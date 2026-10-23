@@ -24,6 +24,8 @@ If setting is enabled, Allow materialized columns in INSERT.
 
 Enables or disables block deduplication of `INSERT` (for Replicated\* tables).
 
+This setting only takes effect when [`deduplicate_insert`](/reference/settings/session-settings/deduplicate-insert#deduplicate_insert) is set to `backward_compatible_choice`.
+
 Possible values:
 
 - 0 — Disabled.

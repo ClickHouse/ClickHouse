@@ -1,0 +1,4 @@
+bad-schema: rejected
+bad-schema: no orphan _delta_log
+retry: initial commit exists
+0

@@ -34,22 +34,6 @@ namespace ErrorCodes
 namespace
 {
 
-bool isValidStemWordType(const IDataType & type)
-{
-    if (isStringOrFixedString(type))
-        return true;
-    if (const auto * array_type = typeid_cast<const DataTypeArray *>(&type))
-    {
-        const IDataType & nested = *array_type->getNestedType();
-        if (isStringOrFixedString(nested))
-            return true;
-        if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&nested))
-            return isStringOrFixedString(*nullable_type->getNestedType());
-    }
-    return false;
-}
-
-
 /// RAII wrapper around sb_stemmer. Constructed from a language code; throws
 /// ILLEGAL_TYPE_OF_ARGUMENT in the constructor if the language is unsupported.
 class Stemmer
@@ -99,9 +83,10 @@ public:
     /// Rows where null_map[i] != 0 are skipped and emitted as empty strings.
     /// For FixedString, getDataAt returns the value with null-byte padding; trimRight removes it.
     /// For String, trailing zero bytes are valid data and must not be trimmed.
-    /// Snowball stemming never lengthens a word, so upper_bound bytes is a safe pre-allocation.
     MutableColumnPtr stemColumn(const IColumn & col, size_t input_rows_count, const NullMap * null_map = nullptr)
     {
+        /// upper_bound is only an initial estimate: some stemmers lengthen a word (e.g. Turkish maps
+        /// the ASCII 'i' to the 2-byte 'ı'), so the loop grows res_data when the output overflows it.
         size_t upper_bound = 0;
         const bool is_fixed_string = checkAndGetColumn<ColumnFixedString>(&col) != nullptr;
         if (const auto * col_str = checkAndGetColumn<ColumnString>(&col))
@@ -131,7 +116,10 @@ public:
             if (is_fixed_string)
                 trimRight(word, '\0');
             std::string_view stemmed = stem(word);
-            chassert(data_size + stemmed.size() <= res_data.size());
+
+            /// Stemming can lengthen the word, grow the output buffer.
+            if (data_size + stemmed.size() > res_data.size())
+                res_data.resize(data_size + stemmed.size());
 
             memcpy(res_data.data() + data_size, stemmed.data(), stemmed.size());
             data_size += stemmed.size();
@@ -159,30 +147,12 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors args{
-            {"word", &isValidStemWordType, nullptr, "String, FixedString, Array(String), Array(FixedString), Array(Nullable(String)), or Array(Nullable(FixedString))"},
-            {"language", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"},
-        };
-        validateFunctionArguments(*this, arguments, args);
-
-        const IDataType & arg0 = *arguments[0].type;
-
-        if (isStringOrFixedString(arg0))
-            return std::make_shared<DataTypeString>();
-
-        const auto & array_type = assert_cast<const DataTypeArray &>(arg0);
-        const IDataType & nested = *array_type.getNestedType();
-
-        if (isStringOrFixedString(nested))
-            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
-
-        /// Array(Nullable(String/FixedString))
-        const auto & nullable_type = assert_cast<const DataTypeNullable &>(nested);
-        chassert(isStringOrFixedString(*nullable_type.getNestedType()));
-        return std::make_shared<DataTypeArray>(
-            std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()));
+        return
+            "(StringOrFixedString, const String) -> String"
+            " OR (Array(StringOrFixedString), const String) -> Array(String)"
+            " OR (Array(Nullable(StringOrFixedString)), const String) -> Array(Nullable(String))";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -229,7 +199,7 @@ Each input string must be a single, lowercase word — strings containing whites
 Passing uppercase characters produces undefined results.
 Returns String for scalar inputs (including FixedString) and Array(String) for array inputs.
 Nullable and LowCardinality variants of String and FixedString are supported.
-The list of supported language identifiers is available in [system.stemmers](/operations/system-tables/stemmers).
+The list of supported language identifiers is available in [system.stemmers](/reference/system-tables/stemmers).
 )";
     FunctionDocumentation::Syntax syntax = "stem(word, language)";
     FunctionDocumentation::Arguments arguments = {
@@ -240,7 +210,7 @@ The list of supported language identifiers is available in [system.stemmers](/op
          "Array(Nullable(String)), or Array(Nullable(FixedString)).",
          {"String", "FixedString", "Array(String)", "Array(FixedString)"}},
         {"language",
-         "Language whose stemming rules will be applied. The canonical identifiers are listed in [system.stemmers](/operations/system-tables/stemmers) (e.g. 'english', 'german', 'porter'). "
+         "Language whose stemming rules will be applied. The canonical identifiers are listed in [system.stemmers](/reference/system-tables/stemmers) (e.g. 'english', 'german', 'porter'). "
          "Snowball also accepts 2- or 3-letter ISO 639 codes (e.g. 'en', 'eng') as aliases where defined, but coverage varies by language — prefer the names from `system.stemmers` for portability.",
          {"String"}},
     };

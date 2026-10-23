@@ -303,7 +303,7 @@ export const IntegrationGrid = () => {
           }, 8000)
 
           const response = await fetch(
-            "https://staging-cms.clickhouse.com/api/integrations?fields[0]=name&fields[1]=slug&fields[2]=category&fields[3]=supportLevel&fields[4]=docsLink&populate[logo][fields][0]=url&populate[logo_dark][fields][0]=url&pagination[pageSize]=500",
+            "https://cms-new.clickhouse.com/api/integrations?fields[0]=name&fields[1]=slug&fields[2]=category&fields[3]=supportLevel&fields[4]=docsLink&populate[logo][fields][0]=url&populate[logo_dark][fields][0]=url&pagination[pageSize]=500",
             {
               signal: controller.signal,
               headers: {
@@ -582,7 +582,6 @@ export const IntegrationGrid = () => {
           -webkit-backdrop-filter: blur(4px);
           border-radius: 0.75rem;
           opacity: 0;
-          transition: opacity 0.2s ease;
           pointer-events: none;
           z-index: 1;
         }
@@ -595,7 +594,7 @@ export const IntegrationGrid = () => {
           color: #fff;
         }
         .dark .integration-external-overlay svg {
-          color: #1f1f1f;
+          color: #fff;
         }
         .integration-card:hover .integration-external-overlay {
           opacity: 1;
@@ -617,7 +616,7 @@ export const IntegrationGrid = () => {
             </svg>
             <input
               type="text"
-              placeholder="البحث حسب التكامل"
+              placeholder="Search by integration"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full text-sm border rounded-xl focus:outline-none bg-[#F6F7FA] dark:bg-[#282828] text-black dark:text-white border-gray-300 dark:border-gray-600 focus:border-[#FAFF69]"
@@ -642,7 +641,7 @@ export const IntegrationGrid = () => {
               style={{ padding: "6px 12px" }}
               onClick={() => setSelectedFilter("All")}
             >
-              الكل
+              All
             </button>
             {integrationTypes.map((type) => (
               <button
@@ -670,7 +669,7 @@ export const IntegrationGrid = () => {
               style={{ padding: "6px 12px" }}
               onClick={() => setSelectedTier("All")}
             >
-              جميع المستويات
+              All tiers
             </button>
             {integrationTiers.map((tier) => (
               <button
@@ -693,7 +692,7 @@ export const IntegrationGrid = () => {
         {selectedFilter === "All" ? (
           Array.from(groupedIntegrations.entries())
             .sort(([a], [b]) => {
-              const sortOrder = ["مكتبة العملاء للغات البرمجة", "ClickPipes", "استيعاب البيانات", "تصور البيانات", "AI/ML", "تكامل البيانات", "إدارة البيانات", "حوكمة الأمان", "عميل SQL"]
+              const sortOrder = ["Language client", "ClickPipes", "Data ingestion", "Data visualization", "AI/ML", "Data integration", "Data management", "Security governance", "SQL client"]
 
               const indexA = sortOrder.indexOf(a)
               const indexB = sortOrder.indexOf(b)

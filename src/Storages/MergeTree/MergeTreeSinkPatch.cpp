@@ -1,6 +1,8 @@
 #include <Storages/MergeTree/MergeTreeSinkPatch.h>
 #include <Storages/StorageMergeTree.h>
+#include <Storages/MergeTree/PatchParts/PatchPartIndex.h>
 #include <Interpreters/InsertDeduplication.h>
+#include <Interpreters/MergeTreeTransaction.h>
 #include <Common/ProfileEventsScope.h>
 
 namespace DB
@@ -13,15 +15,16 @@ namespace ErrorCodes
 
 MergeTreeSinkPatch::MergeTreeSinkPatch(
     StorageMergeTree & storage_,
-    StorageMetadataPtr metadata_snapshot_,
+    PatchPartMetadata patch_metadata_,
     PlainLightweightUpdateHolder update_holder_,
     ContextPtr context_)
     : MergeTreeSink(
         storage_,
-        std::move(metadata_snapshot_),
+        patch_metadata_.metadata,
         /*max_parts_per_block=*/ 0,
         std::move(context_))
     , update_holder(std::move(update_holder_))
+    , patch_metadata(std::move(patch_metadata_))
 {
 }
 
@@ -57,15 +60,16 @@ void MergeTreeSinkPatch::finishDelayedChunk()
     delayed_chunk.reset();
 }
 
-TemporaryPartPtr MergeTreeSinkPatch::writeNewTempPart(BlockWithPartition & block)
+TemporaryPartPtr MergeTreeSinkPatch::writeNewTempPart(BlockWithPartition & block, const MergeTreeTransactionPtr & txn)
 {
+    chassert(!txn, fmt::format("a patch part reached the writer under unique-key transaction {}", txn->tid));
     storage.throwLightweightUpdateIfNeeded(block.block->bytes());
 
     auto partition_id = getPartitionIdForPatch(block.partition);
     UInt64 block_number = update_holder.block_holder->block.number;
+    auto patch_part_index = buildPatchPartIndex(*block.block, block_number, patch_metadata);
 
-    auto source_parts_set = buildSourceSetForPatch(*block.block, block_number);
-    return storage.writer.writeTempPatchPart(block, metadata_snapshot, std::move(partition_id), std::move(source_parts_set), context);
+    return storage.writer.writeTempPatchPart(block, patch_metadata.metadata, std::move(partition_id), std::move(patch_part_index), context);
 }
 
 }

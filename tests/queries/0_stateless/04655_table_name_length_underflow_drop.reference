@@ -1,5 +1,12 @@
 created
 dropped
 ARGUMENT_OUT_OF_BOUND
-into-long-accepted
-out-of-long-rejected
+into-long-rejected
+into-long-escaped-rejected
+out-of-long-accepted
+rescued-dropped
+unknown-db-reported
+view-into-long-rejected
+matview-into-long-rejected
+refreshable-matview-into-long-rejected
+dictionary-into-long-rejected

@@ -1,0 +1,15 @@
+<clickhouse>
+    <!-- Force `ZSTD(3)` as the default codec for parts of any size, so that a column without an
+         explicit CODEC is compressed with a leveled codec even in a small part. This lets the
+         `detectDefaultCompressionCodec` column-proven recovery path be exercised cheaply: the
+         recovered codec loses the level (the compressed frame only stores the method byte), which
+         is the case the `default_codec_is_approximate` flag must cover. -->
+    <compression>
+        <case>
+            <min_part_size>0</min_part_size>
+            <min_part_size_ratio>0</min_part_size_ratio>
+            <method>zstd</method>
+            <level>3</level>
+        </case>
+    </compression>
+</clickhouse>

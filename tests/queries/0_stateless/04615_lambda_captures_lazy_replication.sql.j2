@@ -1,0 +1,75 @@
+-- Correctness of higher order functions with captured columns when captures are
+-- replicated lazily (wrapped into ColumnReplicated) instead of physically copied.
+-- Every query is executed with lazy replication disabled and enabled; results must match.
+
+{% for i in range(0, 2) -%}
+
+SELECT '-- captured String column';
+SELECT arrayMap(x -> concat(s, toString(x)), [1, 2, 3]) FROM (SELECT materialize('str_' || toString(number)) AS s FROM numbers(3)) SETTINGS enable_lazy_columns_replication = {{ i }};
+
+SELECT '-- captured Array column (canonical shape)';
+WITH materialize(range(10)) AS large_array SELECT sum(length(arrayMap(idx -> arraySlice(large_array, idx, 2), arrayEnumerate(large_array)))) FROM numbers(5) SETTINGS enable_lazy_columns_replication = {{ i }};
+
+-- The arrays are distinct per row, so materializing the wrong row ranges (even with correct offsets)
+-- in the Replicated(Array) fast path would change the output values, not only the lengths.
+SELECT '-- captured Array column, value-sensitive (fast path of Replicated(Array) materialization)';
+SELECT arrayMap(idx -> arraySlice(big, idx, 2), arrayEnumerate(big)) FROM (SELECT materialize(range(number, number + 10)) AS big FROM numbers(3)) SETTINGS enable_lazy_columns_replication = {{ i }};
+
+SELECT '-- captured Array column, value-sensitive hash over many rows (UInt16 indexes)';
+SELECT sum(cityHash64(toString(arrayMap(idx -> arraySlice(big, idx, 2), arrayEnumerate(big))))) FROM (SELECT materialize(range(number, number + 10)) AS big FROM numbers(300)) SETTINGS enable_lazy_columns_replication = {{ i }};
+
+SELECT '-- capture used without the lambda argument';
+SELECT arrayMap(x -> s, [1, 2]) FROM (SELECT materialize(toString(number)) AS s FROM numbers(3)) SETTINGS enable_lazy_columns_replication = {{ i }};
+
+SELECT '-- captured Nullable column';
+SELECT arrayMap(x -> concat(coalesce(s, 'null'), toString(x)), [1, 2]) FROM (SELECT if(number % 2 = 0, toString(number), NULL)::Nullable(String) AS s FROM numbers(3)) SETTINGS enable_lazy_columns_replication = {{ i }};
+
+SELECT '-- captured LowCardinality column';
+SELECT arrayMap(x -> concat(s, toString(x)), [1, 2]) FROM (SELECT toLowCardinality('lc_' || toString(number)) AS s FROM numbers(3)) SETTINGS enable_lazy_columns_replication = {{ i }};
+
+SELECT '-- captured const column';
+SELECT arrayMap(x -> concat('c', toString(x + n)), [1, 2]) FROM (SELECT 10 AS n FROM numbers(2)) SETTINGS enable_lazy_columns_replication = {{ i }};
+
+SELECT '-- multiple captures of different types';
+SELECT arrayMap(x -> (s, t, x), [1, 2]) FROM (SELECT materialize(toString(number)) AS s, materialize(range(number)) AS t FROM numbers(3)) SETTINGS enable_lazy_columns_replication = {{ i }};
+
+SELECT '-- multi-array lambda';
+SELECT arrayMap((x, y) -> concat(s, toString(x + y)), [1, 2], [10, 20]) FROM (SELECT materialize(toString(number)) AS s FROM numbers(3)) SETTINGS enable_lazy_columns_replication = {{ i }};
+
+SELECT '-- arrayFilter and arrayExists with capture';
+SELECT arrayFilter(x -> x > length(s), [1, 2, 3, 4]), arrayExists(x -> x = length(s), [1, 2, 3]) FROM (SELECT materialize(repeat('a', number::UInt64)) AS s FROM numbers(4)) SETTINGS enable_lazy_columns_replication = {{ i }};
+
+SELECT '-- nested lambda capturing outer lambda argument and outer capture';
+SELECT arrayMap(x -> arrayMap(y -> concat(s, toString(x + y)), [1, 2]), [10, 20]) FROM (SELECT materialize(toString(number)) AS s FROM numbers(2)) SETTINGS enable_lazy_columns_replication = {{ i }};
+
+SELECT '-- short-circuit function inside the lambda body';
+SELECT arrayMap(x -> if(x > 1, concat(s, '!'), s), [1, 2]) FROM (SELECT materialize(toString(number)) AS s FROM numbers(3)) SETTINGS enable_lazy_columns_replication = {{ i }};
+
+SELECT '-- capture produced by lazy ARRAY JOIN replication';
+SELECT arrayMap(x -> concat(s, toString(x)), [1, 2]) FROM (SELECT materialize('s' || toString(number)) AS s, range(2) AS r FROM numbers(2)) ARRAY JOIN r SETTINGS enable_lazy_columns_replication = {{ i }};
+
+SELECT '-- capture produced by lazy JOIN replication';
+SELECT sum(length(arrayMap(x -> concat(s, toString(x)), range(3)))), sum(cityHash64(arrayStringConcat(arrayMap(x -> s, range(2))))) FROM (SELECT number % 10 AS k FROM numbers(1000)) AS l INNER JOIN (SELECT number AS k, 's' || toString(number) AS s FROM numbers(10)) AS r ON l.k = r.k SETTINGS enable_lazy_columns_replication = {{ i }};
+
+SELECT '-- replication indexes of type UInt16 (more than 255 rows in a block)';
+SELECT sum(length(arrayMap(x -> t, [1, 2]))) FROM (SELECT materialize(range(number % 5)) AS t FROM numbers(300)) SETTINGS enable_lazy_columns_replication = {{ i }};
+
+SELECT '-- replication indexes of type UInt32 (more than 65535 rows in a block)';
+SELECT sum(length(arrayMap(x -> t, [1, 2]))) FROM (SELECT materialize(range(number % 5)) AS t FROM numbers(70000)) SETTINGS enable_lazy_columns_replication = {{ i }}, max_block_size = 70000;
+
+SELECT '-- arrayFold with capture';
+SELECT arrayFold((acc, x) -> concat(acc, s, toString(x)), [1, 2], 'i'::String) FROM (SELECT materialize(toString(number)) AS s FROM numbers(3)) SETTINGS enable_lazy_columns_replication = {{ i }};
+
+SELECT '-- arrayFold whose lambda returns the capture directly';
+SELECT arrayFold((acc, x) -> s, [1, 2], ''::String) FROM (SELECT materialize(toString(number)) AS s FROM numbers(3)) SETTINGS enable_lazy_columns_replication = {{ i }};
+
+SELECT '-- arrayFold with capture produced by lazy ARRAY JOIN replication';
+SELECT arrayFold((acc, x) -> concat(acc, s), [1, 2], ''::String), arrayFold((acc, x) -> s, [1, 2], ''::String) FROM (SELECT materialize('s' || toString(number)) AS s, range(2) AS r FROM numbers(2)) ARRAY JOIN r SETTINGS enable_lazy_columns_replication = {{ i }};
+
+SELECT '-- constant folding still works with all-const captures';
+SELECT arrayMap(x -> x + n, [1, 2]) FROM (SELECT 1 AS n FROM numbers(2)) WHERE arrayMap(x -> x + 1, [1])[1] = 2 SETTINGS enable_lazy_columns_replication = {{ i }};
+
+SELECT '-- empty arrays and empty input';
+SELECT arrayMap(x -> concat(s, toString(x)), []::Array(UInt8)) FROM (SELECT materialize(toString(number)) AS s FROM numbers(2)) SETTINGS enable_lazy_columns_replication = {{ i }};
+
+{% endfor -%}

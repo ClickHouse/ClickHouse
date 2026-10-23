@@ -1,6 +1,7 @@
 #include <QueryPipeline/RemoteInserter.h>
 
 #include <Client/Connection.h>
+#include <Client/SecondaryQuerySettings.h>
 #include <Common/logger_useful.h>
 
 #include <Common/NetException.h>
@@ -47,6 +48,11 @@ void RemoteInserter::initialize()
     modified_client_info.current_roles.reset();
 
     Settings settings = insert_settings;
+
+    /// Demote the `compatibility`-derived values and force ClickHouse SQL, exactly as the `SELECT`
+    /// senders do. Runs before the overrides below, so they stay changed and are serialized.
+    prepareSecondaryQuerySettings(settings);
+
     /// With current protocol it is impossible to avoid deadlock in case of send_logs_level!=none.
     ///
     /// RemoteInserter send Data blocks/packets to the remote shard,
@@ -94,14 +100,16 @@ void RemoteInserter::initialize()
             /// Server could attach ColumnsDescription in front of stream for column defaults. There's no need to pass it through cause
             /// client's already got this information for remote table. Ignore.
         }
-        else if (Protocol::Server::Progress == packet.type)
+        else if (Protocol::Server::Progress == packet.type || Protocol::Server::ProfileEvents == packet.type)
         {
-            /// Progress packets are ignored
+            /// A subquery executed while the remote server is still analysing the query reports progress and
+            /// profile events, so these can arrive before the header block. They are ignored.
         }
         else
             throw NetException(
                 ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
-                "Unexpected packet from server (expected Data or Exception, got {})",
+                "Unexpected packet from server (expected Data, Exception, Log, TableColumns, Progress "
+                "or ProfileEvents, got {})",
                 Protocol::Server::toString(packet.type));
     }
 }

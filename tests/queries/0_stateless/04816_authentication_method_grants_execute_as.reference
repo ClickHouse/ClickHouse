@@ -1,0 +1,14 @@
+-- token cannot read the unlisted table itself
+ACCESS_DENIED
+-- token, subquery form, listed table
+1
+-- token, subquery form, unlisted table
+ACCESS_DENIED
+-- token, session form, listed table
+1
+-- token, session form, unlisted table
+ACCESS_DENIED
+-- full credential, subquery form, unlisted table
+1
+-- full credential, session form, unlisted table
+1

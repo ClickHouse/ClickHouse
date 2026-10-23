@@ -5,6 +5,8 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
@@ -12,8 +14,12 @@
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/quoteString.h>
+#include <Common/scope_guard_safe.h>
 
 #include <Poco/String.h>
+
+#include <optional>
+#include <vector>
 
 namespace DB
 {
@@ -25,6 +31,39 @@ namespace ErrorCodes
 
 namespace
 {
+
+void validatePostgreSQLArrayShape(
+    const IColumn & column, const IDataType & type, size_t row, std::vector<std::optional<size_t>> & dimensions, size_t depth)
+{
+    if (const auto * const_column = checkAndGetColumn<ColumnConst>(&column))
+    {
+        validatePostgreSQLArrayShape(const_column->getDataColumn(), type, 0, dimensions, depth);
+        return;
+    }
+
+    const auto & array_column = assert_cast<const ColumnArray &>(column);
+    const auto & array_type = assert_cast<const DataTypeArray &>(type);
+    const auto & offsets = array_column.getOffsets();
+    const size_t begin = row == 0 ? 0 : offsets[row - 1];
+    const size_t end = offsets[row];
+    const size_t size = end - begin;
+
+    if (dimensions.size() == depth)
+        dimensions.emplace_back(size);
+    else if (*dimensions[depth] != size)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot serialize {} as a PostgreSQL array: multidimensional PostgreSQL arrays must be rectangular",
+            type.getName());
+
+    const auto & nested_type = array_type.getNestedType();
+    if (!isArray(nested_type))
+        return;
+
+    const IColumn & nested_column = array_column.getData();
+    for (size_t k = begin; k < end; ++k)
+        validatePostgreSQLArrayShape(nested_column, *nested_type, k, dimensions, depth + 1);
+}
 
 /// Emit one scalar array element: double-quoted, with `"` and `\` escaped.
 void writeQuotedElement(const String & value, WriteBuffer & out)
@@ -44,6 +83,9 @@ void writeQuotedElement(const String & value, WriteBuffer & out)
 void writePostgreSQLArrayText(
     const IColumn & column, const IDataType & type, size_t row, WriteBuffer & out, const FormatSettings & settings)
 {
+    std::vector<std::optional<size_t>> dimensions;
+    validatePostgreSQLArrayShape(column, type, row, dimensions, 0);
+
     /// A constant expression (e.g. `SELECT [1, 2]`) may reach here as a `ColumnConst` if the caller
     /// does not materialize its input; unwrap it instead of copying the whole column per row.
     if (const auto * const_column = checkAndGetColumn<ColumnConst>(&column))
@@ -104,6 +146,11 @@ public:
     void parse(IColumn & column, const IDataType & type)
     {
         skipWhitespace();
+        /// PostgreSQL prefixes the literal of an array whose lower bound is not 1 with its dimensions,
+        /// as in `[0:1]={a,b}`. A ClickHouse array always starts at index 1, so such a value cannot be
+        /// represented, and dropping the bounds would silently shift the indices of its elements.
+        if (pos < text.size() && text[pos] == '[')
+            throwError("explicit array bounds are not supported, because a ClickHouse array always starts at index 1");
         parseArray(column, type);
         skipWhitespace();
         if (pos != text.size())
@@ -114,6 +161,14 @@ private:
     std::string_view text;
     const FormatSettings & settings;
     size_t pos = 0;
+    /// The number of elements seen at each nesting depth. PostgreSQL multidimensional arrays are
+    /// rectangular: every array at a given depth has the same number of elements as the first one
+    /// completed at that depth. The write side enforces the same invariant, so a ragged literal
+    /// accepted here would produce a row that this interface can no longer read back. Arrays
+    /// complete innermost-first, so a depth may be filled in before its parent: the entries are
+    /// optional rather than appended in order.
+    std::vector<std::optional<size_t>> dimensions;
+    size_t depth = 0;
 
     [[noreturn]] void throwError(const String & what) const
     {
@@ -139,6 +194,9 @@ private:
         const auto & nested_type = array_type->getNestedType();
         IColumn & nested_column = array_column.getData();
         const size_t initial_size = nested_column.size();
+        const size_t current_depth = depth;
+        ++depth;
+        SCOPE_EXIT({ depth = current_depth; });
 
         if (pos >= text.size() || text[pos] != '{')
             throwError("expected '{'");
@@ -179,6 +237,24 @@ private:
             }
         }
 
+        /// `nested_column` gains exactly one entry per element at this depth - one value for a scalar
+        /// element type, one offset for a nested array - so this is the element count of this array.
+        const size_t element_count = nested_column.size() - initial_size;
+        if (dimensions.size() <= current_depth)
+            dimensions.resize(current_depth + 1);
+        if (!dimensions[current_depth].has_value())
+            dimensions[current_depth] = element_count;
+        else if (*dimensions[current_depth] != element_count)
+        {
+            /// Reject before the offsets are committed, and leave the nested column as it was.
+            const size_t expected = *dimensions[current_depth];
+            nested_column.popBack(element_count);
+            throwError(fmt::format(
+                "multidimensional PostgreSQL arrays must be rectangular, but an array of {} element(s) follows "
+                "an array of {} element(s) at the same nesting depth",
+                element_count, expected));
+        }
+
         array_column.getOffsets().push_back(nested_column.size());
     }
 
@@ -192,6 +268,8 @@ private:
 
         String value;
         bool quoted = false;
+        /// An unquoted element with an escape is never a null: PostgreSQL reads `{\NULL}` as the string `NULL`.
+        bool escaped = false;
 
         if (pos < text.size() && text[pos] == '"')
         {
@@ -219,26 +297,63 @@ private:
         }
         else
         {
-            const size_t begin = pos;
+            /// Trailing whitespace is insignificant, unless it arrived through an escape: `{a\ }` is `a `.
+            size_t significant_size = 0;
             while (pos < text.size() && text[pos] != ',' && text[pos] != '}')
+            {
+                bool is_escaped = false;
+                if (text[pos] == '\\')
+                {
+                    ++pos;
+                    if (pos >= text.size())
+                        throwError("unterminated escape sequence");
+                    is_escaped = true;
+                    escaped = true;
+                }
+                value += text[pos];
                 ++pos;
-            size_t end = pos;
-            while (end > begin && isWhitespaceASCII(text[end - 1]))
-                --end;
-            value = String(text.substr(begin, end - begin));
+                if (is_escaped || !isWhitespaceASCII(value.back()))
+                    significant_size = value.size();
+            }
+
+            value.resize(significant_size);
         }
 
-        /// Only an unquoted `NULL` is a null element - `"NULL"` is the four-character string.
-        if (!quoted && Poco::toUpper(value) == "NULL")
+        /// Only an unquoted, unescaped `NULL` is a null element - `"NULL"` is the four-character string.
+        if (!quoted && !escaped && Poco::toUpper(value) == "NULL")
         {
-            if (!nested_column.isNullable())
+            /// `LowCardinality(Nullable(T))` holds nulls too, and its default value is a null, but the
+            /// column itself does not report as nullable.
+            if (!isColumnNullableOrLowCardinalityNullable(nested_column))
                 throwError(fmt::format("a NULL element cannot be read into a value of type {}", nested_type->getName()));
             nested_column.insertDefault();
             return;
         }
 
+        /// The element is not a null, and what it reads as must not depend on the null representation of
+        /// a text format: inside an array literal `"NULL"` and `\N` are ordinary strings, and only the
+        /// array grammar decides what a null is. So the value is deserialized as the element type with
+        /// its nullability stripped, and only then inserted into the element column.
+        const auto value_type = removeNullable(removeLowCardinality(nested_type));
         ReadBufferFromString element_buffer(value);
-        nested_type->getDefaultSerialization()->deserializeWholeText(nested_column, element_buffer, settings);
+        if (value_type->equals(*nested_type))
+        {
+            nested_type->getDefaultSerialization()->deserializeWholeText(nested_column, element_buffer, settings);
+            return;
+        }
+
+        auto value_column = value_type->createColumn();
+        value_type->getDefaultSerialization()->deserializeWholeText(*value_column, element_buffer, settings);
+        if (auto * nullable_column = typeid_cast<ColumnNullable *>(&nested_column))
+        {
+            nullable_column->getNestedColumn().insertFrom(*value_column, 0);
+            nullable_column->getNullMapData().push_back(false);
+        }
+        else
+        {
+            /// `LowCardinality`: the value has to go through the dictionary, so it is inserted by value.
+            nested_column.insert((*value_column)[0]);
+        }
     }
 };
 

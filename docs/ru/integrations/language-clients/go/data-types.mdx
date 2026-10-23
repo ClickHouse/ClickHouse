@@ -7,9 +7,7 @@ title: 'Типы данных'
 doc_type: 'reference'
 ---
 
-<div id="type-conversions">
-  ## Преобразования типов
-</div>
+## Преобразования типов {#type-conversions}
 
 Клиент стремится быть максимально гибким в плане поддержки типов переменных — как для вставки, так и для маршалинга ответов. В большинстве случаев для типа столбца ClickHouse существует эквивалентный тип Golang, например [UInt64](/ru/reference/data-types/int-uint) и [uint64](https://pkg.go.dev/builtin#uint64). Такие логические соответствия должны поддерживаться всегда. Также могут использоваться типы переменных, которые можно вставлять в столбцы или применять для получения ответа, если предварительно выполняется преобразование переменной или полученных данных. Клиент стремится поддерживать такие преобразования прозрачно, чтобы пользователям не приходилось заранее точно приводить данные к нужному типу перед вставкой, а также чтобы обеспечить гибкий маршалинг во время выполнения запроса. При этом такие прозрачные преобразования не допускают потери точности. Например, `uint32` нельзя использовать для получения данных из столбца `UInt64`. И наоборот, строку можно вставить в поле `DateTime64`, если она соответствует требованиям формата.
 
@@ -19,13 +17,9 @@ doc_type: 'reference'
 
 Стандартный интерфейс `database/sql` должен поддерживать те же типы, что и API ClickHouse. Есть несколько исключений, в основном для сложных типов; они описаны в разделах ниже. Как и API ClickHouse, клиент стремится быть максимально гибким в плане поддержки типов переменных — как для вставки, так и для маршалинга ответов.
 
-<div id="complex-types">
-  ## Сложные типы
-</div>
+## Сложные типы {#complex-types}
 
-<div id="datedatetime">
-  ### Date/DateTime
-</div>
+### Date/DateTime {#datedatetime}
 
 Клиент Go для ClickHouse поддерживает типы даты и даты/времени `Date`, `Date32`, `DateTime` и `DateTime64`. Даты можно вставлять как строки в формате `2006-01-02` или с помощью встроенных типов Go `time.Time{}` и `sql.NullTime`. Для `DateTime` также поддерживаются эти типы, но строки должны передаваться в формате `2006-01-02 15:04:05` с необязательным смещением часового пояса, например `2006-01-02 15:04:05 +08:00`. При чтении также поддерживаются `time.Time{}` и `sql.NullTime`, а также любая реализация интерфейса `sql.Scanner`.
 
@@ -38,9 +32,7 @@ doc_type: 'reference'
   * Во время **вставки** при преобразовании даты в Unix-временную метку учитывается ее часовой пояс, то есть перед сохранением как даты к ней применяется соответствующее смещение часового пояса, поскольку типы `Date` в ClickHouse не содержат информации о локали. Если в строковом значении он не указан, будет использоваться локальный часовой пояс.
   * Во время **чтения** даты, считанные в экземпляры `time.Time{}` или `sql.NullTime{}`, возвращаются без информации о часовом поясе.
 
-<div id="timetime64-types">
-  ### Типы Time/Time64
-</div>
+### Типы Time/Time64 {#timetime64-types}
 
 Типы столбцов `Time` и `Time64` хранят значения времени суток без компонента даты. Оба сопоставляются с типом Go `time.Duration`.
 
@@ -80,9 +72,7 @@ if err = conn.QueryRow(ctx, "SELECT * FROM example").Scan(&col1, &col2); err != 
 fmt.Printf("col1=%v, col2=%v\n", col1, col2)
 ```
 
-<div id="array">
-  ### Array
-</div>
+### Array {#array}
 
 Значения типа Array следует вставлять как срезы. Правила для типов элементов такие же, как и для [примитивного типа](#type-conversions), то есть по возможности элементы будут преобразованы.
 
@@ -133,9 +123,7 @@ rows.Close()
 
 [Полный пример](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/array.go)
 
-<div id="map">
-  ### Map
-</div>
+### Map {#map}
 
 Значения типа Map следует вставлять в виде map в Go, при этом ключи и значения должны соответствовать правилам преобразования типов, определённым [ранее](#type-conversions).
 
@@ -191,9 +179,7 @@ rows.Close()
   [Полный пример](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/map.go)
 </Note>
 
-<div id="tuples">
-  ### Tuple
-</div>
+### Tuple {#tuples}
 
 Тип Tuple представляет собой группу столбцов произвольной длины. Столбцы могут быть либо явно именованными, либо можно указать только их тип, например.
 
@@ -254,9 +240,7 @@ fmt.Printf("row: col1=%v, col2=%v, col3=%v\n", col1, col2, col3)
 
 Примечание: типизированные срезы и значения типа Map поддерживаются при условии, что все подстолбцы в именованном Tuple имеют один и тот же тип.
 
-<div id="nested">
-  ### Nested
-</div>
+### Nested {#nested}
 
 Поле Nested эквивалентно Array из именованных Tuple. Использование зависит от того, установил ли пользователь для [flatten&#95;nested](/ru/reference/settings/session-settings#flatten_nested) значение 1 или 0.
 
@@ -438,9 +422,7 @@ if err := batch.Send(); err != nil {
 
 Благодаря более простому интерфейсу и официальной поддержке вложенных структур мы рекомендуем `flatten_nested=0`.
 
-<div id="geo-types">
-  ### Гео-типы
-</div>
+### Гео-типы {#geo-types}
 
 Клиент поддерживает гео-типы Point, Ring, LineString, Polygon, MultiPolygon и MultiLineString. В Go эти типы представлены с помощью пакета [github.com/paulmach/orb](https://github.com/paulmach/orb).
 
@@ -543,9 +525,7 @@ fmt.Printf("point=%v, ring=%v, lineString=%v, polygon=%v, mPolygon=%v, mLineStri
 
 [Полный пример](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/geo.go)
 
-<div id="uuid">
-  ### UUID
-</div>
+### UUID {#uuid}
 
 Тип UUID поддерживается пакетом [github.com/google/uuid](https://github.com/google/uuid). Вы также можете отправлять и сериализовать UUID как строку или как любой тип, реализующий `sql.Scanner` или `Stringify`.
 
@@ -590,9 +570,7 @@ if err = conn.QueryRow(ctx, "SELECT * FROM example").Scan(&col1, &col2); err != 
 
 [Полный пример](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/uuid.go)
 
-<div id="decimal">
-  ### Decimal
-</div>
+### Decimal {#decimal}
 
 Поскольку в Go нет встроенного типа Decimal, мы рекомендуем использовать сторонний пакет [github.com/shopspring/decimal](https://github.com/shopspring/decimal), чтобы работать с типами Decimal нативно, не изменяя исходные запросы.
 
@@ -651,9 +629,7 @@ fmt.Printf("col1=%v, col2=%v, col3=%v, col4=%v, col5=%v\n", col1, col2, col3, co
 
 [Полный пример](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/decimal.go)
 
-<div id="nullable">
-  ### Nullable
-</div>
+### Nullable {#nullable}
 
 Значение Nil в Go соответствует NULL в ClickHouse. Его можно использовать, если поле объявлено как Nullable. Во время вставки Nil можно передавать как для обычного столбца, так и для столбца типа Nullable. В первом случае будет сохранено значение по умолчанию для этого типа, например пустая строка для string. Для Nullable-варианта в ClickHouse будет сохранено значение NULL.
 
@@ -707,9 +683,7 @@ if err = conn.QueryRow(ctx, "SELECT * FROM example").Scan(&col1, &col2, &col3, &
 
 Клиент также поддерживает типы `sql.Null*`, например `sql.NullInt64`. Они совместимы с соответствующими типами ClickHouse.
 
-<div id="big-ints">
-  ### Большие целые числа
-</div>
+### Большие целые числа {#big-ints}
 
 Числовые типы размером более 64 бит представлены с помощью встроенного в Go пакета [big](https://pkg.go.dev/math/big).
 
@@ -779,9 +753,7 @@ fmt.Printf("col1=%v, col2=%v, col3=%v, col4=%v, col5=%v, col6=%v, col7=%v\n", co
 
 [Полный пример](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/big_int.go)
 
-<div id="bfloat16">
-  ### BFloat16
-</div>
+### BFloat16 {#bfloat16}
 
 `BFloat16` — это 16-битный тип чисел с плавающей запятой brain float, используемый в рабочих нагрузках машинного обучения. В Go значения `BFloat16` записываются и считываются как `float32`. Для вариантов Nullable используется `sql.NullFloat64`.
 
@@ -814,9 +786,7 @@ fmt.Printf("Col1: %v, Col2: %v\n", col1, col2)
 
 [Полный пример](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/bfloat16.go)
 
-<div id="qbit">
-  ### QBit
-</div>
+### QBit {#qbit}
 
 `QBit` — это экспериментальный тип столбца для хранения векторных эмбеддингов в бит-срезовом формате, оптимизированный для поиска по сходству векторов. Для его использования должна быть включена настройка `allow_experimental_qbit_type`.
 

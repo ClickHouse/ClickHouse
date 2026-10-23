@@ -1,4 +1,11 @@
-if (CMAKE_SYSTEM_PROCESSOR MATCHES "amd64|x86_64|i386")
+if (CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    # This file runs before target.cmake, so `OS_WASM` is not set yet; recognize the toolchain by
+    # name instead, and do it before every processor match. `CMAKE_SYSTEM_PROCESSOR` says nothing
+    # about a WebAssembly target: Emscripten sets it to `x86` by default, and a user can override it
+    # to anything with `-DEMSCRIPTEN_SYSTEM_PROCESSOR=`, including a value that a host-CPU regex
+    # below would claim.
+    set (ARCH_WASM 1)
+elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "amd64|x86_64|i386")
     if (CMAKE_LIBRARY_ARCHITECTURE MATCHES "i386")
         message (FATAL_ERROR "32bit platforms are not supported")
     endif ()

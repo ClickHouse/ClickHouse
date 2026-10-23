@@ -61,7 +61,17 @@ cat "$TMP_DIR"/*.dict "$CURATED_DICT" | LC_ALL=C sort | uniq > "$OUTPUT_DIR/all.
 # surface, so extractor gaps cannot regress silently.
 echo "Checking that the source-derived dictionary covers the binary-derived one"
 "$SCRIPT_DIR/generate_source_dict.sh" "$SOURCE_ROOT" "$TMP_DIR/source.dict"
-MISSING_TOKENS=$(comm -23 <(LC_ALL=C sort -u "$OUTPUT_DIR/all.dict") <(LC_ALL=C sort -u "$TMP_DIR/source.dict"))
+# BEGIN: dictionary coverage check
+# Sort into files: set -e does not see a process substitution's failure, so a
+# failed sort there would read as an empty diff.
+LC_ALL=C sort -u "$OUTPUT_DIR/all.dict" > "$TMP_DIR/all.sorted"
+LC_ALL=C sort -u "$TMP_DIR/source.dict" > "$TMP_DIR/source.sorted"
+# comm compares by collation, so it must use the locale its inputs were sorted
+# with. It exits non-zero only when the comparison itself fails, never on a diff.
+if ! MISSING_TOKENS=$(LC_ALL=C comm -23 "$TMP_DIR/all.sorted" "$TMP_DIR/source.sorted"); then
+    echo "error: failed to compare the binary-derived and source-derived dictionaries."
+    exit 1
+fi
 if [ -n "$MISSING_TOKENS" ]; then
     echo "error: tokens present in the binary-derived all.dict are missing from the source-derived dictionary:"
     echo "$MISSING_TOKENS"
@@ -69,3 +79,4 @@ if [ -n "$MISSING_TOKENS" ]; then
          "compile time and cannot be derived from the sources - add it to tests/fuzz/dictionaries/old.dict."
     exit 1
 fi
+# END: dictionary coverage check

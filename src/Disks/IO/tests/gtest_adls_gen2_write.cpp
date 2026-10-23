@@ -234,6 +234,7 @@ struct WriteFixture
         return std::make_unique<WriteBufferFromAzureDataLakeStorage>(
             endpoint,
             auth_method,
+            /*drop_credentials_=*/ false,
             clientOptions(),
             FINAL_BLOB_PATH,
             /*buf_size_=*/ DBMS_DEFAULT_BUFFER_SIZE,
@@ -1177,6 +1178,7 @@ TEST(AdlsGen2Write, KeyThatCannotBeStagedNamesTheParentDirectory)
     auto buffer = std::make_unique<WriteBufferFromAzureDataLakeStorage>(
         fixture.endpoint,
         fixture.auth_method,
+        /*drop_credentials_=*/ false,
         fixture.clientOptions(),
         key,
         DBMS_DEFAULT_BUFFER_SIZE,

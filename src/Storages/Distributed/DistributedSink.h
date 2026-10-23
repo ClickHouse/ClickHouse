@@ -48,12 +48,22 @@ public:
         UInt64 insert_timeout_,
         const Names & columns_to_send_);
 
+    ~DistributedSink() override;
+
     String getName() const override { return "DistributedSink"; }
     void consume(Chunk & chunk) override;
     void onFinish() override;
 
 private:
     void onCancel() noexcept override;
+
+    /// Cancels the executor of every writing job. Requires `execution_mutex` to be held: holding it is
+    /// what proves no writing job is running, hence that the executors may be touched from this thread.
+    void cancelExecutors() noexcept;
+
+    /// An executor may only be touched by the thread that owns it, so a writing job acts on the
+    /// cancellation flag itself rather than having another thread cancel it.
+    void throwIfCancelled();
 
     IColumn::Selector createSelector(const Block & source_block) const;
 

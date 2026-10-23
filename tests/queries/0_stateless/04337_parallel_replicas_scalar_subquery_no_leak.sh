@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-parallel-replicas
-# Tag no-parallel -- queries system.text_log
+# Tags: no-parallel-replicas
 # Tag no-parallel-replicas -- the test manages parallel replicas settings itself
 
 # Regression test for "Duplicate announcement received for replica number 1"
@@ -52,9 +51,15 @@ echo -n 'scalar over nested union, coordinators: '
 coordinators_for "SELECT (SELECT count() FROM (SELECT a FROM t_pr_scalar UNION ALL SELECT a FROM t_pr_scalar))" union
 
 # Control: a top-level query over the same data still uses parallel replicas. Expect > 0.
+# Pinned to the query-based implementation for now: a UNION whose branches read the same table
+# is left local by the plan-based one on purpose (collectReadsToDistribute), because the coordinator
+# drives every read of a shipped fragment and cannot tell duplicate announcements for one table
+# apart - the very failure this test guards. Removing this pin requires a protocol / coordinator
+# change rather than a local cleanup. The assertions above are not pinned and hold for both
+# implementations.
 echo -n 'top-level query uses parallel replicas: '
 top_id="04337_${CLICKHOUSE_DATABASE}_top"
-${CLICKHOUSE_CLIENT} --query_id "$top_id" --query "SELECT count() FROM (SELECT a FROM t_pr_scalar UNION ALL SELECT a FROM t_pr_scalar) $pr_settings" >/dev/null 2>&1
+${CLICKHOUSE_CLIENT} --query_id "$top_id" --query "SELECT count() FROM (SELECT a FROM t_pr_scalar UNION ALL SELECT a FROM t_pr_scalar) $pr_settings, parallel_replicas_plan_based = 0" >/dev/null 2>&1
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS text_log"
 ${CLICKHOUSE_CLIENT} --query "
     SELECT count() > 0

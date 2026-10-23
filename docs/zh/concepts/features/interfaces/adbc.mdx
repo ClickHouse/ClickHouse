@@ -1,0 +1,49 @@
+---
+description: 'ClickHouse ADBC 驱动程序文档'
+sidebarTitle: 'ADBC 驱动程序'
+slug: /interfaces/adbc
+title: 'ADBC 驱动程序'
+doc_type: 'reference'
+---
+
+ClickHouse ADBC 驱动程序提供符合标准的 [Arrow Database Connectivity (ADBC)](https://arrow.apache.org/adbc/)
+接口，用于将兼容 ADBC 的应用程序连接到 ClickHouse。
+
+该驱动程序通过 [HTTP 协议](/zh/concepts/features/interfaces/http) 与 ClickHouse server 通信；HTTP 是所有 ClickHouse 部署均主要支持的
+协议。这使驱动程序能够在各种环境中一致运行，包括本地安装、云托管服务，以及仅提供基于 HTTP 访问的
+环境。
+
+该驱动程序的源代码可在
+[adbc&#95;clickhouse GitHub Repository](https://github.com/clickhouse/adbc_clickhouse) 获取。
+
+<Note>
+  此驱动程序仍在积极开发中。部分 ADBC 功能可能尚未完全实现。当前版本
+  侧重于提供基本连接能力和核心 ADBC 功能，后续
+  发行版计划增加更多功能。
+
+  您的反馈十分宝贵，有助于确定新功能和改进的优先级。如果您遇到
+  限制、功能缺失或意外行为，请通过以下 issue 跟踪器提交您的观察结果或功能请求：
+  [github.com/ClickHouse/adbc&#95;clickhouse/issues](https://github.com/ClickHouse/adbc_clickhouse/issues)
+</Note>
+
+<div id="installation">
+  ## 安装
+</div>
+
+您可以使用 [dbc](https://docs.columnar.tech/dbc/) 安装最新版驱动程序：
+
+```bash
+dbc install clickhouse
+```
+
+或者，您也可以从 [github.com/adbc-drivers/clickhouse/releases](https://github.com/adbc-drivers/clickhouse/releases) 手动下载。
+
+<div id="database-options">
+  ## 数据库选项
+</div>
+
+以下数据库选项用于通过 ClickHouse ADBC 驱动程序建立连接。
+
+* `uri`：指定 ClickHouse server 的完整 HTTP(S) 端点，包括协议、主机和端口。
+* `username`：用于向 ClickHouse server 进行身份验证的用户名。
+* `password`：与指定用户名关联的密码。

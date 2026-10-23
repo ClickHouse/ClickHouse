@@ -228,9 +228,10 @@ def test_select_constant_array_over_wire(started_cluster):
     try:
         cur = conn.cursor()
         cur.execute("SELECT [1, 2] AS a, ['x', 'y'] AS s")
-        # Arrays are advertised as text in the RowDescription of a direct SELECT, so the client sees
-        # the PostgreSQL literal itself (every scalar element is quoted).
-        assert cur.fetchall() == [('{"1","2"}', '{"x","y"}')]
+        # The RowDescription of a direct SELECT advertises the array OID of the element type, so the
+        # client decodes the streamed PostgreSQL array literal into a native array.
+        assert [d.type_code for d in cur.description] == [1005, 1009]
+        assert cur.fetchall() == [([1, 2], ["x", "y"])]
     finally:
         conn.close()
 
@@ -342,6 +343,91 @@ def test_copy_honours_format_and_no_op_options(started_cluster):
         conn.close()
 
 
+def test_copy_escape_string_option_values(started_cluster):
+    # PostgreSQL's escape-string syntax is how clients spell control-character option values without
+    # embedding the raw bytes: `DELIMITER E'\t'` and `NULL E'\N'` (a doubled backslash in the SQL text)
+    # decode to exactly the tab and `\N` defaults, so they must be accepted as the no-ops their
+    # plain-string spellings are, and a non-default value in the same syntax must still be rejected.
+    conn = py_psql.connect(
+        host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
+    )
+    try:
+        cur = conn.cursor()
+
+        # The text format's defaults in the escape-string spelling: both options are no-ops.
+        out = io.StringIO()
+        cur.copy_expert(
+            "COPY (SELECT 1 AS a, 2 AS b) TO STDOUT WITH DELIMITER E'\\t' NULL E'\\\\N'", out
+        )
+        assert out.getvalue() == "1\t2\n"
+
+        # The same spelling works in the parenthesized grammar, and an escape-string `NULL E'\N'` for
+        # CSV selects the `\N` marker exactly like its plain-string spelling does.
+        out = io.StringIO()
+        cur.copy_expert(
+            "COPY (SELECT 1 AS a, CAST(NULL AS Nullable(Int32)) AS b) TO STDOUT WITH (FORMAT csv, DELIMITER E',', NULL E'\\\\N')",
+            out,
+        )
+        assert out.getvalue() == "1,\\N\n"
+
+        # A non-default value in the escape-string spelling is still rejected, not silently ignored.
+        with pytest.raises(py_psql.Error, match="non-default DELIMITER"):
+            cur.copy_expert("COPY (SELECT 1 AS a, 2 AS b) TO STDOUT WITH DELIMITER E';'", io.StringIO())
+        conn.rollback()
+
+        # The connection stayed usable across all of the above.
+        cur.execute("SELECT 42")
+        assert cur.fetchone() == (42,)
+    finally:
+        conn.close()
+
+
+def test_copy_null_marker_spellings(started_cluster):
+    # The handler reports `standard_conforming_strings = on`, so a backslash inside a plain string literal
+    # is an ordinary byte: `NULL '\N'` is the supported default marker, while `NULL '\\N'` (a doubled
+    # backslash in the SQL text) requests a three-byte marker and must be rejected as non-default rather
+    # than silently served as `\N`. The escape-string `E'\\N'` decodes to `\N` and stays accepted.
+    conn = py_psql.connect(
+        host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
+    )
+    try:
+        cur = conn.cursor()
+
+        # SQL text `NULL AS '\N'` - the default marker, accepted as a no-op for the text format.
+        out = io.StringIO()
+        cur.copy_expert(
+            "COPY (SELECT 1 AS a, CAST(NULL AS Nullable(Int32)) AS b) TO STDOUT WITH NULL AS '\\N'", out
+        )
+        assert out.getvalue() == "1\t\\N\n"
+
+        # SQL text `NULL AS E'\\N'` - decodes to `\N`, accepted the same way.
+        out = io.StringIO()
+        cur.copy_expert(
+            "COPY (SELECT 1 AS a, CAST(NULL AS Nullable(Int32)) AS b) TO STDOUT WITH NULL AS E'\\\\N'", out
+        )
+        assert out.getvalue() == "1\t\\N\n"
+
+        # SQL text `NULL AS '\\N'` - a distinct three-byte marker, rejected instead of being mis-served.
+        with pytest.raises(py_psql.Error, match="non-default NULL marker"):
+            cur.copy_expert(
+                "COPY (SELECT 1 AS a, 2 AS b) TO STDOUT WITH NULL AS '\\\\N'", io.StringIO()
+            )
+        conn.rollback()
+
+        # Same in the parenthesized grammar and for CSV.
+        with pytest.raises(py_psql.Error, match="non-default NULL marker"):
+            cur.copy_expert(
+                "COPY (SELECT 1 AS a, 2 AS b) TO STDOUT WITH (FORMAT csv, NULL '\\\\N')", io.StringIO()
+            )
+        conn.rollback()
+
+        # The connection stayed usable after the rejections.
+        cur.execute("SELECT 42")
+        assert cur.fetchone() == (42,)
+    finally:
+        conn.close()
+
+
 def test_copy_rejects_unsupported_options(started_cluster):
     # Only the format (text/CSV) is honoured; a data-formatting option we cannot faithfully apply must be
     # rejected with a clear error instead of being silently ignored (which would stream output that does not
@@ -357,10 +443,11 @@ def test_copy_rejects_unsupported_options(started_cluster):
             cur.copy_expert("COPY (SELECT 1 AS a, 2 AS b) TO STDOUT WITH (FORMAT csv, DELIMITER ';')", io.StringIO())
         conn.rollback()
 
-        # HEADER is not produced by the text output formats used here.
-        with pytest.raises(py_psql.Error, match="HEADER"):
-            cur = conn.cursor()
-            cur.copy_expert("COPY (SELECT 1 AS a, 2 AS b) TO STDOUT WITH (FORMAT csv, HEADER)", io.StringIO())
+        # HEADER is honoured rather than rejected: the column names come first.
+        out = io.StringIO()
+        cur = conn.cursor()
+        cur.copy_expert("COPY (SELECT 1 AS a, 2 AS b) TO STDOUT WITH (FORMAT csv, HEADER)", out)
+        assert out.getvalue() == '"a","b"\n1,2\n'
         conn.rollback()
 
         # For the text format the only supported NULL marker is the default `\N`; an empty marker would be
@@ -372,9 +459,9 @@ def test_copy_rejects_unsupported_options(started_cluster):
         conn.rollback()
 
         # An option we do not interpret at all is rejected by name rather than dropped.
-        with pytest.raises(py_psql.Error, match='"QUOTE" option'):
+        with pytest.raises(py_psql.Error, match='"ENCODING" option'):
             cur = conn.cursor()
-            cur.copy_expert("COPY (SELECT 1 AS a, 2 AS b) TO STDOUT WITH (FORMAT csv, QUOTE '\"')", io.StringIO())
+            cur.copy_expert("COPY (SELECT 1 AS a, 2 AS b) TO STDOUT WITH (FORMAT csv, ENCODING 'UTF8')", io.StringIO())
         conn.rollback()
 
         # A format we do not recognize must be rejected with a clean error too, not throw inside the parser
@@ -384,8 +471,50 @@ def test_copy_rejects_unsupported_options(started_cluster):
             cur.copy_expert("COPY (SELECT 1 AS a, 2 AS b) TO STDOUT WITH FORMAT JSONEachRow", io.StringIO())
         conn.rollback()
 
+        # A missing option value and a stray literal must not silently select the default delimiter or
+        # null marker. Both forms are malformed PostgreSQL COPY syntax and stay in-band errors.
+        for copy_query in [
+            "COPY (SELECT 1 AS a) TO STDOUT WITH (DELIMITER)",
+            "COPY (SELECT 1 AS a) TO STDOUT WITH (NULL)",
+            "COPY (SELECT 1 AS a) TO STDOUT WITH (FORMAT csv, 'unexpected')",
+            "COPY (SELECT 1 AS a) TO STDOUT WITH (DELIMITER csv)",
+            "COPY (SELECT 1 AS a) TO STDOUT WITH (NULL on)",
+        ]:
+            with pytest.raises(py_psql.Error, match="missing or unexpected value"):
+                cur = conn.cursor()
+                cur.copy_expert(copy_query, io.StringIO())
+            conn.rollback()
+
         # The connection is still usable after the rejections.
         cur = conn.cursor()
+        cur.execute("SELECT 42")
+        assert cur.fetchone() == (42,)
+    finally:
+        conn.close()
+
+
+def test_simple_query_stops_after_copy_error_and_rejects_custom_format(started_cluster):
+    # An in-band COPY error terminates its simple-query packet: later statements must not run. Explicit
+    # ClickHouse output formats are likewise rejected before they can place non-PostgreSQL bytes on the
+    # wire, and both errors leave the connection usable for the next query.
+    node.query("DROP TABLE IF EXISTS test_copy_error_stops_packet SYNC")
+    conn = py_psql.connect(
+        host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
+    )
+    try:
+        cur = conn.cursor()
+        with pytest.raises(py_psql.Error, match="binary COPY format is not supported"):
+            cur.execute(
+                "COPY (SELECT 1) TO STDOUT WITH FORMAT binary; "
+                "CREATE TABLE test_copy_error_stops_packet (x UInt8) ENGINE = Memory"
+            )
+        conn.rollback()
+        assert node.query("EXISTS TABLE test_copy_error_stops_packet") == "0\n"
+
+        with pytest.raises(py_psql.Error, match="does not support custom output formats"):
+            cur.execute("SELECT 1 FORMAT JSONEachRow")
+        conn.rollback()
+
         cur.execute("SELECT 42")
         assert cur.fetchone() == (42,)
     finally:
@@ -871,7 +1000,7 @@ def test_copy_array_column_round_trips(started_cluster):
     )
     node.query(
         "INSERT INTO copy_arrays VALUES "
-        "(1, [1, 2, 3], ['a', 'b,c'], [[1, 2], [3]], [1, NULL, 3]), "
+        "(1, [1, 2, 3], ['a', 'b,c'], [[1, 2], [3, 4]], [1, NULL, 3]), "
         "(2, [], [''], [], [])",
         settings={"async_insert": 0},
     )
@@ -914,11 +1043,56 @@ def test_copy_array_column_round_trips(started_cluster):
     assert node.query(
         "SELECT id, ints, strs, nested, nulls FROM copy_arrays ORDER BY id"
     ) == (
-        "1\t[1,2,3]\t['a','b,c']\t[[1,2],[3]]\t[1,NULL,3]\n"
+        "1\t[1,2,3]\t['a','b,c']\t[[1,2],[3,4]]\t[1,NULL,3]\n"
         "2\t[]\t['']\t[]\t[]\n"
     )
     node.query("DROP TABLE copy_arrays SYNC")
     node.query("DROP TABLE copy_bad_arrays SYNC")
+
+    # PostgreSQL multidimensional arrays must be rectangular. Reject a ClickHouse-only ragged value
+    # rather than advertising it as a PostgreSQL array literal that another server cannot parse.
+    # The failure is observed through `COPY ... TO STDOUT`: a backend-detected error during copy-out
+    # is reported with an `ErrorResponse` inside the copy stream and the server reverts to normal
+    # processing, as PostgreSQL does, so the client sees the server's message and the connection
+    # stays usable.
+    node.query("DROP TABLE IF EXISTS copy_ragged SYNC")
+    node.query(
+        "CREATE TABLE copy_ragged (v Array(Array(Int32))) ENGINE = MergeTree ORDER BY tuple()"
+    )
+    node.query(
+        "INSERT INTO copy_ragged VALUES ([[1, 2], [3]])", settings={"async_insert": 0}
+    )
+    ragged_conn = py_psql.connect(
+        host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
+    )
+    try:
+        ragged_cur = ragged_conn.cursor()
+        with pytest.raises(py_psql.Error, match="rectangular"):
+            ragged_cur.copy_expert("COPY copy_ragged TO STDOUT", io.StringIO())
+        ragged_conn.rollback()
+        ragged_cur.execute("SELECT 42")
+        assert ragged_cur.fetchone()[0] == 42
+    finally:
+        ragged_conn.close()
+
+    # The same invariant holds on input: a ragged literal is rejected by `COPY ... FROM STDIN`
+    # instead of being stored as a row that this interface can no longer read back.
+    ragged_in_conn = py_psql.connect(
+        host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
+    )
+    try:
+        ragged_in_cur = ragged_in_conn.cursor()
+        with pytest.raises(py_psql.Error, match="rectangular"):
+            ragged_in_cur.copy_expert(
+                "COPY copy_ragged FROM STDIN", io.StringIO("{{1,2},{3}}\n")
+            )
+        ragged_in_conn.rollback()
+        ragged_in_cur.execute("SELECT 43")
+        assert ragged_in_cur.fetchone()[0] == 43
+    finally:
+        ragged_in_conn.close()
+    assert node.query("SELECT count() FROM copy_ragged") == "1\n"
+    node.query("DROP TABLE copy_ragged SYNC")
 
 
 def test_empty_nested_array_round_trips(started_cluster):
@@ -929,15 +1103,18 @@ def test_empty_nested_array_round_trips(started_cluster):
     node.query(
         "CREATE TABLE empty_nested (id UInt32, nested Array(Array(Int32))) ENGINE = MergeTree ORDER BY id"
     )
+    # The second row is rectangular on purpose: PostgreSQL multidimensional arrays must be
+    # rectangular, so a ragged value such as `[[1, 2], []]` is not representable as a PostgreSQL
+    # array literal at all (its rejection is covered in `test_copy_array_column_round_trips`).
     node.query(
-        "INSERT INTO empty_nested VALUES (1, []), (2, [[1, 2], []])",
+        "INSERT INTO empty_nested VALUES (1, []), (2, [[1, 2]])",
         settings={"async_insert": 0},
     )
 
     assert node.query(
         f"SELECT id, nested FROM postgresql('127.0.0.1:{PG_PORT}', 'default', 'empty_nested', "
         f"'pguser', 'pgpass') ORDER BY id"
-    ) == "1\t[]\n2\t[[1,2],[]]\n"
+    ) == "1\t[]\n2\t[[1,2]]\n"
 
     node.query("DROP TABLE empty_nested SYNC")
 
@@ -1547,24 +1724,9 @@ def test_pg_class_oid_is_unique_per_row(started_cluster):
         node.query("DROP TABLE IF EXISTS oid_unique_probe SYNC")
 
 
-def assert_statement_rejected(statement):
-    # A statement that reaches normal query processing and fails there is answered with an
-    # `ErrorResponse` and then tears the connection down: the handler rethrows after replying and the
-    # run loop ends. So each rejection is checked on a connection of its own - reusing the caller's
-    # connection would leave every later assertion running into a socket this rejection already closed.
-    conn = py_psql.connect(
-        host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
-    )
-    try:
-        with pytest.raises(Exception):
-            conn.cursor().execute(statement)
-    finally:
-        conn.close()
-
-
 def test_jdbc_set_noop_requires_exact_statement(started_cluster):
     # The JDBC handshake's `SET extra_float_digits` / `SET application_name` are acknowledged as no-ops
-    # only when the packet is exactly such a single statement. A query merely containing that text as a
+    # only when the statement is exactly such a `SET`. A query merely containing that text as a
     # literal must be executed, not swallowed with a fake `CommandComplete`.
     conn = py_psql.connect(
         host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
@@ -1601,8 +1763,10 @@ def test_jdbc_set_noop_requires_exact_statement(started_cluster):
         assert cur.statusmessage == "SET", cur.statusmessage
         cur.execute("SET application_name = '%s'" % ("long;value " * 50))
         assert cur.statusmessage == "SET", cur.statusmessage
-        # A trailing statement is still rejected even when it is pushed far out by a long value.
-        assert_statement_rejected("SET application_name TO '%s'; SELECT 1" % ("x" * 500))
+        # A trailing statement is still seen even when it is pushed far out by a long value: the
+        # classifier scans the whole statement, so the `SET` stays a no-op and `SELECT 1` runs.
+        cur.execute("SET application_name TO '%s'; SELECT 1" % ("x" * 500))
+        assert cur.fetchall() == [(1,)]
 
         # A non-ASCII value is not a reason to reject the handshake either: the classifier only folds
         # ASCII, so bytes above 0x7F pass through instead of being handed to the locale-dependent ctype
@@ -1618,13 +1782,14 @@ def test_jdbc_set_noop_requires_exact_statement(started_cluster):
         cur.execute("SELECT 'SET application_name TO ''x''; SELECT 1'")
         assert cur.fetchall() == [("SET application_name TO 'x'; SELECT 1",)]
 
+        # A multi-statement packet is not acknowledged by the fast path as a whole: it is split into
+        # statements first, so the no-op `SET` is answered as such and the trailing statement is
+        # executed rather than silently dropped. This is what PostgreSQL does with a simple-query
+        # message holding several statements.
+        cur.execute("SET application_name TO 'x'; SELECT 1")
+        assert cur.fetchall() == [(1,)]
     finally:
         conn.close()
-
-    # A multi-statement packet is not acknowledged by the fast path: it falls through to normal
-    # processing, where the unsupported `SET` fails loudly instead of silently dropping the trailing
-    # statement.
-    assert_statement_rejected("SET application_name TO 'x'; SELECT 1")
 
 
 def test_copy_to_stdout_zero_rows(started_cluster):

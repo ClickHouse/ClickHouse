@@ -198,3 +198,48 @@ Baz	3
 1
 1
 0
+-- Preprocessor referencing an ALIAS column
+1
+1
+1
+1
+1
+1
+1
+0
+-- Preprocessor on an ALIAS column with direct read from text index disabled (row-level path)
+1
+1
+1
+1
+1
+1
+1
+0
+-- Preprocessor with a lambda parameter shadowing an ALIAS column
+1
+1
+1
+1
+1
+0
+-- Preprocessor referencing an ALIAS whose body is captured by a lambda parameter is rejected
+-- Preprocessor referencing a chained ALIAS captured by a lambda parameter is rejected
+-- Preprocessor referencing an ALIAS whose compound identifier root is captured is rejected
+-- Preprocessor referencing a chained ALIAS through an intermediate name matching the lambda parameter
+1
+1
+1
+0
+-- The same capture in a non-text index expression is still accepted
+0
+-- Preprocessor referencing chained ALIAS columns (a -> b -> s)
+1
+1
+1
+1
+0
+-- Preprocessor referencing an ALIAS whose body has its own shadowing lambda (not a capture)
+2
+-- Preprocessor on an ALIAS column with the sparseGrams tokenizer
+3

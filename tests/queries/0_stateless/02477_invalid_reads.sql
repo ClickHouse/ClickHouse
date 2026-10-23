@@ -38,17 +38,17 @@ SELECT finalizeAggregation(CAST(unhex('0F010000000000000001000000000000000300000
 -- sequenceNextNode (This was fine because it would fail in the next readBinary call, but better to add a test)
 SELECT finalizeAggregation(CAST(unhex('FFFFFFF014181056F38010000000000000001FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'),
                                 'AggregateFunction(sequenceNextNode(''forward'', ''head''), DateTime, Nullable(String), UInt8, Nullable(UInt8))'))
-    SETTINGS allow_experimental_funnel_functions=1; -- { serverError CANNOT_READ_ALL_DATA }
+    SETTINGS enable_funnel_functions=1; -- { serverError CANNOT_READ_ALL_DATA }
 
 -- Fuzzer (ALL)
 SELECT finalizeAggregation(CAST(unhex('FFFFFFF014181056F38010000000000000001FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF014181056F38010000000000000001FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'),
                                 'AggregateFunction(sequenceNextNode(\'forward\', \'head\'), DateTime, Nullable(String), UInt8, Nullable(UInt8))'))
-    SETTINGS allow_experimental_funnel_functions = 1; -- { serverError TOO_LARGE_ARRAY_SIZE }
+    SETTINGS enable_funnel_functions = 1; -- { serverError TOO_LARGE_ARRAY_SIZE }
 
 -- Fuzzer 2 (UBSAN)
 SELECT finalizeAggregation(CAST(unhex('FFFFFFF014181056F38010000000000000001FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'),
                                 'AggregateFunction(sequenceNextNode(\'forward\', \'head\'), DateTime, Nullable(String), UInt8, Nullable(UInt8))'))
-    SETTINGS allow_experimental_funnel_functions = 1; -- { serverError CANNOT_READ_ALL_DATA }
+    SETTINGS enable_funnel_functions = 1; -- { serverError CANNOT_READ_ALL_DATA }
 
 -- uniqUpTo
 SELECT finalizeAggregation(CAST(unhex('04128345AA2BC97190'),
@@ -64,3 +64,22 @@ SELECT finalizeAggregation(CAST(unhex('0F000000000000803F'),
 -- a zero string_size must be rejected instead of underflowing to a huge/OOB allocation.
 SELECT finalizeAggregation(CAST(unhex('01080000000000000000'),
                                 'AggregateFunction(groupUniqArray, Tuple(String))')); -- { serverError INCORRECT_DATA }
+
+-- uniq stores skip_degree as the first byte and thins hashes by 2 ^ skip_degree. Thinning cannot
+-- raise the degree beyond one past its budget, so a larger one is rejected. The last accepted
+-- degree still admits a count that saturates the hash space, which size() reports as its maximum.
+SELECT finalizeAggregation(CAST(unhex('2003FF6321D0F2F6B3C3E0A35D4C'),
+                                'AggregateFunction(uniq, UInt64)')); -- { serverError INCORRECT_DATA }
+SELECT finalizeAggregation(CAST(unhex('8003FF6321D0F2F6B3C3E0A35D4C'),
+                                'AggregateFunction(uniq, UInt64, UInt64)')); -- { serverError INCORRECT_DATA }
+SELECT finalizeAggregation(CAST(unhex('1103000002000000040000000600'),
+                                'AggregateFunction(uniq, UInt64)')); -- { serverError INCORRECT_DATA }
+SELECT finalizeAggregation(CAST(unhex('1003000001000000020000000300'),
+                                'AggregateFunction(uniq, UInt64)'));
+SELECT finalizeAggregation(CAST(unhex(concat('10808004', arrayStringConcat(arrayMap(
+                                    i -> hex(reinterpretAsFixedString(toUInt32(i * 65536))),
+                                    range(65536))))),
+                                'AggregateFunction(uniq, UInt64)'));
+-- One past that cap belongs to the cap: until #121303 this raised a bare `Poco::Exception`.
+SELECT finalizeAggregation(CAST(unhex('10818004'),
+                                'AggregateFunction(uniq, UInt64)')); -- { serverError TOO_LARGE_ARRAY_SIZE }

@@ -43,11 +43,11 @@ DELETE FROM posts WHERE toYear(CreationDate) = 2018
 可以通过 `ALTER TABLE ... DELETE` 命令执行删除变更，例如：
 
 ```sql
--- 通过变更删除 2018 年的所有数据。不推荐。
+-- delete all data from 2018 with a mutation. Not recommended.
 ALTER TABLE posts DELETE WHERE toYear(CreationDate) = 2018
 ```
 
-这些操作既可以同步执行 (对于非复制表，默认如此) ，也可以异步执行 (由 [mutations&#95;sync](/zh/reference/settings/session-settings#mutations_sync) 设置决定) 。这类操作的 I/O 开销极大，会重写所有匹配 `WHERE` 表达式的 parts。这个过程不具备原子性——变更后的parts一旦准备就绪，就会立即替换原parts；因此，如果某个 `SELECT` 查询在变更过程中开始执行，就会同时看到已完成变更的parts中的数据和仍未变更的parts中的数据。用户可以通过 [system.mutations](/zh/reference/system-tables/mutations#monitoring-mutations) 表跟踪其进度状态。这些都是 I/O 密集型操作，应谨慎使用，因为它们可能会影响集群的 `SELECT` 性能。
+这些操作既可以同步执行 (对于非复制表，默认如此) ，也可以异步执行 (由 [mutations&#95;sync](/zh/reference/settings/session-settings/mutations#mutations_sync) 设置决定) 。这类操作的 I/O 开销极大，会重写所有匹配 `WHERE` 表达式的 parts。这个过程不具备原子性——变更后的parts一旦准备就绪，就会立即替换原parts；因此，如果某个 `SELECT` 查询在变更过程中开始执行，就会同时看到已完成变更的parts中的数据和仍未变更的parts中的数据。用户可以通过 [system.mutations](/zh/reference/system-tables/mutations#monitoring-mutations) 表跟踪其进度状态。这些都是 I/O 密集型操作，应谨慎使用，因为它们可能会影响集群的 `SELECT` 性能。
 
 阅读更多关于[删除变更](/zh/reference/statements/alter/delete)的信息。
 

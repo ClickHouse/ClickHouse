@@ -12,9 +12,13 @@ namespace DB
 
 namespace
 {
-    void formatRenameTo(const String & new_name, WriteBuffer & ostr, const IAST::FormatSettings &)
+    void formatRenameTo(const ASTUserNameWithHost & new_name, WriteBuffer & ostr, const IAST::FormatSettings & settings)
     {
-        ostr << " RENAME TO " << quoteString(new_name);
+        ostr << " RENAME TO ";
+        if (new_name.usernameWasQueryParameter())
+            new_name.format(ostr, settings);
+        else
+            ostr << quoteString(new_name.toString());
     }
 
     void formatAuthenticationData(const std::vector<boost::intrusive_ptr<ASTAuthenticationData>> & authentication_methods, WriteBuffer & ostr, const IAST::FormatSettings & settings)
@@ -36,9 +40,9 @@ namespace
         }
     }
 
-    void formatValidUntil(const IAST & valid_until, WriteBuffer & ostr, const IAST::FormatSettings & settings)
+    void formatValidUntil(const IAST & valid_until, bool is_interval, WriteBuffer & ostr, const IAST::FormatSettings & settings)
     {
-        ostr << " VALID UNTIL ";
+        ostr << (is_interval ? " VALID FOR " : " VALID UNTIL ");
         valid_until.format(ostr, settings);
     }
 
@@ -189,7 +193,18 @@ ASTPtr ASTCreateUserQuery::clone() const
     res->authentication_methods.clear();
 
     if (names)
+    {
         res->names = boost::static_pointer_cast<ASTUserNamesWithHost>(names->clone());
+        if (res->names->hasQueryParameters())
+            res->children.push_back(res->names);
+    }
+
+    if (new_name)
+    {
+        res->new_name = boost::static_pointer_cast<ASTUserNameWithHost>(new_name->clone());
+        if (res->new_name->usernameWasQueryParameter())
+            res->children.push_back(res->new_name);
+    }
 
     if (roles)
         res->roles = boost::static_pointer_cast<ASTRolesOrUsersSet>(roles->clone());
@@ -216,7 +231,28 @@ ASTPtr ASTCreateUserQuery::clone() const
         res->children.push_back(ast_clone);
     }
 
+    if (global_valid_until)
+    {
+        res->global_valid_until = global_valid_until->clone();
+        res->children.push_back(res->global_valid_until);
+    }
+
     return res;
+}
+
+
+/// `settings` and `alter_settings` are held outside `children`.
+bool ASTCreateUserQuery::hasSecretParts() const
+{
+    return (settings && settings->hasSecretParts())
+        || (alter_settings && alter_settings->hasSecretParts())
+        || childrenHaveSecretParts();
+}
+
+
+void ASTCreateUserQuery::forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f)
+{
+    f(nullptr, &global_valid_until);
 }
 
 
@@ -245,6 +281,14 @@ void ASTCreateUserQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & f
     if (new_name)
         formatRenameTo(*new_name, ostr, format);
 
+    /// The global (user-level) VALID UNTIL/VALID FOR clause must be printed before the IDENTIFIED list:
+    /// the parser treats VALID UNTIL/VALID FOR as global only while no authentication method has been
+    /// parsed yet, and after an IDENTIFIED list the clause would bind to the last authentication method.
+    /// Formatting it first keeps the round-trip exact, which matters when the query text is re-parsed,
+    /// e.g. by the replicas of an ON CLUSTER DDL query.
+    if (global_valid_until)
+        formatValidUntil(*global_valid_until, global_valid_until_is_interval, ostr, format);
+
     if (!authentication_methods.empty())
     {
         if (add_identified_with)
@@ -253,9 +297,6 @@ void ASTCreateUserQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & f
         ostr << " IDENTIFIED";
         formatAuthenticationData(authentication_methods, ostr, format);
     }
-
-    if (global_valid_until)
-        formatValidUntil(*global_valid_until, ostr, format);
 
     if (hosts)
         formatHosts(nullptr, *hosts, ostr, format);

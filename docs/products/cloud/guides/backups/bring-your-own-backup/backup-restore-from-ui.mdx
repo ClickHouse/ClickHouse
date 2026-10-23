@@ -10,7 +10,7 @@ keywords: ['backups', 'disaster recovery', 'data protection', 'restore', 'cloud 
 import { Image } from "/snippets/components/Image.jsx";
 
 <Note>
-Automated backups to your external bucket are configured to run as "full" backups every 24 hours, and the frequency is not configurable.  
+Automated backups to your external bucket are full, independent backups. They follow the backup frequency and start time configured for the service (every 24 hours by default). ClickHouse also creates a separate backup in a ClickHouse-managed bucket every 24 hours; that cadence is fixed.
 </Note>
 
 ## AWS {#AWS}
@@ -126,9 +126,9 @@ Click on “Save External Bucket” to save the settings
 
 External Backups will now happen in your bucket on the default schedule.
 Alternatively, you can configure the backup schedule from the “Settings” page.
-If configured differently, the custom schedule is used to write backups to your
-bucket and the default schedule (backups every 24 hours) is used for backups in
-the ClickHouse cloud owned bucket.
+If configured differently, the custom schedule and retention setting apply to
+backups written to your bucket. Backups in the ClickHouse Cloud-managed bucket
+use the default schedule (backups every 24 hours) and default retention policy.
 </Step>
 <Step title="View backups stored in your bucket" id="view-backups-stored-in-your-bucket">
 
@@ -150,7 +150,7 @@ Create a new service to restore the backup to.
 </Step>
 <Step title="Add service ARN" id="add-service-arn">
 
-Add the newly created service’s ARN (from the service settings page in Clickhouse
+Add the newly created service’s ARN (from the service settings page in ClickHouse
 Cloud console) to the trust policy for the IAM role. This is the same as the
 [second step](#create-iam-role) in the AWS Steps section above. This is required
 so the new service can access the S3 bucket.
@@ -246,9 +246,9 @@ Click on `Save External Bucket` to save the settings.
 
 External Backups will now happen in your bucket on the default schedule. 
 Alternatively, you can configure the backup schedule from the `Settings` page. 
-If configured differently, the custom schedule is used to write backups to your 
-bucket and the default schedule (backups every 24 hours) is used for backups in 
-ClickHouse cloud owned bucket.
+If configured differently, the custom schedule and retention setting apply to
+backups written to your bucket. Backups in the ClickHouse Cloud-managed bucket
+use the default schedule (backups every 24 hours) and default retention policy.
 </Step>
 <Step title="View backups stored in your bucket" id="gcp-view-backups-stored-in-your-bucket">
 
@@ -348,8 +348,9 @@ Click on `Save External Bucket` to save the settings
 
 External Backups will now happen in your bucket on the default schedule. Alternatively,
 you can configure the backup schedule from the “Settings” page. If configured differently,
-the custom schedule is used to write backups to your bucket and the default schedule
-(backups every 24 hours) is used for backups in ClickHouse cloud owned bucket.
+the custom schedule and retention setting apply to backups written to your bucket.
+Backups in the ClickHouse Cloud-managed bucket use the default schedule (backups every
+24 hours) and default retention policy.
 </Step>
 <Step title="View backups stored in your bucket" id="azure-view-backups-stored-in-your-bucket">
 

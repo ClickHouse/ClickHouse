@@ -138,13 +138,14 @@ bool isAdlsGen2Endpoint(const AzureBlobStorage::Endpoint & endpoint)
 Azure::Storage::Files::DataLake::DataLakeFileClient makeAdlsGen2FileClient(
     const AzureBlobStorage::Endpoint & endpoint,
     const AzureBlobStorage::AuthMethod & auth_method,
+    bool drop_credentials,
     const Azure::Storage::Blobs::BlobClientOptions & blob_client_options,
     const String & blob_path)
 {
     using namespace Azure::Storage::Files::DataLake;
     auto datalake_options = toDataLakeOptions(blob_client_options);
 
-    if (!endpoint.sas_auth.empty() || !endpoint.additional_params.empty())
+    if (!endpoint.sas_auth.empty() || !endpoint.additional_params.empty() || drop_credentials)
         return DataLakeFileClient(buildAdlsGen2FileUrl(endpoint, blob_path), datalake_options);
 
     return std::visit(
@@ -208,6 +209,7 @@ String adlsGen2FileSystemPath(
 Azure::Storage::Files::DataLake::DataLakeFileSystemClient makeAdlsGen2FileSystemClient(
     const AzureBlobStorage::Endpoint & endpoint,
     const AzureBlobStorage::AuthMethod & auth_method,
+    bool drop_credentials,
     const Azure::Storage::Blobs::BlobClientOptions & blob_client_options,
     bool disable_sdk_retries)
 {
@@ -218,7 +220,7 @@ Azure::Storage::Files::DataLake::DataLakeFileSystemClient makeAdlsGen2FileSystem
     if (disable_sdk_retries)
         datalake_options.Retry.MaxRetries = 0;
 
-    if (!endpoint.sas_auth.empty() || !endpoint.additional_params.empty())
+    if (!endpoint.sas_auth.empty() || !endpoint.additional_params.empty() || drop_credentials)
         return DataLakeFileSystemClient(buildAdlsGen2FileSystemUrl(endpoint), datalake_options);
 
     return std::visit(
@@ -242,6 +244,7 @@ Azure::Storage::Files::DataLake::DataLakeFileSystemClient makeAdlsGen2FileSystem
 WriteBufferFromAzureDataLakeStorage::WriteBufferFromAzureDataLakeStorage(
     const AzureBlobStorage::Endpoint & endpoint_,
     const AzureBlobStorage::AuthMethod & auth_method_,
+    bool drop_credentials_,
     const Azure::Storage::Blobs::BlobClientOptions & blob_client_options_,
     const String & blob_path_,
     size_t buf_size_,
@@ -251,8 +254,10 @@ WriteBufferFromAzureDataLakeStorage::WriteBufferFromAzureDataLakeStorage(
     BlobStorageLogWriterPtr blob_log_)
     : WriteBufferFromFileBase(buf_size_, nullptr, 0)
     , log(getLogger("WriteBufferFromAzureDataLakeStorage"))
-    , staging_fs_client(makeAdlsGen2FileSystemClient(endpoint_, auth_method_, blob_client_options_, /*disable_sdk_retries=*/ false))
-    , publish_client(makeAdlsGen2FileSystemClient(endpoint_, auth_method_, blob_client_options_, /*disable_sdk_retries=*/ true))
+    , staging_fs_client(makeAdlsGen2FileSystemClient(
+          endpoint_, auth_method_, drop_credentials_, blob_client_options_, /*disable_sdk_retries=*/ false))
+    , publish_client(makeAdlsGen2FileSystemClient(
+          endpoint_, auth_method_, drop_credentials_, blob_client_options_, /*disable_sdk_retries=*/ true))
     , publish_filesystem_path(adlsGen2FileSystemPath(endpoint_, auth_method_))
     , blob_path(blob_path_)
     , prefixed_blob_path(prefixedBlobPath(endpoint_, blob_path_))
@@ -340,7 +345,7 @@ void WriteBufferFromAzureDataLakeStorage::runWithRetries(
         }
         catch (const Azure::Core::RequestFailedException & e)
         {
-            const bool retryable = isRetryableAzureException(e, write_settings.is_initial_access_check);
+            const bool retryable = isRetryableAzureException(e);
             if (!retryable || attempt >= max_unexpected_write_error_retries)
             {
                 log_event(static_cast<Int32>(e.StatusCode), e.Message, watch.elapsedMicroseconds());
