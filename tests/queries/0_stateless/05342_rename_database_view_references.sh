@@ -73,6 +73,8 @@ ${CLICKHOUSE_CLIENT} -q "
     CREATE TABLE ${EXT}.s (a UInt64) ENGINE = MergeTree ORDER BY a;
     CREATE TABLE ${EXT}.tgt (a UInt64) ENGINE = MergeTree ORDER BY a;
     CREATE MATERIALIZED VIEW ${EXT}.mv TO ${EXT}.tgt AS SELECT a FROM ${SRC}.sample;
+    CREATE TABLE ${EXT}.cte_tgt (a UInt64) ENGINE = MergeTree ORDER BY a;
+    CREATE MATERIALIZED VIEW ${EXT}.cte_mv TO ${EXT}.cte_tgt AS WITH cte AS (SELECT a FROM ${SRC}.sample) SELECT a FROM cte;
     CREATE TABLE ${SRC}.tgt3 (a UInt64) ENGINE = MergeTree ORDER BY a;
     CREATE MATERIALIZED VIEW ${EXT}.mv2 TO ${SRC}.tgt3 AS SELECT a FROM ${EXT}.s;
     CREATE VIEW ${EXT}.v AS SELECT a FROM ${SRC}.sample;
@@ -112,13 +114,13 @@ function check()
 {
     ${CLICKHOUSE_CLIENT} -q "INSERT INTO ${DST}.sample SELECT number FROM numbers(5); INSERT INTO ${EXT}.s SELECT number FROM numbers(2)"
     rows ${DST}.inline_mv ${DST}.tgt ${DST}.pv ${DST}.not_in_v ${DST}.tgt2 ${DST}.qualified_v ${DST}.regexp_v ${DST}.list_v ${DST}.join_v \
-        ${DST}.intersect_v ${DST}.except_v ${DST}.literal_v ${DST}.tgt4 ${EXT}.tgt ${DST}.tgt3 ${EXT}.v ${MEM}.v ${EXT}.merge_v ${EXT}.param_call_v ${EXT}.literal_arg_v
+        ${DST}.intersect_v ${DST}.except_v ${DST}.literal_v ${DST}.tgt4 ${EXT}.tgt ${EXT}.cte_tgt ${DST}.tgt3 ${EXT}.v ${MEM}.v ${EXT}.merge_v ${EXT}.param_call_v ${EXT}.literal_arg_v
 }
 
 echo "-- after the rename"
 check
 echo "occurrences of the old name: $(occurrences "${SRC}" ${DST}.inline_mv ${DST}.to_mv ${DST}.pv ${DST}.not_in_v ${DST}.qualified_mv \
-    ${DST}.qualified_v ${DST}.regexp_v ${DST}.list_v ${DST}.join_v ${DST}.intersect_v ${DST}.except_v ${DST}.union_mv ${DST}.union_rmv ${EXT}.mv ${EXT}.mv2 \
+    ${DST}.qualified_v ${DST}.regexp_v ${DST}.list_v ${DST}.join_v ${DST}.intersect_v ${DST}.except_v ${DST}.union_mv ${DST}.union_rmv ${EXT}.mv ${EXT}.cte_mv ${EXT}.mv2 \
     ${EXT}.v ${MEM}.v ${DST}.rmv ${EXT}.rmv ${EXT}.merge_v ${DST}.param_v ${EXT}.param_call_v ${EXT}.param_rmv)"
 
 ${CLICKHOUSE_CLIENT} -q "

@@ -4,6 +4,7 @@
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DDLRenamingVisitor.h>
 #include <Databases/IDatabase.h>
+#include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterFactory.h>
@@ -73,14 +74,17 @@ std::vector<StoragePtr> getInnerTables(const IStorage & table, const ContextPtr 
     return res;
 }
 
-/// The set operations of a definition read from metadata are normalized before a table uses it, as on load.
-void normalizeSetOperations(ASTPtr query, const ContextPtr & context)
+/// A definition read from metadata gets its set operations normalized and its CTEs expanded before a table uses it, as on load.
+void prepareDefinitionAsOnLoad(ASTPtr query, const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
     SelectIntersectExceptQueryVisitor::Data intersect_except_data{settings[Setting::intersect_default_mode], settings[Setting::except_default_mode]};
     SelectIntersectExceptQueryVisitor{intersect_except_data}.visit(query);
     NormalizeSelectWithUnionQueryVisitor::Data union_data{settings[Setting::union_default_mode]};
     NormalizeSelectWithUnionQueryVisitor{union_data}.visit(query);
+    auto & create = query->as<ASTCreateQuery &>();
+    if (create.select && create.isView())
+        ApplyWithSubqueryVisitor::visit(*create.select, /*max_expanded_ast_elements=*/ 0); /// Bounded when it was created.
 }
 
 /// Temporary views belong to their sessions and keep their definitions.
@@ -333,7 +337,7 @@ void ViewDefinitionsRenaming::stage()
                     view.name.getFullName());
         }
 
-        normalizeSetOperations(view.definition, context->getGlobalContext());
+        prepareDefinitionAsOnLoad(view.definition, context->getGlobalContext());
         staged.push_back(view);
     }
     views = std::move(staged);

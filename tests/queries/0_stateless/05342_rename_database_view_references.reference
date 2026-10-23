@@ -14,6 +14,7 @@ _dst.except_v: 2
 _dst.literal_v: 5
 _dst.tgt4: 10
 _ext.tgt: 5
+_ext.cte_tgt: 5
 _dst.tgt3: 2
 _ext.v: 5
 _mem.v: 5
@@ -43,10 +44,11 @@ _dst.except_v: 2
 _dst.literal_v: 10
 _dst.tgt4: 20
 _ext.tgt: 10
+_ext.cte_tgt: 10
 _dst.tgt3: 4
 _ext.v: 10
 _mem.v: 10
 _ext.merge_v: 10
 _ext.param_call_v: 10
 _ext.literal_arg_v: 10
-['_dst.inline_mv','_dst.qualified_mv','_dst.to_mv','_dst.union_mv','_ext.mv']
+['_dst.inline_mv','_dst.qualified_mv','_dst.to_mv','_dst.union_mv','_ext.cte_mv','_ext.mv']
