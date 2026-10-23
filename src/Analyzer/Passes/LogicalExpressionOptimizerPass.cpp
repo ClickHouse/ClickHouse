@@ -1,10 +1,12 @@
 #include <Analyzer/Passes/LogicalExpressionOptimizerPass.h>
 
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/JoinNode.h>
+#include <Analyzer/LambdaNode.h>
 #include <Analyzer/Utils.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
@@ -12,6 +14,7 @@
 #include <Common/NaNUtils.h>
 #include <Core/AccurateComparison.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -458,43 +461,24 @@ static std::optional<Field> tryConvertToColumnType(const ConstantNode * constant
     if (from_type->equals(*expr_type))
         return constant_node->getValue();
 
-    const Field & original_value = constant_node->getValue();
-    auto converted = tryConvertFieldToType(original_value, *expr_type, from_type.get(), {}, /*strict=*/true);
+    /// The constant becomes a bound the fold compares exactly, so a lossy conversion forgoes the fold.
+    auto converted = tryConvertFieldToTypeExact(constant_node->getValue(), *expr_type, from_type.get());
     if (converted.isNull())
         return std::nullopt;
 
-    /// `strict` conversion is supposed to reject any lossy conversion by returning a null `Field`, but
-    /// `convertFieldToType` does not honour that contract for some value-narrowing conversions of a
-    /// typed constant, so `converted.isNull()` alone is not enough:
-    ///   - `DateTime64`/`Time64` scale reduction silently truncates a higher-scale value to a lower one
-    ///     (e.g. `1.23` of scale 2 becomes `1.2` of scale 1). For a `DateTime64(1)` column,
-    ///     `dt = toDateTime64('1970-01-01 00:00:01.20', 1) AND dt != toDateTime64('1970-01-01 00:00:01.23', 2)`
-    ///     must keep the row `1.20` (because `1.20 != 1.23`), but both constants would collapse to `1.2`.
-    ///   - `DateTime`/`DateTime64` -> `Date`/`Date32` truncation drops the intra-day part, even though the
-    ///     comparison is evaluated in the wider (`DateTime`) domain (a `Date` value promotes to midnight).
-    ///     For a `Date` column,
-    ///     `d = toDate('2024-01-01') AND d != toDateTime('2024-01-01 12:34:56')` must keep the row
-    ///     `2024-01-01` (which differs from `2024-01-01 12:34:56`), but the `DateTime` constant would
-    ///     truncate to the day and the whole `AND` would fold to `false`.
-    ///
-    /// Guard against these by requiring the conversion to be exactly reversible: convert the value back to
-    /// the constant's original type and demand it round-trips to the original value; otherwise skip the
-    /// optimization (which only forgoes a fold and never changes results).
-    ///
-    /// The guard is skipped where the strict contract is known to hold or where it would misfire:
-    ///   - conversions between native numeric types are already exact (`accurate::convertNumeric`
-    ///     performs its own bounds and round-trip checks);
-    ///   - a string constant is parsed directly at the column's resolution, so it never carries the
-    ///     finer resolution that triggers the truncation, and round-tripping through the string
-    ///     rendering would spuriously fail even for exact folds (e.g. `Float64` `3.0` renders as `"3"`).
-    if (!isStringOrFixedString(from_type) && !(isNativeNumber(from_type) && isNativeNumber(expr_type)))
-    {
-        auto round_trip = tryConvertFieldToType(converted, *from_type, expr_type.get(), {}, /*strict=*/true);
-        if (round_trip.isNull() || !accurateEquals(round_trip, original_value))
-            return std::nullopt;
-    }
-
     return converted;
+}
+
+/// A comparison of `DateTime` or a lower-scale `DateTime64` with a `DateTime64` widens the former to the latter's scale.
+static bool isLowerScaleTimePoint(const DataTypePtr & from, const DataTypePtr & to)
+{
+    const auto * to_date_time64 = typeid_cast<const DataTypeDateTime64 *>(to.get());
+    if (!to_date_time64)
+        return false;
+    if (isDateTime(from))
+        return true;
+    const auto * from_date_time64 = typeid_cast<const DataTypeDateTime64 *>(from.get());
+    return from_date_time64 && from_date_time64->getScale() < to_date_time64->getScale();
 }
 
 enum class BoundaryCheckResult : uint8_t
@@ -1762,20 +1746,22 @@ class LogicalExpressionOptimizerVisitor : public InDepthQueryTreeVisitorWithCont
 public:
     using Base = InDepthQueryTreeVisitorWithContext<LogicalExpressionOptimizerVisitor>;
 
-    explicit LogicalExpressionOptimizerVisitor(ContextPtr context)
+    enum class Mode : uint8_t
+    {
+        JOIN_ON_AND_COMPARE_CHAIN,
+        OTHER_REWRITES,
+    };
+
+    LogicalExpressionOptimizerVisitor(ContextPtr context, Mode mode_)
         : Base(std::move(context))
+        , mode(mode_)
         , and_compare_chain_max_hash_work(getSettings()[Setting::optimize_and_compare_chain_max_hash_work])
         , and_compare_chain_hash_work_start(getTreeHashWorkCounter())
     {}
 
-    /// Work budget for tryOptimizeAndCompareChain, measured directly in nodes hashed by getTreeHash
-    /// (its dominant cost). We snapshot the global counter when the visitor starts and stop the
-    /// optimization once it has hashed more than `and_compare_chain_max_hash_work` nodes for this
-    /// query. On queries with very many / very large AND-comparison chains this caps a cost that
-    /// otherwise dominates analysis while folding nothing (e.g. a 16x16 SQL ray-trace: ~72s -> ~3s),
-    /// while normal queries hash only thousands of nodes and never approach the budget. Stopping
-    /// early is always safe -- it only forgoes an optimization, never changes results.
-    /// The budget is the `optimize_and_compare_chain_max_hash_work` setting (0 disables it).
+    const Mode mode;
+
+    /// Work budget of the compare-chain traversal, in nodes hashed by getTreeHash (its dominant cost).
     const size_t and_compare_chain_max_hash_work = 0;
     const size_t and_compare_chain_hash_work_start = 0;
 
@@ -1786,6 +1772,28 @@ public:
     {
         return and_compare_chain_max_hash_work != 0
             && getTreeHashWorkCounter() - and_compare_chain_hash_work_start > and_compare_chain_max_hash_work;
+    }
+
+    /// `and` nodes the compare chain appended conjuncts to, with their state before the first append.
+    struct AndNodeBeforeCompareChain
+    {
+        size_t arguments_size;
+        FunctionBasePtr function;
+    };
+    std::unordered_map<QueryTreeNodePtr, AndNodeBeforeCompareChain> and_nodes_before_compare_chain;
+
+    /// All or nothing per query: equal copies of an expression (a SELECT alias and its GROUP BY key) must be rewritten alike.
+    void revertAndCompareChainIfBudgetExceeded()
+    {
+        if (!andCompareChainHashBudgetExceeded())
+            return;
+        for (const auto & [node, before] : and_nodes_before_compare_chain)
+        {
+            auto & function_node = node->as<FunctionNode &>();
+            function_node.getArguments().getNodes().resize(before.arguments_size);
+            function_node.resolveAsFunction(before.function);
+        }
+        and_nodes_before_compare_chain.clear();
     }
 
     /// Memoized "this subtree contains a correlated subquery" bit, keyed by node identity.
@@ -1820,16 +1828,107 @@ public:
         return result;
     }
 
+    /// a conjunct over these can't leave ON, and full_sorting_merge rejects it there
+    TableExpressionNodes preserved_join_tables;
+    /// the join evaluates an input-less conjunct of ON with its left side
+    bool join_left_side_preserved = false;
+
+    /// Whether the join may evaluate `node` with a preserved side: it reads a column of `preserved_join_tables` (constant folding in the
+    /// join can drop every other column), or no column outside lambda and `indexHint` arguments, as the join evaluates that on the left.
+    bool mayReadPreservedJoinTables(const QueryTreeNodePtr & node) const
+    {
+        if (preserved_join_tables.empty())
+            return false;
+
+        bool reads_other_table = false;
+        std::vector<const IQueryTreeNode *> nodes_to_process{node.get()};
+        while (!nodes_to_process.empty())
+        {
+            const auto * current = nodes_to_process.back();
+            nodes_to_process.pop_back();
+
+            if (const auto * column = current->as<ColumnNode>())
+            {
+                auto source = column->getColumnSourceOrNull();
+                if (source && source->getNodeType() == QueryTreeNodeType::LAMBDA_ARGS)
+                    continue;
+                if (std::ranges::contains(preserved_join_tables, source))
+                    return true;
+                reads_other_table = true;
+            }
+            else if (const auto * function = current->as<FunctionNode>())
+            {
+                if (function->getFunctionName() == "indexHint")
+                    continue;
+                for (const auto & argument : function->getArguments().getNodes())
+                    nodes_to_process.push_back(argument.get());
+            }
+            else if (const auto * lambda = current->as<LambdaNode>())
+            {
+                nodes_to_process.push_back(lambda->getExpression().get());
+            }
+        }
+        return !reads_other_table;
+    }
+
+    void visitWithPreservedJoinSides(QueryTreeNodePtr & node, TableExpressionNodes tables, bool left_side_preserved)
+    {
+        std::swap(preserved_join_tables, tables);
+        std::swap(join_left_side_preserved, left_side_preserved);
+        visit(node);
+        std::swap(preserved_join_tables, tables);
+        std::swap(join_left_side_preserved, left_side_preserved);
+    }
+
+    bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
+    {
+        /// a subquery is a separate query, the sides of a join around it do not apply
+        if (isQueryOrUnionNode(child))
+        {
+            visitWithPreservedJoinSides(child, {}, false);
+            return false;
+        }
+
+        const auto * join_node = parent->as<JoinNode>();
+        if (!join_node || child != join_node->getJoinExpression())
+            return true;
+
+        TableExpressionNodes tables;
+        bool left_side_preserved = false;
+        /// semi join keeps only matched rows
+        if (join_node->getStrictness() != JoinStrictness::Semi)
+        {
+            if (isLeftOrFull(join_node->getKind()))
+                tables = extractTableExpressions(join_node->getLeftTableExpressionNodeTyped(), /*add_array_join=*/ true);
+            if (isRightOrFull(join_node->getKind()))
+                tables.append_range(extractTableExpressions(join_node->getRightTableExpressionNodeTyped(), /*add_array_join=*/ true));
+            /// the planner may swap the sides of a GLOBAL RIGHT JOIN, see tryRewriteGlobalRightJoinAsLeftJoin
+            left_side_preserved = isLeftOrFull(join_node->getKind())
+                || (join_node->getKind() == JoinKind::Right && isGlobalJoin(*join_node, getSettings()));
+        }
+
+        visitWithPreservedJoinSides(child, std::move(tables), left_side_preserved);
+        return false;
+    }
+
     void enterImpl(QueryTreeNodePtr & node)
     {
         if (auto * join_node = node->as<JoinNode>())
         {
             /// Operator <=> is not supported outside of JOIN ON section
-            if (join_node->hasJoinExpression())
+            if (mode == Mode::JOIN_ON_AND_COMPARE_CHAIN && join_node->hasJoinExpression())
             {
                 JoinOnLogicalExpressionOptimizerVisitor join_on_visitor(*join_node, getContext());
                 join_on_visitor.visit(join_node->getJoinExpression());
             }
+            return;
+        }
+
+        if (mode == Mode::JOIN_ON_AND_COMPARE_CHAIN)
+        {
+            auto * function_node = node->as<FunctionNode>();
+            if (function_node && function_node->getFunctionName() == "and" && getSettings()[Setting::optimize_and_compare_chain])
+                tryOptimizeAndCompareChain(node);
             return;
         }
 
@@ -1846,11 +1945,6 @@ public:
 
         if (function_node->getFunctionName() == "and")
         {
-            /// Run transitive inference first so that the conflict detector can see inferred equalities.
-            /// E.g. `x = 3 AND x = y AND y = 5` — the compare-chain pass infers `x = 5`,
-            /// then the equals-chain pass detects `x = 3` vs `x = 5` and collapses to FALSE.
-            if (getSettings()[Setting::optimize_and_compare_chain])
-                tryOptimizeAndCompareChain(node);
             tryOptimizeAndCompareNotEqualsChain(node);
             return;
         }
@@ -1864,6 +1958,9 @@ public:
 
     void leaveImpl(QueryTreeNodePtr & node)
     {
+        if (mode == Mode::JOIN_ON_AND_COMPARE_CHAIN)
+            return;
+
         if (!getSettings()[Setting::optimize_extract_common_expressions])
             return;
 
@@ -2024,6 +2121,10 @@ private:
                     if (!filter.converted_value)
                         return;
 
+            /// A `Nothing` operand collapses the AND's own result type to `Nothing`, which holds no value.
+            if (isNothing(function_node.getResultType()))
+                return;
+
             node = std::make_shared<ConstantNode>(0u, function_node.getResultType());
             return;
         }
@@ -2165,9 +2266,10 @@ private:
         function_node.resolveAsFunction(and_function_resolver);
     }
 
-    /// If one side is a constant `String`/`FixedString` compared with a non-string type, convert
-    /// the literal to that type as `executeWithConstString` does and return the edge's domain.
-    ComparisonOrderDomain tryNormalizeConstStringEdge(const String & function_name, QueryTreeNodePtr & lhs, QueryTreeNodePtr & rhs) const
+    /// If one side is a constant the comparison converts once to the other side's type (a `String`/`FixedString`
+    /// vs a non-string, as `executeWithConstString` does, or a `DateTime`/lower-scale `DateTime64` vs a `DateTime64`,
+    /// widened exactly), convert the literal to that type and return the edge's domain.
+    ComparisonOrderDomain tryNormalizeConstEdge(const String & function_name, QueryTreeNodePtr & lhs, QueryTreeNodePtr & rhs) const
     {
         const auto * lhs_constant = lhs->as<ConstantNode>();
         const auto * rhs_constant = rhs->as<ConstantNode>();
@@ -2178,12 +2280,16 @@ private:
         const auto & other_side = lhs_constant ? rhs : lhs;
         const auto constant_type = removeLowCardinality(constant_side->getResultType());
         const auto other_type = removeLowCardinality(other_side->getResultType());
-        if (!isStringOrFixedString(constant_type) || isStringOrFixedString(other_type) || other_type->isNullable())
+        if (other_type->isNullable())
             return {};
 
         const auto * constant_node = lhs_constant ? lhs_constant : rhs_constant;
-        auto converted = tryConvertFieldToType(
-            constant_node->getValue(), *other_type, constant_type.get(), getFormatSettings(getContext()));
+        Field converted;
+        if (isStringOrFixedString(constant_type) && !isStringOrFixedString(other_type))
+            converted = tryConvertFieldToType(
+                constant_node->getValue(), *other_type, constant_type.get(), getFormatSettings(getContext()));
+        else if (isLowerScaleTimePoint(constant_type, other_type))
+            converted = tryConvertFieldToTypeExact(constant_node->getValue(), *other_type, constant_type.get());
         if (converted.isNull())
             return {};
 
@@ -2224,6 +2330,9 @@ private:
         /// hashed by getTreeHash since this visitor started).
         if (andCompareChainHashBudgetExceeded())
             return;
+
+        const size_t arguments_size_before = function_node.getArguments().getNodes().size();
+        const auto function_before = function_node.getFunctionOrThrow();
 
         enum CompareType
         {
@@ -2319,10 +2428,10 @@ private:
             /// Only comparisons within one order domain join transitive chains; the seeding above
             /// is domain-agnostic (it converts constants to the expression's own type).
             auto comparison_domain = argument_function->getFunctionOrThrow()->getComparisonOrderDomain();
-            /// A const string compares after a one-time conversion to the other side's type (see
-            /// `executeWithConstString`); mirror it so the edge carries a typed constant instead.
+            /// A constant of another type may compare after a one-time conversion to the other side's
+            /// type; mirror it so the edge carries a typed constant instead.
             if (!comparison_domain.isValid())
-                comparison_domain = tryNormalizeConstStringEdge(function_name, lhs, rhs);
+                comparison_domain = tryNormalizeConstEdge(function_name, lhs, rhs);
             if (!comparison_domain.isValid())
                 continue;
 
@@ -2472,7 +2581,11 @@ private:
                                 ErrorCodes::LOGICAL_ERROR,
                                 "Inferred comparison {} has an inconsistent order domain",
                                 compare_function_name);
-                        if (!existing_plain_conjuncts.contains(QueryTreeNodePtr(and_node)))
+                        /// A bound that may read the preserved side of an outer join can't leave ON, so it is derived only
+                        /// to expose a contradiction with a conjunct already written on that expression.
+                        const bool reads_preserved = mayReadPreservedJoinTables(left.node);
+                        if (!existing_plain_conjuncts.contains(QueryTreeNodePtr(and_node))
+                            && (!reads_preserved || derived_conjunct_filters.contains(left.node)))
                         {
                             /// Do not append a derived conjunct implied by an existing or already-derived
                             /// one; contradictions are appended so the next pass folds the AND to `false`.
@@ -2486,7 +2599,7 @@ private:
                                 existing_plain_conjuncts.emplace(and_node);
                                 function_node.getArguments().getNodes().push_back(and_node);
                             }
-                            else if (add_result != AddComparisonFilterResult::ALWAYS_TRUE)
+                            else if (add_result != AddComparisonFilterResult::ALWAYS_TRUE && !reads_preserved)
                             {
                                 if (left.crosses_source)
                                 {
@@ -2495,10 +2608,11 @@ private:
                                     existing_plain_conjuncts.emplace(and_node);
                                     function_node.getArguments().getNodes().push_back(and_node);
                                 }
-                                else if (existing_hint_conjuncts.emplace(and_node).second)
+                                else if (!join_left_side_preserved && existing_hint_conjuncts.emplace(and_node).second)
                                 {
                                     /// Within one source it filters nothing beyond the original chain,
                                     /// so add it as `indexHint`: it still prunes, but does not execute.
+                                    /// Not if the join's left side is preserved: the join evaluates the input-less `indexHint` there.
                                     auto index_hint_node = std::make_shared<FunctionNode>("indexHint");
                                     index_hint_node->getArguments().getNodes().push_back(and_node);
                                     index_hint_node->resolveAsFunction(
@@ -2532,6 +2646,9 @@ private:
             visited.clear();
             find_pairs(less_pairs, constant.node, nullptr, CompareType::equals, {});
         }
+
+        if (function_node.getArguments().getNodes().size() > arguments_size_before)
+            and_nodes_before_compare_chain.emplace(node, AndNodeBeforeCompareChain{arguments_size_before, function_before});
 
         auto and_function_resolver = FunctionFactory::instance().get("and", getContext());
         function_node.resolveAsFunction(and_function_resolver);
@@ -2798,7 +2915,13 @@ private:
 
 void LogicalExpressionOptimizerPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
-    LogicalExpressionOptimizerVisitor visitor(std::move(context));
+    /// The JOIN ON rewrites and the derivation of transitive comparisons run first: the derivation sees the rewritten JOIN ON,
+    /// and the conflict detector of the other rewrites sees the derived conjuncts (`x = 3 AND x = y AND y = 5` -> FALSE).
+    LogicalExpressionOptimizerVisitor and_compare_chain_visitor(context, LogicalExpressionOptimizerVisitor::Mode::JOIN_ON_AND_COMPARE_CHAIN);
+    and_compare_chain_visitor.visit(query_tree_node);
+    and_compare_chain_visitor.revertAndCompareChainIfBudgetExceeded();
+
+    LogicalExpressionOptimizerVisitor visitor(std::move(context), LogicalExpressionOptimizerVisitor::Mode::OTHER_REWRITES);
     visitor.visit(query_tree_node);
 }
 

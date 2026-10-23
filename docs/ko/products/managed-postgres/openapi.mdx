@@ -19,9 +19,7 @@ ClickHouse 서비스와 마찬가지로 ClickHouse Managed Postgres 서비스를
 [ClickHouse Managed Postgres API 참조][pg-openapi]로 바로 이동하십시오.
 그렇지 않다면, 아래에서 간단히 살펴보십시오.
 
-<div id="api-keys">
-  ## API Keys
-</div>
+## API Keys {#api-keys}
 
 ClickHouse OpenAPI를 사용하려면 인증이 필요합니다. 생성 방법은 [API keys]를
 참조하십시오. 그런 다음 아래와 같이 basic auth 자격 증명을 사용하십시오:
@@ -33,9 +31,7 @@ KEY_SECRET=mykeysecret
 curl -s --user "$KEY_ID:$KEY_SECRET" https://api.clickhouse.cloud/v1/organizations | jq
 ```
 
-<div id="organization-id">
-  ## 조직 ID
-</div>
+## 조직 ID {#organization-id}
 
 다음 단계에서는 조직 ID가 필요합니다.
 
@@ -80,22 +76,18 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 }
 ```
 
-<div id="crud">
-  ## CRUD
-</div>
+## CRUD {#crud}
 
 Postgres 서비스의 생명주기를 살펴보겠습니다.
 
-<div id="create">
-  ### 생성
-</div>
+### 생성 {#create}
 
 먼저 [create API]를 사용해
 새 항목을 생성합니다. 요청의 JSON 본문에는 다음 속성이
 필요합니다:
 
 * `name`: 새 Postgres 서비스의 이름
-* `provider`: 클라우드 제공업체 이름
+* `provider`: 클라우드 제공업체 이름: `aws`(또는 [비공개 프리뷰](https://clickhouse.com/cloud/postgres#gcp-waitlist)의 `gcp`)
 * `region`: 서비스를 배포할 제공업체 네트워크 내 리전
 * `size`: VM 크기
 
@@ -114,7 +106,7 @@ create_data='{
 
 이제 이 데이터를 사용해 새 인스턴스를 생성하세요. 이때는 Content-Type
 헤더가 필요합니다. 서비스 자격 증명을 포함하는 유일한 응답이므로 응답을 저장하세요
-(요청에 비밀번호를 제공하지 않는 경우 [비밀번호 reset] 응답도 이를 반환합니다):
+(요청에 비밀번호를 제공하지 않는 경우 [password reset] 응답도 이를 반환합니다):
 
 ```bash
 pg_created=$(curl -s --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
@@ -149,9 +141,7 @@ echo "$pg_created" | jq
 }
 ```
 
-<div id="read">
-  ### 조회
-</div>
+### 조회 {#read}
 
 응답의 `id`를 사용해 서비스를 다시 조회하세요:
 
@@ -189,9 +179,7 @@ postgres=#
 
 [psql]을 종료하려면 `\q`를 입력하세요.
 
-<div id="update">
-  ### 업데이트
-</div>
+### 업데이트 {#update}
 
 [patch API]는 [RFC 7396] JSON Merge Patch를 사용해 Managed
 Postgres 서비스 속성의 일부만 업데이트할 수 있도록 지원합니다. 복잡한 배포에서는 태그가 특히
@@ -266,9 +254,7 @@ curl -s --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
 
   */}
 
-<div id="delete">
-  ### 삭제
-</div>
+### 삭제 {#delete}
 
 Postgres 서비스를 삭제하려면 [delete API]를 사용합니다.
 
@@ -293,27 +279,21 @@ curl -sX DELETE --user "$KEY_ID:$KEY_SECRET" \
 }
 ```
 
-<div id="monitoring">
-  ## 모니터링
-</div>
+## 모니터링 {#monitoring}
 
 Prometheus와 호환되는 2개의 엔드포인트에서 ClickHouse Managed Postgres 서비스의 CPU, 메모리, I/O, 연결,
 트랜잭션 메트릭을 제공합니다. 하나는 조직의 모든 서비스에 대한 메트릭을 반환하고,
 다른 하나는 단일 서비스에 대한 메트릭을 반환합니다. 설정 방법은 [Prometheus 엔드포인트] 페이지를,
 전체 메트릭 목록은 [메트릭 참고]를 참조하십시오.
 
-<div id="query-insights">
-  ## 쿼리 인사이트
-</div>
+## 쿼리 인사이트 {#query-insights}
 
 클라우드
 콘솔의 [쿼리 인사이트] 탭에서 사용하는 SQL 문별 텔레메트리는 프로그래밍 방식으로도 사용할 수 있습니다. 2개의 엔드포인트가 서비스에서 가장 느린
 쿼리 패턴을 제공합니다. 하나는 영향도 순으로 정렬된 모든 패턴을 나열하고,
 다른 하나는 최근 실행 내역과 함께 단일 패턴을 반환합니다.
 
-<div id="list-slow-query-patterns">
-  ### 느린 쿼리 패턴 목록
-</div>
+### 느린 쿼리 패턴 목록 {#list-slow-query-patterns}
 
 [slow patterns API]는 지정한 시간 구간에서 관찰된 가장 느린 쿼리 패턴의 집계 메트릭을 반환합니다. 시간 구간 지정은 필수이므로 `from_date`와 `to_date`를 RFC 3339 형식의 타임스탬프로 전달하십시오:
 
@@ -370,9 +350,7 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 음수인 경우가 많습니다. 단일 pattern을 가져오려면 앞의 `-`를 포함한 값을
 그대로 다시 전달하세요.
 
-<div id="get-slow-query-pattern">
-  ### 느린 쿼리 패턴 조회
-</div>
+### 느린 쿼리 패턴 조회 {#get-slow-query-pattern}
 
 목록 응답의 `queryId`를 [slow pattern API]에 전달하면 해당
 패턴의 집계된 메트릭과 가장 최근의 개별 실행 정보를 함께 조회할 수 있습니다.
@@ -431,9 +409,7 @@ JIT, WAL이 포함되며, 이는 콘솔의
 이 예시에서는 간결하게 보여주기 위해 두 객체를 모두 일부만 표시했으며, API는 [per-execution counters]에 문서화된 전체
 카운터 세트를 반환합니다.
 
-<div id="server-logs">
-  ## 서버 로그
-</div>
+## 서버 로그 {#server-logs}
 
 Cloud Console의 로그 뷰어에서 제공되는 PostgreSQL 서버 로그는
 프로그래밍 방식으로도 사용할 수 있습니다. [logs API]는

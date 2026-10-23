@@ -19,15 +19,11 @@ Admitimos SSO iniciado por el proveedor de servicios, múltiples organizaciones 
 
 Los clientes que habilitan integraciones SAML también pueden designar el rol predeterminado que se asignará a los nuevos usuarios y ajustar la configuración del tiempo de espera de sesión.
 
-<div id="before-you-begin">
-  ## Antes de empezar
-</div>
+## Antes de empezar {#before-you-begin}
 
 Necesitarás permisos de administrador en tu IdP, la capacidad de añadir un registro TXT a la configuración DNS de tu dominio y el rol de **Admin** en tu organización de ClickHouse Cloud. Te recomendamos configurar un **enlace directo a tu organización** además de tu conexión SAML para simplificar el proceso de inicio de sesión. Cada IdP lo gestiona de forma diferente. A continuación, te explicamos cómo hacerlo en tu IdP.
 
-<div id="how-it-works">
-  ## Cómo funciona
-</div>
+## Cómo funciona {#how-it-works}
 
 Una vez configurado SAML SSO, los usuarios inician sesión mediante un flujo iniciado por el proveedor de servicios:
 
@@ -38,11 +34,11 @@ Una vez configurado SAML SSO, los usuarios inician sesión mediante un flujo ini
 
 El resto de esta guía trata la configuración que solo se realiza una vez.
 
-<div id="how-to-configure-your-idp">
-  ## Cómo configurar el IdP
-</div>
+## Cómo configurar el IdP {#how-to-configure-your-idp}
 
-<Steps>
+Si SAML ya está habilitado y necesita acceso de administrador, consulte [Configurar el usuario administrador](#configure-your-admin-user) o [Solución de problemas](#troubleshooting).
+
+<Steps titleSize="h3">
   <Step title="Acceda a la configuración de la organización" id="access-organization-settings">
     Haga clic en el nombre de su organización, en la esquina inferior izquierda, y seleccione Detalles de la organización.
   </Step>
@@ -124,15 +120,13 @@ El resto de esta guía trata la configuración que solo se realiza una vez.
   </Step>
 </Steps>
 
-<div id="configure-idp">
-  ### Configure su proveedor de identidad
-</div>
+### Configure su proveedor de identidad {#configure-idp}
 
 <Tabs>
   <Tab title="Okta" id="okta">
     Configurarás dos integraciones de aplicaciones en Okta para cada organización de ClickHouse: una aplicación SAML y un marcador que contendrá tu enlace directo.
 
-    #### Crea un grupo para administrar el acceso
+#### Crea un grupo para administrar el acceso {#okta-create-group}
 
     1. Inicia sesión en tu instancia de Okta como **Administrator**.
     2. Selecciona **Groups** en el panel izquierdo.
@@ -142,7 +136,7 @@ El resto de esta guía trata la configuración que solo se realiza una vez.
     6. Haz clic en el nombre del grupo que creaste.
     7. Haz clic en **Assign people** para asignar a los usuarios a los que quieras dar acceso a esta organización de ClickHouse.
 
-    #### Crea una aplicación de marcador para que los usuarios inicien sesión sin problemas
+#### Crea una aplicación de marcador para que los usuarios inicien sesión sin problemas {#okta-bookmark-app}
 
     1. Selecciona **Applications** en el panel izquierdo y, a continuación, selecciona el subapartado **Applications**.
     2. Haz clic en **Browse App Catalog**.
@@ -152,7 +146,7 @@ El resto de esta guía trata la configuración que solo se realiza una vez.
     6. Introduce la URL como `https://console.clickhouse.cloud/?connection={organizationid}`
     7. Ve a la pestaña **Assignments** y añade el grupo que creaste antes.
 
-    #### Crea una aplicación SAML para habilitar la conexión
+#### Crea una aplicación SAML para habilitar la conexión {#okta-saml-app}
 
     1. Selecciona **Applications** en el panel izquierdo y, a continuación, selecciona el subapartado **Applications**.
 
@@ -193,7 +187,7 @@ El resto de esta guía trata la configuración que solo se realiza una vez.
   <Tab title="Google" id="google">
     Configurarás una aplicación SAML en Google para cada organización y, si usas SSO multi-org, deberás proporcionar a tus usuarios el enlace directo (`https://console.clickhouse.cloud/?connection={organizationId}`) para que lo guarden en sus marcadores.
 
-    #### Crear una aplicación web en Google
+#### Crear una aplicación web en Google {#google-web-app}
 
     1. Ve a la consola de administración de Google (admin.google.com).
 
@@ -237,7 +231,7 @@ El resto de esta guía trata la configuración que solo se realiza una vez.
   <Tab title="Azure (Microsoft)" id="azure">
     Azure (Microsoft) SAML también puede aparecer como Azure Active Directory (AD) o Microsoft Entra.
 
-    #### Crear una aplicación empresarial de Azure
+#### Crear una aplicación empresarial de Azure {#azure-enterprise-app}
 
     Configurarás una integración de aplicación con una URL de inicio de sesión independiente para cada organización.
 
@@ -283,7 +277,7 @@ El resto de esta guía trata la configuración que solo se realiza una vez.
   </Tab>
 
   <Tab title="Duo" id="duo">
-    #### Cree un proveedor de servicios SAML genérico para Duo
+#### Cree un proveedor de servicios SAML genérico para Duo {#duo-saml-provider}
 
     1. Siga las instrucciones de [Duo Single Sign-On for Generic SAML Service Providers](https://duo.com/docs/sso-generic).
 
@@ -305,11 +299,20 @@ El resto de esta guía trata la configuración que solo se realiza una vez.
   </Tab>
 </Tabs>
 
-<div id="troubleshooting">
-  ## Solución de problemas
-</div>
+## Solución de problemas {#troubleshooting}
 
 <AccordionGroup>
+  <Accordion title="Faltan los permisos de administrador después de iniciar sesión con SAML">
+    **Causa:** tu nueva cuenta de SAML recibe el rol de SAML predeterminado que esté configurado. Si ese rol no es **Admin**, la cuenta no tendrá permisos de administrador, aunque tu cuenta original tenga el rol **Admin**. ClickHouse Cloud no vincula automáticamente las cuentas de SAML con las que no lo son.
+
+    **Solución:** inicia sesión una vez mediante SAML para que el nuevo usuario aparezca en ClickHouse Cloud. A continuación, cierra sesión e inicia sesión con tu cuenta de administrador original para asignar el rol **Admin** al usuario de SAML:
+
+    * Para cuentas con correo electrónico y contraseña, usa [el enlace de inicio de sesión por correo electrónico](https://console.clickhouse.cloud/?with=email) para evitar la redirección automática a SAML. El `email` de `?with=email` es un valor literal, no un marcador de posición para tu dirección de correo electrónico.
+    * Para cuentas de Google o Microsoft, selecciona **Continue with Google** o **Continue with Microsoft**.
+
+    Cierra sesión y vuelve a iniciarla mediante SAML para comprobar que tienes acceso de administrador antes de eliminar tu cuenta de administrador original. Consulta [Configurar tu usuario administrador](#configure-your-admin-user) para ver el procedimiento completo.
+  </Accordion>
+
   <Accordion title="Podría haber una configuración incorrecta en el sistema o una interrupción del servicio">
     **Causa:** inicio de sesión iniciado por el proveedor de identidad, que no es compatible.
 
@@ -341,9 +344,7 @@ El resto de esta guía trata la configuración que solo se realiza una vez.
   </Accordion>
 </AccordionGroup>
 
-<div id="faq">
-  ## Preguntas frecuentes
-</div>
+## Preguntas frecuentes {#faq}
 
 <AccordionGroup>
   <Accordion title="¿ClickHouse Cloud admite el inicio de sesión iniciado por el proveedor de identidad?">
@@ -365,9 +366,7 @@ El resto de esta guía trata la configuración que solo se realiza una vez.
   </Accordion>
 </AccordionGroup>
 
-<div id="next-steps">
-  ## Próximos pasos
-</div>
+## Próximos pasos {#next-steps}
 
 * [Manage cloud users](/es/products/cloud/guides/security/cloud-access-management/manage-cloud-users) — administra los permisos y restringe el acceso únicamente a las conexiones SAML.
 * Aprovisionamiento de SCIM — automatiza el aprovisionamiento de usuarios y grupos con [Okta](/es/products/cloud/guides/security/cloud-access-management/scim-setup) o [Microsoft Entra ID](/es/products/cloud/guides/security/cloud-access-management/scim-setup-entra).

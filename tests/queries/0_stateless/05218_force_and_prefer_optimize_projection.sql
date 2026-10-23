@@ -1,7 +1,7 @@
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 SET optimize_use_projections = 1, optimize_use_implicit_projections = 1, optimize_use_projection_filtering = 1, optimize_trivial_count_query = 0, optimize_aggregation_in_order = 0, use_query_condition_cache = 0;
-SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, query_plan_remove_unused_columns = 1;
+SET optimize_move_to_prewhere = 1, query_plan_remove_unused_columns = 1;
 
 DROP TABLE IF EXISTS t_relax_normal;
 DROP TABLE IF EXISTS t_relax_agg;
