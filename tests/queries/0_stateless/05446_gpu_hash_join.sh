@@ -44,9 +44,9 @@ if [ "$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.build_options WHERE
     PROBE_ERROR=$($CLICKHOUSE_CLIENT --join_algorithm gpu_hash \
         --query "SELECT count() FROM gpu_join_left AS l INNER JOIN gpu_join_right AS r ON l.k = r.k" 2>&1 > /dev/null)
     if [ -z "$PROBE_ERROR" ]; then
-        # The device takes a join on its estimated size, so the estimates must be the real ones, not the random
-        # ones the test harness may ask the join order optimizer for.
-        GPU_SETTINGS=(--join_algorithm "gpu_hash,hash" --enable_join_runtime_filters 0 --query_plan_optimize_join_order_randomize 0)
+        # The device takes a join on its estimated size, so the estimates must be there and be the real ones: from the
+        # statistics, not the random ones the test harness may ask the join order optimizer for.
+        GPU_SETTINGS=(--join_algorithm "gpu_hash,hash" --enable_join_runtime_filters 0 --use_statistics 1 --query_plan_optimize_join_order_randomize 0)
     elif [[ "$PROBE_ERROR" != *"There is no GPU"* ]]; then
         echo "$PROBE_ERROR"
     fi

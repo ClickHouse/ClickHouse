@@ -16,7 +16,7 @@ $CLICKHOUSE_CLIENT --query "
     CREATE TABLE gpu_group_by_strings (s String, t String, k UInt16, v UInt64, i Int32, b UInt8)
     ENGINE = MergeTree ORDER BY tuple()
     SETTINGS min_bytes_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 1.0,
-        serialization_info_version = 'with_types', string_serialization_version = 'with_size_stream';
+        serialization_info_version = 'with_types', string_serialization_version = 'with_size_stream', pack_string_sizes = 1;
 
     SYSTEM STOP MERGES gpu_group_by_strings;
 "

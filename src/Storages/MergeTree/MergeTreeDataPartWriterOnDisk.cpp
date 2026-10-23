@@ -20,7 +20,10 @@
 #include <Common/logger_useful.h>
 #include <Columns/IColumn.h>
 #include <Compression/CompressionCodecAdaptive.h>
+#include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionFactory.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/NullWriteBuffer.h>
 #include <IO/PackedFilesWriter.h>
@@ -38,6 +41,7 @@ namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
+    extern const MergeTreeSettingsBool pack_string_sizes;
     extern const MergeTreeSettingsUInt64 packed_skip_index_max_bytes;
 }
 
@@ -777,6 +781,19 @@ CompressionCodecPtr MergeTreeDataPartWriterOnDisk::getSubstreamCodec(
     const bool is_data_substream = ISerialization::isSpecialCompressionAllowed(substream_path);
     auto codec = CompressionCodecFactory::instance().get(
         effective_codec_desc, is_data_substream ? substream_type.get() : nullptr, default_codec, /*only_generic=*/!is_data_substream);
+
+    /// The sizes of strings, which are small integers, packed by `BitPacking` before the generic codecs take them.
+    if (substream_path.back().type == ISerialization::Substream::StringSizes && (*storage_settings)[MergeTreeSetting::pack_string_sizes])
+    {
+        Codecs chain;
+        chain.push_back(CompressionCodecFactory::instance().get(
+            makeASTFunction("CODEC", make_intrusive<ASTIdentifier>("BitPacking")), substream_type.get()));
+        if (const auto * multiple = typeid_cast<const CompressionCodecMultiple *>(codec.get()))
+            chain.insert(chain.end(), multiple->getCodecs().begin(), multiple->getCodecs().end());
+        else
+            chain.push_back(codec);
+        codec = std::make_shared<CompressionCodecMultiple>(std::move(chain));
+    }
 
     /// Adaptive could pick an unencrypted codec for some blocks and drop the encryption. Thus skip adaptivity for an encrypting codec.
     if (settings.apply_adaptive_codec && column_uses_default_codec && !codec->isEncryption())
