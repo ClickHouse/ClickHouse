@@ -34,8 +34,19 @@ static const char * readContiguousBytes(ReadBuffer & in, size_t num_bytes, Padde
     return buffer.data();
 }
 
+/// Rounds the segment size up to a multiple of `BLOCK_SIZE`. A size too large to be rounded up within `size_t` means
+/// an unbounded segment anyway, so it is rounded down to the largest multiple instead of wrapping around to zero.
+static size_t roundUpSegmentSize(size_t segment_size)
+{
+    constexpr size_t block_size = IPostingListBlockCodec::BLOCK_SIZE;
+    constexpr size_t max_segment_size = std::numeric_limits<size_t>::max() / block_size * block_size;
+    if (segment_size > max_segment_size)
+        return max_segment_size;
+    return segment_size / block_size * block_size + (segment_size % block_size != 0 ? block_size : 0);
+}
+
 SegmentedPostingListCodec::SegmentedPostingListCodec(IPostingListCodec::Type block_codec_type_, size_t segment_size_)
-    : segment_size((segment_size_ + BLOCK_SIZE - 1) / BLOCK_SIZE * BLOCK_SIZE)
+    : segment_size(roundUpSegmentSize(segment_size_))
     , block_codec(createPostingListBlockCodec(block_codec_type_))
 {
     compressed_data.reserve(BLOCK_SIZE);
