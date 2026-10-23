@@ -7,42 +7,42 @@
       "versionId": "091a210897cb2739dd7b1fd49ce115a27809146676df129803c8a21b7a3e3970",
       "translations": {
         "zh": {
-          "updatedAt": "2026-10-23T12:56:32.718Z",
+          "updatedAt": "2026-10-23T13:19:28.042Z",
           "fileName": "docs.json",
           "postProcessHash": "51e4526d836e9b592d6e121229a205c2df62adc1f3790ba21c79b4ec0ddae2e2"
         },
         "es": {
-          "updatedAt": "2026-10-23T12:56:31.774Z",
+          "updatedAt": "2026-10-23T13:19:27.114Z",
           "fileName": "docs.json",
           "postProcessHash": "51e4526d836e9b592d6e121229a205c2df62adc1f3790ba21c79b4ec0ddae2e2"
         },
         "ar": {
-          "updatedAt": "2026-10-23T12:56:32.915Z",
+          "updatedAt": "2026-10-23T13:19:28.220Z",
           "fileName": "docs.json",
           "postProcessHash": "51e4526d836e9b592d6e121229a205c2df62adc1f3790ba21c79b4ec0ddae2e2"
         },
         "fr": {
-          "updatedAt": "2026-10-23T12:56:33.106Z",
+          "updatedAt": "2026-10-23T13:19:28.431Z",
           "fileName": "docs.json",
           "postProcessHash": "51e4526d836e9b592d6e121229a205c2df62adc1f3790ba21c79b4ec0ddae2e2"
         },
         "ja": {
-          "updatedAt": "2026-10-23T12:56:31.957Z",
+          "updatedAt": "2026-10-23T13:19:27.314Z",
           "fileName": "docs.json",
           "postProcessHash": "51e4526d836e9b592d6e121229a205c2df62adc1f3790ba21c79b4ec0ddae2e2"
         },
         "ru": {
-          "updatedAt": "2026-10-23T12:56:32.538Z",
+          "updatedAt": "2026-10-23T13:19:27.865Z",
           "fileName": "docs.json",
           "postProcessHash": "51e4526d836e9b592d6e121229a205c2df62adc1f3790ba21c79b4ec0ddae2e2"
         },
         "pt-BR": {
-          "updatedAt": "2026-10-23T12:56:32.344Z",
+          "updatedAt": "2026-10-23T13:19:27.679Z",
           "fileName": "docs.json",
           "postProcessHash": "51e4526d836e9b592d6e121229a205c2df62adc1f3790ba21c79b4ec0ddae2e2"
         },
         "ko": {
-          "updatedAt": "2026-10-23T12:56:32.143Z",
+          "updatedAt": "2026-10-23T13:19:27.500Z",
           "fileName": "docs.json",
           "postProcessHash": "51e4526d836e9b592d6e121229a205c2df62adc1f3790ba21c79b4ec0ddae2e2"
         }
@@ -88141,51 +88141,50 @@
     },
     {
       "fileId": "f50856f5a57ce975e8f090a5b34271520c120e375e990d70e831363a6d511dd8",
-      "versionId": "f9e8f4acc23f0693e297b32ce72d9e32176f7fc8ddaae58e698389993c7b09df",
+      "versionId": "78efe9d09be9f0563abae385f6b093ae597a7e7f60582fea69b8312bc2951b22",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:08.238Z",
-          "fileName": "es/reference/functions/regular-functions/geo/flipCoordinates.mdx",
-          "postProcessHash": "037590f4f2db863c53c3bc3bd9fe037fdfb8622f2c357d046586882a6d31e423"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:08.238Z",
-          "fileName": "ja/reference/functions/regular-functions/geo/flipCoordinates.mdx",
-          "postProcessHash": "a4913fb278e0bd333c940999041fa48a8f8c1825981c4ee27b2cbfaaaab2c508"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:08.238Z",
-          "fileName": "ko/reference/functions/regular-functions/geo/flipCoordinates.mdx",
-          "postProcessHash": "8242506a9e61382c16ca25de91347b52deab7b3a48f7bac2f627a53ae3b6f56d"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.238Z",
-          "fileName": "pt-BR/reference/functions/regular-functions/geo/flipCoordinates.mdx",
-          "postProcessHash": "4a348ac8eff57bd71982158b356f738c550f29a6d4f146b1d3e2aedc8513da28"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:08.238Z",
-          "fileName": "ru/reference/functions/regular-functions/geo/flipCoordinates.mdx",
-          "postProcessHash": "65d87fe6a2847f7a2b80398a2a186e239060026f1850e18f4c701e276c4dbc10"
+        "fr": {
+          "updatedAt": "2026-10-23T13:19:31.987Z",
+          "fileName": "fr/reference/functions/regular-functions/geo/flipCoordinates.mdx",
+          "postProcessHash": "83e41e72d32df476e0ce23dae1d434f87020fc1d17967ea32804632ba4e05fbe"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:08.239Z",
+          "updatedAt": "2026-10-23T13:19:31.988Z",
           "fileName": "zh/reference/functions/regular-functions/geo/flipCoordinates.mdx",
-          "postProcessHash": "ca894ad2de2aab20028bbc03bc0288a677c6e7dd0e8c461f91dce55fa2d3451b"
+          "postProcessHash": "31d950c85fef69a9e5a903635c9c0baca76b073b9757b4deac225ebd20fec8ee"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-10-23T13:19:31.989Z",
+          "fileName": "pt-BR/reference/functions/regular-functions/geo/flipCoordinates.mdx",
+          "postProcessHash": "2de3abc4a9a75562add015096d02bf746a9d4f815c1cb5f99fd501066c12b649"
+        },
+        "es": {
+          "updatedAt": "2026-10-23T13:19:31.990Z",
+          "fileName": "es/reference/functions/regular-functions/geo/flipCoordinates.mdx",
+          "postProcessHash": "e3e8cc8c702c8c4f097031ea322b1e908511fe0411784af53d95f8d4ceb8b25e"
+        },
+        "ko": {
+          "updatedAt": "2026-10-23T13:19:31.990Z",
+          "fileName": "ko/reference/functions/regular-functions/geo/flipCoordinates.mdx",
+          "postProcessHash": "c4fc6d1c46f438448e78173dd5e26b051d778672aaf16dabe8ad30bc829765d7"
+        },
+        "ru": {
+          "updatedAt": "2026-10-23T13:19:31.991Z",
+          "fileName": "ru/reference/functions/regular-functions/geo/flipCoordinates.mdx",
+          "postProcessHash": "a80b3322d11314cf1108b6b44e887c1c7023cf482bf7c3df22b1df33d1528a4c"
+        },
+        "ja": {
+          "updatedAt": "2026-10-23T13:19:31.992Z",
+          "fileName": "ja/reference/functions/regular-functions/geo/flipCoordinates.mdx",
+          "postProcessHash": "9c99067b3d14324101b21464dd21c90062e8f4a8b6b2ed47f665247312425b9d"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:08.239Z",
+          "updatedAt": "2026-10-23T13:19:31.993Z",
           "fileName": "ar/reference/functions/regular-functions/geo/flipCoordinates.mdx",
-          "postProcessHash": "085f8c6339332788c55af7cd04195a8c0282b4a35ec5393981b16b1c62456879"
-        },
-        "fr": {
-          "updatedAt": "2026-08-14T10:41:08.239Z",
-          "fileName": "fr/reference/functions/regular-functions/geo/flipCoordinates.mdx",
-          "postProcessHash": "0d45ae3dd17891021f82b138b28773938c30c7cdeb25338bd07324a78e31a401"
+          "postProcessHash": "36700dcecc6bd6cb92c5e9879e1c00897c694f820bd03729c32f54de9b3fd9a9"
         }
       },
-      "fileName": "reference/functions/regular-functions/geo/flipCoordinates.mdx",
-      "staged": false
+      "fileName": "reference/functions/regular-functions/geo/flipCoordinates.mdx"
     },
     {
       "fileId": "02e26f7696b96bd10ba168d82f792c9e4219fb65b3a70a1ae3d0bd3e99f4789e",
@@ -88285,47 +88284,47 @@
     },
     {
       "fileId": "be645c10e972cc1223b9ddddffb6fc774b2405a7669ec2c0bd760cca180d04c4",
-      "versionId": "921ad96fcda0aa64d7b2bd413fc4984636b2e8709b449f6e89599587dcc8bce6",
+      "versionId": "46f8861cc843d9d590ac3ad71cee111bce5f19caec51792600c597630a781bde",
       "translations": {
-        "es": {
-          "updatedAt": "2026-09-24T10:24:07.450Z",
-          "fileName": "es/reference/functions/regular-functions/geo/h3.mdx",
-          "postProcessHash": "5fcd1ae956c36e2359ca2a206c367b8c90b898d9936819d88f4b1f9a808ffd76"
-        },
-        "ja": {
-          "updatedAt": "2026-09-24T10:24:07.451Z",
-          "fileName": "ja/reference/functions/regular-functions/geo/h3.mdx",
-          "postProcessHash": "ef4a711bf42c3fc2c0d9370f1dcede6768a5c3927c6bef6f32b0ba8d333a6f13"
-        },
-        "ko": {
-          "updatedAt": "2026-09-24T10:24:07.451Z",
-          "fileName": "ko/reference/functions/regular-functions/geo/h3.mdx",
-          "postProcessHash": "312addee435fbf78fbb5a3df5bb9a4fc06113de0ffe9553f7260f00e290d048f"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-09-24T10:24:07.452Z",
-          "fileName": "pt-BR/reference/functions/regular-functions/geo/h3.mdx",
-          "postProcessHash": "0ceea04075bc7d652e4deecd88b35a346c149979ca3ce8b9dc8200f84785755f"
-        },
         "ru": {
-          "updatedAt": "2026-09-24T10:24:07.453Z",
+          "updatedAt": "2026-10-23T13:19:31.988Z",
           "fileName": "ru/reference/functions/regular-functions/geo/h3.mdx",
-          "postProcessHash": "bab8492a1238fae473aa4aa86d01ded31c2ef1ea1e17f0ab70133733a8ba6904"
+          "postProcessHash": "3784c16cda8fa0a09427e8519538bbd266a76c738018bffd994d4a85318410aa"
         },
         "zh": {
-          "updatedAt": "2026-09-24T10:24:07.453Z",
+          "updatedAt": "2026-10-23T13:19:31.989Z",
           "fileName": "zh/reference/functions/regular-functions/geo/h3.mdx",
-          "postProcessHash": "a51f2efc5c657a6bf7c0202b273a9bf30582b977941e42242bbcb783649a71fd"
+          "postProcessHash": "f05d6f0ee763917565cbdb81fc6e82c62eca73843c4a1e375d062aa3ff3b52f3"
         },
-        "ar": {
-          "updatedAt": "2026-09-24T10:24:07.454Z",
-          "fileName": "ar/reference/functions/regular-functions/geo/h3.mdx",
-          "postProcessHash": "7b79ed5bf4be9d400c7ee7ac36073715a6b94f20af7dc6106952ea040aca3842"
+        "pt-BR": {
+          "updatedAt": "2026-10-23T13:19:31.989Z",
+          "fileName": "pt-BR/reference/functions/regular-functions/geo/h3.mdx",
+          "postProcessHash": "47b24217ee6be146e0611ae538582ee194e03a3048bee45f13ecdf6b8d8e48a0"
+        },
+        "ko": {
+          "updatedAt": "2026-10-23T13:19:31.991Z",
+          "fileName": "ko/reference/functions/regular-functions/geo/h3.mdx",
+          "postProcessHash": "8b2413f9630421afad5cc027cac213fb4493e834b9083af614815b7b9d8eb83e"
+        },
+        "es": {
+          "updatedAt": "2026-10-23T13:19:31.992Z",
+          "fileName": "es/reference/functions/regular-functions/geo/h3.mdx",
+          "postProcessHash": "7dc91de67af8ac453dc2d0e77be1313cfb341f18b8b7d61fb360d415664c172c"
         },
         "fr": {
-          "updatedAt": "2026-09-24T10:24:07.454Z",
+          "updatedAt": "2026-10-23T13:19:31.993Z",
           "fileName": "fr/reference/functions/regular-functions/geo/h3.mdx",
-          "postProcessHash": "3e68430af13df528e920af4781c4f31d0048085296cf110f8c43c95519542f4d"
+          "postProcessHash": "63e5908510bd62a3523fa45fc276686e722f1ddc42bd20f4fe32aa4c3cc63800"
+        },
+        "ar": {
+          "updatedAt": "2026-10-23T13:19:31.994Z",
+          "fileName": "ar/reference/functions/regular-functions/geo/h3.mdx",
+          "postProcessHash": "7307cefc2bb78c9917332a1783a4ad7369654af5dc23ce9e1a55b48d227549ce"
+        },
+        "ja": {
+          "updatedAt": "2026-10-23T13:19:31.994Z",
+          "fileName": "ja/reference/functions/regular-functions/geo/h3.mdx",
+          "postProcessHash": "10e38af141fa763e9295cda4c998f7b9f9277a637e0676738406f307146b4c2a"
         }
       },
       "fileName": "reference/functions/regular-functions/geo/h3.mdx"
