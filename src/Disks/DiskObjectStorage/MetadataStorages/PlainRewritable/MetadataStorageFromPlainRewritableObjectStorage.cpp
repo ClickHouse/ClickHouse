@@ -213,6 +213,13 @@ MetadataStorageFromPlainRewritableObjectStorage::SnapshotRole MetadataStorageFro
 {
     if (!snapshot_settings.enabled)
         return SnapshotRole::None;
+
+    /// A reader may read the snapshot at any moment, so the writer has to replace it atomically. An object storage that
+    /// creates or truncates the destination before uploading (HDFS, OneLake) would expose an incomplete snapshot and lose
+    /// the previous one on a failed write, so snapshots are not used there at all: neither written nor read.
+    if (!object_storage->supportsAtomicWrite())
+        return SnapshotRole::None;
+
     return isReadOnlyDisk() ? SnapshotRole::Reader : SnapshotRole::Writer;
 }
 
@@ -1203,7 +1210,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(LoadMode mode)
 
     /// A writer with snapshots disabled must not leave a snapshot written before (e.g. when snapshots were enabled) for the
     /// readers: they would trust the stale state forever instead of listing the object storage.
-    if (mode == LoadMode::Initial && has_metadata && !snapshot_settings.enabled && !isReadOnlyDisk())
+    if (mode == LoadMode::Initial && has_metadata && snapshot_role == SnapshotRole::None && !isReadOnlyDisk())
     {
         const StoredObject snapshot_object(layout->constructSnapshotObjectKey());
         if (object_storage->exists(snapshot_object))

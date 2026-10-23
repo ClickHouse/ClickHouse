@@ -488,6 +488,13 @@ not keep using a stale state. If a snapshot cannot be read, or there is a
 malformed marker of an unfinished operation, the read-only disk lists the
 object storage, and does not use that snapshot until it is rewritten.
 
+The snapshot is used only on object storages that replace an object
+atomically, so that a read-only disk never sees a partially written snapshot:
+`S3`, Azure Blob Storage and local. On `HDFS` and on Azure Data Lake Storage
+Gen2 endpoints (such as OneLake) the snapshot is neither written nor read, and
+the disks list the object storage as without the snapshot; a snapshot left
+there from before is removed by the writer on startup.
+
 | Setting                             | Description                                                                                                                                                                                                                  | Default |
 |-------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
 | `metadata_snapshot_enabled`         | Write the snapshot after modifications (if the object storage is writable), or load the state from it instead of listing the object storage (if the object storage is read-only).                                            | `true`  |
