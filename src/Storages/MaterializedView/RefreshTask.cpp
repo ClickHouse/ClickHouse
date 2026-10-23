@@ -348,7 +348,7 @@ bool RefreshTask::canCreateOrDropOtherTables() const
     return !isAppend();
 }
 
-void RefreshTask::startup()
+void RefreshTask::startup(bool target_keeps_data_only_in_memory)
 {
     ContextMutablePtr context;
     StorageID view_id = StorageID::createEmpty();
@@ -365,7 +365,8 @@ void RefreshTask::startup()
         if (start_paused || context->getSettingsRef()[Setting::stop_refreshable_materialized_views_on_startup])
             scheduling.stop_requested = true;
 
-        if (!coordination.coordinated)
+        persist_local_state = !coordination.coordinated && !target_keeps_data_only_in_memory;
+        if (persist_local_state)
             local_state = resolveLocalStateLocation(view_id, context);
 
         auto loaded = local_state.path.empty() ? LoadedLocalState{} : loadLocalCoordinationState(local_state);
@@ -516,7 +517,7 @@ void RefreshTask::rename(StorageID new_id, StorageID new_inner_table_id)
 {
     ContextPtr context;
     StorageID old_id = StorageID::createEmpty();
-    bool uncoordinated = false;
+    bool persist = false;
     {
         std::lock_guard guard(mutex);
         createLogger(new_id);
@@ -528,19 +529,20 @@ void RefreshTask::rename(StorageID new_id, StorageID new_inner_table_id)
         if (view)
         {
             context = view->getContext();
-            uncoordinated = !coordination.coordinated;
+            persist = persist_local_state;
         }
     }
     if (context)
     {
-        if (uncoordinated)
+        if (persist)
         {
             /// An Ordinary database gives its tables no UUID, so a view migrated out of one becomes
             /// persistable only here. Resolved outside `mutex`: it reads the database catalog.
             auto location = resolveLocalStateLocation(new_id, context);
             std::lock_guard guard(mutex);
             local_state = std::move(location);
-            scheduling.local_state_save_pending = !local_state.path.empty();
+            /// A running refresh is persisted by its finish transition instead.
+            scheduling.local_state_save_pending = !local_state.path.empty() && !coordination.root_znode.refresh_running;
             if (scheduling.local_state_save_pending)
                 scheduling_task->schedule();
         }

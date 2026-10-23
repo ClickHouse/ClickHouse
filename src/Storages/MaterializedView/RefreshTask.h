@@ -159,8 +159,9 @@ public:
         bool start_paused,
         bool is_restore_from_backup);
 
-    /// Called at most once.
-    void startup();
+    /// Called at most once. A target that keeps its data only in memory is empty after a restart,
+    /// so the schedule that filled it is not persisted either.
+    void startup(bool target_keeps_data_only_in_memory);
     void finalizeRestoreFromBackup();
     /// Permanently disable task scheduling and remove this table from RefreshSet.
     /// Ok to call multiple times, including in parallel.
@@ -176,6 +177,7 @@ public:
 
     Info getInfo() const;
     String getCoordinationPath() const { return coordination.path; }
+    bool isCoordinated() const { return coordination.coordinated; }
 
     bool canCreateOrDropOtherTables() const;
 
@@ -408,6 +410,7 @@ private:
     ExecutionState execution;
     SchedulingState scheduling;
     LocalStateLocation local_state;
+    bool persist_local_state = false;
 
     RefreshState state = RefreshState::Scheduling;
     /// Notified when wait() needs to wake up: when `state` or `root_znode` changes, and on shutdown.

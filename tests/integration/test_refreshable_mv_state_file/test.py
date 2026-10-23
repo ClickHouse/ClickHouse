@@ -406,7 +406,7 @@ def create_slow_rmv(name):
     node.query(
         f"CREATE MATERIALIZED VIEW {name} REFRESH AFTER 1 DAY (a DateTime, b UInt8) "
         f"ENGINE = MergeTree ORDER BY tuple() "
-        f"AS SELECT now() a, sleep(1) b FROM numbers(3) "
+        f"AS SELECT now() a, sleep(1) b FROM numbers(6) "
         f"SETTINGS max_block_size = 1, max_threads = 1"
     )
     return wait_for_refresh_info(
@@ -424,6 +424,8 @@ def test_a_starting_refresh_is_not_persisted():
     value differs.
     """
     name = "rmv_starting"
+    renamed = "rmv_starting_renamed"
+    node.query(f"DROP TABLE IF EXISTS {renamed} SYNC")
     create_slow_rmv(name)
     try:
         state_files = find_refresh_state_files(DB_DISK_PATH)
@@ -439,6 +441,15 @@ def test_a_starting_refresh_is_not_persisted():
         persisted = read_state_file(state_files[0])
         assert "refresh_running: 0\n" in persisted, persisted
 
+        # A rename re-saves the state under the view's (here unchanged) UUID; mid-refresh it must
+        # not save the running one.
+        node.query(f"RENAME TABLE {name} TO {renamed}")
+        time.sleep(1)
+        renamed_state = read_state_file(state_files[0])
+        assert refresh_info(renamed, "status") == "Running"
+        assert "refresh_running: 0\n" in renamed_state, renamed_state
+        name = renamed
+
         node.query(f"SYSTEM WAIT VIEW {name}")
         # The skip is confined to the start transition, so the finished one does publish: the payload
         # has to change. last_completed_timeslot alone guarantees it moves, since AFTER anchors on the
@@ -449,6 +460,7 @@ def test_a_starting_refresh_is_not_persisted():
         assert find_refresh_state_files(DB_DISK_PATH) == state_files
     finally:
         node.query(f"DROP TABLE IF EXISTS {name} SYNC")
+        node.query(f"DROP TABLE IF EXISTS {renamed} SYNC")
 
 
 def test_state_follows_the_owning_databases_disk():
@@ -613,3 +625,87 @@ def test_a_view_migrated_from_an_ordinary_database_keeps_its_schedule():
     finally:
         node.query(f"DROP DATABASE IF EXISTS {ordinary_db} SYNC")
         node.query(f"DROP TABLE IF EXISTS {name} SYNC")
+
+
+def test_a_target_that_keeps_data_only_in_memory_is_refilled_after_restart():
+    """Such a target is empty after a restart, so a restored schedule would leave it empty until the
+    next refresh, up to a day later. These views refresh at startup instead and persist nothing.
+    """
+    memory_view = "rmv_memory_target"
+    join_target = "rmv_join_target"
+    join_view = "rmv_join_view"
+    append_target = "rmv_append_memory_target"
+    append_view = "rmv_append_memory_view"
+    alias_target = "rmv_alias_memory_target"
+    alias_view = "rmv_alias_view"
+    buffer_target = "rmv_buffer_target"
+    buffer_view = "rmv_buffer_view"
+    views = [memory_view, join_view, append_view, alias_view, buffer_view]
+    tables = views + [join_target, append_target, alias_target, buffer_target]
+    for table in tables:
+        node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    try:
+        node.query(
+            f"CREATE MATERIALIZED VIEW {memory_view} REFRESH AFTER 1 DAY (b UInt64) "
+            f"ENGINE = Memory AS SELECT number b FROM numbers(2)"
+        )
+        node.query(
+            f"CREATE TABLE {join_target} (b UInt64, c UInt64) "
+            f"ENGINE = Join(ANY, LEFT, b) SETTINGS persistent = 0"
+        )
+        node.query(
+            f"CREATE MATERIALIZED VIEW {join_view} REFRESH AFTER 1 DAY TO {join_target} "
+            f"AS SELECT number b, number * 10 c FROM numbers(2)"
+        )
+        node.query(f"CREATE TABLE {append_target} (b UInt64) ENGINE = Memory")
+        node.query(
+            f"CREATE MATERIALIZED VIEW {append_view} REFRESH AFTER 1 DAY APPEND "
+            f"TO {append_target} AS SELECT number b FROM numbers(2)"
+        )
+        # An Alias stores nothing itself: its Memory target is what the restart empties.
+        node.query(f"CREATE TABLE {alias_target} ENGINE = Alias({append_target})")
+        node.query(
+            f"CREATE MATERIALIZED VIEW {alias_view} REFRESH AFTER 1 DAY APPEND "
+            f"TO {alias_target} AS SELECT number + 10 b FROM numbers(2)"
+        )
+        # No destination, and thresholds the test never reaches: only the shutdown flush clears it.
+        node.query(
+            f"CREATE TABLE {buffer_target} (b UInt64) "
+            f"ENGINE = Buffer('', '', 1, 3600, 3600, 1000000, 1000000, 1000000000, 1000000000)"
+        )
+        node.query(
+            f"CREATE MATERIALIZED VIEW {buffer_view} REFRESH AFTER 1 DAY APPEND "
+            f"TO {buffer_target} AS SELECT number b FROM numbers(2)"
+        )
+        before = {
+            view: wait_for_refresh_info(
+                view, "last_success_time", lambda x: x not in ("", "\\N")
+            )
+            for view in views
+        }
+
+        node.restart_clickhouse()
+
+        for view in views:
+            wait_for_refresh_info(
+                view,
+                "last_success_time",
+                lambda x, view=view: x not in ("", "\\N", before[view]),
+            )
+        assert node.query(f"SELECT count() FROM {memory_view}").strip() == "2"
+        assert (
+            node.query(f"SELECT joinGet('{join_target}', 'c', toUInt64(1))").strip()
+            == "10"
+        )
+        # One startup refresh of each view into the emptied target, not a skipped one and not two.
+        assert (
+            node.query(
+                f"SELECT countIf(b < 10), countIf(b >= 10) FROM {append_target}"
+            ).strip()
+            == "2\t2"
+        )
+        assert node.query(f"SELECT count() FROM {buffer_target}").strip() == "2"
+        assert find_refresh_state_files(DB_DISK_PATH) == []
+    finally:
+        for table in tables:
+            node.query(f"DROP TABLE IF EXISTS {table} SYNC")

@@ -34,8 +34,11 @@
 #include <Interpreters/executeQuery.h>
 
 #include <Storages/AlterCommands.h>
+#include <Storages/StorageBuffer.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageMemory.h>
 #include <Storages/StorageProxy.h>
+#include <Storages/StorageSet.h>
 #include <Storages/SelectQueryDescription.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -1096,6 +1099,30 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
         refresher->rename(new_table_id, getTargetTableId());
 }
 
+static bool keepsDataOnlyInMemory(StoragePtr table)
+{
+    /// `Alias` and `Buffer` keep their rows in the table they point to.
+    for (size_t depth = 0; table && depth < max_storage_proxy_depth; ++depth)
+    {
+        if (castStorage<StorageMemory>(table, DeferredTable::Load))
+            return true;
+        /// For `Set` and `Join` this is `persistent = 0`.
+        if (auto set_or_join = castStorage<StorageSetOrJoinBase>(table, DeferredTable::Load))
+            return !set_or_join->hasUnreplicatedTableDataOnDisk();
+        if (auto buffer = castStorage<StorageBuffer>(table, DeferredTable::Load))
+        {
+            /// Without a destination, a flush discards the rows.
+            if (!buffer->readsFromOtherTables())
+                return true;
+            table = buffer->getDestinationTable();
+            continue;
+        }
+        auto underlying = table->getUnderlyingStorages();
+        table = underlying.size() == 1 ? underlying.front() : nullptr;
+    }
+    return false;
+}
+
 void StorageMaterializedView::startup()
 {
     if (const auto configured_delay_ms = getContext()->getServerSettings()[ServerSetting::startup_mv_delay_ms]; configured_delay_ms)
@@ -1107,7 +1134,11 @@ void StorageMaterializedView::startup()
     }
 
     if (refresher)
-        refresher->startup();
+    {
+        /// Only an uncoordinated view persists its schedule itself.
+        auto target = refresher->isCoordinated() ? nullptr : tryGetTargetTable();
+        refresher->startup(target && keepsDataOnlyInMemory(target));
+    }
 }
 
 void StorageMaterializedView::flushAndPrepareForShutdown()
