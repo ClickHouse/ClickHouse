@@ -263,9 +263,11 @@ public:
     /// `-inf`/`+inf` stand-ins of a nullable key range, which are not NULLs.
     static bool fieldHasNullInside(const Field & field);
 
+    /// The functions are numbered from `first_function_number`, see `applyFunction`.
     static std::optional<Range> applyMonotonicFunctionsChainToRange(
         Range key_range,
         const MonotonicFunctionsChain & functions,
+        size_t first_function_number,
         DataTypePtr current_type,
         bool single_point = false);
 
@@ -428,6 +430,10 @@ public:
         /// E.g. toDate(key) > '2025-09-12'.
         /// Applicable only for some FUNCTION_* types and only if key_columns.size() == 1.
         MonotonicFunctionsChain monotonic_functions_chain;
+
+        /// The number of the first function of `monotonic_functions_chain`, or of the chains of `set_index` in mapping
+        /// order. Assigned when the condition is built, it names the cached results of the functions (see `applyFunction`).
+        size_t first_function_number = 0;
 
         std::optional<BloomFilterData> bloom_filter_data;
     };
