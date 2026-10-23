@@ -25,6 +25,7 @@ ${CLICKHOUSE_CLIENT} --query "
 SELECT_QUERY="SELECT * FROM azureBlobStorage('${AZURE_CONN}', '${AZURE_CONT}', 'data.csv', 'CSV', 'auto', 'a String, b UInt32')
     ORDER BY b SETTINGS input_format_parallel_parsing = 0"
 PAGE_CACHE_USED="SELECT value > 0 FROM system.metrics WHERE metric = 'PageCacheBytes'"
+PAGE_CACHE_HIT="SELECT sum(value) > 0 FROM system.events WHERE event = 'PageCacheReadBytes'"
 
 echo "-- direct read"
 ${CLICKHOUSE_CLIENT} --query "${SELECT_QUERY},
@@ -44,6 +45,6 @@ ${CLICKHOUSE_LOCAL} --config-file "${CONFIG_FILE}" --query "${SELECT_QUERY},
 echo "-- page cache, reader executor, read twice"
 READER_EXECUTOR_QUERY="${SELECT_QUERY},
     use_page_cache_for_object_storage = 1, remote_filesystem_read_method = 'read', use_reader_executor = 1"
-${CLICKHOUSE_LOCAL} --config-file "${CONFIG_FILE}" --query "${READER_EXECUTOR_QUERY}; ${READER_EXECUTOR_QUERY}; ${PAGE_CACHE_USED}"
+${CLICKHOUSE_LOCAL} --config-file "${CONFIG_FILE}" --query "${READER_EXECUTOR_QUERY}; ${READER_EXECUTOR_QUERY}; ${PAGE_CACHE_HIT}"
 
 rm "${CONFIG_FILE}"
