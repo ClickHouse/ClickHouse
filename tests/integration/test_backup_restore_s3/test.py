@@ -1686,3 +1686,58 @@ def test_backup_to_object_storage_disk_zip_not_supported(cluster):
         assert "Zip archive format is not supported for backups on disk" in error, error
     finally:
         node.query("DROP TABLE data SYNC;")
+
+
+def backup_table_on_broken_disk(node, backup_destination):
+    """Fills a table on the disk reached through the mock and backs it up, with nothing injected yet."""
+    node.query("DROP TABLE IF EXISTS data SYNC;")
+    node.query(
+        "CREATE TABLE data (key Int) Engine=MergeTree() ORDER BY tuple() SETTINGS storage_policy='policy_s3_broken';"
+    )
+    # One part and no merges, so the data blobs of the restore are the only uploads into the destination:
+    # the metadata of an `s3` disk is local.
+    node.query("SYSTEM STOP MERGES data;")
+    node.query("INSERT INTO data SELECT * FROM numbers(100);")
+    node.query(f"BACKUP TABLE data TO {backup_destination}")
+
+
+def restore_from_broken_disk_backup(backup_destination, retry_attempts):
+    """`allow_s3_native_copy=0` is what makes the restore upload into the destination disk itself, which is the
+    only thing the client of that disk does during a restore."""
+    return f"""
+        RESTORE TABLE data AS data_restored FROM {backup_destination}
+        SETTINGS allow_s3_native_copy=0, backup_restore_s3_retry_attempts={retry_attempts}
+    """
+
+
+def test_restore_retries_the_upload_into_the_destination(cluster, broken_s3):
+    # `disk_s3_broken` allows no retries, so the restore gets its data in only if the upload into the
+    # destination is retried with the `backup_restore_s3_retry_attempts` of the restore instead.
+    node = cluster.instances["node"]
+    backup_name = new_backup_name()
+    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', '{minio_secret_key}')"
+    backup_table_on_broken_disk(node, backup_destination)
+
+    node.query("DROP TABLE IF EXISTS data_restored SYNC;")
+    broken_s3.setup_at_object_upload(after=0, count=3, action="slow_down")
+
+    node.query(restore_from_broken_disk_backup(backup_destination, retry_attempts=100))
+
+    assert node.query("SELECT count() FROM data_restored") == "100\n"
+
+
+def test_restore_gives_up_the_upload_into_the_destination_without_retries(cluster, broken_s3):
+    # The mirror of the test above: with the retries of the restore set to none, a single injected answer is
+    # enough to fail it, so that test cannot pass on a client that merely retries a lot.
+    node = cluster.instances["node"]
+    backup_name = new_backup_name()
+    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', '{minio_secret_key}')"
+    backup_table_on_broken_disk(node, backup_destination)
+
+    node.query("DROP TABLE IF EXISTS data_restored SYNC;")
+    broken_s3.setup_at_object_upload(after=0, count=1, action="slow_down")
+
+    error = node.query_and_get_error(
+        restore_from_broken_disk_backup(backup_destination, retry_attempts=0)
+    )
+    assert "SlowDown" in error, error
