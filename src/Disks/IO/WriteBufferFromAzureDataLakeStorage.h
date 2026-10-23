@@ -104,6 +104,8 @@ private:
     bool published = false;
     /// The rename was issued but its outcome is unknown, so the target may hold either object.
     bool publish_outcome_unknown = false;
+    /// The guarded flush may have taken effect without this write learning the new ETag.
+    bool flush_outcome_unknown = false;
     int64_t bytes_appended = 0;
 
     char fake_buffer_when_prefinalized[1] = {};

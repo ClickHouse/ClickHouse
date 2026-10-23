@@ -967,7 +967,8 @@ TEST(AdlsGen2Write, LostCreateResponseLeavesTheFirstStagingObjectAndNeverDeletes
         {{Azure::Core::Http::HttpStatusCode::InternalServerError, "InternalError", {}},
          {Azure::Core::Http::HttpStatusCode::Conflict, "PathAlreadyExists", {}},
          {Azure::Core::Http::HttpStatusCode::Created, {}, "\"e-second\""}});
-    fixture.transport->scriptForever(Op::Flush, {Azure::Core::Http::HttpStatusCode::InternalServerError, "InternalError", {}});
+    /// A definite failure, so the cleanup delete stays pinned to the ETag this write observed.
+    fixture.transport->scriptForever(Op::Flush, {Azure::Core::Http::HttpStatusCode::BadRequest, "InvalidFlushPosition", {}});
 
     auto buffer = fixture.makeBuffer();
     writeSomeData(*buffer);
@@ -992,31 +993,31 @@ TEST(AdlsGen2Write, LostCreateResponseLeavesTheFirstStagingObjectAndNeverDeletes
     EXPECT_TRUE(fixture.requestsTargetingFinalPath().empty());
 }
 
-/// A lost response to the flush is the other live-process orphan. The flush took effect, so the object's
-/// ETag moved, but this write still holds the create ETag; the conditional cleanup delete is therefore
-/// refused with 412 and the object stays. Same reasoning: an object we cannot identify is not ours to
-/// remove. The refusal must not escape, since cleanup runs from a `noexcept` path.
-TEST(AdlsGen2Write, LostFlushResponseLeavesStagingInPlaceRatherThanDeletingIt)
+/// A lost response to the flush must not leave staging behind: if the flush took effect, the object's
+/// ETag moved past the create ETag this write holds, so a delete pinned to it would be refused and the
+/// failed write's rows would stay readable next to the target, e.g. through a `data/*` glob.
+TEST(AdlsGen2Write, LostFlushResponseStillRemovesStaging)
 {
-    WriteFixture fixture;
-    fixture.transport->scriptForever(Op::Flush, {Azure::Core::Http::HttpStatusCode::InternalServerError, "InternalError", {}});
-    /// The staging object now holds post-flush content, so the create ETag no longer matches.
-    fixture.transport->scriptForever(Op::Delete, {Azure::Core::Http::HttpStatusCode::PreconditionFailed, "ConditionNotMet", {}});
+    for (const bool transport_failure : {true, false})
+    {
+        WriteFixture fixture;
+        if (transport_failure)
+            fixture.transport->failTransportForever(Op::Flush);
+        else
+            fixture.transport->scriptForever(Op::Flush, {Azure::Core::Http::HttpStatusCode::InternalServerError, "InternalError", {}});
 
-    auto buffer = fixture.makeBuffer();
-    writeSomeData(*buffer);
-    EXPECT_THROW(buffer->finalize(), DB::Exception);
+        auto buffer = fixture.makeBuffer();
+        writeSomeData(*buffer);
+        EXPECT_THROW(buffer->finalize(), DB::Exception);
+        EXPECT_NO_THROW(buffer.reset());
 
-    const auto deletes = fixture.requestsOf(Op::Delete);
-    ASSERT_EQ(deletes.size(), 1u) << "a refused delete must not be retried or forced";
-    EXPECT_EQ(deletes[0].path, fixture.stagingPath());
-    EXPECT_EQ(deletes[0].header("If-Match"), "\"etag-after-create\"")
-        << "the delete is pinned to the ETag this write observed, which the flush has moved past";
-
-    EXPECT_NO_THROW(buffer.reset());
-    /// A refusal is final: it clears `file_created`, so the destructor does not try again.
-    EXPECT_EQ(fixture.requestsOf(Op::Delete).size(), 1u);
-    EXPECT_TRUE(fixture.requestsTargetingFinalPath().empty());
+        const auto deletes = fixture.requestsOf(Op::Delete);
+        ASSERT_EQ(deletes.size(), 1u);
+        EXPECT_EQ(deletes[0].path, fixture.stagingPath());
+        EXPECT_FALSE(deletes[0].hasHeader("If-Match")) << deletes[0].header("If-Match");
+        EXPECT_TRUE(fixture.requestsOf(Op::Rename).empty());
+        EXPECT_TRUE(fixture.requestsTargetingFinalPath().empty());
+    }
 }
 
 /// Cleanup is idempotent, so unlike the flush and the rename it keeps its retries: a transient failure

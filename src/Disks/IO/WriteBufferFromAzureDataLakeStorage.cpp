@@ -517,8 +517,10 @@ void WriteBufferFromAzureDataLakeStorage::flushStaging()
         /// This runs before any rename, so the target provably still holds its previous complete
         /// object. Reporting the commit status as unknown here would be wrong, and alarming.
         if (isAmbiguousAzureFailure(e))
-            LOG_WARNING(log, "Outcome of the flush of ADLS Gen2 staging file `{}` is unknown, so it may be "
-                        "left behind with contents this write cannot identify.", staging_path);
+        {
+            flush_outcome_unknown = true;
+            LOG_WARNING(log, "Outcome of the flush of ADLS Gen2 staging file `{}` is unknown.", staging_path);
+        }
 
         throw Exception(
             ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
@@ -588,7 +590,10 @@ void WriteBufferFromAzureDataLakeStorage::cleanupStaging() noexcept
         Azure::Storage::Files::DataLake::DeleteFileOptions delete_options;
         /// Only delete the object this write owns: after an ambiguous rename the name may already
         /// hold someone else's object, and deleting that would be the very bug being fixed here.
-        delete_options.AccessConditions.IfMatch = staging_etag;
+        /// An unknown flush outcome is never followed by a rename, so the name still holds the object
+        /// created here, and the flush may have moved its ETag past `staging_etag`.
+        if (!flush_outcome_unknown)
+            delete_options.AccessConditions.IfMatch = staging_etag;
         file_client->DeleteIfExists(delete_options);
         file_created = false;
     }
