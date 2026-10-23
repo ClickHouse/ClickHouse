@@ -409,7 +409,11 @@ static void tryOptimizeGroupByTopKOverRemoteMerge(
     for (auto * source : sources)
     {
         if (auto * remote_read = typeid_cast<ReadFromRemote *>(source->step.get()))
+        {
+            if (!remote_read->isGroupByTopKAllowed())
+                return;
             remote_reads.push_back(remote_read);
+        }
         else if (auto * parallel_replicas_read = typeid_cast<ReadFromParallelRemoteReplicasStep *>(source->step.get()))
             parallel_replicas_reads.push_back(parallel_replicas_read);
         else if (auto * plan_fragment_read = typeid_cast<ReadFromParallelReplicasStep *>(source->step.get()))
