@@ -155,7 +155,7 @@ $CLICKHOUSE_LOCAL --queries-file="$SECOND_SQL_FILE_NAME" -q 'SELECT f_stdin_0152
 # A prelude that does not read stdin must not make read() replay the same rows.
 printf '1\n2\n3\n' > "$STDIN_DATA_FILE_NAME"
 echo 'SELECT 99 FROM system.one;' > "$TEMP_SQL_FILE_NAME"
-$CLICKHOUSE_LOCAL --storage_file_read_method=read --queries-file="$TEMP_SQL_FILE_NAME" \
+$CLICKHOUSE_LOCAL --storage_file_read_method=read --use_cache_for_count_from_files=0 --queries-file="$TEMP_SQL_FILE_NAME" \
     -q 'SELECT count(); SELECT count(); SELECT count()' < "$STDIN_DATA_FILE_NAME"
 
 # Repeated pread queries must keep the input boundary inherited from the caller.
@@ -255,7 +255,7 @@ $CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" \
 
 # A replacement with different contents must not resurrect the inferred input alias.
 $CLICKHOUSE_LOCAL --async_insert=0 --queries-file="$TEMP_SQL_FILE_NAME" \
-    -q 'DROP TABLE `table`; CREATE TEMPORARY TABLE `table` (c1 UInt8) ENGINE=Memory; INSERT INTO `table` VALUES (9); SELECT sum(c1) FROM `table`' \
+    -q 'DROP TABLE `table`; CREATE TEMPORARY TABLE `table` (c1 UInt8) ENGINE=Memory; INSERT INTO `table` SELECT 9 FROM system.one; SELECT sum(c1) FROM `table`' \
     < "$STDIN_DATA_FILE_NAME"
 
 # A profile-supplied implicit-table setting must not be overwritten.
