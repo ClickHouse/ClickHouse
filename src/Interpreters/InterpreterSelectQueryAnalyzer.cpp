@@ -207,6 +207,10 @@ PlanWithParallelReplicas buildQueryPlanForAutomaticParallelReplicas(
     ctx->setSetting("automatic_parallel_replicas_mode", Field{0});
     // We don't want to analyze primaty key at all, see `query_plan_optimize_primary_key` below.
     ctx->setSetting("force_primary_key", false);
+    /// The automatic mode decides with its own cost model, and the row estimate that
+    /// `parallel_replicas_min_number_of_rows_per_replica` asks for is a full index analysis of the read, repeated on
+    /// every build of this plan. Every context of the plan inherits this mark, and the planner skips the estimate there.
+    ctx->setIsAutomaticParallelReplicasProbe(true);
 
     /// Building the plan below re-analyzes and re-plans the query from scratch, and for a query parallel
     /// replicas cannot read at all the result is the single-node plan again, recognized as such only
