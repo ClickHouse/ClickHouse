@@ -870,7 +870,7 @@ bool tryEstimateProjection(
     const size_t weighed = built.layouts_differ ? built.scenarios.size() : 1;
     for (size_t i = 0; i < weighed; ++i)
     {
-        /// a scenario with the parts of an earlier one takes its outcome, as each weigh plans the whole query again
+        /// a scenario with the same parts as an earlier one takes its outcome, because each call of `weigh` plans the whole query again
         size_t same = 0;
         while (same < i && built.scenarios[same]->parts != built.scenarios[i]->parts)
             ++same;
