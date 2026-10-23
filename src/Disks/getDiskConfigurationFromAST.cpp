@@ -64,7 +64,7 @@ namespace ServerSetting
 /// the backend reads differently.
 static std::optional<bool> parseLiteralConfigBool(const std::string & value)
 {
-    if (value.find('$') != std::string::npos)
+    if (value.contains('$'))
         return std::nullopt;
     int number = 0;
     if (Poco::NumberParser::tryParse(value, number))
