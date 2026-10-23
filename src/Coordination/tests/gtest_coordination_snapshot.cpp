@@ -19,12 +19,14 @@
 #include <Common/SipHash.h>
 #include <Common/tests/gtest_global_context.h>
 
+#include <Disks/DiskLocal.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDisk.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/Plain/MetadataStorageFromPlainObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Disks/DiskObjectStorage/Replication/ClusterConfiguration.h>
 #include <Disks/DiskObjectStorage/Replication/ObjectStorageRouter.h>
-#include <Disks/DiskLocal.h>
+#include <Disks/LocalDirectorySyncGuard.h>
 
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFile.h>
@@ -47,6 +49,7 @@
 #include <stdexcept>
 #include <thread>
 #include <vector>
+#include <unistd.h>
 
 namespace DB::CoordinationSetting
 {
@@ -399,8 +402,8 @@ void assertNoSnapshotArtifactsAndNoRegistration(Manager & manager, const std::st
     EXPECT_EQ(manager.getLatestSnapshotInfo(), nullptr);
 }
 
-std::pair<std::shared_ptr<DB::DiskObjectStorage>, std::shared_ptr<TestLocalObjectStorage>>
-createLocalObjectStorageDisk(const std::string & meta_path, const std::string & obj_path)
+std::pair<std::shared_ptr<DB::DiskObjectStorage>, std::shared_ptr<TestLocalObjectStorage>> createLocalObjectStorageDisk(
+    const std::string & meta_path, const std::string & obj_path, bool plain_metadata = false, DB::DiskPtr meta_disk = nullptr)
 {
     auto obj_storage = std::make_shared<TestLocalObjectStorage>(
         DB::LocalObjectStorageSettings("SnapshotDisk", obj_path, false));
@@ -408,10 +411,18 @@ createLocalObjectStorageDisk(const std::string & meta_path, const std::string & 
     auto cluster = std::make_shared<DB::ClusterConfiguration>("SnapshotDisk", std::move(cluster_locations));
     auto router = std::make_shared<DB::ObjectStorageRouter>(
         std::unordered_map<DB::Location, DB::ObjectStoragePtr>{{"main", obj_storage}});
-    auto meta_disk = std::make_shared<DB::DiskLocal>("SnapshotMetaDisk", meta_path);
-    DB::MetadataStoragePtr metadata_storage = std::make_shared<DB::MetadataStorageFromDisk>(
-        meta_disk, "", obj_storage->createKeyGenerator(), /*persist_removal_queue_=*/false, /*removal_log_compaction_threshold_=*/static_cast<size_t>(0));
+    DB::MetadataStoragePtr metadata_storage;
+    if (plain_metadata)
+        metadata_storage = std::make_shared<DB::MetadataStorageFromPlainObjectStorage>(obj_storage, "", 0);
+    else
+        metadata_storage = std::make_shared<DB::MetadataStorageFromDisk>(
+            meta_disk ? meta_disk : std::make_shared<DB::DiskLocal>("SnapshotMetaDisk", meta_path),
+            "",
+            obj_storage->createKeyGenerator(),
+            /*persist_removal_queue_=*/false,
+            /*removal_log_compaction_threshold_=*/static_cast<size_t>(0));
     Poco::AutoPtr<Poco::Util::MapConfiguration> config_ptr(new Poco::Util::MapConfiguration);
+    getContext().context->setConfig(config_ptr);
     auto disk = std::make_shared<DB::DiskObjectStorage>("SnapshotDisk", cluster, metadata_storage, router, /*wrapped_disk=*/nullptr, *config_ptr, "");
     return {disk, obj_storage};
 }
@@ -2167,6 +2178,2209 @@ TEST_P(CoordinationTestWithCompression, TestStorageSnapshotTTLRoundTrip)
     auto expired = restored->collectExpiredTTLPaths(/*now_ms=*/ttl_ms + 1, 1000000);
     ASSERT_EQ(expired.size(), 1u);
     EXPECT_EQ(expired[0].first, "/ttl_node");
+}
+
+/// Test that orphaned nodes (and their descendants) are removed during snapshot deserialization
+/// when remove_orphaned_nodes_on_startup is enabled and digest is disabled.
+TEST_P(CoordinationTestWithCompression, TestSnapshotOrphanedNodesRemoval)
+{
+    ChangelogDirTest test("./snapshots");
+    this->setSnapshotDirectory("./snapshots");
+
+    DB::KeeperSnapshotManager manager(3, this->keeper_context, this->enable_compression);
+
+    /// Fabricate the corrupted snapshot on a mem-based storage regardless of the storage type under
+    /// test: corruption is injected by poking the in-memory container directly. The snapshot wire
+    /// format does not depend on the storage backend, so the restore side below uses the tested one.
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", ::makeKeeperContext(/*use_lsmt_storage=*/false));
+    DB::KeeperStorage & storage = *storage_ptr;
+    auto & mem_storage = dynamic_cast<DB::KeeperMemNodesStorage &>(*storage.nodes_storage);
+
+    /// Add normal nodes
+    addNode(storage, "/hello1", "world");
+    addNode(storage, "/hello2", "data");
+
+    /// Capture baseline size before inserting orphans (includes / + system nodes + hello1 + hello2)
+    const auto baseline_size = mem_storage.container.size();
+    const auto baseline_root_children = storage.nodes_storage->listCommittedChildrenNames("/").size();
+
+    /// Insert orphaned nodes directly (parent /missing does not exist)
+    {
+        DB::KeeperMemNode orphan_child;
+        orphan_child.setData("orphan_child_data");
+        mem_storage.container.insertOrReplace("/missing/child", std::move(orphan_child));
+    }
+    {
+        DB::KeeperMemNode orphan_grandchild;
+        orphan_grandchild.setData("orphan_grandchild_data");
+        mem_storage.container.insertOrReplace("/missing/child/grandchild", std::move(orphan_grandchild));
+    }
+
+    DB::KeeperStorageSnapshot snapshot(&storage, 0, nullptr, DB::SnapshotVersion::V7);
+    auto buf = manager.serializeSnapshotToBuffer(snapshot);
+    manager.serializeSnapshotBufferToDisk(*buf, 0);
+
+    /// Deserialize with orphan removal enabled
+    this->keeper_context->setRemoveOrphanedNodesOnStartup(true);
+    this->keeper_context->setDigestEnabled(false);
+
+    auto debuf = manager.deserializeSnapshotBufferFromDisk(0);
+    const auto restored_storage = DB::KeeperStorage::create(500, "", this->keeper_context, /*initialize_system_nodes=*/false);
+    if (GetParam().use_lsmt_storage)
+    {
+        /// The LSMT nodes storage does not implement orphan cleanup; it must reject the snapshot
+        /// instead of loading a damaged tree.
+        EXPECT_THROW(
+            manager.deserializeSnapshotFromBuffer(debuf, *restored_storage, /*allow_orphaned_nodes_removal=*/ true), DB::Exception);
+        return;
+    }
+    manager.deserializeSnapshotFromBuffer(debuf, *restored_storage, /*allow_orphaned_nodes_removal=*/ true);
+    const auto & restored_mem_storage = dynamic_cast<const DB::KeeperMemNodesStorage &>(*restored_storage->nodes_storage);
+
+    /// Orphans should be removed, size should match baseline
+    EXPECT_EQ(restored_mem_storage.container.size(), baseline_size);
+    EXPECT_TRUE(committedNodeExists(*restored_storage, "/hello1"));
+    EXPECT_TRUE(committedNodeExists(*restored_storage, "/hello2"));
+    EXPECT_FALSE(committedNodeExists(*restored_storage, "/missing/child"));
+    EXPECT_FALSE(committedNodeExists(*restored_storage, "/missing/child/grandchild"));
+
+    /// Normal parent-child relationships should be intact
+    EXPECT_EQ(restored_storage->nodes_storage->listCommittedChildrenNames("/").size(), baseline_root_children);
+}
+
+/// Test that deserialization throws when orphaned nodes are found but removal is disabled.
+TEST_P(CoordinationTestWithCompression, TestSnapshotOrphanedNodesThrowsWhenDisabled)
+{
+    ChangelogDirTest test("./snapshots");
+    this->setSnapshotDirectory("./snapshots");
+
+    DB::KeeperSnapshotManager manager(3, this->keeper_context, this->enable_compression);
+
+    /// Fabricate the corrupted snapshot on a mem-based storage regardless of the storage type under
+    /// test: corruption is injected by poking the in-memory container directly. The snapshot wire
+    /// format does not depend on the storage backend, so the restore side below uses the tested one.
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", ::makeKeeperContext(/*use_lsmt_storage=*/false));
+    DB::KeeperStorage & storage = *storage_ptr;
+    auto & mem_storage = dynamic_cast<DB::KeeperMemNodesStorage &>(*storage.nodes_storage);
+
+    addNode(storage, "/hello1", "world");
+
+    /// Insert orphaned node
+    DB::KeeperMemNode orphan;
+    orphan.setData("orphan_data");
+    mem_storage.container.insertOrReplace("/missing/child", std::move(orphan));
+
+    DB::KeeperStorageSnapshot snapshot(&storage, 0, nullptr, DB::SnapshotVersion::V7);
+    auto buf = manager.serializeSnapshotToBuffer(snapshot);
+    manager.serializeSnapshotBufferToDisk(*buf, 0);
+
+    /// Deserialize with orphan removal disabled (default)
+    this->keeper_context->setRemoveOrphanedNodesOnStartup(false);
+    this->keeper_context->setDigestEnabled(false);
+
+    auto debuf = manager.deserializeSnapshotBufferFromDisk(0);
+    const auto restored_storage = DB::KeeperStorage::create(500, "", this->keeper_context, /*initialize_system_nodes=*/false);
+    EXPECT_THROW(manager.deserializeSnapshotFromBuffer(debuf, *restored_storage, /*allow_orphaned_nodes_removal=*/ true), DB::Exception);
+}
+
+/// A snapshot that contains nodes but lost the root node `/` is catastrophically corrupted: every
+/// node in it looks orphaned. Loading it must always throw, even with orphan removal enabled,
+/// instead of wiping the whole data tree and silently starting with an empty database.
+TEST_P(CoordinationTestWithCompression, TestSnapshotMissingRootAlwaysThrows)
+{
+    ChangelogDirTest test("./snapshots");
+    this->setSnapshotDirectory("./snapshots");
+
+    DB::KeeperSnapshotManager manager(3, this->keeper_context, this->enable_compression);
+
+    /// Fabricate the corrupted snapshot on a mem-based storage regardless of the storage type under
+    /// test: corruption is injected by poking the in-memory container directly. The snapshot wire
+    /// format does not depend on the storage backend, so the restore side below uses the tested one.
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", ::makeKeeperContext(/*use_lsmt_storage=*/false));
+    DB::KeeperStorage & storage = *storage_ptr;
+    auto & mem_storage = dynamic_cast<DB::KeeperMemNodesStorage &>(*storage.nodes_storage);
+
+    addNode(storage, "/hello1", "world");
+    addNode(storage, "/hello1/child", "data");
+
+    /// Drop the root node to emulate a snapshot that lost it
+    mem_storage.container.erase("/");
+
+    DB::KeeperStorageSnapshot snapshot(&storage, 0, nullptr, DB::SnapshotVersion::V7);
+    auto buf = manager.serializeSnapshotToBuffer(snapshot);
+    manager.serializeSnapshotBufferToDisk(*buf, 0);
+
+    /// Even with removal fully allowed, a root-less snapshot must be rejected
+    this->keeper_context->setRemoveOrphanedNodesOnStartup(true);
+    this->keeper_context->setDigestEnabled(false);
+
+    auto debuf = manager.deserializeSnapshotBufferFromDisk(0);
+    const auto restored_storage = DB::KeeperStorage::create(500, "", this->keeper_context, /*initialize_system_nodes=*/false);
+    EXPECT_THROW(
+        manager.deserializeSnapshotFromBuffer(debuf, *restored_storage, /*allow_orphaned_nodes_removal=*/true), DB::Exception);
+}
+
+/// A snapshot with no nodes at all is corrupted for the same reason: every valid Keeper snapshot
+/// contains `/`. Loading it must throw instead of letting `KeeperStorage::initializeSystemNodes`
+/// recreate a fresh empty tree.
+TEST_P(CoordinationTestWithCompression, TestSnapshotWithoutNodesAlwaysThrows)
+{
+    ChangelogDirTest test("./snapshots");
+    this->setSnapshotDirectory("./snapshots");
+
+    DB::KeeperSnapshotManager manager(3, this->keeper_context, this->enable_compression);
+
+    /// Fabricate the corrupted snapshot on a mem-based storage regardless of the storage type under
+    /// test: corruption is injected by poking the in-memory container directly. The snapshot wire
+    /// format does not depend on the storage backend, so the restore side below uses the tested one.
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", ::makeKeeperContext(/*use_lsmt_storage=*/false));
+    DB::KeeperStorage & storage = *storage_ptr;
+    auto & mem_storage = dynamic_cast<DB::KeeperMemNodesStorage &>(*storage.nodes_storage);
+
+    /// Keep only the system nodes with data (children of `/keeper`, which are never serialized), so
+    /// that the resulting snapshot carries zero nodes
+    mem_storage.container.erase("/");
+    mem_storage.container.erase(DB::keeper_system_path);
+
+    DB::KeeperStorageSnapshot snapshot(&storage, 0, nullptr, DB::SnapshotVersion::V7);
+    auto buf = manager.serializeSnapshotToBuffer(snapshot);
+    manager.serializeSnapshotBufferToDisk(*buf, 0);
+
+    this->keeper_context->setRemoveOrphanedNodesOnStartup(true);
+    this->keeper_context->setDigestEnabled(false);
+
+    auto debuf = manager.deserializeSnapshotBufferFromDisk(0);
+    const auto restored_storage = DB::KeeperStorage::create(500, "", this->keeper_context, /*initialize_system_nodes=*/false);
+    EXPECT_THROW(
+        manager.deserializeSnapshotFromBuffer(debuf, *restored_storage, /*allow_orphaned_nodes_removal=*/true), DB::Exception);
+}
+
+/// Test that ephemeral tracking is cleaned up when orphaned ephemeral nodes are removed.
+TEST_P(CoordinationTestWithCompression, TestSnapshotOrphanedEphemeralCleanup)
+{
+    ChangelogDirTest test("./snapshots");
+    this->setSnapshotDirectory("./snapshots");
+
+    DB::KeeperSnapshotManager manager(3, this->keeper_context, this->enable_compression);
+
+    /// Fabricate the corrupted snapshot on a mem-based storage regardless of the storage type under
+    /// test: corruption is injected by poking the in-memory container directly. The snapshot wire
+    /// format does not depend on the storage backend, so the restore side below uses the tested one.
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", ::makeKeeperContext(/*use_lsmt_storage=*/false));
+    DB::KeeperStorage & storage = *storage_ptr;
+    auto & mem_storage = dynamic_cast<DB::KeeperMemNodesStorage &>(*storage.nodes_storage);
+
+    addNode(storage, "/hello1", "world");
+
+    /// Insert orphaned ephemeral node
+    static constexpr int64_t session_id = 42;
+    DB::KeeperMemNode orphan;
+    orphan.setData("ephemeral_orphan");
+    orphan.stats.makeEphemeral(session_id);
+    mem_storage.container.insertOrReplace("/missing/ephemeral", std::move(orphan));
+
+    /// Register it in ephemeral tracking (as snapshot serialization would have captured)
+    storage.committed_ephemerals[session_id].insert("/missing/ephemeral");
+    ++storage.committed_ephemeral_nodes;
+
+    DB::KeeperStorageSnapshot snapshot(&storage, 0, nullptr, DB::SnapshotVersion::V7);
+    auto buf = manager.serializeSnapshotToBuffer(snapshot);
+    manager.serializeSnapshotBufferToDisk(*buf, 0);
+
+    /// Deserialize with orphan removal enabled
+    this->keeper_context->setRemoveOrphanedNodesOnStartup(true);
+    this->keeper_context->setDigestEnabled(false);
+
+    auto debuf = manager.deserializeSnapshotBufferFromDisk(0);
+    const auto restored_storage = DB::KeeperStorage::create(500, "", this->keeper_context, /*initialize_system_nodes=*/false);
+    if (GetParam().use_lsmt_storage)
+    {
+        /// The LSMT nodes storage does not implement orphan cleanup; it must reject the snapshot
+        /// instead of loading a damaged tree.
+        EXPECT_THROW(
+            manager.deserializeSnapshotFromBuffer(debuf, *restored_storage, /*allow_orphaned_nodes_removal=*/ true), DB::Exception);
+        return;
+    }
+    manager.deserializeSnapshotFromBuffer(debuf, *restored_storage, /*allow_orphaned_nodes_removal=*/ true);
+
+    /// Orphaned ephemeral node should be removed
+    EXPECT_FALSE(committedNodeExists(*restored_storage, "/missing/ephemeral"));
+
+    /// Ephemeral tracking should be cleaned up
+    EXPECT_FALSE(restored_storage->committed_ephemerals.contains(session_id));
+    EXPECT_EQ(restored_storage->committed_ephemeral_nodes, 0);
+}
+
+/// Test that deserialization throws when orphans exist and digest is enabled (even if removal is enabled).
+TEST_P(CoordinationTestWithCompression, TestSnapshotOrphanedNodesThrowsWhenDigestEnabled)
+{
+    ChangelogDirTest test("./snapshots");
+    this->setSnapshotDirectory("./snapshots");
+
+    DB::KeeperSnapshotManager manager(3, this->keeper_context, this->enable_compression);
+
+    /// Fabricate the corrupted snapshot on a mem-based storage regardless of the storage type under
+    /// test: corruption is injected by poking the in-memory container directly. The snapshot wire
+    /// format does not depend on the storage backend, so the restore side below uses the tested one.
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", ::makeKeeperContext(/*use_lsmt_storage=*/false));
+    DB::KeeperStorage & storage = *storage_ptr;
+    auto & mem_storage = dynamic_cast<DB::KeeperMemNodesStorage &>(*storage.nodes_storage);
+
+    addNode(storage, "/hello1", "world");
+
+    /// Insert orphaned node
+    DB::KeeperMemNode orphan;
+    orphan.setData("orphan_data");
+    mem_storage.container.insertOrReplace("/missing/child", std::move(orphan));
+
+    DB::KeeperStorageSnapshot snapshot(&storage, 0, nullptr, DB::SnapshotVersion::V7);
+    auto buf = manager.serializeSnapshotToBuffer(snapshot);
+    manager.serializeSnapshotBufferToDisk(*buf, 0);
+
+    /// Removal enabled but digest also enabled — should throw
+    this->keeper_context->setRemoveOrphanedNodesOnStartup(true);
+    this->keeper_context->setDigestEnabled(true);
+
+    auto debuf = manager.deserializeSnapshotBufferFromDisk(0);
+    const auto restored_storage = DB::KeeperStorage::create(500, "", this->keeper_context, /*initialize_system_nodes=*/false);
+    EXPECT_THROW(manager.deserializeSnapshotFromBuffer(debuf, *restored_storage, /*allow_orphaned_nodes_removal=*/ true), DB::Exception);
+}
+
+/// Test that stale numChildren on surviving ancestors is fixed after orphan removal.
+TEST_P(CoordinationTestWithCompression, TestSnapshotOrphanedAncestorNumChildren)
+{
+    ChangelogDirTest test("./snapshots");
+    this->setSnapshotDirectory("./snapshots");
+
+    DB::KeeperSnapshotManager manager(3, this->keeper_context, this->enable_compression);
+
+    /// Fabricate the corrupted snapshot on a mem-based storage regardless of the storage type under
+    /// test: corruption is injected by poking the in-memory container directly. The snapshot wire
+    /// format does not depend on the storage backend, so the restore side below uses the tested one.
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", ::makeKeeperContext(/*use_lsmt_storage=*/false));
+    DB::KeeperStorage & storage = *storage_ptr;
+    auto & mem_storage = dynamic_cast<DB::KeeperMemNodesStorage &>(*storage.nodes_storage);
+
+    addNode(storage, "/a", "data");
+
+    /// Simulate stale numChildren: /a had a child /a/missing that is now absent from the snapshot.
+    /// Set numChildren=1 to reflect that stale state.
+    mem_storage.container.updateValue("/a", [](DB::KeeperMemNode & value) { value.stats.setNumChildren(1); });
+
+    /// Insert orphaned node under the missing path
+    DB::KeeperMemNode orphan;
+    orphan.setData("orphan_data");
+    mem_storage.container.insertOrReplace("/a/missing/child", std::move(orphan));
+
+    DB::KeeperStorageSnapshot snapshot(&storage, 0, nullptr, DB::SnapshotVersion::V7);
+    auto buf = manager.serializeSnapshotToBuffer(snapshot);
+    manager.serializeSnapshotBufferToDisk(*buf, 0);
+
+    /// Deserialize with orphan removal enabled
+    this->keeper_context->setRemoveOrphanedNodesOnStartup(true);
+    this->keeper_context->setDigestEnabled(false);
+
+    auto debuf = manager.deserializeSnapshotBufferFromDisk(0);
+    const auto restored_storage = DB::KeeperStorage::create(500, "", this->keeper_context, /*initialize_system_nodes=*/false);
+    if (GetParam().use_lsmt_storage)
+    {
+        /// The LSMT nodes storage does not implement orphan cleanup; it must reject the snapshot
+        /// instead of loading a damaged tree.
+        EXPECT_THROW(
+            manager.deserializeSnapshotFromBuffer(debuf, *restored_storage, /*allow_orphaned_nodes_removal=*/ true), DB::Exception);
+        return;
+    }
+    manager.deserializeSnapshotFromBuffer(debuf, *restored_storage, /*allow_orphaned_nodes_removal=*/ true);
+
+    /// Orphan should be removed
+    EXPECT_FALSE(committedNodeExists(*restored_storage, "/a/missing/child"));
+
+    /// /a should have numChildren fixed to match actual children count (0, since /a/missing doesn't exist)
+    DB::KeeperNodeStats stats;
+    ASSERT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple("/a", &stats, /*out_data=*/nullptr));
+    EXPECT_EQ(stats.getNumChildren(), static_cast<int32_t>(restored_storage->nodes_storage->listCommittedChildrenNames("/a").size()));
+}
+
+/// Orphan cleanup is a startup-only recovery operation for the latest local snapshot. A snapshot
+/// received from another node (a follower applying a leader snapshot in `apply_snapshot`) must not
+/// be cleaned locally, otherwise the follower would diverge from the rest of the cluster. That
+/// path passes `allow_orphaned_nodes_removal = false`, and — because `apply_snapshot` can run even
+/// before the server phase flips to `RUNNING` — cleanup must be refused whenever either the flag
+/// is not set or the phase is not `INIT`, even with removal enabled and digest disabled.
+TEST_P(CoordinationTestWithCompression, TestSnapshotOrphanedNodesThrowsWhenRunning)
+{
+    ChangelogDirTest test("./snapshots");
+    this->setSnapshotDirectory("./snapshots");
+
+    DB::KeeperSnapshotManager manager(3, this->keeper_context, this->enable_compression);
+
+    /// Fabricate the corrupted snapshot on a mem-based storage regardless of the storage type under
+    /// test: corruption is injected by poking the in-memory container directly. The snapshot wire
+    /// format does not depend on the storage backend, so the restore side below uses the tested one.
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", ::makeKeeperContext(/*use_lsmt_storage=*/false));
+    DB::KeeperStorage & storage = *storage_ptr;
+    auto & mem_storage = dynamic_cast<DB::KeeperMemNodesStorage &>(*storage.nodes_storage);
+
+    addNode(storage, "/hello1", "world");
+
+    /// Insert orphaned node
+    DB::KeeperMemNode orphan;
+    orphan.setData("orphan_data");
+    mem_storage.container.insertOrReplace("/missing/child", std::move(orphan));
+
+    DB::KeeperStorageSnapshot snapshot(&storage, 0, nullptr, DB::SnapshotVersion::V7);
+    auto buf = manager.serializeSnapshotToBuffer(snapshot);
+    manager.serializeSnapshotBufferToDisk(*buf, 0);
+
+    this->keeper_context->setRemoveOrphanedNodesOnStartup(true);
+    this->keeper_context->setDigestEnabled(false);
+
+    /// Removal enabled and digest disabled, but the server is already running — should throw.
+    this->keeper_context->setServerState(DB::KeeperContext::Phase::RUNNING);
+    {
+        auto debuf = manager.deserializeSnapshotBufferFromDisk(0);
+        const auto restored_storage = DB::KeeperStorage::create(500, "", this->keeper_context, /*initialize_system_nodes=*/false);
+        EXPECT_THROW(
+            manager.deserializeSnapshotFromBuffer(debuf, *restored_storage, /*allow_orphaned_nodes_removal=*/ true), DB::Exception);
+    }
+
+    /// Startup phase, but the snapshot is applied as if received from another node
+    /// (`allow_orphaned_nodes_removal` not set, as in `apply_snapshot`) — should throw.
+    this->keeper_context->setServerState(DB::KeeperContext::Phase::INIT);
+    {
+        auto debuf = manager.deserializeSnapshotBufferFromDisk(0);
+        const auto restored_storage = DB::KeeperStorage::create(500, "", this->keeper_context, /*initialize_system_nodes=*/false);
+        EXPECT_THROW(
+            manager.deserializeSnapshotFromBuffer(debuf, *restored_storage, /*allow_orphaned_nodes_removal=*/ false), DB::Exception);
+    }
+
+    /// Startup phase and the latest local snapshot — cleanup is allowed (mem storage only; the
+    /// LSMT nodes storage does not implement orphan cleanup and rejects the snapshot regardless).
+    {
+        auto debuf = manager.deserializeSnapshotBufferFromDisk(0);
+        const auto restored_storage = DB::KeeperStorage::create(500, "", this->keeper_context, /*initialize_system_nodes=*/false);
+        if (GetParam().use_lsmt_storage)
+            EXPECT_THROW(
+                manager.deserializeSnapshotFromBuffer(debuf, *restored_storage, /*allow_orphaned_nodes_removal=*/ true),
+                DB::Exception);
+        else
+            EXPECT_NO_THROW(
+                manager.deserializeSnapshotFromBuffer(debuf, *restored_storage, /*allow_orphaned_nodes_removal=*/ true));
+    }
+}
+
+/// Test that TTL bookkeeping is cleaned up when orphaned TTL nodes are removed.
+/// Without this fix, an orphaned TTL node would leave a phantom entry in ttl_paths after removal.
+TEST_P(CoordinationTestWithCompression, TestSnapshotOrphanedTTLCleanup)
+{
+    ChangelogDirTest test("./snapshots");
+    this->setSnapshotDirectory("./snapshots");
+
+    DB::KeeperSnapshotManager manager(3, this->keeper_context, this->enable_compression);
+
+    /// Fabricate the corrupted snapshot on a mem-based storage regardless of the storage type under
+    /// test: corruption is injected by poking the in-memory container directly. The snapshot wire
+    /// format does not depend on the storage backend, so the restore side below uses the tested one.
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", ::makeKeeperContext(/*use_lsmt_storage=*/false));
+    DB::KeeperStorage & storage = *storage_ptr;
+    auto & mem_storage = dynamic_cast<DB::KeeperMemNodesStorage &>(*storage.nodes_storage);
+
+    addNode(storage, "/hello1", "world");
+
+    /// Insert orphaned TTL node directly (parent /missing does not exist).
+    /// The TTL flag lives in the node stats; deserialization registers it in
+    /// ttl_paths automatically, so we only set stats here.
+    DB::KeeperMemNode orphan;
+    orphan.setData("ttl_orphan_data");
+    orphan.stats.makeTTL(5000);
+    mem_storage.container.insertOrReplace("/missing/ttl_node", std::move(orphan));
+
+    /// Serialize with V8 (required for TTL serialization)
+    DB::KeeperStorageSnapshot snapshot(&storage, 0, nullptr, DB::SnapshotVersion::V8);
+    auto buf = manager.serializeSnapshotToBuffer(snapshot);
+    manager.serializeSnapshotBufferToDisk(*buf, 0);
+
+    /// Deserialize with orphan removal enabled
+    this->keeper_context->setRemoveOrphanedNodesOnStartup(true);
+    this->keeper_context->setDigestEnabled(false);
+
+    auto debuf = manager.deserializeSnapshotBufferFromDisk(0);
+    const auto restored_storage = DB::KeeperStorage::create(500, "", this->keeper_context, /*initialize_system_nodes=*/false);
+    if (GetParam().use_lsmt_storage)
+    {
+        /// The LSMT nodes storage does not implement orphan cleanup; it must reject the snapshot
+        /// instead of loading a damaged tree.
+        EXPECT_THROW(
+            manager.deserializeSnapshotFromBuffer(debuf, *restored_storage, /*allow_orphaned_nodes_removal=*/ true), DB::Exception);
+        return;
+    }
+    manager.deserializeSnapshotFromBuffer(debuf, *restored_storage, /*allow_orphaned_nodes_removal=*/ true);
+
+    /// Orphaned TTL node should be removed from the container
+    EXPECT_FALSE(committedNodeExists(*restored_storage, "/missing/ttl_node"));
+
+    /// TTL tracking should be cleaned up: no phantom entries left behind
+    EXPECT_FALSE(restored_storage->containsTTLPath("/missing/ttl_node"));
+
+    /// Normal nodes should survive
+    EXPECT_TRUE(committedNodeExists(*restored_storage, "/hello1"));
+}
+
+/// Tests for the local-log-tail verification that guards orphaned-nodes removal.
+///
+/// Removing orphaned nodes repairs the tree we loaded, but the raft log above the snapshot was
+/// produced against the *unrepaired* tree. Those entries are replayed right after startup, so an entry
+/// referencing a removed path would silently resolve differently (`Create`/`Set` -> `ZNONODE`) instead
+/// of failing, and orphan removal requires digest checking to be off, so nothing would catch it.
+/// `KeeperStateMachine::findOrphanConflictInLogTail` refuses to start in that case.
+
+namespace
+{
+
+DB::KeeperContextPtr makeContextForOrphanRemoval(
+    bool use_lsmt_storage, bool enable_compression, const std::string & snapshots_path, const std::string & log_path)
+{
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    (*settings)[DB::CoordinationSetting::compress_snapshots_with_zstd_format] = enable_compression;
+    auto ctx = makeKeeperContext(use_lsmt_storage, settings);
+    /// Deliberately does NOT call setLocalLogsPreprocessed: the log tail must look unprocessed, as it
+    /// does during a real startup. Orphan removal requires digest checking to be off, and the server
+    /// state stays at the default `Phase::INIT`.
+    ctx->setDigestEnabled(false);
+    ctx->setRemoveOrphanedNodesOnStartup(true);
+    ctx->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapshotDisk", snapshots_path));
+    ctx->setLogDisk(std::make_shared<DB::DiskLocal>("LogDisk", log_path));
+    return ctx;
+}
+
+/// `KeeperLogStore::append` takes a non-const reference, so it cannot bind to a temporary. This lets the
+/// tests below append freshly built entries inline.
+void appendEntry(DB::KeeperLogStore & changelog, LogEntryPtr entry)
+{
+    changelog.append(entry);
+}
+
+/// Write a snapshot at `up_to_log_idx` holding `present_nodes` plus `orphan_nodes`, whose parents are
+/// deliberately never created. Injecting straight into the container bypasses the storage API, which
+/// would otherwise refuse to create a node without a parent. A fresh `KeeperStateMachine::init()` picks
+/// this snapshot up from disk and prunes the orphans.
+///
+/// `present_ephemeral_nodes` / `ephemeral_orphan_nodes` are `(path, owner session)` pairs added the same
+/// way; the restore side rebuilds `committed_ephemerals` from the owner recorded in the node stats.
+void writeSnapshotWithOrphans(
+    const DB::KeeperContextPtr & ctx,
+    bool enable_compression,
+    uint64_t up_to_log_idx,
+    const std::vector<std::string> & present_nodes,
+    const std::vector<std::string> & orphan_nodes,
+    const std::vector<std::pair<std::string, int64_t>> & present_ephemeral_nodes = {},
+    const std::vector<std::pair<std::string, int64_t>> & ephemeral_orphan_nodes = {},
+    const DB::SnapshotMetadataPtr & snapshot_meta = nullptr)
+{
+    DB::KeeperSnapshotManager manager(3, ctx, enable_compression);
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", ctx);
+    DB::KeeperStorage & storage = *storage_ptr;
+
+    for (const auto & path : present_nodes)
+        addNode(storage, path, "present");
+    for (const auto & [path, session_id] : present_ephemeral_nodes)
+        addNode(storage, path, "present_ephemeral", session_id);
+
+    auto & mem_storage = dynamic_cast<DB::KeeperMemNodesStorage &>(*storage.nodes_storage);
+    for (const auto & path : orphan_nodes)
+    {
+        DB::KeeperMemNode orphan;
+        orphan.setData("orphan");
+        mem_storage.container.insertOrReplace(path, std::move(orphan));
+    }
+    for (const auto & [path, session_id] : ephemeral_orphan_nodes)
+    {
+        DB::KeeperMemNode orphan;
+        orphan.setData("ephemeral_orphan");
+        orphan.stats.makeEphemeral(session_id);
+        mem_storage.container.insertOrReplace(path, std::move(orphan));
+    }
+
+    TSA_SUPPRESS_WARNING_FOR_WRITE(storage.zxid) = static_cast<int64_t>(up_to_log_idx);
+    auto meta
+        = snapshot_meta ? snapshot_meta : std::make_shared<DB::SnapshotMetadata>(up_to_log_idx, 0, std::make_shared<DB::ClusterConfig>());
+    DB::KeeperStorageSnapshot snapshot(&storage, meta, snapshot_meta ? meta->get_last_config() : nullptr, ctx->getWriteSnapshotVersion());
+    auto buf = manager.serializeSnapshotToBuffer(snapshot);
+    manager.serializeSnapshotBufferToDisk(*buf, up_to_log_idx);
+}
+
+}
+
+/// Recovery must persist the tree before serving a follower or restarting without the recovery setting.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalPersistsSnapshotBeforeTransferAndRestart)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    enum class SnapshotDiskType
+    {
+        Local,
+        Object,
+        Plain,
+    };
+    for (const auto & [disk_type, has_log_tail] :
+         {std::pair{SnapshotDiskType::Local, false},
+          std::pair{SnapshotDiskType::Local, true},
+          std::pair{SnapshotDiskType::Object, false},
+          std::pair{SnapshotDiskType::Object, true},
+          std::pair{SnapshotDiskType::Plain, false},
+          std::pair{SnapshotDiskType::Plain, true}})
+    {
+        SCOPED_TRACE(fmt::format("disk_type={}, has_log_tail={}", static_cast<int>(disk_type), has_log_tail));
+        ChangelogDirTest snapshots("./snapshots");
+        ChangelogDirTest objects("./snapshot_objects");
+        ChangelogDirTest logs("./logs");
+        ChangelogDirTest follower_snapshots("./follower_snapshots");
+
+        auto settings = std::make_shared<DB::CoordinationSettings>();
+        (*settings)[DB::CoordinationSetting::compress_snapshots_with_zstd_format] = this->enable_compression;
+        (*settings)[DB::CoordinationSetting::snapshot_transfer_chunk_size] = 32;
+        auto ctx = ::makeKeeperContext(false, settings);
+        ctx->setDigestEnabled(false);
+        ctx->setRemoveOrphanedNodesOnStartup(true);
+        ctx->setLogDisk(std::make_shared<DB::DiskLocal>("LogDisk", "./logs"));
+        DB::DiskPtr disk = std::make_shared<DB::DiskLocal>("SnapshotDisk", "./snapshots");
+        if (disk_type != SnapshotDiskType::Local)
+        {
+            getContext();
+            disk = createLocalObjectStorageDisk("./snapshots", "./snapshot_objects/", disk_type == SnapshotDiskType::Plain).first;
+        }
+        SCOPE_EXIT({ disk->shutdown(); });
+        ctx->setSnapshotDisk(disk);
+
+        auto config = std::make_shared<DB::ClusterConfig>();
+        config->get_servers().push_back(std::make_shared<nuraft::srv_config>(1, "localhost:9234"));
+        auto meta = std::make_shared<DB::SnapshotMetadata>(2, 7, config);
+        writeSnapshotWithOrphans(ctx, this->enable_compression, 2, {"/present"}, {"/missing/child"}, {}, {}, meta);
+        DB::KeeperSnapshotManager manager(3, ctx, this->enable_compression);
+        auto original_info = manager.getLatestSnapshotInfo();
+        auto original_bytes = manager.deserializeLatestSnapshotBufferFromDisk();
+
+        DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
+        changelog.init(0, 1000);
+        DB::SnapshotsQueue queue{1};
+        auto leader = std::make_shared<DB::KeeperStateMachine>(nullptr, queue, ctx, nullptr);
+        leader->init();
+        leader->setLogStore(&changelog);
+        for (size_t i = 0; i < 2; ++i)
+            appendEntry(changelog, makeSetEntry(*leader, "/present", "covered"));
+        if (has_log_tail)
+            appendEntry(changelog, makeSetEntry(*leader, "/present", "tail"));
+        changelog.end_of_append_batch(0, 0);
+        waitDurableLogs(changelog);
+
+        ASSERT_FALSE(leader->findOrphanConflictInLogTail(3, changelog.next_slot()).has_value());
+        DB::KeeperSnapshotManager repaired_manager(3, ctx, this->enable_compression);
+        auto repaired_bytes = repaired_manager.deserializeLatestSnapshotBufferFromDisk();
+        EXPECT_FALSE(nuraftBuffersEqual(original_bytes, repaired_bytes));
+        DB::SnapshotFileInfo backup("orphaned_" + original_info->path, disk);
+        EXPECT_TRUE(nuraftBuffersEqual(original_bytes, manager.deserializeSnapshotBufferFromDisk(backup)));
+        EXPECT_EQ(leader->getLatestSnapshotSize(), repaired_bytes->size());
+        ASSERT_FALSE(leader->findOrphanConflictInLogTail(3, changelog.next_slot()).has_value());
+        EXPECT_TRUE(nuraftBuffersEqual(repaired_bytes, repaired_manager.deserializeLatestSnapshotBufferFromDisk()));
+
+        /// Check the transferred bytes before applying them: the unfixed implementation must fail
+        /// this assertion rather than terminate the whole test binary inside `apply_snapshot`.
+        auto follower_ctx = makeContextForSnapshotApply(false, "./follower_snapshots");
+        DB::SnapshotsQueue follower_queue{1};
+        DB::KeeperStateMachine follower(nullptr, follower_queue, follower_ctx, nullptr);
+        follower.init();
+        auto snapshot_meta = leader->last_snapshot();
+        void * transfer_ctx = nullptr;
+        SCOPE_EXIT({
+            if (leader)
+                leader->free_user_snp_ctx(transfer_ctx);
+        });
+        bool is_last = false;
+        uint64_t obj_id = 0;
+        while (!is_last)
+        {
+            nuraft::ptr<nuraft::buffer> data;
+            const bool is_first = obj_id == 0;
+            ASSERT_GT(leader->read_logical_snp_obj(*snapshot_meta, transfer_ctx, obj_id, data, is_last), 0);
+            follower.save_logical_snp_obj(*snapshot_meta, obj_id, *data, is_first, is_last);
+        }
+        EXPECT_GT(obj_id, 1);
+        DB::KeeperSnapshotManager follower_manager(3, follower_ctx);
+        auto check_storage = DB::KeeperStorage::create(500, "", follower_ctx, false);
+        ASSERT_NO_THROW(follower_manager.restoreFromLatestSnapshot(*check_storage));
+        ASSERT_TRUE(follower.apply_snapshot(*snapshot_meta));
+        EXPECT_EQ(committedNodeData(follower.getStorageUnsafe(), "/present"), "present");
+        EXPECT_FALSE(committedNodeExists(follower.getStorageUnsafe(), "/missing/child"));
+
+        /// No graceful shutdown snapshot: only the recovery write can make this restart succeed.
+        leader->free_user_snp_ctx(transfer_ctx);
+        leader.reset();
+        ctx->setRemoveOrphanedNodesOnStartup(false);
+        ctx->setDigestEnabled(true);
+        DB::KeeperStateMachine restarted(nullptr, queue, ctx, nullptr);
+        ASSERT_NO_THROW(restarted.init());
+        EXPECT_EQ(restarted.last_commit_index(), 2);
+        EXPECT_EQ(restarted.last_snapshot()->get_last_log_term(), 7);
+        ASSERT_TRUE(restarted.getClusterConfig());
+        EXPECT_TRUE(nuraftBuffersEqual(restarted.getClusterConfig()->serialize(), config->serialize()));
+        EXPECT_EQ(committedNodeData(restarted.getStorageUnsafe(), "/present"), "present");
+        EXPECT_FALSE(committedNodeExists(restarted.getStorageUnsafe(), "/missing/child"));
+        if (has_log_tail)
+        {
+            restarted.setLogStore(&changelog);
+            restarted.pre_commit(3, changelog.entry_at(3)->get_buf());
+            restarted.commit(3, changelog.entry_at(3)->get_buf());
+            EXPECT_EQ(committedNodeData(restarted.getStorageUnsafe(), "/present"), "tail");
+        }
+    }
+}
+
+TEST_P(CoordinationTestWithCompression, OrphanRemovalArchivesSameIndexDuplicates)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest latest_snapshots("./latest_snapshots");
+    ChangelogDirTest logs("./logs");
+    auto ctx = makeContextForOrphanRemoval(false, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 2, {"/present"}, {"/missing/child"});
+    const auto original_name = snapshotFilesForIdx("./snapshots", 2).at(0);
+    const auto * const duplicate_name = "snapshot_2_duplicate.bin";
+    fs::copy_file(fs::path("./snapshots") / original_name, fs::path("./snapshots") / duplicate_name);
+    fs::copy_file(fs::path("./snapshots") / original_name, fs::path("./latest_snapshots") / original_name);
+    ctx->setLatestSnapshotDisk(std::make_shared<DB::DiskLocal>("LatestSnapshotDisk", "./latest_snapshots"));
+
+    DB::SnapshotsQueue queue{1};
+    {
+        DB::KeeperStateMachine state_machine(nullptr, queue, ctx, nullptr);
+        state_machine.init();
+        ASSERT_FALSE(state_machine.findOrphanConflictInLogTail(3, 3).has_value());
+    }
+    EXPECT_TRUE(snapshotFilesForIdx("./snapshots", 2).empty());
+    EXPECT_EQ(snapshotFilesForIdx("./latest_snapshots", 2).size(), 1);
+    size_t backups = 0;
+    for (const auto & directory : {"./snapshots", "./latest_snapshots"})
+        for (const auto & entry : fs::directory_iterator(directory))
+            backups += entry.path().filename().string().starts_with("orphaned_");
+    EXPECT_EQ(backups, 3);
+
+    ctx->setRemoveOrphanedNodesOnStartup(false);
+    for (size_t i = 0; i < 2; ++i)
+    {
+        DB::KeeperStateMachine restarted(nullptr, queue, ctx, nullptr);
+        ASSERT_NO_THROW(restarted.init());
+        EXPECT_EQ(committedNodeData(restarted.getStorageUnsafe(), "/present"), "present");
+        EXPECT_FALSE(committedNodeExists(restarted.getStorageUnsafe(), "/missing/child"));
+    }
+}
+
+TEST_P(CoordinationTestWithCompression, OrphanRemovalRewriteFailurePreservesOriginal)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    for (const auto & [prefix, mode] : std::vector<std::pair<std::string, SnapshotDiskFailureMode>>{
+             {"snapshot_2_recovered_", SnapshotDiskFailureMode::SyncFile},
+             {"orphaned_", SnapshotDiskFailureMode::SyncFile},
+             {"snapshot_", SnapshotDiskFailureMode::RemoveFileOnce}})
+    {
+        SCOPED_TRACE(prefix);
+        ChangelogDirTest snapshots("./snapshots");
+        ChangelogDirTest logs("./logs");
+        auto ctx = makeContextForOrphanRemoval(false, this->enable_compression, "./snapshots", "./logs");
+        writeSnapshotWithOrphans(ctx, this->enable_compression, 2, {"/present"}, {"/missing/child"});
+        auto disk = std::make_shared<ThrowingSnapshotDisk>("SnapshotDisk", "./snapshots", prefix, mode);
+        ctx->setSnapshotDisk(disk);
+        DB::KeeperSnapshotManager manager(3, ctx, this->enable_compression);
+        auto original_bytes = manager.deserializeLatestSnapshotBufferFromDisk();
+
+        DB::SnapshotsQueue queue{1};
+        DB::KeeperStateMachine state_machine(nullptr, queue, ctx, nullptr);
+        state_machine.init();
+        EXPECT_THROW(state_machine.findOrphanConflictInLogTail(3, 3), std::runtime_error);
+        EXPECT_FALSE(state_machine.getRemovedOrphanSubtreeRoots().empty());
+        EXPECT_TRUE(nuraftBuffersEqual(original_bytes, manager.deserializeLatestSnapshotBufferFromDisk()));
+
+        disk->disarm();
+        ASSERT_FALSE(state_machine.findOrphanConflictInLogTail(3, 3).has_value());
+        ctx->setRemoveOrphanedNodesOnStartup(false);
+        DB::KeeperStateMachine restarted(nullptr, queue, ctx, nullptr);
+        ASSERT_NO_THROW(restarted.init());
+        EXPECT_EQ(committedNodeData(restarted.getStorageUnsafe(), "/present"), "present");
+    }
+}
+
+namespace
+{
+
+class RecoveryDirectorySyncFailureDisk : public DB::DiskLocal
+{
+public:
+    RecoveryDirectorySyncFailureDisk()
+        : DB::DiskLocal("SnapshotDisk", "./snapshots")
+    {
+    }
+
+    size_t fail_at = 0;
+    mutable size_t sync_calls = 0;
+
+    DB::SyncGuardPtr getDirectorySyncGuard(const String & path) const override
+    {
+        if (fail_at && ++sync_calls == fail_at)
+        {
+            /// Exercise the real sync error path without relying on a new test-only API.
+            return std::make_unique<DB::LocalDirectorySyncGuard>(std::numeric_limits<int>::max());
+        }
+        return DB::DiskLocal::getDirectorySyncGuard(path);
+    }
+};
+
+constexpr int interrupted_recovery_exit_code = 86;
+
+class InterruptRecoveryDisk : public DB::DiskLocal
+{
+public:
+    explicit InterruptRecoveryDisk(bool on_publication_)
+        : DB::DiskLocal("SnapshotDisk", "./snapshots")
+        , on_publication(on_publication_)
+    {
+    }
+
+    bool armed = false;
+
+    void removeFile(const String & path) override
+    {
+        DB::DiskLocal::removeFile(path);
+        interruptIfNeeded(path);
+    }
+
+    void moveFile(const String & from, const String & to) override
+    {
+        DB::DiskLocal::moveFile(from, to);
+        /// Object-storage metadata removal first moves the metadata to a random name.
+        interruptIfNeeded(from);
+    }
+
+private:
+    void interruptIfNeeded(const String & path) const
+    {
+        const bool publishing = path.starts_with("tmp_snapshot_") && path.contains("_recovered_");
+        const bool archiving = path.starts_with("snapshot_") && !path.contains("_recovered_");
+        if (armed && (on_publication ? publishing : archiving))
+            ::_exit(interrupted_recovery_exit_code);
+    }
+
+    bool on_publication;
+};
+
+void checkInterruptedOrphanRecovery(bool compression, bool object_storage, bool on_publication)
+{
+    SCOPE_EXIT({
+        fs::remove_all("./snapshots");
+        fs::remove_all("./snapshot_objects");
+        fs::remove_all("./logs");
+    });
+    const auto previous_death_test_style = ::testing::FLAGS_gtest_death_test_style;
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+    SCOPE_EXIT({ ::testing::FLAGS_gtest_death_test_style = previous_death_test_style; });
+
+    ASSERT_EXIT(
+        {
+            ChangelogDirTest snapshots("./snapshots");
+            ChangelogDirTest objects("./snapshot_objects");
+            ChangelogDirTest logs("./logs");
+            auto ctx = makeContextForOrphanRemoval(false, compression, "./snapshots", "./logs");
+            auto interrupt_disk = std::make_shared<InterruptRecoveryDisk>(on_publication);
+            if (object_storage)
+                ctx->setSnapshotDisk(createLocalObjectStorageDisk("./snapshots", "./snapshot_objects/", false, interrupt_disk).first);
+            else
+                ctx->setSnapshotDisk(interrupt_disk);
+            writeSnapshotWithOrphans(ctx, compression, 2, {"/present"}, {"/missing/child"});
+            DB::SnapshotsQueue queue{1};
+            DB::KeeperStateMachine state(nullptr, queue, ctx, nullptr);
+            state.init();
+            interrupt_disk->armed = true;
+            state.findOrphanConflictInLogTail(3, 3);
+            ::_exit(0);
+        },
+        ::testing::ExitedWithCode(interrupted_recovery_exit_code),
+        "");
+
+    auto ctx = makeContextForOrphanRemoval(false, compression, "./snapshots", "./logs");
+    DB::DiskPtr disk = ctx->getSnapshotDisk();
+    if (object_storage)
+        disk = createLocalObjectStorageDisk("./snapshots", "./snapshot_objects/").first;
+    SCOPE_EXIT({ disk->shutdown(); });
+    ctx->setSnapshotDisk(disk);
+    ctx->setRemoveOrphanedNodesOnStartup(false);
+    DB::SnapshotsQueue queue{1};
+    DB::KeeperStateMachine restarted(nullptr, queue, ctx, nullptr);
+    ASSERT_NO_THROW(restarted.init());
+    EXPECT_EQ(restarted.last_commit_index(), 2);
+    EXPECT_EQ(committedNodeData(restarted.getStorageUnsafe(), "/present"), "present");
+    EXPECT_FALSE(committedNodeExists(restarted.getStorageUnsafe(), "/missing/child"));
+}
+
+}
+
+TEST_P(CoordinationTestWithCompression, OrphanRemovalPropagatesDirectorySyncFailure)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    /// Marker creation, publication, backup creation, and original removal must each be durable.
+    for (size_t fail_at = 1; fail_at <= 4; ++fail_at)
+    {
+        SCOPED_TRACE(fail_at);
+        ChangelogDirTest snapshots("./snapshots");
+        ChangelogDirTest logs("./logs");
+        auto ctx = makeContextForOrphanRemoval(false, this->enable_compression, "./snapshots", "./logs");
+        auto disk = std::make_shared<RecoveryDirectorySyncFailureDisk>();
+        ctx->setSnapshotDisk(disk);
+        writeSnapshotWithOrphans(ctx, this->enable_compression, 2, {"/present"}, {"/missing/child"});
+        DB::SnapshotsQueue queue{1};
+        DB::KeeperStateMachine state(nullptr, queue, ctx, nullptr);
+        state.init();
+        disk->fail_at = fail_at;
+        EXPECT_THROW(state.findOrphanConflictInLogTail(3, 3), DB::Exception);
+        EXPECT_FALSE(state.getRemovedOrphanSubtreeRoots().empty());
+        disk->fail_at = 0;
+        ASSERT_FALSE(state.findOrphanConflictInLogTail(3, 3).has_value());
+        ctx->setRemoveOrphanedNodesOnStartup(false);
+        DB::KeeperStateMachine restarted(nullptr, queue, ctx, nullptr);
+        ASSERT_NO_THROW(restarted.init());
+        EXPECT_EQ(committedNodeData(restarted.getStorageUnsafe(), "/present"), "present");
+    }
+}
+
+TEST_P(CoordinationTestWithCompression, OrphanRemovalInterruptedLocalPublication)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+    checkInterruptedOrphanRecovery(this->enable_compression, false, true);
+}
+
+TEST_P(CoordinationTestWithCompression, OrphanRemovalInterruptedObjectPublication)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+    checkInterruptedOrphanRecovery(this->enable_compression, true, true);
+}
+
+TEST_P(CoordinationTestWithCompression, OrphanRemovalInterruptedLocalArchival)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+    checkInterruptedOrphanRecovery(this->enable_compression, false, false);
+}
+
+TEST_P(CoordinationTestWithCompression, OrphanRemovalInterruptedObjectArchival)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+    checkInterruptedOrphanRecovery(this->enable_compression, true, false);
+}
+
+TEST_P(CoordinationTestWithCompression, OrphanRemovalPrefersCompletedRecoveryGeneration)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+    auto ctx = makeContextForOrphanRemoval(false, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 2, {"/present"}, {"/missing/child"});
+    DB::KeeperSnapshotManager manager(3, ctx, this->enable_compression);
+    auto damaged = manager.deserializeLatestSnapshotBufferFromDisk();
+    auto storage = DB::KeeperStorage::create(500, "", ctx);
+    addNode(*storage, "/present", "recovered");
+    TSA_SUPPRESS_WARNING_FOR_WRITE(storage->zxid) = 2;
+    DB::KeeperStorageSnapshot snapshot(storage.get(), 2, nullptr, ctx->getWriteSnapshotVersion());
+    auto repaired = manager.serializeSnapshotToBuffer(snapshot);
+    auto disk = ctx->getSnapshotDisk();
+
+    /// An older completed recovery may itself have needed repair. A newer incomplete write must
+    /// not hide the last completed generation, regardless of directory iteration order.
+    writeSnapshotBufferToFile(disk, "snapshot_2_recovered_1_aaaaaaaa.bin", damaged);
+    writeSnapshotBufferToFile(disk, "snapshot_2_recovered_2_bbbbbbbb.bin", repaired);
+    writeSnapshotBufferToFile(disk, "snapshot_2_recovered_3_cccccccc.bin", damaged);
+    disk->writeFile("tmp_snapshot_2_recovered_3_cccccccc.bin")->finalize();
+
+    ctx->setRemoveOrphanedNodesOnStartup(false);
+    DB::SnapshotsQueue queue{1};
+    DB::KeeperStateMachine state(nullptr, queue, ctx, nullptr);
+    ASSERT_NO_THROW(state.init());
+    EXPECT_EQ(state.last_commit_index(), 2);
+    EXPECT_EQ(committedNodeData(state.getStorageUnsafe(), "/present"), "recovered");
+    EXPECT_FALSE(committedNodeExists(state.getStorageUnsafe(), "/missing/child"));
+    EXPECT_FALSE(disk->existsFile("snapshot_2_recovered_3_cccccccc.bin"));
+    EXPECT_EQ(snapshotFilesForIdx("./snapshots", 2).size(), 1);
+}
+
+/// The recorded anchor must be the *absent parent* (`/missing`), not the orphaned node itself
+/// (`/missing/child`): the absent path is what bounds the region where our tree differs from the tree
+/// the log was written against.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalRecordsDamageRootsFromStateMachineInit)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 2, {"/present"}, {"/missing/child", "/missing/child/grandchild"});
+
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+
+    EXPECT_EQ(state_machine->last_commit_index(), 2);
+    EXPECT_TRUE(committedNodeExists(state_machine->getStorageUnsafe(), "/present"));
+    EXPECT_FALSE(committedNodeExists(state_machine->getStorageUnsafe(), "/missing/child"));
+    EXPECT_FALSE(committedNodeExists(state_machine->getStorageUnsafe(), "/missing/child/grandchild"));
+
+    EXPECT_EQ(state_machine->getRemovedOrphanSubtreeRoots(), std::vector<std::string>{"/missing"});
+}
+
+/// The blocker this guard exists for: a committed entry above the snapshot updates a pruned node.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalRefusesConflictingLogTail)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 2, {"/present"}, {"/missing/child"});
+
+    DB::KeeperSnapshotManager manager(3, ctx, this->enable_compression);
+    auto original_bytes = manager.deserializeLatestSnapshotBufferFromDisk();
+
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    /// Entries 1..2 are covered by the snapshot; 3..4 are the tail that startup would replay.
+    for (size_t i = 1; i <= 2; ++i)
+        appendEntry(changelog, makeCreateEntry(*state_machine, fmt::format("/covered{}", i), "covered"));
+    appendEntry(changelog, makeSetEntry(*state_machine, "/missing/child", "tail_update"));
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/unrelated", "unrelated"));
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    auto conflict = state_machine->findOrphanConflictInLogTail(state_machine->last_commit_index() + 1, changelog.next_slot());
+    ASSERT_TRUE(conflict.has_value());
+    EXPECT_EQ(conflict->log_idx, 3);
+    EXPECT_EQ(conflict->op_num, Coordination::opNumToString(Coordination::OpNum::Set));
+    EXPECT_EQ(conflict->request_path, "/missing/child");
+    EXPECT_EQ(conflict->subtree_root, "/missing");
+
+    /// The roots are kept on conflict so the caller can report them; only a clean tail clears them.
+    EXPECT_FALSE(state_machine->getRemovedOrphanSubtreeRoots().empty());
+    EXPECT_TRUE(nuraftBuffersEqual(original_bytes, manager.deserializeLatestSnapshotBufferFromDisk()));
+    EXPECT_FALSE(fs::exists(fs::path("./snapshots") / ("orphaned_" + manager.getLatestSnapshotInfo()->path)));
+}
+
+/// A tail entry below a pruned node: its parent is gone, so `Create` would return `ZNONODE`.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalRefusesLogTailTouchingRemovedSubtreeDescendant)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/present"}, {"/missing/child"});
+
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/missing/child/new", "below_pruned"));
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    auto conflict = state_machine->findOrphanConflictInLogTail(state_machine->last_commit_index() + 1, changelog.next_slot());
+    ASSERT_TRUE(conflict.has_value());
+    EXPECT_EQ(conflict->log_idx, 2);
+    EXPECT_EQ(conflict->request_path, "/missing/child/new");
+    EXPECT_EQ(conflict->subtree_root, "/missing");
+}
+
+/// A tail entry on the absent parent that anchors the pruned region -- the recorded damage root
+/// itself -- must conflict too: recreating it succeeds against our repaired tree but was
+/// `ZNODEEXISTS` against the real one.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalRefusesLogTailTouchingAncestorOfRemovedSubtree)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/present"}, {"/missing/child"});
+
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/missing", "recreate_absent_parent"));
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    auto conflict = state_machine->findOrphanConflictInLogTail(state_machine->last_commit_index() + 1, changelog.next_slot());
+    ASSERT_TRUE(conflict.has_value());
+    EXPECT_EQ(conflict->log_idx, 2);
+    EXPECT_EQ(conflict->request_path, "/missing");
+    EXPECT_EQ(conflict->subtree_root, "/missing");
+}
+
+/// A sibling create under the direct parent of a removed subtree root must be refused. The create's
+/// own path lies outside the removed region, but it bumps the parent's stats (`numChildren`,
+/// `cversion`, `pzxid`), which were repaired to exclude the lost children -- replaying it would
+/// silently update them from a different base than on replicas that still hold the lost children.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalRefusesSiblingCreateUnderRepairedParent)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/a"}, {"/a/missing/child"});
+
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
+    /// `/a/new` itself does not lie on the `/a/missing` root-to-leaf chain; only the parent-stats
+    /// check can catch it.
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/a/new", "sibling_create"));
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    auto conflict = state_machine->findOrphanConflictInLogTail(state_machine->last_commit_index() + 1, changelog.next_slot());
+    ASSERT_TRUE(conflict.has_value());
+    EXPECT_EQ(conflict->log_idx, 2);
+    EXPECT_EQ(conflict->op_num, Coordination::opNumToString(Coordination::OpNum::Create));
+    EXPECT_EQ(conflict->request_path, "/a");
+    EXPECT_EQ(conflict->subtree_root, "/a/missing");
+}
+
+/// Same for a sibling remove: it decrements the repaired parent's stats.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalRefusesSiblingRemoveUnderRepairedParent)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/a", "/a/sibling"}, {"/a/missing/child"});
+
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
+    auto remove_request = std::make_shared<Coordination::ZooKeeperRemoveRequest>();
+    remove_request->path = "/a/sibling";
+    remove_request->version = -1;
+    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), remove_request));
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    auto conflict = state_machine->findOrphanConflictInLogTail(state_machine->last_commit_index() + 1, changelog.next_slot());
+    ASSERT_TRUE(conflict.has_value());
+    EXPECT_EQ(conflict->log_idx, 2);
+    EXPECT_EQ(conflict->op_num, Coordination::opNumToString(Coordination::OpNum::Remove));
+    EXPECT_EQ(conflict->request_path, "/a");
+    EXPECT_EQ(conflict->subtree_root, "/a/missing");
+}
+
+/// Removing a subtree changes only the removed nodes themselves and the stats of the removed root's
+/// *direct* parent. An ancestor further up the chain keeps exactly the data, version and children set
+/// it has on a replica that never lost anything, so an entry that observes only such a node -- a
+/// `Set` on it, or a create of a new child of it -- replays identically and must not block recovery.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalAllowsHigherAncestorEntriesInLogTail)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    /// The removed subtree root is the absent parent `/a/b/missing`, so the only repaired stats are
+    /// those of `/a/b`. `/a` is a strict ancestor two levels up and is untouched.
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/a", "/a/b"}, {"/a/b/missing/child"});
+
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    /// The snapshot covers index 1, so the verified and replayed tail starts at index 2.
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
+    appendEntry(changelog, makeSetEntry(*state_machine, "/a", "ancestor_update"));
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/a/x", "ancestor_child"));
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    const auto tail_start = state_machine->last_commit_index() + 1;
+    EXPECT_FALSE(state_machine->findOrphanConflictInLogTail(tail_start, changelog.next_slot()).has_value());
+
+    for (uint64_t i = tail_start; i < changelog.next_slot(); ++i)
+    {
+        state_machine->pre_commit(i, changelog.entry_at(i)->get_buf());
+        state_machine->commit(i, changelog.entry_at(i)->get_buf());
+    }
+
+    EXPECT_EQ(committedNodeData(state_machine->getStorageUnsafe(), "/a"), "ancestor_update");
+    EXPECT_TRUE(committedNodeExists(state_machine->getStorageUnsafe(), "/a/x"));
+    EXPECT_FALSE(committedNodeExists(state_machine->getStorageUnsafe(), "/a/b/missing/child"));
+}
+
+/// The opposite direction of the same rule: a request that walks the *whole* subtree below its path
+/// does observe descendants that were pruned, so it conflicts however far up the chain it sits.
+/// `RemoveRecursive` deletes every descendant and compares their number with `remove_nodes_limit`,
+/// so replaying it against the repaired tree can succeed where it returned `ZNOTEMPTY` before.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalRefusesRecursiveRemoveOfHigherAncestorInLogTail)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/a", "/a/b"}, {"/a/b/missing/child"});
+
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
+    auto remove_recursive = std::make_shared<Coordination::ZooKeeperRemoveRecursiveRequest>();
+    remove_recursive->path = "/a";
+    remove_recursive->remove_nodes_limit = 100;
+    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), remove_recursive));
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    auto conflict = state_machine->findOrphanConflictInLogTail(state_machine->last_commit_index() + 1, changelog.next_slot());
+    ASSERT_TRUE(conflict.has_value());
+    EXPECT_EQ(conflict->log_idx, 2);
+    EXPECT_EQ(conflict->op_num, Coordination::opNumToString(Coordination::OpNum::RemoveRecursive));
+    EXPECT_EQ(conflict->request_path, "/a");
+    EXPECT_EQ(conflict->subtree_root, "/a/b/missing");
+}
+
+/// Some request forms are rejected by their handlers before the tree is consulted, identically on every
+/// replica: `RemoveRecursive` of `/` or of the internal Keeper path returns `ZBADARGUMENTS`, and so does
+/// a recursive `ListWithOptions` with a watch. They must not block recovery even though their paths are
+/// ancestors of the removed subtree; a valid recursive `ListWithOptions` of the same path still does.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalAllowsRejectedRecursiveRequestsInLogTail)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/a"}, {"/a/missing/child"});
+
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    auto make_remove_recursive = [](const std::string & path)
+    {
+        auto request = std::make_shared<Coordination::ZooKeeperRemoveRecursiveRequest>();
+        request->path = path;
+        request->remove_nodes_limit = 100;
+        return request;
+    };
+    auto make_recursive_list = [](const std::string & path, bool has_watch)
+    {
+        auto request = std::make_shared<Coordination::ZooKeeperListWithOptionsRequest>();
+        request->path = path;
+        request->has_watch = has_watch;
+        request->options.recursive = true;
+        return request;
+    };
+
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
+    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), make_remove_recursive("/")));
+    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), make_remove_recursive(DB::keeper_system_path)));
+    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), make_recursive_list("/", /*has_watch=*/ true)));
+    /// Control: the same recursive listing without a watch is valid and walks the pruned subtree.
+    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), make_recursive_list("/", /*has_watch=*/ false)));
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    auto conflict = state_machine->findOrphanConflictInLogTail(state_machine->last_commit_index() + 1, changelog.next_slot());
+    ASSERT_TRUE(conflict.has_value());
+    EXPECT_EQ(conflict->log_idx, 5);
+    EXPECT_EQ(conflict->op_num, Coordination::opNumToString(Coordination::OpNum::ListWithOptions));
+    EXPECT_EQ(conflict->request_path, "/");
+    EXPECT_EQ(conflict->subtree_root, "/a/missing");
+}
+
+/// `Close` carries no path, but the storage removes every ephemeral node the session owns and updates
+/// their parents' stats. When one of those ephemerals was pruned from the snapshot, other replicas
+/// still remove it on `Close` while we have nothing to remove -- the tail must be refused.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalRefusesCloseOfSessionOwningRemovedEphemeral)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    static constexpr int64_t session_id = 42;
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(
+        ctx, this->enable_compression, 1, {"/present"}, {}, /*present_ephemeral_nodes=*/ {}, {{"/missing/ephemeral", session_id}});
+
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    EXPECT_FALSE(committedNodeExists(state_machine->getStorageUnsafe(), "/missing/ephemeral"));
+    EXPECT_EQ(state_machine->getRemovedOrphanSubtreeRoots(), std::vector<std::string>{"/missing"});
+    EXPECT_EQ(state_machine->getRemovedOrphanEphemeralSessions(), std::vector<int64_t>{session_id});
+
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
+    appendEntry(changelog, makeCloseEntry(*state_machine, session_id));
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    auto conflict = state_machine->findOrphanConflictInLogTail(state_machine->last_commit_index() + 1, changelog.next_slot());
+    ASSERT_TRUE(conflict.has_value());
+    EXPECT_EQ(conflict->log_idx, 2);
+    EXPECT_EQ(conflict->op_num, Coordination::opNumToString(Coordination::OpNum::Close));
+    EXPECT_TRUE(conflict->request_path.empty());
+    EXPECT_TRUE(conflict->subtree_root.empty());
+    EXPECT_NE(conflict->reason.find("42"), std::string::npos);
+}
+
+/// A surviving ephemeral directly under the parent of a removed subtree root: `Close` decrements that
+/// parent's repaired `numChildren`, i.e. from a different base than on the other replicas -- the same
+/// divergence as a sibling `Remove` in the tail.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalRefusesCloseOfSessionOwningEphemeralUnderRepairedParent)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    static constexpr int64_t session_id = 7;
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/a"}, {"/a/missing/child"}, {{"/a/ephemeral", session_id}});
+
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    /// The ephemeral itself survived and is tracked; no session lost an ephemeral to the cleanup.
+    EXPECT_TRUE(committedNodeExists(state_machine->getStorageUnsafe(), "/a/ephemeral"));
+    EXPECT_TRUE(state_machine->getStorageUnsafe().committed_ephemerals.contains(session_id));
+    EXPECT_TRUE(state_machine->getRemovedOrphanEphemeralSessions().empty());
+
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
+    appendEntry(changelog, makeCloseEntry(*state_machine, session_id));
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    auto conflict = state_machine->findOrphanConflictInLogTail(state_machine->last_commit_index() + 1, changelog.next_slot());
+    ASSERT_TRUE(conflict.has_value());
+    EXPECT_EQ(conflict->log_idx, 2);
+    EXPECT_EQ(conflict->op_num, Coordination::opNumToString(Coordination::OpNum::Close));
+    EXPECT_EQ(conflict->request_path, "/a/ephemeral");
+    EXPECT_EQ(conflict->subtree_root, "/a/missing");
+}
+
+/// Positive control: a `Close` whose ephemerals are nowhere near the damage, and a `Close` of a session
+/// without ephemerals, replay identically everywhere and must not block recovery.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalAllowsCloseOfUnaffectedSessionsInLogTail)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    static constexpr int64_t session_with_ephemeral = 9;
+    static constexpr int64_t session_without_ephemerals = 1234;
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(
+        ctx, this->enable_compression, 1, {"/present", "/b"}, {"/present/missing/child"}, {{"/b/ephemeral", session_with_ephemeral}});
+
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    ASSERT_FALSE(state_machine->getRemovedOrphanSubtreeRoots().empty());
+
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
+    appendEntry(changelog, makeCloseEntry(*state_machine, session_with_ephemeral));
+    appendEntry(changelog, makeCloseEntry(*state_machine, session_without_ephemerals));
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    EXPECT_FALSE(state_machine->findOrphanConflictInLogTail(state_machine->last_commit_index() + 1, changelog.next_slot()).has_value());
+    /// A clean tail consumes both startup tokens.
+    EXPECT_TRUE(state_machine->getRemovedOrphanSubtreeRoots().empty());
+    EXPECT_TRUE(state_machine->getRemovedOrphanEphemeralSessions().empty());
+}
+
+/// `ZooKeeperMultiRequest::getPath()` returns an empty string, so sub-requests must be walked.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalDetectsConflictInsideMultiRequest)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/present"}, {"/missing/child"});
+
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
+
+    Coordination::Requests sub_requests;
+    auto check_request = std::make_shared<Coordination::ZooKeeperCheckRequest>();
+    check_request->path = "/present";
+    sub_requests.push_back(check_request);
+    auto set_request = std::make_shared<Coordination::ZooKeeperSetRequest>();
+    set_request->path = "/missing/child";
+    set_request->data = "tail_update";
+    set_request->version = -1;
+    sub_requests.push_back(set_request);
+    auto multi_request = std::make_shared<Coordination::ZooKeeperMultiRequest>(sub_requests, Coordination::ACLs{});
+    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), multi_request));
+
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    auto conflict = state_machine->findOrphanConflictInLogTail(state_machine->last_commit_index() + 1, changelog.next_slot());
+    ASSERT_TRUE(conflict.has_value());
+    EXPECT_EQ(conflict->log_idx, 2);
+    EXPECT_EQ(conflict->request_path, "/missing/child");
+    EXPECT_EQ(conflict->subtree_root, "/missing");
+}
+
+/// Fail closed: an entry we cannot parse cannot be proven safe, so it is reported as a conflict.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalRefusesUnparseableTailEntry)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/present"}, {"/missing/child"});
+
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
+    /// Not a serialized Keeper request at all.
+    appendEntry(changelog, getLogEntry("this is not a keeper request", 0));
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    auto conflict = state_machine->findOrphanConflictInLogTail(state_machine->last_commit_index() + 1, changelog.next_slot());
+    ASSERT_TRUE(conflict.has_value());
+    EXPECT_EQ(conflict->log_idx, 2);
+    EXPECT_TRUE(conflict->subtree_root.empty());
+}
+
+/// A tail that avoids the damaged region must still start, and must replay correctly afterwards --
+/// otherwise the guard would make the recovery feature useless.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalAllowsBenignLogTailAndReplaysIt)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    /// The damage is deliberately *not* directly under "/": a create/remove under the direct parent
+    /// of a removed subtree root mutates that parent's repaired stats and rightly conflicts, so a
+    /// tail with top-level creates is only benign when the damaged region lies deeper in the tree.
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/present", "/stable"}, {"/present/missing/child"});
+
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/other", "other_create"));
+    appendEntry(changelog, makeSetEntry(*state_machine, "/stable", "stable_update"));
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    const auto tail_start = state_machine->last_commit_index() + 1;
+    EXPECT_FALSE(state_machine->findOrphanConflictInLogTail(tail_start, changelog.next_slot()).has_value());
+    /// A clean tail consumes the token, so nothing is left to re-check.
+    EXPECT_TRUE(state_machine->getRemovedOrphanSubtreeRoots().empty());
+
+    /// Now actually replay the tail the way startup does.
+    for (uint64_t i = tail_start; i < changelog.next_slot(); ++i)
+    {
+        state_machine->pre_commit(i, changelog.entry_at(i)->get_buf());
+        state_machine->commit(i, changelog.entry_at(i)->get_buf());
+    }
+
+    EXPECT_TRUE(committedNodeExists(state_machine->getStorageUnsafe(), "/other"));
+    EXPECT_EQ(committedNodeData(state_machine->getStorageUnsafe(), "/stable"), "stable_update");
+    EXPECT_FALSE(committedNodeExists(state_machine->getStorageUnsafe(), "/present/missing/child"));
+}
+
+/// `Sync` carries a path but never reads or writes the tree, so it must not conflict -- otherwise a
+/// harmless `Sync("/")` in the tail would block recovery, because "/" is an ancestor of every root.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalIgnoresSyncInLogTail)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/present"}, {"/missing/child"});
+
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
+    auto sync_request = std::make_shared<Coordination::ZooKeeperSyncRequest>();
+    sync_request->path = "/";
+    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), sync_request));
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    EXPECT_FALSE(
+        state_machine->findOrphanConflictInLogTail(state_machine->last_commit_index() + 1, changelog.next_slot()).has_value());
+}
+
+/// A sequential create touches `<path><seq_num>`, not the path it carries, so comparing only the
+/// serialized path would miss a removed subtree whose root is itself a sequence-numbered node.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalRefusesSequentialCreateTouchingRemovedSubtree)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    /// `/p` survives; `/p/n0000000001` is absent, so it becomes the damaged root.
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/p"}, {"/p/n0000000001/child"});
+
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    ASSERT_EQ(state_machine->getRemovedOrphanSubtreeRoots(), std::vector<std::string>{"/p/n0000000001"});
+
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
+    /// The serialized path `/p/n` is unrelated to `/p/n0000000001` under plain path matching.
+    auto sequential_create = std::make_shared<Coordination::ZooKeeperCreateRequest>();
+    sequential_create->path = "/p/n";
+    sequential_create->data = "sequential";
+    sequential_create->is_sequential = true;
+    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), sequential_create));
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    auto conflict = state_machine->findOrphanConflictInLogTail(state_machine->last_commit_index() + 1, changelog.next_slot());
+    ASSERT_TRUE(conflict.has_value());
+    EXPECT_EQ(conflict->log_idx, 2);
+    EXPECT_EQ(conflict->subtree_root, "/p/n0000000001");
+}
+
+/// `SetWatches` carries lists of paths rather than a single one, and `KeeperStorage::setWatches`
+/// resolves them against the tree (a missing node answers an immediate `DELETED` event instead of
+/// re-registering the watch), so a watch on a pruned path replays differently after orphan cleanup.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalRefusesSetWatchesTouchingRemovedSubtree)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/present"}, {"/missing/child"});
+
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
+    /// The pruned path hides in `exist_watches`, not in `data_watches[0]`, so anything that only
+    /// looks at `getPath()` would miss it.
+    auto set_watches = std::make_shared<Coordination::ZooKeeperSetWatchesRequest>();
+    set_watches->data_watches = {"/present"};
+    set_watches->exist_watches = {"/missing/child"};
+    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), set_watches));
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    auto conflict = state_machine->findOrphanConflictInLogTail(state_machine->last_commit_index() + 1, changelog.next_slot());
+    ASSERT_TRUE(conflict.has_value());
+    EXPECT_EQ(conflict->log_idx, 2);
+    EXPECT_EQ(conflict->op_num, Coordination::opNumToString(Coordination::OpNum::SetWatch));
+    EXPECT_EQ(conflict->request_path, "/missing/child");
+    EXPECT_EQ(conflict->subtree_root, "/missing");
+}
+
+/// The persistent (and persistent recursive) watch lists that only `SetWatches2` carries are registered
+/// without consulting the tree -- exactly like `AddWatch` -- and no watch map is restored from a
+/// snapshot, so a client restoring such watches on a pruned path after a reconnect replays identically
+/// and must not block recovery.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalAllowsSetWatches2PersistentWatchesOnRemovedSubtreeInLogTail)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/present"}, {"/missing/child"});
+
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    /// The snapshot covers index 1, so the verified and replayed tail starts at index 2.
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
+    auto set_watches = std::make_shared<Coordination::ZooKeeperSetWatches2Request>();
+    set_watches->data_watches = {"/present"};
+    set_watches->persistent_watches = {"/missing/child"};
+    set_watches->persistent_recursive_watches = {"/missing"};
+    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), set_watches));
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    ASSERT_FALSE(state_machine->getRemovedOrphanSubtreeRoots().empty());
+    EXPECT_FALSE(
+        state_machine->findOrphanConflictInLogTail(state_machine->last_commit_index() + 1, changelog.next_slot()).has_value());
+}
+
+/// A `SetWatches` that names only surviving paths -- including one with empty lists -- must not
+/// block recovery.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalAllowsBenignSetWatchesInLogTail)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/present"}, {"/missing/child"});
+
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
+    auto benign_watches = std::make_shared<Coordination::ZooKeeperSetWatchesRequest>();
+    benign_watches->data_watches = {"/present"};
+    benign_watches->child_watches = {"/present"};
+    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), benign_watches));
+    /// All lists empty: nothing to check, and in particular no `data_watches[0]` to trip over.
+    auto empty_watches = std::make_shared<Coordination::ZooKeeperSetWatchesRequest>();
+    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), empty_watches));
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    EXPECT_FALSE(
+        state_machine->findOrphanConflictInLogTail(state_machine->last_commit_index() + 1, changelog.next_slot()).has_value());
+}
+
+/// `SetWatches` resolves a data watch against the node's existence and `mzxid`, a child watch against
+/// its existence and `pzxid`, and an exist watch against its existence only. Orphan cleanup repairs just
+/// the children set and `numChildren` of the removed root's direct parent, so watches restored on that
+/// parent replay identically and must not block recovery.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalAllowsSetWatchesOnRepairedParentInLogTail)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    /// The removed subtree root is the absent `/a/missing`, so `/a` is its repaired direct parent.
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/a"}, {"/a/missing/child"});
+
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    /// The snapshot covers index 1, so the verified and replayed tail starts at index 2.
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
+    auto set_watches = std::make_shared<Coordination::ZooKeeperSetWatchesRequest>();
+    set_watches->data_watches = {"/a"};
+    set_watches->child_watches = {"/a"};
+    set_watches->exist_watches = {"/a"};
+    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), set_watches));
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    ASSERT_FALSE(state_machine->getRemovedOrphanSubtreeRoots().empty());
+    EXPECT_FALSE(
+        state_machine->findOrphanConflictInLogTail(state_machine->last_commit_index() + 1, changelog.next_slot()).has_value());
+}
+
+/// `Check` and `CheckNotExists` compare only the node's existence, ACL and `version`, none of which
+/// orphan cleanup changes on the repaired direct parent of a removed subtree, so a tail such as
+/// `Multi{Check("/a"), Create("/other")}` replays identically and must not block recovery.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalAllowsCheckOfRepairedParentInLogTail)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/a"}, {"/a/missing/child"});
+
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    /// The snapshot covers index 1, so the verified and replayed tail starts at index 2.
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
+    Coordination::Requests sub_requests;
+    auto check_request = std::make_shared<Coordination::ZooKeeperCheckRequest>();
+    check_request->path = "/a";
+    sub_requests.push_back(check_request);
+    auto check_not_exists_request = std::make_shared<Coordination::ZooKeeperCheckRequest>();
+    check_not_exists_request->path = "/a";
+    check_not_exists_request->not_exists = true;
+    check_not_exists_request->version = 12345;
+    sub_requests.push_back(check_not_exists_request);
+    auto create_request = std::make_shared<Coordination::ZooKeeperCreateRequest>();
+    create_request->path = "/other";
+    create_request->data = "created_after_check";
+    sub_requests.push_back(create_request);
+    auto multi_request = std::make_shared<Coordination::ZooKeeperMultiRequest>(sub_requests, Coordination::ACLs{});
+    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), multi_request));
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    const auto tail_start = state_machine->last_commit_index() + 1;
+    EXPECT_FALSE(state_machine->findOrphanConflictInLogTail(tail_start, changelog.next_slot()).has_value());
+
+    for (uint64_t i = tail_start; i < changelog.next_slot(); ++i)
+    {
+        state_machine->pre_commit(i, changelog.entry_at(i)->get_buf());
+        state_machine->commit(i, changelog.entry_at(i)->get_buf());
+    }
+
+    EXPECT_EQ(committedNodeData(state_machine->getStorageUnsafe(), "/other"), "created_after_check");
+}
+
+/// The narrowing applies only outside the removed region: a `Check` of a removed node resolves
+/// differently (`ZNONODE`) and is still refused.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalRefusesCheckOfRemovedNodeInLogTail)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/a"}, {"/a/missing/child"});
+
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    /// The snapshot covers index 1, so the verified and replayed tail starts at index 2.
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
+    auto check_request = std::make_shared<Coordination::ZooKeeperCheckRequest>();
+    check_request->path = "/a/missing/child";
+    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), check_request));
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    auto conflict = state_machine->findOrphanConflictInLogTail(state_machine->last_commit_index() + 1, changelog.next_slot());
+    ASSERT_TRUE(conflict.has_value());
+    EXPECT_EQ(conflict->log_idx, 2);
+    EXPECT_EQ(conflict->op_num, Coordination::opNumToString(Coordination::OpNum::Check));
+    EXPECT_EQ(conflict->request_path, "/a/missing/child");
+    EXPECT_EQ(conflict->subtree_root, "/a/missing");
+}
+
+/// A `CheckStat` that compares only fields orphan cleanup never changes (here `version`) replays
+/// identically on the repaired direct parent of a removed subtree, so it must not block recovery.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalAllowsVersionOnlyCheckStatOfRepairedParentInLogTail)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/a"}, {"/a/missing/child"});
+
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    /// The snapshot covers index 1, so the verified and replayed tail starts at index 2.
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
+    Coordination::Requests sub_requests;
+    auto check_stat_request = std::make_shared<Coordination::ZooKeeperCheckRequest>();
+    check_stat_request->path = "/a";
+    /// Only `version` is compared; `numChildren` and `cversion` are left at `-1`.
+    Coordination::Stat stat_to_check{-1, -1, -1, -1, 0, -1, -1, -1, -1, -1, -1};
+    check_stat_request->stat_to_check = stat_to_check;
+    sub_requests.push_back(check_stat_request);
+    auto create_request = std::make_shared<Coordination::ZooKeeperCreateRequest>();
+    create_request->path = "/other";
+    create_request->data = "created_after_check_stat";
+    sub_requests.push_back(create_request);
+    auto multi_request = std::make_shared<Coordination::ZooKeeperMultiRequest>(sub_requests, Coordination::ACLs{});
+    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), multi_request));
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    const auto tail_start = state_machine->last_commit_index() + 1;
+    EXPECT_FALSE(state_machine->findOrphanConflictInLogTail(tail_start, changelog.next_slot()).has_value());
+
+    for (uint64_t i = tail_start; i < changelog.next_slot(); ++i)
+    {
+        state_machine->pre_commit(i, changelog.entry_at(i)->get_buf());
+        state_machine->commit(i, changelog.entry_at(i)->get_buf());
+    }
+
+    EXPECT_EQ(committedNodeData(state_machine->getStorageUnsafe(), "/other"), "created_after_check_stat");
+}
+
+/// A `CheckStat` that compares `numChildren` or `cversion` observes exactly what differs on the
+/// repaired direct parent, so unlike `Check` it is still refused there.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalRefusesCheckStatOfRepairedParentInLogTail)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/a"}, {"/a/missing/child"});
+
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    /// The snapshot covers index 1, so the verified and replayed tail starts at index 2.
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
+    auto check_stat_request = std::make_shared<Coordination::ZooKeeperCheckRequest>();
+    check_stat_request->path = "/a";
+    Coordination::Stat stat_to_check{-1, -1, -1, -1, -1, -1, -1, -1, -1, 1, -1};
+    check_stat_request->stat_to_check = stat_to_check;
+    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), check_stat_request));
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    auto conflict = state_machine->findOrphanConflictInLogTail(state_machine->last_commit_index() + 1, changelog.next_slot());
+    ASSERT_TRUE(conflict.has_value());
+    EXPECT_EQ(conflict->log_idx, 2);
+    EXPECT_EQ(conflict->op_num, Coordination::opNumToString(Coordination::OpNum::CheckStat));
+    EXPECT_EQ(conflict->request_path, "/a");
+    EXPECT_EQ(conflict->subtree_root, "/a/missing");
+}
+
+/// `Set` and `SetACL` on the repaired direct parent of a removed subtree check and rewrite only the
+/// parent's own data, ACL and versions (plus the grandparent's `cversion` for `Set`), never its children
+/// or `numChildren`, so they replay identically and must not block recovery.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalAllowsSetAndSetACLOfRepairedParentInLogTail)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/a"}, {"/a/missing/child"});
+
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    /// The snapshot covers index 1, so the verified and replayed tail starts at index 2.
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
+    appendEntry(changelog, makeSetEntry(*state_machine, "/a", "parent_update"));
+    auto set_acl_request = std::make_shared<Coordination::ZooKeeperSetACLRequest>();
+    set_acl_request->path = "/a";
+    set_acl_request->acls = {{.permissions = 31, .scheme = "world", .id = "anyone"}};
+    set_acl_request->version = -1;
+    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), set_acl_request));
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    const auto tail_start = state_machine->last_commit_index() + 1;
+    EXPECT_FALSE(state_machine->findOrphanConflictInLogTail(tail_start, changelog.next_slot()).has_value());
+    EXPECT_TRUE(state_machine->getRemovedOrphanSubtreeRoots().empty());
+
+    for (uint64_t i = tail_start; i < changelog.next_slot(); ++i)
+    {
+        state_machine->pre_commit(i, changelog.entry_at(i)->get_buf());
+        state_machine->commit(i, changelog.entry_at(i)->get_buf());
+    }
+
+    EXPECT_EQ(committedNodeData(state_machine->getStorageUnsafe(), "/a"), "parent_update");
+    EXPECT_FALSE(committedNodeExists(state_machine->getStorageUnsafe(), "/a/missing/child"));
+}
+
+/// `AddWatch`, `CheckWatch` and `RemoveWatch` only touch the watch maps, which are not part of the
+/// snapshot and are never resolved against the tree, so replaying them after orphan cleanup ends in
+/// the same state as on an unrepaired replica -- even when they name a pruned path. They must not
+/// block recovery.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalAllowsPersistentWatchOpsOnRemovedSubtreeInLogTail)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/present"}, {"/missing/child"});
+
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
+
+    auto add_watch = std::make_shared<Coordination::ZooKeeperAddWatchRequest>();
+    add_watch->path = "/missing/child";
+    add_watch->mode = Coordination::AddWatchRequest::AddWatchMode::PERSISTENT_RECURSIVE;
+    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), add_watch));
+
+    auto check_watch = std::make_shared<Coordination::ZooKeeperCheckWatchRequest>();
+    check_watch->path = "/missing/child";
+    check_watch->type = Coordination::CheckWatchRequest::CheckWatchType::ANY;
+    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), check_watch));
+
+    auto remove_watch = std::make_shared<Coordination::ZooKeeperRemoveWatchRequest>();
+    remove_watch->path = "/missing";
+    remove_watch->type = Coordination::RemoveWatchRequest::WatchType::ANY;
+    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), remove_watch));
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    ASSERT_FALSE(state_machine->getRemovedOrphanSubtreeRoots().empty());
+    EXPECT_FALSE(
+        state_machine->findOrphanConflictInLogTail(state_machine->last_commit_index() + 1, changelog.next_slot()).has_value());
+    /// A clean scan is final: the verifier forgets the removed roots once the tail is known to be safe.
+    EXPECT_TRUE(state_machine->getRemovedOrphanSubtreeRoots().empty());
+}
+
+/// The watch entries are skipped, not the scan: a request that does read the tree right after them is
+/// still reported, at its own index.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalStillRefusesTreeReadAfterPersistentWatchOpsInLogTail)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/present"}, {"/missing/child"});
+
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
+
+    auto add_watch = std::make_shared<Coordination::ZooKeeperAddWatchRequest>();
+    add_watch->path = "/missing/child";
+    add_watch->mode = Coordination::AddWatchRequest::AddWatchMode::PERSISTENT;
+    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), add_watch));
+
+    auto get = std::make_shared<Coordination::ZooKeeperGetRequest>();
+    get->path = "/missing/child";
+    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), get));
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    auto conflict = state_machine->findOrphanConflictInLogTail(state_machine->last_commit_index() + 1, changelog.next_slot());
+    ASSERT_TRUE(conflict.has_value());
+    EXPECT_EQ(conflict->log_idx, 3);
+    EXPECT_EQ(conflict->op_num, Coordination::opNumToString(Coordination::OpNum::Get));
+    EXPECT_EQ(conflict->request_path, "/missing/child");
+    EXPECT_EQ(conflict->subtree_root, "/missing");
+}
+
+/// When the snapshot covers the whole log there is nothing to replay, so nothing can observe the
+/// pruned paths.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalNoConflictWhenNoLogTail)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 2, {"/present"}, {"/missing/child"});
+
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    for (size_t i = 1; i <= 2; ++i)
+        appendEntry(changelog, makeCreateEntry(*state_machine, fmt::format("/covered{}", i), "covered"));
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    ASSERT_EQ(state_machine->last_commit_index(), 2);
+    ASSERT_EQ(changelog.next_slot(), 3);
+    EXPECT_FALSE(
+        state_machine->findOrphanConflictInLogTail(state_machine->last_commit_index() + 1, changelog.next_slot()).has_value());
+    EXPECT_TRUE(state_machine->getRemovedOrphanSubtreeRoots().empty());
+}
+
+/// `CreateIfNotExists` of a node that already exists is a no-op: the handler returns `ZOK` before
+/// touching the parent's stats (`KeeperStorageImpl.cpp`). A tail entry with this op under the
+/// repaired parent must not block recovery, because it replays identically after orphan cleanup.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalAllowsNoopCreateIfNotExistsUnderRepairedParent)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    /// `/a/existing` is a present (non-orphan) node; `/a/missing/child` is the orphan.
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/a", "/a/existing"}, {"/a/missing/child"});
+
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
+    /// `CreateIfNotExists("/a/existing")` — the node already exists, so the create is a no-op.
+    auto create_request = std::make_shared<Coordination::ZooKeeperCreateRequest>();
+    create_request->path = "/a/existing";
+    create_request->data = "should_be_noop";
+    create_request->not_exists = true;
+    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), create_request));
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    const auto tail_start = state_machine->last_commit_index() + 1;
+    EXPECT_FALSE(state_machine->findOrphanConflictInLogTail(tail_start, changelog.next_slot()).has_value());
+    EXPECT_TRUE(state_machine->getRemovedOrphanSubtreeRoots().empty());
+
+    for (uint64_t i = tail_start; i < changelog.next_slot(); ++i)
+    {
+        state_machine->pre_commit(i, changelog.entry_at(i)->get_buf());
+        state_machine->commit(i, changelog.entry_at(i)->get_buf());
+    }
+
+    /// The existing node keeps its original data — the create was a no-op.
+    EXPECT_EQ(committedNodeData(state_machine->getStorageUnsafe(), "/a/existing"), "present");
+    EXPECT_FALSE(committedNodeExists(state_machine->getStorageUnsafe(), "/a/missing/child"));
+}
+
+/// `TryRemove` of a node that does not exist is a no-op: it returns `ZOK` without touching the
+/// parent's stats. A tail entry with this op targeting a non-existent sibling of the removed
+/// subtree must not block recovery.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalAllowsNoopTryRemoveUnderRepairedParent)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/a"}, {"/a/missing/child"});
+
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
+    /// `TryRemove("/a/gone")` — the node does not exist in the snapshot, so the remove is a no-op.
+    auto remove_request = std::make_shared<Coordination::ZooKeeperRemoveRequest>();
+    remove_request->path = "/a/gone";
+    remove_request->version = -1;
+    remove_request->try_remove = true;
+    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), remove_request));
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    const auto tail_start = state_machine->last_commit_index() + 1;
+    EXPECT_FALSE(state_machine->findOrphanConflictInLogTail(tail_start, changelog.next_slot()).has_value());
+    EXPECT_TRUE(state_machine->getRemovedOrphanSubtreeRoots().empty());
+}
+
+/// A `CreateIfNotExists` that actually creates (node does not exist) MUST still conflict,
+/// because the create bumps the repaired parent's `numChildren` from a different base.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalRefusesEffectiveCreateIfNotExistsUnderRepairedParent)
+{
+    if (GetParam().use_lsmt_storage)
+        GTEST_SKIP() << "Orphaned-nodes cleanup is only supported by the in-memory nodes storage";
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/a"}, {"/a/missing/child"});
+
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
+    /// `CreateIfNotExists("/a/new")` — the node does NOT exist, so this create takes effect.
+    auto create_request = std::make_shared<Coordination::ZooKeeperCreateRequest>();
+    create_request->path = "/a/new";
+    create_request->data = "will_actually_create";
+    create_request->not_exists = true;
+    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), create_request));
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    auto conflict = state_machine->findOrphanConflictInLogTail(state_machine->last_commit_index() + 1, changelog.next_slot());
+    ASSERT_TRUE(conflict.has_value());
+    EXPECT_EQ(conflict->log_idx, 2);
+    EXPECT_EQ(conflict->request_path, "/a");
+    EXPECT_EQ(conflict->subtree_root, "/a/missing");
 }
 
 TEST_P(CoordinationTestWithCompression, SerializeSnapshotToDiskCleansPartialFilesOnOpenException)

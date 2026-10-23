@@ -28,9 +28,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int INCORRECT_DATA;
 }
 
@@ -50,23 +48,13 @@ public:
     }
 
     String getName() const override { return name; }
+    /// The setting decides which paths count for the same arguments, see `IFunctionBase::updateHash`.
+    void updateHash(SipHash & hash) const override { hash.update(skip_null_typed_paths); }
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & data_types) const override
-    {
-        if (data_types.size() != 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} requires single argument with type JSON", getName());
-
-        if (data_types[0]->getTypeId() != TypeIndex::Object)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Function {} requires argument with type JSON, got: {}",
-                getName(), data_types[0]->getName());
-
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
-    }
+    String getSignatureString() const override { return "(JSON) -> Array(String)"; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {

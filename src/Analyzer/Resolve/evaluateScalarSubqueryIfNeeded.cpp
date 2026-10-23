@@ -145,7 +145,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
         scalar_block = scalars_cache.at(node_with_hash);
     }
-    else if (context->hasQueryContext() && can_use_global_scalars && context->getQueryContext()->hasScalar(str_hash))
+    else if (context->hasQueryContext() && can_use_global_scalars && context->getQueryContext()->hasComputedScalar(str_hash))
     {
         scalar_block = context->getQueryContext()->getScalar(str_hash);
         scalar_subquery_to_scalar_value_global.emplace(node_with_hash, scalar_block);
@@ -217,7 +217,9 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         addQueryTreePasses(query_tree_pass_manager, options.only_analyze);
         query_tree_pass_manager.run(query_tree);
 
-        if (auto storage = subquery_context->getViewSource())
+        /// The inner query of an ordinary view referenced by the view query reads the table itself,
+        /// not the inserted block.
+        if (auto storage = subquery_context->getViewSource(); storage && !subquery_context->isViewInnerQuery())
             replaceStorageInQueryTree(query_tree, subquery_context, storage);
         auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(query_tree, subquery_context, options);
 

@@ -1,0 +1,20 @@
+-- String path, no cast
+Granules: 2/2
+Name: index_document_name
+Granules: 1/2
+1
+-- String path, cast to Nullable(String)
+Granules: 2/2
+Name: index_document_name
+Granules: 1/2
+1
+-- Nullable(String) path, no cast
+Granules: 2/2
+Name: index_document_typename
+Granules: 1/2
+1
+-- Nullable(String) path, cast to String
+Granules: 2/2
+Name: index_document_typename
+Granules: 1/2
+1
