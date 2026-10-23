@@ -55,6 +55,7 @@ using ColumnToReduce = ReadFromGPUCompressedColumns::ColumnToReduce;
 using DeviceFilter = ReadFromGPUCompressedColumns::DeviceFilter;
 using AggregateToCompute = ReadFromGPUCompressedColumns::AggregateToCompute;
 using DerivedColumn = ReadFromGPUCompressedColumns::DerivedColumn;
+using PartToRead = ReadFromGPUCompressedColumns::PartToRead;
 
 struct SharedState
 {
@@ -148,6 +149,82 @@ DataTypes typesOf(const std::vector<NameAndTypePair> & columns)
     for (const auto & column : columns)
         types.push_back(column.type);
     return types;
+}
+
+/// Whether every column the read takes is of a fixed width, so that a part can be read in ranges of its marks.
+bool readsFixedWidthOnly(const SharedState & state)
+{
+    const auto fixed = [](const NameAndTypePair & column) { return !isString(*column.type); };
+    return std::ranges::all_of(state.keys, fixed) && std::ranges::all_of(state.columns, [&](const auto & column) { return fixed(column.column); })
+        && std::ranges::all_of(filterColumnsOf(state), fixed);
+}
+
+/// A piece smaller than this is not split: a reader gathers about a batch of rows before the device groups them.
+constexpr size_t min_rows_to_split = 1UL << 20;
+
+/// Splits the parts into at least `min_pieces` pieces of ranges of marks, the largest in two each time, so that as many
+/// readers as there are have rows to read however few parts the table has: a table of one part after a merge was read
+/// by one reader. A piece of several ranges is split between its ranges, one of one range at its middle mark.
+void splitPartsAmongReaders(std::vector<PartToRead> & parts, size_t min_pieces)
+{
+    if (parts.size() >= min_pieces)
+        return;
+
+    struct Piece
+    {
+        DataPartPtr part;
+        MarkRanges ranges;
+        size_t rows = 0;
+    };
+
+    std::vector<Piece> pieces;
+    pieces.reserve(min_pieces);
+    for (auto & part_to_read : parts)
+    {
+        const auto & granularity = *part_to_read.part->index_granularity;
+        MarkRanges ranges = part_to_read.ranges.empty() ? MarkRanges{MarkRange(0, granularity.getMarksCountWithoutFinal())} : part_to_read.ranges;
+        const size_t rows = granularity.getRowsCountInRanges(ranges);
+        pieces.push_back({.part = part_to_read.part, .ranges = std::move(ranges), .rows = rows});
+    }
+
+    while (pieces.size() < min_pieces)
+    {
+        auto largest = std::ranges::max_element(pieces, {}, &Piece::rows);
+        if (largest->rows < 2 * min_rows_to_split)
+            break;
+
+        const auto & granularity = *largest->part->index_granularity;
+        Piece second{.part = largest->part, .ranges = {}, .rows = 0};
+        if (largest->ranges.size() > 1)
+        {
+            /// From the range at which the rows so far pass half.
+            size_t rows_before = 0;
+            size_t split_at = 0;
+            while (split_at + 1 < largest->ranges.size() && rows_before + granularity.getRowsCountInRange(largest->ranges[split_at]) <= largest->rows / 2)
+                rows_before += granularity.getRowsCountInRange(largest->ranges[split_at++]);
+            if (split_at == 0)
+                split_at = 1;
+            second.ranges.assign(largest->ranges.begin() + split_at, largest->ranges.end());
+            largest->ranges.resize(split_at);
+        }
+        else
+        {
+            MarkRange & range = largest->ranges.front();
+            if (range.end - range.begin < 2)
+                break;
+            const size_t middle = (range.begin + range.end) / 2;
+            second.ranges.push_back(MarkRange(middle, range.end));
+            range.end = middle;
+        }
+        second.rows = granularity.getRowsCountInRanges(second.ranges);
+        largest->rows -= second.rows;
+        pieces.push_back(std::move(second));
+    }
+
+    parts.clear();
+    parts.reserve(pieces.size());
+    for (auto & piece : pieces)
+        parts.push_back({.part = std::move(piece.part), .ranges = std::move(piece.ranges)});
 }
 
 /// Two readers fill the link when they only copy compressed blocks into pinned memory; a reader
@@ -494,6 +571,7 @@ public:
         , state(std::move(state_))
         , query_status(std::move(query_status_))
         , num_readers(std::max<size_t>(1, std::min(state->num_readers, state->parts.size())))
+        , output_queue(state->collect ? std::make_unique<ConcurrentBoundedQueue<Chunk>>(collect_queue_chunks) : nullptr)
         , accumulator(
               typesOf(state->keys),
               argumentTypesOf(state->columns),
@@ -503,17 +581,36 @@ public:
               num_readers,
               typesOf(filterColumnsOf(*state)),
               state->filter ? std::optional(state->filter->program) : std::nullopt,
-              derivedValuesOf(state->derived))
+              derivedValuesOf(state->derived),
+              state->collect ? std::function<void(MutableColumns)>([this](MutableColumns columns) { pushCollected(std::move(columns)); })
+                             : std::function<void(MutableColumns)>{})
     {
         if (state->decompression == GPUDecompressionMode::AUTO)
             adaptive_ratio.emplace(state->device_decompression_max_ratio, num_readers);
     }
 
+    ~GPUCompressedGroupBySource() override
+    {
+        if (output_queue)
+            output_queue->clearAndFinish();
+        if (reading_thread.joinable())
+            reading_thread.join();
+    }
+
     String getName() const override { return "GPUCompressedGroupBy"; }
 
 protected:
+    void onCancel() noexcept override
+    {
+        if (output_queue)
+            output_queue->clearAndFinish();
+    }
+
     Chunk generate() override
     {
+        if (state->collect)
+            return generateCollected();
+
         if (generated)
             return {};
 
@@ -526,9 +623,6 @@ protected:
             num_groups = accumulator.filterGroups(state->group_filter->program, state->group_filter->columns);
         if (num_groups == 0)
             return {};
-
-        if (state->collect)
-            return collectedRows(num_groups);
 
         /// The header is the aggregation's: the keys, then the result of each aggregate.
         const Block & header = getPort().getHeader();
@@ -563,26 +657,71 @@ protected:
     }
 
 private:
-    /// The rows the device collected, in the read's header: the columns, as they are.
-    Chunk collectedRows(size_t num_rows)
+    /// How many chunks of collected rows wait for the steps above before the grouping thread waits for them.
+    static constexpr size_t collect_queue_chunks = 4;
+
+    /// The rows the device collected, as the chunks the grouping thread hands over while the parts are read on a thread
+    /// of this source's own, and the rest once the read ends.
+    Chunk generateCollected()
+    {
+        if (!reading_started)
+        {
+            reading_started = true;
+            reading_thread = ThreadFromGlobalPool([this, thread_group = CurrentThread::getGroup()]
+            {
+                ThreadGroupSwitcher switcher(thread_group, ThreadName::GPU_READER);
+                try
+                {
+                    readParts();
+                    if (accumulator.finalize() != 0)
+                    {
+                        MutableColumns no_keys;
+                        MutableColumns columns;
+                        columns.reserve(state->columns.size());
+                        for (const auto & column : state->columns)
+                            columns.push_back(column.column.type->createColumn());
+                        accumulator.copyGroupsTo(no_keys, columns);
+                        pushCollected(std::move(columns));
+                    }
+                }
+                catch (...)
+                {
+                    reading_error = std::current_exception();
+                }
+                output_queue->finish();
+            });
+        }
+
+        Chunk chunk;
+        if (output_queue->pop(chunk))
+            return chunk;
+
+        if (reading_thread.joinable())
+            reading_thread.join();
+        if (reading_error)
+            std::rethrow_exception(reading_error);
+        return {};
+    }
+
+    /// A column of each of `state->columns`, into the read's header, to the steps above. Waits for room.
+    void pushCollected(MutableColumns columns)
     {
         const Block & header = getPort().getHeader();
-        if (header.columns() != state->columns.size())
+        if (header.columns() != state->columns.size() || columns.size() != state->columns.size())
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "A GPU read of {} columns emits {} columns", state->columns.size(), header.columns());
+                ErrorCodes::LOGICAL_ERROR,
+                "A GPU read of {} columns emits {} columns, {} of them collected",
+                state->columns.size(),
+                header.columns(),
+                columns.size());
 
-        MutableColumns no_keys;
-        MutableColumns columns;
-        columns.reserve(header.columns());
-        for (const auto & column : state->columns)
-            columns.push_back(header.getByName(column.column.name).type->createColumn());
-
-        accumulator.copyGroupsTo(no_keys, columns);
-
+        const size_t num_rows = columns.front()->size();
         Columns result_columns(header.columns());
         for (size_t i = 0; i < state->columns.size(); ++i)
             result_columns[header.getPositionByName(state->columns[i].column.name)] = std::move(columns[i]);
-        return Chunk(std::move(result_columns), num_rows);
+
+        if (!output_queue->push(Chunk(std::move(result_columns), num_rows)))
+            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "The GPU read's rows are no longer taken");
     }
 
     static DataTypes argumentTypesOf(const std::vector<ColumnToReduce> & columns)
@@ -695,7 +834,9 @@ private:
         /// Of a variable-width key: the reader of its sizes, where the rows whose sizes are read and whose
         /// bytes are not all read yet end, and how many rows of either there are.
         std::unique_ptr<CompressedReadBufferFromFile> sizes;
-        std::deque<UInt64> pending_ends;
+        /// From `pending_front` on, where the rows whose sizes are read and whose bytes are not all read yet end.
+        std::vector<UInt64> pending_ends;
+        size_t pending_front = 0;
         UInt64 last_end = 0;
         size_t rows_sized = 0;
         size_t variable_rows_read = 0;
@@ -739,15 +880,20 @@ private:
         /// and only sizes once the bytes have ended.
         bool readsSizesNext() const
         {
-            return is_variable && !sizes_done && (bytes_done || pending_ends.empty() || last_end <= bytes_read);
+            return is_variable && !sizes_done && (bytes_done || pending_front == pending_ends.size() || last_end <= bytes_read);
         }
 
         void countVariableRowsRead()
         {
-            while (!pending_ends.empty() && pending_ends.front() <= bytes_read)
+            const auto first = pending_ends.begin() + static_cast<std::ptrdiff_t>(pending_front);
+            const auto covered = std::upper_bound(first, pending_ends.end(), bytes_read);
+            variable_rows_read += static_cast<size_t>(covered - first);
+            pending_front = static_cast<size_t>(covered - pending_ends.begin());
+            /// The ends passed are dropped once they are as many as those left, so that each is moved at most once more.
+            if (pending_front >= pending_ends.size() - pending_front)
             {
-                pending_ends.pop_front();
-                ++variable_rows_read;
+                pending_ends.erase(pending_ends.begin(), pending_ends.begin() + static_cast<std::ptrdiff_t>(pending_front));
+                pending_front = 0;
             }
             done = sizes_done && bytes_done;
         }
@@ -788,8 +934,8 @@ private:
         {
             column.last_end += ends[i];
             ends[i] = column.last_end;
-            column.pending_ends.push_back(column.last_end);
         }
+        column.pending_ends.insert(column.pending_ends.end(), ends.begin(), ends.begin() + static_cast<std::ptrdiff_t>(num_rows));
         column.rows_sized += num_rows;
 
         accumulator.addVariableOffsets(reader_index, key_index, std::span<const UInt64>(ends.data(), num_rows));
@@ -865,9 +1011,13 @@ private:
         for (const auto & column : filter_columns)
             readers.push_back(std::make_unique<ColumnReader>(part, column, state->read_settings, on_device(column.name), in_ranges));
 
+        /// The rows of all the ranges of a part go to the device as the rows of one part, so that it groups them as they
+        /// come, however many ranges there are, rather than drain its work at the end of each.
+        size_t num_rows_read = 0;
         if (!in_ranges)
         {
             readRows(reader_index, part, readers, part.rows_count);
+            num_rows_read = part.rows_count;
         }
         else
         {
@@ -879,14 +1029,17 @@ private:
                 for (auto & reader : readers)
                     reader->startRange(range, num_rows);
                 readRows(reader_index, part, readers, num_rows);
+                num_rows_read += num_rows;
             }
         }
+        accumulator.finishPart(reader_index, num_rows_read);
 
         if (adaptive_ratio)
             adaptive_ratio->update(accumulator.waits());
     }
 
-    /// The `num_rows` rows of every column from where its reader is: every row of the part, or a range of it.
+    /// The `num_rows` rows of every column from where its reader is: every row of the part, or a range of it. The part is
+    /// finished by the caller once all of its ranges are read.
     void readRows(size_t reader_index, const IMergeTreeDataPart & part, std::vector<std::unique_ptr<ColumnReader>> & readers, size_t num_rows)
     {
         /// The offsets of a column of values of varying width start from the 0 its first row starts at.
@@ -1017,8 +1170,6 @@ private:
                     num_rows,
                     readers[i]->element_size);
         }
-
-        accumulator.finishPart(reader_index, num_rows);
     }
 
     void checkNotCancelled() const
@@ -1034,6 +1185,8 @@ private:
     SharedStatePtr state;
     QueryStatusPtr query_status;
     const size_t num_readers;
+    /// Of a collecting read: the chunks handed over, which `generate` takes. Before `accumulator`, which pushes into it.
+    std::unique_ptr<ConcurrentBoundedQueue<Chunk>> output_queue;
     GPU::GroupByGPUAccumulator accumulator;
     /// Only under `gpu_aggregation_decompression = 'auto'`.
     std::optional<AdaptiveDecompressionRatio> adaptive_ratio;
@@ -1042,6 +1195,11 @@ private:
     std::mutex reader_error_mutex;
     std::exception_ptr reader_error;
     std::atomic<bool> reader_failed{false};
+
+    /// Of a collecting read.
+    bool reading_started = false;
+    ThreadFromGlobalPool reading_thread;
+    std::exception_ptr reading_error;
 };
 
 }
@@ -1107,6 +1265,10 @@ void ReadFromGPUCompressedColumns::initializePipeline(QueryPipelineBuilder & pip
     state->batch_bytes = batch_bytes;
     state->num_readers = num_readers != 0 ? num_readers : automaticReaders(*state);
     state->collect = collect;
+
+    /// A keyed or a collecting read, of columns of a fixed width, reads a large part in pieces, a reader each.
+    if ((!keys.empty() || collect) && readsFixedWidthOnly(*state))
+        splitPartsAmongReaders(state->parts, 2 * state->num_readers);
 
     Pipes pipes;
 

@@ -998,6 +998,11 @@ bool canAggregateOnDevice(
         || query_node.isGroupByWithTotals())
         return false;
 
+    /// A correlated subquery is decorrelated once planned, into a `GROUP BY` the correlated columns as well, which the
+    /// decorrelation does of an `AggregatingStep` alone.
+    if (query_node.isCorrelated())
+        return false;
+
     /// `group_by_use_nulls` makes every key column `Nullable`, so that a key can carry the `NULL`
     /// that `ROLLUP` and friends put in the columns they do not group by. Nullable keys are out of
     /// scope for the device path - a validity bitmask is a layout it does not stage or upload - and

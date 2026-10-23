@@ -257,7 +257,7 @@ private:
         for (const auto & argument : arguments)
         {
             if (registers[argument.pos].pending_string)
-                return refused("a string constant that is not compared with a column of dates");
+                return refused("a string constant that is not compared with a column of dates or numbers");
         }
 
         if (const auto arithmetic = arithmeticOf(name))
@@ -300,17 +300,19 @@ private:
         return refused("a function the device does not evaluate: `" + name + "`");
     }
 
-    /// A string constant compared with a column of dates is the date it reads as, as ClickHouse compares them, and is
-    /// loaded as one.
+    /// A string constant compared with a column of dates or numbers is the value it reads as, as ClickHouse compares them,
+    /// and is loaded as one.
     bool loadPendingString(size_t own, size_t other)
     {
         Register & mine = registers[own];
         if (!mine.pending_string)
             return true;
 
+        /// ClickHouse compares a column of dates or of numbers with a string constant as with the constant converted to
+        /// the column's type.
         const DataTypePtr & type = registers[other].type;
-        if (!type || !(isDateOrDate32(type) || isDateTime(type)))
-            return refused("a string constant that is not compared with a column of dates");
+        if (!type || !(isDateOrDate32(type) || isDateTime(type) || isNativeNumber(type)))
+            return refused("a string constant that is not compared with a column of dates or numbers");
 
         const Field converted = tryConvertFieldToType(*mine.pending_string, *type);
         const auto element_type = filterElementTypeOf(*type);

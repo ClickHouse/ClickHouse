@@ -43,6 +43,11 @@ public:
 
     __host__ size_t finalize();
 
+    /// Of rows collected rather than grouped: how many are collected and not taken yet, and makes them what `value`
+    /// views, until the next call, returning how many. Before `finalize` as well.
+    __host__ size_t collectedRows() const;
+    __host__ size_t takeCollected();
+
     /// After `finalize`: keeps the groups for which `program` holds over the keys and the aggregates' results, each of a
     /// fixed width, that `columns` names, the keys first and then the aggregates. Returns the number of groups kept.
     __host__ size_t filterGroups(const GPUFilterProgram & program, GPUSpan<uint32_t> columns);

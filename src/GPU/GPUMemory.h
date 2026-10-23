@@ -124,6 +124,7 @@ public:
     const char * data() const { return memory; }
     char * data() { return memory; }
     size_t size() const { return used; }
+    size_t allocated() const { return capacity; }
     bool empty() const { return used == 0; }
 
 private:

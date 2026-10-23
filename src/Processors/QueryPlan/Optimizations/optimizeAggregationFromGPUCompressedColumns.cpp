@@ -30,6 +30,7 @@
 #include <Compression/CompressionFactory.h>
 #include <Compression/ICompressionCodec.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Common/logger_useful.h>
@@ -59,6 +60,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_gpu_aggregation;
     extern const SettingsBool allow_experimental_gpu_filtered_read;
+    extern const SettingsFloat gpu_filtered_read_max_selectivity;
     extern const SettingsUInt64 gpu_aggregation_batch_bytes;
     extern const SettingsUInt64 gpu_aggregation_readers;
     extern const SettingsFloat gpu_aggregation_device_decompression_max_ratio;
@@ -246,7 +248,8 @@ bool deviceExpandsColumnCodec(const ColumnsDescription & columns, const String &
 struct ReadColumns
 {
     std::vector<NameAndTypePair> keys;
-    /// Without keys, one per aggregate. With keys, one per column the aggregates are of, once each.
+    /// One per column the aggregates are of, once each. Without keys, every aggregate of a column must be by one
+    /// function, as the column is reduced into itself.
     std::vector<ReadFromGPUCompressedColumns::ColumnToReduce> columns;
     /// With keys only.
     std::vector<ReadFromGPUCompressedColumns::DerivedColumn> derived;
@@ -1117,11 +1120,30 @@ bool optimizeReadFilteredOnGPU(QueryPlan::Node & node, QueryPlan::Nodes & nodes,
     if (reading->readsInOrder() || reading->getInputOrder())
         GPU_FILTERED_READ_REFUSE("the read is in the order of the sorting key");
 
+    const PrewhereInfoPtr prewhere = reading->getPrewhereInfo();
+    if (!prewhere)
+        GPU_FILTERED_READ_REFUSE("the read has no PREWHERE");
+
+    /// By the column statistics, what the `PREWHERE` keeps: a read that keeps much of the table sends most of it back from
+    /// the device, over the link it came by, and is faster on the CPU.
+    {
+        const auto max_selectivity = static_cast<double>(context->getSettingsRef()[Setting::gpu_filtered_read_max_selectivity]);
+        const ActionsDAG::Node * predicate = prewhere->prewhere_actions.tryFindInOutputs(prewhere->prewhere_column_name);
+        if (!predicate)
+            GPU_FILTERED_READ_REFUSE("a PREWHERE without its predicate among its outputs");
+        Names predicate_columns;
+        for (const auto * input : prewhere->prewhere_actions.getInputs())
+            predicate_columns.push_back(input->result_name);
+        const auto estimator = reading->getConditionSelectivityEstimatorForPrewhere(predicate_columns, predicate);
+        const UInt64 total_rows = estimator->getTotalRows();
+        const UInt64 kept_rows = estimator->estimateRelationProfile(reading->getStorageMetadata(), predicate).rows;
+        if (total_rows == 0 || static_cast<double>(kept_rows) > max_selectivity * static_cast<double>(total_rows))
+            GPU_FILTERED_READ_REFUSE(fmt::format("a PREWHERE estimated to keep {} of {} rows, more than {} of them", kept_rows, total_rows, max_selectivity));
+    }
+
     auto split = splitPrewhere(*reading);
     if (!split)
         return false;
-
-    const PrewhereInfoPtr prewhere = reading->getPrewhereInfo();
     auto [on_host, filter_name] = prewhereOnHost(prewhere->prewhere_actions, prewhere->prewhere_column_name, *split);
 
     /// What the device sends back: the columns the actions on the host take, and the columns of the read the `PREWHERE`

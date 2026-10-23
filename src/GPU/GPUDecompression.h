@@ -53,23 +53,29 @@ struct CompressedPiece
 class DecompressionBatch
 {
 public:
-    void launch(GPUCodec codec, std::span<const CompressedPiece> pieces, char * destination);
+    explicit DecompressionBatch(cuda::stream_ref stream_ = GPUResources::get().decompression);
+
+    /// The destination is written once `destination_ready` has happened, or, without it, once all that the compute
+    /// stream has before has.
+    void launch(GPUCodec codec, std::span<const CompressedPiece> pieces, char * destination, cudaEvent_t destination_ready_event = nullptr);
 
     void wait();
 
     void waitAndCheck();
 
 private:
+    cuda::stream_ref stream;
+
     PinnedBuffer host_arguments;
     PinnedBuffer host_results;
 
-    DeviceBuffer device_arguments{GPUResources::get().decompression};
-    DeviceBuffer device_results{GPUResources::get().decompression};
-    DeviceBuffer device_temp{GPUResources::get().decompression};
+    DeviceBuffer device_arguments{stream};
+    DeviceBuffer device_results{stream};
+    DeviceBuffer device_temp{stream};
     /// What nvcomp expands packed chunks to, and where their integers go.
-    DeviceBuffer device_packed{GPUResources::get().decompression};
+    DeviceBuffer device_packed{stream};
     PinnedBuffer host_packed_chunks;
-    DeviceBuffer device_packed_chunks{GPUResources::get().decompression};
+    DeviceBuffer device_packed_chunks{stream};
 
     EventPtr destination_ready = createEvent();
     EventPtr expanded = createEvent();
@@ -97,7 +103,7 @@ private:
 class AsyncDecompressor
 {
 public:
-    AsyncDecompressor() = default;
+    explicit AsyncDecompressor(cuda::stream_ref stream = GPUResources::get().decompression) : batch(stream) { }
     ~AsyncDecompressor();
 
     AsyncDecompressor(AsyncDecompressor && other) noexcept;
@@ -106,7 +112,7 @@ public:
     AsyncDecompressor & operator=(const AsyncDecompressor &) = delete;
     AsyncDecompressor & operator=(AsyncDecompressor &&) = delete;
 
-    void launch(GPUCodec codec, std::span<const CompressedPiece> pieces, char * device_destination);
+    void launch(GPUCodec codec, std::span<const CompressedPiece> pieces, char * device_destination, cudaEvent_t destination_ready = nullptr);
 
     void wait();
 

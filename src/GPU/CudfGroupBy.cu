@@ -36,7 +36,9 @@ constexpr int filter_threads_per_block = 256;
 /// `streaming_groupby` encodes a row of a batch as its capacity plus the row's index, in a `cudf::size_type`.
 constexpr size_t max_capacity = static_cast<size_t>(std::numeric_limits<cudf::size_type>::max());
 constexpr size_t max_slice_rows = 64UL << 20;
-constexpr size_t min_capacity = 1UL << 20;
+/// The first hash table is for this many groups, and grows by half with the groups seen: a query of a few groups does not
+/// pay for a table of a million, and one of many pays a few merges.
+constexpr size_t min_capacity = 1UL << 16;
 
 /// A batch of which a `WHERE` leaves out at least this share of the rows is compacted to the rows it keeps before they
 /// are grouped and their derived values computed. `streaming_groupby` still goes over a row left out as a null of the
@@ -653,22 +655,9 @@ __host__ size_t CudfGroupBy::finalize()
     if (state->finalized)
         throwGPUError("the groups were closed twice");
 
-    if (state->collect && state->collected.size() == 1)
+    if (state->collect)
     {
-        state->groups = std::move(state->collected.front());
-        state->collected.clear();
-    }
-    else if (state->collect && !state->collected.empty())
-    {
-        std::vector<cudf::table_view> views;
-        views.reserve(state->collected.size());
-        for (const auto & table : state->collected)
-            views.push_back(table->view());
-        state->groups = guarded("concatenating " + std::to_string(views.size()) + " batches of collected rows", [&]
-        {
-            return cudf::concatenate(views, state->stream);
-        });
-        state->collected.clear();
+        takeCollected();
     }
     else if (state->grouping)
     {
@@ -692,6 +681,40 @@ __host__ size_t CudfGroupBy::finalize()
     state->variable_offsets.resize(state->keys.size());
     state->value_offsets.resize(state->collect ? state->values.size() : state->aggregates.size());
     return static_cast<size_t>(state->groups->num_rows());
+}
+
+__host__ size_t CudfGroupBy::collectedRows() const
+{
+    size_t rows = 0;
+    for (const auto & table : state->collected)
+        rows += static_cast<size_t>(table->num_rows());
+    return rows;
+}
+
+__host__ size_t CudfGroupBy::takeCollected()
+{
+    if (!state->collect)
+        throwGPUError("the rows of a `GROUP BY` taken as collected");
+
+    state->groups.reset();
+    if (state->collected.size() == 1)
+    {
+        state->groups = std::move(state->collected.front());
+    }
+    else if (!state->collected.empty())
+    {
+        std::vector<cudf::table_view> views;
+        views.reserve(state->collected.size());
+        for (const auto & table : state->collected)
+            views.push_back(table->view());
+        state->groups = guarded("concatenating " + std::to_string(views.size()) + " batches of collected rows", [&]
+        {
+            return cudf::concatenate(views, state->stream);
+        });
+    }
+    state->collected.clear();
+    state->value_offsets.resize(state->values.size());
+    return state->groups ? static_cast<size_t>(state->groups->num_rows()) : 0;
 }
 
 __host__ size_t CudfGroupBy::filterGroups(const GPUFilterProgram & program, GPUSpan<uint32_t> columns)
@@ -765,7 +788,7 @@ __host__ DeviceColumnView CudfGroupBy::key(size_t index) const
 
 __host__ DeviceColumnView CudfGroupBy::value(size_t index) const
 {
-    if (!state->finalized)
+    if (!state->finalized && !state->collect)
         throwGPUError("the groups were asked for before they were closed");
 
     const size_t num_values = state->collect ? state->values.size() : state->aggregates.size();

@@ -19,8 +19,10 @@
 
 #include <atomic>
 #include <exception>
+#include <functional>
 #include <memory>
 #include <condition_variable>
+#include <deque>
 #include <mutex>
 #include <optional>
 #include <span>
@@ -134,8 +136,10 @@ private:
 /// that are there in every column over to the grouping thread, which groups them through the `CudfGroupBy`. So the
 /// device expands and copies the next rows while it groups those before, each on a stream of its own.
 ///
-/// Without keys and aggregates, it groups nothing: it collects the rows of the values that the `WHERE` keeps, which
-/// `copyGroupsTo` copies out as the values' columns.
+/// Without keys and aggregates, it groups nothing: it collects the rows of the values that the `WHERE` keeps. With
+/// `on_collected`, the grouping thread hands them over as they come, a column of each value at a time, so that they do
+/// not pile up on the device and the steps above take them while the rest is read; what is left at the end comes
+/// through `copyGroupsTo`.
 class GroupByGPUAccumulator
 {
 public:
@@ -148,7 +152,8 @@ public:
         size_t num_readers_ = 1,
         const DataTypes & filter_types = {},
         std::optional<GPUFilterProgram> filter_ = {},
-        std::vector<GPUDerivedValue> derived_ = {});
+        std::vector<GPUDerivedValue> derived_ = {},
+        std::function<void(MutableColumns)> on_collected_ = {});
 
     ~GroupByGPUAccumulator();
 
@@ -244,11 +249,29 @@ private:
         size_t num_rows = 0;
     };
 
+    /// Where the rows of a column of varying width that are on the device and not handed over yet end, from the part's
+    /// start: the first is where the first of them starts.
+    struct HostOffsets
+    {
+        std::vector<UInt64> values;
+        size_t front = 0;
+
+        size_t size() const { return values.size() - front; }
+        bool empty() const { return size() == 0; }
+        UInt64 at(size_t i) const { return values[front + i]; }
+        void append(std::span<const UInt64> offsets) { values.insert(values.end(), offsets.begin(), offsets.end()); }
+        /// The rows before the `n`-th are handed over: it is where the first one left starts.
+        void dropFront(size_t n);
+        void clear() { values.clear(); front = 0; }
+    };
+
     struct Reader
     {
+        /// The stream its pieces go to the device in, of its own, so that the readers send theirs at once.
+        StreamPtr upload;
         std::vector<StagedColumn> staging;
         std::vector<DeviceFixedColumnBuffer> device_columns;
-        std::vector<std::vector<UInt64>> variable_offsets;
+        std::vector<HostOffsets> variable_offsets;
         /// Of the part being read, the rows handed over to the grouping thread.
         size_t sent_rows = 0;
     };
@@ -292,8 +315,11 @@ private:
     void flushPendingRaw(bool wait);
     void freeCopiedRaw(bool wait);
 
+    /// Finishes the oldest expansion first, when every slot is taken.
     void startExpansion(std::vector<DeviceWork> && works);
+    /// Of the oldest expansion.
     void finishExpansion();
+    void finishAllExpansions();
 
     bool groupPiece();
     bool hasPieceToGroup() const;
@@ -306,6 +332,9 @@ private:
 
     void groupOnDevice(GroupingBatch & batch);
 
+    /// Hands the rows collected so far to `on_collected`, on the grouping thread.
+    void flushCollected();
+
     /// Of plain columns, staged in the compute stream, and grouped before it goes on.
     void groupBatch(
         const std::vector<DeviceColumnView> & keys,
@@ -316,6 +345,9 @@ private:
     const std::vector<GPUElementType> key_element_types;
     /// The columns aggregated, read and sent once each however many aggregates are of them.
     const std::vector<GPUElementType> values;
+    /// Of rows collected rather than grouped, the types of the columns they are handed over in.
+    const DataTypes value_data_types;
+    const std::function<void(MutableColumns)> on_collected;
     /// Computed on the device from `values` before each batch is grouped, and aggregated after them: an aggregate of
     /// column `values.size() + i` is of `derived[i]`.
     const std::vector<GPUDerivedValue> derived;
@@ -332,17 +364,37 @@ private:
     std::vector<ColumnUploadPipe> key_pipes;
     std::vector<ColumnUploadPipe> value_pipes;
 
+    /// Of this aggregation alone, so that what it does on the device waits for nothing of another: what the expanded
+    /// blocks are copied into the columns in, and what they are expanded in.
+    StreamPtr compute_stream;
+    StreamPtr decompression_stream;
+    cuda::stream_ref compute() const { return cuda::stream_ref{compute_stream.get()}; }
+
     StreamPtr group_stream;
     std::unique_ptr<CudfGroupBy> group_by;
 
     std::optional<size_t> num_groups;
 
     std::vector<Reader> readers;
-    AsyncDecompressor decompressor;
-    /// What `decompressor` expands into. Allocated in the order of the compute stream, which reads it.
-    DeviceBuffer expanded{GPUResources::get().compute};
-    std::vector<DeviceWork> expanding;
-    Stopwatch expansion_watch;
+
+    /// A batch of blocks expanding on the device. There are two, so that the device expands the next batch while the
+    /// one before is copied into the columns, and they are finished in the order they were started in.
+    struct ExpansionSlot
+    {
+        ExpansionSlot(cuda::stream_ref decompression, cuda::stream_ref compute) : decompressor(decompression), expanded(compute) { }
+
+        AsyncDecompressor decompressor;
+        /// What `decompressor` expands into. Allocated in the order of the compute stream, which reads it.
+        DeviceBuffer expanded;
+        /// In the compute stream, after `expanded` is allocated or copied out of, which the next expansion into it waits
+        /// for, rather than for everything in the compute stream.
+        EventPtr released = createEvent();
+        bool released_recorded = false;
+        std::vector<DeviceWork> works;
+        Stopwatch watch;
+    };
+    std::vector<std::unique_ptr<ExpansionSlot>> slots;
+    std::deque<ExpansionSlot *> in_flight;
 
     std::vector<DeviceWork> raw_pending;
 

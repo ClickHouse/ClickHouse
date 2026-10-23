@@ -214,12 +214,12 @@ AsyncDecompressor::~AsyncDecompressor()
     }
 }
 
-void AsyncDecompressor::launch(GPUCodec codec, std::span<const CompressedPiece> pieces, char * device_destination)
+void AsyncDecompressor::launch(GPUCodec codec, std::span<const CompressedPiece> pieces, char * device_destination, cudaEvent_t destination_ready)
 {
     if (in_flight)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A decompression was launched while the last one was not waited for");
 
-    batch.launch(codec, pieces, device_destination);
+    batch.launch(codec, pieces, device_destination, destination_ready);
     in_flight = true;
 }
 
@@ -232,13 +232,20 @@ void AsyncDecompressor::wait()
     batch.waitAndCheck();
 }
 
-void DecompressionBatch::launch(GPUCodec codec, std::span<const CompressedPiece> pieces, char * destination)
+DecompressionBatch::DecompressionBatch(cuda::stream_ref stream_)
+    : stream(stream_)
 {
-    const cuda::stream_ref stream = GPUResources::get().decompression;
+}
 
+void DecompressionBatch::launch(GPUCodec codec, std::span<const CompressedPiece> pieces, char * destination, cudaEvent_t destination_ready_event)
+{
     /// The destination is the caller's, which may have just allocated or written it on the compute stream.
-    checkCuda(cudaEventRecord(destination_ready.get(), GPUResources::get().compute.get()), "Cannot mark a point in the compute stream");
-    checkCuda(cudaStreamWaitEvent(stream.get(), destination_ready.get(), 0), "Cannot make the decompression stream wait for the compute stream");
+    if (!destination_ready_event)
+    {
+        checkCuda(cudaEventRecord(destination_ready.get(), GPUResources::get().compute.get()), "Cannot mark a point in the compute stream");
+        destination_ready_event = destination_ready.get();
+    }
+    checkCuda(cudaStreamWaitEvent(stream.get(), destination_ready_event, 0), "Cannot make the decompression stream wait for its destination");
 
     size_t num_blocks = 0;
     size_t decompressed_total = 0;

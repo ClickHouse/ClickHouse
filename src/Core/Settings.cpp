@@ -11427,6 +11427,12 @@ Possible values:
 - 1 - A read whose `PREWHERE` the device can evaluate is filtered on a GPU.
 )", EXPERIMENTAL, \
         {"26.11", false, false, "New experimental setting to filter the reads of a `MergeTree` table on a GPU."}) \
+    DECLARE(Float, gpu_filtered_read_max_selectivity, 0.2f, R"(
+The largest share of the rows of a table that its `PREWHERE` is estimated to keep, by the column statistics, for
+`allow_experimental_gpu_filtered_read` to read the table through the GPU. A read that keeps more sends most of the table
+back from the device, and is faster on the CPU.
+)", EXPERIMENTAL, \
+        {"26.11", 0.2, 0.2, "New setting: the selectivity above which a read is not filtered on a GPU."}) \
     DECLARE(UInt64, gpu_aggregation_batch_bytes, 256 * 1024 * 1024, R"(
 How much of a column `allow_experimental_gpu_aggregation` gathers in host memory before sending it
 to the device.
