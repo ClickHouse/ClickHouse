@@ -589,8 +589,8 @@ static void addSizeDelta(std::atomic<size_t> & size, ssize_t delta)
 
 void TemporaryDataOnDiskScope::deltaAllocAndCheck(ssize_t compressed_delta, ssize_t uncompressed_delta)
 {
-    if (parent)
-        parent->deltaAllocAndCheck(compressed_delta, uncompressed_delta);
+    /// The local checks go before the update of the parent: if they throw, the parent must stay unchanged,
+    /// because the caller does not account the delta and will not subtract it later.
 
     /// check that we don't go negative
     if ((compressed_delta < 0 && stat.compressed_size < common::negateIgnoreOverflow(static_cast<size_t>(compressed_delta))) ||
@@ -603,6 +603,9 @@ void TemporaryDataOnDiskScope::deltaAllocAndCheck(ssize_t compressed_delta, ssiz
     if (compressed_delta > 0 && settings.max_size_on_disk && new_consumption > settings.max_size_on_disk)
         throw Exception(ErrorCodes::TOO_MANY_ROWS_OR_BYTES,
             "Limit for temporary files size exceeded (would consume {} / {} bytes)", new_consumption, settings.max_size_on_disk);
+
+    if (parent)
+        parent->deltaAllocAndCheck(compressed_delta, uncompressed_delta);
 
     addSizeDelta(stat.compressed_size, compressed_delta);
     addSizeDelta(stat.uncompressed_size, uncompressed_delta);
