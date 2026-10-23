@@ -132,6 +132,12 @@ SELECT count() FROM t_enum_tuple_partition WHERE v < tuple('m') SETTINGS optimiz
 SELECT count() FROM t_enum_tuple_partition WHERE v < materialize(tuple('m')) SETTINGS optimize_use_implicit_projections = 0;
 SELECT count() FROM t_enum_tuple_partition WHERE v < materialize(tuple('m')) SETTINGS optimize_use_implicit_projections = 0, use_partition_pruning = 0;
 
+-- the key analysis keeps the Enum order of an Enum tuple key element against a Dynamic or Variant string
+SELECT arraySort(groupArray(v.1)) FROM t_enum_tuple_partition WHERE v > tuple(CAST('a' AS Dynamic)) SETTINGS optimize_use_implicit_projections = 0;
+SELECT arraySort(groupArray(v.1)) FROM t_enum_tuple_partition WHERE v > materialize(tuple(CAST('a' AS Dynamic))) SETTINGS optimize_use_implicit_projections = 0;
+SELECT arraySort(groupArray(v.1)) FROM t_enum_tuple_partition WHERE v > tuple(CAST('a' AS Dynamic)) SETTINGS optimize_use_implicit_projections = 0, use_partition_pruning = 0;
+SELECT arraySort(groupArray(v.1)) FROM t_enum_tuple_partition WHERE v > tuple(CAST('a' AS Variant(String, UInt8))) SETTINGS optimize_use_implicit_projections = 0;
+
 -- the key analysis keeps the Enum order of a Dynamic tuple element that holds a tuple
 SELECT arraySort(groupArray(v.1.1)) FROM t_nested_tuple_partition WHERE v < tuple(CAST(tuple(CAST('3', 'Enum8(''z'' = 1, ''a'' = 2, ''3'' = 3)')) AS Dynamic)) SETTINGS optimize_use_implicit_projections = 0;
 SELECT arraySort(groupArray(v.1.1)) FROM t_nested_tuple_partition WHERE v < tuple(CAST(tuple(CAST('3', 'Enum8(''z'' = 1, ''a'' = 2, ''3'' = 3)')) AS Dynamic)) SETTINGS optimize_use_implicit_projections = 0, use_partition_pruning = 0;

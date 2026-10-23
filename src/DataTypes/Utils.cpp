@@ -406,20 +406,26 @@ bool comparesStringWithEnum(const DataTypePtr & string_side, const DataTypePtr &
         return false;
     }
 
-    /// A `Dynamic` or a `Variant` may hold an `Enum`, also in a tuple aligned with a tuple in `string_side`.
-    if (isDynamic(enum_type) || isVariant(enum_type))
+    /// A `Dynamic` or a `Variant` may hold a string in `string_side` or an `Enum` in `enum_side`,
+    /// also in a tuple aligned with a tuple on the other side.
+    const bool string_carrier = isDynamic(string_type) || isVariant(string_type);
+    const bool enum_carrier = isDynamic(enum_type) || isVariant(enum_type);
+    if (string_carrier && enum_tuple)
     {
-        if (string_tuple)
-        {
-            for (const auto & element : string_tuple->getElements())
-                if (comparesStringWithEnum(element, enum_type))
-                    return true;
-            return false;
-        }
-        return isStringOrFixedString(string_type);
+        for (const auto & element : enum_tuple->getElements())
+            if (comparesStringWithEnum(string_type, element))
+                return true;
+        return false;
+    }
+    if (enum_carrier && string_tuple)
+    {
+        for (const auto & element : string_tuple->getElements())
+            if (comparesStringWithEnum(element, enum_type))
+                return true;
+        return false;
     }
 
-    return isStringOrFixedString(string_type) && isEnum(enum_type);
+    return (string_carrier || isStringOrFixedString(string_type)) && (enum_carrier || isEnum(enum_type));
 }
 
 }
