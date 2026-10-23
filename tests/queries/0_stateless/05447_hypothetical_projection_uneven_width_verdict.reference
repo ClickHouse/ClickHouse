@@ -1,0 +1,13 @@
+-- the byte limit does not cut a granule
+Baseline (after PK + partition + existing indexes):
+marks: 200
+With p (normal projection, hypothetical):
+marks: 1
+verdict: chosen
+real: 1 marks, 100 rows
+-- the byte limit cuts granules
+With p (normal projection, hypothetical):
+verdict: too close to call
+-- a compact part
+With p (normal projection, hypothetical):
+verdict: too close to call

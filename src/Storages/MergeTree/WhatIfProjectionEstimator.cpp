@@ -662,13 +662,15 @@ bool buildScenarios(
         /// with uneven row widths the layout depends on block boundaries we can't know
         /// a sample can't show that rows it didn't read have the same width
         bool uneven_rows = plan.sample_step > 1 && part_data.variable_width;
+        /// a wide part has the same layout from any blocks when a granule of the widest rows stays under `index_granularity_bytes`
+        bool widest_fits = false;
         if (!uneven_rows && part_data.row_bytes.size() == part_data.rows && !part_data.row_bytes.empty())
         {
             const auto [narrowest, widest] = std::minmax_element(part_data.row_bytes.begin(), part_data.row_bytes.end());
             uneven_rows = *narrowest != *widest;
+            widest_fits = UInt64{*widest} * mt_settings[MergeTreeSetting::index_granularity]
+                <= mt_settings[MergeTreeSetting::index_granularity_bytes];
         }
-        if (uneven_rows)
-            ++out.uneven_width_parts;
         /// no row passes the filter of the projection, so the writer writes no projection part
         if (part_data.rows == 0)
         {
@@ -690,6 +692,8 @@ bool buildScenarios(
             : part_data.rows;
         const auto [parts, primary]
             = buildSyntheticProjectionParts(part_data, projection, data, part, mt_settings, uneven_rows, part_rows);
+        if (uneven_rows && !(widest_fits && parts[primary]->getType() == MergeTreeDataPartType::Wide))
+            ++out.uneven_width_parts;
         out.scenarios[0]->parts[part->name] = parts[primary];
         /// a part with one layout uses it in every scenario
         for (size_t layout = 0; layout + 1 < out.scenarios.size(); ++layout)
