@@ -52,7 +52,6 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int CLUSTER_DOESNT_EXIST;
     extern const int INFINITE_LOOP;

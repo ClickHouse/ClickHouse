@@ -23,6 +23,10 @@ SELECT
 
 SYSTEM FLUSH LOGS query_log;
 
+-- An `Alias` runs with definer rights, forwarding the INSERT to its target under a separate (definer)
+-- execution. The view reading from the alias fires at the alias and is attributed to this INSERT
+-- (`has_alias_view` = 1); the view reading from the target fires inside the forwarded insert and is
+-- attributed there, not to this query (`has_source_view` = 0). Both views still receive the row.
 SELECT
     has(views, currentDatabase() || '.alias_query_log_from_alias') AS has_alias_view,
     has(views, currentDatabase() || '.alias_query_log_from_source') AS has_source_view

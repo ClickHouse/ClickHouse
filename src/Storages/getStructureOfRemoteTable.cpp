@@ -33,7 +33,6 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int ACCESS_DENIED;
     extern const int NO_REMOTE_SHARD_AVAILABLE;
 }
 

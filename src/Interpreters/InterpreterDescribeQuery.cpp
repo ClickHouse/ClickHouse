@@ -45,7 +45,6 @@ namespace Setting
 namespace ErrorCodes
 {
 
-extern const int ACCESS_DENIED;
 extern const int UNSUPPORTED_METHOD;
 extern const int UNKNOWN_FUNCTION;
 

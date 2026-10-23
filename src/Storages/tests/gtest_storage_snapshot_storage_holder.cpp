@@ -7,6 +7,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageAlias.h>
+#include <Parsers/ASTSQLSecurity.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageSnapshot.h>
 #include <Common/tests/gtest_global_context.h>
@@ -187,7 +188,9 @@ void assertStorageAliasPinsItsTarget(
 
     /// An alias owns nothing and resolves its target through DatabaseCatalog on every access, so this
     /// is the whole ownership state a query has when it reads through one.
-    auto alias = std::make_shared<StorageAlias>(StorageID{database_name, "alias"}, context, database_name, "target");
+    ASTSQLSecurity sql_security;
+    sql_security.type = SQLSecurityType::INVOKER;
+    auto alias = std::make_shared<StorageAlias>(StorageID{database_name, "alias"}, context, database_name, "target", &sql_security);
     auto snapshot = take_snapshot(*alias, context);
 
     /// Detaching releases the catalog's own StoragePtr, which is what DROP does before the background

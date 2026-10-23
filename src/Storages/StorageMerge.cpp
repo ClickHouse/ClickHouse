@@ -132,7 +132,6 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int SAMPLING_NOT_SUPPORTED;
 extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
 extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
-extern const int ACCESS_DENIED;
 extern const int DATABASE_ACCESS_DENIED;
 extern const int STORAGE_REQUIRES_PARAMETER;
 extern const int UNKNOWN_DATABASE;
