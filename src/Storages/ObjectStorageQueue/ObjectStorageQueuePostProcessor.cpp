@@ -53,6 +53,7 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString google_adc_client_id;
     extern const S3AuthSettingsString google_adc_client_secret;
     extern const S3AuthSettingsString google_adc_refresh_token;
+    extern const S3AuthSettingsS3UriStyle uri_style;
 }
 
 #endif
@@ -397,6 +398,10 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
             /// headers and SSE-C/SSE-KMS keys) merged from the server `<s3>` config: otherwise the server's
             /// headers or encryption keys would be sent to the user-supplied move destination.
             s3_settings->auth_settings.clearServerManagedRequestAuth();
+            /// The host check and `dst_uri` below parse `move_uri` with automatic style detection. The client must use the same
+            /// parse, so the URI style of the server `<s3>` config or of the `s3_uri_style` query setting must not apply here:
+            /// otherwise the requests can go to a host that `checkObjectStorageQueueS3MoveDestinationHost` did not check.
+            s3_settings->auth_settings[S3AuthSetting::uri_style] = S3UriStyle::AUTO;
             std::shared_ptr<S3::Client> dst_client = getClient(
                 move_uri,
                 *s3_settings,
