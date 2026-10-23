@@ -132,12 +132,13 @@ check_if_detached "UPDATE t_reattach_mut_lw SET b = 1 IN PARTITION ID 'all' WHER
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mut_lw"
 
-${CLICKHOUSE_CLIENT} -q "DROP FUNCTION IF EXISTS reattach_recursive_mut_udf"
-${CLICKHOUSE_CLIENT} -q "CREATE FUNCTION reattach_recursive_mut_udf AS x -> reattach_recursive_mut_udf(x)"
-check_source_not_detached_for_failing_mutation "UPDATE t_reattach_mut_mt SET a = 1 WHERE reattach_recursive_mut_udf(a) IN (SELECT a FROM t_reattach_mut_src)" "UNSUPPORTED_METHOD"
-check_source_not_detached_for_failing_mutation "ALTER TABLE t_reattach_mut_mt UPDATE a = reattach_recursive_mut_udf(a) WHERE a IN (SELECT a FROM t_reattach_mut_src)" "UNSUPPORTED_METHOD"
-check_source_not_detached_for_failing_mutation "DELETE FROM t_reattach_mut_mt WHERE reattach_recursive_mut_udf(a) IN (SELECT a FROM t_reattach_mut_src)" "UNSUPPORTED_METHOD"
-${CLICKHOUSE_CLIENT} -q "DROP FUNCTION reattach_recursive_mut_udf"
+RECURSIVE_MUT_UDF="reattach_recursive_mut_udf_${CLICKHOUSE_DATABASE}"
+${CLICKHOUSE_CLIENT} -q "DROP FUNCTION IF EXISTS ${RECURSIVE_MUT_UDF}"
+${CLICKHOUSE_CLIENT} -q "CREATE FUNCTION ${RECURSIVE_MUT_UDF} AS x -> ${RECURSIVE_MUT_UDF}(x)"
+check_source_not_detached_for_failing_mutation "UPDATE t_reattach_mut_mt SET a = 1 WHERE ${RECURSIVE_MUT_UDF}(a) IN (SELECT a FROM t_reattach_mut_src)" "UNSUPPORTED_METHOD"
+check_source_not_detached_for_failing_mutation "ALTER TABLE t_reattach_mut_mt UPDATE a = ${RECURSIVE_MUT_UDF}(a) WHERE a IN (SELECT a FROM t_reattach_mut_src)" "UNSUPPORTED_METHOD"
+check_source_not_detached_for_failing_mutation "DELETE FROM t_reattach_mut_mt WHERE ${RECURSIVE_MUT_UDF}(a) IN (SELECT a FROM t_reattach_mut_src)" "UNSUPPORTED_METHOD"
+${CLICKHOUSE_CLIENT} -q "DROP FUNCTION ${RECURSIVE_MUT_UDF}"
 
 # An unqualified table inside a mutation's predicate is resolved against the *target table's* database
 # (`AddDefaultDatabaseVisitor` in `InterpreterUpdateQuery` / `InterpreterAlterQuery`), not against the

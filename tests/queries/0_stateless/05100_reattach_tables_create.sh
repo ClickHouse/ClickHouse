@@ -241,10 +241,11 @@ check_fails_kind_without_detach "ATTACH TABLE t_reattach_attach_replicated AS RE
 
 # SQL UDF substitution runs before `CREATE VIEW` reads its source. A recursive UDF makes substitution
 # fail with `UNSUPPORTED_METHOD`, so the source must remain attached.
-${CLICKHOUSE_CLIENT} -q "DROP FUNCTION IF EXISTS reattach_recursive_udf"
-${CLICKHOUSE_CLIENT} -q "CREATE FUNCTION reattach_recursive_udf AS x -> reattach_recursive_udf(x)"
-check_fails_kind_without_detach "CREATE VIEW t_reattach_udf_view AS SELECT reattach_recursive_udf(a) FROM t_reattach_dest_src" "t_reattach_dest_src" "UNSUPPORTED_METHOD"
-${CLICKHOUSE_CLIENT} -q "DROP FUNCTION reattach_recursive_udf"
+RECURSIVE_UDF="reattach_recursive_udf_${CLICKHOUSE_DATABASE}"
+${CLICKHOUSE_CLIENT} -q "DROP FUNCTION IF EXISTS ${RECURSIVE_UDF}"
+${CLICKHOUSE_CLIENT} -q "CREATE FUNCTION ${RECURSIVE_UDF} AS x -> ${RECURSIVE_UDF}(x)"
+check_fails_kind_without_detach "CREATE VIEW t_reattach_udf_view AS SELECT ${RECURSIVE_UDF}(a) FROM t_reattach_dest_src" "t_reattach_dest_src" "UNSUPPORTED_METHOD"
+${CLICKHOUSE_CLIENT} -q "DROP FUNCTION ${RECURSIVE_UDF}"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_dest_free"
 check_if_detached "CREATE TABLE t_reattach_dest_free ENGINE = MergeTree ORDER BY a AS SELECT * FROM t_reattach_dest_src" "t_reattach_dest_src"
