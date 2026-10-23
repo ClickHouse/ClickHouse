@@ -10800,7 +10800,7 @@ If set to true, allow creating projection-based text indexes (`PROJECTION ... TY
 This is a separate on-disk format from the GA skip text index and is still experimental; it must
 be explicitly opted into before a table or projection of this kind can be created or attached.
 )", 0, \
-        {"26.10", false, false, "New setting that gates the experimental projection-based text index (`PROJECTION ... TYPE text(...)`). Off by default; users must opt in before creating or attaching a table or projection that uses this on-disk format."}) \
+        {"26.11", false, false, "New setting that gates the experimental projection-based text index (`PROJECTION ... TYPE text(...)`). Off by default; users must opt in before creating or attaching a table or projection that uses this on-disk format."}) \
     DECLARE(Bool, query_plan_direct_read_from_text_index, true, R"(
 Allow to perform full text search filtering using only the inverted text index in query plan.
 )", 0, \
