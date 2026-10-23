@@ -15,16 +15,51 @@ doc_type: 'guide'
   [Windows Subsystem for Linux (WSL)](https://learn.microsoft.com/en-us/windows/wsl/about) 中执行以下步骤。
 </Info>
 
-ClickHouse 命令行客户端 (`clickhousectl`) 可帮助您安装和管理本地 ClickHouse
-版本、启动服务器以及运行查询。
+ClickHouse 命令行客户端 (`clickhousectl`，别名 `chctl`) 可用于安装和管理本地
+ClickHouse 版本、运行本地 ClickHouse 和 Postgres 服务器、执行查询，
+以及管理 ClickHouse Cloud。本页将指导您安装该命令行客户端、
+启动本地 ClickHouse 服务器并进行连接。
+
+如果您已使用[快速安装](/zh/get-started/setup/self-managed/quick-install)
+脚本，则 `clickhousectl` 已安装完毕，可直接跳至
+[安装 ClickHouse](#cli-install-clickhouse)。
 
 <Steps>
   <Step title="安装 ClickHouse 命令行客户端" id="install-the-cli">
+    该安装脚本支持 x86&#95;64 和 ARM64 架构的 macOS 与 Linux 系统：
+
     ```bash
-    curl https://clickhouse.com/cli | sh
+    curl -fsSL https://clickhouse.com/cli | sh
     ```
 
-    此外，还会自动创建一个 `chctl` 别名，方便使用。
+    该脚本会将 `clickhousectl` 安装到 `~/.local/bin`，并在同一目录下创建别名 `chctl`。
+    如果脚本提示 `~/.local/bin` 不在你的 `PATH` 中，请将其添加到 `PATH`，
+    同时将同样的配置行写入你的 shell 配置文件 (`~/.bashrc`、`~/.zshrc`) ，使其在之后的
+    会话中也能生效：
+
+    ```bash
+    export PATH="$HOME/.local/bin:$PATH"
+    ```
+
+    <Accordion title="其他安装方法">
+      | 工具                       | 命令                              |
+      | ------------------------ | ------------------------------- |
+      | npm                      | `npm install -g clickhousectl`  |
+      | uv                       | `uv tool install clickhousectl` |
+      | pipx                     | `pipx install clickhousectl`    |
+      | pip                      | `pip install clickhousectl`     |
+      | cargo-binstall           | `cargo binstall clickhousectl`  |
+      | Cargo，从源码构建 (Rust 1.94+) | `cargo install clickhousectl`   |
+
+      只有安装脚本和 npm 会创建 `chctl` 别名。
+    </Accordion>
+
+    如需检查命令行客户端是否有更新的发行版并进行安装：
+
+    ```bash
+    clickhousectl update --check
+    clickhousectl update
+    ```
   </Step>
 
   <Step title="安装 ClickHouse" id="cli-install-clickhouse">
@@ -34,59 +69,141 @@ ClickHouse 命令行客户端 (`clickhousectl`) 可帮助您安装和管理本�
     clickhousectl local use latest
     ```
 
-    如果该版本尚未安装，`local use` 会先进行安装，将其设为您的
-    默认版本，并在 `~/.local/bin` (位于您的 `PATH` 中) 创建一个 `clickhouse` 符号链接，
-    这样您就可以直接调用 `clickhouse` 可执行文件。之后，本文档中任何运行
-    `clickhouse` 命令的步骤都可以直接照用。
+    `local use` 会在该版本尚未安装时自动安装，将其设为默认版本，并在 `~/.local/bin` 中创建 `clickhouse` 符号链接，这样你就可以直接运行 `clickhouse` 二进制文件。只要 `~/.local/bin` 已加入 `PATH`，本文档后续所有运行
+    `clickhouse` 命令的步骤都可以直接照做，无需修改。
 
-    您也可以选择特定版本：
+    你也可以选择最新的长期支持 (LTS) 发行版，或指定某个特定
+    版本：
 
     ```bash
-    clickhousectl local use 26.5            # 最新的 26.5.x.x
-    clickhousectl local use 26.5.2.39       # 精确版本
+    clickhousectl local use lts             # Latest LTS release
+    clickhousectl local use 26.8            # Latest 26.8.x.x release
+    clickhousectl local use 26.8.1.1760     # Exact version
+    ```
+
+    要查看哪些次版本可供下载，以及您已安装了哪些版本，请执行：
+
+    ```bash
+    clickhousectl local list --remote
+    clickhousectl local list
     ```
 
     <Info>
       **use 与 install 的区别**
 
-      `clickhousectl local use <version>` 会安装指定版本，*并且* 将其设为您的
-      默认版本，同时更新 `PATH` 中的 `clickhouse` 符号链接。若只想下载某个版本，
-      而不更改默认版本或更新符号链接，请改用
-      `clickhousectl local install <version>`。
+      `clickhousectl local use <version>` 会安装指定版本，*并*将其设为默认版本，同时更新
+      `clickhouse` 符号链接。`clickhousectl local install <version>`
+      则仅下载指定版本：只有在尚未设置默认版本时，它才会成为默认版本，
+      且不会更新符号链接。如需仅设置默认版本，而不创建或
+      更新符号链接，请使用 `clickhousectl local use <version> --no-global`。
     </Info>
   </Step>
 
   <Step title="启动 clickhouse-server" id="cli-start-clickhouse-server">
+    `clickhousectl` 会将本地服务器的作用域限定在其运行时所在的目录中。请先创建一个
+    项目目录，然后在该目录中启动服务器：
+
     ```bash
+    mkdir my-project && cd my-project
     clickhousectl local server start
     ```
 
-    服务器会在后台运行。要验证其是否已启动：
+    ```response
+    Server 'default' started in background (PID: 14705)
+      HTTP port: 8123
+      TCP port:  9000
+      Version:   26.9.1.1312
+    ```
+
+    该服务器在后台运行，名称为 `default`。其数据存放在
+    `./.clickhouse/` 中，因此后续的 `clickhousectl local` 命令需在同一
+    目录下运行；`clickhousectl` 不会搜索上级目录。服务器默认监听
+    HTTP 端口 `8123` 和 TCP 端口 `9000`；若这些端口已被占用，则改用空闲端口。
+    如需指定端口，请传入 `--http-port` 和 `--tcp-port`。如需运行多个
+    服务器，请为每个服务器指定名称，例如 `clickhousectl local server start dev`。
+
+    验证服务器是否正在运行：
 
     ```bash
     clickhousectl local server list
     ```
+
+    ```response
+    | Name    | Status  | PID   | Version     | HTTP Port | TCP Port |
+    |---------|---------|-------|-------------|-----------|----------|
+    | default | running | 14705 | 26.9.1.1312 | 8123      | 9000     |
+
+    1 server, 1 running
+    ```
   </Step>
 
-  <Step title="启动 clickhouse-client" id="cli-start-clickhouse-client">
+  <Step title="启动 ClickHouse 客户端" id="cli-start-clickhouse-client">
+    在同一目录下，使用 `clickhouse-client` 连接到服务器：
+
     ```bash
     clickhousectl local client
     ```
 
-    您将看到类似如下内容：
+    `local client` 会连接到名为 `default` 的服务器，并使用与该服务器相同的
+    ClickHouse 版本。如需连接其他服务器，请传入服务器名称，
+    例如 `clickhousectl local client dev`。您将看到类似以下的输出：
 
     ```response
-    ClickHouse client version 24.5.1.117 (official build).
+    ClickHouse client version 26.9.1.1312 (official build).
     Connecting to localhost:9000 as user default.
-    Connected to ClickHouse server version 24.5.1.
+    Connected to ClickHouse server version 26.9.1.
 
     local-host :)
     ```
 
-    现在，您已经可以开始向 ClickHouse 发送 SQL 命令了！
+    现在可以开始向 ClickHouse 发送 SQL 命令了！输入 `exit` 即可
+    退出客户端。
+
+    如果只想运行单个查询而不进入交互式会话，请传入 `-q` 参数：
+
+    ```bash
+    clickhousectl local client -q "SELECT version()"
+    ```
 
     <Tip>
-      [快速入门](/zh/get-started/setup/install) 将指导您完成创建表和插入数据的步骤。
+      [在 ClickHouse 中创建表](/zh/get-started/quickstarts/creating-tables)一文将逐步指导您创建表并插入数据。
     </Tip>
   </Step>
+
+  <Step title="停止服务器" id="cli-stop-clickhouse-server">
+    服务器会一直在后台运行，直到您手动停止。请在
+    同一目录下执行以下命令停止服务器：
+
+    ```bash
+    clickhousectl local server stop
+    ```
+
+    停止服务器后，其数据会被保留，供下次执行 `clickhousectl local server start` 时使用。
+
+    <Warning>
+      `clickhousectl local server remove` 会永久删除已停止服务器的数据。
+    </Warning>
+  </Step>
 </Steps>
+
+## 后续步骤 {#next-steps}
+
+* **在本地运行 Postgres。** 确保 Docker 正在运行，然后启动本地 Postgres 服务器，
+  并使用 `psql` 连接：
+
+  ```bash
+  clickhousectl local postgres start
+  clickhousectl local postgres client
+  ```
+
+* **连接到 ClickHouse Cloud。** 注册新账户，或登录现有账户。
+  通过浏览器登录仅具有只读权限；如需创建或修改 Cloud 资源，则需要使用
+  API key，运行 `clickhousectl cloud auth login --interactive` 时会提示您输入。
+
+  ```bash
+  clickhousectl cloud auth signup
+  clickhousectl cloud auth login
+  ```
+
+* **进一步了解命令行客户端。** 请参阅 [clickhousectl 参考文档](/zh/concepts/features/interfaces/cli)，
+  或运行 `clickhousectl --help`。

@@ -16,18 +16,26 @@ import { AgentPrompt } from '/snippets/fr/components/AgentPrompt/AgentPrompt.jsx
 
 Ce guide vous explique comment déployer un OpenTelemetry Collector sur un service Managed ClickStack existant, ou adapter votre collector existant, puis vérifier que les données circulent correctement.
 
-Installez les ClickHouse agent skills officiels avant d’utiliser l’assistant de configuration :
+Installez les ClickHouse agent skills officiels avant d’utiliser l’assistant de configuration :
 
 ```bash
 npx skills add clickhouse/agent-skills
 ```
 
+Si vous disposez déjà de [`clickhousectl`](/fr/concepts/features/interfaces/cli), vous pouvez à la place installer ces mêmes compétences dans les agents de code qu’il détecte :
+
+```bash
+clickhousectl skills --detected-only
+```
+
+Pour cibler un seul agent, passez `--agent` (par exemple, `--agent claude`). Ajoutez `--global` pour effectuer l’installation dans votre répertoire personnel plutôt que dans le projet courant.
+
 <AgentPrompt
   prompt="Utilisez la skill clickstack-otel-collector pour connecter un OpenTelemetry Collector à mon service Managed ClickStack."
-  description="Votre agent configurera l’OpenTelemetry Collector ClickStack pour vous. Fonctionne avec Claude Code, Cursor, Codex et d'autres agents de développement."
+  description="Votre agent configurera l’OpenTelemetry Collector ClickStack pour vous. Fonctionne avec Claude Code, Cursor, Codex et d'autres agents de code."
   repositoryUrl="https://github.com/ClickHouse/agent-skills"
   outline={[
-"Installez clickhousectl s'il n'est pas déjà présent et authentifiez-le (il vous demandera une clé API ClickHouse Cloud — collez-la dans le chat ou exécutez vous-même la commande de connexion).",
+"Installez clickhousectl s'il n'est pas déjà présent et vérifiez qu'il est authentifié avec une API key (la connexion via le navigateur est en lecture seule et ne permet pas de créer l'utilisateur d'ingestion). Si ce n'est pas le cas, il vous demandera d'exécuter vous-même clickhousectl cloud auth login --interactive dans un terminal distinct, depuis le même répertoire de projet (la clé y est enregistrée dans .clickhouse/credentials.json). Ne collez jamais le secret de l'API key dans le chat.",
 "Demandez l'ID ou le nom du service ClickHouse Cloud cible, puis récupérez son endpoint HTTPS.",
 "Créez un utilisateur SQL hyperdx_ingest sur le service (génère un mot de passe robuste, ou utilise celui que vous fournissez).",
 "Exécutez localement l’OpenTelemetry Collector ClickStack dans Docker, pointé vers votre service.",
@@ -403,9 +411,7 @@ Choisissez l&#39;onglet correspondant à votre situation :
   </Tab>
 </Tabs>
 
-<div id="next-steps">
-  ## Étapes suivantes : envoyez vos propres données
-</div>
+## Étapes suivantes : envoyez vos propres données {#next-steps}
 
 Le burst synthétique ci-dessus prouve seulement que le pipeline fonctionne. Pour commencer à envoyer de la télémétrie réelle, instrumentez vos propres services avec les [ClickStack SDKs](/fr/clickstack/ingesting-data/sdks/index), qui fournissent l’instrumentation pour Node.js, Python, Go, Java et d’autres langages exportant OTLP vers l’endpoint du collector que vous venez de vérifier. Pour un exemple complet, consultez [Instrumenter une application](/fr/clickstack/managed-onboarding/instrument-application).
 
@@ -414,9 +420,7 @@ Pour collecter des données depuis l’infrastructure plutôt que depuis le code
 * [Surveiller Kubernetes](/fr/clickstack/managed-onboarding/monitoring-kubernetes) : collectez les logs, les métriques d’infrastructure et les événements Kubernetes d’un cluster.
 * [Surveiller les logs AWS CloudWatch](/fr/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs) : transférez les logs CloudWatch via le receiver CloudWatch d’OpenTelemetry.
 
-<div id="further-reading">
-  ## Pour aller plus loin
-</div>
+## Pour aller plus loin {#further-reading}
 
 Ce guide présente une instance unique du collector dans sa forme la plus simple. La [documentation de référence de l’OpenTelemetry Collector](/fr/clickstack/ingesting-data/collector) explique les étapes suivantes :
 

@@ -28,6 +28,7 @@ Todas las funciones comparten una infraestructura común que proporciona:
 
 * **Aplicación de cuotas**: Límites por consulta de tokens ([`ai_function_max_input_tokens_per_query`](/es/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/es/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query)) y llamadas a la API ([`ai_function_max_api_calls_per_query`](/es/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query)).
 * **Reintentos con backoff**: Los fallos transitorios se reintentan ([`ai_function_max_retries`](/es/reference/settings/session-settings/ai-function#ai_function_max_retries)) con backoff exponencial ([`ai_function_retry_initial_delay_ms`](/es/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms)).
+* **Solicitudes concurrentes**: Las solicitudes se envían desde un pool de hilos compartido por todo el servidor, varias a la vez (controladas mediante [`ai_function_max_concurrent_requests_per_thread`](/es/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_thread)).
 
 ## Configuración {#configuration}
 
@@ -156,6 +157,35 @@ El transporte se determina únicamente por el esquema de la URL del `endpoint`. 
 De forma predeterminada, las funciones de IA rechazan un `endpoint` que enviaría datos en texto sin formato a un host remoto: cualquier endpoint que no sea HTTPS cuyo host no sea de bucle local genera una excepción. Los hosts de bucle local (`localhost`, `127.0.0.0/8`, `::1`) están exentos, por lo que un servidor de modelos local en `http://localhost` funciona de forma predeterminada. Para permitir un endpoint `http://` en texto sin formato en un host remoto, establezca [`ai_function_allow_insecure_endpoint`](/es/reference/settings/session-settings/ai-function#ai_function_allow_insecure_endpoint) en `1`. Esta comprobación es independiente de [`remote_url_allow_hosts`](/es/reference/settings/server-settings/settings/remote#remote_url_allow_hosts): esa configuración es una lista de permitidos de hosts y no inspecciona el esquema de la URL, por lo que un `endpoint` `http://` dirigido a un host permitido igualmente la supera.
 
 Tenga en cuenta que, en cualquiera de los dos casos, el proveedor recibe los datos de entrada en texto sin formato después de la terminación de TLS; TLS protege los datos solo en la ruta de red entre el servidor y el proveedor.
+
+### Caudal {#throughput}
+
+Las funciones de IA se diferencian de la mayoría de las funciones tradicionales de ClickHouse en que su caudal depende casi por completo del endpoint remoto al que envían las solicitudes, y no de la CPU ni de la E/S locales. Por ello, se benefician considerablemente de una concurrencia superior al valor estándar de `max_threads` que se utiliza en todo ClickHouse. Por este motivo, las solicitudes se emiten desde un pool de hilos dedicado a nivel de servidor. Su tamaño (`ai_function_max_thread_pool_size`, un ajuste del servidor) limita cuántas solicitudes al proveedor de IA puede tener en curso simultáneamente el servidor en su conjunto, sumando todas las consultas.
+
+[`ai_function_max_concurrent_requests_per_thread`](/es/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_thread) limita la parte de ese pool que corresponde a cada thread de una consulta, de modo que una consulta que se ejecuta en varios threads (como máximo `max_threads`) puede tener hasta ese número de solicitudes en curso por thread. Para impedir que las consultas aumenten este valor, establezca un valor máximo para el parámetro de configuración mediante una [restricción de perfil de configuración](/es/concepts/features/configuration/settings/constraints-on-settings). Este máximo se sigue aplicando por thread, por lo que una consulta puede tener en curso hasta dicho máximo multiplicado por su número de threads. Por ejemplo:
+
+```xml
+<profiles>
+    <default>
+        <constraints>
+            <ai_function_max_concurrent_requests_per_thread>
+                <max>16</max>
+            </ai_function_max_concurrent_requests_per_thread>
+        </constraints>
+    </default>
+</profiles>
+```
+
+El valor predeterminado es `8`. Un valor superior a `1` relaja dos garantías:
+
+* El consumo de tokens de una solicitud solo se conoce cuando llega su respuesta, por lo que [`ai_function_max_input_tokens_per_query`](/es/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query) y [`ai_function_max_output_tokens_per_query`](/es/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query) pueden superarse en el equivalente a una solicitud por cada solicitud en curso, en lugar de en el equivalente a una sola solicitud en total.
+* Se envía una tanda de solicitudes antes de detectar cualquiera de sus errores, por lo que una consulta que falla en su primera fila puede haber emitido (y generado cargos por) tantas solicitudes como permita la concurrencia.
+
+[`ai_function_max_api_calls_per_query`](/es/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query) no se ve afectado y sigue siendo un límite exacto, ya que se reserva un cupo antes de enviar cada solicitud.
+
+<Note>
+  En el caso de una vista materializada, los ajustes deben especificarse en el `INSERT` que alimenta la tabla de origen de la vista, no en la sentencia `CREATE MATERIALIZED VIEW`: las cuotas se leen de la consulta de nivel superior, y cualquier cláusula `SETTINGS` incluida en la definición de la vista se ignora.
+</Note>
 
 ## Proveedores compatibles {#supported-providers}
 

@@ -41,7 +41,7 @@
         {
           "group": "投影",
           "pages": [
-            "concepts/features/projections/projections",
+            "zh/concepts/features/projections/projections",
             "zh/concepts/features/projections/materialized-views-versus-projections"
           ]
         },
@@ -191,7 +191,7 @@
                 },
                 "zh/concepts/features/security/external-authenticators/http",
                 "zh/concepts/features/security/external-authenticators/kerberos",
-                "concepts/features/security/external-authenticators/jwt"
+                "zh/concepts/features/security/external-authenticators/jwt"
               ]
             }
           ]
@@ -219,7 +219,7 @@
               "group": "驱动程序与接口",
               "pages": [
                 "zh/concepts/features/interfaces/overview",
-                "concepts/features/interfaces/http",
+                "zh/concepts/features/interfaces/http",
                 "zh/concepts/features/interfaces/framing-formats",
                 "zh/concepts/features/interfaces/tcp",
                 "zh/concepts/features/interfaces/adbc",
@@ -243,7 +243,7 @@
             "zh/concepts/features/interfaces/web-ui-pinned-columns",
             "zh/concepts/features/interfaces/web-ui-notebook",
             "zh/concepts/features/interfaces/web-ui-result-shaping",
-            "concepts/features/interfaces/web-terminal",
+            "zh/concepts/features/interfaces/web-terminal",
             {
               "group": "第三方客户端",
               "pages": [

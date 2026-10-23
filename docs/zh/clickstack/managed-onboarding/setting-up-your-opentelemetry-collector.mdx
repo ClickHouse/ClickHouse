@@ -22,16 +22,24 @@ import { AgentPrompt } from '/snippets/zh/components/AgentPrompt/AgentPrompt.jsx
 npx skills add clickhouse/agent-skills
 ```
 
+如果你已安装 [`clickhousectl`](/zh/concepts/features/interfaces/cli)，也可以改用它，将相同的技能安装到它检测到的编程智能体中：
+
+```bash
+clickhousectl skills --detected-only
+```
+
+如需仅针对某一个智能体安装，请传入 `--agent` (例如 `--agent claude`) 。添加 `--global` 可安装到你的主目录，而不是当前项目中。
+
 <AgentPrompt
   prompt="使用 clickstack-otel-collector 技能将 OpenTelemetry collector 接入我的托管 ClickStack 服务。"
   description="你的智能体会为你设置 ClickStack OpenTelemetry collector。适用于 Claude Code、Cursor、Codex 及其他编程智能体。"
   repositoryUrl="https://github.com/ClickHouse/agent-skills"
   outline={[
-"如果尚未安装 clickhousectl，请先安装并完成身份验证（会提示你提供 ClickHouse Cloud API key——可直接粘贴到聊天中，或自行运行登录命令）。",
+"如果尚未安装 clickhousectl，则先进行安装，并检查其是否已使用 API key 完成身份验证（浏览器登录为只读模式，无法创建摄取用户）。如果尚未验证，会请你在单独的终端中、从同一项目目录下自行运行 clickhousectl cloud auth login --interactive（API key 会保存到该目录下的 .clickhouse/credentials.json）。切勿将 API key 密钥粘贴到聊天中。",
 "询问目标 ClickHouse Cloud 服务的 ID 或名称，然后拉取其 HTTPS 端点。",
 "在该服务上创建一个 hyperdx_ingest SQL 用户（生成一个高强度密码，或使用你提供的密码）。",
 "在本地 Docker 中运行 ClickStack OpenTelemetry collector，并将其指向你的服务。",
-"通过 collector 发送一小批模拟的 logs、traces 和 metrics，以验证管道工作正常。",
+"通过 collector 发送一小批模拟的 日志、traces 和 指标，以验证管道工作正常。",
 "确认数据已写入 otel 数据库，并将可查看这些数据的 ClickStack UI URL 提供给你。"
 ]}
 />
@@ -403,9 +411,7 @@ npx skills add clickhouse/agent-skills
   </Tab>
 </Tabs>
 
-<div id="next-steps">
-  ## 后续步骤：发送你自己的数据
-</div>
+## 后续步骤：发送你自己的数据 {#next-steps}
 
 上面的模拟突发流量只能证明这条管道可以正常工作。要开始发送真实的遥测数据，请使用 [ClickStack SDKs](/zh/clickstack/ingesting-data/sdks/index) 为你自己的服务添加监测埋点。它们为 Node.js、Python、Go、Java 以及其他语言提供 instrumentation，并将 OTLP 导出到你刚刚验证过的 collector 端点。完整的实操作示例请参见 [为应用程序添加监测埋点](/zh/clickstack/managed-onboarding/instrument-application)。
 
@@ -414,9 +420,7 @@ npx skills add clickhouse/agent-skills
 * [监控 Kubernetes](/zh/clickstack/managed-onboarding/monitoring-kubernetes)：从集群中收集日志、基础设施指标和 Kubernetes 事件。
 * [监控 AWS CloudWatch 日志](/zh/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs)：通过 OpenTelemetry CloudWatch receiver 转发 CloudWatch 日志。
 
-<div id="further-reading">
-  ## 延伸阅读
-</div>
+## 延伸阅读 {#further-reading}
 
 本指南介绍了最简单形式的单个 collector 实例。[OpenTelemetry collector 参考](/zh/clickstack/ingesting-data/collector)介绍了接下来可以做什么：
 

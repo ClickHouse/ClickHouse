@@ -85,7 +85,7 @@
         {
           "group": "문제 해결 및 오류",
           "pages": [
-            "resources/support-center/troubleshooting/index",
+            "ko/resources/support-center/troubleshooting/index",
             "ko/resources/support-center/troubleshooting/troubleshooting",
             "ko/resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error",
             "ko/resources/support-center/knowledge-base/troubleshooting/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",

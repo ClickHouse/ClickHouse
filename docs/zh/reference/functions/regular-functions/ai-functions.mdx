@@ -28,6 +28,7 @@ AI 函数是 ClickHouse 中的内置函数，可用于调用 AI 或生成嵌入�
 
 * **配额限制**：每次查询的标记数限制 ([`ai_function_max_input_tokens_per_query`](/zh/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query)、[`ai_function_max_output_tokens_per_query`](/zh/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query)) 以及 API 调用次数限制 ([`ai_function_max_api_calls_per_query`](/zh/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query)) 。
 * **退避重试**：遇到临时性故障时会自动重试 ([`ai_function_max_retries`](/zh/reference/settings/session-settings/ai-function#ai_function_max_retries)) ，并采用指数退避 ([`ai_function_retry_initial_delay_ms`](/zh/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms)) 。
+* **并发请求**：请求通过服务器级线程池发出，可多个请求同时进行 (由 [`ai_function_max_concurrent_requests_per_thread`](/zh/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_thread) 控制) 。
 
 ## 配置 {#configuration}
 
@@ -156,6 +157,35 @@ AI 命名集合中的 `endpoint` URL 是服务器以自身身份连接的出站�
 默认情况下，AI 函数会拒绝将数据以明文发送到远程主机的 `endpoint`：任何主机不是回环地址的非 HTTPS 端点都会引发异常。回环主机 (`localhost`、`127.0.0.0/8`、`::1`) 不受此限制，因此本地 `http://localhost` 模型服务器开箱即用。若要允许远程主机上的明文 `http://` 端点，请将 [`ai_function_allow_insecure_endpoint`](/zh/reference/settings/session-settings/ai-function#ai_function_allow_insecure_endpoint) 设置为 `1`。此检查独立于 [`remote_url_allow_hosts`](/zh/reference/settings/server-settings/settings/remote#remote_url_allow_hosts)：该设置是主机允许列表，不会检查 URL scheme，因此指向允许主机的 `http://` 端点仍然可以通过。
 
 请注意，无论哪种情况，TLS 终止后提供商都会以明文接收输入数据；TLS 仅保护 服务器 与提供商之间网络路径上的数据。
+
+### 吞吐量 {#throughput}
+
+AI 函数与大多数传统 ClickHouse 函数不同：其吞吐量几乎完全取决于所请求的远程端点，而非本地 CPU 或 I/O。因此，将并发度提升到 ClickHouse 中通用的标准 `max_threads` 之上，能够显著提升其性能。正因如此，这些请求由一个专用的服务器级线程池发出。该线程池的大小 (`ai_function_max_thread_pool_size`，一项服务器设置) 决定了整个服务器在所有查询中可同时处理的 AI 服务提供商请求数量上限。
+
+[`ai_function_max_concurrent_requests_per_thread`](/zh/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_thread) 限定了每个查询线程在该线程池中可占用的份额，因此对于在多个线程 (最多 `max_threads` 个) 上运行的查询，每个线程最多可同时处理该数量的请求。若要防止查询调高该值，可通过[设置配置文件约束](/zh/concepts/features/configuration/settings/constraints-on-settings)为该设置指定上限。该上限仍按线程计算，因此单个查询同时处理的请求数最多可达该上限乘以其线程数。示例：
+
+```xml
+<profiles>
+    <default>
+        <constraints>
+            <ai_function_max_concurrent_requests_per_thread>
+                <max>16</max>
+            </ai_function_max_concurrent_requests_per_thread>
+        </constraints>
+    </default>
+</profiles>
+```
+
+默认值为 `8`。当该值大于 `1` 时，会放宽以下两项保证：
+
+* 请求的标记用量要等到响应返回后才能得知，因此 [`ai_function_max_input_tokens_per_query`](/zh/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query) 和 [`ai_function_max_output_tokens_per_query`](/zh/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query) 的超出量不再是总共最多一个请求的用量，而是每个处理中的请求都可能各超出一个请求的用量。
+* 一批请求在发现其中任何错误之前就已分派，因此即使查询在第一行就失败，也可能已经发出了并发度所允许的全部请求，并已为这些请求计费。
+
+[`ai_function_max_api_calls_per_query`](/zh/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query) 不受影响，仍是精确的上限，因为每个请求在分派前都会预留一个槽位。
+
+<Note>
+  对于 materialized view，这些设置必须加在向该视图源表写入数据的 `INSERT` 上，而不是加在 `CREATE MATERIALIZED VIEW` 语句上：配额从顶层查询中读取，视图定义中的 `SETTINGS` 子句会被忽略。
+</Note>
 
 ## 支持的提供商 {#supported-providers}
 

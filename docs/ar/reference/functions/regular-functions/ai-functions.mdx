@@ -28,6 +28,7 @@ doc_type: 'reference'
 
 * **فرض الحصص**: حدود لكل استعلام على الرموز ([`ai_function_max_input_tokens_per_query`](/ar/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/ar/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query)) واستدعاءات واجهة برمجة التطبيقات ([`ai_function_max_api_calls_per_query`](/ar/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query)).
 * **إعادة المحاولة مع زيادة تدريجية في التأخير**: تتم إعادة محاولة الإخفاقات العابرة ([`ai_function_max_retries`](/ar/reference/settings/session-settings/ai-function#ai_function_max_retries)) باستخدام تأخير أُسّي متزايد ([`ai_function_retry_initial_delay_ms`](/ar/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms)).
+* **الطلبات المتزامنة**: تُرسَل الطلبات من مجمّع خيوط مشترك على مستوى الخادم، عدة طلبات في آنٍ واحد (ويُتحكَّم في ذلك عبر الإعداد [`ai_function_max_concurrent_requests_per_thread`](/ar/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_thread)).
 
 ## الإعداد {#configuration}
 
@@ -156,6 +157,35 @@ SELECT aiGenerate(body, map('temperature', '0.2', 'system_prompt', 'You are ters
 افتراضيًا، ترفض دوال الذكاء الاصطناعي `endpoint` يؤدي إلى إرسال البيانات بصيغة مكشوفة إلى مضيف بعيد: إذ تؤدي أي نقطة نهاية غير HTTPS لا يكون مضيفها loopback إلى ظهور استثناء. تُستثنى مضيفات loopback (`localhost`، `127.0.0.0/8`، `::1`)، لذا يعمل خادم model محلي على `http://localhost` مباشرةً. للسماح بنقطة نهاية `http://` ذات نص مكشوف على مضيف بعيد، اضبط [`ai_function_allow_insecure_endpoint`](/ar/reference/settings/session-settings/ai-function#ai_function_allow_insecure_endpoint) على `1`. هذا check مستقل عن [`remote_url_allow_hosts`](/ar/reference/settings/server-settings/settings/remote#remote_url_allow_hosts): فهذا الإعداد هو allowlist للمضيفين ولا يفحص scheme الخاص بعنوان URL، لذا فإن `endpoint` من نوع `http://` والموجَّه إلى مضيف مسموح به يمر منه أيضًا.
 
 لاحظ أنه في كلتا الحالتين يتلقى الموفّر بيانات الإدخال بصيغة مكشوفة بعد إنهاء TLS؛ إذ لا يحمي TLS البيانات إلا على مسار الشبكة بين الخادم والموفّر.
+
+### معدل النقل {#throughput}
+
+تختلف دوال الذكاء الاصطناعي عن معظم دوال ClickHouse التقليدية في أن معدل النقل الخاص بها يتوقف بالكامل تقريبًا على نقطة النهاية البعيدة التي ترسل إليها الطلبات، لا على موارد CPU أو IO المحلية. ولذلك تستفيد هذه الدوال استفادة كبيرة من رفع مستوى التزامن إلى ما يتجاوز القيمة المعتادة لـ `max_threads` المستخدمة في سائر أجزاء ClickHouse. ولهذا تُرسَل الطلبات من مجمّع خيوط مخصص على مستوى الخادم بأكمله. ويحدّد حجم هذا المجمّع (`ai_function_max_thread_pool_size`، وهو إعداد خادم) الحد الأقصى لعدد طلبات مزود خدمات الذكاء الاصطناعي التي يمكن أن تكون قيد الإرسال في آنٍ واحد على مستوى الخادم بأكمله، عبر جميع الاستعلامات.
+
+يحدّ الإعداد [`ai_function_max_concurrent_requests_per_thread`](/ar/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_thread) من حصة كل خيط تنفيذ تابع للاستعلام من ذلك المجمّع، وبذلك يمكن للاستعلام الذي يعمل على عدة خيوط تنفيذ (بحد أقصى `max_threads`) أن يرسل ما يصل إلى هذا العدد من الطلبات المتزامنة لكل خيط تنفيذ. ولمنع الاستعلامات من رفع هذه القيمة، ضع حدًا أعلى للإعداد باستخدام [قيد في ملف تعريف الإعدادات](/ar/concepts/features/configuration/settings/constraints-on-settings). ويظل هذا الحد الأعلى مطبقًا على كل خيط تنفيذ على حدة، ومن ثَمّ يمكن أن يصل عدد الطلبات قيد الإرسال للاستعلام الواحد إلى حاصل ضرب الحد الأعلى في عدد خيوط التنفيذ الخاصة به. مثال:
+
+```xml
+<profiles>
+    <default>
+        <constraints>
+            <ai_function_max_concurrent_requests_per_thread>
+                <max>16</max>
+            </ai_function_max_concurrent_requests_per_thread>
+        </constraints>
+    </default>
+</profiles>
+```
+
+القيمة الافتراضية هي `8`. وتؤدي أي قيمة أكبر من `1` إلى إضعاف ضمانتين:
+
+* لا يُعرف استهلاك الطلب من الرموز إلا عند وصول الاستجابة الخاصة به، لذا قد يتجاوز كلٌّ من [`ai_function_max_input_tokens_per_query`](/ar/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query) و[`ai_function_max_output_tokens_per_query`](/ar/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query) الحدَّ المضبوط بمقدار طلب واحد عن كل طلب قيد الإرسال، بدلاً من طلب واحد فقط في المجمل.
+* تُوجَّه دفعة من الطلبات قبل رصد أي error ناتج عنها، لذا فإن الاستعلام الذي يفشل عند الصف الأول قد يكون أصدر بالفعل عددًا من الطلبات يساوي ما يسمح به التزامن، وتُحتسب عليك تكلفتها.
+
+أما [`ai_function_max_api_calls_per_query`](/ar/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query) فلا يتأثر بذلك ويظل حدًّا دقيقًا، لأن خانة تنفيذ تُحجز قبل توجيه كل طلب.
+
+<Note>
+  في حالة العرض المُجسَّد، يجب تحديد الإعدادات في عبارة `INSERT` التي تغذّي الجدول المصدر للعرض، لا في عبارة `CREATE MATERIALIZED VIEW`؛ إذ تُقرأ الحصص من الاستعلام ذي المستوى الأعلى، ويُتجاهل أي عبارة `SETTINGS` في تعريف العرض.
+</Note>
 
 ## الموفّرون المدعومون {#supported-providers}
 

@@ -21,13 +21,14 @@ Les fonctions d’IA sont des fonctions intégrées de ClickHouse que vous pouve
 <Warning>
   **Injection de prompt**
 
-  Le texte d’entrée est envoyé au modèle et peut orienter sa sortie (injection de prompt). Le texte provenant de sources externes, non vérifiées ou non nettoyées peut contenir des instructions qui amènent le modèle à renvoyer du contenu contrôlé par un attaquant, à ignorer le format demandé ou à émettre des payloads malveillants. Considérez la sortie des fonctions d’IA comme non fiable : validez-la ou nettoyez-la avant de l’utiliser dans des étapes ultérieures, telles que la construction de SQL, de commandes shell, de requêtes supplémentaires ou de décisions de contrôle d’accès.
+  Le texte d’entrée est envoyé au modèle et peut orienter sa sortie (injection de prompt). Le texte provenant de sources externes, non vérifiées ou non nettoyées peut contenir des instructions qui amènent le modèle à renvoyer du contenu contrôlé par un attaquant, à ignorer le format demandé ou à émettre des payloads malveillants. Considérez la sortie des fonctions d’IA comme non fiable : validez-la ou nettoyez-la avant de l’utiliser dans des étapes ultérieures, telles que la construction de SQL, de commandes shell, de requêtes supplémentaires ou de décisions de contrôle d’accès.
 </Warning>
 
-Toutes les fonctions partagent une infrastructure commune qui fournit :
+Toutes les fonctions partagent une infrastructure commune qui fournit :
 
-* **Application des quotas** : limites par requête sur les tokens ([`ai_function_max_input_tokens_per_query`](/fr/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/fr/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query)) et sur les appels d’API ([`ai_function_max_api_calls_per_query`](/fr/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query)).
-* **Nouvelle tentative avec backoff** : les échecs temporaires sont réessayés ([`ai_function_max_retries`](/fr/reference/settings/session-settings/ai-function#ai_function_max_retries)) avec un backoff exponentiel ([`ai_function_retry_initial_delay_ms`](/fr/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms)).
+* **Application des quotas** : limites par requête sur les jetons ([`ai_function_max_input_tokens_per_query`](/fr/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/fr/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query)) et sur les appels d’API ([`ai_function_max_api_calls_per_query`](/fr/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query)).
+* **Nouvelle tentative avec backoff** : les échecs temporaires sont réessayés ([`ai_function_max_retries`](/fr/reference/settings/session-settings/ai-function#ai_function_max_retries)) avec un backoff exponentiel ([`ai_function_retry_initial_delay_ms`](/fr/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms)).
+* **Requêtes concurrentes** : les requêtes sont émises par lots de plusieurs à la fois depuis un thread pool partagé à l’échelle du serveur (paramètre [`ai_function_max_concurrent_requests_per_thread`](/fr/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_thread)).
 
 ## Configuration {#configuration}
 
@@ -156,6 +157,35 @@ Le transport est déterminé uniquement par le schéma de l’URL `endpoint`. Il
 Par défaut, les fonctions d’IA rejettent un `endpoint` qui enverrait des données en clair à un hôte distant : tout point de terminaison non HTTPS dont l’hôte n’est pas une adresse de bouclage lève une exception. Les hôtes de bouclage (`localhost`, `127.0.0.0/8`, `::1`) sont exemptés, de sorte qu’un serveur de modèle local `http://localhost` fonctionne immédiatement. Pour autoriser un point de terminaison `http://` en clair sur un hôte distant, définissez [`ai_function_allow_insecure_endpoint`](/fr/reference/settings/session-settings/ai-function#ai_function_allow_insecure_endpoint) sur `1`. Cette vérification est indépendante de [`remote_url_allow_hosts`](/fr/reference/settings/server-settings/settings/remote#remote_url_allow_hosts) : ce paramètre est une liste d’hôtes autorisés et n’inspecte pas le schéma de l’URL, si bien qu’un point de terminaison `http://` pointant vers un hôte autorisé est quand même accepté.
 
 Notez que, dans les deux cas, le fournisseur reçoit les données d’entrée en clair après la terminaison TLS ; TLS protège les données uniquement sur le trajet réseau entre le serveur et le fournisseur.
+
+### Débit {#throughput}
+
+Les fonctions d’IA se distinguent de la plupart des fonctions ClickHouse traditionnelles : leur débit est presque entièrement limité par l’endpoint distant auquel elles envoient leurs requêtes, et non par le CPU ou les E/S locaux. Elles bénéficient donc nettement d’une concurrence supérieure à la valeur standard de `max_threads` utilisée dans ClickHouse. C’est pourquoi les requêtes sont émises depuis un thread pool dédié, partagé à l’échelle du serveur. Sa taille (`ai_function_max_thread_pool_size`, un paramètre du serveur) plafonne le nombre de requêtes vers le fournisseur d’IA que l’ensemble du serveur peut avoir en cours simultanément, toutes requêtes confondues.
+
+[`ai_function_max_concurrent_requests_per_thread`](/fr/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_thread) limite la part de ce pool attribuée à chaque fil d’exécution d’une requête : une requête s’exécutant sur plusieurs fils d’exécution (au plus `max_threads`) peut donc avoir jusqu’à ce nombre de requêtes en cours par fil d’exécution. Pour empêcher les requêtes d’augmenter cette valeur, plafonnez le paramètre à l’aide d’une [contrainte de settings profile](/fr/concepts/features/configuration/settings/constraints-on-settings). Ce plafond s’applique toujours par fil d’exécution : une requête peut donc avoir en cours jusqu’à ce plafond multiplié par son nombre de fils d’exécution. Par exemple :
+
+```xml
+<profiles>
+    <default>
+        <constraints>
+            <ai_function_max_concurrent_requests_per_thread>
+                <max>16</max>
+            </ai_function_max_concurrent_requests_per_thread>
+        </constraints>
+    </default>
+</profiles>
+```
+
+La valeur par défaut est `8`. Une valeur supérieure à `1` assouplit deux garanties :
+
+* La consommation de jetons d&#39;une requête n&#39;est connue qu&#39;à la réception de sa réponse ; [`ai_function_max_input_tokens_per_query`](/fr/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query) et [`ai_function_max_output_tokens_per_query`](/fr/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query) peuvent donc être dépassés de l&#39;équivalent d&#39;une requête par requête en cours, et non de l&#39;équivalent d&#39;une seule requête au total.
+* Une vague de requêtes est acheminée avant qu&#39;aucune de leurs erreurs ne soit constatée ; une requête qui échoue dès sa première ligne peut donc avoir déjà émis (et s&#39;être vu facturer) autant de requêtes que la concurrence le permet.
+
+[`ai_function_max_api_calls_per_query`](/fr/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query) n&#39;est pas concerné et reste un plafond strict, car un créneau est réservé avant l&#39;acheminement de chaque requête.
+
+<Note>
+  Pour une vue matérialisée, les paramètres doivent être définis sur l&#39;`INSERT` qui alimente la table source de la vue, et non sur le statement `CREATE MATERIALIZED VIEW` : les quotas sont lus depuis la requête de niveau supérieur, et une clause `SETTINGS` figurant dans la définition de la vue est ignorée.
+</Note>
 
 ## Fournisseurs pris en charge {#supported-providers}
 

@@ -28,6 +28,7 @@ Todas as funções compartilham uma infraestrutura comum que fornece:
 
 * **Aplicação de cotas**: Limites por consulta para tokens ([`ai_function_max_input_tokens_per_query`](/pt-BR/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/pt-BR/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query)) e chamadas de API ([`ai_function_max_api_calls_per_query`](/pt-BR/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query)).
 * **Retentativas com backoff**: Falhas transitórias são repetidas ([`ai_function_max_retries`](/pt-BR/reference/settings/session-settings/ai-function#ai_function_max_retries)) com backoff exponencial ([`ai_function_retry_initial_delay_ms`](/pt-BR/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms)).
+* **Requisições concorrentes**: As requisições são enviadas a partir de um pool de threads compartilhado por todo o servidor, várias ao mesmo tempo (controlado por [`ai_function_max_concurrent_requests_per_thread`](/pt-BR/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_thread)).
 
 ## Configuração {#configuration}
 
@@ -156,6 +157,35 @@ O transporte é determinado exclusivamente pelo esquema da URL do `endpoint`. N�
 Por padrão, as funções de IA rejeitam um `endpoint` que enviaria dados em texto claro para um host remoto: qualquer endpoint que não seja HTTPS e cujo host não seja de loopback gera uma exceção. Hosts de loopback (`localhost`, `127.0.0.0/8`, `::1`) estão isentos, portanto um servidor de modelo local em `http://localhost` funciona imediatamente. Para permitir um endpoint `http://` em texto claro em um host remoto, defina [`ai_function_allow_insecure_endpoint`](/pt-BR/reference/settings/session-settings/ai-function#ai_function_allow_insecure_endpoint) como `1`. Essa verificação é independente de [`remote_url_allow_hosts`](/pt-BR/reference/settings/server-settings/settings/remote#remote_url_allow_hosts): essa configuração é uma lista de permissões de hosts e não inspeciona o esquema da URL, portanto um `endpoint` `http://` direcionado a um host permitido ainda passa por ela.
 
 Observe que, em ambos os casos, o provedor recebe os dados de entrada em texto claro após a terminação de TLS; o TLS protege os dados apenas no caminho de rede entre o servidor e o provedor.
+
+### Vazão {#throughput}
+
+As funções de IA diferem da maioria das funções tradicionais do ClickHouse porque sua vazão é limitada quase inteiramente pelo endpoint remoto para o qual enviam as requisições, e não pela CPU ou pela E/S local. Por isso, elas se beneficiam significativamente de uma concorrência maior do que a permitida pelo `max_threads` padrão usado em todo o ClickHouse. Assim, as requisições são emitidas a partir de um pool de threads dedicado, compartilhado por todo o servidor. O tamanho desse pool (`ai_function_max_thread_pool_size`, uma configuração do servidor) limita quantas requisições ao provedor de IA o servidor inteiro pode ter em andamento simultaneamente, somando todas as consultas.
+
+[`ai_function_max_concurrent_requests_per_thread`](/pt-BR/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests_per_thread) limita a parcela desse pool que cabe a cada thread de consulta, de modo que uma consulta executada em várias threads (no máximo `max_threads`) pode ter até esse número de requisições em andamento por thread. Para impedir que as consultas aumentem esse valor, defina um teto para a configuração com uma [restrição de perfil de configurações](/pt-BR/concepts/features/configuration/settings/constraints-on-settings). O teto continua valendo por thread, portanto uma consulta pode ter em andamento até o valor do teto multiplicado pelo seu número de threads. Por exemplo:
+
+```xml
+<profiles>
+    <default>
+        <constraints>
+            <ai_function_max_concurrent_requests_per_thread>
+                <max>16</max>
+            </ai_function_max_concurrent_requests_per_thread>
+        </constraints>
+    </default>
+</profiles>
+```
+
+O padrão é `8`. Um valor acima de `1` afrouxa duas garantias:
+
+* O uso de tokens de uma requisição só é conhecido quando a resposta chega, portanto [`ai_function_max_input_tokens_per_query`](/pt-BR/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query) e [`ai_function_max_output_tokens_per_query`](/pt-BR/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query) podem ser excedidos no equivalente a uma requisição para cada requisição em andamento, e não no equivalente a uma única requisição no total.
+* Uma leva de requisições é encaminhada antes que qualquer erro delas seja detectado, portanto uma consulta que falha já na primeira linha ainda pode ter emitido (e gerado cobrança por) tantas requisições quanto a concorrência permitir.
+
+[`ai_function_max_api_calls_per_query`](/pt-BR/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query) não é afetado e continua sendo um limite exato, pois um slot é reservado antes que cada requisição seja encaminhada.
+
+<Note>
+  Para uma visão materializada, as configurações devem ser aplicadas no `INSERT` que alimenta a tabela de origem da visão, e não na instrução `CREATE MATERIALIZED VIEW`: as cotas são lidas da consulta de nível superior, e uma cláusula `SETTINGS` na definição da visão é ignorada.
+</Note>
 
 ## Provedores compatíveis {#supported-providers}
 

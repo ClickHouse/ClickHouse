@@ -2,7 +2,6 @@
 sidebarTitle: 'Neon'
 title: 'Migrar de Neon a ClickHouse Managed Postgres'
 description: 'Aprenda a migrar sus datos de PostgreSQL desde Neon a ClickHouse Managed Postgres'
-slug: /products/managed-postgres/migrations/neon
 keywords: ['postgres', 'postgresql', 'neon', 'migration','managed postgres']
 doc_type: 'guide'
 ---
@@ -64,7 +63,16 @@ Con ClickPipes, los clientes pueden migrar bases de datos Postgres de varios ter
 Neon ofrece ramificación instantánea mediante copy-on-write. ClickHouse Managed Postgres utiliza almacenamiento NVMe local para ofrecer un rendimiento de Postgres rápido, predecible y fiable.
 La contrapartida es que las ramas no son instantáneas: se crean como implementaciones independientes mediante [recuperación a un momento dado (PITR)](/es/products/managed-postgres/backup-and-restore). Normalmente están disponibles en unos minutos.
 
-Para el desarrollo diario, recomendamos mantener una base de datos de desarrollo de ClickHouse Managed Postgres más pequeña, con datos de producción representativos y saneados —por ejemplo, de unos pocos gigabytes—, y crear ramas PITR a partir de ella cuando sea necesario. La creación y la limpieza de ramas pueden automatizarse con [clickhousectl](/es/concepts/features/interfaces/cli), nuestra CLI oficial, o con [OpenAPI](/es/products/managed-postgres/openapi) o [Terraform](/es/products/managed-postgres/terraform)
+Para el desarrollo diario, recomendamos mantener una base de datos de desarrollo de ClickHouse Managed Postgres más pequeña, con datos de producción representativos y saneados —por ejemplo, de unos pocos gigabytes—, y crear ramas PITR a partir de ella cuando sea necesario. La creación y la limpieza de ramas pueden automatizarse con [clickhousectl](/es/concepts/features/interfaces/cli), nuestra CLI oficial, con la [OpenAPI](/es/products/managed-postgres/openapi) o con [Terraform](/es/products/managed-postgres/terraform). Con clickhousectl y una clave de API, crear una rama consiste en realizar una restauración a un momento dado en un nuevo servicio:
+
+```bash
+clickhousectl cloud postgres restore <postgres-id> \
+  --name dev-branch-42 --restore-target 2026-10-20T12:00:00Z
+clickhousectl cloud postgres reset-password <branch-id> --generate
+clickhousectl cloud postgres delete <branch-id>
+```
+
+`restore` devuelve el ID del nuevo servicio, pero no una contraseña, así que establezca una con `reset-password` cuando la rama esté en estado `running`. La rama hereda las reglas de acceso IPv4 actuales de la base de datos de origen, a menos que indique reglas con `--ip-allow` o use `--block-public-access`. `delete` elimina la rama y sus datos de forma permanente.
 
 Algunos clientes emplean este enfoque para gestionar cientos de entornos de desarrollo. Estamos mejorando activamente la experiencia de bifurcación y de sandbox. Consulte la [documentación sobre ramificación](/es/products/managed-postgres/branching).
 
@@ -96,7 +104,7 @@ ClickHouse Managed Postgres admite 500 conexiones directas a Postgres de forma p
 * Usar un pool de conexiones en el lado de la aplicación.
 * Usar la instancia de PgBouncer incluida, que admite hasta 5.000 conexiones de client.
 * Aumentar `max_connections` si se requieren más conexiones directas.
-  * `max_connections` se puede modificar desde **Settings → Edit parameters**. Algunos cambios requieren un reinicio. Consulta la [documentación de configuración](/es/products/managed-postgres/settings#changing-configuration).
+  * `max_connections` se puede modificar desde **Settings → Edit parameters** o con `clickhousectl cloud postgres config patch <postgres-id> --set max_connections=1000`. Algunos cambios requieren un reinicio, que puedes disparar con `clickhousectl cloud postgres restart <postgres-id>`. Consulta la [documentación de configuración](/es/products/managed-postgres/settings#changing-configuration).
 
 ### Cambios de esquema durante la migración {#schema-changes}
 
