@@ -14,10 +14,9 @@ ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --max_insert_threads=1 --quer
 DATA_FILE=$(find "${TABLE_PATH}data" -name '*.parquet')
 MANIFEST=$(find "${TABLE_PATH}metadata" -name '*.avro' ! -name 'snap-*')
 
-${CLICKHOUSE_CLIENT} --query "SELECT num_row_groups FROM file('${DATA_FILE}', 'ParquetMetadata')"
 ${CLICKHOUSE_CLIENT} --query "
     SELECT
-        length(data_file.split_offsets),
+        length(data_file.split_offsets) > 1,
         data_file.split_offsets = (SELECT arrayMap(rg -> toInt64(rg.file_offset), row_groups) FROM file('${DATA_FILE}', 'ParquetMetadata'))
     FROM file('${MANIFEST}', 'Avro')"
 

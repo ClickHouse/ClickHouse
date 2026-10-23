@@ -85,7 +85,7 @@ def test_spark_split_offsets_match_clickhouse_row_groups(started_cluster_iceberg
         f"/iceberg_data/default/{TABLE_NAME}/",
     )
 
-    split_offsets = _spark_split_offsets(spark.sql(f"SELECT file_path, file_size_in_bytes, split_offsets FROM {TABLE_NAME}.files").collect())
+    split_offsets = _spark_split_offsets(spark.sql(f"SELECT file_path, file_size_in_bytes, split_offsets FROM spark_catalog.default.{TABLE_NAME}.files").collect())
     assert len(split_offsets) == 1, split_offsets
     assert len(next(iter(split_offsets.values()))) > 1, split_offsets
 
