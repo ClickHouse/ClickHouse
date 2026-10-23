@@ -65,12 +65,13 @@ SELECT count() FROM t_compact_large_values WHERE s LIKE '%needle%' SETTINGS max_
 
 -- The parts without matches are rejected by the skip index while reading, and a rejected read task must not
 -- use up the blocks to sample, or the part with matches, which comes last, has no sample to estimate the input.
+-- `max_rows_to_read` is checked before reading, and the skip indexes are then applied before reading as well.
 CREATE TABLE t_compact_skip_index(id UInt64, s String, INDEX idx s TYPE ngrambf_v1(3, 32768, 2, 0) GRANULARITY 1) ENGINE=MergeTree
 PARTITION BY intDiv(id, 1024) ORDER BY id
 SETTINGS auto_statistics_types='', index_granularity=8192, min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18;
 INSERT INTO t_compact_skip_index SELECT id, s FROM t_wide WHERE id < 32768 AND (id % 100 != 0 OR id >= 31744);
 SELECT count() FROM t_compact_skip_index WHERE s LIKE '%needle%'
-SETTINGS max_threads=1, use_skip_indexes=1, use_skip_indexes_on_data_read=1, log_comment='skip_index';
+SETTINGS max_threads=1, use_skip_indexes=1, use_skip_indexes_on_data_read=1, max_rows_to_read=0, log_comment='skip_index';
 
 SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
 
