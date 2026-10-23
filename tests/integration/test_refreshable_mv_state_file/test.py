@@ -640,8 +640,31 @@ def test_a_target_that_keeps_data_only_in_memory_is_refilled_after_restart():
     alias_view = "rmv_alias_view"
     buffer_target = "rmv_buffer_target"
     buffer_view = "rmv_buffer_view"
-    views = [memory_view, join_view, append_view, alias_view, buffer_view]
-    tables = views + [join_target, append_target, alias_target, buffer_target]
+    buffer_destination = "rmv_buffer_destination"
+    destination_buffer = "rmv_destination_buffer"
+    destination_buffer_view = "rmv_destination_buffer_view"
+    forwarding_source = "rmv_forwarding_source"
+    forwarding_target = "rmv_forwarding_memory_target"
+    forwarding_view = "rmv_forwarding_view"
+    views = [
+        memory_view,
+        join_view,
+        append_view,
+        alias_view,
+        buffer_view,
+        destination_buffer_view,
+        forwarding_view,
+    ]
+    tables = views + [
+        join_target,
+        append_target,
+        alias_target,
+        buffer_target,
+        destination_buffer,
+        buffer_destination,
+        forwarding_target,
+        forwarding_source,
+    ]
     for table in tables:
         node.query(f"DROP TABLE IF EXISTS {table} SYNC")
     try:
@@ -677,6 +700,29 @@ def test_a_target_that_keeps_data_only_in_memory_is_refilled_after_restart():
             f"CREATE MATERIALIZED VIEW {buffer_view} REFRESH AFTER 1 DAY APPEND "
             f"TO {buffer_target} AS SELECT number b FROM numbers(2)"
         )
+        # A destination does not help: rows still buffered at a crash are lost, and a restored
+        # APPEND INCREMENTAL cursor would skip them for good.
+        node.query(
+            f"CREATE TABLE {buffer_destination} (b UInt64) ENGINE = MergeTree ORDER BY b"
+        )
+        node.query(
+            f"CREATE TABLE {destination_buffer} (b UInt64) ENGINE = Buffer(currentDatabase(), "
+            f"{buffer_destination}, 1, 3600, 3600, 1000000, 1000000, 1000000000, 1000000000)"
+        )
+        node.query(
+            f"CREATE MATERIALIZED VIEW {destination_buffer_view} REFRESH AFTER 1 DAY APPEND "
+            f"TO {destination_buffer} AS SELECT number b FROM numbers(2)"
+        )
+        # An insert into a materialized view lands in its target, here a Memory table.
+        node.query(f"CREATE TABLE {forwarding_source} (b UInt64) ENGINE = Null")
+        node.query(
+            f"CREATE MATERIALIZED VIEW {forwarding_target} ENGINE = Memory "
+            f"AS SELECT b FROM {forwarding_source}"
+        )
+        node.query(
+            f"CREATE MATERIALIZED VIEW {forwarding_view} REFRESH AFTER 1 DAY APPEND "
+            f"TO {forwarding_target} AS SELECT number b FROM numbers(2)"
+        )
         before = {
             view: wait_for_refresh_info(
                 view, "last_success_time", lambda x: x not in ("", "\\N")
@@ -705,6 +751,7 @@ def test_a_target_that_keeps_data_only_in_memory_is_refilled_after_restart():
             == "2\t2"
         )
         assert node.query(f"SELECT count() FROM {buffer_target}").strip() == "2"
+        assert node.query(f"SELECT count() FROM {forwarding_target}").strip() == "2"
         assert find_refresh_state_files(DB_DISK_PATH) == []
     finally:
         for table in tables:

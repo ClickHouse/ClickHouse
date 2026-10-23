@@ -1101,20 +1101,18 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
 
 static bool keepsDataOnlyInMemory(StoragePtr table)
 {
-    /// `Alias` and `Buffer` keep their rows in the table they point to.
+    /// `Alias` and a materialized view keep their rows in the table they point to.
     for (size_t depth = 0; table && depth < max_storage_proxy_depth; ++depth)
     {
-        if (castStorage<StorageMemory>(table, DeferredTable::Load))
+        /// A `Buffer` holds inserted rows in memory until it flushes them, even with a destination.
+        if (castStorage<StorageMemory>(table, DeferredTable::Load) || castStorage<StorageBuffer>(table, DeferredTable::Load))
             return true;
         /// For `Set` and `Join` this is `persistent = 0`.
         if (auto set_or_join = castStorage<StorageSetOrJoinBase>(table, DeferredTable::Load))
             return !set_or_join->hasUnreplicatedTableDataOnDisk();
-        if (auto buffer = castStorage<StorageBuffer>(table, DeferredTable::Load))
+        if (auto view = castStorage<StorageMaterializedView>(table, DeferredTable::Load))
         {
-            /// Without a destination, a flush discards the rows.
-            if (!buffer->readsFromOtherTables())
-                return true;
-            table = buffer->getDestinationTable();
+            table = view->tryGetTargetTable();
             continue;
         }
         auto underlying = table->getUnderlyingStorages();
