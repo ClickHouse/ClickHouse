@@ -3,6 +3,7 @@
 #include <Columns/ColumnSparse.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
+#include <Processors/QueryPlan/PartsRemoteFSUtils.h>
 #include <Interpreters/Squashing.h>
 #include <Interpreters/sortBlock.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -153,6 +154,7 @@ void LazyMaterializingTransform::work()
 
 LazyMaterializingRows::LazyMaterializingRows(RangesInDataParts ranges_in_data_parts_)
     : ranges_in_data_parts(std::move(ranges_in_data_parts_))
+    , any_source_parts_on_remote_disk(analyzePartsOnRemoteFS(ranges_in_data_parts).any_parts_on_remote_disk)
 {
 }
 
