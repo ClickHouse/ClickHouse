@@ -28,7 +28,7 @@ namespace ErrorCodes
 }
 
 PlanStepIndex::PlanStepIndex()
-: value(CurrentThread::isInitialized() ? CurrentThread::get().getNextPlanStepIndex() : 0)
+: value(CurrentThread::getGroup() ? CurrentThread::get().getNextPlanStepIndex() : NONE)
 {}
 
 void IQueryPlanStep::updateInputHeaders(SharedHeaders input_headers_)

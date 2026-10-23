@@ -5,6 +5,7 @@
 #include <Core/SortDescription.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/PlanStepIndex.h>
 #include <Processors/QueryPlan/Profiling/Analysis/StepAnalyzer.h>
 #include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 #include <functional>
@@ -40,29 +41,6 @@ class IQueryPlanStep;
 using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
 
 struct ExplainFormatSettings;
-
-
-/// Identity of a plan step, unique within a query.
-class PlanStepIndex
-{
-public:
-    PlanStepIndex();
-
-    /// A copy of a step is a different step -- `clone` is `make_unique<Step>(*this)` and both
-    /// copies can end up in the same plan -- so copying takes a fresh index instead of
-    /// duplicating the source's.
-    PlanStepIndex(const PlanStepIndex &) : PlanStepIndex() {}
-    PlanStepIndex & operator=(const PlanStepIndex &) { return *this; } // NOLINT(cert-oop54-cpp) - keeping our own index is self-assignment safe
-
-    /// Moving is the same step changing hands, so the index travels with it.
-    PlanStepIndex(PlanStepIndex &&) noexcept = default;
-    PlanStepIndex & operator=(PlanStepIndex &&) noexcept = default;
-
-    size_t get() const { return value; }
-
-private:
-    size_t value = 0;
-};
 
 /// Single step of query plan.
 class IQueryPlanStep
@@ -147,10 +125,13 @@ public:
     /// Append extra processors for this step.
     void appendExtraProcessors(const Processors & extra_processors);
 
-    /// Updates the input streams of the given step. Used during query plan optimizations.
-    /// It won't do any validation of new streams, so it is your responsibility to ensure that this update doesn't break anything
     String getUniqID() const;
 
+    /// The number in `getUniqID`, which is what identifies the step: see `PlanStepIndex`.
+    UInt64 getStepIndex() const { return step_index.get(); }
+
+    /// Updates the input streams of the given step. Used during query plan optimizations.
+    /// It won't do any validation of new streams, so it is your responsibility to ensure that this update doesn't break anything
     /// (e.g. you correctly remove / add columns).
     void updateInputHeaders(SharedHeaders input_headers_);
     void updateInputHeader(SharedHeader input_header, size_t idx = 0);
