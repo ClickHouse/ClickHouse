@@ -92,7 +92,9 @@ const char * __tsan_default_suppressions()
     /// receiving side are named, because either can be the stack that a report is matched on.
     ///
     /// Only the three functions that touch the payload are named - `write_message`,
-    /// `take_message` and `drop_message` - plus the two callers they are inlined into, so that a
+    /// `take_message` and `drop_message` - plus the callers they are inlined into (`Sender::send`,
+    /// and the `poll` of both the blocking `Receiver` and the `AsyncReceiver` future that `oneshot`
+    /// 0.2 hands out for `.await`), so that a
     /// race anywhere else in the crate (the state machine, the waker, the allocation) is still
     /// reported. `race:` matches any frame, so a wider pattern would also blind a
     /// heap-use-after-free seen through it.
@@ -112,6 +114,7 @@ const char * __tsan_default_suppressions()
            "race:oneshot::channel::Channel*::drop_message\n"
            "race:oneshot::sender::Sender*::send\n"
            "race:oneshot::receiver::Receiver*::poll\n"
+           "race:oneshot::receiver::AsyncReceiver*::poll\n"
            "race:kanal::signal::Signal*::recv\n"
            "race:kanal::signal::Signal*::wake\n"
            "race:kanal::signal::Signal*::send\n";
