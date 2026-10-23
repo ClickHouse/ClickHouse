@@ -1593,6 +1593,11 @@ static NameSet collectFilesToSkip(
 {
     NameSet files_to_skip = source_part->getFileNamesWithoutChecksums();
 
+    /// The new part writes its own version metadata, and the source's is rewritten concurrently
+    /// (`txn_version.txt.tmp` is renamed over `txn_version.txt`), so neither file is carried over.
+    files_to_skip.insert(VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
+    files_to_skip.insert(VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME);
+
     /// Do not hardlink this file because it's always rewritten at the end of mutation.
     files_to_skip.insert(IMergeTreeDataPart::SERIALIZATION_FILE_NAME);
 

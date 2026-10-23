@@ -456,6 +456,13 @@ endif ()
 # Disable floating-point expression contraction in order to get consistent floating point calculation results across platforms
 set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffp-contract=off")
 
+# Clang turns a call to `sincos` into the `llvm.sincos` intrinsic, and for a musl target LLVM lowers that intrinsic
+# to separate `sin` and `cos` calls again (it assumes `sincos` only in glibc, Fuchsia and Android). Our musl links
+# llvm-libc's `sincos`, which shares one argument reduction between the two, so keep the call as it is written.
+if (USE_MUSL)
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -fno-builtin-sincos")
+endif ()
+
 # Do not maintain `errno` for math functions (`sqrt`, `log`, `pow`, ...). This changes no
 # computed result - `errno` is the only observable difference and ClickHouse never reads it
 # after a libm call - but it lets the compiler emit math instructions directly instead of

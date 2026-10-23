@@ -38,6 +38,7 @@
 #include <Interpreters/SecretArgumentsRegistry.h>
 
 #include <Storages/ObjectStorage/S3/S3SecretArguments.h>
+#include <Common/maskURIPassword.h>
 
 #include <Access/ContextAccess.h>
 
@@ -692,7 +693,7 @@ void findBackupDatabaseSecretArguments(FunctionSecretArgumentsFinder & finder)
                 else if (key_value->arguments->at(1)->tryGetString(&value, /* allow_identifier= */ true))
                 {
                     /// A `url` override can itself carry credentials (userinfo, presign parameters).
-                    has_secret |= maskS3URICredentials(value);
+                    has_secret |= maskURICredentials(value);
                     replacement += quoteString(value);
                 }
                 else if (String literal_text; key_value->arguments->at(1)->tryGetLiteralText(&literal_text))
@@ -779,7 +780,7 @@ void findBackupDatabaseSecretArguments(FunctionSecretArgumentsFinder & finder)
         else if (arg->tryGetString(&arg_value, /* allow_identifier= */ true))
         {
             /// The url positional can itself carry credentials (userinfo, presign parameters).
-            has_secret |= maskS3URICredentials(arg_value);
+            has_secret |= maskURICredentials(arg_value);
             replacement += quoteString(arg_value);
         }
         else
