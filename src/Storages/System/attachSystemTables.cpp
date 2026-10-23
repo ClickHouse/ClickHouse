@@ -144,6 +144,7 @@
 #include <DistributedCache/Utils.h>
 #endif
 #include <Storages/System/StorageSystemIcebergHistory.h>
+#include <Storages/System/StorageSystemIcebergMetadataLogEntries.h>
 #if USE_ICU
 #   include <Storages/System/StorageSystemUnicode.h>
 #endif
@@ -3885,6 +3886,10 @@ This system table contains the snapshot history of Iceberg tables existing in Cl
     attachNoDescription<StorageSystemIcebergFiles>(context, system_database, "iceberg_files", R"DOCS_MD(
 .description
 This system table contains per-file metadata for Iceberg tables existing in ClickHouse, with one row per data or delete file referenced by the current snapshot of each table. It will be empty if you don't have any Iceberg tables in ClickHouse.
+)DOCS_MD");
+    attach<StorageSystemIcebergMetadataLogEntries>(context, system_database, "iceberg_metadata_log_entries", R"DOCS_MD(
+.description
+This system table contains the metadata files of Iceberg tables existing in ClickHouse, with one row per metadata file. It will be empty if you don't have any Iceberg tables in ClickHouse.
 )DOCS_MD");
 #if USE_ICU
     attach<StorageSystemUnicode>(context, system_database, "unicode", R"DOCS_MD(
