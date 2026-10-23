@@ -95,8 +95,7 @@ public:
     const Float64 weight_lowering_io_bytes; /// Attained IO-bytes threshold (0 = disabled)
     const Priority priority; /// `priority` scheduler order (`workload_priority`): lower = higher, 0 neutral, negatives outrank it
 
-    /// Readers kept by the filesystem cache that carry this context's links (one per link). None may
-    /// remain when the query's classifier is destroyed. Counted in debug and sanitizer builds only.
+    /// Filesystem cache readers carrying this context's links, zero on destruction. Counted in debug and sanitizer builds only.
     std::atomic<size_t> bound_cached_readers{0};
 
     /// Allocate the per-resource slots (one per attached leaf). Called once by the classifier after

@@ -126,7 +126,7 @@ public:
         const size_t local_fs_buffer_size;
         /// Throttler for local filesystem reads (cache file reads).
         const ThrottlerPtr local_throttler;
-        /// The links of the remote reads: set on the remote readers and passed to the file segments.
+        /// IO scheduling links of the remote reads.
         IOSchedulingSettings io_scheduling;
 
         /// Non-included range end offset.

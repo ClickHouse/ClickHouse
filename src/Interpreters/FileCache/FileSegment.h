@@ -229,7 +229,6 @@ public:
      * ========== Methods that must do cv.notify() ==================
      */
 
-    /// `holder_io_scheduling` are the links of the leaving holder.
     static void complete(
         FileSegmentPtr && file_segment,
         bool allow_background_download,
