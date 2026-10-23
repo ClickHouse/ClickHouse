@@ -1,6 +1,7 @@
 #include <Core/Mongo/DocumentReply.h>
 #include <Core/Mongo/Handler.h>
 
+#include <charconv>
 #include <cmath>
 #include <limits>
 #include <memory>
@@ -31,6 +32,8 @@
 #include <Common/quoteString.h>
 
 #include <rapidjson/document.h>
+#include <rapidjson/memorystream.h>
+#include <rapidjson/reader.h>
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
 
@@ -428,6 +431,82 @@ Int64 dateTime64ToMilliseconds(DateTime64 value, UInt32 scale)
     return value.value * DecimalUtils::scaleMultiplier<Int64>(3 - scale);
 }
 
+/** The events of a JSON text passed on to a document, except that the parser hands over every
+  * number as its text (`kParseNumbersAsStringsFlag`): the ones that fit a 64-bit integer or are not
+  * integers become the numbers RapidJSON would have built, and an integer that does not fit 64 bits
+  * becomes the string of its digits, which RapidJSON would have rounded into a double.
+  */
+struct WideIntegerPreservingHandler
+{
+    rapidjson::Document & target;
+
+    bool Null() { return target.Null(); }
+    bool Bool(bool b) { return target.Bool(b); }
+    bool Int(int i) { return target.Int(i); }
+    bool Uint(unsigned u) { return target.Uint(u); }
+    bool Int64(int64_t i) { return target.Int64(i); }
+    bool Uint64(uint64_t u) { return target.Uint64(u); }
+    bool Double(double d) { return target.Double(d); }
+    bool String(const char * str, rapidjson::SizeType length, bool copy) { return target.String(str, length, copy); }
+    bool StartObject() { return target.StartObject(); }
+    bool Key(const char * str, rapidjson::SizeType length, bool copy) { return target.Key(str, length, copy); }
+    bool EndObject(rapidjson::SizeType member_count) { return target.EndObject(member_count); }
+    bool StartArray() { return target.StartArray(); }
+    bool EndArray(rapidjson::SizeType element_count) { return target.EndArray(element_count); }
+
+    bool RawNumber(const char * str, rapidjson::SizeType length, bool copy)
+    {
+        const std::string_view text(str, length);
+        if (text.find_first_of(".eE") == std::string_view::npos)
+        {
+            const char * end = str + length;
+            if (text.starts_with('-'))
+            {
+                ::Int64 signed_value = 0;
+                if (auto [ptr, error] = std::from_chars(str, end, signed_value); error == std::errc() && ptr == end)
+                    return target.Int64(signed_value);
+            }
+            else
+            {
+                ::UInt64 unsigned_value = 0;
+                if (auto [ptr, error] = std::from_chars(str, end, unsigned_value); error == std::errc() && ptr == end)
+                    return target.Uint64(unsigned_value);
+            }
+            return target.String(str, length, copy);
+        }
+
+        rapidjson::Document number;
+        if (number.Parse(str, length).HasParseError() || !number.IsNumber())
+            return false;
+        return target.Double(number.GetDouble());
+    }
+};
+
+}
+
+bool parseResultRow(rapidjson::Document & row, std::string_view line, bool keep_wide_integers)
+{
+    if (!keep_wide_integers)
+        return !row.Parse(line.data(), line.size()).HasParseError();
+
+    bool parsed = false;
+    auto generator = [&](rapidjson::Document & target)
+    {
+        WideIntegerPreservingHandler handler{target};
+        rapidjson::MemoryStream stream(line.data(), line.size());
+        rapidjson::Reader reader;
+        parsed = !reader.Parse<rapidjson::kParseNumbersAsStringsFlag>(stream, handler).IsError();
+        return parsed;
+    };
+    row.Populate(generator);
+    return parsed;
+}
+
+bool hasWideIntegers(const DataTypePtr & type)
+{
+    /// `UInt128` and `UInt256` contain the names of their signed counterparts.
+    const auto name = type->getName();
+    return name.contains("Int128") || name.contains("Int256");
 }
 
 void appendTypedValue(bson_t * document, const String & key, const rapidjson::Value & value, const DataTypePtr & type)
@@ -522,6 +601,29 @@ void appendTypedValue(bson_t * document, const String & key, const rapidjson::Va
             bson_append_double(document, key.data(), key_length, *denormal);
             return;
         }
+        /// A large float with no fraction is written as its digits - `1e20` as a 21-digit number -
+        /// which `parseResultRow` keeps as text in a row that has a wide integer column too.
+        Float64 number = 0;
+        ReadBufferFromString in(text);
+        if (tryReadFloatTextPrecise(number, in) && in.eof())
+        {
+            bson_append_double(document, key.data(), key_length, number);
+            return;
+        }
+    }
+    if ((which.isInt128() || which.isUInt128() || which.isInt256() || which.isUInt256()) && value.IsString())
+    {
+        /// A value that does not fit 64 bits arrives as the string of its digits (see
+        /// `parseResultRow`). BSON has no integer that wide, so it goes as a decimal128 when its
+        /// 34 significant digits hold it exactly, and stays the string of its digits otherwise
+        /// rather than being rounded.
+        std::string_view text(value.GetString(), value.GetStringLength());
+        bson_decimal128_t decimal;
+        if (text.size() - text.starts_with('-') <= 34 && bson_decimal128_from_string(value.GetString(), &decimal))
+            bson_append_decimal128(document, key.data(), key_length, &decimal);
+        else
+            bson_append_utf8(document, key.data(), key_length, value.GetString(), static_cast<int>(value.GetStringLength()));
+        return;
     }
     if (which.isFloat() && value.IsNumber())
     {
@@ -766,6 +868,8 @@ std::vector<Document> executeSelectIntoCursor(
     std::vector<String> names;
     std::vector<std::pair<String, DataTypePtr>> columns;
     FieldTree tree;
+    /// Set once the types of the columns are known, for the rows that follow them.
+    bool keep_wide_integers = false;
 
     auto append_row_document = [&](bson_t * row_document)
     {
@@ -788,7 +892,7 @@ std::vector<Document> executeSelectIntoCursor(
     auto on_row = [&](std::string_view line)
     {
         rapidjson::Document json;
-        if (json.Parse(line.data(), line.size()).HasParseError())
+        if (!parseResultRow(json, line, keep_wide_integers))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not parse the result of the query");
 
         if (holds_documents)
@@ -828,6 +932,7 @@ std::vector<Document> executeSelectIntoCursor(
                 if (!type.IsString())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "The column list of the result is malformed");
                 columns.emplace_back(names[i], DataTypeFactory::instance().get(type.GetString()));
+                keep_wide_integers = keep_wide_integers || hasWideIntegers(columns.back().second);
             }
 
             /// A conflict - the columns `a` and `a.b` in one result - keeps the dotted names of both as

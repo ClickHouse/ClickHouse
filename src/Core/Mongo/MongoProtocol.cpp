@@ -241,6 +241,11 @@ static void applyReplyOutputSettings(ContextMutablePtr & query_context)
     /// changed by the profile into an array of pairs or a missing member.
     query_context->setSetting("output_format_json_map_as_array_of_tuples", false);
     query_context->setSetting("output_format_json_skip_null_value_in_named_tuples", false);
+    /// The reply carries the stored values, not a rendering of them: a precision of the profile
+    /// would round a float (`1.25` to `1.3`), and the trimming of a `FixedString` would drop the
+    /// zero bytes that pad it.
+    query_context->setSetting("output_format_float_precision", UInt64(0));
+    query_context->setSetting("output_format_trim_fixed_string", false);
 
     /// A reply with cursor id `0` tells the client that it has the whole result, and there is no
     /// way to tell it that the result was cut short. A limit of the profile with the `break` mode

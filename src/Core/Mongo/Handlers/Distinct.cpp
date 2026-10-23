@@ -200,7 +200,7 @@ std::vector<Document> DistinctHandler::handle(const std::vector<OpMessageSection
         auto on_row = [&](std::string_view line)
         {
             rapidjson::Document row;
-            if (row.Parse(line.data(), line.size()).HasParseError() || !row.IsArray() || row.Size() != 1)
+            if (!parseResultRow(row, line, type && hasWideIntegers(type)) || !row.IsArray() || row.Size() != 1)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not parse the result of the query");
 
             const auto & first = row[0];
