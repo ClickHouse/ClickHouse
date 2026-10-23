@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Client/ConnectionPool_fwd.h>
+#include <Core/Block_fwd.h>
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
@@ -123,6 +124,33 @@ bool canUseParallelReplicasOnInitiator(const ContextPtr & context);
 /// one used by the Fast test job, must not disable the local plan for every query).
 bool leafTimeoutRequiresRemoteOnlyLeafReading(const Settings & settings);
 
+/// Builds the `_shard_num` scalar shipped to a shard, recording which shard numbering the number belongs
+/// to: `Cluster::getShardScopeIdentity`, not the name, since a derived cluster keeps the name and may
+/// renumber the shards. Both live in one block so that overwriting `_shard_num` replaces number and
+/// provenance atomically; a separate scalar would survive a hop that replaced only the number.
+Block makeShardNumScalar(UInt32 shard_num, const String & shard_scope_identity);
+
+enum class ShardScopeKind : uint8_t
+{
+    None, /// no `_shard_num` scalar: the query is not running inside a distributed sub-query
+    Scoped, /// the scalar indexes this cluster's shards, so parallel replicas are scoped to that shard
+    Foreign, /// the scalar indexes another numbering and says nothing about this cluster's shards
+};
+
+struct ShardScope
+{
+    ShardScopeKind kind = ShardScopeKind::None;
+    UInt64 shard_num = 0; /// 1-based; meaningful only for Scoped and Foreign
+};
+
+/// Decides whether the `_shard_num` scalar in `context` may be used to scope parallel replicas to a shard
+/// of `cluster`. Exposed for testing the wire-compatibility cases, which SQL cannot construct.
+ShardScope getShardScopeForCluster(const ContextPtr & context, const Cluster & cluster);
+
+/// True when the shipped `_shard_num` indexes a numbering other than `cluster_for_parallel_replicas`'s, so
+/// it cannot scope this read. Returns false rather than throwing when that cluster cannot be resolved.
+bool hasForeignShardScope(const ContextPtr & context);
+
 /// Parallel-replicas state captured from the `ReadFromParallelRemoteReplicasStep` removed from the local
 /// INSERT SELECT plan. Carrying it into the remote-pool pass lets that pass reuse the exact coordinator,
 /// connection pools, and local replica numbering decided while building the local pipeline, instead of
@@ -184,14 +212,6 @@ void executeQueryWithParallelReplicas(
     QueryPlan & query_plan,
     const StorageID & storage_id,
     QueryProcessingStage::Enum processed_stage,
-    const ASTPtr & query_ast,
-    ContextPtr context,
-    std::shared_ptr<const StorageLimitsList> storage_limits);
-
-void executeQueryWithParallelReplicas(
-    QueryPlan & query_plan,
-    const StorageID & storage_id,
-    QueryProcessingStage::Enum processed_stage,
     const QueryTreeNodePtr & query_tree,
     const PlannerContextPtr & planner_context,
     ContextPtr context,
@@ -220,15 +240,6 @@ void executeQueryWithParallelReplicasCustomKey(
     const QueryTreeNodePtr & query_tree,
     ContextPtr context);
 
-void executeQueryWithParallelReplicasCustomKey(
-    QueryPlan & query_plan,
-    const StorageID & storage_id,
-    SelectQueryInfo query_info,
-    const ColumnsDescription & columns,
-    const StorageSnapshotPtr & snapshot,
-    QueryProcessingStage::Enum processed_stage,
-    const ASTPtr & query_ast,
-    ContextPtr context);
 }
 
 }

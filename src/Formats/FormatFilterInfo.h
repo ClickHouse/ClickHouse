@@ -17,6 +17,31 @@ struct PrewhereInfo;
 using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
 struct FilterDAGInfo;
 using FilterDAGInfoPtr = std::shared_ptr<FilterDAGInfo>;
+class ITopKThresholdTracker;
+using TopKThresholdTrackerPtr = std::shared_ptr<ITopKThresholdTracker>;
+
+/// TopN dynamic filtering (`ORDER BY x LIMIT n`, see `tryOptimizeTopK`): the format may drop rows
+/// that cannot enter the query's top-K, and skip whole row groups / pages whose statistics prove
+/// the same, by comparing the sort column against the running threshold of the top-K heap
+/// (published by the sorting transforms into the shared tracker). The tracker carries the sort
+/// direction, NULLS FIRST/LAST and collation. Only supported by the Parquet format.
+struct FormatTopKFilterInfo
+{
+    /// Name of the first ORDER BY column in the format's output block.
+    String column_name;
+    TopKThresholdTrackerPtr threshold_tracker;
+    /// Hash of the planning-time parameters of the TopK (sort column and its type, number of sort
+    /// columns, `LIMIT`, direction, NULLS FIRST/LAST, collation). Which row groups the filter lets
+    /// through depends on these, so a query condition cache entry written by a TopK read is keyed
+    /// by it (see `StorageFileSource`).
+    UInt64 plan_hash = 0;
+    /// Remember, for each row group, the best value of the sort column among the rows the format
+    /// returned (see `IInputFormat::getTopKBestValuesOfBuckets`), which tells a row group whose every
+    /// row is beyond the final threshold - even if the rows were returned before the threshold got
+    /// tight enough to drop them. Set by a reading step that writes such verdicts to the query
+    /// condition cache.
+    bool track_row_group_best_values = false;
+};
 
 /// Some formats needs to custom mapping between columns in file and clickhouse columns.
 class ColumnMapper
@@ -54,6 +79,22 @@ public:
     bool hasIcebergRequiredInfo() const { return has_iceberg_required_info; }
     bool isIcebergOptionalPath(const String & path) const { return iceberg_optional_paths.contains(path); }
 
+    /// Paths whose lake type is a local (wall clock) timestamp, not an instant: Delta `timestamp_ntz`,
+    /// Iceberg `timestamp`. ClickHouse has no wall-clock type, so both arrive as DateTime64.
+    void setLocalTimestampPaths(std::unordered_set<String> && local_timestamp_paths_)
+    {
+        local_timestamp_paths = std::move(local_timestamp_paths_);
+    }
+    bool isLocalTimestampPath(const String & path) const { return local_timestamp_paths.contains(path); }
+
+    /// Field ids whose Iceberg type is `time` (microseconds since midnight, exposed as `Int64`).
+    void setIcebergTimeFieldIds(std::unordered_set<Int64> && iceberg_time_field_ids_)
+    {
+        iceberg_time_field_ids = std::move(iceberg_time_field_ids_);
+    }
+    bool isIcebergTimeFieldId(Int64 field_id) const { return iceberg_time_field_ids.contains(field_id); }
+    bool hasIcebergTimeFieldIds() const { return !iceberg_time_field_ids.empty(); }
+
     void setLastAssignedFieldId(Int64 last_assigned_field_id_) { last_assigned_field_id = last_assigned_field_id_; }
     std::optional<Int64> getLastAssignedFieldId() const { return last_assigned_field_id; }
 
@@ -67,6 +108,8 @@ private:
     bool has_iceberg_string_info = false;
     std::unordered_set<String> iceberg_optional_paths;
     bool has_iceberg_required_info = false;
+    std::unordered_set<String> local_timestamp_paths;
+    std::unordered_set<Int64> iceberg_time_field_ids;
     std::optional<Int64> last_assigned_field_id;
 };
 
@@ -113,6 +156,7 @@ struct FormatFilterInfo
     /// to a `field_id` requires this mapper, not the per-file one.
     ColumnMapperPtr current_schema_column_mapper;
 
+    /// The query condition cache key of `filter_actions_dag` (see `computeConditionHash`).
     std::optional<size_t> condition_hash;
 
     /// Lazy materialization: if set, read only the rows with these row numbers and skip everything
@@ -120,17 +164,37 @@ struct FormatFilterInfo
     /// return exactly these rows; with `FormatSettings::parquet::preserve_order` they are returned
     /// in this exact order. Only supported by the Parquet format.
     std::shared_ptr<const PaddedPODArray<UInt64>> rows_to_read;
+
+    /// TopN dynamic filtering; see the struct comment. Assigned by the reading step when the plan
+    /// optimization applies (`SourceStepWithFilterBase::setTopKFilter`); formats that don't support
+    /// it just ignore it - the filter only ever removes rows the sort + limit above would discard,
+    /// so applying it partially or not at all is always correct.
+    std::shared_ptr<const FormatTopKFilterInfo> top_k_filter;
+
+    /// Output columns are consumed only by `min` / `max`: the format may return any rows with the same per-column min and max.
+    bool min_max_from_statistics = false;
+
+    /// The caller calls `IInputFormat::cacheFilterColumnStatistics` after reading a file.
+    bool keep_filter_column_statistics = false;
 private:
     /// For lazily initializing the fields above.
     std::once_flag init_flag;
     std::exception_ptr init_exception;
 
 public:
+    /// True if the format may skip rows of the file.
     bool hasFilter() const;
 
     /// Creates `key_condition` and `additional_columns` with std::call_once semantics.
     /// If a previous init attempt threw an exception, rethrows it instead of retrying.
     void initKeyConditionOnce(const Block & keys);
+
+    /// The query condition cache key of the rows `filter_actions_dag` and `prewhere_info` keep, if
+    /// the condition is deterministic and covers `prewhere_info`.
+    static std::optional<size_t> computeConditionHash(
+        const ActionsDAG & filter_actions_dag,
+        const PrewhereInfoPtr & prewhere_info,
+        const ContextPtr & context);
 
     /// Returns `base` extended with columns required by PREWHERE / row-level filter.
     /// Hint: pass `base` with `std::move` to avoid copying

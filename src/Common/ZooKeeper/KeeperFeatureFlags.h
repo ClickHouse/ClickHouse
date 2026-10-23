@@ -33,6 +33,7 @@ enum class KeeperFeatureFlag : size_t
     CREATE_TTL,
     CREATE_CONTAINER,
     MAX_REQUEST_SIZE,
+    LIST_WITH_OPTIONS,
 };
 
 class KeeperFeatureFlags

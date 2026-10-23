@@ -49,19 +49,9 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        for (size_t i = 0; i < getNumberOfArguments(); ++i)
-        {
-            const auto * arg = arguments[i].get();
-            if (!WhichDataType(arg).isFloat64())
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of argument {} of function {}. Must be Float64",
-                    arg->getName(), i, getName());
-        }
-
-        return std::make_shared<DataTypeUInt64>();
+        return "(Float64, Float64) -> UInt64";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

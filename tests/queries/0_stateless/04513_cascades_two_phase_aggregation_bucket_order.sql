@@ -1,5 +1,3 @@
--- Tags: no-darwin
--- no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
 
 -- The memory-efficient distributed merge expects every input to deliver two-level buckets in
 -- ascending order, so the two-phase split makes the partial step emit them that way.  Without
@@ -31,19 +29,19 @@ INSERT INTO agg_bo SELECT number, number % 500, number % 200, intDiv(number, 40)
 
 -- Every output row must be a distinct group; a duplicated group means partial states were
 -- not merged.  10 repetitions because a single run can pass by chance.
-SELECT throwIf(count() != uniqExact((g1, g2)), 'duplicate groups in two-phase aggregation') FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo GROUP BY g1, g2);
-SELECT throwIf(count() != uniqExact((g1, g2)), 'duplicate groups in two-phase aggregation') FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo GROUP BY g1, g2);
-SELECT throwIf(count() != uniqExact((g1, g2)), 'duplicate groups in two-phase aggregation') FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo GROUP BY g1, g2);
-SELECT throwIf(count() != uniqExact((g1, g2)), 'duplicate groups in two-phase aggregation') FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo GROUP BY g1, g2);
-SELECT throwIf(count() != uniqExact((g1, g2)), 'duplicate groups in two-phase aggregation') FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo GROUP BY g1, g2);
-SELECT throwIf(count() != uniqExact((g1, g2)), 'duplicate groups in two-phase aggregation') FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo GROUP BY g1, g2);
-SELECT throwIf(count() != uniqExact((g1, g2)), 'duplicate groups in two-phase aggregation') FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo GROUP BY g1, g2);
-SELECT throwIf(count() != uniqExact((g1, g2)), 'duplicate groups in two-phase aggregation') FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo GROUP BY g1, g2);
-SELECT throwIf(count() != uniqExact((g1, g2)), 'duplicate groups in two-phase aggregation') FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo GROUP BY g1, g2);
-SELECT throwIf(count() != uniqExact((g1, g2)), 'duplicate groups in two-phase aggregation') FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo GROUP BY g1, g2);
+SELECT throwIf(count() != uniqExact((g1, g2)), 'duplicate groups in two-phase aggregation') FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo GROUP BY g1, g2) SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT throwIf(count() != uniqExact((g1, g2)), 'duplicate groups in two-phase aggregation') FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo GROUP BY g1, g2) SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT throwIf(count() != uniqExact((g1, g2)), 'duplicate groups in two-phase aggregation') FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo GROUP BY g1, g2) SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT throwIf(count() != uniqExact((g1, g2)), 'duplicate groups in two-phase aggregation') FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo GROUP BY g1, g2) SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT throwIf(count() != uniqExact((g1, g2)), 'duplicate groups in two-phase aggregation') FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo GROUP BY g1, g2) SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT throwIf(count() != uniqExact((g1, g2)), 'duplicate groups in two-phase aggregation') FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo GROUP BY g1, g2) SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT throwIf(count() != uniqExact((g1, g2)), 'duplicate groups in two-phase aggregation') FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo GROUP BY g1, g2) SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT throwIf(count() != uniqExact((g1, g2)), 'duplicate groups in two-phase aggregation') FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo GROUP BY g1, g2) SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT throwIf(count() != uniqExact((g1, g2)), 'duplicate groups in two-phase aggregation') FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo GROUP BY g1, g2) SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT throwIf(count() != uniqExact((g1, g2)), 'duplicate groups in two-phase aggregation') FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo GROUP BY g1, g2) SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 -- The result must also match the non-distributed baseline.
-SELECT count(), uniqExact((g1, g2)), sum(u) FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo GROUP BY g1, g2);
+SELECT count(), uniqExact((g1, g2)), sum(u) FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo GROUP BY g1, g2) SETTINGS distributed_plan_fallback_to_local_execution = 0;
 SELECT count(), uniqExact((g1, g2)), sum(u) FROM (SELECT g1, g2, uniqExact(s) AS u FROM agg_bo GROUP BY g1, g2)
 SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
 

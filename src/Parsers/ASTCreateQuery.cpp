@@ -1,4 +1,5 @@
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTCodecDeclaration.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
@@ -24,7 +25,7 @@
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <Core/UUID.h>
-#include <Parsers/getTimeSeriesSettingVersion.h>
+#include <Parsers/Prometheus/CreateQueryTimeSeriesSettings.h>
 
 
 namespace DB
@@ -67,6 +68,7 @@ void ASTColumns::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "Columns definition");
     w.writeChild("columns", columns);
+    w.writeChild("codec_declarations", codec_declarations);
     w.writeChild("indices", indices);
     w.writeChild("constraints", constraints);
     w.writeChild("projections", projections);
@@ -113,6 +115,7 @@ void ASTColumns::readJSON(const Poco::JSON::Object & json)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "A column-level 'primary_key_specifier' is not allowed in `Columns` during AST JSON deserialization");
 
+    readDeclarationList.operator()<ASTCodecDeclaration>("codec_declarations", codec_declarations);
     readDeclarationList.operator()<ASTIndexDeclaration>("indices", indices);
     readDeclarationList.operator()<ASTConstraintDeclaration>("constraints", constraints);
     readDeclarationList.operator()<ASTProjectionDeclaration>("projections", projections);
@@ -147,19 +150,19 @@ void ASTStorage::readJSON(const Poco::JSON::Object & json)
     /// `engine` (`ASTFunction`) and `settings` (`ASTSetQuery`) are concrete typed members; a wrong node
     /// type from malformed `clickhouse_json` would otherwise reach `set` as a `LOGICAL_ERROR` cast
     /// failure instead of a user-facing `BAD_ARGUMENTS`. The remaining slots are arbitrary expressions.
-    auto child = r.readChildOfType<ASTFunction>("engine");
+    auto child = r.readFunctionChildWithExpressionArguments("engine");
     if (child)
         set(engine, child);
 
-    child = r.readChild("partition_by");
+    child = r.readExpressionChild("partition_by");
     if (child)
         set(partition_by, child);
 
-    child = r.readChild("primary_key");
+    child = r.readExpressionChild("primary_key");
     if (child)
         set(primary_key, child);
 
-    child = r.readChild("order_by");
+    child = r.readExpressionChild("order_by");
     if (child)
         set(order_by, child);
 
@@ -167,7 +170,7 @@ void ASTStorage::readJSON(const Poco::JSON::Object & json)
     if (child)
         set(unique_key, child);
 
-    child = r.readChild("sample_by");
+    child = r.readExpressionChild("sample_by");
     if (child)
         set(sample_by, child);
 
@@ -178,6 +181,11 @@ void ASTStorage::readJSON(const Poco::JSON::Object & json)
     child = r.readChildOfType<ASTExpressionList>("ttl_table");
     if (child)
     {
+        /// `ParserTTLExpressionList` reads at least one element, and an empty list formats as a bare
+        /// `TTL` clause that the metadata reparse rejects.
+        if (child->children.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "`ttl_table` must not be an empty list during AST JSON deserialization");
         for (const auto & ttl_element : child->children)
             if (!ttl_element || !ttl_element->as<ASTTTLElement>())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -271,6 +279,11 @@ void ASTStorage::normalizeChildrenOrder()
 }
 
 
+bool ASTStorage::isEmpty() const
+{
+    return !engine && !partition_by && !primary_key && !order_by && !sample_by && !ttl_table && !unique_key && !settings;
+}
+
 bool ASTStorage::isExtendedStorageDefinition() const
 {
     return partition_by || primary_key || order_by || unique_key || sample_by || settings;
@@ -327,6 +340,8 @@ ASTPtr ASTColumns::clone() const
 
     if (columns)
         res->set(res->columns, columns->clone());
+    if (codec_declarations)
+        res->set(res->codec_declarations, codec_declarations->clone());
     if (indices)
         res->set(res->indices, indices->clone());
     if (constraints)
@@ -352,6 +367,16 @@ void ASTColumns::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Format
             auto elem = make_intrusive<ASTColumnsElement>();
             elem->prefix = "";
             elem->set(elem->elem, column->clone());
+            list.children.push_back(elem);
+        }
+    }
+    if (codec_declarations)
+    {
+        for (const auto & declaration : codec_declarations->children)
+        {
+            auto elem = make_intrusive<ASTColumnsElement>();
+            elem->prefix = "CODEC";
+            elem->set(elem->elem, declaration->clone());
             list.children.push_back(elem);
         }
     }
@@ -568,7 +593,7 @@ void ASTCreateQuery::writeJSON(WriteBuffer & out) const
     {
         std::optional<UInt64> time_series_version;
         if (is_time_series_table)
-            time_series_version = getTimeSeriesSettingVersion(*this);
+            time_series_version = getTimeSeriesVersion(*this);
         w.writeKey("targets");
         targets->writeJSON(out, time_series_version);
     }
@@ -718,7 +743,7 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
 
     /// `as_table_function` is parser-produced as an `ASTFunction` (`AS table_function(...)`);
     /// `InterpreterCreateQuery::setEngine` does `as_table_function->as<ASTFunction>()->name`.
-    child = r.readChildOfType<ASTFunction>("as_table_function");
+    child = r.readScreenedChildOfType<ASTFunction>("as_table_function");
     if (child)
         set(as_table_function, child);
 
@@ -728,7 +753,7 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "`CreateQuery` declares both 'storage' and 'as_table_function' during AST JSON deserialization");
 
-    child = r.readChildOfType<ASTSelectWithUnionQuery>("select");
+    child = r.readScreenedChildOfType<ASTSelectWithUnionQuery>("select");
     if (child)
         set(select, child);
 
@@ -767,6 +792,10 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
     child = r.readChildOfType<ASTExpressionList>("dictionary_attributes_list");
     if (child)
     {
+        /// `ParserDictionaryAttributeDeclarationList` reads at least one attribute.
+        if (child->children.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'dictionary_attributes_list' must be a non-empty list of dictionary attribute declarations during AST JSON deserialization");
         /// Dictionary configuration walks this list and downcasts each child to
         /// `ASTDictionaryAttributeDeclaration` (the only type `ParserDictionaryAttributeDeclarationList` produces).
         for (const auto & attribute : child->children)
@@ -779,6 +808,13 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
     child = r.readChildOfType<ASTDictionary>("dictionary");
     if (child)
         set(dictionary, child);
+
+    /// `ParserCreateDictionaryQuery` reads the attributes together with the definition, except for `ATTACH`; no other query has them.
+    const bool expect_definition = is_dictionary && !attach;
+    if ((dictionary_attributes_list != nullptr) != expect_definition || (dictionary != nullptr) != expect_definition)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`CreateQuery` must have both 'dictionary_attributes_list' and 'dictionary' in a `CREATE DICTIONARY` and neither "
+            "in other queries during AST JSON deserialization");
 
     child = r.readChildOfType<ASTRefreshStrategy>("refresh_strategy");
     if (child)
@@ -1180,7 +1216,7 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
     {
         std::optional<UInt64> time_series_version;
         if (is_time_series_table)
-            time_series_version = getTimeSeriesSettingVersion(*this);
+            time_series_version = getTimeSeriesVersion(*this);
         for (const auto & target : targets->targets)
         {
             /// `To` and `Inner` are formatted separately above (for materialized views).
