@@ -46,13 +46,17 @@ struct CommandSelectorResult : private std::variant<SQLSet, arrow::Result<std::s
     }
 };
 
-inline bool isArrowFlightSql(const google::protobuf::Any & any_msg)
+/// The name of the message type in the type URL of `any_msg`, which can be given with or without a prefix ending with a slash.
+inline std::string getTypeName(const google::protobuf::Any & any_msg)
 {
     const auto & type_url = any_msg.type_url();
     const auto slash_pos = type_url.find_last_of('/');
-    const auto type_name = (slash_pos == std::string::npos) ? type_url : type_url.substr(slash_pos + 1);
+    return (slash_pos == std::string::npos) ? type_url : type_url.substr(slash_pos + 1);
+}
 
-    return type_name.starts_with("arrow.flight.protocol.sql.");
+inline bool isArrowFlightSql(const google::protobuf::Any & any_msg)
+{
+    return getTypeName(any_msg).starts_with("arrow.flight.protocol.sql.");
 }
 
 inline bool cmdIsArrowFlightSql(const std::string & cmd)
