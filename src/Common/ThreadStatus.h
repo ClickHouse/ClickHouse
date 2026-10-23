@@ -292,10 +292,10 @@ protected:
 private:
     explicit ThreadStatus(UInt64 thread_id_);
 
+public:
     /// Whether this ThreadStatus owns a dedicated OS thread (as opposed to a fiber).
     bool boundToOSThread() const { return thread_id != NO_OS_THREAD; }
 
-public:
     struct NoOSThreadTag {};
 
     ThreadStatus();
