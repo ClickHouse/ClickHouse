@@ -1124,7 +1124,8 @@ TEST(Statistics, CountMinSketchDeserializeCorrupted)
     /// `StatisticsCountMinSketch` itself, without the `ColumnStatistics` wrapper.
     auto create = [&]
     {
-        auto stats = MergeTreeStatisticsFactory::instance().tryCreateSingle(StatisticsType::CountMinSketch, data_type);
+        auto stats = MergeTreeStatisticsFactory::instance().tryCreateSingle(
+            SingleStatisticsDescription(StatisticsType::CountMinSketch, nullptr, false), data_type);
         EXPECT_TRUE(stats != nullptr);
         return stats;
     };
