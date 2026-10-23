@@ -65,7 +65,13 @@ namespace
         return static_cast<time_t>(std::chrono::duration_cast<std::chrono::seconds>(tp.time_since_epoch()).count());
     }
 
-    ObjectMetadata toObjectMetadata(const gcs::ObjectMetadata & md)
+    /// The namespace of the object generations of one bucket, for `ObjectMetadata::content_cache_namespace`.
+    String contentCacheNamespace(const GCSObjectStorageSettings & settings, const String & bucket)
+    {
+        return fmt::format("gcs:{}/{}", settings.endpoint_override, bucket);
+    }
+
+    ObjectMetadata toObjectMetadata(const gcs::ObjectMetadata & md, const String & cache_namespace)
     {
         ObjectMetadata result;
         result.size_bytes = md.size();
@@ -76,6 +82,9 @@ namespace
         /// cache key wherever an etag is expected) and `readObject` can pin ranged re-reads to it
         /// with `IfGenerationMatch` to detect concurrent overwrites (`s3_validate_etag_on_read`).
         result.etag = std::to_string(md.generation());
+        /// A generation is unique only for one object of one bucket, unlike a content hash, so the caches that key on
+        /// the path within the bucket and the etag must also see the bucket and the endpoint.
+        result.content_cache_namespace = cache_namespace;
         for (const auto & [key, value] : md.metadata())
             result.attributes.emplace(key, value);
         return result;
@@ -101,6 +110,7 @@ namespace
         GCSIteratorAsync(
             std::shared_ptr<gcs::Client> client_,
             String bucket_,
+            String cache_namespace_,
             String path_prefix_,
             String disk_name_,
             const std::optional<std::string> & start_after_,
@@ -112,6 +122,7 @@ namespace
                 ThreadName::GCS_LIST_POOL)
             , client(std::move(client_))
             , bucket(std::move(bucket_))
+            , cache_namespace(std::move(cache_namespace_))
             , path_prefix(std::move(path_prefix_))
             , disk_name(std::move(disk_name_))
             , start_after(start_after_.has_value() ? *start_after_ : "")
@@ -157,7 +168,7 @@ namespace
                 if (!start_after.empty() && item->name() <= start_after)
                     continue;
 
-                batch.emplace_back(std::make_shared<RelativePathWithMetadata>(item->name(), toObjectMetadata(*item)));
+                batch.emplace_back(std::make_shared<RelativePathWithMetadata>(item->name(), toObjectMetadata(*item, cache_namespace)));
 
                 if (batch.size() >= batch_size)
                 {
@@ -171,6 +182,7 @@ namespace
 
         std::shared_ptr<gcs::Client> client;
         const String bucket;
+        const String cache_namespace;
         const String path_prefix;
         const String disk_name;
         const String start_after;
@@ -350,7 +362,8 @@ void GCSObjectStorage::listObjects(const std::string & path, RelativePathsWithMe
             throwFromGCSStatus(item.status(),
                 fmt::format("while listing objects in bucket '{}' with prefix '{}' on disk '{}'", bucket, path, disk_name));
 
-        children.emplace_back(std::make_shared<RelativePathWithMetadata>(item->name(), toObjectMetadata(*item)));
+        children.emplace_back(std::make_shared<RelativePathWithMetadata>(
+            item->name(), toObjectMetadata(*item, contentCacheNamespace(snapshot->settings, bucket))));
 
         if (max_keys && ++count >= max_keys)
             break;
@@ -370,7 +383,7 @@ ObjectStorageIteratorPtr GCSObjectStorage::iterate(
     if (!max_keys)
         max_keys = snapshot->settings.list_object_keys_size;
     return std::make_shared<GCSIteratorAsync>(
-        snapshot->client, bucket, path_prefix, disk_name, start_after, max_keys);
+        snapshot->client, bucket, contentCacheNamespace(snapshot->settings, bucket), path_prefix, disk_name, start_after, max_keys);
 }
 
 void GCSObjectStorage::removeObjectImpl(
@@ -431,7 +444,7 @@ ObjectMetadata GCSObjectStorage::getObjectMetadata(const std::string & path, boo
     if (!metadata)
         throwFromGCSStatus(metadata.status(),
             fmt::format("while reading metadata of '{}' in bucket '{}' on disk '{}'", path, bucket, disk_name));
-    return toObjectMetadata(*metadata);
+    return toObjectMetadata(*metadata, contentCacheNamespace(snapshot->settings, bucket));
 }
 
 std::optional<ObjectMetadata> GCSObjectStorage::tryGetObjectMetadata(const std::string & path, bool /*with_tags*/) const
@@ -440,7 +453,7 @@ std::optional<ObjectMetadata> GCSObjectStorage::tryGetObjectMetadata(const std::
     countRequest(ProfileEvents::GCSGetObjectMetadata, ProfileEvents::DiskGCSGetObjectMetadata, snapshot->settings.for_disk);
     auto metadata = snapshot->client->GetObjectMetadata(bucket, path);
     if (metadata)
-        return toObjectMetadata(*metadata);
+        return toObjectMetadata(*metadata, contentCacheNamespace(snapshot->settings, bucket));
     if (isGCSNotFoundError(metadata.status()))
         return {};
     throwFromGCSStatus(metadata.status(),
