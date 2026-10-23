@@ -5606,10 +5606,16 @@ std::vector<KeyCondition::ComparisonAtomCandidate> KeyCondition::collectComparis
     std::vector<ComparisonAtomCandidate> candidates;
 
     /// A string ordered against an `Enum` constant, also in a tuple element, compares by value, not in the order of a string key.
-    /// An `Enum` ordered against a string constant converts the constant to the `Enum`, which matches the numeric key order.
-    if ((func_name == "less" || func_name == "greater" || func_name == "lessOrEquals" || func_name == "greaterOrEquals")
-        && comparesStringWithEnum(key_arg.getDAGNode()->result_type, getConstantValueType(*constant_for_transform.column, const_type)))
-        return candidates;
+    /// A scalar `Enum` key ordered against a string constant converts the constant to the `Enum`, which matches the numeric key order.
+    /// A tuple key takes the common type with a tuple constant instead, which casts an `Enum` element to its name.
+    if (func_name == "less" || func_name == "greater" || func_name == "lessOrEquals" || func_name == "greaterOrEquals")
+    {
+        const auto & key_type = key_arg.getDAGNode()->result_type;
+        const auto value_type = getConstantValueType(*constant_for_transform.column, const_type);
+        if (comparesStringWithEnum(key_type, value_type)
+            || (isTuple(removeLowCardinalityAndNullable(key_type)) && comparesStringWithEnum(value_type, key_type)))
+            return candidates;
+    }
 
     /// The constant was already pushed through a key-side recipe, so it compares
     /// against the key column directly and the check-time chain is empty.
