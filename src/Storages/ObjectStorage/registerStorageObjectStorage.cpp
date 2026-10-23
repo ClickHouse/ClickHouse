@@ -1982,7 +1982,7 @@ The Keeper cursor at `paimon_keeper_path` records how far the stream has consume
 
 Moving the warehouse *backwards* breaks that assumption. Restoring the warehouse from an older backup, rolling it back with another engine, or dropping and recreating the Paimon table at the same path all rewind the snapshot ids, and the writer then reuses ids the cursor has already consumed.
 
-**Rewinding the warehouse requires resetting the cursor in the same operation.** ClickHouse cannot reconstruct which snapshots a consumer already received once ids are reused, so a cursor left behind after a rewind produces undefined delivery: snapshots at reused ids may be skipped.
+**Rewinding the warehouse requires resetting the cursor in the same operation.** The cursor also records which snapshot it points at, so once the writer has reused the cursor's snapshot id, the read fails with `INVALID_STATE`: nothing is read and the cursor is left untouched. To recover, point the cursor at the snapshot the warehouse was rewound to, which reads every snapshot written since the rewind, or set it to its current value, which skips the snapshots at the reused ids. A cursor set by hand, or written by an older version, is trusted as written until a read advances it. Nothing can be checked once Paimon has expired the snapshot the cursor points at, nor for a rewind that keeps the cursor's snapshot and lands while a read is loading the snapshots after it.
 
 When the rewind leaves the cursor pointing past the warehouse's newest snapshot, the read fails with `INVALID_STATE` rather than reporting no new data, and the error names the recovery command. Nothing is read and the cursor is left untouched, so every subsequent poll fails identically until it is resolved:
 
