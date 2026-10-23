@@ -576,6 +576,36 @@ static bool hasColumnsWithDynamicSubcolumns(const Block & block)
     return false;
 }
 
+static bool isLossyStream(const ISerialization::SubstreamPath & substream_path, const ColumnDescription & column)
+{
+    if (!ISerialization::isSpecialCompressionAllowed(substream_path))
+        return false;
+    auto codec = getSubstreamCodecDescription(substream_path, column);
+    return codec && CompressionCodecFactory::instance().get(codec, substream_path.back().data.type.get())->isLossyCompression();
+}
+
+/// The dictionary stream of `LowCardinality` also stores its version and sizes, which a lossy codec would corrupt.
+void MergeTreeData::checkLossyCodecOnLowCardinality(const ColumnsDescription & columns)
+{
+    for (const auto & column : columns)
+    {
+        if ((!column.codec && column.subcolumn_codecs.empty()) || !columns.hasPhysical(column.name))
+            continue;
+
+        bool is_lossy = false;
+        ISerialization::StreamCallback callback = [&](const auto & substream_path)
+        {
+            if (!is_lossy && ISerialization::isLowCardinalityDictionarySubcolumn(substream_path))
+                is_lossy = isLossyStream(substream_path, column);
+        };
+        column.type->getDefaultSerialization()->enumerateStreams(callback, column.type);
+
+        if (is_lossy)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Column {} contains a LowCardinality type, so it cannot be compressed with a lossy codec", backQuoteIfNeed(column.name));
+    }
+}
+
 namespace
 {
 
@@ -1292,14 +1322,6 @@ void MergeTreeData::checkProperties(
     /// the data on disk no longer holds. Not on attach, so a table stored by an earlier version stays loadable.
     if (!attach)
     {
-        auto is_lossy_stream = [](const ISerialization::SubstreamPath & substream_path, const ColumnDescription & column)
-        {
-            if (!ISerialization::isSpecialCompressionAllowed(substream_path))
-                return false;
-            auto codec = getSubstreamCodecDescription(substream_path, column);
-            return codec && CompressionCodecFactory::instance().get(codec, substream_path.back().data.type.get())->isLossyCompression();
-        };
-
         Names key_columns = new_metadata.getColumnsRequiredForSortingKey();
         const Names partition_key_columns = new_metadata.getColumnsRequiredForPartitionKey();
         key_columns.insert(key_columns.end(), partition_key_columns.begin(), partition_key_columns.end());
@@ -1319,7 +1341,7 @@ void MergeTreeData::checkProperties(
             ISerialization::StreamCallback callback = [&](const auto & substream_path)
             {
                 if (!is_lossy)
-                    is_lossy = is_lossy_stream(substream_path, *column);
+                    is_lossy = isLossyStream(substream_path, *column);
             };
             /// The serialization of a subcolumn enumerates its streams with the full path from the column, as the writer does.
             const auto & type_in_storage = written_column->getTypeInStorage();
@@ -1333,25 +1355,6 @@ void MergeTreeData::checkProperties(
                     "Column {} is used in the sorting key or the partition key, so it cannot be compressed "
                     "with a lossy codec",
                     backQuoteIfNeed(name));
-        }
-
-        /// The dictionary stream of `LowCardinality` also stores its version and sizes, which a lossy codec would corrupt.
-        for (const auto & column : new_metadata.columns)
-        {
-            if (!column.codec && column.subcolumn_codecs.empty())
-                continue;
-
-            bool is_lossy = false;
-            ISerialization::StreamCallback callback = [&](const auto & substream_path)
-            {
-                if (!is_lossy && ISerialization::isLowCardinalityDictionarySubcolumn(substream_path))
-                    is_lossy = is_lossy_stream(substream_path, column);
-            };
-            column.type->getDefaultSerialization()->enumerateStreams(callback, column.type);
-
-            if (is_lossy)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Column {} contains a LowCardinality type, so it cannot be compressed with a lossy codec", backQuoteIfNeed(column.name));
         }
     }
 
@@ -6994,6 +6997,9 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     }
 
     checkProperties(new_metadata, old_metadata, false, false, allow_nullable_key, local_context, alter_effective_settings.get());
+    /// Not in `checkProperties`, which also runs when a replica applies an already committed ALTER.
+    if (!is_secondary_replay)
+        checkLossyCodecOnLowCardinality(new_metadata.columns);
     checkTTLExpressions(new_metadata, old_metadata);
     if (!is_secondary_replay)
         checkColumnTTLsForKeyColumns(new_metadata, old_metadata);

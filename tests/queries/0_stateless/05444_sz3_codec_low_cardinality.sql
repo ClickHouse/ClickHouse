@@ -8,6 +8,7 @@ SET enable_sz3_codec = 1, allow_suspicious_low_cardinality_types = 1, enable_sub
 SET allow_suspicious_codecs = 1;
 
 DROP TABLE IF EXISTS tab;
+DROP TABLE IF EXISTS tab_ephemeral;
 
 CREATE TABLE tab (k UInt64, x LowCardinality(Float64) CODEC(SZ3)) ENGINE = MergeTree ORDER BY k; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE tab (k UInt64, x LowCardinality(Float64) CODEC(SZ3, LZ4)) ENGINE = MergeTree ORDER BY k; -- { serverError BAD_ARGUMENTS }
@@ -28,3 +29,8 @@ ALTER TABLE tab ADD COLUMN w Array(LowCardinality(Float64)) CODEC(SZ3); -- { ser
 SELECT count(), uniqExact(x.a), uniqExact(y) FROM tab;
 
 DROP TABLE tab;
+
+-- An EPHEMERAL column is not stored, so a lossy codec on it is allowed
+CREATE TABLE tab_ephemeral (k UInt64, e LowCardinality(Float64) EPHEMERAL 0 CODEC(SZ3)) ENGINE = MergeTree ORDER BY k;
+ALTER TABLE tab_ephemeral ADD COLUMN f LowCardinality(Float64) EPHEMERAL 0 CODEC(SZ3);
+DROP TABLE tab_ephemeral;
