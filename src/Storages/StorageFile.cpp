@@ -179,6 +179,26 @@ using String = std::string;
 
 namespace
 {
+thread_local bool local_file_descriptor_inference = false;
+thread_local bool preserve_inherited_file_descriptor_offset = false;
+}
+
+ScopedLocalFileDescriptorInference::ScopedLocalFileDescriptorInference(bool enabled, bool preserve_inherited_offset)
+    : previous_enabled(local_file_descriptor_inference)
+    , previous_preserve_offset(preserve_inherited_file_descriptor_offset)
+{
+    local_file_descriptor_inference = enabled;
+    preserve_inherited_file_descriptor_offset = enabled && preserve_inherited_offset;
+}
+
+ScopedLocalFileDescriptorInference::~ScopedLocalFileDescriptorInference()
+{
+    local_file_descriptor_inference = previous_enabled;
+    preserve_inherited_file_descriptor_offset = previous_preserve_offset;
+}
+
+namespace
+{
 /// Bound on the recursion depth of `listFilesWithRegexpMatchingImpl`.
 constexpr size_t MAX_LIST_FILES_RECURSION_DEPTH = 1000;
 
@@ -1287,10 +1307,11 @@ std::pair<ColumnsDescription, String> StorageFile::getTableStructureAndFormatFro
     /// schema inference.
     auto file_stat = getFileStat("", true, table_fd, getName());
     const auto read_method = context->getSettingsRef()[Setting::storage_file_read_method];
-    inferred_fd_reader_is_positional = S_ISREG(file_stat.st_mode)
+    inferred_fd_reader_is_positional = local_file_descriptor_inference
+        && S_ISREG(file_stat.st_mode)
         && (read_method == LocalFSReadMethod::pread || read_method == LocalFSReadMethod::mmap);
     inferred_fd_reader_uses_mmap = inferred_fd_reader_is_positional && read_method == LocalFSReadMethod::mmap;
-    if (inferred_fd_reader_is_positional)
+    if (inferred_fd_reader_is_positional && preserve_inherited_file_descriptor_offset)
     {
         const off_t offset = ::lseek(table_fd, 0, SEEK_CUR);
         if (offset < 0)
