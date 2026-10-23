@@ -6,6 +6,7 @@
 #include <tuple>
 #include <utility>
 
+#include <Access/Common/AccessType.h>
 #include <Backups/IRestoreCoordination.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Core/ServerSettings.h>
@@ -2882,6 +2883,9 @@ void DatabaseReplicated::applySettingsChanges(const SettingsChanges & changes, C
         if (change.name == "collection_name")
         {
             const String & collection_name = new_settings[DatabaseReplicatedSetting::collection_name];
+            if (!collection_name.empty())
+                query_context->checkAccess(AccessType::NAMED_COLLECTION, collection_name);
+
             new_cluster_auth_info.emplace(getClusterAuthInfo(collection_name));
             if (new_cluster_auth_info->cluster_secure_connection != cluster_auth_info->cluster_secure_connection)
             {

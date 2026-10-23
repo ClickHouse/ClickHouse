@@ -1,0 +1,16 @@
+created	default	Replicated(\'/test/{db}/collection_name_access\', \'shard1\', \'replica1\')
+created ok rows=1
+ACCESS_DENIED
+ACCESS_DENIED
+denied	default	Replicated(\'/test/{db}/collection_name_access\', \'shard1\', \'replica1\')
+OK
+granted	{db}_cluster_user	Replicated(\'/test/{db}/collection_name_access\', \'shard1\', \'replica1\') SETTINGS collection_name = \'{db}_collection\'
+granted ok rows=1
+collection changed ok rows=1
+OK
+collection reread failed AUTHENTICATION_FAILED
+reattached	{db}_cluster_user	Replicated(\'/test/{db}/collection_name_access\', \'shard1\', \'replica1\') SETTINGS collection_name = \'{db}_collection\'
+reattached ok rows=1
+OK
+cleared	default	Replicated(\'/test/{db}/collection_name_access\', \'shard1\', \'replica1\') SETTINGS collection_name = \'\'
+cleared ok rows=1
