@@ -91,8 +91,7 @@ private:
 
         std::atomic<State> state {State::HasRange};
 
-        /// Whether this range can be piggy-backed to nearby other reads.
-        std::atomic<bool> allow_incidental_read {true};
+        std::atomic<bool> likely_to_be_used {true};
 
         /// Whether the data of this range was handed out by getRangeData. To count used bytes once (introspection only).
         std::atomic<bool> data_used {false};

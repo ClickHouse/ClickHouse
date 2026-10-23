@@ -1512,12 +1512,25 @@ void Reader::initializePrefetches()
         || std::any_of(primitive_columns.begin(), primitive_columns.end(), [](const auto & c) { return !c.column_index_conditions.empty(); });
     bool need_to_find_bloom_filter_lengths_the_hard_way = false;
 
+    const bool has_row_filter = format_filter_info->prewhere_info || format_filter_info->row_level_filter;
+
+    struct DeferredRange
+    {
+        PrefetchHandle * handle;
+        size_t offset;
+        size_t length;
+    };
+    std::vector<DeferredRange> deferred_ranges;
+
     for (RowGroup & row_group : row_groups)
     {
+        deferred_ranges.clear();
+
         /// Initialize prefetches.
         for (size_t column_idx = 0; column_idx < primitive_columns.size(); ++column_idx)
         {
             ColumnChunk & column = row_group.columns[column_idx];
+            const bool deferrable = !primitive_columns[column_idx].used_by_key_condition;
 
             /// The data pages of a column served from the columns cache are not read. Its bloom filter,
             /// dictionary filter and column index are still used, as they prune row groups and pages
@@ -1548,8 +1561,13 @@ void Reader::initializePrefetches()
                 /// allows coalescing it with the other requested ranges again). A page shorter than
                 /// `min_bytes_for_seek` can still be read incidentally, which costs less than a seek.
                 if (!column.served_from_cache || column.use_dictionary_filter)
-                    column.dictionary_page_prefetch = prefetcher.registerRange(
-                        start, dict_page_length, /*likely_to_be_used=*/ !column.use_dictionary_filter);
+                {
+                    if (deferrable && !column.use_dictionary_filter)
+                        deferred_ranges.push_back({&column.dictionary_page_prefetch, start, dict_page_length});
+                    else
+                        column.dictionary_page_prefetch = prefetcher.registerRange(
+                            start, dict_page_length, /*likely_to_be_used=*/ !column.use_dictionary_filter);
+                }
             }
 
             /// Bloom filter.
@@ -1649,11 +1667,21 @@ void Reader::initializePrefetches()
             if (file_metadata().created_by == "parquet-mr" && !column.meta->meta_data.__isset.dictionary_page_offset && !column.meta->__isset.offset_index_offset)
                 data_pages_extra_bytes = std::min(100ul, prefetcher.getFileSize() - size_t(column.meta->meta_data.data_page_offset) - column.data_pages_bytes);
 
-            column.data_pages_prefetch = prefetcher.registerRange(
-                size_t(column.meta->meta_data.data_page_offset),
-                column.data_pages_bytes + data_pages_extra_bytes,
-                /*likely_to_be_used=*/ true);
+            if (deferrable)
+                deferred_ranges.push_back(
+                    {&column.data_pages_prefetch, size_t(column.meta->meta_data.data_page_offset), column.data_pages_bytes + data_pages_extra_bytes});
+            else
+                column.data_pages_prefetch = prefetcher.registerRange(
+                    size_t(column.meta->meta_data.data_page_offset),
+                    column.data_pages_bytes + data_pages_extra_bytes,
+                    /*likely_to_be_used=*/ true);
         }
+
+        const bool may_be_pruned = has_row_filter
+            || std::any_of(row_group.columns.begin(), row_group.columns.end(), [](const ColumnChunk & c)
+                { return c.use_dictionary_filter || c.use_bloom_filter || c.use_column_index; });
+        for (const auto & range : deferred_ranges)
+            *range.handle = prefetcher.registerRange(range.offset, range.length, /*likely_to_be_used=*/ !may_be_pruned);
     }
 
     if (need_to_find_bloom_filter_lengths_the_hard_way)

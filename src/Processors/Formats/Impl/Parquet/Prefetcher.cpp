@@ -158,7 +158,7 @@ PrefetchHandle Prefetcher::registerRange(size_t offset, size_t length, bool like
         throw Exception(ErrorCodes::INCORRECT_DATA, "Range out of bounds: offset {}, length {}, file size {}", offset, length, file_size);
     RequestState & req = requests.emplace_back();
     req.length = length;
-    req.allow_incidental_read.store(likely_to_be_used || length < min_bytes_for_seek, std::memory_order_relaxed);
+    req.likely_to_be_used.store(likely_to_be_used, std::memory_order_relaxed);
     range_sets[0].ranges.push_back(RangeState {.request = &req, .start = offset, .end = offset + length});
     return PrefetchHandle(&req);
 }
@@ -191,7 +191,7 @@ void Prefetcher::startPrefetch(const std::vector<PrefetchHandle *> & requests_to
     /// min_bytes_for_seek.
     for (const PrefetchHandle * handle : requests_to_start)
         if (*handle)
-            handle->request->allow_incidental_read.store(true, std::memory_order_relaxed);
+            handle->request->likely_to_be_used.store(true, std::memory_order_relaxed);
 
     for (PrefetchHandle * handle : requests_to_start)
     {
@@ -269,7 +269,7 @@ std::vector<PrefetchHandle> Prefetcher::splitRange(
                     const auto [start, length] = subranges[i];
                     RequestState * req = out_handles[i].request;
                     req->state.store(RequestState::State::HasRange, std::memory_order_relaxed);
-                    req->allow_incidental_read.store(likely_to_be_used || length < min_bytes_for_seek);
+                    req->likely_to_be_used.store(likely_to_be_used);
                     req->range_set_idx = new_range_set_idx;
                     req->range_idx = i;
                     req->length = length;
@@ -338,6 +338,9 @@ void Prefetcher::pickRangesAndCreateTaskIfNotExists(RequestState * initial_req, 
         end_offset = ranges[range_idx].end;
     }
 
+    const size_t initial_start_offset = start_offset;
+    const size_t initial_end_offset = end_offset;
+
     /// Try to extend the task's range in both directions to cover more request ranges, as long
     /// as gaps between them are shorter than min_bytes_for_seek.
 
@@ -352,7 +355,7 @@ void Prefetcher::pickRangesAndCreateTaskIfNotExists(RequestState * initial_req, 
         const RangeState & r = ranges[idx - 1];
         if (r.end + min_bytes_for_seek <= start_offset || // short gap
             r.start + bytes_per_read_task <= initial_offset || // task not too big
-            !r.request->allow_incidental_read.load(std::memory_order_relaxed)) // range wants to be coalesced
+            !(r.request->likely_to_be_used.load(std::memory_order_relaxed) || r.length() < min_bytes_for_seek)) // range wants to be coalesced
             break;
 
         const auto s = r.request->state.load(std::memory_order_relaxed);
@@ -387,7 +390,7 @@ void Prefetcher::pickRangesAndCreateTaskIfNotExists(RequestState * initial_req, 
         const RangeState & r = ranges[end_idx];
         if (end_offset + min_bytes_for_seek <= r.start ||
             initial_offset + bytes_per_read_task <= r.end ||
-            !r.request->allow_incidental_read.load(std::memory_order_relaxed))
+            !(r.request->likely_to_be_used.load(std::memory_order_relaxed) || r.length() < min_bytes_for_seek))
             break;
 
         const auto s = r.request->state.load(std::memory_order_relaxed);
@@ -404,6 +407,30 @@ void Prefetcher::pickRangesAndCreateTaskIfNotExists(RequestState * initial_req, 
             chassert(s == RequestState::State::HasTask);
             break;
         }
+    }
+
+    auto is_useful = [&](size_t idx)
+    {
+        const RequestState * req = ranges[idx].request;
+        return idx == range_idx
+            || (req->state.load(std::memory_order_relaxed) == RequestState::State::HasRange
+                && req->likely_to_be_used.load(std::memory_order_relaxed));
+    };
+    while (start_idx < range_idx && !is_useful(start_idx))
+        ++start_idx;
+    while (end_idx > range_idx + 1 && !is_useful(end_idx - 1))
+        --end_idx;
+
+    start_offset = initial_start_offset;
+    end_offset = initial_end_offset;
+    total_length_of_covered_ranges = end_offset - start_offset;
+    for (size_t idx = start_idx; idx < end_idx; ++idx)
+    {
+        if (idx == range_idx || ranges[idx].request->state.load(std::memory_order_relaxed) != RequestState::State::HasRange)
+            continue;
+        total_length_of_covered_ranges += ranges[idx].length();
+        start_offset = std::min(start_offset, ranges[idx].start);
+        end_offset = std::max(end_offset, ranges[idx].end);
     }
 
     /// Create task.
