@@ -235,6 +235,15 @@ public:
     /// Tells if merge() with thread pool parameter could be used.
     virtual bool isAbleToParallelizeMerge() const { return false; }
 
+    /// Whether merging `rhs` into `place` is expensive enough to be deferred by `mergeBatchOrDefer` /
+    /// `mergeAndDestroyBatchOrDefer` and merged later in parallel via `parallelizeMergeMulti`.
+    /// Overridden by functions whose merge cost grows with the state size (e.g. `uniqExact`);
+    /// combinators forward it to the nested function so that wrapped states are deferred too.
+    virtual bool isLargeMergePair(ConstAggregateDataPtr __restrict /*place*/, ConstAggregateDataPtr __restrict /*rhs*/) const
+    {
+        return false;
+    }
+
     /// Return true if it is allowed to replace call of `addBatch`
     /// to `addBatchSinglePlace` for ranges of consecutive equal keys.
     virtual bool canOptimizeEqualKeysRanges() const { return true; }
@@ -274,6 +283,40 @@ public:
     /// Merges states (on which src places points to) with other states (on which dst places points to) of current aggregation function
     /// then destroy states (on which src places points to).
     virtual void mergeAndDestroyBatch(AggregateDataPtr * dst_places, AggregateDataPtr * src_places, size_t size, size_t offset, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const = 0;
+
+    /// Same as `mergeAndDestroyBatch`, but pairs of states that are too large to merge serially on this
+    /// thread are skipped and appended (with `offset` already applied) to `deferred_dst`/`deferred_src`.
+    /// The caller must later merge each deferred destination with all its deferred sources — e.g. via
+    /// `parallelizeMergeMulti` — and destroy the deferred source states.
+    /// Functions that cannot parallelize their merge (see `isAbleToParallelizeMerge`) defer nothing.
+    /// If it throws, every source state of the batch has been destroyed or recorded in `deferred_src`.
+    /// Should be used only if `isAbleToParallelizeMerge` returned true. It is not a member of `IAggregateFunctionHelper`
+    /// on purpose: the merges of such functions are expensive anyway, so the virtual calls cost nothing, while a
+    /// devirtualized copy for every aggregate function and combinator would only bloat the binary.
+    void mergeAndDestroyBatchOrDefer(
+        AggregateDataPtr * dst_places,
+        AggregateDataPtr * src_places,
+        size_t size,
+        size_t offset,
+        PaddedPODArray<AggregateDataPtr> & deferred_dst,
+        PaddedPODArray<AggregateDataPtr> & deferred_src,
+        Arena * arena) const;
+
+    /// Same as `mergeBatch`, but pairs of states that are too large to merge serially on this thread are
+    /// skipped and appended (with `place_offset` already applied to the destination) to `deferred_dst`/`deferred_src`.
+    /// The caller must later merge each deferred destination with all its deferred sources — e.g. via
+    /// `parallelizeMergeMulti`. The sources stay owned by the caller (they live in an aggregate column)
+    /// and are not destroyed. Functions that cannot parallelize their merge defer nothing.
+    /// Should be used only if `isAbleToParallelizeMerge` returned true (see `mergeAndDestroyBatchOrDefer`).
+    void mergeBatchOrDefer(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const AggregateDataPtr * rhs,
+        PaddedPODArray<AggregateDataPtr> & deferred_dst,
+        PaddedPODArray<AggregateDataPtr> & deferred_src,
+        Arena * arena) const;
 
     /// Serializes state (to transmit it over the network, for example).
     virtual void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version = std::nullopt) const = 0; /// NOLINT

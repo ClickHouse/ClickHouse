@@ -64,6 +64,16 @@ GeneralWindowFunctionSlot createSlot(const Block & input_header, const WindowFun
     return slot;
 }
 
+void destroyStates(std::vector<GeneralWindowFunctionSlot> & general_functions, std::vector<WindowFunctionWorkspace> & workspaces)
+{
+    for (auto & slot : general_functions)
+        if (slot.state)
+            slot.function->destroyState(slot.state);
+
+    for (auto & ws : workspaces)
+        ws.aggregate_function->destroy(ws.aggregate_function_state.data());
+}
+
 std::vector<ArgumentBlock> collectArgumentBlocks(const SlidingBlocks & blocks, RowNumber batch_start, Int64 batch_start_position)
 {
     Int64 first_row = batch_start_position - batch_start.row;
@@ -95,30 +105,33 @@ WindowTransform::WindowTransform(
         if (const auto general = asGeneralWindowFunction(function.aggregate_function))
             general->checkWindowFrameType(params.window_description);
 
-    for (size_t result_column = 0; result_column < functions.size(); ++result_column)
+    try
     {
-        const WindowFunctionDescription & function = functions[result_column];
-        if (auto general = asGeneralWindowFunction(function.aggregate_function))
+        for (size_t result_column = 0; result_column < functions.size(); ++result_column)
         {
-            general_functions.push_back(createSlot(params.input_header, function, std::move(general), result_column, states_arena));
+            const WindowFunctionDescription & function = functions[result_column];
+            if (auto general = asGeneralWindowFunction(function.aggregate_function))
+            {
+                general_functions.push_back(createSlot(params.input_header, function, std::move(general), result_column, states_arena));
+            }
+            else
+            {
+                workspaces.push_back(createWorkspace(params.input_header, function, result_column));
+                if (!arena && function.aggregate_function->allocatesMemoryInArena())
+                    arena = std::make_unique<Arena>();
+            }
         }
-        else
-        {
-            workspaces.push_back(createWorkspace(params.input_header, function, result_column));
-            if (!arena && function.aggregate_function->allocatesMemoryInArena())
-                arena = std::make_unique<Arena>();
-        }
+    }
+    catch (...)
+    {
+        destroyStates(general_functions, workspaces);
+        throw;
     }
 }
 
 WindowTransform::~WindowTransform()
 {
-    for (auto & slot : general_functions)
-        if (slot.state)
-            slot.function->destroyState(slot.state);
-
-    for (auto & ws : workspaces)
-        ws.aggregate_function->destroy(ws.aggregate_function_state.data());
+    destroyStates(general_functions, workspaces);
 }
 
 void WindowTransform::updateAggregationState()
