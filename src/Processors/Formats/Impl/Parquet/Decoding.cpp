@@ -213,13 +213,13 @@ struct BitPackedRLEDecoder : public PageDecoder
             /// bit_width == 0 means all values are 0.
             size_t count = num_values;
             if constexpr (filtered)
-            {
                 count = countBytesInFilter(filter, 0, num_values);
+            if constexpr (!skip)
+            {
                 if (count && limit == 0)
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Dict index or rep/def level out of bounds (rle)");
-            }
-            if constexpr (!skip)
                 memset(out, 0, count * sizeof(T));
+            }
             if constexpr (count_zeros)
                 *num_zeros += num_values;
             return;

@@ -73,6 +73,14 @@ WHERE event_date BETWEEN today() - INTERVAL 1 MONTH - INTERVAL 1 WEEK AND today(
     AND metric = 'client_time'
     AND pr_number = 0
     AND workflow_name = 'MasterCI'
+    -- The same runs, selected by the key prefix so that the PR runs are not read.
+    AND new_sha IN (
+        SELECT new_sha FROM perf_test_times_v1
+        -- The job writes both tables, so their dates differ by a day at most.
+        WHERE event_date BETWEEN today() - INTERVAL 1 MONTH - INTERVAL 1 WEEK - INTERVAL 1 DAY
+                AND today() - INTERVAL 1 WEEK + INTERVAL 1 DAY
+            AND pr_number = 0
+            AND workflow_name = 'MasterCI')
 -- The display name is part of the key: compare.sh joins this file on all three.
 GROUP BY test, query_index, query_display_name
 HAVING count() > 100"""
@@ -1585,6 +1593,7 @@ PERFORMANCE_REFERENCE_BUILD_JOBS = {
     "build_amd_release": f"{JobNames.BUILD} ({BuildTypes.AMD_RELEASE_PERFORMANCE_REFERENCE})",
     "build_arm_release": f"{JobNames.BUILD} ({BuildTypes.ARM_RELEASE_PERFORMANCE_REFERENCE})",
 }
+PERFORMANCE_REFERENCE_BUILD_IMAGE = "clickhouse/binary-builder"
 
 
 def find_performance_reference_build(commits, build_type):
@@ -1592,23 +1601,35 @@ def find_performance_reference_build(commits, build_type):
     of the commit whose sources it was built from, or `(None, None)`.
 
     Commits before the first one with an official build are passed over, as in
-    `find_master_build`. From that commit on, the walk goes further back only over
-    commits where `MasterCI` skipped the reference build job: such a commit changed
-    none of the job's inputs, so an older build has the same sources."""
+    `find_master_build`. Past that commit, only the newest older reference build is
+    taken, and only when `MasterCI` recorded the same sources and builder image
+    digests for the job at both commits."""
     job_name = PERFORMANCE_REFERENCE_BUILD_JOBS[build_type]
     official_index = None
+    sources = None
     for index, sha in enumerate(commits):
         link, _ = find_master_build([sha], Utils.normalize_string(job_name))
-        if link:
-            return link, index if official_index is None else official_index
         if official_index is None:
+            if link:
+                return link, index
             if find_master_build([sha], build_type)[0] is None:
                 continue
             official_index = index
-        state, status = master_job_status(job_name, sha)
-        if state != FETCH_OK or status != Result.Status.SKIPPED:
+            state, sources = master_job_build_inputs_digest(job_name, sha)
+            if state != FETCH_OK or not sources:
+                return None, None
+            continue
+        if not link:
+            continue
+        state, digest = master_job_build_inputs_digest(job_name, sha)
+        if state != FETCH_OK or digest != sources:
+            print(
+                f"INFO: [{job_name}] build inputs digest at master {sha} is {digest}, "
+                f"not {sources} as at master {commits[official_index]}"
+            )
             return None, None
-        print(f"INFO: [{job_name}] was skipped at master {sha}, its sources are the ones of its parent")
+        print(f"INFO: [{job_name}] of master {sha} has the sources and builder image of master {commits[official_index]}")
+        return link, official_index
     return None, None
 
 
@@ -2223,6 +2244,46 @@ def master_job_status(job_name, sha):
         if isinstance(job, dict) and job.get("name") == job_name:
             return FETCH_OK, job.get("status") or ""
     return FETCH_OK, None
+
+
+def master_job_build_inputs_digest(job_name, sha):
+    """The builder image digest and the sources part of the praktika digest that the `MasterCI`
+    run of master commit `sha` recorded for `job_name`, with the states of `master_job_status`.
+    The job digest does not include the image; its dropped last part hashes the job config,
+    which depends on the runner."""
+    link = master_report_link(sha, MASTER_WORKFLOW_RESULT_FILE)
+    state, out = fetch_prev_master_result(link)
+    if state != FETCH_OK:
+        return state, None
+    try:
+        config_link = next(
+            (
+                job_link
+                for job in json.loads(out).get("results") or []
+                if job.get("name") == Settings.CI_CONFIG_JOB_NAME
+                for job_link in job.get("links") or []
+                if job_link.endswith("/workflow_config_masterci.json")
+            ),
+            None,
+        )
+    except Exception:
+        print(f"WARNING: failed to parse the master workflow report [{link}]")
+        return FETCH_ERROR, None
+    if not config_link:
+        return FETCH_OK, None
+    state, out = fetch_prev_master_result(config_link)
+    if state != FETCH_OK:
+        return state, None
+    try:
+        config = json.loads(out)
+        digest = (config.get("digest_jobs") or {}).get(job_name)
+        image = (config.get("digest_dockers") or {}).get(PERFORMANCE_REFERENCE_BUILD_IMAGE)
+    except Exception:
+        print(f"WARNING: failed to parse the master workflow config [{config_link}]")
+        return FETCH_ERROR, None
+    if not isinstance(digest, str) or not digest or not isinstance(image, str) or not image:
+        return FETCH_OK, None
+    return FETCH_OK, f"{image}-{digest.rsplit('-', 1)[0]}"
 
 
 def classify_missing_prev_master_run(job_name, sha):
