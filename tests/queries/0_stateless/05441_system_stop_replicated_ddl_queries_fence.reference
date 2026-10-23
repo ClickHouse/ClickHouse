@@ -1,0 +1,25 @@
+denied
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+--
+ok
+stop
+default	1	1
+zookeeper2	1	1
+--
+QUERY_IS_PROHIBITED
+QUERY_IS_PROHIBITED
+ACCESS_DENIED
+default	1	1
+zookeeper2	1	1
+--
+QUERY_IS_PROHIBITED
+start
+--
+ok
+ok
+_aux_keeper	t1
+_default_keeper	t0
+_default_keeper	t1

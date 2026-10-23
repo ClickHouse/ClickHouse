@@ -2350,18 +2350,43 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery & query)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), table_id.getNameForLogs());
 }
 
+namespace
+{
+
+/// Keeper connections of all `Replicated` databases: their initial DDL entries check the stop flag through them.
+std::vector<zkutil::ZooKeeperPtr> getKeepersOfReplicatedDatabases(const ContextPtr & context)
+{
+    std::set<String> zookeeper_names;
+    for (const auto & [_, database] : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false, .with_remote_databases = false}))
+        if (const auto * replicated = dynamic_cast<const DatabaseReplicated *>(database.get()))
+            zookeeper_names.insert(replicated->getZooKeeperName());
+
+    std::vector<zkutil::ZooKeeperPtr> keepers;
+    for (const auto & name : zookeeper_names)
+        keepers.push_back(context->getDefaultOrAuxiliaryZooKeeper(name));
+    return keepers;
+}
+
+}
+
 void InterpreterSystemQuery::stopReplicatedDDLQueries()
 {
     auto component_guard = Coordination::setCurrentComponent("InterpreterSystemQuery::stopReplicatedDDLQueries");
     getContext()->checkAccess(AccessType::SYSTEM_REPLICATION_QUEUES);
 
-    auto zookeeper = getContext()->getZooKeeper();
-    String path = "/clickhouse/stop_replicated_ddl_queries/{replica}";
-    path = getContext()->getMacros()->expand(path);
-    zookeeper->createAncestors(path);
-    zookeeper->createIfNotExists(path, "");
-
+    /// Reject new DDL queries first, then fence the already queued entries that have passed the in-memory check
+    /// (see `DatabaseReplicatedTask::makeQueryContext`). The flag in Keeper is ephemeral, because the in-memory
+    /// flag does not survive a restart of the server either.
     DatabaseCatalog::instance().stopReplicatedDDLQueries();
+
+    String path = DatabaseReplicatedTask::getStopReplicatedDDLQueriesFlagPath();
+    for (const auto & zookeeper : getKeepersOfReplicatedDatabases(getContext()))
+    {
+        zookeeper->createAncestors(path);
+        auto code = zookeeper->tryCreate(path, "", zkutil::CreateMode::Ephemeral);
+        if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
+            throw zkutil::KeeperException::fromPath(code, path);
+    }
 }
 
 void InterpreterSystemQuery::startReplicatedDDLQueries()
@@ -2369,12 +2394,13 @@ void InterpreterSystemQuery::startReplicatedDDLQueries()
     auto component_guard = Coordination::setCurrentComponent("InterpreterSystemQuery::startReplicatedDDLQueries");
     getContext()->checkAccess(AccessType::SYSTEM_REPLICATION_QUEUES);
 
-    auto zookeeper = getContext()->getZooKeeper();
-    String path = "/clickhouse/stop_replicated_ddl_queries/{replica}";
-    path = getContext()->getMacros()->expand(path);
-    auto code = zookeeper->tryRemove(path, -1);
-    if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
-        throw zkutil::KeeperException::fromPath(code, path);
+    String path = DatabaseReplicatedTask::getStopReplicatedDDLQueriesFlagPath();
+    for (const auto & zookeeper : getKeepersOfReplicatedDatabases(getContext()))
+    {
+        auto code = zookeeper->tryRemove(path, -1);
+        if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
+            throw zkutil::KeeperException::fromPath(code, path);
+    }
 
     DatabaseCatalog::instance().startReplicatedDDLQueries();
 }
