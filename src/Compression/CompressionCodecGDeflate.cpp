@@ -14,6 +14,7 @@
 #include <bit>
 #include <cstring>
 #include <memory>
+#include <type_traits>
 
 namespace DB
 {
@@ -70,30 +71,6 @@ bool isPackedElementSize(size_t size)
     return size == 1 || size == 2 || size == 4 || size == 8;
 }
 
-/// An integer of `element_size` bytes, widened to 64 bits as what it is, signed or not, so that the integers of a chunk
-/// order as their type does.
-UInt64 integerAt(const char * at, UInt8 element_size, bool is_signed)
-{
-    switch (element_size)
-    {
-        case 1: return is_signed ? static_cast<UInt64>(static_cast<Int64>(unalignedLoadLittleEndian<Int8>(at))) : unalignedLoadLittleEndian<UInt8>(at);
-        case 2: return is_signed ? static_cast<UInt64>(static_cast<Int64>(unalignedLoadLittleEndian<Int16>(at))) : unalignedLoadLittleEndian<UInt16>(at);
-        case 4: return is_signed ? static_cast<UInt64>(static_cast<Int64>(unalignedLoadLittleEndian<Int32>(at))) : unalignedLoadLittleEndian<UInt32>(at);
-        default: return unalignedLoadLittleEndian<UInt64>(at);
-    }
-}
-
-void storeInteger(char * at, UInt64 value, UInt32 element_size)
-{
-    switch (element_size)
-    {
-        case 1: unalignedStoreLittleEndian<UInt8>(at, static_cast<UInt8>(value)); break;
-        case 2: unalignedStoreLittleEndian<UInt16>(at, static_cast<UInt16>(value)); break;
-        case 4: unalignedStoreLittleEndian<UInt32>(at, static_cast<UInt32>(value)); break;
-        default: unalignedStoreLittleEndian<UInt64>(at, value); break;
-    }
-}
-
 size_t packedBytes(size_t count, UInt32 bits)
 {
     return (count * bits + 7) / 8;
@@ -105,24 +82,23 @@ struct PackedChunk
     UInt64 reference = 0;
 };
 
-/// Packs the chunk into `out`, of `packedBytes` and `packed_padding` more, if its integers take fewer bits than they are
-/// wide; otherwise returns a chunk of 0 bits.
-PackedChunk pack(const char * chunk, size_t chunk_size, UInt8 element_size, bool is_signed, char * out)
+template <typename T>
+PackedChunk packIntegers(const char * chunk, size_t chunk_size, char * out)
 {
-    const size_t count = chunk_size / element_size;
-    UInt64 least = integerAt(chunk, element_size, is_signed);
-    UInt64 most = least;
+    using U = std::make_unsigned_t<T>;
+    const size_t count = chunk_size / sizeof(T);
+    T least = unalignedLoadLittleEndian<T>(chunk);
+    T most = least;
     for (size_t i = 1; i < count; ++i)
     {
-        const UInt64 value = integerAt(chunk + i * element_size, element_size, is_signed);
-        if (is_signed ? static_cast<Int64>(value) < static_cast<Int64>(least) : value < least)
-            least = value;
-        if (is_signed ? static_cast<Int64>(value) > static_cast<Int64>(most) : value > most)
-            most = value;
+        const T value = unalignedLoadLittleEndian<T>(chunk + i * sizeof(T));
+        least = std::min(least, value);
+        most = std::max(most, value);
     }
 
-    const auto bits = std::max<UInt32>(1, static_cast<UInt32>(std::bit_width(most - least)));
-    if (bits > max_packed_bits || bits >= 8u * element_size)
+    const UInt64 range = static_cast<U>(static_cast<U>(most) - static_cast<U>(least));
+    const auto bits = std::max<UInt32>(1, static_cast<UInt32>(std::bit_width(range)));
+    if (bits > max_packed_bits || bits >= 8 * sizeof(T))
         return {};
 
     /// Each integer is ORed into the bytes from the lowest bit of the byte its first bit is in, 8 bytes at a time, which
@@ -130,24 +106,50 @@ PackedChunk pack(const char * chunk, size_t chunk_size, UInt8 element_size, bool
     memset(out, 0, packedBytes(count, bits) + packed_padding);
     for (size_t i = 0; i < count; ++i)
     {
-        const UInt64 delta = integerAt(chunk + i * element_size, element_size, is_signed) - least;
+        const T value = unalignedLoadLittleEndian<T>(chunk + i * sizeof(T));
+        const UInt64 delta = static_cast<U>(static_cast<U>(value) - static_cast<U>(least));
         const size_t first_bit = i * bits;
         char * const at = out + first_bit / 8;
         unalignedStoreLittleEndian<UInt64>(at, unalignedLoadLittleEndian<UInt64>(at) | (delta << (first_bit % 8)));
     }
-    return {.bits = bits, .reference = least};
+    return {.bits = bits, .reference = static_cast<U>(least)};
 }
 
-/// Writes the `count` integers of `element_size` bytes packed in `bits` bits at `packed`, readable for `packed_padding`
-/// bytes past them.
-void unpack(const char * packed, size_t count, UInt32 bits, UInt32 element_size, UInt64 reference, char * out)
+/// Packs the chunk into `out`, of `packedBytes` and `packed_padding` more, if its integers take fewer bits than they are
+/// wide; otherwise returns a chunk of 0 bits.
+PackedChunk pack(const char * chunk, size_t chunk_size, UInt8 element_size, bool is_signed, char * out)
+{
+    switch (element_size)
+    {
+        case 1: return is_signed ? packIntegers<Int8>(chunk, chunk_size, out) : packIntegers<UInt8>(chunk, chunk_size, out);
+        case 2: return is_signed ? packIntegers<Int16>(chunk, chunk_size, out) : packIntegers<UInt16>(chunk, chunk_size, out);
+        case 4: return is_signed ? packIntegers<Int32>(chunk, chunk_size, out) : packIntegers<UInt32>(chunk, chunk_size, out);
+        default: return is_signed ? packIntegers<Int64>(chunk, chunk_size, out) : packIntegers<UInt64>(chunk, chunk_size, out);
+    }
+}
+
+template <typename U>
+void unpackIntegers(const char * packed, size_t count, UInt32 bits, UInt64 reference, char * out)
 {
     const UInt64 mask = (UInt64{1} << bits) - 1;
     for (size_t i = 0; i < count; ++i)
     {
         const size_t first_bit = i * bits;
         const UInt64 delta = (unalignedLoadLittleEndian<UInt64>(packed + first_bit / 8) >> (first_bit % 8)) & mask;
-        storeInteger(out + i * element_size, reference + delta, element_size);
+        unalignedStoreLittleEndian<U>(out + i * sizeof(U), static_cast<U>(reference + delta));
+    }
+}
+
+/// Writes the `count` integers of `element_size` bytes packed in `bits` bits at `packed`, readable for `packed_padding`
+/// bytes past them.
+void unpack(const char * packed, size_t count, UInt32 bits, UInt32 element_size, UInt64 reference, char * out)
+{
+    switch (element_size)
+    {
+        case 1: unpackIntegers<UInt8>(packed, count, bits, reference, out); break;
+        case 2: unpackIntegers<UInt16>(packed, count, bits, reference, out); break;
+        case 4: unpackIntegers<UInt32>(packed, count, bits, reference, out); break;
+        default: unpackIntegers<UInt64>(packed, count, bits, reference, out); break;
     }
 }
 
