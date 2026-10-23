@@ -6,6 +6,9 @@
 
 #include <Common/StringUtils.h>
 #include <Parsers/ASTColumnsMatcher.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 
 namespace DB
 {
@@ -417,6 +420,19 @@ constexpr std::string_view SUBTREE_PATTERN_SUFFIX = R"((\.|$))";
 std::string fieldSubtreePattern(const std::string & path)
 {
     return "^" + quoteForPattern(path) + std::string(SUBTREE_PATTERN_SUFFIX);
+}
+
+ASTPtr makeSortKeyIsNotArrayCondition(const std::string & field)
+{
+    auto is_array = makeASTFunction(
+        "startsWith",
+        makeASTFunction("toTypeName", make_intrusive<ASTIdentifier>(field)),
+        make_intrusive<ASTLiteral>(Field(String("Array"))));
+    auto message = make_intrusive<ASTLiteral>(Field(fmt::format(
+        "Sorting on the array field '{}' is not supported: Mongo orders a document by the smallest or the largest element of the "
+        "array, which a sort of ClickHouse does not",
+        field)));
+    return makeASTFunction("not", makeASTFunction("throwIf", std::move(is_array), std::move(message)));
 }
 
 ASTPtr makeFieldSubtreeMatcher(const std::string & path)

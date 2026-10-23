@@ -21,6 +21,10 @@ class QueryMetadata
 public:
     bool add_data_to_query = true;
 
+    /// The setting `max_parser_depth` of the query, which bounds how deeply the JSON of each part of
+    /// the request may nest - the chained `.sort` is parsed apart from the rest. `0` means no bound.
+    size_t max_parser_depth = 0;
+
     enum class QueryType : uint8_t
     {
         select = 0,

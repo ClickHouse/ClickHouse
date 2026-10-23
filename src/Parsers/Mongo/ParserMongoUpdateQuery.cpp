@@ -141,10 +141,32 @@ void parseUpdateOperator(std::string_view name, const rapidjson::Value & argumen
             assignments.push_back(makeAssignment(column, makeASTFunction("plus", field(), parseUpdateValue(it->value, name, false))));
         else if (name == "$mul")
             assignments.push_back(makeAssignment(column, makeASTFunction("multiply", field(), parseUpdateValue(it->value, name, false))));
+        /** `$min` and `$max` compare as Mongo orders values, where `null` is below every other value:
+          * `$min` with a `null` on either side writes `null`, and `$max` writes the other side.
+          * `least` and `greatest` skip a `NULL` argument instead, or propagate it with
+          * `least_greatest_legacy_null_behavior` - one of the two is wrong either way - so they
+          * only ever compare two values.
+          */
         else if (name == "$min")
-            assignments.push_back(makeAssignment(column, makeASTFunction("least", field(), parseUpdateValue(it->value, name, false))));
+        {
+            auto value = parseUpdateValue(it->value, name, false);
+            auto any_null = makeASTFunction("or", makeASTFunction("isNull", field()), makeASTFunction("isNull", value->clone()));
+            assignments.push_back(makeAssignment(
+                column, makeASTFunction("if", std::move(any_null), make_intrusive<ASTLiteral>(Field()), makeASTFunction("least", field(), value))));
+        }
         else if (name == "$max")
-            assignments.push_back(makeAssignment(column, makeASTFunction("greatest", field(), parseUpdateValue(it->value, name, false))));
+        {
+            auto value = parseUpdateValue(it->value, name, false);
+            assignments.push_back(makeAssignment(
+                column,
+                makeASTFunction(
+                    "multiIf",
+                    makeASTFunction("isNull", field()),
+                    value->clone(),
+                    makeASTFunction("isNull", value->clone()),
+                    field(),
+                    makeASTFunction("greatest", field(), value))));
+        }
         else if (name == "$currentDate")
         {
             /// The legal forms are `true` and `{"$type": "date"}`. `{"$type": "timestamp"}` asks

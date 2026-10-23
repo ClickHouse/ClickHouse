@@ -1,6 +1,7 @@
 #include <Parsers/Mongo/ParserMongoAggregateQuery.h>
 
 #include <cmath>
+#include <functional>
 #include <limits>
 #include <string_view>
 
@@ -17,6 +18,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/Mongo/MongoConstants.h>
 #include <Parsers/Mongo/ParserMongoAggregateExpression.h>
 #include <Parsers/Mongo/ParserMongoFilter.h>
 #include <Parsers/Mongo/Utils.h>
@@ -398,11 +400,13 @@ void translateProject(SelectChain & chain, const rapidjson::Value & stage)
     std::vector<MongoProjectedField> fields;
     std::vector<std::string> excluded;
 
-    for (auto it = stage.MemberBegin(); it != stage.MemberEnd(); ++it)
+    /** Translates the projection of one field. A nested document of a projection projects the fields
+      * below it the way their dotted paths would: `{"profile": {"name": 1}}` keeps `profile.name` as
+      * `{"profile.name": 1}` does, rather than computing a document whose `name` is the number one.
+      * Only in a projection is a number a flag; in the document of a `$set` it is data.
+      */
+    std::function<void(std::string, const rapidjson::Value &)> project_field = [&](std::string name, const rapidjson::Value & value)
     {
-        std::string name(stringView(it->name));
-        const auto & value = it->value;
-
         if (name.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "A field name of a projection must not be empty");
 
@@ -419,11 +423,28 @@ void translateProject(SelectChain & chain, const rapidjson::Value & stage)
                 fields.push_back({name, makeFieldSubtreeMatcher(name)});
             else
                 excluded.push_back(std::move(name));
-            continue;
+            return;
+        }
+
+        const bool is_nested_projection = value.IsObject() && value.MemberCount() > 0
+            && !stringView(value.MemberBegin()->name).starts_with("$") && !tryParseMongoConstant(value);
+        if (is_nested_projection)
+        {
+            for (auto it = value.MemberBegin(); it != value.MemberEnd(); ++it)
+            {
+                std::string nested(stringView(it->name));
+                if (nested.empty())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "A field name of a projection must not be empty");
+                project_field(name + "." + nested, it->value);
+            }
+            return;
         }
 
         expandMongoProjectedField(name, value, fields);
-    }
+    };
+
+    for (auto it = stage.MemberBegin(); it != stage.MemberEnd(); ++it)
+        project_field(std::string(stringView(it->name)), it->value);
 
     if (!fields.empty())
     {
@@ -541,6 +562,12 @@ void translateSort(SelectChain & chain, const rapidjson::Value & stage)
         element->nulls_direction_was_explicitly_specified = true;
         order_by->children.push_back(std::move(element));
         order.keys.emplace_back(std::move(key), direction);
+    }
+
+    for (const auto & [key, direction] : order.keys)
+    {
+        auto guard = makeSortKeyIsNotArrayCondition(key->as<ASTIdentifier &>().name());
+        chain.where = chain.where ? makeASTFunction("and", chain.where, std::move(guard)) : std::move(guard);
     }
 
     chain.order_by = std::move(order_by);
@@ -782,6 +809,20 @@ void translateUnwind(SelectChain & chain, const rapidjson::Value & stage)
         select_list->children.push_back(makeAsterisk({index_name}));
         select_list->children.push_back(withAlias(make_intrusive<ASTIdentifier>(std::string(unwound_index)), index_name));
         chain.select_list = std::move(select_list);
+    }
+
+    /** A key of the order of the stream that names the unwound field - or the field of the index -
+      * would name the element in place of the array the stream was sorted by, and ordering by it
+      * would no longer be the order the documents come in: sorted by an array, they are unwound
+      * one array after another. So the order cannot be named any more.
+      */
+    for (const auto & key : chain.order.keys)
+    {
+        const auto * identifier = key.first->as<ASTIdentifier>();
+        const bool replaced = !identifier || isInSubtree(identifier->name(), path) || isInSubtree(path, identifier->name())
+            || (!index_name.empty() && (isInSubtree(identifier->name(), index_name) || isInSubtree(index_name, identifier->name())));
+        if (replaced)
+            chain.order.keys_in_scope = false;
     }
 
     /** The stages that follow see documents in which the field is one element of the array, so the

@@ -33,8 +33,9 @@ ASTPtr tryParseMongoConstant(const rapidjson::Value & value);
 std::optional<std::string> tryParseMongoRegularExpression(const rapidjson::Value & value);
 
 /** `pattern` with the Mongo regular expression `options` applied to it as the inline flags RE2
-  * understands, e.g. `^a` and `i` become `(?i)^a`. An option RE2 has no counterpart for is an
-  * error rather than a silently different match.
+  * understands, e.g. `^a` and `i` become `(?i-s)^a`: the dot does not match a newline unless `s`
+  * asks for it, as in Mongo. The extended mode `x` is applied to the text of the pattern. An option
+  * RE2 has no counterpart for is an error rather than a silently different match.
   */
 std::string applyMongoRegularExpressionOptions(std::string_view pattern, std::string_view options);
 

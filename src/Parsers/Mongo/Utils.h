@@ -112,6 +112,17 @@ std::string fieldSubtreePattern(const std::string & path);
   */
 ASTPtr makeFieldSubtreeMatcher(const std::string & path);
 
+/** A condition that holds for every row, attached to the `WHERE` of a select that sorts on `field`,
+  * which fails the query when it is analyzed if `field` is a column of arrays. Mongo sorts a document
+  * by the smallest element of its array in an ascending sort and by the largest in a descending
+  * one, while an `ORDER BY` of an array compares the arrays element by element, which is a
+  * different order. The type of a column is not known when the request is translated, and a sort
+  * on a column of any other type has to stay a plain `ORDER BY` an index can serve, so the sort on
+  * an array is rejected rather than answered in the other order. The type name is a constant, so
+  * the condition is folded away when the column is not an array.
+  */
+ASTPtr makeSortKeyIsNotArrayCondition(const std::string & field);
+
 /// The field a matcher built by `makeFieldSubtreeMatcher` selects the subtree of, if it is one.
 std::optional<std::string> fieldOfSubtreeMatcher(const IAST & node);
 

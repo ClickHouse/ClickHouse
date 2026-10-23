@@ -190,12 +190,16 @@ ASTPtr parseFieldOperator(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of '$size' must be a number");
         /** `$size` is defined on arrays only. A string also has a `length`, but to Mongo a
           * document whose field is not an array matches no `$size` at all, so the length test is
-          * guarded by the type of the column. A column of a type that has no `length` (a number,
-          * for instance) makes the query fail instead of matching nothing - a controlled
-          * rejection, since the type is not known when this is lowered.
+          * guarded by the type of the value. That is the type the value holds in each row, which
+          * `dynamicType` names for a value of any type cast to `Dynamic`: a path of a stored
+          * document is `Dynamic` as a whole, and only the value it holds says that it is an array.
+          * A column of a type that has no `length` (a number, for instance) makes the query fail
+          * instead of matching nothing - a controlled rejection, since the type is not known when
+          * this is lowered.
           */
-        auto is_array = makeASTFunction(
-            "startsWith", makeASTFunction("toTypeName", identifier()), make_intrusive<ASTLiteral>(Field(String("Array"))));
+        auto row_type = makeASTFunction(
+            "dynamicType", makeASTFunction("CAST", identifier(), make_intrusive<ASTLiteral>(Field(String("Dynamic")))));
+        auto is_array = makeASTFunction("startsWith", std::move(row_type), make_intrusive<ASTLiteral>(Field(String("Array"))));
         return makeASTFunction("and", std::move(is_array), makeASTFunction("equals", makeASTFunction("length", identifier()), size));
     }
 

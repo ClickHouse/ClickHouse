@@ -216,12 +216,6 @@ const std::unordered_map<std::string_view, std::string> direct_functions = {
     {"$setIntersection", "arrayIntersect"},
     {"$range", "range"},
     {"$concat", "concat"},
-    {"$eq", "equals"},
-    {"$ne", "notEquals"},
-    {"$lt", "less"},
-    {"$lte", "lessOrEquals"},
-    {"$gt", "greater"},
-    {"$gte", "greaterOrEquals"},
     {"$divide", "divide"},
     {"$mod", "modulo"},
     {"$pow", "pow"},
@@ -623,7 +617,8 @@ ASTPtr makeToBool(ASTPtr argument)
 ASTPtr makeTruth(ASTPtr argument)
 {
     static const std::unordered_set<std::string_view> boolean_functions{
-        "equals", "notEquals", "less", "lessOrEquals", "greater", "greaterOrEquals", "and", "or", "not", "isNull", "isNotNull"};
+        "equals", "notEquals", "less", "lessOrEquals", "greater", "greaterOrEquals", "and", "or", "not", "isNull", "isNotNull",
+        "isNotDistinctFrom"};
 
     if (argument->as<ASTLiteral>())
     {
@@ -639,6 +634,71 @@ ASTPtr makeTruth(ASTPtr argument)
         return makeASTFunction("ifNull", std::move(argument), makeLiteral(Field(false)));
 
     return makeASTFunction("ifNull", makeToBool(std::move(argument)), makeLiteral(Field(false)));
+}
+
+/** A comparison of two values: `$eq`, `$ne`, `$lt`, `$lte`, `$gt`, `$gte` and `$cmp`. Mongo compares
+  * `null` as a value - it equals `null` and orders before every other value - while a comparison of
+  * SQL answers `NULL` when either side is `NULL`: `{$eq: [null, null]}` would be `NULL` rather than
+  * `true`, and `{$not: [{$eq: ["$a", null]}]}` would hold for a document whose `a` is `null`. So the
+  * outcome for a side that is `NULL` is decided first, and the SQL comparison only compares two
+  * values. Equality is `isNotDistinctFrom`, which is exactly that and which an index can use.
+  */
+ASTPtr makeComparison(std::string_view name, std::vector<ASTPtr> arguments)
+{
+    requireArgumentCount(name, arguments, 2);
+    ASTPtr left = std::move(arguments[0]);
+    ASTPtr right = std::move(arguments[1]);
+
+    if (name == "$eq")
+        return makeASTFunction("isNotDistinctFrom", std::move(left), std::move(right));
+    if (name == "$ne")
+        return makeASTFunction("not", makeASTFunction("isNotDistinctFrom", std::move(left), std::move(right)));
+
+    auto is_null = [](const ASTPtr & value) { return makeASTFunction("isNull", value->clone()); };
+    auto is_not_null = [](const ASTPtr & value) { return makeASTFunction("isNotNull", value->clone()); };
+    /// The SQL comparison of the two values, when neither of them is `NULL`. It is still `NULL` by
+    /// type when a side is, and that branch is never taken.
+    auto compare = [&](const char * function)
+    {
+        return makeASTFunction("ifNull", makeASTFunction(function, left->clone(), right->clone()), makeLiteral(Field(UInt64(0))));
+    };
+
+    ASTPtr if_null;
+    ASTPtr if_values;
+    if (name == "$lt")
+    {
+        if_null = makeASTFunction("and", is_null(left), is_not_null(right));
+        if_values = compare("less");
+    }
+    else if (name == "$lte")
+    {
+        if_null = is_null(left);
+        if_values = compare("lessOrEquals");
+    }
+    else if (name == "$gt")
+    {
+        if_null = makeASTFunction("and", is_not_null(left), is_null(right));
+        if_values = compare("greater");
+    }
+    else if (name == "$gte")
+    {
+        if_null = is_null(right);
+        if_values = compare("greaterOrEquals");
+    }
+    else
+    {
+        /// `$cmp`: -1, 0 or 1.
+        if_null = makeASTFunction("minus", is_not_null(left), is_not_null(right));
+        if_values = makeASTFunction(
+            "multiIf",
+            makeASTFunction("less", left->clone(), right->clone()),
+            makeLiteral(Field(Int64(-1))),
+            makeASTFunction("greater", left->clone(), right->clone()),
+            makeLiteral(Field(Int64(1))),
+            makeLiteral(Field(Int64(0))));
+    }
+
+    return makeASTFunction("if", makeASTFunction("or", is_null(left), is_null(right)), std::move(if_null), std::move(if_values));
 }
 
 /// `$and` and `$or` over the truth of each argument. Mongo answers `true` for an `$and` of nothing and
@@ -986,10 +1046,10 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
 
     if (name == "$first" || name == "$last")
     {
-        /// Outside `$group`, `$first` and `$last` take an element of an array.
+        /// Outside `$group`, `$first` and `$last` take an element of an array, and of an empty one none.
         auto arguments = parseArguments(argument);
         requireArgumentCount(name, arguments, 1);
-        return makeASTFunction("arrayElement", arguments[0], makeLiteral(Field(name == "$first" ? Int64(1) : Int64(-1))));
+        return makeASTFunction("arrayElementOrNull", arguments[0], makeLiteral(Field(name == "$first" ? Int64(1) : Int64(-1))));
     }
 
     if (name == "$arrayElemAt")
@@ -997,17 +1057,18 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
         auto arguments = parseArguments(argument);
         requireArgumentCount(name, arguments, 2);
         /// Mongo indexes an array from zero and ClickHouse from one; a negative index counts from
-        /// the end in both, and there `-1` already means the same element.
+        /// the end in both, and there `-1` already means the same element. An index past either end
+        /// takes no element, which is `NULL` rather than the default value `arrayElement` makes up.
         if (const auto * index = arguments[1]->as<ASTLiteral>())
         {
             const bool counts_from_the_end = index->value.getType() == Field::Types::Int64 && index->value.safeGet<Int64>() < 0;
             if (!counts_from_the_end)
                 arguments[1] = makeASTFunction("plus", arguments[1], makeLiteral(Field(UInt64(1))));
-            return makeASTFunction("arrayElement", arguments[0], arguments[1]);
+            return makeASTFunction("arrayElementOrNull", arguments[0], arguments[1]);
         }
         /// An index computed per document is shifted by its value: by one when it is not negative.
         auto shift = makeASTFunction("greaterOrEquals", arguments[1]->clone(), makeLiteral(Field(UInt64(0))));
-        return makeASTFunction("arrayElement", arguments[0], makeASTFunction("plus", arguments[1], std::move(shift)));
+        return makeASTFunction("arrayElementOrNull", arguments[0], makeASTFunction("plus", arguments[1], std::move(shift)));
     }
 
     if (name == "$in")
@@ -1104,18 +1165,8 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
         return makeASTFunction("divide", makeASTFunction("log", arguments[0]), makeASTFunction("log", arguments[1]));
     }
 
-    if (name == "$cmp")
-    {
-        auto arguments = parseArguments(argument);
-        requireArgumentCount(name, arguments, 2);
-        return makeASTFunction(
-            "multiIf",
-            makeASTFunction("less", arguments[0], arguments[1]),
-            makeLiteral(Field(Int64(-1))),
-            makeASTFunction("greater", arguments[0]->clone(), arguments[1]->clone()),
-            makeLiteral(Field(Int64(1))),
-            makeLiteral(Field(Int64(0))));
-    }
+    if (name == "$eq" || name == "$ne" || name == "$lt" || name == "$lte" || name == "$gt" || name == "$gte" || name == "$cmp")
+        return makeComparison(name, parseArguments(argument));
 
     if (name == "$indexOfBytes" || name == "$indexOfCP" || name == "$indexOfArray")
     {

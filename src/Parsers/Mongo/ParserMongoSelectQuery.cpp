@@ -87,22 +87,32 @@ bool ParserMongoSelectQuery::parseImpl(ASTPtr & node)
         select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, std::move(literal));
     }
 
+    ASTPtr order_by_node;
     if (metadata->getOrderBy())
     {
-        ASTPtr order_by_node;
         auto order_by = *metadata->getOrderBy();
-        auto order_by_tree = parseData(order_by.data(), order_by.data() + order_by.size(), metadata->getAllocator(), false);
+        auto order_by_tree = parseData(
+            order_by.data(), order_by.data() + order_by.size(), metadata->getAllocator(), false, metadata->max_parser_depth);
         if (!ParserMongoOrderBy(std::move(order_by_tree), metadata, "").parseImpl(order_by_node))
         {
             return false;
         }
-        select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, std::move(order_by_node));
+        select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, order_by_node->clone());
     }
 
     /// Traverse data tree for WHERE operator
     ASTPtr where_condition;
     if (ParserMongoFilter(std::move(data), metadata, "").parseImpl(where_condition))
     {
+        /// A sort on an array is rejected (see `makeSortKeyIsNotArrayCondition`).
+        if (order_by_node)
+        {
+            for (const auto & element : order_by_node->children)
+            {
+                auto guard = makeSortKeyIsNotArrayCondition(element->children.front()->as<ASTIdentifier &>().name());
+                where_condition = where_condition ? makeASTFunction("and", where_condition, std::move(guard)) : std::move(guard);
+            }
+        }
         select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_condition));
         return true;
     }

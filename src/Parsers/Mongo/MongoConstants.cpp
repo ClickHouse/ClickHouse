@@ -105,6 +105,93 @@ T extendedJSONNumber(const rapidjson::Value & value, std::string_view wrapper)
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of '{}' must be a number or a string", wrapper);
 }
 
+bool isExtendedModeWhitespace(char c)
+{
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v';
+}
+
+/** The pattern of Mongo's extended mode (the `x` option) as an ordinary one: whitespace is
+  * dropped and `#` starts a comment that runs to the end of the line, unless they are escaped or
+  * inside a character class. RE2 does not implement this mode, so it is applied to the text.
+  */
+std::string removeExtendedModeWhitespace(std::string_view pattern)
+{
+    std::string result;
+    result.reserve(pattern.size());
+    bool in_class = false;
+    for (size_t pos = 0; pos < pattern.size(); ++pos)
+    {
+        const char c = pattern[pos];
+        if (c == '\\' && pos + 1 < pattern.size())
+        {
+            const char escaped = pattern[++pos];
+            if (escaped == 'Q')
+            {
+                /// `\Q...\E` quotes its text literally, whitespace included.
+                const size_t end = pattern.find("\\E", pos + 1);
+                const size_t stop = end == std::string_view::npos ? pattern.size() : end + 2;
+                result.append(pattern.substr(pos - 1, stop - (pos - 1)));
+                pos = stop - 1;
+            }
+            else if (isExtendedModeWhitespace(escaped))
+            {
+                /// An escaped whitespace is the character itself, which RE2 reads unescaped.
+                result.push_back(escaped);
+            }
+            else
+            {
+                result.push_back(c);
+                result.push_back(escaped);
+            }
+            continue;
+        }
+
+        if (in_class)
+        {
+            if (c == '[' && pos + 1 < pattern.size() && pattern[pos + 1] == ':')
+            {
+                /// A named class such as `[:alpha:]` ends with a `]` of its own.
+                const size_t end = pattern.find(":]", pos + 2);
+                if (end != std::string_view::npos)
+                {
+                    result.append(pattern.substr(pos, end + 2 - pos));
+                    pos = end + 1;
+                    continue;
+                }
+            }
+            if (c == ']')
+                in_class = false;
+            result.push_back(c);
+            continue;
+        }
+
+        if (c == '[')
+        {
+            in_class = true;
+            result.push_back(c);
+            /// A `]` right after the opening bracket, or after its `^`, is a member of the class.
+            if (pos + 1 < pattern.size() && pattern[pos + 1] == '^')
+                result.push_back(pattern[++pos]);
+            if (pos + 1 < pattern.size() && pattern[pos + 1] == ']')
+                result.push_back(pattern[++pos]);
+            continue;
+        }
+
+        if (isExtendedModeWhitespace(c))
+            continue;
+
+        if (c == '#')
+        {
+            while (pos + 1 < pattern.size() && pattern[pos + 1] != '\n')
+                ++pos;
+            continue;
+        }
+
+        result.push_back(c);
+    }
+    return result;
+}
+
 }
 
 ASTPtr tryParseMongoConstant(const rapidjson::Value & value)
@@ -226,25 +313,35 @@ std::optional<std::string> tryParseMongoRegularExpression(const rapidjson::Value
 
 std::string applyMongoRegularExpressionOptions(std::string_view pattern, std::string_view options)
 {
-    /// RE2 spells the Mongo options as inline flags. `x` (extended) and `s` (dot matches newline)
-    /// have the same meaning in both; `u` only says the pattern is UTF-8, which RE2 already is.
+    /** RE2 spells the Mongo options `i`, `m` and `s` as inline flags; `u` only says the pattern is
+      * UTF-8, which RE2 already is. ClickHouse compiles a pattern with the dot matching a newline,
+      * while Mongo's dot does not match one unless `s` is given, so its absence is spelled out as
+      * `-s`. The flags precede the pattern, so an inline flag of the pattern itself still overrides
+      * them. RE2 has no extended mode, so `x` is applied to the pattern here (see
+      * `removeExtendedModeWhitespace`).
+      */
     std::string flags;
+    bool dot_matches_newline = false;
+    bool extended = false;
     for (char option : options)
     {
         switch (option)
         {
+            case 's': dot_matches_newline = true; [[fallthrough]];
             case 'i': [[fallthrough]];
-            case 'm': [[fallthrough]];
-            case 's': [[fallthrough]];
-            case 'x': flags.push_back(option); break;
+            case 'm':
+                if (flags.find(option) == std::string::npos)
+                    flags.push_back(option);
+                break;
+            case 'x': extended = true; break;
             case 'u': break;
             default: throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported regular expression option '{}'", option);
         }
     }
+    if (!dot_matches_newline)
+        flags += "-s";
 
-    if (flags.empty())
-        return std::string(pattern);
-    return "(?" + flags + ")" + std::string(pattern);
+    return "(?" + flags + ")" + (extended ? removeExtendedModeWhitespace(pattern) : std::string(pattern));
 }
 
 bool isMongoExtendedJSONWrapper(const rapidjson::Value & value)

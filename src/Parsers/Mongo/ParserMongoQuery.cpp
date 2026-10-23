@@ -96,8 +96,17 @@ bool ParserMongoQuery::parseImpl(Pos & /*pos*/, ASTPtr & node, Expected & /*expe
 {
     if (!parseStatement(node))
         return false;
-    if (node)
-        normalizeIntegerLiterals(*node);
+    if (!node)
+        return true;
+
+    /** The query built out of a request can be much deeper than its JSON: every stage of a pipeline
+      * that cannot share a select with the one before wraps everything below it into a subquery, so
+      * a flat list of `$skip` stages nests as deep as it is long. The depth is checked - without
+      * recursion - before anything walks the tree recursively, starting with the normalization below.
+      */
+    if (max_parser_depth)
+        node->checkDepth(max_parser_depth);
+    normalizeIntegerLiterals(*node);
     return true;
 }
 
