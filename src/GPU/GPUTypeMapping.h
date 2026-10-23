@@ -13,23 +13,12 @@
 #include <string_view>
 #include <vector>
 
-namespace DB
-{
-class ICompressionCodec;
-}
-
 namespace DB::GPU
 {
 
 std::optional<GPUElementType> elementTypeOf(const IDataType & type);
 
 GPUElementType elementTypeOrThrow(const IDataType & type);
-
-/// The element type a column of a `WHERE` on the device is compared as: that of `elementTypeOf`, and the integers that
-/// `Date`, `Date32` and `DateTime` are stored as, which compare in the order of their values.
-std::optional<GPUElementType> filterElementTypeOf(const IDataType & type);
-
-std::vector<GPUElementType> filterElementTypesOrThrow(const DataTypes & types);
 
 std::vector<GPUElementType> elementTypesOrThrow(const DataTypes & types);
 
@@ -60,19 +49,11 @@ std::optional<GPUElementType> keyElementTypeOf(const IDataType & type);
 
 std::vector<GPUElementType> groupByKeysOrThrow(const DataTypes & key_types);
 
-/// What the rows of a column that the device collects, rather than groups, are carried as: a `String` as one, a
-/// `FixedString` as `keyElementTypeOf`, and any other as `filterElementTypeOf`, the bytes of its values as they are.
-std::optional<GPUElementType> collectElementTypeOf(const IDataType & type);
-
 bool canGroupByReduceOnDevice(
     const DataTypes & key_types,
     const DataTypes & argument_types,
     const DataTypes & result_types,
     const std::vector<GPUAggregationKind> & aggregations);
-
-/// The codec the device expands the blocks of `codec` with: one of the codecs of `GPUCodec`, or the second of a chain
-/// of `BitPacking` and one of them. Nothing for any other.
-std::optional<GPUCodec> deviceCodecOf(const ICompressionCodec & codec);
 
 std::string_view rawValuesOf(const IColumn & column, size_t num_rows, size_t element_size);
 

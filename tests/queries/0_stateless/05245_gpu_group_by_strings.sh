@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 
-# Checks a `GROUP BY` by `String` keys on the device against the CPU: over the blocks the pipeline
-# reads, and over compressed blocks, with the strings' bytes expanded on the device and on the host.
-# The strings are empty, short and long, so that their bytes do not end where a compressed block
-# does, and there are several parts, so that the groups of the parts merge.
+# Checks a `GROUP BY` by `String` keys on the device against the CPU, over the blocks the pipeline
+# reads. The strings are empty, short and long, and there are several parts, so that the groups of
+# the parts merge.
 #
 # Where the build has no GPU support, or the machine no usable device, the setting is not applied
 # and both sides of every comparison run on the CPU - the checks hold trivially.
@@ -75,9 +74,7 @@ function device_step()
 
     local plan
     plan=$($CLICKHOUSE_CLIENT "${GPU_SETTINGS[@]}" --query "EXPLAIN $query")
-    if [[ "$plan" == *"ReadFromGPUCompressedColumns"* ]]; then
-        echo "compressed"
-    elif [[ "$plan" == *"GPUAggregating"* ]]; then
+    if [[ "$plan" == *"GPUAggregating"* ]]; then
         echo "blocks"
     else
         echo "cpu"
@@ -96,45 +93,5 @@ compare_with_cpu "SELECT t, s, min(v) FROM gpu_group_by_strings $WHERE GROUP BY 
 compare_with_cpu "SELECT count(), sum(length(s)), sum(m) FROM (SELECT s, sum(i) AS m FROM gpu_group_by_strings $WHERE GROUP BY s) $SETTINGS"
 # Batches small enough that the groups of many of them merge.
 compare_with_cpu "SELECT s, sum(v) FROM gpu_group_by_strings $WHERE GROUP BY s ORDER BY s $SETTINGS, gpu_aggregation_batch_bytes = 65536"
-
-echo "- compressed"
-
-device_step "SELECT s, sum(v) FROM gpu_group_by_strings GROUP BY s" compressed
-for mode in device host; do
-    SETTINGS="SETTINGS gpu_aggregation_decompression = '$mode'"
-    compare_with_cpu "SELECT s, sum(v), min(i), max(b) FROM gpu_group_by_strings GROUP BY s ORDER BY s $SETTINGS"
-    compare_with_cpu "SELECT s, k, sum(v), max(i) FROM gpu_group_by_strings GROUP BY s, k ORDER BY s, k $SETTINGS"
-    compare_with_cpu "SELECT t, s, min(v) FROM gpu_group_by_strings GROUP BY t, s ORDER BY t, s $SETTINGS"
-    compare_with_cpu "SELECT k, s, sum(i) FROM gpu_group_by_strings GROUP BY k, s ORDER BY k, s $SETTINGS, gpu_aggregation_readers = 3"
-    # Pieces of a part much smaller than the part: the rows of strings wait on the device until the
-    # part ends, and are grouped then.
-    compare_with_cpu "SELECT s, t, sum(v), min(b) FROM gpu_group_by_strings GROUP BY s, t ORDER BY s, t $SETTINGS, gpu_aggregation_batch_bytes = 65536"
-done
-
-# A sum of a computed float is grouped on the device from the blocks the pipeline reads, as only a stored
-# `Float64` is read from the compressed columns, and a filter on a column is applied on the device to the
-# compressed columns it reads.
-device_step "SELECT s, sum(toFloat64(v)) FROM gpu_group_by_strings GROUP BY s" blocks
-device_step "SELECT s, sum(v) FROM gpu_group_by_strings WHERE k = 3 GROUP BY s" compressed
-compare_with_cpu "SELECT s, sum(v), count() FROM gpu_group_by_strings WHERE k = 3 GROUP BY s ORDER BY s"
-
-# `device` expands the strings' bytes on the device and `host` does not, as `GPUDecompressionBytes`
-# counts what the device expanded.
-for mode in device host; do
-    query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_${mode}"
-    $CLICKHOUSE_CLIENT "${GPU_SETTINGS[@]}" --query_id "$query_id" --query "
-        SELECT s, sum(v) FROM gpu_group_by_strings GROUP BY s FORMAT Null SETTINGS gpu_aggregation_decompression = '$mode'"
-
-    if [ ${#GPU_SETTINGS[@]} -eq 0 ]; then
-        echo "$mode ok"
-        continue
-    fi
-
-    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
-    $CLICKHOUSE_CLIENT --query "
-        SELECT '$mode', if(ProfileEvents['GPUDecompressionBytes'] > 0, 'device', 'host') = if('$mode' = 'device', 'device', 'host') ? 'ok' : 'wrong side'
-        FROM system.query_log
-        WHERE current_database = currentDatabase() AND query_id = '$query_id' AND type = 'QueryFinish'" | tr '\t' ' '
-done
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE gpu_group_by_strings"

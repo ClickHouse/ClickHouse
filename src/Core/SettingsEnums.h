@@ -689,13 +689,5 @@ enum class FileLikeEngineDefaultPartitionStrategy : uint8_t
 };
 DECLARE_SETTING_ENUM(FileLikeEngineDefaultPartitionStrategy)
 
-/// Where a GPU aggregation over compressed blocks expands a column of a part, see
-/// `gpu_aggregation_decompression`.
-enum class GPUDecompressionMode : uint8_t
-{
-    DEVICE,
-    HOST,
-};
-DECLARE_SETTING_ENUM(GPUDecompressionMode)
 
 }

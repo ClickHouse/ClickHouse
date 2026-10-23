@@ -409,30 +409,29 @@ CompressedUploadPipe::CompressedUploadPipe(const IDataType & type, size_t stage_
 {
 }
 
-void CompressedUploadPipe::stageCompressedBlock(UInt8 method, std::string_view payload, size_t decompressed_bytes)
+void CompressedUploadPipe::stageCompressedBlock(std::string_view payload, size_t decompressed_bytes)
 {
-    stageBlock(staged_data, method, payload, decompressed_bytes);
+    stageBlock(staged_data, payload, decompressed_bytes);
 }
 
-void CompressedUploadPipe::stageCompressedSizesBlock(UInt8 method, std::string_view payload, size_t decompressed_bytes)
+void CompressedUploadPipe::stageCompressedSizesBlock(std::string_view payload, size_t decompressed_bytes)
 {
     if (!std::holds_alternative<DeviceVariableColumnBuffer>(device))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Sizes of a column of values of fixed width");
-    stageBlock(staged_sizes, method, payload, decompressed_bytes);
+    stageBlock(staged_sizes, payload, decompressed_bytes);
 }
 
-void CompressedUploadPipe::stageBlock(StagedBlocks & staged, UInt8 method, std::string_view payload, size_t decompressed_bytes)
+void CompressedUploadPipe::stageBlock(StagedBlocks & staged, std::string_view payload, size_t decompressed_bytes)
 {
     if (!staged.blocks.empty() && staged.bytes.size() + payload.size() > stage_bytes)
         sendStagedToDevice();
 
-    const GPUCodec block_codec = GPU::stageCompressedBlock(staged.bytes, staged.blocks, staged.packed, method, payload, decompressed_bytes);
-    if (block_codec != codec)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "A block the device expands with codec {} in a pipe of codec {}",
-            static_cast<int>(block_codec),
-            static_cast<int>(codec));
+    staged.blocks.push_back({
+        .offset = staged.bytes.size(),
+        .compressed_bytes = payload.size(),
+        .decompressed_bytes = decompressed_bytes,
+    });
+    appendHostBytes(staged.bytes, payload);
     staged.expanded_bytes += decompressed_bytes;
     staged_bytes += decompressed_bytes;
 }
@@ -454,10 +453,9 @@ void CompressedUploadPipe::sendStagedToDevice()
 {
     const auto expand = [&](StagedBlocks & staged, char * destination)
     {
-        decompressor.decompress(codec, bytesOf(staged.bytes), staged.blocks, staged.packed, destination);
+        decompressor.decompress(codec, bytesOf(staged.bytes), staged.blocks, destination);
         staged.bytes.clear();
         staged.blocks.clear();
-        staged.packed.clear();
         staged.expanded_bytes = 0;
     };
 

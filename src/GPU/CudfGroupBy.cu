@@ -1,16 +1,12 @@
 #include <GPU/CudfGroupBy.cuh>
 
 #include <GPU/Cudf.cuh>
-#include <GPU/GPUExpression.cuh>
-#include <GPU/GPUFilter.cuh>
 
 #include <cudf/column/column.hpp>
 #include <cudf/column/column_view.hpp>
 #include <cudf/concatenate.hpp>
 #include <cudf/copying.hpp>
 #include <cudf/groupby.hpp>
-#include <cudf/null_mask.hpp>
-#include <cudf/stream_compaction.hpp>
 #include <cudf/table/table.hpp>
 #include <cudf/table/table_view.hpp>
 #include <cudf/unary.hpp>
@@ -31,19 +27,12 @@ namespace DB::GPU
 namespace
 {
 
-constexpr int filter_threads_per_block = 256;
-
 /// `streaming_groupby` encodes a row of a batch as its capacity plus the row's index, in a `cudf::size_type`.
 constexpr size_t max_capacity = static_cast<size_t>(std::numeric_limits<cudf::size_type>::max());
 constexpr size_t max_slice_rows = 64UL << 20;
 /// The first hash table is for this many groups, and grows by half with the groups seen: a query of a few groups does not
 /// pay for a table of a million, and one of many pays a few merges.
 constexpr size_t min_capacity = 1UL << 16;
-
-/// A batch of which a `WHERE` leaves out at least this share of the rows is compacted to the rows it keeps before they
-/// are grouped and their derived values computed. `streaming_groupby` still goes over a row left out as a null of the
-/// first key, and the derived values are computed for it, while compacting reads every row once and writes those kept.
-constexpr double min_left_out_share_to_compact = 0.25;
 
 /// The batches are reduced over their runs of equal keys before they are grouped where the first batch has at most this
 /// many runs per row, see `CudfGroupBy::State::reduce_runs`.
@@ -53,24 +42,6 @@ constexpr double max_runs_per_row_to_reduce = 0.5;
 /// after they were combined last, whichever is more, or once they reach this many rows, below what cuDF concatenates.
 constexpr size_t min_bytes_to_combine_runs = 4UL << 30;
 constexpr size_t max_rows_to_combine_runs = 1UL << 30;
-
-/// Sets the bit of every row that passes `program`, a word of the null mask per 32 rows.
-__global__ void filterToNullMask(GPUFilterProgram program, Filtering::FilterLayouts filters, size_t rows, cudf::bitmask_type * mask)
-{
-    const size_t row = static_cast<size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
-    const bool passes = row < rows && Filtering::passesFilter(program, filters, row);
-    const unsigned word = __ballot_sync(0xffffffffu, passes);
-    if (row < rows && (threadIdx.x % 32) == 0)
-        mask[row / 32] = word;
-}
-
-/// Whether each row passes `program`, as a column of `BOOL8`.
-__global__ void filterToBooleans(GPUFilterProgram program, Filtering::FilterLayouts columns, size_t rows, bool * mask)
-{
-    const size_t row = static_cast<size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
-    if (row < rows)
-        mask[row] = Filtering::passesFilter(program, columns, row);
-}
 
 __host__ std::unique_ptr<cudf::groupby_aggregation> groupByAggregationFor(GPUAggregationKind aggregation)
 {
@@ -85,20 +56,12 @@ __host__ std::unique_ptr<cudf::groupby_aggregation> groupByAggregationFor(GPUAgg
     throwGPUError(("unknown aggregation " + std::to_string(static_cast<int>(aggregation))).c_str());
 }
 
-__host__ cudf::column_view withNullMask(const cudf::column_view & column, const cudf::bitmask_type * mask, cudf::size_type null_count)
-{
-    std::vector<cudf::column_view> children(column.child_begin(), column.child_end());
-    return cudf::column_view(column.type(), column.size(), column.head(), mask, null_count, column.offset(), children);
-}
-
 }
 
 struct CudfGroupBy::State
 {
     const std::vector<GPUElementType> keys;
-    /// The values of a batch, then those derived from them.
     const std::vector<GPUElementType> values;
-    const std::vector<GPUDerivedValue> derived;
     const std::vector<GPUGroupByAggregate> aggregates;
     const cuda::stream_ref stream;
 
@@ -110,15 +73,6 @@ struct CudfGroupBy::State
 
     /// The keys, then the values, once the groups are closed.
     std::unique_ptr<cudf::table> groups;
-
-    /// What a batch's `WHERE` leaves out, as the null mask of its first key.
-    rmm::device_buffer filter_mask;
-    /// As many `true` bytes as the largest batch compacted had rows: the values of the `BOOL8` column whose nulls are
-    /// what a `WHERE` leaves out.
-    rmm::device_buffer all_true;
-
-    /// Of each derived value, its values over the rows of the batch.
-    std::vector<rmm::device_buffer> derived_values;
 
     /// Whether the partial results of every aggregate over some of the rows of a group combine by an aggregate: those of
     /// a `sum`, a `min` and a `max` by the same one and those of a `count` by a `sum`, but not those of an `avg`.
@@ -138,44 +92,28 @@ struct CudfGroupBy::State
     size_t reduced_bytes = 0;
     size_t combined_bytes = 0;
 
-    /// Without keys and aggregates, the rows a `WHERE` keeps are collected rather than grouped: the values of each batch's.
-    const bool collect;
-    std::vector<std::unique_ptr<cudf::table>> collected;
-
     /// Of the keys and of the values of varying width: their offsets widened for a view of the device's.
     std::vector<std::unique_ptr<cudf::column>> variable_offsets;
     std::vector<std::unique_ptr<cudf::column>> value_offsets;
     bool finalized = false;
 
     __host__ State(
-        GPUSpan<GPUElementType> keys_,
-        GPUSpan<GPUElementType> values_,
-        GPUSpan<GPUDerivedValue> derived_,
-        GPUSpan<GPUGroupByAggregate> aggregates_,
-        cuda::stream_ref stream_)
+        GPUSpan<GPUElementType> keys_, GPUSpan<GPUElementType> values_, GPUSpan<GPUGroupByAggregate> aggregates_, cuda::stream_ref stream_)
         : keys(keys_.begin(), keys_.end())
         , values(values_.begin(), values_.end())
-        , derived(derived_.begin(), derived_.end())
         , aggregates(aggregates_.begin(), aggregates_.end())
         , stream(stream_)
-        , collect(keys_.empty() && aggregates_.empty())
-        , filter_mask(0, stream_)
-        , all_true(0, stream_)
     {
         key_indices.resize(keys.size());
         for (size_t i = 0; i < keys.size(); ++i)
             key_indices[i] = static_cast<cudf::size_type>(i);
-        for (size_t i = 0; i < derived.size(); ++i)
-            derived_values.emplace_back(0, stream_);
         runs_combine = std::all_of(
             aggregates.begin(), aggregates.end(), [](const GPUGroupByAggregate & aggregate) { return aggregate.aggregation != GPUAggregationKind::Mean; });
     }
 
-    __host__ size_t numBatchValues() const { return values.size() - derived.size(); }
-
     __host__ cudf::groupby::streaming_groupby make(size_t new_capacity) const
     {
-        /// A `count` counts the rows of the first key, which has no nulls but what a `WHERE` leaves out.
+        /// A `count` counts the rows of the first key, which has no nulls.
         std::vector<cudf::groupby::streaming_aggregation_request> requests;
         requests.reserve(aggregates.size());
         for (const auto & aggregate : aggregates)
@@ -184,7 +122,7 @@ struct CudfGroupBy::State
                 .aggregation = groupByAggregationFor(aggregate.aggregation),
             });
 
-        /// The keys have no nulls but what a `WHERE` leaves out.
+        /// The keys have no nulls.
         return guarded("making a `streaming_groupby` of at most " + std::to_string(new_capacity) + " groups", [&]
         {
             return cudf::groupby::streaming_groupby(
@@ -261,59 +199,8 @@ struct CudfGroupBy::State
         }
     }
 
-    /// Sets the bits of `filter_mask` of the rows `filter` holds for, and returns how many of the rows it leaves out.
-    __host__ cudf::size_type evaluateFilter(size_t rows, GPUSpan<DeviceFixedColumn> filter_columns, const GPUFilterProgram & filter)
-    {
-        if (filter_columns.size() > max_filter_columns)
-            throwGPUError(("a `WHERE` over " + std::to_string(filter_columns.size()) + " columns").c_str());
-
-        Filtering::FilterLayouts layouts;
-        layouts.present = true;
-        layouts.count = static_cast<uint32_t>(filter_columns.size());
-        for (size_t i = 0; i < filter_columns.size(); ++i)
-        {
-            if (filter_columns[i].rows != rows)
-                throwGPUError(("a column of a `WHERE` of " + std::to_string(filter_columns[i].rows) + " rows in a batch of " + std::to_string(rows)).c_str());
-            layouts.columns[i] = {.data = filter_columns[i].data, .type = filter_columns[i].element_type};
-        }
-
-        const auto num_rows = static_cast<cudf::size_type>(rows);
-        filter_mask.resize(cudf::bitmask_allocation_size_bytes(num_rows), stream);
-        auto * mask = static_cast<cudf::bitmask_type *>(filter_mask.data());
-
-        const auto blocks = static_cast<unsigned>((rows + filter_threads_per_block - 1) / filter_threads_per_block);
-        filterToNullMask<<<blocks, filter_threads_per_block, 0, stream.get()>>>(filter, layouts, rows, mask);
-        checkCuda(cudaGetLastError(), "Cannot evaluate a `WHERE` into a null mask");
-
-        return guarded("counting the rows a `WHERE` leaves out", [&]
-        {
-            return cudf::null_count(mask, 0, num_rows, stream);
-        });
-    }
-
-    /// The rows of `columns` that the `WHERE` whose mask is in `filter_mask` keeps.
-    __host__ std::unique_ptr<cudf::table> compact(const std::vector<cudf::column_view> & columns, size_t rows, cudf::size_type left_out)
-    {
-        if (all_true.size() < rows)
-        {
-            all_true.resize(rows, stream);
-            checkCuda(cudaMemsetAsync(all_true.data(), 1, rows, stream.get()), "Cannot fill a mask of the device");
-        }
-
-        const cudf::column_view kept(
-            cudf::data_type{cudf::type_id::BOOL8},
-            static_cast<cudf::size_type>(rows),
-            all_true.data(),
-            static_cast<const cudf::bitmask_type *>(filter_mask.data()),
-            left_out);
-        return guarded("compacting " + std::to_string(rows) + " rows to those a `WHERE` keeps", [&]
-        {
-            return cudf::apply_retention_mask(cudf::table_view(columns), kept, stream);
-        });
-    }
-
-    /// The keys of each run of equal keys of `columns`, the keys, the values and the derived values of a batch without
-    /// nulls, and the aggregates over the run. cuDF's sort-based groupby, told the keys are sorted, starts a group
+    /// The keys of each run of equal keys of `columns`, the keys and the values of a batch, and the aggregates over the
+    /// run. cuDF's sort-based groupby, told the keys are sorted, starts a group
     /// wherever a row's keys differ from the row's before, so that a key in several runs comes once for each.
     __host__ std::unique_ptr<cudf::table> reduceRuns(const std::vector<cudf::column_view> & columns) const
     {
@@ -408,76 +295,11 @@ struct CudfGroupBy::State
         reduced_runs.push_back(std::move(groups));
     }
 
-    /// Keeps the rows of a batch of `values` that `filter`, when given, holds for, as a table of its own.
-    __host__ void collectBatch(GPUSpan<DeviceColumnView> batch, GPUSpan<DeviceFixedColumn> filter_columns, const GPUFilterProgram * filter)
-    {
-        if (batch.size() != values.size())
-            throwGPUError(("a batch of " + std::to_string(batch.size()) + " columns to collect, expected " + std::to_string(values.size())).c_str());
 
-        const size_t rows = batch[0].rows();
-        if (rows == 0)
-            return;
-
-        std::vector<cudf::column_view> columns;
-        columns.reserve(values.size());
-        for (size_t i = 0; i < batch.size(); ++i)
-        {
-            if (batch[i].rows() != rows)
-                throwGPUError(("column " + std::to_string(i) + " of " + std::to_string(batch[i].rows()) + " rows in a batch of " + std::to_string(rows)).c_str());
-            columns.push_back(columnViewOf(batch[i], values[i]));
-        }
-
-        if (filter)
-        {
-            const cudf::size_type left_out = evaluateFilter(rows, filter_columns, *filter);
-            if (static_cast<size_t>(left_out) == rows)
-                return;
-            if (left_out != 0)
-            {
-                collected.push_back(compact(columns, rows, left_out));
-                return;
-            }
-        }
-
-        /// A copy, as the batch's buffers are freed once it is added.
-        collected.push_back(guarded("keeping " + std::to_string(rows) + " rows", [&]
-        {
-            return std::make_unique<cudf::table>(cudf::table_view(columns), stream);
-        }));
-    }
-
-    /// Appends to `columns`, the keys and the values of a batch of `rows` rows, the values derived from them.
-    __host__ void derive(std::vector<cudf::column_view> & columns, size_t rows)
-    {
-        if (derived.empty())
-            return;
-
-        std::vector<DeviceFixedColumn> batch_values;
-        batch_values.reserve(numBatchValues());
-        for (size_t i = 0; i < numBatchValues(); ++i)
-        {
-            const GPUElementType type = values[i];
-            batch_values.push_back(
-                columnKindOf(type) == GPUColumnKind::Fixed ? deviceViewOf(columns[keys.size() + i], type) : DeviceFixedColumn{});
-        }
-
-        for (size_t j = 0; j < derived.size(); ++j)
-        {
-            rmm::device_buffer & out = derived_values[j];
-            if (out.size() < rows * sizeof(double))
-                out.resize(rows * sizeof(double), stream);
-            evaluateDerivedValue(derived[j], batch_values, rows, static_cast<double *>(out.data()), stream);
-            columns.emplace_back(cudf::data_type{cudf::type_id::FLOAT64}, static_cast<cudf::size_type>(rows), out.data(), nullptr, 0);
-        }
-    }
 };
 
 __host__ CudfGroupBy::CudfGroupBy(
-    GPUSpan<GPUElementType> keys,
-    GPUSpan<GPUElementType> values,
-    GPUSpan<GPUDerivedValue> derived,
-    GPUSpan<GPUGroupByAggregate> aggregates,
-    cuda::stream_ref stream)
+    GPUSpan<GPUElementType> keys, GPUSpan<GPUElementType> values, GPUSpan<GPUGroupByAggregate> aggregates, cuda::stream_ref stream)
 {
     if (stream.get() == cudaStreamLegacy || stream.get() == nullptr)
         throwGPUError("a `GROUP BY` through cuDF on the device's default stream, where cuco cannot copy its counts back");
@@ -485,31 +307,8 @@ __host__ CudfGroupBy::CudfGroupBy(
     if (values.empty())
         throwGPUError("a `GROUP BY` without values");
 
-    /// Collects the rows a `WHERE` keeps, of values of any type.
-    if (keys.empty() && aggregates.empty())
-    {
-        if (!derived.empty())
-            throwGPUError("a collection of rows with derived values");
-        state = new State(keys, values, derived, aggregates, stream);
-        return;
-    }
-
     if (keys.empty())
         throwGPUError("a `GROUP BY` without keys");
-
-    if (derived.size() > values.size())
-        throwGPUError(("a `GROUP BY` of " + std::to_string(derived.size()) + " derived values among " + std::to_string(values.size())).c_str());
-
-    for (size_t j = 0; j < derived.size(); ++j)
-    {
-        if (values[values.size() - derived.size() + j] != GPUElementType::Float64)
-            throwGPUError("a derived value of other than a `Float64`");
-        for (uint32_t i = 0; i < derived[j].num_columns; ++i)
-        {
-            if (derived[j].columns[i] >= values.size() - derived.size())
-                throwGPUError(("a derived value of value " + std::to_string(derived[j].columns[i]) + ", which is not of a batch").c_str());
-        }
-    }
 
     for (const auto & key : keys)
     {
@@ -555,7 +354,7 @@ __host__ CudfGroupBy::CudfGroupBy(
     if (aggregates.empty())
         throwGPUError("a `GROUP BY` without aggregates");
 
-    state = new State(keys, values, derived, aggregates, stream);
+    state = new State(keys, values, aggregates, stream);
 }
 
 __host__ CudfGroupBy::~CudfGroupBy()
@@ -563,24 +362,17 @@ __host__ CudfGroupBy::~CudfGroupBy()
     delete state;
 }
 
-__host__ void CudfGroupBy::addBatch(
-    GPUSpan<DeviceColumnView> keys, GPUSpan<DeviceColumnView> values, GPUSpan<DeviceFixedColumn> filter_columns, const GPUFilterProgram * filter)
+__host__ void CudfGroupBy::addBatch(GPUSpan<DeviceColumnView> keys, GPUSpan<DeviceColumnView> values)
 {
     if (state->finalized)
         throwGPUError("a batch after the groups were closed");
 
-    if (state->collect)
-    {
-        state->collectBatch(values, filter_columns, filter);
-        return;
-    }
-
-    if (keys.size() != state->keys.size() || values.size() != state->numBatchValues())
+    if (keys.size() != state->keys.size() || values.size() != state->values.size())
         throwGPUError(
             ("a batch of " + std::to_string(keys.size()) + " keys and " + std::to_string(values.size()) + " values, expected "
-            + std::to_string(state->keys.size()) + " and " + std::to_string(state->numBatchValues())).c_str());
+            + std::to_string(state->keys.size()) + " and " + std::to_string(state->values.size())).c_str());
 
-    size_t rows = keys[0].rows();
+    const size_t rows = keys[0].rows();
     if (rows == 0)
         return;
 
@@ -601,33 +393,7 @@ __host__ void CudfGroupBy::addBatch(
         columns.push_back(columnViewOf(values[i], state->values[i]));
     }
 
-    /// Lives until the groups are made of its rows.
-    std::unique_ptr<cudf::table> compacted;
-    if (filter)
-    {
-        const cudf::size_type left_out = state->evaluateFilter(rows, filter_columns, *filter);
-        if (static_cast<size_t>(left_out) == rows)
-            return;
-
-        /// Runs are reduced over batches without nulls only, as cuDF sorts keys with nulls whatever it is told.
-        if (left_out != 0
-            && (state->reduce_runs.value_or(state->runs_combine)
-                || static_cast<double>(left_out) >= min_left_out_share_to_compact * static_cast<double>(rows)))
-        {
-            compacted = state->compact(columns, rows, left_out);
-            rows = static_cast<size_t>(compacted->num_rows());
-            const cudf::table_view kept = compacted->view();
-            columns.assign(kept.begin(), kept.end());
-        }
-        else if (left_out != 0)
-        {
-            columns[0] = withNullMask(columns[0], static_cast<const cudf::bitmask_type *>(state->filter_mask.data()), left_out);
-        }
-    }
-
-    state->derive(columns, rows);
-
-    if (!state->reduce_runs.has_value() && state->runs_combine && !columns[0].has_nulls())
+    if (!state->reduce_runs.has_value() && state->runs_combine)
     {
         std::unique_ptr<cudf::table> runs = state->reduceRuns(columns);
         state->reduce_runs = static_cast<double>(runs->num_rows()) <= max_runs_per_row_to_reduce * static_cast<double>(rows);
@@ -655,11 +421,7 @@ __host__ size_t CudfGroupBy::finalize()
     if (state->finalized)
         throwGPUError("the groups were closed twice");
 
-    if (state->collect)
-    {
-        takeCollected();
-    }
-    else if (state->grouping)
+    if (state->grouping)
     {
         auto [group_keys, results] = guarded("closing the groups", [&]
         {
@@ -679,82 +441,7 @@ __host__ size_t CudfGroupBy::finalize()
         return 0;
 
     state->variable_offsets.resize(state->keys.size());
-    state->value_offsets.resize(state->collect ? state->values.size() : state->aggregates.size());
-    return static_cast<size_t>(state->groups->num_rows());
-}
-
-__host__ size_t CudfGroupBy::collectedRows() const
-{
-    size_t rows = 0;
-    for (const auto & table : state->collected)
-        rows += static_cast<size_t>(table->num_rows());
-    return rows;
-}
-
-__host__ size_t CudfGroupBy::takeCollected()
-{
-    if (!state->collect)
-        throwGPUError("the rows of a `GROUP BY` taken as collected");
-
-    state->groups.reset();
-    if (state->collected.size() == 1)
-    {
-        state->groups = std::move(state->collected.front());
-    }
-    else if (!state->collected.empty())
-    {
-        std::vector<cudf::table_view> views;
-        views.reserve(state->collected.size());
-        for (const auto & table : state->collected)
-            views.push_back(table->view());
-        state->groups = guarded("concatenating " + std::to_string(views.size()) + " batches of collected rows", [&]
-        {
-            return cudf::concatenate(views, state->stream);
-        });
-    }
-    state->collected.clear();
-    state->value_offsets.resize(state->values.size());
-    return state->groups ? static_cast<size_t>(state->groups->num_rows()) : 0;
-}
-
-__host__ size_t CudfGroupBy::filterGroups(const GPUFilterProgram & program, GPUSpan<uint32_t> columns)
-{
-    if (!state->finalized)
-        throwGPUError("the groups were filtered before they were closed");
-
-    if (!state->groups || state->groups->num_rows() == 0)
-        return 0;
-
-    if (columns.size() > max_filter_columns)
-        throwGPUError(("a filter of the groups over " + std::to_string(columns.size()) + " columns").c_str());
-
-    const cudf::table_view groups = state->groups->view();
-    const auto rows = static_cast<size_t>(groups.num_rows());
-
-    Filtering::FilterLayouts layouts;
-    layouts.present = true;
-    layouts.count = static_cast<uint32_t>(columns.size());
-    for (size_t i = 0; i < columns.size(); ++i)
-    {
-        const uint32_t column = columns[i];
-        const GPUElementType element_type = column < state->keys.size()
-            ? state->keys[column]
-            : (column - state->keys.size() < state->aggregates.size() ? state->aggregates[column - state->keys.size()].result_type
-                                                                       : GPUElementType::String);
-        if (column >= static_cast<uint32_t>(groups.num_columns()) || columnKindOf(element_type) != GPUColumnKind::Fixed)
-            throwGPUError(("a filter of the groups over column " + std::to_string(column) + ", which is not of a fixed width").c_str());
-        const cudf::column_view view = groups.column(static_cast<cudf::size_type>(column));
-        checkNoNulls(view);
-        layouts.columns[i] = {.data = view.head<char>(), .type = element_type};
-    }
-
-    rmm::device_buffer mask(rows * sizeof(bool), state->stream);
-    const auto blocks = static_cast<unsigned>((rows + filter_threads_per_block - 1) / filter_threads_per_block);
-    filterToBooleans<<<blocks, filter_threads_per_block, 0, state->stream.get()>>>(program, layouts, rows, static_cast<bool *>(mask.data()));
-    checkCuda(cudaGetLastError(), "Cannot filter the groups on the device");
-
-    const cudf::column_view mask_view(cudf::data_type{cudf::type_id::BOOL8}, static_cast<cudf::size_type>(rows), mask.data(), nullptr, 0);
-    state->groups = guarded("filtering " + std::to_string(rows) + " groups", [&] { return cudf::apply_boolean_mask(groups, mask_view, state->stream); });
+    state->value_offsets.resize(state->aggregates.size());
     return static_cast<size_t>(state->groups->num_rows());
 }
 
@@ -788,14 +475,13 @@ __host__ DeviceColumnView CudfGroupBy::key(size_t index) const
 
 __host__ DeviceColumnView CudfGroupBy::value(size_t index) const
 {
-    if (!state->finalized && !state->collect)
+    if (!state->finalized)
         throwGPUError("the groups were asked for before they were closed");
 
-    const size_t num_values = state->collect ? state->values.size() : state->aggregates.size();
-    if (index >= num_values)
-        throwGPUError(("aggregate " + std::to_string(index) + " of " + std::to_string(num_values)).c_str());
+    if (index >= state->aggregates.size())
+        throwGPUError(("aggregate " + std::to_string(index) + " of " + std::to_string(state->aggregates.size())).c_str());
 
-    const GPUElementType result_type = state->collect ? state->values[index] : state->aggregates[index].result_type;
+    const GPUElementType result_type = state->aggregates[index].result_type;
     const auto column_index = static_cast<cudf::size_type>(state->keys.size() + index);
     switch (columnKindOf(result_type))
     {

@@ -6,7 +6,6 @@
 
 #include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypeFixedString.h>
-#include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionInfo.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
@@ -54,24 +53,8 @@ std::optional<GPUCodec> codecOf(UInt8 method_byte)
     {
         case static_cast<UInt8>(CompressionMethodByte::LZ4): return GPUCodec::LZ4;
         case static_cast<UInt8>(CompressionMethodByte::ZSTD): return GPUCodec::ZSTD;
-        case static_cast<UInt8>(CompressionMethodByte::GDeflate): return GPUCodec::GDEFLATE;
     }
     return {};
-}
-
-std::optional<GPUCodec> deviceCodecOf(const ICompressionCodec & codec)
-{
-    if (const auto own = codecOf(codec.getMethodByte()))
-        return own;
-
-    const auto * multiple = typeid_cast<const CompressionCodecMultiple *>(&codec);
-    if (!multiple)
-        return {};
-
-    const auto chain = multiple->getCodecs();
-    if (chain.size() != 2 || chain[0]->getMethodByte() != static_cast<UInt8>(CompressionMethodByte::BitPacking))
-        return {};
-    return codecOf(chain[1]->getMethodByte());
 }
 
 std::string_view rawValuesOf(const IColumn & column, size_t num_rows, size_t element_size)
@@ -145,31 +128,6 @@ HostColumnView resizeForElementType(IColumn & column, size_t num_rows, GPUElemen
     return {element_type, resizeAndGetValueBytes(column, num_rows, element_type), num_rows};
 }
 
-
-std::optional<GPUElementType> filterElementTypeOf(const IDataType & type)
-{
-    switch (type.getTypeId())
-    {
-        case TypeIndex::Date: return GPUElementType::UInt16;
-        case TypeIndex::Date32: return GPUElementType::Int32;
-        case TypeIndex::DateTime: return GPUElementType::UInt32;
-        default: return elementTypeOf(type);
-    }
-}
-
-std::vector<GPUElementType> filterElementTypesOrThrow(const DataTypes & types)
-{
-    std::vector<GPUElementType> element_types;
-    element_types.reserve(types.size());
-    for (const auto & type : types)
-    {
-        const auto element_type = filterElementTypeOf(*type);
-        if (!element_type)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "A column of {} in a `WHERE` on the GPU", type->getName());
-        element_types.push_back(*element_type);
-    }
-    return element_types;
-}
 
 std::vector<GPUElementType> elementTypesOrThrow(const DataTypes & types)
 {
@@ -332,15 +290,6 @@ std::optional<GPUElementType> keyElementTypeOf(const IDataType & type)
         }
     }
     return elementTypeOf(type);
-}
-
-std::optional<GPUElementType> collectElementTypeOf(const IDataType & type)
-{
-    if (isStringKey(type))
-        return GPUElementType::String;
-    if (typeid_cast<const DataTypeFixedString *>(&type))
-        return keyElementTypeOf(type);
-    return filterElementTypeOf(type);
 }
 
 std::vector<GPUElementType> groupByKeysOrThrow(const DataTypes & key_types)

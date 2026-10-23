@@ -410,10 +410,6 @@ public:
     /// `allow_query_condition_cache_ = false` also bypasses the query condition cache: an estimate runs
     /// before `tryOptimizeTopK`, so the `use_query_condition_cache_for_top_k` gate is not yet known.
     AnalysisResultPtr selectRangesToReadForEstimation(bool allow_query_condition_cache_) const;
-    /// The ranges to read with the skip indexes applied to the granules here, as they are where they cannot be while
-    /// the granules are read, for a read that takes the ranges and reads them otherwise. Not memoized either: this read
-    /// still reads as it would.
-    AnalysisResultPtr selectRangesToReadApplyingSkipIndexes() const;
 
     /// Range analysis charges whole granules, so an estimate must not enforce a throwing read row limit.
     bool hasThrowingReadRowLimit() const;

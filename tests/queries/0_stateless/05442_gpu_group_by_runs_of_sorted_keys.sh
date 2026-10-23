@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-# Checks a `GROUP BY` over compressed blocks by the key a table is sorted by against the CPU. The
-# device reduces the rows of a batch over their runs of equal keys before it groups them, where the
+# Checks a `GROUP BY` on the device by the key a table is sorted by against the CPU. The device
+# reduces the rows of a batch over their runs of equal keys before it groups them, where the
 # first batch has few runs per row and every aggregate combines over runs: a `sum`, a `min`, a `max`
 # and a `count`. A key is in several parts, and with small batches in several batches of one part,
 # so that its runs come to one group. Keys whose rows are not together, a second key that splits
@@ -61,17 +61,17 @@ function compare_with_cpu()
     fi
 }
 
-# Whether the device reads the compressed blocks. On a machine without a device the plan is the
-# CPU's, and the expected line is printed as it is.
+# Whether the device aggregates. On a machine without a device the plan is the CPU's, and the
+# expected line is printed as it is.
 if [ ${#GPU_SETTINGS[@]} -eq 0 ]; then
-    echo "compressed"
-elif [[ "$($CLICKHOUSE_CLIENT "${GPU_SETTINGS[@]}" --query "EXPLAIN SELECT k, sum(v) FROM gpu_runs WHERE f < 20000 GROUP BY k SETTINGS optimize_move_to_prewhere = 1")" == *"ReadFromGPUCompressedColumns"* ]]; then
-    echo "compressed"
+    echo "device"
+elif [[ "$($CLICKHOUSE_CLIENT "${GPU_SETTINGS[@]}" --query "EXPLAIN SELECT k, sum(v) FROM gpu_runs GROUP BY k")" == *"GPUAggregating"* ]]; then
+    echo "device"
 else
     echo "elsewhere"
 fi
 
-for settings in "" "gpu_aggregation_batch_bytes = 65536, gpu_aggregation_readers = 3"; do
+for settings in "" "gpu_aggregation_batch_bytes = 65536"; do
     echo "- ${settings:-default batches}"
 
     # By the sorting key, with and without a `WHERE`, and a `HAVING` as in TPC-H Q18.

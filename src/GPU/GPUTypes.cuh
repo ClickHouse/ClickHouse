@@ -85,8 +85,6 @@ enum class GPUCodec : int
 {
     LZ4 = 0,
     ZSTD = 1,
-    /// A block in chunks, each a chunk of nvcomp, see `GPU::gdeflate_chunk_bytes`.
-    GDEFLATE = 2,
 };
 
 /// One aggregate of a `GROUP BY`: of the value column `column`, or of no column for `GPUAggregationKind::Count`, into a
@@ -151,73 +149,6 @@ struct HostColumnView
     GPUElementType element_type;
     char * data = nullptr;
     size_t rows = 0;
-};
-
-enum class GPUFilterOp : int
-{
-    LoadColumn = 0,
-    LoadConstant = 1,
-    Move = 2,
-    Equals = 3,
-    NotEquals = 4,
-    Less = 5,
-    LessOrEquals = 6,
-    Greater = 7,
-    GreaterOrEquals = 8,
-    And = 9,
-    Or = 10,
-    Not = 11,
-    /// Of two values as doubles, into a double: only in a program whose every value is a `Float64` but the constants.
-    Plus = 12,
-    Minus = 13,
-    Multiply = 14,
-    Divide = 15,
-};
-
-struct GPUFilterInstruction
-{
-    GPUFilterOp op;
-    uint32_t result;
-    uint32_t first;
-    uint32_t second;
-};
-
-enum class GPUFilterValueKind : int
-{
-    Signed = 0,
-    Unsigned = 1,
-    Float = 2,
-};
-
-struct GPUFilterConstant
-{
-    GPUFilterValueKind kind;
-    uint64_t bits;
-};
-
-constexpr size_t max_filter_columns = 8;
-constexpr size_t max_filter_instructions = 32;
-constexpr size_t max_filter_constants = 16;
-constexpr size_t max_filter_registers = 16;
-
-struct GPUFilterProgram
-{
-    GPUFilterInstruction code[max_filter_instructions];
-    uint32_t length = 0;
-    GPUFilterConstant constants[max_filter_constants];
-    uint32_t num_constants = 0;
-    uint32_t num_columns = 0;
-    uint32_t num_registers = 0;
-    uint32_t result = 0;
-};
-
-/// A value column of a `GROUP BY` that the device computes from other value columns by `program`, into a `Float64`:
-/// the `columns[i]`-th value column is what the program loads as its column `i`.
-struct GPUDerivedValue
-{
-    GPUFilterProgram program;
-    uint32_t columns[max_filter_columns];
-    uint32_t num_columns = 0;
 };
 
 __host__ __device__ constexpr bool isInteger(GPUElementType type)

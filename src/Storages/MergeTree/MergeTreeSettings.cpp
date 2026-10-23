@@ -350,12 +350,6 @@ Possible values:
 )", 0, \
         {"25.11", "single_stream", "with_size_stream", "Change to the newer format with separate sizes"}, \
         {"25.10", "single_stream", "single_stream", "New setting"}) \
-    DECLARE(Bool, pack_string_sizes, false, R"(
-Compresses the `.size` stream of a `String` column written with `string_serialization_version = 'with_size_stream'` with
-the `BitPacking` codec in front of the generic codecs of the column: the sizes of strings are small integers, which
-`BitPacking` packs in a few bits each, where a general-purpose codec alone leaves them 8 bytes each to expand.
-)", EXPERIMENTAL, \
-        {"26.11", false, false, "New setting"}) \
     DECLARE(MergeTreeNullableSerializationVersion, nullable_serialization_version, "basic", R"(
 Controls the serialization method used for `Nullable(T)` columns.
 

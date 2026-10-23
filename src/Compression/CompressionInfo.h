@@ -61,8 +61,6 @@ enum class CompressionMethodByte : uint8_t
     Quantized       = 0x9e,
     ZXC             = 0x9f,
     PCO             = 0xa0,
-    GDeflate        = 0xa1,
-    BitPacking      = 0xa2,
 };
 
 }

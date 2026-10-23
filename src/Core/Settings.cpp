@@ -10702,19 +10702,10 @@ Enables the `Quantized` compression codec.
 Enables the `SZ3` compression codec.
 )", EXPERIMENTAL, \
         {"26.8", false, false, "New setting to enable the experimental `SZ3` compression codec individually, without the `allow_experimental_codecs`."}) \
-    DECLARE(Bool, enable_bitpacking_codec, false, R"(
-Enables the `BitPacking` compression codec.
-)", EXPERIMENTAL, \
-        {"26.11", false, false, "New setting to enable the experimental `BitPacking` compression codec."}) \
     DECLARE(Bool, enable_zxc_codec, false, R"(
 Enables the `ZXC` compression codec.
 )", EXPERIMENTAL, \
         {"26.8", false, false, "New setting to enable the experimental `ZXC` compression codec individually, without the `allow_experimental_codecs`."}) \
-    DECLARE(Bool, enable_gdeflate_codec, false, R"(
-Enables the `GDeflate` compression codec, which compresses and expands on the server's GPU with nvcomp's GDeflate. Only in
-a build with GPU support, on a server with `enable_gpu`.
-)", EXPERIMENTAL, \
-        {"26.11", false, false, "New setting to enable the experimental `GDeflate` compression codec."}) \
     DECLARE(Bool, throw_on_unsupported_query_inside_transaction, true, R"(
 Throw exception if unsupported query is used inside transaction
 )", EXPERIMENTAL) \
@@ -11373,10 +11364,7 @@ floats are excluded from the keys, because cuDF groups them by IEEE equality, wh
 and `-0.0` in one group where ClickHouse puts them in two. A `GROUP BY` is grouped by cuDF's
 `streaming_groupby`, which keeps the groups on the device across the batches and grows its
 hash table with them; it does not sum a `Float32`, since cuDF sums a
-`Float32` into a `Float32` where ClickHouse sums it into a `Float64`. Over compressed blocks
-(`ReadFromGPUCompressedColumns`) its parts must keep the sizes of the strings in a stream of their
-own, as `string_serialization_version = 'with_size_stream'` writes them, and it takes no `PREWHERE`
-to the device.
+`Float32` into a `Float32` where ClickHouse sums it into a `Float64`.
 
 Everything else - another aggregate function, a `Nullable`, `Decimal` or `LowCardinality` argument
 or key, `ROLLUP`, `CUBE`, `GROUPING SETS`, `WITH TOTALS`, `group_by_use_nulls`, several tables, a
@@ -11418,25 +11406,6 @@ Possible values:
 - 1 - Supported aggregations are computed on a GPU.
 )", EXPERIMENTAL, \
         {"26.11", false, false, "New experimental setting to compute supported aggregations on a GPU."}) \
-    DECLARE(Bool, allow_experimental_gpu_filtered_read, false, R"(
-Read a `MergeTree` table whose `PREWHERE` a CUDA GPU evaluates through the device: the compressed blocks of its columns
-are sent to the device, which decompresses them, evaluates the conjuncts of the `PREWHERE` it can, and sends back only
-the rows they keep. The conjuncts it cannot evaluate, such as those over strings, are evaluated on the CPU over the rows
-sent back. It pays where the `PREWHERE` keeps few rows, and the CPU would spend more decompressing the columns than the
-link takes to carry their compressed blocks. Uses the settings of `allow_experimental_gpu_aggregation` for the reading.
-
-Possible values:
-
-- 0 - The table is read on the CPU.
-- 1 - A read whose `PREWHERE` the device can evaluate is filtered on a GPU.
-)", EXPERIMENTAL, \
-        {"26.11", false, false, "New experimental setting to filter the reads of a `MergeTree` table on a GPU."}) \
-    DECLARE(Float, gpu_filtered_read_max_selectivity, 0.2f, R"(
-The largest share of the rows of a table that its `PREWHERE` is estimated to keep, by the column statistics, for
-`allow_experimental_gpu_filtered_read` to read the table through the GPU. A read that keeps more sends most of the table
-back from the device, and is faster on the CPU.
-)", EXPERIMENTAL, \
-        {"26.11", 0.2, 0.2, "New setting: the selectivity above which a read is not filtered on a GPU."}) \
     DECLARE(UInt64, gpu_aggregation_batch_bytes, 256 * 1024 * 1024, R"(
 How much of a column `allow_experimental_gpu_aggregation` gathers in host memory before sending it
 to the device.
@@ -11451,44 +11420,8 @@ What the size does decide is memory. A batch is staged in pinned host memory and
 device, and the device's table of groups is sized so that every row of a batch could be a new
 group, so a query with few groups still holds a batch's worth of them. The default favours the
 many-groups case, which is the one the device is for.
-
-A `GROUP BY` that reads whole parts as compressed blocks (`ReadFromGPUCompressedColumns`) groups
-each part as it arrives on the device, and this setting does not apply to it.
 )", EXPERIMENTAL, \
         {"26.11", 268435456, 268435456, "New experimental setting, the batch size of the GPU aggregation."}) \
-    DECLARE(UInt64, gpu_aggregation_readers, 0, R"(
-How many threads read the parts of a `GROUP BY` that `allow_experimental_gpu_aggregation` runs over
-compressed blocks (`ReadFromGPUCompressedColumns`), each a part at a time. 0 chooses by what the
-threads have to do.
-
-A reading thread copies the compressed blocks of a part into pinned host memory for the device to
-fetch, and one thread copies slower than the link carries - about 4 GB/s against 6 GB/s of PCIe 3
-on a Tesla T4 - so one reader leaves the link idle, and two fill it: over 300 million rows grouped
-by a `UInt8` key, one reader took 0.95 s, two 0.53 s, and four or eight were slower than two.
-
-With `gpu_aggregation_decompression = 'host'` the reading threads expand the columns as well, which
-is work per byte rather than per block, and two threads no longer keep up with the link: grouping
-300 million rows of a `UInt64` by a `UInt32` key took 1.34 s with two readers, 0.84 s with four and
-0.77 s with eight. Yet each reader holds a part's buffers in pinned memory and on the device, and
-with four columns of a part in flight eight readers lost what they gained: grouping by two keys took
-1.37 s with four readers and 1.78 s with eight. So with 0 the query gets two readers when the
-columns are expanded on the device, and a quarter of the CPU cores, at least two, when they are
-expanded on the host.
-
-Each reader holds a part's compressed blocks in pinned memory and its expanded columns on the
-device while they are grouped, so more readers take more of both.
-)", EXPERIMENTAL, \
-        {"26.11", 0, 0, "New experimental setting, the number of threads that read parts for a GPU aggregation over compressed blocks; 0 chooses by whether the columns are expanded on the device or on the host."}) \
-    DECLARE(GPUDecompressionMode, gpu_aggregation_decompression, GPUDecompressionMode::DEVICE, R"(
-Who expands a column of a part - the device or the CPU - in an aggregation that
-`allow_experimental_gpu_aggregation` runs over compressed blocks (`ReadFromGPUCompressedColumns`).
-
-Possible values:
-
-- `device` - Every column is expanded on the device: the compressed blocks go over the link as they are stored.
-- `host` - Every column is expanded on the CPU by the reading threads and sent whole.
-)", EXPERIMENTAL, \
-        {"26.11", "device", "device", "New experimental setting, whether a GPU aggregation over compressed blocks expands the columns on the device or on the host."}) \
     \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \
