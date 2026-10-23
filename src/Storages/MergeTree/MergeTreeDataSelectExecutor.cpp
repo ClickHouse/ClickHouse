@@ -164,7 +164,7 @@ MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(const MergeTreeData & d
 
 /// Maps each primary-key column position to the slot of the matching column in a part's partition
 /// minmax index (nullopt when the primary-key column is not a partition-minmax column).
-std::vector<std::optional<size_t>> MergeTreeDataSelectExecutor::buildPrimaryKeyToMinMaxSlotMapping(
+static std::vector<std::optional<size_t>> buildPrimaryKeyToMinMaxSlotMapping(
     const StorageMetadataPtr & metadata_snapshot, const MergeTreeSettingsPtr & data_settings)
 {
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
@@ -2200,11 +2200,12 @@ size_t MergeTreeDataSelectExecutor::roundRowsOrBytesToMarks(
     size_t rows_granularity,
     size_t bytes_granularity)
 {
-    size_t res = (rows_setting + rows_granularity - 1) / rows_granularity;
+    /// Round up without `x + granularity - 1`, which wraps around for a setting close to the maximum.
+    size_t res = rows_setting / rows_granularity + (rows_setting % rows_granularity != 0);
 
     if (bytes_granularity == 0)
         return res;
-    return std::max(res, (bytes_setting + bytes_granularity - 1) / bytes_granularity);
+    return std::max(res, bytes_setting / bytes_granularity + (bytes_setting % bytes_granularity != 0));
 }
 
 /// Same as roundRowsOrBytesToMarks() but do not return more then max_marks
