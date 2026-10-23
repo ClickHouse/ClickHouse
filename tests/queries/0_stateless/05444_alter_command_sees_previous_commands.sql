@@ -29,3 +29,15 @@ SELECT name, type FROM system.columns WHERE database = currentDatabase() AND tab
 
 SHOW CREATE TABLE t_alter_previous_commands;
 DROP TABLE t_alter_previous_commands;
+
+-- The placement of a column (FIRST / AFTER) decides which columns DROP COLUMN of a Nested group removes,
+-- so a later IF NOT EXISTS sees the same columns as `apply` does.
+CREATE TABLE t_alter_previous_commands_nested (`n.a` Array(UInt32), id UInt64) ENGINE = MergeTree ORDER BY id;
+ALTER TABLE t_alter_previous_commands_nested ADD COLUMN `n.b` Array(UInt32) AFTER `n.a`, DROP COLUMN n, ADD COLUMN IF NOT EXISTS `n.b` Array(UInt64);
+SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 't_alter_previous_commands_nested' ORDER BY position;
+DROP TABLE t_alter_previous_commands_nested;
+
+CREATE TABLE t_alter_previous_commands_nested (`n.a` Array(UInt32), id UInt64, `n.b` Array(UInt32)) ENGINE = MergeTree ORDER BY id;
+ALTER TABLE t_alter_previous_commands_nested MODIFY COLUMN `n.b` Array(UInt32) AFTER `n.a`, DROP COLUMN n, ADD COLUMN IF NOT EXISTS `n.b` Array(UInt64);
+SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 't_alter_previous_commands_nested' ORDER BY position;
+DROP TABLE t_alter_previous_commands_nested;
