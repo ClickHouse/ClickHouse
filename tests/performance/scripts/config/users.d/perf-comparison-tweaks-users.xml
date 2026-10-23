@@ -46,6 +46,13 @@
             <use_query_condition_cache>0</use_query_condition_cache>
 
             <!--
+                The tables of the tests live in `Atomic` databases, where `DROP TABLE` returns before
+                the data is removed, which then competes with the next measured queries for CPU and
+                disk. Wait for the removal in the query, as with the `Ordinary` databases before.
+            -->
+            <database_atomic_wait_for_drop_and_detach_synchronously>1</database_atomic_wait_for_drop_and_detach_synchronously>
+
+            <!--
                 Pin network compression to `LZ4` for the performance comparison.
 
                 This repository changes the default `network_compression_method`
