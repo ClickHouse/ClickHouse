@@ -104,6 +104,7 @@ namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsAlterColumnSecondaryIndexMode alter_column_secondary_index_mode;
     extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
+    extern const MergeTreeSettingsUInt64 max_bytes_to_buffer_for_packed_part;
     extern const MergeTreeSettingsBool always_use_copy_instead_of_hardlinks;
     extern const MergeTreeSettingsMilliseconds background_task_preferred_step_execution_time_ms;
     extern const MergeTreeSettingsBool enable_block_number_column;
@@ -1069,7 +1070,7 @@ static void splitAndModifyMutationCommands(
         {
             if (projections_being_dropped.contains(projection.name))
                 continue;
-            if (!part->hasProjection(projection.name))
+            if (!part->hasProjection(projection.name) && !part->hasUnloadedProjection(projection.name))
                 continue;
             if (part->hasBrokenProjection(projection.name))
                 continue;
@@ -1831,7 +1832,7 @@ static std::set<ProjectionDescriptionRawPtr> getProjectionsToRecalculate(
         bool need_recalculate =
             materialized_projections.contains(projection.name)
             || (!is_full_part_storage
-                && source_part->hasProjection(projection.name)
+                && (source_part->hasProjection(projection.name) || source_part->hasUnloadedProjection(projection.name))
                 && !source_part->hasBrokenProjection(projection.name));
 
         if (need_recalculate)
@@ -1911,6 +1912,11 @@ static NameSet collectFilesToSkip(
     bool packed_skip_index_archive_dirty)
 {
     NameSet files_to_skip = source_part->getFileNamesWithoutChecksums();
+
+    /// The new part writes its own version metadata, and the source's is rewritten concurrently
+    /// (`txn_version.txt.tmp` is renamed over `txn_version.txt`), so neither file is carried over.
+    files_to_skip.insert(VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
+    files_to_skip.insert(VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME);
 
     /// Do not hardlink this file because it's always rewritten at the end of mutation.
     files_to_skip.insert(IMergeTreeDataPart::SERIALIZATION_FILE_NAME);
@@ -3682,7 +3688,7 @@ private:
             bool need_recalculate =
                 (ctx->materialized_projections.contains(projection.name)
                 || (!is_full_part_storage
-                    && ctx->source_part->hasProjection(projection.name)
+                    && (ctx->source_part->hasProjection(projection.name) || ctx->source_part->hasUnloadedProjection(projection.name))
                     && !ctx->source_part->hasBrokenProjection(projection.name)))
                 && !lightweight_delete_drop;
 
@@ -5096,6 +5102,7 @@ bool MutateTask::prepare()
             .copy_instead_of_hardlink = (*settings_ptr)[MergeTreeSetting::always_use_copy_instead_of_hardlinks],
             .files_to_copy_instead_of_hardlinks = std::move(files_to_copy_instead_of_hardlinks),
             .keep_metadata_version = true,
+            .temporary_data = ctx->context->getTempDataOnDisk(),
         };
 
         MergeTreeData::MutableDataPartPtr part;
@@ -5105,6 +5112,8 @@ bool MutateTask::prepare()
             std::tie(part, lock) = ctx->data->cloneAndLoadDataPart(
                 ctx->source_part, "tmp_clone_", ctx->future_part->part_info, ctx->metadata_snapshot, clone_params, ctx->context->getReadSettings(), ctx->context->getWriteSettings(), true/*must_on_same_disk*/);
             part->getDataPartStorage().beginTransaction();
+            if (auto max_bytes_to_buffer = (*ctx->data->getSettings())[MergeTreeSetting::max_bytes_to_buffer_for_packed_part])
+                part->getDataPartStorage().setTemporaryDataForTransaction(ctx->context->getTempDataOnDisk(), max_bytes_to_buffer);
             ctx->temporary_directory_lock = std::move(lock);
         }
 
@@ -5225,7 +5234,7 @@ bool MutateTask::prepare()
         {
             for (const auto & projection : ctx->metadata_snapshot->getProjections())
             {
-                if (!ctx->source_part->hasProjection(projection.name))
+                if (!ctx->source_part->hasProjection(projection.name) && !ctx->source_part->hasUnloadedProjection(projection.name))
                     continue;
 
                 ctx->materialized_projections.insert(projection.name);
@@ -5255,6 +5264,8 @@ bool MutateTask::prepare()
 
     ctx->new_data_part = std::move(builder).build();
     ctx->new_data_part->getDataPartStorage().beginTransaction();
+    if (auto max_bytes_to_buffer = (*ctx->data->getSettings())[MergeTreeSetting::max_bytes_to_buffer_for_packed_part])
+        ctx->new_data_part->getDataPartStorage().setTemporaryDataForTransaction(ctx->context->getTempDataOnDisk(), max_bytes_to_buffer);
 
     ctx->new_data_part->uuid = ctx->future_part->uuid;
     ctx->new_data_part->is_temp = true;
