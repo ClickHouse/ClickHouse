@@ -5773,6 +5773,48 @@ TEST_P(CoordinationTest, MoveSnapshotCandidateHonorsBoolPublishCallback)
     EXPECT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple("/move_me", /*out_stats=*/nullptr, /*out_data=*/nullptr));
 }
 
+TEST_P(CoordinationTest, MoveOntoRetainedCopyKeepsPinnedSnapshot)
+{
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest latest("./snapshots_latest");
+    ChangelogDirTest rocks("./rocksdb");
+
+    auto ctx = makeContextForSnapshotApply(use_lsmt_storage, "./snapshots", "./rocksdb");
+    auto latest_disk = std::make_shared<DB::DiskLocal>("LatestSnapshotDisk", "./snapshots_latest");
+    ctx->setLatestSnapshotDisk(latest_disk);
+    auto buf_80 = makeSingleNodeSnapshotBuffer(ctx, 80, "/kept80", "from_80");
+    auto buf_90 = makeSingleNodeSnapshotBuffer(ctx, 90, "/kept90", "from_90");
+
+    /// The same snapshot file on both disks: startup selects the latest-disk copy and retains the other one.
+    constexpr auto path_80 = "snapshot_80_aaaaaaaa.bin.zstd";
+    auto regular_disk = ctx->getSnapshotDisk();
+    writeSnapshotBufferToFile(regular_disk, path_80, buf_80);
+    writeSnapshotBufferToFile(latest_disk, path_80, buf_80);
+    writeSnapshotBufferToFile(latest_disk, "snapshot_90_bbbbbbbb.bin.zstd", buf_90);
+    const auto digest_80 = DB::computeKeeperFileDigest(latest_disk, path_80);
+
+    DB::KeeperSnapshotManager manager(3, ctx, true);
+    EXPECT_EQ(manager.totalSnapshots(), 2);
+    EXPECT_EQ(manager.getSnapshotPin(80)->disk, latest_disk);
+
+    /// Maintenance moves the non-latest snapshot onto the path of its retained copy.
+    manager.runMaintenanceInline(0);
+    auto pin = manager.getSnapshotPin(80);
+    ASSERT_NE(pin, nullptr);
+    EXPECT_EQ(pin->disk, regular_disk);
+    EXPECT_FALSE(latest_disk->existsFile(path_80));
+    EXPECT_TRUE(regular_disk->existsFile(path_80));
+
+    /// Retiring the index must not unlink the file while the registered snapshot is pinned.
+    manager.removeSnapshot(80);
+    EXPECT_TRUE(regular_disk->existsFile(path_80));
+    EXPECT_EQ(DB::computeKeeperFileDigest(pin->disk, pin->path), digest_80);
+
+    pin.reset();
+    EXPECT_FALSE(regular_disk->existsFile(path_80));
+    EXPECT_EQ(manager.totalSnapshots(), 1);
+}
+
 TEST(KeeperSnapshotFileNameTest, CanonicalSnapshotS3Name)
 {
     EXPECT_EQ(DB::getCanonicalSnapshotS3Name("snapshot_100_ab12cd34.bin.zstd"), "snapshot_100.bin.zstd");

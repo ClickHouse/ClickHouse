@@ -1092,12 +1092,25 @@ KeeperSnapshotManager::detachSnapshotForRemoval(std::map<uint64_t, SnapshotFileI
     auto snapshot_file_info = itr->second;
     snapshot_file_info->retired_for_removal.store(true, std::memory_order_release);
     existing_snapshots.erase(itr);
-    retired.push_back(std::move(snapshot_file_info));
+    retired.push_back(snapshot_file_info);
 
     if (auto duplicate_it = retained_duplicate_snapshots.find(log_idx); duplicate_it != retained_duplicate_snapshots.end())
     {
         for (auto & duplicate : duplicate_it->second)
         {
+            /// A move of the registered snapshot can land on the path of a retained copy. Then the copy is
+            /// the registered file itself, and only the registered object, which carries the pins, may unlink it.
+            /// `disk` and `path` are mutated only under `snapshots_lock`, which the caller holds.
+            if (duplicate->disk == snapshot_file_info->disk && duplicate->path == snapshot_file_info->path)
+            {
+                LOG_DEBUG(
+                    log,
+                    "Retained copy {} on disk {} of snapshot {} was replaced by a move of the registered snapshot",
+                    duplicate->path,
+                    duplicate->disk->getName(),
+                    log_idx);
+                continue;
+            }
             duplicate->retired_for_removal.store(true, std::memory_order_release);
             retired.push_back(std::move(duplicate));
         }
