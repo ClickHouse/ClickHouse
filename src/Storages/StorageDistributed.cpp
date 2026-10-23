@@ -113,7 +113,6 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
@@ -801,44 +800,15 @@ void StorageDistributed::checkRemoteTableConversionPreservesOrder(
     const ClusterPtr & cluster,
     const std::optional<NameSet> & key_columns) const
 {
-    const auto conversion = findRemoteTableConversionNotPreservingOrder(local_context, storage_snapshot, cluster, key_columns);
-    if (!conversion)
-        return;
-
-    const auto & [remote_column, declared_type] = *conversion;
-    const String & remote_database_name = remote_database.empty() ? local_context->getCurrentDatabase() : remote_database;
-    throw Exception(
-        ErrorCodes::INCOMPATIBLE_COLUMNS,
-        "Column {} has type {} in the shard table {} and type {} in the Distributed table {}, and converting "
-        "between them does not preserve the order or the distinctness of values: the shards would sort, group or "
-        "deduplicate by {} and the initiator would treat their result as if it were done by {}, so the query "
-        "cannot be processed. Declare the column with "
-        "the shard table's type, or with a type it converts to without reordering, such as a wider integer or "
-        "a Nullable of it",
-        backQuoteIfNeed(remote_column.name),
-        remote_column.type->getName(),
-        StorageID(remote_database_name, remote_table).getNameForLogs(),
-        declared_type->getName(),
-        getStorageID().getNameForLogs(),
-        remote_column.type->getName(),
-        declared_type->getName());
-}
-
-std::optional<std::pair<NameAndTypePair, DataTypePtr>> StorageDistributed::findRemoteTableConversionNotPreservingOrder(
-    ContextPtr local_context,
-    const StorageSnapshotPtr & storage_snapshot,
-    const ClusterPtr & cluster,
-    const std::optional<NameSet> & key_columns) const
-{
     if (remote_table_function_ptr)
-        return {};
+        return;
 
     /// A shard that is this server reads `remote_database.remote_table` from here, whatever
     /// `prefer_localhost_replica` says, so that table's types are the ones a shard sorts by. Nothing
     /// is known about the tables behind remote-only shards, and a local table that merely shares
     /// their name would be unrelated to them.
     if (cluster->getLocalShardCount() == 0)
-        return {};
+        return;
 
     /// An empty remote database means the shard's default database, which for this server is the
     /// query's current database (`createLocalPlan` runs the shard query in a copy of this context).
@@ -846,7 +816,7 @@ std::optional<std::pair<NameAndTypePair, DataTypePtr>> StorageDistributed::findR
     StorageID remote_table_id{remote_database_name, remote_table};
     auto remote_table_storage = DatabaseCatalog::instance().tryGetTable(remote_table_id, local_context);
     if (!remote_table_storage)
-        return {};
+        return;
 
     /// `ALIAS` columns cross the same cast, so they are compared too.
     const GetColumnsOptions order_relevant_columns(GetColumnsOptions::AllPhysicalAndAliases);
@@ -863,10 +833,22 @@ std::optional<std::pair<NameAndTypePair, DataTypePtr>> StorageDistributed::findR
 
         auto declared_column = declared_columns.tryGetColumn(order_relevant_columns, remote_column.name);
         if (declared_column && !conversionPreservesOrder(*remote_column.type, *declared_column->type))
-            return std::make_pair(remote_column, declared_column->type);
+            throw Exception(
+                ErrorCodes::INCOMPATIBLE_COLUMNS,
+                "Column {} has type {} in the shard table {} and type {} in the Distributed table {}, and converting "
+                "between them does not preserve the order or the distinctness of values: the shards would sort, group or "
+                "deduplicate by {} and the initiator would treat their result as if it were done by {}, so the query "
+                "cannot be processed. Declare the column with "
+                "the shard table's type, or with a type it converts to without reordering, such as a wider integer or "
+                "a Nullable of it",
+                backQuoteIfNeed(remote_column.name),
+                remote_column.type->getName(),
+                remote_table_id.getNameForLogs(),
+                declared_column->type->getName(),
+                getStorageID().getNameForLogs(),
+                remote_column.type->getName(),
+                declared_column->type->getName());
     }
-
-    return {};
 }
 
 /// Reuses the logic of isPartitionKeySuitsGroupByKey in useDataParallelAggregation.cpp
@@ -1262,34 +1244,6 @@ void StorageDistributed::read(
     /// (e.g., every shard had a missing table with no remote replicas).
     if (!query_plan.isInitialized())
         throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "No available shards to query");
-
-    /// The initiator merges the groups after the cast to the declared types, so a conversion that merges or reorders
-    /// the keys leaves the result complete, but the `GROUP BY` top-K heap would let each shard keep its smallest keys
-    /// by its own type. The keys of `ORDER BY` were checked in `getQueryProcessingStage`.
-    if (processed_stage == QueryProcessingStage::WithMergeableState && modified_query_info.getCluster()->getLocalShardCount() > 0)
-    {
-        const auto * query_node = query_info.query_tree ? query_info.query_tree->as<QueryNode>() : nullptr;
-        if (query_node && query_node->hasGroupBy())
-        {
-            const auto key_columns = getKeyColumns(query_info, /*shards_finalize_reductions=*/ true);
-            if (findRemoteTableConversionNotPreservingOrder(
-                    local_context,
-                    storage_snapshot,
-                    modified_query_info.getCluster(),
-                    key_columns.unknown ? std::nullopt : std::make_optional(key_columns.names)))
-            {
-                std::vector<QueryPlan::Node *> nodes{query_plan.getRootNode()};
-                while (!nodes.empty())
-                {
-                    auto * node = nodes.back();
-                    nodes.pop_back();
-                    if (auto * read_from_remote = typeid_cast<ReadFromRemote *>(node->step.get()))
-                        read_from_remote->disallowGroupByTopK();
-                    nodes.insert(nodes.end(), node->children.begin(), node->children.end());
-                }
-            }
-        }
-    }
 }
 
 

@@ -52,11 +52,6 @@ public:
 
     void enableMemoryBoundMerging();
     void enforceAggregationInOrder(const SortDescription & sort_description);
-    /// See `distributed_group_by_top_k`.
-    void enableGroupByTopK(size_t top_k_limit);
-    /// The shards group by keys of other types than the initiator, so their smallest keys are not the initiator's.
-    void disallowGroupByTopK() { group_by_top_k_allowed = false; }
-    bool isGroupByTopKAllowed() const { return group_by_top_k_allowed; }
 
     bool hasSerializedPlan() const;
 
@@ -78,7 +73,6 @@ private:
     const String shard_scope_identity;
     UnavailableShardTrackerPtr unavailable_shard_tracker;
     std::optional<GetPriorityForLoadBalancing> priority_func_factory;
-    bool group_by_top_k_allowed = true;
 
     /// An EXPLAIN runs extra executors of its own, whose skips are not the query's: it passes no tracker.
     Pipes addPipes(

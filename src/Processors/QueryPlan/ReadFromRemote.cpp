@@ -244,11 +244,6 @@ void ReadFromRemote::enforceAggregationInOrder(const SortDescription & sort_desc
     DB::enforceAggregationInOrder(stage, &shards, sort_description, *context);
 }
 
-void ReadFromRemote::enableGroupByTopK(size_t top_k_limit)
-{
-    DB::enableGroupByTopK(stage, top_k_limit, *context);
-}
-
 static ASTSelectQuery & getSelectQuery(ASTPtr ast)
 {
     if (const auto * explain = ast->as<ASTExplainQuery>())

@@ -366,15 +366,18 @@ static void applyTopKByAllKeys(
     aggregating_step.applyTopKOptimization(std::move(top_k_params));
 }
 
-/// `GROUP BY ... LIMIT n` without `ORDER BY` that merges the partial states of shards or parallel replicas:
+/// `GROUP BY ... LIMIT n` without `ORDER BY` that merges the partial states of parallel replicas:
 ///
-///   Limit - [Expression] - MergingAggregated - Union - Aggregating (the local shard or replica, partial)
-///                                                    - ReadFromRemote / ReadFromRemoteParallelReplicas / ReadFromParallelReplicas
+///   Limit - [Expression] - MergingAggregated - Union - Aggregating (the local replica, partial)
+///                                                    - ReadFromRemoteParallelReplicas / ReadFromParallelReplicas
 ///
-/// or without the `Union` when nothing is read locally, or with local aggregations only when all shards are local. Any `n` groups answer the query, so it may return the smallest
-/// `n` by the keys, which a sort above the merge selects. Then each shard or replica may keep only its smallest `n`
-/// groups: a group beyond them on one of them is beyond the smallest `n` overall. The local aggregation gets the heap
-/// here, the remote ones through `distributed_group_by_top_k`.
+/// or without the `Union` when nothing is read locally. Any `n` groups answer the query, so it may return the smallest
+/// `n` by the keys, which a sort above the merge selects. Then each replica may keep only its smallest `n` groups: a
+/// group beyond them on one of them is beyond the smallest `n` overall. The local aggregation gets the heap here, the
+/// remote ones through `distributed_group_by_top_k`.
+///
+/// Not over the shards of a `Distributed` table: they group by the types of their own tables, which the initiator
+/// converts to its own only after the merge, and cannot always see.
 static void tryOptimizeGroupByTopKOverRemoteMerge(
     QueryPlan::Node * node_above_merging,
     QueryPlan::Node * merging_node,
@@ -384,12 +387,12 @@ static void tryOptimizeGroupByTopKOverRemoteMerge(
 {
     const auto & merging_step = typeid_cast<const MergingAggregatedStep &>(*merging_node->step);
     const auto & params = merging_step.getParams();
-    /// Under `max_rows_to_group_by` no shard or replica would take the heap, and the sort would only cost.
+    /// Under `max_rows_to_group_by` no replica would take the heap, and the sort would only cost.
     if (!merging_step.isFinal() || merging_step.isGroupingSets() || params.overflow_row || settings.max_rows_to_group_by > 0
         || params.keys.empty() || merging_node->children.size() != 1)
         return;
 
-    /// The merge streams in the order of the keys and lets `LIMIT` stop it early, and the shards aggregate in order,
+    /// The merge streams in the order of the keys and lets `LIMIT` stop it early, and the replicas aggregate in order,
     /// which takes no heap.
     if (merging_step.memoryBoundMergingWillBeUsed())
         return;
@@ -401,32 +404,26 @@ static void tryOptimizeGroupByTopKOverRemoteMerge(
     else
         sources = {input_node};
 
-    std::vector<ReadFromRemote *> remote_reads;
     std::vector<ReadFromParallelRemoteReplicasStep *> parallel_replicas_reads;
     std::vector<ReadFromParallelReplicasStep *> plan_fragment_reads;
     std::vector<QueryPlan::Node *> local_aggregating_nodes;
     /// Any other source keeps all its groups, which the sort handles as well.
     for (auto * source : sources)
     {
-        if (auto * remote_read = typeid_cast<ReadFromRemote *>(source->step.get()))
-        {
-            if (!remote_read->isGroupByTopKAllowed())
-                return;
-            remote_reads.push_back(remote_read);
-        }
-        else if (auto * parallel_replicas_read = typeid_cast<ReadFromParallelRemoteReplicasStep *>(source->step.get()))
+        if (typeid_cast<const ReadFromRemote *>(source->step.get()))
+            return;
+        if (auto * parallel_replicas_read = typeid_cast<ReadFromParallelRemoteReplicasStep *>(source->step.get()))
             parallel_replicas_reads.push_back(parallel_replicas_read);
         else if (auto * plan_fragment_read = typeid_cast<ReadFromParallelReplicasStep *>(source->step.get()))
             plan_fragment_reads.push_back(plan_fragment_read);
         else if (validateAggregatingStep(source, /*final=*/ false))
             local_aggregating_nodes.push_back(source);
         else if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(source->step.get()); aggregating_step && aggregating_step->inOrder())
-            /// The remote shards read the same table, so they aggregate in order as well, without the heap.
+            /// The other replicas read the same table, so they aggregate in order as well, without the heap.
             return;
     }
 
-    /// All shards may be local (`prefer_localhost_replica`), with no remote read.
-    if (remote_reads.empty() && parallel_replicas_reads.empty() && plan_fragment_reads.empty() && local_aggregating_nodes.empty())
+    if (parallel_replicas_reads.empty() && plan_fragment_reads.empty())
         return;
 
     SortDescription sort_description;
@@ -447,8 +444,6 @@ static void tryOptimizeGroupByTopKOverRemoteMerge(
     chassert(node_above_merging->children.front() == merging_node);
     node_above_merging->children.front() = &sort_node;
 
-    for (auto * remote_read : remote_reads)
-        remote_read->enableGroupByTopK(limit);
     for (auto * parallel_replicas_read : parallel_replicas_reads)
         parallel_replicas_read->enableGroupByTopK(limit);
     for (auto * plan_fragment_read : plan_fragment_reads)
@@ -666,7 +661,7 @@ void applyGroupByTopKOfInitiator(
     if (settings.make_distributed_plan)
         return;
 
-    /// A shard or replica runs the query up to the partial aggregation, so it is the root, maybe below the sets it builds
+    /// A replica runs the query up to the partial aggregation, so it is the root, maybe below the sets it builds
     /// and the marshalling of its output.
     QueryPlan::Node * node = &root;
     while ((typeid_cast<const CreatingSetsStep *>(node->step.get()) || typeid_cast<const BlocksMarshallingStep *>(node->step.get()))

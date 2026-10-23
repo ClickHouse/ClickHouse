@@ -243,13 +243,6 @@ private:
         const ClusterPtr & cluster,
         const std::optional<NameSet> & key_columns) const;
 
-    /// The same check, returning the first such column of the remote table and its type declared here instead of throwing.
-    std::optional<std::pair<NameAndTypePair, DataTypePtr>> findRemoteTableConversionNotPreservingOrder(
-        ContextPtr local_context,
-        const StorageSnapshotPtr & storage_snapshot,
-        const ClusterPtr & cluster,
-        const std::optional<NameSet> & key_columns) const;
-
     /// The implicit `rand()` sharding key of a `Remote` database proxy (see `DatabaseRemote`) exists
     /// only to spread `INSERT` rows across the shards; it says nothing about data placement. The read
     /// path (shard pruning under `optimize_skip_unused_shards`/`force_optimize_skip_unused_shards`,

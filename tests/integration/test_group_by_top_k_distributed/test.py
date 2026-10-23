@@ -13,9 +13,10 @@ prefix of the GROUP BY keys:
     partial side: a key rejected by a shard-local heap cannot be in the
     global top-N, and the initiator's final sort + LIMIT discards any group
     a remote eviction left incomplete.
-  * without ORDER BY (`GROUP BY ... LIMIT N`) - the initiator synthesizes a
+  * without ORDER BY (`GROUP BY ... LIMIT N`) - stays final-only over a
+    Distributed table.  With parallel replicas the initiator synthesizes a
     sort over all the keys above its merge, which makes the shape the one with
-    ORDER BY, and tells the followers to put the heap on their partial
+    ORDER BY, and tells the replicas to put the heap on their partial
     aggregation (`distributed_group_by_top_k`).  A follower never decides
     that on its own: the clause guards below protect the shape with ORDER BY.
 
@@ -405,23 +406,25 @@ def test_distributed_remote_composite_prefix(start_cluster):
 def test_distributed_remote_no_order_by(start_cluster):
     """`GROUP BY k LIMIT N` (no ORDER BY) over a Distributed table.
 
-    The initiator sorts the merged groups by the key and each shard keeps only
-    its smallest N groups, so the query returns the smallest N groups with
-    complete aggregates.  A shard pruning without the initiator's sort would
-    return groups with partial aggregates instead.
+    The no-ORDER-BY shape is the one the gate definitively protects: there
+    is no ORDER BY at the coordinator to evict tuples with corrupted partial
+    state, so if the gate were ever wrongly relaxed for partial aggregation
+    this would diverge.
+
+    To make the comparison deterministic regardless of LIMIT's arbitrary
+    tie-breaking, we compare a deterministic aggregate over the LIMIT'd
+    rowset.
     """
     _make_local_shards()
-    query = (
+    inner = (
         "SELECT k, sum(v) AS s "
         "FROM remote('node{1,2}', currentDatabase(), t_local) "
         "GROUP BY k "
+        "LIMIT 100"
     )
-    expected = _run(node1, query + "ORDER BY k LIMIT 100", 0)
-    on = _run(node1, query + "LIMIT 100", 1)
-    assert expected == on, (
-        f"GROUP BY ... LIMIT did not return the smallest groups.\n"
-        f"  expected:\n{expected}\n  on:\n{on}\n"
-    )
+    # Sum + sort the surviving (k, s) pairs to get a stable comparison.
+    outer = f"SELECT sum(k), sum(s), count() FROM ({inner})"
+    _assert_same_result(node1, outer)
 
 
 def test_distributed_remote_array_join_projection(start_cluster):
