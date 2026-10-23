@@ -542,6 +542,8 @@ struct Reader
 
         /// Admitted by ReadManager::admitTopKRowGroups and not fully read yet.
         std::atomic<bool> holds_top_k_admission {false};
+
+        std::atomic<bool> skipped_by_top_k {false};
     };
 
     struct Step

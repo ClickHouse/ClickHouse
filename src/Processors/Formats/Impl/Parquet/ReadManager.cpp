@@ -145,7 +145,10 @@ void ReadManager::admitTopKRowGroups(MemoryUsageDiff & diff)
         if (!row_group.need_to_process || skipped_by_threshold)
         {
             if (skipped_by_threshold)
+            {
+                row_group.skipped_by_top_k.store(true);
                 ProfileEvents::increment(ProfileEvents::ParquetTopKSkippedRowGroups);
+            }
             {
                 std::lock_guard lock(top_k_admission.mutex);
                 --top_k_admission.outstanding;
@@ -307,6 +310,7 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
                 /// filtered out (empty subgroups below).
                 if (reader.topKShouldSkipRowGroup(row_group))
                 {
+                    row_group.skipped_by_top_k.store(true);
                     if (row_group.need_to_process)
                         ProfileEvents::increment(ProfileEvents::ParquetTopKSkippedRowGroups);
                     stage = ReadStage::Deliver;

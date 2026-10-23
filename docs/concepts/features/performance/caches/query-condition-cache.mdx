@@ -83,6 +83,7 @@ This also applies to TopK reads of Parquet files through the `File` table engine
 The same holds for TopK reads of data lake tables with Parquet data files (e.g. `Iceberg`, `DeltaLake`, `Paimon`): their entries are partitioned by the TopK plan parameters, the filter condition (if any), and the snapshot of the table, so that each new snapshot leads to a fresh entry.
 Unlike other reads, such a TopK read uses the cache even without a filter condition, e.g. `SELECT * FROM hits ORDER BY EventTime LIMIT 10`.
 Such reads can be kept out of the cache entirely with the setting [`use_query_condition_cache_for_top_k`](/reference/settings/session-settings/use-query) (default: enabled), which only takes effect if `use_query_condition_cache` is also enabled.
+Reads of Parquet files that use the threshold only to skip row groups by their statistics (a `String` sort column with `use_top_k_dynamic_filtering_for_variable_length_types` disabled) use the cache like reads without TopK, whatever the value of `use_query_condition_cache_for_top_k`.
 
 ## Administration {#administration}
 
