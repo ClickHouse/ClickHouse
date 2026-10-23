@@ -37,6 +37,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTCodecDeclaration.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTDataType.h>
@@ -57,6 +58,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/SubcolumnCodecs.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -134,6 +136,7 @@ namespace Setting
     extern const SettingsBool enable_xgboost;
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
     extern const SettingsBool enable_full_text_index;
+    extern const SettingsBool enable_subcolumn_codecs;
     extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_materialized_view_with_bad_select;
     extern const SettingsBool compatibility_ignore_collation_in_create_table;
@@ -605,6 +608,17 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
     return columns_list;
 }
 
+ASTPtr InterpreterCreateQuery::formatCodecDeclarations(const ColumnsDescription & columns)
+{
+    auto res = make_intrusive<ASTExpressionList>();
+
+    for (const auto & column : columns)
+        for (const auto & [subcolumn_name, codec] : column.subcolumn_codecs)
+            res->children.push_back(make_intrusive<ASTCodecDeclaration>(column.name + "." + subcolumn_name, codec->clone()));
+
+    return res;
+}
+
 ASTPtr InterpreterCreateQuery::formatIndices(const IndicesDescription & indices)
 {
     auto res = make_intrusive<ASTExpressionList>();
@@ -694,9 +708,88 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
     return column_type;
 }
 
-ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
-    const ASTExpressionList & columns_ast, ContextPtr context_, LoadingStrictnessLevel mode, bool is_restore_from_backup, bool check_defaults_over_virtual_columns, bool materialize_uuid_type_version)
+namespace
 {
+
+/// The gate guards only new declarations; tables that have them load, are restored and are altered without it.
+void checkSubcolumnCodecsAreEnabled(const ContextPtr & context, LoadingStrictnessLevel mode, bool is_restore_from_backup)
+{
+    if (mode == LoadingStrictnessLevel::CREATE && !is_restore_from_backup && !context->getSettingsRef()[Setting::enable_subcolumn_codecs])
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Subcolumn codecs are experimental. Set enable_subcolumn_codecs = 1 to use them");
+}
+
+/// Applies the `CODEC name (...)` entries of a column list to the columns they name.
+void applyCodecDeclarations(
+    const ASTExpressionList & declarations,
+    ColumnsDescription & columns,
+    const ContextPtr & context,
+    LoadingStrictnessLevel mode,
+    bool is_restore_from_backup)
+{
+    const bool skip_checks = LoadingStrictnessLevel::SECONDARY_CREATE <= mode;
+    const CodecValidationSettings codec_validation_settings
+        = skip_checks ? CodecValidationSettings::trusted() : CodecValidationSettings(context->getSettingsRef());
+
+    /// The name is resolved as in a query: a column with this name wins, otherwise it is a subcolumn.
+    for (const auto & ast : declarations.children)
+    {
+        const auto & declaration = ast->as<const ASTCodecDeclaration &>();
+        auto target = columns.tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns(), declaration.name);
+        if (!target)
+        {
+            /// An ALIAS column has no subcolumns, so the name of its element is not found.
+            for (size_t dot = declaration.name.find('.'); dot != String::npos; dot = declaration.name.find('.', dot + 1))
+                if (columns.hasAlias(declaration.name.substr(0, dot)))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
+
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot declare codec for {}: there is no such column or subcolumn{}",
+                backQuote(declaration.name), columns.getHintsMessage(declaration.name));
+        }
+
+        const String owner_name = target->getNameInStorage();
+        const auto & owner = columns.get(owner_name);
+        if (owner.default_desc.kind == ColumnDefaultKind::Alias)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
+
+        if (target->isSubcolumn())
+        {
+            checkSubcolumnCodecsAreEnabled(context, mode, is_restore_from_backup);
+            if (owner.subcolumn_codecs.contains(target->getSubcolumnName()))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Codec for subcolumn {} is declared more than once", backQuote(declaration.name));
+            columns.modify(owner_name, [&](ColumnDescription & column)
+            {
+                column.subcolumn_codecs.set(target->getSubcolumnName(), declaration.getCodec());
+            });
+        }
+        else
+        {
+            if (owner.codec)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec for column {} is declared more than once", backQuote(declaration.name));
+            /// The same as the inline clause of the column, validated the same way.
+            auto codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
+                declaration.getCodec(), owner.type, codec_validation_settings);
+            columns.modify(owner_name, [&](ColumnDescription & column)
+            {
+                column.codec = codec;
+                /// The column was added without the codec, so what `add` does for a `Quantized` codec is done here.
+                attachQuantizeSerializationIfNeeded(column);
+            });
+        }
+    }
+
+    validateColumnCodecs(columns, codec_validation_settings);
+}
+
+}
+
+ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
+    const ASTColumns & columns_list, ContextPtr context_, LoadingStrictnessLevel mode, bool is_restore_from_backup, bool check_defaults_over_virtual_columns, bool materialize_uuid_type_version)
+{
+    if (!columns_list.columns)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column list is empty");
+    const auto & columns_ast = *columns_list.columns;
+
     /// First, deduce implicit types.
 
     /** all default_expressions as a single expression list,
@@ -860,6 +953,9 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
     if (mode <= LoadingStrictnessLevel::CREATE && !is_restore_from_backup && res.getInsertable().empty())
         throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Cannot CREATE table without insertable columns");
+
+    if (columns_list.codec_declarations)
+        applyCodecDeclarations(*columns_list.codec_declarations, res, context_, mode, is_restore_from_backup);
 
     return res;
 }
@@ -1036,8 +1132,10 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             const bool check_defaults_over_virtual_columns
                 = !(create.is_ordinary_view || create.is_materialized_view_with_external_target());
             properties.columns = getColumnsDescription(
-                *create.columns_list->columns, getContext(), mode, is_restore_from_backup, check_defaults_over_virtual_columns);
+                *create.columns_list, getContext(), mode, is_restore_from_backup, check_defaults_over_virtual_columns);
         }
+        else if (create.columns_list->codec_declarations)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec declarations require a list of columns");
 
         if (create.columns_list->indices)
         {
@@ -1088,6 +1186,11 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         as_storage_lock = as_storage->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
         auto as_storage_metadata = as_storage->getInMemoryMetadataPtr(getContext(), false);
         properties.columns = as_storage_metadata->getColumns();
+
+        /// Copying subcolumn codecs is a new declaration of them.
+        for (const auto & column : properties.columns)
+            if (!column.subcolumn_codecs.empty())
+                checkSubcolumnCodecsAreEnabled(getContext(), mode, is_restore_from_backup);
 
         if (!create.comment && !as_storage_metadata->comment.empty())
             create.set(create.comment, make_intrusive<ASTLiteral>(as_storage_metadata->comment));
@@ -1321,11 +1424,13 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     }
 
     ASTPtr new_columns = formatColumns(properties.columns);
+    ASTPtr new_codec_declarations = formatCodecDeclarations(properties.columns);
     ASTPtr new_indices = formatIndices(properties.indices);
     ASTPtr new_constraints = formatConstraints(properties.constraints);
     ASTPtr new_projections = formatProjections(properties.projections);
 
     create.columns_list->setOrReplace(create.columns_list->columns, new_columns);
+    create.columns_list->setOrReplace(create.columns_list->codec_declarations, new_codec_declarations);
     create.columns_list->setOrReplace(create.columns_list->indices, new_indices);
     create.columns_list->setOrReplace(create.columns_list->constraints, new_constraints);
     create.columns_list->setOrReplace(create.columns_list->projections, new_projections);
@@ -3047,6 +3152,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         ContextMutablePtr drop_context = Context::createCopy(current_context);
         drop_context->setQueryContext(std::const_pointer_cast<Context>(current_context));
         drop_context->setDDLOrOnClusterInternal(true);
+        drop_context->setQueryExecutionStartedCallback({});
         /// Bypass = "the size guard was already enforced upstream; do not re-check or consume `force_drop_table` twice".
         if (bypass_size_guard)
         {
@@ -3275,6 +3381,8 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         /// passing this callback allows tcp sessions to send progress, stats and logs.
         /// It prevents getting socket timeout as well.
         bool with_interactive_cancel = create.isCreateQueryWithImmediateInsertSelect();
+        if (fill_io.pipeline.initialized())
+            getContext()->onQueryExecutionStarted();
         executeTrivialBlockIO(fill_io, getContext(), with_interactive_cancel);
 
         /// Replace target table with created one
@@ -3945,6 +4053,7 @@ std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomicallyImp
     /// The process-list element makes `KILL QUERY` cancel the population: on the lazy path the outer
     /// `executeQuery` attached it to the returned pipeline, so it has to be attached by hand here.
     populate_io.pipeline.setProcessListElement(getContext()->getProcessListElement());
+    getContext()->onQueryExecutionStarted();
     executeTrivialBlockIO(populate_io, getContext(), /*with_interactive_cancel=*/true);
     return BlockIO{};
 }

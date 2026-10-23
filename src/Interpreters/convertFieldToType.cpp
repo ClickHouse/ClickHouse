@@ -17,6 +17,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeDynamic.h>
@@ -524,6 +525,127 @@ Field uuid2LeavesToUUIDLayout(const Field & src, const IDataType & src_type)
     }
 
     return src;
+}
+
+/// Splits a decimal integer literal into sign and magnitude; `magnitude_overflowed` leaves only the sign meaningful.
+bool parseDecimalIntegerLiteral(std::string_view literal, bool & negative, UInt256 & magnitude, bool & magnitude_overflowed)
+{
+    negative = false;
+    magnitude = 0;
+    magnitude_overflowed = false;
+
+    if (!literal.empty() && (literal.front() == '-' || literal.front() == '+'))
+    {
+        negative = literal.front() == '-';
+        literal.remove_prefix(1);
+    }
+
+    if (literal.empty() || literal.find_first_not_of("0123456789") != std::string_view::npos)
+        return false;
+
+    /// `common::mulOverflow` does not report overflow for the widest integers, so room is checked instead.
+    const UInt256 max_magnitude = std::numeric_limits<UInt256>::max();
+    for (char c : literal)
+    {
+        const UInt256 digit = static_cast<UInt256>(c - '0');
+        if (magnitude > (max_magnitude - digit) / 10)
+        {
+            magnitude_overflowed = true;
+            break;
+        }
+        magnitude = magnitude * 10 + digit;
+    }
+
+    return true;
+}
+
+template <typename T>
+IntegerLiteralRange classifyAgainstIntegerType(bool negative, const UInt256 & magnitude, bool magnitude_overflowed)
+{
+    if (negative)
+    {
+        if constexpr (is_unsigned_v<T>)
+            return magnitude_overflowed || magnitude != 0 ? IntegerLiteralRange::BelowMin : IntegerLiteralRange::NotApplicable;
+        else
+        {
+            /// The minimum of an integer type fits no unsigned type, but its magnitude `max + 1` fits `UInt256`.
+            const UInt256 min_magnitude = static_cast<UInt256>(std::numeric_limits<T>::max()) + 1;
+            if (magnitude_overflowed || accurate::greaterOp(magnitude, min_magnitude))
+                return IntegerLiteralRange::BelowMin;
+            return IntegerLiteralRange::InRange;
+        }
+    }
+
+    if (magnitude_overflowed || accurate::greaterOp(magnitude, std::numeric_limits<T>::max()))
+        return IntegerLiteralRange::AboveMax;
+    return IntegerLiteralRange::InRange;
+}
+
+/// The 256-bit integer an integer element is read as: the one of its own signedness, the signed one unless the element is `UInt256`
+/// (every element then keeps a common type with its original, which comparing a `Map` needs), or always the signed or the unsigned one.
+enum class WideIntegerCarrier : uint8_t
+{
+    SameSignedness,
+    SignedExceptUInt256,
+    Signed,
+    Unsigned,
+};
+
+/// `nullptr` when no integer element of `type` changes.
+DataTypePtr widenIntegerElements(const DataTypePtr & type, WideIntegerCarrier carrier)
+{
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+    {
+        auto nested = widenIntegerElements(nullable->getNestedType(), carrier);
+        return nested ? makeNullable(nested) : nullptr;
+    }
+
+    if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+        return widenIntegerElements(low_cardinality->getDictionaryType(), carrier);
+
+    if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
+    {
+        auto nested = widenIntegerElements(array->getNestedType(), carrier);
+        return nested ? std::make_shared<DataTypeArray>(nested) : nullptr;
+    }
+
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        DataTypes elements = tuple->getElements();
+        bool widened = false;
+        for (auto & element : elements)
+        {
+            if (auto wider = widenIntegerElements(element, carrier))
+            {
+                element = wider;
+                widened = true;
+            }
+        }
+        if (!widened)
+            return nullptr;
+        return tuple->hasExplicitNames() ? std::make_shared<DataTypeTuple>(elements, tuple->getElementNames())
+                                         : std::make_shared<DataTypeTuple>(elements);
+    }
+
+    if (const auto * map = typeid_cast<const DataTypeMap *>(type.get()))
+    {
+        auto key = widenIntegerElements(map->getKeyType(), carrier);
+        auto value = widenIntegerElements(map->getValueType(), carrier);
+        if (!key && !value)
+            return nullptr;
+        return std::make_shared<DataTypeMap>(key ? key : map->getKeyType(), value ? value : map->getValueType());
+    }
+
+    const WhichDataType which(type);
+    if (type->getCustomSerialization() || (!which.isInt() && !which.isUInt()))
+        return nullptr;
+
+    const bool to_signed = carrier == WideIntegerCarrier::Signed
+        || (carrier == WideIntegerCarrier::SignedExceptUInt256 && !which.isUInt256())
+        || (carrier == WideIntegerCarrier::SameSignedness && which.isInt());
+    if (to_signed)
+        return which.isInt256() ? nullptr : std::make_shared<DataTypeInt256>();
+    return which.isUInt256() ? nullptr : std::make_shared<DataTypeUInt256>();
 }
 
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)
@@ -1514,6 +1636,11 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     /// Conversion from string by parsing.
     if (src.getType() == Field::Types::String)
     {
+        /// Integer text deserialization does not check for overflow: a literal too large wraps into an unrelated value.
+        const auto literal_range = classifyIntegerLiteralRange(src.safeGet<String>(), type);
+        if (literal_range == IntegerLiteralRange::BelowMin || literal_range == IntegerLiteralRange::AboveMax)
+            return {};
+
         /// Promote data type to avoid overflows. Note that overflows in the largest data type are still possible.
         /// But don't promote narrow floats (Float32, BFloat16): parsing the string into Float64 and narrowing back
         /// would fail the strict equality check inside `accurate::convertNumeric` for any decimal value that is not
@@ -1530,26 +1657,55 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             type_to_parse = holder.get();
         }
 
-        const auto col = type_to_parse->createColumn();
-        ReadBufferFromString in_buffer(src.safeGet<String>());
-        try
+        /// A composite or `Variant` type cannot be promoted, so its integer leaves are parsed at their own width.
+        const bool parse_composite = which_type.isArray() || which_type.isTuple() || which_type.isMap() || which_type.isVariant();
+        std::optional<FormatSettings> composite_settings;
+        if (parse_composite)
         {
-            type_to_parse->getDefaultSerialization()->deserializeWholeText(*col, in_buffer, format_settings);
+            composite_settings.emplace(format_settings);
+            composite_settings->check_integer_text_overflow = true;
         }
-        catch (Exception & e)
+        const FormatSettings & parse_settings = composite_settings ? *composite_settings : format_settings;
+
+        /// Returns false when an integer does not fit a composite type.
+        Field parsed;
+        auto parse = [&](const IDataType & parse_type, const FormatSettings & settings)
         {
-            /// A value that ends before the deserializer expected is reported as an attempt to read after eof,
-            /// which says nothing about the query - it reads like a problem with the data. Comparing a numeric
-            /// column with an empty string, `WHERE n <> ''`, is a common mistake and deserves the same message
-            /// as `WHERE n <> 'abc'` already gets.
-            if (e.code() == ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE || e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert string '{}' to type {}", src.safeGet<String>(), type.getName());
+            const auto column = parse_type.createColumn();
+            ReadBufferFromString in_buffer(src.safeGet<String>());
+            try
+            {
+                parse_type.getDefaultSerialization()->deserializeWholeText(*column, in_buffer, settings);
+            }
+            catch (Exception & e)
+            {
+                /// Another error with this code, such as an out-of-range date, is thrown again by the unchecked validation read below.
+                if (settings.check_integer_text_overflow && e.code() == ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE)
+                    return false;
 
-            e.addMessage(fmt::format("while converting '{}' to {}", src.safeGet<String>(), type.getName()));
-            throw;
+                /// A value that ends before the deserializer expected is reported as an attempt to read after eof,
+                /// which says nothing about the query - it reads like a problem with the data. Comparing a numeric
+                /// column with an empty string, `WHERE n <> ''`, is a common mistake and deserves the same message
+                /// as `WHERE n <> 'abc'` already gets.
+                if (e.code() == ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE || e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
+                    throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert string '{}' to type {}", src.safeGet<String>(), type.getName());
+
+                e.addMessage(fmt::format("while converting '{}' to {}", src.safeGet<String>(), type.getName()));
+                throw;
+            }
+            parsed = (*column)[0];
+            return true;
+        };
+
+        if (!parse(*type_to_parse, parse_settings))
+        {
+            /// The checked read stops at the integer that does not fit, so the rest of the literal is validated by an
+            /// unchecked read with signed 256-bit integers, which accepts any sign and any number of digits.
+            const auto signed_type = widenIntegerElements(type.getPtr(), WideIntegerCarrier::Signed);
+            parse(signed_type ? *signed_type : type, format_settings);
+            return {};
         }
 
-        Field parsed = (*col)[0];
         return convertFieldToType(parsed, type, from_type_hint, format_settings);
     }
 
@@ -1557,6 +1713,67 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         type.getName(), src.getType());
 }
 
+}
+
+IntegerLiteralRange classifyIntegerLiteralRange(std::string_view literal, const IDataType & to_type)
+{
+    /// A custom serialization reads its own text syntax: `Bool` reads `true` and `false`, not digits.
+    if (to_type.getCustomSerialization())
+        return IntegerLiteralRange::NotApplicable;
+
+    const WhichDataType which_to_type(to_type);
+    if (!which_to_type.isInt() && !which_to_type.isUInt())
+        return IntegerLiteralRange::NotApplicable;
+
+    bool negative = false;
+    UInt256 magnitude = 0;
+    bool magnitude_overflowed = false;
+    if (!parseDecimalIntegerLiteral(literal, negative, magnitude, magnitude_overflowed))
+        return IntegerLiteralRange::NotApplicable;
+
+    switch (to_type.getTypeId())
+    {
+        case TypeIndex::UInt8:   return classifyAgainstIntegerType<UInt8>(negative, magnitude, magnitude_overflowed);
+        case TypeIndex::UInt16:  return classifyAgainstIntegerType<UInt16>(negative, magnitude, magnitude_overflowed);
+        case TypeIndex::UInt32:  return classifyAgainstIntegerType<UInt32>(negative, magnitude, magnitude_overflowed);
+        case TypeIndex::UInt64:  return classifyAgainstIntegerType<UInt64>(negative, magnitude, magnitude_overflowed);
+        case TypeIndex::UInt128: return classifyAgainstIntegerType<UInt128>(negative, magnitude, magnitude_overflowed);
+        case TypeIndex::UInt256: return classifyAgainstIntegerType<UInt256>(negative, magnitude, magnitude_overflowed);
+        case TypeIndex::Int8:    return classifyAgainstIntegerType<Int8>(negative, magnitude, magnitude_overflowed);
+        case TypeIndex::Int16:   return classifyAgainstIntegerType<Int16>(negative, magnitude, magnitude_overflowed);
+        case TypeIndex::Int32:   return classifyAgainstIntegerType<Int32>(negative, magnitude, magnitude_overflowed);
+        case TypeIndex::Int64:   return classifyAgainstIntegerType<Int64>(negative, magnitude, magnitude_overflowed);
+        case TypeIndex::Int128:  return classifyAgainstIntegerType<Int128>(negative, magnitude, magnitude_overflowed);
+        case TypeIndex::Int256:  return classifyAgainstIntegerType<Int256>(negative, magnitude, magnitude_overflowed);
+        default:                 return IntegerLiteralRange::NotApplicable;
+    }
+}
+
+Field convertFieldToTypeWithWiderIntegers(const Field & src, DataTypePtr & type, const IDataType * from_type_hint, const FormatSettings & format_settings)
+{
+    if (src.getType() != Field::Types::String)
+        return {};
+
+    const WhichDataType which(removeNullable(type));
+    if (!which.isArray() && !which.isTuple() && !which.isMap())
+        return {};
+
+    for (auto carrier : {WideIntegerCarrier::SameSignedness, WideIntegerCarrier::SignedExceptUInt256, WideIntegerCarrier::Signed,
+                         WideIntegerCarrier::Unsigned})
+    {
+        auto wider = widenIntegerElements(type, carrier);
+        if (!wider)
+            continue;
+
+        Field converted = convertFieldToType(src, *wider, from_type_hint, format_settings);
+        if (!converted.isNull())
+        {
+            type = wider;
+            return converted;
+        }
+    }
+
+    return {};
 }
 
 Field tryConvertFieldToType(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)

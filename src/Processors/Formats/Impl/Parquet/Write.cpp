@@ -1,6 +1,7 @@
 #include <Processors/Formats/Impl/Parquet/Write.h>
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
 #include <Core/UUID.h>
+#include <Processors/Formats/Impl/Parquet/ALPEncoding.h>
 #include <arrow/util/key_value_metadata.h>
 #include <parquet/encoding.h>
 #include <parquet/geospatial/statistics.h>
@@ -1087,6 +1088,30 @@ void writeColumnImpl(
 
     bool use_dictionary = options.use_dictionary_encoding && !s.is_bool;
 
+    /// `ALP` is used without a dictionary. Other writers (Arrow, parquet-java, arrow-rs) treat `ALP`
+    /// like any other non-dictionary encoding: as the fallback when the dictionary gets too big. But
+    /// here the dictionary is abandoned only when it exceeds `max_dictionary_size` (1 MiB by
+    /// default, i.e. 131072 distinct `DOUBLE` values), so most column chunks would never get to
+    /// `ALP`, even those where it is a lot better:
+    /// for decimal-like values `ALP` bit-packs the differences from the vector minimum, so it needs
+    /// fewer bits per value than the dictionary indexes once the values are not very repetitive,
+    /// and it doesn't store the dictionary itself. The user opts into `ALP` explicitly, so it is
+    /// what they get. The values that `ALP` can't encode don't make the page bigger than `PLAIN`:
+    /// such pages are written as `PLAIN` (see `makeALPFloatEncoder`).
+    static constexpr bool is_floating_point
+        = std::is_same_v<ParquetDType, parquet::FloatType> || std::is_same_v<ParquetDType, parquet::DoubleType>;
+    if constexpr (is_floating_point)
+    {
+        if (options.use_alp_encoding)
+        {
+            encoding = parq::Encoding::ALP;
+            use_dictionary = false;
+        }
+    }
+
+    /// Encodings of the written data pages, for `ColumnMetaData.encodings`.
+    std::vector<parq::Encoding::type> data_page_encodings;
+
     /// For some readers filter pushdown implementations it's inconvenient if a row straddles pages,
     /// so let's be nice to them and avoid that. This matches arrow's logic.
     /// If we ever use DataPageV2, enable this flag in that case too:
@@ -1124,10 +1149,24 @@ void writeColumnImpl(
     /// ColumnLowCardinality instead. It would work basically the same way as what this function
     /// currently does: add values to the ColumnRowCardinality (instead of `encoder`) in batches,
     /// checking dictionary size after each batch. That might be faster.
-    auto encoder = parquet::MakeTypedEncoder<ParquetDType>(
-        // ignored if using dictionary
-        static_cast<parquet::Encoding::type>(encoding),
-        use_dictionary, fixed_string_descr ? &*fixed_string_descr : nullptr);
+    auto make_encoder = [&](bool dictionary) -> std::unique_ptr<parquet::TypedEncoder<ParquetDType>>
+    {
+        if constexpr (std::is_same_v<ParquetDType, parquet::FloatType>)
+        {
+            if (encoding == parq::Encoding::ALP && !dictionary)
+                return makeALPFloatEncoder();
+        }
+        if constexpr (std::is_same_v<ParquetDType, parquet::DoubleType>)
+        {
+            if (encoding == parq::Encoding::ALP && !dictionary)
+                return makeALPDoubleEncoder();
+        }
+        return parquet::MakeTypedEncoder<ParquetDType>(
+            // ignored if using dictionary
+            static_cast<parquet::Encoding::type>(encoding),
+            dictionary, fixed_string_descr ? &*fixed_string_descr : nullptr);
+    };
+    auto encoder = make_encoder(use_dictionary);
 
     struct PageData
     {
@@ -1234,6 +1273,13 @@ void writeColumnImpl(
 
         std::shared_ptr<parquet::Buffer> values = encoder->FlushValues(); // resets it for next page
 
+        /// The `ALP` encoder writes the pages it can't compress as `PLAIN`.
+        parq::Encoding::type page_encoding = use_dictionary ? parq::Encoding::RLE_DICTIONARY : encoding;
+        if (page_encoding == parq::Encoding::ALP)
+            page_encoding = static_cast<parq::Encoding::type>(encoder->encoding());
+        if (!use_dictionary && !std::count(data_page_encodings.begin(), data_page_encodings.end(), page_encoding))
+            data_page_encodings.push_back(page_encoding);
+
         encoded.resize(encoded.size() + values->size());
         memcpy(encoded.data() + encoded.size() - values->size(), values->data(), values->size());
         values.reset();
@@ -1254,7 +1300,7 @@ void writeColumnImpl(
         header.__isset.data_page_header = true;
         auto & d = header.data_page_header;
         d.__set_num_values(static_cast<Int32>(def_count));
-        d.__set_encoding(use_dictionary ? parq::Encoding::RLE_DICTIONARY : encoding);
+        d.__set_encoding(page_encoding);
         d.__set_definition_level_encoding(parq::Encoding::RLE);
         d.__set_repetition_level_encoding(parq::Encoding::RLE);
 
@@ -1398,9 +1444,7 @@ void writeColumnImpl(
         encoder->FlushValues();
 #endif
 
-        encoder = parquet::MakeTypedEncoder<ParquetDType>(
-            static_cast<parquet::Encoding::type>(encoding), /* use_dictionary */ false,
-            fixed_string_descr ? &*fixed_string_descr : nullptr);
+        encoder = make_encoder(/* dictionary */ false);
     };
 
     /// A batch is bounded by bytes as well as by rows. `write_batch_size` values of a wide column
@@ -1701,9 +1745,14 @@ void writeColumnImpl(
         addToEncodingsUsed(s, parq::Encoding::PLAIN); // dictionary itself
         addToEncodingsUsed(s, parq::Encoding::RLE_DICTIONARY); // ids
     }
-    else
+    else if (data_page_encodings.empty())
     {
         addToEncodingsUsed(s, encoding);
+    }
+    else
+    {
+        for (auto e : data_page_encodings)
+            addToEncodingsUsed(s, e);
     }
 
     if (bloom_data.has_value())

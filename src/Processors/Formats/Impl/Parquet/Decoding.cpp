@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
+#include <Processors/Formats/Impl/Parquet/ALPEncoding.h>
 
 #include <base/arithmeticOverflow.h>
 #include <Columns/ColumnString.h>
@@ -213,13 +214,13 @@ struct BitPackedRLEDecoder : public PageDecoder
             /// bit_width == 0 means all values are 0.
             size_t count = num_values;
             if constexpr (filtered)
-            {
                 count = countBytesInFilter(filter, 0, num_values);
+            if constexpr (!skip)
+            {
                 if (count && limit == 0)
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Dict index or rep/def level out of bounds (rle)");
-            }
-            if constexpr (!skip)
                 memset(out, 0, count * sizeof(T));
+            }
             if constexpr (count_zeros)
                 *num_zeros += num_values;
             return;
@@ -1474,6 +1475,10 @@ std::unique_ptr<PageDecoder> PageDecoderInfo::makeDecoder(
             /// any fixed-size types, so we do the same just in case.
             if (fixed_size_converter)
                 return std::make_unique<ByteStreamSplitDecoder>(data, fixed_size_converter);
+            break;
+        case parq::Encoding::ALP:
+            if (physical_type == parq::Type::FLOAT || physical_type == parq::Type::DOUBLE)
+                return makeALPDecoder(physical_type, data, fixed_size_converter);
             break;
         default: throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected page encoding: {}", thriftToString(encoding));
     }

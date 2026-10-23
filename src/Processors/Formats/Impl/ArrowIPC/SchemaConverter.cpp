@@ -348,7 +348,30 @@ ArrowType parseType(const flatbuf::Field & field)
 
 }
 
-ArrowSchema parseSchema(const flatbuf::Schema & schema)
+namespace
+{
+
+/// `RecordBatchDecoder` decodes a union with the V5 layout, which has no validity buffer. V4 keeps that
+/// buffer, so reading a V4 union would take every following buffer from the wrong offset. Reject the field
+/// instead of decoding it wrongly. Unions nested inside other types have the same problem, so the whole
+/// field tree is checked.
+void rejectUnionFields(const ArrowFields & fields)
+{
+    for (const auto & field : fields)
+    {
+        if (field.type.kind == TypeKind::Union)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Arrow IPC field '{}' is a union written with metadata version V4, whose layout keeps the "
+                "validity buffer that V5 removed; this reader implements the V5 union layout only",
+                field.name);
+        rejectUnionFields(field.type.children);
+    }
+}
+
+}
+
+ArrowSchema parseSchema(const flatbuf::Schema & schema, flatbuf::MetadataVersion version)
 {
     ArrowSchema result;
     /// Big-endian buffers are converted by `RecordBatchDecoder::convertBuffersFromBigEndian`.
@@ -383,6 +406,9 @@ ArrowSchema parseSchema(const flatbuf::Schema & schema)
     }
 
     result.custom_metadata = parseMetadata(schema.custom_metadata());
+    if (version != flatbuf::MetadataVersion_V5)
+        rejectUnionFields(result.fields);
+
     return result;
 }
 
@@ -1016,11 +1042,21 @@ ArrowFileFooter readArrowFileFooter(SeekableReadBuffer & in, size_t file_size_)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Corrupted Arrow file footer");
     const auto * footer = flatbuf::GetFooter(footer_storage.data());
 
+    /// The footer carries the metadata version too, and its block list is read under that edition's
+    /// assumptions, so an edition this reader does not know is rejected here rather than at the first
+    /// message. Each message is checked again in `MessageReader::readNextMessage`.
+    const auto version = footer->version();
+    if (version != flatbuf::MetadataVersion_V4 && version != flatbuf::MetadataVersion_V5)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Unsupported Arrow IPC metadata version V{} in the Arrow file footer: this reader implements V4 and V5",
+            static_cast<Int16>(version) + 1);
+
     if (!footer->schema())
         throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow file footer has no schema");
 
     ArrowFileFooter result;
-    result.schema = parseSchema(*footer->schema());
+    result.schema = parseSchema(*footer->schema(), version);
     /// Footer blocks are untrusted: a negative offset/metadata/body length would, after being passed on as
     /// a seek target, a metadata bound, or a body size, become a huge unsigned value or seek out of range.
     /// And the block's metadata+body must lie within the data region (before the footer): otherwise a

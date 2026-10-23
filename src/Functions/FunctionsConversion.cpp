@@ -1,6 +1,7 @@
 #include <Functions/FunctionsConversion.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/iota.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -978,10 +979,62 @@ bool canHaveSameNumberOfDimensions(const IDataType & from, const IDataType & to)
     return from_dimensions.min <= to_dimensions.max && to_dimensions.min <= from_dimensions.max;
 }
 
+bool isGeometryToMultiGeometry(const IDataType & from, const IDataType & to)
+{
+    const auto * from_name = from.getCustomName();
+    const auto * to_name = to.getCustomName();
+    if (!from_name || !to_name)
+        return false;
+
+    const String from_geometry = from_name->getName();
+    const String to_geometry = to_name->getName();
+    return (from_geometry == "Point" && to_geometry == "MultiPoint")
+        || (from_geometry == "LineString" && to_geometry == "MultiLineString")
+        || (from_geometry == "Polygon" && to_geometry == "MultiPolygon");
+}
+
+bool isGeometryToMultiGeometryUnderArrays(const IDataType & from, const IDataType & to)
+{
+    if (isGeometryToMultiGeometry(from, to))
+        return true;
+
+    if (const auto * from_nullable = typeid_cast<const DataTypeNullable *>(&from))
+        return isGeometryToMultiGeometryUnderArrays(*from_nullable->getNestedType(), to);
+
+    /// Some alternative is promoted, and every other one already has the depth of `to`.
+    if (const auto * from_variant = typeid_cast<const DataTypeVariant *>(&from))
+    {
+        bool has_promoted_alternative = false;
+        for (const auto & alternative : from_variant->getVariants())
+        {
+            if (isGeometryToMultiGeometryUnderArrays(*alternative, to))
+                has_promoted_alternative = true;
+            else if (!canHaveSameNumberOfDimensions(*alternative, to))
+                return false;
+        }
+        return has_promoted_alternative;
+    }
+
+    const auto * from_array = typeid_cast<const DataTypeArray *>(&from);
+    const auto * to_array = typeid_cast<const DataTypeArray *>(&to);
+    return from_array && to_array && isGeometryToMultiGeometryUnderArrays(*from_array->getNestedType(), *to_array->getNestedType());
+}
+
 }
 
 FunctionCast::WrapperType FunctionCast::createArrayWrapper(const DataTypePtr & from_type_untyped, const DataTypeArray & to_type) const
 {
+    /// A single geometry becomes a collection of one element.
+    if (isGeometryToMultiGeometry(*from_type_untyped, to_type))
+    {
+        return [](ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
+        {
+            auto offsets = ColumnArray::ColumnOffsets::create(input_rows_count);
+            iota(offsets->getData().data(), input_rows_count, ColumnArray::Offset(1));
+            return ColumnArray::create(arguments.front().column, std::move(offsets));
+        };
+    }
+
     /// Conversion from String through parsing.
     if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
     {
@@ -1033,7 +1086,7 @@ FunctionCast::WrapperType FunctionCast::createArrayWrapper(const DataTypePtr & f
     /// In query SELECT CAST([] AS Array(Array(String))) from type is Array(Nothing)
     bool from_empty_array = isNothing(from_nested_type);
 
-    if (!canHaveSameNumberOfDimensions(*from_type, to_type) && !from_empty_array)
+    if (!canHaveSameNumberOfDimensions(*from_type, to_type) && !from_empty_array && !isGeometryToMultiGeometryUnderArrays(*from_type, to_type))
         throw Exception(ErrorCodes::TYPE_MISMATCH,
             "CAST AS Array can only be performed between same-dimensional array types");
 
