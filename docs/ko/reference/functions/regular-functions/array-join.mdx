@@ -85,9 +85,32 @@ GROUP BY
 └─────────────┴──────────┴─────────┘
 ```
 
-<div id="important-note">
-  ### 모범 사례
-</div>
+### 행 순서 {#row-order}
+
+`arrayJoin`은 각 원본 행에 대해 배열 원소를 배열 내 순서대로 생성합니다.
+
+쿼리에 서로 다른 인수를 사용하는 `arrayJoin` 호출이 2개 이상 있으면, 결과(result)에는 원소 조합마다 하나의 행이 생성됩니다. 이 행들의 순서는 쿼리 실행 계획(query plan)에 따라 달라지므로 보장되지 않습니다. 예를 들어 `WHERE` 절에서 이러한 호출 중 하나를 사용하면 쿼리가 해당 호출을 먼저 전개할 수 있습니다. 순서를 예측 가능하게 하려면 `ORDER BY`를 사용하십시오.
+
+```sql title="Query"
+SELECT arrayJoin(['a', 'b']) AS x, arrayJoin([1, 2]) AS y
+WHERE y > 0
+ORDER BY x, y
+```
+
+```text title="Response"
+┌─x─┬─y─┐
+│ a │ 1 │
+│ a │ 2 │
+│ b │ 1 │
+│ b │ 2 │
+└───┴───┘
+```
+
+`ORDER BY`가 없으면 이 쿼리는 행을 `('a', 1)`, `('b', 1)`, `('a', 2)`, `('b', 2)` 순서로 반환할 수 있습니다.
+
+`ORDER BY`가 없으면 원본 행의 순서는 보장되지 않습니다. 안정적인 순서가 필요하거나 `LIMIT`과 `OFFSET`으로 페이지를 나누려면 [`ARRAY JOIN`](/ko/reference/statements/select/array-join) 절의 &quot;행 순서와 페이지 나누기&quot; 섹션을 참조하십시오. 해당 섹션의 `ORDER BY` 규칙은 `arrayJoin`에도 동일하게 적용됩니다.
+
+### 모범 사례 {#important-note}
 
 동일한 표현식에 `arrayJoin`을 여러 번 사용하면 공통 부분 표현식이 제거되어 예상한 결과가 나오지 않을 수 있습니다.
 이 경우에는 조인 결과에 영향을 주지 않는 추가 연산을 사용해 반복되는 배열 표현식을 변형하는 것이 좋습니다. 예를 들어 `arrayJoin(arraySort(arr))`, `arrayJoin(arrayConcat(arr, []))`

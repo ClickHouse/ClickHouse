@@ -6,15 +6,11 @@ title: 'Функции для работы с Geometry'
 doc_type: 'reference'
 ---
 
-<div id="geometry">
-  ## Geometry
-</div>
+## Geometry {#geometry}
 
 Функции Geometry позволяют вычислять периметр и площадь для геометрических типов, таких как POLYGON, LINESTRING, MULTIPOLYGON, MULTILINESTRING, RING и POINT. Используйте геометрические объекты в типе Geometry. Если входное значение — `NULL`, все перечисленные ниже функции вернут 0.
 
-<div id="perimetercartesian">
-  ## perimeterCartesian
-</div>
+## perimeterCartesian {#perimetercartesian}
 
 Вычисляет периметр заданного объекта Geometry в декартовой (плоской) системе координат.
 
@@ -46,9 +42,7 @@ SELECT perimeterCartesian(geom) FROM geo_dst;
 └──────────────────────────┘
 ```
 
-<div id="areacartesian">
-  ## areaCartesian
-</div>
+## areaCartesian {#areacartesian}
 
 Вычисляет площадь указанного объекта Geometry в декартовой системе координат.
 
@@ -80,9 +74,7 @@ SELECT areaCartesian(geom) FROM geo_dst;
 └─────────────────────┘
 ```
 
-<div id="perimeterspherical">
-  ## perimeterSpherical
-</div>
+## perimeterSpherical {#perimeterspherical}
 
 Вычисляет периметр объекта Geometry на сфере.
 
@@ -98,7 +90,7 @@ perimeterSpherical(geom)
 
 **Возвращаемые значения**
 
-* Число — периметр. [Float64](/ru/reference/data-types/float).
+* Число — периметр на сфере радиусом 1 в радианах (координаты задаются как долгота и широта в градусах). Чтобы получить длину, умножьте результат на радиус сферы, например на 6371, чтобы получить значение в километрах для Земли. [Float64](/ru/reference/data-types/float).
 
 **Пример**
 
@@ -110,13 +102,11 @@ SELECT perimeterSpherical(geom) FROM geo_dst;
 
 ```response title="Response"
 ┌─perimeterSpherical(geom)─┐
-│ 0                        │
+│      0.06981051179132045 │
 └──────────────────────────┘
 ```
 
-<div id="areaspherical">
-  ## areaSpherical
-</div>
+## areaSpherical {#areaspherical}
 
 Вычисляет площадь объекта типа Geometry на поверхности сферы.
 
@@ -132,7 +122,7 @@ areaSpherical(geom)
 
 **Возвращаемые значения**
 
-* Число — площадь. [Float64](/ru/reference/data-types/float).
+* Число — площадь на сфере радиуса 1 в стерадианах (координаты — долгота и широта в градусах). Чтобы получить площадь, умножьте результат на квадрат радиуса сферы. [Float64](/ru/reference/data-types/float).
 
 **Пример**
 

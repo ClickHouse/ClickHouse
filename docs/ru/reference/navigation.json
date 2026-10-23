@@ -188,7 +188,7 @@
             "ru/reference/statements/system",
             "ru/reference/statements/truncate",
             "ru/reference/statements/undrop",
-            "reference/statements/update",
+            "ru/reference/statements/update",
             "ru/reference/statements/use"
           ]
         },
@@ -478,7 +478,7 @@
                 "ru/reference/functions/regular-functions/geo/flipCoordinates",
                 "ru/reference/functions/regular-functions/geo/geometry",
                 "ru/reference/functions/regular-functions/geo/geohash",
-                "reference/functions/regular-functions/geo/h3",
+                "ru/reference/functions/regular-functions/geo/h3",
                 "ru/reference/functions/regular-functions/geo/mvt",
                 "ru/reference/functions/regular-functions/geo/polygon",
                 "ru/reference/functions/regular-functions/geo/s2",
