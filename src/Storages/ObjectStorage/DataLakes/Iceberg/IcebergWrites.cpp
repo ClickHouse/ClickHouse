@@ -510,7 +510,8 @@ void writePartitionSummaries(avro::GenericRecord & entry, const PartitionFieldSu
         avro::GenericDatum datum(partitions.schema()->leafAt(0));
         auto & record = datum.value<avro::GenericRecord>();
         record.field(f_contains_null) = summary.contains_null;
-        setVersionedField(record, summary.contains_nan, f_contains_nan);
+        if (summary.contains_nan)
+            setVersionedField(record, true, f_contains_nan);
         if (summary.lower_bound)
             setVersionedField(record, std::vector<uint8_t>(summary.lower_bound->begin(), summary.lower_bound->end()), f_lower_bound);
         if (summary.upper_bound)
