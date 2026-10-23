@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/VarInt.h>
 #include <IO/WriteBufferFromString.h>
@@ -7,7 +9,6 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStateSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Lance/LanceDataObjectInfo.h>
 #include <Core/ProtocolDefines.h>
-#include "config.h"
 
 using namespace DB;
 
@@ -284,5 +285,26 @@ TEST(DatalakeStateSerde, LanceDatasetObjectInfoFromSerializableInfo)
     auto round_trip = object->toSerializableInfo();
     ASSERT_EQ(round_trip.snapshot, info.snapshot);
     ASSERT_EQ(round_trip.fragment_ids, info.fragment_ids);
+}
+#endif
+
+#if USE_AVRO
+TEST(DatalakeStateSerde, PaimonStateSerde)
+{
+    for (const auto & index_manifest : {std::optional<String>{}, std::optional<String>{"index-manifest-1"}})
+    {
+        DataLakeTableStateSnapshot initial_state
+            = Paimon::TableStateSnapshot(3, 1, "base", "delta", "COMPACT", 42, 10, 2, std::nullopt, 7, index_manifest);
+        String str;
+        {
+            WriteBufferFromString write_buffer{str};
+            serializeDataLakeTableStateSnapshot(initial_state, write_buffer);
+        }
+        ReadBufferFromMemory read_buffer(str);
+        DataLakeTableStateSnapshot serde_state = deserializeDataLakeTableStateSnapshot(read_buffer);
+        ASSERT_TRUE(read_buffer.eof());
+        ASSERT_EQ(initial_state, serde_state);
+        ASSERT_EQ(std::get<Paimon::TableStateSnapshot>(serde_state).index_manifest, index_manifest);
+    }
 }
 #endif
