@@ -209,7 +209,14 @@ char utmLatitudeBand(Float64 latitude)
     if (latitude >= 72.0 && latitude <= 84.0)
         return 'X';
     if (latitude >= -80.0 && latitude < 72.0)
-        return BAND_LETTERS[static_cast<size_t>(std::floor((latitude + 80.0) / 8.0))];
+    {
+        long double index = std::floor((static_cast<long double>(latitude) + 80.0L) / 8.0L);
+        /// A negative latitude must never be rounded up into band 'N' or above by floating-point
+        /// error (including subnormal values): clamp it to band 'M' (index 9) at most.
+        if (latitude < 0.0)
+            index = std::min(index, 9.0L);
+        return BAND_LETTERS[static_cast<size_t>(index)];
+    }
     return 0;
 }
 
@@ -280,7 +287,10 @@ UTMCoordinate wgs84ToUTM(Float64 longitude, Float64 latitude, UInt8 forced_zone)
                * (a * a / 2.0 + (5.0 - t + 9.0 * c + 4.0 * c * c) * a * a * a * a / 24.0
                   + (61.0 - 58.0 * t + t * t + 600.0 * c - 330.0 * ecc_prime_sq) * a * a * a * a * a * a / 720.0));
 
-    if (latitude < 0.0)
+    /// Decide the false northing from the band letter so that it can never disagree with the band
+    /// returned above (which `UTMToGeo` turns back into a hemisphere). A latitude just below the
+    /// equator that rounds to band 'N' in floating point must not get the southern false northing.
+    if (result.band < 'N')
         result.northing += FALSE_NORTHING;
 
     return result;
