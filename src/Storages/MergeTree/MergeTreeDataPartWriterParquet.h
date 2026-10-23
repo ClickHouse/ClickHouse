@@ -48,7 +48,7 @@ public:
 private:
     /// The columns are written in Parquet format, not with the serializations of the columns,
     /// so there are no streams.
-    void addStreams(const NameAndTypePair &, const ASTPtr &) override {}
+    void addStreams(const NameAndTypePair &) override {}
     ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const override { return {}; }
 
     void fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block) override;

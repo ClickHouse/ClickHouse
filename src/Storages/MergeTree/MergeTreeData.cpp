@@ -7290,18 +7290,28 @@ bool MergeTreeData::canUseParquetPartFormat(const StorageInMemoryMetadata & tabl
         if (default_codec->isEncryption())
             return false;
 
-    for (const auto & column : columns)
+    auto is_allowed_codec = [&](const ASTPtr & codec)
     {
-        if (!column.codec)
-            continue;
-
-        if (tryExtractQuantizedCodecParams(column.codec))
+        if (tryExtractQuantizedCodecParams(codec))
             return false;
 
         /// Only the generic and encryption codecs matter here, and the type-specific codecs apply to the values
         /// of the column (not e.g. to the whole `Nullable` or `Tuple`), so they are not validated against the type.
         for (const auto & default_codec : default_codecs)
-            if (codec_factory.get(column.codec, nullptr, default_codec, /*only_generic=*/ true)->isEncryption())
+            if (codec_factory.get(codec, nullptr, default_codec, /*only_generic=*/ true)->isEncryption())
+                return false;
+
+        return true;
+    };
+
+    for (const auto & column : columns)
+    {
+        if (column.codec && !is_allowed_codec(column.codec))
+            return false;
+
+        /// The codecs of subcolumns are not applied in a Parquet file, but they must not hide an encryption codec either.
+        for (const auto & [_, subcolumn_codec] : column.subcolumn_codecs)
+            if (subcolumn_codec && !is_allowed_codec(subcolumn_codec))
                 return false;
     }
 

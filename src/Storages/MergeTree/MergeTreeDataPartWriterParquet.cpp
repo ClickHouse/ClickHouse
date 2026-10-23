@@ -291,7 +291,15 @@ MergeTreeDataPartWriterParquet::MergeTreeDataPartWriterParquet(
 
         /// The codec of a column applies to its values (e.g. to the nested column of `Nullable` or `Array`),
         /// like to the data substreams of the column in other formats.
-        auto codec_desc = getCodecDescriptionOrDefault(name_and_type.name, default_codec);
+        /// The codecs declared for subcolumns cannot be applied to the parts of a Parquet column, so the column codec
+        /// is used, or the default codec of the part (which already accounts for `default_compression_codec` and
+        /// `RECOMPRESS` TTL, see `MergeTreeData::getCompressionCodecForPart`).
+        const ColumnDescription * column_desc = metadata_snapshot->columns.tryGet(name_and_type.name);
+        if (!column_desc)
+            column_desc = metadata_snapshot->virtuals.tryGetDescription(name_and_type.name, VirtualsKind::All, VirtualsMaterializationPlace::Reader);
+        if (!column_desc)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column name: {}", name_and_type.name);
+        ASTPtr codec_desc = column_desc->codec ? column_desc->codec : default_codec->getFullCodecDescription();
         /// For compound types (`Tuple`, `Map`) only the generic codecs are used.
         auto values_type = getInnermostPrimitiveType(name_and_type.type);
         auto codec = CompressionCodecFactory::instance().get(codec_desc, values_type.get(), default_codec, /*only_generic=*/ !values_type);
