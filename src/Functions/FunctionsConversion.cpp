@@ -6,6 +6,7 @@
 #include <Interpreters/castColumn.h>
 #include <IO/WriteBufferFromString.h>
 #include <Formats/JSONExtractTree.h>
+#include <Formats/SchemaInferenceUtils.h>
 
 #if USE_SIMDJSON
 #include <Common/JSONParsers/SimdJSONParser.h>
@@ -2166,8 +2167,9 @@ bool needsFormatParseFallback(const DataTypePtr & type, const FormatSettings & f
     return anyInTypeTree(*type, check);
 }
 
-/// Returns the canonical Dynamic type for a typed path type, or nullptr if not promotable.
-DataTypePtr getPromotedTypeForDynamic(const DataTypePtr & type, const FormatSettings & format_settings)
+/// Returns the type the JSON parser infers in Dynamic for the serialized values of a typed path type,
+/// or nullptr if a CAST to one type cannot reproduce that inference.
+DataTypePtr getPromotedTypeForDynamicImpl(const DataTypePtr & type, const FormatSettings & format_settings)
 {
     TypeIndex id = type->getTypeId();
     switch (id)
@@ -2177,31 +2179,37 @@ DataTypePtr getPromotedTypeForDynamic(const DataTypePtr & type, const FormatSett
         case TypeIndex::Float64:
         case TypeIndex::String:
             return type; /// Already canonical.
-        case TypeIndex::Int8: [[fallthrough]];
-        case TypeIndex::Int16: [[fallthrough]];
-        case TypeIndex::Int32:
-            return std::make_shared<DataTypeInt64>();
         case TypeIndex::UInt8:
         {
             /// Bool is represented as UInt8 — keep it as-is (canonical).
             if (isBool(type))
                 return type;
-            return std::make_shared<DataTypeUInt64>();
+            return std::make_shared<DataTypeInt64>();
         }
+        /// The parser infers Int64 for every integer that fits it.
+        case TypeIndex::Int8: [[fallthrough]];
+        case TypeIndex::Int16: [[fallthrough]];
+        case TypeIndex::Int32: [[fallthrough]];
         case TypeIndex::UInt16: [[fallthrough]];
         case TypeIndex::UInt32:
-            return std::make_shared<DataTypeUInt64>();
-        case TypeIndex::Float32: [[fallthrough]];
+            return std::make_shared<DataTypeInt64>();
+        /// Not Float32: the parser reads its shortest text, which differs from the Float64 a CAST widens it to.
         case TypeIndex::Decimal32: [[fallthrough]];
         case TypeIndex::Decimal64: [[fallthrough]];
         case TypeIndex::Decimal128: [[fallthrough]];
         case TypeIndex::Decimal256:
             return std::make_shared<DataTypeFloat64>();
-        case TypeIndex::Date: [[fallthrough]];
-        case TypeIndex::Date32:
+        case TypeIndex::Date:
         {
             if (format_settings.try_infer_dates)
                 return std::make_shared<DataTypeDate>();
+            return std::make_shared<DataTypeString>();
+        }
+        /// A Date32 value outside the Date range is inferred as another type, which a CAST to Date cannot follow.
+        case TypeIndex::Date32:
+        {
+            if (format_settings.try_infer_dates)
+                return nullptr;
             return std::make_shared<DataTypeString>();
         }
         case TypeIndex::DateTime:
@@ -2214,18 +2222,17 @@ DataTypePtr getPromotedTypeForDynamic(const DataTypePtr & type, const FormatSett
             }
             return std::make_shared<DataTypeString>();
         }
+        /// Valid only for the values that DateTime64(9) can hold, see fitsIntoMaxScaleDateTime64.
         case TypeIndex::DateTime64:
         {
             if (format_settings.try_infer_datetimes)
-            {
                 return std::make_shared<DataTypeDateTime64>(9);
-            }
             return std::make_shared<DataTypeString>();
         }
         case TypeIndex::Array:
         {
             const auto & array_type = assert_cast<const DataTypeArray &>(*type);
-            auto promoted_nested = getPromotedTypeForDynamic(array_type.getNestedType(), format_settings);
+            auto promoted_nested = getPromotedTypeForDynamicImpl(array_type.getNestedType(), format_settings);
             if (!promoted_nested)
                 return nullptr;
             if (promoted_nested->equals(*array_type.getNestedType()))
@@ -2235,7 +2242,7 @@ DataTypePtr getPromotedTypeForDynamic(const DataTypePtr & type, const FormatSett
         case TypeIndex::Nullable:
         {
             const auto & nullable_type = assert_cast<const DataTypeNullable &>(*type);
-            auto promoted_nested = getPromotedTypeForDynamic(nullable_type.getNestedType(), format_settings);
+            auto promoted_nested = getPromotedTypeForDynamicImpl(nullable_type.getNestedType(), format_settings);
             if (!promoted_nested)
                 return nullptr;
             if (promoted_nested->equals(*nullable_type.getNestedType()))
@@ -2245,6 +2252,49 @@ DataTypePtr getPromotedTypeForDynamic(const DataTypePtr & type, const FormatSett
         default:
             return nullptr; /// Not promotable.
     }
+}
+
+DataTypePtr getPromotedTypeForDynamic(const DataTypePtr & type, const FormatSettings & format_settings)
+{
+    auto promoted = getPromotedTypeForDynamicImpl(type, format_settings);
+    /// The same adjustment as the parser makes to an inferred type, see `DynamicNode::elementToDataType`.
+    if (promoted && format_settings.schema_inference_make_columns_nullable && promoted->haveSubtypes())
+        promoted = makeNullableRecursively(promoted, format_settings);
+    return promoted;
+}
+
+/// True if the DateTime64 values in the column fit DateTime64(9), the type their promotion casts to.
+/// A later value would saturate there, while the parser keeps its text as a String.
+bool fitsIntoMaxScaleDateTime64(const IColumn & column, const IDataType & type)
+{
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&type))
+        return fitsIntoMaxScaleDateTime64(assert_cast<const ColumnNullable &>(column).getNestedColumn(), *nullable_type->getNestedType());
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(&type))
+        return fitsIntoMaxScaleDateTime64(assert_cast<const ColumnArray &>(column).getData(), *array_type->getNestedType());
+
+    constexpr UInt32 promoted_scale = 9;
+    const auto * datetime64_type = typeid_cast<const DataTypeDateTime64 *>(&type);
+    if (!datetime64_type || datetime64_type->getScale() >= promoted_scale)
+        return true;
+
+    const Int64 multiplier = DecimalUtils::scaleMultiplier<Int64>(promoted_scale - datetime64_type->getScale());
+    const Int64 max_value = std::numeric_limits<Int64>::max() / multiplier;
+    const Int64 min_value = std::numeric_limits<Int64>::min() / multiplier;
+    for (const auto & value : assert_cast<const DataTypeDateTime64::ColumnType &>(column).getData())
+    {
+        if (value.value > max_value || value.value < min_value)
+            return false;
+    }
+    return true;
+}
+
+/// With read_datetime_number_as_raw_value the parser reads an integer as raw DateTime64 ticks and
+/// rejects some numbers for DateTime, while CAST reads every number as seconds.
+bool parsesDateTimeNumbersUnlikeCast(const DataTypePtr & to_type, const FormatSettings & format_settings)
+{
+    return format_settings.read_datetime_number_as_raw_value
+        && anyInTypeTree(*to_type, [](const IDataType & t) { return isDateTime(t) || isDateTime64(t); });
 }
 
 /// Returns true if CAST(from_type, to_type) produces the same result as
@@ -2364,8 +2414,9 @@ struct ObjectConversionPlan
     /// New SKIP exact paths (in destination but not in source).
     UnorderedSetWithMemoryTracking<String> new_skip_paths;
 
-    /// New SKIP REGEXP patterns (in destination but not in source).
-    VectorWithMemoryTracking<String> new_skip_regexps;
+    /// New SKIP REGEXP patterns (in destination but not in source), compiled once for all blocks.
+    /// Shared so that the plan stays copyable inside the conversion wrapper.
+    VectorWithMemoryTracking<std::shared_ptr<const re2::RE2>> new_skip_regexps;
 
     /// Whether max_dynamic_paths or max_dynamic_types changed.
     bool dynamic_limits_changed = false;
@@ -2466,7 +2517,7 @@ ObjectConversionPlan buildObjectConversionPlan(
     for (const auto & regexp : dst_regexps)
     {
         if (!src_regexp_set.contains(regexp))
-            plan.new_skip_regexps.push_back(regexp);
+            plan.new_skip_regexps.push_back(std::make_shared<const re2::RE2>(regexp));
     }
 
     return plan;
@@ -2889,12 +2940,6 @@ ColumnPtr convertObjectColumns(
 
     /// ======================== Phase 1: Build skip predicate ========================
 
-    /// Compile regexps.
-    VectorWithMemoryTracking<std::unique_ptr<re2::RE2>> compiled_new_skip_regexps;
-    compiled_new_skip_regexps.reserve(plan.new_skip_regexps.size());
-    for (const auto & pattern : plan.new_skip_regexps)
-        compiled_new_skip_regexps.push_back(std::make_unique<re2::RE2>(pattern));
-
     const bool has_new_skip_rules = plan.hasNewSkipRules();
 
     auto shouldSkip = [&](std::string_view path) -> bool
@@ -2908,7 +2953,7 @@ ColumnPtr convertObjectColumns(
                 return true;
         }
 
-        for (const auto & regexp : compiled_new_skip_regexps)
+        for (const auto & regexp : plan.new_skip_regexps)
         {
             if (format_settings.json.type_json_use_partial_match_to_skip_paths_by_regexp)
             {
@@ -2936,14 +2981,14 @@ ColumnPtr convertObjectColumns(
     /// Paths that stay as dynamic (not skipped, not promoted to typed).
     VectorWithMemoryTracking<String> src_dynamic_paths_to_reuse;
     /// Paths that become typed paths in destination.
-    VectorWithMemoryTracking<String> src_dynamic_paths_to_typed;
+    UnorderedSetWithMemoryTracking<String> src_dynamic_paths_to_typed;
 
     for (const auto & [path, _col] : src_dynamic_paths)
     {
         if (shouldSkip(path))
             continue;
         if (plan.new_typed_paths.contains(path))
-            src_dynamic_paths_to_typed.push_back(path);
+            src_dynamic_paths_to_typed.insert(path);
         else
             src_dynamic_paths_to_reuse.push_back(path);
     }
@@ -2952,10 +2997,6 @@ ColumnPtr convertObjectColumns(
 
     using PathToColumnMap = UnorderedMapWithMemoryTracking<String, ColumnPtr>;
     PathToColumnMap dst_typed_columns;
-
-    /// Track which new typed paths were populated from dynamic paths (so we know
-    /// which ones still need to be populated from shared data or filled with defaults).
-    UnorderedSetWithMemoryTracking<String> new_typed_paths_populated;
 
     const auto & dst_typed_path_types = dst_type.getTypedPaths();
 
@@ -2990,15 +3031,19 @@ ColumnPtr convertObjectColumns(
         {
             auto it = src_typed_paths.find(path);
 
-            /// When the destination drops Nullable, format+parse only turns a source NULL
-            /// into the default when null_as_default is enabled; otherwise it raises. Stripping
-            /// Nullable before CAST would silently default those rows, so fall back to strict
-            /// format+parse when null_as_default is disabled and there is such a mismatch.
+            /// When the destination drops Nullable, format+parse turns a source NULL into the default
+            /// only with null_as_default, otherwise it raises, so stripping Nullable before CAST is wrong.
+            /// type_json_skip_null_typed_paths is the exception for a NULL of the typed path itself:
+            /// the path is left out of the serialized object and the parser fills the default.
             const bool nullable_mismatch = hasNullableMismatchForCast(from_tp, to_tp);
+            const bool nulls_become_defaults = format_settings.null_as_default
+                || (format_settings.json.type_json_skip_null_typed_paths
+                    && !hasNullableMismatchForCast(removeNullableOrLowCardinalityNullable(from_tp), to_tp));
 
             if (skip_invalid
                 || needsFormatParseFallback(from_tp, format_settings)
-                || (nullable_mismatch && !format_settings.null_as_default))
+                || parsesDateTimeNumbersUnlikeCast(to_tp, format_settings)
+                || (nullable_mismatch && !nulls_become_defaults))
             {
                 dst_typed_columns[path]
                     = convertTypedColumnToTyped(it->second, from_tp, to_tp, rows, format_settings, /*skip_on_failure=*/skip_invalid);
@@ -3010,7 +3055,7 @@ ColumnPtr convertObjectColumns(
 
                 /// Strip Nullable where destination is non-Nullable to avoid
                 /// CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN from CAST. Values under NULLs are
-                /// type-defaults, matching null_as_default = 1 (guaranteed enabled here).
+                /// type-defaults, which is what the parser inserts here (see nulls_become_defaults).
                 if (nullable_mismatch)
                 {
                     if (auto stripped = removeNullableForCast(src_col, src_type, to_tp))
@@ -3051,7 +3096,6 @@ ColumnPtr convertObjectColumns(
             dst_typed_columns[path] = convertDynamicColumnToTyped(
                 it_col->second, it_type->second, rows, format_settings);
         }
-        new_typed_paths_populated.insert(path);
     }
 
     /// New typed paths not from dynamic — will be filled from shared data in Phase 7 or defaults in Phase 8.
@@ -3059,7 +3103,7 @@ ColumnPtr convertObjectColumns(
     UnorderedMapWithMemoryTracking<String, MutableColumnPtr> new_typed_path_mutable_columns;
     for (const auto & [path, tp] : plan.new_typed_paths)
     {
-        if (!new_typed_paths_populated.contains(path))
+        if (!src_dynamic_paths_to_typed.contains(path))
         {
             new_typed_path_mutable_columns[path] = tp->createColumn();
             new_typed_path_mutable_columns[path]->reserve(rows);
@@ -3107,6 +3151,8 @@ ColumnPtr convertObjectColumns(
         auto promoted = needsFormatParseFallback(it_type->second, format_settings)
             ? nullptr
             : getPromotedTypeForDynamic(it_type->second, format_settings);
+        if (promoted && !fitsIntoMaxScaleDateTime64(*it_col->second, *it_type->second))
+            promoted = nullptr;
         if (promoted)
         {
             auto dynamic_type = std::make_shared<DataTypeDynamic>(dst_max_dynamic_types);
@@ -3140,7 +3186,7 @@ ColumnPtr convertObjectColumns(
     {
         shared_data_reusable = false;
     }
-    else if (plan.new_typed_paths.size() > new_typed_paths_populated.size() || plan.hasNewSkipRules())
+    else if (plan.new_typed_paths.size() > src_dynamic_paths_to_typed.size() || plan.hasNewSkipRules())
     {
         /// Some new typed paths were not in dynamic — they might be in shared data.
         /// Or skip rules might affect shared data entries.

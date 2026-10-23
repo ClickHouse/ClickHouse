@@ -1,0 +1,113 @@
+-- The optimized JSON-to-JSON conversion must give the same result as format+parse. Every case runs with
+-- both values of json_use_optimized_type_conversion and only the cases whose results differ are printed,
+-- so the reference is the list of accepted differences.
+
+SET session_timezone = 'UTC';
+
+DROP TABLE IF EXISTS results;
+CREATE TABLE results (optimized UInt8, name String, result String) ENGINE = Memory;
+
+{% macro check(name, src, dst, rows, settings='') -%}
+{% for optimized in [1, 0] -%}
+INSERT INTO results
+SELECT {{ optimized }}, '{{ name }}', arrayStringConcat(arrayMap(x -> x.2, arraySort(groupArray((id,
+    concat(toString(j), ' ', toString(JSONDynamicPathsWithTypes(j)), ' ', toString(JSONSharedDataPathsWithTypes(j))))))), '; ')
+FROM (SELECT id, CAST(CAST(json AS {{ src }}) AS {{ dst }}) AS j
+      FROM values('id UInt32, json String', {% for row in rows %}({{ loop.index }}, '{{ row }}'){{ ', ' if not loop.last }}{% endfor %}))
+SETTINGS json_use_optimized_type_conversion = {{ optimized }}{{ ', ' ~ settings if settings }};
+{% endfor -%}
+{%- endmacro %}
+
+-- Removed typed paths for every type the promotion to Dynamic handles, and some it leaves to format+parse.
+{% for type, rows in [
+    ('Int8', ['{"a": 1}', '{"a": -128}', '{"a": 127}', '{}']),
+    ('Int16', ['{"a": -32768}', '{"a": 300}']),
+    ('Int32', ['{"a": 2147483647}', '{"a": -5}']),
+    ('Int64', ['{"a": -9223372036854775808}', '{"a": 100}']),
+    ('UInt8', ['{"a": 0}', '{"a": 255}', '{}']),
+    ('UInt16', ['{"a": 65535}']),
+    ('UInt32', ['{"a": 4294967295}']),
+    ('Bool', ['{"a": true}', '{"a": false}', '{}']),
+    ('Float32', ['{"a": 0.1}', '{"a": -3.25}', '{"a": 5}', '{"a": 1e30}']),
+    ('Float64', ['{"a": 0.1}', '{"a": -3.25}', '{"a": 1e300}']),
+    ('Decimal32(2)', ['{"a": 1.25}', '{"a": -0.5}']),
+    ('Decimal64(3)', ['{"a": 1.125}']),
+    ('Decimal128(5)', ['{"a": 12345.6789}']),
+    ('Decimal256(10)', ['{"a": 0.5}']),
+    ('Date', ['{"a": "2024-01-15"}', '{"a": "1970-01-01"}']),
+    ('Date32', ['{"a": "2024-01-15"}', '{"a": "1970-01-01"}']),
+    ('DateTime', ['{"a": "2024-01-15 12:30:00"}']),
+    ('DateTime64(3)', ['{"a": "2024-01-15 12:30:00.123"}', '{"a": "2024-01-15 12:30:00.000"}', '{"a": "2280-01-01 00:00:00.123"}']),
+    ('DateTime64(6)', ['{"a": "2024-01-15 12:30:00.123456"}']),
+    ('DateTime64(9)', ['{"a": "2024-01-15 12:30:00.123456789"}']),
+    ('String', ['{"a": "abc"}', '{"a": ""}', '{}']),
+    ('Nullable(Int16)', ['{"a": 1}', '{"a": null}', '{}']),
+    ('Nullable(UInt32)', ['{"a": 5}', '{"a": null}']),
+    ('Nullable(Float32)', ['{"a": 0.1}', '{"a": null}']),
+    ('Array(Int8)', ['{"a": [1, 2, 3]}', '{"a": [-1]}']),
+    ('Array(UInt8)', ['{"a": [1, 255]}']),
+    ('Array(Float32)', ['{"a": [0.1, 1.5]}']),
+    ('Array(Nullable(Int32))', ['{"a": [1, null]}']),
+    ('Array(Array(Int8))', ['{"a": [[1], [2, 3]]}']),
+    ('Array(String)', ['{"a": ["x", "y"]}']),
+    ('Array(Date)', ['{"a": ["2024-01-15"]}']),
+    ('Array(Bool)', ['{"a": [true, false]}']),
+    ('UUID', ['{"a": "550e8400-e29b-41d4-a716-446655440000"}']),
+    ('IPv4', ['{"a": "1.2.3.4"}']),
+    ('IPv6', ['{"a": "::1"}']),
+    ("Enum8('x' = 1, 'y' = 2)", ['{"a": "x"}']),
+    ('FixedString(3)', ['{"a": "abc"}']),
+    ('LowCardinality(String)', ['{"a": "abc"}']),
+    ('LowCardinality(Nullable(String))', ['{"a": "abc"}', '{"a": null}']),
+] -%}
+{{ check('removed ' ~ type | replace("'", ""), 'JSON(a ' ~ type ~ ')', 'JSON', rows) }}
+{{ check('removed ' ~ type | replace("'", "") ~ ' to shared data',
+         'JSON(max_dynamic_paths = 0, a ' ~ type ~ ')', 'JSON(max_dynamic_paths = 0)', rows) }}
+{% endfor %}
+
+{% set date32_outside_date_range = ['{"a": "1900-01-01"}', '{"a": "2299-12-31"}'] -%}
+{{ check('removed Date32 outside the Date range', 'JSON(a Date32)', 'JSON', date32_outside_date_range) }}
+{{ check('removed Date32 outside the Date range to shared data',
+         'JSON(max_dynamic_paths = 0, a Date32)', 'JSON(max_dynamic_paths = 0)', date32_outside_date_range) }}
+
+-- Accepted differences: the parser infers a type per value from its text, the optimized path keeps one type for the path.
+{{ check('accepted: removed Float64 whole number', 'JSON(a Float64)', 'JSON', ['{"a": 5}']) }}
+{{ check('accepted: removed Decimal32 whole number', 'JSON(a Decimal32(2))', 'JSON', ['{"a": 5}']) }}
+{{ check('accepted: removed UInt64', 'JSON(a UInt64)', 'JSON', ['{"a": 5}', '{"a": 18446744073709551615}']) }}
+{{ check('accepted: removed DateTime64(0)', 'JSON(a DateTime64(0))', 'JSON', ['{"a": "2024-01-15 12:30:00"}']) }}
+{{ check('accepted: removed String holding a date', 'JSON(a String)', 'JSON', ['{"a": "2024-01-15"}']) }}
+{{ check('accepted: removed empty Array', 'JSON(a Array(Int8))', 'JSON', ['{"a": []}']) }}
+{{ check('accepted: removed Float64 NaN', 'JSON(a Float64)', 'JSON', ['{"a": "nan"}']) }}
+
+-- Removed, new and changed typed paths under the parser settings that the conversion has to follow.
+{% for settings in [
+    'type_json_skip_null_typed_paths = 1',
+    'type_json_skip_null_typed_paths = 1, input_format_null_as_default = 0',
+    'input_format_read_datetime_number_as_raw_value = 1',
+    'precise_float_parsing = 0',
+    'json_type_escape_dots_in_keys = 1',
+    'schema_inference_make_columns_nullable = 0',
+] -%}
+{% for name, src, dst, rows in [
+    ('removed Array(Int8)', 'JSON(a Array(Int8))', 'JSON', ['{"a": [1, 2]}']),
+    ('removed Nullable(Int32)', 'JSON(a Nullable(Int32))', 'JSON', ['{"a": 1}', '{"a": null}']),
+    ('removed Float64', 'JSON(a Float64)', 'JSON', ['{"a": 0.1}']),
+    ('removed DateTime64(3)', 'JSON(a DateTime64(3))', 'JSON', ['{"a": "2024-01-15 12:30:00.123"}']),
+    ('new Float64 from String', 'JSON', 'JSON(a Float64)', ['{"a": "0.1"}', '{"a": "1.0000000000000002"}', '{}']),
+    ('new Int32 from Int64', 'JSON', 'JSON(a Int32)', ['{"a": 1}', '{}']),
+    ('new DateTime64(3) from Int64', 'JSON', 'JSON(a DateTime64(3))', ['{"a": 1700000000}']),
+    ('new a.b over a dotted key', 'JSON', 'JSON(`a.b` Int32)', ['{"a.b": 1, "c": 2}']),
+    ('changed Nullable(Int32) to Int32', 'JSON(a Nullable(Int32))', 'JSON(a Int32)', ['{"a": 1}', '{"a": null}', '{}']),
+    ('changed Int64 to DateTime64(3)', 'JSON(a Int64)', 'JSON(a DateTime64(3))', ['{"a": 1700000000}']),
+    ('changed Int64 to DateTime', 'JSON(a Int64)', 'JSON(a DateTime)', ['{"a": 1700000000}']),
+    ('changed String to Float64', 'JSON(a String)', 'JSON(a Float64)', ['{"a": "0.1"}', '{"a": "1.0000000000000002"}']),
+] -%}
+{{ check(name ~ ' with ' ~ settings, src, dst, rows, settings) }}
+{% endfor -%}
+{% endfor %}
+
+SELECT name, optimized, result FROM results
+WHERE name IN (SELECT name FROM results GROUP BY name HAVING uniqExact(result) > 1)
+ORDER BY name, optimized DESC;
+
+DROP TABLE results;
