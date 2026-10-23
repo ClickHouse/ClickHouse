@@ -548,12 +548,18 @@ class SessionPool {
 // another one. The key uses the same `ca_location` and trust store fingerprint
 // that `SslContextFor` keys on, so a session opened before a CA bundle rotation
 // is not reused afterwards.
+//
+// So does the ClickHouse connection group a session is registered in
+// (`PocoRestSessionAccountingOption`): the registration stays with the session
+// while it is pooled, so a request accounted in another group, or not accounted
+// at all, borrowing it would escape the limits of its own group.
 std::string SessionKey(
     Poco::URI const& uri,
     Poco::Net::HTTPClientSession::ProxyConfig const& proxy,
     ::ClickHouse::PocoRestKeepAliveOption::Type const& keep_alive,
     std::string const& ca_location,
-    std::string const& trust_store_fingerprint) {
+    std::string const& trust_store_fingerprint,
+    std::string const& accounting_key) {
   return uri.getScheme() + "://" + uri.getHost() + ":" +
          std::to_string(uri.getPort()) + "|" + proxy.host + ":" +
          std::to_string(proxy.port) + "|" + proxy.protocol + "|" +
@@ -563,7 +569,7 @@ std::string SessionKey(
          proxy.nonProxyHosts + "|" +
          std::to_string(keep_alive.timeout.count()) + ":" +
          std::to_string(keep_alive.max_requests) + "|" + ca_location + "|" +
-         trust_store_fingerprint;
+         trust_store_fingerprint + "|" + accounting_key;
 }
 
 // Where a session goes back to, and under which limit. Both are decided by the
@@ -661,8 +667,15 @@ AccountedSession MakeSession(
   // Only HTTPS sessions verify a peer, so only they depend on the trust store.
   std::string const trust_store_fingerprint =
       secure ? TrustStoreFingerprint(ca_location) : "";
+  ::ClickHouse::PocoRestSessionAccountingOption::Type accounting;
+  if (options.has<::ClickHouse::PocoRestSessionAccountingOption>()) {
+    accounting = options.get<::ClickHouse::PocoRestSessionAccountingOption>();
+  }
+  std::string const accounting_key =
+      accounting.factory ? "accounted:" + accounting.group : "unaccounted";
+
   auto const key = SessionKey(uri, effective_proxy, keep_alive, ca_location,
-                              trust_store_fingerprint);
+                              trust_store_fingerprint, accounting_key);
   if (ticket != nullptr) {
     ticket->key = key;
     ticket->proxy = effective_proxy;
@@ -692,10 +705,8 @@ AccountedSession MakeSession(
     // ClickHouse connection group apply to it (`PocoRestSessionAccountingOption`).
     // This throws when the group's hard limit is reached, and the request then
     // fails without connecting.
-    if (options.has<::ClickHouse::PocoRestSessionAccountingOption>()) {
-      auto const& accounting =
-          options.get<::ClickHouse::PocoRestSessionAccountingOption>();
-      if (accounting) accounted.registration = accounting(*session);
+    if (accounting.factory) {
+      accounted.registration = accounting.factory(*session);
     }
     // A per-request proxy resolved by ClickHouse wins over the fixed upstream
     // ProxyOption: it already carries everything Poco needs (including tunneling

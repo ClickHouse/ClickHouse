@@ -786,12 +786,17 @@ std::unique_ptr<gcs::Client> getGCSClient(const GCSObjectStorageSettings & setti
     /// `DISK` for a disk, `STORAGE` for a table function or a table engine -- and the server-wide
     /// `disk_connections_*` / `storage_connections_*` limits (`hard_limit`, the limit on idle
     /// connections) and socket buffer sizes (`rcvbuf`, `sndbuf`) apply to them as well.
-    options.set<::ClickHouse::PocoRestSessionAccountingOption>(
-        [group = settings.for_disk ? HTTPConnectionGroupType::DISK : HTTPConnectionGroupType::STORAGE](
+    /// The group is also part of the transport's session pool key, so a session pooled by a table function is never
+    /// reused by a disk (or vice versa) without being registered in the disk's group.
+    const auto connection_group = settings.for_disk ? HTTPConnectionGroupType::DISK : HTTPConnectionGroupType::STORAGE;
+    options.set<::ClickHouse::PocoRestSessionAccountingOption>(::ClickHouse::PocoRestSessionAccountingOption::Type{
+        .group = settings.for_disk ? "DISK" : "STORAGE",
+        .factory = [connection_group](
             Poco::Net::HTTPClientSession & session) -> std::unique_ptr<::ClickHouse::PocoRestSessionAccountingOption::Registration>
         {
-            return std::make_unique<GCSSessionRegistration>(HTTPConnectionPools::instance().registerExternalConnection(group, session));
-        });
+            return std::make_unique<GCSSessionRegistration>(
+                HTTPConnectionPools::instance().registerExternalConnection(connection_group, session));
+        }});
 
     /// Whether a pooled keep-alive session is still usable is decided by ClickHouse's own TLS-aware
     /// probe, the one `HTTPConnectionPool` uses: a session that is merely `connected()` may already

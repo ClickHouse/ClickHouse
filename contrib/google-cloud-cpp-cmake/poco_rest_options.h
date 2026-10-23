@@ -160,6 +160,11 @@ struct PocoRestUrlCheckOption
 /// connects, and throws when the group's hard limit is reached; the request then fails without
 /// connecting. The returned registration lives exactly as long as the session and is destroyed right
 /// before it. Unset means the sessions are not accounted.
+///
+/// A registration stays with its session while the session is pooled, so the transport hands a pooled
+/// session only to a request accounted in the same `group` (or, for an unaccounted session, to an
+/// unaccounted request): otherwise a request could borrow a session counted in another group and skip
+/// the limits of its own.
 struct PocoRestSessionAccountingOption
 {
     class Registration
@@ -181,7 +186,14 @@ struct PocoRestSessionAccountingOption
         virtual void releaseIdle() noexcept = 0;
     };
 
-    using Type = std::function<std::unique_ptr<Registration>(Poco::Net::HTTPClientSession & session)>;
+    using Factory = std::function<std::unique_ptr<Registration>(Poco::Net::HTTPClientSession & session)>;
+
+    struct Type
+    {
+        /// Identifies the connection group the factory registers sessions in; part of the session pool key.
+        std::string group;
+        Factory factory;
+    };
 };
 
 /// Called by the transport on the session of every request right before the request is sent, so that
