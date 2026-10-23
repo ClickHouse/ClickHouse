@@ -77,7 +77,6 @@ inline const char * toString(AggregateFunctionStateVariant variant)
 /// arena. Such memory may be allocated with `operator new`, which the tracker counts but does not refuse.
 const MemoryTracker * getMemoryTrackerToWatchForStates(const IAggregateFunction & function);
 
-/// Checks the memory limit if `memory_tracker` tracks another amount than `memory_at_last_check`, which is updated.
 inline void checkMemoryLimitIfChanged(const MemoryTracker * memory_tracker, Int64 & memory_at_last_check)
 {
     if (!memory_tracker)
