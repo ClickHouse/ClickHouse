@@ -1481,7 +1481,6 @@ def test_restore_row_policy_replace_requires_scoped_drop():
         "CREATE TABLE test.table (owner UInt64) ENGINE = MergeTree ORDER BY owner"
     )
     instance.query("CREATE USER u2")
-    instance.query("GRANT READ ON DISK TO u2")
     instance.query("GRANT CREATE ROW POLICY ON test.table TO u2")
     instance.query(
         "CREATE ROW POLICY rowpol1 ON test.table AS RESTRICTIVE USING 1 TO ALL"
@@ -1539,7 +1538,6 @@ def test_restore_access_partial_revoke_cannot_cancel_drop(kind, system_table, ta
 
     # Create the actor after the backup so its grants cannot mask the target's partial revoke.
     instance.query("CREATE USER u2")
-    instance.query("GRANT READ ON DISK TO u2")
     instance.query(f"GRANT CREATE {kind} ON {target} TO u2")
     instance.query(f"GRANT DROP {kind} ON * TO u2 WITH GRANT OPTION")
     instance.query(f"REVOKE DROP {kind} ON {target} FROM u2")
@@ -1571,7 +1569,6 @@ def test_restore_access_partial_revokes_preserve_grant_and_table_requirements():
     instance.query("ALTER ROLE r1 SETTINGS max_threads = 2")
 
     instance.query("CREATE USER u2")
-    instance.query("GRANT READ ON DISK TO u2")
     instance.query("GRANT CREATE ROLE, DROP ROLE ON r1 TO u2")
     instance.query("GRANT CREATE TABLE ON test.table TO u2")
     instance.query("GRANT SELECT, INSERT ON test.* TO u2 WITH GRANT OPTION")
