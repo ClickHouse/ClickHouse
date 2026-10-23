@@ -1339,8 +1339,8 @@ void collectAliasDependenciesFromAST(
             collectAliasDependenciesFromAST(child, candidate_names, dependencies);
 }
 
-/// Names an ALIAS expression can read from the table. An identifier whose name or first part is a
-/// parameter of an enclosing lambda reads that parameter, as in the analyzer.
+/// Names an ALIAS expression can read from the table, subqueries included. An identifier whose name or
+/// first part is a parameter of an enclosing lambda reads that parameter, as in the analyzer.
 void collectNamesReadFromTable(const ASTPtr & node, Names & lambda_parameters, NameSet & names)
 {
     if (!node)
@@ -1355,9 +1355,6 @@ void collectNamesReadFromTable(const ASTPtr & node, Names & lambda_parameters, N
             names.insert(identifier->name());
         return;
     }
-
-    if (node->as<ASTSubquery>())
-        return;
 
     if (const auto * function = node->as<ASTFunction>(); function && function->name == "lambda")
     {

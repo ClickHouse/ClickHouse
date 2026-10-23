@@ -22,6 +22,11 @@ ALTER TABLE t3 MODIFY COLUMN b String ALIAS a; -- { serverError CYCLIC_ALIASES }
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Memory;
 ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t (c0 Int32, c5 String ALIAS `c5.size`) ENGINE = Memory; -- { serverError CYCLIC_ALIASES }
 ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t2 (s String, a String ALIAS concat(toString(length(s)) AS b, b), b String ALIAS toString(a.size)) ENGINE = Memory; -- { serverError CYCLIC_ALIASES }
+ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t3 (i Int64, a String ALIAS toString((SELECT b.size)), b String ALIAS a) ENGINE = Memory; -- { serverError CYCLIC_ALIASES }
+ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t4 (i Int64, a String ALIAS toString((SELECT a.size FROM numbers(1)))) ENGINE = Memory; -- { serverError CYCLIC_ALIASES }
+ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t5 (i Int64, a String ALIAS toString((SELECT count() FROM numbers(3)))) ENGINE = Memory;
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.t5 (i) VALUES (1);
+SELECT a FROM {CLICKHOUSE_DATABASE_1:Identifier}.t5;
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 
 -- Not cycles.
