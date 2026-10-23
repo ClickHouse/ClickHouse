@@ -1354,22 +1354,16 @@ def test_backup_restore_s3_plain_backup_metadata_only(cluster):
     err = instance.query_and_get_error(f"BACKUP TABLE sample PARTITIONS 0 TO {new_backup_destination()}")
     assert "CANNOT_BACKUP_TABLE" in err and "Cannot backup specific partitions" in err, err
 
-    # The inner tables of a materialized view and a `TimeSeries` table on such a policy are not supported: the flag is
-    # ignored for them with a warning, and they are backed up as usual.
+    # The inner tables of a materialized view and a `TimeSeries` table on such a policy are not supported: the flag
+    # is ignored for them and they are backed up as usual. Master also warns, naming the inner table that carries
+    # the flag; that warning is left out on this branch, so only the backup itself is asserted here.
     instance.query(
         f"""
         CREATE TABLE src (key Int) ENGINE = Null;
         CREATE MATERIALIZED VIEW mv ENGINE = MergeTree ORDER BY key SETTINGS storage_policy = '{policy}' AS SELECT key FROM src;
         """
     )
-    # A `TimeSeries` table is left out: the warning for its inner tables needs `getTargetKinds`, which is not
-    # static on this branch, so `isDataOnBackupMetadataOnlyStoragePolicy` does not look at them here.
-    for table, kind in [("mv", "materialized view")]:
-        instance.query(f"BACKUP TABLE {table} TO {new_backup_destination()}")
-        assert instance.contains_in_log(
-            f"default.{table} (" + get_uuid(table)
-        ), f"no warning for {table}"
-        assert instance.contains_in_log(f"but it is a {kind} with the inner table"), f"no warning for {table}"
+    instance.query(f"BACKUP TABLE mv TO {new_backup_destination()}")
 
     instance.query("DROP TABLE mv SYNC")
     instance.query("DROP TABLE src SYNC")
