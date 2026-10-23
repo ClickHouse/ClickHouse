@@ -205,14 +205,20 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
             auto cache_key = getMetadataCacheKey();
             ParquetMetadataCache::MappedPtr cache_cell;
             bool cache_hit = false;
+            /// Shared with the readers of the other buckets of the file, also when the cache is enabled: the cell
+            /// in the cache gets the column chunks only after the initialization of a reader.
+            Parquet::SharedFileColumnChunksPtr shared_column_chunks = has_bucket_footer ? buckets_to_read->column_chunks : nullptr;
             if (cache_key)
             {
                 std::tie(cache_cell, cache_hit) = metadata_cache->getOrSetMetadata(*cache_key, load_footer);
-                reader->reader.setFileFooter(cache_cell->footer, cache_cell->column_chunks);
+                /// The cell may have been evicted and replaced since the split, then share nothing.
+                if (has_bucket_footer && cache_cell->footer != buckets_to_read->file_footer)
+                    shared_column_chunks = nullptr;
+                reader->reader.setFileFooter(cache_cell->footer, cache_cell->column_chunks, shared_column_chunks);
             }
             else if (has_bucket_footer)
             {
-                reader->reader.setFileFooter(buckets_to_read->file_footer, buckets_to_read->column_chunks);
+                reader->reader.setFileFooter(buckets_to_read->file_footer, {}, shared_column_chunks);
             }
             else
             {
@@ -517,7 +523,7 @@ std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitForParallelReading(
     Parquet::Prefetcher prefetcher;
     prefetcher.init(&buf, read_options, /*parser_shared_resources_=*/ nullptr);
     std::shared_ptr<const Parquet::FileFooter> footer;
-    std::vector<Parquet::FileColumnChunksPtr> column_chunks;
+    auto column_chunks = std::make_shared<Parquet::SharedFileColumnChunks>();
     /// Like the input format, uses the cache only if it's enabled. Otherwise, the footer parsed here is
     /// still shared by the readers of all buckets.
     ParquetMetadataCachePtr metadata_cache;
@@ -529,7 +535,6 @@ std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitForParallelReading(
         auto cell = metadata_cache->getOrSetMetadata(
             cache_key, [&] { return Parquet::Reader::readFileFooter(prefetcher, read_options.format.parquet.footer_read_size); }).first;
         footer = cell->footer;
-        column_chunks = cell->column_chunks;
     }
     else
     {

@@ -12,6 +12,7 @@
 #include <Common/StringValueFilter.h>
 
 #include <deque>
+#include <mutex>
 #include <optional>
 #include <unordered_set>
 
@@ -105,6 +106,17 @@ namespace DB::Parquet
 ///    distractions in Reader, which is the most complex part).
 ///  * ReadManager drives the Reader. Responsible for scheduling work to threads, thread safety,
 ///    limiting memory usage, and delivering output.
+
+/// Column chunks of one file, parsed by any of the readers that read parts of this file within one
+/// query (see `ParquetBucketSplitter::splitForParallelReading`). Each column is parsed only once and
+/// kept in memory once, regardless of the number of readers, even without `ParquetMetadataCache`.
+struct SharedFileColumnChunks
+{
+    std::mutex mutex;
+    /// By Parquet column index, nullptr if not parsed yet. Protected by `mutex`.
+    std::vector<FileColumnChunksPtr> column_chunks;
+};
+using SharedFileColumnChunksPtr = std::shared_ptr<SharedFileColumnChunks>;
 
 struct Reader
 {
@@ -641,11 +653,17 @@ struct Reader
     /// Works around writer bugs in column chunk metadata.
     static void fixUpColumnChunk(parq::ColumnChunk & column, bool written_by_old_duckdb);
     /// `cached_column_chunks`, by Parquet column index (nullptr = absent), were parsed from `footer`.
-    void setFileFooter(std::shared_ptr<const FileFooter> footer, std::vector<FileColumnChunksPtr> cached_column_chunks_ = {});
+    /// `shared_column_chunks_`, if not null, are taken from and filled with the column chunks of `footer`
+    /// that are not in `cached_column_chunks`, so that other readers of the same file don't parse them again.
+    void setFileFooter(
+        std::shared_ptr<const FileFooter> footer,
+        std::vector<FileColumnChunksPtr> cached_column_chunks_ = {},
+        SharedFileColumnChunksPtr shared_column_chunks_ = nullptr);
     void prefilterAndInitRowGroups(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read);
     /// Takes or parses the column chunks of `primitive_columns`; called by prefilterAndInitRowGroups.
     void parseColumnChunks();
-    /// Takes from the cache or parses those of `column_indices` (sorted, unique) that are not in `column_chunks` yet.
+    /// Takes from the cache, from `shared_column_chunks`, or parses those of `column_indices` (sorted, unique)
+    /// that are not in `column_chunks` yet.
     /// Never replaces an entry: ColumnChunk::meta points into them.
     void ensureColumnChunks(const std::vector<size_t> & column_indices);
     /// Only for the columns of `primitive_columns`, see parseColumnChunks.
@@ -806,6 +824,7 @@ private:
     std::vector<FileColumnChunksPtr> column_chunks;
     /// See setFileFooter, released by prefilterAndInitRowGroups.
     std::vector<FileColumnChunksPtr> cached_column_chunks;
+    SharedFileColumnChunksPtr shared_column_chunks;
 };
 
 }

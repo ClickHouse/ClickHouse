@@ -357,10 +357,14 @@ void Reader::fixUpColumnChunk(parq::ColumnChunk & column, bool written_by_old_du
     }
 }
 
-void Reader::setFileFooter(std::shared_ptr<const FileFooter> footer, std::vector<FileColumnChunksPtr> cached_column_chunks_)
+void Reader::setFileFooter(
+    std::shared_ptr<const FileFooter> footer,
+    std::vector<FileColumnChunksPtr> cached_column_chunks_,
+    SharedFileColumnChunksPtr shared_column_chunks_)
 {
     file_footer = std::move(footer);
     cached_column_chunks = std::move(cached_column_chunks_);
+    shared_column_chunks = std::move(shared_column_chunks_);
 }
 
 size_t Reader::numColumnChunks(size_t row_group_idx) const
@@ -392,6 +396,16 @@ void Reader::ensureColumnChunks(const std::vector<size_t> & column_indices)
 {
     if (!column_indices.empty() && column_indices.back() >= column_chunks.size())
         column_chunks.resize(column_indices.back() + 1);
+    /// Held while parsing, so that the readers of the same file that need the same columns at the same
+    /// time wait for one of them to parse them instead of parsing them too.
+    std::unique_lock<std::mutex> shared_lock;
+    std::vector<FileColumnChunksPtr> * shared = nullptr;
+    if (shared_column_chunks)
+    {
+        shared_lock = std::unique_lock(shared_column_chunks->mutex);
+        shared = &shared_column_chunks->column_chunks;
+    }
+
     std::vector<size_t> indices_to_parse;
     for (size_t column_idx : column_indices)
     {
@@ -399,6 +413,8 @@ void Reader::ensureColumnChunks(const std::vector<size_t> & column_indices)
             continue;
         if (column_idx < cached_column_chunks.size() && cached_column_chunks[column_idx])
             column_chunks[column_idx] = cached_column_chunks[column_idx];
+        else if (shared && column_idx < shared->size() && (*shared)[column_idx])
+            column_chunks[column_idx] = (*shared)[column_idx];
         else
             indices_to_parse.push_back(column_idx);
     }
@@ -414,6 +430,14 @@ void Reader::ensureColumnChunks(const std::vector<size_t> & column_indices)
             for (auto & column : parsed[k].chunks)
                 fixUpColumnChunk(column, written_by_old_duckdb);
             column_chunks[indices_to_parse[k]] = std::make_shared<const FileColumnChunks>(std::move(parsed[k]));
+        }
+
+        if (shared)
+        {
+            if (indices_to_parse.back() >= shared->size())
+                shared->resize(indices_to_parse.back() + 1);
+            for (size_t column_idx : indices_to_parse)
+                (*shared)[column_idx] = column_chunks[column_idx];
         }
     }
 }
@@ -1377,6 +1401,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     initColumnsCache();
     initializePrefetches();
     cached_column_chunks.clear();
+    shared_column_chunks.reset();
 }
 
 /// Glue to convert thrift types to equivalent arrow types because arrow felt the need to

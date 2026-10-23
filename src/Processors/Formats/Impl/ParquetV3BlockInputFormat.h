@@ -22,8 +22,9 @@ struct ParquetFileBucketInfo : public FileBucketInfo
     /// read from the same version of the file. Not serialized: the buckets sent to other servers don't
     /// carry it.
     std::shared_ptr<const Parquet::FileFooter> file_footer;
-    /// The column chunks of `file_footer` that were already parsed, see `ParquetMetadataCacheCell`.
-    std::vector<Parquet::FileColumnChunksPtr> column_chunks;
+    /// The column chunks of `file_footer`, shared by the readers of all buckets of the file, so that
+    /// each column is parsed only once, see `Parquet::SharedFileColumnChunks`. Not serialized.
+    Parquet::SharedFileColumnChunksPtr column_chunks;
 
     /// Whether the bucket is one of the buckets made by `ParquetBucketSplitter::splitForParallelReading`,
     /// so that the other row groups of the file are read by other readers of the same query rather than
