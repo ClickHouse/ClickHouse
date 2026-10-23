@@ -6,6 +6,9 @@
 
 #include <city.h>
 
+#include <optional>
+#include <string_view>
+
 
 namespace DB
 {
@@ -63,6 +66,19 @@ public:
     /// 'compressed_in' could be initialized lazily, but before first call of 'readCompressedData'.
     explicit CompressedReadBufferBase(ReadBuffer * in = nullptr, bool allow_different_codecs_ = false, bool external_data_ = false);
     virtual ~CompressedReadBufferBase();
+
+    /// A compressed block as it is stored: `payload` is what follows its header, which `method` begins.
+    struct CompressedBlock
+    {
+        UInt8 method = 0;
+        std::string_view payload;
+        size_t decompressed_bytes = 0;
+    };
+
+    /// The next block of `compressed_in`, its checksum checked unless checksums are disabled, without decompressing it,
+    /// for a reader that decompresses it elsewhere; nothing at the end of `compressed_in`. The payload is valid until the
+    /// next read. Not to be mixed with reads of decompressed data, whose position this does not know of.
+    std::optional<CompressedBlock> readCompressedBlock();
 
     /** Disable checksums.
       * For example, may be used when

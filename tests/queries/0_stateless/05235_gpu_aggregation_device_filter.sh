@@ -53,7 +53,9 @@ if [ "$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.build_options WHERE
     PROBE_ERROR=$($CLICKHOUSE_CLIENT --allow_experimental_gpu_aggregation 1 \
         --query "SELECT sum(v_u64) FROM gpu_device_filter" 2>&1 > /dev/null)
     if [ -z "$PROBE_ERROR" ]; then
-        GPU_SETTINGS=(--allow_experimental_gpu_aggregation 1)
+        # The plans checked below take the steps between the aggregation and the read without the columns they do
+        # not use, as the planner leaves them by default, whatever the test harness may set.
+        GPU_SETTINGS=(--allow_experimental_gpu_aggregation 1 --query_plan_remove_unused_columns 1)
         HAS_GPU=1
     elif [[ "$PROBE_ERROR" != *"Cannot aggregate on a GPU"* ]]; then
         echo "$PROBE_ERROR"

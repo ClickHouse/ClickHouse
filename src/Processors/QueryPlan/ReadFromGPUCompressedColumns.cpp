@@ -4,7 +4,6 @@
 
 #include <Columns/ColumnString.h>
 #include <Columns/IColumn.h>
-#include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -22,7 +21,9 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/ColumnSize.h>
-#include <Storages/MergeTree/MergeTreeCompressedBlockReader.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/MergeTreeIOSettings.h>
+#include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Common/CurrentThread.h>
 #include <Common/JSONBuilder.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
@@ -70,7 +71,7 @@ struct SharedState
     std::vector<ReadFromGPUCompressedColumns::PartToRead> parts;
     StorageSnapshotPtr storage_snapshot;
     ContextPtr context;
-    ReadSettings read_settings;
+    MergeTreeReaderSettings reader_settings = MergeTreeReaderSettings::createFromSettings();
     size_t batch_bytes;
     size_t num_readers = 1;
     GPUDecompressionMode decompression = GPUDecompressionMode::DEVICE;
@@ -106,6 +107,50 @@ size_t streamBytesOf(const IMergeTreeDataPart & part, const NameAndTypePair & co
     if (!stream_name)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} has no file for a stream of column {}", part.name, column.name);
     return part.checksums.files.at(*stream_name + ".bin").uncompressed_size;
+}
+
+/// A stream of a column of a wide part, read by its marks as `MergeTreeReaderWide` reads it, but without the
+/// uncompressed cache: as its compressed blocks, or through the buffer that decompresses them. `ranges` are what is
+/// read of the part, none for all of it.
+std::unique_ptr<MergeTreeReaderStream> openStream(
+    const IMergeTreeDataPart & part,
+    const NameAndTypePair & column,
+    const MergeTreeReaderSettings & settings,
+    const MarkRanges & ranges,
+    const ISerialization::SubstreamPath & substream_path = {})
+{
+    chassert(part.getType() == MergeTreeDataPartType::Wide);
+
+    const auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+        column, substream_path, ".bin", part.checksums, part.storage.getSettings());
+    if (!stream_name)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} has no file for a stream of column {}", part.name, column.name);
+
+    const size_t marks_count = part.getMarksCount();
+    auto marks_loader = std::make_shared<MergeTreeMarksLoader>(
+        std::make_shared<LoadedMergeTreeDataPartInfoForReader>(part.shared_from_this(), std::make_shared<AlterConversions>()),
+        part.storage.getContext()->getMarkCache().get(),
+        part.index_granularity_info.getMarksFilePath(*stream_name),
+        marks_count,
+        part.index_granularity_info,
+        settings.save_marks_in_cache,
+        settings.read_settings,
+        /*load_marks_threadpool=*/ nullptr,
+        /*num_columns_in_mark=*/ 1,
+        settings.use_streaming_marks_compression);
+
+    return std::make_unique<MergeTreeReaderStreamSingleColumn>(
+        part.getDataPartStoragePtr(),
+        *stream_name,
+        ".bin",
+        marks_count,
+        ranges.empty() ? MarkRanges{MarkRange(0, marks_count)} : ranges,
+        settings,
+        /*uncompressed_cache=*/ nullptr,
+        part.getFileSizeOrZero(*stream_name + ".bin"),
+        std::move(marks_loader),
+        ReadBufferFromFileBase::ProfileCallback{},
+        CLOCK_MONOTONIC_COARSE);
 }
 
 GPU::GPUCodec codecOrThrow(UInt8 method, std::string_view payload, const String & column_name, const IMergeTreeDataPart & part)
@@ -288,15 +333,14 @@ private:
 
         if (expandsOnDevice(state->decompression))
         {
-            MergeTreeCompressedBlockReader reader(part, column.column, state->read_settings);
+            const auto stream = openStream(part, column.column, state->reader_settings, {});
 
-            while (const auto block = reader.next())
+            while (const auto block = stream->readCompressedBlock())
             {
-                const std::string_view payload(block->payload, block->compressed_bytes);
                 if (!accumulator)
-                    accumulator = &accumulatorFor(column_idx, codecOrThrow(*reader.methodByte(), payload, column.column.name, part));
+                    accumulator = &accumulatorFor(column_idx, codecOrThrow(block->method, block->payload, column.column.name, part));
 
-                accumulator->addBlock(*reader.methodByte(), payload, block->decompressed_bytes);
+                accumulator->addBlock(block->method, block->payload, block->decompressed_bytes);
                 bytes_read += block->decompressed_bytes;
 
                 checkNotCancelled();
@@ -305,7 +349,8 @@ private:
         else
         {
             accumulator = &accumulatorFor(column_idx, std::nullopt);
-            CompressedReadBufferFromFile reader(MergeTreeCompressedBlockReader::openColumnFile(part, column.column, state->read_settings));
+            const auto stream = openStream(part, column.column, state->reader_settings, {});
+            ReadBuffer & reader = *stream->getDataBuffer();
 
             while (true)
             {
@@ -361,8 +406,8 @@ private:
 
         if (expandsOnDevice(state->decompression))
         {
-            MergeTreeCompressedBlockReader bytes_reader(part, column.column, state->read_settings);
-            MergeTreeCompressedBlockReader sizes_reader(part, column.column, state->read_settings, stringSizesPath());
+            const auto bytes_stream = openStream(part, column.column, state->reader_settings, {});
+            const auto sizes_stream = openStream(part, column.column, state->reader_settings, {}, stringSizesPath());
             size_t sizes_read = 0;
 
             while (bytes_read < bytes_total || sizes_read < sizes_total)
@@ -372,15 +417,13 @@ private:
                     ? part.rows_count
                     : static_cast<size_t>(static_cast<unsigned __int128>(bytes_read) * part.rows_count / bytes_total);
                 const bool reads_sizes = sizes_read < sizes_total && (bytes_read == bytes_total || sizes_read / sizeof(UInt64) <= rows_of_bytes);
-                MergeTreeCompressedBlockReader & reader = reads_sizes ? sizes_reader : bytes_reader;
-
-                const auto block = reader.next();
+                const auto block = (reads_sizes ? sizes_stream : bytes_stream)->readCompressedBlock();
                 if (!block)
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR, "A stream of column {} of part {} ended before its {} bytes", column.column.name, part.name, bytes_total);
 
-                const std::string_view payload(block->payload, block->compressed_bytes);
-                const UInt8 method = *reader.methodByte();
+                const std::string_view payload = block->payload;
+                const UInt8 method = block->method;
                 const GPU::GPUCodec codec = codecOrThrow(method, payload, column.column.name, part);
                 if (!accumulator)
                     accumulator = &accumulatorFor(column_idx, codec);
@@ -406,9 +449,10 @@ private:
         else
         {
             accumulator = &accumulatorFor(column_idx, std::nullopt);
-            CompressedReadBufferFromFile bytes_reader(MergeTreeCompressedBlockReader::openColumnFile(part, column.column, state->read_settings));
-            CompressedReadBufferFromFile sizes_reader(
-                MergeTreeCompressedBlockReader::openColumnFile(part, column.column, state->read_settings, stringSizesPath()));
+            const auto bytes_stream = openStream(part, column.column, state->reader_settings, {});
+            const auto sizes_stream = openStream(part, column.column, state->reader_settings, {}, stringSizesPath());
+            ReadBuffer & bytes_reader = *bytes_stream->getDataBuffer();
+            ReadBuffer & sizes_reader = *sizes_stream->getDataBuffer();
 
             while (rows_read < part.rows_count)
             {
@@ -705,46 +749,42 @@ private:
         /// Of a column of varying width: the accumulator's column its sizes go to.
         size_t offsets_column_index = 0;
 
+        /// `ranges` are what is read of the part, none for all of it.
         ColumnReader(
-            const IMergeTreeDataPart & part, const NameAndTypePair & column, const ReadSettings & read_settings, bool on_device, bool in_ranges)
+            const IMergeTreeDataPart & part,
+            const NameAndTypePair & column,
+            const MergeTreeReaderSettings & reader_settings,
+            bool on_device_,
+            const MarkRanges & ranges)
             : is_variable(isString(*column.type))
+            , on_device(on_device_)
             , element_size(is_variable ? 1 : column.type->getSizeOfValueInMemory())
             , rows_of_part(part.rows_count)
         {
-            if (in_ranges)
+            if (!ranges.empty())
             {
                 if (is_variable)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} of varying width is read in ranges of marks for the GPU", column.name);
-                marks = MergeTreeCompressedBlockReader::loadMarks(part, column, read_settings);
                 compressed_bytes_of_part = part.getColumnSize(column.name).data_compressed;
             }
 
-            if (on_device)
-            {
-                blocks.emplace(part, column, read_settings);
-                expected_bytes = part.getColumnSize(column.name).data_compressed;
-            }
-            else
-            {
-                raw = std::make_unique<CompressedReadBufferFromFile>(MergeTreeCompressedBlockReader::openColumnFile(part, column, read_settings));
-                expected_bytes = is_variable ? part.getColumnSize(column.name).data_uncompressed : part.rows_count * element_size;
-            }
+            stream = openStream(part, column, reader_settings, ranges);
+            expected_bytes = on_device ? part.getColumnSize(column.name).data_compressed
+                                       : (is_variable ? part.getColumnSize(column.name).data_uncompressed : part.rows_count * element_size);
 
             if (is_variable)
             {
-                if (on_device)
-                    sizes_blocks.emplace(part, column, read_settings, stringSizesPath());
-                else
-                    sizes_raw = std::make_unique<CompressedReadBufferFromFile>(
-                        MergeTreeCompressedBlockReader::openColumnFile(part, column, read_settings, stringSizesPath()));
+                sizes_stream = openStream(part, column, reader_settings, ranges, stringSizesPath());
                 chars_total = streamBytesOf(part, column, {});
                 sizes_total = streamBytesOf(part, column, stringSizesPath());
             }
         }
 
         const bool is_variable;
-        std::optional<MergeTreeCompressedBlockReader> blocks;
-        std::unique_ptr<CompressedReadBufferFromFile> raw;
+        /// Whether the stream is read as its compressed blocks, for the device to expand, or through the buffer that
+        /// decompresses them.
+        const bool on_device;
+        std::unique_ptr<MergeTreeReaderStream> stream;
         size_t element_size;
         size_t bytes_read = 0;
         /// What the column stages for the device: its compressed file when expanded there, its
@@ -753,42 +793,39 @@ private:
         size_t staged_bytes = 0;
         bool done = false;
 
-        /// Of a column of varying width: its sizes, as compressed blocks for the device or expanded on the host like
-        /// the values of the column, the bytes of them read, and the bytes of both of its streams in the part.
-        std::optional<MergeTreeCompressedBlockReader> sizes_blocks;
-        std::unique_ptr<CompressedReadBufferFromFile> sizes_raw;
+        /// Of a column of varying width: the stream of its sizes, read as the column's own, the bytes of them read, and
+        /// the bytes of both of its streams in the part.
+        std::unique_ptr<MergeTreeReaderStream> sizes_stream;
         size_t sizes_bytes_read = 0;
         size_t sizes_total = 0;
         size_t chars_total = 0;
         bool sizes_done = false;
         bool bytes_done = false;
 
-        /// Of a read in ranges of marks: where each granule starts, and, of the range being read, the bytes of its rows
-        /// and the bytes before them in the block it starts in, which are left out.
-        MergeTreeMarksGetterPtr marks;
+        /// Of a read in ranges of marks: of the range being read, the bytes of its rows and the bytes before them in the
+        /// block it starts in, which are left out.
         std::optional<size_t> range_bytes;
         size_t bytes_to_skip = 0;
         size_t compressed_bytes_of_part = 0;
         const size_t rows_of_part;
 
-        /// From the first block of the range, of the file of its compressed blocks, or from its first row, of the
-        /// values the host expands.
+        /// From the first block of the range, of its compressed blocks, or from its first row, of the values the host
+        /// expands; the stream reads no further than the end of the range.
         void startRange(const MarkRange & range, size_t num_rows)
         {
-            const MarkInCompressedFile mark = marks->getMark(range.begin, 0);
             bytes_read = 0;
             staged_bytes = 0;
             done = false;
             range_bytes = num_rows * element_size;
-            if (blocks)
+            stream->adjustRightMark(range.end);
+            stream->seekToMark(range.begin);
+            if (on_device)
             {
-                blocks->seekToBlock(mark.offset_in_compressed_file);
-                bytes_to_skip = mark.offset_in_decompressed_block;
+                bytes_to_skip = stream->getMark(range.begin).offset_in_decompressed_block;
                 expected_bytes = rows_of_part == 0 ? 0 : compressed_bytes_of_part * num_rows / rows_of_part + 1;
             }
             else
             {
-                raw->seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
                 expected_bytes = *range_bytes;
             }
         }
@@ -824,7 +861,7 @@ private:
     /// piece of them expanded on the host, in whole sizes.
     void readSizes(size_t reader_index, const IMergeTreeDataPart & part, ColumnReader & column)
     {
-        if (column.sizes_raw)
+        if (!column.on_device)
         {
             const size_t left = column.sizes_total > column.sizes_bytes_read ? column.sizes_total - column.sizes_bytes_read : 0;
             if (left == 0)
@@ -840,7 +877,7 @@ private:
             size_t read = 0;
             while (read < wanted)
             {
-                const size_t got = column.sizes_raw->readBig(room.data() + read, wanted - read);
+                const size_t got = column.sizes_stream->getDataBuffer()->readBig(room.data() + read, wanted - read);
                 if (got == 0)
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR, "The sizes of column {} of part {} ended after {} bytes of {}", column.column_index, part.name, column.sizes_bytes_read + read, column.sizes_total);
@@ -851,7 +888,7 @@ private:
             return;
         }
 
-        const auto block = column.sizes_blocks->next();
+        const auto block = column.sizes_stream->readCompressedBlock();
         if (!block)
         {
             column.sizes_done = true;
@@ -859,13 +896,12 @@ private:
             return;
         }
 
-        const std::string_view payload(block->payload, block->compressed_bytes);
-        codecOrThrow(*column.sizes_blocks->methodByte(), payload, std::to_string(column.column_index) + ".size", part);
+        codecOrThrow(block->method, block->payload, std::to_string(column.column_index) + ".size", part);
         accumulator.addCompressedBlock(
             reader_index,
             column.offsets_column_index,
-            *column.sizes_blocks->methodByte(),
-            payload,
+            block->method,
+            block->payload,
             block->decompressed_bytes,
             column.sizes_total > column.sizes_bytes_read ? column.sizes_total - column.sizes_bytes_read : 0);
         column.sizes_bytes_read += block->decompressed_bytes;
@@ -932,7 +968,7 @@ private:
         size_t column_index = 0;
         const auto add_reader = [&](const NameAndTypePair & column)
         {
-            readers.push_back(std::make_unique<ColumnReader>(part, column, state->read_settings, on_device, in_ranges));
+            readers.push_back(std::make_unique<ColumnReader>(part, column, state->reader_settings, on_device, part_to_read.ranges));
             readers.back()->column_index = column_index;
             if (readers.back()->is_variable)
                 readers.back()->offsets_column_index = accumulator.offsetsColumnOf(column_index);
@@ -996,7 +1032,7 @@ private:
             {
                 readSizes(reader_index, part, column);
             }
-            else if (column.raw)
+            else if (!column.on_device)
             {
                 if (column.remainingBytes() == 0)
                 {
@@ -1006,14 +1042,14 @@ private:
                     if (!column.range_bytes)
                     {
                         char past_end;
-                        column.bytes_read += column.raw->readBig(&past_end, 1);
+                        column.bytes_read += column.stream->getDataBuffer()->readBig(&past_end, 1);
                     }
                     column.finishBytes();
                     continue;
                 }
 
                 const std::span<char> room = accumulator.reserveRawBytes(reader_index, column.column_index, raw_piece_bytes, column.remainingBytes());
-                const size_t read = column.raw->readBig(
+                const size_t read = column.stream->getDataBuffer()->readBig(
                     room.data(), column.range_bytes ? std::min(room.size(), column.remainingBytes()) : room.size());
                 accumulator.commitRawBytes(reader_index, column.column_index, read);
                 if (read == 0)
@@ -1027,7 +1063,7 @@ private:
             }
             else
             {
-                const auto block = column.blocks->next();
+                const auto block = column.stream->readCompressedBlock();
                 if (!block)
                 {
                     column.finishBytes();
@@ -1046,18 +1082,17 @@ private:
 
                 if (kept != 0)
                 {
-                    const std::string_view payload(block->payload, block->compressed_bytes);
-                    codecOrThrow(*column.blocks->methodByte(), payload, std::to_string(column.column_index), part);
+                    codecOrThrow(block->method, block->payload, std::to_string(column.column_index), part);
                     accumulator.addCompressedBlock(
                         reader_index,
                         column.column_index,
-                        *column.blocks->methodByte(),
-                        payload,
+                        block->method,
+                        block->payload,
                         block->decompressed_bytes,
                         column.remainingBytes(),
                         skipped,
                         kept);
-                    column.staged_bytes += block->compressed_bytes;
+                    column.staged_bytes += block->payload.size();
                 }
                 column.bytes_read += kept;
                 if (column.range_bytes && column.bytes_read == *column.range_bytes)
@@ -1180,7 +1215,7 @@ void ReadFromGPUCompressedColumns::initializePipeline(QueryPipelineBuilder & pip
     state->parts = std::move(parts);
     state->storage_snapshot = storage_snapshot;
     state->context = context;
-    state->read_settings = context->getReadSettings();
+    state->reader_settings = MergeTreeReaderSettings::createFromContext(context);
     state->decompression = decompression;
     state->batch_bytes = batch_bytes;
     state->num_readers = num_readers != 0 ? num_readers : automaticReaders(*state);
