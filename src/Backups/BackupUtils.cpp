@@ -209,7 +209,7 @@ bool isDataOnBackupMetadataOnlyStoragePolicy(const StoragePtr & storage, const C
 
     if (const auto * time_series = typeid_cast<const StorageTimeSeries *>(storage.get()))
     {
-        for (auto target_kind : StorageTimeSeries::getTargetKinds())
+        for (auto target_kind : time_series->getTargetKinds())
         {
             if (!time_series->isInnerTable(target_kind))
                 continue;
