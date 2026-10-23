@@ -1283,7 +1283,7 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
 void StorageObjectStorage::alterSettings(const StorageInMemoryMetadata & new_metadata, ContextPtr context)
 {
     auto new_settings = std::make_shared<DataLakeStorageSettings>();
-    new_settings->loadFromQuery(new_metadata.settings_changes->as<ASTSetQuery &>());
+    new_settings->loadFromQuery(new_metadata.getSettingsChanges()->as<ASTSetQuery &>());
 
     /// The metadata object of the table is created again with the new settings. It takes the global context rather
     /// than the context of the query, so that the settings of the session which runs the `ALTER` do not stick to it.

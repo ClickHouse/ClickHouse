@@ -130,7 +130,7 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     {
         auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
         auto metadata = *metadata_snapshot;
-        metadata.settings_changes = args.storage_def->settings->ptr();
+        metadata.setSettingsChanges(args.storage_def->settings->ptr());
         storage->setInMemoryMetadata(metadata);
     }
 
