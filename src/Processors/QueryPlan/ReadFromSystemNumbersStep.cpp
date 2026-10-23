@@ -689,6 +689,10 @@ Pipe ReadFromSystemNumbersStep::makePipe()
     {
         chassert(numbers_storage.step == 1);
 
+        /// The chunks of all streams together must fit into the range of `UInt64`, otherwise they overlap.
+        if (num_streams > std::numeric_limits<UInt64>::max() / max_block_size)
+            num_streams = std::numeric_limits<UInt64>::max() / max_block_size;
+
         /// Distance between the starts of consecutive chunks in a single source.
         /// For multiple streams, each source jumps by `num_streams * block_range` to avoid overlap.
         const UInt64 step_between_chunks = num_streams * max_block_size;

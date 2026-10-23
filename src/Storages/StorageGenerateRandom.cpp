@@ -2125,7 +2125,7 @@ Pipe StorageGenerateRandom::read(
     }
 
     UInt64 query_limit = query_info.trivial_limit;
-    if (query_limit && num_streams * max_block_size > query_limit)
+    if (query_limit)
     {
         /// We want to avoid spawning more streams than necessary
         num_streams = std::min(
