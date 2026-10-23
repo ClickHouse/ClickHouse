@@ -2590,7 +2590,12 @@ def create_iceberg_databases(port, server_path, with_s3_read_dataset):
 
 
 def attach_datasets(port, server_db):
-    """Attach the staged datasets of one server, see DATASETS_STAGING_DIR. Re-entrant: an attached table is skipped."""
+    """Attach the staged datasets of one server, see DATASETS_STAGING_DIR. Re-entrant: an attached table is skipped.
+
+    The staged definition of a table is removed once it is attached, so a retry never attaches it again:
+    populate_data may have consumed the table since (datasets.hits_v1 is rebuilt into test.hits and dropped),
+    and attaching its definition again would create an empty table, as its data directory is gone.
+    """
     client = _perf_client(port)
     staging = Path(server_db) / "user_files" / DATASETS_STAGING_DIR
     if not staging.is_dir():
@@ -2600,9 +2605,17 @@ def attach_datasets(port, server_db):
         Shell.check(f'{client} --query "CREATE DATABASE IF NOT EXISTS {database}"', strict=True, verbose=True)
         for table_metadata in sorted(database_dir.glob("*.sql")):
             table = table_metadata.stem
+            attach_query_file = table_metadata.with_suffix(".attach")
             if Shell.get_output(f'{client} --query "EXISTS TABLE {database}.{table}"').strip() == "1":
+                # Attached by a previous run that was interrupted before it removed the staged definition.
                 print(f"attach_datasets: {database}.{table} is already attached, skipping")
+                table_metadata.unlink()
+                attach_query_file.unlink(missing_ok=True)
                 continue
+            # `ATTACH TABLE ... FROM` creates a missing data directory instead of failing: fail rather than
+            # test with an empty table.
+            if not (database_dir / table).is_dir():
+                raise RuntimeError(f"attach_datasets: no data directory {database_dir / table} for {table_metadata}")
             # `ATTACH TABLE <table>` with the definition, as written by an `Ordinary` database, becomes
             # `ATTACH TABLE <database>.<table> FROM '<data directory>'` with the same definition.
             query, count = re.subn(
@@ -2613,9 +2626,10 @@ def attach_datasets(port, server_db):
             )
             if count != 1:
                 raise RuntimeError(f"attach_datasets: unexpected table definition in {table_metadata}")
-            attach_query_file = table_metadata.with_suffix(".attach")
             attach_query_file.write_text(query)
             Shell.check(f"{client} --queries-file {quote(str(attach_query_file))}", strict=True, verbose=True)
+            table_metadata.unlink()
+            attach_query_file.unlink()
 
 
 def populate_data(port):
