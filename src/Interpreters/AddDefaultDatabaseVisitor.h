@@ -4,6 +4,7 @@
 #include <Core/QualifiedTableName.h>
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTRenameQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -23,6 +24,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/misc.h>
 #include <Poco/String.h>
 #include <set>
@@ -274,6 +276,9 @@ private:
             return;
 
         auto & arguments = function.arguments->children;
+
+        if ((is_join_get || is_dict_get) && !arguments.empty())
+            foldConstantNameArgument(arguments[0]);
 
         if (is_join_get && !arguments.empty())
         {
@@ -737,6 +742,49 @@ private:
             argument = make_intrusive<ASTIdentifier>(std::vector<String>{bound_database, bound_table});
     }
 
+    /// Whether the subtree consists of functions and literals only: a constant expression that can be evaluated now.
+    /// An identifier (a column, an alias) or a query parameter (of a parameterized view) is only known later.
+    static bool isFunctionOfLiterals(const IAST & ast)
+    {
+        if (ast.as<ASTLiteral>())
+            return true;
+        if (!ast.as<ASTFunction>() && !ast.as<ASTExpressionList>())
+            return false;
+        for (const auto & child : ast.children)
+            if (!isFunctionOfLiterals(*child))
+                return false;
+        return true;
+    }
+
+    /// The first argument of `joinGet` or `dictGet` given as a constant expression (`concat('ns', '.j')`) is replaced
+    /// with the string it evaluates to, so that the name is qualified and bound like a string literal: a stored or
+    /// shipped query must not be silently retargeted when a database `ns` or a table of the same name appears later.
+    /// `currentDatabase()` in the expression is the database the names are qualified with, like in `merge`.
+    void foldConstantNameArgument(ASTPtr & argument) const
+    {
+        if (!bind_qualified_names || database_name.empty())
+            return;
+
+        if (!argument->as<ASTFunction>() || !isFunctionOfLiterals(*argument))
+            return;
+
+        ASTPtr expression = argument->clone();
+        if (const auto * function = expression->as<ASTFunction>(); function && isCurrentDatabaseFunction(*function))
+            expression = make_intrusive<ASTLiteral>(database_name);
+        else
+            for (auto & child : expression->children)
+                substituteCurrentDatabase(child, *expression);
+
+        Field value = evaluateConstantExpression(expression, context).first;
+        if (value.getType() != Field::Types::String)
+            return;
+
+        auto literal = make_intrusive<ASTLiteral>(value);
+        if (String alias = argument->tryGetAlias(); !alias.empty())
+            literal->setAlias(alias);
+        argument = literal;
+    }
+
     /// A qualified table name carried by the first argument of `joinGet` is bound like in `visitCompound`.
     void bindQualifiedJoinGetArgument(ASTPtr & argument) const
     {
@@ -807,6 +855,9 @@ private:
             {
                 for (size_t i = 0; i < child->children.size(); ++i)
                 {
+                    if ((is_join_get || is_dict_get) && i == 0)
+                        foldConstantNameArgument(child->children[i]);
+
                     if (is_join_get && i == 0)
                     {
                         /// An unqualified name is left alone, but a qualified one is bound to the table it denotes now,
