@@ -122,6 +122,8 @@ struct MergeTreeReaderSettings
     /// If true, compress marks into the in-memory representation one block at a time
     /// instead of materializing the full plain marks array.
     bool use_streaming_marks_compression = false;
+    /// Expand the compressed blocks of the streams on the GPU, see `allow_experimental_gpu_read_decompression`.
+    bool gpu_decompression = false;
     /// If true, only column sample with 0 rows will be read.
     /// This information can be used for more optimal reading of
     /// columns prefixes.

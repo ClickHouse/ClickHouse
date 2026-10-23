@@ -11363,6 +11363,17 @@ Maximum number of WebAssembly UDF instances that can run in parallel per functio
 Enable experimental table function `eval`.
 )", EXPERIMENTAL, \
         {"26.7", false, false, "New setting to enable the experimental table function `eval`."}) \
+    DECLARE(Bool, allow_experimental_gpu_read_decompression, false, R"(
+Expand the compressed blocks that a read of a `MergeTree` table decompresses on a CUDA GPU instead of on the CPU, for
+every read of a wide part: the columns the query reads come back to the CPU decompressed, and the rest of the query
+runs as it would. A stream of a column reads a batch of its blocks ahead, the device expands them at once, and they
+are copied back to host memory. Every block of a codec the device expands goes to it - `LZ4`, `ZSTD`, `GDeflate`,
+alone or after `BitPacking`; a block of any other codec is decompressed on the CPU. Not with the uncompressed cache,
+whose blocks are decompressed on the CPU.
+
+Requires a build with `-DENABLE_GPU=1` and has no effect without one.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New experimental setting to expand the compressed blocks of reads of `MergeTree` tables on a GPU."}) \
     DECLARE(Bool, allow_experimental_gpu_aggregation, false, R"(
 Compute supported aggregations on a CUDA GPU instead of on the CPU.
 

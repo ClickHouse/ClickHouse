@@ -1,6 +1,10 @@
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
+
+#include "config.h"
+
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Compression/CachedCompressedReadBuffer.h>
+#include <GPU/GPUCompressedReadBuffer.h>
 #include <IO/ReadPipeline.h>
 
 #include <base/getThreadId.h>
@@ -132,6 +136,22 @@ void MergeTreeReaderStream::init()
         data_buffer = read_buffer_holder.get();
         compressed_data_buffer = static_cast<CachedCompressedReadBuffer *>(read_buffer_holder.get());
     }
+#if USE_GPU
+    else if (settings.gpu_decompression)
+    {
+        auto buffer = std::make_unique<GPUCompressedReadBuffer>(build_read_buffer(), /* allow_different_codecs */ true);
+
+        if (profile_callback)
+            buffer->setProfileCallback(profile_callback, clock_type);
+
+        if (!settings.checksum_on_read)
+            buffer->disableChecksumming();
+
+        read_buffer_holder = std::move(buffer);
+        data_buffer = read_buffer_holder.get();
+        compressed_data_buffer = static_cast<GPUCompressedReadBuffer *>(read_buffer_holder.get());
+    }
+#endif
     else
     {
         auto buffer = std::make_unique<CompressedReadBufferFromFile>(

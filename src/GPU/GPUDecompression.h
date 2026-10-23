@@ -113,6 +113,9 @@ private:
 class SyncDecompressor
 {
 public:
+    /// On `stream_`, of the device's decompression stream by default, which every other user of it shares.
+    explicit SyncDecompressor(cuda::stream_ref stream_ = GPUResources::get().decompression);
+
     void decompress(
         GPUCodec codec,
         std::string_view host_compressed,
@@ -120,9 +123,21 @@ public:
         std::span<const BitPackingBlock> packed,
         char * device_destination);
 
+    /// Expands into a device buffer of its own and copies what the blocks expand to, `valueBytesOf` them, to
+    /// `host_destination`, which should be pinned for the copy to be fast, blocking until both are done.
+    void decompressToHost(
+        GPUCodec codec,
+        std::string_view host_compressed,
+        std::span<const CompressedBlock> blocks,
+        std::span<const BitPackingBlock> packed,
+        char * host_destination);
+
 private:
+    cuda::stream_ref stream;
     DecompressionBatch batch;
-    DeviceBuffer device_compressed{GPUResources::get().decompression};
+    DeviceBuffer device_compressed;
+    DeviceBuffer device_expanded;
+    EventPtr expanded_ready = createEvent();
 };
 
 /// Expands already uploaded pieces into the caller's device buffer without blocking: `launch` queues the work, and

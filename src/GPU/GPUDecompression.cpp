@@ -241,6 +241,58 @@ GPUCodec stageCompressedBlock(
     return *codec;
 }
 
+SyncDecompressor::SyncDecompressor(cuda::stream_ref stream_)
+    : stream(stream_)
+    , batch(stream_)
+    , device_compressed(stream_)
+    , device_expanded(stream_)
+{
+}
+
+void SyncDecompressor::decompressToHost(
+    GPUCodec codec,
+    std::string_view host_compressed,
+    std::span<const CompressedBlock> blocks,
+    std::span<const BitPackingBlock> packed,
+    char * host_destination)
+{
+    const size_t bytes = valueBytesOf(blocks, packed);
+    if (blocks.empty() || bytes == 0)
+        return;
+
+    /// The expanded bytes are allocated in the order of this stream, and the expansion waits for that alone, not for
+    /// the compute stream as it would without an event.
+    device_expanded.clear();
+    char * const destination = device_expanded.grow(bytes);
+    checkCuda(cudaEventRecord(expanded_ready.get(), stream.get()), "Cannot mark a point in a decompression stream");
+
+    size_t compressed_total = 0;
+    for (const CompressedBlock & block : blocks)
+        compressed_total = std::max(compressed_total, block.offset + block.compressed_bytes);
+    if (compressed_total > host_compressed.size())
+        throw Exception(
+            ErrorCodes::GPU_ERROR, "The compressed blocks reach {} bytes into a staging buffer of {}", compressed_total, host_compressed.size());
+
+    waitOnFailure(stream, [&]
+    {
+        device_compressed.clear();
+        device_compressed.append(host_compressed.substr(0, compressed_total));
+
+        const CompressedPiece piece{
+            .device_compressed = device_compressed.data(),
+            .compressed_bytes = compressed_total,
+            .blocks = blocks,
+            .packed = packed,
+        };
+        batch.launch(codec, std::span<const CompressedPiece>(&piece, 1), destination, expanded_ready.get());
+        checkCuda(
+            cudaMemcpyAsync(host_destination, destination, bytes, cudaMemcpyDeviceToHost, stream.get()),
+            "Cannot copy expanded bytes back from the device");
+    });
+    batch.waitAndCheck();
+    checkCuda(cudaStreamSynchronize(stream.get()), "Cannot wait for expanded bytes to come back from the device");
+}
+
 void SyncDecompressor::decompress(
     GPUCodec codec,
     std::string_view host_compressed,
@@ -262,7 +314,7 @@ void SyncDecompressor::decompress(
     if (blocks.empty())
         return;
 
-    waitOnFailure(GPUResources::get().decompression, [&]
+    waitOnFailure(stream, [&]
     {
         device_compressed.clear();
         device_compressed.append(host_compressed.substr(0, compressed_total));

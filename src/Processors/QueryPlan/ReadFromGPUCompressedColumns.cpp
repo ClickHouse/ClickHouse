@@ -1216,6 +1216,9 @@ void ReadFromGPUCompressedColumns::initializePipeline(QueryPipelineBuilder & pip
     state->storage_snapshot = storage_snapshot;
     state->context = context;
     state->reader_settings = MergeTreeReaderSettings::createFromContext(context);
+    /// This read takes the compressed blocks themselves, which the device expands, or decompresses them on the host when
+    /// told to: a stream that expands them on the device for the host has nothing to do here.
+    state->reader_settings.gpu_decompression = false;
     state->decompression = decompression;
     state->batch_bytes = batch_bytes;
     state->num_readers = num_readers != 0 ? num_readers : automaticReaders(*state);
@@ -1225,8 +1228,9 @@ void ReadFromGPUCompressedColumns::initializePipeline(QueryPipelineBuilder & pip
         for (const NameAndTypePair & column : filter->columns)
         {
             std::optional<uint32_t> alias;
+            /// A float key is held as the integer of its bits, which the filter does not compare as a float.
             for (size_t i = 0; i < keys.size() && !alias; ++i)
-                if (keys[i].name == column.name && keys[i].type->equals(*column.type))
+                if (keys[i].name == column.name && keys[i].type->equals(*column.type) && !GPU::isFloatKey(*keys[i].type))
                     alias = static_cast<uint32_t>(i);
             for (size_t i = 0; i < columns.size() && !alias; ++i)
                 if (columns[i].column.name == column.name && columns[i].column.type->equals(*column.type))
