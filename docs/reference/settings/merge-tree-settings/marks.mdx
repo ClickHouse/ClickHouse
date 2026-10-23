@@ -15,7 +15,7 @@ These settings are available in [system.merge_tree_settings](/reference/system-t
 ## marks_compress_block_size {#marks_compress_block_size}
 <SettingsInfoBlock type="NonZeroUInt64" default_value="65536" />
 
-Mark compress block size, the actual size of the block to compress.
+Size, in uncompressed bytes, of blocks used when writing compressed mark files for new or rewritten data parts. Applies only when `compress_marks` is enabled. This controls compression framing and buffering; it does not change index granularity.
 
 ## marks_compression_codec {#marks_compression_codec}
 <SettingsInfoBlock type="String" default_value="ZSTD(3)" />

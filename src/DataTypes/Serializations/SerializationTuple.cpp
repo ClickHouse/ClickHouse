@@ -14,6 +14,7 @@
 #include <IO/PeekableReadBuffer.h>
 #include <IO/WriteBufferFromString.h>
 
+#include <algorithm>
 #include <optional>
 
 namespace DB
@@ -231,6 +232,13 @@ static ReturnType addElementSafe(size_t num_elems, IColumn & column, F && impl)
 void SerializationTuple::readElementsSafe(DB::IColumn & column, std::function<void()> && read_func)
 {
     addElementSafe<void>(assert_cast<ColumnTuple &>(column).getColumns().size(), column, [&](){ read_func(); return true; });
+}
+
+SerializationTuple::SerializationTuple(ElementSerializations elems_, bool has_explicit_names_)
+    : elems(std::move(elems_))
+    , has_explicit_names(has_explicit_names_)
+    , elems_support_pooling(std::ranges::all_of(elems, [](const auto & elem) { return elem->supportsPooling(); }))
+{
 }
 
 SerializationPtr SerializationTuple::create(ElementSerializations elems_, bool has_explicit_names_)
@@ -1015,12 +1023,12 @@ struct DeserializeBinaryBulkStateTuple : public ISerialization::DeserializeBinar
 {
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> states;
 
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext & context) const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateTuple>();
         new_state->states.reserve(states.size());
         for (const auto & state : states)
-            new_state->states.push_back(state ? state->clone() : nullptr);
+            new_state->states.push_back(state ? state->clone(context) : nullptr);
 
         return new_state;
     }
@@ -1187,10 +1195,7 @@ size_t SerializationTuple::allocatedBytes() const
 
 bool SerializationTuple::supportsPooling() const
 {
-    for (const auto & elem : elems)
-        if (!elem->supportsPooling())
-            return false;
-    return true;
+    return elems_support_pooling;
 }
 
 MutableColumnPtr SerializationTuple::wrapColumnForDeserialization(MutableColumnPtr column) const

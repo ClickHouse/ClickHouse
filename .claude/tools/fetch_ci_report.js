@@ -502,6 +502,57 @@ function extractArtifactLinks(jsonData) {
 }
 
 /**
+ * The merge queue re-tests a PR merged with the latest base branch (workflow `MergeQueueCI`, ref
+ * `gh-readonly-queue/<base>/pr-<N>-<sha>`), so it can reject a PR whose own CI is all green - typically
+ * a semantic conflict with the base branch. Return the top-level `MergeQueueCI` report URL of the run
+ * that removed the PR from the queue, or null when the PR was not removed after its last commit (or
+ * was removed because it merged). Failures to query GitHub are reported and yield null: the PR
+ * reports are still useful on their own.
+ */
+function getMergeQueueRejection(prNumber, ghEnv) {
+  const query = `query { repository(owner: "ClickHouse", name: "ClickHouse") { pullRequest(number: ${prNumber}) {
+      mergeQueueEntry { state }
+      commits(last: 1) { nodes { commit { committedDate } } }
+      timelineItems(last: 1, itemTypes: [ADDED_TO_MERGE_QUEUE_EVENT, REMOVED_FROM_MERGE_QUEUE_EVENT]) {
+        nodes { __typename ... on RemovedFromMergeQueueEvent { createdAt reason beforeCommit { oid } } } } } } }`;
+  let pr;
+  try {
+    pr = JSON.parse(execFileSync('gh', ['api', 'graphql', '-f', `query=${query}`],
+      { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], env: ghEnv })).data.repository.pullRequest;
+  } catch (e) {
+    console.log(`Note: could not check the merge queue state of PR #${prNumber} (${e.message.split('\n')[0]}).\n`);
+    return null;
+  }
+  const event = pr.timelineItems.nodes[0];
+  const committed = pr.commits.nodes[0]?.commit.committedDate || '';
+  if (pr.mergeQueueEntry || !event || event.__typename !== 'RemovedFromMergeQueueEvent'
+      || event.reason === 'merged' || !event.beforeCommit || event.createdAt <= committed) {
+    return null;
+  }
+  const sha = event.beforeCommit.oid;
+  console.log(`⚠️  PR #${prNumber} was removed from the merge queue at ${event.createdAt} (reason: ${event.reason}); `
+    + `the merge-queue run tested commit ${sha}, the PR merged with the latest base branch.\n`);
+  // The `gh-readonly-queue/...` ref name is not derivable from the commit alone (the queue position
+  // decides the base), so take the report URL from the commit statuses, where Praktika posts its links
+  // (the check runs link to GitHub Actions jobs instead).
+  let targetUrls = [];
+  try {
+    targetUrls = execFileSync('gh', ['api', `repos/ClickHouse/ClickHouse/commits/${sha}/statuses`, '--paginate',
+      '--jq', '.[].target_url // empty'], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], env: ghEnv })
+      .split('\n').filter(Boolean);
+  } catch (e) {
+    console.log(`Note: could not list the statuses of merge-queue commit ${sha} (${e.message.split('\n')[0]}).\n`);
+    return null;
+  }
+  const reportUrl = targetUrls.find(u => /praktika\.html\?REF=/.test(u) && /[?&]name_0=MergeQueueCI/.test(u));
+  if (!reportUrl) {
+    console.log(`Note: no MergeQueueCI report link among the statuses of commit ${sha}.\n`);
+    return null;
+  }
+  return reportUrl.replace(/&name_1=[^&]*/, '');
+}
+
+/**
  * Extract CI report URLs from a GitHub PR
  */
 async function getCIReportsFromPR(prUrl) {
@@ -528,7 +579,13 @@ async function getCIReportsFromPR(prUrl) {
     });
 
     const comments = commentsJson.trim().split('\n').filter(l => l.trim()).map(l => JSON.parse(l));
-    comments.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+    // The workflow report links live in the `:report:` comment. The bot also posts other comments with
+    // report links (e.g. `:build-profile-diff:`, linking a single job), often later than the `:report:`
+    // one, so take the `:report:` comment first and the others (newest first) only as a fallback;
+    // otherwise a later build-profile comment hides every other report of the PR.
+    const isReportComment = c => (c.body || '').includes('CI automatic comment start :report:');
+    comments.sort((a, b) => (isReportComment(b) - isReportComment(a))
+      || (b.created_at || '').localeCompare(a.created_at || ''));
     if (!comments || comments.length === 0) {
       throw new Error('No CI bot comment found');
     }
@@ -543,6 +600,8 @@ async function getCIReportsFromPR(prUrl) {
       let urls = comment.body.match(reportUrlPattern);
       if (urls && urls.length > 0) {
         urls = urls.map(u => u.replace(/[.,;]+$/, ''));
+        const mergeQueueUrl = getMergeQueueRejection(prNumber, ghEnv);
+        if (mergeQueueUrl) urls.push(mergeQueueUrl);
         return [...new Set(urls)];
       }
     }
@@ -747,9 +806,14 @@ async function fetchReport(inputUrl, options = {}) {
       // job by synthesizing its per-job report URL (praktika.html?...&name_1=<job>, the same form the
       // loop below already fetches). Without this, a failing PR URL would yield only failed job
       // names -- no test names, labels, or CIDB links for steps 2-3.
-      const hasNested = ciUrls.some(u => /[?&]name_1=/.test(u));
-      const topLevelUrl = ciUrls.find(u => /[?&]name_0=/.test(u) && !/[?&]name_1=/.test(u));
-      if (!hasNested && topLevelUrl) {
+      // A PR rejected by the merge queue has a second top-level report (`MergeQueueCI`), so expand each
+      // top-level report whose workflow has no job report linked explicitly.
+      const workflowOf = u => u.replace(/&name_1=[^&]*/, '');
+      const topLevelUrls = ciUrls.filter(u => /[?&]name_0=/.test(u) && !/[?&]name_1=/.test(u));
+      const allGreenTopLevel = [];
+      let failedChildCount = 0;
+      for (const topLevelUrl of topLevelUrls) {
+        if (ciUrls.some(u => /[?&]name_1=/.test(u) && workflowOf(u) === topLevelUrl)) continue;
         try {
           const top = await fetchReport(topLevelUrl, { ...options, isSingleReport: true });
           const childUrls = childReportUrlsForFailedJobs(topLevelUrl, top.jsonData);
@@ -757,20 +821,30 @@ async function fetchReport(inputUrl, options = {}) {
             if (!ciUrls.includes(childUrl)) ciUrls.push(childUrl);
           }
           if (childUrls.length > 0) {
-            console.log(`Top-level PR report is an index — descending into ${childUrls.length} failed job report(s).`);
+            failedChildCount += childUrls.length;
+            console.log(`Top-level report ${topLevelUrl} is an index — descending into ${childUrls.length} failed job report(s).`);
           } else {
-            // No failures (all-green PR): expand to ALL concrete children so the display list
-            // and --report N indices are consistent with each other.
-            const allChildren = allChildReportUrls(topLevelUrl, top.jsonData).filter(isConcreteJobUrl);
-            if (allChildren.length > 0) {
-              for (const childUrl of allChildren) {
-                if (!ciUrls.includes(childUrl)) ciUrls.push(childUrl);
-              }
-              console.log(`Top-level PR report is all-green — expanded into ${allChildren.length} concrete job report(s).`);
-            }
+            allGreenTopLevel.push({ topLevelUrl, jsonData: top.jsonData });
           }
         } catch (e) {
-          console.log(`Note: could not expand the top-level PR report into job reports (${e.message}); showing job-level failures only.`);
+          console.log(`Note: could not expand the top-level report ${topLevelUrl} into job reports (${e.message}); showing job-level failures only.`);
+        }
+      }
+      // An all-green top-level report is expanded into ALL its concrete children, so the display list
+      // and --report N indices are consistent with each other. But when another workflow already
+      // contributed failed jobs (e.g. a green `PR` run of a PR rejected by `MergeQueueCI`), its ~150
+      // green jobs would only bury the failures, so leave it out.
+      for (const { topLevelUrl, jsonData } of allGreenTopLevel) {
+        if (failedChildCount > 0) {
+          console.log(`Top-level report ${topLevelUrl} is all-green — not expanded, because another workflow has failed jobs.`);
+          continue;
+        }
+        const allChildren = allChildReportUrls(topLevelUrl, jsonData).filter(isConcreteJobUrl);
+        if (allChildren.length > 0) {
+          for (const childUrl of allChildren) {
+            if (!ciUrls.includes(childUrl)) ciUrls.push(childUrl);
+          }
+          console.log(`Top-level report ${topLevelUrl} is all-green — expanded into ${allChildren.length} concrete job report(s).`);
         }
       }
 
@@ -1072,7 +1146,8 @@ async function main() {
 Usage: node fetch_ci_report.js <url> [options]
 
 URL formats:
-  - GitHub PR: https://github.com/ClickHouse/ClickHouse/pull/12345 (fetches ALL CI reports)
+  - GitHub PR: https://github.com/ClickHouse/ClickHouse/pull/12345 (fetches ALL CI reports, plus the
+               merge-queue run if the merge queue removed the PR after its last commit)
   - CI HTML:   https://s3.amazonaws.com/.../praktika.html?PR=...&sha=...&name_0=...
   - Direct JSON: https://s3.amazonaws.com/.../result_*.json
 
