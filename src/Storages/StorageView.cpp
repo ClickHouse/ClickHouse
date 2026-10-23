@@ -338,6 +338,17 @@ StoragePtr tryGetTrivialViewUnderlyingStorage(const ASTPtr & inner_query, Contex
 ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot, const StorageView * view)
 {
     auto view_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(context);
+    if (context->hasQueryContext() && view_context->hasQueryContext())
+    {
+        auto query_context = context->getQueryContext();
+        auto view_query_context = view_context->getQueryContext();
+        if (storage_snapshot->metadata->sql_security_type == SQLSecurityType::DEFINER
+            || storage_snapshot->metadata->sql_security_type == SQLSecurityType::NONE)
+            query_context->markQueryAccessInfoHiddenFromUserQueryLog();
+        if (view_query_context != query_context)
+            view_query_context->setQueryAccessInfo(query_context->getQueryAccessInfoPtr());
+    }
+
     Settings view_settings = view_context->getSettingsCopy();
 
     /// With plan-based parallel replicas we always build local, so there is no need to disable parallel replicas
@@ -951,6 +962,17 @@ Used for implementing views (for more information, see the `CREATE VIEW query`).
 ContextPtr StorageView::getViewSubqueryContext(ContextPtr context, const StorageSnapshotPtr &storage_snapshot)
 {
     auto view_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(context);
+    if (context->hasQueryContext() && view_context->hasQueryContext())
+    {
+        auto query_context = context->getQueryContext();
+        auto view_query_context = view_context->getQueryContext();
+        if (storage_snapshot->metadata->sql_security_type == SQLSecurityType::DEFINER
+            || storage_snapshot->metadata->sql_security_type == SQLSecurityType::NONE)
+            query_context->markQueryAccessInfoHiddenFromUserQueryLog();
+        if (view_query_context != query_context)
+            view_query_context->setQueryAccessInfo(query_context->getQueryAccessInfoPtr());
+    }
+
     Settings view_settings = view_context->getSettingsCopy();
     view_settings[Setting::max_result_rows] = 0;
     view_settings[Setting::max_result_bytes] = 0;

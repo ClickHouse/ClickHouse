@@ -7076,7 +7076,7 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
         initializeTableExpressionData(static_pointer_cast<ITableExpressionNode>(join_tree_node), scope);
 
         auto & query_node = scope.scope_node->as<QueryNode &>();
-        auto & mutable_context = query_node.getMutableContext();
+        const auto & mutable_context = query_node.getMutableContext();
 
         if (!mutable_context->isDistributed())
         {
@@ -7985,7 +7985,7 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
     {
         auto & non_recursive_query = queries_nodes[0];
         bool non_recursive_query_is_query_node = non_recursive_query->getNodeType() == QueryTreeNodeType::QUERY;
-        auto & non_recursive_query_mutable_context = non_recursive_query_is_query_node ? non_recursive_query->as<QueryNode &>().getMutableContext()
+        const auto & non_recursive_query_mutable_context = non_recursive_query_is_query_node ? non_recursive_query->as<QueryNode &>().getMutableContext()
             :  non_recursive_query->as<UnionNode &>().getMutableContext();
 
         IdentifierResolveScope & non_recursive_subquery_scope = createIdentifierResolveScope(non_recursive_query, &scope /*parent_scope*/);

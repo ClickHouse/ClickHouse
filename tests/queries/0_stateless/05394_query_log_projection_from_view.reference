@@ -1,0 +1,17 @@
+alpha
+beta
+alpha
+beta
+alpha
+beta
+alpha
+beta
+05394_direct	1	1	0
+05394_inline	1	1	0
+05394_inline1	1	1	0
+05394_missing_direct	1	0	1
+05394_missing_inline1	1	0	1
+05394_missing_sealed	1	0	1
+05394_sealed	1	1	0
+1	1	1	1	1	1	1	1
+0	0	1	1

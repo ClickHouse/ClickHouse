@@ -493,6 +493,7 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
         element.query_projections.insert(access_info.projections.begin(), access_info.projections.end());
         element.query_views.insert(access_info.views.begin(), access_info.views.end());
         element.used_row_policies.insert(access_info.row_policies.begin(), access_info.row_policies.end());
+        element.query_access_info_is_hidden = static_cast<UInt8>(access_info.is_hidden_from_user_query_log);
     }
 
     /// We copy QueryFactoriesInfo for thread-safety, because it is possible that query context can be modified by some processor even
@@ -628,18 +629,22 @@ QueryLogElement logQueryStart(
     /// Log into system table start of query execution, if need.
     if (log_queries)
     {
-        /// This check is not obvious, but without it 01220_scalar_optimization_in_alter fails.
-        if (pipeline.initialized())
         {
             const auto & info = context->getQueryAccessInfo();
             std::lock_guard lock(info.mutex);
-            elem.query_databases = info.databases;
-            elem.query_tables = info.tables;
-            elem.query_columns = info.columns;
-            elem.query_partitions = info.partitions;
-            elem.query_projections = info.projections;
-            elem.query_views = info.views;
-            elem.used_row_policies = info.row_policies;
+            elem.query_access_info_is_hidden = static_cast<UInt8>(info.is_hidden_from_user_query_log);
+
+            /// This check is not obvious, but without it 01220_scalar_optimization_in_alter fails.
+            if (pipeline.initialized())
+            {
+                elem.query_databases = info.databases;
+                elem.query_tables = info.tables;
+                elem.query_columns = info.columns;
+                elem.query_partitions = info.partitions;
+                elem.query_projections = info.projections;
+                elem.query_views = info.views;
+                elem.used_row_policies = info.row_policies;
+            }
         }
 
         if (async_insert)
@@ -1003,6 +1008,12 @@ void logQueryException(
 
     elem.is_internal = log_as_internal;
 
+    {
+        const auto & access_info = context->getQueryAccessInfo();
+        std::lock_guard lock(access_info.mutex);
+        elem.query_access_info_is_hidden = static_cast<UInt8>(access_info.is_hidden_from_user_query_log);
+    }
+
     /// `elem.stack_trace` has two readers: `logException` below and `system.query_log`'s `stack_trace` column.
     std::shared_ptr<QueryLog> query_log;
     if (log_queries && elem.type >= settings[Setting::log_queries_min_type]
@@ -1076,6 +1087,12 @@ void logExceptionBeforeStart(
     }
 
     addPrivilegesInfoToQueryLogElement(elem, context);
+
+    {
+        const auto & access_info = context->getQueryAccessInfo();
+        std::lock_guard lock(access_info.mutex);
+        elem.query_access_info_is_hidden = static_cast<UInt8>(access_info.is_hidden_from_user_query_log);
+    }
 
     // We don't calculate databases, tables and columns when the query isn't able to start
 

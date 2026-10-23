@@ -4,6 +4,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsDateTime.h>
@@ -17,6 +18,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/AsyncReadCounters.h>
@@ -88,6 +90,7 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"formatted_query", std::make_shared<DataTypeString>(), "Formatted query string."},
         {"normalized_query_hash", std::make_shared<DataTypeUInt64>(), "A numeric hash value, such as it is identical for queries differ only by values of literals."},
         {"query_kind", low_cardinality_string, "Type of the query."},
+        {"query_access_info_is_hidden", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()), "Whether this row crossed a view or materialized view with `SQL SECURITY DEFINER` or `SQL SECURITY NONE`, or a materialized view created without an explicit `SQL SECURITY` clause. `1` means yes, `0` means no such boundary was recorded, and `NULL` means provenance is unknown. `system.user_query_log` exposes only initial-query rows with an explicit `0`; `system.query_log` retains every row."},
         {"databases", array_low_cardinality_string, "Names of the databases present in the query."},
         {"tables", array_low_cardinality_string, "Names of the tables present in the query."},
         {"columns", array_low_cardinality_string, "Names of the columns present in the query."},
@@ -224,6 +227,11 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
 
     const std::string_view query_kind_str = magic_enum::enum_name(query_kind);
     typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(query_kind_str.data(), query_kind_str.size());
+    auto & query_access_info_is_hidden_column = typeid_cast<ColumnNullable &>(*columns[i++]);
+    if (query_access_info_is_hidden)
+        query_access_info_is_hidden_column.insert(Field(*query_access_info_is_hidden));
+    else
+        query_access_info_is_hidden_column.insertDefault();
 
     {
         auto & column_databases = typeid_cast<ColumnArray &>(*columns[i++]);

@@ -40,7 +40,7 @@ void OptimizeTrivialGroupByLimitPass::run(QueryTreeNodePtr & query_tree_node, Co
     if (user_max_rows != 0 && user_max_rows <= *max_rows)
         return;
 
-    auto & mutable_context = query->getMutableContext();
+    const auto & mutable_context = query->getMutableContext();
     mutable_context->setSetting("max_rows_to_group_by", *max_rows);
     if (settings[Setting::group_by_overflow_mode] != OverflowMode::ANY)
         mutable_context->setSetting("group_by_overflow_mode", Field("any"));

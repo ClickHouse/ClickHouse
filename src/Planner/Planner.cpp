@@ -338,7 +338,7 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
         {
             auto new_context = Context::createCopy(query_node->getMutableContext());
             new_context->setSetting("enable_parallel_replicas", false);
-            query_node->getMutableContext() = new_context;
+            query_node->setContext(std::move(new_context));
         }
         else if (auto * union_node = updated_query_tree->as<UnionNode>())
         {
@@ -454,6 +454,13 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
 void extendQueryContextAndStoragesLifetime(QueryPlan & query_plan, const PlannerContextPtr & planner_context)
 {
     query_plan.addInterpreterContext(planner_context->getQueryContext());
+    const auto & planner_query_context = planner_context->getMutableQueryContext();
+    if (planner_query_context->hasQueryContext())
+    {
+        auto query_context = planner_query_context->getQueryContext();
+        if (query_context != planner_query_context)
+            query_plan.addInterpreterContext(std::move(query_context));
+    }
     query_plan.addDistributedPlanDecisionContext(planner_context->getMutableQueryContext());
     for (const auto & [table_expression, _] : planner_context->getTableExpressionNodeToData())
     {
@@ -2419,7 +2426,7 @@ static PlannerContextPtr buildPlannerContext(const QueryTreeNodePtr & query_tree
             "Expected QUERY or UNION node. Actual {}",
             query_tree_node->formatASTForErrorMessage());
 
-    auto & mutable_context = query_node ? query_node->getMutableContext() : union_node->getMutableContext();
+    auto mutable_context = query_node ? query_node->getMutableContext() : union_node->getMutableContext();
     size_t max_subquery_depth = mutable_context->getSettingsRef()[Setting::max_subquery_depth];
     if (max_subquery_depth && select_query_options.subquery_depth > max_subquery_depth)
         throw Exception(ErrorCodes::TOO_DEEP_SUBQUERIES, "Too deep subqueries. Maximum: {}", max_subquery_depth);

@@ -3398,6 +3398,15 @@ void Context::addUsedRowPolicy(const String & policy_name)
     query_access_info->row_policies.emplace(policy_name);
 }
 
+void Context::markQueryAccessInfoHiddenFromUserQueryLog()
+{
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
+
+    std::lock_guard<std::mutex> lock(query_access_info->mutex);
+    query_access_info->is_hidden_from_user_query_log = true;
+}
+
 void Context::addQueryAccessInfo(const QualifiedProjectionName & qualified_projection_name)
 {
     if (!qualified_projection_name)
