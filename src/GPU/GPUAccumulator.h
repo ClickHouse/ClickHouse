@@ -154,7 +154,8 @@ public:
         const DataTypes & filter_types = {},
         std::optional<GPUFilterProgram> filter_ = {},
         std::vector<GPUDerivedValue> derived_ = {},
-        std::function<void(MutableColumns)> on_collected_ = {});
+        std::function<void(MutableColumns)> on_collected_ = {},
+        std::vector<std::optional<uint32_t>> filter_aliases_ = {});
 
     ~GroupByGPUAccumulator();
 
@@ -295,6 +296,8 @@ private:
     /// The keys, the values and the columns of the filter come first, then the offsets of each column of varying width.
     bool isVariableColumn(size_t column_index) const;
     size_t variableOffsetsColumnOf(size_t column_index) const;
+    /// A column of the filter that reads the bytes of a key or a value, see `filter_aliases`: nothing comes to it.
+    bool isAliasedColumn(size_t column_index) const;
 
     size_t numColumns() const { return group_keys.size() + values.size() + filter_element_types.size() + variable_column_indices.size(); }
 
@@ -358,6 +361,9 @@ private:
     const std::vector<size_t> variable_column_indices;
     const std::vector<GPUElementType> filter_element_types;
     const std::optional<GPUFilterProgram> filter;
+    /// Of each column of the filter that is a key or a value as well: that column, among the keys and then the
+    /// values, whose bytes it reads instead of bytes of its own.
+    const std::vector<std::optional<uint32_t>> filter_aliases;
     const size_t batch_rows;
     /// The rows a reader gathers on the device before they are grouped: a share of `batch_rows`, so that all the readers
     /// together hold about one batch however many there are.

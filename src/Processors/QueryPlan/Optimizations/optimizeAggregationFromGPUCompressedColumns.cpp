@@ -1172,6 +1172,8 @@ bool optimizeReadFilteredOnGPU(QueryPlan::Node & node, QueryPlan::Nodes & nodes,
         for (const auto * input : prewhere->prewhere_actions.getInputs())
             predicate_columns.push_back(input->result_name);
         const auto estimator = reading->getConditionSelectivityEstimatorForPrewhere(predicate_columns, predicate);
+        if (!estimator)
+            GPU_FILTERED_READ_REFUSE("a PREWHERE whose selectivity there are no statistics to estimate");
         const UInt64 total_rows = estimator->getTotalRows();
         const UInt64 kept_rows = estimator->estimateRelationProfile(reading->getStorageMetadata(), predicate).rows;
         if (total_rows == 0 || static_cast<double>(kept_rows) > max_selectivity * static_cast<double>(total_rows))

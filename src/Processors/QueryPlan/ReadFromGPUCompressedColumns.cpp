@@ -5,11 +5,13 @@
 #include <Columns/ColumnString.h>
 #include <Columns/IColumn.h>
 #include <Compression/CompressedReadBufferFromFile.h>
+#include <Compression/CompressionFactory.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <GPU/GPUAccumulator.h>
 #include <GPU/GPUColumns.h>
 #include <GPU/GPUTypeMapping.h>
+#include <Storages/ColumnsDescription.h>
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
@@ -74,6 +76,9 @@ struct SharedState
     GPUDecompressionMode decompression = GPUDecompressionMode::RATIO;
     double device_decompression_max_ratio = 1;
     bool collect = false;
+    /// Of each column of the filter: the key or the value column of the same name and type, among the keys and then
+    /// the values, which is read once for both.
+    std::vector<std::optional<uint32_t>> filter_aliases;
 
     std::atomic<size_t> next_part{0};
 };
@@ -83,6 +88,25 @@ using SharedStatePtr = std::shared_ptr<SharedState>;
 /// Whether a column of a part is compressed well enough for the device to expand it. Expanding
 /// costs the device about as long per byte as the link takes to carry one, and keeps it from
 /// grouping meanwhile, so a column that compression barely shrinks is cheaper sent whole.
+/// Whether the column's codec is one the host expands much more slowly than the device: `GDeflate`, alone or after
+/// `BitPacking`.
+bool hostExpandsSlowly(const IMergeTreeDataPart & part, const String & column_name)
+{
+    const auto metadata = part.storage.getInMemoryMetadataPtr(part.storage.getContext(), false);
+    const ColumnsDescription & columns = metadata->getColumns();
+    CompressionCodecPtr codec;
+    if (columns.hasCompressionCodec(column_name))
+    {
+        const ColumnDescription & column = columns.get(column_name);
+        codec = CompressionCodecFactory::instance().get(column.codec, column.type);
+    }
+    else
+    {
+        codec = part.default_codec;
+    }
+    return codec && GPU::deviceCodecOf(*codec) == GPU::GPUCodec::GDEFLATE;
+}
+
 bool expandsOnDevice(const IMergeTreeDataPart & part, const String & column_name, GPUDecompressionMode mode, double max_ratio)
 {
     switch (mode)
@@ -97,6 +121,11 @@ bool expandsOnDevice(const IMergeTreeDataPart & part, const String & column_name
     }
 
     if (max_ratio >= 1)
+        return true;
+
+    /// The host expands `GDeflate` at a small fraction of the speed it expands the other codecs at, so a column of it
+    /// stays on the device however little it is compressed.
+    if (hostExpandsSlowly(part, column_name))
         return true;
 
     const ColumnSize size = part.getColumnSize(column_name);
@@ -585,7 +614,8 @@ public:
               state->filter ? std::optional(state->filter->program) : std::nullopt,
               derivedValuesOf(state->derived),
               state->collect ? std::function<void(MutableColumns)>([this](MutableColumns columns) { pushCollected(std::move(columns)); })
-                             : std::function<void(MutableColumns)>{})
+                             : std::function<void(MutableColumns)>{},
+              state->filter_aliases)
     {
         if (state->decompression == GPUDecompressionMode::AUTO)
             adaptive_ratio.emplace(state->device_decompression_max_ratio, num_readers);
@@ -792,6 +822,9 @@ private:
     /// bytes all are.
     struct ColumnReader
     {
+        /// Among the accumulator's columns: the keys, the values, then the columns of the filter.
+        size_t column_index = 0;
+
         ColumnReader(
             const IMergeTreeDataPart & part, const NameAndTypePair & column, const ReadSettings & read_settings, bool on_device, bool in_ranges)
             : is_variable(isString(*column.type))
@@ -1006,12 +1039,24 @@ private:
             return expandsOnDevice(part, column_name, state->decompression, max_ratio);
         };
 
-        for (const auto & key : state->keys)
-            readers.push_back(std::make_unique<ColumnReader>(part, key, state->read_settings, on_device(key.name), in_ranges));
-        for (const auto & column : state->columns)
-            readers.push_back(std::make_unique<ColumnReader>(part, column.column, state->read_settings, on_device(column.column.name), in_ranges));
-        for (const auto & column : filter_columns)
+        size_t column_index = 0;
+        const auto add_reader = [&](const NameAndTypePair & column)
+        {
             readers.push_back(std::make_unique<ColumnReader>(part, column, state->read_settings, on_device(column.name), in_ranges));
+            readers.back()->column_index = column_index++;
+        };
+        for (const auto & key : state->keys)
+            add_reader(key);
+        for (const auto & column : state->columns)
+            add_reader(column.column);
+        /// A column of the filter that is a key or a value as well is read as that column.
+        for (size_t i = 0; i < filter_columns.size(); ++i)
+        {
+            if (state->filter_aliases[i])
+                ++column_index;
+            else
+                add_reader(filter_columns[i]);
+        }
 
         /// The rows of all the ranges of a part go to the device as the rows of one part, so that it groups them as they
         /// come, however many ranges there are, rather than drain its work at the end of each.
@@ -1050,7 +1095,7 @@ private:
             if (readers[i]->is_variable)
             {
                 const UInt64 start = 0;
-                accumulator.addVariableOffsets(reader_index, i, std::span<const UInt64>(&start, 1));
+                accumulator.addVariableOffsets(reader_index, readers[i]->column_index, std::span<const UInt64>(&start, 1));
             }
         }
 
@@ -1068,7 +1113,7 @@ private:
             ColumnReader & column = *readers[behind];
             if (column.readsSizesNext())
             {
-                readVariableSizes(reader_index, behind, column);
+                readVariableSizes(reader_index, column.column_index, column);
             }
             else if (column.raw)
             {
@@ -1086,10 +1131,10 @@ private:
                     continue;
                 }
 
-                const std::span<char> room = accumulator.reserveRawBytes(reader_index, behind, raw_piece_bytes, column.remainingBytes());
+                const std::span<char> room = accumulator.reserveRawBytes(reader_index, column.column_index, raw_piece_bytes, column.remainingBytes());
                 const size_t read = column.raw->readBig(
                     room.data(), column.range_bytes ? std::min(room.size(), column.remainingBytes()) : room.size());
-                accumulator.commitRawBytes(reader_index, behind, read);
+                accumulator.commitRawBytes(reader_index, column.column_index, read);
                 if (read == 0)
                 {
                     column.finishBytes();
@@ -1123,10 +1168,10 @@ private:
                 if (kept != 0)
                 {
                     const std::string_view payload(block->payload, block->compressed_bytes);
-                    codecOrThrow(*column.blocks->methodByte(), payload, std::to_string(behind), part);
+                    codecOrThrow(*column.blocks->methodByte(), payload, std::to_string(column.column_index), part);
                     accumulator.addCompressedBlock(
                         reader_index,
-                        behind,
+                        column.column_index,
                         *column.blocks->methodByte(),
                         payload,
                         block->decompressed_bytes,
@@ -1268,6 +1313,20 @@ void ReadFromGPUCompressedColumns::initializePipeline(QueryPipelineBuilder & pip
     state->batch_bytes = batch_bytes;
     state->num_readers = num_readers != 0 ? num_readers : automaticReaders(*state);
     state->collect = collect;
+    if (filter)
+    {
+        for (const NameAndTypePair & column : filter->columns)
+        {
+            std::optional<uint32_t> alias;
+            for (size_t i = 0; i < keys.size() && !alias; ++i)
+                if (keys[i].name == column.name && keys[i].type->equals(*column.type))
+                    alias = static_cast<uint32_t>(i);
+            for (size_t i = 0; i < columns.size() && !alias; ++i)
+                if (columns[i].column.name == column.name && columns[i].column.type->equals(*column.type))
+                    alias = static_cast<uint32_t>(keys.size() + i);
+            state->filter_aliases.push_back(alias);
+        }
+    }
 
     /// A keyed or a collecting read, of columns of a fixed width, reads a large part in pieces, a reader each.
     if ((!keys.empty() || collect) && readsFixedWidthOnly(*state))

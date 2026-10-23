@@ -27,6 +27,8 @@ namespace ProfileEvents
     extern const Event GPUAggregationMicroseconds;
     extern const Event GPUDecompressionMicroseconds;
     extern const Event GPUDecompressionBytes;
+    extern const Event GPUReadersWaitMicroseconds;
+    extern const Event GPUDeviceWaitMicroseconds;
 }
 
 namespace DB::ErrorCodes
@@ -360,7 +362,8 @@ GroupByGPUAccumulator::GroupByGPUAccumulator(
     const DataTypes & filter_types,
     std::optional<GPUFilterProgram> filter_,
     std::vector<GPUDerivedValue> derived_,
-    std::function<void(MutableColumns)> on_collected_)
+    std::function<void(MutableColumns)> on_collected_,
+    std::vector<std::optional<uint32_t>> filter_aliases_)
     : group_keys(groupByKeysOrThrow(key_types))
     , key_element_types(keyElementTypesOf(group_keys))
     , values(valueTypesOrThrow(value_types, key_types.empty()))
@@ -371,6 +374,7 @@ GroupByGPUAccumulator::GroupByGPUAccumulator(
     , variable_column_indices(variableColumnIndicesOf(group_keys, values))
     , filter_element_types(filterElementTypesOrThrow(filter_types))
     , filter(std::move(filter_))
+    , filter_aliases(std::move(filter_aliases_))
     , batch_rows(std::clamp(batch_bytes / rowBytesOf(key_element_types, values, filter_element_types), size_t{1}, max_batch_rows))
     , reader_batch_rows(std::min(batch_rows, std::max(batch_rows / std::max<size_t>(num_readers_, 1), min_reader_batch_rows)))
     , compressed(compressed_)
@@ -526,6 +530,12 @@ size_t GroupByGPUAccumulator::stagedVariableBytes() const
         }
     }
     return bytes;
+}
+
+bool GroupByGPUAccumulator::isAliasedColumn(size_t column_index) const
+{
+    const size_t first_filter = group_keys.size() + values.size();
+    return column_index >= first_filter && column_index - first_filter < filter_aliases.size() && filter_aliases[column_index - first_filter].has_value();
 }
 
 bool GroupByGPUAccumulator::isVariableColumn(size_t column_index) const
@@ -1142,7 +1152,7 @@ void GroupByGPUAccumulator::finishPartOnDevice(size_t reader_index, size_t num_r
     const size_t first_offsets_column = group_keys.size() + values.size() + filter_element_types.size();
     for (size_t i = 0; i < first_offsets_column; ++i)
     {
-        if (isVariableColumn(i))
+        if (isVariableColumn(i) || isAliasedColumn(i))
             continue;
 
         const DeviceFixedColumnBuffer & column = reader.device_columns[i];
@@ -1188,7 +1198,7 @@ size_t GroupByGPUAccumulator::rowsOnDeviceInEveryColumn(const Reader & reader) c
     size_t rows = std::numeric_limits<size_t>::max();
     for (size_t i = 0; i < first_offsets_column; ++i)
     {
-        if (isVariableColumn(i))
+        if (isVariableColumn(i) || isAliasedColumn(i))
             continue;
         rows = std::min(rows, reader.device_columns[i].rows());
     }
@@ -1237,6 +1247,13 @@ void GroupByGPUAccumulator::sendRowsToGrouping(Reader & reader, size_t num_rows)
             subtractFromOffsets(reinterpret_cast<const uint64_t *>(taken.data()), num_rows, base, to, compute);
             subtractFromOffsets(reinterpret_cast<const uint64_t *>(column.fixedView().data), 1, base, to + num_rows, compute);
             batch.columns.push_back(std::move(rebased));
+            continue;
+        }
+
+        if (isAliasedColumn(i))
+        {
+            /// The grouping takes the bytes of the column it reads instead.
+            batch.columns.emplace_back(compute);
             continue;
         }
 
@@ -1300,7 +1317,12 @@ void GroupByGPUAccumulator::groupOnDevice(GroupingBatch & batch)
     value_columns.reserve(values.size());
     filter_columns.reserve(filter_element_types.size());
 
-    const size_t first_offsets_column = group_keys.size() + values.size() + filter_element_types.size();
+    const size_t first_filter = group_keys.size() + values.size();
+    const size_t first_offsets_column = first_filter + filter_element_types.size();
+    const auto element_type_of = [&](size_t i)
+    {
+        return i < group_keys.size() ? key_element_types[i] : dataElementTypeOf(values[i - group_keys.size()]);
+    };
     size_t next_variable = 0;
     for (size_t i = 0; i < first_offsets_column; ++i)
     {
@@ -1318,11 +1340,14 @@ void GroupByGPUAccumulator::groupOnDevice(GroupingBatch & batch)
             continue;
         }
 
-        const GPUElementType element_type = i < group_keys.size()
-            ? key_element_types[i]
-            : (i < group_keys.size() + values.size() ? dataElementTypeOf(values[i - group_keys.size()])
-                                                      : filter_element_types[i - group_keys.size() - values.size()]);
-        const DeviceFixedColumn view{.element_type = element_type, .data = column.data(), .rows = batch.rows};
+        /// A column of the filter that is a key or a value as well reads the bytes of that column.
+        size_t source = i;
+        if (i >= first_filter && i - first_filter < filter_aliases.size() && filter_aliases[i - first_filter])
+            source = *filter_aliases[i - first_filter];
+        const GPUElementType element_type = i < first_filter ? element_type_of(i) : filter_element_types[i - first_filter];
+        if (source != i && (source >= first_filter || isVariableColumn(source) || element_type_of(source) != element_type))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} of the filter of a GPU aggregation reads column {}, which is not one of its type", i - first_filter, source);
+        const DeviceFixedColumn view{.element_type = element_type, .data = batch.columns[source].data(), .rows = batch.rows};
 
         if (i < group_keys.size())
             keys.push_back(view);
@@ -1395,6 +1420,8 @@ void GroupByGPUAccumulator::groupBatch(
 
 size_t GroupByGPUAccumulator::finalize()
 {
+    ProfileEvents::increment(ProfileEvents::GPUReadersWaitMicroseconds, readers_wait_microseconds.load(std::memory_order_relaxed));
+    ProfileEvents::increment(ProfileEvents::GPUDeviceWaitMicroseconds, device_wait_microseconds.load(std::memory_order_relaxed));
     if (compressed)
     {
         DeviceWork work;
