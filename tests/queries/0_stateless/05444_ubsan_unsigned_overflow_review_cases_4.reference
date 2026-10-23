@@ -1,0 +1,21 @@
+-- formatReadableTimeDelta with a number of sub-second units above UInt64
+20000000000000000000 nanoseconds
+18446744073000000000 nanoseconds
+1500000000 nanoseconds
+-- the maximum numbers of download and parsing threads
+4
+4
+1
+2
+-- reading in order from a table with the maximum index granularity
+1
+-- text index with the maximum dictionary and posting list block sizes
+1
+200
+-- tokenbf_v1 with the maximum seed
+1
+-- proportionsZTest with a sum of trials above UInt64
+1
+0
+-- generateRandom with the maximum numbers of threads and rows in a block
+1
