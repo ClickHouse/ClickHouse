@@ -29,6 +29,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/stripQuerySettings.h>
 #include <Planner/Utils.h>
+#include <Processors/QueryPlan/MaterializingCTEStep.h>
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
@@ -442,34 +443,24 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
         new_settings[Setting::additional_table_filters].value.push_back(std::move(tuple));
     }
 
-    /// disable parallel replicas if cluster contains only shards with 1 replica
-    if (context->canUseTaskBasedParallelReplicas())
+    if (context->canUseTaskBasedParallelReplicas() && is_remote_function)
     {
-        bool disable_parallel_replicas = false;
-        if (is_remote_function)
-        {
-            if (cluster.getName().empty()) // disable parallel replicas with remote() table functions w/o configured cluster
-                disable_parallel_replicas = true;
-            else
-                new_settings[Setting::cluster_for_parallel_replicas] = cluster.getName();
-        }
-
-        if (!disable_parallel_replicas)
-        {
-            disable_parallel_replicas = true;
-            for (const auto & shard : cluster.getShardsInfo())
-            {
-                if (shard.getAllNodeCount() > 1)
-                {
-                    disable_parallel_replicas = false;
-                    break;
-                }
-            }
-        }
-
-        if (disable_parallel_replicas)
+        /// `remote()` without a configured cluster has no cluster to scope parallel replicas to.
+        if (cluster.getName().empty())
             new_settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
+        else
+            new_settings[Setting::cluster_for_parallel_replicas] = cluster.getName();
     }
+
+    /// `clusterAllReplicas` already reads every replica as a shard of its own, so there is nothing left
+    /// for parallel replicas to split
+    if (context->canUseTaskBasedParallelReplicas() && cluster.replicasAsShards())
+        new_settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
+
+    /// Parallel replicas are not disabled here for a cluster whose every shard has one replica:
+    /// `new_settings` is what the shard receives, and its own table may be a `Distributed` table over a
+    /// cluster that can use them. Whether this hop uses them is decided per shard below, and a shard
+    /// that cannot declines on its own, see `canUseParallelReplicasOnInitiator`.
 
     if (settings[Setting::max_execution_time_leaf].totalMicroseconds() > 0)
     {
@@ -591,6 +582,7 @@ void executeQuery(
     /// Tracker is shared between local-missing-table skip path in SelectStreamFactory and
     /// remote unavailable-shard skip path in ReadFromRemote so max_skip_unavailable_shards_num
     /// and max_skip_unavailable_shards_ratio are enforced uniformly across both paths.
+    /// Needed even with no limit set: it is also what notices that every shard was skipped.
     UnavailableShardTrackerPtr unavailable_shard_tracker;
     {
         const auto & new_settings_ref = new_context->getSettingsRef();
@@ -598,8 +590,7 @@ void executeQuery(
         {
             size_t max_num = new_settings_ref[Setting::max_skip_unavailable_shards_num];
             Float64 max_ratio = static_cast<double>(new_settings_ref[Setting::max_skip_unavailable_shards_ratio]);
-            if (max_num > 0 || max_ratio > 0)
-                unavailable_shard_tracker = std::make_shared<UnavailableShardTracker>(shards, max_num, max_ratio);
+            unavailable_shard_tracker = std::make_shared<UnavailableShardTracker>(shards, max_num, max_ratio);
         }
     }
 
@@ -774,6 +765,7 @@ static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logg
 {
     const auto & settings = context->getSettingsRef();
     auto context_mutable = Context::createCopy(context);
+    context_mutable->increaseDistributedDepth();
 
     /// check hedged connections setting
     if (settings[Setting::use_hedged_requests].value)
@@ -1166,6 +1158,9 @@ void executeQueryWithParallelReplicas(
             return;
         }
 
+        /// The replicas read these CTEs by name, so their writer must be gated above both branches.
+        removeDelayedMaterializingCTEsStepFor(*local_plan, collectMaterializedCTEsFromQueryTree(query_tree));
+
         std::shared_ptr<const QueryPlan> remote_query_plan;
         if (new_context->getSettingsRef()[Setting::serialize_query_plan])
         {
@@ -1182,7 +1177,18 @@ void executeQueryWithParallelReplicas(
         else if (const auto * union_node = query_tree->as<UnionNode>())
             local_context = union_node->getContext();
 
-        auto read_from_local = std::make_unique<ReadFromLocalParallelReplicaStep>(std::move(local_plan), std::move(local_context));
+        /// What of a condition pushed into the local copy of the fragment the replicas get as well is
+        /// decided by the splice into the query they are sent, on the context it answers to. A plan
+        /// sent instead carries nothing pushed into this copy.
+        ReadFromLocalParallelReplicaStep::LeftOutConjuncts left_out_conjuncts;
+        if (!remote_query_plan)
+            left_out_conjuncts = [forwarded_query_ast, query_tree, planner_context, local_context](const ActionsDAG::Node & condition)
+            {
+                return conjunctsLeftOutOfRemoteQuery(condition, forwarded_query_ast, query_tree, planner_context, local_context);
+            };
+
+        auto read_from_local = std::make_unique<ReadFromLocalParallelReplicaStep>(
+            std::move(local_plan), local_context, std::move(left_out_conjuncts));
         auto stub_local_plan = std::make_unique<QueryPlan>();
         stub_local_plan->addStep(std::move(read_from_local));
 
@@ -1198,6 +1204,7 @@ void executeQueryWithParallelReplicas(
             header,
             processed_stage,
             new_context,
+            std::move(local_context),
             getThrottler(new_context),
             std::move(scalars),
             std::move(external_tables),
@@ -1237,6 +1244,8 @@ void executeQueryWithParallelReplicas(
             std::move(coordinator),
             header,
             processed_stage,
+            new_context,
+            /// No local copy of the fragment to agree with.
             new_context,
             getThrottler(new_context),
             std::move(scalars),
@@ -1703,6 +1712,15 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
         /// forwarded query text still carries the INSERT's own `SETTINGS` — strip the initiator-only names
         /// (both `changes` and `default_settings`) from it too.
         stripInitiatorOnlySettingsFromQuery(new_query_ast);
+
+        /// `InterpreterInsertQuery::buildInsertSelectPipelineParallelReplicas` pins these on the context shipped
+        /// to the replicas, so the query text must not re-apply the user's values over it. The parser copies the
+        /// SELECT's trailing `SETTINGS` into the INSERT's own clause, so both carriers are stripped. A replica that
+        /// re-applies a non-zero `automatic_parallel_replicas_mode` and does not ignore it as a follower reads the
+        /// whole source table instead of its share, and the insert writes every row once per replica.
+        static constexpr std::array settings_pinned_by_initiator{
+            std::string_view{"parallel_replicas_plan_based"}, std::string_view{"automatic_parallel_replicas_mode"}};
+        removeSettingsFromQueryTopLevel(new_query_ast, settings_pinned_by_initiator);
 
         /// When a leaf timeout is set, drop 'max_execution_time' / 'timeout_overflow_mode' from the top-level
         /// SETTINGS of the query text (both on the INSERT itself and on the top-level SELECT) so that the leaf

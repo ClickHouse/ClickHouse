@@ -59,9 +59,15 @@ FROM
       AND log_comment IN ('build_2_u64', 'build_3_u64', 'build_2_nullable', 'build_2_fs32', 'build_4_fs32',
                           'saved_key_2_u64', 'saved_key_3_u64', 'asof_key_in_store')
 ) AS q
-LEFT JOIN system.text_log AS t ON t.query_id = q.query_id
+LEFT JOIN
+(
+    SELECT query_id, message
+    FROM system.text_log
+    WHERE event_date >= yesterday() AND event_time >= now() - 600
+) AS t ON t.query_id = q.query_id
 GROUP BY comment
-ORDER BY comment;
+ORDER BY comment
+SETTINGS max_rows_to_read = 0; -- system.text_log can be really big
 
 DROP TABLE probe;
 DROP TABLE asof_probe;
