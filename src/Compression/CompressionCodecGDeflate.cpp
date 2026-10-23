@@ -14,7 +14,6 @@
 #include <bit>
 #include <cstring>
 #include <memory>
-#include <type_traits>
 
 namespace DB
 {
@@ -82,23 +81,22 @@ struct PackedChunk
     UInt64 reference = 0;
 };
 
-template <typename T>
-PackedChunk packIntegers(const char * chunk, size_t chunk_size, char * out)
+template <typename U>
+PackedChunk packIntegers(const char * chunk, size_t chunk_size, bool is_signed, char * out)
 {
-    using U = std::make_unsigned_t<T>;
-    const size_t count = chunk_size / sizeof(T);
-    T least = unalignedLoadLittleEndian<T>(chunk);
-    T most = least;
+    const U sign_bit = is_signed ? static_cast<U>(U{1} << (8 * sizeof(U) - 1)) : U{0};
+    const size_t count = chunk_size / sizeof(U);
+    U least = unalignedLoadLittleEndian<U>(chunk) ^ sign_bit;
+    U most = least;
     for (size_t i = 1; i < count; ++i)
     {
-        const T value = unalignedLoadLittleEndian<T>(chunk + i * sizeof(T));
+        const U value = unalignedLoadLittleEndian<U>(chunk + i * sizeof(U)) ^ sign_bit;
         least = std::min(least, value);
         most = std::max(most, value);
     }
 
-    const UInt64 range = static_cast<U>(static_cast<U>(most) - static_cast<U>(least));
-    const auto bits = std::max<UInt32>(1, static_cast<UInt32>(std::bit_width(range)));
-    if (bits > max_packed_bits || bits >= 8 * sizeof(T))
+    const auto bits = std::max<UInt32>(1, static_cast<UInt32>(std::bit_width(static_cast<UInt64>(static_cast<U>(most - least)))));
+    if (bits > max_packed_bits || bits >= 8 * sizeof(U))
         return {};
 
     /// Each integer is ORed into the bytes from the lowest bit of the byte its first bit is in, 8 bytes at a time, which
@@ -106,13 +104,13 @@ PackedChunk packIntegers(const char * chunk, size_t chunk_size, char * out)
     memset(out, 0, packedBytes(count, bits) + packed_padding);
     for (size_t i = 0; i < count; ++i)
     {
-        const T value = unalignedLoadLittleEndian<T>(chunk + i * sizeof(T));
-        const UInt64 delta = static_cast<U>(static_cast<U>(value) - static_cast<U>(least));
+        const U value = unalignedLoadLittleEndian<U>(chunk + i * sizeof(U)) ^ sign_bit;
+        const UInt64 delta = static_cast<U>(value - least);
         const size_t first_bit = i * bits;
         char * const at = out + first_bit / 8;
         unalignedStoreLittleEndian<UInt64>(at, unalignedLoadLittleEndian<UInt64>(at) | (delta << (first_bit % 8)));
     }
-    return {.bits = bits, .reference = static_cast<U>(least)};
+    return {.bits = bits, .reference = static_cast<U>(least ^ sign_bit)};
 }
 
 /// Packs the chunk into `out`, of `packedBytes` and `packed_padding` more, if its integers take fewer bits than they are
@@ -121,10 +119,10 @@ PackedChunk pack(const char * chunk, size_t chunk_size, UInt8 element_size, bool
 {
     switch (element_size)
     {
-        case 1: return is_signed ? packIntegers<Int8>(chunk, chunk_size, out) : packIntegers<UInt8>(chunk, chunk_size, out);
-        case 2: return is_signed ? packIntegers<Int16>(chunk, chunk_size, out) : packIntegers<UInt16>(chunk, chunk_size, out);
-        case 4: return is_signed ? packIntegers<Int32>(chunk, chunk_size, out) : packIntegers<UInt32>(chunk, chunk_size, out);
-        default: return is_signed ? packIntegers<Int64>(chunk, chunk_size, out) : packIntegers<UInt64>(chunk, chunk_size, out);
+        case 1: return packIntegers<UInt8>(chunk, chunk_size, is_signed, out);
+        case 2: return packIntegers<UInt16>(chunk, chunk_size, is_signed, out);
+        case 4: return packIntegers<UInt32>(chunk, chunk_size, is_signed, out);
+        default: return packIntegers<UInt64>(chunk, chunk_size, is_signed, out);
     }
 }
 
