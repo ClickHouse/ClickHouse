@@ -10,6 +10,7 @@
 #include <Processors/Formats/Impl/ArrowGeoTypes.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVariant.h>
@@ -28,6 +29,7 @@
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/extractStringValueFilters.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/TopKThresholdTracker.h>
 #include <IO/CompressionMethod.h>
 #include <IO/Libdeflate.h>
@@ -44,9 +46,9 @@
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
 #include <algorithm>
-#include <numeric>
 #include <bit>
 #include <mutex>
+#include <numeric>
 #include <fmt/ranges.h>
 #include <lz4.h>
 #include <arrow/util/crc32.h>
@@ -71,6 +73,7 @@ namespace ProfileEvents
     extern const Event ParquetColumnsFilterExpression;
     extern const Event ParquetReadPages;
     extern const Event ParquetPrunedPages;
+    extern const Event ParquetRowsDecodedAsDictionaryIndexes;
     extern const Event ParquetFooterReadMicroseconds;
     extern const Event ParquetDecompressedBytes;
     extern const Event ParquetPagesDecompressedToSkipRows;
@@ -784,6 +787,11 @@ bool Reader::spatialBboxStatsHaveNoNulls(size_t row_group_idx, size_t spatial_ke
     return true;
 }
 
+static size_t heapBytesOfField(const Field & field)
+{
+    return field.getType() == Field::Types::String ? field.safeGet<String>().size() : 0;
+}
+
 void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read)
 {
     extended_sample_block = *sample_block;
@@ -1176,6 +1184,16 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     std::vector<RowGroupCandidate> candidates;
     bool some_top_k_range_to_read = false;
     size_t total_rows = 0;
+    key_condition_column_ranges.clear();
+    key_condition_column_ranges_complete = false;
+    const bool record_key_condition_ranges = !collect_key_condition_column_ranges.empty()
+        && options.format.parquet.filter_push_down && format_filter_info->key_condition && spatial_key_conditions.empty()
+        && !rows_to_read;
+    if (record_key_condition_ranges)
+        for (size_t idx : collect_key_condition_column_ranges)
+            if (idx < extended_sample_block.columns())
+                key_condition_column_ranges.push_back({.idx = idx, .ranges = {}, .bytes = 0});
+    size_t key_condition_column_ranges_bytes = 0;
     for (size_t row_group_idx = 0; row_group_idx < file_metadata().row_groups.size(); ++row_group_idx)
     {
         const auto * meta = &file_metadata().row_groups[row_group_idx];
@@ -1209,6 +1227,25 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
             /// hyperrectangle from the four bbox primitives only.
             bool only_spatial_bbox = !options.format.parquet.filter_push_down || !format_filter_info->key_condition;
             getHyperrectangleForRowGroup(row_group_idx, hyperrectangle, only_spatial_bbox);
+        }
+        /// `canSkipFile` matches ranges kept by different queries by position, which must be the same row group for every
+        /// query: no `continue` that depends on the query may come before this push (hence no recording with `rows_to_read`).
+        if (record_key_condition_ranges)
+        {
+            for (auto & column : key_condition_column_ranges)
+            {
+                const Range & range = hyperrectangle[column.idx];
+                const size_t range_bytes = sizeof(Range) + heapBytesOfField(range.left) + heapBytesOfField(range.right);
+                column.ranges.push_back(range);
+                column.bytes += range_bytes;
+                key_condition_column_ranges_bytes += range_bytes;
+            }
+            while (key_condition_column_ranges_bytes > max_key_condition_column_ranges_bytes)
+            {
+                auto largest = std::ranges::max_element(key_condition_column_ranges, {}, &KeyConditionColumnRanges::bytes);
+                key_condition_column_ranges_bytes -= largest->bytes;
+                key_condition_column_ranges.erase(largest);
+            }
         }
 
         if (options.format.parquet.filter_push_down && format_filter_info->key_condition)
@@ -1257,6 +1294,8 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
             && (!row_groups_to_read.has_value() || row_groups_to_read->contains(row_group_idx)))
             some_top_k_range_to_read = true;
     }
+
+    key_condition_column_ranges_complete = record_key_condition_ranges;
 
     /// TopN dynamic filtering: read first the row groups whose sort column statistics are best for the
     /// threshold, so that it tightens early. Any order is correct when the output order is free.
@@ -1927,6 +1966,26 @@ void Reader::preparePrewhere()
             }
         }
     }
+
+    /// `decode_dictionary_as_replicated`: the last step's single input, a plain column no other step reads.
+    if (steps.empty() || steps.back().input_idxs.size() != 1
+        || QueryPlanOptimizations::isSensitiveToEvaluationCount(steps.back().actions.getActionsDAG()))
+        return;
+    const auto & output_idx = sample_block_to_output_columns_idx.at(steps.back().input_idxs[0]);
+    if (!output_idx.has_value())
+        return;
+    const OutputColumnInfo & output_info = output_columns.at(*output_idx);
+    if (!output_info.is_primitive || output_info.is_missing_column || output_info.needs_cast || output_info.nullable_group
+        || output_info.primitive_start + 1 != output_info.primitive_end)
+        return;
+    PrimitiveColumnInfo & pc = primitive_columns.at(output_info.primitive_start);
+    /// A column that can be written to the columns cache is decoded as a full column,
+    /// so that the cache does not get a `ColumnReplicated`.
+    if (columns_cache_writes_possible && columns_cache_identities.at(pc.idx_in_output_block) != 0)
+        return;
+    if (pc.first_step_to_calculate == steps.size() && !pc.output_nullable && !pc.group_nullable && pc.levels.back().rep == 0
+        && isLazyReplicationUseful(pc.decoded_type->createColumn()))
+        pc.decode_dictionary_as_replicated = true;
 }
 
 void Reader::processBloomFilterHeader(ColumnChunk & column, const PrimitiveColumnInfo & column_info)
@@ -3156,7 +3215,15 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
         subchunk.null_map->reserve(output_num_values_estimate);
     }
 
-    subchunk.column = column_info.decoded_type->createColumn();
+    if (column_info.decode_dictionary_as_replicated && !column.need_null_map && column.dictionary.isInitialized()
+        && column.dictionary.count * 2 <= row_subgroup.filter.rows_pass
+        && !(column.page.initialized && !column.page.is_dictionary_encoded))
+    {
+        subchunk.dictionary_values = getDictionaryValues(column, column_info);
+        subchunk.column = ColumnUInt32::create();
+    }
+    else
+        subchunk.column = column_info.decoded_type->createColumn();
     subchunk.column->reserve(output_num_values_estimate);
     if (auto * string_column = typeid_cast<ColumnString *>(subchunk.column.get()))
     {
@@ -3289,6 +3356,16 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
         /// has no element-level nulls; the struct nulls are represented by the outer ColumnNullable).
         subchunk.group_null_map = std::move(subchunk.null_map);
         subchunk.null_map.reset();
+    }
+
+    if (subchunk.dictionary_values)
+    {
+        /// Drop the values no read row references: the step must not evaluate them.
+        ColumnIndex indexes(std::move(subchunk.column));
+        ColumnPtr values = indexes.removeUnusedRowsInIndexedData(subchunk.dictionary_values);
+        subchunk.column = ColumnReplicated::create(values->assumeMutable(), indexes.detachIndexes());
+        subchunk.dictionary_values = nullptr;
+        ProfileEvents::increment(ProfileEvents::ParquetRowsDecodedAsDictionaryIndexes, row_subgroup.filter.rows_pass);
     }
 
     if (subchunk.arrays_offsets.empty() && subchunk.column->size() != row_subgroup.filter.rows_pass)
@@ -3674,16 +3751,32 @@ static void advanceValueIdxUntilRow(size_t end_row_idx, Reader::PageState & page
     }
     else
     {
+        const UInt8 * rep = page.rep.data();
+        size_t remaining_rows = end_row_idx - page.next_row_idx;
+
+        /// Take a 64-byte block of repetition levels wholesale only while all of its row starts fit
+        /// in the remaining budget, so the row we have to stop at can't be inside a taken block.
+        while (new_value_idx + 64 <= page.num_values)
+        {
+            size_t row_starts = static_cast<size_t>(std::popcount(~bytes64MaskToBits64Mask(rep + new_value_idx)));
+            if (row_starts > remaining_rows)
+                break;
+            remaining_rows -= row_starts;
+            new_value_idx += 64;
+        }
+
         while (new_value_idx < page.num_values)
         {
-            if (page.rep[new_value_idx] == 0)
+            if (rep[new_value_idx] == 0)
             {
-                if (page.next_row_idx == end_row_idx)
+                if (remaining_rows == 0)
                     break;
-                page.next_row_idx += 1;
+                remaining_rows -= 1;
             }
             new_value_idx += 1;
         }
+
+        page.next_row_idx = end_row_idx - remaining_rows;
     }
     page.value_idx = new_value_idx;
 }
@@ -3792,62 +3885,138 @@ static void processDefLevelsForInnermostColumn(
     size_t num_values, const UInt8 * def, UInt8 max_def, UInt8 max_array_def, size_t & out_num_encoded_values, ColumnUInt8::Container * out_null_map)
 {
     size_t num_encoded_values = 0;
-    for (size_t i = 0; i < num_values; ++i)
+    if constexpr (has_nulls)
     {
-        if constexpr (has_arrays)
-            if (def[i] < max_array_def)
-                continue; // empty array
+        /// The null map is grown to an upper bound and trimmed at the end: a value of an empty or
+        /// null ancestor array gets no element, so we write unconditionally and advance only for the
+        /// values we keep, and the next kept value overwrites the skipped write.
+        size_t prev_size = out_null_map->size();
+        out_null_map->resize(prev_size + num_values);
+        UInt8 * out = out_null_map->data() + prev_size;
 
-        bool is_null = false;
-        if constexpr (has_nulls)
+        for (size_t i = 0; i < num_values; ++i)
         {
-            is_null = def[i] != max_def;
-            out_null_map->push_back(is_null);
+            bool is_null = def[i] != max_def;
+            *out = is_null;
+            if constexpr (has_arrays)
+                out += def[i] >= max_array_def;
+            else
+                out += 1;
+            /// A skipped value has def[i] < max_array_def <= max_def, so it is never counted here.
+            num_encoded_values += !is_null;
         }
 
-        num_encoded_values += !is_null;
+        out_null_map->resize(out - out_null_map->data());
     }
+    else if constexpr (has_arrays)
+    {
+        for (size_t i = 0; i < num_values; ++i)
+            num_encoded_values += def[i] >= max_array_def;
+    }
+    else
+        num_encoded_values = num_values;
+
     out_num_encoded_values = num_encoded_values;
 }
 
 /// Produces array offsets at a given level of nested arrays.
-/// TODO [parquet]: Try simdifying.
+/// `num_new_instances` is how many array instances start in this span, which the caller knows
+/// exactly, so the output grows once. Returns how many elements this level produced, which is how
+/// many array instances the next deeper level starts.
+/// TODO [parquet]: Try simdifying. The loop below is branch-free, but its store address depends on a
+/// running sum of predicates, which auto-vectorization can't express.
 ///
 /// Instead of calling this for array_rep = 1..max_rep, we could probably process all array levels
 /// in one loop over rep/def levels (doing something like arrays_offsets[rep[i]].push_back(...)).
 /// But I expect it would be slower because (a) simd would be less effective (especially after we
 /// simdify this implementation), (b) usually there's only one level of arrays.
-static void processRepDefLevelsForArray(
+static UInt64 processRepDefLevelsForArray(
     size_t num_values, const UInt8 * def, const UInt8 * rep, UInt8 array_rep, UInt8 array_def,
-    UInt8 parent_array_def, PaddedPODArray<UInt64> & out_offsets)
+    UInt8 parent_array_def, size_t num_new_instances, PaddedPODArray<UInt64> & out_offsets)
 {
-    UInt64 offset = out_offsets.back(); // may take -1-st element, PaddedPODArray allows that
+    size_t prev_size = out_offsets.size();
+    out_offsets.resize(prev_size + num_new_instances);
+
+    /// May point at the -1-st element, PaddedPODArray allows that. Normally that element is only
+    /// ever set to 0; if invalid rep levels make us set it to nonzero, the caller notices and throws.
+    UInt64 * out = out_offsets.data() + prev_size - 1;
+    UInt64 first_offset = *out;
+    UInt64 offset = first_offset;
+
+    /// A value with def[i] < parent_array_def has a null or empty ancestor array and starts no new
+    /// array instance. In particular:
+    ///  * `def[i] == array_def - 1` means this array is empty,
+    ///  * `parent_array_def <= def[i] < array_def - 1` means this array is null,
+    ///    which we convert to empty array because clickhouse doesn't support nullable arrays.
+    ///    TODO [parquet]: Should we throw an error in this case if !options.format.null_as_default?
+    /// `def` equals the level's index in `levels`, so array levels have strictly increasing def and
+    /// `def[i] >= array_def` implies `def[i] >= parent_array_def`; the element count below therefore
+    /// needs no separate check against parent_array_def.
     for (size_t i = 0; i < num_values; ++i)
     {
-        if (def[i] < parent_array_def)
-            /// Some ancestor is null or empty array.
-            /// In particular:
-            ///  * `def[i] == array_def - 1` means this array is empty,
-            ///  * `parent_array_def <= def[i] < array_def - 1` means this array is null,
-            ///    which we convert to empty array because clickhouse doesn't support nullable arrays.
-            ///    TODO [parquet]: Should we throw an error in this case if !options.format.null_as_default?
-            continue;
-
-        if (rep[i] < array_rep)
-        {
-            /// Previous array instance ended and a new array instance started.
-
-            /// May assign -1-st element, but normally only sets it to 0; if we set it to nonzero
-            /// because of invalid rep levels, the caller will notice and throw.
-            out_offsets.back() = offset;
-            out_offsets.resize(out_offsets.size() + 1);
-        }
-
+        /// Finalizes the previous array instance if a new one starts here, is overwritten otherwise.
+        *out = offset;
+        out += rep[i] < array_rep && def[i] >= parent_array_def;
         offset += rep[i] <= array_rep && def[i] >= array_def;
     }
     /// Note that the array may continue in the next page. In that case the next call to this
     /// function will read this offset back, add to it, and assign it again.
-    out_offsets.back() = offset;
+    *out = offset;
+
+    chassert(out == out_offsets.data() + prev_size - 1 + num_new_instances);
+    return offset - first_offset;
+}
+
+/// Fused version of processRepDefLevelsForArray + processDefLevelsForInnermostColumn for the common
+/// case of exactly one array level. Then array_rep is 1, so `rep[i] <= array_rep` always holds, a new
+/// instance starts exactly at `rep[i] == 0`, and `array_def == max_array_def`; one pass over the
+/// levels can produce the offsets, the null map and the encoded value count. Nested arrays keep the
+/// general path.
+template <bool has_nulls>
+static void processRepDefLevelsForSingleArray(
+    size_t num_values, const UInt8 * def, const UInt8 * rep, UInt8 max_def, UInt8 max_array_def,
+    size_t num_new_instances, PaddedPODArray<UInt64> & out_offsets,
+    size_t & out_num_encoded_values, ColumnUInt8::Container * out_null_map)
+{
+    size_t prev_size = out_offsets.size();
+    out_offsets.resize(prev_size + num_new_instances);
+    UInt64 * out_offset = out_offsets.data() + prev_size - 1;
+    UInt64 offset = *out_offset;
+
+    UInt8 * out_null = nullptr;
+    if constexpr (has_nulls)
+    {
+        size_t null_prev_size = out_null_map->size();
+        out_null_map->resize(null_prev_size + num_values);
+        out_null = out_null_map->data() + null_prev_size;
+    }
+
+    size_t num_encoded_values = 0;
+    for (size_t i = 0; i < num_values; ++i)
+    {
+        /// False for a value of an empty or null array, which produces no element at any output.
+        bool in_array = def[i] >= max_array_def;
+
+        *out_offset = offset;
+        out_offset += rep[i] == 0;
+        offset += in_array;
+
+        if constexpr (has_nulls)
+        {
+            bool is_null = def[i] != max_def;
+            *out_null = is_null;
+            out_null += in_array;
+            num_encoded_values += !is_null;
+        }
+        else
+            num_encoded_values += in_array;
+    }
+    *out_offset = offset;
+    if constexpr (has_nulls)
+        out_null_map->resize(out_null - out_null_map->data());
+
+    chassert(out_offset == out_offsets.data() + prev_size - 1 + num_new_instances);
+    out_num_encoded_values = num_encoded_values;
 }
 
 void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowSubgroup * row_subgroup)
@@ -3872,9 +4041,14 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
     advanceValueIdxUntilRow(end_row_idx, page);
 
     /// Produce array offsets.
-    if (!page.rep.empty())
+    const bool single_array_level = !page.rep.empty() && column_info.levels.back().rep == 1;
+    if (!page.rep.empty() && !single_array_level)
     {
         UInt8 parent_array_def = 0;
+        /// The outermost array level has array_rep == 1, so it starts an instance exactly at each
+        /// row start, and advanceValueIdxUntilRow counted those. Each deeper level starts an instance
+        /// per element of the level above, which is what processRepDefLevelsForArray returns.
+        size_t num_new_instances = page.next_row_idx - first_row_idx;
         for (size_t level_idx = 1; level_idx < column_info.levels.size(); ++level_idx)
         {
             const LevelInfo & level = column_info.levels[level_idx];
@@ -3882,9 +4056,10 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
                 continue;
 
             auto & offsets = assert_cast<ColumnArray::ColumnOffsets &>(*subchunk.arrays_offsets.at(level.rep - 1)).getData();
-            processRepDefLevelsForArray(
+            num_new_instances = processRepDefLevelsForArray(
                 page.value_idx - prev_value_idx, page.def.data() + prev_value_idx,
-                page.rep.data() + prev_value_idx, level.rep, level.def, parent_array_def, offsets);
+                page.rep.data() + prev_value_idx, level.rep, level.def, parent_array_def,
+                num_new_instances, offsets);
 
             parent_array_def = level.def;
         }
@@ -3892,7 +4067,23 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
 
     /// Populate null map and find how many encoded values to read.
     size_t encoded_values_to_read = 0;
-    if (page.def.empty())
+    if (single_array_level)
+    {
+        auto & offsets = assert_cast<ColumnArray::ColumnOffsets &>(*subchunk.arrays_offsets.at(0)).getData();
+        size_t num_new_instances = page.next_row_idx - first_row_idx;
+        if (subchunk.null_map)
+            processRepDefLevelsForSingleArray<true>(
+                page.value_idx - prev_value_idx, page.def.data() + prev_value_idx,
+                page.rep.data() + prev_value_idx, column_info.levels.back().def, column_info.max_array_def,
+                num_new_instances, offsets, encoded_values_to_read,
+                &assert_cast<ColumnUInt8 &>(*subchunk.null_map).getData());
+        else
+            processRepDefLevelsForSingleArray<false>(
+                page.value_idx - prev_value_idx, page.def.data() + prev_value_idx,
+                page.rep.data() + prev_value_idx, column_info.levels.back().def, column_info.max_array_def,
+                num_new_instances, offsets, encoded_values_to_read, nullptr);
+    }
+    else if (page.def.empty())
     {
         /// No nulls or arrays in this page.
         encoded_values_to_read = page.value_idx - prev_value_idx;
@@ -3923,6 +4114,15 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
     }
 
     /// Decode values.
+
+    /// Dictionary indexes can't continue past a page that is not dictionary-encoded.
+    if (subchunk.dictionary_values && !page.is_dictionary_encoded)
+    {
+        auto values = column_info.decoded_type->createColumn();
+        column.dictionary.index(assert_cast<const ColumnUInt32 &>(*subchunk.column), *values);
+        subchunk.column = std::move(values);
+        subchunk.dictionary_values = nullptr;
+    }
 
     /// See if we can decompress the whole page directly into IColumn's memory.
     /// Skip when filter is set: direct read bypasses decode and would write all values without applying the filter.
@@ -3961,9 +4161,11 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
             /// A subgroup whose rows all pass is read like an unfiltered one, through the fused path.
             if (filter && row_subgroup->filter.rows_pass == row_subgroup->filter.rows_total)
                 filter = nullptr;
+            if (subchunk.dictionary_values)
+                page.decoder->decode(encoded_values_to_read, *subchunk.column, filter, filter_offset);
             /// Fused decode-and-gather; falls back to materializing the indexes as a column when
             /// filtering, or when the decoder or the dictionary mode does not support the fusion.
-            if (filter || !page.decoder->decodeAndIndex(encoded_values_to_read, column.dictionary, *subchunk.column))
+            else if (filter || !page.decoder->decodeAndIndex(encoded_values_to_read, column.dictionary, *subchunk.column))
             {
                 if (!page.indices_column)
                     page.indices_column = ColumnUInt32::create();
@@ -3983,6 +4185,20 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
 
     if (page.value_idx == page.num_values)
         page.decoder.reset();
+}
+
+const ColumnPtr & Reader::getDictionaryValues(ColumnChunk & column, const PrimitiveColumnInfo & column_info)
+{
+    if (!column.dictionary_values)
+    {
+        auto indexes = ColumnUInt32::create(column.dictionary.count);
+        std::iota(indexes->getData().begin(), indexes->getData().end(), UInt32(0));
+        auto values = column_info.decoded_type->createColumn();
+        values->reserve(column.dictionary.count);
+        column.dictionary.index(*indexes, *values, /*use_string_value_filter*/ false);
+        column.dictionary_values = std::move(values);
+    }
+    return column.dictionary_values;
 }
 
 void Reader::decompressPageIfCompressed(PageState & page)
@@ -4160,7 +4376,13 @@ ColumnPtr & Reader::getOrFormOutputColumn(const RowGroup & row_group, RowSubgrou
                 auto indexes = ColumnUInt64::create();
                 auto & indexes_data = indexes->getData();
                 indexes_data.reserve(row_subgroup.filter.rows_pass);
-                for (size_t i = 0; i < mask.size(); ++i)
+                size_t i = 0;
+                for (; i + 64 <= mask.size(); i += 64)
+                {
+                    for (UInt64 bits = bytes64MaskToBits64Mask(mask.data() + i); bits; bits &= bits - 1)
+                        indexes_data.push_back(row_subgroup.start_row_idx + i + std::countr_zero(bits));
+                }
+                for (; i < mask.size(); ++i)
                     if (mask[i])
                         indexes_data.push_back(row_subgroup.start_row_idx + i);
                 state.column = (*cached_column)->index(*indexes, 0);
@@ -4211,8 +4433,19 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
                 row_subgroup.output.pop_back(); // because OutputColumnState has no move constructor
         }
 
+        auto materialize_replicated = [&]
+        {
+            if (step_idx == steps.size())
+                for (auto & state : row_subgroup.output)
+                    if (state.column)
+                        state.column = state.column->convertToFullColumnIfReplicated();
+        };
+
         if (!step.filter_column_name.has_value())
+        {
+            materialize_replicated();
             return;
+        }
 
         ColumnPtr filter_column = block.getByName(step.filter_column_name.value()).column;
         filter_column = FilterDescription::preprocessFilterColumn(std::move(filter_column));
@@ -4233,6 +4466,7 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
         for (auto & state : row_subgroup.output)
             if (state.column)
                 state.column = state.column->filter(filter, /*result_size_hint=*/ rows_pass);
+        materialize_replicated();
 
         /// Expand the filter to correspond to all column subchunk rows, rather than only rows that
         /// passed previous filters (previous prewhere steps).
