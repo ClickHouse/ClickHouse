@@ -349,6 +349,11 @@ struct Reader
         /// The output column this primitive column belongs to is served from the columns cache in
         /// this row group, so its data is neither prefetched nor decoded.
         bool served_from_cache = false;
+        /// The column is written to the columns cache, which makes the row group read in whole chunks
+        /// unless they would take too much memory, but the length of its strings is not in the metadata.
+        /// So its dictionary is decoded in the `Dictionary` stage, before the row group is split into
+        /// row subgroups, to estimate the size of a chunk, see `intersectColumnIndexResultsAndInitSubgroups`.
+        bool decode_dictionary_early = false;
 
         /// Prefetches.
         /// TODO [parquet]: Check that all handles and tokens are reset after correct stages.
@@ -738,6 +743,9 @@ struct Reader
 
     /// Guess how much memory ColumnSubchunk::{column, arrays_offsets} will use, per row.
     double estimateColumnMemoryBytesPerRow(const ColumnChunk & column, const RowGroup & row_group, const PrimitiveColumnInfo & column_info) const;
+    /// Whether `estimateColumnMemoryBytesPerRow` can only guess: the column is of dictionary-encoded strings, the
+    /// metadata has no length of the strings, and the dictionary is not decoded.
+    bool decodedSizeIsUnknown(const ColumnChunk & column, const PrimitiveColumnInfo & column_info) const;
     /// Bound for memory estimates charged to the read scheduler: the larger memory watermark plus one,
     /// capped far below overflow.
     size_t memoryEstimateLimit() const;

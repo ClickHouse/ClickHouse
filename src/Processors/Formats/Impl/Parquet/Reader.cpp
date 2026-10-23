@@ -2925,21 +2925,42 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
     const bool aligned_with_columns_cache = !row_group.cached_columns.empty() || !row_group.columns_cache_writes.empty();
     if (aligned_with_columns_cache)
     {
-        /// Unless the columns that are decoded would take a large part of the memory the query may use for a whole
-        /// chunk, while the block size settings ask for less: then the row group is read in the blocks the settings
-        /// ask for, still never crossing a chunk, and is not written to the cache, which takes only whole chunks.
-        /// A chunk written to the cache is the server's only after it is decoded.
-        /// A column served from the cache takes no memory of the query when a whole chunk is served, but the rows
-        /// of a chunk that pass a filter are copied out of it, see `getOrFormOutputColumn`.
-        const bool rows_may_be_filtered = format_filter_info->prewhere_info || format_filter_info->row_level_filter
-            || format_filter_info->rows_to_read || format_filter_info->top_k_filter;
+        /// Unless a whole chunk of the columns would take a large part of the memory the query may use, while the block
+        /// size settings ask for less: then the row group is read in the blocks the settings ask for, still never
+        /// crossing a chunk, and is not written to the cache, which takes only whole chunks.
+        /// A chunk written to the cache is the server's only after it is decoded. A chunk served from the cache whole
+        /// takes no memory of the query in the reader, but the query processes it whole: e.g. a function of the column
+        /// allocates its result for the whole chunk. And the rows of a chunk that pass a filter, or that are in the
+        /// ranges of rows left by the column index, are copied out of it, see `getOrFormOutputColumn`.
+        /// When the size of the decoded strings of a column is not known, a whole chunk is not risked: the dictionary
+        /// of such a column is decoded in advance (see `ColumnChunk::decode_dictionary_early`), unless it does not
+        /// fit the memory budget of the reader either.
         double bytes_per_row = 0;
+        bool size_unknown = false;
         for (size_t i = 0; i < primitive_columns.size(); ++i)
-            if (!row_group.columns.at(i).served_from_cache || rows_may_be_filtered)
-                bytes_per_row += estimateColumnMemoryBytesPerRow(row_group.columns.at(i), row_group, primitive_columns.at(i));
+        {
+            const ColumnChunk & column = row_group.columns.at(i);
+            /// The columns served from the cache are counted below, by the size of the cached chunks.
+            if (column.served_from_cache)
+                continue;
+            bytes_per_row += estimateColumnMemoryBytesPerRow(column, row_group, primitive_columns.at(i));
+            size_unknown = size_unknown || decodedSizeIsUnknown(column, primitive_columns.at(i));
+        }
+        for (const auto & chunks : row_group.cached_columns)
+        {
+            size_t bytes = 0;
+            size_t rows = 0;
+            for (const auto & chunk : chunks)
+            {
+                bytes += chunk->byteSize();
+                rows += chunk->size();
+            }
+            if (rows)
+                bytes_per_row += static_cast<double>(bytes) / static_cast<double>(rows);
+        }
         const size_t memory_limit = memoryLimitOfCurrentThread();
         const bool chunk_too_large = memory_limit != 0 && rows_per_subgroup < COLUMNS_CACHE_CHUNK_ROWS
-            && bytes_per_row * static_cast<double>(COLUMNS_CACHE_CHUNK_ROWS) > static_cast<double>(memory_limit) / 4;
+            && (size_unknown || bytes_per_row * static_cast<double>(COLUMNS_CACHE_CHUNK_ROWS) > static_cast<double>(memory_limit) / 4);
         if (chunk_too_large)
             row_group.columns_cache_writes.clear();
         else
@@ -3184,6 +3205,15 @@ double Reader::estimateColumnMemoryBytesPerRow(const ColumnChunk & column, const
         res += (column_info.levels.back().rep - 1) * 8. * static_cast<double>(column.meta->meta_data.num_values) / static_cast<double>(row_group.meta->num_rows);
 
     return res;
+}
+
+bool Reader::decodedSizeIsUnknown(const ColumnChunk & column, const PrimitiveColumnInfo & column_info) const
+{
+    const auto & meta = column.meta->meta_data;
+    return !column_info.output_type->haveMaximumSizeOfValue()
+        && !(meta.__isset.size_statistics && meta.size_statistics.__isset.unencoded_byte_array_data_bytes)
+        && meta.__isset.dictionary_page_offset
+        && !column.dictionary.isInitialized();
 }
 
 size_t Reader::memoryEstimateLimit() const
@@ -4500,7 +4530,11 @@ void Reader::initColumnsCache()
                     row_group.columns_cache_writes.resize(extended_sample_block.columns());
                 row_group.columns_cache_writes[idx].active = true;
                 for (size_t i = info.primitive_start; i < info.primitive_end; ++i)
-                    estimated_bytes_to_write += size_t(std::max<Int64>(0, row_group.columns[i].meta->meta_data.total_uncompressed_size));
+                {
+                    ColumnChunk & column = row_group.columns[i];
+                    estimated_bytes_to_write += size_t(std::max<Int64>(0, column.meta->meta_data.total_uncompressed_size));
+                    column.decode_dictionary_early = decodedSizeIsUnknown(column, primitive_columns[i]);
+                }
             }
         }
     }

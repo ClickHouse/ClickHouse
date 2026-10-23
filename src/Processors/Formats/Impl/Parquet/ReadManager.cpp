@@ -259,7 +259,8 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
     }
     else if (stage == ReadStage::Dictionary)
     {
-        if (!reader.applyBloomAndDictionaryFilters(row_group, pruningMemoryReservation(diff)))
+        /// Without a condition, the stage only decoded the dictionaries for `ColumnChunk::decode_dictionary_early`.
+        if (reader.bloom_filter_condition && !reader.applyBloomAndDictionaryFilters(row_group, pruningMemoryReservation(diff)))
         {
             ProfileEvents::increment(ProfileEvents::ParquetDictionaryFilterPrunedRowGroups);
             stage = ReadStage::Deliver; // skip the row group
@@ -299,7 +300,7 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
                 break;
             case ReadStage::Dictionary:
                 for (size_t i = 0; i < row_group.columns.size(); ++i)
-                    if (row_group.columns[i].use_dictionary_filter)
+                    if (row_group.columns[i].use_dictionary_filter || row_group.columns[i].decode_dictionary_early)
                         add_tasks.push_back(Task {
                             .stage = ReadStage::Dictionary,
                             .row_group_idx = row_group_idx, .column_idx = i});
@@ -1070,7 +1071,10 @@ void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
                 /// `Reader::applyBloomFilters` evaluates the condition.
                 break;
             case ReadStage::Dictionary:
-                if (column.use_dictionary_filter)
+                /// The dictionary is decoded here for the dictionary filter, or to estimate the size of the decoded
+                /// strings, see `ColumnChunk::decode_dictionary_early`. The same budget is used for both: if the
+                /// dictionary does not fit, the size of the strings stays unknown.
+                if (column.use_dictionary_filter || column.decode_dictionary_early)
                 {
                     /// Reserve the decoded dictionary's footprint live against the shared pruning-stage
                     /// budget so it is visible to every row group pruning in parallel the moment it is
