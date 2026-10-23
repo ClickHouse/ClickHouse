@@ -1763,7 +1763,7 @@ bool AlterCommand::isDropOrRename() const
         || type == Type::RENAME_COLUMN;
 }
 
-std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets) const
+MutationCommands AlterCommand::tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets) const
 {
     if (!getMutationStageDecision(metadata, context).requires_mutation)
     {
@@ -1775,6 +1775,11 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
         return {};
     }
 
+    const auto & settings = context->getSettingsRef();
+    const UInt64 max_parser_depth = settings[Setting::max_parser_depth];
+    const UInt64 max_parser_backtracks = settings[Setting::max_parser_backtracks];
+
+    MutationCommands results;
     MutationCommand result;
 
     if (type == MODIFY_COLUMN)
@@ -1789,6 +1794,26 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
         result.column_name = column_name;
         if (clear)
             result.clear = true;
+
+        /// The mutation matches the columns of a part by their exact names, and the table may have a column named like
+        /// a member of the group again when the mutation runs. So the group is dropped member by member.
+        if (!clear && share_nested_offsets && !metadata.columns.has(column_name) && metadata.columns.hasNested(column_name))
+        {
+            for (const auto & nested_column : metadata.columns.getNested(column_name))
+            {
+                auto member_ast = make_intrusive<ASTAlterCommand>();
+                member_ast->type = ASTAlterCommand::DROP_COLUMN;
+                member_ast->if_exists = if_exists;
+                member_ast->set(member_ast->column, make_intrusive<ASTIdentifier>(nested_column.name));
+                results.push_back(MutationCommand{
+                    .ast_text = member_ast->formatWithSecretsOneLine(),
+                    .max_parser_depth = max_parser_depth,
+                    .max_parser_backtracks = max_parser_backtracks,
+                    .type = MutationCommand::Type::DROP_COLUMN,
+                    .column_name = nested_column.name,
+                });
+            }
+        }
     }
     else if (type == DROP_INDEX)
     {
@@ -1819,12 +1844,17 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
         result.rename_to = rename_to;
     }
 
-    result.ast_text = ast->formatWithSecretsOneLine();
-    const auto & settings = context->getSettingsRef();
-    result.max_parser_depth = settings[Setting::max_parser_depth];
-    result.max_parser_backtracks = settings[Setting::max_parser_backtracks];
+    if (results.empty())
+    {
+        chassert(result.type != MutationCommand::Type::EMPTY);
+        result.ast_text = ast->formatWithSecretsOneLine();
+        result.max_parser_depth = max_parser_depth;
+        result.max_parser_backtracks = max_parser_backtracks;
+        results.push_back(std::move(result));
+    }
+
     apply(metadata, context, share_nested_offsets);
-    return result;
+    return results;
 }
 
 bool AlterCommands::hasTextIndex(const StorageInMemoryMetadata & metadata)
@@ -2749,9 +2779,10 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
     MutationCommands result;
     for (const auto & alter_cmd : *this)
     {
-        if (auto mutation_cmd = alter_cmd.tryConvertToMutationCommand(metadata, context, share_nested_offsets); mutation_cmd)
+        if (auto mutation_cmds = alter_cmd.tryConvertToMutationCommand(metadata, context, share_nested_offsets); !mutation_cmds.empty())
         {
-            result.push_back(*mutation_cmd);
+            for (auto & mutation_cmd : mutation_cmds)
+                result.push_back(std::move(mutation_cmd));
         }
         else if (with_alters)
         {
