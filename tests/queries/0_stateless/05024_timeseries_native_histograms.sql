@@ -90,12 +90,14 @@ CREATE TABLE hist_data
     positive_values_int Array(UInt64),
     negative_values_int Array(UInt64)
 ) ENGINE = MergeTree ORDER BY (id, timestamp);
-CREATE TABLE ts_ext ENGINE = TimeSeries HISTOGRAMS hist_data;
+-- Version 10 has inner targets only, external ones need an earlier version.
+CREATE TABLE ts_ext_v10 ENGINE = TimeSeries HISTOGRAMS hist_data; -- { serverError INCORRECT_QUERY }
+CREATE TABLE ts_ext ENGINE = TimeSeries SETTINGS version = 9 HISTOGRAMS hist_data;
 SELECT count() FROM timeSeriesHistograms(ts_ext);
 DROP TABLE ts_ext;
 
 CREATE TABLE hist_missing_column (id Tuple(UInt64, LowCardinality(UUID)), timestamp DateTime64(3), flags UInt8) ENGINE = MergeTree ORDER BY (id, timestamp);
-CREATE TABLE ts_ext_missing ENGINE = TimeSeries HISTOGRAMS hist_missing_column; -- { serverError THERE_IS_NO_COLUMN }
+CREATE TABLE ts_ext_missing ENGINE = TimeSeries SETTINGS version = 9 HISTOGRAMS hist_missing_column; -- { serverError THERE_IS_NO_COLUMN }
 
 CREATE TABLE hist_bad_type
 (
@@ -117,7 +119,7 @@ CREATE TABLE hist_bad_type
     positive_values_int Array(Int64),
     negative_values_int Array(UInt64)
 ) ENGINE = MergeTree ORDER BY (id, timestamp);
-CREATE TABLE ts_ext_badtype ENGINE = TimeSeries HISTOGRAMS hist_bad_type; -- { serverError BAD_TYPE_OF_FIELD }
+CREATE TABLE ts_ext_badtype ENGINE = TimeSeries SETTINGS version = 9 HISTOGRAMS hist_bad_type; -- { serverError BAD_TYPE_OF_FIELD }
 
 DROP TABLE hist_data;
 DROP TABLE hist_missing_column;

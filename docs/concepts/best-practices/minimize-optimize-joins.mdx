@@ -7,63 +7,168 @@ keywords: ['JOIN', 'Parallel Hash JOIN']
 show_related_blogs: true
 doc_type: 'guide'
 ---
-
 import { Image } from "/snippets/components/Image.jsx";
 
-ClickHouse supports a wide variety of JOIN types and algorithms, and JOIN performance has improved significantly in recent releases. However, JOINs are inherently more expensive than querying from a single, denormalized table. Denormalization shifts computational work from query time to insert or pre-processing time, which often results in significantly lower latency at runtime. For real-time or latency-sensitive analytical queries, **denormalization is strongly recommended**.
+This page provides prescriptive guidance for avoiding JOINs when possible and reducing their cost when they are required. For syntax and semantics, see the [`JOIN` clause reference](/reference/statements/select/join). For execution algorithms and algorithm selection, see [Joining tables](/concepts/features/operations/select/joining-tables).
+
+## Prefer avoiding JOINs {#prefer-avoiding-joins}
+
+ClickHouse supports a wide variety of JOIN types and algorithms. However, JOINs are inherently more expensive than querying from a single, denormalized table. Denormalization shifts computational work from query time to insert or preprocessing time, which often results in significantly lower latency at runtime. For real-time or latency-sensitive analytical queries, **denormalization is strongly recommended**.
 
 In general, denormalize when:
 
 - Tables change infrequently or when batch refreshes are acceptable.
-- Relationships aren't many-to-many or not excessively high in cardinality.
+- Relationships are not many-to-many and do not have excessively high cardinality.
 - Only a limited subset of the columns will be queried, i.e. certain columns can be excluded from denormalization.
 - You have the capability to shift processing out of ClickHouse into upstream systems like [Flink](/integrations/connectors/data-ingestion/apache-flink), where real-time enrichment or flattening can be managed.
 
-Not all data needs to be denormalized — focus on the attributes that are frequently queried. Also consider [materialized views](/concepts/best-practices/use-materialized-views) to incrementally compute aggregates instead of duplicating entire sub-tables. When schema updates are rare and latency is critical, denormalization offers the best performance trade-off.
+Not all data needs to be denormalized - focus on the attributes that are frequently queried. Also consider [materialized views](/concepts/best-practices/use-materialized-views) to incrementally compute aggregates instead of duplicating entire sub-tables. When schema updates are rare and latency is critical, denormalization offers the best performance trade-off.
 
-For a full guide on denormalizing data in ClickHouse see [here](/guides/clickhouse/data-modelling/denormalization).
+For a full guide on denormalizing data in ClickHouse see [denormalization](/guides/clickhouse/data-modelling/denormalization).
 
 ## When JOINs are required {#when-joins-are-required}
 
-When JOINs are required, ensure you're using **at least version 24.12 and preferably the latest version**, as JOIN performance continues to improve with each new release. As of ClickHouse 24.12, the query planner now automatically places the smaller table on the right side of the join for optimal performance — a task that previously had to be done manually. Even more enhancements are coming soon, including more aggressive filter pushdown and automatic re-ordering of multiple joins.
+<Tip>
+**Use ClickHouse 26.8 or later.**
+
+Multi-table JOIN reordering and optimizer use of available statistics are enabled by default since 25.12. [Column statistics](/reference/settings/session-settings/allow-statistics#allow_statistics) became generally available and enabled by default in 26.3. Since 26.8, eligible tables [materialize column statistics on insert](/reference/settings/session-settings/materialize-statistics-on-insert#materialize_statistics_on_insert) by default, improving estimates for cost-based JOIN optimization.
+</Tip>
 
 Follow these best practices to improve JOIN performance:
 
-* **Avoid Cartesian products**: If a value on the left-hand side matches multiple values on the right-hand side, the JOIN will return multiple rows — the so-called Cartesian product. If your use case doesn't need all matches from the right-hand side but just any single match, you can use `ANY` JOINs (e.g. `LEFT ANY JOIN`). They're faster and use less memory than regular JOINs.
-* **Reduce the sizes of JOINed tables**: The runtime and memory consumption of JOINs grows proportionally with the sizes of the left and right tables. To reduce the amount of processed data by the JOIN, add additional filter conditions in the `WHERE` or `JOIN ON` clauses of the query. ClickHouse pushes filter conditions as deep as possible down in the query plan, usually before JOINs. If the filters aren't pushed down automatically (for any reason), rewrite one side of the JOIN as a sub-query to force pushdown.
-* **Use direct JOINs via dictionaries if appropriate**: Standard JOINs in ClickHouse are executed in two phases: a build phase which iterates the right-hand side to build a hash table, followed by a probe phase which iterates the left-hand side to find matching join partners via hash table lookups. If the right-hand side is a [dictionary](/concepts/features/dictionaries/index) or another table engine with key-value characteristics (e.g. [EmbeddedRocksDB](/reference/engines/table-engines/integrations/embedded-rocksdb) or the [Join table engine](/reference/engines/table-engines/special/join)), then ClickHouse can use the "direct" join algorithm, which effectively removes the need to build a hash table, speeding up query processing. This works for `INNER` and `LEFT OUTER` JOINs and is preferred for real-time analytical workloads.
-* **Utilize table sorting for JOINs**: Each table in ClickHouse is sorted by the table's primary key columns. It is possible to exploit the table's sorting by using so-called sort-merge JOIN algorithms like `full_sorting_merge` and `partial_merge`. Unlike standard JOIN algorithms based on hash tables (see below, `parallel_hash`, `hash`, `grace_hash`), sort-merge JOIN algorithms first sort and then merge both tables. If the query JOINs both tables by their respective primary key columns, then sort-merge has an optimization which omits the sort step, saving processing time and overhead.
-* **Avoid disk-spilling JOINs**: Intermediate states of JOINs (e.g. hash tables) can become so big that they no longer fit into main memory. In this situation, ClickHouse will return an out-of-memory error by default. Some join algorithms (see below), for example [`grace_hash`](https://clickhouse.com/blog/clickhouse-fully-supports-joins-hash-joins-part2), [`partial_merge`](https://clickhouse.com/blog/clickhouse-fully-supports-joins-full-sort-partial-merge-part3) and [`full_sorting_merge`](https://clickhouse.com/blog/clickhouse-fully-supports-joins-full-sort-partial-merge-part3), are able to spill intermediate states to disk and continue query execution. These join algorithms should nevertheless be used with care as disk access can significantly slow down join processing. We instead recommend optimizing the JOIN query in other ways to reduce the size of intermediate states.
-* **Default values as no-match markers in outer JOINs**: Left/right/full outer joins include all values from the left/right/both tables. If no join partner is found in the other table for some value, ClickHouse replaces the join partner by a special marker. The SQL standard mandates that databases use NULL as such a marker. In ClickHouse, this requires wrapping the result column in Nullable, creating an additional memory and performance overhead. As an alternative, you can configure the setting `join_use_nulls = 0` and use the default value of the result column data type as the marker.
+- **Use `ANY` JOINs when only one match is needed.** A regular JOIN returns every matching row and can produce a Cartesian product for duplicate keys. Use `LEFT ANY JOIN` or `ANY INNER JOIN` when one match is sufficient to reduce result size and memory use.
+- **Reduce both sides before the JOIN.** Apply selective conditions in `WHERE` and `JOIN ON` clauses. ClickHouse pushes filters down when possible, but explicit subqueries can ensure that each input is filtered before the JOIN.
+- **Consider `IN` instead of `INNER JOIN`.** When a query only needs to test whether a key exists in the other table, an `IN` subquery expresses that requirement directly and can use less memory than producing an `INNER JOIN` result.
+- **Prefer the `Join` table engine for reusable lookups.** The [`Join` table engine](/reference/engines/table-engines/special/join) stores a precomputed in-memory structure for a declared JOIN type, strictness, and key. In ClickHouse Cloud, it is implemented as `SharedJoin` with a `MergeTree` backing table, and `Join(ANY, LEFT, key)` provides an updatable per-key lookup. See [Fast, updatable lookups with the Join table engine](https://clickhouse.com/blog/join-table-engine).
+- **Join on table sorting keys when possible.** When both tables are physically ordered by the JOIN key, `full_sorting_merge` can skip sorting and reduce memory use. Confirm the execution plan and benchmark this algorithm against the default on representative data.
+- **Avoid disk-spilling JOINs.** Spilling intermediate JOIN state to disk can keep a query within its memory limit, but disk I/O usually increases latency. Hash joins can switch to grace hash at configured spill thresholds, while merge joins can use external sorting. Reduce input rows and columns or change the data model before relying on spilling. See [Choosing the optimal JOIN algorithm](#choosing-the-optimal-join-algorithm) for details.
+- **Use default values as no-match markers when appropriate.** The default [`join_use_nulls = 0`](/reference/settings/session-settings/join#join_use_nulls) fills unmatched outer JOIN columns with their data type's default value and avoids `Nullable` wrappers. Enable `join_use_nulls` only when the query must distinguish an unmatched row from a matched row containing a default value.
 
-<Info>
-**Use dictionaries carefully**
+## Choosing the optimal JOIN algorithm {#choosing-the-optimal-join-algorithm}
 
-When using dictionaries for JOINs in ClickHouse, it's important to understand that dictionaries, by design, don't allow duplicate keys. During data loading, any duplicate keys are silently deduplicated—only the last loaded value for a given key is retained. This behavior makes dictionaries ideal for one-to-one or many-to-one relationships where only the latest or authoritative value is needed. However, using a dictionary for a one-to-many or many-to-many relationship (e.g. joining roles to actors where an actor can have multiple roles) will result in silent data loss, as all but one of the matching rows will be discarded. As a result, dictionaries aren't suitable for scenarios requiring full relational fidelity across multiple matches. For more on when dictionaries help (and when they don't), see [Dictionary best practices](/concepts/features/dictionaries/best-practices).
-</Info>
+ClickHouse supports several JOIN algorithms that trade off between speed and memory.
+The default value of [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) is `direct,parallel_hash,hash,ie_join`, and ClickHouse selects the first applicable algorithm for the JOIN type, strictness, condition, and table engine. Consider changing it only after reducing both inputs and when measurements on representative data show that a different memory or execution strategy is needed. For algorithm execution details and supported JOIN types, see [Choosing a JOIN algorithm](/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm).
 
-## Choosing the correct JOIN Algorithm {#choosing-the-right-join-algorithm}
+If your key optimization metric is performance and you're looking to execute the join as fast as possible, then you can use the following decision tree for choosing the right join algorithm:
 
-ClickHouse supports several JOIN algorithms that trade off between speed and memory:
+<br />
 
-* **Parallel Hash JOIN (default):** Fast for small-to-medium right-hand tables that fit in memory.
-* **Direct JOIN:** Ideal when using dictionaries (or other table engines with key-value characteristics) with `INNER` or `LEFT ANY JOIN`  — the fastest method for point lookups as it eliminates the need to build a hash table.
-* **Full Sorting Merge JOIN:** Efficient when both tables are sorted on the join key.
-* **Partial Merge JOIN:** Minimizes memory but is slower—best for joining large tables with limited memory.
-* **Grace Hash JOIN:** Flexible and memory-tunable, good for large datasets with adjustable performance characteristics.
+<Image img="/images/guides/joins-4.webp" size="lg" alt="Join performance optimization decision tree"/>
 
-<Image img="/images/bestpractices/joins-speed-memory.png" size="md" alt="Joins — speed vs memory"/>
+<br />
 
-<Note>
-Each algorithm has varying support for JOIN types. A full list of supported join types for each algorithm can be found [here](/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm).
-</Note>
+- **(1)** If the data from the right-hand side table can be pre-loaded into an in-memory low-latency key-value data structure, e.g. a dictionary, and if the join key matches the key attribute of the underlying key-value storage, and if `LEFT ANY JOIN` semantics are adequate - then the **direct join** is applicable and is often the fastest approach.
 
-You can let ClickHouse choose the best algorithm by setting `join_algorithm = 'auto'`, or explicitly control it based on your workload. The default value is `direct,parallel_hash,hash`, so ClickHouse uses a direct join when the right-hand side is a dictionary or key-value engine and otherwise falls back to parallel hash, then hash. If you need to select a join algorithm to optimize for performance or memory overhead, we recommend [this guide](/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm).
+- **(2)** If your table's [physical row order](/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-stored-on-disk-ordered-by-primary-key-columns) matches the join key sort order, then it depends. In this case, the **full sorting merge join** [skips](https://clickhouse.com/blog/clickhouse-fully-supports-joins-full-sort-partial-merge-part3#utilizing-physical-row-order) the sorting phase resulting in significantly reduced memory usage plus, depending on data size and join key value distribution, faster execution times than some of the hash join algorithms.
 
-For optimal performance:
+- **(3)** If the right table fits into memory, even with the [additional memory usage overhead](https://clickhouse.com/blog/clickhouse-fully-supports-joins-hash-joins-part2#summary) of the **parallel hash join**, then this algorithm or the hash join can be faster. This depends on data size, data types, and value distribution of the join key columns.
 
-* Keep JOINs to a minimum in high-performance workloads.
-* Avoid more than 3–4 joins per query.
-* Benchmark different algorithms on real data — performance varies based on JOIN key distribution and data size.
+- **(4)** If the right table does not fit into memory, hash and parallel hash joins can spill by switching to grace hash when [`max_bytes_before_external_join`](/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) or [`max_bytes_ratio_before_external_join`](/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) is reached. Full sorting merge and partial merge joins can also use external storage. Which approach is fastest depends on the data volume, data types, and value distribution of the join key columns.
 
-For more on JOIN optimization strategies, JOIN algorithms, and how to tune them, refer to the[ ClickHouse documentation](/concepts/features/operations/select/joining-tables) and this [blog series](https://clickhouse.com/blog/clickhouse-fully-supports-joins-part1).
+Partial merge join is optimized for minimizing memory usage when large tables are joined, at the expense of join speed which is quite slow. This is especially the case when the physical row order of the left table doesn't match the join key sorting order.
+
+Grace hash join is the most flexible of the three non-memory-bound join algorithms and offers good control of settings. The [`grace_hash_join_initial_buckets`](/reference/settings/session-settings/grace-hash#grace_hash_join_initial_buckets) setting controls the initial number of buckets and provides a tradeoff between memory use and join speed.
+
+Which one of the three disk based algorithms is the fastest depends on the volume of data, the data types, and the value distribution of the join key columns. It is always best to run some benchmarks with realistic data volumes of your data in order to determine which algorithm is the fastest.
+
+## Optimizing for memory {#optimizing-for-memory}
+
+If you want to optimize a join for the lowest memory usage instead of the fastest execution time, then you can use this decision tree instead:
+
+<br />
+
+<Image img="/images/guides/joins-5.webp" size="lg" alt="Join memory optimization decision tree" />
+
+<br />
+
+- **(1)** If your table's physical row order matches the join key sort order, then the memory usage of the **full sorting merge join** is as low as it gets with the additional benefit of good join speed because the sorting phase is [disabled](https://clickhouse.com/blog/clickhouse-fully-supports-joins-full-sort-partial-merge-part3#utilizing-physical-row-order).
+- **(2)** The **grace hash join** can be tuned for very low memory usage by increasing [`grace_hash_join_initial_buckets`](/reference/settings/session-settings/grace-hash#grace_hash_join_initial_buckets) at the expense of join speed. The **partial merge join** intentionally uses a low amount of main memory. The **full sorting merge join** with external sorting enabled generally uses more memory than the partial merge join when the row order does not match the key sort order, with the benefit of significantly better join execution time. Hash and parallel hash joins can also reduce memory pressure by switching to grace hash at the configured spill threshold.
+
+## JOIN optimization examples {#join-optimization-examples}
+
+The following examples use the [Stack Overflow dataset](/getting-started/example-datasets/stackoverflow) and apply the recommendations progressively.
+The measurements below are medians from five runs on a ClickHouse Cloud service running ClickHouse 26.8.1 with `max_threads = 4`. Each query was warmed once, the query order was alternated, and `use_query_cache` and `use_query_condition_cache` were disabled.
+
+### Replace `ANY INNER JOIN` with `IN` {#replace-any-inner-join-with-in}
+
+In this test, the `IN` query was 2.7 times faster and used 83% less peak memory.
+This query counts posts that do not mention ClickHouse but have at least one comment that does:
+
+```sql
+SELECT count()
+FROM stackoverflow.posts AS p
+ANY INNER JOIN stackoverflow.comments AS c ON p.Id = c.PostId
+WHERE
+    p.Title != ''
+    AND p.Title NOT ILIKE '%clickhouse%'
+    AND p.Body NOT ILIKE '%clickhouse%'
+    AND c.Text ILIKE '%clickhouse%'
+```
+
+This query returns `86` as a result. Its median elapsed time was 27.101 seconds, with 970.01 MiB peak memory. It read 150.20 million rows and 51.77 GiB of data.
+
+The query needs only the existence of a matching comment. An `IN` subquery avoids producing a JOIN result:
+
+```sql
+SELECT count()
+FROM stackoverflow.posts
+WHERE
+    Title != ''
+    AND Title NOT ILIKE '%clickhouse%'
+    AND Body NOT ILIKE '%clickhouse%'
+    AND Id IN
+    (
+        SELECT PostId
+        FROM stackoverflow.comments
+        WHERE Text ILIKE '%clickhouse%'
+    )
+```
+
+The `IN` query also returns `86`. Its median elapsed time was 10.206 seconds, with 162.81 MiB peak memory. It read 174.20 million rows and 19.02 GiB of data.
+
+### Filter both sides before replacing the JOIN {#filter-both-sides-before-replacing-the-join}
+
+In this test, the rewrite reduced median elapsed time by 18% and peak memory by 14%.
+This query counts up-votes for Java-related posts created since 2020. The date condition is applied to both inputs before the JOIN:
+
+```sql
+SELECT countIf(v.VoteTypeId = 2) AS upvotes
+FROM stackoverflow.posts AS p
+INNER JOIN stackoverflow.votes AS v ON p.Id = v.PostId
+WHERE
+    p.CreationDate >= '2020-01-01'
+    AND v.CreationDate >= '2020-01-01'
+    AND has(arrayFilter(t -> t != '', splitByChar('|', p.Tags)), 'java')
+```
+
+This query returns `261915` as a result. Its median elapsed time was 0.850 seconds, with 59.96 MiB peak memory. It read 80.94 million rows and 1.13 GiB of data.
+
+Only the existence of a matching post is required for each vote, so the JOIN can then be replaced with `IN` while retaining filters on both inputs:
+
+```sql
+SELECT count() AS upvotes
+FROM stackoverflow.votes
+WHERE
+    VoteTypeId = 2
+    AND CreationDate >= '2020-01-01'
+    AND PostId IN
+    (
+        SELECT Id
+        FROM stackoverflow.posts
+        WHERE
+            CreationDate >= '2020-01-01'
+            AND has(arrayFilter(t -> t != '', splitByChar('|', Tags)), 'java')
+    )
+```
+
+The `IN` query also returns `261915`. Its median elapsed time was 0.696 seconds, with 51.70 MiB peak memory. It read 46.20 million rows and 817.49 MiB of data.
+
+## Further reading {#further-reading}
+
+- [Joining tables](/concepts/features/operations/select/joining-tables)
+- [`JOIN` clause reference](/reference/statements/select/join)
+- [Dictionary best practices](/concepts/features/dictionaries/best-practices)
+- [Full SQL JOIN support, Part 1](https://clickhouse.com/blog/clickhouse-fully-supports-joins)
+- [Full SQL JOIN support, Part 2](https://clickhouse.com/blog/clickhouse-fully-supports-joins-hash-joins-part2)
+- [Full SQL JOIN support, Part 3](https://clickhouse.com/blog/clickhouse-fully-supports-joins-full-sort-partial-merge-part3)
+- [Full SQL JOIN support, Part 4](https://clickhouse.com/blog/clickhouse-fully-supports-joins-direct-join-part4)
