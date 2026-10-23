@@ -7565,6 +7565,15 @@ StoragePolicyPtr Context::getStoragePolicy(const String & name) const
     return policy_selector->get(name);
 }
 
+StoragePolicyPtr Context::tryGetStoragePolicy(const String & name) const
+{
+    std::lock_guard lock(shared->storage_policies_mutex);
+
+    auto policy_selector = getStoragePolicySelector(lock);
+
+    return policy_selector->tryGet(name);
+}
+
 StoragePolicyPtr Context::getStoragePolicyFromDisk(const String & disk_name) const
 {
     std::lock_guard lock(shared->storage_policies_mutex);
