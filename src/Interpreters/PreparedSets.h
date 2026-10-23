@@ -13,6 +13,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/FutureSetSettings.h>
 #include <Interpreters/SetKeys.h>
+#include <Interpreters/SetSpillable.h>
 #include <Interpreters/StorageID.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Storages/IStorage_fwd.h>
@@ -47,6 +48,7 @@ struct SetAndKey
 {
     String key;
     SetPtr set;
+    std::shared_ptr<SetSpillState> spill_state = std::make_shared<SetSpillState>();
     StoragePtr external_table;
     /// `GLOBAL IN` under the analyzer attaches `external_table` only at pipeline build time (see
     /// `ReadFromRemote`), so the intent is recorded at set registration for the plan optimizations

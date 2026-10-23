@@ -41,6 +41,14 @@ instance2 = cluster.add_instance(
     with_rabbitmq=True,
 )
 
+# parallel_view_processing=0: the insert into views gets a single pipeline thread.
+serial_views_instance = cluster.add_instance(
+    "serial_views_instance",
+    main_configs=["configs/rabbitmq.xml"],
+    user_configs=["configs/users_serial_views.xml"],
+    with_rabbitmq=True,
+)
+
 # Helpers
 
 
@@ -3966,3 +3974,144 @@ def test_disable_message_queue_insertion(rabbitmq_cluster, db, unique, setting_n
             f"<{setting_name}>0</{setting_name}>",
         )
         instance.restart_clickhouse()
+
+
+def test_rabbitmq_reconnect_drops_stale_deliveries(rabbitmq_cluster, db, unique):
+    # After a reconnect the consumer gets new channels, but deliveries of the old ones stayed queued. They were inserted
+    # and, never acked, redelivered and inserted again. A block mixing both channels also acked an old delivery tag on
+    # the new channel: if the broker does not know the tag, it closes the channel and redelivers its whole window;
+    # otherwise it acks messages that were not inserted yet.
+    block_size = 100
+    messages_num = 10000
+    instance.query(
+        f"""
+        CREATE TABLE {db}.rabbitmq (key UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = '{unique}',
+                     rabbitmq_queue_base = '{unique}',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_max_block_size = {block_size},
+                     rabbitmq_flush_interval_ms = 1000;
+        CREATE TABLE {db}.view (key UInt64) ENGINE = MergeTree ORDER BY key;
+        """
+    )
+
+    def rabbitmqctl(*args):
+        return rabbitmq_cluster.exec_in_container(
+            rabbitmq_cluster.rabbitmq_docker_id,
+            ["env", f"RABBITMQ_ERLANG_COOKIE={rabbitmq_cluster.rabbitmq_cookie}", "rabbitmqctl", *args],
+        )
+
+    def view_rows():
+        return int(instance.query(f"SELECT count() FROM {db}.view"))
+
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    connection = pika.BlockingConnection(
+        pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials)
+    )
+    channel = connection.channel()
+    channel.confirm_delivery()
+    for i in range(messages_num):
+        channel.basic_publish(exchange=unique, routing_key="", body=json.dumps({"key": i}))
+    connection.close()
+
+    # The consumer subscribes once a view is attached and then gets the whole backlog at once. A block of 100 rows takes
+    # 0.2 s, so most of the backlog is still queued in the consumer when the connection drops.
+    instance.query(
+        f"CREATE MATERIALIZED VIEW {db}.consumer TO {db}.view AS "
+        f"SELECT key FROM {db}.rabbitmq WHERE sleepEachRow(0.002) = 0"
+    )
+    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
+    while view_rows() < 5 * block_size:
+        assert time.monotonic() < deadline, "consumption did not start"
+        time.sleep(0.1)
+    rabbitmqctl("close_all_connections", "test")
+    assert view_rows() < messages_num // 2, "the backlog was consumed before the connection dropped"
+    instance.wait_for_log_line(f"\\({db}.rabbitmq\\): Connection restored")
+
+    # Done once the broker holds nothing for the queue and nothing more is inserted.
+    def queue_drained():
+        out = rabbitmqctl("-q", "list_queues", "name", "messages_ready", "messages_unacknowledged")
+        queues = [line.split() for line in out.splitlines() if unique in line]
+        return bool(queues) and all(q[1] == "0" and q[2] == "0" for q in queues)
+
+    deadline = time.monotonic() + 3 * DEFAULT_TIMEOUT_SEC
+    last_count, stable_since = -1, time.monotonic()
+    while not (queue_drained() and time.monotonic() - stable_since >= 3):
+        current = view_rows()
+        assert time.monotonic() < deadline, f"consumption did not finish, {current} rows"
+        if current != last_count:
+            last_count, stable_since = current, time.monotonic()
+        time.sleep(0.5)
+
+    assert int(instance.query(f"SELECT uniqExact(key) FROM {db}.view")) == messages_num
+    bad_acks = instance.exec_in_container(
+        ["bash", "-c", f"grep -c '({db}.rabbitmq).*unknown delivery tag' /var/log/clickhouse-server/clickhouse-server.log || true"]
+    ).strip()
+    duplicates = view_rows() - messages_num
+    logging.info(f"{duplicates} duplicates after the reconnect")
+    assert bad_acks == "0", f"{bad_acks} acks with a delivery tag of a replaced channel"
+    # With one consumer, only the block in flight when the connection dropped comes back legitimately. If the connection
+    # drops while that block is being acked, the next cycle may read one more block from the old channel before it
+    # notices, hence at most two blocks. Replaying the queued deliveries duplicates most of the backlog.
+    assert duplicates <= 2 * block_size, f"{duplicates} duplicates"
+
+
+def test_rabbitmq_read_consumers_in_parallel(rabbitmq_cluster, unique):
+    # With parallel_view_processing=0 the sources of several consumers ran one after another on one thread. They share
+    # the flush deadline of a cycle, so once the first source had used it the others returned after one message each,
+    # and their messages waited many cycles. Measured from publish to insert (squashing would hide it in part counts).
+    node = serial_views_instance
+    node.query(
+        f"""
+        DROP DATABASE IF EXISTS {unique} SYNC;
+        CREATE DATABASE {unique};
+        CREATE TABLE {unique}.rabbitmq (key UInt64, sent Float64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = '{unique}',
+                     rabbitmq_queue_base = '{unique}',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_num_consumers = 4,
+                     rabbitmq_num_queues = 1,
+                     rabbitmq_flush_interval_ms = 1000;
+        CREATE TABLE {unique}.view (key UInt64, delay Float64) ENGINE = MergeTree ORDER BY key;
+        CREATE MATERIALIZED VIEW {unique}.consumer TO {unique}.view AS
+            SELECT key, toUnixTimestamp64Milli(now64(3)) / 1000 - sent AS delay FROM {unique}.rabbitmq;
+        """
+    )
+
+    # A steady trickle for about 20 seconds: every consumer of the queue gets some messages in each cycle.
+    messages_num = 2000
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    connection = pika.BlockingConnection(pika.ConnectionParameters(
+        rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials))
+    # Publish only once all 4 consumers are subscribed (the queue is 1_<queue_base>). The table declares the queue
+    # asynchronously after CREATE returns, and a passive declare of a missing queue closes the channel, so use a new one.
+    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
+    while True:
+        probe = connection.channel()
+        try:
+            consumer_count = probe.queue_declare(queue=f"1_{unique}", passive=True).method.consumer_count
+            probe.close()
+        except pika.exceptions.ChannelClosedByBroker:
+            consumer_count = 0
+        if consumer_count >= 4:
+            break
+        assert time.monotonic() < deadline, "not all consumers subscribed"
+        time.sleep(0.1)
+    channel = connection.channel()
+    channel.confirm_delivery()
+    for i in range(messages_num):
+        channel.basic_publish(exchange=unique, routing_key="", body=json.dumps({"key": i, "sent": time.time()}))
+        time.sleep(0.01)
+    connection.close()
+
+    check_expected_result_polling(messages_num, f"SELECT uniqExact(key) FROM {unique}.view", instance=node)
+    late, max_delay = node.query(f"SELECT countIf(delay > 5), round(max(delay), 1) FROM {unique}.view").split()
+    node.query(f"DROP DATABASE {unique} SYNC")
+    logging.info(f"{late} of {messages_num} messages inserted more than 5 s after publishing, max delay {max_delay} s")
+    # Read in parallel, a message waits about one flush interval (1 s). Read one after another, about half of them
+    # waited longer than 5 s.
+    assert int(late) < messages_num // 20, f"{late} messages inserted more than 5 s after publishing (max {max_delay} s)"

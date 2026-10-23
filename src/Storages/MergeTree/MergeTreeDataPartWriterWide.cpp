@@ -188,11 +188,8 @@ void MergeTreeDataPartWriterWide::initStreamsToOpenCount()
     streams_to_open_in_part = stream_names.size();
 }
 
-void MergeTreeDataPartWriterWide::addStreams(
-    const NameAndTypePair & name_and_type,
-    const ASTPtr & effective_codec_desc)
+void MergeTreeDataPartWriterWide::addStreams(const NameAndTypePair & name_and_type)
 {
-    const bool column_uses_default_codec = columnUsesDefaultCodec(name_and_type.getNameInStorage());
     ISerialization::StreamCallback callback = [&](const auto & substream_path)
     {
         chassert(!substream_path.empty());
@@ -224,7 +221,7 @@ void MergeTreeDataPartWriterWide::addStreams(
                 " It is a collision between a filename for one column and a hash of filename for another column or a bug",
                 stream_name, it->second, full_stream_name);
 
-        auto compression_codec = getSubstreamCodec(effective_codec_desc, substream_path, column_uses_default_codec);
+        auto compression_codec = getSubstreamCodec(name_and_type, substream_path);
 
         CompressionCodecPtr marks_compression_codec = CompressionCodecFactory::instance().get(settings.marks_compression_codec);
 
@@ -981,16 +978,6 @@ void MergeTreeDataPartWriterWide::writeFinalMark(const NameAndTypePair & name_an
     serialization->enumerateStreams(enumerate_settings, callback, data);
 }
 
-static void fillIndexGranularityImpl(
-    MergeTreeIndexGranularity & index_granularity,
-    size_t index_offset,
-    size_t index_granularity_for_block,
-    size_t rows_in_block)
-{
-    for (size_t current_row = index_offset; current_row < rows_in_block; current_row += index_granularity_for_block)
-        index_granularity.appendMark(index_granularity_for_block);
-}
-
 void MergeTreeDataPartWriterWide::fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block)
 {
     if (getCurrentMark() < index_granularity->getMarksCount() && getCurrentMark() != index_granularity->getMarksCount() - 1)
@@ -1001,11 +988,7 @@ void MergeTreeDataPartWriterWide::fillIndexGranularity(size_t index_granularity_
     if (rows_written_in_last_mark != 0)
         index_offset = index_granularity->getLastMarkRows() - rows_written_in_last_mark;
 
-    fillIndexGranularityImpl(
-        *index_granularity,
-        index_offset,
-        index_granularity_for_block,
-        rows_in_block);
+    fillIndexGranularityForWidePart(*index_granularity, index_offset, index_granularity_for_block, rows_in_block);
 }
 
 
