@@ -78,6 +78,7 @@ public:
 
     bool isSuitableForConstantFolding() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    bool isExpensive() const override { return true; }
 
     /// Handle Nullable cols explicitly, since setting this to true may call func with arbitrary input values
     bool useDefaultImplementationForNulls() const override { return false; }
@@ -107,7 +108,11 @@ public:
         String model(arguments[model_arg_index].column->getDataAt(0));
 
         auto provider = createAIProvider(
-            params.collection.provider, params.collection.endpoint, params.collection.api_key, params.collection.api_version);
+            getContext(),
+            params.collection.provider,
+            params.collection.endpoint,
+            params.collection.api_key,
+            params.collection.api_version);
         if (!provider->supportsEmbeddings())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "AI provider '{}' does not support embeddings", params.collection.provider);
