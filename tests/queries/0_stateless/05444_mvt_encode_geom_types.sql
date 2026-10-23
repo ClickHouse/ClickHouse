@@ -7,7 +7,9 @@
 -- Geometry variant; `buffer` is in [0, 2147483647]; geometries falling entirely outside the tile become NULL.
 
 SELECT '-- MVTEncodeGeom: a buffer beyond the representable MVT coordinate range is rejected';
-SELECT MVTEncodeGeom((0.0, 0.0)::Point, 0, 0, 0, 4096, CAST(2147483648, 'UInt64')); -- { serverError ARGUMENT_OUT_OF_BOUND }
+-- clip = 0 (the seventh argument) so that only the buffer range check can reject this row:
+-- the extent + 2 * buffer check applies to clipped geometries only.
+SELECT MVTEncodeGeom((0.0, 0.0)::Point, 0, 0, 0, 4096, CAST(2147483648, 'UInt64'), 0); -- { serverError ARGUMENT_OUT_OF_BOUND }
 
 SELECT '-- MVTEncodeGeom: a MultiPoint keeps the points inside the tile and drops the rest';
 SELECT MVTEncodeGeom([(13.37, 52.52), (0.0, 0.0)]::MultiPoint, 10, 550, 335);
