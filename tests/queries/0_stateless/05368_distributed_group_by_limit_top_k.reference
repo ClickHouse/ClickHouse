@@ -1,0 +1,43 @@
+2	16
+3	25
+4	20
+2	16
+3	25
+4	20
+2	16
+3	25
+4	20
+2	16
+3	25
+4	20
+2	16
+3	25
+4	20
+2	16
+3	25
+4	20
+2	32
+3	50
+4	40
+2	32
+3	50
+4	40
+2	32
+3	50
+4	40
+05368_replicas_plan_based	1
+05368_replicas_query_plan	1
+05368_replicas_query_text	1
+05368_shards_query_plan	1
+05368_shards_query_text	1
+Sorting (Sorting for GROUP BY top-K)
+Top-K: limit=3, columns=1, directions=[1]
+0
+2591	60
+4183	52
+7992	60
+	1
+3	1
+0	1
+1	1
+2	1

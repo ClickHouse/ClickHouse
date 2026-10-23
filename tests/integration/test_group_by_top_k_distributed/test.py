@@ -13,11 +13,11 @@ prefix of the GROUP BY keys:
     partial side: a key rejected by a shard-local heap cannot be in the
     global top-N, and the initiator's final sort + LIMIT discards any group
     a remote eviction left incomplete.
-  * without ORDER BY (`GROUP BY ... LIMIT N`) - stays final-only over a
-    Distributed table: the synthesized sort that makes this shape safe cannot
-    be placed above the initiator's merge, so the pushdown must never fire on
-    followers.  With parallel replicas, `GroupByLimitOrderByKeysPass` orders
-    the query by the keys, and it becomes the shape with ORDER BY.
+  * without ORDER BY (`GROUP BY ... LIMIT N`) - the initiator synthesizes a
+    sort over all the keys above its merge, which makes the shape the one with
+    ORDER BY, and tells the followers to put the heap on their partial
+    aggregation (`distributed_group_by_top_k`).  A follower never decides
+    that on its own: the clause guards below protect the shape with ORDER BY.
 
 The data is deliberately skewed so a heap would actually filter rows:
 shard 1 has many distinct small keys (fills an N=10 heap on its own),
@@ -405,25 +405,23 @@ def test_distributed_remote_composite_prefix(start_cluster):
 def test_distributed_remote_no_order_by(start_cluster):
     """`GROUP BY k LIMIT N` (no ORDER BY) over a Distributed table.
 
-    The no-ORDER-BY shape is the one the gate definitively protects: there
-    is no ORDER BY at the coordinator to evict tuples with corrupted partial
-    state, so if the gate were ever wrongly relaxed for partial aggregation
-    this would diverge.
-
-    To make the comparison deterministic regardless of LIMIT's arbitrary
-    tie-breaking, we compare a deterministic aggregate over the LIMIT'd
-    rowset.
+    The initiator sorts the merged groups by the key and each shard keeps only
+    its smallest N groups, so the query returns the smallest N groups with
+    complete aggregates.  A shard pruning without the initiator's sort would
+    return groups with partial aggregates instead.
     """
     _make_local_shards()
-    inner = (
+    query = (
         "SELECT k, sum(v) AS s "
         "FROM remote('node{1,2}', currentDatabase(), t_local) "
         "GROUP BY k "
-        "LIMIT 100"
     )
-    # Sum + sort the surviving (k, s) pairs to get a stable comparison.
-    outer = f"SELECT sum(k), sum(s), count() FROM ({inner})"
-    _assert_same_result(node1, outer)
+    expected = _run(node1, query + "ORDER BY k LIMIT 100", 0)
+    on = _run(node1, query + "LIMIT 100", 1)
+    assert expected == on, (
+        f"GROUP BY ... LIMIT did not return the smallest groups.\n"
+        f"  expected:\n{expected}\n  on:\n{on}\n"
+    )
 
 
 def test_distributed_remote_array_join_projection(start_cluster):
@@ -819,11 +817,9 @@ def test_parallel_replicas_no_order_by(start_cluster, max_parallel_replicas):
 def test_parallel_replicas_no_order_by_serialize_query_plan(
     start_cluster, parallel_replicas_local_plan
 ):
-    """With parallel replicas, the no-ORDER-BY shape is ordered by the keys
-    (`GroupByLimitOrderByKeysPass`), so the initiator keeps the smallest groups
-    of the merged ones and each follower may prune its partial aggregation.
-    The plan must sort the merged groups by the injected ORDER BY, never by the
-    synthetic sort, which cannot be placed above the initiator's merge.  The
+    """With parallel replicas, the no-ORDER-BY shape gets the synthetic sort
+    above the initiator's merge, so the initiator keeps the smallest groups of
+    the merged ones and each follower may prune its partial aggregation.  The
     result must be the smallest groups, regardless of whether the initiator
     also executes a local fragment.
     """
@@ -842,12 +838,10 @@ def test_parallel_replicas_no_order_by_serialize_query_plan(
         f"EXPLAIN actions = 1 {inner}",
         settings=dict(settings_base, enable_group_by_top_k_optimization=1),
     )
-    assert "Sorting for ORDER BY" in plan, plan
-    assert "Sorting for GROUP BY top-K" not in plan, plan
+    assert "Sorting for GROUP BY top-K" in plan, plan
     if parallel_replicas_local_plan:
         assert "Top-K:" in plan, plan
 
-    # At the top level: the pass orders only the outermost query.
     expected = node1.query(
         f"SELECT k, sum(v) AS s FROM {table} GROUP BY k ORDER BY k LIMIT 100",
         settings={"enable_parallel_replicas": 0},

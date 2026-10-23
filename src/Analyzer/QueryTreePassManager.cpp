@@ -48,7 +48,6 @@
 #include <Analyzer/Passes/OptimizeLimitByFunctionKeysPass.h>
 #include <Analyzer/Passes/OptimizeLimitByInjectiveFunctionsPass.h>
 #include <Analyzer/Passes/OptimizeRedundantFunctionsInOrderByPass.h>
-#include <Analyzer/Passes/GroupByLimitOrderByKeysPass.h>
 #include <Analyzer/Passes/OptimizeTrivialGroupByLimitPass.h>
 #include <Analyzer/Passes/OrderByLimitByDuplicateEliminationPass.h>
 #include <Analyzer/Passes/OrderByTupleEliminationPass.h>
@@ -349,8 +348,6 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     manager.addPass(std::make_unique<ShardNumColumnToFunctionPass>());
 
     manager.addPass(std::make_unique<OptimizeTrivialGroupByLimitPass>());
-    /// After `OptimizeTrivialGroupByLimitPass`: the `max_rows_to_group_by` it may set takes the query away from the heap.
-    manager.addPass(std::make_unique<GroupByLimitOrderByKeysPass>());
 
     manager.addPass(std::make_unique<InjectRandomOrderIfNoOrderByPass>());
 

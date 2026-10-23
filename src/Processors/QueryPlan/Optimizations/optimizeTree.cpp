@@ -970,6 +970,8 @@ void optimizeTreeSecondPass(
     /// Automatic parallel replicas runs later, but replaces the whole plan by one optimized on its own.
     if (optimization_settings.enable_group_by_top_k_optimization)
     {
+        if (optimization_settings.distributed_group_by_top_k)
+            applyGroupByTopKOfInitiator(root, nodes, optimization_settings.distributed_group_by_top_k, extra_settings);
         traverseQueryPlan(stack, root, [&](auto & frame_node) { tryOptimizeGroupByTopK(&frame_node, nodes, extra_settings); });
     }
 

@@ -41,6 +41,7 @@ namespace Setting
     extern const SettingsBool enable_group_by_top_k_optimization;
     extern const SettingsBool enable_group_by_top_k_dynamic_filtering;
     extern const SettingsUInt64 group_by_top_k_optimization_observation_rows;
+    extern const SettingsUInt64 distributed_group_by_top_k;
     extern const SettingsBool group_by_top_k_optimization_shared_boundary;
     extern const SettingsBool distributed_plan_fallback_to_local_execution;
     extern const SettingsBool distributed_plan_execute_locally;
@@ -424,6 +425,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
             && from->getSettingsRef()[Setting::parallel_replicas_support_projection])
 {
     skip_forced_projection_check = from->skipsForcedProjectionCheck();
+    if (from->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+        distributed_group_by_top_k = from->getSettingsRef()[Setting::distributed_group_by_top_k];
     distributed_plan_local_object = from->getDistributedPlanLocalObject();
     max_parallel_replicas = from->getSettingsRef()[Setting::max_parallel_replicas];
     if (auto cluster_name = from->getSettingsRef()[Setting::cluster_for_parallel_replicas].value; !cluster_name.empty())

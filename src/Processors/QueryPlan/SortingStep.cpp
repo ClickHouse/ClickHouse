@@ -848,7 +848,6 @@ QueryPlanStepPtr SortingStep::clone() const
         input_headers.front(), result_description, limit, sort_settings, is_sorting_for_merge_join);
     cloned->always_read_till_end = always_read_till_end;
     cloned->is_partial_top_n = is_partial_top_n;
-    cloned->is_for_group_by_top_k = is_for_group_by_top_k;
     cloned->use_buffering = use_buffering;
     cloned->apply_virtual_row_conversions = apply_virtual_row_conversions;
     cloned->threshold_tracker = threshold_tracker;

@@ -127,10 +127,6 @@ public:
     bool isPartialTopN() const { return is_partial_top_n; }
     void setPartialTopN() { is_partial_top_n = true; }
 
-    /// See `QueryNode::isOrderByForGroupByTopK`.
-    bool isForGroupByTopK() const { return is_for_group_by_top_k; }
-    void setForGroupByTopK() { is_for_group_by_top_k = true; }
-
     void convertToFinishSorting(SortDescription prefix_description, bool use_buffering_, bool apply_virtual_row_conversions_);
 
     void enableBuffering() { use_buffering = true; }
@@ -238,9 +234,6 @@ private:
     /// This flag marks the first stage. It only tells the optimizer what the sort is for (like
     /// `is_sorting_for_merge_join`); the executed sort is the same, so it is not serialized.
     bool is_partial_top_n = false;
-
-    /// The `ORDER BY` of `GroupByLimitOrderByKeysPass`. Like `is_partial_top_n`, not serialized.
-    bool is_for_group_by_top_k = false;
 
     UInt64 limit;
     bool always_read_till_end = false;

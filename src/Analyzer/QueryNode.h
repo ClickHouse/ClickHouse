@@ -213,18 +213,6 @@ public:
         is_limit_with_ties = is_limit_with_ties_value;
     }
 
-    /// Returns true if the `ORDER BY` was added by `GroupByLimitOrderByKeysPass`, false otherwise.
-    /// The query text does not carry it, so a replica reading the query sees an ordinary `ORDER BY`.
-    bool isOrderByForGroupByTopK() const
-    {
-        return is_order_by_for_group_by_top_k;
-    }
-
-    void setIsOrderByForGroupByTopK(bool value)
-    {
-        is_order_by_for_group_by_top_k = value;
-    }
-
     /// Returns true, if query node has GROUP BY WITH TOTALS, false otherwise
     bool isGroupByWithTotals() const
     {
@@ -787,7 +775,6 @@ private:
     bool is_order_by_all = false;
     bool is_limit_by_all = false;
     bool is_limit_after_all = false;
-    bool is_order_by_for_group_by_top_k = false;
 
     std::string cte_name;
     NamesAndTypes projection_columns;

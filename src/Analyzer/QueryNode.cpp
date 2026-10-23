@@ -463,7 +463,6 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
     result_query_node->is_order_by_all = is_order_by_all;
     result_query_node->is_limit_by_all = is_limit_by_all;
     result_query_node->is_limit_after_all = is_limit_after_all;
-    result_query_node->is_order_by_for_group_by_top_k = is_order_by_for_group_by_top_k;
     result_query_node->cte_name = cte_name;
     result_query_node->projection_columns = projection_columns;
     result_query_node->settings_changes = settings_changes;
