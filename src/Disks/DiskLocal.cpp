@@ -24,6 +24,7 @@
 #include <sys/stat.h>
 
 #include <Disks/IO/WriteBufferFromTemporaryFile.h>
+#include <base/scope_guard.h>
 
 #include <Common/randomSeed.h>
 #include <IO/ReadHelpers.h>
@@ -72,39 +73,30 @@ void syncLocalPath(const fs::path & path, int open_flags, bool is_directory)
     if (fd == -1)
         ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, path, "Cannot open {} {}", is_directory ? "directory" : "file", path);
 
-    const auto close_fd = [&]
-    {
-        const int fd_to_close = std::exchange(fd, -1);
-        if (::close(fd_to_close) == -1)
-            ErrnoException::throwFromPath(ErrorCodes::CANNOT_CLOSE_FILE, path, "Cannot close {} {}", is_directory ? "directory" : "file", path);
-    };
-
-    try
-    {
-        const int sync_result =
-#if defined(OS_DARWIN)
-            ::fsync(fd);
-#else
-            is_directory ? ::fsync(fd) : ::fdatasync(fd);
-#endif
-        if (sync_result == -1)
-            ErrnoException::throwFromPath(
-                ErrorCodes::CANNOT_FSYNC,
-                path,
-                "Cannot synchronize {} {}",
-                is_directory ? "directory" : "file",
-                path);
-        close_fd();
-    }
-    catch (...)
-    {
+    SCOPE_EXIT({
         if (fd != -1)
         {
             [[maybe_unused]] int err = ::close(fd);
             chassert(!err || errno == EINTR);
         }
-        throw;
-    }
+    });
+
+    const int sync_result =
+#if defined(OS_DARWIN)
+        ::fsync(fd);
+#else
+        is_directory ? ::fsync(fd) : ::fdatasync(fd);
+#endif
+    if (sync_result == -1)
+        ErrnoException::throwFromPath(
+            ErrorCodes::CANNOT_FSYNC,
+            path,
+            "Cannot synchronize {} {}",
+            is_directory ? "directory" : "file",
+            path);
+
+    if (::close(std::exchange(fd, -1)) == -1)
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_CLOSE_FILE, path, "Cannot close {} {}", is_directory ? "directory" : "file", path);
 }
 
 bool errnoIndicatesReadOnlyDisk(int err)
