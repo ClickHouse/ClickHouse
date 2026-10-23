@@ -614,11 +614,16 @@ InputFormatPtr FormatFactory::getInputImpl(
         && creators.file_segmentation_engine_creator && !(creators.random_access_input_creator || creators.random_access_input_creator_with_metadata)
         && !need_only_count;
 
-    if (settings[Setting::max_memory_usage]
-        && settings[Setting::min_chunk_bytes_for_parallel_parsing] * max_parsing_threads * 2 > settings[Setting::max_memory_usage])
+    /// Whether `min_chunk_bytes_for_parallel_parsing * max_parsing_threads * 2` exceeds the memory limit, without overflowing.
+    auto exceeds_memory_limit = [&](UInt64 memory_limit)
+    {
+        const UInt64 min_chunk_bytes = settings[Setting::min_chunk_bytes_for_parallel_parsing];
+        return memory_limit && min_chunk_bytes && max_parsing_threads > memory_limit / min_chunk_bytes / 2;
+    };
+
+    if (exceeds_memory_limit(settings[Setting::max_memory_usage]))
         parallel_parsing = false;
-    if (settings[Setting::max_memory_usage_for_user]
-        && settings[Setting::min_chunk_bytes_for_parallel_parsing] * max_parsing_threads * 2 > settings[Setting::max_memory_usage_for_user])
+    if (exceeds_memory_limit(settings[Setting::max_memory_usage_for_user]))
         parallel_parsing = false;
 
     if (format_settings.connection_handling)
@@ -774,7 +779,7 @@ std::unique_ptr<ReadBuffer> FormatFactory::wrapReadBufferIfNeeded(
         try
         {
             file_size = getFileSizeFromReadBuffer(buf);
-            parallel_read = file_size >= 2 * settings[Setting::max_download_buffer_size];
+            parallel_read = file_size / 2 >= settings[Setting::max_download_buffer_size];
         }
         catch (const Poco::Exception & e)
         {
