@@ -1977,6 +1977,37 @@ def test_large_uint64_round_trips_as_a_decimal(started_cluster):
     node.query("DROP TABLE db.uint64_values", password="123")
 
 
+def test_wide_integers_keep_their_digits(started_cluster):
+    """An integer wider than 64 bits is written by the output as a bare JSON number, which a double
+    would round. It comes back as a decimal128 when that holds it exactly, and as the string of its
+    digits otherwise; a large float in the same row is still a double."""
+    node = cluster.instances["node"]
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query("DROP TABLE IF EXISTS db.wide_integers", password="123")
+    node.query(
+        "CREATE TABLE db.wide_integers (id Int64, a Int128, b UInt128, c Int256, d UInt256, e Array(Int128), f Float64) "
+        "ENGINE = MergeTree ORDER BY id",
+        password="123",
+    )
+    node.query(
+        "INSERT INTO db.wide_integers VALUES (1, 18446744073709551617, 340282366920938463463374607431768211455, "
+        "-18446744073709551617, 12, [18446744073709551617, 3], 1e20)",
+        password="123",
+    )
+
+    collection = make_client()["db"]["wide_integers"]
+    document = collection.find_one({}, {"_id": 0})
+    assert document["a"] == bson.Decimal128("18446744073709551617")
+    assert document["b"] == "340282366920938463463374607431768211455"
+    assert document["c"] == bson.Decimal128("-18446744073709551617")
+    assert document["d"] == 12
+    assert document["e"] == [bson.Decimal128("18446744073709551617"), 3]
+    assert document["f"] == 1e20 and isinstance(document["f"], float)
+    assert collection.distinct("a") == [bson.Decimal128("18446744073709551617")]
+
+    node.query("DROP TABLE db.wide_integers", password="123")
+
+
 def test_update_operator_values_are_data(started_cluster):
     """An update statement carries data, not an aggregation pipeline: a string that starts with
     a dollar sign is stored as it is written rather than read as a field path, and a document
@@ -2349,6 +2380,20 @@ def test_element_wise_match_over_a_document_collection_compares_the_value(starte
         list(collection.find({"tags": "green"}))
     with pytest.raises(pymongo.errors.OperationFailure):
         list(collection.find({"tags": {"$in": ["green"]}}))
+
+    collection.drop()
+
+
+def test_size_over_a_document_collection_reads_the_array(started_cluster):
+    """A path of a document is `Dynamic`, so `$size` checks the type of the value it holds rather
+    than the type of the path: the array matches, and a negated `$size` in a delete keeps it."""
+    collection = make_client()["db"]["document_sizes"]
+    collection.drop()
+    collection.insert_many([{"k": 1, "tags": [1, 2]}, {"k": 2, "tags": [1, 2, 3]}, {"k": 3, "tags": 5}, {"k": 4}])
+
+    assert [document["k"] for document in collection.find({"tags": {"$size": 2}})] == [1]
+    collection.delete_many({"tags": {"$not": {"$size": 2}}})
+    assert [document["k"] for document in collection.find({})] == [1]
 
     collection.drop()
 
@@ -3240,17 +3285,19 @@ def test_the_settings_of_a_profile_do_not_weaken_the_replies(started_cluster):
         "CREATE USER mongo_lenient_user IDENTIFIED WITH plaintext_password BY 'mongo_pass' "
         "SETTINGS output_format_json_map_as_array_of_tuples = 1, output_format_json_skip_null_value_in_named_tuples = 1, "
         "input_format_allow_errors_num = 1, input_format_allow_errors_ratio = 1, skip_unavailable_shards = 1, "
-        "max_result_rows = 2, result_overflow_mode = 'break', max_block_size = 1",
+        "max_result_rows = 2, result_overflow_mode = 'break', max_block_size = 1, "
+        "output_format_float_precision = 1, output_format_trim_fixed_string = 1",
         password="123",
     )
     node.query("GRANT ALL ON db.* TO mongo_lenient_user", password="123")
     for table in ["profile_shapes", "profile_strict", "profile_rows", "profile_missing_shard"]:
         node.query(f"DROP TABLE IF EXISTS db.{table}", password="123")
     node.query(
-        "CREATE TABLE db.profile_shapes (id Int64, m Map(String, Int64), t Tuple(a Nullable(Int64))) ENGINE = MergeTree ORDER BY id",
+        "CREATE TABLE db.profile_shapes (id Int64, m Map(String, Int64), t Tuple(a Nullable(Int64)), f Float64, s FixedString(4)) "
+        "ENGINE = MergeTree ORDER BY id",
         password="123",
     )
-    node.query("INSERT INTO db.profile_shapes VALUES (1, {'k': 7}, tuple(NULL))", password="123")
+    node.query("INSERT INTO db.profile_shapes VALUES (1, {'k': 7}, tuple(NULL), 1.25, 'ab')", password="123")
     node.query("CREATE TABLE db.profile_strict (id Int64) ENGINE = MergeTree ORDER BY id", password="123")
     node.query("CREATE TABLE db.profile_rows (id Int64) ENGINE = MergeTree ORDER BY id", password="123")
     node.query("INSERT INTO db.profile_rows SELECT number FROM numbers(5)", password="123")
@@ -3260,7 +3307,9 @@ def test_the_settings_of_a_profile_do_not_weaken_the_replies(started_cluster):
     )
 
     database = make_client(user="mongo_lenient_user", password="mongo_pass", database="db")["db"]
-    assert list(database["profile_shapes"].find({}, {"_id": 0, "id": 0})) == [{"m": {"k": 7}, "t": {"a": None}}]
+    assert list(database["profile_shapes"].find({}, {"_id": 0, "id": 0})) == [
+        {"m": {"k": 7}, "t": {"a": None}, "f": 1.25, "s": "ab\x00\x00"}
+    ]
 
     with pytest.raises(pymongo.errors.WriteError):
         database["profile_strict"].insert_one({"id": "oops"})
