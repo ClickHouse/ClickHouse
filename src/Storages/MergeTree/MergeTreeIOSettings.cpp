@@ -71,6 +71,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 map_buckets_min_avg_size;
     extern const MergeTreeSettingsBool compress_per_column_in_compact_parts;
     extern const MergeTreeSettingsBool enable_adaptive_codec_selection;
+    extern const MergeTreeSettingsMergeTreeStringSizeStreamCodec string_size_stream_codec;
 }
 
 MergeTreeWriterSettings::MergeTreeWriterSettings(
@@ -118,6 +119,7 @@ MergeTreeWriterSettings::MergeTreeWriterSettings(
     , adaptive_write_buffer_initial_size((*storage_settings)[MergeTreeSetting::adaptive_write_buffer_initial_size])
     , compress_per_column_in_compact_parts((*storage_settings)[MergeTreeSetting::compress_per_column_in_compact_parts])
     , apply_adaptive_codec(try_adaptive_codec_ && (*storage_settings)[MergeTreeSetting::enable_adaptive_codec_selection])
+    , string_size_stream_codec((*storage_settings)[MergeTreeSetting::string_size_stream_codec])
 {
 }
 

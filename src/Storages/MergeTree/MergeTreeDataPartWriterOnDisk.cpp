@@ -20,6 +20,8 @@
 #include <Common/logger_useful.h>
 #include <Columns/IColumn.h>
 #include <Compression/CompressionCodecAdaptive.h>
+#include <Compression/CompressionCodecMultiple.h>
+#include <Compression/registerCompressionCodecs.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/NullWriteBuffer.h>
@@ -781,6 +783,18 @@ CompressionCodecPtr MergeTreeDataPartWriterOnDisk::getSubstreamCodec(
     /// Adaptive could pick an unencrypted codec for some blocks and drop the encryption. Thus skip adaptivity for an encrypting codec.
     if (settings.apply_adaptive_codec && column_uses_default_codec && !codec->isEncryption())
         return std::make_shared<CompressionCodecAdaptive>(substream_type, codec);
+
+    if (settings.string_size_stream_codec == MergeTreeStringSizeStreamCodec::T64
+        && substream_path.back().type == ISerialization::Substream::StringSizes && codec->isCompression())
+    {
+        /// `LZ4, AES_128_GCM_SIV` must become `T64, LZ4, AES_128_GCM_SIV`, not a chain within a chain.
+        Codecs codecs{getCompressionCodecT64(TypeIndex::UInt64)};
+        if (const auto * multiple = typeid_cast<const CompressionCodecMultiple *>(codec.get()))
+            codecs.insert(codecs.end(), multiple->getCodecs().begin(), multiple->getCodecs().end());
+        else
+            codecs.push_back(codec);
+        return std::make_shared<CompressionCodecMultiple>(std::move(codecs));
+    }
 
     return codec;
 }

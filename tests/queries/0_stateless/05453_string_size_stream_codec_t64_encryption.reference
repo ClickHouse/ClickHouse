@@ -1,0 +1,8 @@
+enc	['AES_128_GCM_SIV']
+enc.size	['AES_128_GCM_SIV']
+lz4_enc	['LZ4, AES_128_GCM_SIV']
+lz4_enc.size	['T64, LZ4, AES_128_GCM_SIV']
+zstd_enc	['ZSTD(1), AES_128_GCM_SIV']
+zstd_enc.size	['T64, ZSTD(1), AES_128_GCM_SIV']
+4950000	4950000	4950000	1000
+1

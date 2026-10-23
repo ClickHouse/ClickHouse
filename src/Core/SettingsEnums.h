@@ -573,6 +573,8 @@ enum class TextIndexPostingListCodec : uint8_t
 
 DECLARE_SETTING_ENUM(TextIndexPostingListCodec)
 
+DECLARE_SETTING_ENUM(MergeTreeStringSizeStreamCodec)
+
 /// On-disk serialization format version of text indexes.
 /// These are the on-disk version numbers and must remain stable.
 enum class MergeTreeTextIndexSerializationVersion : uint8_t
