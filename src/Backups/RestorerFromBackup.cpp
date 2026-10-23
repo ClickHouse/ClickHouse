@@ -26,7 +26,6 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/IStorage.h>
-#include <Storages/StorageFactory.h>
 #include <Common/FailPoint.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/escapeForFileName.h>
@@ -387,17 +386,7 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                 continue;
             }
 
-            const ASTCreateQuery & create = table_info.create_table_query->as<const ASTCreateQuery &>();
-            const bool is_temporary = (table_name.database == DatabaseCatalog::TEMPORARY_DATABASE);
-
-            /// The definition comes from the backup, and the table is created by an internal query that checks
-            /// nothing, so settings that send the data elsewhere are authorized here, as for `CREATE`.
-            /// An external engine replaced by `Null` sends nothing, but temporary tables keep their engine.
-            if (restore_settings.create_table != RestoreTableCreationMode::kMustExist
-                && (is_temporary || !context->getSettingsRef()[Setting::restore_replace_external_engines_to_null]))
-                required_access.append_range(StorageFactory::instance().getExportAccess(create));
-
-            if (is_temporary)
+            if (table_name.database == DatabaseCatalog::TEMPORARY_DATABASE)
             {
                 if (restore_settings.create_table != RestoreTableCreationMode::kMustExist)
                     required_access.emplace_back(AccessType::CREATE_TEMPORARY_TABLE);
@@ -405,6 +394,7 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
             }
 
             AccessFlags flags;
+            const ASTCreateQuery & create = table_info.create_table_query->as<const ASTCreateQuery &>();
 
             if (restore_settings.create_table != RestoreTableCreationMode::kMustExist)
             {
