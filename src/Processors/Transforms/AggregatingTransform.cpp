@@ -1592,8 +1592,8 @@ void AggregatingTransform::tryEmitQueryResultPreview(UInt64 num_rows, UInt64 num
     }
 
     /// The states of every participant are merged into one private snapshot, which is then
-    /// finalized into the preview chunk. Nothing is copied out of a participant: the merge only
-    /// reads its states, and it happens under the participant's lock.
+    /// finalized into the preview chunk. The merge only reads the states of a participant, under
+    /// its lock, and the snapshot shares no state storage with it (see `mergeIntoQueryResultPreviewSnapshot`).
     ///
     /// An aggregate function may throw on an intermediate state when merging or finalizing it (for
     /// example, a statistical test whose second sample is still empty), while the final result is
