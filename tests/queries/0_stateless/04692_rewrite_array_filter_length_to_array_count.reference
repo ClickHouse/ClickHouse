@@ -1,0 +1,44 @@
+-- the rewrite fires
+1	0
+-- and not when it is switched off
+0	1
+-- the result type is not changed
+UInt64
+UInt64
+-- the same results with the rewrite on
+[0,0,0,0,1,2,2,2]
+-- and off
+[0,0,0,0,1,2,2,2]
+-- lambdas returning NULL, several arrays, a plain expression body
+0
+1
+2
+2
+2
+3
+2
+2
+0
+-- an alias on the outer call
+2	2	3
+-- the unaliased projection keeps its generated name
+length(arrayFilter(lambda(tuple(x), greater(x, 1)), materialize([1, 2, 3])))
+UInt64
+2
+-- the filtered array is also used on its own
+2	[2,3]
+-- the count is exact for arrays of any size: `arrayCount` also returns UInt64
+UInt64
+-- and the rewrite therefore needs no CAST
+0
+-- length of something that is not arrayFilter is left alone
+3	2	1
+3
+-- the constness of the result is preserved as well: a constant predicate over a non-constant array
+0	0
+0	0
+-- and over a constant array
+1	1
+1	1
+-- `arrayCount` itself does not return a constant for a non-constant array either
+0	0

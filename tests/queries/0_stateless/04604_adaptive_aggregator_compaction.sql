@@ -5,14 +5,14 @@
 -- uniform queries stage nearly every row. Every cell compares the same query with the feature
 -- off and on.
 
+-- Random settings limits: index_granularity=(100, None); index_granularity_bytes=(100000, None)
+
 SET enable_adaptive_aggregator = 1;
 SET adaptive_aggregator_freeze_threshold = 128;
 SET max_threads = 4;
 SET max_block_size = 8192;
 SET group_by_two_level_threshold = 10000;
 SET group_by_two_level_threshold_bytes = 5000000;
--- The adaptive admission rejects any group-by row limit.
-SET max_rows_to_group_by = 0;
 
 DROP TABLE IF EXISTS test_skew;
 CREATE TABLE test_skew (k UInt64, v UInt64, s String, nv Nullable(UInt64), arr Array(UInt64), flag UInt8)

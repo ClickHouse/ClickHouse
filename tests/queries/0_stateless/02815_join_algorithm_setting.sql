@@ -58,6 +58,8 @@ SELECT countIf(explain like '%Algorithm: GraceHashJoin%'), countIf(explain like 
     EXPLAIN PLAN actions = 1
     SELECT * FROM ( SELECT number AS key, number * 10 AS key2 FROM numbers_mt(10) ) AS t1
     JOIN ( SELECT k AS key, k + 100 AS key2 FROM t2 ) AS t2 ON t1.key = t2.key
+    -- `grace_hash` forces an external join and requires a spill threshold
+    SETTINGS max_bytes_before_external_join = 100000
 );
 
 SET join_algorithm = 'grace_hash, hash, auto';

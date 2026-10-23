@@ -7,13 +7,11 @@ doc_type: 'landing-page'
 keywords: ['PostgreSQL', 'Postgres', 'FDW', 'foreign data wrapper', 'pg_clickhouse', 'extensión']
 ---
 
-<div id="introduction">
-  ## Introducción
-</div>
+## Introducción {#introduction}
 
 [pg&#95;clickhouse], una extensión de PostgreSQL de código abierto, ejecuta consultas analíticas
 en ClickHouse directamente desde PostgreSQL sin necesidad de reescribir SQL. Es compatible con
-PostgreSQL 13 y versiones posteriores, y con ClickHouse v23 y posteriores.
+PostgreSQL 14 y versiones posteriores, y con ClickHouse v23 y posteriores.
 
 Una vez que [ClickPipes](/es/integrations/clickpipes/home) comience a sincronizar datos con ClickHouse,
 usa pg&#95;clickhouse para [importar tablas foráneas] de forma rápida y sencilla a un
@@ -21,9 +19,7 @@ esquema de PostgreSQL. Luego, ejecuta tus consultas existentes de PostgreSQL sob
 tablas, conservando tu base de código actual mientras delegas la ejecución en
 ClickHouse.
 
-<div id="getting-started">
-  ## Primeros pasos
-</div>
+## Primeros pasos {#getting-started}
 
 La forma más sencilla de probar pg&#95;clickhouse es la [imagen de Docker], que incluye
 la imagen estándar de PostgreSQL para Docker junto con las extensiones pg&#95;clickhouse y [re2]:
@@ -37,9 +33,7 @@ docker exec -it pg_clickhouse psql -U postgres -c 'CREATE EXTENSION pg_clickhous
 Consulta el [tutorial] para empezar a importar tablas de ClickHouse y delegar la
 ejecución de consultas.
 
-<div id="test-case-tpc-h">
-  ## Caso de prueba: TPC-H
-</div>
+## Caso de prueba: TPC-H {#test-case-tpc-h}
 
 Esta tabla compara el rendimiento de las consultas [TPC-H] entre tablas
 PostgreSQL convencionales y pg&#95;clickhouse conectado a ClickHouse, ambos con un factor de
@@ -72,22 +66,16 @@ con 36 GB de memoria.
 | [Consulta 21] |    1145 ms |           4470 ms |          |
 | [Consulta 22] |     270 ms |             45 ms |     ✼    |
 
-<div id="compile-from-source">
-  ### Compilar a partir del código fuente
-</div>
+### Compilar a partir del código fuente {#compile-from-source}
 
-<div id="general-unix">
-  #### Unix en general
-</div>
+#### Unix en general {#general-unix}
 
 Los paquetes de desarrollo de PostgreSQL y curl incluyen `pg_config` y
 `curl-config` en el PATH, por lo que debería bastar con ejecutar `make` (o
 `gmake`), luego `make install` y, después, en tu base de datos
 `CREATE EXTENSION pg_clickhouse`.
 
-<div id="debian--ubuntu--apt">
-  #### Debian / Ubuntu / APT
-</div>
+#### Debian / Ubuntu / APT {#debian--ubuntu--apt}
 
 Consulta [PostgreSQL Apt] para obtener más información sobre cómo descargarlo desde el repositorio APT de PostgreSQL.
 
@@ -102,9 +90,7 @@ sudo apt install \
   g++
 ```
 
-<div id="redhat--centos--yum">
-  #### RedHat / CentOS / Yum
-</div>
+#### RedHat / CentOS / Yum {#redhat--centos--yum}
 
 ```sh
 sudo yum install \
@@ -119,9 +105,7 @@ sudo yum install \
 
 Consulta [PostgreSQL Yum] para obtener más información sobre cómo descargar desde el repositorio PostgreSQL Yum.
 
-<div id="install-from-pgxn">
-  #### Instalar desde PGXN
-</div>
+#### Instalar desde PGXN {#install-from-pgxn}
 
 Con las dependencias anteriores ya cumplidas, use el [PGXN client] (disponible como
 paquetes de [Homebrew], [Apt] y Yum llamados `pgxnclient`) para descargar, compilar
@@ -131,9 +115,7 @@ e instalar `pg_clickhouse`:
 pgxn install pg_clickhouse
 ```
 
-<div id="compile-and-install">
-  #### Compilar e instalar
-</div>
+#### Compilar e instalar {#compile-and-install}
 
 Para compilar e instalar la biblioteca de ClickHouse y `pg_clickhouse`, ejecute:
 
@@ -207,9 +189,7 @@ extension_control_path = '/usr/local/extras/postgresql/share:$system'
 dynamic_library_path   = '/usr/local/extras/postgresql/lib:$libdir'
 ```
 
-<div id="testing">
-  #### Pruebas
-</div>
+#### Pruebas {#testing}
 
 Para ejecutar la batería de pruebas, una vez instalada la extensión, ejecute
 
@@ -230,9 +210,7 @@ superusuario predeterminado &quot;postgres&quot;:
 make installcheck PGUSER=postgres
 ```
 
-<div id="loading">
-  ### Carga
-</div>
+### Carga {#loading}
 
 Una vez instalado `pg_clickhouse`, puede añadirlo a una base de datos conectándose
 como superusuario y ejecutando:
@@ -249,17 +227,13 @@ CREATE SCHEMA env;
 CREATE EXTENSION pg_clickhouse SCHEMA env;
 ```
 
-<div id="dependencies">
-  ## Dependencias
-</div>
+## Dependencias {#dependencies}
 
-La extensión `pg_clickhouse` requiere [PostgreSQL] 13 o superior, [libcurl]
+La extensión `pg_clickhouse` requiere [PostgreSQL] 14 o superior, [libcurl]
 y [libuuid]. Para compilar la extensión se necesita un compilador de C y C++, [libSSL], [GNU
 make] y [CMake].
 
-<div id="road-map">
-  ## Hoja de ruta
-</div>
+## Hoja de ruta {#road-map}
 
 Nuestra principal prioridad es completar la cobertura de pushdown para cargas de trabajo analíticas antes
 de añadir capacidades de DML. Nuestra hoja de ruta:
@@ -278,9 +252,7 @@ de añadir capacidades de DML. Nuestra hoja de ruta:
 * Añadir compatibilidad con el pushdown de consultas UNION cuando todas consulten la
   base de datos remota
 
-<div id="authors">
-  ## Autores
-</div>
+## Autores {#authors}
 
 * [David E. Wheeler](https://justatheory.com/)
 * [serprex](https://github.com/serprex)
@@ -288,9 +260,7 @@ de añadir capacidades de DML. Nuestra hoja de ruta:
 * [Ildus Kurbangaliev](https://github.com/ildus)
 * [Ibrar Ahmed](https://github.com/ibrarahmad)
 
-<div id="copyright">
-  ## Derechos de autor
-</div>
+## Derechos de autor {#copyright}
 
 * Copyright (c) 2025-2026, ClickHouse
 * Partes con Copyright (c) 2023-2025, Ildus Kurbangaliev

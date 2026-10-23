@@ -1,7 +1,6 @@
 udf	toTimeWithFixedDate(c0)
 qualified	toTimeWithFixedDate(c0)
 as	toTimeWithFixedDate(c0)
-clone	toTime(c0)
 attach	toTimeWithFixedDate(c0)
 stored_key_type
 part_name	String
@@ -15,7 +14,3 @@ mark_number	UInt64
 rows_in_granule	UInt64
 toTimeWithFixedDate(c0)	DateTime
 ttl_group_by	toTimeWithFixedDate(c0)
-on_cluster_oldest_entry	toTimeWithFixedDate(c0)
-on_cluster_oldest_entry_udf	toTimeWithFixedDate(c0)
-on_cluster_oldest_entry_mv	ORDER BY toTimeWithFixedDate(c0)
-on_cluster_oldest_entry_projection	ORDER BY toTimeWithFixedDate

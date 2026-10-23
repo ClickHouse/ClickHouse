@@ -55,10 +55,10 @@ ${CLICKHOUSE_CLIENT} --query "
 
 error=$(${CLICKHOUSE_CLIENT} \
     --allow_metadata_only_named_tuple_alter=1 \
-    --allow_experimental_json_lazy_type_hints=1 \
+    --enable_json_lazy_type_hints=1 \
     --query "ALTER TABLE ${TABLE} MODIFY COLUMN t Tuple(j JSON(a Int64), b UInt64)" 2>&1 || :)
 
-echo "$error" | grep -Fq "Disable settings 'allow_experimental_json_lazy_type_hints', 'allow_metadata_only_named_tuple_alter' to run this change as a full mutation" \
+echo "$error" | grep -Fq "Disable settings 'allow_metadata_only_named_tuple_alter', 'enable_json_lazy_type_hints' to run this change as a full mutation" \
     && echo OK || echo FAIL
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${TABLE}"

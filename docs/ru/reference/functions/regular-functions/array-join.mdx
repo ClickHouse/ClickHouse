@@ -20,6 +20,8 @@ doc_type: 'reference'
   Чтобы вернуть одну строку, содержащую значение по умолчанию для типа массива, можно обернуть массив в [emptyArrayToSingle](/ru/reference/functions/regular-functions/array-functions#emptyArrayToSingle), например: `arrayJoin(emptyArrayToSingle(...))`.
 </Note>
 
+`unnest` (начиная с версии 26.5) — регистронезависимый псевдоним `arrayJoin` в форме вызова функции (`SELECT unnest(arr)`). Синтаксис PostgreSQL для указания источника таблицы не поддерживается (`FROM unnest(...)`, `CROSS JOIN UNNEST(...)` и `LATERAL`). Для таких запросов используйте предложение [`ARRAY JOIN`](/ru/reference/statements/select/array-join).
+
 Например:
 
 ```sql title="Query"

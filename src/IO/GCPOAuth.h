@@ -14,6 +14,9 @@ struct GCPOAuthToken
     Int64 expires_in = 3600; /// seconds until expiry as reported by the token endpoint
 };
 
+/// Throws if the access token from a token endpoint cannot be sent in an `Authorization` header.
+void checkGCPOAuthAccessToken(const std::string & access_token);
+
 /// Exchange a Google OAuth2 refresh token for an access token by POSTing to
 /// https://oauth2.googleapis.com/token.
 ///

@@ -1,0 +1,320 @@
+---
+slug: /cloud/managed-postgres/guides/kysely
+sidebarTitle: 'Kysely'
+title: 'Uso de Kysely con ClickHouse Managed Postgres'
+description: 'Conecte una aplicación TypeScript a ClickHouse Managed Postgres con Kysely y node-postgres, con TLS verificado, consultas tipadas y migraciones'
+keywords: ['managed postgres', 'kysely', 'typescript', 'node.js', 'node-postgres', 'pg', 'query builder', 'migrations', 'tls']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-kysely-beta" />
+
+[Kysely](https://kysely.dev) es un generador de consultas SQL con tipado seguro para TypeScript. En esta guía, conectará Kysely a ClickHouse Managed Postgres mediante el controlador [`pg`](https://node-postgres.com/) con verificación TLS, creará una tabla con migraciones de Kysely y expondrá una pequeña API de lista de tareas desde Node.js.
+
+## Requisitos previos {#prerequisites}
+
+* Node.js 22.18 o posterior, que ejecuta archivos TypeScript directamente sin necesidad de un paso de build. Los archivos de esta guía usan la extensión `.mts`, por lo que Node.js los trata como módulos ES tanto en proyectos CommonJS como en proyectos de módulos ES.
+* Una cuenta de ClickHouse Cloud.
+* [`psql`](https://www.postgresql.org/download/), para crear la base de datos. También puede ejecutar la sentencia `CREATE DATABASE` en la [consola SQL](/es/integrations/connectors/sql-clients/sql-console).
+* `curl`, para llamar a la API.
+
+Esta guía se probó con Node.js 24.21, Kysely 0.29.6, `pg` 8.23.1, TypeScript 7.0.2 y PostgreSQL 18.
+
+## Crear un servicio de ClickHouse Managed Postgres {#create-service}
+
+En la consola de ClickHouse Cloud, haga clic en **New service** y seleccione **Postgres**. La instancia estará lista en unos minutos. Consulte la [guía de inicio rápido](/es/products/managed-postgres/quickstart) para ver el proceso paso a paso.
+
+## Obtén los detalles de conexión {#connection-details}
+
+Haz clic en **Connect** en la barra lateral izquierda de tu servicio. Deja seleccionada la opción **Directly** y activa **Use SSL**: la cadena de conexión **url** terminará ahora en `sslmode=verify-full&sslrootcert=...`. Haz clic en **Download CA certificate** para descargar el certificado de CA de tu servicio, llamado `<service-name>-ca-certificate.pem`, y copia la cadena de conexión.
+
+En esta guía, la conexión a Postgres se realiza **directamente** en el puerto `5432`, por dos motivos:
+
+* Un servidor Node.js es un proceso de larga duración. El `Pool` de `pg` ya mantiene abiertas unas pocas conexiones y las reutiliza, así que un pooler del lado del servidor aporta poco.
+* El `Migrator` de Kysely mantiene un bloqueo consultivo a nivel de sesión (`pg_advisory_lock`) mientras ejecuta las migraciones. PgBouncer funciona en modo de pooling por transacción, por lo que la adquisición del bloqueo, la ejecución de las migraciones y la liberación del bloqueo pueden acabar cada una en una conexión de backend distinta. A través de PgBouncer, el bloqueo puede quedar retenido en una conexión del grupo, y las ejecuciones posteriores de migraciones se quedan bloqueadas a la espera de que se libere.
+
+Si más adelante ejecutas muchas instancias de la aplicación o funciones sin servidor, puedes hacer que la cadena de conexión de la aplicación apunte a PgBouncer (puerto `6432`, mismo host). Kysely con `pg` funciona en modo de pooling por transacción porque `pg` utiliza de forma predeterminada sentencias preparadas sin nombre. Sigue ejecutando las migraciones contra el puerto `5432`. Consulta [Pooling de conexiones con PgBouncer](/es/products/managed-postgres/connection#pgbouncer).
+
+## Configurar el proyecto {#setup}
+
+Cree un proyecto e instale Kysely, el controlador `pg` y TypeScript:
+
+```bash
+mkdir kysely-todo && cd kysely-todo
+npm init -y
+npm install kysely pg
+npm install --save-dev typescript @types/node @types/pg
+npm pkg set scripts.migrate="node --env-file=.env src/migrate.mts" scripts.start="node --env-file=.env src/server.mts" scripts.typecheck="tsc"
+mkdir src migrations
+```
+
+<Tip>
+  **¿Lo va a añadir a una aplicación existente?**
+
+  Omita `mkdir kysely-todo && cd kysely-todo` y `npm init -y`. En su proyecto, ejecute los siguientes comandos, que añaden los scripts `migrate` y `typecheck` sin modificar su script `start`, y después continúe con [Configurar la conexión](#connection-config).
+
+  ```bash
+  npm install kysely pg
+  npm install --save-dev typescript @types/node @types/pg
+  npm pkg set scripts.migrate="node --env-file=.env src/migrate.mts" scripts.typecheck="tsc"
+  mkdir -p src migrations
+  ```
+</Tip>
+
+### Configurar la conexión {#connection-config}
+
+Mueva el certificado de CA que descargó al directorio de su proyecto y cámbiele el nombre a `ca-certificate.pem`. A continuación, cree una base de datos para la aplicación:
+
+```bash
+psql "postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/postgres?sslmode=verify-full&sslrootcert=ca-certificate.pem" -c "CREATE DATABASE guide_kysely;"
+```
+
+```text
+CREATE DATABASE
+```
+
+Añade la cadena de conexión que copiaste a un archivo `.env` nuevo o al `.env` que ya tengas. Sustituye `<PASSWORD>` por tu contraseña y el nombre de la base de datos por `guide_kysely`, y asigna a `sslrootcert` el valor `ca-certificate.pem`:
+
+```bash title=".env"
+DATABASE_URL="postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/guide_kysely?sslmode=verify-full&sslrootcert=ca-certificate.pem"
+```
+
+`pg` lee `sslmode` y `sslrootcert` de la cadena de conexión: con `verify-full`, comprueba que el certificado del servidor esté firmado por la CA de su servicio y que coincida con el nombre del host. `sslrootcert` se resuelve de forma relativa al directorio de trabajo, que es la raíz del proyecto cuando se usa `npm run`.
+
+<Warning>
+  Mantenga `sslmode=verify-full` en la URL. Sin `sslmode`, `pg` no usa TLS ni verifica el servidor. No pase además un objeto `ssl` a `Pool`: cuando la URL contiene `sslmode`, la configuración de la URL reemplaza su objeto `ssl`. Si necesita cargar la CA desde un origen que no sea un archivo, elimine `sslmode` y `sslrootcert` de la URL y, en su lugar, pase `ssl: { ca }` a `Pool`.
+</Warning>
+
+Añada un `tsconfig.json` para que `tsc` compruebe los tipos de los mismos archivos que ejecuta Node.js. Si su aplicación ya tiene un `tsconfig.json`, incorpore en él estas `compilerOptions` y la carpeta `migrations`:
+
+```json title="tsconfig.json"
+{
+  "compilerOptions": {
+    "target": "esnext",
+    "module": "nodenext",
+    "types": ["node"],
+    "strict": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true
+  },
+  "include": ["src", "migrations"]
+}
+```
+
+## Definir la interfaz de la base de datos {#database-interface}
+
+Kysely asigna tipos a cada consulta a partir de una interfaz que describe sus tablas. Cree `src/db.mts` con la interfaz y una instancia de `Kysely` que utilice `PostgresDialect` con un `Pool` de `pg`:
+
+```ts title="src/db.mts"
+import { Kysely, PostgresDialect, type Generated } from 'kysely'
+import { Pool } from 'pg'
+
+export interface TodoTable {
+  id: Generated<number>
+  title: string
+  done: Generated<boolean>
+  created_at: Generated<Date>
+}
+
+export interface Database {
+  todo: TodoTable
+}
+
+export const db = new Kysely<Database>({
+  dialect: new PostgresDialect({
+    pool: new Pool({
+      connectionString: process.env.DATABASE_URL,
+      max: 10,
+    }),
+  }),
+})
+```
+
+`Generated` marca las columnas que rellena la propia base de datos, por lo que son opcionales al insertar.
+
+## Crear y ejecutar una migración {#migrations}
+
+Esta guía utiliza el `Migrator` integrado de Kysely con `FileMigrationProvider`, que forma parte del paquete principal `kysely`. La CLI independiente [`kysely-ctl`](https://github.com/kysely-org/kysely-ctl) es opcional y envuelve el mismo `Migrator`.
+
+Cree un archivo de migración. Kysely ejecuta las migraciones en orden alfanumérico según el nombre de archivo, así que añada una fecha como prefijo:
+
+```ts title="migrations/2026-09-30_create_todo.mts"
+import { type Kysely, sql } from 'kysely'
+
+export async function up(db: Kysely<any>): Promise<void> {
+  await db.schema
+    .createTable('todo')
+    .addColumn('id', 'integer', (col) => col.primaryKey().generatedAlwaysAsIdentity())
+    .addColumn('title', 'text', (col) => col.notNull())
+    .addColumn('done', 'boolean', (col) => col.notNull().defaultTo(false))
+    .addColumn('created_at', 'timestamptz', (col) => col.notNull().defaultTo(sql`now()`))
+    .execute()
+}
+
+export async function down(db: Kysely<any>): Promise<void> {
+  await db.schema.dropTable('todo').execute()
+}
+```
+
+Cree `src/migrate.mts` para aplicar todas las migraciones pendientes. En Kysely 0.29, importe `Migrator` y `FileMigrationProvider` desde `kysely/migration`:
+
+```ts title="src/migrate.mts"
+import { promises as fs } from 'node:fs'
+import path from 'node:path'
+import { FileMigrationProvider, Migrator } from 'kysely/migration'
+import { db } from './db.mts'
+
+const migrator = new Migrator({
+  db,
+  provider: new FileMigrationProvider({
+    fs,
+    path,
+    migrationFolder: path.join(import.meta.dirname, '../migrations'),
+  }),
+})
+
+const { error, results } = await migrator.migrateToLatest()
+
+for (const result of results ?? []) {
+  console.log(`${result.status}: ${result.migrationName}`)
+}
+
+await db.destroy()
+
+if (error) {
+  console.error('Migration failed:', error)
+  process.exit(1)
+}
+```
+
+Ejecute la migración:
+
+```bash
+npm run migrate
+```
+
+```text
+Success: 2026-09-30_create_todo
+```
+
+Kysely registra las migraciones aplicadas en la tabla `kysely_migration`, por lo que volver a ejecutar el comando no tiene ningún efecto.
+
+<Tip>
+  Para comprobar que `pg` realmente verifica el certificado, ejecute la migración sin `sslrootcert`. Node.js no confía de forma predeterminada en la CA de su servicio, por lo que la conexión falla:
+
+  ```bash
+  DATABASE_URL="postgresql://postgres:<PASSWORD>@your-instance.pg.clickhouse.cloud:5432/guide_kysely?sslmode=verify-full" npm run migrate
+  ```
+
+  ```text
+  Migration failed: Error: unable to verify the first certificate; if the root CA is installed locally, try running Node.js with --use-system-ca
+  ```
+</Tip>
+
+## Consultar la base de datos {#query}
+
+Cree `src/server.mts`, un pequeño servidor HTTP que crea, lee, actualiza y elimina tareas pendientes con Kysely. En una aplicación existente, puede usar las mismas consultas en sus propios handlers de ruta:
+
+```ts title="src/server.mts"
+import { createServer } from 'node:http'
+import { json } from 'node:stream/consumers'
+import { db } from './db.mts'
+
+const port = Number(process.env.PORT ?? 3000)
+
+const server = createServer(async (req, res) => {
+  const { pathname } = new URL(req.url ?? '/', 'http://localhost')
+  const id = Number(pathname.match(/^\/todos\/(\d+)$/)?.[1])
+
+  try {
+    let result: unknown
+
+    if (req.method === 'GET' && pathname === '/todos') {
+      result = await db.selectFrom('todo').selectAll().orderBy('id').execute()
+    } else if (req.method === 'POST' && pathname === '/todos') {
+      const { title } = (await json(req)) as { title: string }
+      result = await db.insertInto('todo').values({ title }).returningAll().executeTakeFirstOrThrow()
+    } else if (req.method === 'PATCH' && id) {
+      const { done } = (await json(req)) as { done: boolean }
+      result = await db.updateTable('todo').set({ done }).where('id', '=', id).returningAll().executeTakeFirst()
+    } else if (req.method === 'DELETE' && id) {
+      result = await db.deleteFrom('todo').where('id', '=', id).returningAll().executeTakeFirst()
+    } else {
+      res.writeHead(404).end()
+      return
+    }
+
+    res.writeHead(result ? 200 : 404, { 'content-type': 'application/json' })
+    res.end(JSON.stringify(result ?? { error: 'not found' }, null, 2))
+  } catch (err) {
+    console.error(err)
+    res.writeHead(500).end()
+  }
+})
+
+server.listen(port, () => console.log(`Listening on http://localhost:${port}/todos`))
+```
+
+Como cada consulta se valida con la interfaz `Database`, un nombre de tabla o de columna mal escrito, o una inserción sin el campo obligatorio `title`, provoca un error en la comprobación de tipos. Compruebe el proyecto:
+
+```bash
+npm run typecheck
+```
+
+## Verificación {#verify}
+
+Inicie el servidor:
+
+```bash
+npm start
+```
+
+En una aplicación existente, donde `npm start` ejecuta su propia aplicación, inicie en su lugar el servidor de ejemplo con `node --env-file=.env src/server.mts`.
+
+En otra terminal, cree, actualice y elimine algunas tareas pendientes:
+
+```bash
+curl -X POST localhost:3000/todos -d '{"title": "Create a Managed Postgres service"}'
+curl -X POST localhost:3000/todos -d '{"title": "Connect Kysely with verify-full"}'
+curl -X POST localhost:3000/todos -d '{"title": "Try PgBouncer later"}'
+curl -X PATCH localhost:3000/todos/1 -d '{"done": true}'
+curl -X DELETE localhost:3000/todos/3
+```
+
+Abra [http://localhost:3000/todos](http://localhost:3000/todos) en su navegador para ver la lista de tareas pendientes. La respuesta será similar a esta:
+
+```json
+[
+  {
+    "id": 1,
+    "title": "Create a Managed Postgres service",
+    "done": true,
+    "created_at": "2026-09-30T16:47:31.081Z"
+  },
+  {
+    "id": 2,
+    "title": "Connect Kysely with verify-full",
+    "done": false,
+    "created_at": "2026-09-30T16:47:31.142Z"
+  }
+]
+```
+
+Para ver los mismos datos en la consola, abra **consola SQL** en la barra lateral izquierda de su servicio, expanda `guide_kysely` y el esquema `public`, y haga clic en la tabla `todo`. Junto a ella aparecen las tablas `kysely_migration` y `kysely_migration_lock` que creó Kysely:
+
+| id | title                             | done  | created&#95;at                |
+| -- | --------------------------------- | ----- | ----------------------------- |
+| 1  | Create a Managed Postgres service | true  | 2026-09-30 16:47:31.081942+00 |
+| 2  | Connect Kysely with verify-full   | false | 2026-09-30 16:47:31.142225+00 |
+
+## Próximos pasos {#next-steps}
+
+* [Conexión](/es/products/managed-postgres/connection): cadenas de conexión, PgBouncer y TLS.
+* [Configuración](/es/products/managed-postgres/settings): ajuste los parámetros de PostgreSQL y PgBouncer, como `max_connections`.
+* [Réplicas de lectura](/es/products/managed-postgres/read-replicas): escale workloads con un uso intensivo de lecturas.
+* [Documentación de Kysely](https://kysely.dev/docs/intro): joins, transacciones y generación de tipos.

@@ -1,4 +1,3 @@
--- Tags: no-old-analyzer
 -- `query_plan_convert_join_to_in` is not applied under `make_distributed_plan`: the set it
 -- would create uses `transform_null_in = false` and transfer limits, which the serialized set
 -- record does not carry, so a worker would rebuild the set with a different policy.
@@ -22,7 +21,7 @@ SELECT trimLeft(explain) FROM (EXPLAIN distributed = 1 SELECT count() FROM tj1, 
     WHERE explain ILIKE '%CreatingSet%' OR trimLeft(explain) LIKE 'Join%';
 
 SELECT '-- results agree';
-SELECT count() FROM tj1, tj2 WHERE tj1.id = tj2.id;
+SELECT count() FROM tj1, tj2 WHERE tj1.id = tj2.id SETTINGS distributed_plan_fallback_to_local_execution = 0;
 SELECT count() FROM tj1, tj2 WHERE tj1.id = tj2.id SETTINGS make_distributed_plan = 0;
 
 DROP TABLE tj1;

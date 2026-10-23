@@ -1,0 +1,6 @@
+sizes	e.size	['ZSTD(1)']
+sizes	s.size	['T64']
+roundtrip	300000	8848486	1688890
+nested_merge_algorithm	Vertical
+nested	n.size0	['T64']
+nested_roundtrip	300000	4656926	4656926	46623962

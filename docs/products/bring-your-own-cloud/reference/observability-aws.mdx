@@ -9,7 +9,7 @@ doc_type: 'reference'
 
 import { Image } from "/snippets/components/Image.jsx";
 
-BYOC deployments include comprehensive observability capabilities, allowing you to monitor your ClickHouse services through a dedicated Prometheus monitoring stack, and direct metric endpoints from ClickHouse Servers. All observability data remains within your cloud account, giving you complete control over your monitoring infrastructure.
+BYOC deployments include comprehensive observability capabilities, allowing you to monitor your ClickHouse services through a dedicated Prometheus monitoring stack, and direct metric endpoints from ClickHouse Servers. Your monitoring data remains within your cloud account, giving you complete control over your monitoring infrastructure. The bounded usage and health telemetry listed in [network boundaries](/products/bring-your-own-cloud/reference/network-security#outbound-connections) is the only monitoring data exported to ClickHouse; separately, ClickHouse's dashboards and, on approved escalation, its engineers can query this stack in place over Tailscale, with nothing persisted on the ClickHouse side — see [ClickHouse data access](/products/bring-your-own-cloud/reference/clickhouse-data-access).
 
 ## Prometheus Monitoring Approaches {#prometheus-monitoring}
 

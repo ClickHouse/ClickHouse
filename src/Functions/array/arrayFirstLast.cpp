@@ -28,6 +28,15 @@ enum class ArrayFirstLastElementNotExistsStrategy : uint8_t
 template <ArrayFirstLastStrategy strategy, ArrayFirstLastElementNotExistsStrategy element_not_exists_strategy>
 struct ArrayFirstLastImpl
 {
+    /// Declarative signature — element type of the first array is preserved
+    /// (wrapped in `Nullable` for the `OrNull` variants when the predicate
+    /// never matches). Lambda return type follows the boolean-predicate
+    /// convention used by `arrayFilter`.
+    static constexpr auto signature =
+        element_not_exists_strategy == ArrayFirstLastElementNotExistsStrategy::Null
+            ? "(Function((Any, ...), MaybeNullable(UInt8) | NULL | IsNothing), Array(T : Any), ...) -> Nullable(T)"
+            : "(Function((Any, ...), MaybeNullable(UInt8) | NULL | IsNothing), Array(T : Any), ...) -> T";
+
     static bool needBoolean() { return true; }
     static bool needExpression() { return true; }
     static bool needOneArray() { return false; }
@@ -64,11 +73,10 @@ struct ArrayFirstLastImpl
             if (column_filter_const->getValue<UInt8>())
             {
                 const auto & offsets = array.getOffsets();
+                size_t offsets_size = offsets.size();
                 const auto & data = array.getData();
                 auto out = data.cloneEmpty();
-                out->reserve(data.size());
-
-                size_t offsets_size = offsets.size();
+                out->reserve(offsets_size);
 
                 ColumnUInt8::MutablePtr col_null_map_to;
                 ColumnUInt8::Container * vec_null_map_to = nullptr;
@@ -120,11 +128,10 @@ struct ArrayFirstLastImpl
 
         const auto & filter = column_filter->getData();
         const auto & offsets = array.getOffsets();
+        size_t offsets_size = offsets.size();
         const auto & data = array.getData();
         auto out = data.cloneEmpty();
-        out->reserve(data.size());
-
-        size_t offsets_size = offsets.size();
+        out->reserve(offsets_size);
 
         ColumnUInt8::MutablePtr col_null_map_to;
         ColumnUInt8::Container * vec_null_map_to = nullptr;
@@ -298,4 +305,3 @@ Returns the last element in the source array for which a lambda `func(x [, y1, y
 }
 
 }
-

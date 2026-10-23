@@ -1,11 +1,11 @@
 {
   "icon": "/images/icons/icon-kubernetes-operator.svg",
-  "item": "Operator Kubernetes",
+  "item": "Opérateur Kubernetes",
   "pages": [
     "fr/products/kubernetes-operator/overview",
     {
       "expanded": true,
-      "group": "Installation",
+      "group": "Installer",
       "pages": [
         "fr/products/kubernetes-operator/install/kubectl",
         "fr/products/kubernetes-operator/install/helm",

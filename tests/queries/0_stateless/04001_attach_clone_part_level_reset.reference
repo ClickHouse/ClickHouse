@@ -1,10 +1,6 @@
 src level	1
-clone level	0
-clone final	1
-clone after optimize	1
 attach level	0
 attach final	1
-summing final	1	30
 aggregating level	0
 aggregating final	1	30
 move level	0

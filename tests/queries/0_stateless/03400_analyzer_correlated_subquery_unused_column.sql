@@ -14,7 +14,7 @@ INSERT INTO users2 VALUES (1231, 'John', 33);
 
 -- { echoOn }
 
-SET allow_experimental_correlated_subqueries = 1;
+SET allow_correlated_subqueries = 1;
 
 SELECT name FROM users u1
 WHERE EXISTS (
@@ -30,4 +30,4 @@ WHERE (age = 50) OR exists((
     WHERE u1.age = u2.age
 ))
 ORDER BY ALL
-SETTINGS allow_experimental_correlated_subqueries = 1
+SETTINGS allow_correlated_subqueries = 1

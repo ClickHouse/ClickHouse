@@ -28,9 +28,7 @@ INDEX name expr TYPE type(...) [GRANULARITY N]
 
 يتضمن كل قسم أمثلة باستخدام بيانات نموذجية، ويوضح كيفية التحقق من استخدام الفهرس أثناء تنفيذ الاستعلام.
 
-<div id="minmax-index">
-  ## فهرس MinMax
-</div>
+## فهرس MinMax {#minmax-index}
 
 يُعد فهرس `minmax` الأنسب لشروط النطاق على البيانات ذات الترتيب غير المحكم أو على الأعمدة المرتبطة بـ `ORDER BY`.
 
@@ -60,9 +58,7 @@ SELECT count() FROM events WHERE ts >= now() - 3600;
 
 اطّلع على [مثال عملي](/ar/concepts/best-practices/using-data-skipping-indices#example) يتضمن `EXPLAIN` واستبعاد البيانات غير اللازمة.
 
-<div id="set-index">
-  ## فهرس Set
-</div>
+## فهرس Set {#set-index}
 
 استخدم فهرس `set` عندما يكون عدد القيم المميّزة محليًا (في كل كتلة) منخفضًا؛ ولا يكون مفيدًا إذا كانت كل كتلة تحتوي على عدد كبير من القيم المميّزة.
 
@@ -78,9 +74,7 @@ SELECT * FROM events WHERE user_id IN (101, 202);
 
 يوضح [دليل التشغيل الأساسي](/ar/concepts/features/performance/skip-indexes/skipping-indexes#basic-operation) سير عمل الإنشاء/التجسيد والأثر قبل ذلك وبعده.
 
-<div id="textindex-for-full-text-search">
-  ## الفهرس النصي (text) للبحث النصي الكامل
-</div>
+## الفهرس النصي (text) للبحث النصي الكامل {#textindex-for-full-text-search}
 
 `text` هو فهرس معكوس للبيانات النصية المُجزأة إلى رموز.
 وقد صُمم خصيصًا لأعباء عمل البحث النصي الكامل، مما يتيح بحثًا فعّالًا وحتميًا عن الرموز والمصطلحات.
@@ -99,9 +93,7 @@ SELECT count() FROM logs WHERE hasAllTokens(msg, 'exception');
 
 الفهرس النصي حتمي بالكامل وقابل للضبط بالكامل من حيث تقسيم النص إلى رموز ومعالجة النص، وذلك مقابل زيادة طفيفة في استهلاك التخزين مقارنةً بالفهارس المعتمدة على bloom filter،
 
-<div id="generic-bloom-filter-scalar">
-  ## مرشح Bloom عام (قيَمي)
-</div>
+## مرشح Bloom عام (قيَمي) {#generic-bloom-filter-scalar}
 
 يُعد فهرس `bloom_filter` مناسبًا لعمليات المساواة والتحقق من العضوية باستخدام IN في حالات &quot;البحث عن إبرة في كومة قش&quot;. ويقبل معلمة اختيارية تمثل معدل النتائج الإيجابية الكاذبة (الافتراضي 0.025).
 
@@ -115,9 +107,7 @@ EXPLAIN indexes = 1
 SELECT * FROM events WHERE value IN (7, 42, 99);
 ```
 
-<div id="n-gram-bloom-filter-ngrambf-v1-for-substring-search">
-  ## مرشح Bloom لـ N-gram ‏(ngrambf_v1) للبحث عن السلاسل الفرعية *(مهمل)*
-</div>
+## مرشح Bloom لـ N-gram ‏(ngrambf_v1) للبحث عن السلاسل الفرعية *(مهمل)* {#n-gram-bloom-filter-ngrambf-v1-for-substring-search}
 
 <Note>
   تم إهمال استخدام الفهارس `ngrambf_v1` للبحث النصي الكامل في إصدارات ClickHouse `>= 26.2` لصالح فهارس `text` (راجع [هنا](/ar/reference/engines/table-engines/mergetree-family/textindexes) لمزيد من التفاصيل).
@@ -157,9 +147,7 @@ SELECT bfEstimateFunctions(4300, bfEstimateBmSize(4300, 0.0001)) AS k; -- ~13
 
 راجع [وثائق المعلمات](/ar/reference/engines/table-engines/mergetree-family/mergetree#n-gram-bloom-filter) للاطلاع على إرشادات الضبط الكاملة.
 
-<div id="token-bloom-filter-tokenbf-v1-for-word-based-search">
-  ## مرشح Bloom للرموز (tokenbf_v1) للبحث المستند إلى الكلمات *(مهمل)*
-</div>
+## مرشح Bloom للرموز (tokenbf_v1) للبحث المستند إلى الكلمات *(مهمل)* {#token-bloom-filter-tokenbf-v1-for-word-based-search}
 
 <Note>
   أصبح استخدام فهارس `tokenbf_v1` في البحث النصي الكامل مهملًا في إصدارات ClickHouse `>= 26.2` لصالح فهارس `text` (راجع [هنا](/ar/reference/engines/table-engines/mergetree-family/textindexes) لمزيد من التفاصيل).
@@ -182,9 +170,7 @@ SELECT count() FROM logs WHERE hasToken(lower(msg), 'exception');
 
 اطّلع على أمثلة حول observability وإرشادات بشأن `token` مقابل `ngram` [هنا](/ar/guides/use-cases/observability/build-your-own/schema-design#text-index-for-full-text-search).
 
-<div id="add-indexes-during-create-table-multiple-examples">
-  ## أضِف الفهارس أثناء CREATE TABLE (أمثلة متعددة)
-</div>
+## أضِف الفهارس أثناء CREATE TABLE (أمثلة متعددة) {#add-indexes-during-create-table-multiple-examples}
 
 تدعم فهارس التخطي أيضًا التعبيرات المركبة وأنواع `Map`/`Tuple`/`Nested`. ويوضح المثال أدناه ذلك:
 
@@ -205,9 +191,7 @@ ENGINE = MergeTree
 ORDER BY u64;
 ```
 
-<div id="materializing-on-existing-data-and-verifying">
-  ## تطبيق `MATERIALIZE` على البيانات الموجودة والتحقق
-</div>
+## تطبيق `MATERIALIZE` على البيانات الموجودة والتحقق {#materializing-on-existing-data-and-verifying}
 
 يمكنك إضافة فهرس إلى أجزاء البيانات الموجودة باستخدام `MATERIALIZE`، وفحص الاستبعاد باستخدام `EXPLAIN` أو سجلات التتبّع، كما هو موضح أدناه:
 
@@ -223,9 +207,7 @@ SET send_logs_level = 'trace';
 
 يوضح هذا [المثال التطبيقي لـ minmax](/ar/concepts/best-practices/using-data-skipping-indices#example) بنية مخرجات EXPLAIN وعدد عمليات الاستبعاد.
 
-<div id="when-use-and-when-to-avoid">
-  ## متى تستخدم فهارس التخطي ومتى تتجنبها
-</div>
+## متى تستخدم فهارس التخطي ومتى تتجنبها {#when-use-and-when-to-avoid}
 
 **استخدم فهارس التخطي عندما:**
 
@@ -244,11 +226,9 @@ SET send_logs_level = 'trace';
   إذا ظهرت قيمة ولو مرة واحدة فقط في كتلة بيانات، فسيتعين على ClickHouse قراءة الكتلة بالكامل. اختبر الفهارس باستخدام مجموعات بيانات واقعية، واضبط درجة التحبيب والمعلمات الخاصة بالنوع استنادًا إلى قياسات الأداء الفعلية.
 </Info>
 
-<div id="temporarily-ignore-or-force-indexes">
-  ## تجاهل الفهارس أو فرض استخدامها مؤقتًا
-</div>
+## تجاهل الفهارس أو فرض استخدامها مؤقتًا {#temporarily-ignore-or-force-indexes}
 
-عطّل فهارس معيّنة حسب الاسم لكل استعلام على حدة أثناء الاختبار واستكشاف الأخطاء وإصلاحها. تتوفر أيضًا إعدادات لفرض استخدام الفهارس عند الحاجة. راجع [`ignore_data_skipping_indices`](/ar/reference/settings/session-settings/ignore#ignore_data_skipping_indices).
+عطّل فهارس معيّنة حسب الاسم لكل استعلام على حدة أثناء الاختبار واستكشاف الأخطاء وإصلاحها. تتوفر أيضًا إعدادات لفرض استخدام الفهارس عند الحاجة. راجع [`ignore_data_skipping_indexes`](/ar/reference/settings/session-settings/ignore#ignore_data_skipping_indexes).
 
 ```sql
 -- Ignore an index by name
@@ -257,17 +237,13 @@ WHERE hasToken(lower(msg), 'exception')
 SETTINGS ignore_data_skipping_indices = 'msg_token';
 ```
 
-<div id="notes-and-caveats">
-  ## ملاحظات ومحاذير
-</div>
+## ملاحظات ومحاذير {#notes-and-caveats}
 
 * لا تُدعَم فهارس التخطي إلا في [جداول عائلة MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree)؛ ويتم الاستبعاد على مستوى الحبيبات/الكتل.
 * الفهارس المعتمدة على مرشحات Bloom احتمالية (فالنتائج الإيجابية الكاذبة تؤدي إلى قراءات إضافية، لكنها لا تتسبب في تخطي بيانات صالحة).
 * ينبغي التحقق من مرشحات Bloom وفهارس التخطي الأخرى باستخدام `EXPLAIN` والتتبّع؛ واضبط درجة التحبيب لتحقيق توازن بين الاستبعاد وحجم الفهرس.
 
-<div id="related-docs">
-  ## الوثائق ذات الصلة
-</div>
+## الوثائق ذات الصلة {#related-docs}
 
 * [دليل فهرس تخطي البيانات](/ar/concepts/features/performance/skip-indexes/skipping-indexes)
 * [دليل أفضل الممارسات](/ar/concepts/best-practices/using-data-skipping-indices)

@@ -116,6 +116,8 @@ private:
             divisor_slot = in_nanoseconds(divisor_slot, divisor_kind);
         }
 
+        /// A timespan ratio keeps floating-point semantics regardless of integer SQL division settings.
+        value_slot = plan.step("toFloat64", {value_slot});
         plan.step("divide", {value_slot, divisor_slot});
         return std::move(plan).finish(name, arguments);
     }
