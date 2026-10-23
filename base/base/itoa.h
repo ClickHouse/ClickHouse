@@ -226,10 +226,10 @@ ALWAYS_INLINE inline UInt8x16 shuffleBytes(UInt8x16 bytes, UInt8x16 order)
 /// and one 16-byte store writes them.
 ALWAYS_INLINE inline char * writeUInt32Text(UInt32 value, char * p)
 {
-    /// Short values are common and usually come in runs, where this branch is predicted: the 8-bit table costs one
-    /// load and one store, much less than the vector code below.
-    if (value < 256)
-        return writeUInt8Text(value, p);
+    /// Short values are common and usually come in runs, where this branch is predicted: the 8-bit table, or two
+    /// multiplications for 3 and 4 digits, cost much less than the vector code below.
+    if (value < 10000)
+        return writeUInt16Text(value, p);
 
     UInt32 length = static_cast<UInt32>((value + uint32_tables.digit_count_increments[std::countl_zero(value)]) >> 32);
 
@@ -245,27 +245,30 @@ ALWAYS_INLINE inline char * writeUInt32Text(UInt32 value, char * p)
     /// (`vpmuludq`, `umull`), also where this is inlined into code that already knows `value` fits in 32 bits.
     using UInt32x2 = UInt32 __attribute__((vector_size(8)));
     UInt64x2 wide = __builtin_convertvector(UInt32x2{value, value}, UInt64x2);
-    UInt32x4 quotients = std::bit_cast<UInt32x4>((wide * UInt64x2{0x51eb851f, 0x431bde83}) >> UInt64x2{37, 50});
+    UInt64x2 wide_quotients = (wide * UInt64x2{0x51eb851f, 0x431bde83}) >> UInt64x2{37, 50};
+    UInt32x4 quotients = std::bit_cast<UInt32x4>(wide_quotients);
+    /// The low halves of the 64-bit lanes of both vectors, one shuffle on x86 and ARM. The fourth lane gets `n`, which is
+    /// never written out.
     UInt32x4 terms;
-    UInt32x4 subtracted;
-    /// Shuffles that are one instruction on x86 and ARM: the low halves of the 64-bit lanes of both vectors, and
-    /// the two 64-bit lanes swapped. The fourth lane gets `n`, which is never written out.
     if constexpr (little_endian)
-    {
         terms = __builtin_shufflevector(quotients, std::bit_cast<UInt32x4>(wide), 0, 2, 4, 6);
-        subtracted = __builtin_shufflevector(quotients, quotients, 2, 3, 0, 1);
-    }
     else
-    {
         terms = __builtin_shufflevector(quotients, std::bit_cast<UInt32x4>(wide), 1, 3, 5, 7);
-        subtracted = __builtin_shufflevector(quotients, quotients, 3, 2, 1, 0);
-    }
-    UInt32x4 groups = terms + subtracted * UInt32x4{static_cast<UInt32>(-10000), 0, static_cast<UInt32>(-100), 0};
+    /// 10^4 * (n / 10^6) and 10^2 * (n / 100) in the swapped 64-bit lanes: both fit in 32 bits, so this is one 32 x 32 to
+    /// 64-bit multiplication (`vpmuludq`, `umull`), and the high halves are 0. A 32-bit multiplication (`vpmulld`) is
+    /// two micro-ops with a latency of 10 cycles on Intel.
+    UInt32x4 subtracted = std::bit_cast<UInt32x4>(__builtin_shufflevector(wide_quotients, wide_quotients, 1, 0) * UInt64x2{10000, 100});
+    if constexpr (!little_endian)
+        subtracted = __builtin_shufflevector(subtracted, subtracted, 1, 0, 3, 2);
+    UInt32x4 groups = terms - subtracted;
 
-    /// A lane v < 10^4 becomes (v % 100) | (v / 100) << 16: v + (v / 100) * (2^16 - 100). The last lane is 0; the
-    /// different multipliers there make clang load each constant as a vector, instead of broadcasting one element
-    /// with an extra instruction.
-    UInt32x4 pairs = groups + ((groups * UInt32x4{5243, 5243, 5243, 0}) >> 19) * UInt32x4{65536 - 100, 65536 - 100, 65536 - 100, 0};
+    /// A lane v < 10^4 becomes (v % 100) | (v / 100) << 16, in 16-bit lanes: v / 100 = (v * 5243) >> 19, exact for
+    /// v < 43699, is the high half of a 16 x 16-bit product shifted by 3 (`vpmulhuw`), and v % 100 = v - 100 * (v / 100).
+    /// The other 16-bit lane of each 32-bit lane is 0, and stays 0 in both, except in the fourth lane, never written out.
+    using UInt32x8 = UInt32 __attribute__((vector_size(32)));
+    UInt16x8 group_lanes = std::bit_cast<UInt16x8>(groups);
+    UInt16x8 hundreds = __builtin_convertvector((__builtin_convertvector(group_lanes, UInt32x8) * 5243) >> 19, UInt16x8);
+    UInt32x4 pairs = std::bit_cast<UInt32x4>(group_lanes - hundreds * UInt16(100)) + (std::bit_cast<UInt32x4>(hundreds) << 16);
     /// Each 16-bit pair p < 100 becomes the characters (p % 10) | (p / 10) << 8: p + (p / 10) * (2^8 - 10), with
     /// p / 10 = (p * 205) >> 11, exact for p < 100.
     UInt16x8 pair_lanes = std::bit_cast<UInt16x8>(pairs);
