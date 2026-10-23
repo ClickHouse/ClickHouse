@@ -174,3 +174,12 @@ SYSTEM START MERGES t_batch_lightweight_alter_delete;
 ALTER TABLE t_batch_lightweight_alter_delete DELETE WHERE 0 SETTINGS mutations_sync = 1;
 SELECT 'batch lightweight delete then alter delete', affected_rows FROM system.mutations WHERE database = currentDatabase() AND table = 't_batch_lightweight_alter_delete';
 DROP TABLE t_batch_lightweight_alter_delete;
+
+-- 15. A known limitation: a constant condition that deletes all rows also stops the counting of the commands before it,
+-- because the pipeline stops before reading the part. The `UPDATE` reports 0 instead of 4, and the `DELETE` reports 0 instead of 10.
+DROP TABLE IF EXISTS t_update_constant_delete;
+CREATE TABLE t_update_constant_delete (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_update_constant_delete (id) SELECT number FROM numbers(10);
+ALTER TABLE t_update_constant_delete UPDATE v = 1 WHERE id < 4, DELETE WHERE 1 SETTINGS mutations_sync = 1;
+SELECT 'update then constant delete', command, affected_rows FROM system.mutations WHERE database = currentDatabase() AND table = 't_update_constant_delete';
+DROP TABLE t_update_constant_delete;

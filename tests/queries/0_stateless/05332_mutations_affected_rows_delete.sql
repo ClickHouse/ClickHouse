@@ -190,3 +190,21 @@ SYSTEM START MERGES t_all_rows_batch;
 ALTER TABLE t_all_rows_batch DELETE WHERE 0 SETTINGS mutations_sync = 1;
 SELECT 'all rows batch', affected_rows FROM system.mutations WHERE database = currentDatabase() AND table = 't_all_rows_batch' ORDER BY toUInt64(extract(mutation_id, '\\d+'));
 DROP TABLE t_all_rows_batch;
+
+-- 19. A known limitation: a constant condition that deletes all rows, applied together with other commands, reports 0.
+-- The filter of the stage is folded to a constant false, so the pipeline stops before reading the part and counting its rows.
+DROP TABLE IF EXISTS t_constant_batch;
+CREATE TABLE t_constant_batch (id UInt64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_constant_batch SELECT number FROM numbers(10);
+ALTER TABLE t_constant_batch DELETE WHERE 1, DELETE WHERE 0 SETTINGS mutations_sync = 1;
+SELECT 'constant batch', command, affected_rows FROM system.mutations WHERE database = currentDatabase() AND table = 't_constant_batch';
+DROP TABLE t_constant_batch;
+
+-- 20. The same commands as 19 applied separately: the part is replaced by an empty one, and its rows are counted
+DROP TABLE IF EXISTS t_constant_separate;
+CREATE TABLE t_constant_separate (id UInt64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_constant_separate SELECT number FROM numbers(10);
+ALTER TABLE t_constant_separate DELETE WHERE 1 SETTINGS mutations_sync = 1;
+ALTER TABLE t_constant_separate DELETE WHERE 0 SETTINGS mutations_sync = 1;
+SELECT 'constant separate', command, affected_rows FROM system.mutations WHERE database = currentDatabase() AND table = 't_constant_separate' ORDER BY toUInt64(extract(mutation_id, '\\d+'));
+DROP TABLE t_constant_separate;

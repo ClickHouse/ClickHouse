@@ -34,3 +34,7 @@ all rows	10
 all rows batch	6
 all rows batch	4
 all rows batch	0
+constant batch	(DELETE WHERE 1)	0
+constant batch	(DELETE WHERE 0)	0
+constant separate	(DELETE WHERE 1)	10
+constant separate	(DELETE WHERE 0)	0

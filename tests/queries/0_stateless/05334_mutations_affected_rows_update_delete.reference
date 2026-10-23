@@ -28,3 +28,5 @@ update after lightweight delete in patch part	6
 batch lightweight delete then alter delete	3
 batch lightweight delete then alter delete	2
 batch lightweight delete then alter delete	0
+update then constant delete	(UPDATE v = 1 WHERE id < 4)	0
+update then constant delete	(DELETE WHERE 1)	0
