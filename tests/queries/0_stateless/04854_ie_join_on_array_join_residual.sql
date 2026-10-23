@@ -1,4 +1,3 @@
--- Tags: no-old-analyzer
 -- `ie_join` is not in the default `join_algorithm`, so both queries pin the algorithm themselves.
 
 DROP TABLE IF EXISTS ie_l;

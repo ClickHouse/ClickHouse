@@ -148,7 +148,7 @@ public:
 
     time_t getLastChanged(const String & path) const override;
 
-    bool isRemote() const override { return true; }
+    bool isRemote() const override;
 
     void shutdown() override;
 
@@ -216,6 +216,8 @@ public:
     /// MergeTree table on this disk.
     bool isWriteOnce() const override;
 
+    bool prefersRecursiveRemoval() const override;
+
     /// Return true if the disk is "shared-compatible", i.e. does not uses local disks
     bool isSharedCompatible() const;
 
@@ -231,7 +233,14 @@ public:
     /// Example: DiskObjectStorage(S3ObjectStorage) -> DiskObjectStorage(CachedObjectStorage(S3ObjectStorage))
     /// There can be any number of cache layers:
     /// DiskObjectStorage(CachedObjectStorage(...CacheObjectStorage(S3ObjectStorage)...))
-    DiskObjectStoragePtr wrapWithCache(FileCachePtr cache, const FileCacheSettings & cache_settings, const String & layer_name) const;
+    /// The configuration of the cache layer is the section the cache disk is defined in, and it has
+    /// to be passed here: a disk defined in a query is not present in the server configuration at all.
+    DiskObjectStoragePtr wrapWithCache(
+        FileCachePtr cache,
+        const FileCacheSettings & cache_settings,
+        const String & layer_name,
+        const Poco::Util::AbstractConfiguration & config,
+        const String & config_prefix) const;
 
     /// Get names of all cache layers. Name is how cache is defined in configuration file.
     NameSet getCacheLayersNames() const override;

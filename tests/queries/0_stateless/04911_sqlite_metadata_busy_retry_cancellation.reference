@@ -1,0 +1,2 @@
+Cancelling a metadata query blocked on SQLite lock reports:
+QUERY_WAS_CANCELLED

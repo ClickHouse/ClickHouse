@@ -126,7 +126,7 @@ public:
     {
         MainObject,     /// Offset inside the main executable.
         OtherObject,    /// Offset inside the loaded object named by `object`.
-        UnknownMapping, /// No loaded object contains the address, so it is the runtime address.
+        UnknownMapping, /// No loaded object is known to contain the address. The runtime address is not published, so it is null.
         Unsupported,    /// The platform keeps runtime addresses, so it is the argument unchanged.
     };
 
@@ -143,9 +143,17 @@ public:
     /// symbolized trace lines use, so that it can be fed to `addr2line` or `llvm-symbolizer`.
     static ResolvedAddress resolveAddress(const void * virtual_addr);
 
+    /// The same as `resolveAddress`, but never builds the symbol index: when it has not been built
+    /// yet, only addresses in the main executable are resolved, and any other one is `UnknownMapping`.
+    /// For the fatal signal handler, whose first bare dump of addresses must not depend on the
+    /// machinery the symbolized trace after it may fail or block on.
+    static ResolvedAddress tryResolveAddress(const void * virtual_addr);
+
     /// The form to store an address in a bare integer column: an address in the main executable
     /// becomes its file offset, which stays valid across restarts and hosts, while any other address
-    /// is kept as is, because a stored offset into a library reads as a main executable one.
+    /// becomes 0: an offset into a library would read as a main executable one, and the runtime
+    /// address must not be published. The slot is kept, so frame positions do not change.
+    /// Raw runtime addresses must never leave the process (tables, logs, network): convert them with this function first.
     static UInt64 resolveAddressForStorage(const void * virtual_addr);
 
     void toStringEveryLine(std::function<void(std::string_view)> callback) const;
@@ -156,6 +164,7 @@ public:
     /// If you turn off addresses, it will be more secure, but we will be unable to help you with debugging.
     /// Please note: addresses are also available in the system.stack_trace and system.trace_log tables.
     static void setShowAddresses(bool show);
+    static bool showAddresses();
 
     /// Renders the demangled name of a frame for display: shortens well-known libc++ spellings, and returns
     /// "?" for frames whose name carries no information. @param file is the source location of the frame.

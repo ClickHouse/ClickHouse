@@ -42,14 +42,13 @@ class DataFileEntriesStream
 {
 public:
     using CreateManifestIterator = std::function<ManifestIteratorPtr(const ManifestFileCacheKey &, const std::atomic<bool> *)>;
-    /// Called on the producer thread, after `prepare`, for every data manifest of the snapshot.
+    /// Called on the producer thread for every data manifest of the snapshot.
     using SkipManifest = std::function<bool(const ManifestFileCacheKey &)>;
 
     DataFileEntriesStream(
         size_t queue_size_,
         size_t decode_concurrency_,
         IcebergDataSnapshotPtr data_snapshot_,
-        std::function<void()> prepare_,
         CreateManifestIterator create_manifest_iterator_,
         SkipManifest skip_manifest_);
 
@@ -82,7 +81,6 @@ private:
     const size_t decode_concurrency;
     const IcebergDataSnapshotPtr data_snapshot;
 
-    const std::function<void()> prepare;
     const CreateManifestIterator create_manifest_iterator;
     const SkipManifest skip_manifest;
     ConcurrentBoundedQueue<ProcessedManifestFileEntryPtr> queue;
@@ -133,7 +131,8 @@ private:
     std::mutex deletes_mutex;
     bool deletes_ready TSA_GUARDED_BY(deletes_mutex) = false;
     std::exception_ptr deletes_exception TSA_GUARDED_BY(deletes_mutex);
-    /// Built on the producer thread of `data_files_stream` and read only there.
+    /// Built in the constructor, before the producer thread of `data_files_stream` exists, and read
+    /// only on that thread afterwards.
     std::unique_ptr<Iceberg::ManifestListPruner> manifest_list_pruner;
     /// Declared last: its tasks call back into `createManifestIterator`, so it must be destroyed
     /// (producer joined, tasks drained) before any other member.

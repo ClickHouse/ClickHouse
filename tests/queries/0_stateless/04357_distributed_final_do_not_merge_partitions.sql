@@ -1,4 +1,3 @@
--- Tags: no-darwin, no-old-analyzer
 -- Distributed FINAL must reproduce per-partition deduplication. When FINAL does not merge across
 -- partitions, a primary-key value may repeat in several partitions and both copies must survive. The
 -- distributed read splits a FINAL into primary-key-range layers per partition so a layer never merges
@@ -20,7 +19,8 @@ INSERT INTO t_dm_unrelated SELECT number, 1, number + 1000000, 2 FROM numbers(80
 SELECT 'unrelated local', count(), sum(v) FROM t_dm_unrelated FINAL
 SETTINGS make_distributed_plan = 0, do_not_merge_across_partitions_select_final = 1;
 SELECT 'unrelated distributed', count(), sum(v) FROM t_dm_unrelated FINAL
-SETTINGS make_distributed_plan = 1, do_not_merge_across_partitions_select_final = 1;
+SETTINGS make_distributed_plan = 1, do_not_merge_across_partitions_select_final = 1,
+    distributed_plan_fallback_to_local_execution = 0;
 
 -- The read must distribute (one PK-range layer per partition), not fall back to a serial read.
 -- A bare SELECT (no aggregation to distribute on its own) is distributed only if the read is.
@@ -41,7 +41,8 @@ INSERT INTO t_dm_derived SELECT number, number, 1 FROM numbers(80000);
 INSERT INTO t_dm_derived SELECT number, number + 7, 2 FROM numbers(80000);
 
 SELECT 'derived local', count(), sum(v) FROM t_dm_derived FINAL SETTINGS make_distributed_plan = 0;
-SELECT 'derived distributed', count(), sum(v) FROM t_dm_derived FINAL SETTINGS make_distributed_plan = 1;
+SELECT 'derived distributed', count(), sum(v) FROM t_dm_derived FINAL
+SETTINGS make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0;
 SELECT 'derived read distributes', countIf(explain LIKE '%ReadFromDistributedPlanSource%') > 0
 FROM (EXPLAIN PIPELINE SELECT k, v FROM t_dm_derived FINAL SETTINGS make_distributed_plan = 1);
 

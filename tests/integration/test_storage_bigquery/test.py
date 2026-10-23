@@ -374,22 +374,14 @@ def test_no_referenced_columns():
     # A query that references no physical columns at all (a bare count(), a constant
     # projection): the planner requests the smallest column from the storage, so the
     # read path always parses at least one field and row counts stay correct.
-    for analyzer in (0, 1):
-        settings = {"enable_analyzer": analyzer}
-        mock_reset()
-        assert (
-            node.query(f"SELECT count() FROM {bq('test_paging')}", settings=settings)
-            == "10\n"
-        )
-        requests = mock_stats()["data_requests"]
-        # The mock caps pages at 4 rows, so counting 10 rows takes 3 requests.
-        assert len(requests) == 3
-        assert all(r["params"]["selectedFields"] == "i" for r in requests)
+    mock_reset()
+    assert node.query(f"SELECT count() FROM {bq('test_paging')}") == "10\n"
+    requests = mock_stats()["data_requests"]
+    # The mock caps pages at 4 rows, so counting 10 rows takes 3 requests.
+    assert len(requests) == 3
+    assert all(r["params"]["selectedFields"] == "i" for r in requests)
 
-        assert (
-            node.query(f"SELECT 1 FROM {bq('test_paging')}", settings=settings)
-            == "1\n" * 10
-        )
+    assert node.query(f"SELECT 1 FROM {bq('test_paging')}") == "1\n" * 10
 
 
 # Must match bigquery_mock_server.py::wide_column_name (the mock's `test_wide` table has 40 such columns

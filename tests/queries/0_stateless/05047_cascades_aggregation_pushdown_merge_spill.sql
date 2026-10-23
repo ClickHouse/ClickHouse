@@ -1,5 +1,6 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: distributed planning requires the analyzer.
+-- Tags: no-flaky-check
+-- no-flaky-check: every distributed-plan statement pays for a full optimizer run and multi-stage
+-- execution, and this one also spills; the flaky check's repeated runs exceed its budget.
 
 -- End-to-end external-aggregation (spill) coverage for the merge-only `Aggregating` above the
 -- pushed variant-A join. The full-`Params` copy in the rule and the settings round trip of the
@@ -56,26 +57,37 @@ SET max_bytes_ratio_before_external_group_by = 0;
 SELECT '-- canary: variant A fires for the spill query';
 EXPLAIN SELECT t2.g AS g, count() AS c, sum(t1.v) AS s FROM t_spill_facts AS t1 INNER JOIN t_spill_dims AS t2 ON t1.j = t2.j GROUP BY t2.g
 SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, explain_query_plan_default = 'legacy',
-    enable_join_runtime_filters = 1, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+    enable_join_runtime_filters = 1, optimize_move_to_prewhere = 1;
+
+-- A server-side fuzzed re-run repeats the statement under the same session settings, so it would
+-- carry the marker below and, being later, would win the lookup.
+SET ast_fuzzer_runs = 0;
 
 SELECT t2.g AS g, count() AS c, sum(t1.v) AS s FROM t_spill_facts AS t1 INNER JOIN t_spill_dims AS t2 ON t1.j = t2.j GROUP BY t2.g
 FORMAT Null
-SETTINGS log_comment = '05047_cascades_spill_probe';
+SETTINGS log_comment = '05047_cascades_spill_probe', distributed_plan_fallback_to_local_execution = 0;
 
--- Spill evidence from `system.text_log` rather than `ProfileEvents` in `system.query_log`:
--- under `distributed_plan_execute_locally` the fragment pipelines run on executor-pool threads
--- whose profile counters do not reach any `query_log` entry (verified: the initiator and every
--- `stage_*`/`main` fragment entry report `ExternalAggregationWritePart = 0` while the server log
--- shows the writes), so the `Aggregator` log line is the reliable server-side proof. The
--- `query_log` subquery collects the whole fragment family: `log_comment` propagates to the
--- fragment queries. The evidence query must be planned classically: a distributed plan pins
+-- Spill evidence from `system.text_log` rather than `ProfileEvents` in `system.query_log`: the
+-- `Aggregator` log line records the write itself, independently of which entry a fragment's
+-- counters are attributed to. `query_log` rows outlive the database that wrote them and a run with
+-- a fixed `--database` repeats it, so the fragment family is taken from the latest initiator row
+-- (`log_comment` propagates to the fragments, which are rooted at the initiator through
+-- `initial_query_id`) rather than from `log_comment` alone. The evidence query must be planned
+-- classically: a distributed plan pins
 -- concrete log-table part names at planning time, and background merges of the log tables
 -- invalidate them between planning and fragment execution.
 SYSTEM FLUSH LOGS query_log, text_log;
 SELECT '-- merge spilled to disk';
-SELECT count() > 0 AS merge_spilled
+WITH (
+    SELECT query_id FROM system.query_log
+    WHERE event_date >= yesterday() AND current_database = currentDatabase()
+      AND log_comment = '05047_cascades_spill_probe' AND is_initial_query AND type = 'QueryFinish'
+    ORDER BY event_time_microseconds DESC LIMIT 1
+) AS probe
+SELECT probe != '' AND count() > 0 AS merge_spilled
 FROM system.text_log
-WHERE query_id IN (SELECT query_id FROM system.query_log WHERE log_comment = '05047_cascades_spill_probe' AND current_database = currentDatabase())
+WHERE query_id IN (SELECT query_id FROM system.query_log
+                   WHERE event_date >= yesterday() AND initial_query_id = probe)
   AND logger_name = 'Aggregator' AND message LIKE 'Writing part of aggregation data%'
 SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
 
@@ -93,7 +105,8 @@ SELECT '-- digest: pushed (with spill) vs hand-computed constants';
 SELECT count() AS groups, sum(c) AS total_rows, sum(s) AS total_sum FROM
 (
     SELECT t2.g AS g, count() AS c, sum(t1.v) AS s FROM t_spill_facts AS t1 INNER JOIN t_spill_dims AS t2 ON t1.j = t2.j GROUP BY t2.g
-);
+)
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 DROP TABLE t_spill_facts;
 DROP TABLE t_spill_dims;
