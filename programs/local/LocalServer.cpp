@@ -135,6 +135,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_introspection_functions;
+    extern const SettingsString database;
     extern const SettingsString default_format;
     extern const SettingsSeconds http_receive_timeout;
     extern const SettingsSeconds http_send_timeout;
