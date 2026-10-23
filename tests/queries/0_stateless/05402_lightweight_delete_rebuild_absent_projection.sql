@@ -1,10 +1,11 @@
 -- Lightweight DELETE in 'rebuild' mode rebuilds the projections a part has and does not add one the part never had.
+-- The implicit min-max index of `add_minmax_index_for_numeric_columns` on `v` would make reading the table as good as reading `p2`.
 
 DROP TABLE IF EXISTS t_lwd_rebuild_absent_proj;
 
 CREATE TABLE t_lwd_rebuild_absent_proj (g UInt8, k UInt32, v UInt32, PROJECTION p1 (SELECT g, count() GROUP BY g))
 ENGINE = MergeTree PARTITION BY g ORDER BY k
-SETTINGS index_granularity = 16, lightweight_mutation_projection_mode = 'rebuild';
+SETTINGS index_granularity = 16, lightweight_mutation_projection_mode = 'rebuild', add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO t_lwd_rebuild_absent_proj SELECT 1, number, number FROM numbers(100);
 ALTER TABLE t_lwd_rebuild_absent_proj ADD PROJECTION p2 (SELECT k, v ORDER BY v);
