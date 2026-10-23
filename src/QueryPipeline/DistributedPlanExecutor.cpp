@@ -2104,11 +2104,14 @@ protected:
                     try
                     {
                         sendTask(task_info.endpoint_uri, task_info.task_id, description, unique_temp_file_path, collectors, context);
-                        /// A start the worker accepted but whose reply was lost, while other starts are in flight.
-                        fiu_do_on(FailPoints::distributed_plan_task_start_fails_after_send,
+                        /// A start the worker accepted but whose reply was lost, while other starts of the stage are in flight.
+                        if (stage.tasks.size() > 1)
                         {
-                            throw Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Injected failure after a task start was sent");
-                        });
+                            fiu_do_on(FailPoints::distributed_plan_task_start_fails_after_send,
+                            {
+                                throw Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Injected failure after task {} was sent", task_info.task_id);
+                            });
+                        }
                     }
                     catch (...)
                     {

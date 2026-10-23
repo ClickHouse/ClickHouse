@@ -215,7 +215,7 @@ struct DistributedQueryTaskDescription
     String initial_query_id;
     DistributedQueryTask task;
     /// Shared, because all tasks of a stage carry the same plan.
-    std::shared_ptr<const String> serialized_query_plan;
+    std::shared_ptr<const String> serialized_query_plan = std::make_shared<const String>();
     ExchangeDescriptions exchanges;
     ExchangeStreamSources exchange_stream_sources;
     /// The initiator's changed settings, applied on the worker so query limits and execution-affecting
