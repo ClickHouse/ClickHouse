@@ -193,27 +193,32 @@ namespace
         if (object_storage->getType() != ObjectStorageType::Web)
             return "s3:" + object_info.getPath();
 
-        if (!object_info.read_source_index)
-            return "web:" + object_info.getPath();
-
-        const auto & web_object_storage = assert_cast<const WebObjectStorage &>(*object_storage);
-        const auto & url_shards = web_object_storage.getURLShards();
-        if (*object_info.read_source_index >= url_shards.size())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid URL shard index: {}", *object_info.read_source_index);
-
         SipHash hash;
-        for (const auto & url : url_shards[*object_info.read_source_index])
+        if (object_info.read_source_index)
         {
-            hash.update(url.base_url);
-            hash.update('\0');
-            hash.update(url.query_fragment);
-            hash.update('\0');
-            /// Two shards can share the same origin/query but point to different path failover sets.
-            /// Include every concrete override so they cannot share cached bytes or metadata.
-            if (url.path_override)
-                hash.update(*url.path_override);
-            hash.update('\0');
+            const auto & web_object_storage = assert_cast<const WebObjectStorage &>(*object_storage);
+            const auto & url_shards = web_object_storage.getURLShards();
+            if (*object_info.read_source_index >= url_shards.size())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid URL shard index: {}", *object_info.read_source_index);
+
+            for (const auto & url : url_shards[*object_info.read_source_index])
+            {
+                hash.update(url.base_url);
+                hash.update('\0');
+                hash.update(url.query_fragment);
+                hash.update('\0');
+                /// Two shards can share the same origin/query but point to different path failover sets.
+                /// Include every concrete override so they cannot share cached bytes or metadata.
+                if (url.path_override)
+                    hash.update(*url.path_override);
+                hash.update('\0');
+            }
         }
+
+        /// An ETag identifies content only within one resource, not across failover URLs.
+        /// Include the URL selected by metadata even when there is no `read_source_index`.
+        if (object_info.resolved_url)
+            hash.update(*object_info.resolved_url);
 
         return fmt::format("web:{}:{}", toString(hash.get128()), object_info.getPath());
     }
