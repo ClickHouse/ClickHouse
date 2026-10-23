@@ -22,15 +22,21 @@
 #include <aws/core/client/CoreErrors.h>
 #include <aws/core/client/RetryStrategy.h>
 #include <aws/core/http/URI.h>
+#include <aws/core/utils/crypto/Factories.h>
+#include <aws/core/utils/crypto/Hash.h>
 
 #include <Common/RemoteHostFilter.h>
+#include <Common/Crypto/OpenSSLInitializer.h>
 #include <IO/ReadBufferFromS3.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/S3Common.h>
+#include <IO/S3/copyS3File.h>
 #include <IO/S3/Client.h>
 #include <IO/S3/PocoHTTPClient.h>
+#include <IO/S3RequestSettings.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/S3Settings.h>
 #include <Poco/Util/ServerApplication.h>
@@ -318,6 +324,362 @@ TEST(IOTestAwsS3Client, ChecksumHeaderIsPresentForS3Express)
         "x-amz-meta-clickhouse-idempotency-id;"
         "x-amz-sdk-checksum-algorithm, ...\n",
         /*is_s3express_bucket=*/true);
+}
+
+namespace
+{
+
+/// The base64 MD5 of the single '\0' byte `doWriteRequest` writes, for asserting the exact
+/// `content-md5` value that reaches the wire (not just its presence in the signed headers).
+String expectedContentMd5OfDoWriteRequestPayload()
+{
+    return Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateMD5(Aws::String(1, '\0')));
+}
+
+}
+
+/// The precalculated `Content-MD5` must survive the whole request pipeline: the default upload
+/// checksum is staged while the part is buffered, attached to the request as an additional custom
+/// header, and `AWSClient::AddContentBodyToRequest` skips its own whole-body MD5 scan because the
+/// header is already present. This test runs the real HTTP path and asserts both that the header
+/// reaches the wire and that its value is the MD5 of the actual payload -- so the value the SDK
+/// adopted is provably the one staged in the single pass, not a recomputation.
+TEST(IOTestAwsS3Client, PrecalculatedContentMd5ReachesTheSignedRequest)
+{
+    if (DB::OpenSSLInitializer::instance().isFIPSEnabled())
+        return;
+
+    TestPocoHTTPServer http;
+
+    DB::RemoteHostFilter remote_host_filter;
+    DB::S3::URI uri(http.getUrl() + "/IOTestAwsS3ClientPrecalculatedContentMd5/test.txt");
+
+    DB::S3::PocoHTTPClientConfiguration client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
+        "us-east-1",
+        remote_host_filter,
+        /* s3_max_redirects = */ 100,
+        DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = 0},
+        /* s3_slow_all_threads_after_network_error = */ true,
+        /* s3_slow_all_threads_after_retryable_error = */ true,
+        /* enable_s3_requests_logging = */ false,
+        /* for_disk_s3 = */ false,
+        /* opt_disk_name = */ {},
+        /* request_throttler = */ {},
+        uri.uri.getScheme());
+
+    client_configuration.endpointOverride = uri.endpoint;
+
+    DB::S3::ClientSettings client_settings{
+        .use_virtual_addressing = uri.is_virtual_hosted_style,
+        .gcs_issue_compose_request = false,
+        .is_s3express_bucket = false,
+    };
+
+    std::shared_ptr<const DB::S3::Client> client = DB::S3::ClientFactory::instance().create(
+        client_configuration,
+        client_settings,
+        "ACCESS_KEY_ID",
+        "SECRET_ACCESS_KEY",
+        /* server_side_encryption_customer_key_base64 = */ "",
+        {},
+        {},
+        DB::S3::CredentialsConfiguration{.use_environment_credentials = false, .use_insecure_imds_request = false});
+
+    ASSERT_TRUE(client);
+
+    doWriteRequest(client, uri);
+
+    const auto & last_request_header = http.getLastRequestHeader();
+    ASSERT_TRUE(last_request_header.has("content-md5"));
+    EXPECT_EQ(last_request_header.get("content-md5"), expectedContentMd5OfDoWriteRequestPayload());
+}
+
+
+namespace
+{
+
+/// A `Hash` that forwards to the real MD5 and counts every whole-body computation. The SDK's own
+/// `Content-MD5` derivation (`AWSClient::AddContentBodyToRequest`) goes through
+/// `CreateMD5Implementation()->Calculate(*body)`; counting those calls tells a test whether the SDK
+/// still scans the body itself or adopted the precalculated header instead.
+class MD5CallCountingHash : public Aws::Utils::Crypto::Hash
+{
+public:
+    MD5CallCountingHash(std::shared_ptr<Hash> inner_, size_t * whole_body_computations_)
+        : inner(std::move(inner_)), whole_body_computations(whole_body_computations_) {}
+
+    Aws::Utils::Crypto::HashResult Calculate(const Aws::String & str) override
+    {
+        ++*whole_body_computations;
+        return inner->Calculate(str);
+    }
+
+    Aws::Utils::Crypto::HashResult Calculate(Aws::IStream & stream) override
+    {
+        ++*whole_body_computations;
+        return inner->Calculate(stream);
+    }
+
+    void Update(unsigned char * buffer, size_t buffer_size) override { inner->Update(buffer, buffer_size); }
+    Aws::Utils::Crypto::HashResult GetHash() override { return inner->GetHash(); }
+
+private:
+    std::shared_ptr<Hash> inner;
+    size_t * whole_body_computations;
+};
+
+class MD5CallCountingFactory : public Aws::Utils::Crypto::HashFactory
+{
+public:
+    /// Single-argument constructor, hence `explicit`: clang-tidy's `google-explicit-constructor` rejects
+    /// the implicit form and the build treats warnings as errors.
+    explicit MD5CallCountingFactory(size_t * whole_body_computations_)
+        : whole_body_computations(whole_body_computations_) {}
+
+    /// Two-phase wiring: the factory can only be installed once its own shared_ptr exists,
+    /// because `CreateImplementation` must reinstall itself after temporarily stepping aside.
+    /// The reference is weak on purpose: a strong one closes a cycle with the SDK's global factory
+    /// slot, so the factory and its control block would outlive `ScopedMD5CallCounter` clearing that
+    /// slot and LeakSanitizer would fail the whole test binary after the assertions had passed.
+    void holdSelfReference(const std::shared_ptr<Aws::Utils::Crypto::HashFactory> & self)
+    {
+        self_reference = self;
+    }
+
+    std::shared_ptr<Aws::Utils::Crypto::Hash> CreateImplementation() const override
+    {
+        /// `CreateMD5Implementation` calls this through a bare pointer read from the global factory
+        /// slot, so the caller holds no strong reference: promote the weak self-reference first,
+        /// otherwise clearing the slot below would destroy this object in the middle of its own call.
+        auto self = self_reference.lock();
+
+        /// Temporarily uninstall this counting factory, let `InitCrypto` install the SDK's default
+        /// factory (`CreateMD5Implementation` itself dereferences the factory pointer without a
+        /// null check), take the real implementation, then reinstall the counter. Constructing the
+        /// real MD5 directly (`CRTHash`) is not an option from here: its header reaches into
+        /// aws-c-cal's private includes.
+        Aws::Utils::Crypto::SetMD5Factory(nullptr);
+        Aws::Utils::Crypto::InitCrypto();
+        auto real = Aws::Utils::Crypto::CreateMD5Implementation();
+        Aws::Utils::Crypto::SetMD5Factory(self);
+
+        return std::make_shared<MD5CallCountingHash>(std::move(real), whole_body_computations);
+    }
+
+private:
+    size_t * whole_body_computations;
+    /// Weak, see `holdSelfReference`: a strong self-reference is a reference cycle.
+    std::weak_ptr<Aws::Utils::Crypto::HashFactory> self_reference;
+};
+
+/// Replaces the SDK's global MD5 factory with one counting whole-body computations, for the scope
+/// of the test. Restores the default (a null factory is re-created by `InitCrypto`).
+class ScopedMD5CallCounter
+{
+public:
+    ScopedMD5CallCounter()
+    {
+        auto factory = std::make_shared<MD5CallCountingFactory>(&counter);
+        factory->holdSelfReference(factory);
+        installed_factory = factory;
+        Aws::Utils::Crypto::SetMD5Factory(std::move(factory));
+    }
+
+    ~ScopedMD5CallCounter()
+    {
+        Aws::Utils::Crypto::SetMD5Factory(nullptr);
+        Aws::Utils::Crypto::InitCrypto();
+    }
+
+    size_t wholeBodyComputations() const { return counter; }
+
+    const std::weak_ptr<MD5CallCountingFactory> & installedFactory() const { return installed_factory; }
+
+private:
+    size_t counter = 0;
+    std::weak_ptr<MD5CallCountingFactory> installed_factory;
+};
+
+}
+
+/// The factory installed by `ScopedMD5CallCounter` must be released as soon as the scope ends: the
+/// SDK's global slot is its only owner. A strong self-reference inside the factory would survive the
+/// slot being cleared, leaving the cycle (and its control block) alive past the end of the test, which
+/// LeakSanitizer reports as a failure of the whole unit-test binary at its final check -- after every
+/// assertion had already passed. A weak reference makes that visible without ASan.
+TEST(IOTestAwsS3Client, Md5CallCountingFactoryIsReleasedWithItsScope)
+{
+    std::weak_ptr<MD5CallCountingFactory> installed_factory;
+    {
+        ScopedMD5CallCounter md5_counter;
+        installed_factory = md5_counter.installedFactory();
+        ASSERT_FALSE(installed_factory.expired());
+    }
+
+    /// The scope cleared the SDK slot, so nothing owns the factory any more.
+    EXPECT_TRUE(installed_factory.expired());
+}
+
+/// The behavioral proof of the single-pass upload: with the precalculated `Content-MD5` attached,
+/// the SDK must not scan the request body to derive an MD5 itself (`AddContentBodyToRequest`
+/// short-circuits on a present header). A counting MD5 factory watches every whole-body MD5 the
+/// SDK performs during the write; without the injection the SDK's own derivation would show up
+/// here, with it the count stays at zero (the staging pass uses the CRC32/SHA256/MD5 `Hash`
+/// directly and never this whole-body `Calculate` entry point).
+TEST(IOTestAwsS3Client, SdkDoesNotRecomputeContentMd5WhenPrecalculated)
+{
+    if (DB::OpenSSLInitializer::instance().isFIPSEnabled())
+        return;
+
+    /// `HashingUtils::CalculateMD5` itself goes through the MD5 factory, so take the expectation
+    /// before the counting factory is installed.
+    const auto expected_md5 = expectedContentMd5OfDoWriteRequestPayload();
+
+    ScopedMD5CallCounter md5_counter;
+
+    TestPocoHTTPServer http;
+
+    DB::RemoteHostFilter remote_host_filter;
+    DB::S3::URI uri(http.getUrl() + "/IOTestAwsS3ClientSdkNoRecompute/test.txt");
+
+    DB::S3::PocoHTTPClientConfiguration client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
+        "us-east-1",
+        remote_host_filter,
+        /* s3_max_redirects = */ 100,
+        DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = 0},
+        /* s3_slow_all_threads_after_network_error = */ true,
+        /* s3_slow_all_threads_after_retryable_error = */ true,
+        /* enable_s3_requests_logging = */ false,
+        /* for_disk_s3 = */ false,
+        /* opt_disk_name = */ {},
+        /* request_throttler = */ {},
+        uri.uri.getScheme());
+
+    client_configuration.endpointOverride = uri.endpoint;
+
+    DB::S3::ClientSettings client_settings{
+        .use_virtual_addressing = uri.is_virtual_hosted_style,
+        .gcs_issue_compose_request = false,
+        .is_s3express_bucket = false,
+    };
+
+    std::shared_ptr<const DB::S3::Client> client = DB::S3::ClientFactory::instance().create(
+        client_configuration,
+        client_settings,
+        "ACCESS_KEY_ID",
+        "SECRET_ACCESS_KEY",
+        /* server_side_encryption_customer_key_base64 = */ "",
+        {},
+        {},
+        DB::S3::CredentialsConfiguration{.use_environment_credentials = false, .use_insecure_imds_request = false});
+
+    ASSERT_TRUE(client);
+
+    doWriteRequest(client, uri);
+
+    /// The write happened and the precalculated value reached the wire...
+    const auto & last_request_header = http.getLastRequestHeader();
+    ASSERT_TRUE(last_request_header.has("content-md5"));
+    EXPECT_EQ(last_request_header.get("content-md5"), expected_md5);
+
+    /// ...while the SDK itself performed no whole-body MD5 computation of its own: the body was
+    /// hashed exactly once, in the pass that staged it.
+    EXPECT_EQ(md5_counter.wholeBodyComputations(), 0u);
+}
+
+/// An upload whose checksum header was precalculated must survive an SDK-internal retry. The
+/// precalculated header makes `AWSClient::AddContentBodyToRequest` skip its own whole-body MD5
+/// scan, and with it the stream rewind that scan performed as a side effect. The retry signs the
+/// body again before sending (`AWSAuthV4Signer::ComputePayloadHash`); on a stream left with
+/// eofbit|failbit from the previous attempt that read fails and the SDK surfaces the client error
+/// `SDK failed to sign the request`. The HTTP client must therefore rewind the body stream after
+/// sending it, so the body is readable again when the next attempt starts.
+TEST(IOTestAwsS3Client, PrecalculatedChecksumUploadSurvivesSdkRetry)
+{
+    if (DB::OpenSSLInitializer::instance().isFIPSEnabled())
+        return;
+
+    /// `HashingUtils::CalculateMD5` itself goes through the MD5 factory, so take the expectation
+    /// before the counting factory is installed.
+    const std::string data(1000, 'x');
+    const auto expected_md5 = Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateMD5(Aws::String(data)));
+
+    ScopedMD5CallCounter md5_counter;
+
+    /// Fails the first two requests, so the SDK retries the upload twice: every attempt after the
+    /// first re-signs a body stream that the previous attempt already consumed.
+    TestPocoHTTPServerWithFailures http(/* num_failures = */ 2);
+
+    DB::RemoteHostFilter remote_host_filter;
+    DB::S3::URI uri(http.getUrl() + "/IOTestAwsS3ClientPrecalculatedChecksumRetry/test.txt");
+
+    DB::S3::PocoHTTPClientConfiguration client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
+        "us-east-1",
+        remote_host_filter,
+        /* s3_max_redirects = */ 100,
+        DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = 1},
+        /* s3_slow_all_threads_after_network_error = */ false,
+        /* s3_slow_all_threads_after_retryable_error = */ true,
+        /* enable_s3_requests_logging = */ false,
+        /* for_disk_s3 = */ false,
+        /* opt_disk_name = */ {},
+        /* request_throttler = */ {},
+        uri.uri.getScheme());
+
+    client_configuration.endpointOverride = uri.endpoint;
+
+    DB::S3::ClientSettings client_settings{
+        .use_virtual_addressing = uri.is_virtual_hosted_style,
+        .gcs_issue_compose_request = false,
+        .is_s3express_bucket = false,
+    };
+
+    std::shared_ptr<const DB::S3::Client> client = DB::S3::ClientFactory::instance().create(
+        client_configuration,
+        client_settings,
+        "ACCESS_KEY_ID",
+        "SECRET_ACCESS_KEY",
+        /* server_side_encryption_customer_key_base64 = */ "",
+        {},
+        {},
+        DB::S3::CredentialsConfiguration{.use_environment_credentials = false, .use_insecure_imds_request = false});
+
+    ASSERT_TRUE(client);
+
+    /// The same path the failing integration tests take: `copyDataToS3File` stages the part, hashes
+    /// it in the same pass, attaches the precalculated `Content-MD5`, and retries the whole request
+    /// through the same `PutObjectRequest` object when the server answers with a retryable error.
+    auto create_read_buffer = [data]() -> std::unique_ptr<DB::SeekableReadBuffer>
+    {
+        return std::make_unique<DB::ReadBufferFromOwnString>(data);
+    };
+
+    DB::S3::S3RequestSettings request_settings;
+
+    DB::copyDataToS3File(
+        create_read_buffer,
+        /* offset = */ 0,
+        data.size(),
+        client,
+        uri.bucket,
+        uri.key,
+        request_settings,
+        /* blob_storage_log = */ nullptr,
+        /* schedule = */ {},
+        /* object_metadata = */ std::nullopt);
+
+    /// Two injected failures plus the successful attempt, all carrying the same body.
+    EXPECT_EQ(http.requestCount(), 3);
+    EXPECT_EQ(http.getLastRequestBody(), data);
+
+    /// The checksum header is precalculated, so it must reach the wire on every attempt, including
+    /// the retried ones, and the value is stable across attempts.
+    const auto & last_request_header = http.getLastRequestHeader();
+    ASSERT_TRUE(last_request_header.has("content-md5"));
+    EXPECT_EQ(last_request_header.get("content-md5"), expected_md5);
+
+    /// And the SDK itself must not have scanned the body on any of the three attempts.
+    EXPECT_EQ(md5_counter.wholeBodyComputations(), 0u);
 }
 
 TEST(IOTestAwsS3Client, DetectRegionFromS3ExpressEndpoint)

@@ -80,6 +80,20 @@ RequestChecksum::Algorithm RequestChecksum::getUploadChecksumAlgorithm(const S3R
     return RequestChecksum::Algorithm::MD5;
 }
 
+std::optional<RequestChecksum::Algorithm> RequestChecksum::getPrecalculatedChecksumAlgorithm(std::optional<Algorithm> configured)
+{
+    if (!configured)
+        return std::nullopt;
+
+    /// Under FIPS the SDK drops `Content-MD5` (OpenSSL refuses MD5), so the request goes out with no
+    /// checksum header at all -- the historical behavior. Precalculating a value that could never be
+    /// attached would be a wasted hash, so skip it.
+    if (*configured == Algorithm::MD5 && OpenSSLInitializer::instance().isFIPSEnabled())
+        return std::nullopt;
+
+    return configured;
+}
+
 namespace
 {
 

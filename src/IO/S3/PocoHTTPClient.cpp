@@ -16,6 +16,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
 #include <Common/re2.h>
+#include <base/scope_guard.h>
 #include <IO/Expect404ResponseScope.h>
 #include <IO/GCPOAuth.h>
 #include <IO/HTTPCommon.h>
@@ -647,6 +648,17 @@ void PocoHTTPClient::makeRequestInternalImpl(
                 /// see retryStrategy in Aws::Client::ClientConfiguration.
                 request.GetContentBody()->clear();
                 request.GetContentBody()->seekg(0);
+
+                /// Sending the body consumes the stream and leaves it with eofbit|failbit set. Leave it in the
+                /// state it was found in: the AWS SDK rereads the body on every retry attempt - to sign it
+                /// (`AWSAuthV4Signer::ComputePayloadHash`) and, unless the checksum was precalculated by us,
+                /// to derive its checksum header - and a failed stream would break both. The precalculated
+                /// checksum removes the second reader, so this rewind is the only thing that keeps the body
+                /// readable when the SDK retries the request.
+                SCOPE_EXIT({
+                    request.GetContentBody()->clear();
+                    request.GetContentBody()->seekg(0);
+                });
 
                 setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte*/ false));
                 try

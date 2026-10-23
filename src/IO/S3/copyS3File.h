@@ -5,11 +5,13 @@
 #if USE_AWS_S3
 
 #include <IO/S3Settings.h>
+#include <IO/S3/ChecksumAlgorithm.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/BlobStorageLogWriter.h>
 #include <base/types.h>
 #include <functional>
 #include <memory>
+#include <optional>
 
 
 namespace DB
@@ -20,13 +22,44 @@ class StdStreamFromReadBuffer;
 
 using CreateReadBuffer = std::function<std::unique_ptr<SeekableReadBuffer>()>;
 
+/// The checksum payload computed for an upload part ahead of sending it: the base64 value for the
+/// header of the algorithm it was computed with (`Content-MD5` for MD5,
+/// `x-amz-checksum-crc32`/`x-amz-checksum-sha256` otherwise). Empty when no checksum is in use.
+/// Attached to the request by the caller, it lets the SDK send the body without rereading it to
+/// derive the header (both `AWSClient::AddContentBodyToRequest` and the smithy checksum interceptor
+/// skip their own computation when the header is already present). The saving is the extra pass
+/// over the body, plus the same pass again on every retry.
+/// Computed once per part, over the buffer the part was staged into, on the thread that sends it:
+/// `createS3UploadBody` does it in the upload task that stages the part, `WriteBufferFromS3` in the
+/// upload worker that sends it (its staging loop runs on the single producer thread, so hashing
+/// there would serialise every part's checksum onto that one thread).
+struct PrecalculatedUploadChecksum
+{
+    String value;
+
+    bool empty() const { return value.empty(); }
+};
+
 /// Builds the S3 upload request body for the part [offset, offset + size) of the source.
 /// The part is read fully into memory up front, so the returned body has no failable inner
 /// source buffer: the AWS SDK can rewind (clear(); seekg(0)) and resend the body on a retry
 /// without re-reading the source. Used for both PutObject and UploadPart request bodies.
+/// When `checksum_algorithm` is set, the checksum of the staged part is computed right after the
+/// staging read and returned through `precalculated_checksum`; a request carrying it needs no
+/// separate pass over the body to derive the checksum header.
 /// Declared here so unit tests can drive the real request-body construction.
 std::unique_ptr<StdStreamFromReadBuffer> createS3UploadBody(
-    const CreateReadBuffer & create_read_buffer, size_t offset, size_t size);
+    const CreateReadBuffer & create_read_buffer, size_t offset, size_t size,
+    const std::optional<S3::RequestChecksum::Algorithm> & checksum_algorithm = std::nullopt,
+    PrecalculatedUploadChecksum * precalculated_checksum = nullptr);
+
+/// Attaches a precalculated checksum to a PutObject/UploadPart request: `Content-MD5` for MD5
+/// (a value the SDK would otherwise reread the whole body to compute itself, and which it skips
+/// when the header is already present), the `x-amz-checksum-*` header for the flexible algorithms
+/// (which the smithy checksum interceptor likewise adopts instead of recomputing). For CRC32/SHA256
+/// the request must carry the matching `ChecksumAlgorithm`, so this also sets it.
+template <typename T>
+void applyPrecalculatedUploadChecksum(T & request, const S3::RequestChecksum::Algorithm & algorithm, const PrecalculatedUploadChecksum & checksum);
 
 /// Copies a whole file from S3 to S3. `src_size` is the size of the source object.
 /// The same functionality can be done by using the function copyData() and the classes ReadBufferFromS3 and WriteBufferFromS3

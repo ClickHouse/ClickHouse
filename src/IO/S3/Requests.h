@@ -29,10 +29,12 @@
 #include <aws/s3/model/ChecksumAlgorithm.h>
 #include <aws/s3/model/CompletedPart.h>
 #include <aws/core/utils/HashingUtils.h>
+#include <aws/core/utils/crypto/Factories.h>
 
 #include <base/defines.h>
 #include <Common/Exception.h>
 
+#include <memory>
 #include <optional>
 
 namespace DB
@@ -87,24 +89,74 @@ inline void setChecksum(T & target, Algorithm algorithm, const std::string & che
     UNREACHABLE();
 }
 
-inline std::string calculateFlexibleChecksum(Model::UploadPartRequest & req, Algorithm algorithm)
+/// The checksum previously attached to a request by `setChecksum`; empty when none was attached.
+/// Mirrors `setChecksum` so a caller that records checksums for `CompleteMultipartUpload` can read
+/// them back off the per-part requests without recomputing anything over their bodies.
+template <typename T>
+inline std::string getChecksum(const T & target, Algorithm algorithm)
 {
-    const auto sdk_algorithm = toSDKFlexibleChecksumAlgorithm(algorithm);
-
-    chassert(req.GetChecksumAlgorithm() == sdk_algorithm);
     switch (algorithm)
     {
         case Algorithm::CRC32:
-            return Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateCRC32(*(req.GetBody())));
+            return target.GetChecksumCRC32();
         case Algorithm::SHA256:
-            return Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateSHA256(*(req.GetBody())));
+            return target.GetChecksumSHA256();
         case Algorithm::MD5:
-            break;
+            return {};
     }
     UNREACHABLE();
 }
 
+/// A streaming hash for an upload checksum algorithm.
+inline std::shared_ptr<Aws::Utils::Crypto::Hash> createHash(Algorithm algorithm)
+{
+    switch (algorithm)
+    {
+        case Algorithm::CRC32:
+            return Aws::Utils::Crypto::CreateCRC32Implementation();
+        case Algorithm::SHA256:
+            return Aws::Utils::Crypto::CreateSha256Implementation();
+        case Algorithm::MD5:
+            return Aws::Utils::Crypto::CreateMD5Implementation();
+    }
+    UNREACHABLE();
+}
+
+/// The base64 payload of a checksum header for an algorithm (`Content-MD5` for `MD5`,
+/// `x-amz-checksum-crc32`/`x-amz-checksum-sha256` otherwise). Throws if the hash failed, so an
+/// incomplete checksum can never reach a request header.
+inline std::string base64Checksum(Algorithm algorithm, Aws::Utils::Crypto::Hash & hash)
+{
+    auto result = hash.GetHash();
+    if (!result.IsSuccess())
+    {
+        const auto name = std::string(magic_enum::enum_name(algorithm));
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to calculate the {} checksum for an S3 upload", name);
+    }
+    return Aws::Utils::HashingUtils::Base64Encode(result.GetResult());
+}
+
+/// The base64 checksum payload of a part that is already fully in memory, fed in a single `Update`.
+/// All three algorithms read the caller's bytes in place (CRC32 and the hashes wrap a zero-copy byte
+/// cursor, MD5/SHA256 hand the pointer straight to OpenSSL), so splitting the buffer into chunks buys
+/// nothing and costs a call per chunk. Benchmarked flat from 4 KiB chunks to the whole part on both
+/// 16 MiB and 128 MiB parts, so there is deliberately no chunk size here.
+inline std::string calculateChecksum(Algorithm algorithm, const char * data, size_t size)
+{
+    auto hash = createHash(algorithm);
+    if (size != 0)
+        hash->Update(reinterpret_cast<unsigned char *>(const_cast<char *>(data)), size);
+    return base64Checksum(algorithm, *hash);
+}
+
 Algorithm getUploadChecksumAlgorithm(const S3RequestSettings & request_settings, bool is_s3express_bucket);
+
+/// The algorithm whose checksum is precalculated for an upload part, derived from the configured
+/// upload checksum algorithm. `MD5` (the default, and always for GCS, which rejects the flexible
+/// checksum headers) keeps the `Content-MD5` path, and precalculating it saves the SDK its own
+/// whole-body scan. Returns `nullopt` when no checksum can be attached: under FIPS, MD5 is
+/// unavailable and the SDK silently drops `Content-MD5`, so no hash is computed either.
+std::optional<Algorithm> getPrecalculatedChecksumAlgorithm(std::optional<Algorithm> configured);
 
 template <typename R>
 inline void setChecksumAlgorithm(R & request, Algorithm algorithm)

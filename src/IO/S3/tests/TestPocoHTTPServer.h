@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <memory>
 #include <string>
@@ -100,6 +101,126 @@ public:
     const Poco::Net::MessageHeader & getLastRequestHeader() const
     {
         return last_request_header;
+    }
+};
+
+/// A handler that fails the first `num_failures` requests with an internal server error, so a
+/// client retries them, and answers the rest with 200. The last received header and body are
+/// recorded for assertions. Used to reproduce the SDK retrying an upload whose body was already
+/// consumed by a previous attempt: the retry path signs the body again, which must find the
+/// stream in a readable state.
+class MockRequestHandlerWithFailures : public Poco::Net::HTTPRequestHandler
+{
+    std::atomic<size_t> & request_count;
+    size_t num_failures;
+    Poco::Net::MessageHeader & last_request_header;
+    std::string & last_request_body;
+
+public:
+    MockRequestHandlerWithFailures(
+        std::atomic<size_t> & request_count_,
+        size_t num_failures_,
+        Poco::Net::MessageHeader & last_request_header_,
+        std::string & last_request_body_)
+        : request_count(request_count_)
+        , num_failures(num_failures_)
+        , last_request_header(last_request_header_)
+        , last_request_body(last_request_body_)
+    {
+    }
+
+    void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override
+    {
+        last_request_header = request;
+
+        /// The body arrives as a plain PUT payload; read it for assertions.
+        last_request_body.assign(std::istreambuf_iterator<char>(request.stream()), std::istreambuf_iterator<char>());
+
+        if (request_count.fetch_add(1) < num_failures)
+        {
+            response.setStatus(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
+            auto & out = response.send();
+            out << "<Error><Code>InternalError</Code><Message>injected failure</Message></Error>";
+            out.flush();
+            return;
+        }
+
+        response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
+        auto & out = response.send();
+        out.flush();
+    }
+};
+
+class HTTPRequestHandlerFactoryWithFailures : public Poco::Net::HTTPRequestHandlerFactory
+{
+    std::atomic<size_t> request_count = 0;
+    size_t num_failures;
+    Poco::Net::MessageHeader & last_request_header;
+    std::string & last_request_body;
+
+    Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest &) override
+    {
+        return new MockRequestHandlerWithFailures(request_count, num_failures, last_request_header, last_request_body);
+    }
+
+public:
+    explicit HTTPRequestHandlerFactoryWithFailures(
+        size_t num_failures_, Poco::Net::MessageHeader & last_request_header_, std::string & last_request_body_)
+        : num_failures(num_failures_)
+        , last_request_header(last_request_header_)
+        , last_request_body(last_request_body_)
+    {
+    }
+
+    ~HTTPRequestHandlerFactoryWithFailures() override = default;
+
+    size_t requestCount() const { return request_count.load(); }
+};
+
+/// An HTTP server that fails the first `num_failures` requests with a retryable error (500), then
+/// answers successfully. See `MockRequestHandlerWithFailures`.
+class TestPocoHTTPServerWithFailures
+{
+    std::unique_ptr<Poco::Net::ServerSocket> server_socket;
+    Poco::SharedPtr<HTTPRequestHandlerFactoryWithFailures> handler_factory;
+    Poco::AutoPtr<Poco::Net::HTTPServerParams> server_params;
+    std::unique_ptr<Poco::Net::HTTPServer> server;
+    Poco::Net::MessageHeader last_request_header;
+    std::string last_request_body;
+
+public:
+    explicit TestPocoHTTPServerWithFailures(size_t num_failures)
+        : server_socket(std::make_unique<Poco::Net::ServerSocket>(0))
+        , handler_factory(new HTTPRequestHandlerFactoryWithFailures(num_failures, last_request_header, last_request_body))
+        , server_params(makeMockServerParams())
+        , server(std::make_unique<Poco::Net::HTTPServer>(handler_factory, *server_socket, server_params))
+    {
+        server->start();
+    }
+
+    ~TestPocoHTTPServerWithFailures()
+    {
+        server->stop();
+    }
+
+    std::string getUrl()
+    {
+        return "http://" + server_socket->address().toString();
+    }
+
+    size_t requestCount() const
+    {
+        return handler_factory->requestCount();
+    }
+
+    const Poco::Net::MessageHeader & getLastRequestHeader() const
+    {
+        return last_request_header;
+    }
+
+    const std::string & getLastRequestBody() const
+    {
+        return last_request_body;
     }
 };
 
