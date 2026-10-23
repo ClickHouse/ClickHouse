@@ -676,7 +676,6 @@
                 "reference/functions/aggregate-functions/timeSeriesCountToGrid",
                 "reference/functions/aggregate-functions/timeSeriesDeltaToGrid",
                 "reference/functions/aggregate-functions/timeSeriesDerivToGrid",
-                "reference/functions/aggregate-functions/timeSeriesDoubleExponentialSmoothingToGrid",
                 "reference/functions/aggregate-functions/timeSeriesFirstToGrid",
                 "reference/functions/aggregate-functions/timeSeriesGroupArray",
                 "reference/functions/aggregate-functions/timeSeriesIncreaseToGrid",
