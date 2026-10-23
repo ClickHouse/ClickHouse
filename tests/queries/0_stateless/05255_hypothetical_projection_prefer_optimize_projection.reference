@@ -31,7 +31,7 @@ real: from the base table
 --- a projection that wins on cost stays plainly chosen ---
 status: applicable
 verdict: chosen
-reason: 1 mark would be read instead of 3 from the base table
+reason: `prefer_optimize_projection = 1` takes the projection in any layout, and it reads 1 mark against 3 from the base table
 real: from the projection
 --- the setting from the session ---
 status: applicable

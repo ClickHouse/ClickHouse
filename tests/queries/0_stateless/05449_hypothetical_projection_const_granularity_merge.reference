@@ -1,0 +1,7 @@
+marks: 9
+With p_k (normal projection, hypothetical):
+marks: 8
+marks_span: 8 to 10
+verdict: too close to call
+real: ReadFromMergeTree (p_k)
+real: Granules: 8/72

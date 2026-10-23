@@ -466,6 +466,18 @@ std::pair<std::vector<MergeTreeDataPartPtr>, size_t> buildSyntheticProjectionPar
     std::vector<std::vector<size_t>> layouts;
     for (const auto & [rows_limit, bytes_limit] : chunkings)
         layouts.push_back(simulateWriterMarks(whole_part, part_type, mt_settings, adaptive_marks, rows_limit, bytes_limit));
+    /// with a constant granularity, a merge sizes the granule from the stored bytes of its sources, which have no key expression
+    if (!granularity_per_block && adaptive_marks && parent_part->info.level > 0)
+    {
+        const size_t granule_rows = computeIndexGranularity(
+            whole_part.rows, whole_part.formatBytes(), granule_bytes, mt_settings[MergeTreeSetting::index_granularity],
+            /* blocks_are_granules */ false, adaptive_marks);
+        std::vector<size_t> merged(whole_part.rows / granule_rows, granule_rows);
+        if (whole_part.rows % granule_rows != 0)
+            merged.push_back(whole_part.rows % granule_rows);
+        layouts.push_back(std::move(merged));
+        primary = layouts.size() - 1;
+    }
 
     auto build = [&](const std::vector<size_t> & rows_per_mark) -> MergeTreeDataPartPtr
     {
@@ -811,6 +823,16 @@ void setVerdict(
             cost = fmt::format("the projection reads {} against {} from the base table", marks_text(projection_marks), baseline_marks);
         result.verdict = "chosen (forced)";
         result.verdict_reason = fmt::format("`{} = 1` overrides the cost; {}", relaxing_setting, cost);
+    }
+    /// a relaxing setting takes the projection in any layout, and a usable real one would make the candidate `not_applicable`
+    else if (!relaxing_setting.empty() && chosen_in == weighed)
+    {
+        result.verdict = "chosen";
+        result.verdict_reason = fmt::format(
+            "`{} = 1` takes the projection in any layout, and it reads {} against {} from the base table",
+            relaxing_setting,
+            marks_text(projection_marks),
+            baseline_marks);
     }
     else if (built.uneven_width_parts != 0)
     {

@@ -1,7 +1,7 @@
 -- scalar subquery
 status: applicable
 verdict: chosen
-reason: 1 mark would be read instead of 3 from the base table
+reason: `force_optimize_projection = 1` takes the projection in any layout, and it reads 1 mark against 3 from the base table
 -- IN subquery
 status: applicable
 verdict: chosen (forced)
