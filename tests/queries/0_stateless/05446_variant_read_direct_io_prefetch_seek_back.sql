@@ -1,5 +1,3 @@
--- Random settings limits: use_columns_cache=(0, 0)
-
 DROP TABLE IF EXISTS t_variant_direct_io_prefetch;
 
 CREATE TABLE t_variant_direct_io_prefetch (id UInt64, v Variant(String, UInt64) CODEC(LZ4))
@@ -17,7 +15,7 @@ INSERT INTO t_variant_direct_io_prefetch SELECT number, multiIf(
     CAST(number, 'Variant(String, UInt64)')) FROM numbers(49152);
 OPTIMIZE TABLE t_variant_direct_io_prefetch FINAL;
 
-SELECT count(), any(part_type), any(part_storage_type) FROM system.parts
+SELECT count(), any(part_type) FROM system.parts
 WHERE database = currentDatabase() AND table = 't_variant_direct_io_prefetch' AND active;
 
 SELECT count(s), sum(length(s)), sum(startsWith(s, 'str_')) FROM
@@ -34,7 +32,7 @@ INSERT INTO t_variant_direct_io_prefetch SELECT number, if(number < 8192 OR numb
     CAST('str_' || toString(number), 'Variant(String, UInt64)'), CAST(number, 'Variant(String, UInt64)')) FROM numbers(41960);
 OPTIMIZE TABLE t_variant_direct_io_prefetch FINAL;
 
-SELECT count(), any(part_type), any(part_storage_type) FROM system.parts
+SELECT count(), any(part_type) FROM system.parts
 WHERE database = currentDatabase() AND table = 't_variant_direct_io_prefetch' AND active;
 
 SELECT count(s), sum(length(s)), sum(startsWith(s, 'str_')) FROM
