@@ -101,7 +101,7 @@ const DeviceFixedColumn & fixedOrThrow(const DeviceColumnView & view)
     return view.fixed;
 }
 
-void copyDeviceToHost(std::span<const DeviceColumnView> from, std::span<IColumn * const> to, rmm::cuda_stream_view stream)
+void copyDeviceToHost(std::span<const DeviceColumnView> from, std::span<IColumn * const> to, cuda::stream_ref stream)
 {
     if (from.size() != to.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "{} columns from the device into {} columns", from.size(), to.size());
@@ -138,7 +138,7 @@ void copyDeviceToHost(std::span<const DeviceColumnView> from, std::span<IColumn 
         }
     });
 
-    checkCuda(cudaStreamSynchronize(stream), "Cannot wait for columns to be copied back from the device");
+    checkCuda(cudaStreamSynchronize(stream.get()), "Cannot wait for columns to be copied back from the device");
 
     for (size_t i = 0; i < from.size(); ++i)
     {

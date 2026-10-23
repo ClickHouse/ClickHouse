@@ -86,6 +86,10 @@ def test_dataloss(cluster):
     try:
         with pytest.raises(Exception) as exc_info:
             node.query("INSERT INTO s3_failover_test VALUES (1, 'Hello')")
-        assert "completeMultipartUpload" in str(exc_info.value)
+        # The proxy returns this error only for `uploadId=` requests, and of those only a failed
+        # CompleteMultipartUpload reaches the client.
+        error = str(exc_info.value)
+        assert "S3_ERROR" in error, error
+        assert "We encountered an internal error. Please try again." in error, error
     finally:
         node.query("DROP TABLE IF EXISTS s3_failover_test")
