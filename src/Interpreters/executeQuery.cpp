@@ -2375,10 +2375,13 @@ static BlockIO executeQueryImpl(
             context->getSessionQueryIdsHistory().add(client_info.current_query_id, history_size);
     }
 
-    size_t max_query_size = settings[Setting::max_query_size];
-    /// Don't limit the size of internal queries or distributed subquery.
+    const bool parse_as_internal = internal || context->isDDLOrOnClusterInternal();
     const bool is_secondary_query = client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
-    if (internal || is_secondary_query)
+
+    const size_t fallback_query_size_limit = settings[Setting::max_query_size];
+    size_t max_query_size = fallback_query_size_limit;
+    /// Don't limit the size of internal queries, distributed subqueries, or server-generated DDL queries.
+    if (parse_as_internal || is_secondary_query)
         max_query_size = 0;
     /// `max_parser_depth` / `max_parser_backtracks` are NOT lifted for a secondary query here: `query_kind`
     /// arrives over the wire and can be spoofed by any native client, so keying the parser limits off it would
@@ -2398,7 +2401,7 @@ static BlockIO executeQueryImpl(
     /// `dialect = 'prql'`, `'kusto'`, `'promql'`, `'polyglot'` or `'clickhouse_json'` would otherwise feed it to
     /// the wrong parser and make the handler uninvokable. Only the request-owned construction snippets
     /// (`filter`/`select`/`order`/`page`) stay under the caller's settings; they are parsed elsewhere.
-    const bool use_request_dialect = !internal && !parse_server_owned_query_without_limits;
+    const bool use_request_dialect = !parse_as_internal && !parse_server_owned_query_without_limits;
 
     String query;
     String query_for_logging;
@@ -2535,7 +2538,7 @@ static BlockIO executeQueryImpl(
                 checkASTSizeLimits(*out_ast, settings);
             }
         }
-        else if (settings[Setting::dialect] == Dialect::logsql && !internal)
+        else if (settings[Setting::dialect] == Dialect::logsql && use_request_dialect)
         {
             /// `ParserLogsQLQuery` handles SET queries internally even when the feature gate is off,
             /// so that users can recover from misconfigured profiles (e.g. `SET dialect = 'clickhouse'`).
@@ -2755,7 +2758,12 @@ static BlockIO executeQueryImpl(
     {
         /// Anyway log the query.
         if (query.empty())
-            query.assign(begin, std::min(static_cast<size_t>(end - begin), max_query_size));
+        {
+            size_t fallback_query_size = static_cast<size_t>(end - begin);
+            if (fallback_query_size_limit)
+                fallback_query_size = std::min(fallback_query_size, fallback_query_size_limit);
+            query.assign(begin, fallback_query_size);
+        }
 
         query_for_logging = wipeSensitiveDataAndCutToLength(query, log_queries_cut_to_length, true);
         logQuery(query_for_logging, context, internal, stage);

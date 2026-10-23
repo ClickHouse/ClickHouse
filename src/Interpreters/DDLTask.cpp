@@ -12,6 +12,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/NetException.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/DDLWorker.h>
@@ -29,6 +30,9 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/isLocalAddress.h>
 #include <Common/logger_useful.h>
+
+#include <algorithm>
+#include <array>
 
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/SharedDatabaseCatalog.h>
@@ -68,6 +72,33 @@ namespace ErrorCodes
 String HostID::readableString() const
 {
     return host_name + ":" + DB::toString(port);
+}
+
+std::span<const std::string_view> getDDLQueryParserOnlySettingNames()
+{
+    /// These settings are used only while parsing the input query. Their values are materialized in the
+    /// normalized ClickHouse query before it is enqueued. Keep this list in sync when adding parser-only settings.
+    static constexpr std::array settings{
+        std::string_view{"dialect"},
+        std::string_view{"allow_experimental_kusto_dialect"},
+        std::string_view{"allow_experimental_prql_dialect"},
+        std::string_view{"allow_experimental_polyglot_dialect"},
+        std::string_view{"polyglot_dialect"},
+        std::string_view{"enable_json_ast_dialect"},
+        std::string_view{"enable_trino_dialect"},
+        std::string_view{"enable_logsql_dialect"},
+        std::string_view{"logsql_database"},
+        std::string_view{"logsql_table"},
+        std::string_view{"logsql_time_column"},
+        std::string_view{"logsql_message_column"},
+        std::string_view{"implicit_select"},
+        std::string_view{"allow_settings_after_format_in_insert"},
+        std::string_view{"promql_database"},
+        std::string_view{"promql_table"},
+        std::string_view{"promql_evaluation_time"},
+        std::string_view{"evaluation_time"},
+    };
+    return settings;
 }
 
 HostID HostID::fromString(const String & host_port_str)
@@ -132,25 +163,17 @@ void DDLLogEntry::setSettingsIfRequired(ContextPtr context)
     {
         settings.emplace(context->getSettingsRef().changes());
 
-        /// These settings are interpreted only at the initiator: they shape the final query
-        /// (`select`, `order`, `sort`, `filter`, `limit`, `offset`, `page`, `additional_result_filter`),
-        /// shape how data is parsed from / serialised to the client (`format`, `input_format`,
-        /// `output_format`, `default_format`, `compression`), select the initiator's default database
-        /// (`database`, the equivalent of `USE`), or drive the HTTP query-construction / path routing on
-        /// the initiator only (`http_allow_database_as_path`, `http_allow_table_as_file`,
-        /// `http_allow_filters_as_path`, `http_allow_filters_as_unrecognized_url_parameters`,
-        /// `implicit_table_at_top_level`). Forwarding them to the hosts that pick up this DDL entry is at
-        /// best meaningless for a DDL query and at worst harmful — `database` in particular makes the
-        /// executing host `USE` the initiator's database, which may not exist there and aborts the task,
-        /// leaving `ON CLUSTER` queries hanging until `distributed_ddl_task_timeout`; and a new setting
-        /// name reaches an older worker during a rolling upgrade as `UNKNOWN_SETTING`. Strip them here,
-        /// mirroring `ClusterProxy::stripInitiatorOnlySettings`.
-        static constexpr std::array initiator_only_settings = {
-            "database", "select", "order", "sort", "filter", "additional_result_filter",
-            "limit", "offset", "page", "format", "input_format", "output_format", "default_format", "compression",
-            "http_allow_database_as_path", "http_allow_table_as_file", "http_allow_filters_as_path",
-            "http_allow_filters_as_unrecognized_url_parameters", "implicit_table_at_top_level"};
-        for (const auto * name : initiator_only_settings)
+        /// Use the same initiator-only names as the query-text path, so new settings cannot leak
+        /// through the `DDL` settings packet when they are already stripped from the queued query.
+        std::erase_if(*settings, [](const SettingChange & change)
+        {
+            return ClusterProxy::isInitiatorOnlySettingName(change.name);
+        });
+
+        /// The initiator has already parsed and normalized the query to the `ClickHouse` dialect. Forwarding
+        /// parser selection settings is unnecessary, and can make an older worker reject the entry with
+        /// `UNKNOWN_SETTING` during a rolling upgrade before it gets a chance to parse the normalized query.
+        for (const auto name : getDDLQueryParserOnlySettingNames())
             settings->removeSetting(name);
     }
 }
