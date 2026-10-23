@@ -119,6 +119,8 @@ public:
 
         /// If result of this not is deterministic. Checks only this node, not a subtree.
         bool isDeterministic() const;
+        /// Follows alias nodes to the expression they name.
+        const Node * getWithoutAlias() const;
         void toTree(JSONBuilder::JSONMap & map) const;
         UInt64 getHash() const;
         /// `build_independent` leaves out what differs between two builds of the same query: the composed
@@ -187,7 +189,13 @@ public:
     /// max_type_complexity guards binary type decoding (0 == unlimited). Callers pass the effective
     /// input_format_binary_max_type_complexity for client-reachable QueryPlan packets, or leave it at the
     /// default 0 for trusted internal metadata (e.g. data-lake schema transforms).
-    static ActionsDAG deserialize(ReadBuffer & in, DeserializedSetsRegistry & registry, const ContextPtr & context, size_t max_type_complexity = 0);
+    /// `nesting_depth` is the depth of lambda captures, it is used internally to limit the recursion.
+    static ActionsDAG deserialize(
+        ReadBuffer & in,
+        DeserializedSetsRegistry & registry,
+        const ContextPtr & context,
+        size_t max_type_complexity = 0,
+        size_t nesting_depth = 0);
 
     static Node createAlias(const Node & child, std::string alias);
 

@@ -7,22 +7,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -m -q "
-CREATE TABLE ts_data (id UUID, timestamp DateTime64(3, 'UTC'), value Float64) ENGINE = MergeTree ORDER BY (id, timestamp);
-CREATE TABLE ts_tags (
-    id UUID,
-    metric_name LowCardinality(String),
-    tags Map(LowCardinality(String), String))
-ENGINE = ReplacingMergeTree ORDER BY (metric_name, id);
-CREATE TABLE ts_time_ranges (
-    id UUID,
-    min_time SimpleAggregateFunction(min, DateTime64(3, 'UTC')),
-    max_time SimpleAggregateFunction(max, DateTime64(3, 'UTC')))
-ENGINE = AggregatingMergeTree ORDER BY id;
-CREATE TABLE ts_metrics (metric_family String, type String, unit String, help String) ENGINE = ReplacingMergeTree ORDER BY metric_family;
-CREATE TABLE ts ENGINE = TimeSeries DATA ts_data TAGS ts_tags TIME RANGES ts_time_ranges METRICS ts_metrics;
-INSERT INTO ts_tags VALUES ('00000000-0000-0000-0000-000000000001', 'up', {'instance':'host1'});
-INSERT INTO ts_time_ranges VALUES ('00000000-0000-0000-0000-000000000001', toDateTime64(1699999000, 3, 'UTC'), toDateTime64(1700001000, 3, 'UTC'));
-INSERT INTO ts_data VALUES ('00000000-0000-0000-0000-000000000001', toDateTime64(1700000000, 3, 'UTC'), 1);
+CREATE TABLE ts (samples Array(Tuple(DateTime64(3, 'UTC'), Float64))) ENGINE = TimeSeries;
+INSERT INTO ts (metric_name, tags, samples) VALUES ('up', {'instance':'host1'}, [(toDateTime64(1700000000, 3, 'UTC'), 1)]);
 "
 
 promql_client()

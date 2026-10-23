@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Access/Common/AccessType.h>
+#include <Core/UUID.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Formats/FormatSettings.h>
 
@@ -9,10 +11,47 @@ struct FormatParserSharedResources;
 using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
 struct FormatFilterInfo;
 using FormatFilterInfoPtr = std::shared_ptr<FormatFilterInfo>;
+class ColumnsCache;
+struct ColumnsCacheWriteBudget;
 }
 
 namespace DB::Parquet
 {
+
+/// How a reader uses the columns cache (`use_columns_cache`). Set only for a file whose content is
+/// identified by a strong version token (an ETag, the identity of an immutable file recorded by its
+/// table, or the version token of a local file that has settled), see `Reader::initColumnsCache`.
+struct ColumnsCacheOptions
+{
+    std::shared_ptr<ColumnsCache> cache;
+
+    /// Shown as the `part` of the entries in `system.columns_cache`.
+    String file_path;
+
+    /// The table the file is read by: `system.columns_cache` shows the entries only to a user who
+    /// may see the table. The nil UUID for a table function, see `source`.
+    UUID table_uuid = UUIDHelpers::Nil;
+
+    /// For a table function: the source whose `READ` grant is required to see the entries in
+    /// `system.columns_cache`.
+    AccessTypeObjects::Source source = AccessTypeObjects::Source::FILE;
+
+    /// A hash of what identifies the content of the file - the path among all storages, its version token
+    /// and the size - and of the format settings that change the values decoded
+    /// from it. Part of the key of every entry of the file.
+    UInt64 file_identity = 0;
+
+    bool enable_reads = false;
+    bool enable_writes = false;
+
+    /// `columns_cache_max_bytes_to_write_to_cache` and `columns_cache_max_estimated_bytes_to_write_to_cache`,
+    /// 0 means half of the current size limit of the cache.
+    size_t max_bytes_to_write = 0;
+    size_t max_estimated_bytes_to_write = 0;
+
+    /// Shared by all readers of the query, so that the budgets above apply to the query as a whole.
+    std::shared_ptr<ColumnsCacheWriteBudget> write_budget;
+};
 
 struct ReadOptions
 {
@@ -34,6 +73,9 @@ struct ReadOptions
     /// probability becomes very high. E.g. if bloom filter has 1% false positive probability,
     /// searching for 100 elements would have 63% false positive probability.
     size_t bloom_filter_max_set_size = 100;
+
+    /// Null if the columns cache is not used.
+    std::shared_ptr<const ColumnsCacheOptions> columns_cache;
 };
 
 struct SharedResourcesExt
