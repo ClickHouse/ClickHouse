@@ -1406,7 +1406,9 @@ void LocalServer::connectAndInitializeInputTable()
 
 void LocalServer::beforeExecutingCommandLineQueries()
 {
-    if (!implicit_stdin_table_to_activate)
+    /// A nested query file may read SQL from stdin after inferred data was hidden.
+    /// Never make that SQL source available as the command-line input table.
+    if (!implicit_stdin_table_to_activate || query_file_reads_stdin)
         return;
 
     auto session_context = static_cast<LocalConnection &>(*connection).getSessionContext();
@@ -1443,7 +1445,8 @@ void LocalServer::beforeExecutingCommandLineQueries()
     }
 
     /// A setting explicitly assigned by query files (even to an empty string) wins.
-    if (!client_context->getSettingsRef().isChanged("implicit_table_at_top_level"))
+    if (!client_context->getSettingsRef().isChanged("implicit_table_at_top_level")
+        && !session_context->getSettingsRef().isChanged("implicit_table_at_top_level"))
         client_context->setSetting("implicit_table_at_top_level", name);
 }
 

@@ -117,6 +117,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <csignal>
+#include <sys/stat.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
@@ -5362,6 +5363,18 @@ bool ClientBase::processMultiQueryFromFile(const String & file_name)
 
     ReadBufferFromFile in(file_name);
     readStringUntilEOF(queries_from_file, in);
+
+    /// Also detect nested \\i /dev/stdin. Otherwise local's inferred input table
+    /// would interpret SQL redirected from a regular file as data for --query.
+    if (supportsLocalMetaCommands() && !queries.empty())
+    {
+        struct stat stdin_stat{};
+        struct stat file_stat{};
+        if (::fstat(stdin_fd, &stdin_stat) == 0 && S_ISREG(stdin_stat.st_mode)
+            && ::stat(file_name.c_str(), &file_stat) == 0
+            && stdin_stat.st_dev == file_stat.st_dev && stdin_stat.st_ino == file_stat.st_ino)
+            query_file_reads_stdin = true;
+    }
 
     /// For `clickhouse-local` only: same entry point as `-q` / stdin so meta-commands (`clear`, `ls`,
     /// `\i`, …) work for whole-file input. Remote `clickhouse-client` keeps `executeMultiQuery` so

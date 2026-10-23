@@ -114,7 +114,7 @@ cat "$STDIN_DATA_FILE_NAME"
 
 # Query-file temporary tables also retain their own namespace.
 printf '%s\n' 'CREATE TEMPORARY TABLE `table` (x UInt8) ENGINE=Memory;' \
-    'INSERT INTO `table` VALUES (7);' \
+    'INSERT INTO `table` SELECT 7;' \
     'SELECT sum(x) FROM `table`;' > "$TEMP_SQL_FILE_NAME"
 $CLICKHOUSE_LOCAL --async_insert=0 --queries-file="$TEMP_SQL_FILE_NAME" \
     -q 'SELECT count(); SELECT sum(x) FROM `table`;' < "$STDIN_DATA_FILE_NAME"
@@ -147,6 +147,10 @@ fi
 printf '%s\n' 'CREATE FUNCTION f_stdin_01523 AS (x) -> x + 1;' 'SELECT 99;' > "$TEMP_SQL_FILE_NAME"
 $CLICKHOUSE_LOCAL --queries-file=/dev/stdin -q 'SELECT f_stdin_01523(41)' < "$TEMP_SQL_FILE_NAME"
 $CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" -q 'SELECT f_stdin_01523(41)' < "$TEMP_SQL_FILE_NAME"
+
+# Nested includes must also recognize stdin as SQL, not input data.
+printf '%s\n' '\\i /dev/stdin' > "$SECOND_SQL_FILE_NAME"
+$CLICKHOUSE_LOCAL --queries-file="$SECOND_SQL_FILE_NAME" -q 'SELECT f_stdin_01523(41)' < "$TEMP_SQL_FILE_NAME"
 
 # A prelude that does not read stdin must not make read() replay the same rows.
 printf '1\n2\n3\n' > "$STDIN_DATA_FILE_NAME"
@@ -182,7 +186,7 @@ $CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" \
 echo "SET implicit_table_at_top_level = '';" > "$TEMP_SQL_FILE_NAME"
 $CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" -q 'SELECT 42' < "$STDIN_DATA_FILE_NAME"
 printf '%s\n' 'CREATE TABLE selected_01523 (x UInt8) ENGINE=Memory;' \
-    'INSERT INTO selected_01523 VALUES (7), (8);' \
+    'INSERT INTO selected_01523 SELECT arrayJoin([7, 8]);' \
     "SET implicit_table_at_top_level = 'selected_01523';" > "$TEMP_SQL_FILE_NAME"
 $CLICKHOUSE_LOCAL --async_insert=0 --queries-file="$TEMP_SQL_FILE_NAME" -q 'SELECT sum(x)' < "$STDIN_DATA_FILE_NAME"
 
