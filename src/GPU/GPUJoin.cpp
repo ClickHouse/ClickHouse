@@ -3,8 +3,15 @@
 #if USE_GPU
 
 #include <GPU/CudfHashJoin.cuh>
+#include <GPU/GPUDevice.h>
+#include <GPU/GPUGather.cuh>
 #include <GPU/GPUResources.cuh>
 #include <GPU/GPUTypeMapping.h>
+
+#include <Core/Settings.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <Interpreters/Context.h>
+#include <Processors/DeviceChunk.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
@@ -40,6 +47,11 @@ namespace ErrorCodes
     extern const int SET_SIZE_LIMIT_EXCEEDED;
 }
 
+namespace Setting
+{
+    extern const SettingsBool gpu_hash_join_on_device;
+}
+
 namespace
 {
 
@@ -56,6 +68,38 @@ std::optional<GPU::GPUElementType> integerKeyTypeOf(const IDataType & type)
     if (!element_type || !GPU::isInteger(*element_type))
         return {};
     return element_type;
+}
+
+/// What the device holds a column of `type` as in a join on the device: its values, each of a fixed width, as they are.
+std::optional<GPU::GPUElementType> deviceElementTypeOf(const IDataType & type)
+{
+    if (typeid_cast<const DataTypeFixedString *>(&type))
+        return GPU::keyElementTypeOf(type);
+    return GPU::filterElementTypeOf(type);
+}
+
+GPU::GPUElementType deviceElementTypeOrThrow(const IDataType & type)
+{
+    const auto element_type = deviceElementTypeOf(type);
+    if (!element_type)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A column of {} in a GPU hash join on the device", type.getName());
+    return *element_type;
+}
+
+bool allOnDevice(const Block & block)
+{
+    for (const auto & column : block)
+    {
+        if (!deviceElementTypeOf(*column.type))
+            return false;
+    }
+    return true;
+}
+
+bool joinOnDeviceRequested()
+{
+    const auto context = CurrentThread::tryGetQueryContext();
+    return context && context->getSettingsRef()[Setting::gpu_hash_join_on_device];
 }
 
 }
@@ -109,11 +153,19 @@ GPUHashJoin::GPUHashJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader le
 
     JoinCommon::createMissedColumns(build_payload_header);
 
+    on_device = joinOnDeviceRequested() && allOnDevice(left_sample_block) && allOnDevice(build_payload_header);
+    if (on_device)
+    {
+        for (const auto & column : build_payload_header)
+            build_payload_types.push_back(deviceElementTypeOrThrow(*column.type));
+    }
+
     LOG_TRACE(
         log,
-        "Joining on {} with {} column(s) of the right table, keys on a GPU",
+        "Joining on {} with {} column(s) of the right table, {} on a GPU",
         right_sample_block.getByName(key_name_right).type->getName(),
-        build_payload_header.columns());
+        build_payload_header.columns(),
+        on_device ? "all columns" : "keys");
 }
 
 /// The matches of one probe block, handed out as blocks of at most `slice_rows` rows each.
@@ -147,6 +199,36 @@ private:
     const ColumnPtr build_indices;
     const size_t slice_rows;
     size_t offset = 0;
+};
+
+/// The result of one probe of a join on the device, handed out as chunks of the device of at most `slice_rows` rows each.
+class GPUHashJoin::DeviceResult final : public IJoinResult
+{
+public:
+    DeviceResult(std::shared_ptr<const GPU::GPUDeviceColumns> columns_, size_t slice_rows_)
+        : columns(std::move(columns_))
+        , slice_rows(slice_rows_)
+    {
+    }
+
+    JoinResultBlock next() override
+    {
+        const size_t total = columns->rows();
+        const size_t rows = slice_rows == 0 ? total - offset : std::min(slice_rows, total - offset);
+        last = (offset == 0 && rows == total) ? columns : columns->slice(offset, rows);
+        offset += rows;
+        return {.block = {}, .next_block = nullptr, .is_last = offset >= total};
+    }
+
+    std::shared_ptr<const IDeviceColumns> takeDeviceColumns() override { return std::exchange(last, nullptr); }
+
+    std::optional<size_t> getMatchedRightRows() const override { return columns->rows(); }
+
+private:
+    const std::shared_ptr<const GPU::GPUDeviceColumns> columns;
+    const size_t slice_rows;
+    size_t offset = 0;
+    std::shared_ptr<const GPU::GPUDeviceColumns> last;
 };
 
 GPUHashJoin::~GPUHashJoin()
@@ -191,7 +273,44 @@ bool GPUHashJoin::addBlockToJoin(const Block & block, size_t num_rows, JoinBuild
     if (key_column->size() != num_rows)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A block of {} rows with {} keys for a GPU hash join", num_rows, key_column->size());
 
-    auto * node = new BuildChunk{.keys = key_column, .payload = std::move(chunk)};
+    return addBuildChunk(std::make_unique<BuildChunk>(BuildChunk{.keys = key_column, .payload = std::move(chunk), .device = {}, .next = nullptr}), num_rows, bytes, context);
+}
+
+bool GPUHashJoin::addDeviceChunkToJoin(const Chunk & chunk, const Block & header, JoinBuildContext context)
+{
+    const auto device = GPU::gpuColumnsOf(chunk);
+    if (!on_device || !device)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A chunk of the right table on the device for a GPU hash join of keys on the GPU alone");
+
+    const size_t num_rows = chunk.getNumRows();
+    if (num_rows == 0)
+        return true;
+
+    /// The keys, and then the columns the result takes, as `finishBuildOnDevice` takes them.
+    std::vector<size_t> positions{header.getPositionByName(key_name_right)};
+    for (const auto & column : build_payload_header)
+        positions.push_back(header.getPositionByName(column.name));
+    auto selected = device->select(positions);
+
+    size_t bytes = 0;
+    for (size_t i = 0; i < positions.size(); ++i)
+    {
+        const GPU::DeviceColumnView & view = selected->views()[i];
+        const GPU::GPUElementType expected = i == 0 ? key_type : build_payload_types[i - 1];
+        if (view.kind != GPU::GPUColumnKind::Fixed || view.fixed.element_type != expected)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Device column {} of the right table of a GPU hash join of another type than its header's", positions[i]);
+        bytes += num_rows * GPU::sizeOf(expected);
+    }
+
+    if (built.load(std::memory_order_acquire))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A block of the right table after the build of a GPU hash join ended");
+
+    return addBuildChunk(std::make_unique<BuildChunk>(BuildChunk{.keys = {}, .payload = {}, .device = std::move(selected), .next = nullptr}), num_rows, bytes, context);
+}
+
+bool GPUHashJoin::addBuildChunk(std::unique_ptr<BuildChunk> chunk, size_t num_rows, size_t bytes, JoinBuildContext context)
+{
+    BuildChunk * const node = chunk.release();
     node->next = build_chunks.load(std::memory_order_relaxed);
     while (!build_chunks.compare_exchange_weak(node->next, node, std::memory_order_release, std::memory_order_relaxed))
     {
@@ -226,6 +345,25 @@ void GPUHashJoin::finishBuild()
     if (rows > static_cast<size_t>(std::numeric_limits<Int32>::max()))
         throw Exception(
             ErrorCodes::SET_SIZE_LIMIT_EXCEEDED, "The right table of a GPU hash join has {} rows, more than cuDF indexes", rows);
+
+    if (on_device)
+    {
+        finishBuildOnDevice(chunks, rows);
+        chunks.clear();
+        const UInt64 moved_us = watch.elapsedMicroseconds();
+        hash_join = std::make_unique<GPU::CudfHashJoin>(
+            key_type, GPU::DeviceFixedColumn{.element_type = key_type, .data = build_keys.data(), .rows = rows});
+        built.store(true, std::memory_order_release);
+        LOG_DEBUG(
+            log,
+            "Built the hash table of {} rows of the right table, {} bytes, on the GPU with its columns: {} us to put them "
+            "together on the device, {} us to build",
+            rows,
+            build_bytes.load(std::memory_order_relaxed),
+            moved_us,
+            watch.elapsedMicroseconds() - moved_us);
+        return;
+    }
 
     /// The keys in one pinned buffer, in the order of the chunks, which the payload takes as well, and to the device in one
     /// copy.
@@ -290,6 +428,169 @@ void GPUHashJoin::finishBuild()
         watch.elapsedMicroseconds() - moved_us);
 }
 
+void GPUHashJoin::finishBuildOnDevice(const std::vector<std::unique_ptr<BuildChunk>> & chunks, size_t rows)
+{
+    const cuda::stream_ref stream = GPU::GPUResources::get().compute;
+    const size_t num_columns = 1 + build_payload_types.size();
+    const auto element_type_of = [&](size_t c) { return c == 0 ? key_type : build_payload_types[c - 1]; };
+
+    build_columns.clear();
+    for (size_t i = 0; i < build_payload_types.size(); ++i)
+        build_columns.push_back(std::make_unique<GPU::DeviceBuffer>(stream));
+    const auto target = [&](size_t c) -> GPU::DeviceBuffer & { return c == 0 ? build_keys : *build_columns[c - 1]; };
+
+    /// The rows of the chunks in host memory first, a column of them in one pinned buffer and one copy, and then those
+    /// on the device: the same order for every column.
+    std::vector<GPU::PinnedBuffer> staged(num_columns);
+    GPU::waitOnFailure(stream, [&]
+    {
+        for (size_t c = 0; c < num_columns; ++c)
+        {
+            const size_t size = GPU::sizeOf(element_type_of(c));
+            target(c).reserve(rows * size);
+            for (const auto & chunk : chunks)
+            {
+                if (chunk->device)
+                    continue;
+                const IColumn & column = c == 0 ? *chunk->keys : *chunk->payload[c - 1];
+                GPU::appendHostBytes(staged[c], GPU::rawValuesOf(column, column.size(), size));
+            }
+            target(c).append(GPU::bytesOf(staged[c]));
+        }
+
+        for (const auto & chunk : chunks)
+        {
+            if (!chunk->device)
+                continue;
+            chunk->device->waitIn(stream);
+            for (size_t c = 0; c < num_columns; ++c)
+            {
+                const GPU::DeviceColumnView & view = chunk->device->views()[c];
+                const size_t bytes = view.fixed.rows * GPU::sizeOf(element_type_of(c));
+                if (bytes == 0)
+                    continue;
+                GPU::checkCuda(
+                    cudaMemcpyAsync(target(c).grow(bytes), view.fixed.data, bytes, cudaMemcpyDeviceToDevice, stream.get()),
+                    "Cannot put the right table of a join together on the device");
+            }
+        }
+    });
+    GPU::checkCuda(cudaStreamSynchronize(stream.get()), "Cannot wait for the right table of a join to be put together on the device");
+
+    for (size_t c = 0; c < num_columns; ++c)
+    {
+        if (target(c).size() != rows * GPU::sizeOf(element_type_of(c)))
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "{} bytes of column {} of {} rows of the right table of a GPU hash join", target(c).size(), c, rows);
+    }
+}
+
+JoinResultPtr GPUHashJoin::probeOnDevice(
+    const GPU::GPUDeviceColumns * device_input, const Block & host_block, const Block & header, size_t rows)
+{
+    if (!built.load(std::memory_order_acquire))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The left table of a GPU hash join is probed before the build ended");
+
+    /// As in `joinBlock`, a stream and buffers of the thread, kept from block to block; the probe waits for its stream at
+    /// the end, so they are free at the next.
+    thread_local GPU::StreamPtr thread_stream = GPU::createStream();
+    const cuda::stream_ref stream{thread_stream.get()};
+    thread_local GPU::PinnedBuffer pinned;
+    thread_local GPU::DeviceBuffer uploaded(stream);
+
+    std::vector<GPU::DeviceColumnView> inputs;
+    inputs.reserve(header.columns());
+    if (device_input)
+    {
+        if (device_input->views().size() != header.columns() || device_input->rows() != rows)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "{} device columns of {} rows for a GPU hash join of a header of {} columns and {} rows",
+                device_input->views().size(),
+                device_input->rows(),
+                header.columns(),
+                rows);
+        device_input->waitIn(stream);
+        for (size_t i = 0; i < header.columns(); ++i)
+        {
+            const GPU::DeviceColumnView & view = device_input->views()[i];
+            if (view.kind != GPU::GPUColumnKind::Fixed || view.fixed.element_type != deviceElementTypeOrThrow(*header.getByPosition(i).type))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Device column {} of the left table of a GPU hash join of another type than its header's", i);
+            inputs.push_back(view);
+        }
+    }
+    else
+    {
+        /// The columns in one pinned buffer, each at a multiple of 8 bytes, and to the device in one copy.
+        pinned.clear();
+        std::vector<size_t> offsets;
+        std::vector<GPU::GPUElementType> types;
+        for (const auto & column : host_block)
+        {
+            const GPU::GPUElementType type = deviceElementTypeOrThrow(*column.type);
+            const ColumnPtr full = column.column->convertToFullIfWrapped()->convertToFullColumnIfSparse();
+            GPU::growBy(pinned, (8 - pinned.size() % 8) % 8);
+            offsets.push_back(pinned.size());
+            types.push_back(type);
+            GPU::appendHostBytes(pinned, GPU::rawValuesOf(*full, rows, GPU::sizeOf(type)));
+        }
+        uploaded.clear();
+        uploaded.append(GPU::bytesOf(pinned));
+        for (size_t i = 0; i < offsets.size(); ++i)
+            inputs.push_back(GPU::DeviceFixedColumn{.element_type = types[i], .data = uploaded.data() + offsets[i], .rows = rows});
+    }
+
+    const GPU::DeviceColumnView & probe_key = inputs[header.getPositionByName(key_name_left)];
+    if (probe_key.fixed.element_type != key_type)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A key of the left table of a GPU hash join of another type than the right table's");
+    const GPU::CudfJoinMatches matches = hash_join->probe(probe_key.fixed, stream);
+    const size_t num_matches = matches.size();
+
+    std::vector<GPU::DeviceColumnView> result;
+    std::vector<std::shared_ptr<const void>> owners;
+    result.reserve(inputs.size() + build_payload_types.size() + required_right_keys.columns());
+    const auto gather = [&](const char * values, GPU::GPUElementType type, const int32_t * indices)
+    {
+        auto gathered = std::make_shared<GPU::DeviceBuffer>(stream);
+        char * const data = num_matches ? gathered->grow(num_matches * GPU::sizeOf(type)) : nullptr;
+        GPU::gatherFixedRows(values, GPU::sizeOf(type), indices, num_matches, data, stream);
+        result.push_back(GPU::DeviceFixedColumn{.element_type = type, .data = data, .rows = num_matches});
+        owners.push_back(std::move(gathered));
+    };
+
+    GPU::waitOnFailure(stream, [&]
+    {
+        for (const auto & input : inputs)
+            gather(input.fixed.data, input.fixed.element_type, matches.probeIndices());
+        for (size_t i = 0; i < build_payload_types.size(); ++i)
+            gather(build_columns[i]->data(), build_payload_types[i], matches.buildIndices());
+    });
+
+    /// The right table's keys the result takes are the left table's, as `assembleOutputBlock` has them.
+    for (size_t i = 0; i < required_right_keys.columns(); ++i)
+    {
+        const auto & right_key = required_right_keys.getByPosition(i);
+        const size_t left_position = header.getPositionByName(required_right_keys_sources[i]);
+        if (!right_key.type->equals(*header.getByPosition(left_position).type))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The GPU hash join joined {} to {} of another type", required_right_keys_sources[i], right_key.name);
+        result.push_back(result[left_position]);
+    }
+
+    GPU::checkCuda(cudaStreamSynchronize(stream.get()), "Cannot wait for the result of a join on the device");
+
+    return std::make_unique<DeviceResult>(
+        std::make_shared<GPU::GPUDeviceColumns>(std::move(result), num_matches, std::move(owners), stream), table_join->maxJoinedBlockRows());
+}
+
+JoinResultPtr GPUHashJoin::joinDeviceChunk(const Chunk & chunk, const Block & header)
+{
+    const auto device = GPU::gpuColumnsOf(chunk);
+    if (!on_device || !device)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A chunk of the left table on the device for a GPU hash join of keys on the GPU alone");
+    probe_rows_total.fetch_add(chunk.getNumRows(), std::memory_order_relaxed);
+    return probeOnDevice(device.get(), {}, header, chunk.getNumRows());
+}
+
 void GPUHashJoin::onBuildPhaseFinish()
 {
     finishBuild();
@@ -335,6 +636,10 @@ JoinResultPtr GPUHashJoin::joinBlock(Block block)
 {
     const size_t probe_rows = block.rows();
     probe_rows_total.fetch_add(probe_rows, std::memory_order_relaxed);
+
+    /// A block of no rows, as of the header, is joined as on the host: its result is the output header.
+    if (on_device && probe_rows != 0)
+        return probeOnDevice(nullptr, block, block, probe_rows);
 
     auto probe_indices = ColumnUInt32::create();
     auto build_indices = ColumnUInt32::create();

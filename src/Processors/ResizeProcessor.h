@@ -28,6 +28,7 @@ public:
     ResizeProcessor(SharedHeader header, size_t num_inputs, size_t num_outputs);
 
     String getName() const override { return "Resize"; }
+    bool acceptsDeviceChunks() const override { return true; }
     Status prepare(const UpdatedInputPorts &, const UpdatedOutputPorts &) override;
 
 private:
@@ -81,6 +82,7 @@ public:
     }
 
     String getName() const override { return "StrictResize"; }
+    bool acceptsDeviceChunks() const override { return true; }
     Status prepare(const UpdatedInputPorts &, const UpdatedOutputPorts &) override;
 
 private:

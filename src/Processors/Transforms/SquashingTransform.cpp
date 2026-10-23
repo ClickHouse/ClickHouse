@@ -1,5 +1,6 @@
 #include <utility>
 #include <Processors/Transforms/SquashingTransform.h>
+#include <Processors/DeviceChunk.h>
 #include <Columns/IColumn.h>
 #include <Interpreters/Squashing.h>
 #include <Processors/Chunk.h>
@@ -90,6 +91,17 @@ SimpleSquashingChunksTransform::SimpleSquashingChunksTransform(
 
 void SimpleSquashingChunksTransform::consume(Chunk chunk)
 {
+    if (deviceColumnsOf(chunk))
+    {
+        if (squashing.getRows())
+        {
+            flushed_chunk = Squashing::squash(squashing.flush(), getOutputPort().getSharedHeader());
+            buffered_bytes = 0;
+        }
+        device_chunk = std::move(chunk);
+        return;
+    }
+
     const size_t chunk_bytes = max_block_size_bytes && chunk.getNumRows() ? squashedBytes(chunk) : 0;
     const size_t buffered_rows = squashing.getRows();
     /// A generation round always empties `squashing`, so the buffered bytes are those added since it was last empty.
@@ -115,6 +127,13 @@ Chunk SimpleSquashingChunksTransform::generate()
         return result;
     }
 
+    if (device_chunk)
+    {
+        Chunk result;
+        result.swap(device_chunk);
+        return result;
+    }
+
     squashed_chunk = Squashing::squash(squashing.generate(), getOutputPort().getSharedHeader());
 
     if (squashed_chunk.empty())
@@ -127,12 +146,12 @@ Chunk SimpleSquashingChunksTransform::generate()
 
 bool SimpleSquashingChunksTransform::canGenerate()
 {
-    return static_cast<bool>(flushed_chunk) || squashing.canGenerate();
+    return static_cast<bool>(flushed_chunk) || static_cast<bool>(device_chunk) || squashing.canGenerate();
 }
 
 Chunk SimpleSquashingChunksTransform::getRemaining()
 {
-    chassert(!flushed_chunk);
+    chassert(!flushed_chunk && !device_chunk);
     return Squashing::squash(squashing.flush(), getOutputPort().getSharedHeader());
 }
 

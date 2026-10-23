@@ -28,6 +28,8 @@ class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
 
 class ISpillable;
+class Chunk;
+class IDeviceColumns;
 
 enum class JoinPipelineType : uint8_t
 {
@@ -68,6 +70,11 @@ public:
     };
 
     virtual JoinResultBlock next() = 0;
+
+    /// Of a join that takes chunks on a device, see `IJoin::acceptsDeviceChunks`: the columns on the device, in the order
+    /// of the output header, of the block `next` returned last instead of its `block`, once; nothing for a block in host
+    /// memory.
+    virtual std::shared_ptr<const IDeviceColumns> takeDeviceColumns() { return nullptr; }
 
     /// Right table rows matched while producing the result. Only meaningful once the result is exhausted.
     /// Empty when the probe never counted matches, so its zero would be structural rather than measured.
@@ -175,6 +182,17 @@ public:
     /// `context` says which build stream makes the call and whether the join checks the size limits.
     /// @returns false if the caller should stop adding blocks, for example because a limit was exceeded.
     virtual bool addBlockToJoin(const Block & block, size_t num_rows, JoinBuildContext context) = 0;
+
+    /// Whether the join takes the chunks whose columns are on a device as they are, see `DeviceChunkInfo`: the right
+    /// table's through `addDeviceChunkToJoin`, the left table's through `joinDeviceChunk`. Its results may then hand
+    /// device columns back, see `IJoinResult::JoinResultBlock::device_columns`, for blocks of either kind.
+    virtual bool acceptsDeviceChunks() const { return false; }
+
+    /// As `addBlockToJoin`, of a chunk on a device of the columns of `header`.
+    virtual bool addDeviceChunkToJoin(const Chunk & chunk, const Block & header, JoinBuildContext context);
+
+    /// As `joinBlock`, of a chunk on a device of the columns of `header`.
+    virtual JoinResultPtr joinDeviceChunk(const Chunk & chunk, const Block & header);
 
     /* Some initialization may be required before joinBlock() call.
      * It's better to done in in constructor, but left block exact structure is not known at that moment.

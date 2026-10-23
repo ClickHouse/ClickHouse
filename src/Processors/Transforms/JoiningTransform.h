@@ -86,6 +86,9 @@ public:
     String getName() const override { return "JoiningTransform"; }
     std::span<ISpillable * const> getSpillables() override { return set_spillables.get(); }
 
+    /// The left table's chunks on a device go to a join that takes them as they are, see `IJoin::acceptsDeviceChunks`.
+    bool acceptsDeviceChunks() const override { return join->acceptsDeviceChunks(); }
+
     const JoinPtr & getJoin() const { return join; }
 
     static Block transformHeader(Block header, const JoinPtr & join);
@@ -135,7 +138,9 @@ private:
     RightRowsMatchCounterPtr match_counter;
     std::optional<size_t> matched_right_rows = 0;
 
-    Block readExecute(Chunk & chunk);
+    /// The next part of the result of the join of `chunk`: of a join that takes chunks on a device, possibly a chunk of
+    /// columns there.
+    Chunk readExecute(Chunk & chunk);
 };
 
 class RuntimeFilter;
@@ -161,6 +166,9 @@ class FillingRightJoinSideTransform final : public IProcessor
 public:
     FillingRightJoinSideTransform(SharedHeader input_header, JoinPtr join_, FinishCounterPtr finish_counter_, JoinBuildContext build_context_);
     String getName() const override { return "FillingRightJoinSide"; }
+
+    /// The right table's chunks on a device go to a join that takes them as they are, see `IJoin::acceptsDeviceChunks`.
+    bool acceptsDeviceChunks() const override { return join->acceptsDeviceChunks(); }
 
     InputPort * addTotalsPort();
 

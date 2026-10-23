@@ -32,6 +32,10 @@ public:
     /// Copies the row indices of the pairs, on the left and on the right, to the host, and waits for them on `stream`.
     __host__ void copyOut(uint32_t * probe_indices, uint32_t * build_indices, cuda::stream_ref stream) const;
 
+    /// The row indices of the pairs on the device, on the left and on the right, there once the probe's stream has them.
+    __host__ const int32_t * probeIndices() const;
+    __host__ const int32_t * buildIndices() const;
+
 private:
     friend class CudfHashJoin;
 

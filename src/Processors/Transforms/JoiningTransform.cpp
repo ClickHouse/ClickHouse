@@ -1,6 +1,7 @@
 #include <optional>
 #include <utility>
 #include <Processors/Transforms/JoiningTransform.h>
+#include <Processors/DeviceChunk.h>
 
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
@@ -269,7 +270,13 @@ void JoiningTransform::transform(Chunk & chunk)
     }
     else
     {
-        res = readExecute(chunk);
+        Chunk joined = readExecute(chunk);
+        if (joined.getNumRows())
+        {
+            ProfileEvents::increment(ProfileEvents::JoinResultRowCount, joined.getNumRows());
+            output_chunk = std::move(joined);
+        }
+        return;
     }
 
     if (res.rows())
@@ -279,17 +286,26 @@ void JoiningTransform::transform(Chunk & chunk)
     }
 }
 
-Block JoiningTransform::readExecute(Chunk & chunk)
+Chunk JoiningTransform::readExecute(Chunk & chunk)
 {
     if (!join_result)
     {
-        Block block = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
-        ProfileEvents::increment(ProfileEvents::JoinProbeTableRowCount, block.rows());
-        join_result = join->joinBlock(std::move(block));
+        ProfileEvents::increment(ProfileEvents::JoinProbeTableRowCount, chunk.getNumRows());
+        if (deviceColumnsOf(chunk))
+        {
+            join_result = join->joinDeviceChunk(chunk, inputs.front().getHeader());
+            chunk.clear();
+        }
+        else
+        {
+            Block block = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
+            join_result = join->joinBlock(std::move(block));
+        }
     }
 
     auto data = join_result->next();
     chassert(!data.next_block);
+    auto device_columns = join_result->takeDeviceColumns();
 
     if (data.is_last)
     {
@@ -297,7 +313,10 @@ Block JoiningTransform::readExecute(Chunk & chunk)
         join_result.reset();
     }
 
-    return std::move(data.block);
+    if (device_columns)
+        return makeDeviceChunk(std::move(device_columns), outputs.front().getHeader());
+    const size_t rows = data.block.rows();
+    return Chunk(data.block.getColumns(), rows);
 }
 
 FillingRightJoinSideTransform::FillingRightJoinSideTransform(
@@ -445,6 +464,16 @@ void FillingRightJoinSideTransform::work()
 
     auto & input = inputs.front();
     auto num_rows = chunk.getNumRows();
+
+    if (!for_totals && deviceColumnsOf(chunk))
+    {
+        ProfileEvents::increment(ProfileEvents::JoinBuildTableRowCount, num_rows);
+        stop_reading = !join->addDeviceChunkToJoin(chunk, input.getHeader(), build_context);
+        chunk.clear();
+        set_totals = for_totals;
+        return;
+    }
+
     auto block = input.getHeader().cloneWithColumns(chunk.detachColumns());
 
     if (for_totals)

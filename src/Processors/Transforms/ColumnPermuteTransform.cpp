@@ -1,4 +1,7 @@
 #include <Processors/Transforms/ColumnPermuteTransform.h>
+#include <Processors/DeviceChunk.h>
+
+#include <Core/Block.h>
 
 namespace DB
 {
@@ -42,6 +45,11 @@ ColumnPermuteTransform::ColumnPermuteTransform(SharedHeader header_, const std::
 
 void ColumnPermuteTransform::transform(Chunk & chunk)
 {
+    if (const auto device_columns = deviceColumnsOf(chunk))
+    {
+        setDeviceColumns(chunk, device_columns->selectColumns(permutation), getOutputPort().getHeader());
+        return;
+    }
     permuteChunk(chunk, permutation);
 }
 

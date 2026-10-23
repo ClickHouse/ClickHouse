@@ -3,6 +3,7 @@
 #include <Processors/Chunk.h>
 
 #include <memory>
+#include <vector>
 
 namespace DB
 {
@@ -20,6 +21,9 @@ public:
 
     /// The columns in host memory, of the types of `header`, in its order.
     virtual Columns materialize(const Block & header) const = 0;
+
+    /// The columns at `positions`, in that order, of the same memory.
+    virtual std::shared_ptr<const IDeviceColumns> selectColumns(const std::vector<size_t> & positions) const = 0;
 };
 
 using DeviceColumnsPtr = std::shared_ptr<const IDeviceColumns>;

@@ -43,6 +43,9 @@ public:
 
     String getName() const override { return "SimpleSquashingTransform"; }
 
+    /// A chunk on a device passes as it is, after the rows buffered before it, see `DeviceChunkInfo`.
+    bool acceptsDeviceChunks() const override { return true; }
+
 protected:
     void consume(Chunk chunk) override;
     bool canGenerate() override;
@@ -59,6 +62,8 @@ private:
     size_t buffered_bytes = 0;
     /// Buffered data emitted ahead of a chunk that would overflow a max bound.
     Chunk flushed_chunk;
+    /// A chunk on a device, emitted after `flushed_chunk`.
+    Chunk device_chunk;
 };
 
 }

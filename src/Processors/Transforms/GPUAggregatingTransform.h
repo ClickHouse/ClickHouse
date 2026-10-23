@@ -21,8 +21,8 @@ public:
 
     String getName() const override { return "GPUAggregatingTransform"; }
 
-    /// Without keys, the columns on the device are reduced there, see `DeviceChunkInfo`.
-    bool acceptsDeviceChunks() const override { return !group_by_accumulator; }
+    /// The columns on the device are aggregated there, see `DeviceChunkInfo`.
+    bool acceptsDeviceChunks() const override { return true; }
 
 protected:
     void consume(Chunk chunk) override;

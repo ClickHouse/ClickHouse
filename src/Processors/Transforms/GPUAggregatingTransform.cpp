@@ -108,15 +108,26 @@ void GPUAggregatingTransform::consume(Chunk chunk)
 
     if (const auto device_columns = GPU::gpuColumnsOf(chunk))
     {
-        const auto & views = device_columns->views();
-        bool on_device = !group_by_accumulator;
-        for (size_t i = 0; on_device && i < accumulators.size(); ++i)
-            on_device = accumulators[i].takesOnDevice(views.at(argument_positions[i]));
-        if (on_device)
+        if (group_by_accumulator)
         {
-            for (size_t i = 0; i < accumulators.size(); ++i)
-                accumulators[i].addOnDevice(*device_columns, argument_positions[i]);
-            return;
+            if (group_by_accumulator->takesOnDevice(*device_columns, key_positions, argument_positions))
+            {
+                group_by_accumulator->addOnDevice(*device_columns, key_positions, argument_positions);
+                return;
+            }
+        }
+        else
+        {
+            const auto & views = device_columns->views();
+            bool on_device = true;
+            for (size_t i = 0; on_device && i < accumulators.size(); ++i)
+                on_device = accumulators[i].takesOnDevice(views.at(argument_positions[i]));
+            if (on_device)
+            {
+                for (size_t i = 0; i < accumulators.size(); ++i)
+                    accumulators[i].addOnDevice(*device_columns, argument_positions[i]);
+                return;
+            }
         }
         materializeDeviceChunk(chunk, getInputPort().getHeader());
     }

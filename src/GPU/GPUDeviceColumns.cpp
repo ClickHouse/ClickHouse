@@ -49,6 +49,25 @@ std::shared_ptr<const GPUDeviceColumns> GPUDeviceColumns::select(const std::vect
     return std::shared_ptr<const GPUDeviceColumns>(new GPUDeviceColumns(std::move(selected), num_rows, memory_owners, ready));
 }
 
+std::shared_ptr<const GPUDeviceColumns> GPUDeviceColumns::slice(size_t offset, size_t rows) const
+{
+    if (offset + rows > num_rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Rows {} to {} of device columns of {} rows", offset, offset + rows, num_rows);
+
+    std::vector<DeviceColumnView> sliced;
+    sliced.reserve(column_views.size());
+    for (const auto & view : column_views)
+    {
+        if (view.kind != GPUColumnKind::Fixed)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "A slice of a device column of values of varying width");
+        sliced.push_back(DeviceFixedColumn{
+            .element_type = view.fixed.element_type,
+            .data = view.fixed.data + offset * sizeOf(view.fixed.element_type),
+            .rows = rows});
+    }
+    return std::shared_ptr<const GPUDeviceColumns>(new GPUDeviceColumns(std::move(sliced), rows, memory_owners, ready));
+}
+
 void GPUDeviceColumns::waitIn(cuda::stream_ref stream) const
 {
     checkCuda(cudaStreamWaitEvent(stream.get(), ready.get(), 0), "Cannot make a stream wait for device columns");

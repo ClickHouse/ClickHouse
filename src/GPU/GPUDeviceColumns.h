@@ -30,6 +30,8 @@ public:
 
     Columns materialize(const Block & header) const override;
 
+    DeviceColumnsPtr selectColumns(const std::vector<size_t> & positions) const override { return select(positions); }
+
     const std::vector<DeviceColumnView> & views() const { return column_views; }
     const std::vector<std::shared_ptr<const void>> & owners() const { return memory_owners; }
 
@@ -38,6 +40,10 @@ public:
 
     /// The columns at `positions`, in that order, of the same memory and there at the same point.
     std::shared_ptr<const GPUDeviceColumns> select(const std::vector<size_t> & positions) const;
+
+    /// Rows `offset` to `offset + rows` of every column, which are all of a fixed width, of the same memory and there at
+    /// the same point.
+    std::shared_ptr<const GPUDeviceColumns> slice(size_t offset, size_t rows) const;
 
 private:
     using SharedEvent = std::shared_ptr<std::remove_pointer_t<cudaEvent_t>>;

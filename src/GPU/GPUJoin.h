@@ -6,6 +6,7 @@
 
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
+#include <GPU/GPUDeviceColumns.h>
 #include <GPU/GPUMemory.h>
 #include <GPU/GPUTypes.cuh>
 #include <Interpreters/IJoin.h>
@@ -42,6 +43,13 @@ class CudfHashJoin;
   * The blocks of the left table are probed at once, each on a CUDA stream of its own thread, as the hash table is only
   * read once built. The device computes a whole block's matches in one call, and the result hands them out in blocks of
   * at most `max_joined_block_rows`.
+  *
+  * On the device - with `gpu_hash_join_on_device`, where every column of both sides is of a fixed width the device holds
+  * - the columns of both sides are on the device too, and so is the result: the right table's columns are put together
+  * there once the build ends, a left block's columns go there unless they are there already, and the columns of the
+  * result are gathered there, a chunk of columns on the device for the steps above, see `DeviceChunkInfo`. So a chain of
+  * joins and the reads and aggregation around it keep their rows on the device, and only what the steps on the CPU take
+  * comes back.
   */
 class GPUHashJoin final : public IJoin
 {
@@ -71,6 +79,10 @@ public:
 
     JoinResultPtr joinBlock(Block block) override;
 
+    bool acceptsDeviceChunks() const override { return on_device; }
+    bool addDeviceChunkToJoin(const Chunk & chunk, const Block & header, JoinBuildContext context) override;
+    JoinResultPtr joinDeviceChunk(const Chunk & chunk, const Block & header) override;
+
     void onBuildPhaseFinish() override;
 
     size_t getTotalRowCount() const override { return build_rows.load(std::memory_order_relaxed); }
@@ -90,9 +102,22 @@ public:
 
 private:
     class Result;
+    class DeviceResult;
 
     /// Builds the hash table over the keys sent so far, once.
     void finishBuild();
+
+    /// Of a join on the device: the keys and the columns of the result of the right table's chunks, put together on the
+    /// device in the order of the chunks.
+    struct BuildChunk;
+    void finishBuildOnDevice(const std::vector<std::unique_ptr<BuildChunk>> & chunks, size_t rows);
+
+    /// Of a join on the device: the result of the left table's rows, which are the columns of `header` either on the
+    /// device, `device_input`, or in `host_block`.
+    JoinResultPtr probeOnDevice(const GPU::GPUDeviceColumns * device_input, const Block & host_block, const Block & header, size_t rows);
+
+    /// Adds a block of the right table to the list, and counts it against the limits.
+    bool addBuildChunk(std::unique_ptr<BuildChunk> chunk, size_t num_rows, size_t bytes, JoinBuildContext context);
 
     Block assembleOutputBlock(const Block & probe_block, const ColumnPtr & probe_indices, const ColumnPtr & build_indices) const;
 
@@ -111,13 +136,22 @@ private:
     Block required_right_keys;
     std::vector<String> required_right_keys_sources;
 
-    /// A block of the right table as it arrived: its keys and the columns the result takes of it.
+    /// A block of the right table as it arrived: its keys and the columns the result takes of it, in host memory, or, of
+    /// a join on the device, on the device: the keys and then the columns of `build_payload_header`.
     struct BuildChunk
     {
         ColumnPtr keys;
         Columns payload;
+        std::shared_ptr<const GPU::GPUDeviceColumns> device;
         BuildChunk * next = nullptr;
     };
+
+    /// Whether the columns of both sides and of the result are on the device, see above.
+    bool on_device = false;
+    /// Of a join on the device: what the device holds the values of each column of `build_payload_header` as.
+    std::vector<GPU::GPUElementType> build_payload_types;
+    /// Of a join on the device: the columns of `build_payload_header` of every row of the right table.
+    std::vector<std::unique_ptr<GPU::DeviceBuffer>> build_columns;
 
     /// The blocks of the right table, which its threads add at once, without a lock, to the front of a list; they are put
     /// together once the build ends, the payload a column at a time in parallel, and the keys sent to the device in one

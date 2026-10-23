@@ -29,6 +29,10 @@ public:
 
     String getName() const override { return "BuildRuntimeFilterTransform"; }
 
+    /// Of a chunk on a device, only the column of the filter is copied to host memory, and the chunk passes on as it is,
+    /// see `DeviceChunkInfo`.
+    bool acceptsDeviceChunks() const override { return true; }
+
     Status prepare() override;
 
     void transform(Chunk & chunk) override;

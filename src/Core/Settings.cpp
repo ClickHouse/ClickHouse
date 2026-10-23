@@ -11443,6 +11443,21 @@ Possible values:
 - 1 - A read whose `PREWHERE` the device can evaluate is filtered on a GPU.
 )", EXPERIMENTAL, \
         {"26.11", false, false, "New experimental setting to filter the reads of a `MergeTree` table on a GPU."}) \
+    DECLARE(Bool, gpu_read_to_device, false, R"(
+Read every `MergeTree` table the device can read through the GPU, as `allow_experimental_gpu_filtered_read` does, but
+whatever its `PREWHERE` keeps and also without one, and keep the columns read on the device for the steps above that
+take them there, such as a `gpu_hash` join with `gpu_hash_join_on_device` or a GPU aggregation; the steps on the CPU
+have them copied back.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New experimental setting to read tables onto the GPU for the steps above to take there."}) \
+    DECLARE(Bool, gpu_hash_join_on_device, false, R"(
+Run a `gpu_hash` join with the columns of both sides and of the result on the device, not only its keys: the right
+table's columns are put together on the GPU once the build ends, the columns of each block of the left table are sent
+there unless a step on the GPU left them there, and the result is gathered there, for the steps above to take on the
+device or to have copied back. Applies to a join whose columns are all of a fixed width - integers, floats, dates and
+short `FixedString`s - and has no effect on any other.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New experimental setting to keep the columns of a GPU hash join on the device."}) \
     DECLARE(Float, gpu_filtered_read_max_selectivity, 0.2f, R"(
 The largest share of the rows of a table that its `PREWHERE` is estimated to keep, by the column statistics, for
 `allow_experimental_gpu_filtered_read` to read the table through the GPU. A read that keeps more sends most of the table

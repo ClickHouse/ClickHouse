@@ -34,4 +34,14 @@ JoinResultPtr IJoinResult::createFromBlock(Block block)
     return std::make_unique<JoinResultFromBlock>(std::move(block));
 }
 
+bool IJoin::addDeviceChunkToJoin(const Chunk &, const Block &, JoinBuildContext)
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "A chunk on a device for {}, which takes none", getName());
+}
+
+JoinResultPtr IJoin::joinDeviceChunk(const Chunk &, const Block &)
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "A chunk on a device for {}, which takes none", getName());
+}
+
 }

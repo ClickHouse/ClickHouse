@@ -548,6 +548,76 @@ void GroupByGPUAccumulator::add(const Columns & key_columns, const Columns & val
         sendBatchToDevice();
 }
 
+bool GroupByGPUAccumulator::takesOnDevice(
+    const GPUDeviceColumns & columns, const std::vector<size_t> & key_positions, const std::vector<size_t> & value_positions) const
+{
+    if (compressed || key_positions.size() != group_keys.size() || value_positions.size() != values.size())
+        return false;
+
+    const auto takes = [&](size_t position, GPUElementType expected)
+    {
+        if (position >= columns.views().size())
+            return false;
+        const DeviceColumnView & view = columns.views()[position];
+        if (expected == GPUElementType::String)
+            return view.kind == GPUColumnKind::Variable;
+        return view.kind == GPUColumnKind::Fixed && view.fixed.element_type == expected;
+    };
+
+    for (size_t i = 0; i < group_keys.size(); ++i)
+    {
+        /// A float key arrives as the float it is, and is grouped as the integer of its bits.
+        const GPUElementType expected = !float_keys[i] ? group_keys[i]
+            : (group_keys[i] == GPUElementType::UInt32 ? GPUElementType::Float32 : GPUElementType::Float64);
+        if (!takes(key_positions[i], expected))
+            return false;
+    }
+    for (size_t i = 0; i < values.size(); ++i)
+    {
+        if (!takes(value_positions[i], values[i]))
+            return false;
+    }
+    return true;
+}
+
+void GroupByGPUAccumulator::addOnDevice(
+    const GPUDeviceColumns & columns, const std::vector<size_t> & key_positions, const std::vector<size_t> & value_positions)
+{
+    if (!takesOnDevice(columns, key_positions, value_positions))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Device columns of other types than a GPU aggregation groups");
+    if (columns.rows() == 0)
+        return;
+
+    /// The rows staged in host memory go first, as a batch of their own.
+    sendBatchToDevice();
+
+    Stopwatch watch;
+
+    std::vector<DeviceColumnView> keys;
+    keys.reserve(key_positions.size());
+    for (size_t i = 0; i < key_positions.size(); ++i)
+    {
+        const DeviceColumnView & view = columns.views()[key_positions[i]];
+        if (!float_keys[i])
+            keys.push_back(view);
+        else
+            keys.push_back(DeviceFixedColumn{.element_type = group_keys[i], .data = view.fixed.data, .rows = view.fixed.rows});
+    }
+    std::vector<DeviceColumnView> value_columns;
+    value_columns.reserve(value_positions.size());
+    for (const size_t position : value_positions)
+        value_columns.push_back(columns.views()[position]);
+
+    columns.waitIn(GPUResources::get().compute);
+    groupBatch(keys, value_columns, {});
+    /// The columns are the chunk's, which the transform drops once this returns.
+    checkCuda(cudaStreamSynchronize(group_stream.get()), "Cannot wait for the grouping of device columns");
+
+    ProfileEvents::increment(ProfileEvents::GPUAggregationRows, columns.rows());
+    ProfileEvents::increment(ProfileEvents::GPUAggregationBatches);
+    ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
+}
+
 size_t GroupByGPUAccumulator::stagedVariableBytes() const
 {
     size_t bytes = 0;

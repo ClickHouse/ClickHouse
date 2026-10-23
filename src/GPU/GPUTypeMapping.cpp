@@ -331,7 +331,14 @@ std::optional<GPUElementType> keyElementTypeOf(const IDataType & type)
             default: return {};
         }
     }
-    return elementTypeOf(type);
+    /// A date is grouped, joined and sent as the integer it is held as.
+    switch (type.getTypeId())
+    {
+        case TypeIndex::Date: return GPUElementType::UInt16;
+        case TypeIndex::Date32: return GPUElementType::Int32;
+        case TypeIndex::DateTime: return GPUElementType::UInt32;
+        default: return elementTypeOf(type);
+    }
 }
 
 std::optional<GPUElementType> collectElementTypeOf(const IDataType & type)

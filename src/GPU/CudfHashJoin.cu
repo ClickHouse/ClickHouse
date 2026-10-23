@@ -42,6 +42,17 @@ __host__ size_t CudfJoinMatches::size() const
     return state ? state->probe_indices->size() : 0;
 }
 
+__host__ const int32_t * CudfJoinMatches::probeIndices() const
+{
+    static_assert(sizeof(cudf::size_type) == sizeof(int32_t), "the row indices of cuDF are read as they are");
+    return state ? state->probe_indices->data() : nullptr;
+}
+
+__host__ const int32_t * CudfJoinMatches::buildIndices() const
+{
+    return state ? state->build_indices->data() : nullptr;
+}
+
 __host__ void CudfJoinMatches::copyOut(uint32_t * probe_indices, uint32_t * build_indices, cuda::stream_ref stream) const
 {
     static_assert(sizeof(cudf::size_type) == sizeof(uint32_t), "the row indices of cuDF are copied out as they are");

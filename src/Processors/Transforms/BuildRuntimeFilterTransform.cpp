@@ -1,4 +1,5 @@
 #include <Processors/Transforms/BuildRuntimeFilterTransform.h>
+#include <Processors/DeviceChunk.h>
 #include <Processors/Chunk.h>
 #include <Columns/IColumn.h>
 #include <Interpreters/Context.h>
@@ -95,7 +96,14 @@ IProcessor::Status BuildRuntimeFilterTransform::prepare()
 
 void BuildRuntimeFilterTransform::transform(Chunk & chunk)
 {
-    ColumnPtr filter_column = chunk.getColumns()[filter_column_position];
+    ColumnPtr filter_column;
+    if (const auto device_columns = deviceColumnsOf(chunk))
+    {
+        const Block filter_header{getInputPort().getHeader().getByPosition(filter_column_position)};
+        filter_column = device_columns->selectColumns({filter_column_position})->materialize(filter_header).front();
+    }
+    else
+        filter_column = chunk.getColumns()[filter_column_position];
     if (cast_to_target_type)
     {
         filter_column = cast_to_target_type->execute(

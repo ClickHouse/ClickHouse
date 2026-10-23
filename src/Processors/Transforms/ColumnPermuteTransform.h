@@ -15,6 +15,9 @@ public:
 
     String getName() const override { return "ColumnPermuteTransform"; }
 
+    /// The columns of a chunk on a device are permuted there, see `DeviceChunkInfo`.
+    bool acceptsDeviceChunks() const override { return true; }
+
     void transform(Chunk & chunk) override;
 
     static Block permute(const Block & block, const std::vector<size_t> & permutation);

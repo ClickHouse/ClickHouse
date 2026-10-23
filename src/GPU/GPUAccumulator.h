@@ -204,6 +204,14 @@ public:
     /// Into a column of the keys each, and a column of the result of each aggregate.
     void copyGroupsTo(MutableColumns & key_columns, MutableColumns & aggregate_columns);
 
+    /// Whether `addOnDevice` takes the keys and values at these positions of `columns`, of the types the accumulator
+    /// groups.
+    bool takesOnDevice(const GPUDeviceColumns & columns, const std::vector<size_t> & key_positions, const std::vector<size_t> & value_positions) const;
+
+    /// The rows of `columns`, of the keys and values at these positions, grouped where they are, see `DeviceChunkInfo`.
+    /// Not of an aggregation over compressed blocks.
+    void addOnDevice(const GPUDeviceColumns & columns, const std::vector<size_t> & key_positions, const std::vector<size_t> & value_positions);
+
     /// After `finalize`, of rows collected: the rows left, as they are on the device, which they are no longer the
     /// accumulator's.
     std::shared_ptr<const GPUDeviceColumns> takeCollectedOnDevice();

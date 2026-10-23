@@ -61,6 +61,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_gpu_aggregation;
     extern const SettingsBool allow_experimental_gpu_filtered_read;
+    extern const SettingsBool gpu_read_to_device;
     extern const SettingsFloat gpu_filtered_read_max_selectivity;
     extern const SettingsUInt64 gpu_aggregation_batch_bytes;
     extern const SettingsUInt64 gpu_aggregation_readers;
@@ -1134,6 +1135,72 @@ std::pair<ActionsDAG, std::optional<String>> prewhereOnHost(const ActionsDAG & d
 
 }
 
+namespace
+{
+
+/// Of `gpu_read_to_device`: a read without a `PREWHERE` through the device, which sends back every row of the columns of
+/// the read, in its header.
+bool readToDeviceWithoutFilter(
+    QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, const QueryPlanOptimizationSettings & settings, ReadFromMergeTree & reading)
+{
+    const ContextPtr context = reading.getContext();
+    const Block & read_header = *reading.getOutputHeader();
+    if (read_header.columns() == 0)
+        GPU_FILTERED_READ_REFUSE("the read sends back no column");
+
+    ReadColumns columns;
+    for (const auto & column : read_header)
+    {
+        const NameAndTypePair name_and_type(column.name, column.type);
+        if (!isDeviceReadableColumn(reading, name_and_type))
+            GPU_FILTERED_READ_REFUSE("a column that is not a stored column the device reads: " + column.name);
+        if (!GPU::collectElementTypeOf(*column.type))
+            GPU_FILTERED_READ_REFUSE("a column of a type the device has no element type for: " + column.name);
+        columns.columns.push_back({.column = name_and_type, .result_type = column.type, .aggregation = GPU::GPUAggregationKind::Sum});
+    }
+
+    if (!reading.getAnalyzedResult())
+        reading.setAnalyzedResult(reading.selectRangesToRead());
+
+    const auto analysis = reading.selectRangesToReadApplyingSkipIndexes();
+    if (!analysis || !analysis->isUsable())
+        GPU_FILTERED_READ_REFUSE("the read has no usable analyzed result");
+
+    if (!queryLimitsAllowReading(reading))
+        return false;
+
+    if (analysis->readFromProjection() || analysis->sampling.use_sampling || analysis->sampling.read_nothing)
+        GPU_FILTERED_READ_REFUSE("the read is from a projection or sampled");
+
+    auto parts = matchParts(reading, analysis->parts_with_ranges, columns);
+    if (!parts)
+        return false;
+
+    LOG_DEBUG(getLogger("GPUCompressedColumns"), "Reading onto the device: {} parts, {} columns, no PREWHERE", parts->size(), columns.columns.size());
+
+    auto step = std::make_unique<ReadFromGPUCompressedColumns>(
+        reading.getOutputHeader(),
+        std::vector<NameAndTypePair>{},
+        std::move(columns.columns),
+        std::vector<ReadFromGPUCompressedColumns::DerivedColumn>{},
+        std::vector<ReadFromGPUCompressedColumns::AggregateToCompute>{},
+        std::nullopt,
+        std::move(*parts),
+        reading.getStorageSnapshot(),
+        context,
+        context->getSettingsRef()[Setting::gpu_aggregation_batch_bytes],
+        reading.getNumStreams(),
+        context->getSettingsRef()[Setting::gpu_aggregation_readers],
+        context->getSettingsRef()[Setting::gpu_aggregation_decompression],
+        /*collect_=*/true);
+    step->setStepDescription("Compressed columns decompressed on the device", settings.max_step_description_length);
+    node.step = std::move(step);
+    node.children.clear();
+    return true;
+}
+
+}
+
 bool optimizeReadFilteredOnGPU(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings)
 {
     auto * reading = typeid_cast<ReadFromMergeTree *>(node.step.get());
@@ -1141,7 +1208,8 @@ bool optimizeReadFilteredOnGPU(QueryPlan::Node & node, QueryPlan::Nodes & nodes,
         return false;
 
     const ContextPtr context = reading->getContext();
-    if (!context->getSettingsRef()[Setting::allow_experimental_gpu_filtered_read])
+    const bool to_device = context->getSettingsRef()[Setting::gpu_read_to_device];
+    if (!context->getSettingsRef()[Setting::allow_experimental_gpu_filtered_read] && !to_device)
         return false;
 
     if (settings.make_distributed_plan || settings.enable_parallel_replicas)
@@ -1157,10 +1225,15 @@ bool optimizeReadFilteredOnGPU(QueryPlan::Node & node, QueryPlan::Nodes & nodes,
 
     const PrewhereInfoPtr prewhere = reading->getPrewhereInfo();
     if (!prewhere)
-        GPU_FILTERED_READ_REFUSE("the read has no PREWHERE");
+    {
+        if (!to_device)
+            GPU_FILTERED_READ_REFUSE("the read has no PREWHERE");
+        return readToDeviceWithoutFilter(node, nodes, settings, *reading);
+    }
 
     /// By the column statistics, what the `PREWHERE` keeps: a read that keeps much of the table sends most of it back from
-    /// the device, over the link it came by, and is faster on the CPU.
+    /// the device, over the link it came by, and is faster on the CPU - unless the rows stay on the device.
+    if (!to_device)
     {
         const auto max_selectivity = static_cast<double>(context->getSettingsRef()[Setting::gpu_filtered_read_max_selectivity]);
         const ActionsDAG::Node * predicate = prewhere->prewhere_actions.tryFindInOutputs(prewhere->prewhere_column_name);
