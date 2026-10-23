@@ -1210,6 +1210,16 @@ def test_drop_while_used_by_lazily_loaded_table(cluster):
         "CREATE NAMED COLLECTION lazy_collection AS url = 'http://localhost:8123', format = 'CSV'"
     )
     node.query("CREATE TABLE lazy_db.t (x UInt32) ENGINE = URL(lazy_collection)")
+    # `Elasticsearch` resolves its arguments through named collections too, so its lazily loaded
+    # table must hold the collection as well.
+    node.query("DROP NAMED COLLECTION IF EXISTS lazy_es_collection")
+    node.query(
+        "CREATE NAMED COLLECTION lazy_es_collection AS url = 'http://localhost:9200', index = 'i'"
+    )
+    node.query(
+        "CREATE TABLE lazy_db.es (doc JSON) ENGINE = Elasticsearch(lazy_es_collection)",
+        settings={"enable_elasticsearch": 1},
+    )
 
     # The restart forgets everything that was registered while the table was created, and brings the
     # table back as a proxy that was never accessed.
@@ -1225,6 +1235,17 @@ def test_drop_while_used_by_lazily_loaded_table(cluster):
     assert "NAMED_COLLECTION_IS_USED" in node.query_and_get_error(
         "DROP NAMED COLLECTION lazy_collection"
     )
+    assert (
+        node.query(
+            "SELECT engine FROM system.tables WHERE database = 'lazy_db' AND name = 'es'"
+        ).strip()
+        == "TableProxy"
+    )
+    assert "NAMED_COLLECTION_IS_USED" in node.query_and_get_error(
+        "DROP NAMED COLLECTION lazy_es_collection"
+    )
+    node.query("DROP TABLE lazy_db.es")
+    node.query("DROP NAMED COLLECTION lazy_es_collection")
 
     node.query("DETACH TABLE lazy_db.t")
     assert "NAMED_COLLECTION_IS_USED" in node.query_and_get_error(
