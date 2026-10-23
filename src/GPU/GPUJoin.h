@@ -34,15 +34,15 @@ class CudfHashJoin;
   * and the join is one it cannot do, `chooseJoinAlgorithm` throws the same "none of the algorithms enabled" it throws
   * for every other algorithm that does not apply; there is deliberately no fallback.
   *
-  * Only keys cross the link. The right table's blocks are kept on the host, and its keys are sent to the device once,
-  * when the build ends, where the hash table is built over them. Of a left block only the key column is sent; the probe
+  * Only keys cross the link. The right table's columns are kept on the host, gathered into one block as its blocks
+  * arrive, and its keys go to the device as they arrive, where the hash table is built over them when the build ends. Of a left block only the key column is sent; the probe
   * brings back the row index on either side of each matching pair, and the columns of both sides are gathered on the
   * host with `IColumn::index`. So a column of any type is joined, and what crosses per left row is its key and 8 bytes
   * per match.
   *
   * The blocks of the left table are probed at once, each on a CUDA stream of its own thread, as the hash table is only
-  * read once built. One probe block produces exactly one result block, however many rows that is: the device computes a
-  * whole block's matches in one call.
+  * read once built. The device computes a whole block's matches in one call, and the result hands them out in blocks of
+  * at most `max_joined_block_rows`.
   */
 class GPUHashJoin final : public IJoin
 {
@@ -83,10 +83,16 @@ public:
 
     bool supportParallelJoin() const override { return false; }
 
+    /// Each probe launches several kernels and waits for the device twice, which costs as much as the keys of a block
+    /// of 65536 rows take to match.
+    size_t probeBlockRows() const override { return 1UL << 20; }
+
     IBlocksStreamPtr getNonJoinedBlocks(const Block &, const Block &, UInt64) const override { return nullptr; }
 
 private:
-    /// Concatenates the right table's blocks and builds the hash table over their keys, once.
+    class Result;
+
+    /// Builds the hash table over the keys sent so far, once.
     void finishBuildUnlocked();
 
     Block assembleOutputBlock(const Block & probe_block, const ColumnPtr & probe_indices, const ColumnPtr & build_indices) const;
@@ -108,8 +114,8 @@ private:
 
     std::mutex device_mutex;
 
-    /// The right table's blocks, of its key and payload columns, until the build ends, and then all of them as one.
-    Blocks build_blocks;
+    /// The right table's payload columns, gathered as its blocks arrive, and the block of them once the build ends.
+    MutableColumns build_payload;
     Block build_block;
     bool built = false;
 

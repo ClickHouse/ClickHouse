@@ -13,6 +13,8 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
+#include <algorithm>
+#include <cstring>
 #include <limits>
 #include <mutex>
 #include <utility>
@@ -102,6 +104,39 @@ GPUHashJoin::GPUHashJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader le
         build_payload_header.columns());
 }
 
+/// The matches of one probe block, handed out as blocks of at most `slice_rows` rows each.
+class GPUHashJoin::Result final : public IJoinResult
+{
+public:
+    Result(const GPUHashJoin & join_, Block probe_block_, ColumnPtr probe_indices_, ColumnPtr build_indices_, size_t slice_rows_)
+        : join(join_)
+        , probe_block(std::move(probe_block_))
+        , probe_indices(std::move(probe_indices_))
+        , build_indices(std::move(build_indices_))
+        , slice_rows(slice_rows_)
+    {
+    }
+
+    JoinResultBlock next() override
+    {
+        const size_t total = probe_indices->size();
+        const size_t rows = slice_rows == 0 ? total - offset : std::min(slice_rows, total - offset);
+        Block block = join.assembleOutputBlock(probe_block, probe_indices->cut(offset, rows), build_indices->cut(offset, rows));
+        offset += rows;
+        return {.block = std::move(block), .next_block = nullptr, .is_last = offset >= total};
+    }
+
+    std::optional<size_t> getMatchedRightRows() const override { return probe_indices->size(); }
+
+private:
+    const GPUHashJoin & join;
+    const Block probe_block;
+    const ColumnPtr probe_indices;
+    const ColumnPtr build_indices;
+    const size_t slice_rows;
+    size_t offset = 0;
+};
+
 GPUHashJoin::~GPUHashJoin() = default;
 
 void GPUHashJoin::checkTypesOfKeys(const Block & block) const
@@ -115,21 +150,33 @@ bool GPUHashJoin::addBlockToJoin(const Block & block, size_t num_rows, JoinBuild
     if (num_rows == 0)
         return true;
 
-    Block kept;
-    kept.insert(block.getByName(key_name_right));
-    for (const auto & column : build_payload_header)
-        if (column.name != key_name_right)
-            kept.insert(block.getByName(column.name));
-    for (auto & column : kept)
-        column.column = column.column->convertToFullIfWrapped()->convertToFullColumnIfSparse();
+    const ColumnPtr key_column = block.getByName(key_name_right).column->convertToFullIfWrapped()->convertToFullColumnIfSparse();
 
     {
         std::lock_guard lock(device_mutex);
         if (built)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "A block of the right table after the build of a GPU hash join ended");
-        build_rows.fetch_add(kept.rows(), std::memory_order_relaxed);
-        build_bytes.fetch_add(kept.allocatedBytes(), std::memory_order_relaxed);
-        build_blocks.push_back(std::move(kept));
+
+        if (build_payload.empty())
+        {
+            for (const auto & column : build_payload_header)
+                build_payload.push_back(column.type->createColumn());
+        }
+
+        size_t bytes = num_rows * GPU::sizeOf(key_type);
+        for (size_t i = 0; i < build_payload_header.columns(); ++i)
+        {
+            const ColumnPtr source
+                = block.getByName(build_payload_header.getByPosition(i).name).column->convertToFullIfWrapped()->convertToFullColumnIfSparse();
+            build_payload[i]->insertRangeFrom(*source, 0, num_rows);
+            bytes += source->byteSize();
+        }
+
+        /// From the block's own memory, which a copy from pageable memory does not return before it has read.
+        build_keys.append(GPU::rawValuesOf(*key_column, num_rows, GPU::sizeOf(key_type)));
+
+        build_rows.fetch_add(num_rows, std::memory_order_relaxed);
+        build_bytes.fetch_add(bytes, std::memory_order_relaxed);
     }
 
     if (!context.joinChecksLimits())
@@ -144,16 +191,16 @@ void GPUHashJoin::finishBuildUnlocked()
         return;
     built = true;
 
-    build_block = build_blocks.empty() ? Block{} : concatenateBlocks(build_blocks);
-    build_blocks.clear();
+    build_block = build_payload_header.cloneEmpty();
+    for (size_t i = 0; i < build_payload.size(); ++i)
+        build_block.getByPosition(i).column = std::move(build_payload[i]);
+    build_payload.clear();
 
-    const size_t rows = build_block.rows();
+    const size_t rows = build_rows.load(std::memory_order_relaxed);
     if (rows > static_cast<size_t>(std::numeric_limits<Int32>::max()))
         throw Exception(
             ErrorCodes::SET_SIZE_LIMIT_EXCEEDED, "The right table of a GPU hash join has {} rows, more than cuDF indexes", rows);
 
-    if (rows != 0)
-        build_keys.append(GPU::rawValuesOf(*build_block.getByName(key_name_right).column, rows, GPU::sizeOf(key_type)));
     hash_join = std::make_unique<GPU::CudfHashJoin>(
         key_type, GPU::DeviceFixedColumn{.element_type = key_type, .data = build_keys.data(), .rows = rows});
 }
@@ -176,8 +223,7 @@ Block GPUHashJoin::assembleOutputBlock(const Block & probe_block, const ColumnPt
 
     for (const auto & sample : build_payload_header)
     {
-        ColumnPtr gathered = build_indices->empty() || build_block.empty() ? sample.column->cloneEmpty()
-                                                                    : build_block.getByName(sample.name).column->index(*build_indices, 0);
+        ColumnPtr gathered = build_indices->empty() ? sample.column->cloneEmpty() : build_block.getByName(sample.name).column->index(*build_indices, 0);
         result.insert({std::move(gathered), sample.type, table_join->renamedRightColumnName(sample.name)});
     }
 
@@ -218,34 +264,49 @@ JoinResultPtr GPUHashJoin::joinBlock(Block block)
             finishBuildUnlocked();
         }
 
-        /// Each thread probes on a stream of its own, so that the blocks of the threads are probed at once.
+        /// Each thread probes on a stream of its own, so that the blocks of the threads are probed at once, through
+        /// pinned host memory, which the copies to and from the device need to be asynchronous, and buffers of its own
+        /// that it keeps from block to block. A probe waits for its stream at the end, so a buffer is free at the next.
         thread_local GPU::StreamPtr thread_stream = GPU::createStream();
         const cuda::stream_ref stream{thread_stream.get()};
+        thread_local GPU::PinnedBuffer pinned_keys;
+        thread_local GPU::PinnedBuffer pinned_indices;
+        thread_local GPU::DeviceBuffer probe_keys(stream);
 
-        GPU::DeviceBuffer probe_keys(stream);
-        probe_keys.append(GPU::rawValuesOf(*probe_key, probe_rows, GPU::sizeOf(key_type)));
+        pinned_keys.clear();
+        GPU::appendHostBytes(pinned_keys, GPU::rawValuesOf(*probe_key, probe_rows, GPU::sizeOf(key_type)));
+        probe_keys.clear();
+        probe_keys.append(GPU::bytesOf(pinned_keys));
         const GPU::CudfJoinMatches matches
             = hash_join->probe(GPU::DeviceFixedColumn{.element_type = key_type, .data = probe_keys.data(), .rows = probe_rows}, stream);
 
-        probe_indices->getData().resize(matches.size());
-        build_indices->getData().resize(matches.size());
-        matches.copyOut(probe_indices->getData().data(), build_indices->getData().data(), stream);
+        const size_t num_matches = matches.size();
+        pinned_indices.clear();
+        char * const landed = GPU::growBy(pinned_indices, 2 * num_matches * sizeof(UInt32));
+        matches.copyOut(reinterpret_cast<uint32_t *>(landed), reinterpret_cast<uint32_t *>(landed + num_matches * sizeof(UInt32)), stream);
+
+        probe_indices->getData().resize(num_matches);
+        build_indices->getData().resize(num_matches);
+        memcpy(probe_indices->getData().data(), landed, num_matches * sizeof(UInt32));
+        memcpy(build_indices->getData().data(), landed + num_matches * sizeof(UInt32), num_matches * sizeof(UInt32));
     }
 
-    const size_t build_total = build_block.rows();
-    for (size_t i = 0; i < probe_indices->size(); ++i)
+    if (!probe_indices->empty())
     {
-        if (probe_indices->getData()[i] >= probe_rows || build_indices->getData()[i] >= build_total)
+        const UInt32 max_probe = *std::max_element(probe_indices->getData().begin(), probe_indices->getData().end());
+        const UInt32 max_build = *std::max_element(build_indices->getData().begin(), build_indices->getData().end());
+        const size_t build_total = build_rows.load(std::memory_order_relaxed);
+        if (max_probe >= probe_rows || max_build >= build_total)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "The device returned the pair of rows {} and {} for a left block of {} rows and a right table of {}",
-                probe_indices->getData()[i],
-                build_indices->getData()[i],
+                "The device returned rows up to {} and {} for a left block of {} rows and a right table of {}",
+                max_probe,
+                max_build,
                 probe_rows,
                 build_total);
     }
 
-    return IJoinResult::createFromBlock(assembleOutputBlock(block, std::move(probe_indices), std::move(build_indices)));
+    return std::make_unique<Result>(*this, std::move(block), std::move(probe_indices), std::move(build_indices), table_join->maxJoinedBlockRows());
 }
 
 StepAnalysisReport GPUHashJoin::getAnalysisReport() const

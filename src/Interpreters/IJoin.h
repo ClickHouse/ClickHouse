@@ -211,6 +211,10 @@ public:
     // That can run FillingRightJoinSideTransform parallelly
     virtual bool supportParallelJoin() const { return false; }
 
+    /// The rows a block of the left side is squashed to before it is joined, for an algorithm whose every call costs much
+    /// more than its rows, such as one that probes on a device. Zero leaves it to `min_joined_block_size_rows`.
+    virtual size_t probeBlockRows() const { return 0; }
+
     /// Upper bound on the number of build streams. The pipeline reads it only when `supportParallelJoin`
     /// is true and the right side has no totals. Zero leaves the choice to the pipeline.
     virtual size_t getMaxBuildThreads() const { return 0; }

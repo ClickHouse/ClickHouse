@@ -183,14 +183,18 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         }
         else
         {
+            /// Of an algorithm that joins a few large blocks faster than many small ones, the left side is squashed to them,
+            /// by rows only, unless squashing is off, as it is for a left side read in order.
+            const bool squashes = min_block_size_rows > 0 || min_block_size_bytes > 0;
+            const bool larger_blocks = squashes && join->probeBlockRows() > min_block_size_rows;
             joined_pipeline = QueryPipelineBuilder::joinPipelinesRightLeft(
                 std::move(pipelines[0]),
                 std::move(pipelines[1]),
                 join,
                 join_algorithm_header,
                 max_block_size,
-                min_block_size_rows,
-                min_block_size_bytes,
+                larger_blocks ? join->probeBlockRows() : min_block_size_rows,
+                larger_blocks ? 0 : min_block_size_bytes,
                 max_streams,
                 this,
                 keep_left_read_in_order,
