@@ -3,7 +3,6 @@
 # pylint: disable=line-too-long
 # pylint: disable=bare-except
 
-import json
 import os
 import time
 
@@ -15,11 +14,6 @@ import helpers.test_tools
 from . import fake_sentry_server
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-
-
-def read_fake_sentry_file(node, path):
-    with open(os.path.join(node.logs_dir, os.path.basename(path))) as f:
-        return f.read()
 
 
 @pytest.fixture(scope="module")
@@ -51,10 +45,6 @@ def test_send_segfault(started_node):
     ):
         pytest.skip("doesn't fit in timeouts for stacktrace generation")
 
-    # The report carries the UUID only once ServerUUID::load() has run, so read it from the
-    # live server to compare against.
-    uuid_before_crash = started_node.query("SELECT serverUUID()").strip()
-
     started_node.copy_file_to_container(
         os.path.join(SCRIPT_DIR, "fake_sentry_server.py"), "/fake_sentry_server.py"
     )
@@ -71,7 +61,9 @@ def test_send_segfault(started_node):
     result = None
     for attempt in range(1, 6):
         time.sleep(attempt)
-        result = read_fake_sentry_file(started_node, fake_sentry_server.RESULT_PATH)
+        result = started_node.exec_in_container(
+            ["cat", fake_sentry_server.RESULT_PATH], user="root"
+        )
         if result == "OK":
             break
         if result == "INITIAL_STATE":
@@ -80,9 +72,3 @@ def test_send_segfault(started_node):
             assert False, "Unexpected state: " + result
 
     assert result == "OK", "Crash report not sent"
-
-    payload = json.loads(
-        read_fake_sentry_file(started_node, fake_sentry_server.PAYLOAD_PATH)
-    )
-    assert "server_uuid" in payload, "Crash report has no server_uuid: " + repr(payload)
-    assert payload["server_uuid"] == uuid_before_crash

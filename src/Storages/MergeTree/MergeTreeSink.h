@@ -1,19 +1,16 @@
 #pragma once
 
-#include <exception>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MergeTree/InsertBlockInfo.h>
 #include <Common/ProfileEvents.h>
 #include <Interpreters/InsertDeduplication.h>
-#include <Interpreters/MergeTreeTransactionHolder.h>
 
 
 namespace DB
 {
 
 class StorageMergeTree;
-struct UniqueKeyInsertOutcome;
 struct BlockWithPartition;
 
 struct StorageSnapshot;
@@ -36,9 +33,6 @@ struct MergeTreeDelayedChunk
         TemporaryPartPtr temp_part;
         UInt64 elapsed_ns;
         ProfileEvents::Counters part_counters;
-        /// Commits this partition's part; its csn versions the part and every bitmap the commit
-        /// writes. Empty when the table has no unique key.
-        MergeTreeTransactionHolder uk_txn;
     };
 
     std::vector<Partition> partitions;
@@ -67,9 +61,6 @@ protected:
     size_t max_parts_per_block;
     ContextPtr context;
     StorageSnapshotPtr storage_snapshot;
-    /// The result of the "too many parts" check, evaluated on the query thread at sink
-    /// construction and thrown from onStart, when the sink starts executing.
-    std::exception_ptr too_many_parts_exception;
     UInt64 num_blocks_processed = 0;
     bool deduplicate = true;
     bool synchronously_commit_part_for_dependent_views = false;
@@ -78,11 +69,7 @@ protected:
 
     std::vector<std::string> commitPart(MutableDataPartPtr & part, const std::vector<DeduplicationHash> & deduplication_hashes);
     virtual void finishDelayedChunk();
-    virtual TemporaryPartPtr writeNewTempPart(BlockWithPartition & block, const MergeTreeTransactionPtr & txn);
-
-private:
-    UniqueKeyInsertOutcome commitUniqueKeyPart(
-        MergeTreeDelayedChunk::Partition & partition, const std::vector<DeduplicationHash> & deduplication_hashes);
+    virtual TemporaryPartPtr writeNewTempPart(BlockWithPartition & block);
 };
 
 }

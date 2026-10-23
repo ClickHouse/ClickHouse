@@ -72,10 +72,15 @@ struct SelectQueryOptions
 
     size_t max_step_description_length = 0;
 
-    bool force_materialize_cte = false;
+    /** During read from MergeTree parts will be removed from snapshot after they are not needed.
+      * This optimization will break subsequent execution of the same query tree, because table node
+      * will no more have valid snapshot.
+      *
+      * TODO: Implement this functionality in safer way
+      */
+    bool merge_tree_enable_remove_parts_from_snapshot_optimization = true;
 
-    /// The query is printed from a resolved query tree, so its integer constants are not positions.
-    bool positional_arguments_already_resolved = false;
+    bool force_materialize_cte = false;
 
     SelectQueryOptions( /// NOLINT(google-explicit-constructor)
         QueryProcessingStage::Enum stage = QueryProcessingStage::Complete,
@@ -205,12 +210,6 @@ struct SelectQueryOptions
     SelectQueryOptions & forceMaterializeCTE(bool value = true)
     {
         force_materialize_cte = value;
-        return *this;
-    }
-
-    SelectQueryOptions & positionalArgumentsAlreadyResolved(bool value = true)
-    {
-        positional_arguments_already_resolved = value;
         return *this;
     }
 };

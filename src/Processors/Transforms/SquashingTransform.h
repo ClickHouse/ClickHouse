@@ -35,11 +35,7 @@ private:
 class SimpleSquashingChunksTransform final : public IInflatingTransform
 {
 public:
-    /// Non-zero max bounds stop merging before the merged chunks' total rows or bytes would exceed them; a single chunk is never split.
-    /// The byte bound is an estimate: it sums the input chunks, and concatenation can change a column's representation.
-    explicit SimpleSquashingChunksTransform(
-        SharedHeader header, size_t min_block_size_rows, size_t min_block_size_bytes,
-        size_t max_block_size_rows_ = 0, size_t max_block_size_bytes_ = 0);
+    explicit SimpleSquashingChunksTransform(SharedHeader header, size_t min_block_size_rows, size_t min_block_size_bytes);
 
     String getName() const override { return "SimpleSquashingTransform"; }
 
@@ -52,13 +48,6 @@ protected:
 private:
     Squashing squashing;
     Chunk squashed_chunk;
-
-    const size_t max_block_size_rows;
-    const size_t max_block_size_bytes;
-    /// `squashedBytes` of the chunks buffered in `squashing`; valid only while it is non-empty.
-    size_t buffered_bytes = 0;
-    /// Buffered data emitted ahead of a chunk that would overflow a max bound.
-    Chunk flushed_chunk;
 };
 
 }

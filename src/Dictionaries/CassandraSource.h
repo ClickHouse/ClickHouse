@@ -1,26 +1,25 @@
 #pragma once
 
-#include "config.h"
+#include <Dictionaries/CassandraHelpers.h>
 
 #if USE_CASSANDRA
-
-#include <Core/ExternalResultDescription.h>
-#include <Dictionaries/CassandraClient.h>
 #include <Processors/ISource.h>
+#include <Core/ExternalResultDescription.h>
 
 
 namespace DB
 {
 
-/// Reads the result of a query from Cassandra page by page.
+class Block;
+
 class CassandraSource final : public ISource
 {
 public:
     CassandraSource(
-        Cassandra::ConnectionPoolPtr pool_,
-        const String & query_,
-        const SharedHeader & sample_block,
-        size_t max_block_size_);
+            const CassSessionShared & session_,
+            const String & query_str,
+            SharedHeader & sample_block,
+            size_t max_block_size);
 
     String getName() const override { return "Cassandra"; }
 
@@ -28,16 +27,17 @@ private:
     using ValueType = ExternalResultDescription::ValueType;
 
     Chunk generate() override;
-    void checkColumns(const Cassandra::ResultPage & page) const;
-    static void insertValue(IColumn & column, ValueType type, std::string_view value);
+    static void insertValue(IColumn & column, ValueType type, const CassValue * cass_value);
+    void assertTypes(const CassResultPtr & result);
 
-    Cassandra::ConnectionPoolPtr pool;
-    const String query;
+    CassSessionShared session;
+    CassStatementPtr statement;
+    CassFuturePtr result_future;
     const size_t max_block_size;
     ExternalResultDescription description;
-
-    String paging_state;
-    bool is_finished = false;
+    cass_bool_t has_more_pages;
+    bool assert_types = true;
+    bool is_initialized = false;
 };
 
 }

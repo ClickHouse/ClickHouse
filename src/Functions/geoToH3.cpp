@@ -53,12 +53,22 @@ public:
 
     size_t getNumberOfArguments() const override { return 3; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool canBeExecutedOnDefaultArguments() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(Float, Float, UInt8) -> UInt64";
+        FunctionArgumentDescriptors mandatory_args = geotoh3_argument_order == GeoToH3ArgumentOrder::LON_LAT
+            ? FunctionArgumentDescriptors{
+                {"longitude", &isFloat, nullptr, "Float64"},
+                {"latitude", &isFloat, nullptr, "Float64"},
+                {"resolution", &isUInt8, nullptr, "UInt8"}}
+            : FunctionArgumentDescriptors{
+                {"latitude", &isFloat, nullptr, "Float64"},
+                {"longitude", &isFloat, nullptr, "Float64"},
+                {"resolution", &isUInt8, nullptr, "UInt8"}};
+        validateFunctionArguments(*this, arguments, mandatory_args);
+
+        return std::make_shared<DataTypeUInt64>();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -74,29 +84,24 @@ public:
 
         const ColumnFloat64 * col_lat = nullptr;
         const ColumnFloat64 * col_lon = nullptr;
-        size_t lat_arg = 0;
-        size_t lon_arg = 0;
 
         if (geotoh3_argument_order == GeoToH3ArgumentOrder::LON_LAT)
         {
-            lon_arg = 0;
-            lat_arg = 1;
+            col_lon = checkAndGetColumn<ColumnFloat64>(non_const_arguments[0].column.get());
+            col_lat = checkAndGetColumn<ColumnFloat64>(non_const_arguments[1].column.get());
         }
         else
         {
-            lat_arg = 0;
-            lon_arg = 1;
+            col_lat = checkAndGetColumn<ColumnFloat64>(non_const_arguments[0].column.get());
+            col_lon = checkAndGetColumn<ColumnFloat64>(non_const_arguments[1].column.get());
         }
-
-        col_lat = checkAndGetColumn<ColumnFloat64>(non_const_arguments[lat_arg].column.get());
-        col_lon = checkAndGetColumn<ColumnFloat64>(non_const_arguments[lon_arg].column.get());
 
         if (!col_lat)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
                 "Illegal type {} of argument {} of function {}. Must be Float64.",
-                arguments[lat_arg].type->getName(),
-                lat_arg + 1,
+                arguments[1].type->getName(),
+                2,
                 getName());
 
         const auto & data_lat = col_lat->getData();
@@ -105,8 +110,8 @@ public:
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
                 "Illegal type {} of argument {} of function {}. Must be Float64.",
-                arguments[lon_arg].type->getName(),
-                lon_arg + 1,
+                arguments[0].type->getName(),
+                1,
                 getName());
         const auto & data_lon = col_lon->getData();
 
@@ -138,13 +143,6 @@ public:
                     getName(),
                     MAX_H3_RES);
 
-            if (lat < -90.0 || lat > 90.0)
-                throw Exception(
-                    ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                    "The argument 'latitude' ({}) of function {} is out of bounds because the latitude must be in the range [-90, 90]",
-                    lat,
-                    getName());
-
             LatLng coord;
             coord.lng = degsToRads(lon);
             coord.lat = degsToRads(lat);
@@ -168,10 +166,9 @@ REGISTER_FUNCTION(GeoToH3)
     FunctionDocumentation::Description description = R"(
 Returns [H3](https://h3geo.org/docs/core-library/h3Indexing/) point index for the given latitude, longitude, and resolution.
 
-<Note>
+:::note
 In ClickHouse v25.4 or older, `geoToH3()` arguments are in the order `(lon, lat)`. As per ClickHouse v25.5, the input values are ordered `(lat, lon)`.
 The previous behavior can be restored using setting `geotoh3_argument_order = 'lon_lat'`.
-</Note>
     )";
     FunctionDocumentation::Syntax syntax = "geoToH3(lat, lon, resolution)";
     FunctionDocumentation::Arguments arguments = {
@@ -203,3 +200,4 @@ The previous behavior can be restored using setting `geotoh3_argument_order = 'l
 }
 
 #endif
+

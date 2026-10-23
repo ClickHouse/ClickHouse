@@ -6,6 +6,10 @@ tags: ['错误与异常', '数据格式']
 keywords: ['Parquet', 'Cannot Append Data']
 ---
 
+{frontMatter.description}
+
+{/* truncate */}
+
 <div id="resolving-cannot-append-data-in-parquet-format-error-in-clickhouse">
   ## 解决 ClickHouse 中的 &quot;Cannot Append Data in Parquet Format&quot; 错误
 </div>
@@ -49,7 +53,7 @@ INSERT INTO parquet_test VALUES
 Code: 641. DB::Exception: Received from localhost:9000. DB::Exception: Cannot append data in format Parquet to file, because this format doesn't support appends. You can allow to create a new file on each insert by enabling setting engine_file_allow_create_multiple_files. (CANNOT_APPEND_TO_FILE)
 ```
 
-在 ClickHouse 中，不能向 Parquet 文件追加数据。不过，你可以启用 [`engine_file_allow_create_multiple_files` 设置](/zh/reference/settings/session-settings/engine-file#engine_file_allow_create_multiple_files)，让 ClickHouse 在每次 `INSERT` 时都创建一个新文件。启用后，每次插入都会创建一个按以下模式命名的新文件：
+在 ClickHouse 中，不能向 Parquet 文件追加数据。不过，你可以启用 [`engine_file_allow_create_multiple_files` 设置](/zh/reference/settings/session-settings#engine_file_allow_create_multiple_files)，让 ClickHouse 在每次 `INSERT` 时都创建一个新文件。启用后，每次插入都会创建一个按以下模式命名的新文件：
 
 `data.Parquet` -&gt; `data.1.Parquet` -&gt; `data.2.Parquet`，以此类推：
 

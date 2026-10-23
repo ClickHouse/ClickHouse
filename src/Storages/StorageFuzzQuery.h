@@ -29,8 +29,6 @@ public:
 
     std::string getName() const override { return "FuzzQuery"; }
 
-    bool supportsTruncate() const override { return false; }
-
     static VirtualColumnsDescription createVirtuals();
 
     using StorageWithCommonVirtualColumns::read;

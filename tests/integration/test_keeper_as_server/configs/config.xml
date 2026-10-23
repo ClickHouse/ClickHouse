@@ -9,9 +9,9 @@
 
     <asynchronous_metrics_keeper_metrics_only>true</asynchronous_metrics_keeper_metrics_only>
 
-    <system_tables>
+    <default_system_log_flush_policy>
         <skip_alias_columns>true</skip_alias_columns>
-    </system_tables>
+    </default_system_log_flush_policy>
 
     <asynchronous_metric_log>
         <database>system</database>
@@ -24,7 +24,6 @@
         <server_id>1</server_id>
         <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
         <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
-        <data_storage_path>/var/lib/clickhouse/coordination/data</data_storage_path>
         <four_letter_word_allow_list>*</four_letter_word_allow_list>
 
         <coordination_settings>

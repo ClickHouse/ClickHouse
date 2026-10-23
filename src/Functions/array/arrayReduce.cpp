@@ -51,10 +51,7 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    /// With a non-deterministic aggregate this must stay off: the default implementation executes the
-    /// function on a single row and replicates the result to the whole block, which turns per-row draws
-    /// into one draw for the query. `executeImpl` materializes a constant array argument itself.
-    bool useDefaultImplementationForConstants() const override { return aggregate_function->isDeterministic(); }
+    bool useDefaultImplementationForConstants() const override { return true; }
     /// As we parse the function name and deal with arrays we don't want to default NULL handler, which will hide
     /// nullability from us (which also means hidden from the aggregate functions)
     bool useDefaultImplementationForNulls() const override { return false; }
@@ -62,24 +59,10 @@ public:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
-    /// Documentation-only — the result type is the named aggregate function's
-    /// result type, resolved at query time from the const-string first argument.
-    String getSignatureString() const override
-    {
-        return "(const String, Array, ...) -> Any";
-    }
-
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & /*arguments*/) const override
     {
         return aggregate_function->getResultType();
     }
-
-    /// The aggregate that the string argument names decides this: a `groupArraySample` without a seed
-    /// makes the expression non-deterministic, and both the filter push-down and constant folding have
-    /// to see that. A deterministic aggregate - the overwhelmingly common case - is unaffected.
-    bool isDeterministic() const override { return aggregate_function->isDeterministic(); }
-    bool isDeterministicInScopeOfQuery() const override { return aggregate_function->isDeterministic(); }
-    bool isSuitableForConstantFolding() const override { return aggregate_function->isDeterministic(); }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 
@@ -202,16 +185,6 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
-
-    /// Declarative signature — the result is the named aggregator's
-    /// finalised return type computed over the array element types:
-    /// `AggregateFunction(name, T1, T2, ...)` builds the aggregator state,
-    /// `aggregateFunctionReturnType` extracts what `finalizeAggregation`
-    /// of that state would produce.
-    String getSignatureString() const override
-    {
-        return "(const a String, Array(T1 : Any), ...) -> aggregateFunctionReturnType(AggregateFunction(a, T1, ...))";
-    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {

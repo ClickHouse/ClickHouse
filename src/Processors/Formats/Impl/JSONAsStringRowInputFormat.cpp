@@ -96,8 +96,6 @@ void JSONAsStringRowInputFormat::readJSONObject(IColumn & column)
     if (*buf->position() != '{')
         throw Exception(ErrorCodes::INCORRECT_DATA, "JSON object must begin with '{{'.");
 
-    const size_t start_count = buf->count();
-
     ++buf->position();
     ++balance;
 
@@ -105,17 +103,6 @@ void JSONAsStringRowInputFormat::readJSONObject(IColumn & column)
 
     while (balance)
     {
-        if (format_settings.json.max_row_size_for_json_each_row
-            && buf->count() - start_count > format_settings.json.max_row_size_for_json_each_row)
-            throw Exception(ErrorCodes::INCORRECT_DATA,
-                "Size of JSON object at position {} is extremely large. "
-                "Expected not greater than {} bytes, but current is {} bytes per object. "
-                "Increase the value of setting 'input_format_json_max_object_size' "
-                "or check your data manually, most likely JSON is malformed",
-                buf->count(),
-                format_settings.json.max_row_size_for_json_each_row,
-                buf->count() - start_count);
-
         if (buf->eof())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected end of file while parsing JSON object.");
 
@@ -217,9 +204,6 @@ void registerInputFormatJSONAsString(FormatFactory & factory)
         return std::make_shared<JSONAsStringRowInputFormat>(std::make_unique<const Block>(sample), buf, params, format_settings);
     });
 
-    /// Data in this format is commonly stored in `.json` files, but the `json` extension infers as `JSON`.
-    factory.registerFileExtension("json", "JSONAsString", /*used_for_format_inference=*/ false);
-
     factory.setDocumentation("JSONAsString", Documentation{
         .description = R"DOCS_MD(
 | Input | Output  | Alias |
@@ -232,13 +216,13 @@ In this format, a single JSON object is interpreted as a single value.
 If the input has several JSON objects (which are comma separated), they are interpreted as separate rows. 
 If the input data is enclosed in `[]`, it is interpreted as an array of JSON objects.
 
-<Note>
-This format can only be parsed for a table with a single field of type [String](/reference/data-types/string).
-The remaining columns must be set to either [`DEFAULT`](/reference/statements/create/table#default) or [`MATERIALIZED`](/reference/statements/create/view#materialized-view),
+:::note
+This format can only be parsed for a table with a single field of type [String](/sql-reference/data-types/string.md). 
+The remaining columns must be set to either [`DEFAULT`](/sql-reference/statements/create/table.md/#default) or [`MATERIALIZED`](/sql-reference/statements/create/view#materialized-view), 
 or be omitted. 
-</Note>
+:::
 
-Once you serialize the entire JSON object to a String you can use the [JSON functions](/reference/functions/regular-functions/json-functions) to process it.
+Once you serialize the entire JSON object to a String you can use the [JSON functions](/sql-reference/functions/json-functions.md) to process it.
 
 ## Example usage {#example-usage}
 
@@ -282,13 +266,7 @@ SELECT * FROM json_square_brackets;
 void registerFileSegmentationEngineJSONAsString(FormatFactory & factory);
 void registerFileSegmentationEngineJSONAsString(FormatFactory & factory)
 {
-    factory.registerFileSegmentationEngineCreator("JSONAsString", [](const FormatSettings & settings) -> FormatFactory::FileSegmentationEngine
-    {
-        return [max_row_size = settings.json.max_row_size_for_json_each_row](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
-        {
-            return JSONUtils::fileSegmentationEngineJSONEachRow(in, memory, min_bytes, max_rows, max_row_size);
-        };
-    });
+    factory.registerFileSegmentationEngine("JSONAsString", &JSONUtils::fileSegmentationEngineJSONEachRow);
 }
 
 void registerNonTrivialPrefixAndSuffixCheckerJSONAsString(FormatFactory & factory);
@@ -318,16 +296,13 @@ void registerInputFormatJSONAsObject(FormatFactory & factory)
         return std::make_shared<JSONAsObjectRowInputFormat>(std::make_unique<const Block>(sample), buf, std::move(params), settings);
     });
 
-    /// Data in this format is commonly stored in `.json` files, but the `json` extension infers as `JSON`.
-    factory.registerFileExtension("json", "JSONAsObject", /*used_for_format_inference=*/ false);
-
     factory.setDocumentation("JSONAsObject", Documentation{
         .description = R"DOCS_MD(
 ## Description {#description}
 
-In this format, a single JSON object is interpreted as a single [JSON](/reference/data-types/newjson) value. If the input has several JSON objects (comma separated), they are interpreted as separate rows. If the input data is enclosed in `[]`, it is interpreted as an array of JSONs.
+In this format, a single JSON object is interpreted as a single [JSON](/sql-reference/data-types/newjson.md) value. If the input has several JSON objects (comma separated), they are interpreted as separate rows. If the input data is enclosed in `[]`, it is interpreted as an array of JSONs.
 
-This format can only be parsed for a table with a single field of type [JSON](/reference/data-types/newjson). The remaining columns must be set to [`DEFAULT`](/reference/statements/create/table#default) or [`MATERIALIZED`](/reference/statements/create/view#materialized-view).
+This format can only be parsed for a table with a single field of type [JSON](/sql-reference/data-types/newjson.md). The remaining columns must be set to [`DEFAULT`](/sql-reference/statements/create/table.md/#default) or [`MATERIALIZED`](/sql-reference/statements/create/view#materialized-view).
 
 ## Example usage {#example-usage}
 
@@ -387,13 +362,7 @@ void registerNonTrivialPrefixAndSuffixCheckerJSONAsObject(FormatFactory & factor
 void registerFileSegmentationEngineJSONAsObject(FormatFactory & factory);
 void registerFileSegmentationEngineJSONAsObject(FormatFactory & factory)
 {
-    factory.registerFileSegmentationEngineCreator("JSONAsObject", [](const FormatSettings & settings) -> FormatFactory::FileSegmentationEngine
-    {
-        return [max_row_size = settings.json.max_row_size_for_json_each_row](ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
-        {
-            return JSONUtils::fileSegmentationEngineJSONEachRow(in, memory, min_bytes, max_rows, max_row_size);
-        };
-    });
+    factory.registerFileSegmentationEngine("JSONAsObject", &JSONUtils::fileSegmentationEngineJSONEachRow);
 }
 
 void registerJSONAsObjectSchemaReader(FormatFactory & factory);

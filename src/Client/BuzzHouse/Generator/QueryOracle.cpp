@@ -7,7 +7,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
-extern const int BUZZHOUSE_ORACLE;
+extern const int BUZZHOUSE;
 }
 }
 
@@ -26,8 +26,6 @@ static void finishSettings(SettingValues * svs)
     /// reset must be the `DEFAULT` keyword - assigning the default value would keep the
     /// setting `changed` and pin a nonexistent snapshot. Delta/Paimon pins are value-based
     /// (-1 = latest), where `DEFAULT` works as well.
-    /// `engine_file_truncate_on_insert` keeps the `file()` dump idempotent: without it a
-    /// re-run appends a second copy of the rows and the digest comparison gets a false mismatch.
     static const std::unordered_map<String, String> toSet
         = {{"alter_sync", "2"},
            {"apply_deleted_mask", "1"},
@@ -35,7 +33,6 @@ static void finishSettings(SettingValues * svs)
            {"delta_lake_snapshot_end_version", "DEFAULT"},
            {"delta_lake_snapshot_start_version", "DEFAULT"},
            {"delta_lake_snapshot_version", "DEFAULT"},
-           {"engine_file_truncate_on_insert", "1"},
            {"iceberg_snapshot_id", "DEFAULT"},
            {"iceberg_timestamp_ms", "DEFAULT"},
            {"lightweight_deletes_sync", "2"},
@@ -1071,14 +1068,6 @@ void QueryOracle::generateExportQuery(
         /// Ensure deleted mask and patch parts are applied
         svs = svs ? svs : ins->mutable_setting_values();
         finishSettings(svs);
-        /// `iso` keeps the instant (UTC with `Z`): `simple` loses it in a DST fold, and no input format reads
-        /// back a short `unix_timestamp`. The import copies these settings, and only `best_effort` parses `iso`.
-        SetValue * sv = svs->add_other_values();
-        sv->set_property("date_time_output_format");
-        sv->set_value("'iso'");
-        sv = svs->add_other_values();
-        sv->set_property("date_time_input_format");
-        sv->set_value("'best_effort'");
     }
     /// Set the table on select
     JoinedTableOrFunction * jtf = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
@@ -1521,13 +1510,7 @@ void QueryOracle::generateImportQuery(
     if (can_test_oracle_result)
     {
         /// Ensure deleted mask and patch parts are applied
-        SettingValues * svs = nins->mutable_setting_values();
-        finishSettings(svs);
-        /// `SELECT ... FINAL` keeps all-zero `SummingMergeTree` rows that a merge on insert would drop,
-        /// so reload exactly the dumped rows.
-        SetValue * sv = svs->add_other_values();
-        sv->set_property("optimize_on_insert");
-        sv->set_value("0");
+        finishSettings(nins->mutable_setting_values());
     }
 }
 
@@ -1554,7 +1537,13 @@ bool QueryOracle::generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1)
             setv->set_property(setting);
             if (chs.oracle_values.size() == 2)
             {
-                if (rg.nextBool())
+                if (setting == "enable_analyzer")
+                {
+                    /// For the analyzer, always run the old first, so we can minimize the usage of it
+                    setv->set_value("0");
+                    nsettings.push_back("1");
+                }
+                else if (rg.nextBool())
                 {
                     setv->set_value(*chs.oracle_values.begin());
                     nsettings.push_back(*std::next(chs.oracle_values.begin(), 1));
@@ -1742,14 +1731,6 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     SettingValues * svs = sel->mutable_setting_values();
 
     finishSettings(svs);
-    if (peer_query == PeerQuery::None)
-    {
-        /// `maybeUpdateOracleSelectQuery` may replace a table with a remote or table function call,
-        /// whose virtual columns (`_table`, `_path` etc.) differ, so keep them out of `SELECT *`.
-        SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
-        sv->set_property("asterisk_include_virtual_columns");
-        sv->set_value("0");
-    }
     if (measure_performance)
     {
         /// Add tag to find query later on
@@ -2014,10 +1995,6 @@ void QueryOracle::replaceQueryWithTablePeers(
             gen.columnPathRef(colRef, sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_path());
         }
         gen.entries.clear();
-        /// Store exactly the `FINAL` rows: a merge on insert would drop all-zero `SummingMergeTree` rows
-        SetValue * sv = ins->mutable_setting_values()->mutable_set_value();
-        sv->set_property("optimize_on_insert");
-        sv->set_value("0");
         peer_queries.emplace_back(next2);
     }
 }
@@ -2068,7 +2045,7 @@ void QueryOracle::processSecondOracleQueryResult(const int errcode, ExternalInte
             && !fc.oracle_ignore_error_codes.contains(static_cast<uint32_t>(first_errcode ? first_errcode : errcode)))
         {
             throw DB::Exception(
-                DB::ErrorCodes::BUZZHOUSE_ORACLE,
+                DB::ErrorCodes::BUZZHOUSE,
                 "{}: failed with different success results: {} vs {}",
                 oracle_name,
                 DB::ErrorCodes::getName(first_errcode),
@@ -2088,7 +2065,7 @@ void QueryOracle::processSecondOracleQueryResult(const int errcode, ExternalInte
                 md5_hash2.hashFile((peer_query == PeerQuery::ClickHouseOnly ? qfile_peer : qcfile).generic_string(), second_digest);
                 if (first_digest != second_digest)
                 {
-                    throw DB::Exception(DB::ErrorCodes::BUZZHOUSE_ORACLE, "{}: failed with different result sets", oracle_name);
+                    throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "{}: failed with different result sets", oracle_name);
                 }
             }
         }

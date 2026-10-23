@@ -79,9 +79,6 @@ struct WriteSettings;
 
 class TemporaryFileOnDisk;
 
-class TemporaryDataOnDiskScope;
-using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
-
 
 struct HardlinkedFiles
 {
@@ -114,12 +111,6 @@ public:
 
     /// Get a storage for projection.
     virtual std::shared_ptr<IDataPartStorage> getProjection(const std::string & name, bool use_parent_transaction = true) = 0; // NOLINT
-
-    virtual std::shared_ptr<IDataPartStorage> getProjectionNoInitialize(const std::string & name, bool use_parent_transaction = true) // NOLINT
-    {
-        return getProjection(name, use_parent_transaction);
-    }
-
     virtual std::shared_ptr<const IDataPartStorage> getProjection(const std::string & name) const = 0;
 
     /// Part directory exists.
@@ -278,24 +269,7 @@ public:
         bool make_source_readonly = false;
         DiskTransactionPtr external_transaction = nullptr;
         std::optional<int32_t> metadata_version_to_write = std::nullopt;
-        NameSet invalidated_columns_to_write = {};
-        /// fsync the cloned/frozen directories (the clone subtree plus the ancestor chain up to
-        /// the disk root) so the new hardlink directory entries survive a power loss. Only honored
-        /// by freeze() on a local disk, outside an external transaction.
-        bool fsync_part_directory = false;
-        /// Where the buffered data of the files is moved if the clone rewrites them, see `setTemporaryDataForTransaction`.
-        /// It is not moved if `max_bytes_to_buffer_for_packed_part` is 0.
-        TemporaryDataOnDiskScopePtr temporary_data = nullptr;
-        size_t max_bytes_to_buffer_for_packed_part = 0;
     };
-
-    /// For packed storage the whole data.packed archive is rewritten (copied) during a clone whenever
-    /// any file it contains must be copied instead of hardlinked, the metadata version is overwritten,
-    /// or the version is dropped. When that happens none of the archive's logical members (of the part
-    /// or its packed projections) are hardlinked from the source, so the caller must not record them as
-    /// shared blobs. Full storage hardlinks members individually and has no such archive, so it never
-    /// copies a whole archive.
-    virtual bool cloneCopiesWholeArchive(const ClonePartParams & /*params*/) const { return false; }
 
     virtual std::shared_ptr<IDataPartStorage> freeze(
         const std::string & to,
@@ -331,10 +305,6 @@ public:
 
     virtual void createDirectories() = 0;
     virtual void createProjection(const std::string & name) = 0;
-
-    /// Hint for the preferred on-disk order of files. Packed storage uses it to lay out the
-    /// single archive; storages that keep files separately can ignore it (default no-op).
-    virtual void setPreferredFileOrder(const Strings & /*file_names*/) {}
 
     virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & name,
@@ -384,28 +354,10 @@ public:
     virtual void beginTransaction() = 0;
     /// Commits a transaction of mutable operations.
     virtual void commitTransaction() = 0;
-    /// Rolls back an uncommitted transaction of mutable operations, removing what it has already written
-    /// (e.g. uploaded blobs on object storage). Does nothing if there is no uncommitted transaction.
-    virtual void undoTransaction() = 0;
-
-    /// Commits the accumulated operations and starts a fresh transaction, keeping the storage
-    /// writable (commit->begin). Used mid-build to bound the volume of a single commit; a storage
-    /// that accumulates no per-file operations may make it a no-op.
-    virtual void checkpointTransaction()
-    {
-        commitTransaction();
-        beginTransaction();
-    }
     /// Prepares transaction to commit.
     /// It may be flush of buffered data or similar.
     virtual void precommitTransaction() = 0;
     virtual bool hasActiveTransaction() const = 0;
-
-    /// Lets the active transaction move the buffered data of the files being written to `tmp_data`
-    /// once it takes more than `max_bytes_in_memory` of memory. Applies until the transaction
-    /// is committed or rolled back, and to the projections that share the transaction.
-    /// Storages that write files directly instead of buffering them ignore it.
-    virtual void setTemporaryDataForTransaction(const TemporaryDataOnDiskScopePtr & /*tmp_data*/, size_t /*max_bytes_in_memory*/) {}
 
     /// Returns true if underlying filesystem is case-insensitive,
     /// e.g. file_name and FILE_NAME are the same files.
@@ -439,11 +391,6 @@ private:
 inline bool isFullPartStorage(const IDataPartStorage & storage)
 {
     return storage.getType() == MergeTreeDataPartStorageType::Full;
-}
-
-inline bool isPackedPartStorage(const IDataPartStorage & storage)
-{
-    return storage.getType() == MergeTreeDataPartStorageType::Packed;
 }
 
 }

@@ -9,58 +9,27 @@ namespace common
 {
     /// Multiply and ignore overflow.
     template <typename T1, typename T2>
-    inline auto mulIgnoreOverflow(T1 x, T2 y)
+    inline auto NO_SANITIZE_UNDEFINED mulIgnoreOverflow(T1 x, T2 y)
     {
-        using Result = decltype(x * y);
-        if constexpr (is_integer<Result>)
-        {
-            using Unsigned = make_unsigned_t<Result>;
-            return static_cast<Result>(
-                static_cast<Unsigned>(x) * static_cast<Unsigned>(y));
-        }
-        else
-            return x * y;
+        return x * y;
     }
 
     template <typename T1, typename T2>
-    inline auto addIgnoreOverflow(T1 x, T2 y)
+    inline auto NO_SANITIZE_UNDEFINED addIgnoreOverflow(T1 x, T2 y)
     {
-        using Result = decltype(x + y);
-        if constexpr (is_integer<Result>)
-        {
-            using Unsigned = make_unsigned_t<Result>;
-            return static_cast<Result>(
-                static_cast<Unsigned>(x) + static_cast<Unsigned>(y));
-        }
-        else
-            return x + y;
+        return x + y;
     }
 
     template <typename T1, typename T2>
-    inline auto subIgnoreOverflow(T1 x, T2 y)
+    inline auto NO_SANITIZE_UNDEFINED subIgnoreOverflow(T1 x, T2 y)
     {
-        using Result = decltype(x - y);
-        if constexpr (is_integer<Result>)
-        {
-            using Unsigned = make_unsigned_t<Result>;
-            return static_cast<Result>(
-                static_cast<Unsigned>(x) - static_cast<Unsigned>(y));
-        }
-        else
-            return x - y;
+        return x - y;
     }
 
     template <typename T>
-    inline auto negateIgnoreOverflow(T x)
+    inline auto NO_SANITIZE_UNDEFINED negateIgnoreOverflow(T x)
     {
-        using Result = decltype(-x);
-        if constexpr (is_integer<Result>)
-        {
-            using Unsigned = make_unsigned_t<Result>;
-            return static_cast<Result>(Unsigned{0} - static_cast<Unsigned>(x));
-        }
-        else
-            return -x;
+        return -x;
     }
 
     template <typename T>

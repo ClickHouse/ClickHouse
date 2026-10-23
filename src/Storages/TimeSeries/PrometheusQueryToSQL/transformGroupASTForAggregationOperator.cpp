@@ -2,7 +2,6 @@
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
-#include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 #include <algorithm>
 
 
@@ -10,17 +9,16 @@ namespace DB::PrometheusQueryToSQL
 {
 
 ASTPtr transformGroupASTForAggregationOperator(
-    const PrometheusQueryTree::AggregationOperator * operator_node,
+    const PQT::AggregationOperator * operator_node,
     ASTPtr && group,
     bool drop_metric_name,
     bool & metric_name_dropped)
 {
-    if ((!operator_node->by && !operator_node->without)
-        || (operator_node->by && operator_node->labels.empty()))
+    if (!operator_node->by && !operator_node->without)
     {
-        /// No grouping labels: aggregate all series into one with no tags (group 0).
+        /// No by/without: aggregate all series into one with no tags (group 0).
         metric_name_dropped = true;
-        return timeSeriesNoTagsGroupToAST();
+        return makeASTFunction("CAST", make_intrusive<ASTLiteral>(0u), make_intrusive<ASTLiteral>("UInt64"));
     }
 
     if (operator_node->by)

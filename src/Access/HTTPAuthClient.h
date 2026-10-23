@@ -3,7 +3,6 @@
 #include <set>
 
 #include <base/sleep.h>
-#include <Common/Exception.h>
 #include <Common/HTTPFieldLess.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
@@ -12,11 +11,6 @@
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
 
 struct HTTPAuthClientParams
 {
@@ -56,9 +50,9 @@ public:
             bool last_attempt = attempt + 1 >= max_tries;
             try
             {
-                sendHTTPRequest(*session, request)->finalize();
-                auto body = receiveHTTPResponse(*session, response);
-                return parser.parse(response, body.get());
+                session->sendRequest(request);
+                auto & body_stream = session->receiveResponse(response);
+                return parser.parse(response, &body_stream);
             }
             catch (const Poco::Exception &) // TODO: make retries smarter
             {
@@ -101,13 +95,8 @@ public:
 
         for (const auto & k : headers)
         {
-            if (!this->getForwardHeaders().contains(k.first))
-                continue;
-            /// Poco writes header values verbatim, so a line break would let the value inject extra headers
-            /// (e.g. an `Authorization` placed before ours) into the request to the authentication server.
-            if (k.second.find_first_of(std::string_view("\r\n\0", 3)) != std::string::npos)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Forwarded HTTP header \"{}\" contains CR, LF or NUL", k.first);
-            request.add(k.first, k.second);
+            if (this->getForwardHeaders().contains(k.first))
+                request.add(k.first, k.second);
         }
 
         Poco::Net::HTTPBasicCredentials basic_credentials{user_name, password};

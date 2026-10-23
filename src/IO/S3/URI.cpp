@@ -4,7 +4,6 @@
 #include <Interpreters/Context.h>
 #include <Common/Macros.h>
 #include <Common/Exception.h>
-#include <Common/maskSensitiveQueryParameters.h>
 #include <Common/maskURIPassword.h>
 #include <Common/quoteString.h>
 #include <Common/re2.h>
@@ -15,7 +14,6 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
 
-#include <aws/s3/S3EndpointProvider.h>
 
 namespace DB
 {
@@ -40,6 +38,13 @@ namespace S3
 namespace
 {
 
+/// `Common/maskURIPassword.h` has no `maskURIUserinfo` on this release; this is the regular expression it replaced.
+bool maskURIUserinfo(String & url)
+{
+    static const re2::RE2 userinfo(R"(^([a-zA-Z][a-zA-Z0-9+.-]*://)[^/?#]+@)");
+    return RE2::Replace(&url, userinfo, "\\1[HIDDEN]@");
+}
+
 /// `Poco::URI::toString` renders the userinfo (`user:password@`) and the query parameters of a presigned
 /// URL verbatim. Exception messages reach `system.query_log` and the server log, which, unlike the query
 /// text, are not masked, so a URI must not be put into them as is.
@@ -50,11 +55,8 @@ String maskedURIString(const Poco::URI & uri)
     /// With `compatibility_s3_presigned_url_query_in_path` the constructor folds the query of a presigned URL
     /// into the path by percent-encoding its '?', which `toString` renders as `%3F`, so `maskPresignedURLParameters`
     /// would not see the parameters. Put the '?' back: `toString` encodes '%' itself as `%25`, so a `%3F` can only
-    /// come from a '?'. Only then put the '%' back, so a percent-encoded parameter name reads as written. Only the
-    /// path is encoded: `toString` appends a raw query as is, and a folded query leaves none.
+    /// come from a '?'.
     boost::replace_all(result, "%3F", "?");
-    if (uri.getRawQuery().empty())
-        boost::replace_all(result, "%25", "%");
     maskPresignedURLParameters(result);
     return result;
 }
@@ -86,7 +88,15 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax, bool keep_pre
     bool looks_like_presigned = false;
     for (const auto & [qk, qv] : original_uri.getQueryParameters())
     {
-        if (qk == "versionId" || isPresignedURLParameterName(qk))
+        if (
+            qk == "versionId" ||
+            qk == "AWSAccessKeyId" ||
+            qk == "Signature" ||
+            qk == "Expires" ||
+            qk.starts_with("X-Amz-") ||
+            qk == "GoogleAccessId" ||
+            qk.starts_with("X-Goog-")
+        )
         {
             looks_like_presigned = true;
             break;
@@ -214,7 +224,7 @@ bool URI::tryInitVirtualHostedStyle(bool is_using_aws_private_link_interface, bo
     String name;
     String endpoint_authority_from_uri;
 
-    if (!re2::RE2::FullMatch(uri.getAuthority(), use_strict_pattern ? virtual_hosted_style_pattern_strict : virtual_hosted_style_pattern_light, &bucket, &name, &endpoint_authority_from_uri))
+    if (!re2::RE2::FullMatch(uri.getAuthority(), (use_strict_pattern) ? virtual_hosted_style_pattern_strict : virtual_hosted_style_pattern_light, &bucket, &name, &endpoint_authority_from_uri))
         return false;
 
     is_virtual_hosted_style = true;
@@ -298,19 +308,6 @@ void URI::validateKey(const String & key, const Poco::URI & uri)
             onError();
         }
     }
-}
-
-std::string expandRegionToAmazonPath(const std::string & region)
-{
-    Aws::S3::Endpoint::S3EndpointProvider provider;
-    provider.AccessBuiltInParameters().SetStringParameter("Region", Aws::String(region));
-    auto outcome = provider.ResolveEndpoint({});
-    if (outcome.IsSuccess())
-    {
-        auto uri = outcome.GetResult().GetURI();
-        return uri.GetURIString();
-    }
-    return "https://s3." + region + ".amazonaws.com";
 }
 
 }

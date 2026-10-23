@@ -1,0 +1,148 @@
+---
+slug: /native-protocol/server
+title: '服务器数据包'
+description: '原生协议服务器'
+doc_type: '参考'
+keywords: ['原生协议', 'TCP 协议', '客户端-服务器', '协议规范', '网络']
+---
+
+| 值  | 名称                               | 描述                                                                    |
+| -- | -------------------------------- | --------------------------------------------------------------------- |
+| 0  | [Hello](#hello)                  | 服务器握手响应                                                               |
+| 1  | Data                             | 与[客户端数据](/zh/resources/develop-contribute/native-protocol/client#data)相同 |
+| 2  | [Exception](#exception)          | 查询处理异常                                                                |
+| 3  | [Progress](#progress)            | 查询进度                                                                  |
+| 4  | [Pong](#pong)                    | Ping 响应                                                               |
+| 5  | [EndOfStream](#end-of-stream)    | 所有数据包均已传输完毕                                                           |
+| 6  | [ProfileInfo](#profile-info)     | 性能分析数据                                                                |
+| 7  | Totals                           | 总计值                                                                   |
+| 8  | Extremes                         | 极值 (最小值、最大值)                                                          |
+| 9  | TablesStatusResponse             | 对 TableStatus 请求的响应                                                   |
+| 10 | [日志](#log)                      | 查询系统日志                                                                |
+| 11 | TableColumns                     | 列描述                                                                   |
+| 12 | UUIDs                            | 唯一 parts ID 的列表                                                       |
+| 13 | ReadTaskRequest                  | String (UUID) ，用于描述需要下一个任务的请求                                         |
+| 14 | [ProfileEvents](#profile-events) | 来自服务器的 profile events 数据包                                             |
+
+`Data`、`Totals` 和 `Extremes` 可以压缩。
+
+<div id="hello">
+  ## Hello
+</div>
+
+对 [客户端 hello](/zh/resources/develop-contribute/native-protocol/client#hello) 的响应。
+
+| 字段                | 类型      | 值               | 描述           |
+| ----------------- | ------- | --------------- | ------------ |
+| name              | String  | `Clickhouse`    | 服务器名称        |
+| version&#95;major | UVarInt | `21`            | 服务器主版本号      |
+| version&#95;minor | UVarInt | `12`            | 服务器次版本号      |
+| revision          | UVarInt | `54452`         | 服务器修订号       |
+| tz                | String  | `Europe/Moscow` | 服务器时区        |
+| display&#95;name  | String  | `Clickhouse`    | UI 中显示的服务器名称 |
+| version&#95;patch | UVarInt | `3`             | 服务器补丁版本      |
+
+<div id="exception">
+  ## Exception
+</div>
+
+查询处理期间的服务器异常。
+
+| 字段              | 类型     | 值                                      | 描述                          |
+| --------------- | ------ | -------------------------------------- | --------------------------- |
+| code            | Int32  | `60`                                   | 参见 [ErrorCodes.cpp][codes]。 |
+| name            | String | `DB::Exception`                        | 服务器主版本                      |
+| message         | String | `DB::Exception: Table X doesn't exist` | 服务器次版本                      |
+| stack&#95;trace | String | ~                                      | C++ 栈跟踪                     |
+| nested          | Bool   | `true`                                 | 更多错误                        |
+
+可以是连续的异常列表，直到 `nested` 为 `false`。
+
+[codes]: https://clickhouse.com/codebrowser/ClickHouse/src/Common/ErrorCodes.cpp.html "错误代码列表"
+
+<div id="progress">
+  ## Progress
+</div>
+
+服务器会定期报告查询执行进度。
+
+<Tip>
+  报告的 Progress 为 **增量值**。如需总计，请在客户端累加。
+</Tip>
+
+| 字段              | 类型      | 值        | 描述        |
+| --------------- | ------- | -------- | --------- |
+| rows            | UVarInt | `65535`  | 行数        |
+| bytes           | UVarInt | `871799` | 字节数       |
+| total&#95;rows  | UVarInt | `0`      | 总行数       |
+| wrote&#95;rows  | UVarInt | `0`      | 来自客户端的行数  |
+| wrote&#95;bytes | UVarInt | `0`      | 来自客户端的字节数 |
+
+<div id="pong">
+  ## Pong
+</div>
+
+对[客户端 Ping](/zh/resources/develop-contribute/native-protocol/client#ping)的响应，不包含数据包主体。
+
+<div id="end-of-stream">
+  ## 流结束
+</div>
+
+不会再发送更多 **Data** 数据包，查询结果已从服务器完整流式传输到客户端。
+
+无数据包主体。
+
+<div id="profile-info">
+  ## Profile 信息
+</div>
+
+| 字段                                       | 类型      |
+| ---------------------------------------- | ------- |
+| rows                                     | UVarInt |
+| blocks                                   | UVarInt |
+| bytes                                    | UVarInt |
+| applied&#95;limit                        | Bool    |
+| rows&#95;before&#95;limit                | UVarInt |
+| calculated&#95;rows&#95;before&#95;limit | Bool    |
+
+<div id="log">
+  ## 日志
+</div>
+
+包含服务器日志的**数据块**。
+
+<Tip>
+  编码为由多列组成的**数据块**，但永不压缩。
+</Tip>
+
+| 列              | 类型       |
+| -------------- | -------- |
+| time           | DateTime |
+| time&#95;micro | UInt32   |
+| host&#95;name  | String   |
+| query&#95;id   | String   |
+| thread&#95;id  | UInt64   |
+| priority       | Int8     |
+| source         | String   |
+| text           | String   |
+
+<div id="profile-events">
+  ## Profile events
+</div>
+
+包含 profile events 的**数据块**。
+
+<Tip>
+  编码为由列组成的**数据块**，但不会被压缩。
+
+  `value` 的类型取决于服务器修订版本，为 `UInt64` 或 `Int64`。
+</Tip>
+
+| 列                | 类型              |
+| ---------------- | --------------- |
+| host&#95;name    | String          |
+| current&#95;time | DateTime        |
+| thread&#95;id    | UInt64          |
+| type             | Int8            |
+| name             | String          |
+| value            | UInt64 or Int64 |

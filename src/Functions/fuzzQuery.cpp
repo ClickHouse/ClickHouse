@@ -57,9 +57,13 @@ public:
     bool isDeterministicInScopeOfQuery() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return false; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return "(String) -> String";
+        FunctionArgumentDescriptors args{
+            {"query", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
+        };
+        validateFunctionArguments(*this, arguments, args);
+        return std::make_shared<DataTypeString>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -152,7 +156,7 @@ REGISTER_FUNCTION(fuzzQuery)
                            "Non-deterministic: each call may produce a different result. "
                            "Requires `allow_fuzz_query_functions = 1`.",
             .syntax = "fuzzQuery(query)",
-            .arguments = {{"query", "The SQL query to be fuzzed. [String](/reference/data-types/string)"}},
+            .arguments = {{"query", "The SQL query to be fuzzed. [String](../../sql-reference/data-types/string.md)"}},
             .returned_value = {"The fuzzed query string", {"String"}},
             .examples{
                 {"basic",

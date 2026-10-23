@@ -1,4 +1,3 @@
-#include <Core/ProtocolDefines.h>
 #include "config.h"
 
 #include <IO/ReadHelpers.h>

@@ -20,15 +20,15 @@ REGISTER_FUNCTION(ArrayPushBack)
     FunctionDocumentation::Arguments arguments = {
         {"arr", "The array for which to add value `x` to the end of.", {"Array(T)"}},
         {"x", R"(
-- Single value to add to the end of the array. [`Array(T)`](/reference/data-types/array).
+- Single value to add to the end of the array. [`Array(T)`](/sql-reference/data-types/array).
 
-<Note>
+:::note
 - Only numbers can be added to an array with numbers, and only strings can be added to an array of strings.
 - When adding numbers, ClickHouse automatically sets the type of `x` for the data type of the array.
 - Can be `NULL`. The function adds a `NULL` element to an array, and the type of array elements converts to `Nullable`.
 
-For more information about the types of data in ClickHouse, see [Data types](/reference/data-types).
-</Note>
+For more information about the types of data in ClickHouse, see [Data types](/sql-reference/data-types).
+:::
     )"},
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an array identical to `arr` but with an additional value `x` at the end of the array", {"Array(T)"}};

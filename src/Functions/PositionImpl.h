@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <string>
 #include <vector>
+#include <Poco/UTF8String.h>
 #include <Common/Volnitsky.h>
 
 namespace DB
@@ -25,7 +26,7 @@ struct PositionCaseSensitiveASCII
     using MultiSearcherInBigHaystack = MultiVolnitsky;
 
     /// For searching single substring, that is different each time. This object is created for each row of data. It must have cheap initialization.
-    using SearcherInSmallHaystack = CaseSensitiveStringSearcher;
+    using SearcherInSmallHaystack = StdLibASCIIStringSearcher</*CaseInsensitive*/ false>;
 
     static SearcherInBigHaystack createSearcherInBigHaystack(const char * needle_data, size_t needle_size, size_t haystack_size_hint)
     {
@@ -50,6 +51,10 @@ struct PositionCaseSensitiveASCII
 
     /// Number of code points between 'begin' and 'end' (this has different behaviour for ASCII and UTF-8).
     static size_t countChars(const char * begin, const char * end) { return end - begin; }
+
+    /// Convert string to lowercase. Only for case-insensitive search.
+    /// Implementation is permitted to be inefficient because it is called for single string.
+    static void toLowerIfNeed(std::string &) { }
 };
 
 
@@ -58,7 +63,7 @@ struct PositionCaseInsensitiveASCII
     /// `Volnitsky` is not used here, because one person has measured that this is better. It will be good if you question it.
     using SearcherInBigHaystack = ASCIICaseInsensitiveStringSearcher;
     using MultiSearcherInBigHaystack = MultiVolnitskyCaseInsensitive;
-    using SearcherInSmallHaystack = ASCIICaseInsensitiveStringSearcher;
+    using SearcherInSmallHaystack = StdLibASCIIStringSearcher</*CaseInsensitive*/ true>;
 
     static SearcherInBigHaystack createSearcherInBigHaystack(const char * needle_data, size_t needle_size, size_t /*haystack_size_hint*/)
     {
@@ -82,6 +87,8 @@ struct PositionCaseInsensitiveASCII
     }
 
     static size_t countChars(const char * begin, const char * end) { return end - begin; }
+
+    static void toLowerIfNeed(std::string & s) { std::transform(std::begin(s), std::end(s), std::begin(s), tolower); }
 };
 
 
@@ -89,7 +96,7 @@ struct PositionCaseSensitiveUTF8
 {
     using SearcherInBigHaystack = VolnitskyUTF8;
     using MultiSearcherInBigHaystack = MultiVolnitskyUTF8;
-    using SearcherInSmallHaystack = CaseSensitiveStringSearcher;
+    using SearcherInSmallHaystack = StdLibASCIIStringSearcher</*CaseInsensitive*/ false>;
 
     static SearcherInBigHaystack createSearcherInBigHaystack(const char * needle_data, size_t needle_size, size_t haystack_size_hint)
     {
@@ -128,6 +135,8 @@ struct PositionCaseSensitiveUTF8
                 ++res;
         return res;
     }
+
+    static void toLowerIfNeed(std::string &) {}
 };
 
 
@@ -163,6 +172,8 @@ struct PositionCaseInsensitiveUTF8
         // reuse implementation that doesn't depend on case
         return PositionCaseSensitiveUTF8::countChars(begin, end);
     }
+
+    static void toLowerIfNeed(std::string & s) { Poco::UTF8::toLowerInPlace(s); }
 };
 
 
@@ -255,7 +266,7 @@ struct PositionImpl
             auto start = start_pos != nullptr ? start_pos->getUInt(i) : 0;
 
             /// We check that the entry does not pass through the boundaries of strings.
-            if (matchFitsInRow(searcher, pos, begin + haystack_offsets[i], needle.size()))
+            if (pos + needle.size() <= begin + haystack_offsets[i])
             {
                 auto res_pos = 1 + Impl::countChars(reinterpret_cast<const char *>(begin + haystack_offsets[i - 1]), reinterpret_cast<const char *>(pos));
                 if (res_pos < start)
@@ -297,21 +308,11 @@ struct PositionImpl
         }
 
         size_t start_byte = Impl::advancePos(data.data(), data.data() + data.size(), start - 1) - data.data();
-
-        const UInt8 * const data_begin = reinterpret_cast<const UInt8 *>(data.data());
-        const UInt8 * const data_end = data_begin + data.size();
-
-        typename Impl::SearcherInSmallHaystack searcher = Impl::createSearcherInSmallHaystack(needle.data(), needle.size());
-        const UInt8 * found = searcher.search(data_begin + start_byte, data_end);
-
-        if (found != data_end)
-        {
-            /// `search` returns only a match that ends before `data_end`.
-            chassert(searcher.matchEnd(found, data_end));
-            res = 1 + Impl::countChars(data.data(), reinterpret_cast<const char *>(found));
-        }
-        else
+        res = data.find(needle, start_byte);
+        if (res == std::string::npos)
             res = 0;
+        else
+            res = 1 + Impl::countChars(data.data(), data.data() + res);
     }
 
     /// Search for substring in string starting from different positions.
@@ -324,6 +325,9 @@ struct PositionImpl
     {
         /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
         chassert(!res_null);
+
+        Impl::toLowerIfNeed(data);
+        Impl::toLowerIfNeed(needle);
 
         if (start_pos == nullptr)
         {
@@ -383,11 +387,6 @@ struct PositionImpl
             {
                 /// An empty string is always at any position in `haystack`.
                 res[i] = start;
-            }
-            else if (haystack_size == 0)
-            {
-                /// A non-empty needle is never found in an empty haystack; do not pay the searcher initialization.
-                res[i] = 0;
             }
             else
             {
@@ -451,10 +450,6 @@ struct PositionImpl
             else if (0 == needle_size)
             {
                 res[i] = start;
-            }
-            else if (haystack.empty())
-            {
-                res[i] = 0;
             }
             else
             {

@@ -70,23 +70,18 @@ void collectColumnPaths(
             uint32_t i = 1;
             ArrayType * at = dynamic_cast<ArrayType *>(tp);
             ArrayType * at2 = at;
+            ArrayType * at3 = nullptr;
 
-            while (at)
+            while (at && (at = dynamic_cast<ArrayType *>(at->subtype.get())))
             {
-                at = dynamic_cast<ArrayType *>(at->subtype.get());
-                if (!at)
-                    break;
                 next.path.emplace_back(ColumnPathChainEntry("size" + std::to_string(i), &(*size_tp)));
                 paths.push_back(next);
                 next.path.pop_back();
                 i++;
             }
             /// Array null values
-            while (at2)
+            while (at2 && (at3 = dynamic_cast<ArrayType *>(at2->subtype.get())))
             {
-                ArrayType * at3 = dynamic_cast<ArrayType *>(at2->subtype.get());
-                if (!at3)
-                    break;
                 at2 = at3;
             }
             if (at2)
@@ -290,7 +285,7 @@ StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_i
                 rel.cols.emplace_back(SQLRelationCol(rel_name, {"_tags"}));
             }
         }
-        else if (t.isDistributedEngine() || t.isAnyRemoteEngine())
+        else if (t.isDistributedEngine())
         {
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_shard_num"}, size_tp.get()));
         }
@@ -1007,10 +1002,10 @@ void StatementGenerator::generateMergeTreeEngineDetails(
         chassert(this->ids.empty());
         for (const auto & entry : this->entries)
         {
+            IntType * itp = nullptr;
             SQLType * tp = entry.getBottomType();
-            const auto * itp = dynamic_cast<IntType *>(tp);
 
-            if (itp && itp->is_unsigned)
+            if ((itp = dynamic_cast<IntType *>(tp)) && itp->is_unsigned)
             {
                 const TableKey & tpk = te->primary_key();
 
@@ -1174,10 +1169,7 @@ String StatementGenerator::getTableStructure(RandomGenerator & rg, const SQLTabl
         /// modifier the external catalog can't express. Don't return an empty structure string, use all columns
         flatTableColumnPath(to_remote_entries, t.cols, [](const SQLColumn &) { return true; });
     }
-    if (this->allow_not_deterministic)
-    {
-        std::shuffle(this->remote_entries.begin(), this->remote_entries.end(), rg.generator);
-    }
+    std::shuffle(this->remote_entries.begin(), this->remote_entries.end(), rg.generator);
     for (const auto & entry : this->remote_entries)
     {
         buf += fmt::format(
@@ -1240,14 +1232,6 @@ void StatementGenerator::generateEngineDetails(
     }
     else if (te->has_engine() && b.isFileEngine())
     {
-        if (b.integration == IntegrationCall::Dolor)
-        {
-            /// Ask Spark to write the data file before ClickHouse creates the table over it
-            if (SQLTable * t = dynamic_cast<SQLTable *>(&b))
-            {
-                connections.createExternalDatabaseTable(rg, *t, entries, te);
-            }
-        }
         if (b.file_format.has_value())
         {
             te->add_params()->set_in_out(b.file_format.value());
@@ -1314,7 +1298,7 @@ void StatementGenerator::generateEngineDetails(
         }
         te->add_params()->set_svalue(std::move(mergeDesc));
     }
-    else if (te->has_engine() && (b.isDistributedEngine() || b.isAnyRemoteEngine() || b.isBufferEngine() || b.isAliasEngine()))
+    else if (te->has_engine() && (b.isDistributedEngine() || b.isBufferEngine() || b.isAliasEngine()))
     {
         SQLTable * bt = dynamic_cast<SQLTable *>(&b);
         const SQLTable * tt = nullptr;
@@ -1329,14 +1313,7 @@ void StatementGenerator::generateEngineDetails(
 
         if (b.isDistributedEngine())
         {
-            /// `Distributed` reads from a configured cluster.
             te->add_params()->set_svalue(rg.pickRandomly(fc.clusters));
-        }
-        else if (b.isAnyRemoteEngine())
-        {
-            /// `Remote` / `RemoteSecure` build a cluster on the fly from an addresses expression,
-            /// exactly like the `remote` / `remoteSecure` table functions.
-            te->add_params()->set_svalue(getNextTestingAddress(rg, b.isRemoteSecureEngine()));
         }
         rg.pickWeighted(
             {{dist_table,
@@ -1398,45 +1375,29 @@ void StatementGenerator::generateEngineDetails(
                 te->add_params()->set_svalue(rg.pickRandomly(fc.storage_policies));
             }
         }
-        else if (b.isAnyRemoteEngine() && rg.nextBool())
-        {
-            /// Optional positional `user[, password[, sharding_key]]`, matching the `remote` function.
-            const bool with_password = rg.nextBool();
-
-            te->add_params()->set_svalue("default");
-            if (with_password)
-            {
-                te->add_params()->set_svalue("");
-            }
-            /// The sharding key is only reachable positionally once user (and here password) precede it.
-            if (with_password && rg.nextBool())
-            {
-                setRandomShardKey(rg, bt ? std::make_optional<SQLTable>(*bt) : std::nullopt, te->add_params()->mutable_expr());
-            }
-        }
         else if (b.isBufferEngine())
         {
             /// num_layers
-            te->add_params()->set_num(rg.nextLargeNumber() % 101);
+            te->add_params()->set_num(static_cast<uint32_t>(rg.nextLargeNumber() % 101));
             /// min_time, max_time, min_rows, max_rows, min_bytes, max_bytes
             for (int i = 0; i < 6; i++)
             {
-                te->add_params()->set_num(rg.nextLargeNumber() % 1001);
+                te->add_params()->set_num(static_cast<uint32_t>(rg.nextLargeNumber() % 1001));
             }
             if (rg.nextSmallNumber() < 7)
             {
                 /// flush_time
-                te->add_params()->set_num(rg.nextLargeNumber() % 61);
+                te->add_params()->set_num(static_cast<uint32_t>(rg.nextLargeNumber() % 61));
             }
             if (rg.nextSmallNumber() < 7)
             {
                 /// flush_rows
-                te->add_params()->set_num(rg.nextLargeNumber() % 1001);
+                te->add_params()->set_num(static_cast<uint32_t>(rg.nextLargeNumber() % 1001));
             }
             if (rg.nextSmallNumber() < 7)
             {
                 /// flush_bytes
-                te->add_params()->set_num(rg.nextLargeNumber() % 1001);
+                te->add_params()->set_num(static_cast<uint32_t>(rg.nextLargeNumber() % 1001));
             }
         }
     }
@@ -1526,18 +1487,6 @@ void StatementGenerator::generateEngineDetails(
     {
         /// Optional PARTITION BY
         generateTableKey(rg, rel, b, false, te->mutable_partition_by());
-        if (b.isAnyIcebergEngine() && te->partition_by().exprs_size() > 0)
-        {
-            /// Keep it to find the values of existing partitions for DROP PARTITION
-            String key = "(";
-
-            for (int i = 0; i < te->partition_by().exprs_size(); i++)
-            {
-                key += i == 0 ? "" : ", ";
-                SQLExprToString(key, te->partition_by().exprs(i).expr());
-            }
-            b.iceberg_partition_key = key + ")";
-        }
     }
     if (te->has_engine())
     {
@@ -1571,11 +1520,9 @@ void StatementGenerator::generateEngineDetails(
             /// The mode setting is mandatory
             SettingValues * svs = te->mutable_setting_values();
             SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
-            /// `exclusive` tracks processed files in this server's memory instead of Keeper
-            static const DB::Strings queue_modes = {"'ordered'", "'unordered'", "'exclusive'"};
 
             sv->set_property("mode");
-            sv->set_value(rg.pickRandomly(queue_modes));
+            sv->set_value(fmt::format("'{}ordered'", rg.nextBool() ? "un" : ""));
 
             if (rg.nextSmallNumber() < 3)
             {
@@ -1796,7 +1743,7 @@ String StatementGenerator::addTableColumn(
         if (t.hasPostgreSQLPeer())
         {
             /// Datetime must have 6 digits precision
-            this->next_type_mask &= ~set_any_datetime_precision;
+            this->next_type_mask &= ~(set_any_datetime_precision);
         }
     }
     if ((t.isSQLiteEngine() && (t.isDeterministic() || rg.nextSmallNumber() < 8)) || t.hasSQLitePeer())
@@ -1819,7 +1766,7 @@ String StatementGenerator::addTableColumn(
     if (t.hasDatabasePeer())
     {
         /// ClickHouse's UUID sorting order is different from other databases
-        this->next_type_mask &= ~allow_uuid;
+        this->next_type_mask &= ~(allow_uuid);
     }
     addTableColumnInternal(rg, t, modify, is_pk, special, col, cd);
 
@@ -1837,7 +1784,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
 
     if (usage == IndexUsage::HypotheticalIndex)
     {
-        /// `InterpreterHypotheticalObjectQuery` rejects text and vector similarity indexes with `NOT_IMPLEMENTED`
+        /// `InterpreterHypotheticalIndexQuery` rejects text and vector similarity indexes with `NOT_IMPLEMENTED`
         static const std::vector<IndexType> hypothetical_index_types
             = {IndexType::IDX_set,
                IndexType::IDX_minmax,
@@ -2010,7 +1957,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             String buf;
             bool has_paren = rg.nextSmallNumber() < 8;
             static const DB::Strings tokenizerVals
-                = {"splitByNonAlpha", "splitByString", "ngrams", "array", "keyword", "sparseGrams", "asciiCJK", "unicodeWord"};
+                = {"splitByNonAlpha", "splitByString", "ngrams", "array", "sparseGrams", "asciiCJK", "unicodeWord"};
             const auto & nt = rg.pickRandomly(fc.tokenizers.empty() ? tokenizerVals : fc.tokenizers);
 
             buf += fmt::format("tokenizer = {}", nt);
@@ -2098,7 +2045,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             }
             if (rg.nextBool())
             {
-                static const DB::Strings post_codecs = {"none", "bitpacking", "pfor"};
+                static const DB::Strings post_codecs = {"none", "bitpacking"};
 
                 idef->add_params()->set_unescaped_sval("posting_list_codec = '" + rg.pickRandomly(post_codecs) + "'");
             }
@@ -2147,13 +2094,9 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
     }
 }
 
-void StatementGenerator::addTableProjection(RandomGenerator & rg, SQLTable & t, const ProjectionUsage usage, ProjectionDef * pdef)
+void StatementGenerator::addTableProjection(RandomGenerator & rg, SQLTable & t, ProjectionDef * pdef)
 {
-    const bool hypothetical = usage == ProjectionUsage::HypotheticalProjection;
-    const String prefix = hypothetical ? "hp" : "p";
-    uint32_t & counter = hypothetical ? t.hproj_counter : t.proj_counter;
-
-    pdef->mutable_proj()->set_value(rg.nextIdentifier(prefix, counter++, fc.allow_nasty_identifiers));
+    pdef->mutable_proj()->set_value(rg.nextIdentifier("p", t.proj_counter++, fc.allow_nasty_identifiers));
     this->inside_projection = true;
     if (rg.nextBool())
     {
@@ -2372,13 +2315,6 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
         if (!fc.clusters.empty() && (fc.engine_mask & allow_distributed) != 0)
         {
             this->ids.emplace_back(Distributed);
-        }
-        /// Remote / RemoteSecure build a cluster on the fly from addresses, so (unlike Distributed)
-        /// they don't need a configured cluster — only a target table on the (local) remote server.
-        if ((fc.engine_mask & allow_remote) != 0)
-        {
-            this->ids.emplace_back(Remote);
-            this->ids.emplace_back(RemoteSecure);
         }
         if ((fc.engine_mask & allow_alias) != 0)
         {
@@ -2609,7 +2545,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
                  {add_proj,
                   [&]
                   {
-                      addTableProjection(rg, next, ProjectionUsage::TableProjection, ndef->mutable_proj_def());
+                      addTableProjection(rg, next, ndef->mutable_proj_def());
                       added_projs++;
                   }},
                  {add_const,
@@ -2732,11 +2668,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
     }
     setClusterClause(rg, next.cluster, ct->mutable_cluster());
     if ((next.isAnyIcebergEngine() && next.integration == IntegrationCall::Dolor && next.getLakeCatalog() == LakeCatalog::None)
-        /// Alias never accepts an explicit column list (StorageAlias throws), so always omit it
-        || next.isAliasEngine()
-        /// Distributed/Remote/Buffer infer their schema from the target, but also accept an
-        /// explicit one, so exercise both by omitting it only most of the time
-        || ((next.isDistributedEngine() || next.isAnyRemoteEngine() || next.isBufferEngine()) && rg.nextMediumNumber() < 96))
+        || ((next.isDistributedEngine() || next.isBufferEngine() || next.isAliasEngine()) && rg.nextMediumNumber() < 96))
     {
         /// For Iceberg tables created from Spark, don't give table schema
         ct->clear_table_def();
@@ -3296,21 +3228,9 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         }
     }
 
-    SettingValues * dsvs = nullptr;
     if (rg.nextSmallNumber() < 3)
     {
-        dsvs = cd->mutable_setting_values();
-        generateSettingValues(rg, formatSettings, dsvs);
-    }
-    if (rg.nextSmallNumber() < 4)
-    {
-        /// Honored only in the dictionary DDL, a session value has no effect
-        static const DB::Strings lazyLoadChoices = {"'auto'", "0", "1"};
-
-        dsvs = dsvs ? dsvs : cd->mutable_setting_values();
-        SetValue * sv = dsvs->has_set_value() ? dsvs->add_other_values() : dsvs->mutable_set_value();
-        sv->set_property("dictionary_lazy_load");
-        sv->set_value(rg.pickRandomly(lazyLoadChoices));
+        generateSettingValues(rg, formatSettings, cd->mutable_setting_values());
     }
     this->enforce_final = prev_enforce_final;
     this->allow_not_deterministic = prev_allow_not_deterministic;
@@ -3352,18 +3272,6 @@ DatabaseEngineValues StatementGenerator::getNextDatabaseEngine(RandomGenerator &
     if (std::ranges::any_of(backups, [](const auto & b) { return !b.second.databases.empty(); }) && (fc.engine_mask & allow_backup) != 0)
     {
         this->ids.emplace_back(DBackup);
-    }
-    if (!fc.clusters.empty() && (fc.engine_mask & allow_cluster_database) != 0)
-    {
-        this->ids.emplace_back(DCluster);
-    }
-    if ((fc.engine_mask & allow_remote_database) != 0)
-    {
-        this->ids.emplace_back(rg.nextSmallNumber() < 4 ? DRemoteSecure : DRemote);
-    }
-    if ((fc.engine_mask & allow_overlay_database) != 0)
-    {
-        this->ids.emplace_back(DOverlay);
     }
     const auto res = static_cast<DatabaseEngineValues>(rg.pickRandomly(this->ids));
     this->ids.clear();
@@ -3417,57 +3325,6 @@ void StatementGenerator::generateDatabaseEngineDetails(RandomGenerator & rg, SQL
         de->add_params()->mutable_backup_out()->CopyFrom(backup.bout);
         d.backup_number = backup.bout.backup_number();
     }
-    else if (d.isProxyDatabase())
-    {
-        /// Proxy another database, sometimes another proxy one (a chain)
-        const auto next_proxy_target = [&]() -> String
-        {
-            const uint32_t noption = rg.nextMediumNumber();
-
-            if (noption < 6)
-            {
-                /// A missing database, or the new database itself, which the server rejects as a cycle
-                return rg.nextBool() ? d.getName() : "nonexistent";
-            }
-            if (noption < 61 && collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases))
-            {
-                return rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases)).get()->getName();
-            }
-            return rg.nextSmallNumber() < 9 ? "default" : "system";
-        };
-
-        d.proxy_target = next_proxy_target();
-        if (d.isOverlayDatabase())
-        {
-            const uint32_t nsources = rg.randomInt<uint32_t>(1, 3);
-
-            de->add_params()->set_svalue(d.proxy_target);
-            for (uint32_t i = 1; i < nsources; i++)
-            {
-                de->add_params()->set_svalue(next_proxy_target());
-            }
-        }
-        else if (d.isClusterDatabase())
-        {
-            /// Cluster('cluster_name', 'database')
-            de->add_params()->set_svalue(rg.pickRandomly(fc.clusters));
-            de->add_params()->set_svalue(d.proxy_target);
-        }
-        else
-        {
-            /// Remote('addresses_expr', 'database'[, 'user'[, 'password']])
-            de->add_params()->set_svalue(getNextRandomServerAddresses(rg, d.deng == DatabaseEngineValues::DRemoteSecure));
-            de->add_params()->set_svalue(d.proxy_target);
-            if (rg.nextBool())
-            {
-                de->add_params()->set_svalue("default");
-                if (rg.nextBool())
-                {
-                    de->add_params()->set_svalue("");
-                }
-            }
-        }
-    }
     d.finishDatabaseSpecification(de);
 }
 
@@ -3504,13 +3361,12 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
     {
         cd->set_comment(nextComment(rg));
     }
-    /// The Cluster, Remote and Overlay engines take no settings
-    if (!next.isProxyDatabase() && rg.nextSmallNumber() < 4)
+    if (rg.nextSmallNumber() < 4)
     {
         /// Add general database settings
         generateSettingValues(rg, allDatabaseSettings, deng->mutable_setting_values());
     }
-    if (!next.isReplicatedOrSharedDatabase() && !next.isDataLakeCatalogDatabase() && !next.isProxyDatabase() && rg.nextSmallNumber() < 4)
+    if (!next.isReplicatedOrSharedDatabase() && !next.isDataLakeCatalogDatabase() && rg.nextSmallNumber() < 4)
     {
         /// Add server settings
         generateSettingValues(rg, formatSettings, deng->mutable_setting_values());

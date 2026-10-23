@@ -38,43 +38,25 @@ IProcessor::IProcessor(InputPorts inputs_, OutputPorts outputs_) : inputs(std::m
     processor_index = CurrentThread::isInitialized() ? CurrentThread::get().getNextPipelineProcessorIndex() : 0;
 }
 
-bool IProcessor::isAnyOutputNeeded() const
-{
-    for (const auto & output : outputs)
-        if (!output.isFinished() && output.isNeeded())
-            return true;
-    return false;
-}
-
 void IProcessor::setQueryPlanStep(const IQueryPlanStep * step, size_t group)
 {
     query_plan_step = step;
     query_plan_step_group = group;
-    query_plan_step_wall_clock_ptr = nullptr;
     if (step)
     {
         plan_step_name = step->getName();
         plan_step_description = step->getStepDescription();
         step_uniq_id = step->getUniqID();
-        query_plan_step_id = step->getStepIndex() + 1;
     }
-}
-
-void IProcessor::setQueryPlanStepGroup(size_t group)
-{
-    query_plan_step_group = group;
-    query_plan_step_wall_clock_ptr = nullptr;
 }
 
 void IProcessor::inheritQueryPlanStepFromParent(const IProcessor & parent, size_t group)
 {
     query_plan_step = parent.query_plan_step;
     query_plan_step_group = group;
-    query_plan_step_wall_clock_ptr = nullptr;
     plan_step_name = parent.plan_step_name;
     plan_step_description = parent.plan_step_description;
     step_uniq_id = parent.step_uniq_id;
-    query_plan_step_id = parent.query_plan_step_id;
 }
 
 IProcessor::Status IProcessor::prepare()
@@ -173,22 +155,23 @@ IProcessor::ProcessorDataStats IProcessor::getProcessorDataStats() const
     return stats;
 }
 
-ProcessorsProfileLogInfo IProcessor::getProcessorsProfileLogInfo() const
+IProcessor::ProcessorsProfileLogInfo IProcessor::getProcessorsProfileLogInfo() const
 {
     ProcessorsProfileLogInfo info;
 
-    /// Indices unique within the query, not heap addresses, which must not be published.
-    info.id = processor_index;
+    auto get_proc_id = [](const IProcessor & proc) -> UInt64 { return reinterpret_cast<std::uintptr_t>(&proc); };
+
+    info.id = get_proc_id(*this);
 
     for (const auto & port : outputs)
     {
         if (!port.isConnected())
             continue;
         const IProcessor & next = port.getInputPort().getProcessor();
-        info.parent_ids.push_back(next.processor_index);
+        info.parent_ids.push_back(get_proc_id(next));
     }
 
-    info.plan_step = query_plan_step_id;
+    info.plan_step = reinterpret_cast<std::uintptr_t>(query_plan_step);
     info.plan_step_name = plan_step_name;
     info.plan_step_description = plan_step_description;
     info.plan_group = query_plan_step_group;

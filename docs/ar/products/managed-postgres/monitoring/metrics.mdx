@@ -1,21 +1,23 @@
 ---
 slug: /cloud/managed-postgres/monitoring/metrics
 sidebarTitle: 'مرجع المقاييس'
-title: 'مرجع مقاييس ClickHouse Managed Postgres'
-description: 'القائمة الكاملة للمقاييس التي توفّرها نقطة نهاية Prometheus الخاصة بـ ClickHouse Managed Postgres'
+title: 'مرجع مقاييس Managed Postgres'
+description: 'القائمة الكاملة للمقاييس التي توفّرها نقطة نهاية Prometheus الخاصة بـ Managed Postgres'
 keywords: ['managed postgres', 'المقاييس', 'Prometheus', 'مرجع', 'observability']
 doc_type: 'reference'
 ---
 
-import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-metrics-beta" />
 
 تسرد هذه الصفحة جميع المقاييس التي يوفّرها
-[نقطة نهاية Prometheus الخاصة بـ ClickHouse Managed Postgres](/ar/products/managed-postgres/monitoring/prometheus).
+[Managed Postgres Prometheus endpoint](/ar/products/managed-postgres/monitoring/prometheus).
 لإعداد الخدمة والمصادقة، راجع صفحة [نقطة نهاية Prometheus].
 
-## الوسوم الشائعة {#common-labels}
+<div id="common-labels">
+  ## الوسوم الشائعة
+</div>
 
 يحمل كل مقياس الوسوم التالية:
 
@@ -29,7 +31,9 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 `mode` في مقاييس CPU، و`state` في مقاييس الاتصالات، و`database` في حجم
 قاعدة البيانات). وتُدرج هذه الوسوم إلى جانب كل مقياس.
 
-## مقياس المعلومات {#information-metric}
+<div id="information-metric">
+  ## مقياس المعلومات
+</div>
 
 `PostgresServiceInfo` هو مقياس من نوع مقياس لحظي تكون قيمته دائمًا `1`، ويحمل
 حالة الخدمة الحالية وإصدارها ضمن وسومه. استخدمه لضمّ
@@ -44,7 +48,9 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 (على سبيل المثال `running` و`creating` و`stopped`). ويعرض `postgres_version`
 الإصدار الرئيسي من Postgres (مثل `17` و`18`).
 
-## السعة {#capacity}
+<div id="capacity">
+  ## السعة
+</div>
 
 الحدود الثابتة المخصصة للخدمة. لا تتغير إلا عند
 تغيير حجم الخدمة.
@@ -55,7 +61,9 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 | `PostgresServer_MemoryLimitBytes`  | مقياس لحظي | بايت   | الذاكرة المخصصة للخدمة.       |
 | `PostgresServer_StorageLimitBytes` | مقياس لحظي | بايت   | التخزين المخصص للخدمة.        |
 
-## استخدام الموارد {#resource-utilization}
+<div id="resource-utilization">
+  ## استخدام الموارد
+</div>
 
 | المقياس                                | النوع | الوسوم الإضافية | الوصف                                                                                                      |
 | -------------------------------------- | ----- | ----------------- | ---------------------------------------------------------------------------------------------------------- |
@@ -68,7 +76,9 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 `PostgresServer_CPUSeconds_Total` عبر الأوضاع التي تهمك
 ثم اقسمه على `PostgresServer_CPUCores`.
 
-## إدخال/إخراج القرص والشبكة {#io}
+<div id="io">
+  ## إدخال/إخراج القرص والشبكة
+</div>
 
 | المقياس                                     | النوع | الوحدة | الوصف                          |
 | ------------------------------------------- | ----- | ------ | ------------------------------ |
@@ -77,7 +87,9 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 | `PostgresServer_NetworkReceiveBytes_Total`  | عداد  | bytes  | البايتات المستلَمة عبر الشبكة. |
 | `PostgresServer_NetworkTransmitBytes_Total` | عداد  | bytes  | البايتات المُرسَلة عبر الشبكة. |
 
-## نشاط قاعدة البيانات {#database-activity}
+<div id="database-activity">
+  ## نشاط قاعدة البيانات
+</div>
 
 عدادات تراكمية منذ بدء الخدمة. استخدم `rate()` أو `irate()` لتحويلها
 إلى قيم لكل ثانية.
@@ -92,28 +104,9 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 | `PostgresServer_TransactionsRolledBack_Total` | عداد  | المعاملات التي جرى التراجع عنها. |
 | `PostgresServer_Deadlocks_Total`              | عداد  | حالات الجمود المكتشفة.           |
 
-## أداء الاستعلامات {#query-performance}
-
-عدّادات مستمدة من أحداث Query Insights المسجَّلة، باستثناء عمليات `UTILITY`.
-
-| المقياس                                    | النوع   | الوحدة       | الوصف                                                                     |
-| ------------------------------------------ | ------- | ------------ | ------------------------------------------------------------------------- |
-| `PostgresQuery_Calls_Total`                | عداد | events       | أحداث الاستعلامات المسجَّلة.                                              |
-| `PostgresQuery_DurationMicroseconds_Total` | عداد | microseconds | إجمالي مدة الاستعلامات المسجَّلة.                                         |
-| `PostgresQuery_ErrorEvents_Total`          | عداد | events       | الأحداث المسجَّلة التي تحمل درجة خطورة خطأ غير صفرية، بما فيها التحذيرات. |
-| `PostgresQuery_FailureEvents_Total`        | عداد | events       | الأحداث المسجَّلة التي تبلغ درجة خطورتها `ERROR` أو أعلى.                 |
-| `PostgresQuery_Rows_Total`                 | عداد | صف         | الصفوف التي أعادتها الاستعلامات المسجَّلة أو أثّرت فيها.                  |
-| `PostgresQuery_SharedBlocksHit_Total`      | عداد | كتلة       | الكتل المشتركة التي خُدِّمت من الذاكرة المؤقتة للاستعلامات المسجَّلة.     |
-| `PostgresQuery_SharedBlocksRead_Total`     | عداد | كتلة       | الكتل المشتركة التي قرأتها الاستعلامات المسجَّلة.                         |
-| `PostgresQuery_WALBytes_Total`             | عداد | bytes        | بايتات WAL التي ولّدتها الاستعلامات المسجَّلة.                            |
-| `PostgresQuery_SelectCalls_Total`          | عداد | events       | أحداث `SELECT` المسجَّلة.                                                 |
-| `PostgresQuery_InsertCalls_Total`          | عداد | events       | أحداث `INSERT` المسجَّلة.                                                 |
-| `PostgresQuery_UpdateCalls_Total`          | عداد | events       | أحداث `UPDATE` المسجَّلة.                                                 |
-| `PostgresQuery_DeleteCalls_Total`          | عداد | events       | أحداث `DELETE` المسجَّلة.                                                 |
-| `PostgresQuery_MergeCalls_Total`           | عداد | events       | أحداث `MERGE` المسجَّلة.                                                  |
-| `PostgresQuery_OtherCalls_Total`           | عداد | events       | الأحداث المسجَّلة من غير `SELECT` و`INSERT` و`UPDATE` و`DELETE` و`MERGE`. |
-
-## الاتصالات والذاكرة المؤقتة وحجم قاعدة البيانات {#connections-cache-size}
+<div id="connections-cache-size">
+  ## الاتصالات والذاكرة المؤقتة وحجم قاعدة البيانات
+</div>
 
 | المقياس                            | النوع | الوسوم الإضافية | الوصف                                                                                                                       |
 | ---------------------------------- | ----- | ----------------- | --------------------------------------------------------------------------------------------------------------------------- |
@@ -121,7 +114,9 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 | `PostgresServer_CacheHitRatio`     | مقياس لحظي |                   | نسبة إصابة الذاكرة المؤقتة: الكتل التي جرى تقديمها من الذاكرة المؤقتة مقابل إجمالي الكتل التي تم الوصول إليها، كنسبة مئوية. |
 | `PostgresServer_DatabaseSizeBytes` | مقياس لحظي | `database`        | حجم القرص لكل قاعدة بيانات، بالبايت. يشمل قاعدة `postgres` الافتراضية وأي قواعد بيانات أنشأها المستخدم.                     |
 
-## صفحات ذات صلة {#related}
+<div id="related">
+  ## صفحات ذات صلة
+</div>
 
 * [نقطة نهاية Prometheus] — الإعداد والمصادقة والكشط
 * [لوحة المعلومات](/ar/products/managed-postgres/monitoring/dashboard) — المخططات المضمّنة في Cloud Console

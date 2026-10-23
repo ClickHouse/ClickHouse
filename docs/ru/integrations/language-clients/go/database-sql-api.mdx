@@ -16,7 +16,9 @@ API `database/sql`, или «стандартный» API, позволяет и
 
 Кроме того, этот клиент поддерживает использование HTTP в качестве транспортного уровня — при этом данные по-прежнему кодируются в формате Native для оптимальной производительности.
 
-## Подключение {#connecting}
+<div id="connecting">
+  ## Подключение
+</div>
 
 Подключиться можно либо с помощью строки DSN в формате `clickhouse://<host>:<port>?<query_option>=<value>` и метода `Open`, либо через метод `clickhouse.OpenDB`. Последний не входит в спецификацию `database/sql`, но возвращает экземпляр `sql.DB`. Этот метод предоставляет дополнительные возможности, например доступ к данным профилирования, для которых спецификация `database/sql` не предлагает очевидного способа предоставления.
 
@@ -54,7 +56,9 @@ func ConnectDSN() error {
 
 **Во всех последующих примерах, если не указано иное, предполагается, что переменная ClickHouse `conn` уже создана и доступна.**
 
-### Настройки подключения {#connection-settings}
+<div id="connection-settings">
+  ### Настройки подключения
+</div>
 
 Большинство параметров конфигурации являются общими с API ClickHouse. Общие настройки см. в разделе [Конфигурация](/ru/integrations/language-clients/go/configuration). Доступны следующие параметры DSN, специфичные для SQL:
 
@@ -92,7 +96,9 @@ func ConnectSettings() error {
 
 [Полный пример](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/connect_settings.go)
 
-### Подключение по HTTP {#connecting-over-http}
+<div id="connecting-over-http">
+  ### Подключение по HTTP
+</div>
 
 По умолчанию соединения устанавливаются по собственному протоколу. Если вам нужен HTTP, это можно включить: либо изменить DSN, добавив HTTP-протокол, либо указать `Protocol` в параметрах подключения.
 
@@ -129,7 +135,9 @@ func ConnectDSNHTTP() error {
 
 [Полный пример](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/connect_http.go)
 
-### Сеансы {#sessions}
+<div id="sessions">
+  ### Сеансы
+</div>
 
 <Info>
   **Только HTTP**
@@ -203,7 +211,9 @@ if err := rows.Err(); err != nil {
 
 [Полный пример](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/session.go)
 
-## Выполнение {#execution}
+<div id="execution">
+  ## Выполнение
+</div>
 
 После получения соединения можно выполнять команды `sql` с помощью метода Exec.
 
@@ -225,7 +235,9 @@ _, err = conn.Exec("INSERT INTO example VALUES (1, 'test-1')")
 
 Этот метод не поддерживает передачу контекста — по умолчанию он выполняется с фоновым контекстом. При необходимости используйте `ExecContext`, см. [Использование контекста](#using-context).
 
-## Вставка батчами {#batch-insert}
+<div id="batch-insert">
+  ## Вставка батчами
+</div>
 
 Семантику батча можно реализовать, создав `sql.Tx` с помощью метода `Being`. Из него можно получить батч с помощью метода `Prepare` и оператора `INSERT`. В результате возвращается `sql.Stmt`, к которому можно добавлять строки с помощью метода `Exec`. Батч будет накапливаться в памяти, пока для исходного `sql.Tx` не будет выполнен `Commit`.
 
@@ -259,7 +271,9 @@ return scope.Commit()
 
 [Полный пример](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/batch.go)
 
-## Запрос строк {#querying-rows}
+<div id="querying-rows">
+  ## Запрос строк
+</div>
 
 Получить одну строку можно с помощью метода `QueryRow`. Он возвращает *sql.Row, для которого можно вызвать `Scan`, передав указатели на переменные, в которые будут записаны значения столбцов. Вариант `QueryRowContext` позволяет передать контекст, отличный от background — см. [Использование контекста](#using-context).
 
@@ -311,7 +325,9 @@ if err := rows.Err(); err != nil {
 
 [Полный пример](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/query_rows.go)
 
-## Асинхронная вставка {#async-insert}
+<div id="async-insert">
+  ## Асинхронная вставка
+</div>
 
 Асинхронные вставки можно выполнять с помощью метода `ExecContext`. В него нужно передать контекст с включенным асинхронным режимом, как показано ниже. Это позволяет указать, должен ли клиент ждать, пока сервер завершит вставку, или отвечать сразу после получения данных. По сути, это управляет параметром [wait&#95;for&#95;async&#95;insert](/ru/reference/settings/session-settings#wait_for_async_insert).
 
@@ -342,29 +358,9 @@ ctx := clickhouse.Context(context.Background(), clickhouse.WithStdAsync(false))
 
 [Полный пример](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/async.go)
 
-## Серверные параметры запроса {#server-side-query-parameters}
-
-Стандартный API поддерживает серверные параметры запроса ClickHouse с помощью типизированных плейсхолдеров `{name:Type}` и значений `clickhouse.Named`:
-
-```go
-row := conn.QueryRowContext(ctx,
-    "SELECT {user_id:UInt64}, {message:String}",
-    clickhouse.Named("user_id", uint64(12345)),
-    clickhouse.Named("message", `line 1\nline 2`),
-)
-```
-
-Значение типа `string`/`*string` или `[]byte`/`*[]byte`, переданное через `clickhouse.Named`, считается литералом и экранируется драйвером, поэтому при обратимом обмене оно сохраняется байт в байт. Если в передаваемых данных нужен именно символ перевода строки или табуляции, используйте в значении Go настоящий символ:
-
-```go
-clickhouse.Named("message", "line 1\nline 2") // literal newline — round-trips
-```
-
-Если текст параметров уже сериализован в формате ClickHouse `Escaped`, используйте вместо этого `WithParameters`. Подробное описание типов, экранирования и отличий `{name:Type}` от привязки на стороне клиента см. в разделе [Серверные параметры запроса](/ru/integrations/language-clients/go/clickhouse-api#server-side-query-parameters).
-
-[Полный пример для стандартного API](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/query_parameters.go)
-
-## Привязка параметров {#parameter-binding}
+<div id="parameter-binding">
+  ## Привязка параметров
+</div>
 
 Стандартный API поддерживает те же возможности привязки параметров, что и [API ClickHouse](/ru/integrations/language-clients/go/clickhouse-api#parameter-binding): параметры можно передавать в методы `Exec`, `Query` и `QueryRow` (а также в их эквивалентные варианты с [Context](#using-context)). Поддерживаются позиционные, именованные и нумерованные параметры.
 
@@ -394,7 +390,9 @@ fmt.Printf("Named bind count: %d\n", count)
 
 Обратите внимание: [особые случаи](/ru/integrations/language-clients/go/clickhouse-api#special-cases) по-прежнему действуют.
 
-## Использование контекста {#using-context}
+<div id="using-context">
+  ## Использование контекста
+</div>
 
 Стандартный API поддерживает ту же возможность передавать через контекст дедлайны, сигналы отмены и другие значения, относящиеся к конкретному запросу, что и [API ClickHouse](/ru/integrations/language-clients/go/clickhouse-api#using-context). В отличие от API ClickHouse, здесь это реализовано через варианты методов с `Context`: например, у методов вроде `Exec`, которые по умолчанию используют фоновый контекст, есть вариант `ExecContext`, в который контекст передаётся первым параметром. Это позволяет передавать контекст на любом этапе работы приложения. Например, вы можете передать контекст при установлении соединения через `ConnContext` или при запросе одной строки через `QueryRowContext`. Ниже приведены примеры всех доступных методов.
 
@@ -477,7 +475,9 @@ if err := rows.Err(); err != nil {
 
 [Полный пример](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/context.go)
 
-## Динамическое сканирование {#dynamic-scanning}
+<div id="dynamic-scanning">
+  ## Динамическое сканирование
+</div>
 
 Как и в [API ClickHouse](/ru/integrations/language-clients/go/clickhouse-api#dynamic-scanning), здесь доступна информация о типах столбцов, которая позволяет во время выполнения создавать экземпляры переменных с корректными типами и передавать их в Scan. Это позволяет считывать столбцы, даже если их тип заранее неизвестен.
 
@@ -522,7 +522,9 @@ if err := rows.Err(); err != nil {
 
 [Полный пример](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/dynamic_scan_types.go)
 
-## Внешние таблицы {#external-tables}
+<div id="external-tables">
+  ## Внешние таблицы
+</div>
 
 [Внешние таблицы](/ru/reference/engines/table-engines/special/external-data) позволяют клиенту отправлять данные в ClickHouse вместе с запросом `SELECT`. Эти данные помещаются во временную таблицу и могут использоваться в самом запросе при вычислениях.
 
@@ -593,7 +595,9 @@ fmt.Printf("external_table_1 UNION external_table_2: %d\n", count)
 
 [Полный пример](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/external_data.go)
 
-## OpenTelemetry {#open-telemetry}
+<div id="open-telemetry">
+  ## OpenTelemetry
+</div>
 
 ClickHouse поддерживает [передачу контекста трассировки](/ru/guides/oss/deployment-and-scaling/monitoring/opentelemetry) как по TCP, так и по HTTP. Используйте `clickhouse.WithSpan`, чтобы привязать спан к запросу через контекст.
 
@@ -623,7 +627,9 @@ fmt.Printf("count: %d\n", count)
 
 [Полный пример](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/open_telemetry.go)
 
-## Сжатие {#compression}
+<div id="compression">
+  ## Сжатие
+</div>
 
 Стандартный API поддерживает те же алгоритмы сжатия, что и нативный [API ClickHouse](/ru/integrations/language-clients/go/configuration#compression), а именно сжатие `lz4` и `zstd` на уровне блоков. Кроме того, для HTTP-соединений поддерживается сжатие `gzip`, `deflate` и `br`. Если включен любой из этих вариантов, сжатие применяется к блокам при вставке и к ответам на запросы. Другие запросы, например Ping или запросы query, останутся несжатыми. Это соответствует параметрам `lz4` и `zstd`.
 

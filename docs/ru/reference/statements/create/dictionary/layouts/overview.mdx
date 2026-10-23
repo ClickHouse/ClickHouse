@@ -8,7 +8,9 @@ doc_type: 'reference'
 
 import CloudDetails from '/snippets/ru/_snippet_dictionary_in_cloud.mdx';
 
-## Типы структур словаря {#storing-dictionaries-in-memory}
+<div id="storing-dictionaries-in-memory">
+  ## Типы структур словаря
+</div>
 
 Словари можно хранить в памяти разными способами, и каждый из них предполагает компромисс между использованием CPU и оперативной памяти.
 
@@ -30,9 +32,6 @@ import CloudDetails from '/snippets/ru/_snippet_dictionary_in_cloud.mdx';
 | [direct](/ru/reference/statements/create/dictionary/layouts/direct)                                                              | Без хранения в памяти — для каждого запроса обращается напрямую к источнику.                                                                             |
 | [complex&#95;key&#95;direct](/ru/reference/statements/create/dictionary/layouts/direct#complex_key_direct)                       | Как `direct`, но для составных ключей.                                                                                                                   |
 | [ip&#95;trie](/ru/reference/statements/create/dictionary/layouts/ip-trie)                                                        | Структура префиксного дерева для быстрого поиска по IP-префиксам (на основе CIDR).                                                                       |
-| [hierarchical](/ru/reference/statements/create/dictionary/layouts/hierarchical)                                                  | Поддержка иерархий с числовым ключом, описывающим отношения родитель-потомок.                                                                            |
-| [polygon](/ru/reference/statements/create/dictionary/layouts/polygon)                                                            | Эффективный поиск вхождения Point в Polygon (обратное геокодирование).                                                                                   |
-| [regexp&#95;tree](/ru/reference/statements/create/dictionary/layouts/regexp-tree)                                                | Сопоставляет ключи с деревом регулярных выражений.                                                                                                       |
 
 <Tip>
   **Рекомендуемые структуры**
@@ -41,11 +40,9 @@ import CloudDetails from '/snippets/ru/_snippet_dictionary_in_cloud.mdx';
   Структуры с кэшированием не рекомендуются из-за потенциально низкой производительности и сложности подбора параметров — подробнее см. в разделе [cache](/ru/reference/statements/create/dictionary/layouts/cache).
 </Tip>
 
-<Note>
-  Структуры на основе кэша не подходят для надёжного обогащения данных во время вставки: прогретые записи хранятся локально на каждом сервере и теряются при его перезапуске или замене. В ClickHouse Cloud автомасштабирование и управляемая замена узлов делают такую ситуацию более вероятной. Вместо них используйте структуру с полной загрузкой данных; см. [Кэш-словари в конвейере ингестии](/ru/concepts/features/dictionaries/best-practices#cache-dictionaries-in-ingestion-path).
-</Note>
-
-## Укажите структуру словаря {#specify-dictionary-layout}
+<div id="specify-dictionary-layout">
+  ## Укажите структуру словаря
+</div>
 
 <CloudDetails />
 
@@ -139,7 +136,9 @@ import CloudDetails from '/snippets/ru/_snippet_dictionary_in_cloud.mdx';
   </Tab>
 </Tabs>
 
-## Как повысить производительность словаря {#improve-performance}
+<div id="improve-performance">
+  ## Как повысить производительность словаря
+</div>
 
 Есть несколько способов повысить производительность словаря:
 
