@@ -1141,6 +1141,60 @@ def test_system_named_collections():
     node1.query("DROP NAMED COLLECTION backup_nc")
 
 
+def test_system_named_collections_restore_stale_replica():
+    # The loaded collections of the shared Keeper storage follow Keeper asynchronously: a server
+    # reloads them when a Keeper watch fires. The restore must not decide from that copy whether
+    # a collection still exists: a writer whose reload has not observed a deletion made through
+    # another server would skip recreating the absent Keeper entry, report success, and the
+    # synchronous reload after the restore would drop its stale copy - losing the collection.
+    node1.query("CREATE NAMED COLLECTION backup_nc_stale AS key1 = 'nc_secret_value'")
+    assert_eq_with_retry(
+        node2,
+        "SELECT count() FROM system.named_collections WHERE name='backup_nc_stale'",
+        "1\n",
+    )
+
+    backup_name = new_backup_name()
+    node1.query(f"BACKUP TABLE system.named_collections TO {backup_name}")
+
+    try:
+        # Keep node1's background reload from observing the deletion below: its loaded
+        # collections retain the dropped collection, modeling a replica whose Keeper watch has
+        # not been processed yet.
+        node1.query(
+            "SYSTEM ENABLE FAILPOINT named_collections_replicated_update_pause"
+        )
+        node2.query("DROP NAMED COLLECTION backup_nc_stale")
+        assert (
+            node1.query(
+                "SELECT count() FROM system.named_collections WHERE name='backup_nc_stale'"
+            )
+            == "1\n"
+        )
+
+        node1.query(f"RESTORE TABLE system.named_collections FROM {backup_name}")
+    finally:
+        node1.query(
+            "SYSTEM DISABLE FAILPOINT named_collections_replicated_update_pause"
+        )
+
+    # The restored collection must be in Keeper, not only in node1's memory: node2, which did
+    # observe the deletion, must see it again.
+    assert (
+        node1.query(
+            "SELECT count() FROM system.named_collections WHERE name='backup_nc_stale'"
+        )
+        == "1\n"
+    )
+    assert_eq_with_retry(
+        node2,
+        "SELECT count() FROM system.named_collections WHERE name='backup_nc_stale'",
+        "1\n",
+    )
+
+    node1.query("DROP NAMED COLLECTION backup_nc_stale")
+
+
 def test_system_named_collections_required_privileges():
     node1.query("CREATE NAMED COLLECTION backup_nc AS key1 = 'nc_secret_value'")
 
@@ -1342,6 +1396,13 @@ def test_system_named_collections_distinct_sources():
         node2.query(
             "CREATE NAMED COLLECTION backup_nc_host2 AS key1 = 'nc_host2_value'"
         )
+        # A collection both hosts define identically but created with different creation flags:
+        # the stored statement of node2's copy retains `IF NOT EXISTS`. The flags are no part of
+        # the definition, so merging the directories must not treat the copies as conflicting.
+        node1.query("CREATE NAMED COLLECTION backup_nc_same AS key1 = 'nc_same_value'")
+        node2.query(
+            "CREATE NAMED COLLECTION IF NOT EXISTS backup_nc_same AS key1 = 'nc_same_value'"
+        )
         backup_name = new_backup_name()
         node1.query(
             f"BACKUP TABLE system.named_collections ON CLUSTER 'cluster' TO {backup_name}"
@@ -1357,8 +1418,10 @@ def test_system_named_collections_distinct_sources():
 
         node1.query("DROP NAMED COLLECTION backup_nc_host1")
         node1.query("DROP NAMED COLLECTION backup_nc_dup")
+        node1.query("DROP NAMED COLLECTION backup_nc_same")
         node2.query("DROP NAMED COLLECTION backup_nc_host2")
         node2.query("DROP NAMED COLLECTION backup_nc_dup")
+        node2.query("DROP NAMED COLLECTION backup_nc_same")
     finally:
         node2.replace_in_config(
             storage_config, "local_encrypted", "zookeeper_encrypted"
@@ -1377,15 +1440,18 @@ def test_system_named_collections_distinct_sources():
     for node in [node1, node2]:
         assert node.query(
             "SELECT name, mapKeys(collection) FROM system.named_collections "
-            "WHERE name LIKE 'backup_nc_host%' ORDER BY name"
+            "WHERE name IN ('backup_nc_host1', 'backup_nc_host2', 'backup_nc_same') "
+            "ORDER BY name"
         ) == TSV(
             [
                 ["backup_nc_host1", "['key1']"],
                 ["backup_nc_host2", "['key1']"],
+                ["backup_nc_same", "['key1']"],
             ]
         )
     node1.query("DROP NAMED COLLECTION backup_nc_host1")
     node1.query("DROP NAMED COLLECTION backup_nc_host2")
+    node1.query("DROP NAMED COLLECTION backup_nc_same")
 
     # Conflicting definitions of one name cannot coexist in one shared storage, and silently
     # picking one of them would restore wrong values: the restore is refused before anything

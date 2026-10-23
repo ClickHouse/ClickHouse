@@ -8,6 +8,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/UUID.h>
 #include <Interpreters/Context.h>
+#include <Common/FailPoint.h>
 
 namespace CurrentMetrics
 {
@@ -24,6 +25,11 @@ namespace ErrorCodes
     extern const int NAMED_COLLECTION_IS_IMMUTABLE;
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_NAMED_COLLECTIONS;
+}
+
+namespace FailPoints
+{
+    extern const char named_collections_replicated_update_pause[];
 }
 
 
@@ -453,6 +459,9 @@ void NamedCollectionFactory::updateFunc()
         {
             if (metadata_storage->waitUpdate())
             {
+                /// Lets a test hold this replica's loaded collections stale while another server
+                /// modifies the shared storage.
+                FailPointInjection::pauseFailPoint(FailPoints::named_collections_replicated_update_pause);
                 reloadFromSQL();
             }
         }

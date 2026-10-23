@@ -336,7 +336,14 @@ bool restoreNamedCollections(RestorerFromBackup & restorer, const String & data_
         }
 
         /// Like the errors above, the conflict error below names no collection.
-        const auto & parsed_create_query = ast->as<const ASTCreateNamedCollectionQuery &>();
+        auto & parsed_create_query = ast->as<ASTCreateNamedCollectionQuery &>();
+        /// The stored statement of a collection created with `IF NOT EXISTS` retains the flag (and
+        /// a restore in the default 'if-not-exists' mode stores it too), so the directories of two
+        /// hosts may hold an identical collection with and without it. The creation-mode flags are
+        /// no part of the definition (and are reset below to match the restore mode anyway), so
+        /// they must not make identical definitions compare as different.
+        parsed_create_query.if_not_exists = false;
+        parsed_create_query.or_replace = false;
         String formatted_statement = ast->formatWithSecretsOneLine();
         if (auto [it, inserted] = statements_by_name.try_emplace(parsed_create_query.collection_name, formatted_statement); !inserted)
         {
@@ -353,6 +360,17 @@ bool restoreNamedCollections(RestorerFromBackup & restorer, const String & data_
 
         create_queries.push_back(std::move(ast));
     }
+
+    /// The loaded collections of a replicated storage follow Keeper asynchronously: a background
+    /// task reloads them when a Keeper watch fires. The existence decisions below (`createFromSQL`
+    /// skipping an entry in the default 'if-not-exists' mode, in particular) must not trust a copy
+    /// which may not have observed a deletion made through another server: it would skip
+    /// recreating an entry absent from Keeper, the restore would report success, and the
+    /// synchronous reload after it (see `reloadNamedCollectionsAfterRestore`) would drop the stale
+    /// copy - losing the collection. Reload synchronously first, so the decisions are made against
+    /// the current replicated state.
+    if (storage_properties.is_replicated)
+        factory.reloadFromSQL();
 
     const auto & restore_settings = restorer.getRestoreSettings();
     bool throw_if_exists = (restore_settings.create_named_collection == RestoreNamedCollectionCreationMode::kCreate);
