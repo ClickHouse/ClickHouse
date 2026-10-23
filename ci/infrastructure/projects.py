@@ -295,6 +295,7 @@ PROJECTS = [
                 region="us-east-1",
                 subnets=[
                     VPC.Subnet(availability_zone="us-east-1c"),
+                    VPC.Subnet(availability_zone="us-east-1d", cidr="10.0.64.0/18"),
                 ],
             ),
         ],
@@ -361,11 +362,11 @@ PROJECTS = [
             ),
             _mac_runner_pool(
                 name="pr-macos-m4pro-use1",
-                # Zone ID `use1-az2`.
-                availability_zones=["us-east-1c"],
+                # Zone IDs `use1-az2` and `use1-az4`.
+                availability_zones=["us-east-1c", "us-east-1d"],
                 instance_type="mac-m4pro.metal",
                 image_id=MAC_OS_26_ARM_US_EAST_1_AMI,
-                quantity_per_az=15,
+                quantity_per_az=10,
                 vpc_name="macos-us-east-1",
             ),
         ],
