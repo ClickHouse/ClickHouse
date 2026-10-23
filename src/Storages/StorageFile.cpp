@@ -2072,7 +2072,15 @@ Chunk StorageFileSource::generate()
                 }
                 else
                 {
-                    read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, getContext());
+                    /// Later positional reads must start at the same inherited stdin offset as schema inference.
+                    read_buf = createReadBuffer(
+                        current_path,
+                        file_stat,
+                        storage->use_table_fd,
+                        storage->table_fd,
+                        storage->compression_method,
+                        getContext(),
+                        storage->inferred_fd_reader_is_positional);
 
                     /// `createReadBuffer` opens the file by path, strictly after the `stat` above computed
                     /// `current_file_cache_version`. Another writer - e.g. a second `File` table pointing at
