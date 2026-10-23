@@ -40,6 +40,7 @@ _POOL_USER_DATA = _pool_user_data()
 MAC_OS_TAHOE_ARM_IMAGE_AMI = "ami-0cbd6d494543c15b3"
 # Public `amzn-ec2-macos-26.7-20260918-025529-arm64`.
 MAC_OS_26_ARM_US_EAST_1_AMI = "ami-0d2a9e55f71bda474"
+MAC_OS_26_ARM_US_WEST_2_AMI = "ami-0b2ea1252252f73c3"
 
 
 def _image_builders():
@@ -298,6 +299,13 @@ PROJECTS = [
                     VPC.Subnet(availability_zone="us-east-1d", cidr="10.0.64.0/18"),
                 ],
             ),
+            VPC.Config(
+                name="macos-us-west-2",
+                region="us-west-2",
+                subnets=[
+                    VPC.Subnet(availability_zone="us-west-2b"),
+                ],
+            ),
         ],
         storages=[
             # Storage.Config(
@@ -362,12 +370,21 @@ PROJECTS = [
             ),
             _mac_runner_pool(
                 name="pr-macos-m4pro-use1",
-                # Zone IDs `use1-az2` and `use1-az4`.
-                availability_zones=["us-east-1c", "us-east-1d"],
+                # Zone ID `use1-az2`.
+                availability_zones=["us-east-1c"],
                 instance_type="mac-m4pro.metal",
                 image_id=MAC_OS_26_ARM_US_EAST_1_AMI,
-                quantity_per_az=10,
+                quantity_per_az=5,
                 vpc_name="macos-us-east-1",
+            ),
+            _mac_runner_pool(
+                name="pr-macos-m4pro-usw2",
+                # Zone ID `usw2-az2`.
+                availability_zones=["us-west-2b"],
+                instance_type="mac-m4pro.metal",
+                image_id=MAC_OS_26_ARM_US_WEST_2_AMI,
+                quantity_per_az=5,
+                vpc_name="macos-us-west-2",
             ),
         ],
         # TODO: make self-contained component SlackApp
