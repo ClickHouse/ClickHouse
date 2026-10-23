@@ -38,3 +38,19 @@ tuple_vt	1	(1,'x\ny\nz\nw')
 count_tuple_vt	1	1
 tuple_ff	1	(1,'x\ny\nz\nw')
 count_tuple_ff	1	1
+tuple_cr	0	(1,'x\ny\nz\nw')
+count_tuple_cr	0	1
+count_mid_bom	0	4	4
+count_mid_bom	0	1048576	4
+count_space_apostrophe	0	4
+rows_space_apostrophe	0	4
+count_vt_apostrophe	0	4
+rows_vt_apostrophe	0	4
+tuple_cr	1	(1,'x\ny\nz\nw')
+count_tuple_cr	1	1
+count_mid_bom	1	4	4
+count_mid_bom	1	1048576	4
+count_space_apostrophe	1	4
+rows_space_apostrophe	1	4
+count_vt_apostrophe	1	4
+rows_vt_apostrophe	1	4

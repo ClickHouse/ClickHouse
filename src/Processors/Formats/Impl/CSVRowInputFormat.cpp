@@ -128,7 +128,8 @@ void CSVFormatReader::skipRow()
     bool at_field_start = true;
     char quote_char = '"';
     ReadBuffer & istr = *buf;
-    const bool at_stream_start = istr.count() == 0;
+    bool at_stream_start = istr.count() == 0;
+    bool after_ws = false;
 
     while (!istr.eof())
     {
@@ -156,6 +157,7 @@ void CSVFormatReader::skipRow()
         else
         {
             const char * span_start = istr.position();
+            bool span_ws = false;
             auto * pos = find_first_symbols<'"', '\'', '\r', '\n'>(istr.position(), istr.buffer().end());
             istr.position() = pos;
 
@@ -176,10 +178,16 @@ void CSVFormatReader::skipRow()
                     break;
                 }
                 if (c != format_settings.csv.delimiter && (c == ' ' || c == '\t' || c == '\v' || c == '\f'))
+                {
+                    span_ws = true;
                     continue;
+                }
                 at_field_start = (c == format_settings.csv.delimiter || c == format_settings.csv.tuple_delimiter);
                 break;
             }
+            if (pos > span_start)
+                after_ws = span_ws;
+            at_stream_start = false;
 
             if (pos == istr.buffer().end())
                 continue;
@@ -188,7 +196,7 @@ void CSVFormatReader::skipRow()
             {
                 if (*pos == '"' || format_settings.csv.allow_single_quotes)
                 {
-                    quotes = at_field_start;
+                    quotes = at_field_start && !(*pos == '\'' && after_ws);
                     if (quotes)
                         quote_char = *pos;
                 }
@@ -866,7 +874,9 @@ std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memor
     bool at_field_start = true;
     bool need_more_data = true;
     size_t number_of_rows = 0;
-    const bool at_stream_start = in.count() == 0;
+    bool at_stream_start = in.count() == 0;
+    /// True if the whitespace directly before the current position was skipped when looking for a field start.
+    bool after_ws = false;
 
     if (max_rows && (max_rows < min_rows))
         max_rows = min_rows;
@@ -895,6 +905,7 @@ std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memor
         else
         {
             const char * span_start = pos;
+            bool span_ws = false;
             pos = find_first_symbols<'"', '\'', '\r', '\n'>(pos, in.buffer().end());
             if (pos > in.buffer().end())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
@@ -911,10 +922,17 @@ std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memor
                     break;
                 }
                 if (c != settings.csv.delimiter && (c == ' ' || c == '\t' || c == '\v' || c == '\f'))
+                {
+                    span_ws = true;
                     continue;
+                }
                 at_field_start = (c == settings.csv.delimiter || c == settings.csv.tuple_delimiter);
                 break;
             }
+            if (pos > span_start)
+                after_ws = span_ws;
+            /// A BOM is recognized only in the very first span of the stream, not at the start of a refilled buffer.
+            at_stream_start = false;
 
             if (pos == in.buffer().end())
                 continue;
@@ -923,7 +941,7 @@ std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memor
             {
                 if (*pos == '"' || settings.csv.allow_single_quotes)
                 {
-                    quotes = at_field_start;
+                    quotes = at_field_start && !(*pos == '\'' && after_ws);
                     if (quotes)
                         quote_char = *pos;
                 }
@@ -941,9 +959,13 @@ std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memor
             else if (*pos == '\r')
             {
                 ++pos;
-                at_field_start = settings.csv.allow_cr_end_of_line;
+                /// A bare `\r` that is not a line ending is skipped as whitespace by some deserializers (e.g. tuples),
+                /// so it must not change whether the next `"` starts a field.
                 if (settings.csv.allow_cr_end_of_line)
+                {
+                    at_field_start = true;
                     continue;
+                }
                 if (loadAtPosition(in, memory, pos) && *pos == '\n')
                     ++pos;
                 else
@@ -951,6 +973,7 @@ std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memor
             }
 
             at_field_start = true;
+            after_ws = false;
             ++number_of_rows;
             if ((number_of_rows >= min_rows)
                 && ((memory.size() + static_cast<size_t>(pos - in.position()) >= min_bytes) || (number_of_rows == max_rows)))

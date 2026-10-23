@@ -68,4 +68,25 @@ do
     ${CLICKHOUSE_CLIENT} -q "SELECT 'count_tuple_ff', ${parallel}, count() FROM file('${unique_name}/tuple_ff.csv', 'CSV', 's Tuple(Int32, String)') SETTINGS input_format_parallel_parsing = ${parallel}, ${SETTINGS}"
 done
 
+# A bare `\r` between tuple elements is whitespace for the tuple deserializer, BOM-like bytes inside a field
+# must not be treated as a BOM after a buffer refill, and an apostrophe after whitespace is a literal in a String column.
+printf '1,\r"x\ny\nz\nw"\n' > "${tmp_dir}/tuple_cr.csv"
+printf "aaaa\xEF\xBB\xBF'x\nb\nc\nd\n" > "${tmp_dir}/mid_bom.csv"
+printf " 'x\nb\nc\nd\n" > "${tmp_dir}/space_apostrophe.csv"
+printf "\v'x\nb\nc\nd\n" > "${tmp_dir}/vt_apostrophe.csv"
+
+for parallel in 0 1
+do
+    ${CLICKHOUSE_CLIENT} -q "SELECT 'tuple_cr', ${parallel}, s FROM file('${unique_name}/tuple_cr.csv', 'CSV', 's Tuple(Int32, String)') SETTINGS input_format_parallel_parsing = ${parallel}, ${SETTINGS}"
+    ${CLICKHOUSE_CLIENT} -q "SELECT 'count_tuple_cr', ${parallel}, count() FROM file('${unique_name}/tuple_cr.csv', 'CSV', 's Tuple(Int32, String)') SETTINGS input_format_parallel_parsing = ${parallel}, ${SETTINGS}"
+    for buf in 4 1048576
+    do
+        ${CLICKHOUSE_CLIENT} -q "SELECT 'count_mid_bom', ${parallel}, ${buf}, count() FROM file('${unique_name}/mid_bom.csv', 'CSV', 's String') SETTINGS input_format_parallel_parsing = ${parallel}, storage_file_read_method = 'pread', max_read_buffer_size = ${buf}, ${SQ_SETTINGS}"
+    done
+    ${CLICKHOUSE_CLIENT} -q "SELECT 'count_space_apostrophe', ${parallel}, count() FROM file('${unique_name}/space_apostrophe.csv', 'CSV', 's String') SETTINGS input_format_parallel_parsing = ${parallel}, input_format_csv_trim_whitespaces = 0, ${SQ_SETTINGS}"
+    ${CLICKHOUSE_CLIENT} -q "SELECT 'rows_space_apostrophe', ${parallel}, count() FROM (SELECT s FROM file('${unique_name}/space_apostrophe.csv', 'CSV', 's String') SETTINGS input_format_parallel_parsing = ${parallel}, input_format_csv_trim_whitespaces = 0, ${SQ_SETTINGS})"
+    ${CLICKHOUSE_CLIENT} -q "SELECT 'count_vt_apostrophe', ${parallel}, count() FROM file('${unique_name}/vt_apostrophe.csv', 'CSV', 's String') SETTINGS input_format_parallel_parsing = ${parallel}, ${SQ_SETTINGS}"
+    ${CLICKHOUSE_CLIENT} -q "SELECT 'rows_vt_apostrophe', ${parallel}, count() FROM (SELECT s FROM file('${unique_name}/vt_apostrophe.csv', 'CSV', 's String') SETTINGS input_format_parallel_parsing = ${parallel}, ${SQ_SETTINGS})"
+done
+
 rm -rf "${tmp_dir:?}"
