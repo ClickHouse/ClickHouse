@@ -1169,6 +1169,10 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
         local_context->getSettingsRef()[Setting::max_threads],
         [&](size_t part_index)
         {
+            return !parts[part_index].data_part->areStatisticsCached(required_columns_set, statistics_cache.get());
+        },
+        [&](size_t part_index)
+        {
             ProfileEvents::increment(ProfileEvents::LoadedStatistics);
             parts_statistics[part_index] = parts[part_index].data_part->loadStatistics(required_columns_set, statistics_cache.get());
         },
@@ -1186,10 +1190,21 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
 void MergeTreeData::loadStatisticsOfPartsInParallel(
     size_t num_parts,
     size_t max_threads,
+    const std::function<bool(size_t)> & needs_loading,
     const std::function<void(size_t)> & load_part,
     const std::function<void(size_t)> & consume_part)
 {
-    const size_t num_threads = std::min(max_threads, num_parts);
+    /// The parts whose statistics are already in memory are loaded in the calling thread right before they are consumed:
+    /// that is only a copy, much cheaper than scheduling a job, so a warm query does not use the pool at all.
+    std::vector<size_t> parts_to_load;
+    if (max_threads > 1)
+    {
+        for (size_t part_index = 0; part_index < num_parts; ++part_index)
+            if (needs_loading(part_index))
+                parts_to_load.push_back(part_index);
+    }
+
+    const size_t num_threads = std::min(max_threads, parts_to_load.size());
     if (num_threads <= 1)
     {
         for (size_t part_index = 0; part_index < num_parts; ++part_index)
@@ -1200,14 +1215,14 @@ void MergeTreeData::loadStatisticsOfPartsInParallel(
         return;
     }
 
-    /// The parts are loaded in batches, and every batch is consumed before the next one is loaded, so that the loaded
-    /// statistics of at most `batch_size` parts are held at once. They may be large, they are not freed by the eviction
-    /// from the statistics cache while held, and they are loaded without accounting in the memory tracker of the query.
+    /// The parts to load are loaded in batches, and every batch is consumed before the next one is loaded, so that the
+    /// loaded statistics of at most `batch_size` parts are held at once. They may be large, they are not freed by the
+    /// eviction from the statistics cache while held, and they are loaded without accounting in the memory tracker of the query.
     const size_t batch_size = num_threads * 2;
 
     /// Outlive `pool`, whose destructor joins the jobs that still use them when scheduling throws.
     std::vector<std::exception_ptr> exceptions(batch_size);
-    std::atomic<size_t> next_part_index = 0;
+    std::atomic<size_t> next_index = 0;
     std::atomic<bool> has_exception = false;
     size_t batch_begin = 0;
     size_t batch_end = 0;
@@ -1220,10 +1235,14 @@ void MergeTreeData::loadStatisticsOfPartsInParallel(
         CurrentMetrics::MergeTreeStatisticsLoaderThreadsScheduled,
         num_threads);
 
-    for (; batch_begin < num_parts; batch_begin = batch_end)
+    /// The next part to consume.
+    size_t consumed_end = 0;
+
+    /// `batch_begin` and `batch_end` are the positions in `parts_to_load`.
+    for (; batch_begin < parts_to_load.size(); batch_begin = batch_end)
     {
-        batch_end = std::min(num_parts, batch_begin + batch_size);
-        next_part_index.store(batch_begin, std::memory_order_relaxed);
+        batch_end = std::min(parts_to_load.size(), batch_begin + batch_size);
+        next_index.store(batch_begin, std::memory_order_relaxed);
 
         const size_t num_jobs = std::min(num_threads, batch_end - batch_begin);
         for (size_t job = 0; job < num_jobs; ++job)
@@ -1238,17 +1257,17 @@ void MergeTreeData::loadStatisticsOfPartsInParallel(
                     /// The pool is finished once its destructor has started (scheduling has thrown), then the other parts are abandoned.
                     while (!has_exception.load(std::memory_order_relaxed) && !pool.isFinished())
                     {
-                        const size_t part_index = next_part_index.fetch_add(1, std::memory_order_relaxed);
-                        if (part_index >= batch_end)
+                        const size_t index = next_index.fetch_add(1, std::memory_order_relaxed);
+                        if (index >= batch_end)
                             break;
 
                         try
                         {
-                            load_part(part_index);
+                            load_part(parts_to_load[index]);
                         }
                         catch (...)
                         {
-                            exceptions[part_index - batch_begin] = std::current_exception();
+                            exceptions[index - batch_begin] = std::current_exception();
                             has_exception.store(true, std::memory_order_relaxed);
                         }
                     }
@@ -1257,12 +1276,22 @@ void MergeTreeData::loadStatisticsOfPartsInParallel(
 
         pool.wait();
 
-        for (size_t part_index = batch_begin; part_index < batch_end; ++part_index)
-            if (auto & exception = exceptions[part_index - batch_begin])
-                std::rethrow_exception(exception);
+        /// Consume the parts in their order up to the last loaded part of the batch, loading the parts in between,
+        /// which did not need loading, in this thread.
+        const size_t batch_consumed_end = batch_end == parts_to_load.size() ? num_parts : parts_to_load[batch_end - 1] + 1;
+        for (size_t index = batch_begin; consumed_end < batch_consumed_end; ++consumed_end)
+        {
+            if (index < batch_end && parts_to_load[index] == consumed_end)
+            {
+                if (auto & exception = exceptions[index - batch_begin])
+                    std::rethrow_exception(exception);
+                ++index;
+            }
+            else
+                load_part(consumed_end);
 
-        for (size_t part_index = batch_begin; part_index < batch_end; ++part_index)
-            consume_part(part_index);
+            consume_part(consumed_end);
+        }
     }
 }
 

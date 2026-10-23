@@ -1426,13 +1426,9 @@ std::shared_ptr<StatisticsCacheCell> IMergeTreeDataPart::loadStatisticsFile(
     }
 }
 
-ColumnsStatistics IMergeTreeDataPart::loadStatistics(const NameSet & required_columns, StatisticsCache * cache) const
+std::vector<std::pair<String, const ColumnDescription *>> IMergeTreeDataPart::getStatisticsFilesToLoad(
+    const NameSet & required_columns, const PackedFilesReader * packed_reader) const
 {
-    auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::loadStatistics");
-
-    /// The list of statistics files is known without reading them: it is the index of the packed
-    /// archive, which is read once per part, or the checksums of a part that stores every file separately.
-    const PackedFilesReader * packed_reader = getStatisticsPackedReader();
     const auto & all_columns = getColumnsDescription();
 
     /// Pairs of a statistics file and the column it belongs to.
@@ -1484,6 +1480,18 @@ ColumnsStatistics IMergeTreeDataPart::loadStatistics(const NameSet & required_co
             if (const auto * column_desc = getColumnForStatisticsFile(filename, all_columns))
                 files_to_load.emplace_back(std::move(filename), column_desc);
     }
+
+    return files_to_load;
+}
+
+ColumnsStatistics IMergeTreeDataPart::loadStatistics(const NameSet & required_columns, StatisticsCache * cache) const
+{
+    auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::loadStatistics");
+
+    /// The list of statistics files is known without reading them: it is the index of the packed
+    /// archive, which is read once per part, or the checksums of a part that stores every file separately.
+    const PackedFilesReader * packed_reader = getStatisticsPackedReader();
+    const auto files_to_load = getStatisticsFilesToLoad(required_columns, packed_reader);
 
     /// `clearCaches` is one-shot: once it has run, nothing evicts the entries of this part again,
     /// so a part whose caches are cleared must not fill the cache any more.
@@ -1605,6 +1613,48 @@ Estimates IMergeTreeDataPart::getEstimates(const NameSet & required_columns) con
         }
     }
     return estimates;
+}
+
+bool IMergeTreeDataPart::areStatisticsCached(const NameSet & required_columns, const StatisticsCache * cache) const
+{
+    if (!cache || cleared_data_in_caches)
+        return false;
+
+    /// The index of the packed archive is read from disk on first access, so the statistics are not cached until it is read.
+    const PackedFilesReader * packed_reader = nullptr;
+    if (checksums.has(String(ColumnsStatistics::FILENAME)))
+    {
+        std::lock_guard lock(statistics_reader_mutex);
+        if (!statistics_reader)
+            return false;
+        packed_reader = statistics_reader.get();
+    }
+
+    const String part_path = getPathForCacheKey();
+    for (const auto & [filename, column_desc] : getStatisticsFilesToLoad(required_columns, packed_reader))
+        if (!cache->contains(StatisticsCache::hash(part_path, column_desc->name)))
+            return false;
+    return true;
+}
+
+bool IMergeTreeDataPart::areEstimatesCached(const NameSet & required_columns) const
+{
+    NameSet columns_to_load;
+    {
+        std::lock_guard lock(estimates_mutex);
+
+        if (estimates_complete)
+            return true;
+
+        for (const auto & column_name : required_columns)
+            if (!estimates_loaded_columns.contains(column_name))
+                columns_to_load.insert(column_name);
+
+        if (!required_columns.empty() && columns_to_load.empty())
+            return true;
+    }
+
+    return areStatisticsCached(columns_to_load, storage.getContext()->getStatisticsCache().get());
 }
 
 void IMergeTreeDataPart::setEstimates(const Estimates & new_estimates)

@@ -1000,24 +1000,30 @@ static Block makeBlockWithMinMaxFromStatistics(
     /// The estimates of the parts whose statistics may answer the query, loaded in parallel and released once
     /// consumed; `std::nullopt` for a part that is read instead.
     std::vector<std::optional<Estimates>> parts_estimates(parts_with_ranges.size());
-    auto load_part_estimates = [&](size_t part_index)
+    auto part_may_use_statistics = [&](size_t part_index)
     {
         const auto & part_with_ranges = parts_with_ranges[part_index];
         const auto & part = part_with_ranges.data_part;
 
         /// A lightweight delete mask hides rows that the statistics still account for.
         if (part->hasLightweightDelete())
-            return;
+            return false;
 
         /// Part-level statistics can only answer a full-part read.
         if (part->index_granularity->getRowsCountInRanges(part_with_ranges.ranges) != part->rows_count)
-            return;
+            return false;
 
         /// An empty part has no extremes, but `getExtremes` reports zeros for it. Read it instead;
         /// it contributes nothing to the result anyway.
-        if (part->rows_count == 0)
+        return part->rows_count != 0;
+    };
+
+    auto load_part_estimates = [&](size_t part_index)
+    {
+        if (!part_may_use_statistics(part_index))
             return;
 
+        const auto & part = parts_with_ranges[part_index].data_part;
         try
         {
             /// An empty set would mean all columns, but `count` needs no statistics.
@@ -1101,6 +1107,10 @@ static Block makeBlockWithMinMaxFromStatistics(
     MergeTreeData::loadStatisticsOfPartsInParallel(
         parts_with_ranges.size(),
         required_columns.empty() ? 1 : static_cast<size_t>(context->getSettingsRef()[Setting::max_threads]),
+        [&](size_t part_index)
+        {
+            return part_may_use_statistics(part_index) && !parts_with_ranges[part_index].data_part->areEstimatesCached(required_columns);
+        },
         load_part_estimates,
         consume_part_estimates);
     parts_with_ranges = std::move(parts_to_read);
