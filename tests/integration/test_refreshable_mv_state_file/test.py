@@ -646,6 +646,12 @@ def test_a_target_that_keeps_data_only_in_memory_is_refilled_after_restart():
     forwarding_source = "rmv_forwarding_source"
     forwarding_target = "rmv_forwarding_memory_target"
     forwarding_view = "rmv_forwarding_view"
+    fanout_source = "rmv_fanout_source"
+    fanout_target = "rmv_fanout_memory_target"
+    fanout_view = "rmv_fanout_view"
+    durable_fanout_source = "rmv_durable_fanout_source"
+    durable_fanout_target = "rmv_durable_fanout_target"
+    durable_fanout_view = "rmv_durable_fanout_view"
     views = [
         memory_view,
         join_view,
@@ -654,8 +660,10 @@ def test_a_target_that_keeps_data_only_in_memory_is_refilled_after_restart():
         buffer_view,
         destination_buffer_view,
         forwarding_view,
+        fanout_view,
     ]
     tables = views + [
+        durable_fanout_view,
         join_target,
         append_target,
         alias_target,
@@ -664,6 +672,10 @@ def test_a_target_that_keeps_data_only_in_memory_is_refilled_after_restart():
         buffer_destination,
         forwarding_target,
         forwarding_source,
+        fanout_target,
+        fanout_source,
+        durable_fanout_target,
+        durable_fanout_source,
     ]
     for table in tables:
         node.query(f"DROP TABLE IF EXISTS {table} SYNC")
@@ -723,12 +735,36 @@ def test_a_target_that_keeps_data_only_in_memory_is_refilled_after_restart():
             f"CREATE MATERIALIZED VIEW {forwarding_view} REFRESH AFTER 1 DAY APPEND "
             f"TO {forwarding_target} AS SELECT number b FROM numbers(2)"
         )
+        # The rows also reach the materialized views over the target, here into Memory.
+        node.query(f"CREATE TABLE {fanout_source} (b UInt64) ENGINE = Null")
+        node.query(
+            f"CREATE MATERIALIZED VIEW {fanout_target} ENGINE = Memory "
+            f"AS SELECT b FROM {fanout_source}"
+        )
+        node.query(
+            f"CREATE MATERIALIZED VIEW {fanout_view} REFRESH AFTER 1 DAY APPEND "
+            f"TO {fanout_source} AS SELECT number b FROM numbers(2)"
+        )
+        # Control: the same pipeline into MergeTree keeps its schedule.
+        node.query(f"CREATE TABLE {durable_fanout_source} (b UInt64) ENGINE = Null")
+        node.query(
+            f"CREATE MATERIALIZED VIEW {durable_fanout_target} ENGINE = MergeTree "
+            f"ORDER BY b AS SELECT b FROM {durable_fanout_source}"
+        )
+        node.query(
+            f"CREATE MATERIALIZED VIEW {durable_fanout_view} REFRESH AFTER 1 DAY APPEND "
+            f"TO {durable_fanout_source} AS SELECT number b FROM numbers(2)"
+        )
         before = {
             view: wait_for_refresh_info(
                 view, "last_success_time", lambda x: x not in ("", "\\N")
             )
-            for view in views
+            for view in views + [durable_fanout_view]
         }
+        durable_fanout_uuid = node.query(
+            f"SELECT uuid FROM system.tables "
+            f"WHERE database = 'default' AND name = '{durable_fanout_view}'"
+        ).strip()
 
         node.restart_clickhouse()
 
@@ -752,7 +788,14 @@ def test_a_target_that_keeps_data_only_in_memory_is_refilled_after_restart():
         )
         assert node.query(f"SELECT count() FROM {buffer_target}").strip() == "2"
         assert node.query(f"SELECT count() FROM {forwarding_target}").strip() == "2"
-        assert find_refresh_state_files(DB_DISK_PATH) == []
+        assert node.query(f"SELECT count() FROM {fanout_target}").strip() == "2"
+        assert (
+            refresh_info(durable_fanout_view, "last_success_time")
+            == before[durable_fanout_view]
+        )
+        assert node.query(f"SELECT count() FROM {durable_fanout_target}").strip() == "2"
+        state_files = find_refresh_state_files(DB_DISK_PATH)
+        assert len(state_files) == 1 and durable_fanout_uuid in state_files[0]
     finally:
         for table in tables:
             node.query(f"DROP TABLE IF EXISTS {table} SYNC")

@@ -178,6 +178,7 @@ public:
     Info getInfo() const;
     String getCoordinationPath() const { return coordination.path; }
     bool isCoordinated() const { return coordination.coordinated; }
+    bool isAppend() const { return refresh_mode != RefreshMode::Replace; }
 
     bool canCreateOrDropOtherTables() const;
 
@@ -391,7 +392,6 @@ private:
     RefreshSettings refresh_settings;
     std::vector<StorageID> initial_dependencies;
     const RefreshMode refresh_mode;
-    bool isAppend() const { return refresh_mode != RefreshMode::Replace; }
     bool isIncremental() const { return refresh_mode == RefreshMode::AppendIncremental; }
     /// Start with refreshing paused. Used for the temporary view of CREATE OR REPLACE, which is
     /// resumed after the rename so it cannot refresh the target before the replacement is committed.

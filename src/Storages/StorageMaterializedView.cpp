@@ -1099,7 +1099,9 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
         refresher->rename(new_table_id, getTargetTableId());
 }
 
-static bool keepsDataOnlyInMemory(StoragePtr table)
+using StorageIDSet = std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
+
+static bool keepsDataOnlyInMemory(StoragePtr table, bool follow_dependent_views, const ContextPtr & context, StorageIDSet & visited)
 {
     /// `Alias` and a materialized view keep their rows in the table they point to.
     for (size_t depth = 0; table && depth < max_storage_proxy_depth; ++depth)
@@ -1107,6 +1109,16 @@ static bool keepsDataOnlyInMemory(StoragePtr table)
         /// A `Buffer` holds inserted rows in memory until it flushes them, even with a destination.
         if (castStorage<StorageMemory>(table, DeferredTable::Load) || castStorage<StorageBuffer>(table, DeferredTable::Load))
             return true;
+        /// An insert also writes its rows to the targets of the materialized views over the table.
+        if (follow_dependent_views && visited.insert(table->getStorageID()).second)
+        {
+            for (const auto & view_id : DatabaseCatalog::instance().getDependentViews(table->getStorageID()))
+            {
+                auto view = castStorage<StorageMaterializedView>(DatabaseCatalog::instance().tryGetTable(view_id, context), DeferredTable::Load);
+                if (view && keepsDataOnlyInMemory(view->tryGetTargetTable(), true, context, visited))
+                    return true;
+            }
+        }
         /// For `Set` and `Join` this is `persistent = 0`.
         if (auto set_or_join = castStorage<StorageSetOrJoinBase>(table, DeferredTable::Load))
             return !set_or_join->hasUnreplicatedTableDataOnDisk();
@@ -1133,9 +1145,11 @@ void StorageMaterializedView::startup()
 
     if (refresher)
     {
-        /// Only an uncoordinated view persists its schedule itself.
+        /// Only an uncoordinated view persists its schedule itself. A non-APPEND refresh fills a new table
+        /// and exchanges it, so the views over the target never see its rows.
         auto target = refresher->isCoordinated() ? nullptr : tryGetTargetTable();
-        refresher->startup(target && keepsDataOnlyInMemory(target));
+        StorageIDSet visited;
+        refresher->startup(target && keepsDataOnlyInMemory(target, refresher->isAppend(), getContext(), visited));
     }
 }
 
