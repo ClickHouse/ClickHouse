@@ -207,7 +207,7 @@ private:
     void removeNode(Node & node);
 
     /// Add single edge to edges list. Check processor is known.
-    Edge & addEdge(Edges & edges, Edge edge, const IProcessor * from, const IProcessor * to);
+    Edge & addEdge(Edges & edges, Edge edge, const Node & from, const IProcessor * to);
 
     /// Edges newly appended for a node by a call to addEdges.
     struct NewEdges
