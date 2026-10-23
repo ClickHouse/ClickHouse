@@ -153,3 +153,12 @@ printf '1\n2\n3\n' > "$STDIN_DATA_FILE_NAME"
 echo 'SELECT 99 FROM system.one;' > "$TEMP_SQL_FILE_NAME"
 $CLICKHOUSE_LOCAL --storage_file_read_method=read --queries-file="$TEMP_SQL_FILE_NAME" \
     -q 'SELECT count(); SELECT count(); SELECT count()' < "$STDIN_DATA_FILE_NAME"
+
+# Repeated pread queries must keep the input boundary inherited from the caller.
+# Schema inference and later reads should both skip the already-consumed first row.
+printf '1\n2\n3\n' > "$STDIN_DATA_FILE_NAME"
+echo "SELECT 'init' FROM system.one;" > "$TEMP_SQL_FILE_NAME"
+{ IFS= read -r _; $CLICKHOUSE_LOCAL --storage_file_read_method=pread --use_cache_for_count_from_files=0 \
+    -q 'SELECT sum(c1); SELECT sum(c1)'; } < "$STDIN_DATA_FILE_NAME"
+{ IFS= read -r _; $CLICKHOUSE_LOCAL --storage_file_read_method=pread --use_cache_for_count_from_files=0 \
+    --queries-file="$TEMP_SQL_FILE_NAME" -q 'SELECT sum(c1); SELECT sum(c1)'; } < "$STDIN_DATA_FILE_NAME"
