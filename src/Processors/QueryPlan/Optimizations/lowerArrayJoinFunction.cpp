@@ -1,5 +1,4 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
-#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
@@ -10,28 +9,6 @@
 
 namespace DB::QueryPlanOptimizations
 {
-
-/// arrayJoin(emptyArrayToSingle(x)) is LEFT ARRAY JOIN x, make `before` return x for the join
-static bool unpadArrayJoinArgument(ActionsDAG & before, const String & name)
-{
-    for (auto & output : before.getOutputs())
-    {
-        if (output->result_name != name)
-            continue;
-        const auto * padded = output;
-        while (padded->type == ActionsDAG::ActionType::ALIAS)
-            padded = padded->children.front();
-        if (padded->type != ActionsDAG::ActionType::FUNCTION || padded->function_base->getName() != "emptyArrayToSingle")
-            return false;
-        const auto * array = padded->children.front();
-        if (!array->result_type->equals(*padded->result_type))
-            return false;
-        output = &before.addAlias(*array, name);
-        before.removeUnusedActions(/*allow_remove_inputs=*/false);
-        return true;
-    }
-    return false;
-}
 
 /// Lower an `arrayJoin` function into a real ArrayJoinStep so it gets lazy replication and filter fusion.
 /// Peels one join per call; the driver repeats for the rest (independent joins are a cross product).
@@ -50,21 +27,27 @@ size_t tryLowerArrayJoinFunction(QueryPlan::Node * parent_node, QueryPlan::Nodes
     if (!dag.hasArrayJoin())
         return 0;
 
-    /// The extremes skip the predicate of such a filter, but not an `ArrayJoinStep` made from it. Unlowered, a
-    /// non-deterministic or stateful function is computed before the expansion, so such a filter is still lowered.
-    if (filter_step && filter_step->skipsExtremes() && !dag.hasStatefulFunctions() && !dagContainsNonDeterministicFunction(dag))
-        return 0;
-
     /// a stateful function sees other blocks after the step
     if (settings.legacy_array_join_function_nondeterministic_evaluation && dag.hasStatefulFunctions())
         return 0;
+
+    /// The extremes skip the predicate of such a filter, but would not skip the steps made from it,
+    /// so the filter lowers its joins itself when it builds the pipeline.
+    if (filter_step && filter_step->skipsExtremes())
+    {
+        filter_step->setArrayJoinLowering({
+            .max_block_size = settings.max_block_size,
+            .enable_lazy_columns_replication = settings.enable_lazy_columns_replication,
+            .nondeterministic_before_expansion = settings.legacy_array_join_function_nondeterministic_evaluation});
+        return 0;
+    }
 
     auto extracted = dag.extractFirstArrayJoin(settings.legacy_array_join_function_nondeterministic_evaluation);
     if (!extracted)
         return 0;
 
     auto * child_node = parent_node->children.front();
-    bool is_left = unpadArrayJoinArgument(extracted->before, extracted->array_join_column_name);
+    bool is_left = ArrayJoinStep::unpadArrayJoinArgument(extracted->before, extracted->array_join_column_name);
 
     /// Expression/Filter(after) -> ArrayJoin -> Expression(before) -> child
     auto & before_node = nodes.emplace_back();

@@ -88,8 +88,7 @@ size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Op
             std::move(split.first),
             std::move(split_filter_name),
             remove_filter);
-    if (filter_step->skipsExtremes())
-        split_filter_step->setSkipExtremes();
+    filter_step->copyExtremesHandlingTo(*split_filter_step);
     filter_node.step = std::move(split_filter_step);
 
     auto expression_step = std::make_unique<ExpressionStep>(filter_node.step->getOutputHeader(), std::move(split.second));

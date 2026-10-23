@@ -73,6 +73,27 @@ std::optional<ActionsDAG> ArrayJoinStep::toActionsDAG() const
     return dag;
 }
 
+bool ArrayJoinStep::unpadArrayJoinArgument(ActionsDAG & before, const String & name)
+{
+    for (auto & output : before.getOutputs())
+    {
+        if (output->result_name != name)
+            continue;
+        const auto * padded = output;
+        while (padded->type == ActionsDAG::ActionType::ALIAS)
+            padded = padded->children.front();
+        if (padded->type != ActionsDAG::ActionType::FUNCTION || padded->function_base->getName() != "emptyArrayToSingle")
+            return false;
+        const auto * array = padded->children.front();
+        if (!array->result_type->equals(*padded->result_type))
+            return false;
+        output = &before.addAlias(*array, name);
+        before.removeUnusedActions(/*allow_remove_inputs=*/false);
+        return true;
+    }
+    return false;
+}
+
 void ArrayJoinStep::setElementFilter(ActionsDAG filter_dag, String filter_column_name, bool remove_filter_column)
 {
     element_filter = std::move(filter_dag);
