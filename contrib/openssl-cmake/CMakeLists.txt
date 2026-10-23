@@ -1463,7 +1463,12 @@ set(SSL_SRC
 #
 # SRP API is deprecated in OpenSSL 3.0.
 # https://docs.openssl.org/3.1/man3/SRP_Calc_B/#history
+#
+# OpenSSL 4.1 deprecates APIs that are still widely used by contribs and by ClickHouse itself (e.g.
+# `ASN1_STRING_length`, `X509_check_host`). `OPENSSL_API_COMPAT` keeps everything deprecated after
+# 4.0 in the library.
 add_definitions(-DOPENSSL_NO_DEPRECATED)
+add_definitions(-DOPENSSL_API_COMPAT=40000)
 add_definitions(-DOPENSSL_NO_ENGINE)
 add_definitions(-DOPENSSL_NO_SRP)
 
