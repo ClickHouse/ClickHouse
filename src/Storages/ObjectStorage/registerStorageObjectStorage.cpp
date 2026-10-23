@@ -56,20 +56,23 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     configuration->is_replayed_definition = isReplayedTableDefinition(args.mode, args.query, context);
     StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, context, false, &args.table_id);
 
-    // Format settings come from the query context, so the session's settings apply, plus the SETTINGS clause.
+    // Format settings come from the server's settings, as for `File` and `URL`, plus the SETTINGS clause. Not from the
+    // session: the definition does not keep them, so the table would read differently once it is attached again, e.g.
+    // on server startup.
+    const auto global_context = args.getContext();
     std::optional<FormatSettings> format_settings;
     if (args.storage_def->settings)
     {
-        Settings settings = context->getSettingsCopy();
+        Settings settings = global_context->getSettingsCopy();
 
         // Applying the changes validates the values, not the names.
         settings.applyChanges(args.storage_def->settings->changes);
 
-        format_settings = getFormatSettings(context, settings);
+        format_settings = getFormatSettings(global_context, settings);
     }
     else
     {
-        format_settings = getFormatSettings(context);
+        format_settings = getFormatSettings(global_context);
     }
 
     ASTPtr partition_by;
@@ -107,7 +110,7 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         && (args.table_id.table_name.ends_with("_s3") || args.table_id.table_name.ends_with("_s3queue")))
         configuration->force_anonymous_load_fallback = true;
 
-    return std::make_shared<StorageObjectStorage>(
+    auto storage = std::make_shared<StorageObjectStorage>(
         configuration,
         // We only want to perform write actions (e.g. create a container in Azure) when the table is being created,
         // and we want to avoid it when we load the table after a server restart.
@@ -125,6 +128,16 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         /* distributed_processing */ false,
         partition_by,
         order_by);
+
+    if (configuration->isDataLakeConfiguration() && args.storage_def->settings)
+    {
+        auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+        auto metadata = *metadata_snapshot;
+        metadata.settings_changes = args.storage_def->settings->ptr();
+        storage->setInMemoryMetadata(metadata);
+    }
+
+    return storage;
 }
 
 #endif
@@ -1500,6 +1513,7 @@ When using the `Iceberg` table engine in ClickHouse, the system needs to locate 
 
 3. **Default Search**:
 * If neither of the above settings are provided, all `.metadata.json` files in the `metadata` directory become candidates
+* On S3 and Azure, with the query-level setting `iceberg_list_only_v_prefixed_metadata_files` enabled and `iceberg_use_version_hint` disabled, if some of these files have names starting with `v` (as ClickHouse and Hadoop catalogs name them), only those files are candidates, and only they are listed (by the key prefix `metadata/v`, so the manifests stored in the same directory are not). Enable it only for tables whose metadata files are all named this way: in a directory that holds both naming schemes, the `<N>-<uuid>.metadata.json` files are never candidates
 
 ### Selecting the most recent file {#most-recent-file}
 
@@ -1557,6 +1571,22 @@ SETTINGS iceberg_metadata_staleness_ms=120000
 **Note**: Asynchronous metadata prefetching runs at `ICEBERG_SCEDULE_POOL`, which is server-side threadpool for background operations on active `Iceberg` tables. The size of this threadpool is controlled by `iceberg_background_schedule_pool_size` server configuration parameter (default is 10).
 
 **Note**: Current expectation is that metadata cache size is sufficient to hold the latest metadata snapshot in full for all active tables, if asynchronous prefetching is enabled.
+
+## Modifying table settings {#modify-settings}
+
+The settings which are stored only in the table definition, and not in the Iceberg metadata, can be changed for an existing table with `ALTER TABLE ... MODIFY SETTING` and `ALTER TABLE ... RESET SETTING`:
+
+- the lookup of the metadata file: `iceberg_use_version_hint`, `iceberg_recent_metadata_file_by_last_updated_ms_field` and `iceberg_metadata_async_prefetch_period_ms`;
+- the background compaction and the cleanup after it: `allow_experimental_iceberg_compaction`, `allow_experimental_cleanup_old_data_files_compaction`, `iceberg_compaction_lock_lease_seconds`, `iceberg_compaction_delay_bias`, `iceberg_compaction_data_cleanup`, `iceberg_read_with_snapshot_lease`, `iceberg_snapshot_lease_seconds`, `iceberg_outdated_snapshot_lifetime_seconds`, `iceberg_compaction_commit_batch_size`, `iceberg_compaction_max_rows_in_data_file`, `iceberg_compaction_max_bytes_in_data_file`, `iceberg_max_number_datafiles_to_compact`, `iceberg_data_file_size_lower_threshold_compaction` and `iceberg_data_file_size_upper_threshold_compaction`.
+
+The new values take effect for subsequent queries and are stored in the table definition. The background jobs of the table are stopped while the settings are changed and started again with the new settings, so switching `allow_experimental_iceberg_compaction` off stops the background compaction of the table, and switching it on starts it. Other settings cannot be modified, and a settings change cannot be combined with other `ALTER` commands in one query. Tables of a `DataLakeCatalog` database do not support modifying settings.
+
+```sql
+ALTER TABLE example_table MODIFY SETTING iceberg_use_version_hint = 1;
+ALTER TABLE example_table RESET SETTING iceberg_use_version_hint;
+ALTER TABLE example_table MODIFY SETTING allow_experimental_iceberg_compaction = 0;
+ALTER TABLE example_table MODIFY SETTING iceberg_compaction_delay_bias = 600, iceberg_data_file_size_lower_threshold_compaction = 268435456;
+```
 
 ## See also {#see-also}
 
@@ -1858,6 +1888,27 @@ CREATE TABLE paimon_table ENGINE=PaimonS3(paimon_conf, filename = 'test_table')
 Merge-on-read is not implemented, so **primary-key tables cannot be read**: the reader returns the raw union of the
 snapshot's data files, which still contains the row versions superseded by later upserts. Reading a table whose schema
 declares `primary-key` therefore throws.
+
+## Tables with deletion vectors {#deletion-vectors}
+
+Deletion vectors are not applied, so **snapshots with deletion vectors cannot be read**: the result would still
+contain the rows that later `DELETE` and `UPDATE` statements removed. Reading a snapshot whose index manifest lists
+deletion vectors therefore throws, even after `deletion-vectors.enabled` is turned off.
+
+A full compaction in Paimon (`compact_strategy => 'full'`) applies the deletion vectors, and the snapshots created after
+it can be read again.
+
+An incremental read stops at the first unconsumed snapshot with deletion vectors and stays there even after a full
+compaction, because every snapshot up to that compaction lists the same deletion vectors. The cursor is not advanced.
+The read resumes once Paimon expires those snapshots, or once they are abandoned by moving the cursor to the snapshot of
+the full compaction, which drops every snapshot not yet consumed up to it (see
+[When a snapshot cannot be read](#when-a-snapshot-cannot-be-read)):
+
+```bash
+clickhouse-keeper-client -q "set '<paimon_keeper_path>/committed_snapshot' '<snapshot id of the full compaction>'"
+```
+
+Either way, the rows that those deletion vectors removed stay in what the incremental read has already delivered.
 
 ## Settings {#settings}
 
