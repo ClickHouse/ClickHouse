@@ -3513,6 +3513,28 @@ bool StorageFile::storesDataOnDisk() const
     return is_db_table;
 }
 
+bool StorageFile::hasUnreplicatedTableDataOnDisk() const
+{
+    /// A table over a file descriptor owns nothing.
+    if (use_table_fd)
+        return false;
+
+    /// Read-only variants over an explicit path are deliberately not recognized here, even though `write` rejects
+    /// them, because whether a path denotes such a variant is not decided by the `CREATE TABLE` query alone, so
+    /// the same query could be accepted on one replica and rejected on another:
+    /// - an archive: the `::` path syntax is interpreted only when `allow_archive_path_syntax` is enabled, and a
+    ///   `Replicated` database applies on other replicas only the settings changed by the initiating query, not
+    ///   each replica's own profile, so the path can denote an archive on one replica and a plain file on another;
+    /// - a glob: `is_path_with_globs` follows the number of files the pattern matches on the local filesystem
+    ///   right now, so a table accepted as read-only could also later become writable.
+    /// Rejecting such a read-only table is a false rejection, which this gate tolerates; accepting a table that
+    /// turns out to own local unreplicated data is not.
+
+    /// A table over an explicit path keeps its own data in a local file just like a table inside the database
+    /// directory does, and that data is not replicated.
+    return true;
+}
+
 Strings StorageFile::getPathsSnapshot() const
 {
     std::lock_guard lock{paths_mutex};
@@ -3616,6 +3638,21 @@ void registerStorageFile(StorageFactory & factory)
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                                 "Storage File requires from 1 to 3 arguments: "
                                 "name of used format, source and compression_method.");
+
+            /// Only a table over a file descriptor does not own its data, see `StorageFile::hasUnreplicatedTableDataOnDisk`.
+            /// Checked before the storage is constructed, because the construction resolves the path and may infer the schema
+            /// from the file, which would turn a deterministic rejection into a file or schema error. This also covers
+            /// `ENGINE = URL('file://...')`, which creates its delegate with this creator.
+            bool is_table_over_fd = false;
+            if (engine_args_ast.size() >= 2)
+            {
+                if (tryGetIdentifierName(engine_args_ast[1]))
+                    is_table_over_fd = true;
+                else if (const auto * literal = engine_args_ast[1]->as<ASTLiteral>())
+                    is_table_over_fd = literal->value.getType() == Field::Types::Int64 || literal->value.getType() == Field::Types::UInt64;
+            }
+            if (!is_table_over_fd)
+                throwIfUnreplicatedTableDataNotAllowed(factory_args);
 
             engine_args_ast[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args_ast[0], factory_args.getLocalContext());
             storage_args.format_name = checkAndGetLiteralArgument<String>(engine_args_ast[0], "format_name");

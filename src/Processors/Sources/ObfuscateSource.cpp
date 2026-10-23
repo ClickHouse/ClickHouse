@@ -52,10 +52,7 @@ ContextPtr ObfuscateSource::makeInnerContext(const ContextPtr & context_)
         inner_context->setSetting("additional_result_filter", Field(""));
     }
 
-    /// The inner query is analyzed from scratch here and was never seen by a distributed
-    /// initiator. Mark the context the same way `StorageView` does, so that positional
-    /// arguments (`GROUP BY 1`) are resolved even on secondary-query / local-shard-plan
-    /// contexts, where resolution is otherwise skipped as already done by the initiator.
+    /// The inner query is analyzed from scratch, like the body of a view.
     inner_context->setIsViewInnerQuery(true);
 
     return inner_context;
