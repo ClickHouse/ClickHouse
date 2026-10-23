@@ -69,19 +69,17 @@ SELECT count() FROM logs WHERE level = 'Info' AND id > 995 SETTINGS force_data_s
 SELECT id FROM logs WHERE id > 100 AND level = 'Error' AND message LIKE '%boo%' ORDER BY id SETTINGS force_data_skipping_indices = 'message_ngram';
 SELECT id FROM logs WHERE level = 'Error' AND message LIKE '%boo%' ORDER BY id SETTINGS force_data_skipping_indices = 'message_ngram'; -- { serverError INDEX_NOT_USED }
 
--- An `IN` condition and a condition with an alias.
+-- An `IN` condition.
 CREATE TABLE logs_misc
 (
     id UInt64,
     level String,
-    INDEX id_in id TYPE minmax WHERE level IN ('Error', 'Fatal'),
-    INDEX id_alias id TYPE minmax WHERE (level = 'Error' AS is_error)
+    INDEX id_in id TYPE minmax WHERE level IN ('Error', 'Fatal')
 )
 ENGINE = MergeTree ORDER BY tuple()
 SETTINGS index_granularity = 10, index_granularity_bytes = '10Mi';
 INSERT INTO logs_misc SELECT number, if(number % 100 = 0, 'Error', 'Info') FROM numbers(1000);
 SELECT count() FROM logs_misc WHERE level IN ('Error', 'Fatal') AND id = 300 SETTINGS force_data_skipping_indices = 'id_in', max_rows_to_read = 10;
-SELECT count() FROM logs_misc WHERE level = 'Error' AND id = 300 SETTINGS force_data_skipping_indices = 'id_alias', max_rows_to_read = 10;
 
 -- With FINAL, the granule with the newest version is read even if it has no rows for the index.
 CREATE TABLE versions (id UInt64, status String, INDEX id_active id TYPE minmax WHERE status = 'active')
@@ -96,6 +94,7 @@ CREATE TABLE logs_array_join (x UInt64, INDEX i x TYPE minmax WHERE arrayJoin([1
 CREATE TABLE logs_constant (x UInt64, INDEX i x TYPE minmax WHERE 1) ENGINE = MergeTree ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 CREATE TABLE logs_text (s String, INDEX i s TYPE text(tokenizer = 'splitByNonAlpha') WHERE s = 'a') ENGINE = MergeTree ORDER BY tuple(); -- { serverError NOT_IMPLEMENTED }
 CREATE TABLE logs_not_bool (s String, INDEX i s TYPE minmax WHERE s) ENGINE = MergeTree ORDER BY tuple(); -- { serverError ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER }
+CREATE TABLE logs_alias (s String, INDEX i s TYPE minmax WHERE (s = 'a' AS is_a)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE logs;
 DROP TABLE logs_misc;

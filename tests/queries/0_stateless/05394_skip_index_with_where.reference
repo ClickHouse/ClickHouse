@@ -47,20 +47,17 @@ SELECT id FROM logs WHERE id > 100 AND level = 'Error' AND message LIKE '%boo%' 
 500
 1000
 SELECT id FROM logs WHERE level = 'Error' AND message LIKE '%boo%' ORDER BY id SETTINGS force_data_skipping_indices = 'message_ngram'; -- { serverError INDEX_NOT_USED }
--- An `IN` condition and a condition with an alias.
+-- An `IN` condition.
 CREATE TABLE logs_misc
 (
     id UInt64,
     level String,
-    INDEX id_in id TYPE minmax WHERE level IN ('Error', 'Fatal'),
-    INDEX id_alias id TYPE minmax WHERE (level = 'Error' AS is_error)
+    INDEX id_in id TYPE minmax WHERE level IN ('Error', 'Fatal')
 )
 ENGINE = MergeTree ORDER BY tuple()
 SETTINGS index_granularity = 10, index_granularity_bytes = '10Mi';
 INSERT INTO logs_misc SELECT number, if(number % 100 = 0, 'Error', 'Info') FROM numbers(1000);
 SELECT count() FROM logs_misc WHERE level IN ('Error', 'Fatal') AND id = 300 SETTINGS force_data_skipping_indices = 'id_in', max_rows_to_read = 10;
-1
-SELECT count() FROM logs_misc WHERE level = 'Error' AND id = 300 SETTINGS force_data_skipping_indices = 'id_alias', max_rows_to_read = 10;
 1
 -- With FINAL, the granule with the newest version is read even if it has no rows for the index.
 CREATE TABLE versions (id UInt64, status String, INDEX id_active id TYPE minmax WHERE status = 'active')

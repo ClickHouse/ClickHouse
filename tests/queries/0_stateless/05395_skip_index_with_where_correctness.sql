@@ -189,16 +189,9 @@ SELECT count() FROM t_format_row_names WHERE k = 1 AND formatRow('JSONEachRow', 
 SELECT count() FROM t_format_row_names WHERE k = 1 AND formatRow('JSONEachRow', ab AS a, c AS bc) = '{"a":1,"bc":2}\n' SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0;
 SELECT count() FROM t_format_row_names WHERE k = 1 AND formatRow('JSONEachRow', ab AS a, c AS bc) = '{"a":1,"bc":2}\n' SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1;
 
-SELECT 'formatRow field names in the marker of a part attached under another definition';
-CREATE TABLE t_format_row_marker (k UInt64, ab UInt8, c UInt8, INDEX idx k TYPE minmax WHERE formatRow('JSONEachRow', ab, c) = '{"a":1,"bc":2}\n') ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO t_format_row_marker VALUES (1, 1, 2);
-ALTER TABLE t_format_row_marker DETACH PARTITION tuple();
-ALTER TABLE t_format_row_marker DROP INDEX idx;
-ALTER TABLE t_format_row_marker ADD INDEX idx k TYPE minmax WHERE formatRow('JSONEachRow', ab AS a, c AS bc) = '{"a":1,"bc":2}\n';
-ALTER TABLE t_format_row_marker ATTACH PARTITION tuple();
-SELECT count() FROM t_format_row_marker WHERE k = 1 AND formatRow('JSONEachRow', ab AS a, c AS bc) = '{"a":1,"bc":2}\n' SETTINGS use_skip_indexes = 0;
-SELECT count() FROM t_format_row_marker WHERE k = 1 AND formatRow('JSONEachRow', ab AS a, c AS bc) = '{"a":1,"bc":2}\n' SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0;
-SELECT count() FROM t_format_row_marker WHERE k = 1 AND formatRow('JSONEachRow', ab AS a, c AS bc) = '{"a":1,"bc":2}\n' SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 1;
+SELECT 'formatRow field names given by aliases in the index condition are rejected';
+CREATE TABLE t_format_row_marker (k UInt64, ab UInt8, c UInt8) ENGINE = MergeTree ORDER BY tuple();
+ALTER TABLE t_format_row_marker ADD INDEX idx k TYPE minmax WHERE formatRow('JSONEachRow', ab AS a, c AS bc) = '{"a":1,"bc":2}\n'; -- { serverError BAD_ARGUMENTS }
 
 SELECT 'setting read from the query that writes the part: use_legacy_to_time';
 SET enable_time_time64_type = 1;
