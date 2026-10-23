@@ -277,6 +277,19 @@ TEST(LanceQuerySession, IdentityKeyDelimitsAdjacentFields)
     EXPECT_NE(a.identityKey(), b.identityKey());
 }
 
+TEST(LanceQuerySession, IdentityKeySensitiveToTimeouts)
+{
+    Lance::DatasetOptions a{.uri = "s3://bucket/ds", .use_s3 = true};
+    Lance::DatasetOptions b = a;
+    b.s3_request_timeout_ms = 1000;
+    EXPECT_NE(a.identityKey(), b.identityKey());
+
+    Lance::DatasetOptions c = a;
+    c.s3_connect_timeout_ms = 1000;
+    EXPECT_NE(a.identityKey(), c.identityKey());
+    EXPECT_NE(b.identityKey(), c.identityKey());
+}
+
 TEST(LanceQuerySession, PinSnapshotIsIdempotent)
 {
     auto context = Context::createCopy(getContext().context);

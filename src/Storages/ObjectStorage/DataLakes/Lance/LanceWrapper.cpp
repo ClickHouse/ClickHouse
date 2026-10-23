@@ -209,6 +209,10 @@ String DatasetOptions::identityKey() const
     hash.update(static_cast<UInt8>(s3_no_sign_request));
     hash.update(static_cast<UInt8>(s3_allow_http));
     hash.update(static_cast<UInt8>(s3_virtual_hosted_style_request));
+    /// The timeouts configure the object store client of the handle, so handles with different
+    /// timeouts cannot be shared.
+    hash.update(s3_request_timeout_ms);
+    hash.update(s3_connect_timeout_ms);
     return getSipHash128AsHexString(hash);
 }
 
