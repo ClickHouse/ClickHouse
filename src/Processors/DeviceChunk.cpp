@@ -5,10 +5,12 @@
 #include <Processors/IProcessor.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 
 namespace ProfileEvents
 {
     extern const Event DeviceChunksMaterialized;
+    extern const Event DeviceChunksMaterializedMicroseconds;
 }
 
 namespace DB
@@ -57,7 +59,9 @@ void materializeDeviceChunk(Chunk & chunk, const Block & header)
         return;
 
     ProfileEvents::increment(ProfileEvents::DeviceChunksMaterialized);
+    Stopwatch watch;
     Columns columns = info->columns->materialize(header);
+    ProfileEvents::increment(ProfileEvents::DeviceChunksMaterializedMicroseconds, watch.elapsedMicroseconds());
     if (columns.size() != header.columns())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR, "{} columns materialized from a device chunk of a header of {}", columns.size(), header.columns());
