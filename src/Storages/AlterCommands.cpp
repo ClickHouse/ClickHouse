@@ -764,6 +764,22 @@ static std::vector<ColumnDescription> columnsAddedByAlter(
 }
 
 
+/// Inserts the columns returned by `columnsAddedByAlter` where `ADD COLUMN ... FIRST | AFTER` places them.
+static void addColumnsAtPosition(ColumnsDescription & columns, const std::vector<ColumnDescription> & columns_to_add, const String & after_column, bool first)
+{
+    if (!after_column.empty() || first)
+    {
+        for (const auto & column : columns_to_add | std::views::reverse)
+            columns.add(column, after_column, first);
+    }
+    else
+    {
+        for (const auto & column : columns_to_add)
+            columns.add(column, after_column, first);
+    }
+}
+
+
 std::optional<AlterCommand> AlterCommand::extractSettingsResets()
 {
     if (type != MODIFY_SETTING || settings_resets.empty())
@@ -844,17 +860,7 @@ void AlterCommand::apply(
         if (columns_to_add.empty())
             return;
 
-        if (!after_column.empty() || first)
-        {
-            for (const auto & col : columns_to_add | std::views::reverse)
-                metadata.columns.add(col, after_column, first);
-        }
-        else
-        {
-            for (const auto & col : columns_to_add)
-                metadata.columns.add(col, after_column, first);
-        }
-
+        addColumnsAtPosition(metadata.columns, columns_to_add, after_column, first);
         metadata.addImplicitIndicesForColumn(column, context);
     }
     else if (type == DROP_COLUMN)
@@ -2136,6 +2142,10 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, ContextPtr
                     }
                 }
             }
+
+            /// The snapshot follows the `FIRST` / `AFTER` placement of the column, like `apply` does.
+            if (!command.ignore && (command.first || !command.after_column.empty()) && columns.has(command.column_name))
+                columns.modifyColumnOrder(command.column_name, command.after_column, command.first);
         }
         else if (command.type == AlterCommand::ADD_COLUMN)
         {
@@ -2144,8 +2154,11 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, ContextPtr
             else
             {
                 ColumnDescription added_column(command.column_name, command.data_type);
-                for (auto & column : columnsAddedByAlter(columns, added_column, context, command.if_not_exists, share_nested_offsets))
-                    columns.add(std::move(column));
+                addColumnsAtPosition(
+                    columns,
+                    columnsAddedByAlter(columns, added_column, context, command.if_not_exists, share_nested_offsets),
+                    command.after_column,
+                    command.first);
             }
         }
         else if (command.type == AlterCommand::DROP_COLUMN
@@ -2319,12 +2332,14 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     codec_validation_settings);
             }
 
-            /// Advance the working snapshot with the exact columns apply() would materialize
-            /// (flatten_nested expansion), not a synthetic top-level `n`, so a later command in the
+            /// Advance the working snapshot with the exact columns apply() would materialize, at the same place
+            /// (flatten_nested expansion, FIRST / AFTER), not a synthetic top-level `n`, so a later command in the
             /// same ALTER that targets a real flattened child (e.g. RENAME COLUMN `n.b`) sees it.
-            for (auto & col : columnsAddedByAlter(all_columns, ColumnDescription(column_name, command.data_type),
-                                                  context, command.if_not_exists, share_nested))
-                all_columns.add(std::move(col));
+            addColumnsAtPosition(
+                all_columns,
+                columnsAddedByAlter(all_columns, ColumnDescription(column_name, command.data_type), context, command.if_not_exists, share_nested),
+                command.after_column,
+                command.first);
         }
         else if (command.type == AlterCommand::MODIFY_COLUMN)
         {
@@ -2413,6 +2428,9 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 /// Later commands of the same ALTER, such as a codec for a subcolumn of the new type, see the new type.
                 all_columns.modify(column_name, [&](ColumnDescription & column) { column.type = command.data_type; });
             }
+
+            if (command.first || !command.after_column.empty())
+                all_columns.modifyColumnOrder(column_name, command.after_column, command.first);
 
             if (command.isRemovingProperty())
             {
