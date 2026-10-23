@@ -1553,11 +1553,16 @@ ColumnPtr ColumnArray::replicateNumber(const Offsets & replicate_offsets) const
     {
         size_t size_to_replicate = replicate_offsets[i] - prev_replicate_offset;
         size_t value_size = src_offsets[i] - prev_data_offset;
+        size_t value_bytes = value_size * sizeof(T);
         const T * src = &src_data[prev_data_offset];
 
         for (size_t j = 0; j < size_to_replicate; ++j)
         {
-            memcpySmallAllowReadWriteOverflow15(&res_data[current_new_offset], src, value_size * sizeof(T));
+            /// memcpySmallAllowReadWriteOverflow15 is slower than memcpy for long values.
+            if (value_bytes <= 64)
+                memcpySmallAllowReadWriteOverflow15(&res_data[current_new_offset], src, value_bytes);
+            else
+                memcpy(&res_data[current_new_offset], src, value_bytes);
             current_new_offset += value_size;
             res_offsets[res_row] = current_new_offset;
             ++res_row;
