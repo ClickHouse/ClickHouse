@@ -1,39 +1,29 @@
 -- Tags: no-fasttest
 -- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
 
--- With parallel replicas and an empty data table, the local plan is built from a copy of the query tree and
+-- With parallel replicas and an empty samples table, the local plan is built from a copy of the query tree and
 -- runs `timeSeriesStoreTags` after the context it was created with is gone.
 
 SET allow_experimental_time_series_table = 1, session_timezone = 'UTC';
 
 DROP TABLE IF EXISTS ts;
-DROP TABLE IF EXISTS ts_data;
-DROP TABLE IF EXISTS ts_tags;
-DROP TABLE IF EXISTS ts_time_ranges;
-DROP TABLE IF EXISTS ts_metrics;
 DROP TABLE IF EXISTS t_data;
 DROP TABLE IF EXISTS t_tags;
 DROP TABLE IF EXISTS t_ranges;
 
-CREATE TABLE ts_data (id UUID, timestamp DateTime64(3, 'UTC'), value Float64) ENGINE = MergeTree ORDER BY (id, timestamp);
-CREATE TABLE ts_tags (id UUID, metric_name LowCardinality(String), tags Map(LowCardinality(String), String))
-ENGINE = ReplacingMergeTree ORDER BY (metric_name, id);
-CREATE TABLE ts_time_ranges (id UUID, min_time SimpleAggregateFunction(min, DateTime64(3, 'UTC')), max_time SimpleAggregateFunction(max, DateTime64(3, 'UTC')))
-ENGINE = AggregatingMergeTree ORDER BY id;
-CREATE TABLE ts_metrics (metric_family String, type String, unit String, help String) ENGINE = ReplacingMergeTree ORDER BY metric_family;
-CREATE TABLE ts ENGINE = TimeSeries DATA ts_data TAGS ts_tags TIME RANGES ts_time_ranges METRICS ts_metrics;
+CREATE TABLE ts ENGINE = TimeSeries;
 CREATE TABLE t_data (id UInt64) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE t_tags (id UInt64) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE t_ranges (id UInt64) ENGINE = MergeTree ORDER BY id;
 
+-- Time series with tags and time ranges but without samples.
 INSERT INTO ts (metric_name, tags, samples) VALUES
-    ('req', map('job', 'api', 'instance', 'i1'), [(toDateTime64(90, 3), 1), (toDateTime64(110, 3), 2)]),
-    ('req', map('job', 'db', 'instance', 'i2'), [(toDateTime64(90, 3), 3), (toDateTime64(110, 3), 4)]),
-    ('lim', map('job', 'api', 'instance', 'i1'), [(toDateTime64(90, 3), 10), (toDateTime64(110, 3), 20)]);
+    ('req', map('job', 'api', 'instance', 'i1'), []),
+    ('req', map('job', 'db', 'instance', 'i2'), []),
+    ('lim', map('job', 'api', 'instance', 'i1'), []);
+INSERT INTO FUNCTION timeSeriesTimeRanges(ts) SELECT id, toDateTime64(90, 3), toDateTime64(110, 3) FROM timeSeriesTags(ts);
 INSERT INTO t_tags VALUES (1), (2), (3);
 INSERT INTO t_ranges VALUES (1), (2), (3);
-
-TRUNCATE TABLE ts_data;
 
 SET enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
     parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan = 1, automatic_parallel_replicas_mode = 0,
@@ -55,7 +45,7 @@ WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND is_initi
     AND log_comment = '05410_empty_data'
 SETTINGS enable_parallel_replicas = 0;
 
-INSERT INTO ts_data SELECT id, toDateTime64(100, 3), 5 FROM ts_tags;
+INSERT INTO FUNCTION timeSeriesSamples(ts) SELECT id, toDateTime64(100, 3), 5 FROM timeSeriesTags(ts);
 
 SELECT 'with data';
 SELECT tags, samples FROM prometheusQueryRange('ts', 'req', 100, 120, 10) ORDER BY toString(tags);
@@ -67,10 +57,6 @@ SELECT timeSeriesGroupToTags(timeSeriesTagsToGroup([('a', toString(number))])) F
 SELECT name, signature != '' FROM system.functions WHERE name IN ('timeSeriesStoreTags', 'timeSeriesTagsToGroup') ORDER BY name;
 
 DROP TABLE ts;
-DROP TABLE ts_data;
-DROP TABLE ts_tags;
-DROP TABLE ts_time_ranges;
-DROP TABLE ts_metrics;
 DROP TABLE t_data;
 DROP TABLE t_tags;
 DROP TABLE t_ranges;
