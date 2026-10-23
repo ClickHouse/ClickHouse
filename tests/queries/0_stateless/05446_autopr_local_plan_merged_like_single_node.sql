@@ -7,26 +7,21 @@
 DROP TABLE IF EXISTS t_facts;
 DROP TABLE IF EXISTS t_dim;
 
-CREATE TABLE t_facts (k UInt64, flag UInt8, v UInt64, w UInt64) ENGINE = MergeTree ORDER BY k
-    SETTINGS index_granularity = 8192;
-CREATE TABLE t_dim (k UInt64, name String) ENGINE = MergeTree ORDER BY k
-    SETTINGS index_granularity = 8192;
+CREATE TABLE t_facts (k UInt64, flag UInt8, v UInt64, w UInt64) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE t_dim (k UInt64, name String) ENGINE = MergeTree ORDER BY k;
 
 INSERT INTO t_facts SELECT number % 20000, number % 3, number, number % 7 FROM numbers(200000);
 INSERT INTO t_dim SELECT number, toString(number % 10) FROM numbers(100);
 
 SET enable_analyzer = 1;
-SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, query_plan_merge_expressions = 1;
-SET enable_join_runtime_filters = 1, join_algorithm = 'hash';
--- Both plans have to add the runtime filter. With statistics the single-node plan can estimate the probe
--- side below the threshold, while the replicas plan cannot see through `MergingAggregated`.
+SET optimize_move_to_prewhere = 1;
+SET enable_join_runtime_filters = 1;
+-- Both plans have to add the runtime filter. The single-node plan can estimate the probe side below the
+-- threshold, while the replicas plan cannot see through `MergingAggregated`.
 SET join_runtime_filter_min_probe_rows = 0;
 -- Without merging the filters, the runtime filter stays a step of its own in the local branch.
 SET query_plan_merge_filters = 1;
--- Keep the subquery on the probe side in both plans.
-SET query_plan_join_swap_table = 'false', query_plan_optimize_join_order_randomize = 0;
--- An aggregation that spills marks the statistics as unsupported.
-SET max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0;
+-- The local branch is optimized on its own only in this implementation.
 SET parallel_replicas_plan_based = 0;
 SET enable_parallel_replicas = 1;
 -- Mode 2 always collects the statistics, without consulting the cost model.
