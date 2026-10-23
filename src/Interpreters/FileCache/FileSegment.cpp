@@ -1551,6 +1551,8 @@ void FileSegment::setDetachedState(const FileSegmentGuard::Lock & lock)
     queue_iterator = nullptr;
     if (download_data && download_data->cache_writer)
         download_data->cache_writer->cancel();
+    if (download_data)
+        setReaderIOSchedulingUnlocked(*download_data, {});
     resetDownloadDataUnlocked(lock);
 }
 
