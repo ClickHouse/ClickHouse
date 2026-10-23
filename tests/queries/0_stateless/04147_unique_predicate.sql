@@ -44,5 +44,11 @@ INSERT INTO t_lc_nullable VALUES ('a');
 SELECT UNIQUE(SELECT x FROM t_lc_nullable);
 DROP TABLE t_lc_nullable;
 
-SELECT 'Correlated subquery: not supported';
-SELECT UNIQUE(SELECT number FROM numbers(5) WHERE number = n) FROM (SELECT 1 AS n); -- { serverError NOT_IMPLEMENTED }
+SELECT 'Correlated subquery';
+SET allow_correlated_subqueries = 1;
+SELECT n, UNIQUE(SELECT number % n FROM numbers(3)) FROM (SELECT arrayJoin([1, 2, 5]) AS n) ORDER BY n;
+SELECT n, UNIQUE(SELECT 1 FROM numbers(5) WHERE number < n) FROM (SELECT arrayJoin([0, 1, 2]) AS n) ORDER BY n;
+SELECT n FROM (SELECT arrayJoin([1, 2, 3, 4]) AS n) WHERE UNIQUE(SELECT intDiv(number, n) FROM numbers(2)) ORDER BY n;
+
+SELECT 'Floating-point values are compared like DISTINCT does';
+SELECT UNIQUE(SELECT arrayJoin([0.0, -0.0])), UNIQUE(SELECT nan FROM numbers(2));

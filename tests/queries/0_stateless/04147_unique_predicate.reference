@@ -24,4 +24,13 @@ Nullable column with actual duplicates among non-NULL rows
 LowCardinality(Nullable(...)) columns
 1
 0
-Correlated subquery: not supported
+Correlated subquery
+1	0
+2	0
+5	1
+0	1
+1	1
+2	0
+1
+Floating-point values are compared like DISTINCT does
+1	0
