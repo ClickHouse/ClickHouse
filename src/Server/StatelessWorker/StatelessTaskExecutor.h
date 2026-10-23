@@ -32,6 +32,8 @@ public:
         TaskFinished = 3,
         TaskCancelled = 4,
         TaskFailed = 5,
+        /// The task has failed and still frees its resources, e.g. removes its spilled data.
+        TaskFailing = 6,
     };
 
     struct TaskStatus
@@ -39,7 +41,7 @@ public:
         Result result;
         String message;
         Progress progress;
-        /// Error code of a failed task, 0 otherwise.
+        /// Error code of a failed or failing task, 0 otherwise.
         int error_code = 0;
         /// Log lines drained on this poll together with the loss counters; set only when the task
         /// collects logs (see `startTask`).
@@ -75,10 +77,23 @@ private:
 
 //    std::atomic<bool> shutdown_called{false};
 
+    /// The failure of a task, known as soon as the task fails and before it frees its resources.
+    class FailureSlot
+    {
+    public:
+        void set(TaskFailure failure_);
+        std::optional<TaskFailure> get() const;
+
+    private:
+        mutable std::mutex mutex;
+        std::optional<TaskFailure> failure TSA_GUARDED_BY(mutex);
+    };
+
     struct TaskState
     {
         /// Fulfilled when the task ends: with nothing on success, with the failure otherwise.
         std::shared_future<std::optional<TaskFailure>> completion_future;
+        std::shared_ptr<FailureSlot> failure = std::make_shared<FailureSlot>();
         std::shared_ptr<std::atomic<bool>> cancelled = std::make_shared<std::atomic<bool>>(false);
         std::shared_ptr<Progress> progress = std::make_shared<Progress>();
         /// What the coordinator asked to collect for this task; decides which payloads a status reply carries.

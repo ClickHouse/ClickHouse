@@ -1,0 +1,18 @@
+-- S3: a session setting does not apply, even in the session that creates the table
+CANNOT_PARSE_INPUT_ASSERTION_FAILED
+-- S3: the SETTINGS clause applies, in any session and after the table is attached again
+0	0
+1	10
+2	20
+0	0
+1	10
+2	20
+-- AZURE: a session setting does not apply, even in the session that creates the table
+CANNOT_PARSE_INPUT_ASSERTION_FAILED
+-- AZURE: the SETTINGS clause applies, in any session and after the table is attached again
+0	0
+1	10
+2	20
+0	0
+1	10
+2	20
