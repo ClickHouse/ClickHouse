@@ -482,6 +482,9 @@ SELECT groupBitXor(num) FROM t;
     factory.registerAlias("BIT_OR", "groupBitOr", AggregateFunctionFactory::Case::Insensitive);
     factory.registerAlias("BIT_AND", "groupBitAnd", AggregateFunctionFactory::Case::Insensitive);
     factory.registerAlias("BIT_XOR", "groupBitXor", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("bitwise_or_agg", "groupBitOr", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("bitwise_and_agg", "groupBitAnd", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("bitwise_xor_agg", "groupBitXor", AggregateFunctionFactory::Case::Insensitive);
 }
 
 }

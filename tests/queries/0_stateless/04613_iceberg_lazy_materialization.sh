@@ -17,7 +17,7 @@ TABLE_PATH="${USER_FILES_PATH}/${TABLE}/"
 trap 'rm -rf "${TABLE_PATH}" 2>/dev/null' EXIT
 
 ${CLICKHOUSE_CLIENT} --query "
-    CREATE TABLE ${TABLE} (k UInt64, f UInt64, s String)
+    CREATE TABLE ${TABLE} (k Int64, f Int64, s String)
     ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet')
 "
 
@@ -80,7 +80,7 @@ ${CLICKHOUSE_CLIENT} \
 # Schema evolution forces reading all physical columns of the older files, so such
 # snapshots must not take the lazy path even when the optimization is enabled.
 echo '-- schema evolution keeps the lazy path off'
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "ALTER TABLE ${TABLE} ADD COLUMN extra Nullable(UInt64)"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "ALTER TABLE ${TABLE} ADD COLUMN extra Nullable(Int64)"
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "
     INSERT INTO ${TABLE}
     SELECT number AS k, number % 7 AS f, concat('val_', toString(number)) AS s, number * 2 AS extra FROM numbers(10000, 100)

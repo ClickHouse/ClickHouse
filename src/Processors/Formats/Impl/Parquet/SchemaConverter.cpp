@@ -21,8 +21,10 @@
 #include <Formats/FormatFilterInfo.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
+#include <Processors/Formats/Impl/Parquet/FileLogicalType.h>
 
 #include <array>
+#include <unordered_set>
 #include <fmt/ranges.h>
 
 namespace DB::ErrorCodes
@@ -41,9 +43,9 @@ namespace DB::Parquet
 {
 
 SchemaConverter::SchemaConverter(
-    const parq::FileMetaData & file_metadata_, const ReadOptions & options_,
+    const FileFooter & file_footer_, const ReadOptions & options_,
     const Block * sample_block_, std::optional<std::unordered_map<String, GeoColumnMetadata>> precomputed_geo_columns)
-    : file_metadata(file_metadata_), options(options_), sample_block(sample_block_)
+    : file_footer(file_footer_), file_metadata(file_footer_.metadata), options(options_), sample_block(sample_block_)
     , levels {LevelInfo {.def = 0, .rep = 0, .is_array = true}}
 {
     if (precomputed_geo_columns.has_value())
@@ -206,6 +208,84 @@ std::string_view SchemaConverter::useColumnMapperIfNeeded(
     return it->second;
 }
 
+static bool isPrimitiveNode(const parq::SchemaElement & elem)
+{
+    /// `parquet.thrift` says "[num_children] is not set when the element is a primitive type".
+    /// If it's set but has value 0, logically it should be an empty tuple/struct.
+    /// But in practice some writers are sloppy about it and set this field to 0 (rather than unset)
+    /// for primitive columns. E.g.
+    /// tests/queries/0_stateless/data_hive/partitioning/non_existing_column=Elizabeth/sample.parquet
+    return !elem.__isset.num_children || (elem.num_children == 0 && elem.__isset.type);
+}
+
+/// Checks that the children of a group annotated with the `FILE` logical type are the fields
+/// defined by the specification, with the specified physical and logical types and `OPTIONAL`
+/// repetition. Apart from this, the group is read as an ordinary `Tuple`.
+///
+/// The values are not validated: a row whose fields do not form a valid reference (e.g. `offset`
+/// without `uri`, or no fields set at all) is returned as is, with each field as stored. The
+/// specification allows a reader to return a null reference for such rows, and returning the
+/// stored fields is not less informative than that (a reference with all fields null is the null
+/// reference), while avoiding a pass over the values.
+static void validateFileLogicalTypeGroup(const parq::FileMetaData & file_metadata, size_t group_schema_idx, const String & name_for_logging)
+{
+    const parq::SchemaElement & group = file_metadata.schema.at(group_schema_idx);
+    const size_t first_child_idx = group_schema_idx + 1;
+    if (group.num_children < 0 || size_t(group.num_children) > file_metadata.schema.size() - first_child_idx)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet schema element {} declares {} children, but only {} schema elements remain in the file", name_for_logging, group.num_children, file_metadata.schema.size() - first_child_idx);
+
+    std::unordered_set<std::string_view> seen_names;
+    for (size_t i = 0; i < size_t(group.num_children); ++i)
+    {
+        /// Every child must be a primitive node (checked below), so the children are consecutive.
+        const parq::SchemaElement & field = file_metadata.schema[first_child_idx + i];
+        const std::optional<FileLogicalTypeFieldKind> kind = getFileLogicalTypeFieldKind(field.name);
+        if (!kind.has_value())
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Parquet column {} has `FILE` logical type, but contains unrecognized field `{}`. Valid fields are: {}",
+                name_for_logging, field.name, file_logical_type_field_names);
+        if (!seen_names.insert(field.name).second)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Parquet column {} has `FILE` logical type, but contains field `{}` more than once", name_for_logging, field.name);
+        if (!isPrimitiveNode(field))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Parquet column {} has `FILE` logical type, but its field `{}` is a group", name_for_logging, field.name);
+        if (field.repetition_type != parq::FieldRepetitionType::OPTIONAL)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Parquet column {} has `FILE` logical type, but its field `{}` is not OPTIONAL", name_for_logging, field.name);
+
+        const parq::LogicalType & logical = field.logicalType;
+        const bool has_annotation = field.__isset.logicalType || field.__isset.converted_type;
+        bool valid_type = false;
+        std::string_view expected_type;
+        switch (*kind)
+        {
+            case FileLogicalTypeFieldKind::String:
+                expected_type = "BYTE_ARRAY annotated with STRING";
+                valid_type = field.type == parq::Type::BYTE_ARRAY
+                    && (field.__isset.logicalType ? logical.__isset.STRING
+                                                  : field.__isset.converted_type && field.converted_type == parq::ConvertedType::UTF8);
+                break;
+            case FileLogicalTypeFieldKind::Int64:
+                /// An `INTEGER(64, true)` annotation means the same as no annotation.
+                expected_type = "INT64";
+                valid_type = field.type == parq::Type::INT64
+                    && (!has_annotation
+                        || (field.__isset.logicalType && logical.__isset.INTEGER && logical.INTEGER.bitWidth == 64 && logical.INTEGER.isSigned)
+                        || (!field.__isset.logicalType && field.converted_type == parq::ConvertedType::INT_64));
+                break;
+            case FileLogicalTypeFieldKind::Binary:
+                expected_type = "BYTE_ARRAY without annotation";
+                valid_type = field.type == parq::Type::BYTE_ARRAY && !has_annotation;
+                break;
+        }
+        if (!field.__isset.type || !valid_type)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Parquet column {} has `FILE` logical type, but its field `{}` has unexpected type (expected {}): {}",
+                name_for_logging, field.name, expected_type, thriftToString(field));
+    }
+}
+
 void SchemaConverter::processSubtree(TraversalNode & node)
 {
     /// Reject deeply nested schemas before recursing. The def-level guard below (def == UINT8_MAX)
@@ -311,6 +391,17 @@ void SchemaConverter::processSubtree(TraversalNode & node)
 
     /// https://github.com/apache/parquet-format/blob/master/LogicalTypes.md
 
+    /// A `FILE` group is validated regardless of whether it is requested (even partially, like
+    /// `file.uri`), because a schema that violates the specification makes the file invalid.
+    /// After that it is read as a `Tuple`, which is what processSubtreeTuple below produces for it.
+    if (node.element->logicalType.__isset.FILE)
+    {
+        if (isPrimitiveNode(*node.element))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Parquet column {} has `FILE` logical type, but it is a primitive column rather than a group", node.getNameForLogging());
+        validateFileLogicalTypeGroup(file_metadata, schema_idx - 1, node.getNameForLogging());
+    }
+
     if (!processSubtreePrimitive(node) &&
         !processSubtreeMap(node) &&
         !processSubtreeArrayOuter(node) &&
@@ -366,16 +457,6 @@ void SchemaConverter::processSubtree(TraversalNode & node)
     }
 }
 
-static bool isPrimitiveNode(const parq::SchemaElement & elem)
-{
-    /// `parquet.thrift` says "[num_children] is not set when the element is a primitive type".
-    /// If it's set but has value 0, logically it should be an empty tuple/struct.
-    /// But in practice some writers are sloppy about it and set this field to 0 (rather than unset)
-    /// for primitive columns. E.g.
-    /// tests/queries/0_stateless/data_hive/partitioning/non_existing_column=Elizabeth/sample.parquet
-    return !elem.__isset.num_children || (elem.num_children == 0 && elem.__isset.type);
-}
-
 bool SchemaConverter::processSubtreePrimitive(TraversalNode & node)
 {
     if (!isPrimitiveNode(*node.element))
@@ -389,6 +470,7 @@ bool SchemaConverter::processSubtreePrimitive(TraversalNode & node)
 
     DataTypePtr primitive_type_hint = node.type_hint;
     bool output_nullable = false;
+    bool output_nullable_requested = false;
     bool output_nullable_if_not_json = false;
     if (primitive_type_hint)
     {
@@ -399,6 +481,7 @@ bool SchemaConverter::processSubtreePrimitive(TraversalNode & node)
         if (primitive_type_hint->isNullable())
         {
             output_nullable = true;
+            output_nullable_requested = true;
             primitive_type_hint = assert_cast<const DataTypeNullable &>(*primitive_type_hint).getNestedType();
         }
     }
@@ -425,12 +508,21 @@ bool SchemaConverter::processSubtreePrimitive(TraversalNode & node)
     auto geo_it = geo_columns.find(node.getParquetName());
     auto geo_metadata = geo_it == geo_columns.end() ? std::nullopt : std::optional(geo_it->second);
 
+    /// Iceberg stores only `time` as Parquet TIME, so a column of a file without field ids needs no lookup.
+    bool time_as_stored_integer = false;
+    if (column_mapper && primitive_type_hint && WhichDataType(primitive_type_hint).isInt64())
+        time_as_stored_integer = node.element->__isset.field_id
+            ? column_mapper->isIcebergTimeFieldId(node.element->field_id)
+            : column_mapper->hasIcebergTimeFieldIds();
+
     DataTypePtr inferred_type;
     DataTypePtr decoded_type;
     PageDecoderInfo decoder;
     try
     {
-        processPrimitiveColumn(*node.element, primitive_type_hint, decoder, decoded_type, inferred_type, geo_metadata);
+        processPrimitiveColumn(
+            *node.element, primitive_type_hint, time_as_stored_integer, decoder, decoded_type, inferred_type, geo_metadata,
+            primitive_column_idx - 1);
     }
     catch (Exception & e)
     {
@@ -446,10 +538,12 @@ bool SchemaConverter::processSubtreePrimitive(TraversalNode & node)
         }
     }
 
-    /// GeoParquet types like Point or Polygon can't be inside Nullable.
+    /// Geo types based on arrays, like Polygon, can't be inside Nullable.
     /// Geometry (Variant) is also not Nullable-compatible.
+    /// Point (Tuple) can be inside Nullable, but it is inferred as non-nullable. If `Nullable(Point)`
+    /// is requested explicitly, keep the null map, otherwise NULLs would silently become (0, 0).
     if (typeid_cast<const DataTypeArray *>(inferred_type.get())
-        || typeid_cast<const DataTypeTuple *>(inferred_type.get())
+        || (typeid_cast<const DataTypeTuple *>(inferred_type.get()) && !output_nullable_requested)
         || typeid_cast<const DataTypeVariant *>(inferred_type.get()))
     {
         output_nullable = false;
@@ -607,7 +701,9 @@ bool SchemaConverter::processSubtreeArrayOuter(TraversalNode & node)
     if (child.repetition_type != parq::FieldRepetitionType::REPEATED)
         return false;
 
-    bool has_inner_group = child.num_children == 1;
+    /// A repeated group annotated with `FILE` is the element itself (a two-level list), even if it has
+    /// only one field: the middle level of a three-level list has no annotation.
+    bool has_inner_group = child.num_children == 1 && !child.logicalType.__isset.FILE;
 
     TraversalNode subnode = node.prepareToRecurse(has_inner_group ? SchemaContext::ListTuple : SchemaContext::ListElement, node.type_hint);
     processSubtree(subnode);
@@ -1114,10 +1210,69 @@ std::optional<RequestedIntegerSpace> getRequestedIntegerSpace(const IDataType & 
 
 }
 
+std::optional<GeoType> SchemaConverter::getGeoTypeFromGeospatialStatistics(size_t column_idx) const
+{
+    /// WKB (ISO) codes of 2D geometries are 1..6. With Z and/or M the code is increased by 1000,
+    /// 2000 or 3000. Such geometries have no corresponding ClickHouse type and cannot be parsed.
+    auto is_2d_geometry_type = [](Int32 geospatial_type) { return geospatial_type >= 1 && geospatial_type <= 6; };
+
+    /// The footer is parsed without column chunks, parse the chunks of only this column.
+    std::vector<FileColumnChunks> parsed;
+    deserializeColumnChunks(
+        file_footer.serialized.data(), file_footer.serialized.size(), file_footer.column_chunk_offsets, {column_idx}, parsed);
+    const auto & chunks = parsed.at(0).chunks;
+
+    std::optional<Int32> single_type;
+    bool is_mixed = false;
+    for (size_t row_group_idx = 0; row_group_idx < file_metadata.row_groups.size(); ++row_group_idx)
+    {
+        if (column_idx >= file_footer.numColumnChunks(row_group_idx))
+        {
+            is_mixed = true;
+            continue;
+        }
+        const auto & column_meta = chunks.at(row_group_idx).meta_data;
+
+        /// A column chunk with only NULLs has no geometry types.
+        if (column_meta.statistics.__isset.null_count && column_meta.statistics.null_count == column_meta.num_values)
+            continue;
+
+        /// An empty list means that the types are unknown.
+        if (!column_meta.__isset.geospatial_statistics || column_meta.geospatial_statistics.geospatial_types.empty())
+        {
+            is_mixed = true;
+            continue;
+        }
+
+        for (Int32 geospatial_type : column_meta.geospatial_statistics.geospatial_types)
+        {
+            if (!is_2d_geometry_type(geospatial_type))
+                return std::nullopt;
+            if (single_type.has_value() && *single_type != geospatial_type)
+                is_mixed = true;
+            single_type = geospatial_type;
+        }
+    }
+
+    if (is_mixed || !single_type.has_value())
+        return GeoType::Mixed;
+
+    switch (*single_type)
+    {
+        case 1: return GeoType::Point;
+        case 2: return GeoType::LineString;
+        case 3: return GeoType::Polygon;
+        case 4: return GeoType::MultiPoint;
+        case 5: return GeoType::MultiLineString;
+        case 6: return GeoType::MultiPolygon;
+        default: return GeoType::Mixed;
+    }
+}
+
 void SchemaConverter::processPrimitiveColumn(
-    const parq::SchemaElement & element, DataTypePtr type_hint,
+    const parq::SchemaElement & element, DataTypePtr type_hint, bool time_as_stored_integer,
     PageDecoderInfo & out_decoder, DataTypePtr & out_decoded_type,
-    DataTypePtr & out_inferred_type, std::optional<GeoColumnMetadata> geo_metadata) const
+    DataTypePtr & out_inferred_type, std::optional<GeoColumnMetadata> geo_metadata, size_t column_idx) const
 {
     /// Inputs:
     ///  * Parquet Type ("physical type"),
@@ -1307,6 +1462,16 @@ void SchemaConverter::processPrimitiveColumn(
         return get_output_type_index() == TypeIndex::String;
     };
 
+    auto set_plain_int64_decoder = [&](bool allow_datetime_and_ipv4)
+    {
+        out_inferred_type = std::make_shared<DataTypeInt64>();
+        auto converter = std::make_shared<IntConverter>();
+        converter->input_size = 8;
+        out_decoder.allow_stats = dispatch_int_stats_converter(allow_datetime_and_ipv4, *converter);
+        out_decoder.allow_hash_filters = allow_int_hash_filters(64, true, 64);
+        out_decoder.fixed_size_converter = std::move(converter);
+    };
+
     /// Escape hatch for reading raw plain-encoded values and bypassing data type stuff.
     /// If type FixedString is requested, and the parquet physical type is a fixed-size type of
     /// matching size, use a trivial FixedSizeConverter.
@@ -1342,6 +1507,80 @@ void SchemaConverter::processPrimitiveColumn(
         }
     }
 
+    /// Parquet `GEOMETRY` and `GEOGRAPHY` logical types: WKB values. ClickHouse has no geography
+    /// type, so `GEOGRAPHY` (whose coordinates are longitude/latitude) is read into the same geo
+    /// types as `GEOMETRY`, and its edge interpolation algorithm is not represented. The CRS is not
+    /// represented either. The sort order of these logical types is undefined, so min/max
+    /// statistics must be ignored: `allow_stats` stays false here and in the `String` case below.
+    const bool is_geospatial_logical_type = logical.__isset.GEOMETRY || logical.__isset.GEOGRAPHY;
+    if (is_geospatial_logical_type && type != parq::Type::BYTE_ARRAY)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type for geospatial logical type: {}", thriftToString(element));
+
+    /// If the type hint is String, return the raw WKB bytes.
+    if (is_geospatial_logical_type && (!type_hint || !typeid_cast<const DataTypeString *>(type_hint.get())))
+    {
+        std::optional<GeoType> type_from_hint;
+        if (type_hint)
+        {
+            const String hint_name = type_hint->getName();
+            if (hint_name == "Point")
+                type_from_hint = GeoType::Point;
+            else if (hint_name == "MultiPoint")
+                type_from_hint = GeoType::MultiPoint;
+            else if (hint_name == "LineString" || hint_name == "Ring")
+                /// `Ring` has the same structure as `LineString` and is not a WKB geometry type.
+                type_from_hint = GeoType::LineString;
+            else if (hint_name == "Polygon")
+                type_from_hint = GeoType::Polygon;
+            else if (hint_name == "MultiLineString")
+                type_from_hint = GeoType::MultiLineString;
+            else if (hint_name == "MultiPolygon")
+                type_from_hint = GeoType::MultiPolygon;
+            else if (hint_name == "Geometry")
+                type_from_hint = GeoType::Mixed;
+        }
+
+        /// A geo type requested explicitly is decoded even if the inference of geo types is disabled.
+        if (options.format.parquet.allow_geoparquet_parser || type_from_hint)
+        {
+            GeoColumnMetadata column_geo_metadata{GeoEncoding::WKB, GeoType::Mixed, std::nullopt};
+            bool decode_geo = true;
+            if (type_from_hint)
+            {
+                /// Decode directly into the requested type (a value of another type is an error).
+                column_geo_metadata.type = *type_from_hint;
+            }
+            else if (geo_metadata.has_value())
+            {
+                /// GeoParquet 1.1 allows to have both the `geo` metadata and the logical type. Use
+                /// the geometry type declared in the metadata, the same as for a column without
+                /// the logical type.
+                if (geo_metadata->encoding != GeoEncoding::WKB)
+                    throw Exception(ErrorCodes::INCORRECT_DATA,
+                        "Column with the geospatial logical type {} is declared with a non-WKB encoding in GeoParquet metadata",
+                        thriftToString(element));
+                column_geo_metadata.type = geo_metadata->type;
+            }
+            else if (auto type_from_statistics = getGeoTypeFromGeospatialStatistics(column_idx))
+            {
+                column_geo_metadata.type = *type_from_statistics;
+            }
+            else
+            {
+                /// The column has geometries with Z and/or M coordinates, which cannot be parsed.
+                /// Return the raw WKB bytes instead.
+                decode_geo = false;
+            }
+
+            if (decode_geo)
+            {
+                out_inferred_type = getGeoDataType(column_geo_metadata.type);
+                out_decoder.string_converter = std::make_shared<GeoConverter>(column_geo_metadata, options.format.precise_float_parsing);
+                return;
+            }
+        }
+    }
+
     /// GeoParquet.
     /// Spec says "Geometry columns MUST be at the root of the schema", but we allow them to be
     /// nested in tuples etc, why not. (Though nesting in arrays/maps probably currently wouldn't
@@ -1366,7 +1605,11 @@ void SchemaConverter::processPrimitiveColumn(
         return;
     }
 
-    if (logical.__isset.STRING || logical.__isset.JSON || logical.__isset.BSON ||
+    if (is_geospatial_logical_type)
+    {
+        /// Raw WKB bytes, see above. Fall through to dispatch by physical type only.
+    }
+    else if (logical.__isset.STRING || logical.__isset.JSON || logical.__isset.BSON ||
         logical.__isset.ENUM || converted == CONV::UTF8 || converted == CONV::JSON ||
         converted == CONV::BSON || converted == CONV::ENUM)
     {
@@ -1468,6 +1711,12 @@ void SchemaConverter::processPrimitiveColumn(
             scale = 9;
         else
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected timestamp units: {}", thriftToString(element));
+
+        if (time_as_stored_integer && is_time_of_day && scale == 6 && type == parq::Type::INT64)
+        {
+            set_plain_int64_decoder(/*allow_datetime_and_ipv4=*/ false);
+            return;
+        }
 
         if (type != parq::Type::INT64 && type != parq::Type::INT32)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type for timestamp logical type: {}", thriftToString(element));
@@ -1816,12 +2065,7 @@ void SchemaConverter::processPrimitiveColumn(
         }
         case parq::Type::INT64:
         {
-            out_inferred_type = std::make_shared<DataTypeInt64>();
-            auto converter = std::make_shared<IntConverter>();
-            converter->input_size = 8;
-            out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_ipv4=*/ false, *converter);
-            out_decoder.allow_hash_filters = allow_int_hash_filters(64, true, 64);
-            out_decoder.fixed_size_converter = std::move(converter);
+            set_plain_int64_decoder(/*allow_datetime_and_ipv4=*/ true);
             return;
         }
         case parq::Type::INT96:
@@ -1851,7 +2095,8 @@ void SchemaConverter::processPrimitiveColumn(
         {
             out_inferred_type = std::make_shared<DataTypeString>();
             auto converter = std::make_shared<TrivialStringConverter>();
-            out_decoder.allow_stats = is_output_type_string();
+            /// The sort order of the geospatial logical types is undefined, their min/max must be ignored.
+            out_decoder.allow_stats = is_output_type_string() && !is_geospatial_logical_type;
             out_decoder.string_converter = std::move(converter);
 
             if ((logical.__isset.JSON || converted == CONV::JSON) && options.format.parquet.enable_json_parsing)

@@ -271,3 +271,9 @@ select * from (select x + 1 as a, y from table_1 union all select x as a, y from
 4	ccc
 4	dddd
 5	dddd
+select * from table_1 order by x settings additional_result_filter='x in (select number from numbers(3))';
+1	a
+2	bb
+select count() as c from table_1 settings additional_result_filter='c in (select 4)', enable_analyzer=1;
+4
+select count() as c from table_1 settings additional_result_filter='c in (select 3)', enable_analyzer=1;
