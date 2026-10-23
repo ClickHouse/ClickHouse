@@ -7797,6 +7797,21 @@ bool KeyCondition::mayReadNullKeyValue(const Hyperrectangle & hyperrectangle, co
     return false;
 }
 
+bool KeyCondition::mayClaimNestedNullOrNaN(const DataTypes & key_types) const
+{
+    for (const auto & element : expandAtomGroups(rpn))
+    {
+        if (!atomIsNullForNullArgument(element.function) || !atomMayClaimNestedNullOrNaN(element))
+            continue;
+
+        for (size_t key_column : element.key_columns)
+            if (key_column < key_types.size() && key_types[key_column] && keyTypeMayHoldNestedNullOrNaN(key_types[key_column]))
+                return true;
+    }
+
+    return false;
+}
+
 /// The same over the sparse representation of the primary index, where a key column is addressed by
 /// its position among the columns the index resolves.
 bool KeyCondition::mayReadNullKeyValue(

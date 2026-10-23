@@ -2279,6 +2279,13 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         exact_ranges = nullptr;
 
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
+
+    /// Neither are there exact ranges when a nested `NULL` or `NaN` of a key value costs every range its
+    /// `can_be_false` claim. The search would otherwise trim the boundary marks of a continuous range and
+    /// then find the interior marks not exact either, which looks like an inconsistent `KeyCondition`.
+    if (exact_ranges && key_condition.mayClaimNestedNullOrNaN(primary_key.data_types))
+        exact_ranges = nullptr;
+
     auto index_columns = std::make_shared<ColumnsWithTypeAndName>();
 
     /// Which key columns are reverse-sorted.
