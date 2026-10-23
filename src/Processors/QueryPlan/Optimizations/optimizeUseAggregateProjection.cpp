@@ -1287,6 +1287,8 @@ UseProjectionsResult optimizeUseAggregateProjections(
         bool find_exact_ranges = !candidates.only_count_column.empty();
         if (!parent_reading_select_result || (!parent_reading_select_result->has_exact_ranges && find_exact_ranges))
             parent_reading_select_result = reading->selectRangesToRead(find_exact_ranges);
+        if (hypothetical)
+            hypothetical->outcome.parent_read = parent_reading_select_result->parts_with_ranges;
 
         const bool relax_projection_checks = context->getSettingsRef()[Setting::force_optimize_projection] || context->getSettingsRef()[Setting::prefer_optimize_projection];
 

@@ -2,6 +2,7 @@
 
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MarkRange.h>
+#include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/ProjectionsDescription.h>
 
 #include <optional>
@@ -39,6 +40,8 @@ struct HypotheticalProjection
         String reason;
         /// parent part name -> granules read from its projection part
         std::unordered_map<String, MarkRanges> ranges;
+        /// the read of the base table that the optimizer weighs an aggregate projection against
+        RangesInDataParts parent_read;
     };
     Outcome outcome;
 

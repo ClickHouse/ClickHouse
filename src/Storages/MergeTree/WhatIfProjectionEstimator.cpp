@@ -1204,12 +1204,11 @@ WhatIfCandidateResult evaluateProjection(
 
     if (settings.empirical)
     {
-        /// an exact count or column statistics can take parts out of the base read, but not out of the read that the optimizer
-        /// weighs an aggregate projection against
-        const auto whole_read = projection->type == ProjectionDescription::Type::Aggregate ? read_step->selectRangesToRead() : nullptr;
+        /// an exact count can take parts out of the base read, but the optimizer weighs an aggregate projection on all of them
+        const bool aggregate = projection->type == ProjectionDescription::Type::Aggregate;
+        const auto & parts_to_scan = aggregate ? probe->outcome.parent_read : baseline_parts;
         if (tryEstimateProjection(
-                result, *projection, filters_on_offsets, relaxing_setting, read_step,
-                whole_read ? whole_read->parts_with_ranges : baseline_parts, analysis.selected_marks,
+                result, *projection, filters_on_offsets, relaxing_setting, read_step, parts_to_scan, analysis.selected_marks,
                 settings.projection_scan_budget_rows, weigh))
             return result;
         result.empirical_status = WhatIfCandidateResult::Unsupported;
