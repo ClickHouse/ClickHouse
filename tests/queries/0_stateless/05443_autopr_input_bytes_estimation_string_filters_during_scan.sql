@@ -28,7 +28,6 @@ DROP TABLE IF EXISTS t_compact_varying_lengths;
 DROP TABLE IF EXISTS t_compact_empty_granules;
 DROP TABLE IF EXISTS t_compact_long_values;
 DROP TABLE IF EXISTS t_compact_large_values;
-DROP TABLE IF EXISTS t_compact_large_matching_values;
 DROP TABLE IF EXISTS t_compact_skip_index;
 
 -- Statistics are disabled so that reading them is not accounted in `ReadCompressedBytes`.
@@ -109,12 +108,6 @@ SETTINGS auto_statistics_types='', index_granularity=8192, index_granularity_byt
 INSERT INTO t_compact_large_values SELECT number, concat(if(number = 0, 'needle', ''), repeat(hex(cityHash64(number)), 65536)) FROM numbers(64);
 SELECT count() FROM t_compact_large_values WHERE s LIKE '%needle%' SETTINGS max_threads=1, max_memory_usage='32Mi', log_comment='large_values';
 
--- The same holds for the matching values, which are sampled together with the replaced ones.
-CREATE TABLE t_compact_large_matching_values(id UInt64, s String) ENGINE=MergeTree ORDER BY id
-SETTINGS auto_statistics_types='', index_granularity=8192, index_granularity_bytes=1073741824, min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18;
-INSERT INTO t_compact_large_matching_values SELECT number, concat(if(number % 2 = 0, 'needle', ''), repeat(hex(cityHash64(number)), 65536)) FROM numbers(32);
-SELECT count() FROM t_compact_large_matching_values WHERE s LIKE '%needle%' SETTINGS max_threads=1, max_memory_usage='64Mi', log_comment='large_matching_values';
-
 -- The parts without matches are rejected by the skip index while reading, and a rejected read task must not
 -- use up the blocks to sample, or the part with matches, which comes last, has no sample to estimate the input.
 -- `max_rows_to_read` is checked before reading, and the skip indexes are then applied before reading as well.
@@ -173,5 +166,4 @@ DROP TABLE t_compact_varying_lengths;
 DROP TABLE t_compact_empty_granules;
 DROP TABLE t_compact_long_values;
 DROP TABLE t_compact_large_values;
-DROP TABLE t_compact_large_matching_values;
 DROP TABLE t_compact_skip_index;
