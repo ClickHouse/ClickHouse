@@ -317,15 +317,6 @@ std::vector<DeviceFixedColumnBuffer> deviceColumnsFor(
     return columns;
 }
 
-/// The rows on the device of a column of varying width whose chars, the `chars_bytes` from where the first starts, all are.
-template <typename Offsets>
-size_t rowsCoveredBy(const Offsets & offsets, size_t chars_bytes)
-{
-    if (offsets.empty())
-        return 0;
-    const auto first = offsets.values.begin() + static_cast<std::ptrdiff_t>(offsets.front);
-    return static_cast<size_t>(std::upper_bound(first + 1, offsets.values.end(), offsets.at(0) + chars_bytes) - (first + 1));
-}
 
 /// What a reader stages of one column before it hands the piece over: the uncompressed bytes of the blocks staged, or the
 /// raw bytes. Every piece in the work queue is on the device already, so this times the queue's length bounds the device
@@ -434,7 +425,8 @@ GroupByGPUAccumulator::GroupByGPUAccumulator(
         reader.staging.resize(num_columns);
         reader.device_columns
             = deviceColumnsFor(key_element_types, values, filter_element_types, variable_column_indices.size(), compressed, compute());
-        reader.variable_offsets.resize(variable_column_indices.size());
+        reader.variable_base.assign(variable_column_indices.size(), 0);
+        reader.variable_checkpoints.resize(variable_column_indices.size());
     }
 
     work_queue = std::make_unique<ConcurrentBoundedQueue<DeviceWork>>(queued_buffers_per_column * (num_columns + 1) * num_readers_);
@@ -550,23 +542,6 @@ size_t GroupByGPUAccumulator::variableOffsetsColumnOf(size_t column_index) const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} of a GPU aggregation is not of varying width", column_index);
 
     return group_keys.size() + values.size() + filter_element_types.size() + static_cast<size_t>(it - variable_column_indices.begin());
-}
-
-void GroupByGPUAccumulator::addVariableOffsets(size_t reader_index, size_t column_index, std::span<const UInt64> offsets)
-{
-    Reader & reader = readerOrThrow(reader_index);
-    rethrowDeviceError();
-
-    const size_t offsets_column_index = variableOffsetsColumnOf(column_index);
-    StagedColumn & column = reader.staging[offsets_column_index];
-
-    const size_t bytes = offsets.size_bytes();
-    if (!column.staged.empty() && column.staged.size() + bytes > compressed_stage_bytes)
-        handOff(reader_index, offsets_column_index);
-
-    column.raw = true;
-    appendHostBytes(column.staged, {reinterpret_cast<const char *>(offsets.data()), bytes});
-    column.decompressed_bytes += bytes;
 }
 
 std::optional<size_t> GroupByGPUAccumulator::variableOrdinalOfOffsetsColumn(size_t column_index) const
@@ -964,21 +939,8 @@ void GroupByGPUAccumulator::flushPendingRaw(bool wait)
         else if (!isComplete(work.uploaded.get()))
             break;
 
-        const size_t bytes = work.on_device.size();
-        DeviceFixedColumnBuffer & column = readers[work.reader].device_columns[work.column_index];
-        checkCuda(
-            cudaMemcpyAsync(column.grow(bytes), work.on_device.data(), bytes, cudaMemcpyDeviceToDevice, compute().get()),
-            "Cannot append plain bytes to a device column");
-
-        if (const auto ordinal = variableOrdinalOfOffsetsColumn(work.column_index))
-        {
-            const std::string_view landed_offsets = bytesOf(work.staged);
-            if (landed_offsets.size() % sizeof(UInt64) != 0)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "{} bytes of the offsets of a variable-width key", landed_offsets.size());
-
-            readers[work.reader].variable_offsets[*ordinal].append(
-                {reinterpret_cast<const UInt64 *>(landed_offsets.data()), landed_offsets.size() / sizeof(UInt64)});
-        }
+        /// Plain bytes of a column, or the sizes of a column of varying width expanded on the host.
+        appendToDeviceColumn(readers[work.reader], work.column_index, work.on_device.data(), work.on_device.size());
 
         work.staged = PinnedBuffer{};
         CopiedRaw copied{.work = std::move(work), .copied = createEvent()};
@@ -1059,6 +1021,45 @@ void GroupByGPUAccumulator::startExpansion(std::vector<DeviceWork> && works)
     in_flight.push_back(slot);
 }
 
+void GroupByGPUAccumulator::appendToDeviceColumn(Reader & reader, size_t column_index, const char * device_source, size_t bytes)
+{
+    DeviceFixedColumnBuffer & column = reader.device_columns[column_index];
+    const bool offsets = variableOrdinalOfOffsetsColumn(column_index).has_value();
+
+    /// The offsets of a part start from the 0 its first row starts at, before the ends of its rows.
+    if (offsets && column.bytes() == 0)
+        checkCuda(
+            cudaMemsetAsync(column.grow(sizeof(UInt64)), 0, sizeof(UInt64), compute().get()),
+            "Cannot start the offsets of a column of varying width");
+
+    if (bytes == 0)
+        return;
+
+    char * const destination = column.grow(bytes);
+    checkCuda(cudaMemcpyAsync(destination, device_source, bytes, cudaMemcpyDeviceToDevice, compute().get()), "Cannot append bytes to a device column");
+
+    /// The sizes of the rows become the offsets the rows end at, from the end of the row before; the last of them
+    /// comes to the host, a checkpoint of how far the offsets reach.
+    if (offsets)
+    {
+        if (bytes % sizeof(UInt64) != 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "{} bytes of the sizes of a column of varying width", bytes);
+        const size_t count = bytes / sizeof(UInt64);
+        auto * const sizes = reinterpret_cast<uint64_t *>(destination);
+        offsetsFromSizes(sizes, count, sizes - 1, compute());
+
+        VariableCheckpoint checkpoint;
+        checkpoint.rows = reader.sent_rows + column.rows() - 1;
+        growBy(checkpoint.end, sizeof(UInt64));
+        checkCuda(
+            cudaMemcpyAsync(checkpoint.end.data(), sizes + count - 1, sizeof(UInt64), cudaMemcpyDeviceToHost, compute().get()),
+            "Cannot copy an offset back");
+        checkpoint.ready = createEvent();
+        checkCuda(cudaEventRecord(checkpoint.ready.get(), compute().get()), "Cannot mark a point in the compute stream");
+        reader.variable_checkpoints[*variableOrdinalOfOffsetsColumn(column_index)].push_back(std::move(checkpoint));
+    }
+}
+
 void GroupByGPUAccumulator::finishExpansion()
 {
     if (in_flight.empty())
@@ -1072,16 +1073,7 @@ void GroupByGPUAccumulator::finishExpansion()
     for (DeviceWork & work : slot.works)
     {
         const size_t bytes = valueBytesOf(work.blocks, work.packed);
-        DeviceFixedColumnBuffer & column = readers[work.reader].device_columns[work.column_index];
-        if (work.kept_bytes != 0)
-            checkCuda(
-                cudaMemcpyAsync(
-                    column.grow(work.kept_bytes),
-                    slot.expanded.data() + at + work.skipped_bytes,
-                    work.kept_bytes,
-                    cudaMemcpyDeviceToDevice,
-                    compute().get()),
-                "Cannot append expanded bytes to a device column");
+        appendToDeviceColumn(readers[work.reader], work.column_index, slot.expanded.data() + at + work.skipped_bytes, work.kept_bytes);
         at += bytes;
         compressed_bytes += work.on_device.size();
     }
@@ -1099,19 +1091,6 @@ void GroupByGPUAccumulator::finishAllExpansions()
 {
     while (!in_flight.empty())
         finishExpansion();
-}
-
-void GroupByGPUAccumulator::HostOffsets::dropFront(size_t n)
-{
-    if (n >= size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Handing over {} rows of a column of varying width of {}", n, size() - 1);
-    front += n;
-    /// What is handed over is dropped once it is as much as what is left, so that each offset is moved at most once more.
-    if (front >= values.size() - front)
-    {
-        values.erase(values.begin(), values.begin() + static_cast<std::ptrdiff_t>(front));
-        front = 0;
-    }
 }
 
 bool GroupByGPUAccumulator::hasPieceToGroup() const
@@ -1167,31 +1146,37 @@ void GroupByGPUAccumulator::finishPartOnDevice(size_t reader_index, size_t num_r
                 column.elementSize());
     }
 
+    const size_t rows_left = num_rows - reader.sent_rows;
     for (size_t j = 0; j < variable_column_indices.size(); ++j)
     {
-        const HostOffsets & offsets = reader.variable_offsets[j];
+        const DeviceFixedColumnBuffer & offsets = reader.device_columns[first_offsets_column + j];
         const size_t chars_bytes = reader.device_columns[variable_column_indices[j]].bytes();
-        if (offsets.empty() || reader.sent_rows + offsets.size() - 1 != num_rows || offsets.at(offsets.size() - 1) - offsets.at(0) != chars_bytes)
+        /// A part of no rows has no offsets at all: not even the 0 its first row would start at.
+        const bool fits = offsets.rows() == 0 ? rows_left == 0 && chars_bytes == 0
+                                              : offsets.rows() == rows_left + 1 && offsetAt(offsets, rows_left) - reader.variable_base[j] == chars_bytes;
+        if (!fits)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Column {} of varying width of a part came to {} rows grouped, {} offsets and {} bytes on the device, where the part has {} rows",
                 variable_column_indices[j],
                 reader.sent_rows,
-                offsets.size(),
+                offsets.rows(),
                 chars_bytes,
                 num_rows);
     }
 
-    sendRowsToGrouping(reader, num_rows - reader.sent_rows);
+    sendRowsToGrouping(reader, rows_left);
 
     for (auto & column : reader.device_columns)
         column.clear();
-    for (auto & offsets : reader.variable_offsets)
-        offsets.clear();
+    for (auto & base : reader.variable_base)
+        base = 0;
+    for (auto & checkpoints : reader.variable_checkpoints)
+        checkpoints.clear();
     reader.sent_rows = 0;
 }
 
-size_t GroupByGPUAccumulator::rowsOnDeviceInEveryColumn(const Reader & reader) const
+size_t GroupByGPUAccumulator::rowsOnDeviceInEveryColumn(const Reader & reader, bool exact) const
 {
     const size_t first_offsets_column = group_keys.size() + values.size() + filter_element_types.size();
 
@@ -1203,10 +1188,47 @@ size_t GroupByGPUAccumulator::rowsOnDeviceInEveryColumn(const Reader & reader) c
         rows = std::min(rows, reader.device_columns[i].rows());
     }
 
+    /// Fewer rows than a piece in a column of fixed width is answer enough without a wait for the device.
+    if (variable_column_indices.empty() || (!exact && rows < reader_batch_rows))
+        return rows;
+
+    /// Of a column of varying width, the rows up to the last checkpoint that is within the rows of the other columns,
+    /// is on the host already - or is waited for, where the number must be exact - and whose rows' bytes are all there.
     for (size_t j = 0; j < variable_column_indices.size(); ++j)
-        rows = std::min(rows, rowsCoveredBy(reader.variable_offsets[j], reader.device_columns[variable_column_indices[j]].bytes()));
+    {
+        const UInt64 chars_end = reader.variable_base[j] + reader.device_columns[variable_column_indices[j]].bytes();
+        size_t covered = 0;
+        const auto & checkpoints = reader.variable_checkpoints[j];
+        for (auto it = checkpoints.rbegin(); it != checkpoints.rend(); ++it)
+        {
+            if (it->rows <= reader.sent_rows || it->rows - reader.sent_rows > rows)
+                continue;
+            if (exact)
+                checkCuda(cudaEventSynchronize(it->ready.get()), "Cannot wait for an offset to come back");
+            else if (!isComplete(it->ready.get()))
+                continue;
+            if (it->endOffset() <= chars_end)
+            {
+                covered = it->rows - reader.sent_rows;
+                break;
+            }
+        }
+        rows = std::min(rows, covered);
+    }
 
     return rows;
+}
+
+UInt64 GroupByGPUAccumulator::offsetAt(const DeviceFixedColumnBuffer & offsets, size_t index) const
+{
+    if (index >= offsets.rows())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Offset {} of a column of {} offsets on the device", index, offsets.rows());
+    UInt64 value = 0;
+    checkCuda(
+        cudaMemcpyAsync(&value, reinterpret_cast<const UInt64 *>(offsets.fixedView().data) + index, sizeof(UInt64), cudaMemcpyDeviceToHost, compute().get()),
+        "Cannot copy an offset back");
+    checkCuda(cudaStreamSynchronize(compute().get()), "Cannot wait for an offset to come back");
+    return value;
 }
 
 void GroupByGPUAccumulator::sendRowsToGrouping(Reader & reader, size_t num_rows)
@@ -1217,6 +1239,33 @@ void GroupByGPUAccumulator::sendRowsToGrouping(Reader & reader, size_t num_rows)
     const size_t first_offsets_column = group_keys.size() + values.size() + filter_element_types.size();
 
     const cuda::stream_ref compute = this->compute();
+
+    /// Of each column of varying width: where the rows handed over end, from the start of the part - from the
+    /// checkpoint at the last of them, or from the device.
+    std::vector<UInt64> ends(variable_column_indices.size());
+    for (size_t j = 0; j < variable_column_indices.size(); ++j)
+    {
+        const DeviceFixedColumnBuffer & offsets = reader.device_columns[first_offsets_column + j];
+        if (offsets.rows() < num_rows + 1)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "{} rows of column {} of varying width are grouped, of {} offsets on the device",
+                num_rows,
+                variable_column_indices[j],
+                offsets.rows());
+
+        std::optional<UInt64> end;
+        for (const VariableCheckpoint & checkpoint : reader.variable_checkpoints[j])
+        {
+            if (checkpoint.rows == reader.sent_rows + num_rows)
+            {
+                checkCuda(cudaEventSynchronize(checkpoint.ready.get()), "Cannot wait for an offset to come back");
+                end = checkpoint.endOffset();
+                break;
+            }
+        }
+        ends[j] = end ? *end : offsetAt(offsets, num_rows);
+    }
 
     GroupingBatch batch;
     batch.rows = num_rows;
@@ -1230,17 +1279,7 @@ void GroupByGPUAccumulator::sendRowsToGrouping(Reader & reader, size_t num_rows)
         {
             /// Of a column of varying width, the offsets of the rows handed over, and the one after the last, which the
             /// rows left start at: from where the first row starts, as the batch's own.
-            const HostOffsets & offsets = reader.variable_offsets[i - first_offsets_column];
-            if (offsets.size() < num_rows + 1 || column.bytes() < (num_rows + 1) * sizeof(UInt64))
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "{} rows of column {} of varying width are grouped, of {} offsets on the host and {} bytes on the device",
-                    num_rows,
-                    i,
-                    offsets.size(),
-                    column.bytes());
-
-            const UInt64 base = offsets.at(0);
+            const UInt64 base = reader.variable_base[i - first_offsets_column];
             DeviceBuffer taken = column.takeFront(num_rows * sizeof(UInt64));
             DeviceBuffer rebased(compute);
             auto * to = reinterpret_cast<uint64_t *>(rebased.grow((num_rows + 1) * sizeof(UInt64)));
@@ -1260,8 +1299,8 @@ void GroupByGPUAccumulator::sendRowsToGrouping(Reader & reader, size_t num_rows)
         size_t bytes = num_rows * column.elementSize();
         if (isVariableColumn(i))
         {
-            const HostOffsets & offsets = reader.variable_offsets[next_variable++];
-            bytes = offsets.at(num_rows) - offsets.at(0);
+            bytes = ends[next_variable] - reader.variable_base[next_variable];
+            ++next_variable;
         }
         if (bytes > column.bytes())
             throw Exception(
@@ -1270,8 +1309,10 @@ void GroupByGPUAccumulator::sendRowsToGrouping(Reader & reader, size_t num_rows)
         batch.columns.push_back(column.takeFront(bytes));
     }
 
-    for (auto & offsets : reader.variable_offsets)
-        offsets.dropFront(num_rows);
+    reader.variable_base = ends;
+    for (auto & checkpoints : reader.variable_checkpoints)
+        while (!checkpoints.empty() && checkpoints.front().rows <= reader.sent_rows + num_rows)
+            checkpoints.pop_front();
 
     batch.filled = createEvent();
     checkCuda(cudaEventRecord(batch.filled.get(), compute.get()), "Cannot mark a point in the compute stream");

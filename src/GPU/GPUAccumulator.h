@@ -182,8 +182,10 @@ public:
 
     void finishPart(size_t reader, size_t num_rows);
 
-    /// Offsets a column of values of varying width - a key or a value - ends its rows at, from where its part starts.
-    void addVariableOffsets(size_t reader, size_t column_index, std::span<const UInt64> offsets);
+    /// Of a column of values of varying width - a key or a value - the column its sizes come to, as compressed blocks
+    /// of the `.size` stream through `addCompressedBlock`, or expanded on the host through `reserveRawBytes` and
+    /// `commitRawBytes` in whole sizes, and which the device turns into the offsets its rows end at.
+    size_t offsetsColumnOf(size_t column_index) const { return variableOffsetsColumnOf(column_index); }
 
     struct Waits
     {
@@ -253,20 +255,13 @@ private:
         size_t num_rows = 0;
     };
 
-    /// Where the rows of a column of varying width that are on the device and not handed over yet end, from the part's
-    /// start: the first is where the first of them starts.
-    struct HostOffsets
+    struct VariableCheckpoint
     {
-        std::vector<UInt64> values;
-        size_t front = 0;
+        size_t rows = 0;
+        PinnedBuffer end;
+        EventPtr ready;
 
-        size_t size() const { return values.size() - front; }
-        bool empty() const { return size() == 0; }
-        UInt64 at(size_t i) const { return values[front + i]; }
-        void append(std::span<const UInt64> offsets) { values.insert(values.end(), offsets.begin(), offsets.end()); }
-        /// The rows before the `n`-th are handed over: it is where the first one left starts.
-        void dropFront(size_t n);
-        void clear() { values.clear(); front = 0; }
+        UInt64 endOffset() const { return *reinterpret_cast<const UInt64 *>(end.data()); }
     };
 
     struct Reader
@@ -274,8 +269,16 @@ private:
         /// The stream its pieces go to the device in, of its own, so that the readers send theirs at once.
         StreamPtr upload;
         std::vector<StagedColumn> staging;
+        /// The offsets of a column of varying width are on the device, in the column of its own after the keys, the
+        /// values and the columns of the filter: from where its first row that is not handed over yet starts, which is
+        /// `variable_base` from the start of the part, to where each row ends.
         std::vector<DeviceFixedColumnBuffer> device_columns;
-        std::vector<HostOffsets> variable_offsets;
+        std::vector<UInt64> variable_base;
+        /// Of each column of varying width, the end of every piece of its sizes the device turned into offsets: how
+        /// many rows of the part the offsets reach by then, and the offset of the last of them, which the device
+        /// writes to the host and `ready` marks. By them the host tells how many rows have all their bytes on the
+        /// device without waiting for it.
+        std::vector<std::deque<VariableCheckpoint>> variable_checkpoints;
         /// Of the part being read, the rows handed over to the grouping thread.
         size_t sent_rows = 0;
     };
@@ -331,7 +334,15 @@ private:
     bool hasPieceToGroup() const;
 
     void finishPartOnDevice(size_t reader, size_t num_rows);
-    size_t rowsOnDeviceInEveryColumn(const Reader & reader) const;
+    /// The rows every column of the reader has on the device. Of a column of varying width, those whose bytes are all
+    /// there, found by the device: a wait for it, taken only where the other columns have `reader_batch_rows` or `exact`
+    /// asks for the number.
+    size_t rowsOnDeviceInEveryColumn(const Reader & reader, bool exact = false) const;
+    /// The offset at `index` of a column of offsets, from the device.
+    UInt64 offsetAt(const DeviceFixedColumnBuffer & offsets, size_t index) const;
+    /// Appends `bytes` from `device_source` to a column of the reader; to a column of offsets, as the sizes of its rows,
+    /// which the device turns into the offsets they end at.
+    void appendToDeviceColumn(Reader & reader, size_t column_index, const char * device_source, size_t bytes);
 
     /// Hands the first `num_rows` rows on the device of `reader` over to the grouping thread, and keeps the rest.
     void sendRowsToGrouping(Reader & reader, size_t num_rows);

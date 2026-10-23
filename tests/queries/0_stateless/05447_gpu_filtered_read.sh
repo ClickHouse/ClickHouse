@@ -12,7 +12,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT --query "
+# The statistics the device's share of the read is decided by are made as the rows are inserted, whatever the test
+# harness may set.
+$CLICKHOUSE_CLIENT --materialize_statistics_on_insert 1 --query "
     CREATE TABLE gpu_filtered_read (k UInt32, d Date, c Date, r Date, m String, p Float64, q Int64, t DateTime('UTC'))
     ENGINE = MergeTree ORDER BY k
     SETTINGS min_bytes_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 1,

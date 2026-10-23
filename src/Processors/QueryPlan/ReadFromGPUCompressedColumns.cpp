@@ -817,18 +817,21 @@ private:
     ///
     /// A column of values of varying width - a `String`, the one kind a part is read as, a key or a
     /// value - is two streams: its bytes, in the column's own file, which are read like the values of
-    /// any other column, and their sizes, in the `.size` stream, which are read on the host ahead of
-    /// the bytes and go to the device as the offsets the bytes end at. Its rows read are those whose
-    /// bytes all are.
+    /// any other column, and their sizes, in the `.size` stream, which go to the device as compressed
+    /// blocks, a little ahead of the bytes, for it to turn into the offsets the bytes end at. How many
+    /// of its rows are read is told by the bytes read, as the rows are as long as the average one.
     struct ColumnReader
     {
         /// Among the accumulator's columns: the keys, the values, then the columns of the filter.
         size_t column_index = 0;
+        /// Of a column of varying width: the accumulator's column its sizes go to.
+        size_t offsets_column_index = 0;
 
         ColumnReader(
             const IMergeTreeDataPart & part, const NameAndTypePair & column, const ReadSettings & read_settings, bool on_device, bool in_ranges)
             : is_variable(isString(*column.type))
             , element_size(is_variable ? 1 : column.type->getSizeOfValueInMemory())
+            , rows_of_part(part.rows_count)
         {
             if (in_ranges)
             {
@@ -836,7 +839,6 @@ private:
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} of varying width is read in ranges of marks for the GPU", column.name);
                 marks = MergeTreeCompressedBlockReader::loadMarks(part, column, read_settings);
                 compressed_bytes_of_part = part.getColumnSize(column.name).data_compressed;
-                rows_of_part = part.rows_count;
             }
 
             if (on_device)
@@ -851,8 +853,15 @@ private:
             }
 
             if (is_variable)
-                sizes = std::make_unique<CompressedReadBufferFromFile>(
-                    MergeTreeCompressedBlockReader::openColumnFile(part, column, read_settings, stringSizesPath()));
+            {
+                if (on_device)
+                    sizes_blocks.emplace(part, column, read_settings, stringSizesPath());
+                else
+                    sizes_raw = std::make_unique<CompressedReadBufferFromFile>(
+                        MergeTreeCompressedBlockReader::openColumnFile(part, column, read_settings, stringSizesPath()));
+                chars_total = streamBytesOf(part, column, {});
+                sizes_total = streamBytesOf(part, column, stringSizesPath());
+            }
         }
 
         const bool is_variable;
@@ -866,15 +875,13 @@ private:
         size_t staged_bytes = 0;
         bool done = false;
 
-        /// Of a variable-width key: the reader of its sizes, where the rows whose sizes are read and whose
-        /// bytes are not all read yet end, and how many rows of either there are.
-        std::unique_ptr<CompressedReadBufferFromFile> sizes;
-        /// From `pending_front` on, where the rows whose sizes are read and whose bytes are not all read yet end.
-        std::vector<UInt64> pending_ends;
-        size_t pending_front = 0;
-        UInt64 last_end = 0;
-        size_t rows_sized = 0;
-        size_t variable_rows_read = 0;
+        /// Of a column of varying width: its sizes, as compressed blocks for the device or expanded on the host like
+        /// the values of the column, the bytes of them read, and the bytes of both of its streams in the part.
+        std::optional<MergeTreeCompressedBlockReader> sizes_blocks;
+        std::unique_ptr<CompressedReadBufferFromFile> sizes_raw;
+        size_t sizes_bytes_read = 0;
+        size_t sizes_total = 0;
+        size_t chars_total = 0;
         bool sizes_done = false;
         bool bytes_done = false;
 
@@ -884,7 +891,7 @@ private:
         std::optional<size_t> range_bytes;
         size_t bytes_to_skip = 0;
         size_t compressed_bytes_of_part = 0;
-        size_t rows_of_part = 0;
+        const size_t rows_of_part;
 
         /// From the first block of the range, of the file of its compressed blocks, or from its first row, of the
         /// values the host expands.
@@ -908,73 +915,82 @@ private:
             }
         }
 
-        size_t rowsRead() const { return is_variable ? variable_rows_read : bytes_read / element_size; }
-        size_t remainingBytes() const { return expected_bytes > staged_bytes ? expected_bytes - staged_bytes : 0; }
-
-        /// A variable-width key reads the sizes of rows beyond the bytes read before it reads more bytes,
-        /// and only sizes once the bytes have ended.
-        bool readsSizesNext() const
-        {
-            return is_variable && !sizes_done && (bytes_done || pending_front == pending_ends.size() || last_end <= bytes_read);
-        }
-
-        void countVariableRowsRead()
-        {
-            const auto first = pending_ends.begin() + static_cast<std::ptrdiff_t>(pending_front);
-            const auto covered = std::upper_bound(first, pending_ends.end(), bytes_read);
-            variable_rows_read += static_cast<size_t>(covered - first);
-            pending_front = static_cast<size_t>(covered - pending_ends.begin());
-            /// The ends passed are dropped once they are as many as those left, so that each is moved at most once more.
-            if (pending_front >= pending_ends.size() - pending_front)
-            {
-                pending_ends.erase(pending_ends.begin(), pending_ends.begin() + static_cast<std::ptrdiff_t>(pending_front));
-                pending_front = 0;
-            }
-            done = sizes_done && bytes_done;
-        }
-
-        /// The file of the column's values, or of a variable-width key's bytes, has ended.
-        void finishBytes()
+        /// Of a column of varying width, the rows the bytes read make were every row as long as the average one.
+        size_t rowsRead() const
         {
             if (!is_variable)
-            {
-                done = true;
-                return;
-            }
+                return bytes_read / element_size;
+            if (chars_total == 0)
+                return sizes_bytes_read / sizeof(UInt64);
+            return static_cast<size_t>(static_cast<unsigned __int128>(bytes_read) * rows_of_part / chars_total);
+        }
 
+        size_t remainingBytes() const { return expected_bytes > staged_bytes ? expected_bytes - staged_bytes : 0; }
+
+        /// A column of varying width reads the sizes of its rows ahead of their bytes: a block of sizes whenever those
+        /// read cover no more rows than the bytes read make, and only sizes once the bytes have ended.
+        bool readsSizesNext() const
+        {
+            return is_variable && !sizes_done && (bytes_done || sizes_bytes_read / sizeof(UInt64) <= rowsRead());
+        }
+
+        /// The file of the column's values, or of the bytes of a column of varying width, has ended.
+        void finishBytes()
+        {
             bytes_done = true;
-            countVariableRowsRead();
+            done = !is_variable || sizes_done;
         }
     };
 
-    /// How many sizes of a variable-width key are read on the host at a time.
-    static constexpr size_t sizes_piece_rows = 64 * 1024;
-
-    void readVariableSizes(size_t reader_index, size_t key_index, ColumnReader & column)
+    /// The sizes of a column of varying width, to the device, which turns them into offsets: a compressed block, or a
+    /// piece of them expanded on the host, in whole sizes.
+    void readSizes(size_t reader_index, const IMergeTreeDataPart & part, ColumnReader & column)
     {
-        std::vector<UInt64> ends(sizes_piece_rows);
-        const size_t read = column.sizes->readBig(reinterpret_cast<char *>(ends.data()), ends.size() * sizeof(UInt64));
-        if (read % sizeof(UInt64) != 0)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "The sizes of variable-width key {} end in the middle of a size, after {} bytes", key_index, read);
-
-        const size_t num_rows = read / sizeof(UInt64);
-        if (num_rows == 0)
+        if (column.sizes_raw)
         {
-            column.sizes_done = true;
-            column.countVariableRowsRead();
+            const size_t left = column.sizes_total > column.sizes_bytes_read ? column.sizes_total - column.sizes_bytes_read : 0;
+            if (left == 0)
+            {
+                column.sizes_done = true;
+                column.done = column.bytes_done;
+                return;
+            }
+            const std::span<char> room = accumulator.reserveRawBytes(reader_index, column.offsets_column_index, raw_piece_bytes, left);
+            const size_t wanted = std::min(room.size() / sizeof(UInt64) * sizeof(UInt64), left);
+            if (wanted == 0)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "No room for a size of column {} of part {}", column.column_index, part.name);
+            size_t read = 0;
+            while (read < wanted)
+            {
+                const size_t got = column.sizes_raw->readBig(room.data() + read, wanted - read);
+                if (got == 0)
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR, "The sizes of column {} of part {} ended after {} bytes of {}", column.column_index, part.name, column.sizes_bytes_read + read, column.sizes_total);
+                read += got;
+            }
+            accumulator.commitRawBytes(reader_index, column.offsets_column_index, read);
+            column.sizes_bytes_read += read;
             return;
         }
 
-        for (size_t i = 0; i < num_rows; ++i)
+        const auto block = column.sizes_blocks->next();
+        if (!block)
         {
-            column.last_end += ends[i];
-            ends[i] = column.last_end;
+            column.sizes_done = true;
+            column.done = column.bytes_done;
+            return;
         }
-        column.pending_ends.insert(column.pending_ends.end(), ends.begin(), ends.begin() + static_cast<std::ptrdiff_t>(num_rows));
-        column.rows_sized += num_rows;
 
-        accumulator.addVariableOffsets(reader_index, key_index, std::span<const UInt64>(ends.data(), num_rows));
-        column.countVariableRowsRead();
+        const std::string_view payload(block->payload, block->compressed_bytes);
+        codecOrThrow(*column.sizes_blocks->methodByte(), payload, std::to_string(column.column_index) + ".size", part);
+        accumulator.addCompressedBlock(
+            reader_index,
+            column.offsets_column_index,
+            *column.sizes_blocks->methodByte(),
+            payload,
+            block->decompressed_bytes,
+            column.sizes_total > column.sizes_bytes_read ? column.sizes_total - column.sizes_bytes_read : 0);
+        column.sizes_bytes_read += block->decompressed_bytes;
     }
 
     /// Reads the parts on `num_readers` threads, each taking the next part not yet taken. The
@@ -1043,7 +1059,10 @@ private:
         const auto add_reader = [&](const NameAndTypePair & column)
         {
             readers.push_back(std::make_unique<ColumnReader>(part, column, state->read_settings, on_device(column.name), in_ranges));
-            readers.back()->column_index = column_index++;
+            readers.back()->column_index = column_index;
+            if (readers.back()->is_variable)
+                readers.back()->offsets_column_index = accumulator.offsetsColumnOf(column_index);
+            ++column_index;
         };
         for (const auto & key : state->keys)
             add_reader(key);
@@ -1089,16 +1108,6 @@ private:
     /// finished by the caller once all of its ranges are read.
     void readRows(size_t reader_index, const IMergeTreeDataPart & part, std::vector<std::unique_ptr<ColumnReader>> & readers, size_t num_rows)
     {
-        /// The offsets of a column of values of varying width start from the 0 its first row starts at.
-        for (size_t i = 0; i < readers.size(); ++i)
-        {
-            if (readers[i]->is_variable)
-            {
-                const UInt64 start = 0;
-                accumulator.addVariableOffsets(reader_index, readers[i]->column_index, std::span<const UInt64>(&start, 1));
-            }
-        }
-
         while (true)
         {
             size_t behind = readers.size();
@@ -1113,7 +1122,7 @@ private:
             ColumnReader & column = *readers[behind];
             if (column.readsSizesNext())
             {
-                readVariableSizes(reader_index, column.column_index, column);
+                readSizes(reader_index, part, column);
             }
             else if (column.raw)
             {
@@ -1143,8 +1152,6 @@ private:
 
                 column.bytes_read += read;
                 column.staged_bytes += read;
-                if (column.is_variable)
-                    column.countVariableRowsRead();
             }
             else
             {
@@ -1181,8 +1188,6 @@ private:
                     column.staged_bytes += block->compressed_bytes;
                 }
                 column.bytes_read += kept;
-                if (column.is_variable)
-                    column.countVariableRowsRead();
                 if (column.range_bytes && column.bytes_read == *column.range_bytes)
                     column.finishBytes();
             }
@@ -1194,16 +1199,15 @@ private:
         {
             if (readers[i]->is_variable)
             {
-                if (readers[i]->rows_sized != num_rows || readers[i]->variable_rows_read != num_rows
-                    || readers[i]->bytes_read != readers[i]->last_end)
+                if (readers[i]->sizes_bytes_read != num_rows * sizeof(UInt64) || readers[i]->bytes_read != readers[i]->chars_total)
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
-                        "Variable-width column {} of part {} holds {} sizes adding up to {} bytes and {} bytes, where the part has {} rows",
+                        "Column {} of varying width of part {} holds {} bytes of sizes and {} bytes of {}, where the part has {} rows",
                         i,
                         part.name,
-                        readers[i]->rows_sized,
-                        readers[i]->last_end,
+                        readers[i]->sizes_bytes_read,
                         readers[i]->bytes_read,
+                        readers[i]->chars_total,
                         num_rows);
                 continue;
             }
