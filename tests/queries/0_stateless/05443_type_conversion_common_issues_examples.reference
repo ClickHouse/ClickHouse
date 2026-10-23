@@ -1,0 +1,3 @@
+LowCardinality(String)	LowCardinality(String)	String
+Nullable(String)	Nullable(String)	String
+Nullable(String)	Nullable(String)	Nullable(String)
