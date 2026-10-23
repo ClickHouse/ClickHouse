@@ -1158,13 +1158,22 @@ public:
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
 
-    static bool insertResultToColumn(IColumn & dest, const Element & element, std::string_view, const FormatSettings & format_settings, String &)
+    static bool insertResultToColumn(IColumn & dest, const Element & element, std::string_view, const FormatSettings & format_settings, String & error)
     {
         ColumnString & col_str = assert_cast<ColumnString &>(dest);
         auto & chars = col_str.getChars();
+        size_t prev_chars_size = chars.size();
+        bool written = false;
         {
             WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag());
-            jsonElementToString<JSONParser>(element, buf, format_settings);
+            written = jsonElementToString<JSONParser>(element, buf, format_settings, format_settings.json.max_depth);
+        }
+        /// A value nested deeper than the limit cannot be rendered whole: a failure to extract it.
+        if (!written)
+        {
+            chars.resize_assume_reserved(prev_chars_size);
+            error = fmt::format("Maximum JSON depth ({}) exceeded. Consider raising input_format_json_max_depth setting.", format_settings.json.max_depth);
+            return false;
         }
         col_str.getOffsets().push_back(chars.size());
         return true;
@@ -1194,7 +1203,11 @@ public:
         ColumnArray & col_res = assert_cast<ColumnArray &>(dest);
 
         for (auto value : array)
-            JSONExtractRawImpl<JSONParser>::insertResultToColumn(col_res.getData(), value, {}, format_settings, error);
+        {
+            /// The result keeps one element per array element, also where one cannot be rendered.
+            if (!JSONExtractRawImpl<JSONParser>::insertResultToColumn(col_res.getData(), value, {}, format_settings, error))
+                col_res.getData().insertDefault();
+        }
 
         col_res.getOffsets().push_back(col_res.getOffsets().back() + array.size());
         return true;
@@ -1232,7 +1245,9 @@ public:
         for (const auto & [key, value] : object)
         {
             col_key.insertData(key.data(), key.size());
-            JSONExtractRawImpl<JSONParser>::insertResultToColumn(col_value, value, {}, format_settings, error);
+            /// Keep one value per key even where the value cannot be rendered.
+            if (!JSONExtractRawImpl<JSONParser>::insertResultToColumn(col_value, value, {}, format_settings, error))
+                col_value.insertDefault();
         }
 
         col_arr.getOffsets().push_back(col_arr.getOffsets().back() + object.size());

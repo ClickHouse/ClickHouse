@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SetSerialization.h>
+#include <Common/checkStackSize.h>
 
 #include <stack>
 
@@ -58,14 +59,6 @@ static Block deserializeHeader(ReadBuffer & in, size_t max_type_complexity)
 
     return Block(std::move(columns));
 }
-
-/// Nothing is here for now
-struct QueryPlan::SerializationFlags
-{
-    /// Query-plan serialization version of the stream, set on deserialize from the leading version field.
-    UInt64 version = 0;
-    bool skip_data = false;
-};
 
 void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version) const
 {
@@ -178,6 +171,9 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
 
 QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags, size_t max_type_complexity)
 {
+    /// It is called recursively for plans of sets from subqueries.
+    checkStackSize();
+
     QueryPlanStepRegistry & step_registry = QueryPlanStepRegistry::instance();
 
     DeserializedSetsRegistry sets_registry;
