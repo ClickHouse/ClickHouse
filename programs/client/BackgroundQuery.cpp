@@ -275,14 +275,22 @@ public:
             throw Exception(ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR, "Cannot flush background-query spool");
     }
 
-    void replayTo(WriteBuffer & output)
+    /// Returns false if `is_cancelled` stopped the replay.
+    bool replayTo(WriteBuffer & output, const std::function<bool()> & is_cancelled = {})
     {
         flush();
         if (::lseek(fd, 0, SEEK_SET) < 0)
             throw ErrnoException(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Cannot rewind background-query spool");
 
         ReadBufferFromFileDescriptor input(fd);
-        copyData(input, output);
+        while (!input.eof())
+        {
+            if (is_cancelled && is_cancelled())
+                return false;
+            output.write(input.position(), input.available());
+            input.position() = input.buffer().end();
+        }
+        return true;
     }
 
     UInt64 size() const
@@ -1482,7 +1490,7 @@ std::optional<BackgroundQueryManager::JobInfo> BackgroundQueryManager::get(JobId
 }
 
 BackgroundQueryManager::ForegroundResult BackgroundQueryManager::foreground(
-    JobId id, WriteBuffer & output, WriteBuffer & diagnostics, bool allow_unsafe_output)
+    JobId id, WriteBuffer & output, WriteBuffer & diagnostics, bool allow_unsafe_output, const std::function<bool()> & is_cancelled)
 {
     std::shared_ptr<Impl::Job> job;
     JobInfo job_info;
@@ -1504,8 +1512,14 @@ BackgroundQueryManager::ForegroundResult BackgroundQueryManager::foreground(
     if (job->worker.joinable())
         job->worker.join();
 
-    job->output.replayTo(output);
+    const bool replayed = job->output.replayTo(output, is_cancelled);
     output.next();
+    if (!replayed)
+    {
+        std::lock_guard lock(impl->mutex);
+        impl->jobs.emplace(id, job);
+        return {ForegroundStatus::Interrupted, std::move(job_info)};
+    }
 
     job->diagnostics.replayTo(diagnostics);
     diagnostics.next();

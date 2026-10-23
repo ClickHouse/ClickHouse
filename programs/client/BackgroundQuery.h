@@ -1,5 +1,7 @@
 #pragma once
 
+#include <functional>
+
 #include <Client/ConnectionParameters.h>
 #include <Client/IServerConnection.h>
 #include <Core/QueryProcessingStage.h>
@@ -128,6 +130,7 @@ public:
         Running,
         UnsafeOutput,
         Replayed,
+        Interrupted,
     };
 
     struct ForegroundResult
@@ -219,7 +222,10 @@ public:
 
     /// Never waits for an active query. For a terminal query, replays its
     /// result and diagnostic spools and then removes it from the manager.
-    ForegroundResult foreground(JobId id, WriteBuffer & output, WriteBuffer & diagnostics, bool allow_unsafe_output = false);
+    /// A replay stopped by `is_cancelled` keeps the job, so it can be replayed again.
+    ForegroundResult foreground(
+        JobId id, WriteBuffer & output, WriteBuffer & diagnostics, bool allow_unsafe_output = false,
+        const std::function<bool()> & is_cancelled = {});
 
     /// Requests cancellation and returns without waiting for a running worker.
     /// A terminal job is removed immediately and its spools are discarded.

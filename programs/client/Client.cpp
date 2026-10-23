@@ -529,7 +529,11 @@ bool Client::tryProcessInteractiveClientCommand(std::string_view input)
             }
 
             AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor> diagnostics(stderr_fd);
-            result = background_queries.foreground(*id, *result_output, diagnostics, true);
+            /// Ctrl+C stops the replay instead of exiting the client.
+            query_interrupt_handler.start();
+            SCOPE_EXIT({ query_interrupt_handler.stop(); });
+            result = background_queries.foreground(
+                *id, *result_output, diagnostics, true, [this] { return query_interrupt_handler.cancelled(); });
             finish_background_pager(true);
         }
         catch (...)
@@ -560,6 +564,9 @@ bool Client::tryProcessInteractiveClientCommand(std::string_view input)
             case BackgroundQueryManager::ForegroundStatus::Replayed:
                 output_stream << "Background job " << *id << ' '
                               << BackgroundQueryManager::stateName(result.job->state) << std::endl;
+                break;
+            case BackgroundQueryManager::ForegroundStatus::Interrupted:
+                output_stream << std::endl << "Replay of background job " << *id << " interrupted; the job is kept" << std::endl;
                 break;
         }
         return true;
@@ -664,26 +671,37 @@ bool Client::tryExecuteDetachableQuery(
     });
     startKeystrokeInterceptorIfExists();
 
-    const auto handle = background_queries.startAttached(
-        String(query),
-        parsed_query->formatForLogging(/* max_length = */ 80),
-        std::move(snapshot),
-        connection,
-        *std_out,
-        output_stream,
-        error_stream,
-        server_logs_file,
-        server_revision,
-        server_version,
-        stdout_is_a_tty,
-        stderr_is_a_tty,
-        terminal_width,
-        stderr_fd,
-        foreground_tty_fd,
-        need_render_progress,
-        need_render_progress_table,
-        progress_table_toggle_enabled,
-        progress_table_toggle_on);
+    BackgroundQueryManager::AttachedHandle handle;
+    try
+    {
+        handle = background_queries.startAttached(
+            String(query),
+            parsed_query->formatForLogging(/* max_length = */ 80),
+            std::move(snapshot),
+            connection,
+            *std_out,
+            output_stream,
+            error_stream,
+            server_logs_file,
+            server_revision,
+            server_version,
+            stdout_is_a_tty,
+            stderr_is_a_tty,
+            terminal_width,
+            stderr_fd,
+            foreground_tty_fd,
+            need_render_progress,
+            need_render_progress_table,
+            progress_table_toggle_enabled,
+            progress_table_toggle_on);
+    }
+    catch (const Exception &)
+    {
+        /// Without its spools or its worker the query cannot be detached, so it runs as an ordinary one.
+        if (!connection)
+            throw;
+        return false;
+    }
 
     bool attached_handle_owned = true;
     SCOPE_EXIT({
