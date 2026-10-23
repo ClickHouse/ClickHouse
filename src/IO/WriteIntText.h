@@ -8,8 +8,8 @@
 template <typename T> constexpr size_t max_int_width = 20;
 template <> inline constexpr size_t max_int_width<UInt8> = 4;    /// 255, and `itoa` stores four bytes
 template <> inline constexpr size_t max_int_width<Int8> = 5;     /// -128, and `itoa` stores four bytes after the sign
-template <> inline constexpr size_t max_int_width<UInt16> = 8;   /// 65535, and `itoa` stores eight bytes
-template <> inline constexpr size_t max_int_width<Int16> = 9;    /// -32768, and `itoa` stores eight bytes after the sign
+template <> inline constexpr size_t max_int_width<UInt16> = 5;   /// 65535
+template <> inline constexpr size_t max_int_width<Int16> = 6;    /// -32768
 template <> inline constexpr size_t max_int_width<UInt32> = 16;  /// 4294967295, and `itoa` stores sixteen bytes
 template <> inline constexpr size_t max_int_width<Int32> = 17;   /// -2147483648, and `itoa` stores sixteen bytes after the sign
 template <> inline constexpr size_t max_int_width<UInt64> = 20;  /// 18446744073709551615
