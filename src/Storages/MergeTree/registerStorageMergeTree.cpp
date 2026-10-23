@@ -38,6 +38,7 @@
 #include <Disks/IDisk.h>
 #include <Disks/StoragePolicy.h>
 
+#include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/FunctionNameNormalizer.h>
@@ -215,6 +216,21 @@ static void evaluateEngineArgs(ASTs & engine_args, const ContextPtr & context)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot evaluate engine argument {}: {} {}",
                         arg_idx, e.message(), verbose_help_message);
     }
+}
+
+/// Stored expressions (keys, TTL, indices, projections) are built with the global context, which has full access,
+/// so access checks done when a function is created do not apply to the user defining the table.
+/// Do a dry-run here: create every function with the local query context to run the checks, then throw it away.
+static void checkAccessToFunctions(const IAST & ast, const ContextPtr & local_context)
+{
+    if (const auto * function = ast.as<ASTFunction>())
+    {
+        if (FunctionFactory::instance().has(function->name))
+            FunctionFactory::instance().get(function->name, local_context);
+    }
+
+    for (const auto & child : ast.children)
+        checkAccessToFunctions(*child, local_context);
 }
 
 /// Returns whether this is a Replicated table engine?
@@ -728,6 +744,13 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     "Cannot add statistics to column '{}': it is not physically stored",
                     column.name);
         }
+    }
+
+    if (is_fresh_definition && !is_ddl_replay && !is_stored_definition)
+    {
+        checkAccessToFunctions(*args.storage_def, args.getLocalContext());
+        if (args.query.columns_list)
+            checkAccessToFunctions(*args.query.columns_list, args.getLocalContext());
     }
 
     const auto & initial_storage_settings = replicated ? context->getReplicatedMergeTreeSettings() : context->getMergeTreeSettings();

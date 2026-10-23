@@ -20,6 +20,7 @@ CREATE NAMED COLLECTION $collection_name AS
     api_key = 'fake-key';
 
 CREATE USER $user_name IDENTIFIED WITH plaintext_password BY 'password';
+GRANT AI FUNCTIONS ON *.* TO $user_name;
 "
 
 # Runs the AI functions as the test user in one client invocation and emits one line
