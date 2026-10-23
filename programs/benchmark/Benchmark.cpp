@@ -45,6 +45,9 @@
 #include <IO/WriteBuffer.h>
 #include <Client/ClientApplicationBaseParser.h>
 #include <Parsers/parseQuery.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
+#include <Common/ProfileEvents.h>
 #include <base/scope_guard.h>
 #include <base/sleep.h>
 
@@ -54,6 +57,12 @@
   * With --arrival-rate (open loop) queries arrive at random times with exponentially distributed
   * interarrival times (a Poisson process), whatever the server does.
   */
+
+namespace ProfileEvents
+{
+    extern const Event UserTimeMicroseconds;
+    extern const Event SystemTimeMicroseconds;
+}
 
 namespace CurrentMetrics
 {
@@ -90,6 +99,28 @@ namespace ErrorCodes
     extern const int EMPTY_DATA_PASSED;
     extern const int LOGICAL_ERROR;
     extern const int UNRECOGNIZED_ARGUMENTS;
+}
+
+/// The CPU time of a query on the server from a `ProfileEvents` packet.
+/// The rows with thread id 0 are the increments for all threads of the query on one host.
+static UInt64 getCPUMicroseconds(const Block & block)
+{
+    const auto & thread_ids = typeid_cast<const ColumnUInt64 &>(*block.getByName("thread_id").column).getData();
+    const auto & names = typeid_cast<const ColumnString &>(*block.getByName("name").column);
+    const auto & values = typeid_cast<const ColumnInt64 &>(*block.getByName("value").column).getData();
+    const std::string_view user_time_name = ProfileEvents::getName(ProfileEvents::UserTimeMicroseconds);
+    const std::string_view system_time_name = ProfileEvents::getName(ProfileEvents::SystemTimeMicroseconds);
+
+    UInt64 result = 0;
+    for (size_t i = 0; i < block.rows(); ++i)
+    {
+        if (thread_ids[i] != 0 || values[i] < 0)
+            continue;
+        const auto name = names.getDataAt(i);
+        if (name == user_time_name || name == system_time_name)
+            result += values[i];
+    }
+    return result;
 }
 
 static QueriesFormat parseQueriesFormat(const std::string & value)
@@ -340,6 +371,8 @@ private:
         double read_bytes = 0;
         double result_rows = 0;
         double result_bytes = 0;
+        /// CPU time of the queries on the server, from their `UserTimeMicroseconds` and `SystemTimeMicroseconds` profile events.
+        double cpu_seconds = 0;
 
         using Sampler = ReservoirSampler<double>;
         Sampler sampler;
@@ -348,9 +381,10 @@ private:
             : sampler(sample_count)
         {}
 
-        void addWeighted(size_t read_rows_inc, size_t read_bytes_inc, size_t result_rows_inc, size_t result_bytes_inc, double weight)
+        void addWeighted(size_t read_rows_inc, size_t read_bytes_inc, size_t result_rows_inc, size_t result_bytes_inc, double cpu_seconds_inc, double weight)
         {
             queries += weight;
+            cpu_seconds += weight * cpu_seconds_inc;
             read_rows += weight * static_cast<double>(read_rows_inc);
             read_bytes += weight * static_cast<double>(read_bytes_inc);
             result_rows += weight * static_cast<double>(result_rows_inc);
@@ -364,9 +398,9 @@ private:
             sampler.insert(duration);
         }
 
-        void add(double duration, size_t read_rows_inc, size_t read_bytes_inc, size_t result_rows_inc, size_t result_bytes_inc)
+        void add(double duration, size_t read_rows_inc, size_t read_bytes_inc, size_t result_rows_inc, size_t result_bytes_inc, double cpu_seconds_inc)
         {
-            addWeighted(read_rows_inc, read_bytes_inc, result_rows_inc, result_bytes_inc, 1.0);
+            addWeighted(read_rows_inc, read_bytes_inc, result_rows_inc, result_bytes_inc, cpu_seconds_inc, 1.0);
             sample(duration);
         }
     };
@@ -1139,6 +1173,9 @@ private:
         Progress progress;
         executor.setProgressCallback([&progress](const Progress & value) { progress.incrementPiecewiseAtomically(value); });
 
+        UInt64 cpu_microseconds = 0;
+        executor.setProfileEventsCallback([&cpu_microseconds](const Block & block) { cpu_microseconds += getCPUMicroseconds(block); });
+
         executor.sendQuery(ClientInfo::QueryKind::INITIAL_QUERY);
 
         ProfileInfo info;
@@ -1151,6 +1188,7 @@ private:
         double duration = (display_client_side_time || progress.elapsed_ns == 0)
             ? watch.elapsedSeconds()
             : static_cast<double>(progress.elapsed_ns) / 1e9;
+        const double cpu_seconds = static_cast<double>(cpu_microseconds) / 1e6;
         size_t info_index = round_robin ? 0 : connection_index;
 
         if (precise && cur_interval)
@@ -1180,7 +1218,7 @@ private:
                 const double overlap_ns = static_cast<double>(std::min(cur_interval->end_ns, watch.getEnd()) - std::max(cur_interval->start_ns, watch.getStart()));
                 const double weight = overlap_ns / static_cast<double>(duration_ns);
                 if (overlap_ns > 0 && duration_ns > 0)
-                    cur_interval->stats[info_index]->addWeighted(progress.read_rows, progress.read_bytes, info.rows, info.bytes, weight);
+                    cur_interval->stats[info_index]->addWeighted(progress.read_rows, progress.read_bytes, info.rows, info.bytes, cpu_seconds, weight);
             }
 
             // Latency goes to the last interval only (our sampler does not support weights)
@@ -1189,13 +1227,13 @@ private:
         else if (!cumulative)
         {
             std::lock_guard lock(interval_mutex);
-            interval->stats[info_index]->add(duration, progress.read_rows, progress.read_bytes, info.rows, info.bytes);
+            interval->stats[info_index]->add(duration, progress.read_rows, progress.read_bytes, info.rows, info.bytes, cpu_seconds);
         }
 
         std::lock_guard lock(mutex);
-        total_stats[info_index]->add(duration, progress.read_rows, progress.read_bytes, info.rows, info.bytes);
+        total_stats[info_index]->add(duration, progress.read_rows, progress.read_bytes, info.rows, info.bytes, cpu_seconds);
         if (per_query)
-            per_query_stats[task.query_index]->add(duration, progress.read_rows, progress.read_bytes, info.rows, info.bytes);
+            per_query_stats[task.query_index]->add(duration, progress.read_rows, progress.read_bytes, info.rows, info.bytes, cpu_seconds);
         t_test.add(info_index, duration);
     }
 
@@ -1265,8 +1303,12 @@ private:
                 << "RPS: " << fmt::format("{:.3f}", info->read_rows / seconds) << ", "
                 << "MiB/s: " << fmt::format("{:.3f}", info->read_bytes / seconds / 1048576) << ", "
                 << "result RPS: " << fmt::format("{:.3f}", info->result_rows / seconds) << ", "
-                << "result MiB/s: " << fmt::format("{:.3f}", info->result_bytes / seconds / 1048576) << "."
-                << "\n";
+                << "result MiB/s: " << fmt::format("{:.3f}", info->result_bytes / seconds / 1048576);
+            /// With open-loop arrivals QPS follows the arrival rate, so the CPU usage shows the cost of the load.
+            if (!arrival_rates.empty())
+                log << ", CPU: " << fmt::format("{:.3f}", info->cpu_seconds / seconds) << " cores"
+                    << ", CPU per query: " << fmt::format("{:.3f}", info->cpu_seconds / info->queries) << " sec";
+            log << ".\n";
         }
         log << "\n";
 
@@ -1300,7 +1342,7 @@ private:
             return;
 
         log << "Per-query statistics:\n";
-        log << "#\tqueries\terrors\tQPS\t50%\t90%\t99%\tmax\tquery\n";
+        log << "#\tqueries\terrors\tQPS\t50%\t90%\t99%\tmax\tCPU\tquery\n";
         for (size_t i = 0; i < queries.size(); ++i)
         {
             auto & stats = *per_query_stats[i];
@@ -1309,6 +1351,7 @@ private:
             for (double level : {0.5, 0.9, 0.99})
                 log << "\t" << (stats.finished_queries ? fmt::format("{:.3f}", stats.sampler.quantileNearest(level)) : "-");
             log << "\t" << (stats.finished_queries ? fmt::format("{:.3f}", stats.max_duration) : "-");
+            log << "\t" << (stats.finished_queries ? fmt::format("{:.3f}", stats.cpu_seconds / stats.queries) : "-");
             String query_text = queries[i].substr(0, 80);
             std::replace_if(query_text.begin(), query_text.end(), [](char c) { return c == '\n' || c == '\t'; }, ' ');
             log << "\t" << query_text << (queries[i].size() > 80 ? "..." : "") << "\n";

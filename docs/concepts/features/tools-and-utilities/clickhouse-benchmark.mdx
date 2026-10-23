@@ -55,7 +55,7 @@ clickhouse-benchmark [keys] < queries_file;
 - `--arrival-rate=R` — Enables the [open-loop mode](#clickhouse-benchmark-open-loop-mode): queries arrive at random times at the average rate of `R` queries per second. A comma-separated list of rates, such as `--arrival-rate=5,10,20`, runs the benchmark for every rate one after another and makes one report per rate; it requires `--iterations` or `--timelimit`.
 - `--max-in-flight=N` — The maximum number of queries executing at the same time in the open-loop mode. Default value: 256.
 - `--seed=N` — Seed of the random generator for the arrival times, the order of queries with `--randomize`, and the choice of a server in the open-loop mode. The same seed and options reproduce the same arrival schedule. Default: a random seed, printed at the start in the open-loop mode.
-- `--per-query` — Prints statistics for every query at the end: the number of queries and errors, QPS and latency percentiles.
+- `--per-query` — Prints statistics for every query at the end: the number of queries and errors, QPS, latency percentiles, the maximum latency and the mean CPU time of a query on the server.
 - `-s`, `--secure` — Using `TLS` connection.
 - `-t N`, `--timelimit=N` — Time limit in seconds. `clickhouse-benchmark` stops sending queries when the specified time limit is reached. Default value: 0 (time limit disabled).
 - `--port=N` — Server port. Default value: 9000. For the [comparison mode](#clickhouse-benchmark-comparison-mode) you can use multiple `--port` keys.
@@ -148,6 +148,13 @@ In flight: mean 0.223, max 4 of 256.
 - `queued`: The number of arrivals that found all `--max-in-flight` slots busy and waited in the client-side queue, and the maximum length of this queue.
 - `not sent`: The number of arrivals that were still in the queue when the run stopped. It is shown only if it is not zero.
 - `In flight`: The time-weighted mean and the maximum number of queries executing at the same time.
+
+With open-loop arrivals QPS follows the arrival rate, so it says little about the cost of the load. In the open-loop mode the status string of each server also contains:
+
+- `CPU`: The CPU time of the queries on the server per second, in cores.
+- `CPU per query`: The mean CPU time of a query on the server, in seconds.
+
+The CPU time is the sum of the `UserTimeMicroseconds` and `SystemTimeMicroseconds` profile events that the server sends for every query, so it covers the threads executing the query and is an approximation of its total CPU cost.
 
 To run a mixed workload, run several `clickhouse-benchmark` processes at the same time, one per class of queries. Each process reports the statistics of its own class, and the combined arrivals of all processes are a Poisson process too.
 
