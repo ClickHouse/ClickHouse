@@ -1,6 +1,7 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 
@@ -11,6 +12,36 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int NOT_IMPLEMENTED;
+}
+
+const MemoryTracker * getMemoryTrackerToWatchForStates(const IAggregateFunction & function)
+{
+    if (function.hasTrivialDestructor())
+        return nullptr;
+
+    /// The query's tracker rather than the thread's: a remote read can be resumed by another thread of the query.
+    MemoryTracker * memory_tracker = CurrentThread::getMemoryTracker();
+    while (memory_tracker && memory_tracker->level == VariableContext::Thread && memory_tracker->getParent())
+        memory_tracker = memory_tracker->getParent();
+    return memory_tracker;
+}
+
+void checkMemoryLimitAfterReadingState(const IAggregateFunction & function)
+{
+    static thread_local const MemoryTracker * last_memory_tracker = nullptr;
+    static thread_local Int64 last_memory = 0;
+
+    const MemoryTracker * memory_tracker = getMemoryTrackerToWatchForStates(function);
+    if (!memory_tracker)
+        return;
+
+    Int64 memory = memory_tracker->get();
+    if (memory_tracker == last_memory_tracker && memory == last_memory)
+        return;
+
+    CurrentMemoryTracker::check();
+    last_memory_tracker = memory_tracker;
+    last_memory = memory;
 }
 
 DataTypePtr IAggregateFunction::getStateType() const
