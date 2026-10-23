@@ -329,7 +329,10 @@ void convertHistoryFile(const std::string & path, replxx::Replxx & rx)
 namespace DB
 {
 
-static bool replxx_last_is_delimiter = false;
+/// Thread-local, because several embedded clients (e.g. concurrent web terminal sessions) can run
+/// in the same process. The flag is written by the highlighter and read by the Enter key handler,
+/// and replxx invokes both on the thread that runs the input loop of the session.
+static thread_local bool replxx_last_is_delimiter = false;
 void ReplxxLineReader::setLastIsDelimiter(bool flag)
 {
     replxx_last_is_delimiter = flag;
