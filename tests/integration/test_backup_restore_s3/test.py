@@ -1362,23 +1362,15 @@ def test_backup_restore_s3_plain_backup_metadata_only(cluster):
         CREATE MATERIALIZED VIEW mv ENGINE = MergeTree ORDER BY key SETTINGS storage_policy = '{policy}' AS SELECT key FROM src;
         """
     )
-    instance.query(
-        f"""
-        CREATE TABLE ts ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0
-        DATA INNER ENGINE = MergeTree SETTINGS storage_policy = '{policy}'
-        TAGS INNER ENGINE = Memory
-        METRICS INNER ENGINE = ReplacingMergeTree SETTINGS storage_policy = '{policy}'
-        """,
-        settings={"allow_experimental_time_series_table": 1},
-    )
-    for table, kind in [("mv", "materialized view"), ("ts", "TimeSeries table")]:
+    # A `TimeSeries` table is left out: the warning for its inner tables needs `getTargetKinds`, which is not
+    # static on this branch, so `isDataOnBackupMetadataOnlyStoragePolicy` does not look at them here.
+    for table, kind in [("mv", "materialized view")]:
         instance.query(f"BACKUP TABLE {table} TO {new_backup_destination()}")
         assert instance.contains_in_log(
             f"default.{table} (" + get_uuid(table)
         ), f"no warning for {table}"
         assert instance.contains_in_log(f"but it is a {kind} with the inner table"), f"no warning for {table}"
 
-    instance.query("DROP TABLE ts SYNC")
     instance.query("DROP TABLE mv SYNC")
     instance.query("DROP TABLE src SYNC")
 
