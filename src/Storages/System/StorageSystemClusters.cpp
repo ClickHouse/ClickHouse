@@ -75,7 +75,17 @@ void StorageSystemClusters::fillData(MutableColumns & res_columns, ContextPtr co
     access_secrets &= context->displaySecretsInShowAndSelect();
 
     for (const auto & name_and_cluster : context->getClusters())
+    {
+        /// A SQL-managed cluster shadowed by a `Replicated` database cluster with the same name is not reachable, skip it.
+        if (name_and_cluster.second->getSourceId() == Cluster::SourceId::SQL)
+        {
+            auto resolved = context->tryGetCluster(name_and_cluster.first);
+            if (resolved && resolved->getSourceId() != Cluster::SourceId::SQL)
+                continue;
+        }
+
         writeCluster(res_columns, columns_mask, name_and_cluster, /* replicas_info_getter= */ {}, access_secrets);
+    }
 
     const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
     for (const auto & name_and_database : databases)

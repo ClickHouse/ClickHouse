@@ -9,6 +9,7 @@
 #include <base/sleep.h>
 
 #include <unordered_set>
+#include <utility>
 
 
 namespace DB
@@ -264,13 +265,28 @@ void SQLClusterFactory::reloadFromStorage()
             context->removeCluster(cluster_name);
     }
 
-    stored_cluster_names = std::move(new_stored_cluster_names);
+    const auto previous_cluster_names = std::exchange(stored_cluster_names, {});
 
     for (const auto & [cluster_name, create_query] : clusters)
     {
+        /// Apply the same namespace check as `CREATE CLUSTER`: a stored SQL cluster must not shadow a cluster
+        /// from the server configuration, cluster discovery or a `Replicated` database that appeared later.
+        if (auto existing = context->tryGetCluster(cluster_name); existing && existing->getSourceId() != Cluster::SourceId::SQL)
+        {
+            LOG_ERROR(log, "Not loading SQL cluster `{}`: a cluster with the same name already exists (source: {})",
+                cluster_name, Cluster::formatSourceIdForSystemTable(existing->getSourceId()));
+
+            /// A discovered or a `Replicated` database cluster lives outside the map of static clusters,
+            /// so the previously loaded SQL cluster is still there and must be removed.
+            if (existing->getSourceId() != Cluster::SourceId::CONFIG && previous_cluster_names.contains(cluster_name))
+                context->removeCluster(cluster_name);
+            continue;
+        }
+
         auto create_statement = create_query.formatWithSecretsOneLine();
         auto cluster = materializeCluster(create_query, context, std::move(create_statement));
         context->setCluster(cluster_name, cluster);
+        stored_cluster_names.insert(cluster_name);
     }
 
     /// Advance the loaded version only now that the new snapshot has been fully read and applied,
@@ -318,6 +334,8 @@ void SQLClusterFactory::alterFromSQL(const ASTAlterSQLClusterQuery & query)
 
     if (!metadata_storage->exists(query.cluster_name))
     {
+        /// Another replica may have dropped the cluster before this one has synced; do not keep serving the stale copy.
+        removeStaleLocalCluster(query.cluster_name);
         if (query.if_exists)
             return;
         throw Exception(ErrorCodes::CLUSTER_DOESNT_EXIST, "SQL cluster `{}` does not exist", query.cluster_name);
@@ -344,6 +362,8 @@ void SQLClusterFactory::dropFromSQL(const ASTDropSQLClusterQuery & query)
     const bool removed = metadata_storage->removeIfExists(query.cluster_name);
     if (!removed)
     {
+        /// Another replica may have dropped the cluster before this one has synced; do not keep serving the stale copy.
+        removeStaleLocalCluster(query.cluster_name);
         if (query.if_exists)
             return;
         throw Exception(ErrorCodes::CLUSTER_DOESNT_EXIST, "SQL cluster `{}` does not exist", query.cluster_name);
@@ -354,6 +374,15 @@ void SQLClusterFactory::dropFromSQL(const ASTDropSQLClusterQuery & query)
     stored_cluster_names.erase(query.cluster_name);
 
     LOG_INFO(log, "Dropped SQL cluster `{}`", query.cluster_name);
+}
+
+void SQLClusterFactory::removeStaleLocalCluster(const String & cluster_name)
+{
+    if (!stored_cluster_names.erase(cluster_name))
+        return;
+
+    Context::getGlobalContextInstance()->getGlobalContext()->removeCluster(cluster_name);
+    LOG_INFO(log, "Removed SQL cluster `{}` which no longer exists in the metadata storage", cluster_name);
 }
 
 void SQLClusterFactory::updateFunc()

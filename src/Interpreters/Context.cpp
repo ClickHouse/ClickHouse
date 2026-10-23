@@ -7827,6 +7827,7 @@ std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name, b
     /// server's own address as a local shard, which is wrong in clickhouse-local. The clusters of
     /// the other sources already account for `treat_local_port_as_remote` on construction (see
     /// `DatabaseReplicated::getClusterImpl`) or describe genuinely remote discovered replicas.
+    std::shared_ptr<Cluster> sql_cluster;
     {
         std::lock_guard lock(shared->clusters_mutex);
 
@@ -7835,8 +7836,9 @@ std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name, b
         if (config.has(config_prefix))
             return std::make_shared<Cluster>(config, *settings, "remote_servers", cluster_name, treat_local_port_as_remote);
 
-        if (auto res = getClustersImpl(lock)->getCluster(cluster_name))
-            return res;
+        sql_cluster = getClustersImpl(lock)->getCluster(cluster_name);
+        if (sql_cluster && sql_cluster->getSourceId() != Cluster::SourceId::SQL)
+            return sql_cluster;
 
         if (shared->cluster_discovery)
         {
@@ -7845,8 +7847,12 @@ std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name, b
         }
     }
 
+    /// A SQL-managed cluster never shadows a discovered or a `Replicated` database cluster with the same name.
     if (auto res = tryGetReplicatedDatabaseCluster(cluster_name))
         return res;
+
+    if (sql_cluster)
+        return sql_cluster;
 
     throw Exception(ErrorCodes::CLUSTER_DOESNT_EXIST, "Requested cluster '{}' not found", cluster_name);
 }
@@ -7855,10 +7861,15 @@ std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name, b
 std::shared_ptr<Cluster> Context::tryGetCluster(const std::string & cluster_name) const
 {
     std::shared_ptr<Cluster> res = nullptr;
+    std::shared_ptr<Cluster> sql_cluster = nullptr;
 
     {
         std::lock_guard lock(shared->clusters_mutex);
         res = getClustersImpl(lock)->getCluster(cluster_name);
+
+        /// A SQL-managed cluster never shadows a discovered or a `Replicated` database cluster with the same name.
+        if (res && res->getSourceId() == Cluster::SourceId::SQL)
+            std::swap(res, sql_cluster);
 
         if (res == nullptr && shared->cluster_discovery)
             res = shared->cluster_discovery->getCluster(cluster_name);
@@ -7866,6 +7877,9 @@ std::shared_ptr<Cluster> Context::tryGetCluster(const std::string & cluster_name
 
     if (res == nullptr)
         res = tryGetReplicatedDatabaseCluster(cluster_name);
+
+    if (res == nullptr)
+        res = std::move(sql_cluster);
 
     return res;
 }
@@ -7952,7 +7966,12 @@ std::map<String, ClusterPtr> Context::getClusters() const
     {
         const auto & cluster_discovery_map = shared->cluster_discovery->getClusters();
         for (const auto & [name, cluster] : cluster_discovery_map)
-            clusters.emplace(name, cluster);
+        {
+            /// A discovered cluster takes precedence over a SQL-managed cluster with the same name.
+            auto [it, inserted] = clusters.emplace(name, cluster);
+            if (!inserted && it->second->getSourceId() == Cluster::SourceId::SQL)
+                it->second = cluster;
+        }
     }
     return clusters;
 }

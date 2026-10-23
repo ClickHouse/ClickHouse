@@ -40,11 +40,13 @@ private:
 
     void loadIfNotImpl(std::lock_guard<std::mutex> & lock);
     void reloadFromStorage();
+    /// Removes a SQL cluster from `Context` if it was loaded locally but is already gone from the metadata storage.
+    void removeStaleLocalCluster(const String & cluster_name);
     void updateFunc();
 
     mutable std::mutex mutex;
     std::unique_ptr<SQLClusterMetadataStorage> metadata_storage;
-    /// Snapshot of cluster names from the last storage sync, used only to drop removed clusters from Context.
+    /// Names of SQL clusters currently applied to `Context`, used only to drop removed clusters from it.
     std::unordered_set<String> stored_cluster_names;
     bool loaded = false;
     std::atomic<bool> shutdown_called = false;
