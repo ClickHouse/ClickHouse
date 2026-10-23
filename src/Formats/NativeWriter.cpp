@@ -123,8 +123,15 @@ std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> NativeWriter::getS
 
 void NativeWriter::setAggregateFunctionStateVersions(DataTypePtr & type, UInt64 client_revision)
 {
-    bool include_version = client_revision >= DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING;
-    setVersionToAggregateFunctions(type, /* if_empty= */ client_revision == 0, include_version ? std::optional<size_t>(client_revision) : std::nullopt);
+    const bool include_version = client_revision >= DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING;
+    /// Older peers cannot parse the explicit AggregateFunction(0, ...) syntax, even though
+    /// their state payload must still be rewritten to version 0 before transmission.
+    const bool print_explicit_zero_in_name = client_revision == 0 || include_version;
+    setVersionToAggregateFunctions(
+        type,
+        /* if_empty= */ client_revision == 0,
+        include_version ? std::optional<size_t>(client_revision) : std::nullopt,
+        print_explicit_zero_in_name);
 }
 
 size_t NativeWriter::write(const Block & block)

@@ -6,6 +6,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Common/memory.h>
 #include <Common/typeid_cast.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeNullable.h>
 
 

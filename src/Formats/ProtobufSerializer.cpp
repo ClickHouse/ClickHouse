@@ -1968,7 +1968,7 @@ namespace
         void dataToString(ConstAggregateDataPtr data, String & str) const
         {
             WriteBufferFromString buf{str};
-            aggregate_function->serialize(data, buf);
+            aggregate_function->serialize(data, buf, aggregate_function_data_type->getVersion());
         }
 
         AggregateDataPtr stringToData(const String & str, Arena & arena) const
@@ -1979,7 +1979,7 @@ namespace
             {
                 aggregate_function->create(data);
                 ReadBufferFromMemory buf(str.data(), str.length());
-                aggregate_function->deserialize(data, buf, std::nullopt, &arena);
+                aggregate_function->deserialize(data, buf, aggregate_function_data_type->getVersion(), &arena);
                 return data;
             }
             catch (...)

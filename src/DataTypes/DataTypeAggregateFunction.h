@@ -23,6 +23,8 @@ private:
     DataTypes argument_types;
     Array parameters;
     std::optional<size_t> version;
+    /// Old peers need the legacy unversioned name while the payload is written at v0.
+    bool print_explicit_zero_in_name;
 
     String getNameImpl(bool with_version) const;
 
@@ -30,7 +32,8 @@ public:
     static constexpr bool is_parametric = true;
 
     DataTypeAggregateFunction(AggregateFunctionPtr function_, const DataTypes & argument_types_,
-                              const Array & parameters_, std::optional<size_t> version_ = std::nullopt);
+                              const Array & parameters_, std::optional<size_t> version_ = std::nullopt,
+                              bool print_explicit_zero_in_name_ = true);
 
     size_t getVersion() const;
 
@@ -53,6 +56,14 @@ public:
     DataTypePtr getReturnType() const;
     DataTypePtr getReturnTypeToPredict() const;
     DataTypes getArgumentsDataTypes() const { return argument_types; }
+
+    /// Aggregate arguments are children for type rewriting, even though the stored state is opaque.
+    size_t getNumberOfChildren() const override { return argument_types.size(); }
+    const DataTypePtr & getChild(size_t index) const override
+    {
+        chassert(index < argument_types.size());
+        return argument_types[index];
+    }
 
     MutableColumnPtr createColumn() const override;
 
@@ -99,19 +110,30 @@ public:
     ///
     /// Whether the version was pinned explicitly, as opposed to falling back to the default one.
     bool hasExplicitVersion() const { return version.has_value(); }
+    bool printsExplicitZeroInName() const { return print_explicit_zero_in_name; }
+
+protected:
+    DataTypePtr doCloneWithChildren(const DataTypes & new_children) const override;
 };
 
 /// Pins the state version of every versioned aggregate function nested in `type` to the one that
 /// corresponds to `revision`, or to 0 if no revision is given. With `if_empty`, a version that is
 /// already pinned explicitly is kept. The nested types are replaced rather than modified in place,
 /// because a type object is typically shared - notably with the table metadata a block was read from.
-void setVersionToAggregateFunctions(DataTypePtr & type, bool if_empty, std::optional<size_t> revision = std::nullopt);
+void setVersionToAggregateFunctions(
+    DataTypePtr & type,
+    bool if_empty,
+    std::optional<size_t> revision = std::nullopt,
+    bool print_explicit_zero_in_name = true);
 
 /// For a freshly declared column type (`CREATE TABLE`): pins the state version the current server
 /// revision maps to, but only where that version is newer than the default the function would fall
 /// back to anyway, and never over an explicitly spelled version. The pin makes the version part of
 /// the persisted type name, so the column keeps its layout when a newer server changes the default.
 void pinCurrentStateVersionToAggregateFunctions(DataTypePtr & type);
+
+/// Detect an unversioned aggregate state that cannot safely accept fresh legacy v0 writes.
+bool hasLegacyUnversionedAggregateStateRequiringMigration(const DataTypePtr & type);
 
 /// Checks type of any nested type is DataTypeAggregateFunction.
 bool hasAggregateFunctionType(const DataTypePtr & type);

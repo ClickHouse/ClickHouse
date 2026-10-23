@@ -92,6 +92,7 @@ public:
     virtual String getName() const = 0;
 
     /// Get the data type of internal state. By default it is AggregateFunction(name(params), argument_types...).
+    /// Versioned functions include the version selected by the current protocol revision.
     virtual DataTypePtr getStateType() const;
 
     /// Same as the above but normalize state types so that variants with the same binary representation will use the same type.
@@ -163,6 +164,15 @@ public:
     virtual size_t getVersionFromRevision(size_t /* revision */) const { return 0; }
 
     virtual size_t getDefaultVersion() const { return 0; }
+
+    /// Some legacy unversioned states are readable but cannot safely accept new writes because their
+    /// old serialization omits semantic information. Combinators propagate this property by default.
+    virtual bool requiresExplicitStateVersionForWrite() const
+    {
+        if (auto nested = getNestedFunction())
+            return nested->requiresExplicitStateVersionForWrite();
+        return false;
+    }
 
     /// Some aggregate functions have more efficient implementation for merging final states.
     /// See AggregateFunctionAny for example.

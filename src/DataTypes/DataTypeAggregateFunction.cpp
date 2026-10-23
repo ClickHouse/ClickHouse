@@ -41,11 +41,12 @@ namespace ErrorCodes
 
 
 DataTypeAggregateFunction::DataTypeAggregateFunction(AggregateFunctionPtr function_, const DataTypes & argument_types_,
-                            const Array & parameters_, std::optional<size_t> version_)
+                            const Array & parameters_, std::optional<size_t> version_, bool print_explicit_zero_in_name_)
     : function(std::move(function_))
     , argument_types(argument_types_)
     , parameters(parameters_)
     , version(version_)
+    , print_explicit_zero_in_name(print_explicit_zero_in_name_)
 {
 }
 
@@ -72,6 +73,17 @@ size_t DataTypeAggregateFunction::getVersion() const
     if (version)
         return *version;
     return function->getDefaultVersion();
+}
+
+DataTypePtr DataTypeAggregateFunction::doCloneWithChildren(const DataTypes & new_children) const
+{
+    /// The outer function's serializer can depend on the argument types (any/groupArray over
+    /// AggregateFunction states). Keep its function object in sync with the rewritten arguments.
+    AggregateFunctionProperties properties;
+    auto new_function = AggregateFunctionFactory::instance().get(
+        function->getName(), NullsAction::EMPTY, new_children, parameters, properties, function->getStateVariant());
+    return std::make_shared<DataTypeAggregateFunction>(
+        std::move(new_function), new_children, parameters, version, print_explicit_zero_in_name);
 }
 
 DataTypePtr DataTypeAggregateFunction::getReturnType() const
@@ -111,9 +123,15 @@ String DataTypeAggregateFunction::getNameImpl(bool with_version) const
     WriteBufferFromOwnString stream;
     stream << "AggregateFunction(";
 
-    /// If aggregate function does not support versioning its version is 0 and is not printed.
-    auto data_type_version = getVersion();
-    if (with_version && data_type_version)
+    /// Version 0 is normally omitted for backward-compatible type names. Migration-sensitive
+    /// states are the exception: an explicitly pinned v0 must stay distinguishable from legacy
+    /// unversioned metadata when the type is serialized to SQL and parsed again.
+    const auto data_type_version = getVersion();
+    const bool print_explicit_zero = print_explicit_zero_in_name
+        && hasExplicitVersion()
+        && data_type_version == 0
+        && function->requiresExplicitStateVersionForWrite();
+    if (with_version && (data_type_version || print_explicit_zero))
         stream << data_type_version << ", ";
     stream << function->getName();
     stream << formatParameters(parameters);
@@ -356,9 +374,12 @@ static DataTypePtr create(const ASTPtr & arguments)
 /// `choose_version` returns the version to pin on a versioned aggregate function type, or nothing
 /// to leave the type untouched.
 static void setVersionToAggregateFunctionsImpl(
-    DataTypePtr & type, bool if_empty, const std::function<std::optional<size_t>(const AggregateFunctionPtr &)> & choose_version)
+    DataTypePtr & type,
+    bool if_empty,
+    const std::function<std::optional<size_t>(const AggregateFunctionPtr &)> & choose_version,
+    bool print_explicit_zero_in_name = true)
 {
-    auto rewrite = [&choose_version, if_empty](const DataTypePtr & column_type) -> DataTypePtr
+    auto rewrite = [&choose_version, if_empty, print_explicit_zero_in_name](const DataTypePtr & column_type) -> DataTypePtr
     {
         const auto * aggregate_function_type = typeid_cast<const DataTypeAggregateFunction *>(column_type.get());
         if (!aggregate_function_type || !aggregate_function_type->isVersioned())
@@ -373,11 +394,26 @@ static void setVersionToAggregateFunctionsImpl(
             return column_type;
         const size_t new_version = *chosen_version;
 
-        if (aggregate_function_type->hasExplicitVersion() && aggregate_function_type->getVersion() == new_version)
+        const bool same_name_policy = new_version != 0
+            || !function->requiresExplicitStateVersionForWrite()
+            || aggregate_function_type->printsExplicitZeroInName() == print_explicit_zero_in_name;
+        if (aggregate_function_type->hasExplicitVersion()
+            && aggregate_function_type->getVersion() == new_version
+            && same_name_policy)
             return column_type;
 
+        /// Unversioned migration-sensitive metadata must remain distinguishable from explicit v0.
+        const bool keep_legacy_unversioned = if_empty
+            && !aggregate_function_type->hasExplicitVersion()
+            && new_version == function->getDefaultVersion()
+            && function->requiresExplicitStateVersionForWrite();
+
         auto new_type = std::make_shared<DataTypeAggregateFunction>(
-            function, aggregate_function_type->getArgumentsDataTypes(), aggregate_function_type->getParameters(), new_version);
+            function,
+            aggregate_function_type->getArgumentsDataTypes(),
+            aggregate_function_type->getParameters(),
+            keep_legacy_unversioned ? std::nullopt : std::optional<size_t>(new_version),
+            print_explicit_zero_in_name);
 
         /// A custom name is part of the observable type and must survive the replacement. The only
         /// custom name an `AggregateFunction` type can carry is `SimpleAggregateFunction` over an
@@ -396,7 +432,7 @@ static void setVersionToAggregateFunctionsImpl(
             /// receiver would read one version too many out of it.
             DataTypes new_argument_types = simple->getArgumentsDataTypes();
             for (auto & argument_type : new_argument_types)
-                setVersionToAggregateFunctionsImpl(argument_type, if_empty, choose_version);
+                setVersionToAggregateFunctionsImpl(argument_type, if_empty, choose_version, print_explicit_zero_in_name);
 
             new_type->setCustomization(std::make_unique<DataTypeCustomDesc>(std::make_unique<DataTypeCustomSimpleAggregateFunction>(
                 simple->getFunction(), new_argument_types, simple->getParameters())));
@@ -411,12 +447,29 @@ static void setVersionToAggregateFunctionsImpl(
         type = rewritten;
 }
 
-void setVersionToAggregateFunctions(DataTypePtr & type, bool if_empty, std::optional<size_t> revision)
+bool hasLegacyUnversionedAggregateStateRequiringMigration(const DataTypePtr & type)
+{
+    bool found = false;
+    DataTypePtr inspected_type = type;
+    setVersionToAggregateFunctionsImpl(
+        inspected_type,
+        /* if_empty= */ true,
+        [&found](const AggregateFunctionPtr & function) -> std::optional<size_t>
+        {
+            if (function->requiresExplicitStateVersionForWrite())
+                found = true;
+            return std::nullopt;
+        });
+    return found;
+}
+
+void setVersionToAggregateFunctions(
+    DataTypePtr & type, bool if_empty, std::optional<size_t> revision, bool print_explicit_zero_in_name)
 {
     setVersionToAggregateFunctionsImpl(type, if_empty, [revision](const AggregateFunctionPtr & function)
     {
         return std::optional<size_t>(revision ? function->getVersionFromRevision(*revision) : 0);
-    });
+    }, print_explicit_zero_in_name);
 }
 
 void pinCurrentStateVersionToAggregateFunctions(DataTypePtr & type)

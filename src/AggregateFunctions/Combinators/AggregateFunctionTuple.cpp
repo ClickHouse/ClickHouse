@@ -92,6 +92,13 @@ size_t AggregateFunctionTuple::getVersionFromRevision(size_t revision) const
     return version;
 }
 
+bool AggregateFunctionTuple::requiresExplicitStateVersionForWrite() const
+{
+    return std::ranges::any_of(
+        nested_functions, [](const auto & nested) { return nested->requiresExplicitStateVersionForWrite(); });
+}
+
+
 /// `-Tuple` is a pass-through combinator: it stores the nested states inside its own state and
 /// forwards the version to every one of them in `serialize` / `deserialize`. So, like the other
 /// pass-through combinators, its state type has to spell the version out - otherwise a fresh

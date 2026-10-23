@@ -220,6 +220,7 @@ Block InterpreterInsertQuery::getSampleBlock(
     {
         if (no_destination)
             return metadata_snapshot->getSampleBlockWithVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
+
         return metadata_snapshot->getSampleBlockNonMaterialized();
     }
 
