@@ -56,7 +56,7 @@ SELECT *
 FROM tab
 FULL JOIN mem4 AS t1 ON tab.k1 = t1.k1 AND tab.k2 = t1.k2
 FULL JOIN mem4 AS t2 ON tab.k1 = t2.k1 AND tab.k2 = t2.k2
-ORDER BY tab.v
+ORDER BY tab.v, t1.k1 -- `t1.k1` orders the two rows with an empty `tab.v`, whatever order the joins run in
 ;
 
 SELECT '-----';

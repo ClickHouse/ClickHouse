@@ -146,6 +146,9 @@ public:
 
     bool supportsLazyMaterialization(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override;
 
+    std::optional<DataLakeReadEstimate>
+    estimateRead(StorageMetadataPtr storage_metadata_snapshot, const ActionsDAG * filter, ContextPtr context) const override;
+
     ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr object_info) const override;
 
     ColumnMapperPtr getColumnMapperForCurrentSchema(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override;
@@ -216,6 +219,8 @@ public:
 
     void drop(ContextPtr context) override;
 
+    DataLakeMetadataPtr cloneWithNewSettings(StorageObjectStorageConfigurationPtr configuration, ContextPtr context) const override;
+
     static DataLakeMetadataPtr createWithDeserialization(
         const ObjectStoragePtr & object_storage,
         const StorageObjectStorageConfigurationWeakPtr & configuration,
@@ -263,7 +268,7 @@ private:
     LoggerPtr log;
     const ObjectStoragePtr object_storage;
     const DB::Iceberg::PersistentTableComponents persistent_components;
-    const DataLakeStorageSettings & data_lake_settings;
+    const DataLakeStorageSettingsPtr data_lake_settings;
     MultiVersion<String> explicit_metadata_file_path;
     const String write_format;
     BackgroundSchedulePoolTaskHolder background_metadata_prefetch_task;
