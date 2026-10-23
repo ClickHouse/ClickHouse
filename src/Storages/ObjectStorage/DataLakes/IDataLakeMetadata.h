@@ -200,6 +200,11 @@ public:
 
     virtual void drop(ContextPtr) { }
 
+    virtual std::unique_ptr<IDataLakeMetadata> cloneWithNewSettings(StorageObjectStorageConfigurationPtr /*configuration*/, ContextPtr /*context*/) const
+    {
+        throwNotImplemented("cloneWithNewSettings");
+    }
+
     virtual ObjectStorageType getObjectStorageType() const { return ObjectStorageType::None; }
 
     virtual bool scheduleDataProcessingJob(BackgroundJobsAssignee & /*assignee*/, StorageObjectStorage & /*storage_object_storage*/) { return false; }
