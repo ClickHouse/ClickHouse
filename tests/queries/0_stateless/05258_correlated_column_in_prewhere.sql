@@ -5,6 +5,7 @@ DROP TABLE IF EXISTS t_prewhere_outer;
 DROP TABLE IF EXISTS t_prewhere_outer_final;
 DROP TABLE IF EXISTS t_prewhere_outer_clash;
 DROP TABLE IF EXISTS t_prewhere_outer_ab;
+DROP TABLE IF EXISTS t_prewhere_outer_clash3;
 
 CREATE TABLE t_prewhere_outer (value UInt64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_prewhere_outer VALUES (10), (11);
@@ -71,6 +72,15 @@ SELECT count() FROM t_prewhere_outer_ab AS t1
 WHERE exists((SELECT 1 FROM t_prewhere_outer_clash AS t2 PREWHERE t1.a = 10 AND t2.`__table1.value` = 1)
     UNION ALL (SELECT 1 FROM t_prewhere_outer AS t3 WHERE t1.value = 999)); -- { serverError NOT_IMPLEMENTED }
 
+-- The same in a scalar subquery that compares that column with the outer column, in either order.
+CREATE TABLE t_prewhere_outer_clash3 (`__table3.value` UInt64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_prewhere_outer_clash3 VALUES (1);
+SELECT value, (SELECT t2.`__table3.value` FROM t_prewhere_outer_clash3 AS t2 PREWHERE t2.`__table3.value` = t1.value LIMIT 1)
+FROM t_prewhere_outer AS t1 ORDER BY value; -- { serverError NOT_IMPLEMENTED }
+SELECT value, (SELECT t2.`__table3.value` FROM t_prewhere_outer_clash3 AS t2 PREWHERE t1.value = t2.`__table3.value` LIMIT 1)
+FROM t_prewhere_outer AS t1 ORDER BY value; -- { serverError NOT_IMPLEMENTED }
+
+DROP TABLE t_prewhere_outer_clash3;
 DROP TABLE t_prewhere_outer_ab;
 DROP TABLE t_prewhere_outer_clash;
 DROP TABLE t_prewhere_outer_final;

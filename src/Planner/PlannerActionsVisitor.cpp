@@ -59,6 +59,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_QUERY;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -972,6 +973,14 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitCorrelatedColumn(const ColumnNodePtr & node)
 {
     auto column_node_name = action_node_name_helper.calculateActionNodeName(node);
+
+    /// Where table columns are named by their names, one of them can have the name of the correlated column.
+    const auto * existing_node = actions_stack[0].tryGetNode(column_node_name);
+    if (!use_column_identifier_as_action_node_name && existing_node && existing_node->type != ActionsDAG::ActionType::PLACEHOLDER)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot decorrelate query, because the subquery has a column named {}, which is also the name of a correlated column",
+            column_node_name);
 
     /// Add PLACEHOLDER only to the outermost scope (will be decorrelated later).
     /// Inner scopes (e.g. lambda scopes) get INPUT so the lambda capture mechanism
