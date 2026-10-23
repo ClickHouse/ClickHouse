@@ -661,6 +661,23 @@ struct Reader
     /// By Parquet column index, nullptr for the columns that are not parsed.
     const std::vector<FileColumnChunksPtr> & getColumnChunks() const { return column_chunks; }
     size_t numColumnChunks(size_t row_group_idx) const;
+
+    struct KeyConditionColumnRanges
+    {
+        /// Position in `extended_sample_block`.
+        size_t idx = 0;
+        std::vector<Range> ranges;
+        /// `sizeof(Range)` and the heap bytes of the bounds, for every range.
+        size_t bytes = 0;
+    };
+    /// Statistics ranges of key condition columns for every non-empty row group, as `prefilterAndInitRowGroups` checked
+    /// them. Complete only if every row group was checked by statistics alone.
+    std::vector<KeyConditionColumnRanges> key_condition_column_ranges;
+    bool key_condition_column_ranges_complete = false;
+    /// The key condition columns whose ranges `prefilterAndInitRowGroups` collects. While the ranges of all of them take
+    /// more than `max_key_condition_column_ranges_bytes`, it drops the column whose ranges take the most.
+    std::vector<size_t> collect_key_condition_column_ranges;
+    size_t max_key_condition_column_ranges_bytes = 0;
     void preparePrewhere();
 
     /// Deserialize bf header and determine which bf blocks to read.
