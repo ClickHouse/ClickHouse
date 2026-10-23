@@ -1080,6 +1080,7 @@ WhatIfCandidateResult evaluateProjection(
     auto projection = refreshHypotheticalProjection(stored_projection, data, metadata, context, result.not_applicable_reason);
     if (!projection)
         return result;
+    const bool aggregate = projection->type == ProjectionDescription::Type::Aggregate;
 
     if (!context->getSettingsRef()[Setting::optimize_use_projections])
     {
@@ -1108,7 +1109,7 @@ WhatIfCandidateResult evaluateProjection(
     }
 
     /// the optimization of aggregate projections matches the aggregation of the query, not the columns that the query reads
-    for (const auto & column_name : projection->type == ProjectionDescription::Type::Normal ? read_step->getAllColumnNames() : Names{})
+    for (const auto & column_name : aggregate ? Names{} : read_step->getAllColumnNames())
     {
         if (!projection->sample_block.findColumnOrSubcolumnByName(column_name) && !projection->metadata->virtuals.has(column_name))
         {
@@ -1123,7 +1124,7 @@ WhatIfCandidateResult evaluateProjection(
     const auto & proj_key = projection->metadata->getSortingKey();
     if (proj_key.column_names.empty())
     {
-        result.not_applicable_reason = projection->type == ProjectionDescription::Type::Aggregate
+        result.not_applicable_reason = aggregate
             ? "Aggregate projection has no GROUP BY keys, which EXPLAIN WHATIF does not estimate yet"
             : "Projection has no sort key to prune on";
         return result;
@@ -1141,7 +1142,7 @@ WhatIfCandidateResult evaluateProjection(
             return result;
         }
         /// the key of an aggregate projection is over its own `GROUP BY` columns
-        const auto & stored = projection->type == ProjectionDescription::Type::Aggregate ? projection->metadata : metadata;
+        const auto & stored = aggregate ? projection->metadata : metadata;
         if (!stored->getColumns().hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, required))
         {
             result.not_applicable_reason = fmt::format(
@@ -1189,7 +1190,7 @@ WhatIfCandidateResult evaluateProjection(
     weigh(probe);
     if (!probe->outcome.weighed)
     {
-        result.not_applicable_reason = projection->type == ProjectionDescription::Type::Aggregate
+        result.not_applicable_reason = aggregate
             ? "The optimizer weighs an aggregate projection only for a query with GROUP BY or DISTINCT on this table"
             : "The optimizer does not weigh projections for this read";
         return result;
@@ -1205,7 +1206,6 @@ WhatIfCandidateResult evaluateProjection(
     if (settings.empirical)
     {
         /// an exact count can remove parts from the base read, but the optimizer weighs an aggregate projection on all of them
-        const bool aggregate = projection->type == ProjectionDescription::Type::Aggregate;
         const auto & parts_to_scan = aggregate ? probe->outcome.parent_read : baseline_parts;
         if (tryEstimateProjection(
                 result, *projection, filters_on_offsets, relaxing_setting, read_step, parts_to_scan, analysis.selected_marks,
