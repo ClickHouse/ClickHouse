@@ -13,7 +13,7 @@
             "ru/integrations/clickpipes/kafka/index",
             "ru/integrations/clickpipes/kafka/create-kafka-clickpipe",
             "ru/integrations/clickpipes/kafka/schema-registries",
-            "integrations/clickpipes/kafka/reference",
+            "ru/integrations/clickpipes/kafka/reference",
             "ru/integrations/clickpipes/kafka/best-practices",
             "ru/integrations/clickpipes/kafka/faq"
           ]
@@ -30,7 +30,7 @@
           "group": "GCP Pub/Sub",
           "icon": "/images/integrations/logos/google_pubsub.svg",
           "pages": [
-            "integrations/clickpipes/pubsub/overview",
+            "ru/integrations/clickpipes/pubsub/overview",
             "ru/integrations/clickpipes/pubsub/auth"
           ]
         }
@@ -52,7 +52,7 @@
           "group": "Google Cloud Storage",
           "icon": "/images/integrations/logos/gcs.svg",
           "pages": [
-            "integrations/clickpipes/object-storage/google-cloud-storage/overview",
+            "ru/integrations/clickpipes/object-storage/google-cloud-storage/overview",
             "ru/integrations/clickpipes/object-storage/google-cloud-storage/get-started",
             "ru/integrations/clickpipes/object-storage/google-cloud-storage/unordered-mode"
           ]
@@ -106,7 +106,7 @@
                 "ru/integrations/clickpipes/postgres/source/rds",
                 "ru/integrations/clickpipes/postgres/source/aurora",
                 "ru/integrations/clickpipes/postgres/source/supabase",
-                "integrations/clickpipes/postgres/source/google-cloudsql",
+                "ru/integrations/clickpipes/postgres/source/google-cloudsql",
                 "ru/integrations/clickpipes/postgres/source/azure-flexible-server-postgres",
                 "ru/integrations/clickpipes/postgres/source/neon-postgres",
                 "ru/integrations/clickpipes/postgres/source/crunchy-postgres",
@@ -144,7 +144,7 @@
               "pages": [
                 "ru/integrations/clickpipes/mysql/source/rds",
                 "ru/integrations/clickpipes/mysql/source/aurora",
-                "integrations/clickpipes/mysql/source/gcp",
+                "ru/integrations/clickpipes/mysql/source/gcp",
                 "ru/integrations/clickpipes/mysql/source/azure-flexible-server-mysql",
                 "ru/integrations/clickpipes/mysql/source/generic",
                 "ru/integrations/clickpipes/mysql/source/rds-maria",
@@ -188,7 +188,7 @@
           "group": "BigQuery",
           "icon": "/images/logo-bigquery.svg",
           "pages": [
-            "integrations/clickpipes/bigquery/overview",
+            "ru/integrations/clickpipes/bigquery/overview",
             "ru/integrations/clickpipes/bigquery/get-started",
             "ru/integrations/clickpipes/bigquery/faq"
           ]

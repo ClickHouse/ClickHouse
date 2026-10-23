@@ -41,7 +41,7 @@
         {
           "group": "Projeções",
           "pages": [
-            "concepts/features/projections/projections",
+            "pt-BR/concepts/features/projections/projections",
             "pt-BR/concepts/features/projections/materialized-views-versus-projections"
           ]
         },
@@ -191,7 +191,7 @@
                 },
                 "pt-BR/concepts/features/security/external-authenticators/http",
                 "pt-BR/concepts/features/security/external-authenticators/kerberos",
-                "concepts/features/security/external-authenticators/jwt"
+                "pt-BR/concepts/features/security/external-authenticators/jwt"
               ]
             }
           ]
@@ -219,7 +219,7 @@
               "group": "Drivers e interfaces",
               "pages": [
                 "pt-BR/concepts/features/interfaces/overview",
-                "concepts/features/interfaces/http",
+                "pt-BR/concepts/features/interfaces/http",
                 "pt-BR/concepts/features/interfaces/framing-formats",
                 "pt-BR/concepts/features/interfaces/tcp",
                 "pt-BR/concepts/features/interfaces/adbc",
@@ -243,7 +243,7 @@
             "pt-BR/concepts/features/interfaces/web-ui-pinned-columns",
             "pt-BR/concepts/features/interfaces/web-ui-notebook",
             "pt-BR/concepts/features/interfaces/web-ui-result-shaping",
-            "concepts/features/interfaces/web-terminal",
+            "pt-BR/concepts/features/interfaces/web-terminal",
             {
               "group": "Clientes de terceiros",
               "pages": [
