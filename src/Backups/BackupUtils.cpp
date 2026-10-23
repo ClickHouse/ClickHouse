@@ -191,7 +191,8 @@ void warnBackupMetadataOnlyIgnored(const StoragePtr & storage, const String & re
 
 }
 
-bool isDataOnBackupMetadataOnlyStoragePolicy(const StoragePtr & storage, const ContextPtr & context)
+/// `context` is unused here: only the `TimeSeries` targets left out on this branch needed it.
+bool isDataOnBackupMetadataOnlyStoragePolicy(const StoragePtr & storage, [[maybe_unused]] const ContextPtr & context)
 {
     /// Only a table of the plain `MergeTree` family reopens the parts it finds on the storage. `RESTORE` creates a
     /// `ReplicatedMergeTree` table in a mode that refuses them, a `SharedMergeTree` table sees only the parts in Keeper,
@@ -207,18 +208,10 @@ bool isDataOnBackupMetadataOnlyStoragePolicy(const StoragePtr & storage, const C
         return false;
     }
 
-    if (const auto * time_series = typeid_cast<const StorageTimeSeries *>(storage.get()))
-    {
-        for (auto target_kind : time_series->getTargetKinds())
-        {
-            if (!time_series->isInnerTable(target_kind))
-                continue;
-            auto target = time_series->tryGetTargetTable(target_kind, context);
-            if (target && getMergeTreeOnBackupMetadataOnlyStoragePolicy(target))
-                warnBackupMetadataOnlyIgnored(storage, fmt::format("it is a TimeSeries table with the inner table {}", target->getStorageID().getNameForLogs()));
-        }
+    /// The warning for the inner tables of a `TimeSeries` table is left out: it needs `getTargetKinds`, which is
+    /// not static on this branch. The flag is ignored for such a table either way, as it keeps no data itself.
+    if (typeid_cast<const StorageTimeSeries *>(storage.get()))
         return false;
-    }
 
     auto merge_tree = getMergeTreeOnBackupMetadataOnlyStoragePolicy(storage);
     if (!merge_tree)
