@@ -384,7 +384,8 @@ static void tryOptimizeGroupByTopKOverRemoteMerge(
 {
     const auto & merging_step = typeid_cast<const MergingAggregatedStep &>(*merging_node->step);
     const auto & params = merging_step.getParams();
-    if (!merging_step.isFinal() || merging_step.isGroupingSets() || params.overflow_row || params.max_rows_to_group_by > 0
+    /// Under `max_rows_to_group_by` no shard or replica would take the heap, and the sort would only cost.
+    if (!merging_step.isFinal() || merging_step.isGroupingSets() || params.overflow_row || settings.max_rows_to_group_by > 0
         || params.keys.empty() || merging_node->children.size() != 1)
         return;
 

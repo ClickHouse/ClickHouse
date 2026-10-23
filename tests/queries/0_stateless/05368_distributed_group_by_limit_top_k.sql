@@ -64,6 +64,12 @@ FROM (EXPLAIN actions = 1 SELECT k, arrayJoin([1, 2]) AS x, count() FROM t_05368
     SETTINGS enable_parallel_replicas = 0, prefer_localhost_replica = 1)
 WHERE explain LIKE '%Top-K%' OR explain LIKE '%Sorting (%';
 
+-- No shard takes the heap under `max_rows_to_group_by`, so neither is the sort added.
+SELECT count()
+FROM (EXPLAIN actions = 1 SELECT k, count() FROM t_05368_distributed GROUP BY k LIMIT 3
+    SETTINGS enable_parallel_replicas = 0, prefer_localhost_replica = 1, max_rows_to_group_by = 1000000)
+WHERE explain LIKE '%Top-K%' OR explain LIKE '%Sorting (%';
+
 -- The limit is not passed on beyond the shards: here they run the subquery over the `Distributed` table themselves,
 -- and a heap there would leave keys out of the set.
 SELECT k, count() FROM t_05368_distributed

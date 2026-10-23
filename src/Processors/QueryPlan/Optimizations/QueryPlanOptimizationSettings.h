@@ -99,6 +99,7 @@ struct QueryPlanOptimizationSettings
     bool top_k_optimization_shared_boundary = true;
     /// The `distributed_group_by_top_k` of the initiator, in a secondary query only.
     UInt64 distributed_group_by_top_k = 0;
+    UInt64 max_rows_to_group_by = 0;
 
     /// If we can swap probe/build tables in join
     /// true/false - always/never swap

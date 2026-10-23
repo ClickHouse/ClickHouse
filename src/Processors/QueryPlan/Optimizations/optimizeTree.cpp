@@ -87,6 +87,7 @@ static Optimization::ExtraSettings makeExtraSettings(const QueryPlanOptimization
         optimization_settings.enable_group_by_top_k_optimization,
         optimization_settings.top_k_optimization_observation_rows,
         optimization_settings.top_k_optimization_shared_boundary,
+        optimization_settings.max_rows_to_group_by,
         optimization_settings.enable_group_by_top_k_dynamic_filtering,
         optimization_settings.use_query_condition_cache_for_top_k,
         optimization_settings.is_explain,
