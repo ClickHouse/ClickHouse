@@ -1749,9 +1749,31 @@ void MergeTreeData::setProperties(
     /// A column that keeps its name but is replaced within one `ALTER` (`DROP COLUMN b, ADD COLUMN b ALIAS ...`)
     /// is new as well: when it is an `ALIAS` before or after, no mutation rebuilds the index files, so a changed
     /// type or default expression means the files were built for a different column.
+    /// The implicit index of an expression alias is built over its expanded expression, so the replacement
+    /// of an alias it reaches (`b` for `c ALIAS b + 1`) leaves its files stale too, even if `c` itself keeps
+    /// the same definition.
     std::optional<StorageInMemoryMetadata> metadata_without_foreign_implicit_indices;
     {
         static const std::string_view implicit_index_prefix = IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX;
+
+        const auto is_redefined_alias = [](const ColumnDescription & old_column, const ColumnDescription & new_column)
+        {
+            return (old_column.default_desc.kind == ColumnDefaultKind::Alias || new_column.default_desc.kind == ColumnDefaultKind::Alias)
+                && (!old_column.type->equals(*new_column.type) || !(old_column.default_desc == new_column.default_desc));
+        };
+
+        NameSet redefined_alias_columns;
+        for (const auto & new_column : new_metadata_.columns)
+        {
+            const auto * old_column = old_metadata.columns.tryGet(new_column.name);
+            if (old_column && is_redefined_alias(*old_column, new_column))
+                redefined_alias_columns.insert(new_column.name);
+        }
+
+        NameSet dependent_alias_columns;
+        if (!redefined_alias_columns.empty())
+            dependent_alias_columns = new_metadata_.getExpressionAliasesDependingOn(redefined_alias_columns);
+
         NameSet new_implicit_indices;
         for (const auto & index : new_metadata_.secondary_indices)
         {
@@ -1769,8 +1791,7 @@ void MergeTreeData::setProperties(
                 if (!old_metadata.secondary_indices.has(index.name))
                     new_implicit_indices.insert(index.name);
             }
-            else if ((old_column->default_desc.kind == ColumnDefaultKind::Alias || new_column->default_desc.kind == ColumnDefaultKind::Alias)
-                && (!old_column->type->equals(*new_column->type) || !(old_column->default_desc == new_column->default_desc)))
+            else if (redefined_alias_columns.contains(column_name) || dependent_alias_columns.contains(column_name))
             {
                 new_implicit_indices.insert(index.name);
             }
