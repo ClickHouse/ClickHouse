@@ -51,7 +51,6 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int FAULT_INJECTED;
-    extern const int LOGICAL_ERROR;
 }
 
 void DiskObjectStorageTransaction::waitBlobRemoval(const StoredObjects & blobs) const
