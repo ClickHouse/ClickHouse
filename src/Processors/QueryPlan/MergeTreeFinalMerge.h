@@ -19,6 +19,9 @@ namespace DB
 /// `SelectByIndicesTransform` that materializes the vertical-final result. `read_in_reverse` means
 /// the input streams are read in the reverse order relative to the storage order (supported only
 /// for `Replacing`, see `ReplacingSortedAlgorithm`).
+/// When `limit` is non-zero, it is forwarded to the merge algorithms that support early
+/// termination (`Ordinary`, `Aggregating`, `Summing`, `Coalescing`) so the merge can stop
+/// once enough output rows have been produced (see `optimize_final_limit_pushdown`).
 void addMergingFinal(
     Pipe & pipe,
     const SortDescription & sort_description,
@@ -26,7 +29,8 @@ void addMergingFinal(
     const StorageMetadataPtr & metadata_snapshot,
     size_t max_block_size_rows,
     bool enable_vertical_final,
-    bool read_in_reverse = false);
+    bool read_in_reverse = false,
+    UInt64 limit = 0);
 
 /// One lane of a distributed task's read: the marks it reads. When `needs_merge` it is a FINAL intersecting
 /// layer (read in order, trimmed to `(borders[index-1], borders[index]]`, then merge-deduplicated); otherwise

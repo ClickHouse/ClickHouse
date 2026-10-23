@@ -424,11 +424,14 @@ public:
     static bool filterDependsOnNonDeterministicVirtuals(const VirtualColumnsDescription & virtuals, const SelectQueryInfo & query_info_);
 
     /// Returns `false` if requested reading cannot be performed.
-    bool requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit = 0);
+    bool requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t num_leading_fixed_sort_key_columns = 0, size_t query_limit = 0);
     /// Whether `requestReadingInOrder` accepts a reverse direction. With `FINAL`, only the engines whose merge
     /// does not depend on the direct order of rows can read in reverse order.
     bool canReadInReverseOrder() const;
     bool setVirtualRowConversions(ActionsDAG virtual_row_conversion_);
+    /// Set the limit for FINAL merge algorithms. Unlike input_order_info->limit,
+    /// this is not cleared by filters/prewhere on fixed sorting key prefix columns.
+    void setFinalLimit(UInt64 final_limit_) { final_limit = final_limit_; }
     void resetVirtualRowConversions() { virtual_row_conversion = nullptr; }
 
     /// Whether every part surviving pruning has the value of its virtual row in the index.
@@ -941,6 +944,11 @@ private:
     bool has_lazily_read_columns = false;
 
     ExpressionActionsPtr virtual_row_conversion;
+
+    /// Limit for FINAL merge algorithms (set separately from input_order_info->limit
+    /// because filters/prewhere clear that limit for storage-level TopN, but the FINAL
+    /// merge can still use it when the filter is on a fixed prefix of the sorting key).
+    UInt64 final_limit = 0;
 
     std::optional<size_t> number_of_current_replica;
 
