@@ -37,7 +37,7 @@ ${CLICKHOUSE_CLIENT} --query "
 ${CLICKHOUSE_CLIENT} --query "
     ${ONE_ROW_PER_FILE}
     INSERT INTO t SELECT id FROM file('${BAD_CSV}', 'CSV', 'id Int64') SETTINGS input_format_parallel_parsing = 0;
-" 2>&1 | grep -c -m1 'CANNOT_PARSE'
+" 2>&1 | grep -c -m1 'INCORRECT_DATA'
 
 echo '--- rows ---'
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM t"
