@@ -721,7 +721,10 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
         size_t remaining_bytes = end - data;
         size_t min_bytes_per_block = miniblocks_per_block + 1;
         size_t max_blocks = remaining_bytes / min_bytes_per_block;
-        size_t max_values = max_blocks * values_per_block + 1;
+        /// A corrupted header can declare a huge block size, then there is no bound to check against.
+        size_t max_values = 0;
+        if (common::mulOverflow(max_blocks, values_per_block, max_values) || common::addOverflow(max_values, size_t(1), max_values))
+            max_values = std::numeric_limits<size_t>::max();
         if (total_values_remaining > max_values)
             throw Exception(ErrorCodes::INCORRECT_DATA, "DELTA_BINARY_PACKED header claims {} values but data can contain at most {}", total_values_remaining, max_values);
     }
@@ -754,7 +757,11 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
         chassert(miniblock_idx < miniblocks_per_block);
 
         miniblock_values_remaining = values_per_block / miniblocks_per_block;
-        size_t bytes = (miniblock_values_remaining * miniblock_bit_widths[miniblock_idx] + 7) / 8;
+        /// The number of values in a miniblock is a multiple of 32 (checked in the constructor), so no rounding is needed.
+        /// If the size does not fit, it is larger than the remaining data, and the miniblock is truncated below.
+        size_t bytes = 0;
+        if (common::mulOverflow(miniblock_values_remaining / 8, size_t(miniblock_bit_widths[miniblock_idx]), bytes))
+            bytes = std::numeric_limits<size_t>::max();
 
         /// Tolerate missing padding at the end of the last block.
         /// The Parquet spec requires zero-padding the last block to the full block size,
