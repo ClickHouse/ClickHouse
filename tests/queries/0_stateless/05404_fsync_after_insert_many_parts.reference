@@ -6,8 +6,9 @@
 t_fsync_many_parts	1
 t_fsync_many_parts_no_defer	1
 t_fsync_many_parts_replicated	1
-t_fsync_many_parts	1	1
-t_fsync_many_parts_no_defer	1	1
-t_fsync_many_parts_replicated	1	1
+t_fsync_many_parts	1
+t_fsync_many_parts_no_defer	1
+t_fsync_many_parts_replicated	1
+1
 t_fsync_dedup	1
 t_fsync_dedup_replicated	1

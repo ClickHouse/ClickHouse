@@ -57,15 +57,20 @@ SELECT table, count() >= 20 FROM system.part_log
 WHERE event_date >= yesterday() AND database = currentDatabase() AND event_type = 'NewPart' AND table LIKE 't_fsync_many_parts%'
 GROUP BY table ORDER BY table;
 
--- Every file written by the `INSERT` is fsynced.
+-- Every file written by the `INSERT` is fsynced: the deferred fsync syncs as many files as the inline one.
+-- (`FileOpen` is not comparable, because debug builds read the written files back to validate them.)
 SELECT
     replaceOne(arrayFirst(x -> startsWith(x, currentDatabase() || '.'), tables), currentDatabase() || '.', '') AS t,
-    ProfileEvents['FileSync'] > 0,
-    ProfileEvents['FileSync'] = ProfileEvents['FileOpen']
+    ProfileEvents['FileSync'] > 0
 FROM system.query_log
 WHERE event_date >= yesterday() AND current_database = currentDatabase() AND type = 'QueryFinish' AND query_kind = 'Insert'
     AND t LIKE 't_fsync_many_parts%'
 ORDER BY t;
+
+SELECT uniqExact(ProfileEvents['FileSync'])
+FROM system.query_log
+WHERE event_date >= yesterday() AND current_database = currentDatabase() AND type = 'QueryFinish' AND query_kind = 'Insert'
+    AND hasAny(tables, arrayMap(x -> currentDatabase() || '.' || x, ['t_fsync_many_parts', 't_fsync_many_parts_no_defer', 't_fsync_many_parts_replicated']));
 
 -- The deduplicated `INSERT` syncs the existing part.
 SELECT
