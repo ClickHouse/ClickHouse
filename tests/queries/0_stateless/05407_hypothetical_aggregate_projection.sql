@@ -99,6 +99,42 @@ WHERE match(line, '^(Baseline|With |marks:|rows:|verdict:)');
 SELECT 'real: ' || toString(marks) || ' marks, ' || toString(rows) || ' rows'
 FROM (EXPLAIN ESTIMATE SELECT b, sum(v) FROM w_real WHERE v % 2 = 0 AND b < 300 GROUP BY b);
 
+-- the exact count of whole ranges takes parts out of the base read, but the optimizer weighs the projection on all of them
+CREATE TABLE c_est (d Date, id UInt64) ENGINE = MergeTree PARTITION BY toYYYYMM(d) ORDER BY (d, id)
+    SETTINGS index_granularity = 100, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+        merge_max_block_size = 8192, enable_block_number_column = 0, enable_block_offset_column = 0;
+CREATE TABLE c_real AS c_est;
+ALTER TABLE c_real ADD PROJECTION p_c (SELECT d, count() GROUP BY d);
+INSERT INTO c_est SELECT toDate('2026-01-01') + intDiv(number, 100), number FROM numbers(9000);
+INSERT INTO c_real SELECT toDate('2026-01-01') + intDiv(number, 100), number FROM numbers(9000);
+CREATE HYPOTHETICAL PROJECTION p_c ON c_est (SELECT d, count() GROUP BY d);
+SELECT '-- an exact count of whole ranges';
+SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
+FROM (EXPLAIN WHATIF SELECT count() FROM c_est WHERE d >= '2026-01-15' AND d < '2026-03-10' SETTINGS optimize_use_implicit_projections = 1)
+WHERE match(line, '^(Baseline|With |marks:|rows:|verdict:)');
+SELECT 'real: ' || toString(marks) || ' marks, ' || toString(rows) || ' rows'
+FROM (EXPLAIN ESTIMATE SELECT count() FROM c_real WHERE d >= '2026-01-15' AND d < '2026-03-10' SETTINGS optimize_use_implicit_projections = 1);
+
+-- the key of an aggregate projection can be an expression over the columns of the table
+CREATE TABLE h_est (ts DateTime, v UInt64) ENGINE = MergeTree ORDER BY v
+    SETTINGS index_granularity = 100, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+        merge_max_block_size = 8192, enable_block_number_column = 0, enable_block_offset_column = 0;
+CREATE TABLE h_real AS h_est;
+ALTER TABLE h_real ADD PROJECTION p_h (SELECT toStartOfHour(ts), sum(v) GROUP BY toStartOfHour(ts));
+INSERT INTO h_est SELECT toDateTime('2026-01-01 00:00:00', 'UTC') + number * 60, number FROM numbers(30000);
+INSERT INTO h_real SELECT toDateTime('2026-01-01 00:00:00', 'UTC') + number * 60, number FROM numbers(30000);
+CREATE HYPOTHETICAL PROJECTION p_h ON h_est (SELECT toStartOfHour(ts), sum(v) GROUP BY toStartOfHour(ts));
+SELECT '-- a key expression';
+SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
+FROM (EXPLAIN WHATIF SELECT toStartOfHour(ts) AS h, sum(v) FROM h_est WHERE toStartOfHour(ts) < toDateTime('2026-01-02 00:00:00', 'UTC') GROUP BY h)
+WHERE match(line, '^(Baseline|With |marks:|rows:|verdict:)');
+SELECT 'real: ' || toString(marks) || ' marks, ' || toString(rows) || ' rows'
+FROM (EXPLAIN ESTIMATE SELECT toStartOfHour(ts) AS h, sum(v) FROM h_real WHERE toStartOfHour(ts) < toDateTime('2026-01-02 00:00:00', 'UTC') GROUP BY h);
+
+DROP TABLE c_est;
+DROP TABLE c_real;
+DROP TABLE h_est;
+DROP TABLE h_real;
 DROP TABLE t_est;
 DROP TABLE t_real;
 DROP TABLE w_est;

@@ -1140,7 +1140,9 @@ WhatIfCandidateResult evaluateProjection(
                 backQuote(BlockOffsetColumn::name));
             return result;
         }
-        if (!metadata->getColumns().hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, required))
+        /// the key of an aggregate projection is over its own `GROUP BY` columns
+        const auto & stored = projection->type == ProjectionDescription::Type::Aggregate ? projection->metadata : metadata;
+        if (!stored->getColumns().hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, required))
         {
             result.not_applicable_reason = fmt::format(
                 "Projection orders by {}, which it does not store, so EXPLAIN WHATIF cannot rebuild its key",
@@ -1202,8 +1204,12 @@ WhatIfCandidateResult evaluateProjection(
 
     if (settings.empirical)
     {
+        /// an exact count or column statistics can take parts out of the base read, but not out of the read that the optimizer
+        /// weighs an aggregate projection against
+        const auto whole_read = projection->type == ProjectionDescription::Type::Aggregate ? read_step->selectRangesToRead() : nullptr;
         if (tryEstimateProjection(
-                result, *projection, filters_on_offsets, relaxing_setting, read_step, baseline_parts, analysis.selected_marks,
+                result, *projection, filters_on_offsets, relaxing_setting, read_step,
+                whole_read ? whole_read->parts_with_ranges : baseline_parts, analysis.selected_marks,
                 settings.projection_scan_budget_rows, weigh))
             return result;
         result.empirical_status = WhatIfCandidateResult::Unsupported;
