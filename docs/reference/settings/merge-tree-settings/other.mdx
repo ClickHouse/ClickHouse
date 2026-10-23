@@ -18,7 +18,9 @@ These settings are available in [system.merge_tree_settings](/reference/system-t
 ## adaptive_write_buffer_initial_size {#adaptive_write_buffer_initial_size}
 <SettingsInfoBlock type="NonZeroUInt64" default_value="16384" />
 
-Initial size of an adaptive write buffer
+Sets the initial size, in bytes, of each adaptive write buffer used when writing MergeTree data. Buffers grow automatically as needed. Lower values reduce initial memory use, especially for tables with many columns, but may cause more frequent buffer flushes. This is a starting size, not a memory limit.
+
+Adaptive write buffers are only used in wide parts, as controlled by [`min_columns_to_activate_adaptive_write_buffer`](/reference/settings/merge-tree-settings/min#min_columns_to_activate_adaptive_write_buffer) and [`use_adaptive_write_buffer_for_dynamic_subcolumns`](/reference/settings/merge-tree-settings/use#use_adaptive_write_buffer_for_dynamic_subcolumns).
 
 ## add_implicit_sign_column_constraint_for_collapsing_engine {#add_implicit_sign_column_constraint_for_collapsing_engine}
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -188,7 +190,7 @@ all of them.
 <ExperimentalBadge/>
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-Force read-through filesystem cache for merges
+Controls how background merge and mutation reads handle cache misses. When disabled, existing cached ranges are used, but missing ranges are read directly from the underlying storage without populating the cache. When enabled, missing ranges are read through and stored in the filesystem cache, and in the distributed cache when enabled. This can warm data for later reads, but also consumes cache capacity.
 
 ## initialization_retry_period {#initialization_retry_period}
 <SettingsInfoBlock type="Seconds" default_value="60" />
@@ -401,6 +403,32 @@ This setting works best for tables with no primary key or a low-cardinality
 primary key, i.e. a table with only few distinct primary key values.
 High-cardinality primary keys, e.g. involving timestamp columns of type
 `DateTime64`, are not expected to benefit from this setting.
+
+## optimize_row_order_if_no_order_by {#optimize_row_order_if_no_order_by}
+<SettingsInfoBlock type="Bool" default_value="0" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "New setting to enable row order optimization automatically for ordinary MergeTree-family tables without a sorting key."}]}]}/>
+
+Controls whether row order optimization (see `optimize_row_order`) is applied
+automatically on insert for tables with an empty sorting key, i.e. tables
+declared with `ORDER BY ()` or `ORDER BY tuple()`.
+
+Disabled by default. Enable it for tables where improving the compressibility
+of newly inserted parts with LZ4 or ZSTD is more important than preserving
+insertion order and insert throughput.
+
+As with `optimize_row_order`, inserts incur additional CPU cost to analyze and
+optimize the row order of the new data. Disable this setting if preserving the
+original insert order of the rows or maximizing insert throughput matters more
+than compression.
+
+An explicitly set `optimize_row_order = 0` takes precedence: such a table is
+never row-order optimized, regardless of this setting.
+
+As with `optimize_row_order`, the optimization applies to ordinary
+`MergeTree`-family tables only, including `ReplicatedMergeTree`. Specialized
+engines of the family, e.g. `ReplacingMergeTree`,
+`CollapsingMergeTree` or `AggregatingMergeTree`, are never row-order optimized
+and keep the order of the inserted rows.
 
 ## packed_skip_index_max_bytes {#packed_skip_index_max_bytes}
 
@@ -731,6 +759,22 @@ This applies only to the TTLs that delete rows. A column `TTL` can only be
 honoured by rewriting the part, so the merges that clear expired columns are
 still assigned when this setting is enabled. Such a merge rewrites the part
 anyway, and therefore also removes the rows that have expired in it.
+
+## unique_key_conflict_action {#unique_key_conflict_action}
+
+<ExperimentalBadge/>
+<SettingsInfoBlock type="UniqueKeyConflictAction" default_value="overwrite" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "overwrite"},{"label": "New table setting: how an INSERT on a UNIQUE KEY table resolves a key already live in the partition (overwrite \/ ignore \/ abort)"}]}]}/>
+
+For `UNIQUE KEY` tables, how an INSERT resolves a key that already exists live in the partition:
+
+- `overwrite` — the incoming row supersedes the existing live row (UPSERT). Default.
+- `ignore` — the existing row is kept and the conflicting incoming row is dropped.
+- `abort` — the INSERT fails on the first live duplicate and publishes nothing.
+
+The policy is a property of the table, so every writer is held to it. Note that an INSERT is
+atomic only when it produces a single part, so `abort` may reject one part of a multi-part
+INSERT after earlier parts committed, exactly as plain MergeTree does.
 
 ## wait_for_unique_parts_send_before_shutdown_ms {#wait_for_unique_parts_send_before_shutdown_ms}
 <SettingsInfoBlock type="Milliseconds" default_value="0" />

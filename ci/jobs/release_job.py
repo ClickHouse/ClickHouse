@@ -9,6 +9,7 @@ reuse. The repo is always shallow at the start (hence the unconditional
 """
 
 import argparse
+import dataclasses
 import os
 import re
 import shlex
@@ -165,11 +166,22 @@ def main():
 
     results = []
     ok = True
+    log_files = ["/tmp/reprepro.log", "/tmp/createrepo_c.log", os.path.expanduser("~/fuse_mount.log")]
+    for log_file in log_files:
+        Path(log_file).touch()
+    log_files.append(RELEASE_INFO_FILE)
+
+    def existing_files():
+        return [p for p in log_files if os.path.isfile(p)]
 
     def step(**kwargs):
         nonlocal ok
         if not ok:
             return
+        # A timeout kill skips complete_job, so the runner uploads the files of the last checkpoint
+        Result.create_from(
+            results=results, stopwatch=stopwatch, status=Result.Status.RUNNING, files=existing_files()
+        ).dump_atomically()
         results.append(Result.from_commands_run(**kwargs))
         if results[-1].status != Result.Status.OK:
             ok = False
@@ -687,24 +699,6 @@ def main():
         workdir=REPO_PATH,
     )
 
-    # Post the final release status — but only when "Prepare Release Info" ran
-    # this attempt and produced RELEASE_INFO_FILE. If an early setup step failed
-    # before prepare, the file is absent (cleared at the top of main), so
-    # --post-status would raise FileNotFoundError trying to read it; skip it and
-    # let the aggregated job Result (praktika Slack feed) report the failing
-    # setup step instead.
-    if os.path.exists(RELEASE_INFO_FILE):
-        results.append(
-            Result.from_commands_run(
-                name="Post Slack Message",
-                command=[
-                    f"python3 ./ci/jobs/scripts/create_release.py --post-status"
-                    f" {dry_run_flag}".strip()
-                ],
-                workdir=REPO_PATH,
-            )
-        )
-
     # Always remove the publishing credentials and the signing-key home so they
     # do not persist for a later job on a reused self-hosted runner.
     def cleanup_credentials():
@@ -739,18 +733,40 @@ def main():
             workdir=REPO_PATH,
         )
     )
+    if results[-1].status != Result.Status.OK:
+        ok = False
 
-    log_files = [
-        p
-        for p in [
-            "/tmp/reprepro.log",
-            "/tmp/createrepo_c.log",
-            os.path.expanduser("~/fuse_mount.log"),
-            RELEASE_INFO_FILE,
-        ]
-        if os.path.isfile(p)
-    ]
-    Result.create_from(results=results, stopwatch=stopwatch, files=log_files).complete_job()
+    def post_slack_message():
+        release_info = ReleaseInfo.from_file()
+        title = "New release branch" if release_info.is_new_release_branch() else "New release"
+        print(f"{title}: {release_info.release_tag}")
+        # ci_buddy needs PyGithub and unidiff; importing here keeps the other steps free of them
+        from ci_buddy import CIBuddy
+        from slack_ids import LESHIKUS
+
+        buddy = CIBuddy(dry_run=args.dry_run)
+        if ok:
+            buddy.post_done(f"Completed: {title}", dataclasses.asdict(release_info))
+        else:
+            buddy.post_critical(
+                f"<@{LESHIKUS}> Failed: {title}",
+                dataclasses.asdict(release_info),
+                channels=[CIBuddy.Channels.ALERTS, CIBuddy.Channels.INFO],
+            )
+
+    # RELEASE_INFO_FILE exists only if "Prepare Release Info" ran this attempt
+    if os.path.exists(RELEASE_INFO_FILE):
+        results.append(
+            Result.from_commands_run(
+                name="Post Slack Message",
+                command=post_slack_message,
+                workdir=REPO_PATH,
+            )
+        )
+
+    Result.create_from(
+        results=results, stopwatch=stopwatch, files=existing_files()
+    ).complete_job()
 
 
 if __name__ == "__main__":
