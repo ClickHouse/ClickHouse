@@ -10,6 +10,7 @@
 #include <Processors/Formats/Impl/ArrowGeoTypes.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVariant.h>
@@ -28,6 +29,7 @@
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/extractStringValueFilters.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/TopKThresholdTracker.h>
 #include <IO/CompressionMethod.h>
 #include <IO/Libdeflate.h>
@@ -44,9 +46,9 @@
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
 #include <algorithm>
-#include <numeric>
 #include <bit>
 #include <mutex>
+#include <numeric>
 #include <fmt/ranges.h>
 #include <lz4.h>
 #include <arrow/util/crc32.h>
@@ -71,6 +73,7 @@ namespace ProfileEvents
     extern const Event ParquetColumnsFilterExpression;
     extern const Event ParquetReadPages;
     extern const Event ParquetPrunedPages;
+    extern const Event ParquetRowsDecodedAsDictionaryIndexes;
     extern const Event ParquetFooterReadMicroseconds;
     extern const Event ParquetDecompressedBytes;
     extern const Event ParquetPagesDecompressedToSkipRows;
@@ -1958,6 +1961,26 @@ void Reader::preparePrewhere()
             }
         }
     }
+
+    /// `decode_dictionary_as_replicated`: the last step's single input, a plain column no other step reads.
+    if (steps.empty() || steps.back().input_idxs.size() != 1
+        || QueryPlanOptimizations::isSensitiveToEvaluationCount(steps.back().actions.getActionsDAG()))
+        return;
+    const auto & output_idx = sample_block_to_output_columns_idx.at(steps.back().input_idxs[0]);
+    if (!output_idx.has_value())
+        return;
+    const OutputColumnInfo & output_info = output_columns.at(*output_idx);
+    if (!output_info.is_primitive || output_info.is_missing_column || output_info.needs_cast || output_info.nullable_group
+        || output_info.primitive_start + 1 != output_info.primitive_end)
+        return;
+    PrimitiveColumnInfo & pc = primitive_columns.at(output_info.primitive_start);
+    /// A column that can be written to the columns cache is decoded as a full column,
+    /// so that the cache does not get a `ColumnReplicated`.
+    if (columns_cache_writes_possible && columns_cache_identities.at(pc.idx_in_output_block) != 0)
+        return;
+    if (pc.first_step_to_calculate == steps.size() && !pc.output_nullable && !pc.group_nullable && pc.levels.back().rep == 0
+        && isLazyReplicationUseful(pc.decoded_type->createColumn()))
+        pc.decode_dictionary_as_replicated = true;
 }
 
 void Reader::processBloomFilterHeader(ColumnChunk & column, const PrimitiveColumnInfo & column_info)
@@ -3187,7 +3210,15 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
         subchunk.null_map->reserve(output_num_values_estimate);
     }
 
-    subchunk.column = column_info.decoded_type->createColumn();
+    if (column_info.decode_dictionary_as_replicated && !column.need_null_map && column.dictionary.isInitialized()
+        && column.dictionary.count * 2 <= row_subgroup.filter.rows_pass
+        && !(column.page.initialized && !column.page.is_dictionary_encoded))
+    {
+        subchunk.dictionary_values = getDictionaryValues(column, column_info);
+        subchunk.column = ColumnUInt32::create();
+    }
+    else
+        subchunk.column = column_info.decoded_type->createColumn();
     subchunk.column->reserve(output_num_values_estimate);
     if (auto * string_column = typeid_cast<ColumnString *>(subchunk.column.get()))
     {
@@ -3320,6 +3351,16 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
         /// has no element-level nulls; the struct nulls are represented by the outer ColumnNullable).
         subchunk.group_null_map = std::move(subchunk.null_map);
         subchunk.null_map.reset();
+    }
+
+    if (subchunk.dictionary_values)
+    {
+        /// Drop the values no read row references: the step must not evaluate them.
+        ColumnIndex indexes(std::move(subchunk.column));
+        ColumnPtr values = indexes.removeUnusedRowsInIndexedData(subchunk.dictionary_values);
+        subchunk.column = ColumnReplicated::create(values->assumeMutable(), indexes.detachIndexes());
+        subchunk.dictionary_values = nullptr;
+        ProfileEvents::increment(ProfileEvents::ParquetRowsDecodedAsDictionaryIndexes, row_subgroup.filter.rows_pass);
     }
 
     if (subchunk.arrays_offsets.empty() && subchunk.column->size() != row_subgroup.filter.rows_pass)
@@ -3955,6 +3996,15 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
 
     /// Decode values.
 
+    /// Dictionary indexes can't continue past a page that is not dictionary-encoded.
+    if (subchunk.dictionary_values && !page.is_dictionary_encoded)
+    {
+        auto values = column_info.decoded_type->createColumn();
+        column.dictionary.index(assert_cast<const ColumnUInt32 &>(*subchunk.column), *values);
+        subchunk.column = std::move(values);
+        subchunk.dictionary_values = nullptr;
+    }
+
     /// See if we can decompress the whole page directly into IColumn's memory.
     /// Skip when filter is set: direct read bypasses decode and would write all values without applying the filter.
     const bool has_filter = row_subgroup && !row_subgroup->filter.filter.empty();
@@ -3992,9 +4042,11 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
             /// A subgroup whose rows all pass is read like an unfiltered one, through the fused path.
             if (filter && row_subgroup->filter.rows_pass == row_subgroup->filter.rows_total)
                 filter = nullptr;
+            if (subchunk.dictionary_values)
+                page.decoder->decode(encoded_values_to_read, *subchunk.column, filter, filter_offset);
             /// Fused decode-and-gather; falls back to materializing the indexes as a column when
             /// filtering, or when the decoder or the dictionary mode does not support the fusion.
-            if (filter || !page.decoder->decodeAndIndex(encoded_values_to_read, column.dictionary, *subchunk.column))
+            else if (filter || !page.decoder->decodeAndIndex(encoded_values_to_read, column.dictionary, *subchunk.column))
             {
                 if (!page.indices_column)
                     page.indices_column = ColumnUInt32::create();
@@ -4014,6 +4066,20 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
 
     if (page.value_idx == page.num_values)
         page.decoder.reset();
+}
+
+const ColumnPtr & Reader::getDictionaryValues(ColumnChunk & column, const PrimitiveColumnInfo & column_info)
+{
+    if (!column.dictionary_values)
+    {
+        auto indexes = ColumnUInt32::create(column.dictionary.count);
+        std::iota(indexes->getData().begin(), indexes->getData().end(), UInt32(0));
+        auto values = column_info.decoded_type->createColumn();
+        values->reserve(column.dictionary.count);
+        column.dictionary.index(*indexes, *values, /*use_string_value_filter*/ false);
+        column.dictionary_values = std::move(values);
+    }
+    return column.dictionary_values;
 }
 
 void Reader::decompressPageIfCompressed(PageState & page)
@@ -4191,7 +4257,13 @@ ColumnPtr & Reader::getOrFormOutputColumn(const RowGroup & row_group, RowSubgrou
                 auto indexes = ColumnUInt64::create();
                 auto & indexes_data = indexes->getData();
                 indexes_data.reserve(row_subgroup.filter.rows_pass);
-                for (size_t i = 0; i < mask.size(); ++i)
+                size_t i = 0;
+                for (; i + 64 <= mask.size(); i += 64)
+                {
+                    for (UInt64 bits = bytes64MaskToBits64Mask(mask.data() + i); bits; bits &= bits - 1)
+                        indexes_data.push_back(row_subgroup.start_row_idx + i + std::countr_zero(bits));
+                }
+                for (; i < mask.size(); ++i)
                     if (mask[i])
                         indexes_data.push_back(row_subgroup.start_row_idx + i);
                 state.column = (*cached_column)->index(*indexes, 0);
@@ -4242,8 +4314,19 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
                 row_subgroup.output.pop_back(); // because OutputColumnState has no move constructor
         }
 
+        auto materialize_replicated = [&]
+        {
+            if (step_idx == steps.size())
+                for (auto & state : row_subgroup.output)
+                    if (state.column)
+                        state.column = state.column->convertToFullColumnIfReplicated();
+        };
+
         if (!step.filter_column_name.has_value())
+        {
+            materialize_replicated();
             return;
+        }
 
         ColumnPtr filter_column = block.getByName(step.filter_column_name.value()).column;
         filter_column = FilterDescription::preprocessFilterColumn(std::move(filter_column));
@@ -4264,6 +4347,7 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
         for (auto & state : row_subgroup.output)
             if (state.column)
                 state.column = state.column->filter(filter, /*result_size_hint=*/ rows_pass);
+        materialize_replicated();
 
         /// Expand the filter to correspond to all column subchunk rows, rather than only rows that
         /// passed previous filters (previous prewhere steps).
