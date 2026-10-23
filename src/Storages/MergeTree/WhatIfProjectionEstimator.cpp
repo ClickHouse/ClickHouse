@@ -1204,7 +1204,7 @@ WhatIfCandidateResult evaluateProjection(
 
     if (settings.empirical)
     {
-        /// an exact count can take parts out of the base read, but the optimizer weighs an aggregate projection on all of them
+        /// an exact count can remove parts from the base read, but the optimizer weighs an aggregate projection on all of them
         const bool aggregate = projection->type == ProjectionDescription::Type::Aggregate;
         const auto & parts_to_scan = aggregate ? probe->outcome.parent_read : baseline_parts;
         if (tryEstimateProjection(

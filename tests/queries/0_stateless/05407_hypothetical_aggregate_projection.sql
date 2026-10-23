@@ -99,7 +99,7 @@ WHERE match(line, '^(Baseline|With |marks:|rows:|verdict:)');
 SELECT 'real: ' || toString(marks) || ' marks, ' || toString(rows) || ' rows'
 FROM (EXPLAIN ESTIMATE SELECT b, sum(v) FROM w_real WHERE v % 2 = 0 AND b < 300 GROUP BY b);
 
--- the exact count of whole ranges takes parts out of the base read, but the optimizer weighs the projection on all of them
+-- the exact count of whole ranges removes parts from the base read, but the optimizer weighs the projection on all of them
 CREATE TABLE c_est (d Date, id UInt64) ENGINE = MergeTree PARTITION BY toYYYYMM(d) ORDER BY (d, id)
     SETTINGS index_granularity = 100, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
         merge_max_block_size = 8192, enable_block_number_column = 0, enable_block_offset_column = 0;
