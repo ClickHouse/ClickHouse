@@ -762,7 +762,7 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     const PartitionIdToMaxBlockPtr & max_added_blocks,
     bool allow_implicit_projections,
     size_t max_set_size_for_match,
-    const ProjectionDescription * hypothetical_projection)
+    std::vector<const ProjectionDescription *> agg_projections)
 {
     const auto & keys = aggregating.getParams().keys;
     const auto & aggregates = aggregating.getParams().aggregates;
@@ -772,15 +772,6 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     AggregateProjectionCandidates candidates;
 
     ContextPtr context = reading.getContext();
-
-    const auto & projections = metadata->projections;
-    std::vector<const ProjectionDescription *> agg_projections;
-
-    for (const auto & projection : projections)
-        if (projection.type == ProjectionDescription::Type::Aggregate)
-            agg_projections.push_back(&projection);
-    if (hypothetical_projection)
-        agg_projections.push_back(hypothetical_projection);
 
     bool can_use_minmax_projection = allow_implicit_projections
         && metadata->minmax_count_projection
@@ -903,21 +894,12 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     DistinctStep & distinct,
     ReadFromMergeTree & reading,
     size_t max_set_size_for_match,
-    const ProjectionDescription * hypothetical_projection)
+    std::vector<const ProjectionDescription *> agg_projections)
 {
     const auto metadata = reading.getStorageMetadata();
     Block key_virtual_columns = reading.getMergeTreeData().getHeaderWithVirtualsForFilter(metadata);
 
     ContextPtr context = reading.getContext();
-
-    const auto & projections = metadata->projections;
-    std::vector<const ProjectionDescription *> agg_projections;
-
-    for (const auto & projection : projections)
-        if (projection.type == ProjectionDescription::Type::Aggregate)
-            agg_projections.push_back(&projection);
-    if (hypothetical_projection)
-        agg_projections.push_back(hypothetical_projection);
 
     AggregateProjectionCandidates candidates;
 
@@ -1203,7 +1185,6 @@ UseProjectionsResult optimizeUseAggregateProjections(
         agg_projections.push_back(hypothetical_projection);
         hypothetical->outcome = {};
         hypothetical->outcome.weighed = true;
-        hypothetical->outcome.equal_marks_suffice = true;
     }
 
     auto reject_all = [&](const String & reason)
@@ -1242,7 +1223,7 @@ UseProjectionsResult optimizeUseAggregateProjections(
 
     const size_t max_set_size_for_match = optimization_settings.max_set_size_for_projection_match;
     auto candidates
-        = (distinct ? getAggregateProjectionCandidates(node, *distinct, *reading, max_set_size_for_match, hypothetical_projection)
+        = (distinct ? getAggregateProjectionCandidates(node, *distinct, *reading, max_set_size_for_match, agg_projections)
                     : getAggregateProjectionCandidates(
                           node,
                           *aggregating,
@@ -1250,7 +1231,7 @@ UseProjectionsResult optimizeUseAggregateProjections(
                           max_added_blocks,
                           optimization_settings.optimize_use_implicit_projections,
                           max_set_size_for_match,
-                          hypothetical_projection));
+                          agg_projections));
 
     result.projection_reject_reasons = std::move(candidates.reject_reasons);
 

@@ -871,9 +871,10 @@ void setVerdict(
     const UInt64 marks_low = result.estimated_marks_low;
     const UInt64 marks_high = result.estimated_marks_high;
     auto marks_text = [](UInt64 marks) { return fmt::format("{} mark{}", marks, marks == 1 ? "" : "s"); };
+    const bool aggregated = built.scenarios[0]->projection.type == ProjectionDescription::Type::Aggregate;
     /// the rule against the base table: fewer marks, or the same marks and a served ORDER BY or aggregated rows
     auto beats_base = [&](UInt64 marks)
-    { return marks < baseline_marks || (marks == baseline_marks && (outcome.serves_order || outcome.equal_marks_suffice)); };
+    { return marks < baseline_marks || (marks == baseline_marks && (outcome.serves_order || aggregated)); };
     if (chosen_in == weighed && outcome.forced)
     {
         String cost;
@@ -881,7 +882,7 @@ void setVerdict(
             cost = "the query has no filter or ORDER BY for the projection to help with";
         else if (projection_marks > baseline_marks)
             cost = fmt::format("the projection reads {} instead of {} from the base table", marks_text(projection_marks), baseline_marks);
-        else if (projection_marks == baseline_marks && !outcome.serves_order && !outcome.equal_marks_suffice)
+        else if (projection_marks == baseline_marks && !outcome.serves_order && !aggregated)
             cost = fmt::format("the projection reads the same {} as the base table and serves no ORDER BY", marks_text(projection_marks));
         else
             cost = fmt::format("the projection reads {} against {} from the base table", marks_text(projection_marks), baseline_marks);
@@ -914,7 +915,7 @@ void setVerdict(
         if (projection_marks != baseline_marks)
             result.verdict_reason
                 = fmt::format("{} would be read instead of {} from the base table", marks_text(projection_marks), baseline_marks);
-        else if (outcome.equal_marks_suffice)
+        else if (aggregated)
             result.verdict_reason = fmt::format("the same {} would be read, of aggregated rows", marks_text(projection_marks));
         else
             result.verdict_reason = fmt::format(
