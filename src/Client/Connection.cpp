@@ -91,6 +91,7 @@ namespace ErrorCodes
     extern const int EMPTY_DATA_PASSED;
     extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_ARRAY_SIZE;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 Connection::~Connection()
@@ -1057,6 +1058,15 @@ void Connection::sendQuery(
 
     compression_codec = chooseNetworkCompressionCodec(settings);
 
+    /// An older node cannot receive the values `EXECUTE AS ... SETTINGS` gave, and would run the query without them.
+    if (client_info && client_info->execute_as_settings.has_value() && !cluster_secret.empty()
+        && client_info->query_kind != ClientInfo::QueryKind::INITIAL_QUERY
+        && server_revision < DBMS_MIN_PROTOCOL_VERSION_WITH_EXECUTE_AS_SETTINGS)
+        throw Exception(
+            ErrorCodes::UNSUPPORTED_METHOD,
+            "Server {} is too old for EXECUTE AS ... SETTINGS (revision {} < {})",
+            getDescription(), server_revision, DBMS_MIN_PROTOCOL_VERSION_WITH_EXECUTE_AS_SETTINGS);
+
     query_id = query_id_;
 
     /// Avoid reusing connections that had been left in the intermediate state
@@ -1140,18 +1150,7 @@ void Connection::sendQuery(
             data += query;
             data += query_id;
             data += client_info->initial_user;
-            // Also for backwards compatibility
-            if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_EXTERNALLY_GRANTED_ROLES)
-                data += external_roles_str;
-            /// Cover current roles in the auth hash too, matching the receiver.
-            if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_CURRENT_ROLES && client_info->current_roles.has_value())
-            {
-                String current_roles_str;
-                WriteBufferFromString buffer(current_roles_str);
-                writeVectorBinary(*client_info->current_roles, buffer);
-                buffer.finalize();
-                data += current_roles_str;
-            }
+            data += client_info->serializeRolesAndSettingsForInterserverHash(server_revision, external_roles_str);
             /// TODO: add source/target host/ip-address
 
             std::string hash = encodeSHA256(data);

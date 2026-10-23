@@ -519,6 +519,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int CLUSTER_DOESNT_EXIST;
     extern const int SET_NON_GRANTED_ROLE;
+    extern const int SETTING_CONSTRAINT_VIOLATION;
     extern const int UNKNOWN_DISK;
     extern const int UNKNOWN_READ_METHOD;
     extern const int TIMEOUT_EXCEEDED;
@@ -1637,6 +1638,7 @@ ContextData::ContextData(const ContextData &o) :
     external_roles(o.external_roles),
     authentication_grants(o.authentication_grants),
     authentication_valid_until(o.authentication_valid_until),
+    execute_as_settings(o.execute_as_settings),
     settings_constraints_and_current_profiles(o.settings_constraints_and_current_profiles),
     access(o.access),
     need_recalculate_access(o.need_recalculate_access),
@@ -2435,7 +2437,7 @@ ConfigurationPtr Context::getUsersConfig()
     return shared->users_config;
 }
 
-void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_, const std::shared_ptr<const AccessRightsElements> & authentication_grants_, time_t authentication_valid_until_)
+void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_, const std::shared_ptr<const AccessRightsElements> & authentication_grants_, time_t authentication_valid_until_, const SettingsChanges * execute_as_settings_)
 {
     /// Prepare lists of user's profiles, constraints, settings, roles.
     /// NOTE: AccessControl::read<User>() and other AccessControl's functions may require some IO work,
@@ -2492,12 +2494,56 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
         }
     }
 
+    const bool has_execute_as_settings = execute_as_settings_ && !execute_as_settings_->empty();
+    if (has_execute_as_settings)
+    {
+        if (!access_control.isExecuteAsSettingsAllowed())
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "EXECUTE AS ... SETTINGS is disabled, set access_control_improvements.allow_execute_as_settings to 1 to enable");
+
+        /// A user defined in the server configuration may switch to a looser settings profile.
+        if (isUserDefinedInConfig(user_id_))
+            throw Exception(
+                ErrorCodes::SETTING_CONSTRAINT_VIOLATION,
+                "EXECUTE AS ... SETTINGS cannot be used for user {}, which is defined in the server configuration",
+                backQuote(user->getName()));
+
+        const auto & global_settings = getGlobalContext()->getSettingsRef();
+        std::unordered_set<std::string_view> names;
+        for (const auto & change : *execute_as_settings_)
+        {
+            if (settingIsBuiltin(change.name))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS, "EXECUTE AS ... SETTINGS accepts only custom settings, {} is a builtin one", backQuote(change.name));
+            access_control.checkSettingNameIsAllowed(change.name);
+            if (!names.emplace(change.name).second)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting {} is specified more than once in EXECUTE AS ... SETTINGS", backQuote(change.name));
+
+            Field global_value;
+            if (!enabled_profiles->constraints.isDeclaredConstOnly(change.name) || enabled_profiles->settings.tryGet(change.name)
+                || global_settings.tryGet(change.name, global_value))
+                throw Exception(
+                    ErrorCodes::SETTING_CONSTRAINT_VIOLATION,
+                    "EXECUTE AS ... SETTINGS cannot set {} for user {}: a settings profile of the user must declare it CONST without a value",
+                    backQuote(change.name), backQuote(user->getName()));
+        }
+    }
+
     /// Apply user's profiles, constraints, settings, roles.
     std::lock_guard lock(mutex);
 
     setUserIDWithLock(user_id_, lock);
 
     setCurrentProfilesWithLock(*enabled_profiles, /* check_constraints= */ false, lock);
+
+    if (has_execute_as_settings)
+    {
+        applySettingsChangesWithLock(*execute_as_settings_, lock);
+        execute_as_settings = std::make_shared<const SettingsChanges>(*execute_as_settings_);
+    }
+    else
+        execute_as_settings = nullptr;
 
     setCurrentRolesWithLock(default_roles, lock);
     setExternalRolesWithLock(external_roles_, lock);
@@ -2591,6 +2637,12 @@ std::shared_ptr<const AccessRightsElements> Context::getAuthenticationGrants() c
 {
     SharedLockGuard lock(mutex);
     return authentication_grants;
+}
+
+SettingsChanges Context::getExecuteAsSettings() const
+{
+    SharedLockGuard lock(mutex);
+    return execute_as_settings ? *execute_as_settings : SettingsChanges{};
 }
 
 void Context::setAuthenticationValidUntilWithLock(time_t authentication_valid_until_, const std::lock_guard<ContextSharedMutex> &)

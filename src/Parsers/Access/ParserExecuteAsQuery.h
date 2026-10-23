@@ -6,9 +6,9 @@
 namespace DB
 {
 /** Parses queries like :
-  * EXECUTE AS <user>
+  * EXECUTE AS <user> [SETTINGS name = value, ...]
   *   or
-  * EXECUTE AS <user> <subquery>
+  * EXECUTE AS <user> [SETTINGS name = value, ...] <subquery>
   */
 class ParserExecuteAsQuery : public IParserBase
 {

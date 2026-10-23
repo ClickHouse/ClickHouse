@@ -236,6 +236,22 @@ bool ParserSetQuery::parseNameValuePair(SettingChange & change, IParser::Pos & p
     return true;
 }
 
+bool ParserSetQuery::parseNameLiteralPair(SettingChange & change, IParser::Pos & pos, Expected & expected)
+{
+    ParserCompoundIdentifier name_p;
+    ParserToken s_eq(TokenType::Equals);
+    ParserLiteral literal_p;
+
+    ASTPtr name;
+    ASTPtr value;
+    if (!name_p.parse(pos, name, expected) || !s_eq.ignore(pos, expected) || !literal_p.parse(pos, value, expected))
+        return false;
+
+    tryGetIdentifierNameInto(name, change.name);
+    change.value = value->as<ASTLiteral &>().value;
+    return true;
+}
+
 bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
     SettingChange & change, String & default_settings, ParserSetQuery::Parameter & parameter, IParser::Pos & pos, Expected & expected, bool enable_shorthand_syntax)
 {

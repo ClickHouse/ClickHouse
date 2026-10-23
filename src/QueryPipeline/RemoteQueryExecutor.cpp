@@ -9,6 +9,7 @@
 #include <Common/FailPoint.h>
 #include <Common/Logger.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Common/SettingsChanges.h>
 #include <Common/logger_useful.h>
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
@@ -666,6 +667,18 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
                 current_role_names.push_back(*name);
         }
         modified_client_info.current_roles = std::move(current_role_names);
+    }
+
+    /// The values `EXECUTE AS ... SETTINGS` gave belong to the user, so they are sent only when the remote runs as that user.
+    modified_client_info.execute_as_settings.reset();
+    if (modified_client_info.initial_user == modified_client_info.current_user)
+    {
+        if (auto execute_as_settings = context->getExecuteAsSettings(); !execute_as_settings.empty())
+        {
+            auto & dumped = modified_client_info.execute_as_settings.emplace();
+            for (const auto & change : execute_as_settings)
+                dumped.emplace_back(change.name, change.value.dump());
+        }
     }
 
     /// Never inherited: a stale `true` would point the remote at a coordinator this connection lacks.

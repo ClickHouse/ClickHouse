@@ -415,6 +415,8 @@ protected:
     /// enqueue and execution; the synchronous path re-checks it per query in
     /// `Session::makeQueryContextImpl` (via `Session::checkIfUserIsStillValid`) for every protocol.
     time_t authentication_valid_until = 0;
+    /// The values `EXECUTE AS user SETTINGS ...` filled into settings of the user, set by every `setUser`.
+    std::shared_ptr<const SettingsChanges> execute_as_settings;
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> settings_constraints_and_current_profiles;
     mutable std::shared_ptr<const ContextAccess> access;
     mutable bool need_recalculate_access = true;
@@ -985,8 +987,13 @@ public:
     /// Callers that switch the principal within the SAME authenticated session (e.g. `EXECUTE AS`)
     /// must read both limits back from the source context and pass them here, so the session cannot
     /// escape its credential's limit by impersonating a less restricted principal.
-    void setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_ = {}, const std::shared_ptr<const AccessRightsElements> & authentication_grants_ = nullptr, time_t authentication_valid_until_ = 0);
+    /// `execute_as_settings_` are values for settings the user declares `CONST` without a value, applied after
+    /// the user's profiles; anything else is refused before the context changes.
+    void setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_ = {}, const std::shared_ptr<const AccessRightsElements> & authentication_grants_ = nullptr, time_t authentication_valid_until_ = 0, const SettingsChanges * execute_as_settings_ = nullptr);
     UserPtr getUser() const;
+
+    /// The values `EXECUTE AS user SETTINGS ...` filled for the current user (empty if none).
+    SettingsChanges getExecuteAsSettings() const;
 
     /// Limits the access rights to the intersection with the elements (or resets the limit if null).
     /// See the GRANTS clause of the authentication methods in CREATE USER.

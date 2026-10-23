@@ -218,6 +218,10 @@ public:
     void setImpersonateUserAllowed(bool allow) { allow_impersonate_user = allow; }
     bool isImpersonateUserAllowed() const { return allow_impersonate_user; }
 
+    /// Enable/disable `EXECUTE AS target_user SETTINGS ...`, which fills settings the target declares `CONST` without a value.
+    void setExecuteAsSettingsAllowed(bool allow) { allow_execute_as_settings = allow; }
+    bool isExecuteAsSettingsAllowed() const { return allow_execute_as_settings; }
+
     void setThrowOnInvalidReplicatedAccessEntities(bool enable) { throw_on_invalid_replicated_access_entities = enable; }
     bool shouldThrowOnInvalidReplicatedAccessEntities() const { return throw_on_invalid_replicated_access_entities; }
 
@@ -367,6 +371,7 @@ private:
     std::atomic_bool enable_user_name_access_type = true;
     std::atomic_bool enable_read_write_grants = false;
     std::atomic_bool allow_impersonate_user = false;
+    std::atomic_bool allow_execute_as_settings = false;
     std::atomic_bool readonly_restricts_set_role = false;
 };
 

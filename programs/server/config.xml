@@ -908,6 +908,10 @@
         <!-- Enable/disable the IMPERSONATE feature (EXECUTE AS target_user). -->
         <allow_impersonate_user>true</allow_impersonate_user>
 
+        <!-- Enable/disable EXECUTE AS target_user SETTINGS name = value, which sets a custom setting that the target user
+             declares CONST without a value. By default this setting is false. -->
+        <allow_execute_as_settings>false</allow_execute_as_settings>
+
         <!-- By default, for backward compatibility creating table with a specific table engine ignores grant,
              however you can change this behaviour by setting this to true -->
         <table_engines_require_grant>false</table_engines_require_grant>

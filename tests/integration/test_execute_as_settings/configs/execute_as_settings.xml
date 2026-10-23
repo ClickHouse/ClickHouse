@@ -1,0 +1,6 @@
+<clickhouse>
+    <access_control_improvements>
+        <allow_execute_as_settings>true</allow_execute_as_settings>
+        <settings_constraints_replace_previous>false</settings_constraints_replace_previous>
+    </access_control_improvements>
+</clickhouse>

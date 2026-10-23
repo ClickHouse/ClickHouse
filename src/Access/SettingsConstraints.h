@@ -92,6 +92,9 @@ public:
 
     void merge(const SettingsConstraints & other);
 
+    /// Whether the setting's constraint is exactly `CONST`, with no min, max or disallowed values; unlike `get`, ignores readonly.
+    bool isDeclaredConstOnly(std::string_view setting_name) const;
+
     /// Checks whether `change` violates these constraints and throws an exception if so.
     void check(const Settings & current_settings, const SettingChange & change, SettingSource source) const;
     void check(const Settings & current_settings, const SettingsChanges & changes, SettingSource source) const;

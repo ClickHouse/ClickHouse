@@ -19,6 +19,8 @@ ASTPtr ASTExecuteAsQuery::clone() const
     res->children.clear();
     if (target_user)
         res->set(res->target_user, target_user->clone());
+    if (target_settings)
+        res->set(res->target_settings, target_settings->clone());
     if (subquery)
         res->set(res->subquery, subquery->clone());
     cloneOutputOptions(*res);
@@ -31,6 +33,12 @@ void ASTExecuteAsQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings
     ostr << "EXECUTE AS ";
 
     target_user->format(ostr, settings);
+
+    if (target_settings)
+    {
+        ostr << " SETTINGS ";
+        target_settings->format(ostr, settings, state, frame);
+    }
 
     if (subquery)
     {
