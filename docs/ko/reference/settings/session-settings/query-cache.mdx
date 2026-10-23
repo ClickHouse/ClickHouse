@@ -13,7 +13,9 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이러한 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며, [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)에서 자동으로 생성됩니다.
 
-## query_cache_compress_entries {#query_cache_compress_entries}
+<div id="query_cache_compress_entries">
+  ## query_cache_compress_entries
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -24,7 +26,9 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 * 0 - 비활성화됨
 * 1 - 활성화됨
 
-## query_cache_for_subqueries {#query_cache_for_subqueries}
+<div id="query_cache_for_subqueries">
+  ## query_cache_for_subqueries
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -37,31 +41,33 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 * 0 - 비활성화됨
 * 1 - 활성화됨
 
-## query_cache_max_entries {#query_cache_max_entries}
+<div id="query_cache_max_entries">
+  ## query_cache_max_entries
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-현재 사용자가 인메모리 [쿼리 캐시](/ko/concepts/features/performance/caches/query-cache)에 저장할 수 있는 쿼리 결과의 최대 개수입니다. 0은 무제한을 의미합니다.
-
-이 제한은 디스크 기반 쿼리 캐시(`query_cache_on_disk_cache_name` 설정)에는 적용되지 않습니다. 디스크 기반 쿼리 캐시의 엔트리는 그 기반이 되는 파일 시스템 캐시의 크기에 따라 제한됩니다.
+현재 사용자가 [쿼리 캐시](/ko/concepts/features/performance/caches/query-cache)에 저장할 수 있는 쿼리 결과의 최대 개수입니다. 0은 무제한을 의미합니다.
 
 가능한 값:
 
 * 0 이상의 정수
 
-## query_cache_max_size_in_bytes {#query_cache_max_size_in_bytes}
+<div id="query_cache_max_size_in_bytes">
+  ## query_cache_max_size_in_bytes
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-현재 사용자가 인메모리 [쿼리 캐시](/ko/concepts/features/performance/caches/query-cache)에 할당할 수 있는 최대 메모리 크기(바이트)입니다. 0은 제한이 없음을 의미합니다.
-
-이 제한은 디스크 기반 쿼리 캐시(`query_cache_on_disk_cache_name` 설정)에는 적용되지 않습니다. 디스크 기반 쿼리 캐시의 엔트리는 그 대신 기반 파일 시스템 캐시의 크기에 따라 제한됩니다.
+현재 사용자가 [쿼리 캐시](/ko/concepts/features/performance/caches/query-cache)에 할당할 수 있는 최대 메모리 크기(바이트)입니다. 0은 제한이 없음을 의미합니다.
 
 가능한 값:
 
 * 0 이상의 정수.
 
-## query_cache_min_query_duration {#query_cache_min_query_duration}
+<div id="query_cache_min_query_duration">
+  ## query_cache_min_query_duration
+</div>
 
 <SettingsInfoBlock type="Milliseconds" default_value="0" />
 
@@ -71,7 +77,9 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 * 0 이상의 정수.
 
-## query_cache_min_query_runs {#query_cache_min_query_runs}
+<div id="query_cache_min_query_runs">
+  ## query_cache_min_query_runs
+</div>
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -81,7 +89,9 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 * 0 이상의 정수.
 
-## query_cache_nondeterministic_function_handling {#query_cache_nondeterministic_function_handling}
+<div id="query_cache_nondeterministic_function_handling">
+  ## query_cache_nondeterministic_function_handling
+</div>
 
 <SettingsInfoBlock type="QueryResultCacheNondeterministicFunctionHandling" default_value="throw" />
 
@@ -93,26 +103,9 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 * `'save'` - 쿼리 결과를 캐시합니다.
 * `'ignore'` - 쿼리 결과를 캐시하지 않고 예외도 발생시키지 않습니다.
 
-## query_cache_on_disk_cache_name {#query_cache_on_disk_cache_name}
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": ""},{"label": "쿼리 캐시의 엔트리를 지정한 이름의 파일 시스템 캐시를 통해 디스크에 저장하는 새로운 설정입니다."}]}]} />
-
-[쿼리 캐시](/ko/concepts/features/performance/caches/query-cache)의 엔트리를 디스크에 저장하는 파일 시스템 캐시(서버 구성의 `filesystem_caches` 섹션에 정의된 엔트리)의 이름입니다. 이름을 지정하고 [use&#95;query&#95;cache](/ko/reference/settings/session-settings/use-query#use_query_cache)가 활성화되어 있으면, 쿼리 결과가 지정된 파일 시스템 캐시에도 추가로 캐시되며 이 캐시에서도 결과를 제공합니다. 디스크 기반 쿼리 캐시는 인메모리 쿼리 캐시보다 더 많은 공간을 제공하고, 서버를 재시작해도 유지되며, 인메모리 쿼리 캐시와 독립적으로 동작합니다. 즉, [enable&#95;reads&#95;from&#95;query&#95;cache&#95;on&#95;disk](/ko/reference/settings/session-settings/enable#enable_reads_from_query_cache_on_disk) 및 [enable&#95;writes&#95;to&#95;query&#95;cache&#95;on&#95;disk](/ko/reference/settings/session-settings/enable#enable_writes_to_query_cache_on_disk) 설정으로 인메모리 쿼리 캐시와 별도로 제어할 수 있습니다. 파일 시스템 캐시에 저장된 엔트리는 파일 시스템 캐시의 일반 엔트리와 동일하게 취급됩니다. 따라서 삭제 대상에서 제외되지 않으며, 캐시 내 다른 데이터와 동일한 규칙에 따라 축출됩니다. `SYSTEM CLEAR FILESYSTEM CACHE '<name>'`은 파일 시스템 캐시의 다른 모든 데이터와 함께 이 엔트리를 제거하며, `SYSTEM CLEAR QUERY CACHE`는 이 설정으로 지정된 파일 시스템 캐시에서 디스크 기반 쿼리 캐시의 엔트리만 제거하고 나머지 데이터는 그대로 둡니다. 쿼리 결과 전용 파일 시스템 캐시를 사용할 것을 권장합니다.
-
-가능한 값:
-
-* 빈 문자열 - 디스크 기반 쿼리 캐시가 비활성화됩니다
-* 미리 구성된 파일 시스템 캐시의 이름
-
-## query_cache_on_disk_codec {#query_cache_on_disk_codec}
-
-<SettingsInfoBlock type="String" default_value="ZSTD(3)" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "ZSTD(3)"},{"label": "디스크에 저장되는 쿼리 캐시 엔트리의 압축 코덱을 제어하는 새로운 설정입니다."}]}]} />
-
-디스크에 저장되는 [쿼리 캐시](/ko/concepts/features/performance/caches/query-cache) 엔트리에 사용할 압축 코덱입니다([query&#95;cache&#95;on&#95;disk&#95;cache&#95;name](/ko/reference/settings/session-settings/query-cache#query_cache_on_disk_cache_name) 참고). 이 설정은 쓰기에만 적용됩니다. 압축된 데이터에는 자체 형식 정보가 포함되어 있으므로 읽기는 이 설정의 영향을 받지 않습니다.
-
-## query_cache_share_between_users {#query_cache_share_between_users}
+<div id="query_cache_share_between_users">
+  ## query_cache_share_between_users
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -124,7 +117,9 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 * 0 - 비활성화됨
 * 1 - 활성화됨
 
-## query_cache_squash_partial_results {#query_cache_squash_partial_results}
+<div id="query_cache_squash_partial_results">
+  ## query_cache_squash_partial_results
+</div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -135,7 +130,9 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 * 0 - 비활성화
 * 1 - 활성화
 
-## query_cache_system_table_handling {#query_cache_system_table_handling}
+<div id="query_cache_system_table_handling">
+  ## query_cache_system_table_handling
+</div>
 
 <SettingsInfoBlock type="QueryResultCacheSystemTableHandling" default_value="throw" />
 
@@ -149,7 +146,9 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 * `'save'` - 쿼리 결과를 캐시합니다.
 * `'ignore'` - 쿼리 결과를 캐시하지 않으며 예외도 발생시키지 않습니다.
 
-## query_cache_tag {#query_cache_tag}
+<div id="query_cache_tag">
+  ## query_cache_tag
+</div>
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": ""},{"label": "쿼리 캐시 설정에 레이블을 지정하기 위한 새로운 설정."}]}]} />
 
@@ -160,7 +159,9 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 * 임의의 문자열
 
-## query_cache_ttl {#query_cache_ttl}
+<div id="query_cache_ttl">
+  ## query_cache_ttl
+</div>
 
 <SettingsInfoBlock type="Seconds" default_value="60" />
 

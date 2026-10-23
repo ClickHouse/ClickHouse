@@ -279,11 +279,6 @@ public:
         return delegate->isReadOnly();
     }
 
-    bool isRemote() const override
-    {
-        return delegate->isRemote();
-    }
-
     void updateCache(const std::vector<std::string> & paths, bool recursive, bool enforce_fresh, std::string * serialized_cache_update_description) override
     {
         delegate->updateCache(wrappedPaths(paths), recursive, enforce_fresh, serialized_cache_update_description);
@@ -319,16 +314,6 @@ public:
         return delegate->hasPendingRemovalBlobs(blobs);
     }
 
-    bool hasDeadBlobsQueue() const override
-    {
-        return delegate->hasDeadBlobsQueue();
-    }
-
-    void setDeadBlobsQueuedCallback(std::function<void()> callback) override
-    {
-        delegate->setDeadBlobsQueuedCallback(std::move(callback));
-    }
-
     BlobsToReplicate getBlobsToReplicate(const ClusterConfigurationPtr & cluster, int64_t max_count) override
     {
         return delegate->getBlobsToReplicate(cluster, max_count);
@@ -337,11 +322,6 @@ public:
     int64_t recordAsReplicated(const BlobsToReplicate & blobs) override
     {
         return delegate->recordAsReplicated(blobs);
-    }
-
-    bool hasMissingBlobsQueue() const override
-    {
-        return delegate->hasMissingBlobsQueue();
     }
 };
 

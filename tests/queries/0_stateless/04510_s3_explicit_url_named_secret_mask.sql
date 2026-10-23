@@ -258,8 +258,6 @@ BACKUP TABLE nonexistent_04510 TO Null(); -- { serverError UNKNOWN_TABLE }
 -- rejected only after the statement is logged, and AzureQueue has no backup engine at all. The last
 -- two statements are the controls: a connection string hides its AccountKey, and the three-argument
 -- shape has nothing to hide, so it stays visible verbatim.
--- Let statements without explicit credentials reach argument validation instead of `ACCESS_DENIED`.
-SET s3_allow_server_credentials_in_user_queries = 1;
 BACKUP TABLE nonexistent_04510 TO AzureBlobStorage('http://localhost:11111/acct', 'cont', 'blob',
                  'SEKRIT_AZTO4'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 BACKUP TABLE nonexistent_04510 TO AzureBlobStorage(nc_04510_missing, 'dir',
@@ -533,7 +531,7 @@ WHERE current_database = currentDatabase()
   AND query_id = initial_query_id -- only the statements issued here: a Replicated database logs
                                   -- each DDL again from the replay worker, which inherits the
                                   -- initiator's initial_query_id but gets a fresh query_id
-  AND event_date >= yesterday() AND event_time >= now() - 600
+  AND event_date >= yesterday() AND event_time > now() - INTERVAL 5 MINUTE
 ORDER BY event_time_microseconds;
 
 -- The transcript above is scoped to the statements this test issued. A Replicated database also
@@ -552,4 +550,4 @@ SELECT count() > 0, countIf(query LIKE '%SEKRIT%'),
 FROM system.query_log
 WHERE current_database = currentDatabase()
   AND type != 'QueryStart'
-  AND event_date >= yesterday() AND event_time >= now() - 600;
+  AND event_date >= yesterday() AND event_time > now() - INTERVAL 5 MINUTE;

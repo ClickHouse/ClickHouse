@@ -28,7 +28,7 @@ public:
     using Ptr = PoolBase<PoolObject>::Ptr;
 
     int last_destroy_value = 0;
-    MyPoolBase() : PoolBase<PoolObject>(100, getLogger("MyPoolBase"), /* pool_outlives_query_ = */ false) { }
+    MyPoolBase() : PoolBase<PoolObject>(100, getLogger("MyPoolBase")) { }
 
 protected:
     ObjectPtr allocObject() override { return std::make_shared<Object>(); }
@@ -65,7 +65,7 @@ TEST(PoolBase, testDestroy1)
 class OneObjectPool : public PoolBase<PoolObject>
 {
 public:
-    OneObjectPool() : PoolBase<PoolObject>(1, getLogger("OneObjectPool"), /* pool_outlives_query_ = */ false) { }
+    OneObjectPool() : PoolBase<PoolObject>(1, getLogger("OneObjectPool")) { }
 
 protected:
     ObjectPtr allocObject() override { return std::make_shared<Object>(); }

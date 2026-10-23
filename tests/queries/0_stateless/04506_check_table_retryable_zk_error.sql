@@ -1,4 +1,4 @@
--- Tags: zookeeper, no-parallel, no-shared-merge-tree, no-fasttest
+-- Tags: zookeeper, no-parallel, no-shared-merge-tree
 -- Regression test for CHECK TABLE on a ReplicatedMergeTree table silently reporting a healthy
 -- part as broken (returning 0) when a transient/retryable ZooKeeper error is hit during the check.
 -- A retryable error (e.g. a connection loss) must surface as a query error, not a "broken" result.
@@ -29,8 +29,5 @@ CHECK TABLE t_check_retryable_zk; -- { serverError KEEPER_EXCEPTION }
 
 -- The failpoint is ONCE, so it is already consumed; the healthy part checks out again.
 CHECK TABLE t_check_retryable_zk;
-
--- Nothing above guarantees the fail point fired, so disarm it explicitly rather than rely on that.
-SYSTEM DISABLE FAILPOINT check_table_inject_retryable_zk_error;
 
 DROP TABLE t_check_retryable_zk SYNC;

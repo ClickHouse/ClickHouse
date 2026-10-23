@@ -109,16 +109,6 @@ size_t rawByteWidth(const WhichDataType & which);
 /// then left as String for the subsequent cast (matching the library reader's text-parse fallback).
 MutableColumnPtr reinterpretStringLeaf(const ColumnString & str, const NullMap * null_map, const DataTypePtr & to_no_null);
 
-/// Decodes a column the writer had no Arrow mapping for and wrote with `serializeBinary`, back into the type
-/// its `clickhouse.opaque` tag names. Returns null when the field is not one, or names a type other than
-/// `to_no_null`, leaving the bytes to be read as `String`.
-MutableColumnPtr deserializeOpaqueBinaryLeaf(
-    const ColumnString & str,
-    const NullMap * null_map,
-    const DataTypePtr & to_no_null,
-    const ArrowField & field,
-    const FormatSettings & format_settings);
-
 /// Navigation helpers for requested-type hints, shared between the decoder's hint recursion and the
 /// post-decode raw-byte rewrite in `ArrowIPCBlockInputFormat` — both must resolve the target of a
 /// nested field by the same rules, or a leaf the decoder converted comes back to a rewrite that
@@ -172,9 +162,6 @@ public:
         String name;
         DataTypePtr type;
         ColumnPtr column;
-        /// The schema field this came from, so the post-decode rewrite can read its metadata. Points into
-        /// the decoder's schema, which outlives every batch.
-        const ArrowField * field = nullptr;
     };
 
     using DecodedColumns = VectorWithMemoryTracking<DecodedColumn>;
@@ -305,10 +292,6 @@ private:
     /// materializing its data. With `validate_lengths`, checks buffer sizes and row-aligned child
     /// lengths before decoding. Otherwise, skips unrequested values without reading their buffers.
     void advanceField(const ArrowField & field, bool validate_lengths = false);
-    /// Converts the buffers of `fields` in the current batch from big-endian to little-endian in place: walks
-    /// them in layout order with `advanceField`, which byte-swaps every buffer it passes, then rewinds the
-    /// cursors. `prepareBuffers` has already copied a big-endian batch's buffers into `decompressed_body`.
-    void convertBuffersFromBigEndian(const ArrowField * fields, size_t count);
     ColumnPtr decodeInner(
         const ArrowField & field, size_t rows, const DataTypePtr & target_hint, const String & path,
         size_t list_depth, const InvisibleRowsMask * invisible_rows);
@@ -332,18 +315,7 @@ private:
     /// Nullable structs retain their null maps when tuples are nullable or a tuple conversion is
     /// requested. The reader applies the destination nullability after converting visible rows.
     bool wrapsInNullable(const ArrowField & field, const IColumn & inner, const DataTypePtr & effective_hint) const;
-    /// Decodes a RunEndEncoded field (which has no buffers of its own) into a column of its values type, with each
-    /// run's value repeated for its rows. The nulls are those of the values.
-    ColumnPtr decodeRunEndEncoded(
-        const ArrowField & field, size_t rows, const DataTypePtr & target_hint, const String & path, size_t list_depth,
-        const InvisibleRowsMask * invisible_rows, ColumnUInt8::Ptr * decoded_null_map);
     ColumnPtr readOffsetsAndChild(
-        const ArrowField & field, size_t rows, bool large, const DataTypePtr & target_hint, const String & path,
-        size_t list_depth, const InvisibleRowsMask * invisible_rows);
-    /// Decodes a ListView/LargeListView field into an `Array`: each visible row copies the child range
-    /// [offset, offset + size), which may overlap other rows' ranges and come in any order. An invisible row
-    /// (whose offset and size are undefined) is an empty array, like an invisible List row.
-    ColumnPtr readListViewAndChild(
         const ArrowField & field, size_t rows, bool large, const DataTypePtr & target_hint, const String & path,
         size_t list_depth, const InvisibleRowsMask * invisible_rows);
     /// The requested ClickHouse type for a field: `resolveHint` over the requested types of the batch being
@@ -398,8 +370,6 @@ private:
     /// For BinaryView/Utf8View columns: the per-field count of variadic data buffers.
     VectorWithMemoryTracking<Int64> variadic_counts;
     size_t variadic_index = 0;
-    /// Set during `convertBuffersFromBigEndian`: `advanceField` byte-swaps the buffers it passes.
-    bool swap_from_big_endian = false;
 };
 
 }

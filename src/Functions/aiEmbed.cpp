@@ -78,7 +78,6 @@ public:
 
     bool isSuitableForConstantFolding() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
-    bool isExpensive() const override { return true; }
 
     /// Handle Nullable cols explicitly, since setting this to true may call func with arbitrary input values
     bool useDefaultImplementationForNulls() const override { return false; }
@@ -170,10 +169,8 @@ public:
         });
 
         FunctionBaseAI::embedTexts(
-            *provider, model, dimensions,
-            getName(), getContext()->getCurrentQueryId(), getContext()->getClientInfo().initial_query_id,
-            inputs, max_batch_size, max_retries,
-            retry_delay_ms, throw_on_error, *quota_tracker, timeouts, embedding_result);
+            *provider, model, dimensions, getName(), inputs, max_batch_size, max_retries, retry_delay_ms, throw_on_error, *quota_tracker,
+            timeouts, embedding_result);
 
         auto data_col = ColumnVector<Float32>::create(); /// float32 is standard embedding API output
         auto offsets_col = ColumnArray::ColumnOffsets::create();

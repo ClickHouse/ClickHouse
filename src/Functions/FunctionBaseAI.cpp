@@ -49,14 +49,8 @@ namespace Setting
     extern const SettingsBool ai_function_allow_insecure_endpoint;
 }
 
-namespace ServerSetting
-{
-    extern const ServerSettingsBool ai_function_allow_sql_named_collections;
-}
-
 namespace ErrorCodes
 {
-    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int AI_PROVIDER_RESPONSE_TRUNCATED;
     extern const int AI_PROVIDER_RESPONSE_INCOMPLETE;
@@ -256,11 +250,6 @@ FunctionBaseAI::AIParams FunctionBaseAI::resolveAIParams(
 
     context->checkAccess(AccessType::NAMED_COLLECTION, credentials);
     const auto & collection = NamedCollectionFactory::instance().get(credentials);
-    if (!context->getServerSettings()[ServerSetting::ai_function_allow_sql_named_collections]
-        && collection->getSourceId() != NamedCollection::SourceId::CONFIG)
-        throw Exception(ErrorCodes::ACCESS_DENIED,
-            "AI named collection '{}' is not defined in the server configuration file, and the server setting "
-            "'ai_function_allow_sql_named_collections' is disabled", credentials);
 
     AIParams params;
     params.collection.collection_name = credentials;
@@ -382,8 +371,6 @@ void FunctionBaseAI::embedTexts(
     const String & model,
     UInt64 dimensions,
     const String & function_name,
-    const String & query_id,
-    const String & initial_query_id,
     const VectorWithMemoryTracking<std::string_view> & inputs,
     size_t max_batch_size,
     UInt64 max_retries,
@@ -418,8 +405,6 @@ void FunctionBaseAI::embedTexts(
         ai_embedding_request.model = model;
         ai_embedding_request.dimensions = dimensions;
         ai_embedding_request.function_name = function_name;
-        ai_embedding_request.query_id = query_id;
-        ai_embedding_request.initial_query_id = initial_query_id;
         ai_embedding_request.inputs.reserve(batch_end - batch_start);
         for (size_t k = batch_start; k < batch_end; ++k)
             ai_embedding_request.inputs.emplace_back(inputs[k]);
@@ -519,9 +504,6 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
     timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(timeout_sec) /*s*/, 0 /*us*/);
 
-    const String query_id = getContext()->getCurrentQueryId();
-    const String & initial_query_id = getContext()->getClientInfo().initial_query_id;
-
     auto result_col = removeNullable(result_type)->createColumn();
     auto null_map_col = prompt_nullable ? ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0)) : nullptr;
 
@@ -569,7 +551,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
             try
             {
-                AIChatRequest ai_request;
+                AIRequest ai_request;
                 ai_request.system_prompt = system_prompt;
                 ai_request.user_message = user_message;
                 ai_request.response_format = response_format;
@@ -577,8 +559,6 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
                 ai_request.temperature = temperature;
                 ai_request.max_tokens = max_tokens;
                 ai_request.function_name = getName();
-                ai_request.query_id = query_id;
-                ai_request.initial_query_id = initial_query_id;
 
                 ++total_api_calls;
 
@@ -592,7 +572,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
                 /// `raw_finish_reason` is provider-controlled text; sanitize control characters before
                 /// interpolating it into an exception message that reaches the logs and `system.query_log`.
-                const String safe_finish_reason = sanitize(ai_response.raw_finish_reason);
+                const String safe_finish_reason = sanitizeForLog(ai_response.raw_finish_reason);
 
                 /// Reject incomplete responses, throw plain DB::Exception so it is classified as non-retriable
                 switch (ai_response.finish_reason)

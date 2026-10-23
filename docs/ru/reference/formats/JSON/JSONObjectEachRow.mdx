@@ -15,13 +15,19 @@ doc_type: 'справочник'
 | ------- | -------- | --------- |
 | ✔       | ✔        |           |
 
-## Описание {#description}
+<div id="description">
+  ## Описание
+</div>
 
 В этом формате все данные представлены в виде одного объекта JSON, а каждая строка — как отдельное поле этого объекта, аналогично формату [`JSONEachRow`](/ru/reference/formats/JSON/JSONEachRow).
 
-## Пример использования {#example-usage}
+<div id="example-usage">
+  ## Пример использования
+</div>
 
-### Базовый пример {#basic-example}
+<div id="basic-example">
+  ### Базовый пример
+</div>
 
 Предположим, есть такой JSON:
 
@@ -36,7 +42,9 @@ doc_type: 'справочник'
 Чтобы использовать имя объекта в качестве значения столбца, можно воспользоваться специальной настройкой [`format_json_object_each_row_column_for_object_name`](/ru/reference/settings/formats/format#format_json_object_each_row_column_for_object_name).
 В качестве значения этой настройки указывается имя столбца, которое используется как JSON-ключ для строки в результирующем объекте.
 
-#### Результат {#output}
+<div id="output">
+  #### Результат
+</div>
 
 Допустим, у нас есть таблица `test` с двумя столбцами:
 
@@ -62,7 +70,9 @@ SELECT * FROM test SETTINGS format_json_object_each_row_column_for_object_name='
 }
 ```
 
-#### Входные данные {#input}
+<div id="input">
+  #### Входные данные
+</div>
 
 Предположим, что мы сохранили результат из предыдущего примера в файл `data.json`:
 
@@ -91,7 +101,9 @@ DESCRIBE file('data.json', JSONObjectEachRow) SETTING format_json_object_each_ro
 └─────────────┴─────────────────┘
 ```
 
-### Вставка данных {#json-inserting-data}
+<div id="json-inserting-data">
+  ### Вставка данных
+</div>
 
 ```sql title="Query"
 INSERT INTO UserActivity FORMAT JSONEachRow {"PageViews":5, "UserID":"4324182021466249494", "Duration":146,"Sign":-1} {"UserID":"4324182021466249494","PageViews":6,"Duration":185,"Sign":1}
@@ -104,7 +116,9 @@ ClickHouse допускает:
 
 ClickHouse игнорирует пробелы между элементами и запятые после объектов. Все объекты можно передать в одной строке. Разделять их переводами строк не обязательно.
 
-#### Обработка пропущенных значений {#omitted-values-processing}
+<div id="omitted-values-processing">
+  #### Обработка пропущенных значений
+</div>
 
 ClickHouse заменяет пропущенные значения значениями по умолчанию для соответствующих [типов данных](/ru/reference/data-types/index).
 
@@ -127,7 +141,9 @@ CREATE TABLE IF NOT EXISTS example_table
   При вставке данных с `input_format_defaults_for_omitted_fields = 1` ClickHouse потребляет больше вычислительных ресурсов по сравнению со вставкой данных с `input_format_defaults_for_omitted_fields = 0`.
 </Note>
 
-### Выборка данных {#json-selecting-data}
+<div id="json-selecting-data">
+  ### Выборка данных
+</div>
 
 Рассмотрим таблицу `UserActivity` в качестве примера:
 
@@ -151,7 +167,9 @@ CREATE TABLE IF NOT EXISTS example_table
   В строки можно выводить любой набор байтов. Используйте формат [`JSONEachRow`](/ru/reference/formats/JSON/JSONEachRow), если уверены, что данные в таблице можно представить в формате JSON без потери информации.
 </Info>
 
-### Использование вложенных структур {#jsoneachrow-nested}
+<div id="jsoneachrow-nested">
+  ### Использование вложенных структур
+</div>
 
 Если у вас есть таблица со столбцами типа [`Nested`](/ru/reference/data-types/nested-data-structures/index), вы можете вставлять JSON-данные с той же структурой. Чтобы включить эту возможность, используйте настройку [input&#95;format&#95;import&#95;nested&#95;json](/ru/reference/settings/formats/input-format#input_format_import_nested_json).
 
@@ -210,7 +228,9 @@ SELECT * FROM json_each_row_nested
 └───────────────┴────────┘
 ```
 
-## Настройки формата {#format-settings}
+<div id="format-settings">
+  ## Настройки формата
+</div>
 
 | Настройка                                                                                                                                                                   | Описание                                                                                                                                                                                                | По умолчанию | Примечания                                                                                                                                                                                             |
 | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -229,7 +249,7 @@ SELECT * FROM json_each_row_nested
 | [`input_format_json_compact_allow_variable_number_of_columns`](/ru/reference/settings/formats/input-format#input_format_json_compact_allow_variable_number_of_columns)         | разрешить переменное количество столбцов в формате JSONCompact/JSONCompactEachRow, игнорировать лишние столбцы и использовать значения по умолчанию для отсутствующих столбцов.                         | `false`      |                                                                                                                                                                                                        |
 | [`input_format_json_throw_on_bad_escape_sequence`](/ru/reference/settings/formats/input-format#input_format_json_throw_on_bad_escape_sequence)                                 | сгенерировать исключение, если JSON-строка содержит недопустимую escape-последовательность. Если отключено, недопустимые escape-последовательности останутся в данных без изменений.                    | `true`       |                                                                                                                                                                                                        |
 | [`input_format_json_empty_as_default`](/ru/reference/settings/formats/input-format#input_format_json_empty_as_default)                                                         | обрабатывать пустые поля во входных JSON-данных как значения по умолчанию.                                                                                                                              | `false`.     | Для сложных выражений по умолчанию также должен быть включен параметр [`input_format_defaults_for_omitted_fields`](/ru/reference/settings/formats/input-format#input_format_defaults_for_omitted_fields). |
-| [`output_format_json_quote_64bit_integers`](/ru/reference/settings/formats/output-format#output_format_json_quote_64bit_integers)                                              | управляет заключением 64-битных и более крупных целых чисел в кавычки в формате вывода JSON.                                                                                                            | `false`      |                                                                                                                                                                                                        |
+| [`output_format_json_quote_64bit_integers`](/ru/reference/settings/formats/output-format#output_format_json_quote_64bit_integers)                                              | управляет заключением 64-битных целых чисел в кавычки в формате вывода JSON.                                                                                                                            | `true`       |                                                                                                                                                                                                        |
 | [`output_format_json_quote_64bit_floats`](/ru/reference/settings/formats/output-format#output_format_json_quote_64bit_floats)                                                  | управляет заключением 64-битных чисел с плавающей запятой в кавычки в формате вывода JSON.                                                                                                              | `false`      |                                                                                                                                                                                                        |
 | [`output_format_json_quote_denormals`](/ru/reference/settings/formats/output-format#output_format_json_quote_denormals)                                                        | включает вывод &#39;+nan&#39;, &#39;-nan&#39;, &#39;+inf&#39;, &#39;-inf&#39; в формате вывода JSON.                                                                                                    | `false`      |                                                                                                                                                                                                        |
 | [`output_format_json_quote_decimals`](/ru/reference/settings/formats/output-format#output_format_json_quote_decimals)                                                          | управляет заключением decimal-значений в кавычки в формате вывода JSON.                                                                                                                                 | `false`      |                                                                                                                                                                                                        |

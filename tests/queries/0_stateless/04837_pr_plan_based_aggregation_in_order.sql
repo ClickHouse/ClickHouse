@@ -1,4 +1,4 @@
--- Tags: no-random-merge-tree-settings, no-parallel, no-fasttest
+-- Tags: no-random-merge-tree-settings
 
 -- Aggregation in order under plan-based parallel replicas (`parallel_replicas_plan_based`).
 --

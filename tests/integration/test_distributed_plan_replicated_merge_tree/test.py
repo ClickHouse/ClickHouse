@@ -26,7 +26,6 @@ import pytest
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry
 
 pytestmark = pytest.mark.timeout(300)
 
@@ -83,7 +82,7 @@ DISTRIBUTED_SETTINGS = ", ".join([
     "query_plan_convert_join_to_in = 0",
     "query_plan_convert_outer_join_to_inner_join = 0",
     "query_plan_convert_any_join_to_semi_or_anti_join = 0",
-    # Off by default here; `test_join_runtime_filters` turns them on.
+    # Runtime filters are not yet implemented for distributed queries.
     "enable_join_runtime_filters = 0",
     # To support old explain format
     "explain_query_plan_default = 'legacy'",
@@ -601,58 +600,6 @@ def test_profile_events_local_execution(started_cluster):
     assert events["hosts_used"] == 0, (
         f"expected no host assignment for local execution, got events={events}"
     )
-
-
-@EXCHANGE_KINDS
-def test_join_runtime_filters(started_cluster, exchange_kind):
-    """A shuffle join sends the runtime filter states of its build tasks through one `rf_merge_*`
-    task to the probe tasks. The result must match the non-distributed query, and no worker task
-    may keep running after the query ends."""
-    buckets = 3
-    query = "SELECT count(), sum(b.id) FROM big AS b INNER JOIN small AS s ON b.id = s.id"
-    query_id = f"dist_join_rf_{uuid.uuid4().hex}"
-    distributed = INITIATOR.query(
-        f"{query} SETTINGS {DISTRIBUTED_SETTINGS}, " + _override(
-            exchange_kind,
-            "enable_join_runtime_filters = 1",
-            "distributed_plan_join_runtime_filters = 1",
-            "join_runtime_filter_min_probe_rows = 0",
-        ),
-        query_id=query_id,
-    )
-    assert distributed == INITIATOR.query(f"{query} SETTINGS make_distributed_plan = 0")
-
-    # Worker tasks carry the initiator query id as `initial_query_id` and the task id as `query`.
-    tasks = []
-    for node in NODES:
-        node.query("SYSTEM FLUSH LOGS query_log")
-        result = node.query(
-            f"""
-            SELECT query, ProfileEvents['RuntimeFilterStatesSent'],
-                ProfileEvents['StreamingExchangeSendBytes'] + ProfileEvents['StreamingExchangeReceiveBytes'],
-                ProfileEvents['WriteBufferFromS3Bytes'], ProfileEvents['ReadBufferFromS3Bytes']
-            FROM system.query_log
-            WHERE type = 'QueryFinish' AND initial_query_id = '{query_id}' AND query_id != initial_query_id
-            """
-        )
-        tasks += [line.split("\t") for line in result.strip().splitlines()]
-
-    merge_tasks = [task for task in tasks if task[0].startswith("rf_merge_")]
-    assert len(merge_tasks) == 1, tasks
-    # Each build task sends its partial state once, to the merge task.
-    assert sum(int(task[1]) for task in tasks if task not in merge_tasks) == buckets, tasks
-    if exchange_kind == "Persisted":
-        # On a persisted chain the merge task reads and writes the states as files in MinIO.
-        streaming_bytes, s3_written, s3_read = (int(field) for field in merge_tasks[0][2:])
-        assert streaming_bytes == 0 and s3_read > 0 and s3_written > 0, merge_tasks
-
-    for node in NODES:
-        assert_eq_with_retry(
-            node,
-            f"SELECT count() FROM system.processes WHERE initial_query_id = '{query_id}'",
-            "0",
-            retry_count=120,
-        )
 
 
 @EXCHANGE_KINDS

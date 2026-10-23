@@ -26,11 +26,6 @@
     <query>SELECT sum(cityHash64(payload)) FROM array_join_filter_fusion ARRAY JOIN arr AS elem WHERE elem = 'e7' SETTINGS enable_lazy_columns_replication = 0</query>
     <!-- element vs row column: fused now, so the wide payload is replicated only for survivors -->
     <query>SELECT sum(cityHash64(payload)) FROM array_join_filter_fusion ARRAY JOIN arr AS elem WHERE elem = concat('e', toString(id % 40)) SETTINGS enable_lazy_columns_replication = 0</query>
-    <!-- lazy replication on: the wide payload goes through the fused filter to the output -->
-    <query>SELECT elem, payload FROM array_join_filter_fusion ARRAY JOIN arr AS elem WHERE elem != 'e7' FORMAT Null</query>
-    <query>SELECT elem, payload FROM array_join_filter_fusion ARRAY JOIN arr AS elem WHERE elem = concat('e', toString(id % 40)) FORMAT Null</query>
-    <!-- many elements from few rows: sorting must keep the payload lazy -->
-    <query>SELECT elem, payload FROM array_join_filter_fusion ARRAY JOIN arr AS elem WHERE elem != 'e7' AND (id % 1000 = 0 OR elem = 'none') ORDER BY elem FORMAT Null</query>
     <!-- regression guard: count() carries no passenger, so both paths do the same element comparisons -->
     <query>SELECT count() FROM array_join_filter_fusion ARRAY JOIN arr AS elem WHERE elem = 'e7'</query>
 

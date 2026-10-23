@@ -1,5 +1,4 @@
 -- comparison overflow during scale conversion
-1	1	1	1
 -- the same comparisons with the overflow check disabled, vector/vector
 0	0	0
 -- the same in the left-const shape

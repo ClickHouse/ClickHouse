@@ -59,7 +59,6 @@ public:
     bool isDeterministicInScopeOfQuery() const override { return false; }
     bool isSuitableForConstantFolding() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
-    bool isExpensive() const override { return true; }
     /// Handle Nullable cols explicitly, since setting this to true may call functions with arbitrary input values
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return false; }
@@ -162,8 +161,6 @@ public:
         const String & model,
         UInt64 dimensions,
         const String & function_name,
-        const String & query_id,
-        const String & initial_query_id,
         const VectorWithMemoryTracking<std::string_view> & inputs,
         size_t max_batch_size,
         UInt64 max_retries,

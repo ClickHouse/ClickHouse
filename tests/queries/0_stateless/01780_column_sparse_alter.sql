@@ -1,4 +1,3 @@
--- Random settings limits: index_granularity=(100, None); index_granularity_bytes=(100000, None)
 
 SET mutations_sync = 2;
 

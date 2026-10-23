@@ -1,3 +1,5 @@
+-- Tags: no-darwin
+-- no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
 
 -- INTERSECT/EXCEPT under `make_distributed_plan`: `IntersectOrExceptStep` is serializable,
 -- so it runs in worker tasks instead of being rejected at the remotability gate.
@@ -24,23 +26,23 @@ SET max_rows_to_group_by = 0;
 
 SELECT '-- intersect distinct, rule-based';
 SET enable_cascades_optimizer = 0;
-SELECT count(), min(k), max(k) FROM (SELECT k, v FROM t_ie_left INTERSECT DISTINCT SELECT k, v FROM t_ie_right) SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT count(), min(k), max(k) FROM (SELECT k, v FROM t_ie_left INTERSECT DISTINCT SELECT k, v FROM t_ie_right);
 
 SELECT '-- intersect all, rule-based';
-SELECT count() FROM (SELECT k, v FROM t_ie_left INTERSECT ALL SELECT k, v FROM t_ie_right) SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT count() FROM (SELECT k, v FROM t_ie_left INTERSECT ALL SELECT k, v FROM t_ie_right);
 
 SELECT '-- except distinct, rule-based';
-SELECT count(), min(k), max(k) FROM (SELECT k, v FROM t_ie_left EXCEPT DISTINCT SELECT k, v FROM t_ie_right) SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT count(), min(k), max(k) FROM (SELECT k, v FROM t_ie_left EXCEPT DISTINCT SELECT k, v FROM t_ie_right);
 
 SELECT '-- except all, rule-based';
-SELECT count() FROM (SELECT k, v FROM t_ie_left EXCEPT ALL SELECT k, v FROM t_ie_right) SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT count() FROM (SELECT k, v FROM t_ie_left EXCEPT ALL SELECT k, v FROM t_ie_right);
 
 SELECT '-- intersect distinct, cascades';
 SET enable_cascades_optimizer = 1;
-SELECT count(), min(k), max(k) FROM (SELECT k, v FROM t_ie_left INTERSECT DISTINCT SELECT k, v FROM t_ie_right) SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT count(), min(k), max(k) FROM (SELECT k, v FROM t_ie_left INTERSECT DISTINCT SELECT k, v FROM t_ie_right);
 
 SELECT '-- except all, cascades';
-SELECT count() FROM (SELECT k, v FROM t_ie_left EXCEPT ALL SELECT k, v FROM t_ie_right) SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT count() FROM (SELECT k, v FROM t_ie_left EXCEPT ALL SELECT k, v FROM t_ie_right);
 
 DROP TABLE t_ie_left;
 DROP TABLE t_ie_right;

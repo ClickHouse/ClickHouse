@@ -71,7 +71,7 @@ public:
     /** Construct query analysis pass for query or union analysis.
       * Available columns are extracted from query node join tree.
       */
-    explicit QueryAnalysisPass(bool only_analyze_ = false, bool positional_arguments_already_resolved_ = false);
+    explicit QueryAnalysisPass(bool only_analyze_ = false);
 
     /** Construct query analysis pass for expression or list of expressions analysis.
       * Available expression columns are extracted from table expression.
@@ -94,7 +94,6 @@ public:
 private:
     TableExpressionNodePtr table_expression;
     const bool only_analyze;
-    const bool positional_arguments_already_resolved = false;
 };
 
 }

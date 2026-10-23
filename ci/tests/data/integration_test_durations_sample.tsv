@@ -1074,6 +1074,7 @@ test_system_reload_async_metrics/test_async_metrics_invalid_settings.py	10136
 test_storage_iceberg_no_spark/test_iceberg_history_operation_summary.py	10104
 test_host_regexp_hosts_file_resolution/test.py	10093
 test_tcp_handler_http_responses/test_case.py	10042
+test_cgroup_metrics/test.py	9966
 test_http_auth_config_credentials/test.py	9941
 test_arrowflight_interface/test_prepared_statement_malformed_params.py	9912
 test_filesystem_cache_uninitialized/test.py	9896

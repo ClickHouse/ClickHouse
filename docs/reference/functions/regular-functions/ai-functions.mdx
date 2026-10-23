@@ -114,24 +114,6 @@ SELECT aiGenerate(body, map('temperature', '0.2', 'system_prompt', 'You are ters
 
 All AI-related settings are listed in [Settings](/reference/settings/session-settings) under the `ai_function_` prefix.
 
-### Server configuration {#server-configuration}
-
-The server setting `ai_function_allow_sql_named_collections` (default `true`) controls which named collections AI functions accept. When set to `false`, AI functions accept only named collections defined in the server configuration file, and using a collection created with `CREATE NAMED COLLECTION` throws an exception. This applies both to the `credentials` parameter and to the default-credentials settings. Changing the setting requires a server restart.
-
-```xml
-<clickhouse>
-    <ai_function_allow_sql_named_collections>false</ai_function_allow_sql_named_collections>
-    <named_collections>
-        <ai_text_credentials>
-            <provider>openai</provider>
-            <endpoint>https://api.openai.com/v1/chat/completions</endpoint>
-            <model>gpt-4o-mini</model>
-            <api_key>sk-...</api_key>
-        </ai_text_credentials>
-    </named_collections>
-</clickhouse>
-```
-
 ### Restricting endpoint hosts {#restricting-endpoint-hosts}
 
 The `endpoint` URL in an AI named collection is an outbound destination the server connects to under its own identity, potentially carrying (if specified) the named collection's `api_key` in the request headers. By default, ClickHouse permits any host. To restrict functions to a specific set of providers, configure [`remote_url_allow_hosts`](/reference/settings/server-settings/settings/remote#remote_url_allow_hosts) in the server config, e.g.:

@@ -10,9 +10,13 @@ integration:
   - category: 'clickpipes'
 ---
 
-## Kafka ClickPipes 常见问题 {#faq}
+<div id="faq">
+  ## Kafka ClickPipes 常见问题
+</div>
 
-### 常见问题 {#general}
+<div id="general">
+  ### 常见问题
+</div>
 
 <Accordion title="ClickPipes for Kafka 的工作原理是什么？">
   ClickPipes 采用专用架构，通过运行 Kafka Consumer API 从指定的 topic 读取数据，然后将数据插入特定 ClickHouse Cloud 服务上的 ClickHouse 表中。
@@ -44,15 +48,15 @@ integration:
   可以，流式 ClickPipes 支持水平扩缩容和垂直扩缩容。
   水平扩缩容会增加更多副本以提升吞吐量，而垂直扩缩容则会增加分配给每个副本的资源 (CPU 和 RAM) ，以处理更高强度的 workloads。
   这可以在创建 ClickPipe 时进行配置，也可以之后随时在 **Settings** -&gt; **Advanced Settings** -&gt; **Scaling** 下进行配置。
-
-  如果 ClickPipe 使用 AWS PrivateLink 反向专用端点，那么共享该端点的所有 ClickPipes 的副本总数会受到限制。请参阅[每个反向专用端点的副本数量上限](/zh/integrations/clickpipes/networking/aws-privatelink#rpe-replica-limit)。
 </Accordion>
 
 <Accordion title="为什么我在 ClickPipes 设置 UI 中找不到某些 Kafka topics？">
   ClickPipes 的 topic 发现 UI 默认最多列出 1,500 个 topics。如果您的 Kafka cluster 中有超过 1,500 个 topics，则部分 topics 可能不会出现在下拉列表中。要验证您的 topic 是否存在，请使用具有相同 credentials 的 Kafka 客户端直接检查。如果确认存在，并且您需要将列出上限提高到 1,500 以上，请联系 ClickHouse 支持团队。
 </Accordion>
 
-### Azure Event Hubs {#azure-eventhubs}
+<div id="azure-eventhubs">
+  ### Azure Event Hubs
+</div>
 
 <Accordion title="Azure Event Hubs ClickPipe 在不启用 Kafka 接口的情况下可以工作吗？">
   不能。ClickPipes 要求 Event Hubs 命名空间启用 Kafka 接口。该功能仅在高于 **基础版** 的层级中可用。更多信息请参阅 [Azure Event Hubs 文档](https://learn.microsoft.com/en-us/azure/event-hubs/event-hubs-quickstart-kafka-enabled-event-hubs?tabs=passwordless#create-an-azure-event-hubs-namespace)。

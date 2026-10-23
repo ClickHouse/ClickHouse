@@ -93,18 +93,6 @@ is enabled:
 ```
 </Note>
 
-### Do not make `readonly` changeable in read-only mode {#readonly-changeable-in-readonly}
-
-<Warning>
-Keep `readonly` off the `changeable_in_readonly` list in every profile, including profiles you assign to nobody: a profile's name is selectable by any session.
-</Warning>
-
-Don't mark `readonly` itself as `changeable_in_readonly`. If you do, a session that starts at `readonly = 1` can run `SET readonly = 0` and regain the ability to run the write queries its existing privileges already allow, unless the same constraint also forbids `0`.
-
-This matters for every profile you define, not only the ones you assign:
-- `SET profile` is not access-checked, so any session can select any profile by name. A profile is reachable even when you assign it to nobody, although what it then changes is still checked against the constraints already active in that session.
-- Over HTTP, `GET` requests are forced to `readonly = 2` only when the effective value would otherwise be `0`. So a profile that sets `readonly = 1` but also lets `readonly` be changed in read-only mode defeats that protection, because a `GET` request can flip it to `0` and write.
-
 ## Multiple constraint profiles {#multiple-constraint-profiles}
 
 If there are multiple profiles active for a user, then constraints are merged. 
@@ -115,20 +103,6 @@ The Merge process depends on `settings_constraints_replace_previous`:
 - **false** (default): constraints for the same setting are merged in a way that
   every unset type of constraint is taken from the previous profile and every 
   set type of constraint is replaced by the value from the new profile.
-
-## Constraints and the `compatibility` setting {#constraints-and-compatibility}
-
-The [`compatibility`](/reference/settings/session-settings/compatibility#compatibility) setting changes the
-settings the user has not set to the defaults of a previous version. It never applies a value that the
-constraints refuse: a setting keeps its default when the previous default is outside its `min`/`max`
-range, is one of its `disallowed` values, or the setting is `const`. The same applies to a setting of a tier
-that [`allow_feature_tier`](/reference/settings/server-settings/settings/allow#allow_feature_tier) disables.
-The `readonly` setting does not restrict `compatibility` in this way: it decides whether a query may set
-`compatibility` at all.
-
-`MergeTree` settings follow only the `compatibility` of the default profile, which gives the server-wide
-defaults of every table. There, a setting likewise keeps its default when a `merge_tree_`-prefixed
-constraint of the default profile or `allow_feature_tier` refuses the previous default.
 
 ## Read-only mode {#read-only}
 
