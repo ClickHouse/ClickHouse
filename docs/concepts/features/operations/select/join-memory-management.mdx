@@ -1,0 +1,52 @@
+---
+title: 'JOIN memory management and spilling'
+description: 'Limits, spill thresholds, and temporary storage used by ClickHouse JOINs.'
+keywords: ['JOIN memory', 'JOIN spilling', 'max_bytes_in_join', 'grace hash join', 'temporary storage']
+doc_type: 'guide'
+---
+
+Two groups of settings control JOIN memory. For most algorithms, hard limits stop a query when the JOIN state becomes too large. Spill thresholds make a JOIN write part of its state to disk so that the query can continue.
+
+## Hard limits
+
+- [`max_rows_in_join`](/reference/settings/session-settings/max-rows#max_rows_in_join) limits the number of rows in the right-hand data structure of a JOIN, which is typically a hash table.
+- [`max_bytes_in_join`](/reference/settings/session-settings/max-bytes#max_bytes_in_join) limits the size in bytes of the same data structure.
+- [`join_overflow_mode`](/reference/settings/session-settings/join#join_overflow_mode) defines the action when either limit is reached.
+
+Both limits also apply to the [`Join` table engine](/reference/engines/table-engines/special/join). If a query contains several JOINs, ClickHouse checks the limits for every JOIN.
+
+For hash-based algorithms, including the algorithms that spill to disk, reaching a limit stops the query and never makes a JOIN spill. As a result, a limit at or below the spill threshold normally stops the query before the JOIN can spill.
+
+The limits act differently for other algorithms:
+
+- For [`ie_join`](/concepts/features/operations/select/join-algorithms#ie-join), the limits apply to the accumulated input of both sides together.
+- For the [block nested loop fallback](/concepts/features/operations/select/join-algorithms#block-nested-loop-fallback), the limits apply to the materialized right-hand side, including spilled blocks.
+- For [`partial_merge`](/concepts/features/operations/select/join-algorithms#partial-merge), reaching a limit changes the execution strategy instead of stopping the query: the JOIN starts writing its sorted right-hand blocks to disk.
+
+## Spill thresholds
+
+- [`max_bytes_before_external_join`](/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) sets an absolute spill threshold in bytes for the right-hand side of a hash-based JOIN.
+- [`max_bytes_ratio_before_external_join`](/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) sets the spill threshold as a ratio of the memory that remains under the user and server memory limits. If no memory limit is configured, the ratio has no effect.
+
+If both settings are set, the smaller resulting threshold applies. The thresholds apply to `hash`, `parallel_hash`, `grace_hash`, the `auto` value, and the block nested loop fallback. They require a configured temporary data path.
+
+## How spilling works
+
+Each algorithm that can spill writes a different part of its state to temporary files:
+
+- **`hash` and `parallel_hash`.** The JOIN builds its hash tables in memory. When the right-hand side exceeds the spill threshold, the JOIN converts to `grace_hash`. It splits the right-hand rows into buckets by a hash of the JOIN key, keeps one bucket in memory, and writes the other buckets to temporary files. The left-hand rows are split with the same hash function. Rows of the in-memory bucket are joined immediately, and the other rows are written to temporary files. After the left-hand side is read, ClickHouse loads and joins the remaining pairs of buckets one at a time.
+- **`grace_hash`.** The JOIN follows the same procedure from the first block. If the hash table of a bucket exceeds the threshold, the number of buckets doubles up to `grace_hash_join_max_buckets`. When this maximum is exceeded, the query fails with an error.
+- **`full_sorting_merge`.** The sort of each input writes sorted blocks to temporary files when it exceeds `max_bytes_before_external_sort` or `max_bytes_ratio_before_external_sort`. The sorted files are then merged.
+- **`partial_merge`.** The sorted right-hand blocks and their min-max indexes are written to temporary files after the right-hand side reaches a hard limit.
+- **Block nested loop fallback.** The right-hand blocks are compressed in memory and then written to temporary files after the spill threshold is reached.
+
+The [`direct`](/concepts/features/operations/select/join-algorithms#direct) and [`ie_join`](/concepts/features/operations/select/join-algorithms#ie-join) algorithms do not spill to disk.
+
+Temporary files are written to the storage that the [`tmp_path`](/reference/settings/server-settings/settings/tmp#tmp_path), [`tmp_policy`](/reference/settings/server-settings/settings/tmp#tmp_policy), or [`temporary_data_in_cache`](/reference/settings/server-settings/settings/temporary-data#temporary_data_in_cache) server setting configures. Reading and writing temporary files adds disk I/O, so a spilling JOIN is slower than the same JOIN in memory.
+
+The `ExternalJoinWritePart`, `ExternalJoinCompressedBytes`, and `ExternalJoinUncompressedBytes` profile events report how many temporary files a JOIN wrote and how much data they contained. They are available in the `ProfileEvents` column of [`system.query_log`](/reference/system-tables/query_log).
+
+## Related pages
+
+- [JOIN algorithms](/concepts/features/operations/select/join-algorithms)
+- [How ClickHouse executes JOINs](/concepts/features/operations/select/join-execution)
