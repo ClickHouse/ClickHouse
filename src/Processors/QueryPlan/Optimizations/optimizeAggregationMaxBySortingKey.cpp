@@ -1,15 +1,13 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
-#include <Access/ContextAccess.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Core/Range.h>
 #include <Core/Settings.h>
 #include <DataTypes/IDataType.h>
-#include <Databases/enableAllExperimentalSettings.h>
 #include <DataTypes/TypeTree.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/inplaceBlockConversions.h>
+#include <Parsers/ASTFunction.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -19,8 +17,6 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/KeyCondition.h>
-#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
-#include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Common/logger_useful.h>
 
@@ -91,8 +87,8 @@ namespace DB::QueryPlanOptimizations
 /// - `argMin`/`argMax` of a `Nullable` value;
 /// - a filter on a non-prefix column when a primary key column can contain NULL;
 /// - `LIMIT BY` whose limit plus offset overflows, or with `arrayJoin` above the sorting;
-/// - stateful functions (`rowNumberInAllBlocks`, ...) before the aggregation or `LIMIT BY`, or in the default of a column
-///   that a part does not have.
+/// - stateful functions (`rowNumberInAllBlocks`, ...) before the aggregation or `LIMIT BY`;
+/// - a `DEFAULT` or `MATERIALIZED` column whose expression calls a function.
 
 /// The order and equality of the primary index must agree with the aggregation. `Nullable`: `max` and `min`
 /// ignore NULLs, which sort at an end of the run. Floating point: NaN has no consistent order, and `-0` and `+0`
@@ -146,56 +142,15 @@ static bool dependsOnlyOn(const ActionsDAG::Node * predicate, const NameSet & co
     return true;
 }
 
-/// Whether the reader computes some of `column_names` for `part` from default expressions with stateful functions
-/// (`rowNumberInAllBlocks`, `runningDifference`, ...). This happens for columns the part does not have, e.g. added by
-/// `ALTER TABLE ... ADD COLUMN` and not materialized. As the reader does, the stored columns that such defaults use are
-/// added first (`injectRequiredColumns`), and then the same expressions as in `IMergeTreeReader::evaluateMissingDefaults`
-/// are built, so nothing is built that the reader would not build.
-static bool readerComputesStatefulDefaults(
-    const MergeTreeData::DataPartPtr & part,
-    const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
-    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
-    const ContextPtr & context)
+/// Whether the expression calls a function. Only the parsed expression is inspected: no function is built.
+static bool hasFunctionCall(const ASTPtr & ast)
 {
-    AlterConversionsPtr alter_conversions;
-    if (!part->isProjectionPart())
-        alter_conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context
-#if CLICKHOUSE_CLOUD
-            , context->getAccess()->getEnabledMaskingPolicies()
-#endif
-        );
-    Names columns_to_read = column_names;
-    injectRequiredColumns(LoadedMergeTreeDataPartInfoForReader(part, alter_conversions), storage_snapshot, /*with_subcolumns=*/ true, columns_to_read);
-
-    const auto & columns = storage_snapshot->metadata->getColumns();
-    Block present_columns;
-    NamesAndTypesList requested_columns;
-    NameSet seen;
-    bool has_missing_columns = false;
-    for (const auto & name : columns_to_read)
-    {
-        /// Virtual columns are not in the description and have no defaults here.
-        auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
-        if (!column)
-            continue;
-        const auto name_in_storage = column->getNameInStorage();
-        if (!seen.insert(name_in_storage).second)
-            continue;
-        const auto type = column->getTypeInStorage();
-        requested_columns.emplace_back(name_in_storage, type);
-        if (part->tryGetColumn(name_in_storage))
-            present_columns.insert({type->createColumn(), type, name_in_storage});
-        else
-            has_missing_columns = true;
-    }
-    if (!has_missing_columns)
-        return false;
-
-    auto context_copy = Context::createCopy(context);
-    enableAllExperimentalSettings(context_copy);
-    auto dag = evaluateMissingDefaults(present_columns, requested_columns, columns, context_copy);
-    return dag && dag->hasStatefulFunctions();
+    if (ast->as<ASTFunction>())
+        return true;
+    for (const auto & child : ast->children)
+        if (hasFunctionCall(child))
+            return true;
+    return false;
 }
 
 /// Aggregate functions whose result depends only on the set of distinct values of their arguments, not on how
@@ -329,6 +284,15 @@ static void tryApply(
     const auto table_metadata = reading->getMergeTreeData().getInMemoryMetadataPtr(reading->getContext(), /*bypass_metadata_cache=*/ false);
     if (metadata->hasUniqueKey() || table_metadata->hasUniqueKey())
         return;
+    /// The reader computes `DEFAULT` and `MATERIALIZED` expressions for the rows of parts that do not have the column
+    /// (e.g. added by `ALTER TABLE ... ADD COLUMN`), or that are converted to a new type, and a function there may depend
+    /// on all rows read (`rowNumberInAllBlocks`). Constants cannot, so only defaults that call a function disable the
+    /// optimization. `ALIAS` columns are expanded in the query, so they are covered by `query.dag`.
+    for (const auto & column : table_metadata->getColumns())
+        if (column.default_desc.expression
+            && (column.default_desc.kind == ColumnDefaultKind::Default || column.default_desc.kind == ColumnDefaultKind::Materialized)
+            && hasFunctionCall(column.default_desc.expression))
+            return;
     const auto & sorting_key = metadata->getSortingKey();
     const auto & primary_key = metadata->getPrimaryKey();
 
@@ -522,13 +486,6 @@ static void tryApply(
     /// applied to the parts of a projection that was already chosen.
     if (!analysis)
         return;
-
-    /// Stateful default expressions computed by the reader (see `readerComputesStatefulDefaults`) depend on all rows read,
-    /// also those of other parts, so one such part disables the optimization.
-    for (const auto & part : analysis->parts_with_ranges)
-        if (readerComputesStatefulDefaults(
-                part.data_part, reading->getAllColumnNames(), reading->getStorageSnapshot(), reading->getMutationsSnapshot(), context))
-            return;
 
     auto result = std::make_shared<ReadFromMergeTree::AnalysisResult>(*analysis);
     const auto & mutations_snapshot = reading->getMutationsSnapshot();
