@@ -3,7 +3,6 @@
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/ProfileEvents.h>
-#include <Common/noexcept_scope.h>
 
 #include <exception>
 
@@ -23,16 +22,12 @@ extern const int FS_METADATA_ERROR;
 
 void MetadataOperationsHolder::rollback(size_t until_pos, Exception & rollback_reason) noexcept
 {
+    LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
+
     ProfileEvents::increment(ProfileEvents::MetadataTransactionRollbacks);
 
     for (int64_t i = until_pos; i >= 0; --i)
     {
-        if (noexcept_rollback)
-        {
-            NOEXCEPT_SCOPE(operations[i]->undo());
-            continue;
-        }
-
         try
         {
             operations[i]->undo();
@@ -95,9 +90,6 @@ void MetadataOperationsHolder::commit()
         }
         catch (Exception & error)
         {
-            /// Neither the memory limit nor its fault injection can stop the rollback.
-            LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
-
             state = MetadataStorageTransactionState::FAILED;
 
             error.addMessage(fmt::format("While committing metadata operation #{}", i));

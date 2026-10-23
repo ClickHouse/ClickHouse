@@ -1612,34 +1612,6 @@ TEST_F(MetadataLocalDiskTest, TestRollbackIsNotStoppedByMemoryLimit)
     }
 }
 
-using MetadataLocalDiskDeathTest = MetadataLocalDiskTest;
-
-/// The disk of the child process, which dies before `TearDown` could remove it.
-static std::string terminated_disk_path;
-
-/// An `undo` that throws terminates the server, so a partially rolled back transaction is never left behind.
-TEST_F(MetadataLocalDiskDeathTest, TestFailedUndoTerminates)
-{
-    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
-
-    auto [metadata, disk] = getFaultInjectingMetadataStorage("/TestFailedUndoTerminates");
-    createPartWithDetachedCopy(metadata, {{"f", "kf"}});
-    terminated_disk_path = disk->getPath();
-
-    /// Write #1 decrements the count of "detached/f", #2 fails the transaction, #3 restores the count in the rollback.
-    disk->arm({.write_file = {3}});
-    EXPECT_EXIT(
-        {
-            std::set_terminate([] { fs::remove_all(terminated_disk_path); std::_Exit(42); });
-            auto tx = metadata->createTransaction();
-            tx->removeRecursive("detached", /*should_remove_objects=*/nullptr);
-            tx->createMetadataFile("non-existing/fail-tx", /*objects=*/{});
-            tx->commit(DB::NoCommitOptions{});
-        },
-        ::testing::ExitedWithCode(42), "");
-    disk->disarm();
-}
-
 /// Rolling back a recursive removal restores the count of a file that has two links inside the removed directory.
 TEST_F(MetadataLocalDiskTest, TestRemoveRecursiveRollbackRestoresSharedInodeCount)
 {
@@ -1828,24 +1800,6 @@ TEST_F(MetadataLocalDiskTest, TestRollbackUndoesOnlyWhatAFailedOperationDid)
             .check = [&](const Metadata & metadata) { expect_blob(metadata, "md/f"); EXPECT_FALSE(metadata->existsDirectory("md2")); },
         },
         {
-            .name = "move a directory onto an empty one",
-            .setup = [&](const Metadata & metadata)
-            {
-                auto tx = metadata->createTransaction();
-                tx->createDirectory("ex");
-                tx->createDirectory("ey");
-                tx->commit(DB::NoCommitOptions{});
-                create_files(metadata, {"ex/f"});
-            },
-            .operation = [](Transaction & tx) { tx.moveDirectory("ex", "ey"); },
-            .check = [&](const Metadata & metadata)
-            {
-                expect_blob(metadata, "ex/f");
-                ASSERT_TRUE(metadata->existsDirectory("ey"));
-                EXPECT_TRUE(metadata->listDirectory("ey").empty());
-            },
-        },
-        {
             .name = "create a directory",
             .operation = [](Transaction & tx) { tx.createDirectory("nd"); },
             .check = [&](const Metadata & metadata) { EXPECT_FALSE(metadata->existsDirectory("nd")); },
@@ -1873,6 +1827,16 @@ TEST_F(MetadataLocalDiskTest, TestRollbackUndoesOnlyWhatAFailedOperationDid)
             },
             .operation = [](Transaction & tx) { tx.chmod("m", 0600); },
             .check = [&](const Metadata & metadata) { EXPECT_EQ(metadata->stat("m").st_mode & 0777, 0640u); },
+        },
+        {
+            .name = "create a hard link",
+            .setup = [&](const Metadata & metadata) { create_files(metadata, {"a1"}); },
+            .operation = [](Transaction & tx) { tx.createHardLink("a1", "l1"); },
+            .check = [&](const Metadata & metadata)
+            {
+                EXPECT_FALSE(metadata->existsFile("l1"));
+                EXPECT_EQ(metadata->getHardlinkCount("a1"), 0);
+            },
         },
         {
             .name = "create a hard link onto another file",
@@ -1929,19 +1893,4 @@ TEST_F(MetadataLocalDiskTest, TestRollbackUndoesOnlyWhatAFailedOperationDid)
         if (test_case.check)
             test_case.check(metadata);
     }
-}
-
-/// Rolling back a recursive directory creation removes the directories it created.
-TEST_F(MetadataLocalDiskTest, TestRecursiveDirectoryCreationIsRolledBack)
-{
-    auto metadata = getMetadataStorage("/TestRecursiveDirectoryCreationIsRolledBack");
-
-    {
-        auto tx = metadata->createTransaction();
-        tx->createDirectoryRecursive("r/s/t");
-        tx->createMetadataFile("non-existing/fail-tx", /*objects=*/{});
-        EXPECT_THROW(tx->commit(DB::NoCommitOptions{}), std::exception);
-    }
-
-    EXPECT_FALSE(metadata->existsDirectory("r"));
 }

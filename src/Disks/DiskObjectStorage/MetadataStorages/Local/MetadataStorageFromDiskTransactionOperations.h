@@ -60,7 +60,6 @@ private:
     IDisk & disk;
 
     std::optional<std::string> prev_data;
-    /// Set before the write, so a write that stopped part way is undone too.
     bool write_attempted = false;
 };
 
@@ -168,7 +167,6 @@ private:
     IDisk & disk;
 
     std::unique_ptr<WriteFileOperation> write_operation;
-    /// False when the destination existed, even as a link to the same file.
     bool link_created = false;
 };
 
@@ -200,8 +198,6 @@ private:
     IDisk & disk;
 
     bool moved = false;
-    /// The rename replaced an empty directory at `path_to`.
-    bool replaced_destination = false;
 };
 
 struct ReplaceFileOperation final : public IMetadataOperation
