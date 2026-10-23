@@ -121,3 +121,11 @@ INSERT INTO t_tuple_vertical SELECT number, (1, 'x'), 'v' FROM numbers(100);
 INSERT INTO t_tuple_vertical SELECT number, (1, 'x'), 'v' FROM numbers(100);
 OPTIMIZE TABLE t_tuple_vertical FINAL;
 SELECT count() FROM t_tuple_vertical WHERE t.a = 1;
+CREATE TABLE t_json_path_vertical (id UInt64, j JSON, v String)
+ENGINE = ReplacingMergeTree PARTITION BY j.p.:Int64 ORDER BY id
+SETTINGS allow_nullable_key = 1, index_granularity = 64, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
+    enable_vertical_merge_algorithm = 1, vertical_merge_algorithm_min_rows_to_activate = 1, vertical_merge_algorithm_min_columns_to_activate = 1;
+INSERT INTO t_json_path_vertical SELECT number, '{"p":1}', 'v' FROM numbers(100);
+INSERT INTO t_json_path_vertical SELECT number, '{"p":1}', 'v' FROM numbers(100);
+OPTIMIZE TABLE t_json_path_vertical FINAL;
+SELECT count() FROM t_json_path_vertical WHERE j.p.:Int64 = 1;

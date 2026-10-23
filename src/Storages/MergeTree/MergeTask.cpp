@@ -433,6 +433,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
             key_columns.insert(name);
             if (auto subcolumn = columns_description.tryGetSubcolumn(name, GetColumnsOptions::AllPhysical))
                 key_columns.insert(subcolumn->getNameInStorage());
+            else if (auto column_in_storage = Nested::tryGetColumnNameInStorage(name, storage_columns))
+                key_columns.insert(*column_in_storage);
         }
     }
 
