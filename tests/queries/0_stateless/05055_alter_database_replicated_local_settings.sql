@@ -15,8 +15,12 @@ DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 DROP NAMED COLLECTION IF EXISTS collection_05055_alter_db_replicated_settings_secure;
 DROP NAMED COLLECTION IF EXISTS collection_05055_alter_db_replicated_settings_not_secure;
 
+-- The definition states `max_replication_lag_to_enqueue` twice, and the last occurrence is in effect.
+-- Altering it must leave a single occurrence in the metadata file, otherwise the stale `20` overrides
+-- the new value on the next load, see the reattach below.
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier}
-ENGINE = Replicated('/test/' || currentDatabase() || '/alter_local_settings', 'shard1', 'replica1');
+ENGINE = Replicated('/test/' || currentDatabase() || '/alter_local_settings', 'shard1', 'replica1')
+SETTINGS max_replication_lag_to_enqueue = 10, max_replication_lag_to_enqueue = 20;
 
 SELECT 'created', replaceAll(engine_full, currentDatabase(), '{db}')
 FROM system.databases WHERE name = {CLICKHOUSE_DATABASE_1:String};

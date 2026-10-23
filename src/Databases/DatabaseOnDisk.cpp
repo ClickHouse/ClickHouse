@@ -1052,26 +1052,28 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
     auto component_guard = Coordination::setCurrentComponent("DatabaseOnDisk::modifySettingsMetadata");
     auto create_query = getCreateDatabaseQuery()->clone();
     auto * create = create_query->as<ASTCreateQuery>();
-    auto * settings = create->storage->settings;
-    if (settings)
+    if (!create->storage->settings)
     {
-        auto & storage_settings = settings->changes;
-        for (const auto & change : settings_changes)
-        {
-            auto it = std::find_if(storage_settings.begin(), storage_settings.end(),
-                                   [&](const auto & prev){ return prev.name == change.name; });
-            if (it != storage_settings.end())
-                it->value = change.value;
-            else
-                storage_settings.push_back(change);
-        }
+        auto new_storage_settings = make_intrusive<ASTSetQuery>();
+        new_storage_settings->is_standalone = false;
+        new_storage_settings->changes.reserve(settings_changes.size());
+        create->storage->set(create->storage->settings, new_storage_settings);
     }
-    else
+
+    auto & storage_settings = create->storage->settings->changes;
+    for (const auto & change : settings_changes)
     {
-        auto storage_settings = make_intrusive<ASTSetQuery>();
-        storage_settings->is_standalone = false;
-        storage_settings->changes = settings_changes;
-        create->storage->set(create->storage->settings, storage_settings->clone());
+        const auto same_setting = [&change](const SettingChange & prev) { return prev.name == change.name; };
+        const auto it = std::find_if(storage_settings.begin(), storage_settings.end(), same_setting);
+        if (it == storage_settings.end())
+        {
+            storage_settings.push_back(change);
+            continue;
+        }
+
+        it->value = change.value;
+        /// Remove setting duplicates.
+        storage_settings.erase(std::remove_if(it + 1, storage_settings.end(), same_setting), storage_settings.end());
     }
 
     create->attach = true;
