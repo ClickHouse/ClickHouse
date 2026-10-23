@@ -153,8 +153,12 @@ QuoteStart updateQuoteStart(
             seen_ambiguous = true;
             break;
         }
-        if (c == delimiter || c == tuple_delimiter)
+        if (c == delimiter)
             return seen_ambiguous ? QuoteStart::Maybe : QuoteStart::Yes;
+        /// A tuple delimiter that differs from the field delimiter (e.g. HiveText) is ordinary field content
+        /// for non-tuple columns, and the scanners do not know the column type, so it is only an ambiguous start.
+        if (c == tuple_delimiter)
+            return QuoteStart::Maybe;
         if (c == ' ' || c == '\t')
         {
             if (!whitespace_is_skipped)
