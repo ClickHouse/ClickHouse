@@ -72,6 +72,7 @@
 #include <Common/HTTPConnectionPool.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/SQLDefinedHandlers/SQLDefinedHandlersFactory.h>
+#include <Server/ConnectionRegistry.h>
 #include <Server/createServer.h>
 #include <Server/StartupWarnings.h>
 #include <Server/socketBindListen.h>
@@ -277,6 +278,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt32 dns_max_consecutive_failures;
     extern const ServerSettingsBool enable_azure_sdk_logging;
     extern const ServerSettingsBool enable_silk_runtime;
+    extern const ServerSettingsBool enable_gpu;
     extern const ServerSettingsUInt64 global_profiler_cpu_time_period_ns;
     extern const ServerSettingsUInt64 global_profiler_real_time_period_ns;
     extern const ServerSettingsUInt64 http_connections_soft_limit;
@@ -451,6 +453,9 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_iceberg_manifest_decode_thread_pool_size;
     extern const ServerSettingsUInt64 max_iceberg_manifest_decode_thread_pool_free_size;
     extern const ServerSettingsUInt64 iceberg_manifest_decode_thread_pool_queue_size;
+    extern const ServerSettingsNonZeroUInt64 ai_function_max_thread_pool_size;
+    extern const ServerSettingsUInt64 ai_function_max_thread_pool_free_size;
+    extern const ServerSettingsUInt64 ai_function_thread_pool_queue_size;
     extern const ServerSettingsUInt64 page_cache_history_window_ms;
     extern const ServerSettingsString page_cache_policy;
     extern const ServerSettingsDouble page_cache_size_ratio;
@@ -463,6 +468,7 @@ namespace ServerSetting
     extern const ServerSettingsFloat max_os_cpu_wait_time_ratio_to_drop_connection;
     extern const ServerSettingsBool skip_binary_checksum_checks;
     extern const ServerSettingsBool abort_on_logical_error;
+    extern const ServerSettingsBool collect_connection_metrics;
     extern const ServerSettingsUInt64 jemalloc_flush_profile_interval_bytes;
     extern const ServerSettingsUInt64 jemalloc_merge_tree_arenas;
     extern const ServerSettingsBool jemalloc_flush_profile_on_memory_exceeded;
@@ -1822,6 +1828,11 @@ try
         server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_free_size],
         server_settings[ServerSetting::iceberg_manifest_decode_thread_pool_queue_size]);
 
+    getAIRequestThreadPool().initialize(
+        server_settings[ServerSetting::ai_function_max_thread_pool_size],
+        server_settings[ServerSetting::ai_function_max_thread_pool_free_size],
+        server_settings[ServerSetting::ai_function_thread_pool_queue_size]);
+
     std::string path_str = getCanonicalPath(String(server_settings[ServerSetting::path]), original_working_directory);
     fs::path path = path_str;
 
@@ -2292,6 +2303,15 @@ try
     }
     global_context->setUncompressedCache(uncompressed_cache_policy, uncompressed_cache_size, uncompressed_cache_size_ratio);
 
+    if (server_settings[ServerSetting::enable_gpu])
+    {
+#if USE_GPU
+        global_context->setGPU(server_settings);
+#else
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server setting `enable_gpu` is set, but the server is built without GPU support");
+#endif
+    }
+
     String mark_cache_policy = server_settings[ServerSetting::mark_cache_policy];
     size_t mark_cache_size = server_settings[ServerSetting::mark_cache_size];
     double mark_cache_size_ratio = server_settings[ServerSetting::mark_cache_size_ratio];
@@ -2682,6 +2702,8 @@ try
 
             DB::abort_on_logical_error.store(new_server_settings[ServerSetting::abort_on_logical_error], std::memory_order_relaxed);
 
+            ConnectionRegistry::instance().setEnabled(new_server_settings[ServerSetting::collect_connection_metrics]);
+
             /// The seccomp filter cannot be changed once installed; `system.server_settings` keeps showing the mode in force.
             if (const auto requested_seccomp_mode = getRequestedSeccompMode();
                 requested_seccomp_mode && *requested_seccomp_mode != new_server_settings[ServerSetting::seccomp].value)
@@ -2960,6 +2982,11 @@ try
                 new_server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_size],
                 new_server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_free_size],
                 new_server_settings[ServerSetting::iceberg_manifest_decode_thread_pool_queue_size]);
+
+            getAIRequestThreadPool().reloadConfiguration(
+                new_server_settings[ServerSetting::ai_function_max_thread_pool_size],
+                new_server_settings[ServerSetting::ai_function_max_thread_pool_free_size],
+                new_server_settings[ServerSetting::ai_function_thread_pool_queue_size]);
 
             global_context->setMergeWorkload(new_server_settings[ServerSetting::merge_workload]);
             global_context->setMutationWorkload(new_server_settings[ServerSetting::mutation_workload]);
