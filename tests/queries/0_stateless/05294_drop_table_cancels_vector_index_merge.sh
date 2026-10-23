@@ -30,8 +30,12 @@ $CLICKHOUSE_CLIENT -m -q "
 $CLICKHOUSE_CLIENT -q "OPTIMIZE TABLE tab FINAL" >/dev/null 2>&1 &
 optimize_pid=$!
 
+merge_started=0
 for _ in {1..600}; do
-    [ "$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.merges WHERE database = currentDatabase() AND table = 'tab' AND elapsed > 3")" != 0 ] && break
+    if [ "$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.merges WHERE database = currentDatabase() AND table = 'tab' AND elapsed > 3")" != 0 ]; then
+        merge_started=1
+        break
+    fi
     sleep 0.1
 done
 
@@ -44,7 +48,9 @@ wait $optimize_pid
 elapsed=$(( $(date +%s) - start ))
 wait $drop_pid
 
-if [ "$elapsed" -lt 30 ]; then
+if [ "$merge_started" -eq 0 ]; then
+    echo "The merge did not run for more than 3 seconds"
+elif [ "$elapsed" -lt 30 ]; then
     echo "OK"
 else
     echo "Cancelling the merge took $elapsed seconds"
