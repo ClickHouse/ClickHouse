@@ -656,9 +656,9 @@ public:
 
             /// Wrapping arithmetic: the values of arbitrary decimals may be far outside the range of the
             /// date lookup table, and the result is only required to be deterministic.
-            const Int64 src_diff = static_cast<Int64>(static_cast<UInt64>(src_whole) - static_cast<UInt64>(src_prev_value));
+            const Int64 src_diff = static_cast<Int64>(common::subIgnoreOverflow(static_cast<UInt64>(src_whole), static_cast<UInt64>(src_prev_value)));
             const Int64 res_diff = transformSigned(src_diff, seed);
-            const Int64 new_datetime = static_cast<Int64>(static_cast<UInt64>(res_prev_value) + static_cast<UInt64>(res_diff));
+            const Int64 new_datetime = static_cast<Int64>(common::addIgnoreOverflow(static_cast<UInt64>(res_prev_value), static_cast<UInt64>(res_diff)));
 
             const auto year = date_lut.toYear(src_whole);
             const auto month = date_lut.toMonth(src_whole);
