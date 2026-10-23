@@ -1,15 +1,30 @@
-key prime: result 2, same as without cache 1, granules as expected 1
-key shifted: result 2, same as without cache 1, granules as expected 1
-key before matches: result 0, same as without cache 1, granules as expected 1
-key including matches: result 2, same as without cache 1, granules as expected 1
-float prime: result 1, same as without cache 1, granules as expected 1
-float narrower: result 1, same as without cache 1, granules as expected 1
-float wider: result 1, same as without cache 1, granules as expected 1
-integer prime: result 1, same as without cache 1, granules as expected 1
-integer narrower: result 1, same as without cache 1, granules as expected 1
-decimal prime: result 1, same as without cache 1, granules as expected 1
-decimal narrower: result 1, same as without cache 1, granules as expected 1
-nan prime: result 899001, same as without cache 1, granules as expected 1
-nan: result 2, same as without cache 1, granules as expected 1
-nan reversed prime: result 2, same as without cache 1, granules as expected 1
-nan reversed: result 2, same as without cache 1, granules as expected 1
+key prime	2
+key shifted	2
+key before matches	0
+key including matches	2
+float prime	1
+float narrower	1
+float wider	1
+integer prime	1
+integer narrower	1
+decimal prime	1
+decimal narrower	1
+nan prime	899001
+nan	2
+nan reversed prime	2
+nan reversed	2
+decimal narrower	granules as expected
+decimal prime	granules as expected
+float narrower	granules as expected
+float prime	granules as expected
+float wider	granules as expected
+integer narrower	granules as expected
+integer prime	granules as expected
+key before matches	granules as expected
+key including matches	granules as expected
+key prime	granules as expected
+key shifted	granules as expected
+nan	granules as expected
+nan prime	granules as expected
+nan reversed	granules as expected
+nan reversed prime	granules as expected

@@ -1,25 +1,50 @@
-where prime: result 2, same as without cache 1, granules as expected 1
-where shifted: result 2, same as without cache 1, granules as expected 1
-where narrower: result 2, same as without cache 1, granules as expected 1
-where wider: result 2, same as without cache 1, granules as expected 1
-where string: result 2, same as without cache 1, granules as expected 1
-where string shifted: result 2, same as without cache 1, granules as expected 1
-where not: result 2, same as without cache 1, granules as expected 1
-where not shifted: result 2, same as without cache 1, granules as expected 1
-where before matches: result 0, same as without cache 1, granules as expected 1
-where including matches: result 2, same as without cache 1, granules as expected 1
-where other condition: result 799999, same as without cache 1, granules as expected 1
-prewhere prime: result 2, same as without cache 1, granules as expected 1
-prewhere shifted: result 2, same as without cache 1, granules as expected 1
-prewhere narrower: result 2, same as without cache 1, granules as expected 1
-prewhere wider: result 2, same as without cache 1, granules as expected 1
-prewhere string: result 2, same as without cache 1, granules as expected 1
-prewhere string shifted: result 2, same as without cache 1, granules as expected 1
-prewhere not: result 2, same as without cache 1, granules as expected 1
-prewhere not shifted: result 2, same as without cache 1, granules as expected 1
-prewhere before matches: result 0, same as without cache 1, granules as expected 1
-prewhere including matches: result 2, same as without cache 1, granules as expected 1
-prewhere other condition: result 799999, same as without cache 1, granules as expected 1
-disabled: result 2, same as without cache 1, granules as expected 1
-now prime: result 2, same as without cache 1, granules as expected 1
-now moved: result 2, same as without cache 1, granules as expected 1
+where prime	2
+where shifted	2
+where narrower	2
+where wider	2
+where string	2
+where string shifted	2
+where not	2
+where not shifted	2
+where before matches	0
+where including matches	2
+where other condition	799999
+prewhere prime	2
+prewhere shifted	2
+prewhere narrower	2
+prewhere wider	2
+prewhere string	2
+prewhere string shifted	2
+prewhere not	2
+prewhere not shifted	2
+prewhere before matches	0
+prewhere including matches	2
+prewhere other condition	799999
+disabled	2
+now prime	2
+now moved	2
+disabled	granules as expected
+now moved	granules as expected
+now prime	granules as expected
+prewhere before matches	granules as expected
+prewhere including matches	granules as expected
+prewhere narrower	granules as expected
+prewhere not	granules as expected
+prewhere not shifted	granules as expected
+prewhere other condition	granules as expected
+prewhere prime	granules as expected
+prewhere shifted	granules as expected
+prewhere string	granules as expected
+prewhere string shifted	granules as expected
+prewhere wider	granules as expected
+where before matches	granules as expected
+where including matches	granules as expected
+where narrower	granules as expected
+where not	granules as expected
+where not shifted	granules as expected
+where other condition	granules as expected
+where prime	granules as expected
+where shifted	granules as expected
+where string	granules as expected
+where string shifted	granules as expected
+where wider	granules as expected
