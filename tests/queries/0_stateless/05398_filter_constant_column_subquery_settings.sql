@@ -25,8 +25,11 @@ FROM
 SETTINGS optimize_constant_columns_after_filter = 0;
 
 -- Only a part of the predicate moves to `PREWHERE`, the rest stays in a filter above the read.
+-- The sparse serialization of `a` is disabled: otherwise `a = 1` may look more expensive than `x = ...`
+-- and `x = ...` is moved to `PREWHERE` instead.
 DROP TABLE IF EXISTS t_filter_const_subquery_settings;
-CREATE TABLE t_filter_const_subquery_settings (a UInt8, x String) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_filter_const_subquery_settings (a UInt8, x String) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS ratio_of_defaults_for_sparse_serialization = 1;
 INSERT INTO t_filter_const_subquery_settings SELECT number % 2, repeat('x', 1000) FROM numbers(4);
 
 SELECT 'partial PREWHERE, inner disabled, outer enabled';
