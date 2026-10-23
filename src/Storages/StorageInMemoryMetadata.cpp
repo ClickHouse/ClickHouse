@@ -1028,6 +1028,8 @@ void StorageInMemoryMetadata::addImplicitIndicesForColumn(const ColumnDescriptio
             {
                 /// An index that cannot be built, e.g. over an ALIAS whose dictionary, `Join` table or function is gone, is not generated.
                 auto index = createImplicitMinMaxIndexDescription(column.name, columns, escape_index_filenames, context);
+                /// An index may not have an alias, and one inside the expression of an ALIAS column reaches the index with it.
+                KeyDescription::checkNoAlias(index.expression_list_ast.get(), "INDEX " + index.name);
                 static const MergeTreeSettings default_settings;
                 MergeTreeIndexFactory::instance().validate(index, false, default_settings);
                 secondary_indices.push_back(std::move(index));
