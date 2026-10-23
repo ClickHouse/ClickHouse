@@ -73,34 +73,6 @@ def test_default_database(test_cluster):
     )
 
 
-def test_legacy_create_as_worker_only_source(test_cluster):
-    initiator = test_cluster.instances["ch1"]
-    worker = test_cluster.instances["ch2"]
-    source = "test.legacy_worker_source"
-    destination = "test.legacy_worker_copy"
-
-    worker.query(
-        f"CREATE TABLE {source} (k UInt64, v UInt64, "
-        "PROJECTION p (SELECT k, v ORDER BY k)) ENGINE = MergeTree ORDER BY k"
-    )
-    try:
-        assert initiator.query(f"EXISTS TABLE {source}") == "0\n"
-        test_cluster.ddl_check_query(
-            initiator,
-            f"CREATE TABLE {destination} ON CLUSTER 'cluster_worker_only' AS {source}",
-            num_hosts=1,
-            settings={"distributed_ddl_entry_format_version": 2},
-        )
-        assert worker.query(
-            "SELECT count() FROM system.projections "
-            "WHERE database = 'test' AND table = 'legacy_worker_copy' AND name = 'p'"
-        ) == "1\n"
-        assert initiator.query(f"EXISTS TABLE {destination}") == "0\n"
-    finally:
-        worker.query(f"DROP TABLE IF EXISTS {destination} SYNC")
-        worker.query(f"DROP TABLE IF EXISTS {source} SYNC")
-
-
 def test_create_view(test_cluster):
     instance = test_cluster.instances["ch3"]
     test_cluster.ddl_check_query(

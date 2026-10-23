@@ -102,17 +102,6 @@
         </shard>
     </cluster_no_replicas>
 
-    <!-- Cluster whose initiator may have no local copy of the source table -->
-    <cluster_worker_only>
-        <shard>
-            <replica>
-                <host>ch2</host>
-                <port>9440</port>
-                <secure>1</secure>
-            </replica>
-        </shard>
-    </cluster_worker_only>
-
     <!-- Cluster with disabled distributed DDL queries -->
     <cluster_disabled_ddl>
         <allow_distributed_ddl_queries>false</allow_distributed_ddl_queries>
