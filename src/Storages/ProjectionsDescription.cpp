@@ -865,7 +865,10 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
         /// Expand matchers with the translator and source columns used by the legacy interpreter,
         /// which defines the projection's stored columns. Do this before its function rewrites so
         /// codec declarations can still name the original `SELECT` outputs.
-        auto visible_query_ast = result.query_ast->clone();
+        /// Start again from the projection's own query: `result.query_ast` of a filtered normal projection
+        /// already has its single appended `ORDER BY` child replaced with the columns it reads, so dropping
+        /// its last child would leave ordering inputs among the visible outputs.
+        auto visible_query_ast = query.cloneToASTSelect();
         if (projection_order_by)
         {
             auto & visible_select = visible_query_ast->as<ASTSelectQuery &>().select()->as<ASTExpressionList &>();
@@ -1027,8 +1030,10 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     {
         /// The interpreter strips output aliases and expands source `ALIAS` columns, giving
         /// the names stored in the projection part.
+        /// Without `ORDER BY` the stored list is exactly the visible outputs. With it, what `ORDER BY` appends
+        /// follows them, and a filtered normal projection appends only the columns it reads, possibly none.
         const auto & stored_select = select.getQuery()->as<const ASTSelectQuery &>().select()->children;
-        if (stored_select.size() < visible_output_names.size() + (projection_order_by ? 1 : 0)
+        if (stored_select.size() < visible_output_names.size()
             || (!projection_order_by && stored_select.size() != visible_output_names.size()))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Cannot bind codec declarations to the outputs of projection {}", backQuote(result.name));
