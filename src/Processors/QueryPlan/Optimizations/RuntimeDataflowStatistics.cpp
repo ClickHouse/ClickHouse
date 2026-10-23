@@ -141,6 +141,12 @@ bool isSerializedAsSingleStreamOfColumnType(const ISerialization & serialization
     return num_streams == 1 && stream_is_column_itself;
 }
 
+/// To avoid spending too much time on serialization, we limit the number of rows to serialize.
+static size_t numRowsToSample(size_t rows)
+{
+    return std::max<size_t>(std::min(8192ul, rows), rows / 10);
+}
+
 /// Tries to estimate compressed size of a column by serializing a sample of it.
 static std::pair<size_t, size_t> estimateCompressedColumnSize(const ColumnWithTypeAndName & column, const ColumnCodecs & codecs)
 {
@@ -156,11 +162,20 @@ static std::pair<size_t, size_t> estimateCompressedColumnSize(const ColumnWithTy
     const auto & codec = sample_matches_type_specific_codec ? codecs.type_specific : codecs.generic;
     NullWriteBuffer null_buf;
     CompressedWriteBuffer compressed_buf(null_buf, codec);
-    // To avoid spending too much time on serialization, we limit the number of rows to serialize.
-    const auto limit = std::max<size_t>(std::min(8192ul, column_to_write->size()), column_to_write->size() / 10);
+    const auto limit = numRowsToSample(column_to_write->size());
     NativeWriter::writeData(*serialization, column_to_write, compressed_buf, std::nullopt, 0, limit, DBMS_TCP_PROTOCOL_VERSION);
     compressed_buf.finalize();
     // Return pair of (sample size, compressed size), note that both sizes are based on limited number of rows.
+    return std::make_pair(compressed_buf.count(), null_buf.count());
+}
+
+/// Returns pair of (sample size, compressed size) of `data` as a whole.
+static std::pair<size_t, size_t> estimateCompressedSize(std::string_view data, const CompressionCodecPtr & codec)
+{
+    NullWriteBuffer null_buf;
+    CompressedWriteBuffer compressed_buf(null_buf, codec);
+    compressed_buf.write(data.data(), data.size());
+    compressed_buf.finalize();
     return std::make_pair(compressed_buf.count(), null_buf.count());
 }
 
@@ -199,14 +214,6 @@ bool RuntimeDataflowStatisticsCacheUpdater::shouldSampleBlock(Statistics & stati
         return false;
     const auto counter = statistics.counter.fetch_add(1, std::memory_order_relaxed);
     return counter % 5 == 0 && counter < 25;
-}
-
-bool RuntimeDataflowStatisticsCacheUpdater::shouldSampleInputBlock(size_t block_rows)
-{
-    /// A block read from a part always has a byte hint (see `recordInputColumns`).
-    auto & statistics = duplicated ? block->duplicated_bytes_statistics[InputStatisticsType::WithByteHint]
-                                   : block->input_bytes_statistics[InputStatisticsType::WithByteHint];
-    return shouldSampleBlock(statistics, block_rows);
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
@@ -411,7 +418,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateColumnSizes(
 void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
     const ColumnsWithTypeAndName & input_columns,
     const NameSet & partially_read_columns,
-    const std::unordered_map<String, size_t> & bytes_skipped_by_string_value_filters,
+    const StringValuesSkippedInBlockByColumn & string_values_skipped_by_filters,
     const NamesAndTypesList & part_columns,
     const ColumnSizeByName & column_sizes,
     const ColumnCodecByName & column_codecs,
@@ -431,11 +438,11 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
     /// The values replaced with empty strings were read from disk all the same.
     auto get_bytes_skipped = [&](const String & name) -> size_t
     {
-        const auto it = bytes_skipped_by_string_value_filters.find(name);
-        return it == bytes_skipped_by_string_value_filters.end() ? 0 : it->second;
+        const auto it = string_values_skipped_by_filters.find(name);
+        return it == string_values_skipped_by_filters.end() ? 0 : it->second.bytes;
     };
-    for (const auto & [_, bytes_skipped] : bytes_skipped_by_string_value_filters)
-        read_bytes += bytes_skipped;
+    for (const auto & [_, skipped] : string_values_skipped_by_filters)
+        read_bytes += skipped.bytes;
 
     size_t sample_bytes = 0;
     size_t compressed_bytes = 0;
@@ -486,11 +493,25 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
                         const auto codec_it = column_codecs.find(column.name);
                         /// A column with no `CODEC` of its own is written with the part's default codec,
                         /// which is generic, so it applies to any serialization layout.
-                        const auto [sample, compressed] = estimateCompressedColumnSize(
-                            column,
-                            codec_it == column_codecs.end() ? ColumnCodecs{.generic = default_codec} : codec_it->second);
+                        const ColumnCodecs codecs = codec_it == column_codecs.end() ? ColumnCodecs{.generic = default_codec} : codec_it->second;
+                        const auto [sample, compressed] = estimateCompressedColumnSize(column, codecs);
                         sample_bytes += sample;
                         compressed_bytes += compressed;
+
+                        /// The values replaced with empty strings are missing from the column, so they are estimated
+                        /// from a sample of them, in the proportion of the rows of the column sampled above.
+                        const auto skipped_it = string_values_skipped_by_filters.find(column.name);
+                        if (skipped_it != string_values_skipped_by_filters.end() && !skipped_it->second.sample.empty())
+                        {
+                            const auto & skipped = skipped_it->second;
+                            const auto [skipped_sample, skipped_compressed] = estimateCompressedSize(skipped.sample, codecs.generic);
+                            const size_t rows = column.column->size();
+                            const double skipped_bytes
+                                = static_cast<double>(skipped.bytes) * static_cast<double>(numRowsToSample(rows)) / static_cast<double>(rows);
+                            sample_bytes += static_cast<size_t>(skipped_bytes);
+                            compressed_bytes += static_cast<size_t>(
+                                skipped_bytes * static_cast<double>(skipped_compressed) / static_cast<double>(skipped_sample));
+                        }
                     }
                 }
             }

@@ -103,12 +103,12 @@ public:
 
     /// Returns the total size of the values that the string value filters replaced with empty strings since
     /// the previous call, keyed by the column name in the part, and resets it. The in-memory size of the read
-    /// columns misses these values, although they were read from disk.
-    std::unordered_map<String, size_t> takeBytesSkippedByStringValueFilters();
+    /// columns misses these values, although they were read from disk. The returned samples are valid until
+    /// the next read.
+    StringValuesSkippedInBlockByColumn takeStringValuesSkippedByFilters();
 
-    bool hasStringValueFilters() const { return !string_value_filters_by_part_column_name.empty(); }
-    /// Allows to read the values in full for a while, e.g. to take a sample of them.
-    void setStringValueFiltersEnabled(bool enabled) { string_value_filters_enabled = enabled; }
+    /// Keeps the beginning of the skipped values, see `StringValuesSkippedByFilter::sample`.
+    void setMaxSampleBytesOfStringValuesSkippedByFilters(size_t max_sample_bytes);
 
     size_t getFirstMarkToRead() const { return all_mark_ranges.front().begin; }
 
@@ -165,7 +165,7 @@ protected:
     bool isSubcolumnOffsetsOfNested(const String & name_in_storage, const String & subcolumn_name) const;
 
     /// Sets the string value filter to apply during deserialization of the column, or resets it if there is none,
-    /// together with the counter of the bytes it skips (see `takeBytesSkippedByStringValueFilters`).
+    /// together with the account of the values it skips (see `takeStringValuesSkippedByFilters`).
     /// Takes the column as it is named in the part (an element of `columns_to_read`).
     /// See `MergeTreeReaderSettings::string_value_filters`.
     void setStringValueFilter(const NameAndTypePair & column_in_part, ISerialization::DeserializeBinaryBulkSettings & deserialize_settings);
@@ -279,14 +279,12 @@ private:
     struct StringValueFilterForColumn
     {
         StringValueFilterPtr filter;
-        /// The total size of the values replaced with empty strings, see `takeBytesSkippedByStringValueFilters`.
-        size_t bytes_skipped = 0;
+        StringValuesSkippedByFilter skipped;
     };
 
     /// String value filters from `settings.string_value_filters` for the columns that pass all
     /// the applicability checks, keyed by the column name in the part. Filled in the constructor.
     std::unordered_map<String, StringValueFilterForColumn> string_value_filters_by_part_column_name;
-    bool string_value_filters_enabled = true;
 
     /// Fields of virtual columns that were filled in previous stages.
     VirtualFields virtual_fields;

@@ -136,16 +136,11 @@ void MergeTreeReadTask::Readers::updateReadRequestMap(const MarkRangesPtr & requ
         patches[i]->getReader()->updateReadRequestMap(patch_request_maps[i]);
 }
 
-bool MergeTreeReadTask::Readers::hasStringValueFilters() const
+void MergeTreeReadTask::Readers::setMaxSampleBytesOfStringValuesSkippedByFilters(size_t max_sample_bytes)
 {
-    return main->hasStringValueFilters() || std::ranges::any_of(prewhere, [](const auto & reader) { return reader->hasStringValueFilters(); });
-}
-
-void MergeTreeReadTask::Readers::setStringValueFiltersEnabled(bool enabled)
-{
-    main->setStringValueFiltersEnabled(enabled);
+    main->setMaxSampleBytesOfStringValuesSkippedByFilters(max_sample_bytes);
     for (auto & reader : prewhere)
-        reader->setStringValueFiltersEnabled(enabled);
+        reader->setMaxSampleBytesOfStringValuesSkippedByFilters(max_sample_bytes);
 }
 
 MergeTreeReadTask::MergeTreeReadTask(
@@ -183,13 +178,15 @@ MergeTreeReadTask::MergeTreeReadTask(
         }
 
         /// Without the sizes of the columns of the part, the compression ratio is taken from a sample of the read
-        /// blocks, and the values replaced with empty strings by a string value filter would make it meaningless.
+        /// blocks, which misses the values replaced with empty strings by a string value filter, so a sample of
+        /// them is kept aside. The default `min_compress_block_size` is enough to see how they compress.
         const auto part_column_sizes = info->data_part_info->getColumnSizes();
-        read_sampled_blocks_without_string_value_filters = (!part_column_sizes || part_column_sizes->empty()) && readers.hasStringValueFilters();
+        if (!part_column_sizes || part_column_sizes->empty())
+            readers.setMaxSampleBytesOfStringValuesSkippedByFilters(64 * 1024);
 
         dataflow_cache_update_cb = [this, default_codec, column_codecs = std::move(resolved_codecs)](const ColumnsWithTypeAndName & columns,
                                                            const NameSet & partially_read_columns,
-                                                           const std::unordered_map<String, size_t> & bytes_skipped_by_string_value_filters,
+                                                           const StringValuesSkippedInBlockByColumn & string_values_skipped_by_filters,
                                                            size_t read_bytes,
                                                            std::optional<bool> & should_continue_sampling) -> void
         {
@@ -201,7 +198,7 @@ MergeTreeReadTask::MergeTreeReadTask(
             updater->recordInputColumns(
                 columns,
                 partially_read_columns,
-                bytes_skipped_by_string_value_filters,
+                string_values_skipped_by_filters,
                 part_columns,
                 column_sizes ? *column_sizes : no_column_sizes,
                 column_codecs,
@@ -547,16 +544,7 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
     UInt64 recommended_rows = estimateNumRows();
     UInt64 rows_to_read = std::max(static_cast<UInt64>(1), std::min(block_size_params.max_block_size_rows, recommended_rows));
 
-    /// A sampled block is read in full, see `read_sampled_blocks_without_string_value_filters`. Only a few blocks
-    /// of a query are sampled, so it costs little.
-    std::optional<bool> should_sample_block;
-    if (read_sampled_blocks_without_string_value_filters)
-    {
-        should_sample_block = updater->shouldSampleInputBlock(rows_to_read);
-        readers.setStringValueFiltersEnabled(!*should_sample_block);
-    }
-    auto read_result = readers_chain.read(
-        rows_to_read, mark_ranges, patches_mark_ranges, dataflow_cache_update_cb, block_size_params.max_block_size_rows, should_sample_block);
+    auto read_result = readers_chain.read(rows_to_read, mark_ranges, patches_mark_ranges, dataflow_cache_update_cb, block_size_params.max_block_size_rows);
 
     /// All rows were filtered. Repeat.
     if (read_result.num_rows == 0)

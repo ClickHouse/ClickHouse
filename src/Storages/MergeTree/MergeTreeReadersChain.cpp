@@ -300,8 +300,7 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
     MarkRanges & ranges,
     std::vector<MarkRanges> & patch_ranges,
     const DataflowCacheUpdateCallback & dataflow_cache_update_cb,
-    size_t max_block_size_rows,
-    std::optional<bool> should_sample_block)
+    size_t max_block_size_rows)
 {
     if (max_rows == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected at least 1 row to read, got 0.");
@@ -330,7 +329,7 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
         throw;
     }
 
-    std::optional<bool> should_continue_sampling = should_sample_block;
+    std::optional<bool> should_continue_sampling;
     if (read_result.num_rows != 0)
     {
         first_reader.getReader()->fillVirtualColumns(read_result.columns, read_result.num_rows);
@@ -340,7 +339,7 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
             dataflow_cache_update_cb(
                 toColumnsWithTypeAndName(read_result.columns, first_reader.getReader()->getColumnsToRead()),
                 first_reader.getReader()->getPartiallyReadColumns(),
-                first_reader.getReader()->takeBytesSkippedByStringValueFilters(),
+                first_reader.getReader()->takeStringValuesSkippedByFilters(),
                 read_result.num_bytes_read,
                 should_continue_sampling);
 
@@ -383,7 +382,7 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
                 dataflow_cache_update_cb(
                     toColumnsWithTypeAndName(columns, range_readers[i].getReader()->getColumnsToRead()),
                     range_readers[i].getReader()->getPartiallyReadColumns(),
-                    range_readers[i].getReader()->takeBytesSkippedByStringValueFilters(),
+                    range_readers[i].getReader()->takeStringValuesSkippedByFilters(),
                     read_result.num_bytes_read - num_bytes_read_so_far,
                     should_continue_sampling);
             }

@@ -2,8 +2,10 @@
 
 #include <base/types.h>
 
+#include <algorithm>
 #include <atomic>
 #include <memory>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -146,5 +148,31 @@ using StringValueFilterPtr = std::shared_ptr<const StringValueFilter>;
 /// Filters for multiple columns, keyed by the column name.
 using StringValueFilters = std::unordered_map<String, StringValueFilterPtr>;
 using StringValueFiltersPtr = std::shared_ptr<const StringValueFilters>;
+
+/// The values of a column that a `StringValueFilter` replaced with empty strings. The in-memory size of the
+/// read column misses them, although they were read from disk.
+struct StringValuesSkippedByFilter
+{
+    /// The total size of the values.
+    size_t bytes = 0;
+    /// The beginning of the concatenated values, at most `max_sample_bytes` long, to estimate how they compress.
+    /// It is bounded, because a value can be arbitrarily long.
+    String sample;
+    size_t max_sample_bytes = 0;
+
+    void addToSample(const char * data, size_t size)
+    {
+        if (sample.size() < max_sample_bytes)
+            sample.append(data, std::min(size, max_sample_bytes - sample.size()));
+    }
+};
+
+/// The values skipped in one read block, and the sample of the values skipped so far, by column name.
+struct StringValuesSkippedInBlock
+{
+    size_t bytes = 0;
+    std::string_view sample;
+};
+using StringValuesSkippedInBlockByColumn = std::unordered_map<String, StringValuesSkippedInBlock>;
 
 }

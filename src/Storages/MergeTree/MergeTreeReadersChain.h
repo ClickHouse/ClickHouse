@@ -39,7 +39,7 @@ class MergeTreeReadersChain
     using DataflowCacheUpdateCallback = std::function<void(
         const ColumnsWithTypeAndName & columns,
         const NameSet & partially_read_columns,
-        const std::unordered_map<String, size_t> & bytes_skipped_by_string_value_filters,
+        const StringValuesSkippedInBlockByColumn & string_values_skipped_by_filters,
         size_t read_bytes,
         std::optional<bool> & should_continue_sampling)>;
 
@@ -52,7 +52,7 @@ public:
 
     ReadResult
     read(size_t max_rows, MarkRanges & ranges, std::vector<MarkRanges> & patch_ranges, const DataflowCacheUpdateCallback & update_cb = {},
-         size_t max_block_size_rows = 0, std::optional<bool> should_sample_block = {});
+         size_t max_block_size_rows = 0);
 
     size_t numReadRowsInCurrentGranule() const;
     size_t numPendingRowsInCurrentGranule() const;

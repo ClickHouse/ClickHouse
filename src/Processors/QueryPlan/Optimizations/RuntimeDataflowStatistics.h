@@ -12,6 +12,7 @@
 #include <Compression/ICompressionCodec.h>
 #include <Storages/ColumnSize.h>
 #include <Common/CacheBase.h>
+#include <Common/StringValueFilter.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <cstddef>
@@ -230,23 +231,18 @@ public:
     /// It is needed because in general we read each block in multiple steps because of prewhere.
     /// If the first part of the block was chosen for sampling, we want to record statistics for the whole block in later steps,
     /// so should_continue_sampling remains true for subsequent calls for the same logical block.
-    /// `bytes_skipped_by_string_value_filters` are the sizes of the values read from disk but replaced with
-    /// empty strings in `input_columns` (see `StringValueFilter`), by column name.
+    /// `string_values_skipped_by_filters` are the values read from disk but replaced with empty strings
+    /// in `input_columns` (see `StringValueFilter`), by column name.
     void recordInputColumns(
         const ColumnsWithTypeAndName & input_columns,
         const NameSet & partially_read_columns,
-        const std::unordered_map<String, size_t> & bytes_skipped_by_string_value_filters,
+        const StringValuesSkippedInBlockByColumn & string_values_skipped_by_filters,
         const NamesAndTypesList & part_columns,
         const ColumnSizeByName & column_sizes,
         const ColumnCodecByName & column_codecs,
         const CompressionCodecPtr & default_codec,
         size_t read_bytes,
         std::optional<bool> & should_continue_sampling);
-
-    /// Decides ahead of reading whether the next read block of `block_rows` rows is sampled by `recordInputColumns`,
-    /// for a reader that has to read a sampled block differently. The decision is handed to `recordInputColumns`
-    /// as `should_continue_sampling`.
-    bool shouldSampleInputBlock(size_t block_rows);
 
     /// Ignored for duplicated reads: they only refine the duplicated-read gate, so a read that cannot be
     /// measured there must not drop the statistics that decide whether parallel replicas are considered at all.

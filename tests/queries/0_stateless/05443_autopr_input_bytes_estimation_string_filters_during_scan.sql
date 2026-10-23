@@ -23,6 +23,8 @@ DROP TABLE IF EXISTS t_wide;
 DROP TABLE IF EXISTS t_compact;
 DROP TABLE IF EXISTS t_compact_unread_compressible;
 DROP TABLE IF EXISTS t_compact_unread_incompressible;
+DROP TABLE IF EXISTS t_compact_large_values;
+DROP TABLE IF EXISTS t_compact_skip_index;
 
 -- Statistics are disabled so that reading them is not accounted in `ReadCompressedBytes`.
 -- A wide part has per-column sizes, a compact part does not, and the estimate takes the compression ratio differently for the two.
@@ -54,6 +56,22 @@ SELECT count(), max(id) FROM t_wide WHERE s LIKE '%needle%' SETTINGS log_comment
 SELECT count() FROM t_compact_unread_compressible WHERE s LIKE '%needle%' SETTINGS log_comment='query_compact_unread_compressible';
 SELECT count() FROM t_compact_unread_incompressible WHERE s LIKE '%needle%' SETTINGS log_comment='query_compact_unread_incompressible';
 
+-- Only a bounded sample of the replaced values is kept to estimate how they compress: they can be long, and holding
+-- them in full would take far more memory than the read itself. The values are 1 MiB each, a granule has all of them.
+CREATE TABLE t_compact_large_values(id UInt64, s String) ENGINE=MergeTree ORDER BY id
+SETTINGS auto_statistics_types='', index_granularity=8192, index_granularity_bytes=1073741824, min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18;
+INSERT INTO t_compact_large_values SELECT number, concat(if(number = 0, 'needle', ''), repeat(hex(cityHash64(number)), 65536)) FROM numbers(64);
+SELECT count() FROM t_compact_large_values WHERE s LIKE '%needle%' SETTINGS max_threads=1, max_memory_usage='32Mi', log_comment='large_values';
+
+-- The parts without matches are rejected by the skip index while reading, and a rejected read task must not
+-- use up the blocks to sample, or the part with matches, which comes last, has no sample to estimate the input.
+CREATE TABLE t_compact_skip_index(id UInt64, s String, INDEX idx s TYPE ngrambf_v1(3, 32768, 2, 0) GRANULARITY 1) ENGINE=MergeTree
+PARTITION BY intDiv(id, 1024) ORDER BY id
+SETTINGS auto_statistics_types='', index_granularity=8192, min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18;
+INSERT INTO t_compact_skip_index SELECT id, s FROM t_wide WHERE id < 32768 AND (id % 100 != 0 OR id >= 31744);
+SELECT count() FROM t_compact_skip_index WHERE s LIKE '%needle%'
+SETTINGS max_threads=1, use_skip_indexes=1, use_skip_indexes_on_data_read=1, log_comment='skip_index';
+
 SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
 
 SYSTEM FLUSH LOGS query_log;
@@ -63,6 +81,10 @@ SELECT log_comment, ProfileEvents['StringValueFilterValuesReplaced'] > 0
 FROM system.query_log
 WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTES') AND (current_database = currentDatabase()) AND (log_comment LIKE 'query_%') AND (type = 'QueryFinish')
 ORDER BY event_time_microseconds;
+
+SELECT log_comment, ProfileEvents['RuntimeDataflowStatisticsInputBytes'] > 0
+FROM system.query_log
+WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTES') AND (current_database = currentDatabase()) AND (log_comment = 'skip_index') AND (type = 'QueryFinish');
 
 SELECT format('{} {} {}', log_comment, compressed_bytes, statistics_input_bytes)
 FROM (
@@ -80,3 +102,5 @@ DROP TABLE t_wide;
 DROP TABLE t_compact;
 DROP TABLE t_compact_unread_compressible;
 DROP TABLE t_compact_unread_incompressible;
+DROP TABLE t_compact_large_values;
+DROP TABLE t_compact_skip_index;
