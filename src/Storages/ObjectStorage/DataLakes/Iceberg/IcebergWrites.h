@@ -183,7 +183,7 @@ private:
     void finalizeBuffers();
     void releaseBuffers();
     void cancelBuffers();
-    /// Best-effort removal of the files kept across commit retries.
+    /// Best-effort removal of the written data files and manifests; never throws.
     void removeDataFilesAndManifests();
     bool initializeMetadata();
 
