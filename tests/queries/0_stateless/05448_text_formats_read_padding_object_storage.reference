@@ -1,0 +1,22 @@
+-- direct read
+0	0
+1	10
+2	20
+-- page cache, direct read
+0	0
+1	10
+2	20
+1
+-- page cache, prefetching read
+0	0
+1	10
+2	20
+1
+-- page cache, reader executor, read twice
+0	0
+1	10
+2	20
+0	0
+1	10
+2	20
+1
