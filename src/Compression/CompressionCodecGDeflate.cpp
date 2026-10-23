@@ -68,82 +68,6 @@ size_t packedBytes(size_t count, UInt32 bits)
     return (count * bits + 7) / 8;
 }
 
-struct PackedChunk
-{
-    UInt32 bits = 0;
-    UInt64 reference = 0;
-};
-
-template <typename U>
-PackedChunk packIntegers(const char * chunk, size_t chunk_size, bool is_signed, char * out)
-{
-    const U sign_bit = is_signed ? static_cast<U>(U{1} << (8 * sizeof(U) - 1)) : U{0};
-    const size_t count = chunk_size / sizeof(U);
-    U least = unalignedLoadLittleEndian<U>(chunk) ^ sign_bit;
-    U most = least;
-    for (size_t i = 1; i < count; ++i)
-    {
-        const U value = unalignedLoadLittleEndian<U>(chunk + i * sizeof(U)) ^ sign_bit;
-        least = std::min(least, value);
-        most = std::max(most, value);
-    }
-
-    const auto bits = std::max<UInt32>(1, static_cast<UInt32>(std::bit_width(static_cast<UInt64>(static_cast<U>(most - least)))));
-    if (bits > max_packed_bits || bits >= 8 * sizeof(U))
-        return {};
-
-    /// Each integer is ORed into the bytes from the lowest bit of the byte its first bit is in, 8 bytes at a time, which
-    /// hold any 56 bits from any bit offset.
-    memset(out, 0, packedBytes(count, bits) + packed_padding);
-    for (size_t i = 0; i < count; ++i)
-    {
-        const U value = unalignedLoadLittleEndian<U>(chunk + i * sizeof(U)) ^ sign_bit;
-        const UInt64 delta = static_cast<U>(value - least);
-        const size_t first_bit = i * bits;
-        char * const at = out + first_bit / 8;
-        unalignedStoreLittleEndian<UInt64>(at, unalignedLoadLittleEndian<UInt64>(at) | (delta << (first_bit % 8)));
-    }
-    return {.bits = bits, .reference = static_cast<U>(least ^ sign_bit)};
-}
-
-/// Packs the chunk into `out`, of `packedBytes` and `packed_padding` more, if its integers take fewer bits than they are
-/// wide; otherwise returns a chunk of 0 bits.
-PackedChunk pack(const char * chunk, size_t chunk_size, UInt8 element_size, bool is_signed, char * out)
-{
-    switch (element_size)
-    {
-        case 1: return packIntegers<UInt8>(chunk, chunk_size, is_signed, out);
-        case 2: return packIntegers<UInt16>(chunk, chunk_size, is_signed, out);
-        case 4: return packIntegers<UInt32>(chunk, chunk_size, is_signed, out);
-        default: return packIntegers<UInt64>(chunk, chunk_size, is_signed, out);
-    }
-}
-
-template <typename U>
-void unpackIntegers(const char * packed, size_t count, UInt32 bits, UInt64 reference, char * out)
-{
-    const UInt64 mask = (UInt64{1} << bits) - 1;
-    for (size_t i = 0; i < count; ++i)
-    {
-        const size_t first_bit = i * bits;
-        const UInt64 delta = (unalignedLoadLittleEndian<UInt64>(packed + first_bit / 8) >> (first_bit % 8)) & mask;
-        unalignedStoreLittleEndian<U>(out + i * sizeof(U), static_cast<U>(reference + delta));
-    }
-}
-
-/// Writes the `count` integers of `element_size` bytes packed in `bits` bits at `packed`, readable for `packed_padding`
-/// bytes past them.
-void unpack(const char * packed, size_t count, UInt32 bits, UInt32 element_size, UInt64 reference, char * out)
-{
-    switch (element_size)
-    {
-        case 1: unpackIntegers<UInt8>(packed, count, bits, reference, out); break;
-        case 2: unpackIntegers<UInt16>(packed, count, bits, reference, out); break;
-        case 4: unpackIntegers<UInt32>(packed, count, bits, reference, out); break;
-        default: unpackIntegers<UInt64>(packed, count, bits, reference, out); break;
-    }
-}
-
 struct CompressorDeleter
 {
     void operator()(libdeflate_gdeflate_compressor * compressor) const { libdeflate_free_gdeflate_compressor(compressor); }
@@ -156,35 +80,6 @@ struct DecompressorDeleter
         libdeflate_free_gdeflate_decompressor(decompressor);
     }
 };
-
-/// Compresses one page into `out`, of `maxPageBytes`, and returns its compressed size.
-size_t compressPage(libdeflate_gdeflate_compressor * compressor, const char * page_data, size_t page_size, char * out)
-{
-    libdeflate_gdeflate_out_page page{.data = out, .nbytes = maxPageBytes()};
-    if (libdeflate_gdeflate_compress(compressor, page_data, page_size, &page, 1) == 0)
-        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress a chunk of {} bytes with GDeflate", page_size);
-    return page.nbytes;
-}
-
-void decompressPage(const char * compressed, size_t compressed_size, char * out, size_t out_size)
-{
-    thread_local std::unique_ptr<libdeflate_gdeflate_decompressor, DecompressorDeleter> decompressor;
-    if (!decompressor)
-    {
-        decompressor.reset(libdeflate_alloc_gdeflate_decompressor());
-        if (!decompressor)
-            throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Cannot allocate a GDeflate decompressor");
-    }
-
-    libdeflate_gdeflate_in_page page{.data = compressed, .nbytes = compressed_size};
-    size_t decompressed_size = 0;
-    const auto result = libdeflate_gdeflate_decompress(decompressor.get(), &page, 1, out, out_size, &decompressed_size);
-    if (result != LIBDEFLATE_SUCCESS)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress a GDeflate chunk: error code {}", static_cast<int>(result));
-    if (decompressed_size != out_size)
-        throw Exception(
-            ErrorCodes::CANNOT_DECOMPRESS, "A GDeflate chunk expands to {} bytes, where {} were expected", decompressed_size, out_size);
-}
 
 class Chunk
 {
@@ -211,17 +106,19 @@ public:
         if (packed_descriptor)
         {
             element_size = element_size_;
-            const PackedChunk packed_chunk = pack(source, size, element_size, is_signed, packed);
-            if (packed_chunk.bits)
+            pack(source, size, is_signed, packed);
+            if (bits)
             {
-                const size_t packed_size
-                    = compressPage(compressor, packed, packedBytes(size / element_size, packed_chunk.bits), compressed_packed);
+                const size_t packed_size = compressPage(compressor, packed, packedBytes(size / element_size, bits), compressed_packed);
                 if (packed_size < compressed_size)
                 {
                     memcpy(out, compressed_packed, packed_size);
                     compressed_size = static_cast<UInt32>(packed_size);
-                    bits = static_cast<UInt8>(packed_chunk.bits);
-                    reference = packed_chunk.reference;
+                }
+                else
+                {
+                    bits = 0;
+                    reference = 0;
                 }
             }
         }
@@ -232,7 +129,7 @@ public:
     {
         if (bits == 0)
         {
-            decompressPage(in, compressed_size, out, size);
+            decompressPage(in, out, size);
             return;
         }
 
@@ -247,8 +144,8 @@ public:
         const size_t packed_size = packedBytes(count, bits);
         unpacked.resize(packed_size + packed_padding);
         memset(unpacked.data() + packed_size, 0, packed_padding);
-        decompressPage(in, compressed_size, unpacked.data(), packed_size);
-        unpack(unpacked.data(), count, bits, element_size, reference, out);
+        decompressPage(in, unpacked.data(), packed_size);
+        unpack(unpacked.data(), count, out);
     }
 
     void serialize(char * out) const
@@ -279,6 +176,105 @@ private:
     UInt8 bits = 0;
     UInt8 element_size = 0;
     UInt64 reference = 0;
+
+    template <typename U>
+    void packIntegers(const char * source, size_t size, bool is_signed, char * out)
+    {
+        const U sign_bit = is_signed ? static_cast<U>(U{1} << (8 * sizeof(U) - 1)) : U{0};
+        const size_t count = size / sizeof(U);
+        U least = unalignedLoadLittleEndian<U>(source) ^ sign_bit;
+        U most = least;
+        for (size_t i = 1; i < count; ++i)
+        {
+            const U value = unalignedLoadLittleEndian<U>(source + i * sizeof(U)) ^ sign_bit;
+            least = std::min(least, value);
+            most = std::max(most, value);
+        }
+
+        const auto width = std::max<UInt32>(1, static_cast<UInt32>(std::bit_width(static_cast<UInt64>(static_cast<U>(most - least)))));
+        if (width > max_packed_bits || width >= 8 * sizeof(U))
+            return;
+
+        /// Each integer is ORed into the bytes from the lowest bit of the byte its first bit is in, 8 bytes at a time, which
+        /// hold any 56 bits from any bit offset.
+        memset(out, 0, packedBytes(count, width) + packed_padding);
+        for (size_t i = 0; i < count; ++i)
+        {
+            const U value = unalignedLoadLittleEndian<U>(source + i * sizeof(U)) ^ sign_bit;
+            const UInt64 delta = static_cast<U>(value - least);
+            const size_t first_bit = i * width;
+            char * const at = out + first_bit / 8;
+            unalignedStoreLittleEndian<UInt64>(at, unalignedLoadLittleEndian<UInt64>(at) | (delta << (first_bit % 8)));
+        }
+        bits = static_cast<UInt8>(width);
+        reference = static_cast<U>(least ^ sign_bit);
+    }
+
+    /// Packs the chunk into `out`, of `packedBytes` and `packed_padding` more, if its integers take fewer bits than they are
+    /// wide; otherwise leaves `bits` 0.
+    void pack(const char * source, size_t size, bool is_signed, char * out)
+    {
+        switch (element_size)
+        {
+            case 1: packIntegers<UInt8>(source, size, is_signed, out); break;
+            case 2: packIntegers<UInt16>(source, size, is_signed, out); break;
+            case 4: packIntegers<UInt32>(source, size, is_signed, out); break;
+            default: packIntegers<UInt64>(source, size, is_signed, out); break;
+        }
+    }
+
+    template <typename U>
+    void unpackIntegers(const char * packed, size_t count, char * out) const
+    {
+        const UInt64 mask = (UInt64{1} << bits) - 1;
+        for (size_t i = 0; i < count; ++i)
+        {
+            const size_t first_bit = i * bits;
+            const UInt64 delta = (unalignedLoadLittleEndian<UInt64>(packed + first_bit / 8) >> (first_bit % 8)) & mask;
+            unalignedStoreLittleEndian<U>(out + i * sizeof(U), static_cast<U>(reference + delta));
+        }
+    }
+
+    /// Writes the `count` integers packed at `packed`, readable for `packed_padding` bytes past them.
+    void unpack(const char * packed, size_t count, char * out) const
+    {
+        switch (element_size)
+        {
+            case 1: unpackIntegers<UInt8>(packed, count, out); break;
+            case 2: unpackIntegers<UInt16>(packed, count, out); break;
+            case 4: unpackIntegers<UInt32>(packed, count, out); break;
+            default: unpackIntegers<UInt64>(packed, count, out); break;
+        }
+    }
+
+    /// Compresses one page into `out`, of `maxPageBytes`, and returns its compressed size.
+    static size_t compressPage(libdeflate_gdeflate_compressor * compressor, const char * page_data, size_t page_size, char * out)
+    {
+        libdeflate_gdeflate_out_page page{.data = out, .nbytes = maxPageBytes()};
+        if (libdeflate_gdeflate_compress(compressor, page_data, page_size, &page, 1) == 0)
+            throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress a chunk of {} bytes with GDeflate", page_size);
+        return page.nbytes;
+    }
+
+    void decompressPage(const char * in, char * out, size_t out_size) const
+    {
+        thread_local std::unique_ptr<libdeflate_gdeflate_decompressor, DecompressorDeleter> decompressor;
+        if (!decompressor)
+        {
+            decompressor.reset(libdeflate_alloc_gdeflate_decompressor());
+            if (!decompressor)
+                throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Cannot allocate a GDeflate decompressor");
+        }
+
+        libdeflate_gdeflate_in_page page{.data = in, .nbytes = compressed_size};
+        size_t decompressed_size = 0;
+        const auto result = libdeflate_gdeflate_decompress(decompressor.get(), &page, 1, out, out_size, &decompressed_size);
+        if (result != LIBDEFLATE_SUCCESS)
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress a GDeflate chunk: error code {}", static_cast<int>(result));
+        if (decompressed_size != out_size)
+            throw Exception(
+                ErrorCodes::CANNOT_DECOMPRESS, "A GDeflate chunk expands to {} bytes, where {} were expected", decompressed_size, out_size);
+    }
 };
 
 class Header
