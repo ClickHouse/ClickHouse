@@ -1,10 +1,7 @@
 #include <Common/COW.h>
 #include <iostream>
 #include <base/defines.h>
-#include <Examples/clickhouse_examples.h>
 
-namespace
-{
 
 class IColumn : public COW<IColumn>
 {
@@ -12,7 +9,6 @@ private:
     friend class COW<IColumn>;
 
     virtual MutablePtr clone() const = 0;
-    virtual size_t sizeOfObject() const = 0;
     virtual MutablePtr deepMutate() const { return shallowMutate(); }
 
 public:
@@ -74,9 +70,7 @@ void print(const ColumnPtr & x, const ColPtr & y)
     std::cerr << "addresses: " << x.get()         << ", " << y.get()        << "\n";
 }
 
-}
-
-int mainEntryExampleCowCompositions(int, char **)
+int main(int, char **)
 {
     ColumnPtr x = ColumnComposition::create(1);
     ColumnPtr y = x;

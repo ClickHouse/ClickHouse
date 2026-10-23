@@ -1,7 +1,6 @@
 #pragma once
 
 #include <base/types.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Common/levenshteinDistance.h>
 
 #include <algorithm>
@@ -21,7 +20,7 @@ public:
     using DistanceIndex = std::pair<size_t, size_t>;
     using DistanceIndexQueue = std::priority_queue<DistanceIndex>;
 
-    static VectorWithMemoryTracking<String> getHints(const String & name, const VectorWithMemoryTracking<String> & prompting_strings)
+    static std::vector<String> getHints(const String & name, const std::vector<String> & prompting_strings)
     {
         DistanceIndexQueue queue;
         for (size_t i = 0; i < prompting_strings.size(); ++i)
@@ -30,7 +29,7 @@ public:
     }
 
 private:
-    static void appendToQueue(size_t ind, const String & name, DistanceIndexQueue & queue, const VectorWithMemoryTracking<String> & prompting_strings)
+    static void appendToQueue(size_t ind, const String & name, DistanceIndexQueue & queue, const std::vector<String> & prompting_strings)
     {
         const String & prompt = prompting_strings[ind];
 
@@ -52,9 +51,9 @@ private:
         }
     }
 
-    static VectorWithMemoryTracking<String> release(DistanceIndexQueue & queue, const VectorWithMemoryTracking<String> & prompting_strings)
+    static std::vector<String> release(DistanceIndexQueue & queue, const std::vector<String> & prompting_strings)
     {
-        VectorWithMemoryTracking<String> answer;
+        std::vector<String> answer;
         answer.reserve(queue.size());
         while (!queue.empty())
         {
@@ -67,22 +66,22 @@ private:
     }
 };
 
-String getHintsErrorMessageSuffix(const VectorWithMemoryTracking<String> & hints);
+String getHintsErrorMessageSuffix(const std::vector<String> & hints);
 
-void appendHintsMessage(String & error_message, const VectorWithMemoryTracking<String> & hints);
+void appendHintsMessage(String & error_message, const std::vector<String> & hints);
 
 template <size_t MaxNumHints = 1>
 class IHints
 {
 public:
-    virtual VectorWithMemoryTracking<String> getAllRegisteredNames() const = 0;
+    virtual std::vector<String> getAllRegisteredNames() const = 0;
 
-    VectorWithMemoryTracking<String> getHints(const String & name) const
+    std::vector<String> getHints(const String & name) const
     {
         return prompter.getHints(name, getAllRegisteredNames());
     }
 
-    VectorWithMemoryTracking<String> getHints(const String & name, const VectorWithMemoryTracking<String> & prompting_strings) const
+    std::vector<String> getHints(const String & name, const std::vector<String> & prompting_strings) const
     {
         return prompter.getHints(name, prompting_strings);
     }

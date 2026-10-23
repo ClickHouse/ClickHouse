@@ -6,25 +6,18 @@
 #include <Formats/FormatSettings.h>
 #include <Common/IntervalKind.h>
 
+
 namespace DB
 {
 
-class SerializationInterval final : public SerializationNumber<typename DataTypeInterval::FieldType>
+class SerializationInterval : public SerializationNumber<typename DataTypeInterval::FieldType>
 {
-private:
-    explicit SerializationInterval(IntervalKind kind_);
-
 public:
-    static UInt128 getHash(IntervalKind kind_);
-    static SerializationPtr create(IntervalKind kind_);
-
+    explicit SerializationInterval(IntervalKind kind_);
     void serializeText(const IColumn & column, size_t row, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void serializeTextJSON(const IColumn & column, size_t row, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void serializeTextCSV(const IColumn & column, size_t row, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void serializeTextQuoted(const IColumn & column, size_t row, WriteBuffer & ostr, const FormatSettings & settings) const override;
-
-    /// Hive has no Interval type, so the HiveText output format does not support it (throws NOT_IMPLEMENTED).
-    void serializeTextHive(const IColumn & column, size_t row, WriteBuffer & ostr, const FormatSettings & settings) const override;
 private:
     using Base = SerializationNumber<typename DataTypeInterval::FieldType>;
     IntervalKind interval_kind;

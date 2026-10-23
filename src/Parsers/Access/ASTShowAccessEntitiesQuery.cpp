@@ -1,5 +1,4 @@
 #include <Parsers/Access/ASTShowAccessEntitiesQuery.h>
-#include <Parsers/Access/parseAccessEntityName.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 #include <fmt/format.h>
@@ -30,7 +29,7 @@ void ASTShowAccessEntitiesQuery::formatQueryImpl(WriteBuffer & ostr, const Forma
     ostr << "SHOW " << getKeyword();
 
     if (!short_name.empty())
-        ostr << " " << backQuoteAccessEntityNameIfNeed(short_name);
+        ostr << " " << backQuoteIfNeed(short_name);
 
     if (database_and_table_name)
     {

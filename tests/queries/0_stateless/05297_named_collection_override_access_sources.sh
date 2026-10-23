@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-replicated-database
-# Tag no-replicated-database: on a replicated database the DDL runs with no user, so the access check asserted here is skipped and the deny path silently allows, https://github.com/ClickHouse/ClickHouse/issues/111561
+# Tags: no-fasttest
 # Requires the external database and message queue engines omitted from the fast build.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -20,7 +19,6 @@ function cleanup()
         DROP USER IF EXISTS $user;
         DROP NAMED COLLECTION IF EXISTS ${nc}_db;
         DROP NAMED COLLECTION IF EXISTS ${nc}_mysql_settings;
-        DROP NAMED COLLECTION IF EXISTS ${nc}_pg_settings;
         DROP NAMED COLLECTION IF EXISTS ${nc}_s3;
         DROP NAMED COLLECTION IF EXISTS ${nc}_azure;
         DROP NAMED COLLECTION IF EXISTS ${nc}_nats;
@@ -42,17 +40,13 @@ ${CLICKHOUSE_CLIENT} --multiquery --query "
     CREATE NAMED COLLECTION ${nc}_mysql_settings AS
         host = '127.0.0.1', port = 1, user = 'user', password = 'secret', database = 'database', table = 'table',
         connection_pool_size = 2;
-    CREATE NAMED COLLECTION ${nc}_pg_settings AS
-        host = '127.0.0.1', port = 1, user = 'user', password = 'secret', database = 'database', table = 'table',
-        postgresql_connection_pool_size = 2;
     CREATE NAMED COLLECTION ${nc}_s3 AS
         url = 'http://127.0.0.1:1/bucket/data', access_key_id = 'key', secret_access_key = 'secret';
     CREATE NAMED COLLECTION ${nc}_azure AS
         storage_account_url = 'http://127.0.0.1:1/account', account_name = 'account', account_key = 'secret',
         container = 'container', blob_path = 'data';
     CREATE NAMED COLLECTION ${nc}_nats AS
-        nats_url = '127.0.0.1:1', nats_subjects = 'subject', nats_format = 'JSONEachRow',
-        nats_credentials = 'secret';
+        nats_url = '127.0.0.1:1', nats_subjects = 'subject', nats_format = 'JSONEachRow';
     CREATE NAMED COLLECTION ${nc}_kafka AS
         kafka_broker_list = '127.0.0.1:1', kafka_topic_list = 'topic', kafka_group_name = 'group', kafka_format = 'JSONEachRow';
     CREATE NAMED COLLECTION ${nc}_rabbitmq AS
@@ -73,7 +67,6 @@ done <<SQL
     SELECT * FROM mysql(${nc}_db, addresses_expr = '127.0.0.1:2');
     SELECT * FROM postgresql(${nc}_db, addresses_expr = '127.0.0.1:2');
     CREATE TABLE override_access_queue (value UInt64) ENGINE = MySQL(${nc}_mysql_settings) SETTINGS connection_pool_size = 0;
-    CREATE TABLE override_access_queue (value UInt64) ENGINE = PostgreSQL(${nc}_pg_settings) SETTINGS postgresql_connection_pool_size = 0;
     SELECT * FROM s3(${nc}_s3, url = 'http://127.0.0.1:2/bucket/data', structure = 'value UInt64');
     SELECT * FROM azureBlobStorage(${nc}_azure, connection_string = 'http://127.0.0.1:2/account', structure = 'value UInt64');
     BACKUP TABLE override_access_source TO S3(${nc}_s3, url = 'http://127.0.0.1:2/bucket/backup');
@@ -85,7 +78,6 @@ done <<SQL
     CREATE TABLE override_access_queue (value UInt64) ENGINE = NATS(${nc}_nats, \`nats_server_list.value\` = '127.0.0.1:2');
     CREATE TABLE override_access_queue (value UInt64) ENGINE = NATS(${nc}_nats) SETTINGS nats_url = '127.0.0.1:2';
     CREATE TABLE override_access_queue (value UInt64) ENGINE = NATS(${nc}_nats) SETTINGS nats_server_list = '127.0.0.1:2';
-    CREATE TABLE override_access_queue (value UInt64) ENGINE = NATS(${nc}_nats) SETTINGS nats_credentials = 'replacement';
     CREATE TABLE override_access_queue (value UInt64) ENGINE = Kafka(${nc}_kafka) SETTINGS kafka_broker_list = '127.0.0.1:2';
     CREATE TABLE override_access_queue (value UInt64) ENGINE = RabbitMQ(${nc}_rabbitmq) SETTINGS rabbitmq_host_port = '127.0.0.1:2';
     CREATE TABLE override_access_queue (value UInt64) ENGINE = RabbitMQ(${nc}_rabbitmq) SETTINGS rabbitmq_address = 'amqp://127.0.0.1:2';

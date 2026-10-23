@@ -41,7 +41,7 @@ public:
     Mapped & operator[](const Key & x)
     {
         typename ClearableHashMap::LookupResult it;
-        bool inserted = false;
+        bool inserted;
         this->emplace(x, it, inserted);
 
         if (inserted)
@@ -59,7 +59,7 @@ public:
     void ALWAYS_INLINE insertIfNotPresent(const Key & x, size_t hash, const typename Cell::Mapped & value)
     {
         typename ClearableHashMap::LookupResult it;
-        bool inserted = false;
+        bool inserted;
         this->emplace(x, it, inserted, hash);
         if (inserted)
         {

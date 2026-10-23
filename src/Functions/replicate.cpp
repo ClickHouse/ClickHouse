@@ -12,6 +12,19 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
+DataTypePtr FunctionReplicate::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
+{
+    FunctionArgumentDescriptors mandatory_args{
+        {"value", nullptr, nullptr, "Any"},
+        {"array", &isArray, nullptr, "Array"}
+    };
+    FunctionArgumentDescriptor variadic_args{"arrays", &isArray, nullptr, "Array"};
+
+    validateFunctionArgumentsWithVariadics(*this, arguments, mandatory_args, variadic_args);
+
+    return std::make_shared<DataTypeArray>(arguments[0].type);
+}
+
 ColumnPtr FunctionReplicate::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const
 {
     ColumnPtr first_column = arguments[0].column;
@@ -56,9 +69,9 @@ Creates an array with a single value.
 SELECT replicate(1, ['a', 'b', 'c']);
         )",
         R"(
-┌─replicate(1, ['a', 'b', 'c'])─┐
-│ [1,1,1]                       │
-└───────────────────────────────┘
+┌─replicate(1, ['a', 'b', 'c'])───┐
+│ [1, 1, 1]                       │
+└─────────────────────────────────┘
         )"
     }
     };

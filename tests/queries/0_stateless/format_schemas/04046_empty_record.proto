@@ -1,8 +1,0 @@
-syntax = "proto3";
-message Empty {}
-message Record {
-  oneof type {
-    Empty nothing = 1;
-    Empty nothing2 = 2;
-  }
-}

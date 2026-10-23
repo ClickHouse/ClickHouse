@@ -1,6 +1,5 @@
 SET join_algorithm = 'hash';
-SET query_plan_join_swap_table = 0;
-SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0; -- Disable automatic spilling for this test
+SET query_plan_join_swap_table=false;
 
 SELECT n, j FROM (SELECT number as n FROM numbers(4)) nums
 ANY LEFT JOIN (

@@ -20,9 +20,6 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
-#if CLICKHOUSE_CLOUD
-#include <Core/KMS.h>
-#endif
 
 namespace fs = std::filesystem;
 
@@ -440,7 +437,7 @@ public:
 
 private:
     std::string key;
-    UInt128 key_fingerprint{};
+    UInt128 key_fingerprint;
     FileEncryption::Algorithm algorithm;
 };
 
@@ -506,18 +503,6 @@ MutableNamedCollectionPtr NamedCollectionsMetadataStorage::create(const ASTCreat
 {
     auto collection_ptr = NamedCollectionFromSQL::create(create_query);
     writeCreateQuery(create_query.collection_name, collection_ptr->getCreateStatement(true));
-    return collection_ptr;
-}
-
-MutableNamedCollectionPtr NamedCollectionsMetadataStorage::createOrReplace(const ASTCreateNamedCollectionQuery & create_query)
-{
-    /// Persist a plain CREATE so that the stored statement stays parseable by older versions.
-    auto normalized_ast = create_query.clone();
-    auto & normalized_query = normalized_ast->as<ASTCreateNamedCollectionQuery &>();
-    normalized_query.or_replace = false;
-
-    auto collection_ptr = NamedCollectionFromSQL::create(normalized_query);
-    writeCreateQuery(create_query.collection_name, collection_ptr->getCreateStatement(true), /*replace=*/true);
     return collection_ptr;
 }
 
