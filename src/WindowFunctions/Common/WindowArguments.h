@@ -11,13 +11,6 @@ namespace DB
 
 class Field;
 
-struct ArgumentBlock
-{
-    std::span<const ColumnPtr> columns;
-    Int64 first_row = 0;
-    Int64 end_row = 0;
-};
-
 class ArgumentValue
 {
 public:
@@ -35,61 +28,29 @@ private:
     size_t row;
 };
 
-struct ArgumentSegment
-{
-    std::span<const IColumn *> columns;
-    size_t row_begin;
-    size_t row_end;
-};
-
-class ArgumentSegments
-{
-    class Iterator
-    {
-    public:
-        Iterator(const ArgumentSegments & segments_, size_t block_index_);
-
-        ArgumentSegment operator*() const;
-        Iterator & operator++();
-        bool operator!=(const Iterator & other) const;
-
-    private:
-        const ArgumentSegments * segments;
-        size_t block_index;
-    };
-
-public:
-    ArgumentSegments(std::span<const ArgumentBlock> blocks_, std::span<const IColumn *> columns_, size_t arguments_count_, Int64 begin_row_, Int64 end_row_);
-
-    Iterator begin() const;
-    Iterator end() const;
-
-private:
-    std::span<const ArgumentBlock> blocks;
-    std::span<const IColumn *> columns;
-    size_t arguments_count;
-    Int64 begin_row;
-    Int64 end_row;
-};
-
 class WindowArguments
 {
-    size_t blockOf(Int64 position) const;
+    size_t findBlock(size_t argument, Int64 position) const;
 
 public:
-    explicit WindowArguments(std::vector<size_t> argument_column_indices_);
+    struct Block
+    {
+        std::span<const ColumnPtr> columns;
+        Int64 first_position = 0;
+        Int64 end_position = 0;
+    };
 
-    void rebuild(std::span<const ArgumentBlock> blocks_);
+    explicit WindowArguments(std::vector<size_t> column_indices_);
+
+    void setBlocks(const std::vector<Block> & blocks_);
 
     size_t size() const;
     ArgumentValue at(size_t argument, Int64 position) const;
-    ArgumentSegments segments(Int64 begin, Int64 end) const;
 
 private:
-    std::vector<size_t> argument_column_indices;
-    std::span<const ArgumentBlock> blocks;
-    std::vector<const IColumn *> columns;
-    mutable size_t resolved = 0;
+    std::vector<size_t> column_indices;
+    std::vector<Block> blocks;
+    mutable std::vector<size_t> last_used_block_for_arg;
 };
 
 }

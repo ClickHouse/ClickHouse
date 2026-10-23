@@ -74,19 +74,19 @@ void destroyStates(std::vector<GeneralWindowFunctionSlot> & general_functions, s
         ws.aggregate_function->destroy(ws.aggregate_function_state.data());
 }
 
-std::vector<ArgumentBlock> collectArgumentBlocks(const SlidingBlocks & blocks, RowNumber batch_start, Int64 batch_start_position)
+std::vector<WindowArguments::Block> collectArgumentBlocks(const SlidingBlocks & blocks, RowNumber batch_start, Int64 batch_start_position)
 {
-    Int64 first_row = batch_start_position - batch_start.row;
+    Int64 first_position = batch_start_position - batch_start.row;
     for (int64_t block_number = batch_start.block; block_number > blocks.begin().block; --block_number)
-        first_row -= blocks.blockAt(block_number - 1).rows_count;
+        first_position -= blocks.blockAt(block_number - 1).rows_count;
 
-    std::vector<ArgumentBlock> argument_blocks;
+    std::vector<WindowArguments::Block> argument_blocks;
     argument_blocks.reserve(blocks.end().block - blocks.begin().block);
     for (int64_t block_number = blocks.begin().block; block_number < blocks.end().block; ++block_number)
     {
         const SlidingBlock & block = blocks.blockAt(block_number);
-        argument_blocks.push_back(ArgumentBlock{.columns = block.materialized_columns, .first_row = first_row, .end_row = first_row + block.rows_count});
-        first_row += block.rows_count;
+        argument_blocks.push_back(WindowArguments::Block{.columns = block.materialized_columns, .first_position = first_position, .end_position = first_position + block.rows_count});
+        first_position += block.rows_count;
     }
     return argument_blocks;
 }
@@ -283,13 +283,12 @@ void WindowTransform::flushBatch()
     if (bounds.rows == 0)
         return;
 
-    std::vector<ArgumentBlock> argument_blocks;
     const bool has_arguments = std::ranges::any_of(general_functions, [](const GeneralWindowFunctionSlot & slot) { return slot.arguments.size() != 0; });
     if (has_arguments)
     {
-        argument_blocks = collectArgumentBlocks(blocks, batch_start, bounds.row[0]);
+        const std::vector<WindowArguments::Block> argument_blocks = collectArgumentBlocks(blocks, batch_start, bounds.row[0]);
         for (auto & slot : general_functions)
-            slot.arguments.rebuild(argument_blocks);
+            slot.arguments.setBlocks(argument_blocks);
     }
 
     const SlidingBlock & block = blocks.blockAt(batch_start.block);
