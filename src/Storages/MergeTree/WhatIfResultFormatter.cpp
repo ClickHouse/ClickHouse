@@ -1,5 +1,9 @@
 #include <Storages/MergeTree/WhatIfResult.h>
 
+#include <Core/Block.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteHelpers.h>
 #include <Common/formatReadable.h>
 
@@ -7,6 +11,21 @@
 
 namespace DB
 {
+
+namespace
+{
+
+const char * sourceName(WhatIfCandidateResult::EstimateSource source)
+{
+    switch (source)
+    {
+        case WhatIfCandidateResult::Empirical: return "empirical";
+        case WhatIfCandidateResult::Statistical: return "statistical";
+        case WhatIfCandidateResult::ApplicabilityOnly: return "applicability_only";
+    }
+}
+
+}
 
 void WhatIfResult::format(WriteBuffer & out) const
 {
@@ -72,14 +91,7 @@ void WhatIfResult::format(WriteBuffer & out) const
 
         writeCString("Estimation:\n", out);
 
-        String estimate_source_str;
-        switch (idx.estimate_source)
-        {
-            case WhatIfCandidateResult::Empirical: estimate_source_str = "empirical"; break;
-            case WhatIfCandidateResult::Statistical: estimate_source_str = "statistical"; break;
-            case WhatIfCandidateResult::ApplicabilityOnly: estimate_source_str = "applicability_only"; break;
-        }
-        writeString(fmt::format("  source:           {}\n", estimate_source_str), out);
+        writeString(fmt::format("  source:           {}\n", sourceName(idx.estimate_source)), out);
 
         String empirical_status_str;
         switch (idx.empirical_status)
@@ -105,6 +117,46 @@ void WhatIfResult::format(WriteBuffer & out) const
             writeString(fmt::format("  elapsed_us:       {}\n", idx.elapsed_us), out);
         }
         writeCString("\n", out);
+    }
+}
+
+Block WhatIfResult::tableHeader()
+{
+    const auto string = std::make_shared<DataTypeString>();
+    const auto count = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>());
+    return Block{
+        {string->createColumn(), string, "name"},
+        {string->createColumn(), string, "kind"},
+        {string->createColumn(), string, "status"},
+        {count->createColumn(), count, "marks"},
+        {count->createColumn(), count, "marks_low"},
+        {count->createColumn(), count, "marks_high"},
+        {count->createColumn(), count, "rows"},
+        {string->createColumn(), string, "verdict"},
+        {string->createColumn(), string, "source"},
+        {string->createColumn(), string, "reason"},
+    };
+}
+
+void WhatIfResult::fillTable(MutableColumns & columns) const
+{
+    for (const auto & candidate : candidates)
+    {
+        const bool applicable = candidate.status == WhatIfCandidateResult::Applicable;
+        const auto & marks = candidate.estimated_marks;
+        const bool has_span = marks && candidate.estimated_marks_high > candidate.estimated_marks_low;
+        auto count = [](std::optional<UInt64> value) { return value ? Field(*value) : Field(); };
+
+        columns[0]->insert(candidate.name);
+        columns[1]->insert(candidate.kind == WhatIfCandidateResult::Index ? "index" : "projection");
+        columns[2]->insert(applicable ? "applicable" : "not_applicable");
+        columns[3]->insert(count(marks));
+        columns[4]->insert(has_span ? Field(candidate.estimated_marks_low) : count(marks));
+        columns[5]->insert(has_span ? Field(candidate.estimated_marks_high) : count(marks));
+        columns[6]->insert(count(candidate.estimated_rows));
+        columns[7]->insert(candidate.verdict);
+        columns[8]->insert(applicable ? sourceName(candidate.estimate_source) : "");
+        columns[9]->insert(applicable ? candidate.verdict_reason : candidate.not_applicable_reason);
     }
 }
 

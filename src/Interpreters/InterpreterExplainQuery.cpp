@@ -75,6 +75,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/HypotheticalObjectStore.h>
 #include <Storages/MergeTree/WhatIfEstimator.h>
+#include <Storages/MergeTree/WhatIfSettings.h>
 
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
@@ -524,8 +525,12 @@ BlockIO InterpreterExplainQuery::execute()
 }
 
 
-Block InterpreterExplainQuery::getSampleBlock(const ASTExplainQuery::ExplainKind kind)
+Block InterpreterExplainQuery::getSampleBlock(const ASTExplainQuery & ast)
 {
+    const auto kind = ast.getKind();
+    if (kind == ASTExplainQuery::ExplainKind::WhatIf && WhatIfSettings::fromAST(ast.getSettings()).table)
+        return WhatIfResult::tableHeader();
+
     if (kind == ASTExplainQuery::ExplainKind::QueryEstimates)
     {
         auto cols = NamesAndTypes{
@@ -1079,7 +1084,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 {
     const auto & ast = query->as<const ASTExplainQuery &>();
 
-    Block sample_block = getSampleBlock(ast.getKind());
+    Block sample_block = getSampleBlock(ast);
     MutableColumns res_columns = sample_block.cloneEmptyColumns();
 
     WriteBufferFromOwnString buf;
@@ -1415,7 +1420,13 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is supported for EXPLAIN WHATIF query");
 
             auto whatif_result = estimateHypotheticalObjects(query_ast, query_context, ast.getSettings());
-            whatif_result.format(buf);
+            if (WhatIfSettings::fromAST(ast.getSettings()).table)
+            {
+                whatif_result.fillTable(res_columns);
+                insert_buf = false;
+            }
+            else
+                whatif_result.format(buf);
             break;
         }
         case DB::ASTExplainQuery::Analyze:

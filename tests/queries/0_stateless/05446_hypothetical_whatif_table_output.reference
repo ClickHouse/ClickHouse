@@ -1,0 +1,11 @@
+-- the statement
+idx_b	index	applicable	10	10	10	\N		empirical	
+p_b	projection	applicable	1	1	1	100	chosen	empirical	1 mark would be read instead of 10 from the base table
+p_a	projection	not_applicable	\N	\N	\N	\N			Projection does not contain column b required by the query, so it could only filter the base table\'s parts, which EXPLAIN WHATIF does not estimate yet
+-- the column types
+String	String	String	Nullable(UInt64)	Nullable(UInt64)	Nullable(UInt64)	Nullable(UInt64)	String	String	String
+-- a query on the rows
+p_b	1
+idx_b	10
+-- the text report stays the default
+1

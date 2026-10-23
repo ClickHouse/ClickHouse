@@ -20,7 +20,7 @@ public:
 
     BlockIO execute() override;
 
-    static Block getSampleBlock(ASTExplainQuery::ExplainKind kind);
+    static Block getSampleBlock(const ASTExplainQuery & ast);
 
     bool supportsTransactions() const override { return true; }
 

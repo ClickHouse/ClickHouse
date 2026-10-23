@@ -10,6 +10,8 @@ namespace DB
 struct WhatIfSettings
 {
     bool empirical = true;
+    /// one row with typed columns for each candidate, instead of the text report
+    bool table = false;
     /// row budget for projection estimates, 0 means no limit
     UInt64 projection_scan_budget_rows = 10'000'000;
 

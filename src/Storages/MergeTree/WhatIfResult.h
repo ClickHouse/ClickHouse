@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Columns/IColumn_fwd.h>
+#include <Core/Block_fwd.h>
 #include <base/types.h>
 
 #include <optional>
@@ -67,6 +69,10 @@ struct WhatIfResult
     std::vector<WhatIfCandidateResult> candidates;
 
     void format(WriteBuffer & out) const;
+
+    /// the columns of `EXPLAIN WHATIF table = 1`, one row for each candidate
+    static Block tableHeader();
+    void fillTable(MutableColumns & columns) const;
 };
 
 }

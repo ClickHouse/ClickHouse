@@ -1363,13 +1363,14 @@ WHATIF reports aggregate projections and projections with their own skip indexes
 **Syntax**
 
 ```sql
-EXPLAIN WHATIF [empirical = 0] SELECT ...
+EXPLAIN WHATIF [empirical = 0] [table = 1] SELECT ...
 ```
 
 **Settings**
 
 - `projection_scan_budget_rows` — how many rows a projection estimate may read before it switches to a sample of granules. Default: `10000000`. `0` means no limit; `max_rows_to_read` can lower it. A sample reads at least about 30 granules and one per part, and when `max_rows_to_read` does not allow that the estimate is `unsupported`.
 - `empirical` — `1` (default) runs the index over the baseline-pruned granules in memory to measure the skip ratio (an upper bound). `0` skips that path. Either way, if empirical doesn't produce a result (disabled, or the index can't be evaluated in memory) the estimator falls back to column [statistics](/reference/engines/table-engines/mergetree-family/mergetree#column-statistics), and finally to an applicability-only summary if neither is available.
+- `table` — `1` returns one row with typed columns for each candidate instead of the text report. Default: `0`. See the table output below.
 
 **Output**
 
@@ -1403,6 +1404,28 @@ Estimation:
 - `empirical_reason` — why the empirical estimate could not run. Shown only with `empirical_status: unsupported`. For example, a non-zero `merge_tree_min_rows_for_seek` or `merge_tree_min_bytes_for_seek` makes a real read coalesce mark ranges, which the per-granule count does not model, so the estimate falls back to `statistical` or `applicability_only`.
 - `sampled_parts` / `sampled_marks` — `<baseline-pruned> / <total in the table>`. Shows what fraction of the table survived PK, partition, and existing-index pruning, i.e. the input to the hypothetical index. For a projection, `sampled_marks` is `<marks read> / <marks in the parts the query reads>`, and a first number below the second means the estimate used a sample.
 - `est_bytes` — an estimate of the bytes read, derived from the table's average row size, so it is approximate and varies with storage and compression. The baseline line appears only when the query reads rows; the per-candidate line only when the baseline byte estimate is known.
+
+**Table output**
+
+With `table = 1`, `EXPLAIN WHATIF` returns one row for each candidate, so a query can sort or filter the candidates:
+
+```sql
+SELECT name, marks, verdict FROM (EXPLAIN WHATIF table = 1 SELECT ...) WHERE status = 'applicable' ORDER BY marks
+```
+
+| Column | Type | Description |
+|---|---|---|
+| `name` | `String` | The name of the candidate, or `(combined: ...)` for the combined row. |
+| `kind` | `String` | `index` or `projection`. |
+| `status` | `String` | `applicable` or `not_applicable`. |
+| `marks` | `Nullable(UInt64)` | The estimated marks. `NULL` when no estimate gives a number. |
+| `marks_low`, `marks_high` | `Nullable(UInt64)` | The range of the estimate, as `marks_span` shows it. Without a range, both are equal to `marks`. |
+| `rows` | `Nullable(UInt64)` | The estimated rows of a projection. `NULL` for an index. |
+| `verdict` | `String` | The verdict for a projection. Empty for an index. |
+| `source` | `String` | `empirical`, `statistical` or `applicability_only`. Empty when the candidate is not applicable. |
+| `reason` | `String` | Why the candidate is not applicable, or the reason for the verdict. |
+
+The table has no row for the baseline. The text report shows the baseline.
 
 The setting is written inline between `WHATIF` and the `SELECT` — there is no `SETTINGS` keyword (this matches how other `EXPLAIN` variants accept their options).
 
