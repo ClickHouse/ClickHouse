@@ -8,3 +8,7 @@ Granules: 1/3
 1	11
 -- the same column, read: not applied
 not applied
+-- a missing column whose default uses a stored column with a default that cannot be used in the query
+Granules: 1/3
+1	11!
+1	11!

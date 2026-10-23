@@ -36,3 +36,18 @@ SELECT if(has(lines, 'MaxBySortingKey'), lines[indexOf(lines, 'MaxBySortingKey')
 FROM (SELECT groupArray(trimLeft(explain)) AS lines FROM (EXPLAIN indexes = 1 SELECT k, max(m), any(y) FROM t GROUP BY k SETTINGS optimize_aggregation_max_by_sorting_key = 1));
 
 DROP TABLE t;
+
+SELECT '-- a missing column whose default uses a stored column with a default that cannot be used in the query';
+SET allow_introspection_functions = 1;
+CREATE TABLE t (k UInt8, m UInt32, x String DEFAULT addressToSymbol(toUInt64(0))) ENGINE = MergeTree ORDER BY (k, m)
+    SETTINGS index_granularity = 4, index_granularity_bytes = '10Mi';
+INSERT INTO t (k, m, x) SELECT 1, number, toString(number) FROM numbers(12);
+-- The reader computes `y` from the stored `x`, and never needs the default of `x`.
+ALTER TABLE t ADD COLUMN y String DEFAULT concat(x, '!');
+SET allow_introspection_functions = 0;
+SELECT if(has(lines, 'MaxBySortingKey'), lines[indexOf(lines, 'MaxBySortingKey') + 3], 'not applied') AS granules
+FROM (SELECT groupArray(trimLeft(explain)) AS lines FROM (EXPLAIN indexes = 1 SELECT k, argMax(y, m) FROM t GROUP BY k SETTINGS optimize_aggregation_max_by_sorting_key = 1));
+SELECT k, argMax(y, m) FROM t GROUP BY k SETTINGS optimize_aggregation_max_by_sorting_key = 0;
+SELECT k, argMax(y, m) FROM t GROUP BY k SETTINGS optimize_aggregation_max_by_sorting_key = 1;
+
+DROP TABLE t;

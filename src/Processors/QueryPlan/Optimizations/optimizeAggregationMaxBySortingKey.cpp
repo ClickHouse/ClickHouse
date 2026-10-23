@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
+#include <Access/ContextAccess.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Core/Range.h>
 #include <Core/Settings.h>
@@ -18,6 +19,8 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Common/logger_useful.h>
 
@@ -145,16 +148,32 @@ static bool dependsOnlyOn(const ActionsDAG::Node * predicate, const NameSet & co
 
 /// Whether the reader computes some of `column_names` for `part` from default expressions with stateful functions
 /// (`rowNumberInAllBlocks`, `runningDifference`, ...). This happens for columns the part does not have, e.g. added by
-/// `ALTER TABLE ... ADD COLUMN` and not materialized. The same expressions as in `IMergeTreeReader::evaluateMissingDefaults`
+/// `ALTER TABLE ... ADD COLUMN` and not materialized. As the reader does, the stored columns that such defaults use are
+/// added first (`injectRequiredColumns`), and then the same expressions as in `IMergeTreeReader::evaluateMissingDefaults`
 /// are built, so nothing is built that the reader would not build.
 static bool readerComputesStatefulDefaults(
-    const IMergeTreeDataPart & part, const Names & column_names, const ColumnsDescription & columns, const ContextPtr & context)
+    const MergeTreeData::DataPartPtr & part,
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+    const ContextPtr & context)
 {
+    AlterConversionsPtr alter_conversions;
+    if (!part->isProjectionPart())
+        alter_conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context
+#if CLICKHOUSE_CLOUD
+            , context->getAccess()->getEnabledMaskingPolicies()
+#endif
+        );
+    Names columns_to_read = column_names;
+    injectRequiredColumns(LoadedMergeTreeDataPartInfoForReader(part, alter_conversions), storage_snapshot, /*with_subcolumns=*/ true, columns_to_read);
+
+    const auto & columns = storage_snapshot->metadata->getColumns();
     Block present_columns;
     NamesAndTypesList requested_columns;
     NameSet seen;
     bool has_missing_columns = false;
-    for (const auto & name : column_names)
+    for (const auto & name : columns_to_read)
     {
         /// Virtual columns are not in the description and have no defaults here.
         auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
@@ -165,7 +184,7 @@ static bool readerComputesStatefulDefaults(
             continue;
         const auto type = column->getTypeInStorage();
         requested_columns.emplace_back(name_in_storage, type);
-        if (part.tryGetColumn(name_in_storage))
+        if (part->tryGetColumn(name_in_storage))
             present_columns.insert({type->createColumn(), type, name_in_storage});
         else
             has_missing_columns = true;
@@ -506,9 +525,9 @@ static void tryApply(
 
     /// Stateful default expressions computed by the reader (see `readerComputesStatefulDefaults`) depend on all rows read,
     /// also those of other parts, so one such part disables the optimization.
-    const auto & read_columns = reading->getStorageSnapshot()->metadata->getColumns();
     for (const auto & part : analysis->parts_with_ranges)
-        if (readerComputesStatefulDefaults(*part.data_part, reading->getAllColumnNames(), read_columns, context))
+        if (readerComputesStatefulDefaults(
+                part.data_part, reading->getAllColumnNames(), reading->getStorageSnapshot(), reading->getMutationsSnapshot(), context))
             return;
 
     auto result = std::make_shared<ReadFromMergeTree::AnalysisResult>(*analysis);
