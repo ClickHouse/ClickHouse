@@ -107,7 +107,20 @@ namespace Redis
         std::string getline();
         /// Redis uses \r\n as delimiter. This getline version removes
         /// the \r from the result.
+
+        int & arrayNestingDepth();
+        /// Returns the current nesting depth of arrays being read from the stream.
+        /// Used to limit the recursion depth while parsing nested arrays.
+
+    private:
+        int _arrayNestingDepth = 0;
     };
+
+
+    inline int & RedisInputStream::arrayNestingDepth()
+    {
+        return _arrayNestingDepth;
+    }
 
 
 }
