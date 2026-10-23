@@ -542,7 +542,9 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_JoinNonJoinedHashTableScansSkipped` ([UInt64](/reference/data-types/int-uint)) — Number of times a RIGHT or FULL hash join skipped scanning its hash table for non-joined rows, because every right key in the scanned part had matched.
 - `ProfileEvent_JoinDelayedJoinedTransformBlockCount` ([UInt64](/reference/data-types/int-uint)) — Number of blocks emitted by DelayedJoinedBlocksWorkerTransform.
 - `ProfileEvent_JoinDelayedJoinedTransformRowCount` ([UInt64](/reference/data-types/int-uint)) — Number of rows emitted by DelayedJoinedBlocksWorkerTransform.
-- `ProfileEvent_JoinSpillingHashJoinSwitchedToGraceJoin` ([UInt64](/reference/data-types/int-uint)) — Number of times a (Concurrent)HashJoin was switched to GraceHashJoin due to memory limit in SpillingHashJoin.
+- `ProfileEvent_JoinSpillingHashJoinSwitchedToGraceJoin` ([UInt64](/reference/data-types/int-uint)) — Number of times a HashJoin was switched to GraceHashJoin due to memory limit in SpillingHashJoin.
+- `ProfileEvent_HashJoinBuiltWithParallelLayout` ([UInt64](/reference/data-types/int-uint)) — Number of hash tables built for hash joins as several parts. Up to `max_threads` threads fill the parts at the same time, and with `max_threads = 1` one thread fills them all. The `parallel_hash_join_threshold` setting decides which hash joins are built this way.
+- `ProfileEvent_HashJoinBuiltWithSerialLayout` ([UInt64](/reference/data-types/int-uint)) — Number of hash tables built for hash joins as one part, one insert at a time. Each hash table counts once, so a grace hash join adds one for every bucket that it loads into memory. See HashJoinBuiltWithParallelLayout.
 - `ProfileEvent_JoinReorderMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent executing JOIN reordering algorithm.
 - `ProfileEvent_JoinOptimizeMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent executing JOIN plan optimizations.
 - `ProfileEvent_QueryPlanOptimizeMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent executing query plan optimizations.
@@ -1968,9 +1970,9 @@ It is safe to truncate or drop this table at any time.
 - `CurrentMetric_DestroyAggregatesThreads` ([Int64](/reference/data-types/int-uint)) — Number of threads in the thread pool for destroy aggregate states.
 - `CurrentMetric_DestroyAggregatesThreadsActive` ([Int64](/reference/data-types/int-uint)) — Number of threads in the thread pool for destroy aggregate states running a task.
 - `CurrentMetric_DestroyAggregatesThreadsScheduled` ([Int64](/reference/data-types/int-uint)) — Number of queued or active jobs in the thread pool for destroy aggregate states.
-- `CurrentMetric_ConcurrentHashJoinPoolThreads` ([Int64](/reference/data-types/int-uint)) — Number of threads in the thread pool for concurrent hash join.
-- `CurrentMetric_ConcurrentHashJoinPoolThreadsActive` ([Int64](/reference/data-types/int-uint)) — Number of threads in the thread pool for concurrent hash join running a task.
-- `CurrentMetric_ConcurrentHashJoinPoolThreadsScheduled` ([Int64](/reference/data-types/int-uint)) — Number of queued or active jobs in the thread pool for concurrent hash join.
+- `CurrentMetric_HashJoinDestroyThreads` ([Int64](/reference/data-types/int-uint)) — Number of threads in the thread pool for destroying the right table of a hash join.
+- `CurrentMetric_HashJoinDestroyThreadsActive` ([Int64](/reference/data-types/int-uint)) — Number of threads in the thread pool for destroying the right table of a hash join running a task.
+- `CurrentMetric_HashJoinDestroyThreadsScheduled` ([Int64](/reference/data-types/int-uint)) — Number of queued or active jobs in the thread pool for destroying the right table of a hash join.
 - `CurrentMetric_HashedDictionaryThreads` ([Int64](/reference/data-types/int-uint)) — Number of threads in the HashedDictionary thread pool.
 - `CurrentMetric_HashedDictionaryThreadsActive` ([Int64](/reference/data-types/int-uint)) — Number of threads in the HashedDictionary thread pool running a task.
 - `CurrentMetric_HashedDictionaryThreadsScheduled` ([Int64](/reference/data-types/int-uint)) — Number of queued or active jobs in the HashedDictionary thread pool.

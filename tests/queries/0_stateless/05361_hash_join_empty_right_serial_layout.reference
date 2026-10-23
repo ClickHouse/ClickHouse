@@ -1,0 +1,39 @@
+inner, empty right
+FillingRightJoinSide
+right, empty right
+FillingRightJoinSide
+left semi, empty right
+FillingRightJoinSide
+left, empty right
+FillingRightJoinSide × 4
+left anti, empty right
+FillingRightJoinSide × 4
+full, empty right
+FillingRightJoinSide × 4
+inner, empty right, spilling hash join
+FillingRightJoinSide
+inner, right is an inner join of empty tables
+FillingRightJoinSide
+FillingRightJoinSide
+inner, right is a cross join of empty tables
+FillingRightJoinSide
+FillingRightJoinSide
+inner, right is an inner join with an empty left side
+FillingRightJoinSide
+FillingRightJoinSide × 4
+inner, right is an inner join with an empty right side
+FillingRightJoinSide
+FillingRightJoinSide
+inner, right is a left join with an empty right side
+FillingRightJoinSide × 4
+FillingRightJoinSide × 4
+inner, right is an aggregation of an empty table
+FillingRightJoinSide × 4
+inner, non-empty right without an estimate
+FillingRightJoinSide × 4
+inner, empty right, parallel_hash_join_threshold = 0
+FillingRightJoinSide × 4
+four empty tables, reordered
+FillingRightJoinSide
+FillingRightJoinSide
+FillingRightJoinSide

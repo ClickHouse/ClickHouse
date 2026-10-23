@@ -47,6 +47,8 @@ SET query_plan_join_swap_table = 0;
 -- A fabricated probe-side row count from randomized join-order statistics can land at or below
 -- the threshold, in which case no runtime filter is built at all.
 SET query_plan_optimize_join_order_randomize = 0;
+-- Without join reordering the build side has no row estimate, so it would build in parallel, which never converts.
+SET query_plan_optimize_join_order_limit = 10;
 SET join_runtime_filter_min_probe_rows = 0;
 
 -- Correctness: every one of the 4000 matching rows must survive.

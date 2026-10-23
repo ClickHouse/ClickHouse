@@ -25,6 +25,9 @@ SELECT count()
 FROM t_post_build_left AS l
 INNER JOIN t_post_build_right AS r ON l.k = r.k
 SETTINGS join_algorithm = 'hash',
+         parallel_hash_join_threshold = 1000000000, -- the serial layout, the only one that converts
+         query_plan_optimize_join_order_limit = 10, -- keeps the right-side estimate the layout choice needs
+         query_plan_join_shard_by_pk_ranges = 0,
          enable_join_fixed_hash_table_conversion = 1,
          max_bytes_ratio_before_external_join = 0,
          max_bytes_before_external_join = 100000000000,

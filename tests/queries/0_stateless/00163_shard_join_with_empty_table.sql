@@ -3,6 +3,7 @@
 SET any_join_distinct_right_table_keys = 1;
 SET joined_subquery_requires_alias = 0;
 SET join_algorithm = 'hash';
+SET parallel_hash_join_threshold = 18446744073709551615;
 -- The output is not guaranteed with multithreaded joins, because the order by is applied after limit. To keep the test somewhat similar
 -- to the original one
 --  - first run the query on a single thread to ensure it still works with SpillingHashJoin

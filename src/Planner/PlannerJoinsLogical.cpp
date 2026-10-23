@@ -31,7 +31,6 @@
 
 #include <Dictionaries/IDictionary.h>
 #include <Interpreters/ArrayJoinAction.h>
-#include <Interpreters/ConcurrentHashJoin.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DirectJoin.h>
 #include <Interpreters/FullSortingMergeJoin.h>

@@ -530,7 +530,9 @@
     M(JoinNonJoinedHashTableScansSkipped, "Number of times a RIGHT or FULL hash join skipped scanning its hash table for non-joined rows, because every right key in the scanned part had matched.", ValueType::Number) \
     M(JoinDelayedJoinedTransformBlockCount, "Number of blocks emitted by DelayedJoinedBlocksWorkerTransform.", ValueType::Number) \
     M(JoinDelayedJoinedTransformRowCount, "Number of rows emitted by DelayedJoinedBlocksWorkerTransform.", ValueType::Number) \
-    M(JoinSpillingHashJoinSwitchedToGraceJoin, "Number of times a (Concurrent)HashJoin was switched to GraceHashJoin due to memory limit in SpillingHashJoin.", ValueType::Number) \
+    M(JoinSpillingHashJoinSwitchedToGraceJoin, "Number of times a HashJoin was switched to GraceHashJoin due to memory limit in SpillingHashJoin.", ValueType::Number) \
+    M(HashJoinBuiltWithParallelLayout, "Number of hash tables built for hash joins as several parts. Up to `max_threads` threads fill the parts at the same time, and with `max_threads = 1` one thread fills them all. The `parallel_hash_join_threshold` setting decides which hash joins are built this way.", ValueType::Number) \
+    M(HashJoinBuiltWithSerialLayout, "Number of hash tables built for hash joins as one part, one insert at a time. Each hash table counts once, so a grace hash join adds one for every bucket that it loads into memory. See HashJoinBuiltWithParallelLayout.", ValueType::Number) \
     M(JoinReorderMicroseconds, "Total time spent executing JOIN reordering algorithm.", ValueType::Microseconds) \
     M(JoinOptimizeMicroseconds, "Total time spent executing JOIN plan optimizations.", ValueType::Microseconds) \
     M(QueryPlanOptimizeMicroseconds, "Total time spent executing query plan optimizations.", ValueType::Microseconds) \
