@@ -46,5 +46,5 @@ empirical_reason: The estimate would read 12000 rows, over max_rows_to_read = 60
 v != 25	88 / 960	['146','115','146']	146	1	1
 v = 25	88 / 960	['16','16','47']	16	1	1
 -- all parts take draws in proportion to their baseline marks, so the span holds the real granules
-v = 2	104 / 1920	['32','32','62']	32	1
-v >= 1	104 / 1920	['32','32','62']	34	1
+v = 2	104 / 1920	['32','32','97']	32	1
+v >= 1	104 / 1920	['32','32','97']	34	1
