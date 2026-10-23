@@ -20,9 +20,10 @@ struct PartitionCursor
     auto operator<=>(const PartitionCursor & other) const = default;
 };
 
-/// Convert the generic cursor tree (partition_id → {block_number, block_offset})
-/// produced by the parser into a flat per-partition map.
-std::map<String, PartitionCursor> buildMergeTreeCursor(const CursorTreeNodePtr & cursor);
+/// Convert between the generic cursor tree (partition_id → {block_number, block_offset}) and the flat
+/// per-partition map used while reading.
+std::map<String, PartitionCursor> cursorTreeToMergeTreeCursor(const CursorTreeNodePtr & cursor);
+CursorTreeNodePtr mergeTreeCursorToCursorTree(const std::map<String, PartitionCursor> & merge_tree_cursor);
 
 /// Build an ActionsDAG filter for a single partition's read round slice.
 FilterDAGInfo buildPartitionFilter(

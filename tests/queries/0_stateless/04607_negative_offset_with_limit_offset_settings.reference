@@ -1,0 +1,20 @@
+-- no settings: all but the last 3 rows
+0
+1
+2
+3
+4
+5
+6
+-- offset 2 skips the first 2 of the remaining 7 rows
+2
+3
+4
+5
+6
+-- limit 2 keeps the first 2 of the remaining 7 rows
+0
+1
+-- offset 2, limit 2 returns rows 2 and 3 of the remaining 7
+2
+3

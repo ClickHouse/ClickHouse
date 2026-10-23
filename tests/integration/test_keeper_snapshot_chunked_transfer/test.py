@@ -17,6 +17,8 @@ from helpers.keeper_snapshot_utils import (
     get_received_snapshot_info,
     assert_receiving_snapshot_logged,
     assert_obj_ids,
+    start_keeper_phase_only,
+    use_keeper_phase,
 )
 
 
@@ -73,10 +75,29 @@ compat_s3_2 = cluster.add_instance("compat_s3_2", main_configs=["configs/enable_
 compat_s3_3 = cluster.add_instance("compat_s3_3", main_configs=["configs/enable_keeper_compat_s3_3.xml", "configs/text_log.xml"], user_configs=[_small_buf_cfg], stay_alive=True, with_minio=True, with_remote_database_disk=False)
 
 
+# A test exercises exactly one of these groups of independent Keeper clusters, so only
+# one group is kept running at a time (use_keeper_phase); the first group listed stays
+# running after cluster.start().
+KEEPER_PHASES = {
+    "small": [[node1, node2, node3], [node7, node8, node9]],
+    "large": [[node4, node5, node6], [node10, node11, node12]],
+    "compat": [[compat1, compat2, compat3], [compat_s3_1, compat_s3_2, compat_s3_3]],
+}
+
+# The servers running a pinned release stay up for the whole module. A release Keeper aborts
+# at startup on a snapshot written by the newer server it is clustered with ("Unsupported
+# snapshot version", "Manual intervention is necessary for recovery"), so restarting one is
+# not recoverable. They are also the cheap servers here, being the only non-sanitizer builds.
+PINNED_RELEASE_INSTANCES = [compat1, compat2, compat_s3_1, compat_s3_2]
+
+
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
         cluster.start()
+        start_keeper_phase_only(
+            cluster, KEEPER_PHASES, next(iter(KEEPER_PHASES)), PINNED_RELEASE_INSTANCES
+        )
         yield cluster
     finally:
         cluster.shutdown()
@@ -89,6 +110,13 @@ CHUNK_SIZE = 4096  # matches snapshot_transfer_chunk_size in small-chunk configs
 # took ~95 s in CI, so the wait must be generous: start_clickhouse returns as soon as the
 # server is ready, so a large upper bound costs nothing on fast runs.
 RESTART_TIMEOUT_SECONDS = 180
+
+
+def use_phase(phase):
+    use_keeper_phase(
+        cluster, KEEPER_PHASES, phase, RESTART_TIMEOUT_SECONDS, PINNED_RELEASE_INSTANCES
+    )
+
 
 CHUNKED_TRANSFER_PARAMS = [
     pytest.param({"leader": node1, "middle": node2, "lagging": node3, "disk_type": "local"}, id="local_disk"),
@@ -118,6 +146,7 @@ def get_coordination_setting(node, name):
 
 @pytest.mark.parametrize("nodes", CHUNKED_TRANSFER_PARAMS)
 def test_recover_from_snapshot_with_chunked_transfer(started_cluster, nodes):
+    use_phase("small")
     node_leader = nodes["leader"]
     node_middle = nodes["middle"]
     node_lagging = nodes["lagging"]
@@ -171,6 +200,7 @@ def test_recover_from_snapshot_with_chunked_transfer(started_cluster, nodes):
 @pytest.mark.parametrize("nodes", CHUNKED_TRANSFER_PARAMS)
 def test_recover_after_interrupted_transfer(started_cluster, nodes):
     """A `tmp_snapshot_X.bin` left by an interrupted transfer must not block recovery."""
+    use_phase("small")
     node_leader = nodes["leader"]
     node_lagging = nodes["lagging"]
     is_remote = nodes["disk_type"] == "remote"
@@ -290,40 +320,10 @@ def test_recover_after_interrupted_transfer(started_cluster, nodes):
     cleanup_test_tree(cluster, node_leader, prefix)
 
 
-@pytest.mark.parametrize("nodes", LARGE_CHUNK_PARAMS)
-def test_recover_with_chunk_size_larger_than_snapshot(started_cluster, nodes):
-    """When chunk_size > snapshot size the whole snapshot is one NuRaft object (obj_id=0)."""
-    node_leader = nodes["leader"]
-    node_lagging = nodes["lagging"]
-    prefix = "/test_large_chunk_transfer"
-
-    cleanup_test_tree(cluster, node_leader, prefix)
-
-    kill_time = get_kill_timestamp(node_lagging)
-    node_lagging.stop_clickhouse(kill=True)
-
-    leader_zk = keeper_utils.get_fake_zk(cluster, node_leader.name)
-    fill_test_tree(leader_zk, prefix)
-
-    node_lagging.start_clickhouse(RESTART_TIMEOUT_SECONDS)
-    keeper_utils.wait_until_connected(cluster, node_lagging)
-    received = get_received_snapshot_info(node_lagging, kill_time)
-
-    leader_zk = keeper_utils.get_fake_zk(cluster, node_leader.name)
-    lagging_zk = keeper_utils.get_fake_zk(cluster, node_lagging.name)
-    verify_test_tree(leader_zk, lagging_zk, prefix)
-    cleanup_test_tree(cluster, node_leader, prefix)
-
-    assert received is not None
-    snapshot_log_idx, n_chunks, _ = received
-    assert n_chunks == 1, f"Expected 1 chunk (snapshot fits within chunk_size), got {n_chunks}"
-    assert_obj_ids(node_lagging, snapshot_log_idx, [0], kill_time)
-    assert_receiving_snapshot_logged(node_lagging, kill_time, nodes["disk_type"])
-
-
 def test_recover_after_s3_read_error_during_transfer(started_cluster):
     """After `readStrict` throws in `RemoteSnapshotLoader` (simulated via failpoint),
     the loader marks itself as broken and the follower recovers on the next NuRaft retry."""
+    use_phase("small")
     node_lagging = node9
     # Disarm any leftover failpoint from a previous failed run so it does not fire
     # unexpectedly during setup (before we are ready to observe the error).
@@ -363,9 +363,42 @@ def test_recover_after_s3_read_error_during_transfer(started_cluster):
         node_leader.query("SYSTEM DISABLE FAILPOINT s3_read_buffer_throw_expired_token")
 
 
+@pytest.mark.parametrize("nodes", LARGE_CHUNK_PARAMS)
+def test_recover_with_chunk_size_larger_than_snapshot(started_cluster, nodes):
+    """When chunk_size > snapshot size the whole snapshot is one NuRaft object (obj_id=0)."""
+    use_phase("large")
+    node_leader = nodes["leader"]
+    node_lagging = nodes["lagging"]
+    prefix = "/test_large_chunk_transfer"
+
+    cleanup_test_tree(cluster, node_leader, prefix)
+
+    kill_time = get_kill_timestamp(node_lagging)
+    node_lagging.stop_clickhouse(kill=True)
+
+    leader_zk = keeper_utils.get_fake_zk(cluster, node_leader.name)
+    fill_test_tree(leader_zk, prefix)
+
+    node_lagging.start_clickhouse(RESTART_TIMEOUT_SECONDS)
+    keeper_utils.wait_until_connected(cluster, node_lagging)
+    received = get_received_snapshot_info(node_lagging, kill_time)
+
+    leader_zk = keeper_utils.get_fake_zk(cluster, node_leader.name)
+    lagging_zk = keeper_utils.get_fake_zk(cluster, node_lagging.name)
+    verify_test_tree(leader_zk, lagging_zk, prefix)
+    cleanup_test_tree(cluster, node_leader, prefix)
+
+    assert received is not None
+    snapshot_log_idx, n_chunks, _ = received
+    assert n_chunks == 1, f"Expected 1 chunk (snapshot fits within chunk_size), got {n_chunks}"
+    assert_obj_ids(node_lagging, snapshot_log_idx, [0], kill_time)
+    assert_receiving_snapshot_logged(node_lagging, kill_time, nodes["disk_type"])
+
+
 @pytest.mark.parametrize("nodes", COMPAT_PARAMS)
 def test_recover_from_snapshot_sent_by_old_leader(started_cluster, nodes):
     """Old leader (no chunking support) always sends a single NuRaft object (obj_id=0)."""
+    use_phase("compat")
     node_old_leader = nodes["old_leader"]
     node_lagging = nodes["lagging"]
     prefix = "/test_compat_snapshot_transfer"

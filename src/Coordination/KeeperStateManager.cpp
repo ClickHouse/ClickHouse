@@ -23,6 +23,7 @@ namespace CoordinationSetting
     extern const CoordinationSettingsBool compress_logs;
     extern const CoordinationSettingsBool force_sync;
     extern const CoordinationSettingsUInt64 latest_logs_cache_size_threshold;
+    extern const CoordinationSettingsUInt64 latest_logs_cache_entry_count_threshold;
     extern const CoordinationSettingsUInt64 log_file_overallocate_size;
     extern const CoordinationSettingsUInt64 max_flush_batch_size;
     extern const CoordinationSettingsUInt64 max_log_file_size;
@@ -339,6 +340,7 @@ KeeperStateManager::KeeperStateManager(
               .max_size = keeper_context_->getCoordinationSettings()[CoordinationSetting::max_log_file_size],
               .overallocate_size = keeper_context_->getCoordinationSettings()[CoordinationSetting::log_file_overallocate_size],
               .latest_logs_cache_size_threshold = keeper_context_->getCoordinationSettings()[CoordinationSetting::latest_logs_cache_size_threshold],
+              .latest_logs_cache_entry_count_threshold = keeper_context_->getCoordinationSettings()[CoordinationSetting::latest_logs_cache_entry_count_threshold],
               .startup_read_max_streams = keeper_context_->getCoordinationSettings()[CoordinationSetting::log_startup_read_max_streams],
               .startup_read_buffer_size = keeper_context_->getCoordinationSettings()[CoordinationSetting::log_startup_read_buffer_size],
           },

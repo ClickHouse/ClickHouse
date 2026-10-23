@@ -1,6 +1,3 @@
--- Tags: no-darwin, no-old-analyzer
--- no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
--- no-old-analyzer: distributed Cascades planning requires the analyzer, like the other make_distributed_plan tests.
 
 -- `distributed_plan_workers_num` sets the node count Cascades plans for under
 -- `distributed_plan_execute_locally`: one worker stays single-node, four distribute
@@ -35,7 +32,7 @@ SELECT '-- sixteen workers: shuffled aggregation is correct';
 SELECT g, count() FROM t_worker_count GROUP BY g ORDER BY g LIMIT 4
 SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1, distributed_plan_execute_locally = 1,
     enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, distributed_plan_force_shuffle_aggregation = 1,
-    distributed_plan_workers_num = 16;
+    distributed_plan_workers_num = 16, distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- sixteen workers: still a distributed plan';
 EXPLAIN PLAN SELECT g, count() FROM t_worker_count GROUP BY g
@@ -43,10 +40,9 @@ SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1, distributed_p
     enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, distributed_plan_force_shuffle_aggregation = 1,
     distributed_plan_workers_num = 16;
 
--- No `distributed_plan_execute_locally` here: only a dispatched fragment gets its own
--- process-list entry, and so its own counters. Either counter can carry the slot depending on
--- the allocator, so the assertion sums them. A zero on the initiator means slots went unmetered
--- server-wide, which no fragment can cause, so the assertion stands aside instead of guessing.
+-- No `distributed_plan_execute_locally` here: measured, both arms log the same five fragment rows, and
+-- `make_distributed_plan` forces this query's `use_concurrency_control = 1` back to 0, so neither counter
+-- reports a slot and the assertion stands aside on its zero-initiator disjunct instead of guessing.
 SELECT '-- dispatched worker fragments arbitrate CPU slots and honor the thread limit';
 -- The stress profile sets `ast_fuzzer_runs = 5`; a fuzzed re-run inherits `log_comment` and would
 -- win the lookup against `system.query_log` below.
@@ -55,7 +51,7 @@ SELECT g, count() FROM t_worker_count GROUP BY g ORDER BY g LIMIT 4
 SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1,
     enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0,
     distributed_plan_force_shuffle_aggregation = 1,
-    use_concurrency_control = 1, max_threads = 1,
+    use_concurrency_control = 1, max_threads = 1, distributed_plan_fallback_to_local_execution = 0,
     log_comment = '04515_worker_fragment_cpu_slots'
 FORMAT Null;
 SYSTEM FLUSH LOGS query_log;

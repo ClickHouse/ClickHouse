@@ -17,9 +17,7 @@ import CommonUserRolesContent from '/snippets/ar/_users-and-roles-common.mdx';
 
 تستعرض هذه المقالة أساسيات تعريف مستخدمي SQL والأدوار، وتطبيق هذه الامتيازات والأذونات على قواعد البيانات والجداول والصفوف والأعمدة.
 
-<div id="admin-user">
-  ## المستخدم المسؤول
-</div>
+## المستخدم المسؤول {#admin-user}
 
 تتضمن خدمات ClickHouse Cloud مستخدمًا مسؤولًا باسم `default` يُنشأ عند إنشاء الخدمة. وتُحدَّد كلمة المرور عند إنشاء الخدمة، ويمكن لمستخدمي ClickHouse Cloud الذين لديهم دور **Admin** إعادة تعيينها.
 
@@ -40,20 +38,16 @@ GRANT default_role TO clickhouse_admin;
   يكون لدى مستخدمي SQL Console الذين يُنشَؤون تلقائيًا الدور `default`.
 </Note>
 
-<div id="passwordless-authentication">
-  ## المصادقة بدون كلمة مرور
-</div>
+## المصادقة بدون كلمة مرور {#passwordless-authentication}
 
 يتوفر دوران في SQL Console: `sql_console_admin` بأذونات مطابقة لـ `default_role`، و`sql_console_read_only` بأذونات للقراءة فقط.
 
 يُسنَد الدور `sql_console_admin` إلى مستخدمي Admin افتراضيًا، لذا لا يتغير شيء بالنسبة إليهم. ومع ذلك، يتيح الدور `sql_console_read_only` منح المستخدمين غير المشرفين حق وصول للقراءة فقط أو حق وصول كامل إلى أي مثيل. ويجب على مستخدم Admin تهيئة هذا الوصول. ويمكن تعديل الأدوار باستخدام الأمرين `GRANT` و`REVOKE` لتلائم متطلبات كل مثيل بشكل أفضل، كما ستُحفَظ أي تعديلات تُجرى على هذه الأدوار.
 
-<div id="granular-access-control">
-  ### التحكم الدقيق في الوصول
-</div>
+### التحكم الدقيق في الوصول {#granular-access-control}
 
 <Tip>
-  يُفضَّل استخدام [أدوار قاعدة البيانات المُدارة عبر Cloud](/ar/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) (بيتا) لإدارة الوصول إلى قاعدة البيانات من وحدة التحكم. لا تتوافق أدوار `sql-console-role:<email>` مع [مصادقة JWT](/ar/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
+  يُفضَّل استخدام [أدوار قاعدة البيانات المُدارة عبر Cloud](/ar/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) لإدارة الوصول إلى قاعدة البيانات من وحدة التحكم. لا تتوافق أدوار `sql-console-role:<email>` مع جلسات JWT داخل SQL Console.
 </Tip>
 
 يمكن أيضًا تهيئة وظيفة التحكم في الوصول هذه يدويًا بدقة على مستوى كل مستخدم. قبل إسناد أدوار `sql_console_*` الجديدة إلى المستخدمين، يجب إنشاء أدوار قاعدة البيانات الخاصة بمستخدمي SQL Console التي تطابق مساحة الاسم `sql-console-role:<email>`. على سبيل المثال:

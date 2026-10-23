@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
+#include <Parsers/Prometheus/parseTimeSeriesTypes.h>
 
 #include <fmt/format.h>
 
@@ -127,6 +128,48 @@ TEST(PromQLParser, DuplicateMetricName)
         size_t error_pos = 0;
         EXPECT_FALSE(query_tree.tryParse(query, 3, &error_message, &error_pos)) << query;
         EXPECT_NE(error_message.find("metric name must not be set twice"), String::npos) << query;
+    }
+}
+
+
+TEST(PromQLParser, SelectorRequiresNonEmptyMatcher)
+{
+    for (const auto * const query : {
+             R"({__name__=~".*"})",
+             R"({job=~".*"})",
+             R"({job!="demo"})",
+             R"({job=""})",
+             R"({job!~".+"})",
+         })
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = 0;
+        EXPECT_FALSE(query_tree.tryParse(query, 3, &error_message, &error_pos)) << query;
+        EXPECT_EQ(error_message, "vector selector must contain at least one non-empty matcher") << query;
+    }
+
+    for (const auto * const query : {
+             R"({job!=""})",
+             R"({job!~".*"})",
+             R"({__name__=~".+"})",
+             R"({__name__=~".+", job=~".*"})",
+             R"(up{job=~".*"})",
+         })
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = 0;
+        EXPECT_TRUE(query_tree.tryParse(query, 3, &error_message, &error_pos)) << query << ": " << error_message;
+    }
+
+    /// Regex syntax is validated even when another matcher already makes the selector non-empty.
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = 0;
+        EXPECT_FALSE(query_tree.tryParse(R"({__name__=~".+", job=~"(.*"})", 3, &error_message, &error_pos));
+        EXPECT_NE(error_message.find("invalid regular expression in label matcher"), String::npos);
     }
 }
 
@@ -462,13 +505,13 @@ PrometheusQueryTree(INSTANT_VECTOR):
 )");
 
     EXPECT_EQ(parse(R"(
-        {__name__=~".*"}
+        {__name__=~".+"}
         )"), R"(
-{__name__=~".*"}
+{__name__=~".+"}
 
 PrometheusQueryTree(INSTANT_VECTOR):
     InstantSelector:
-        __name__ RE '.*'
+        __name__ RE '.+'
 )");
 
     /// Aggregation operators.
@@ -987,7 +1030,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
 
     /// Functions.
     EXPECT_EQ(parse("avg_over_time(demo_memory_usage_bytes[20m])"), R"(
-avg_over_time(demo_memory_usage_bytes[1200])
+avg_over_time(demo_memory_usage_bytes[20m])
 
 PrometheusQueryTree(INSTANT_VECTOR):
     Function(avg_over_time):
@@ -997,8 +1040,30 @@ PrometheusQueryTree(INSTANT_VECTOR):
                 __name__ EQ 'demo_memory_usage_bytes'
 )");
 
+    EXPECT_EQ(parse("present_over_time(demo_memory_usage_bytes[20m])"), R"(
+present_over_time(demo_memory_usage_bytes[20m])
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    Function(present_over_time):
+        RangeSelector:
+            range: 1200
+            InstantSelector:
+                __name__ EQ 'demo_memory_usage_bytes'
+)");
+
+    EXPECT_EQ(parse("absent_over_time(demo_memory_usage_bytes[20m])"), R"(
+absent_over_time(demo_memory_usage_bytes[20m])
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    Function(absent_over_time):
+        RangeSelector:
+            range: 1200
+            InstantSelector:
+                __name__ EQ 'demo_memory_usage_bytes'
+)");
+
     EXPECT_EQ(parse("quantile_over_time(0.5, demo_memory_usage_bytes[20m])"), R"(
-quantile_over_time(0.5, demo_memory_usage_bytes[1200])
+quantile_over_time(0.5, demo_memory_usage_bytes[20m])
 
 PrometheusQueryTree(INSTANT_VECTOR):
     Function(quantile_over_time):
@@ -1048,7 +1113,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
 )");
 
     EXPECT_EQ(parse("rate(demo_cpu_usage_seconds_total[20m])"), R"(
-rate(demo_cpu_usage_seconds_total[1200])
+rate(demo_cpu_usage_seconds_total[20m])
 
 PrometheusQueryTree(INSTANT_VECTOR):
     Function(rate):
@@ -1059,7 +1124,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
 )");
 
     EXPECT_EQ(parse("deriv(demo_disk_usage_bytes[20m])"), R"(
-deriv(demo_disk_usage_bytes[1200])
+deriv(demo_disk_usage_bytes[20m])
 
 PrometheusQueryTree(INSTANT_VECTOR):
     Function(deriv):
@@ -1070,7 +1135,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
 )");
 
     EXPECT_EQ(parse("predict_linear(demo_disk_usage_bytes[20m], 600)"), R"(
-predict_linear(demo_disk_usage_bytes[1200], 600)
+predict_linear(demo_disk_usage_bytes[20m], 600)
 
 PrometheusQueryTree(INSTANT_VECTOR):
     Function(predict_linear):
@@ -1128,7 +1193,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
 )");
 
     EXPECT_EQ(parse("irate(demo_cpu_usage_seconds_total[20m])"), R"(
-irate(demo_cpu_usage_seconds_total[1200])
+irate(demo_cpu_usage_seconds_total[20m])
 
 PrometheusQueryTree(INSTANT_VECTOR):
     Function(irate):
@@ -1171,7 +1236,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
 )");
 
     EXPECT_EQ(parse("resets(demo_cpu_usage_seconds_total[20m])"), R"(
-resets(demo_cpu_usage_seconds_total[1200])
+resets(demo_cpu_usage_seconds_total[20m])
 
 PrometheusQueryTree(INSTANT_VECTOR):
     Function(resets):
@@ -1182,7 +1247,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
 )");
 
     EXPECT_EQ(parse("changes(demo_batch_last_success_timestamp_seconds[20m])"), R"(
-changes(demo_batch_last_success_timestamp_seconds[1200])
+changes(demo_batch_last_success_timestamp_seconds[20m])
 
 PrometheusQueryTree(INSTANT_VECTOR):
     Function(changes):
@@ -1209,7 +1274,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
 )");
 
     EXPECT_EQ(parse("histogram_quantile(0.5, rate(demo_api_request_duration_seconds_bucket[1m]))"), R"(
-histogram_quantile(0.5, rate(demo_api_request_duration_seconds_bucket[60]))
+histogram_quantile(0.5, rate(demo_api_request_duration_seconds_bucket[1m]))
 
 PrometheusQueryTree(INSTANT_VECTOR):
     Function(histogram_quantile):
@@ -1266,7 +1331,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
 
     /// Subqueries.
     EXPECT_EQ(parse("max_over_time((time() - max(demo_batch_last_success_timestamp_seconds) < 1000)[5m:10s] offset 5m)"), R"(
-max_over_time((time() - max(demo_batch_last_success_timestamp_seconds) < 1000)[300:10] offset 300)
+max_over_time((time() - max(demo_batch_last_success_timestamp_seconds) < 1000)[5m:10s] offset 5m)
 
 PrometheusQueryTree(INSTANT_VECTOR):
     Function(max_over_time):
@@ -1285,7 +1350,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
 )");
 
     EXPECT_EQ(parse("avg_over_time(rate(demo_cpu_usage_seconds_total[1m])[2m:10s])"), R"(
-avg_over_time(rate(demo_cpu_usage_seconds_total[60])[120:10])
+avg_over_time(rate(demo_cpu_usage_seconds_total[1m])[2m:10s])
 
 PrometheusQueryTree(INSTANT_VECTOR):
     Function(avg_over_time):
@@ -1299,6 +1364,143 @@ PrometheusQueryTree(INSTANT_VECTOR):
                         __name__ EQ 'demo_cpu_usage_seconds_total'
 )");
 
+}
+
+
+TEST(PromQLParser, OctalLiterals)
+{
+    EXPECT_EQ(parse("0755"), R"(
+493
+
+PrometheusQueryTree(SCALAR):
+    Scalar(493)
+)");
+
+    EXPECT_EQ(parse("-0755"), R"(
+-493
+
+PrometheusQueryTree(SCALAR):
+    UnaryOperator(-)
+        Scalar(493)
+)");
+
+    EXPECT_EQ(parse("0_755"), R"(
+493
+
+PrometheusQueryTree(SCALAR):
+    Scalar(493)
+)");
+
+    EXPECT_EQ(parse("08"), R"(
+8
+
+PrometheusQueryTree(SCALAR):
+    Scalar(8)
+)");
+
+    EXPECT_EQ(parse("0759"), R"(
+759
+
+PrometheusQueryTree(SCALAR):
+    Scalar(759)
+)");
+
+    EXPECT_EQ(parse("0755.0"), R"(
+755
+
+PrometheusQueryTree(SCALAR):
+    Scalar(755)
+)");
+
+    EXPECT_EQ(parse("0755e1"), R"(
+7550
+
+PrometheusQueryTree(SCALAR):
+    Scalar(7550)
+)");
+}
+
+
+TEST(PromQLParser, OctalTimestamp)
+{
+    EXPECT_EQ(parse("up @ 0755"), R"(
+up @ 493
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    Offset:
+        at: 493
+        InstantSelector:
+            __name__ EQ 'up'
+)");
+}
+
+
+TEST(PromQLParser, OctalTimestampOverflow)
+{
+    PrometheusQueryTree query_tree;
+    String error_message;
+    size_t error_pos = String::npos;
+
+    EXPECT_FALSE(query_tree.tryParse(
+        "up @ 0777777777777777777777",
+        3,
+        &error_message,
+        &error_pos));
+
+    EXPECT_EQ(error_pos, 5);
+    EXPECT_NE(error_message.find("Overflow"), String::npos);
+}
+
+
+TEST(PromQLParser, TimeSeriesNumberFormatsRemainDecimal)
+{
+    EXPECT_EQ(parseTimeSeriesTimestamp(String{"0755"}, 3).value, 755000);
+    EXPECT_EQ(parseTimeSeriesDuration(String{"0755"}, 3).value, 755000);
+}
+
+
+TEST(PromQLParser, OctalRangesAndOffsets)
+{
+    EXPECT_EQ(parse("up[0755]"), R"(
+up[8m13s]
+
+PrometheusQueryTree(RANGE_VECTOR):
+    RangeSelector:
+        range: 493
+        InstantSelector:
+            __name__ EQ 'up'
+)");
+
+    EXPECT_EQ(parse("up[0755:010]"), R"(
+up[8m13s:8s]
+
+PrometheusQueryTree(RANGE_VECTOR):
+    Subquery:
+        range: 493
+        step: 8
+        InstantSelector:
+            __name__ EQ 'up'
+)");
+
+    EXPECT_EQ(parse("up offset 0755"), R"(
+up offset 8m13s
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    Offset:
+        offset: 493
+        InstantSelector:
+            __name__ EQ 'up'
+)");
+
+    EXPECT_EQ(parse("up offset -0755"), R"(
+up offset -8m13s
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    Offset:
+        offset: -493
+        InstantSelector:
+            __name__ EQ 'up'
+)");
 }
 
 
@@ -1333,7 +1535,7 @@ PrometheusQueryTree(SCALAR):
 )");
 
     EXPECT_EQ(parse("3h20m10s5ms"), R"(
-12010.005
+3h20m10s5ms
 
 PrometheusQueryTree(SCALAR):
     Scalar(12010.005)
@@ -1405,7 +1607,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
     EXPECT_EQ(parse(R"(
         http_requests_total{job="prometheus"}[5m]
     )"), R"(
-http_requests_total{job="prometheus"}[300]
+http_requests_total{job="prometheus"}[5m]
 
 PrometheusQueryTree(RANGE_VECTOR):
     RangeSelector:
@@ -1416,7 +1618,7 @@ PrometheusQueryTree(RANGE_VECTOR):
 )");
 
     EXPECT_EQ(parse("http_requests_total offset 5m @ 1609746000"), R"(
-http_requests_total @ 1609746000 offset 300
+http_requests_total @ 1609746000 offset 5m
 
 PrometheusQueryTree(INSTANT_VECTOR):
     Offset:
@@ -1437,7 +1639,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
 )");
 
     EXPECT_EQ(parse("http_requests_total @ end() offset 5m"), R"(
-http_requests_total @ end() offset 300
+http_requests_total @ end() offset 5m
 
 PrometheusQueryTree(INSTANT_VECTOR):
     Offset:
@@ -1448,7 +1650,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
 )");
 
     EXPECT_EQ(parse("http_requests_total offset 5m @ start()"), R"(
-http_requests_total @ start() offset 300
+http_requests_total @ start() offset 5m
 
 PrometheusQueryTree(INSTANT_VECTOR):
     Offset:
@@ -1473,7 +1675,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
 )PROMQL");
 
     EXPECT_EQ(parse("http_requests_total[5m:1m] @ start()"), R"(
-http_requests_total[300:60] @ start()
+http_requests_total[5m:1m] @ start()
 
 PrometheusQueryTree(RANGE_VECTOR):
     Offset:
@@ -1486,7 +1688,7 @@ PrometheusQueryTree(RANGE_VECTOR):
 )");
 
     EXPECT_EQ(parse("http_requests_total[5m:1m] offset -10s"), R"(
-http_requests_total[300:60] offset -10
+http_requests_total[5m:1m] offset -10s
 
 PrometheusQueryTree(RANGE_VECTOR):
     Offset:
@@ -1499,7 +1701,7 @@ PrometheusQueryTree(RANGE_VECTOR):
 )");
 
     EXPECT_EQ(parse("(2 ^ vector(3))[5m:1m]"), R"(
-(2 ^ vector(3))[300:60]
+(2 ^ vector(3))[5m:1m]
 
 PrometheusQueryTree(RANGE_VECTOR):
     Subquery:
@@ -1513,7 +1715,7 @@ PrometheusQueryTree(RANGE_VECTOR):
 
     /// Subquery has higher precedence than power '^'
     EXPECT_EQ(parse("2 ^ vector(3)[5m:1m]"), R"(
-2 ^ vector(3)[300:60]
+2 ^ vector(3)[5m:1m]
 
 PrometheusQueryTree(INSTANT_VECTOR):
     BinaryOperator(^)
@@ -1574,6 +1776,29 @@ TEST(PromQLParser, DurationUnitOrder)
 }
 
 
+TEST(PromQLParser, LineComments)
+{
+    /// A line comment is terminated either by an end of line or by the end of the query.
+    for (const auto * const query : {
+             "up # comment",
+             "up # comment\n",
+             "up # comment\r",
+             "up # comment\r\n",
+             "up #!comment",
+             "up #comment",
+             "up #",
+         })
+        EXPECT_NO_THROW(PrometheusQueryTree{query}) << query;
+
+    PrometheusQueryTree query_tree;
+    String error_message;
+    size_t error_pos = String::npos;
+
+    EXPECT_FALSE(query_tree.tryParse("# comment", 3, &error_message, &error_pos));
+    EXPECT_EQ(error_pos, 9);
+}
+
+
 TEST(PromQLParser, ErrorPosition)
 {
     for (const auto & [query, expected_error_pos] : std::initializer_list<std::pair<std::string_view, size_t>>{
@@ -1599,10 +1824,6 @@ TEST(PromQLParser, InvalidStringQuoteEscapes)
     for (const auto & [query, expected_error_pos] : std::initializer_list<std::pair<std::string_view, size_t>>{
              {R"(up{label="a\'b"})", 11},
              {R"(up{label='a\"b'})", 11},
-             {R"("hello\
-world")", 6},
-             {R"("hello\x
-world")", 6},
          })
     {
         PrometheusQueryTree query_tree;
@@ -1618,12 +1839,18 @@ world")", 6},
 
 TEST(PromQLParser, RejectLiteralLFInQuotedStrings)
 {
+    /// The error for a quoted string containing a line feed is reported at its opening quote, even if
+    /// the string also has an invalid escape sequence or is followed by a syntax error.
     for (const auto & [query, expected_error_pos] : std::initializer_list<std::pair<std::string_view, size_t>>{
              {R"("hello
 world")", 0},
              {R"('hello
 world')", 0},
+             {R"("hello\
+world")", 0},
              {R"("hello\\
+world")", 0},
+             {R"("hello\x
 world")", 0},
              {"\"hello\r\nworld\"", 0},
              {R"("hello
@@ -1641,7 +1868,7 @@ world" $)", 0},
         size_t error_pos = String::npos;
 
         EXPECT_FALSE(query_tree.tryParse(query, 3, &error_message, &error_pos)) << query;
-        EXPECT_EQ(error_message, "unterminated quoted string") << query;
+        EXPECT_NE(error_message.find("token recognition error"), String::npos) << query;
         EXPECT_EQ(error_pos, expected_error_pos) << query;
     }
 
@@ -1650,6 +1877,33 @@ world`)"), "hello\nworld");
     EXPECT_EQ(parseStringLiteral(R"("hello\nworld")"), "hello\nworld");
     EXPECT_EQ(parseStringLiteral(R"('hello\nworld')"), "hello\nworld");
     EXPECT_EQ(parseStringLiteral("\"hello\rworld\""), "hello\rworld");
+}
+
+TEST(PromQLParser, RejectOverlappingOnAndGroupLabels)
+{
+    auto expect_rejected = [](std::string_view query, std::string_view expected_error_message)
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = String::npos;
+        EXPECT_FALSE(query_tree.tryParse(query, 3, &error_message, &error_pos));
+        EXPECT_EQ(error_message, expected_error_message);
+        EXPECT_EQ(error_pos, 6);
+    };
+
+    expect_rejected("foo + on(job) group_left(job) bar", R"(label "job" must not occur in ON and GROUP clause at once)");
+    expect_rejected("foo + on(job) group_right(job) bar", R"(label "job" must not occur in ON and GROUP clause at once)");
+    expect_rejected("foo + on(job,job,job) group_left(job,job,job) bar", R"(label "job" must not occur in ON and GROUP clause at once)");
+    expect_rejected("foo + on(job,instance) group_left(instance,job) bar", R"(label "job" must not occur in ON and GROUP clause at once)");
+    expect_rejected("foo + on(job,instance) group_left(zone,instance) bar", R"(label "instance" must not occur in ON and GROUP clause at once)");
+    expect_rejected(R"(foo + on("job") group_left(job) bar)", R"(label "job" must not occur in ON and GROUP clause at once)");
+    expect_rejected(R"(foo + on(job) group_left("job") bar)", R"(label "job" must not occur in ON and GROUP clause at once)");
+    expect_rejected(R"(foo + on("a\"b") group_left("a\"b") bar)", R"(label "a\"b" must not occur in ON and GROUP clause at once)");
+    expect_rejected(R"(foo + on("\v") group_left("\v") bar)", R"(label "\v" must not occur in ON and GROUP clause at once)");
+
+    EXPECT_NO_THROW(PrometheusQueryTree{"foo + on(job) group_left(instance) bar"});
+    EXPECT_NO_THROW(PrometheusQueryTree{"foo + on(a,a,a) group_left(b,b,b) bar"});
+    EXPECT_NO_THROW(PrometheusQueryTree{"foo + ignoring(job) group_left(job) bar"});
 }
 
 
@@ -1746,7 +2000,7 @@ TEST(PromQLParser, RejectUnicodeSurrogateEscapes)
         PrometheusQueryTree query_tree;
         String error_message;
         size_t error_pos = String::npos;
-        EXPECT_FALSE(query_tree.tryParse(query, /* timestamp_scale = */ 3, &error_message, &error_pos)) << query;
+        EXPECT_FALSE(query_tree.tryParse(query, /* time_scale = */ 3, &error_message, &error_pos)) << query;
         EXPECT_NE(error_message.find("surrogate range 0xD800-0xDFFF"), String::npos) << query << ": " << error_message;
         EXPECT_EQ(error_pos, expected_error_pos) << query;
     };
@@ -1762,4 +2016,111 @@ TEST(PromQLParser, RejectUnicodeSurrogateEscapes)
     EXPECT_EQ(parseStringLiteral(R"("\uE000")"), "\xEE\x80\x80");
     EXPECT_EQ(parseStringLiteral(R"("\U00010000")"), "\xF0\x90\x80\x80");
     EXPECT_EQ(parseStringLiteral(R"("\U0010FFFF")"), "\xF4\x8F\xBF\xBF");
+}
+
+TEST(PromQLParser, UnimplementedCalls)
+{
+    EXPECT_EQ(parse("start()"), R"(
+start()
+
+PrometheusQueryTree(SCALAR):
+    Function(start)
+)");
+
+    EXPECT_EQ(parse("end()"), R"(
+end()
+
+PrometheusQueryTree(SCALAR):
+    Function(end)
+)");
+
+    EXPECT_EQ(parse("step()"), R"(
+step()
+
+PrometheusQueryTree(SCALAR):
+    Function(step)
+)");
+
+    EXPECT_EQ(parse("range()"), R"(
+range()
+
+PrometheusQueryTree(SCALAR):
+    Function(range)
+)");
+
+    EXPECT_EQ(parse(R"(sort_by_label(up, "job"))"), R"(
+sort_by_label(up, "job")
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    Function(sort_by_label):
+        InstantSelector:
+            __name__ EQ 'up'
+        StringLiteral('job')
+)");
+
+    EXPECT_EQ(parse(R"(sort_by_label_desc(up, "job"))"), R"(
+sort_by_label_desc(up, "job")
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    Function(sort_by_label_desc):
+        InstantSelector:
+            __name__ EQ 'up'
+        StringLiteral('job')
+)");
+
+    EXPECT_EQ(parse("double_exponential_smoothing(up[5m], 0.01, 0.1)"), R"(
+double_exponential_smoothing(up[5m], 0.01, 0.1)
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    Function(double_exponential_smoothing):
+        RangeSelector:
+            range: 300
+            InstantSelector:
+                __name__ EQ 'up'
+        Scalar(0.01)
+        Scalar(0.1)
+)");
+
+    EXPECT_EQ(parse("limit_ratio(0.5, up)"), R"(
+limit_ratio(0.5, up)
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    AggregationOperator(limit_ratio)
+        Scalar(0.5)
+        InstantSelector:
+            __name__ EQ 'up'
+)");
+}
+
+
+TEST(PromQLParser, StandaloneStepRangeFunctions)
+{
+    for (const auto * query :
+         {"step()", "range()", "range() - step()", "step\n()", "range # comment\r()", "step # comment\n()"})
+    {
+        PrometheusQueryTree tree{query};
+        EXPECT_EQ(tree.getResultType(), PrometheusQueryTree::ResultType::SCALAR) << query;
+        expectRoundTrip(query, tree.toString());
+    }
+
+    /// These names remain valid metric names when they are not called as functions.
+    for (const auto * query : {"step", "range", R"(step{job="x"})", R"(range{job="x"})", R"(up{step="x",range="y"})"})
+    {
+        PrometheusQueryTree tree{query};
+        EXPECT_EQ(tree.getResultType(), PrometheusQueryTree::ResultType::INSTANT_VECTOR) << query;
+        expectRoundTrip(query, tree.toString());
+    }
+}
+
+
+TEST(PromQLParser, InvalidStandaloneStepRangeFunctions)
+{
+    for (const auto * query : {"step(1)", "range(1)", "step(1, 2)", "STEP()", "RANGE()"})
+    {
+        PrometheusQueryTree tree;
+        String error_message;
+        size_t error_pos = 0;
+        EXPECT_FALSE(tree.tryParse(query, 3, &error_message, &error_pos)) << query;
+        EXPECT_FALSE(error_message.empty()) << query;
+    }
 }

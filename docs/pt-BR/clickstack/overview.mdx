@@ -96,9 +96,7 @@ O ClickStack tem integração nativa com o OpenTelemetry e faz a ingestão de to
 
 O ClickStack é totalmente open source e pode ser implantado em qualquer lugar. O esquema é flexível e pode ser modificado pelo usuário, e a UI foi projetada para se adaptar a esquemas personalizados sem exigir alterações. Todos os componentes — incluindo coletores, ClickHouse e a UI — podem ser escalados de forma independente para atender às demandas de ingestão, consulta ou armazenamento.
 
-<div id="architectural-overview">
-  ## Visão geral da arquitetura
-</div>
+## Visão geral da arquitetura {#architectural-overview}
 
 A arquitetura do ClickStack varia conforme a forma como ele é implantado. Há distinções arquiteturais importantes entre o **ClickStack Open Source**, em que todos os componentes são autogerenciados, e o **Managed ClickStack**, em que o ClickHouse e a UI do HyperDX são hospedados e operados no ClickHouse Cloud. Embora os componentes principais permaneçam os mesmos em ambos os modelos, a responsabilidade por hospedar, escalar e proteger cada componente é diferente.
 
@@ -125,7 +123,7 @@ A arquitetura do ClickStack varia conforme a forma como ele é implantado. Há d
 
     * **Escalonamento automático da capacidade computacional, independente do armazenamento**
     * **Retenção de baixo custo e efetivamente ilimitada**, com base em armazenamento de objetos
-    * **Isolamento independente entre leitura e escrita** usando ClickHouse Cloud Warehouses
+    * **[Isolamento independente entre leitura e escrita](/pt-BR/clickstack/managing/isolating-read-write)** usando ClickHouse Cloud Warehouses
     * **Autenticação e controle de acesso integrados**
     * **Backups automatizados**
     * **Recursos de segurança e conformidade**

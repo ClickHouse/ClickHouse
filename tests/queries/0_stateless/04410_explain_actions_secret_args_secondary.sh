@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-old-analyzer
+# Tags: no-fasttest
 # Tag no-fasttest: the encryption functions are not available in the fast test build
-# Tag no-old-analyzer: the old analyzer builds the ActionsDAG without query-tree masking, so it still leaks the key
 
 # On a secondary (shard) query the planner skips AST-level optimizations, so a secret argument
 # folded into a constant (e.g. concat('SECRET_', 'KEY')) used to be named by its source expression,

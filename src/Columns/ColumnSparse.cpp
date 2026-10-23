@@ -187,11 +187,6 @@ void ColumnSparse::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn:
     insertSingleValue([&](IColumn & column) { column.deserializeAndInsertFromArena(in, settings); });
 }
 
-void ColumnSparse::skipSerializedInArena(ReadBuffer & in) const
-{
-    values->skipSerializedInArena(in);
-}
-
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnSparse::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 #else
@@ -461,7 +456,9 @@ void ColumnSparse::expand(const Filter & mask, bool inverted)
     if (mask.size() < _size)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mask size should be no less than data size.");
 
-    auto res_offsets = offsets->cloneEmpty();
+    /// Every non-default value moves to the position of its row in the mask. The iterator reads the old offsets,
+    /// so the new ones go into a copy.
+    auto res_offsets = offsets->cloneResized(offsets->size());
     auto & res_offsets_data = assert_cast<ColumnUInt64 &>(*res_offsets).getData();
 
     auto it = begin();
@@ -479,6 +476,10 @@ void ColumnSparse::expand(const Filter & mask, bool inverted)
         }
     }
 
+    if (it.getCurrentRow() != _size)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough bytes in mask");
+
+    offsets = std::move(res_offsets);
     _size = mask.size();
 }
 
@@ -511,6 +512,32 @@ ColumnPtr ColumnSparse::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
     auto res_values = values->cloneEmpty();
     res_values->insertDefault();
 
+    auto insert_run = [&](size_t value_index, size_t output_start, size_t length)
+    {
+        if (value_index == 0)
+            return;
+
+        if (length == 1)
+        {
+            res_values->insertFrom(*values, value_index);
+            res_offsets_data.push_back(output_start);
+            return;
+        }
+
+        res_values->insertManyFrom(*values, value_index, length);
+        for (size_t i = 0; i < length; ++i)
+            res_offsets_data.push_back(output_start + i);
+    };
+
+    auto get_run_end = [&](size_t start)
+    {
+        const auto index = indexes[start];
+        size_t end = start + 1;
+        while (end < limit && indexes[end] == index)
+            ++end;
+        return end;
+    };
+
     /// If we need to permute full column, or if limit is large enough,
     /// it's better to save indexes of values in O(size)
     /// and avoid binary search for obtaining every index.
@@ -525,26 +552,41 @@ ColumnPtr ColumnSparse::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
         for (size_t i = 0; i < _size; ++i, ++offset_it)
             values_index[i] = offset_it.getValueIndex();
 
-        for (size_t i = 0; i < limit; ++i)
+        for (size_t i = 0; i < limit;)
         {
-            size_t index = values_index[indexes[i]];
-            if (index != 0)
-            {
-                res_values->insertFrom(*values, index);
-                res_offsets_data.push_back(i);
-            }
+            size_t run_end = get_run_end(i);
+            insert_run(values_index[indexes[i]], i, run_end - i);
+            i = run_end;
         }
     }
     else
     {
-        for (size_t i = 0; i < limit; ++i)
+        /// Sorted indexes (e.g. a sparse filter's offsets) gallop forward instead of a binary search over all offsets per row.
+        const auto * offsets_begin = getOffsetsData().begin();
+        const auto * offsets_end = getOffsetsData().end();
+        size_t i = 0;
+        for (const auto * pos = offsets_begin; i < limit && (pos == offsets_begin || pos[-1] < indexes[i]);)
         {
-            size_t index = getValueIndex(indexes[i]);
-            if (index != 0)
+            chassert(indexes[i] < _size);
+            size_t run_end = get_run_end(i);
+            size_t step = 1;
+            while (step <= static_cast<size_t>(offsets_end - pos) && pos[step - 1] < indexes[i])
             {
-                res_values->insertFrom(*values, index);
-                res_offsets_data.push_back(i);
+                pos += step;
+                step *= 2;
             }
+            pos = std::lower_bound(pos, pos + std::min<size_t>(step - 1, offsets_end - pos), indexes[i]);
+            const bool found = pos != offsets_end && *pos == indexes[i];
+            pos += found;
+            insert_run(found ? pos - offsets_begin : 0, i, run_end - i);
+            i = run_end;
+        }
+
+        while (i < limit)
+        {
+            size_t run_end = get_run_end(i);
+            insert_run(getValueIndex(indexes[i]), i, run_end - i);
+            i = run_end;
         }
     }
 
@@ -1021,8 +1063,9 @@ ColumnPtr removeSpecialRepresentations(const ColumnPtr & column)
     if (!column)
         return column;
 
-    /// We can have only Replicated(Sparse) but not Sparse(Replicated).
-    return recursiveRemoveSparse(column->convertToFullColumnIfReplicated());
+    /// Order matters: the BLOB holds the serialized form of everything below it, and we can have
+    /// only Replicated(Sparse) but not Sparse(Replicated).
+    return recursiveRemoveSparse(column->convertToFullColumnIfDetached()->convertToFullColumnIfReplicated());
 }
 
 }
