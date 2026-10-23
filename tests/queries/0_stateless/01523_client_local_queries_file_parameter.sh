@@ -176,7 +176,7 @@ cat "$STDIN_DATA_FILE_NAME"
 printf '%s\n' 'CREATE DATABASE db_01523;' \
     'CREATE TABLE db_01523.`table` (x UInt8) ENGINE=Memory;' > "$TEMP_SQL_FILE_NAME"
 $CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" \
-    -q "SELECT count() FROM `table` SETTINGS database = 'db_01523'" < "$STDIN_DATA_FILE_NAME"
+    -q "SELECT count() FROM \`table\` SETTINGS database = 'db_01523'" < "$STDIN_DATA_FILE_NAME"
 
 # A query-file setting must override the inferred stdin default, including ''.
 echo "SET implicit_table_at_top_level = '';" > "$TEMP_SQL_FILE_NAME"
