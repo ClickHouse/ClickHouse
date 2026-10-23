@@ -609,7 +609,6 @@ static void splitAndModifyMutationCommands(
         NameSet extra_columns_for_indices_and_projections;
         auto storage_columns = metadata_snapshot->getColumns().getAllPhysical().getNameSet();
 
-        /// A registered subcolumn of an index input is read from the column it is registered under.
         auto get_index_column_in_storage = [&](const String & column) -> std::optional<String>
         {
             if (auto subcolumn = table_columns.tryGetSubcolumn(column, GetColumnsOptions::AllPhysical))
