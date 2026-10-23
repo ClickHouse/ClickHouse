@@ -4,11 +4,11 @@
 #include <Core/Range.h>
 #include <Core/Settings.h>
 #include <DataTypes/IDataType.h>
+#include <Databases/enableAllExperimentalSettings.h>
 #include <DataTypes/TypeTree.h>
-#include <Functions/FunctionFactory.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
-#include <Parsers/ASTFunction.h>
+#include <Interpreters/inplaceBlockConversions.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -88,7 +88,8 @@ namespace DB::QueryPlanOptimizations
 /// - `argMin`/`argMax` of a `Nullable` value;
 /// - a filter on a non-prefix column when a primary key column can contain NULL;
 /// - `LIMIT BY` whose limit plus offset overflows, or with `arrayJoin` above the sorting;
-/// - stateful functions (`rowNumberInAllBlocks`, ...) before the aggregation or `LIMIT BY`, or in a column default.
+/// - stateful functions (`rowNumberInAllBlocks`, ...) before the aggregation or `LIMIT BY`, or in the default of a column
+///   that a part does not have.
 
 /// The order and equality of the primary index must agree with the aggregation. `Nullable`: `max` and `min`
 /// ignore NULLs, which sort at an end of the run. Floating point: NaN has no consistent order, and `-0` and `+0`
@@ -142,18 +143,40 @@ static bool dependsOnlyOn(const ActionsDAG::Node * predicate, const NameSet & co
     return true;
 }
 
-/// Whether the expression calls a stateful function (`rowNumberInAllBlocks`, `runningDifference`, ...).
-static bool hasStatefulFunction(const ASTPtr & ast, const ContextPtr & context)
+/// Whether the reader computes some of `column_names` for `part` from default expressions with stateful functions
+/// (`rowNumberInAllBlocks`, `runningDifference`, ...). This happens for columns the part does not have, e.g. added by
+/// `ALTER TABLE ... ADD COLUMN` and not materialized. The same expressions as in `IMergeTreeReader::evaluateMissingDefaults`
+/// are built, so nothing is built that the reader would not build.
+static bool readerComputesStatefulDefaults(
+    const IMergeTreeDataPart & part, const Names & column_names, const ColumnsDescription & columns, const ContextPtr & context)
 {
-    if (const auto * function = ast->as<ASTFunction>())
+    Block present_columns;
+    NamesAndTypesList requested_columns;
+    NameSet seen;
+    bool has_missing_columns = false;
+    for (const auto & name : column_names)
     {
-        if (auto resolver = FunctionFactory::instance().tryGet(function->name, context); resolver && resolver->isStateful())
-            return true;
+        /// Virtual columns are not in the description and have no defaults here.
+        auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
+        if (!column)
+            continue;
+        const auto name_in_storage = column->getNameInStorage();
+        if (!seen.insert(name_in_storage).second)
+            continue;
+        const auto type = column->getTypeInStorage();
+        requested_columns.emplace_back(name_in_storage, type);
+        if (part.tryGetColumn(name_in_storage))
+            present_columns.insert({type->createColumn(), type, name_in_storage});
+        else
+            has_missing_columns = true;
     }
-    for (const auto & child : ast->children)
-        if (hasStatefulFunction(child, context))
-            return true;
-    return false;
+    if (!has_missing_columns)
+        return false;
+
+    auto context_copy = Context::createCopy(context);
+    enableAllExperimentalSettings(context_copy);
+    auto dag = evaluateMissingDefaults(present_columns, requested_columns, columns, context_copy);
+    return dag && dag->hasStatefulFunctions();
 }
 
 /// Aggregate functions whose result depends only on the set of distinct values of their arguments, not on how
@@ -287,12 +310,6 @@ static void tryApply(
     const auto table_metadata = reading->getMergeTreeData().getInMemoryMetadataPtr(reading->getContext(), /*bypass_metadata_cache=*/ false);
     if (metadata->hasUniqueKey() || table_metadata->hasUniqueKey())
         return;
-    /// A column that a part does not have (e.g. added by `ALTER TABLE ... ADD COLUMN` and not materialized) is computed
-    /// by the reader from its default expression, which is not in `query.dag`. The default expressions of all columns
-    /// are checked, which also covers defaults that use other columns with defaults.
-    for (const auto & [name, column_default] : table_metadata->getColumns().getDefaults())
-        if (column_default.expression && hasStatefulFunction(column_default.expression, reading->getContext()))
-            return;
     const auto & sorting_key = metadata->getSortingKey();
     const auto & primary_key = metadata->getPrimaryKey();
 
@@ -486,6 +503,13 @@ static void tryApply(
     /// applied to the parts of a projection that was already chosen.
     if (!analysis)
         return;
+
+    /// Stateful default expressions computed by the reader (see `readerComputesStatefulDefaults`) depend on all rows read,
+    /// also those of other parts, so one such part disables the optimization.
+    const auto & read_columns = reading->getStorageSnapshot()->metadata->getColumns();
+    for (const auto & part : analysis->parts_with_ranges)
+        if (readerComputesStatefulDefaults(*part.data_part, reading->getAllColumnNames(), read_columns, context))
+            return;
 
     auto result = std::make_shared<ReadFromMergeTree::AnalysisResult>(*analysis);
     const auto & mutations_snapshot = reading->getMutationsSnapshot();

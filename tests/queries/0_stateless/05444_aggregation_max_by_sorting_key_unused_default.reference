@@ -1,0 +1,10 @@
+-- a stored column with a default using a deprecated function
+Granules: 1/3
+1	11
+1	11
+1	11
+-- a column that the part does not have, with a stateful default, not read
+Granules: 1/3
+1	11
+-- the same column, read: not applied
+not applied
