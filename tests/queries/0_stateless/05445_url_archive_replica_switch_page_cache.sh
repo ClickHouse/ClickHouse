@@ -150,11 +150,11 @@ try:
             SETTINGS log_comment = 'mirror';
         SYSTEM FLUSH LOGS query_log;
         SELECT 'cold miss', countIf(ProfileEvents['PageCacheMisses'] > 0) = 1
-            FROM system.query_log WHERE type = 'QueryFinish' AND log_comment = 'primary_cold';
+            FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = 'primary_cold';
         SELECT 'warm hit', countIf(ProfileEvents['PageCacheHits'] > 0 AND ProfileEvents['PageCacheMisses'] = 0) = 1
-            FROM system.query_log WHERE type = 'QueryFinish' AND log_comment = 'primary_warm';
+            FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = 'primary_warm';
         SELECT 'mirror miss', countIf(ProfileEvents['PageCacheMisses'] > 0) = 1
-            FROM system.query_log WHERE type = 'QueryFinish' AND log_comment = 'mirror';
+            FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = 'mirror';
     """
     subprocess.run(
         sys.argv[2:]
