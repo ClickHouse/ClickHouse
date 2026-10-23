@@ -37,6 +37,8 @@ public:
     ///
     /// See also TCPHandler::sendProfileEvents() for block columns.
     void writeProfileEvents(const Block & block);
+    /// Print sampled traces as `JSONEachRow`, with 64-bit integers represented as strings.
+    void writeProfileTraces(const Block & block);
 
     void flush();
 

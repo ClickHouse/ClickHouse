@@ -143,13 +143,16 @@ void DDLLogEntry::setSettingsIfRequired(ContextPtr context)
         /// best meaningless for a DDL query and at worst harmful — `database` in particular makes the
         /// executing host `USE` the initiator's database, which may not exist there and aborts the task,
         /// leaving `ON CLUSTER` queries hanging until `distributed_ddl_task_timeout`; and a new setting
-        /// name reaches an older worker during a rolling upgrade as `UNKNOWN_SETTING`. Strip them here,
-        /// mirroring `ClusterProxy::stripInitiatorOnlySettings`.
+        /// name reaches an older worker during a rolling upgrade as `UNKNOWN_SETTING`. `send_profile_traces`
+        /// asks to deliver sampled stack traces to the client of the initiating request (e.g. the Flame graph
+        /// of the Web UI, which sets it for the whole HTTP request), and the hosts executing the entry have
+        /// no receiver for them. Strip them here, mirroring `ClusterProxy::stripInitiatorOnlySettings`.
         static constexpr std::array initiator_only_settings = {
             "database", "select", "order", "sort", "filter", "additional_result_filter",
             "limit", "offset", "page", "format", "input_format", "output_format", "default_format", "compression",
             "http_allow_database_as_path", "http_allow_table_as_file", "http_allow_filters_as_path",
-            "http_allow_filters_as_unrecognized_url_parameters", "implicit_table_at_top_level"};
+            "http_allow_filters_as_unrecognized_url_parameters", "implicit_table_at_top_level",
+            "send_profile_traces"};
         for (const auto * name : initiator_only_settings)
             settings->removeSetting(name);
     }
