@@ -4251,7 +4251,8 @@ void dumpDatabaseSchema(
             create_database_query.front() = "CREATE DATABASE IF NOT EXISTS "
                 + create_database_query.front().substr(std::string_view("CREATE DATABASE ").size());
             /// The replay keeps the target's own `default`, so another engine of it is not recreated.
-            if (const auto & engine = database_info.at(db).engine; engine != "Atomic")
+            /// `Overlay` is how clickhouse-local shows its own `default`.
+            if (const auto & engine = database_info.at(db).engine; engine != "Atomic" && engine != "Ordinary" && engine != "Overlay")
                 err << "Warning: database `default` has engine " << engine << ", but the dump creates it with IF NOT EXISTS, "
                     << "so a replay keeps the existing `default` of the target with its own engine.\n";
         }
