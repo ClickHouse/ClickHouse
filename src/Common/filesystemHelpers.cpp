@@ -289,6 +289,29 @@ bool fileOrSymlinkPathStartsWith(const String & path, const String & prefix_path
     return fileOrSymlinkPathStartsWith(filesystem_path, filesystem_prefix_path);
 }
 
+std::filesystem::path resolveDotDotForContainmentCheck(const std::filesystem::path & path, std::error_code & ec)
+{
+    fs::path head;
+    fs::path tail;
+    for (const auto & component : path)
+    {
+        tail /= component;
+        if (component == "..")
+        {
+            head /= tail;
+            tail.clear();
+        }
+    }
+
+    if (head.empty())
+        return path;
+
+    head = fs::weakly_canonical(head, ec);
+    if (ec)
+        return {};
+    return tail.empty() ? head : head / tail;
+}
+
 size_t getSizeFromFileDescriptor(int fd, const String & file_name)
 {
     struct stat buf{};

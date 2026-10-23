@@ -8,12 +8,14 @@
 #include <Core/Settings.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/SettingsChanges.h>
+#include <Common/filesystemHelpers.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
+    extern const int PATH_ACCESS_DENIED;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 }
 
@@ -88,6 +90,25 @@ ContextMutablePtr copyContextAndApplySettingsFromDictionaryConfig(
     auto changes = readSettingsFromDictionaryConfig(config, config_prefix);
     context_copy->applySettingsChanges(changes);
     return context_copy;
+}
+
+void checkDictionarySourcePathIsInsideUserFiles(const String & path, const String & user_files_path)
+{
+    /// Resolving probes the filesystem, which would see the path truncated at an embedded NUL byte.
+    bool is_inside = false;
+    if (!path.contains('\0'))
+    {
+        std::error_code ec;
+        const fs::path checked_path = resolveDotDotForContainmentCheck(path, ec);
+        if (ec)
+            throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "Cannot check whether file {} is inside {}: {}",
+                path, user_files_path, ec.message());
+
+        is_inside = fileOrSymlinkPathStartsWith(checked_path.string(), user_files_path);
+    }
+
+    if (!is_inside)
+        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File {} is not inside {}", path, user_files_path);
 }
 
 static Block transformHeader(Block header, Block block_to_add)

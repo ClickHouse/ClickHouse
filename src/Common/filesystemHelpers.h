@@ -67,6 +67,13 @@ bool pathStartsWith(const String & path, const String & prefix_path);
 /// (Path is made absolute and normalized.)
 bool fileOrSymlinkPathStartsWith(const String & path, const String & prefix_path);
 
+/// `fileOrSymlinkPathStartsWith` folds a `..` lexically, while opening the path resolves it against the
+/// target of a preceding symlink, so a path that can carry a `..` must be passed through this first.
+/// Splits `path` at its last `..`, resolves the head (up to and including that `..`) physically and
+/// appends the tail as written, because a symlink in the tail must stay unresolved to stay reachable.
+/// `ec` is set only if resolving fails.
+std::filesystem::path resolveDotDotForContainmentCheck(const std::filesystem::path & path, std::error_code & ec);
+
 size_t getSizeFromFileDescriptor(int fd, const String & file_name = "");
 
 std::optional<size_t> tryGetSizeFromFilePath(const String & path);
