@@ -72,6 +72,31 @@ expect ":) "
 submit {\cancel 1}
 expect -ex {Discarded background job 1}
 expect ":) "
+
+# The same holds while replaying a large diagnostics spool after an empty result.
+submit {\bg SELECT logTrace(repeat('a', 1000000)), logTrace(repeat('b', 1000000)), logTrace(repeat('c', 1000000)), logTrace(repeat('d', 1000000)), logTrace(repeat('e', 1000000)) SETTINGS send_logs_level = 'trace' FORMAT Null}
+expect -ex {Background job 2 started}
+expect ":) "
+wait_for_final_state 2
+
+submit {\fg 2}
+expect -re {aaaaaaaaaa}
+send -- "\3"
+expect {
+    -ex {Replay of background job 2 interrupted; the job is kept} {}
+    -ex {Background job 2 succeeded} { exit 1 }
+}
+expect ":) "
+
+submit {\jobs}
+expect -re {(?i)\[2\][^\r\n]*succeeded}
+expect ":) "
+submit {SELECT 'alive-diagnostics-05446' FORMAT TabSeparatedRaw}
+expect -ex {alive-diagnostics-05446}
+expect ":) "
+submit {\cancel 2}
+expect -ex {Discarded background job 2}
+expect ":) "
 send -- "\4"
 expect eof
 

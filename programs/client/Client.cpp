@@ -41,6 +41,7 @@
 #include <Interpreters/InterpreterSetQuery.h>
 
 #include <Parsers/Access/ASTSetRoleQuery.h>
+#include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTQueryWithOutput.h>
@@ -145,6 +146,10 @@ bool containsSetting(const ASTPtr & ast, std::string_view setting_name)
             { return boost::iequals(name, setting_name); }))
             return true;
     }
+
+    /// BACKUP and RESTORE keep their SETTINGS outside `children`.
+    if (const auto * backup_query = ast->as<ASTBackupQuery>(); backup_query && containsSetting(backup_query->settings, setting_name))
+        return true;
 
     return std::any_of(ast->children.begin(), ast->children.end(), [&](const auto & child)
         { return containsSetting(child, setting_name); });

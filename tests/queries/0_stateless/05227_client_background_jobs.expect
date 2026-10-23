@@ -230,6 +230,23 @@ submit {\bg SELECT 1 SETTINGS profile = 'default'}
 expect -ex {A query-level settings profile cannot be combined with a client background job}
 expect ":) "
 
+# BACKUP and RESTORE keep their SETTINGS apart from the rest of the query.
+submit {\bg BACKUP TABLE system.one TO Disk('no_such_disk_05227', 'b') SETTINGS run_query_in_background = 1}
+expect -ex {The run_query_in_background server setting cannot be combined with a client background job}
+expect ":) "
+
+submit {\bg RESTORE TABLE dst_05227 FROM Disk('no_such_disk_05227', 'b') SETTINGS run_query_in_background = 1}
+expect -ex {The run_query_in_background server setting cannot be combined with a client background job}
+expect ":) "
+
+submit {\bg BACKUP TABLE system.one TO Disk('no_such_disk_05227', 'b') SETTINGS profile = 'default'}
+expect -ex {A query-level settings profile cannot be combined with a client background job}
+expect ":) "
+
+submit {\bg RESTORE TABLE dst_05227 FROM Disk('no_such_disk_05227', 'b') SETTINGS profile = 'default'}
+expect -ex {A query-level settings profile cannot be combined with a client background job}
+expect ":) "
+
 submit {\bg INSERT INTO nonexistent VALUES (1)}
 expect -ex {A background job supports INSERT only as INSERT ... SELECT}
 expect ":) "

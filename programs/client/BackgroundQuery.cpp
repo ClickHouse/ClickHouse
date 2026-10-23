@@ -1512,17 +1512,20 @@ BackgroundQueryManager::ForegroundResult BackgroundQueryManager::foreground(
     if (job->worker.joinable())
         job->worker.join();
 
-    const bool replayed = job->output.replayTo(output, is_cancelled);
+    bool replayed = job->output.replayTo(output, is_cancelled);
     output.next();
+    if (replayed)
+    {
+        replayed = job->diagnostics.replayTo(diagnostics, is_cancelled);
+        diagnostics.next();
+    }
+
     if (!replayed)
     {
         std::lock_guard lock(impl->mutex);
         impl->jobs.emplace(id, job);
         return {ForegroundStatus::Interrupted, std::move(job_info)};
     }
-
-    job->diagnostics.replayTo(diagnostics);
-    diagnostics.next();
 
     return {ForegroundStatus::Replayed, std::move(job_info)};
 }
