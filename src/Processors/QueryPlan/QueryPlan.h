@@ -242,7 +242,8 @@ public:
 
     /// Extract subplan from plan from the root node.
     /// The root node and all the children will be removed from the nodes.
-    static QueryPlan extractSubplan(Node * root, Nodes & nodes);
+    /// The subplan inherits the execution limits and the resources of `source_plan`, the plan that owns `nodes`.
+    static QueryPlan extractSubplan(Node * root, Nodes & nodes, const QueryPlan & source_plan);
 
     Node * getRootNode() const { return root; }
     void replaceRootNode(Node * new_root) { root = new_root; }
