@@ -1,7 +1,6 @@
 #pragma once
 
 #include <mutex>
-#include <Common/SilkFiberMutex.h>
 #include <Common/Throttler.h>
 #include <Client/Connection.h>
 #include <Client/ConnectionPoolWithFailover.h>
@@ -17,6 +16,7 @@ namespace DB
   *
   * The interface is almost the same as Connection.
   */
+template <typename TMutex>
 class MultiplexedConnections final : public IConnections
 {
 public:
@@ -116,7 +116,7 @@ private:
     size_t distributed_fanout = 0;
 
     /// A mutex for the sendCancel function to execute safely in separate thread.
-    mutable Silk::FiberMutex cancel_mutex;
+    mutable TMutex cancel_mutex;
 
     friend struct RemoteQueryExecutorRoutine;
 };

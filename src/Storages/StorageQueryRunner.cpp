@@ -53,6 +53,7 @@
 
 #if USE_SILK
 #include <Client/SilkConnectionPool.h>
+#include <Common/SilkFiberMutex.h>
 #include <IO/SilkStreamSocketFactory.h>
 #include <Common/SilkFiberScheduler.h>
 
@@ -271,10 +272,11 @@ struct QueryRunnerJob
 /// Used to cancel the remote queries and unblock the dispatcher's workers on shutdown.
 /// Cancelling is required because otherwise server shutdown would be blocked on
 /// queries being executed on other clusters - arbitrarily long.
+template <typename Executor>
 class RemoteQueryExecutorRegistry
 {
 public:
-    bool tryAdd(const std::shared_ptr<RemoteQueryExecutor> & executor)
+    bool tryAdd(const std::shared_ptr<Executor> & executor)
     {
         std::lock_guard lock(mutex);
         if (finished)
@@ -283,7 +285,7 @@ public:
         return true;
     }
 
-    void remove(const std::shared_ptr<RemoteQueryExecutor> & executor)
+    void remove(const std::shared_ptr<Executor> & executor)
     {
         std::lock_guard lock(mutex);
         executors.erase(executor);
@@ -291,7 +293,7 @@ public:
 
     void cancelAll()
     {
-        std::unordered_set<std::shared_ptr<RemoteQueryExecutor>> snapshot;
+        std::unordered_set<std::shared_ptr<Executor>> snapshot;
         {
             std::lock_guard lock(mutex);
             finished = true;
@@ -313,16 +315,17 @@ public:
 private:
     std::mutex mutex;
     bool finished TSA_GUARDED_BY(mutex) = false;
-    std::unordered_set<std::shared_ptr<RemoteQueryExecutor>> executors TSA_GUARDED_BY(mutex);
+    std::unordered_set<std::shared_ptr<Executor>> executors TSA_GUARDED_BY(mutex);
 };
 
+template <typename Executor>
 class RegisteredRemoteQueryExecutor
 {
 public:
     template <typename... Args>
-    static std::optional<RegisteredRemoteQueryExecutor> tryCreate(RemoteQueryExecutorRegistry & registry, Args &&... args)
+    static std::optional<RegisteredRemoteQueryExecutor> tryCreate(RemoteQueryExecutorRegistry<Executor> & registry, Args &&... args)
     {
-        auto executor = std::make_shared<RemoteQueryExecutor>(std::forward<Args>(args)...);
+        auto executor = std::make_shared<Executor>(std::forward<Args>(args)...);
         if (!registry.tryAdd(executor))
             return std::nullopt;
         return RegisteredRemoteQueryExecutor(registry, std::move(executor));
@@ -336,19 +339,34 @@ public:
             registry.remove(executor);
     }
 
-    RemoteQueryExecutor * operator->() const { return executor.get(); }
+    Executor * operator->() const { return executor.get(); }
 
 private:
-    RegisteredRemoteQueryExecutor(RemoteQueryExecutorRegistry & registry_, std::shared_ptr<RemoteQueryExecutor> executor_)
+    RegisteredRemoteQueryExecutor(RemoteQueryExecutorRegistry<Executor> & registry_, std::shared_ptr<Executor> executor_)
         : registry(registry_), executor(std::move(executor_))
     {
     }
 
-    RemoteQueryExecutorRegistry & registry;
-    std::shared_ptr<RemoteQueryExecutor> executor;
+    RemoteQueryExecutorRegistry<Executor> & registry;
+    std::shared_ptr<Executor> executor;
 };
 
-class QueryRunnerDispatcher : WithContext
+class IQueryRunnerDispatcher
+{
+public:
+    virtual ~IQueryRunnerDispatcher() = default;
+
+    virtual void submit(QueryRunnerJob job) = 0;
+
+    virtual PrefixLatch & getPending() = 0;
+
+    virtual void waitForAllPending(const QueryStatusPtr & query_status) = 0;
+
+    virtual void shutdown() = 0;
+};
+
+template <typename Executor>
+class QueryRunnerDispatcher : public IQueryRunnerDispatcher, WithContext
 {
 public:
     QueryRunnerDispatcher(
@@ -365,18 +383,14 @@ public:
         client_info.setInitialQuery();
     }
 
-    virtual ~QueryRunnerDispatcher() = default;
+    PrefixLatch & getPending() override { return pending; }
 
-    virtual void submit(QueryRunnerJob job) = 0;
-
-    PrefixLatch & getPending() { return pending; }
-
-    void waitForAllPending(const QueryStatusPtr & query_status)
+    void waitForAllPending(const QueryStatusPtr & query_status) override
     {
         pending.waitForAllIssued(query_status);
     }
 
-    void shutdown()
+    void shutdown() override
     {
         if (shutdown_called.exchange(true))
             return;
@@ -581,7 +595,7 @@ private:
         std::swap(format_settings.native.encode_types_in_binary_format, format_settings.native.decode_types_in_binary_format);
         connection->setFormatSettings(format_settings);
 
-        auto registered = RegisteredRemoteQueryExecutor::tryCreate(cluster_executors, std::vector<IConnectionPool::Entry>{connection}, job.query, std::make_shared<const Block>(), job_context);
+        auto registered = RegisteredRemoteQueryExecutor<Executor>::tryCreate(cluster_executors, std::vector<IConnectionPool::Entry>{connection}, job.query, std::make_shared<const Block>(), job_context);
         if (!registered)
             return;
         auto & executor = *registered;
@@ -666,7 +680,7 @@ private:
     std::mutex pools_mutex;
     std::map<std::pair<UInt64, String>, ConnectionPoolWithFailoverPtr> pools TSA_GUARDED_BY(pools_mutex);
 
-    RemoteQueryExecutorRegistry cluster_executors;
+    RemoteQueryExecutorRegistry<Executor> cluster_executors;
 
 protected:
     static constexpr std::string_view client_name = "QueryRunner";
@@ -676,7 +690,7 @@ protected:
     std::atomic<bool> shutdown_called = false;
 };
 
-class QueryRunnerThreadPoolDispatcher : public QueryRunnerDispatcher
+class QueryRunnerThreadPoolDispatcher : public QueryRunnerDispatcher<RemoteQueryExecutor>
 {
 public:
     QueryRunnerThreadPoolDispatcher(
@@ -750,7 +764,7 @@ private:
 
 #if USE_SILK
 
-class QueryRunnerFiberDispatcher : public QueryRunnerDispatcher
+class QueryRunnerFiberDispatcher : public QueryRunnerDispatcher<RemoteQueryExecutorImpl<Silk::FiberMutex>>
 {
 public:
     QueryRunnerFiberDispatcher(
@@ -866,7 +880,7 @@ class QueryRunnerSink : public SinkToStorage
 public:
     QueryRunnerSink(
         SharedHeader header,
-        QueryRunnerDispatcher & dispatcher_,
+        IQueryRunnerDispatcher & dispatcher_,
         bool synchronous_,
         std::shared_ptr<const QueryRunnerJobOrigin> origin_,
         QueryStatusPtr query_status_)
@@ -939,7 +953,7 @@ public:
 private:
     static constexpr std::chrono::milliseconds poll_interval{100};
 
-    QueryRunnerDispatcher & dispatcher;
+    IQueryRunnerDispatcher & dispatcher;
     const bool synchronous;
     std::shared_ptr<const QueryRunnerJobOrigin> origin;
     QueryStatusPtr query_status;

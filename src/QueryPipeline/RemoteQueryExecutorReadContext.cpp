@@ -3,6 +3,7 @@
 #include <QueryPipeline/RemoteQueryExecutorReadContext.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
+#include <Common/SilkFiberMutex.h>
 #include <base/defines.h>
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
@@ -24,8 +25,9 @@ namespace ErrorCodes
     extern const int SOCKET_TIMEOUT;
 }
 
-RemoteQueryExecutorReadContext::RemoteQueryExecutorReadContext(
-    RemoteQueryExecutor & executor_,
+template <typename TMutex>
+RemoteQueryExecutorReadContext<TMutex>::RemoteQueryExecutorReadContext(
+    RemoteQueryExecutorImpl<TMutex> & executor_,
     bool suspend_when_query_sent_,
     bool read_packet_type_separately_,
     OpenTelemetry::TracingContextOnThread fragment_trace_context_)
@@ -53,18 +55,21 @@ RemoteQueryExecutorReadContext::RemoteQueryExecutorReadContext(
     epoll.add(timer.getDescriptor());
 }
 
-bool RemoteQueryExecutorReadContext::read()
+template <typename TMutex>
+bool RemoteQueryExecutorReadContext<TMutex>::read()
 {
     resume();
     return !isInProgress();
 }
 
-bool RemoteQueryExecutorReadContext::checkBeforeTaskResume()
+template <typename TMutex>
+bool RemoteQueryExecutorReadContext<TMutex>::checkBeforeTaskResume()
 {
     return !is_in_progress.load(std::memory_order_relaxed) || checkTimeout();
 }
 
-void RemoteQueryExecutorReadContext::Task::run(AsyncCallback async_callback, SuspendCallback suspend_callback) TSA_NO_THREAD_SAFETY_ANALYSIS
+template <typename TMutex>
+void RemoteQueryExecutorReadContext<TMutex>::Task::run(AsyncCallback async_callback, SuspendCallback suspend_callback) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     read_context.executor.sendQueryUnlocked(ClientInfo::QueryKind::SECONDARY_QUERY, async_callback);
     read_context.is_query_sent = true;
@@ -91,7 +96,8 @@ void RemoteQueryExecutorReadContext::Task::run(AsyncCallback async_callback, Sus
     }
 }
 
-void RemoteQueryExecutorReadContext::processAsyncEvent(
+template <typename TMutex>
+void RemoteQueryExecutorReadContext<TMutex>::processAsyncEvent(
     int fd, Poco::Timespan socket_timeout, AsyncEventTimeoutType type, const std::string & description, uint32_t events)
 {
     connection_fd = fd;
@@ -103,14 +109,16 @@ void RemoteQueryExecutorReadContext::processAsyncEvent(
     is_in_progress.store(true);
 }
 
-void RemoteQueryExecutorReadContext::clearAsyncEvent()
+template <typename TMutex>
+void RemoteQueryExecutorReadContext<TMutex>::clearAsyncEvent()
 {
     epoll.remove(connection_fd);
     timer.reset();
     is_in_progress.store(false);
 }
 
-bool RemoteQueryExecutorReadContext::checkTimeout(bool blocking)
+template <typename TMutex>
+bool RemoteQueryExecutorReadContext<TMutex>::checkTimeout(bool blocking)
 {
     /// Wait for epoll will not block if it was polled externally.
     epoll_event events[3];
@@ -144,7 +152,8 @@ bool RemoteQueryExecutorReadContext::checkTimeout(bool blocking)
     return true;
 }
 
-void RemoteQueryExecutorReadContext::cancelBefore()
+template <typename TMutex>
+void RemoteQueryExecutorReadContext<TMutex>::cancelBefore()
 {
     /// One should not try to wait for the current packet here in case of
     /// timeout because this will exceed the timeout.
@@ -181,7 +190,8 @@ void RemoteQueryExecutorReadContext::cancelBefore()
     }
 }
 
-RemoteQueryExecutorReadContext::~RemoteQueryExecutorReadContext()
+template <typename TMutex>
+RemoteQueryExecutorReadContext<TMutex>::~RemoteQueryExecutorReadContext()
 {
     /// connection_fd is closed by Poco::Net::Socket or Epoll
     if (pipe_fd[0] != -1)
@@ -196,13 +206,15 @@ RemoteQueryExecutorReadContext::~RemoteQueryExecutorReadContext()
     }
 }
 
-UInt64 RemoteQueryExecutorReadContext::getPacketType() const
+template <typename TMutex>
+UInt64 RemoteQueryExecutorReadContext<TMutex>::getPacketType() const
 {
     chassert(hasReadTillPacketType());
     return packet.type;
 }
 
-Packet RemoteQueryExecutorReadContext::getPacket()
+template <typename TMutex>
+Packet RemoteQueryExecutorReadContext<TMutex>::getPacket()
 {
     chassert(hasReadPacket());
 
@@ -210,6 +222,11 @@ Packet RemoteQueryExecutorReadContext::getPacket()
     has_read_packet_part = PacketPart::None;
     return p;
 }
+
+template class RemoteQueryExecutorReadContext<std::mutex>;
+#if USE_SILK
+template class RemoteQueryExecutorReadContext<Silk::FiberMutex>;
+#endif
 
 }
 #endif
