@@ -1,10 +1,7 @@
 #include <Processors/Transforms/WindowTransform.h>
 
-#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Port.h>
 #include <Processors/QueryResultPreview.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
-#include <QueryPipeline/Pipe.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 
@@ -20,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -329,25 +327,54 @@ void WindowTransform::computeQueryResultPreview()
     Chunk computed;
     try
     {
-        QueryPipelineBuilder builder;
-        builder.init(Pipe(std::make_shared<SourceFromSingleChunk>(inputs.front().getSharedHeader(), std::move(preview))));
-        builder.addTransform(std::make_shared<WindowTransform>(
-            inputs.front().getSharedHeader(), outputs.front().getSharedHeader(), params.window_description, window_functions_for_preview));
+        /// The one-shot transform is driven right here instead of by a nested executor: this thread
+        /// already holds the CPU slot of the query, and an executor would wait for another one (with
+        /// a workload limited to one concurrent thread, forever).
+        WindowTransform transform(
+            inputs.front().getSharedHeader(), outputs.front().getSharedHeader(), params.window_description, window_functions_for_preview);
+        OutputPort source(inputs.front().getSharedHeader());
+        InputPort sink(outputs.front().getSharedHeader());
+        connect(source, transform.getInputs().front());
+        connect(transform.getOutputs().front(), sink);
 
-        auto preview_pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
-        PullingPipelineExecutor executor(preview_pipeline);
+        source.push(std::move(preview));
+        source.finish();
+        sink.setNeeded();
 
         /// A single input chunk produces a single output chunk, but drain defensively.
-        Chunk next;
-        while (executor.pull(next))
+        while (true)
         {
-            if (!next.hasRows())
-                continue;
-            if (!computed)
-                computed = std::move(next);
+            if (isCancelled())
+                return;
+
+            const auto status = transform.prepare();
+            if (status == Status::Finished)
+                break;
+
+            if (status == Status::Ready)
+            {
+                transform.work();
+            }
+            else if (status == Status::PortFull && sink.hasData())
+            {
+                Chunk next = sink.pull();
+                sink.setNeeded();
+                if (!next.hasRows())
+                    continue;
+                if (!computed)
+                    computed = std::move(next);
+                else
+                    computed.append(next);
+            }
             else
-                computed.append(next);
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "Unexpected status {} of a window transform computing a query result preview", statusToName(status));
+            }
         }
+
+        if (sink.hasData())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "A window transform computing a query result preview finished with unread output");
     }
     catch (const Exception & e)
     {
