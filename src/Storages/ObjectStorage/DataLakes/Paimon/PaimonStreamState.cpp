@@ -39,6 +39,7 @@ String PaimonSnapshotIdentity::toJSON() const
     object.set("baseManifestList", base_manifest_list);
     object.set("deltaManifestList", delta_manifest_list);
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    oss.exceptions(std::ios::failbit);
     Poco::JSON::Stringifier::stringify(object, oss);
     return oss.str();
 }
