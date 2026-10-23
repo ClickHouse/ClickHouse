@@ -34,6 +34,21 @@ class PullingPipelineExecutor;
 struct FormatParserSharedResources;
 using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
 
+/// Confine special File(stdin) schema inference to clickhouse-local's combined
+/// --queries-file / --query mode, without affecting ordinary File tables.
+class ScopedLocalFileDescriptorInference
+{
+public:
+    ScopedLocalFileDescriptorInference(bool enabled, bool preserve_inherited_offset);
+    ~ScopedLocalFileDescriptorInference();
+    ScopedLocalFileDescriptorInference(const ScopedLocalFileDescriptorInference &) = delete;
+    ScopedLocalFileDescriptorInference & operator=(const ScopedLocalFileDescriptorInference &) = delete;
+
+private:
+    bool previous_enabled;
+    bool previous_preserve_offset;
+};
+
 class StorageFile final : public IStorage
 {
 public:
