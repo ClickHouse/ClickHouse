@@ -65,6 +65,7 @@
 #include <Loggers/OwnSplitChannel.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTAlterQuery.h>
@@ -80,6 +81,7 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/registerStorages.h>
+#include <Storages/StorageFile.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Interpreters/SecretArgumentsRegistry.h>
 #include <Disks/registerDisks.h>
@@ -141,6 +143,7 @@ namespace Setting
     extern const SettingsSeconds http_send_timeout;
     extern const SettingsBool fsync_metadata;
     extern const SettingsBool implicit_select;
+    extern const SettingsString implicit_table_at_top_level;
     extern const SettingsSeconds receive_timeout;
     extern const SettingsSeconds send_timeout;
     extern const SettingsLocalFSReadMethod storage_file_read_method;
@@ -1131,6 +1134,53 @@ void LocalServer::cleanup()
 }
 
 
+namespace
+{
+/// Query files may contain a single \i directive, and that file may include stdin.
+/// Detect it before schema inference so SQL from stdin is not used as data.
+bool queryFileReadsStdin(const String & path, const struct stat & stdin_stat, size_t depth = 0)
+{
+    if (depth >= 32)
+        return false;
+
+    struct stat file_stat{};
+    if (::stat(path.c_str(), &file_stat) != 0)
+        return false;
+
+    if (file_stat.st_dev == stdin_stat.st_dev && file_stat.st_ino == stdin_stat.st_ino)
+        return true;
+
+    /// A meta-command contains one file name, not a large SQL script.
+    /// Never read a FIFO during this preflight check.
+    if (!S_ISREG(file_stat.st_mode) || file_stat.st_size < 0 || file_stat.st_size > 4096)
+        return false;
+
+    String contents;
+    try
+    {
+        ReadBufferFromFile in(path);
+        readStringUntilEOF(contents, in);
+    }
+    catch (...)
+    {
+        /// Normal query-file execution reports missing or unreadable files.
+        return false;
+    }
+
+    /// Match ClientBase::processQueryText's whole-text \i dispatch.
+    const auto first = contents.find_first_not_of(" \t\r\n\v\f;");
+    const auto last = contents.find_last_not_of(" \t\r\n\v\f;");
+    if (first == String::npos || contents.compare(first, 2, "\\i") != 0)
+        return false;
+
+    const auto file_begin = contents.find_first_not_of(" \t\r\n\v\f", first + 2);
+    if (file_begin == String::npos || file_begin > last)
+        return false;
+
+    return queryFileReadsStdin(contents.substr(file_begin, last - file_begin + 1), stdin_stat, depth + 1);
+}
+}
+
 bool LocalServer::hasExplicitTableInput()
 {
     const auto & client_config = getClientConfiguration();
@@ -1157,13 +1207,12 @@ std::pair<std::string, std::string> LocalServer::getInitialCreateTableQuery()
         if (::fstat(stdin_fd, &stdin_stat) == 0)
         {
             for (const auto & query_file : queries_files)
-            {
-                struct stat query_file_stat{};
-                if (::stat(query_file.c_str(), &query_file_stat) == 0
-                    && query_file_stat.st_dev == stdin_stat.st_dev
-                    && query_file_stat.st_ino == stdin_stat.st_ino)
+                if (queryFileReadsStdin(query_file, stdin_stat))
                     return {};
-            }
+
+            for (const auto & query_file : interleave_queries_files)
+                if (queryFileReadsStdin(query_file, stdin_stat))
+                    return {};
         }
     }
 
@@ -1351,9 +1400,11 @@ void LocalServer::executeInitialTableQuery(const String & initial_query, bool pr
     SCOPE_EXIT({ getClientConfiguration().setBool("print-time-to-stderr", print_time_to_stderr); });
 
     const auto read_method = client_context->getSettingsRef()[Setting::storage_file_read_method];
-    if (preserve_stdin_for_query_files
-        && read_method != LocalFSReadMethod::pread
-        && read_method != LocalFSReadMethod::mmap)
+    const bool needs_positional_override = read_method != LocalFSReadMethod::pread && read_method != LocalFSReadMethod::mmap;
+    /// Only the synthetic File(stdin) table for mixed queries changes its inference reader.
+    /// Standalone -q and other File tables retain their existing behavior.
+    ScopedLocalFileDescriptorInference inference_scope(preserve_stdin_for_query_files, needs_positional_override);
+    if (preserve_stdin_for_query_files && needs_positional_override)
     {
         /// Only consuming descriptor readers require a temporary positional reader.
         /// pread and mmap already leave stdin available to the query files.
@@ -1428,7 +1479,7 @@ void LocalServer::beforeExecutingCommandLineQueries()
     /// Remember when the alias was visible: an unexpected removal is an explicit DROP,
     /// whereas removal for a database collision must remain reversible.
     local_connection.setBeforeQueryCallback(
-        [session_context, inferred_table, public_name, alias_was_exposed = false, alias_overridden_by_user = false]
+        [session_context, inferred_table, public_name, private_name, alias_was_exposed = false, alias_overridden_by_user = false, inferred_alias_retired = false]
         (ContextMutablePtr query_context) mutable
     {
         auto database_name = query_context->getSettingsRef()[Setting::database].value;
@@ -1436,12 +1487,23 @@ void LocalServer::beforeExecutingCommandLineQueries()
             database_name = query_context->getCurrentDatabase();
 
         const auto public_alias = session_context->findExternalTable(public_name);
+        /// A table created by the prelude must not change implicit stdin SELECTs.
+        /// Only retire the implicit source after our public alias was exposed
+        /// and then explicitly dropped or replaced.
+        if (alias_was_exposed && public_alias != inferred_table)
+            inferred_alias_retired = true;
         if ((alias_was_exposed && !public_alias) || (public_alias && public_alias != inferred_table))
             alias_overridden_by_user = true;
 
-        /// An explicit DROP or a user-created temporary table retires the inferred public alias.
         if (alias_overridden_by_user)
+        {
+            /// Follow a subsequent public DROP / CREATE, as in standalone -q.
+            /// Explicit implicit-table settings from the user still win.
+            if (inferred_alias_retired
+                && query_context->getSettingsRef()[Setting::implicit_table_at_top_level].value == private_name)
+                query_context->setSetting("implicit_table_at_top_level", public_name);
             return;
+        }
 
         auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
         const bool database_collision = database && database->isTableExist(public_name, query_context);
