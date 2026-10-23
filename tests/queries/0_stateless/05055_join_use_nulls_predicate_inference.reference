@@ -105,6 +105,16 @@ Condition: (toNullable(crk) in [\'42\', \'42\'])
 6	6
 -- constant key read by isConstant: the matched row survives
 5	7	1
+-- keys differing only in the time zone or Bool, LEFT, RIGHT and FULL: the matched row survives
+5	7
+5	7
+5	7
+5	7
+5	7
+5	7
+5	7
+5	7
+5	7
 -- IN on a float key below the join, LEFT then RIGHT on a nested float: the -0.0 match survives
 7
 7

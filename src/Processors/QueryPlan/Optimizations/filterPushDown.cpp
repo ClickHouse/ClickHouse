@@ -741,6 +741,10 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         /// carries the type the name has in the JOIN output.
         if (replaced->type->equals(*source.getType()))
         {
+            /// `equals` ignores the time zone of `DateTime` and custom names such as `Bool`, which a predicate reads.
+            if (replaced->type->getName() != source.getType()->getName())
+                return;
+
             cross_type_equivalent_columns.insert(replaced_name);
             equivalent_columns[replaced_name] = replacement;
             return;

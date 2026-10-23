@@ -213,6 +213,18 @@ SELECT l.k, r.p, l.x
 FROM (SELECT 5 :: Nullable(UInt64) AS k, 1 AS x) AS l FULL JOIN (SELECT materialize(5 :: Nullable(UInt64)) AS k, 7 AS p) AS r
 ON l.k = r.k WHERE r.k = 5 AND isConstant(r.k) = 0
 SETTINGS join_use_nulls = 1;
+-- Already nullable keys that are equal to the join but differ in the time zone or in the `Bool` name: a
+-- predicate over the key reads either, so the opposite key cannot stand in for it.
+SELECT '-- keys differing only in the time zone or Bool, LEFT, RIGHT and FULL: the matched row survives';
+{% for lk, rk, rpred, lpred in [
+    ("toDateTime(1704067200, 'UTC')", "toDateTime(1704067200, 'Asia/Tokyo')", "toHour(r.k) = 9", "toHour(l.k) = 0"),
+    ("toDateTime64(1704067200, 3, 'UTC')", "toDateTime64(1704067200, 3, 'Asia/Tokyo')", "toHour(r.k) = 9", "toHour(l.k) = 0"),
+    ("true", "1 :: UInt8", "toString(r.k) = '1'", "toString(l.k) = 'true'")] -%}
+{% for kind, where in [('LEFT', rpred), ('RIGHT', lpred), ('FULL', rpred)] -%}
+SELECT l.id, r.id FROM (SELECT toNullable({{ lk }}) AS k, 5 AS id) AS l {{ kind }} JOIN (SELECT toNullable({{ rk }}) AS k, 7 AS id) AS r
+ON l.k = r.k WHERE {{ where }} SETTINGS join_use_nulls = 1;
+{% endfor -%}
+{% endfor -%}
 
 -- The pass copying a predicate that is already below one input onto the other input must decline `IN` on a
 -- float key as well: the set check misses the `-0.0` that a merge join pairs with `0.0`.
