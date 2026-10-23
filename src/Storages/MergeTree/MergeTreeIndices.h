@@ -398,6 +398,8 @@ public:
 
     using Validator = std::function<void(const IndexDescription & index, bool attach, const MergeTreeSettings & settings)>;
     void validate(const IndexDescription & index, bool attach, const MergeTreeSettings & settings) const;
+    /// The checks of `validate` that do not depend on the index type.
+    static void validateExpression(const IndexDescription & index);
 
     using Creator = std::function<MergeTreeIndexPtr(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings)>;
     MergeTreeIndexPtr get(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings) const;

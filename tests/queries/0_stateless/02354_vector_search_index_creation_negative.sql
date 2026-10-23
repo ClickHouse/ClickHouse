@@ -32,6 +32,13 @@ SELECT '5nd argument (M), if given, must be UInt64 and > 1';
 CREATE TABLE tab(vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 1, 'f32', 'invalid', 1, 1)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 CREATE TABLE tab(vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 1, 'f32', 1, 1)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError INCORRECT_DATA }
 
+SELECT '5th and 6th arguments (M, ef_construction) have an upper bound';
+CREATE TABLE tab(vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 1, 'f32', 513, 128)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError INCORRECT_DATA }
+CREATE TABLE tab(vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 1, 'f32', 32, 3201)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError INCORRECT_DATA }
+CREATE TABLE tab(vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 1, 'f32', 512, 3200)) ENGINE = MergeTree ORDER BY tuple();
+ALTER TABLE tab ADD INDEX idx2 vec TYPE vector_similarity('hnsw', 'cosineDistance', 1, 'f32', 2994230, 400); -- { serverError INCORRECT_DATA }
+DROP TABLE tab;
+
 SELECT 'Binary quantization requires cosine distance';
 CREATE TABLE tab(vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 8, 'b1', 64, 128)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError INCORRECT_DATA }
 SELECT 'Binary quantization requires the dimension as a multiple of 8';

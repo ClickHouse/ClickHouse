@@ -1,0 +1,20 @@
+an unrelated ALTER is allowed
+ok
+a new index with the same parameters is rejected
+INCORRECT_DATA
+redeclaring the index under its name is rejected
+INCORRECT_DATA
+INCORRECT_DATA
+INCORRECT_DATA
+changing the type of the indexed column is rejected
+INCORRECT_DATA
+the expression of an index the table has is still validated
+BAD_ARGUMENTS
+renaming the indexed column is allowed
+ok
+the index can be dropped
+ok
+id	UInt64
+vec2	Array(Float32)
+vec_b	Array(Float32)
+x	UInt8

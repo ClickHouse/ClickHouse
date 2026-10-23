@@ -1254,6 +1254,15 @@ static std::exception_ptr tryEvaluateIndexExpression(const IndexDescription & in
     return {};
 }
 
+/// The checks of an index type read only its arguments and column types.
+static bool hasSameTypeCheckInputs(const IndexDescription & lhs, const IndexDescription & rhs)
+{
+    auto format = [](const ASTPtr & ast) { return ast ? ast->formatIgnoringRedundantParentheses() : String{}; };
+    return lhs.type == rhs.type && format(lhs.arguments) == format(rhs.arguments)
+        && std::ranges::equal(
+            lhs.data_types, rhs.data_types, [](const DataTypePtr & l, const DataTypePtr & r) { return l->equals(*r); });
+}
+
 void MergeTreeData::checkProperties(
     const StorageInMemoryMetadata & new_metadata,
     const StorageInMemoryMetadata & old_metadata,
@@ -1261,7 +1270,8 @@ void MergeTreeData::checkProperties(
     bool allow_empty_sorting_key,
     bool allow_nullable_key_,
     ContextPtr local_context,
-    const MergeTreeSettings * alter_effective_settings) const
+    const MergeTreeSettings * alter_effective_settings,
+    bool replay) const
 {
     if (!new_metadata.sorting_key.definition_ast && !allow_empty_sorting_key)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ORDER BY cannot be empty");
@@ -1413,11 +1423,20 @@ void MergeTreeData::checkProperties(
     {
         std::unordered_set<String> indices_names;
         std::unordered_set<String> columns_with_text_indexes;
+        const bool replayed = replay || (local_context && isSecondaryDDLReplay(local_context));
 
         for (const auto & index : new_metadata.secondary_indices)
         {
             try
             {
+                const IndexDescription * old_index = nullptr;
+                /// The create path and the projection recursion pass the same metadata object as both
+                /// arguments, so an index found there is the one being declared and nothing can be inherited.
+                if (&old_metadata != &new_metadata)
+                    for (const auto & candidate : old_metadata.secondary_indices)
+                        if (candidate.name == index.name)
+                            old_index = &candidate;
+
                 if (!allow_suspicious_indices && !attach)
                 {
                     const auto * index_ast = typeid_cast<const ASTIndexDeclaration *>(index.definition_ast.get());
@@ -1430,7 +1449,13 @@ void MergeTreeData::checkProperties(
 
                 if (!attach && !allow_minmax_index_for_json)
                     checkMinMaxIndexForJSON(index);
-                MergeTreeIndexFactory::instance().validate(index, attach, *getSettings());
+
+                /// An index the table already has passes the checks of its type as on ATTACH while their inputs are unchanged,
+                /// and so does every index of replayed metadata.
+                const bool retained = !attach && (replayed || (old_index && hasSameTypeCheckInputs(*old_index, index)));
+                if (retained)
+                    MergeTreeIndexFactory::validateExpression(index);
+                MergeTreeIndexFactory::instance().validate(index, attach || retained, *getSettings());
 
                 if (!attach)
                 {
@@ -1452,15 +1477,7 @@ void MergeTreeData::checkProperties(
                 {
                     if (auto failure = tryEvaluateIndexExpression(index))
                     {
-                        const IndexDescription * old_index = nullptr;
-                        /// The create path and the projection recursion pass the same metadata object as both
-                        /// arguments, so an index found there is the one being declared and nothing can be inherited.
                         /// Definitions are not compared: `RENAME COLUMN` rewrites an index's AST without redeclaring it.
-                        if (&old_metadata != &new_metadata)
-                            for (const auto & candidate : old_metadata.secondary_indices)
-                                if (candidate.name == index.name)
-                                    old_index = &candidate;
-
                         const bool inherited = old_index && tryEvaluateIndexExpression(*old_index);
 
                         if (!inherited)
@@ -1729,7 +1746,8 @@ void MergeTreeData::setProperties(
     const StorageInMemoryMetadata & new_metadata,
     const StorageInMemoryMetadata & old_metadata,
     bool attach,
-    ContextPtr local_context)
+    ContextPtr local_context,
+    bool replay)
 {
     /// Route the table-level metadata clones produced here (the new `StorageInMemoryMetadata`
     /// stored in `metadata.set(...)`, the cloned `ColumnsDescription`, `VirtualColumnsDescription`,
@@ -1743,7 +1761,9 @@ void MergeTreeData::setProperties(
         attach,
         false,
         allow_nullable_key,
-        local_context);
+        local_context,
+        /*alter_effective_settings=*/nullptr,
+        replay);
 
     {
         /// Publish the new metadata and clear the cache of effective sorting keys atomically.
@@ -6969,6 +6989,22 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     }
 
     checkProperties(new_metadata, old_metadata, false, false, allow_nullable_key, local_context, alter_effective_settings.get());
+
+    /// An index this ALTER drops and adds again is a new declaration, which `checkProperties` cannot tell from one it keeps.
+    if (!is_secondary_replay)
+    {
+        NameSet dropped_indices;
+        for (const auto & command : commands)
+        {
+            if (command.type == AlterCommand::DROP_INDEX && !command.partition && !command.clear)
+                dropped_indices.insert(command.index_name);
+            else if (command.type == AlterCommand::ADD_INDEX && dropped_indices.contains(command.index_name)
+                     && new_metadata.secondary_indices.has(command.index_name))
+                MergeTreeIndexFactory::instance().validate(
+                    new_metadata.secondary_indices.getByName(command.index_name), /* attach = */ false, *getSettings());
+        }
+    }
+
     checkTTLExpressions(new_metadata, old_metadata);
     if (!is_secondary_replay)
         checkColumnTTLsForKeyColumns(new_metadata, old_metadata);
