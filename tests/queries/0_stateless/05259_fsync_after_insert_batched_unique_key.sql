@@ -12,10 +12,11 @@
 -- and subtracted. What remains on top of the same INSERT into a table without the UNIQUE KEY is
 -- two fsyncs per part: `unique_key_index.sst` and `txn_version.txt`, once each.
 --
--- Under load in CI the difference is occasionally lower, by one or two (a few percent of the runs
--- in the flaky check): `txn_version.txt` is not always written, and synced, by the INSERT itself.
--- So only the upper bound is checked. Syncing `unique_key_index.sst` both when it is written and
--- at the end of the INSERT would make it three.
+-- Under load in CI a single INSERT occasionally gets one or two `FileSync` more or less (a few percent
+-- of the runs in the flaky check): `txn_version.txt` is not always written, and synced, by the INSERT
+-- itself. So every table gets five INSERTs and the median per table is compared, and only the upper
+-- bound is checked. Syncing `unique_key_index.sst` both when it is written and at the end of the
+-- INSERT would make it three.
 
 SET enable_unique_key = 1;
 
@@ -32,29 +33,43 @@ SETTINGS min_bytes_for_wide_part = 0, fsync_after_insert = 0;
 CREATE TABLE t_fsync_no_uk (k UInt64, s String) ENGINE = MergeTree ORDER BY k
 SETTINGS min_bytes_for_wide_part = 0, fsync_after_insert = 1, fsync_after_insert_each_part = 0;
 
-INSERT INTO t_fsync_uk SELECT number, toString(number) FROM numbers(100);
-INSERT INTO t_fsync_uk_off SELECT number, toString(number) FROM numbers(100);
-INSERT INTO t_fsync_no_uk SELECT number, toString(number) FROM numbers(100);
+-- Every INSERT must write one new part next to the same set of existing parts.
+SYSTEM STOP MERGES t_fsync_uk;
+SYSTEM STOP MERGES t_fsync_uk_off;
+SYSTEM STOP MERGES t_fsync_no_uk;
+
+INSERT INTO t_fsync_uk SELECT number, toString(number) FROM numbers(0, 100);
+INSERT INTO t_fsync_uk SELECT number, toString(number) FROM numbers(100, 100);
+INSERT INTO t_fsync_uk SELECT number, toString(number) FROM numbers(200, 100);
+INSERT INTO t_fsync_uk SELECT number, toString(number) FROM numbers(300, 100);
+INSERT INTO t_fsync_uk SELECT number, toString(number) FROM numbers(400, 100);
+INSERT INTO t_fsync_uk_off SELECT number, toString(number) FROM numbers(0, 100);
+INSERT INTO t_fsync_uk_off SELECT number, toString(number) FROM numbers(100, 100);
+INSERT INTO t_fsync_uk_off SELECT number, toString(number) FROM numbers(200, 100);
+INSERT INTO t_fsync_uk_off SELECT number, toString(number) FROM numbers(300, 100);
+INSERT INTO t_fsync_uk_off SELECT number, toString(number) FROM numbers(400, 100);
+INSERT INTO t_fsync_no_uk SELECT number, toString(number) FROM numbers(0, 100);
+INSERT INTO t_fsync_no_uk SELECT number, toString(number) FROM numbers(100, 100);
+INSERT INTO t_fsync_no_uk SELECT number, toString(number) FROM numbers(200, 100);
+INSERT INTO t_fsync_no_uk SELECT number, toString(number) FROM numbers(300, 100);
+INSERT INTO t_fsync_no_uk SELECT number, toString(number) FROM numbers(400, 100);
 
 SELECT count(), sum(k) FROM t_fsync_uk;
 
 SYSTEM FLUSH LOGS query_log;
 
 SELECT
-    ((SELECT ProfileEvents['FileSync'] FROM system.query_log
+    ((SELECT medianExact(ProfileEvents['FileSync']) FROM system.query_log
      WHERE current_database = currentDatabase() AND type = 'QueryFinish'
-       AND query LIKE 'INSERT INTO t_fsync_uk %'
-     ORDER BY event_time_microseconds DESC LIMIT 1)
+       AND query LIKE 'INSERT INTO t_fsync_uk %')
     -
-    (SELECT ProfileEvents['FileSync'] FROM system.query_log
+    (SELECT medianExact(ProfileEvents['FileSync']) FROM system.query_log
      WHERE current_database = currentDatabase() AND type = 'QueryFinish'
-       AND query LIKE 'INSERT INTO t_fsync_uk_off %'
-     ORDER BY event_time_microseconds DESC LIMIT 1)
+       AND query LIKE 'INSERT INTO t_fsync_uk_off %')
     -
-    (SELECT ProfileEvents['FileSync'] FROM system.query_log
+    (SELECT medianExact(ProfileEvents['FileSync']) FROM system.query_log
      WHERE current_database = currentDatabase() AND type = 'QueryFinish'
-       AND query LIKE 'INSERT INTO t_fsync_no_uk %'
-     ORDER BY event_time_microseconds DESC LIMIT 1)) <= 2;
+       AND query LIKE 'INSERT INTO t_fsync_no_uk %')) <= 2;
 
 DROP TABLE t_fsync_uk;
 DROP TABLE t_fsync_uk_off;
