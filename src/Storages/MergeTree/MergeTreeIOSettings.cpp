@@ -9,6 +9,12 @@
 
 #include <Interpreters/Context.h>
 
+#include "config.h"
+
+#if USE_GPU
+#include <GPU/GPUDevice.h>
+#endif
+
 namespace DB
 {
 namespace Setting
@@ -155,7 +161,9 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createFromContext(const Context
     result.filesystem_prefetches_limit = settings[Setting::filesystem_prefetches_limit];
     result.load_marks_asynchronously = settings[Setting::load_marks_asynchronously];
     result.use_streaming_marks_compression = settings[Setting::use_streaming_marks_compression];
-    result.gpu_decompression = settings[Setting::allow_experimental_gpu_read_decompression];
+#if USE_GPU
+    result.gpu_decompression = settings[Setting::allow_experimental_gpu_read_decompression] && GPU::GPUDevice::exists();
+#endif
     result.collect_predicate_statistics = settings[Setting::predicate_statistics_sample_rate] > 0;
     return result;
 }

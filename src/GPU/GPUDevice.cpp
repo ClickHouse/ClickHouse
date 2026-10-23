@@ -1,5 +1,7 @@
 #include <GPU/GPUDevice.h>
 
+#include <atomic>
+
 #if USE_GPU
 
 #include <Core/ServerSettings.h>
@@ -71,6 +73,13 @@ cudaMemPool_t defaultMemoryPool()
 
 }
 
+namespace
+{
+
+std::atomic<bool> device_exists = false;
+
+}
+
 GPUDevice::GPUDevice(const GPUDeviceSettings & settings)
     : gpu_resources{
           .compute = cuda::stream_ref{cudaStreamLegacy},
@@ -92,10 +101,17 @@ GPUDevice::GPUDevice(const GPUDeviceSettings & settings)
     PinnedMemoryPool::instance().configure(settings.pinned_memory_pool_release_threshold);
 
     setCudfMemoryPool(gpu_resources.memory_pool);
+    device_exists = true;
+}
+
+bool GPUDevice::exists() noexcept
+{
+    return device_exists;
 }
 
 GPUDevice::~GPUDevice()
 {
+    device_exists = false;
     try
     {
         checkCuda(cudaDeviceSynchronize(), "Cannot wait for the device");

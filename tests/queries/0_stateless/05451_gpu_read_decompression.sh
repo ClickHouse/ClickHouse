@@ -7,7 +7,7 @@
 # seek within it: by a `PREWHERE`, by the ranges of marks the primary key leaves, and by `LIMIT`s and `FINAL`-free
 # lookups of single rows.
 #
-# Where the build has no GPU support, or the machine no usable device, the setting is not applied and both sides of every
+# Where the build has no GPU support, or the server no device, the setting has no effect and both sides of every
 # comparison read on the CPU - the checks hold trivially.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -49,15 +49,16 @@ $CLICKHOUSE_CLIENT --enable_gdeflate_codec 1 --enable_bitpacking_codec 1 --query
     FROM numbers(300007);
 "
 
+# The setting is on by default and has no effect without a device, so the CPU side of each comparison turns it off.
+CPU_SETTINGS=(--allow_experimental_gpu_read_decompression 0)
 GPU_SETTINGS=()
 if [ "$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.build_options WHERE name = 'USE_GPU'")" == "1" ]; then
-    # A device that fails for any other reason than being absent is a bug, and is reported as one rather than being
-    # compared with itself on the CPU.
-    PROBE_ERROR=$($CLICKHOUSE_CLIENT --allow_experimental_gpu_read_decompression 1 --use_uncompressed_cache 0 \
-        --query "SELECT sum(k) FROM gpu_read" 2>&1 > /dev/null)
+    # Whether the server has a device: a keyless GPU `sum` fails only without one. A device that fails for any other
+    # reason is a bug, and is reported as one rather than being compared with itself on the CPU.
+    PROBE_ERROR=$($CLICKHOUSE_CLIENT --allow_experimental_gpu_aggregation 1 --query "SELECT sum(k) FROM gpu_read" 2>&1 > /dev/null)
     if [ -z "$PROBE_ERROR" ]; then
         GPU_SETTINGS=(--allow_experimental_gpu_read_decompression 1 --use_uncompressed_cache 0)
-    elif [[ "$PROBE_ERROR" != *"There is no GPU"* ]]; then
+    elif [[ "$PROBE_ERROR" != *"Cannot aggregate on a GPU"* && "$PROBE_ERROR" != *"There is no GPU"* ]]; then
         echo "$PROBE_ERROR"
     fi
 fi
@@ -68,7 +69,7 @@ function compare_with_cpu()
     local on_cpu
     local on_gpu
 
-    on_cpu=$($CLICKHOUSE_CLIENT --query "$query")
+    on_cpu=$($CLICKHOUSE_CLIENT "${CPU_SETTINGS[@]}" --query "$query")
     on_gpu=$($CLICKHOUSE_CLIENT "${GPU_SETTINGS[@]}" --query "$query")
 
     if [ "$on_cpu" == "$on_gpu" ]; then

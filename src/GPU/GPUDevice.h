@@ -70,6 +70,9 @@ public:
     /// The device of the global `Context`; throws when `enable_gpu` is not set.
     static GPUDevice & instance();
 
+    /// Whether there is a device: set from its start at the start of the server to its release at shutdown.
+    static bool exists() noexcept;
+
     const GPUResources & resources() const { return gpu_resources; }
 
     PinnedMemoryPool & pinnedPool() { return PinnedMemoryPool::instance(); }

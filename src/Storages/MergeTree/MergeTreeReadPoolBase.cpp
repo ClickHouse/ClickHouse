@@ -438,8 +438,9 @@ MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_rang
 
     read_task_info.part_index_in_query = part_with_ranges.part_index_in_query;
     read_task_info.part_starting_offset_in_query = part_with_ranges.part_starting_offset_in_query;
-    /// Only the reader executor uses maps.
-    if (reader_settings.read_settings.reader_executor.enabled)
+    /// Only the reader executor and the reads that decompress on the GPU use maps: the latter read ahead only the
+    /// blocks of the ranges the map has.
+    if (reader_settings.read_settings.reader_executor.enabled || reader_settings.gpu_decompression)
         read_task_info.read_request_map = std::make_shared<const MarkRanges>(part_with_ranges.ranges);
     read_task_info.alter_conversions = MergeTreeData::getAlterConversionsForPart(data_part, mutations_snapshot, getContext()
 #if CLICKHOUSE_CLOUD

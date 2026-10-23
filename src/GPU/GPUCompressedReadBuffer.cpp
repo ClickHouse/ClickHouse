@@ -9,6 +9,8 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 
+#include <algorithm>
+
 namespace ProfileEvents
 {
     extern const Event GPUDecompressionBytes;
@@ -28,7 +30,7 @@ namespace
 
 /// What the blocks of a batch expand to, at most, but for the block that crosses it: enough for the device to expand them
 /// at a good part of its speed, and little enough for every stream of every reading thread to hold one in pinned memory.
-constexpr size_t batch_bytes = 4UL << 20;
+constexpr size_t max_batch_bytes = 4UL << 20;
 
 }
 
@@ -40,7 +42,7 @@ GPUCompressedReadBuffer::GPUCompressedReadBuffer(std::unique_ptr<ReadBufferFromF
     compressed_in = file_in.get();
     allow_different_codecs = allow_different_codecs_;
     decompressor.emplace(cuda::stream_ref{stream.get()});
-    expanded.reserve(batch_bytes + batch_bytes / 4);
+    expanded.reserve(max_batch_bytes + max_batch_bytes / 4);
 }
 
 bool GPUCompressedReadBuffer::readBatch()
@@ -56,8 +58,13 @@ bool GPUCompressedReadBuffer::readBatch()
     size_t expanded_bytes = 0;
     size_t device_compressed_bytes = 0;
 
-    while (expanded_bytes < batch_bytes)
+    while (expanded_bytes < max_batch_bytes)
     {
+        /// The first block is where the file is, as a seek or the read in order left it; the blocks read ahead after it
+        /// are only those of the ranges to be read.
+        if (!batch.empty() && !skipToRequestedRange())
+            break;
+
         const size_t offset_in_file = file_in->getPosition();
         size_t decompressed_bytes = 0;
         size_t compressed_with_header = 0;
@@ -156,6 +163,29 @@ void GPUCompressedReadBuffer::seek(size_t offset_in_compressed_file, size_t offs
     file_in->seek(offset_in_compressed_file, SEEK_SET);
     resetWorkingBuffer();
     nextimpl_working_buffer_offset = offset_in_decompressed_block;
+}
+
+void GPUCompressedReadBuffer::setRequestMap(ByteRangeSet ranges)
+{
+    request_map = ranges;
+    file_in->setRequestMap(std::move(ranges));
+}
+
+bool GPUCompressedReadBuffer::skipToRequestedRange()
+{
+    if (request_map.empty())
+        return true;
+
+    const auto position = static_cast<size_t>(file_in->getPosition());
+    const auto & ranges = request_map.ranges();
+    /// The first range that ends after the position.
+    const auto range = std::upper_bound(
+        ranges.begin(), ranges.end(), position, [](size_t offset, const ByteRange & r) { return offset < r.end(); });
+    if (range == ranges.end())
+        return false;
+    if (range->offset > position)
+        file_in->seek(range->offset, SEEK_SET);
+    return true;
 }
 
 off_t GPUCompressedReadBuffer::getPosition() const
