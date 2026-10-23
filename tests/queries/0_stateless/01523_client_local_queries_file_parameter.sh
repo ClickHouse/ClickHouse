@@ -42,7 +42,7 @@ $CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" --queries-file="$SECOND_S
 # SQL from separate files shares a session, even if -q is specified first.
 printf '%s\n' 'CREATE TABLE state_01523 (x UInt8) ENGINE=Memory;' 'INSERT INTO state_01523 VALUES (4);' > "$TEMP_SQL_FILE_NAME"
 printf '%s\n' 'INSERT INTO state_01523 VALUES (5);' > "$SECOND_SQL_FILE_NAME"
-$CLICKHOUSE_LOCAL -q 'SELECT sum(x) FROM state_01523' --queries-file="$TEMP_SQL_FILE_NAME" --queries-file="$SECOND_SQL_FILE_NAME" < /dev/null
+$CLICKHOUSE_LOCAL --async_insert=0 -q 'SELECT sum(x) FROM state_01523' --queries-file="$TEMP_SQL_FILE_NAME" --queries-file="$SECOND_SQL_FILE_NAME" < /dev/null
 
 # Query files and --query keep their own ordering, regardless of interleaving on the command line.
 echo "SELECT 'first file';" > "$TEMP_SQL_FILE_NAME"
@@ -116,7 +116,7 @@ cat "$STDIN_DATA_FILE_NAME"
 printf '%s\n' 'CREATE TEMPORARY TABLE `table` (x UInt8) ENGINE=Memory;' \
     'INSERT INTO `table` VALUES (7);' \
     'SELECT sum(x) FROM `table`;' > "$TEMP_SQL_FILE_NAME"
-$CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" \
+$CLICKHOUSE_LOCAL --async_insert=0 --queries-file="$TEMP_SQL_FILE_NAME" \
     -q 'SELECT count(); SELECT sum(x) FROM `table`;' < "$STDIN_DATA_FILE_NAME"
 
 # --copy is a format-conversion shortcut, not a second query mode for --queries-file.
@@ -184,7 +184,7 @@ $CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" -q 'SELECT 42' < "$STDIN_
 printf '%s\n' 'CREATE TABLE selected_01523 (x UInt8) ENGINE=Memory;' \
     'INSERT INTO selected_01523 VALUES (7), (8);' \
     "SET implicit_table_at_top_level = 'selected_01523';" > "$TEMP_SQL_FILE_NAME"
-$CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" -q 'SELECT sum(x)' < "$STDIN_DATA_FILE_NAME"
+$CLICKHOUSE_LOCAL --async_insert=0 --queries-file="$TEMP_SQL_FILE_NAME" -q 'SELECT sum(x)' < "$STDIN_DATA_FILE_NAME"
 
 # mmap already preserves descriptor position. Its first and later reads must
 # use the same range, even if the caller consumed a line before clickhouse-local.
