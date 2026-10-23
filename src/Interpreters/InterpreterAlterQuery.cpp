@@ -106,7 +106,10 @@ namespace
 void checkAddedIndexPermissions(const ASTAlterQuery & alter, const StoragePtr & table, const ContextPtr & context)
 {
     /// `ON CLUSTER` may run from a host that does not have the table, leaving aliases unexpandable.
-    StorageMetadataPtr metadata = table ? table->getInMemoryMetadataPtr() : nullptr;
+    StorageMetadataHandle metadata;
+    if (table)
+        metadata = table->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
+
     static const ColumnsDescription no_columns;
     const ColumnsDescription & columns = metadata ? metadata->getColumns() : no_columns;
 
