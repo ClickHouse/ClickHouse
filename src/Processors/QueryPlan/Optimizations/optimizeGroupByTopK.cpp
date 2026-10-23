@@ -371,7 +371,7 @@ static void applyTopKByAllKeys(
 ///   Limit - [Expression] - MergingAggregated - Union - Aggregating (the local shard or replica, partial)
 ///                                                    - ReadFromRemote / ReadFromRemoteParallelReplicas / ReadFromParallelReplicas
 ///
-/// or without the `Union` when nothing is read locally. Any `n` groups answer the query, so it may return the smallest
+/// or without the `Union` when nothing is read locally, or with local aggregations only when all shards are local. Any `n` groups answer the query, so it may return the smallest
 /// `n` by the keys, which a sort above the merge selects. Then each shard or replica may keep only its smallest `n`
 /// groups: a group beyond them on one of them is beyond the smallest `n` overall. The local aggregation gets the heap
 /// here, the remote ones through `distributed_group_by_top_k`.
@@ -413,7 +413,8 @@ static void tryOptimizeGroupByTopKOverRemoteMerge(
             local_aggregating_nodes.push_back(source);
     }
 
-    if (remote_reads.empty() && parallel_replicas_reads.empty() && plan_fragment_reads.empty())
+    /// All shards may be local (`prefer_localhost_replica`), with no remote read.
+    if (remote_reads.empty() && parallel_replicas_reads.empty() && plan_fragment_reads.empty() && local_aggregating_nodes.empty())
         return;
 
     SortDescription sort_description;
