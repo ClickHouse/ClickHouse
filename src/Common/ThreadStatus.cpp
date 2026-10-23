@@ -295,6 +295,11 @@ ThreadStatus::QueryCancellationBlocker::~QueryCancellationBlocker()
     query_cancellation_blocked = previous;
 }
 
+bool ThreadStatus::QueryCancellationBlocker::isActive()
+{
+    return query_cancellation_blocked;
+}
+
 bool ThreadStatus::isQueryCanceled() const
 {
     if (!thread_group || query_cancellation_blocked)

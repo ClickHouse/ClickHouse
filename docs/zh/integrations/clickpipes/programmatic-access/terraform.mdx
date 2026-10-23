@@ -9,9 +9,7 @@ keywords: ['clickpipes', 'terraform', '基础设施即代码', 'iac', '编程访
 
 所有 ClickPipe 类型都可以通过 [ClickHouse Terraform 提供商](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/clickpipe) 中的 `clickhouse_clickpipe` 资源创建和管理。本页介绍 提供商 的设置，以及每种受支持的 ClickPipe 类型的配置示例。
 
-<div id="provider-setup">
-  ## 提供商设置
-</div>
+## 提供商设置 {#provider-setup}
 
 <Note>
   从提供商 **v3.14.0** 版本开始，已正式支持 ClickPipes。
@@ -41,9 +39,7 @@ provider "clickhouse" {
 
 请参阅[管理 API 密钥](/zh/products/cloud/features/admin-features/api/openapi)，了解如何创建可供提供商使用的 API 密钥。
 
-<div id="resource-overview">
-  ## 资源概览
-</div>
+## 资源概览 {#resource-overview}
 
 `clickhouse_clickpipe` 资源具有以下顶层参数：
 
@@ -60,9 +56,7 @@ provider "clickhouse" {
 
 `id` 和 `state` 属性为只读，创建后由 ClickHouse Cloud 填充。
 
-<div id="destination">
-  ## 目标端
-</div>
+## 目标端 {#destination}
 
 `destination` 块适用于所有源类型：
 
@@ -94,13 +88,9 @@ destination {
 
 对于 CDC 源 (Postgres、MySQL、MongoDB、BigQuery) ，目标表会根据源 schema 自动创建——通常只需指定 `database`。
 
-<div id="examples">
-  ## 按 ClickPipe 类型划分的示例
-</div>
+## 按 ClickPipe 类型划分的示例 {#examples}
 
-<div id="kafka">
-  ### Kafka
-</div>
+### Kafka {#kafka}
 
 支持的 `type` 取值：`kafka`、`confluent`、`msk`、`azureeventhub`、`redpanda`、`warpstream`。
 
@@ -163,9 +153,7 @@ resource "clickhouse_clickpipe" "kafka_clickpipe" {
 }
 ```
 
-<div id="kafka-schema-registry">
-  #### Kafka 与 Schema Registry
-</div>
+#### Kafka 与 Schema Registry {#kafka-schema-registry}
 
 ```hcl
 resource "clickhouse_clickpipe" "kafka_avro_clickpipe" {
@@ -219,9 +207,7 @@ resource "clickhouse_clickpipe" "kafka_avro_clickpipe" {
 }
 ```
 
-<div id="kinesis">
-  ### Amazon Kinesis
-</div>
+### Amazon Kinesis {#kinesis}
 
 ```hcl
 resource "clickhouse_clickpipe" "kinesis_clickpipe" {
@@ -230,11 +216,17 @@ resource "clickhouse_clickpipe" "kinesis_clickpipe" {
 
   source {
     kinesis {
-      format         = "JSONEachRow"
+      format         = "AvroConfluent"
       stream_name    = "my-stream"
       region         = "us-east-1"
       iterator_type  = "TRIM_HORIZON"
       authentication = "IAM_USER"
+
+      schema_registry {
+        type               = "glue"
+        glue_region        = "us-east-1"
+        glue_registry_name = "my-registry"
+      }
 
       access_key {
         access_key_id = var.aws_access_key_id
@@ -266,9 +258,50 @@ resource "clickhouse_clickpipe" "kinesis_clickpipe" {
 }
 ```
 
-<div id="kinesis-iam-role">
-  #### 使用 IAM 角色的 Kinesis
-</div>
+#### 使用已上传 Protobuf schema 的 Kinesis {#kinesis-protobuf-schema}
+
+将 `format` 设置为 `Protobuf`，并通过 `protobuf_schema` 提供 Base64 编码的 `.proto` 文件或序列化后的 `FileDescriptorSet`。上传 schema 时，请勿配置 `schema_registry`。
+
+```hcl
+resource "clickhouse_clickpipe" "kinesis_protobuf_clickpipe" {
+  name       = "My Kinesis Protobuf ClickPipe"
+  service_id = var.service_id
+
+  source {
+    kinesis {
+      format          = "Protobuf"
+      stream_name     = "my-stream"
+      region          = "us-east-1"
+      iterator_type   = "TRIM_HORIZON"
+      authentication  = "IAM_USER"
+      protobuf_schema = filebase64("${path.module}/event.proto")
+
+      access_key {
+        access_key_id = var.aws_access_key_id
+        secret_key    = var.aws_secret_key
+      }
+    }
+  }
+
+  destination {
+    table         = "my_table"
+    managed_table = true
+
+    table_definition {
+      engine {
+        type = "MergeTree"
+      }
+    }
+
+    columns {
+      name = "id"
+      type = "UInt64"
+    }
+  }
+}
+```
+
+#### 使用 IAM 角色的 Kinesis {#kinesis-iam-role}
 
 使用 IAM 角色进行身份验证需要有一个运行在 AWS 上的 ClickHouse 服务。
 
@@ -311,9 +344,7 @@ resource "clickhouse_clickpipe" "kinesis_iam_role_clickpipe" {
 }
 ```
 
-<div id="s3">
-  ### Amazon S3
-</div>
+### Amazon S3 {#s3}
 
 ```hcl
 resource "clickhouse_clickpipe" "s3_clickpipe" {
@@ -357,9 +388,7 @@ resource "clickhouse_clickpipe" "s3_clickpipe" {
 }
 ```
 
-<div id="s3-continuous">
-  #### 通过 SQS 实现 S3 持续摄取
-</div>
+#### 通过 SQS 实现 S3 持续摄取 {#s3-continuous}
 
 如需使用 SQS 队列 (无序模式) 进行持续摄取，请参见[配置无序模式](/zh/integrations/clickpipes/object-storage/amazon-s3/unordered-mode)中的设置说明。
 
@@ -407,9 +436,7 @@ resource "clickhouse_clickpipe" "s3_continuous_clickpipe" {
 }
 ```
 
-<div id="gcs">
-  ### Google Cloud Storage
-</div>
+### Google Cloud Storage {#gcs}
 
 `service_account_key` 必须为 GCP 服务账号 JSON 密钥文件内容经过 base64 编码后的结果。
 
@@ -451,9 +478,7 @@ resource "clickhouse_clickpipe" "gcs_clickpipe" {
 }
 ```
 
-<div id="abs">
-  ### Azure Blob 存储
-</div>
+### Azure Blob 存储 {#abs}
 
 ```hcl
 resource "clickhouse_clickpipe" "abs_clickpipe" {
@@ -494,9 +519,7 @@ resource "clickhouse_clickpipe" "abs_clickpipe" {
 }
 ```
 
-<div id="postgres">
-  ### Postgres CDC
-</div>
+### Postgres CDC {#postgres}
 
 ```hcl
 resource "clickhouse_clickpipe" "postgres_cdc_clickpipe" {
@@ -552,9 +575,7 @@ resource "clickhouse_clickpipe" "postgres_cdc_clickpipe" {
 }
 ```
 
-<div id="postgres-iam-role">
-  #### 使用 IAM 角色 的 Postgres
-</div>
+#### 使用 IAM 角色 的 Postgres {#postgres-iam-role}
 
 使用 IAM 角色 进行身份验证需要一个运行在 AWS 上的 ClickHouse 服务。
 
@@ -594,9 +615,7 @@ resource "clickhouse_clickpipe" "postgres_iam_role_clickpipe" {
 }
 ```
 
-<div id="mysql">
-  ### MySQL CDC
-</div>
+### MySQL CDC {#mysql}
 
 ```hcl
 resource "clickhouse_clickpipe" "mysql_cdc_clickpipe" {
@@ -652,9 +671,7 @@ resource "clickhouse_clickpipe" "mysql_cdc_clickpipe" {
 }
 ```
 
-<div id="mongodb">
-  ### MongoDB CDC
-</div>
+### MongoDB CDC {#mongodb}
 
 ```hcl
 resource "clickhouse_clickpipe" "mongodb_cdc_clickpipe" {
@@ -702,9 +719,7 @@ resource "clickhouse_clickpipe" "mongodb_cdc_clickpipe" {
 }
 ```
 
-<div id="bigquery">
-  ### BigQuery
-</div>
+### BigQuery {#bigquery}
 
 `service_account_file` 必须为经过 base64 编码的 GCP 服务账号 JSON 密钥文件内容。
 
@@ -755,9 +770,7 @@ resource "clickhouse_clickpipe" "bigquery_snapshot_clickpipe" {
 }
 ```
 
-<div id="scaling">
-  ## 扩缩容
-</div>
+## 扩缩容 {#scaling}
 
 所有 ClickPipe 类型都支持 `scaling` 块，可用于配置副本数量及其资源分配：
 
@@ -769,9 +782,7 @@ scaling {
 }
 ```
 
-<div id="import">
-  ## 导入现有 ClickPipes
-</div>
+## 导入现有 ClickPipes {#import}
 
 可使用 service ID 和 ClickPipe ID 将现有 ClickPipes 导入 Terraform 状态：
 

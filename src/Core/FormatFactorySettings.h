@@ -226,9 +226,9 @@ When reading Parquet files (with reader v3), skip whole row groups based on the 
 )", 0, \
         {"26.8", 0, 1024 * 1024, "New setting enabling Parquet row-group pruning based on dictionary page contents (reader v3). The value is the maximum dictionary page size in bytes for which the optimization applies; 0 (the previous behavior) disables it."}) \
     DECLARE(UInt64, input_format_parquet_footer_read_size, 0, R"(
-Size (in bytes) of the initial tail read that fetches the Parquet footer (`FileMetaData`) when opening a file with reader v3. `0` (default) sizes the read adaptively to the file - 1% of the file size, clamped to `[128 KiB, 2 MiB]` - so it usually covers the whole footer in a single read even for wide files with hundreds of columns. Set a non-zero value to force a fixed initial read size instead of the adaptive one; this is useful for very high-latency object storage where reading a larger tail up front avoids a second round trip. The value is clamped to the file size.
+Size (in bytes) of the initial tail read that fetches the Parquet footer (`FileMetaData`) when opening a file with reader v3. `0` (default) reads a 64 KiB tail when the file is read directly from the local filesystem, and for other sources (object storage, URL, HDFS) sizes the read adaptively - 1% of the file size, clamped to `[128 KiB, 2 MiB]` - so it usually covers the whole footer in a single read even for wide files with hundreds of columns. Set a non-zero value to force a fixed initial read size instead of the adaptive one; this is useful for very high-latency object storage where reading a larger tail up front avoids a second round trip. The value is clamped to the file size.
 )", 0, \
-        {"26.10", 65536, 0, "New setting to override the adaptive Parquet footer initial read size with a fixed number of bytes; 0 keeps the adaptive behavior."}) \
+        {"26.10", 65536, 0, "New setting for the Parquet footer initial read size; 0 reads 64 KiB of a local file and sizes the read adaptively for other sources."}) \
     DECLARE(Bool, input_format_parquet_enable_json_parsing, true, R"(
 When reading Parquet files, parse JSON columns as ClickHouse JSON Column.
 )", 0, \
@@ -773,7 +773,7 @@ Read data types in binary format instead of type names in Native input format
 )", 0, \
         {"24.7", false, false, "Added new setting to allow to read type names in binary format in Native output format"}) \
     DECLARE(UInt64, output_format_compression_level, 3, R"(
-Default compression level if query output is compressed. The setting is applied when `SELECT` query has `INTO OUTFILE` or when writing to table functions `file`, `url`, `hdfs`, `s3`, or `azureBlobStorage`.
+Default compression level if query output is compressed. The setting is applied when `SELECT` query has `INTO OUTFILE` or when writing to table functions `file`, `url`, `hdfs`, `s3`, or `azureBlobStorage`. It is also applied to the compressed response to an HTTP request with a method other than `gzip` and `deflate`, for which [http_zlib_compression_level](/reference/settings/session-settings/http#http_zlib_compression_level) is used.
 
 Possible values: from `1` to `22`
 )", 0, \
@@ -1400,6 +1400,10 @@ Write enum using parquet physical type: BYTE_ARRAY and logical type: ENUM
 Put crc32 checksums in parquet page headers.
 )", 0, \
         {"25.11", false, true, "New setting."}) \
+    DECLARE(Bool, output_format_parquet_use_alp_encoding, false, R"(
+Encode `Float32` and `Float64` columns (Parquet `FLOAT` and `DOUBLE`) with the `ALP` (Adaptive Lossless floating-Point) encoding. `ALP` is lossless and compresses decimal-like floating-point data (prices, measurements, coordinates) much better than `PLAIN`. Such columns are written without a dictionary, and a page for which `ALP` would be bigger than `PLAIN` is written with `PLAIN`. The encoding was added to the Parquet format recently, so not every Parquet reader supports it yet: enable it only if the files are read by readers that do.
+)", 0, \
+        {"26.11", false, false, "New setting."}) \
     DECLARE(String, output_format_avro_codec, "", R"(
 Compression codec used for output. Possible values: 'null', 'deflate', 'snappy', 'zstd'.
 )", 0) \
@@ -1571,7 +1575,7 @@ Suffix after result set (for CustomSeparated format)
 Regular expression (for Regexp format)
 )", 0) \
     DECLARE(EscapingRule, format_regexp_escaping_rule, "Raw", R"(
-Field escaping rule (for Regexp format)
+Specifies how each capture group produced by `format_regexp` is parsed into its target column type. Use `Raw` (default) for unescaped text, `Escaped` for TSV-style escaping, `Quoted` for Values-style quoted fields, `CSV` for CSV fields, or `JSON` for JSON values. This setting applies after the regular expression matches a row; it does not change the regular expression itself.
 )", 0, \
         {"20.10", "Escaped", "Raw", "Use Raw as default escaping rule for Regexp format to male the behaviour more like to what users expect"}) \
     DECLARE(Bool, format_regexp_skip_unmatched, false, R"(
@@ -1848,13 +1852,17 @@ Use the precise float parsing algorithm, which always returns the closest repres
 )", 0, \
         {"26.7", false, true, "Use the precise (closest-representable) float parsing algorithm by default, now that it is faster than the previous fast algorithm. Set to false to restore the pre-26.7 fast-but-less-accurate parsing in conversion functions."}) \
     DECLARE(DateTimeOverflowBehavior, date_time_overflow_behavior, "ignore", R"(
-Defines the behavior when [Date](/reference/data-types/date), [Date32](/reference/data-types/date32), [DateTime](/reference/data-types/datetime), [DateTime64](/reference/data-types/datetime64) or integers are converted into Date, Date32, DateTime or DateTime64 but the value cannot be represented in the result type. It also applies when a `Date` or `DateTime` is parsed from text, including by an input format.
+Defines the behavior when [Date](/reference/data-types/date), [Date32](/reference/data-types/date32), [DateTime](/reference/data-types/datetime), [DateTime64](/reference/data-types/datetime64), [Time](/reference/data-types/time), [Time64](/reference/data-types/time64) or numeric values (integers and floating-point numbers) are converted into `Date`, `Date32`, `DateTime`, `DateTime64`, `Time` or `Time64` but the value cannot be represented in the result type. `Decimal` values can be converted only into `DateTime64` and `Time64`, and those conversions follow this setting as well; a `Decimal` converted into `Date`, `Date32`, `DateTime` or `Time` is rejected regardless of the setting. It also applies when a `Date` or `DateTime` is parsed from text, including by an input format.
 
 Possible values:
 
-- `ignore` — Silently ignore overflows. Result are undefined.
+- `ignore` — Silently ignore overflows. For conversions between date and time types the result is undefined (the value may wrap around); a numeric value is saturated to the range boundaries of the result type.
 - `throw` — Throw an exception in case of overflow.
 - `saturate` — Saturate the result. If the value is smaller than the smallest value that can be represented by the target type, the result is chosen as the smallest representable value. If the value is bigger than the largest value that can be represented by the target type, the result is chosen as the largest representable value.
+
+The accurate casts (`accurateCast`, `accurateCastOrNull`, `accurateCastOrDefault`) do not depend on this setting: an unrepresentable value is always rejected, reported as `NULL` or replaced with the default value, respectively.
+
+The setting applies to conversions done by `CAST` and the conversion functions, including those an `INSERT ... VALUES` expression template or an `INSERT ... SELECT` performs. A constant expression that the `Values` format evaluates without a template (the fallback enabled by `input_format_values_interpret_expressions`) and the `values` table function follow it only for `DateTime64` and `Time64`: an out-of-range number put into a `Date`, `Date32`, `DateTime` or `Time` column there does not follow this setting. The `values` table function rejects it, and the `Values` format rejects it too, unless `input_format_null_as_default` is enabled, in which case it inserts the default value of the column.
 
 Default value: `ignore`.
 )", 0) \
@@ -1864,11 +1872,11 @@ Validate usage of experimental and suspicious types inside nested types like Arr
         {"24.2", false, true, "Validate usage of experimental and suspicious types inside nested types"}) \
     \
     DECLARE(IdentifierQuotingRule, show_create_query_identifier_quoting_rule, IdentifierQuotingRule::WhenNecessary, R"(
-Set the quoting rule for identifiers in SHOW CREATE query
+Controls when identifiers are quoted in `SHOW CREATE` output. `when_necessary` (default) quotes identifiers where required to produce valid, unambiguous SQL; `user_display` quotes identifiers that are SQL keywords; `always` quotes every identifier. This setting controls whether quoting is added; `show_create_query_identifier_quoting_style` controls the quote characters and escaping.
 )", 0, \
         {"24.10", "when_necessary", "when_necessary", "New setting."}) \
     DECLARE(IdentifierQuotingStyle, show_create_query_identifier_quoting_style, IdentifierQuotingStyle::Backticks, R"(
-Set the quoting style for identifiers in SHOW CREATE query
+Controls how quoted identifiers are written in `SHOW CREATE` output. `Backticks` (default) uses ClickHouse-style backticks, `DoubleQuotes` uses double quotes with ClickHouse escaping, and `BackticksMySQL` uses MySQL-compatible backticks where embedded backticks are doubled. This setting does not control which identifiers are quoted; use `show_create_query_identifier_quoting_rule` for that.
 )", 0, \
         {"24.10", "Backticks", "Backticks", "New setting."}) \
     DECLARE(UInt64, output_format_image_width, 1024, R"(
@@ -1971,13 +1979,27 @@ Indicate which field of protobuf oneof was found by means of setting enum value 
 )", 0, \
         {"25.9", false, false, "New setting"}) \
     DECLARE(Bool, input_format_parquet_allow_geoparquet_parser, true, R"(
-Use geo column parser to convert Array(UInt8) into Point/MultiPoint/Linestring/Polygon/MultiLineString/MultiPolygon types
+When reading Parquet files, decode geometry columns as ClickHouse geo types (`Point`, `MultiPoint`, `LineString`, `Polygon`, `MultiLineString`, `MultiPolygon` or `Geometry`). Applies to columns described by the GeoParquet `geo` metadata and to columns annotated with the Parquet `GEOMETRY` or `GEOGRAPHY` logical type. If disabled, such columns are read as `String` with the raw WKB (or WKT) bytes, unless a geo type is requested explicitly.
 )", 0, \
         {"25.5", false, true, "A new setting to use geo columns in parquet file"}) \
+    DECLARE(Bool, input_format_parquet_detect_variant_by_structure, true, R"(
+Read a Parquet group that has no `VARIANT` logical type, but has the layout of an unshredded variant (a `metadata` and a `value` field of type `BYTE_ARRAY`), as a variant, i.e. as `Dynamic`, instead of `Tuple`. Spark 4.0 writes variant columns this way. Groups annotated with the `VARIANT` logical type are always read as a variant.
+)", 0, \
+        {"26.10", false, true, "New setting to read Spark variant columns, which have no `VARIANT` logical type, as `Dynamic` instead of `Tuple`"}) \
     DECLARE(Bool, output_format_parquet_geometadata, true, R"(
 Allow to write information about geo columns in parquet metadata and encode columns in WKB format.
 )", 0, \
         {"25.7", false, true, "A new setting to allow to write information about geo columns in parquet metadata and encode columns in WKB format."}) \
+    DECLARE(Bool, output_format_parquet_geometry_logical_type, false, R"(
+Annotate geo columns written as WKB (see `output_format_parquet_geometadata`) with the Parquet `GEOMETRY` logical type, and write `GeospatialStatistics` (bounding box and geometry types) for them instead of min/max statistics. Readers that support the logical type recognize such columns as geometries even without the GeoParquet `geo` metadata. Has no effect if `output_format_parquet_geometadata` is disabled. A `Geometry` column is also described in the GeoParquet `geo` metadata, with an empty list of geometry types. If disabled, these columns are written as `BYTE_ARRAY` without a geospatial annotation and with min/max statistics, and a `Geometry` column is not described in the `geo` metadata. Disabled by default because readers that do not know this logical type (e.g. Arrow C++ and `pyarrow` before version 20) cannot open the whole file.
+)", 0, \
+        {"26.11", false, false, "New setting"}) \
+    DECLARE(Bool, output_format_parquet_write_file_logical_type, false, R"(
+Write a named `Tuple` whose element names are all fields of the Parquet `FILE` logical type (`uri`, `offset`, `size`, `content_type`, `checksum`, `inline`; any non-empty subset in any order) as a group annotated with the `FILE` logical type, which represents a reference to a range of bytes stored inline or in an external file. The `offset` and `size` elements must be integers (written as `INT64`), the other elements must be `String` or `FixedString` (`inline` is written as `BYTE_ARRAY` without annotation, the others as `STRING`). As the specification requires, every field is written as `OPTIONAL`. Values are written as is, without checking that they form a valid reference.
+
+When reading, a `FILE`-annotated group is always read as such a `Tuple` of `Nullable` elements.
+)", 0, \
+        {"26.10", false, false, "New setting to write a named `Tuple` with fields of the Parquet `FILE` logical type as a `FILE`-annotated group."}) \
     DECLARE(Bool, into_outfile_create_parent_directories, false, R"(
 Automatically create parent directories when using INTO OUTFILE if they do not already exists.
 )", 0, \

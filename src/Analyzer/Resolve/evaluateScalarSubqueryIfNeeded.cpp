@@ -146,7 +146,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
         scalar_block = scalars_cache.at(node_with_hash);
     }
-    else if (context->hasQueryContext() && can_use_global_scalars && context->getQueryContext()->hasScalar(str_hash))
+    else if (context->hasQueryContext() && can_use_global_scalars && context->getQueryContext()->hasComputedScalar(str_hash))
     {
         scalar_block = context->getQueryContext()->getScalar(str_hash);
         scalar_subquery_to_scalar_value_global.emplace(node_with_hash, scalar_block);

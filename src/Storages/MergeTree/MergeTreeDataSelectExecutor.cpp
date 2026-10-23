@@ -35,6 +35,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
+#include <Interpreters/Cache/QueryConditionCacheTimeConditions.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -52,6 +53,8 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionsLogical.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/LoggingFormatStringHelpers.h>
@@ -97,7 +100,6 @@ namespace Setting
 {
     extern const SettingsBool per_part_index_stats;
     extern const SettingsBool apply_deleted_mask;
-    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsString force_data_skipping_indexes;
     extern const SettingsBool force_index_by_date;
     extern const SettingsUInt64 max_rows_to_read;
@@ -116,6 +118,8 @@ namespace Setting
     extern const SettingsBool distributed_index_analysis;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool use_query_condition_cache_for_top_k;
+    extern const SettingsBool use_query_condition_cache_for_time_conditions;
+    extern const SettingsFloat query_condition_cache_time_condition_grid_factor;
     extern const SettingsBool secondary_indexes_enable_bulk_filtering;
     extern const SettingsBool vector_search_with_rescoring;
     extern const SettingsBool use_skip_indexes_for_top_k;
@@ -280,28 +284,8 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
     RelativeSize relative_sample_size = 0;
     RelativeSize relative_sample_offset = 0;
 
-    std::optional<ASTSampleRatio::Rational> sample_size_ratio;
-    std::optional<ASTSampleRatio::Rational> sample_offset_ratio;
-
-    if (select_query_info.table_expression_modifiers)
-    {
-        const auto & table_expression_modifiers = *select_query_info.table_expression_modifiers;
-        sample_size_ratio = table_expression_modifiers.getSampleSizeRatio();
-        sample_offset_ratio = table_expression_modifiers.getSampleOffsetRatio();
-    }
-    else
-    {
-        auto & select = select_query_info.query->as<ASTSelectQuery &>();
-
-        auto select_sample_size = select.sampleSize();
-        auto select_sample_offset = select.sampleOffset();
-
-        if (select_sample_size)
-            sample_size_ratio = select_sample_size->as<ASTSampleRatio &>().ratio;
-
-        if (select_sample_offset)
-            sample_offset_ratio = select_sample_offset->as<ASTSampleRatio &>().ratio;
-    }
+    std::optional<ASTSampleRatio::Rational> sample_size_ratio = select_query_info.getSampleSizeRatio();
+    std::optional<ASTSampleRatio::Rational> sample_offset_ratio = select_query_info.getSampleOffsetRatio();
 
     if (sample_size_ratio)
     {
@@ -377,7 +361,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
         */
 
     const bool can_use_sampling_key_parallel_replicas =
-        settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0
+        context->isParallelReplicasEnabled()
         && settings[Setting::max_parallel_replicas] > 1
         && settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::SAMPLING_KEY;
 
@@ -879,10 +863,11 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
 
     RangesInDataParts res_parts;
     size_t total_parts_before = parts.size();
+    const NameSet required_columns = statistics_pruner.getRequiredColumns();
 
     for (const auto & part : parts)
     {
-        auto estimates = part.data_part->getEstimates();
+        auto estimates = part.data_part->getEstimates(required_columns);
         try
         {
             if (!statistics_pruner.checkPartCanMatch(estimates).can_be_true)
@@ -1143,8 +1128,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     std::vector<std::vector<MergeTreeIndexBulkGranulesMinMax::MinMaxGranule>> parts_top_k_granules(
                     parts_with_ranges.size(), std::vector<MergeTreeIndexBulkGranulesMinMax::MinMaxGranule>());
 
-    /// Perform top-K optimization during index analysis itself?
-    const bool perform_top_k_optimization = top_k_filter_info && skip_indexes.skip_index_for_top_k_filtering && !top_k_filter_info->where_clause;
+    /// Perform top-K optimization during index analysis itself? Not with sampling: its filter runs after the read and
+    /// can discard every row of the granules selected here.
+    const bool perform_top_k_optimization = top_k_filter_info && skip_indexes.skip_index_for_top_k_filtering
+        && !top_k_filter_info->where_clause && !result.sampling.use_sampling;
     const bool top_k_handle_ties = perform_top_k_optimization && (top_k_filter_info->num_sort_columns > 1 || skip_indexes.skip_index_for_top_k_filtering->index.granularity > 1);
 
     size_t num_threads = std::min<size_t>(num_streams, parts_with_ranges.size());
@@ -1171,6 +1158,23 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
         return use_skip_indexes_on_data_read_;
     };
+
+    /// Whether the read drops lightweight-deleted rows: by the deleted mask or by an explicit filter on `_row_exists`.
+    bool query_hides_lightweight_deleted_rows = settings[Setting::apply_deleted_mask];
+    if (!query_hides_lightweight_deleted_rows)
+    {
+        auto dag_reads_row_exists = [](const ActionsDAG & dag)
+        {
+            for (const auto * input : dag.getInputs())
+                if (input->result_name == RowExistsColumn::name)
+                    return true;
+            return false;
+        };
+
+        query_hides_lightweight_deleted_rows = (query_info.filter_actions_dag && dag_reads_row_exists(*query_info.filter_actions_dag))
+            || (query_info.prewhere_info && dag_reads_row_exists(query_info.prewhere_info->prewhere_actions))
+            || (query_info.row_level_filter && dag_reads_row_exists(query_info.row_level_filter->actions));
+    }
 
     /// Let's find what range to read from each part.
     {
@@ -1239,7 +1243,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 ranges.ranges_snapshot_after_pk_analysis = ranges.ranges;
             }
 
-            if (!skip_indexes.empty())
+            /// Do not build alter conversions (linear in the number of patches) for a part dropped by the primary key.
+            if (!skip_indexes.empty() && !ranges.ranges.empty())
             {
                 CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithSecondaryKeys);
                 auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ranges.data_part, mutations_snapshot, context
@@ -1258,6 +1263,24 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                         return std::unexpected(PreformattedMessage::create(
                             "Index {} is not used for part {}. Reason: {}",
                             index->index.name, ranges.data_part->name, check_result.error().text));
+                    }
+
+                    /// A vector similarity index returns exactly as many candidates as the `LIMIT` asks for. A delete
+                    /// that the index does not know about (a lightweight delete, materialized or in a patch part, or a
+                    /// pending `ALTER DELETE` applied on the fly) does not shrink that shortlist: the deleted candidates
+                    /// are dropped after the read with nothing to take their place, and the query returns fewer rows
+                    /// than its `LIMIT`. Read such a part in full until a merge or a mutation rebuilds the index.
+                    /// With `apply_deleted_mask = 0` lightweight-deleted rows are returned and the read sees exactly
+                    /// the rows the index was built on, unless the query filters by `_row_exists` explicitly, which
+                    /// drops the deleted candidates in the same way. A pending `ALTER DELETE` is applied regardless.
+                    const bool has_deleted_rows = (query_hides_lightweight_deleted_rows
+                            && (ranges.data_part->hasLightweightDelete() || alter_conversions->hasLightweightDelete()))
+                        || alter_conversions->hasDeleteMutation();
+                    if (index->isVectorSimilarityIndex() && has_deleted_rows)
+                    {
+                        return std::unexpected(PreformattedMessage::create(
+                            "Index {} is not used for part {}. Reason: the part has deleted rows that the index still returns",
+                            index->index.name, ranges.data_part->name));
                     }
                     return {};
                 };
@@ -1644,11 +1667,17 @@ static bool isTopKFilterFunction(const ActionsDAG::Node * node)
         && node->function_base->getName() == "__topKFilter";
 }
 
-/// Plain `SELECT ... WHERE <predicate>` entries are keyed on `<predicate>` alone, so strip internal TopK nodes before probing reuse.
-static std::optional<size_t> getTopKReusePredicateOnlyConditionHash(const ActionsDAG::Node * node)
+/// Plain `SELECT ... WHERE <predicate>` (or `PREWHERE <predicate>`) entries are keyed on `<predicate>`
+/// alone, so strip internal TopK nodes before probing reuse. In the WHERE DAG, `__topKFilter` no longer
+/// originates from the optimizer (it is merged into the PREWHERE after the pass that builds that DAG);
+/// in the PREWHERE, `buildTopKDynamicFilterPrewhere` produces `and(__topKFilter(...), <user PREWHERE>)`.
+/// Returns the predicate-only node; the caller turns it into a cache key (which, for a condition
+/// involving the current time, is the hash of the derived deterministic condition, not the node's
+/// own hash). The returned node may be owned by `scratch`, which must outlive its use.
+static const ActionsDAG::Node * getTopKReusePredicateOnlyNode(const ActionsDAG::Node * node, ActionsDAG & scratch)
 {
     if (!node)
-        return std::nullopt;
+        return nullptr;
 
     if (node->type == ActionsDAG::ActionType::FUNCTION
         && node->function_base && node->function_base->getName() == "and")
@@ -1662,27 +1691,30 @@ static std::optional<size_t> getTopKReusePredicateOnlyConditionHash(const Action
         }
 
         if (where_children.empty())
-            return std::nullopt;
+            return nullptr;
 
         if (where_children.size() == node->children.size())
-            return node->getHash();
+            return node;
 
         /// The common TopK shape is `and(__topKFilter(...), <WHERE-root>)`, where the WHERE root is a
         /// single (possibly nested `and`) node, so stripping the internal `__topKFilter` leaves exactly
-        /// one child whose hash reproduces the key a plain `SELECT ... WHERE <predicate>` wrote. But the
-        /// top-level `and` can also be flattened (`and(__topKFilter, a, b, ...)`), leaving several
-        /// children with no single node to hash; in that case we cannot reproduce a plain-WHERE key, so
-        /// skip the cross-query reuse (a plain multi-conjunct `WHERE` is keyed on its own single
-        /// `and(a, b, ...)` node, which we do not have here).
-        if (where_children.size() != 1)
-            return std::nullopt;
-        return where_children.front()->getHash();
+        /// one child whose hash reproduces the key a plain `SELECT ... WHERE <predicate>` wrote.
+        if (where_children.size() == 1)
+            return where_children.front();
+
+        /// The top-level `and` can also be flattened (`buildTopKDynamicFilterPrewhere` turns an explicit
+        /// `PREWHERE a AND b` into `and(__topKFilter(...), a, b)`). A plain read keys its entries on its
+        /// own `and(a, b)` node, so rebuild that node from the remaining children. It gets the default
+        /// name `and(a, b)`, built from the names of the children, like the plain read's conjunction.
+        FunctionOverloadResolverPtr func_builder_and
+            = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+        return &scratch.addFunction(func_builder_and, std::move(where_children), {});
     }
 
     if (isTopKFilterFunction(node))
-        return std::nullopt;
+        return nullptr;
 
-    return node->getHash();
+    return node;
 }
 
 void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
@@ -1764,19 +1796,53 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
 
     auto drop_mark_ranges = [&](const ActionsDAG::Node * dag, bool apply_top_k_salt, bool prewhere_top_k_salt)
     {
+        /// A condition involving the current time (e.g. `time >= now() - INTERVAL 10 DAY`) is
+        /// non-deterministic and its own hash changes with every query, so probing it would always
+        /// miss. Probe the deterministic condition derived from it instead (issue #115504). Since
+        /// this is the consult side, the derivation must *weaken* the condition: "no rows of this
+        /// granule match the weakened condition" implies "no rows match the actual condition", so
+        /// skipping the granule is sound. The write sides store entries under the strengthened
+        /// variant, which coincides with the weakened one for grid-aligned constants and equals the
+        /// weakened variant of the next grid cell otherwise.
+        const time_t current_time = time(nullptr);
+        auto derive = [&](const ActionsDAG::Node * node) -> std::optional<DeterministicTimeCondition>
+        {
+            if (!settings[Setting::use_query_condition_cache_for_time_conditions])
+                return std::nullopt;
+            return deriveDeterministicTimeCondition(
+                node,
+                TimeConditionRounding::Weaken,
+                static_cast<double>(settings[Setting::query_condition_cache_time_condition_grid_factor]),
+                current_time);
+        };
+
+        /// The WHERE writers of a TopK read never store entries under a derived condition (see
+        /// `deriveDeterministicTimeCondition`), so the TopK-salted WHERE key is not derived either;
+        /// such a read only reuses plain entries through the predicate-only hash below. The TopK-salted
+        /// PREWHERE key is derived like its writer in `MergeTreeSelectProcessor` does.
+        const bool is_top_k_where_key = apply_top_k_salt && !prewhere_top_k_salt && top_k_filter_info;
+        std::optional<DeterministicTimeCondition> derived = is_top_k_where_key ? std::nullopt : derive(dag);
+
         /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on platforms where
         /// they differ (e.g. Apple, where `size_t` is `unsigned long` but `UInt64` is `unsigned long long`).
-        size_t condition_hash = queryConditionCacheHash(dag->getHash(), settings_salt);
+        size_t condition_hash = queryConditionCacheHash(derived ? derived->hash : dag->getHash(), settings_salt);
         size_t topk_reuse_predicate_only_hash = 0;
         bool has_topk_reuse_predicate_only_hash = false;
-        if (apply_top_k_salt && !prewhere_top_k_salt && top_k_filter_info && top_k_filter_info->where_clause)
+        /// The same applies to a TopK-salted PREWHERE: `buildTopKDynamicFilterPrewhere` rewrites an explicit
+        /// user PREWHERE to `and(__topKFilter(...), <user predicate>)`, while a plain read of the same
+        /// PREWHERE records its entries under `<user predicate>` alone.
+        if (apply_top_k_salt && top_k_filter_info && (prewhere_top_k_salt || top_k_filter_info->where_clause))
         {
             /// Only reuse when stripping actually recovered a predicate-only hash. Otherwise the hash
             /// would still carry `__topKFilter` (matching neither a plain `WHERE` entry nor the salted
             /// TopK entry), so probing it would just be wasted cache lookups per part.
-            if (auto stripped = getTopKReusePredicateOnlyConditionHash(dag))
+            ActionsDAG scratch;
+            if (const auto * stripped = getTopKReusePredicateOnlyNode(dag, scratch))
             {
-                topk_reuse_predicate_only_hash = queryConditionCacheHash(*stripped, settings_salt);
+                /// Key the stripped predicate the same way a plain `SELECT ... WHERE` would: through
+                /// the derived deterministic condition when it involves the current time.
+                auto stripped_derived = derive(stripped);
+                topk_reuse_predicate_only_hash = queryConditionCacheHash(stripped_derived ? stripped_derived->hash : stripped->getHash(), settings_salt);
                 has_topk_reuse_predicate_only_hash = true;
             }
         }
@@ -1951,20 +2017,33 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
                 /// The threshold is derived from rows passing the post-PREWHERE filter. It cannot
                 /// be reused when that filter is non-deterministic, even if its structural hash is
                 /// unchanged between executions.
+                bool consult_salted = apply_top_k_salt;
                 if (apply_top_k_salt && (!allow_top_k_prewhere_query_condition_cache
                     || (select_query_info.filter_actions_dag
                     && !VirtualColumnUtils::isDeterministicAllowingTopKFilter(select_query_info.filter_actions_dag->getOutputs().front()))
                     ))
-                    break;
+                    consult_salted = false;
                 /// The dynamic `TopK` threshold is computed after row policies are applied, but these
                 /// `PREWHERE` cache entries are shared across users. The write path already avoids
                 /// recording row-policy-filtered marks; also avoid reusing marks recorded by an
                 /// unrestricted user before a restrictive policy gets a chance to filter rows.
                 if (apply_top_k_salt && select_query_info.row_level_filter)
-                    break;
+                    consult_salted = false;
                 if (apply_top_k_salt && !consult_top_k_entries)
-                    break;
-                auto stats = drop_mark_ranges(outputs, apply_top_k_salt, /*prewhere_top_k_salt=*/apply_top_k_salt);
+                    consult_salted = false;
+
+                /// Entries written by plain reads of the user PREWHERE predicate (without `__topKFilter`)
+                /// only record granules with no row matching that predicate, so they stay sound for any
+                /// TopK read, also when the TopK-salted entries above cannot be consulted.
+                const ActionsDAG::Node * prewhere_node = outputs;
+                ActionsDAG scratch;
+                if (apply_top_k_salt && !consult_salted)
+                {
+                    prewhere_node = getTopKReusePredicateOnlyNode(outputs, scratch);
+                    if (!prewhere_node)
+                        break;
+                }
+                auto stats = drop_mark_ranges(prewhere_node, consult_salted, /*prewhere_top_k_salt=*/consult_salted);
                 LOG_DEBUG(log,
                         "Query condition cache has dropped {}/{} granules for PREWHERE condition {}.",
                         stats.granules_dropped,
@@ -2107,11 +2186,12 @@ size_t MergeTreeDataSelectExecutor::roundRowsOrBytesToMarks(
     size_t rows_granularity,
     size_t bytes_granularity)
 {
-    size_t res = (rows_setting + rows_granularity - 1) / rows_granularity;
+    /// Round up without `x + granularity - 1`, which wraps around for a setting close to the maximum.
+    size_t res = rows_setting / rows_granularity + (rows_setting % rows_granularity != 0);
 
     if (bytes_granularity == 0)
         return res;
-    return std::max(res, (bytes_setting + bytes_granularity - 1) / bytes_granularity);
+    return std::max(res, bytes_setting / bytes_granularity + (bytes_setting % bytes_granularity != 0));
 }
 
 /// Same as roundRowsOrBytesToMarks() but do not return more then max_marks
@@ -2775,7 +2855,19 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
                     if (result_exact_range.begin < result_exact_range.end)
                     {
-                        if (check_in_range(result_exact_range, BoolMask::consider_only_can_be_false).can_be_false)
+                        const size_t num_unevaluable_before = KeyCondition::getNumUnevaluableChainApplications();
+                        const bool exact_range_can_be_false
+                            = check_in_range(result_exact_range, BoolMask::consider_only_can_be_false).can_be_false;
+                        /// A monotonic function chain that could not be evaluated on the range answers "unknown":
+                        /// an over-approximation that supports no exactness claim and contradicts none either.
+                        const bool exact_range_unevaluable
+                            = KeyCondition::getNumUnevaluableChainApplications() != num_unevaluable_before;
+
+                        if (exact_range_unevaluable)
+                        {
+                            /// Neither an exact range nor an inconsistency.
+                        }
+                        else if (exact_range_can_be_false)
                         {
                             /// key_condition.matchesExactContinuousRange returned true, but the
                             /// range doesn't seem to be continuous. Something's broken - most likely a
