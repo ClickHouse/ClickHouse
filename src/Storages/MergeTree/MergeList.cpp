@@ -25,7 +25,8 @@ namespace ErrorCodes
 
 const MergeTreePartInfo MergeListElement::FAKE_RESULT_PART_FOR_PROJECTION = {"all", 0, 0, 0};
 
-MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMutatedPartPtr future_part, const ContextPtr & context)
+MergeListElement::MergeListElement(
+    const StorageID & table_id_, FutureMergedMutatedPartPtr future_part, const ContextPtr & context, ThreadGroupPtr thread_group_)
     : table_id{table_id_}
     , partition_id{future_part->part_info.getPartitionId()}
     , result_part_name{future_part->name}
@@ -76,7 +77,7 @@ MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMuta
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got {} source parts for mutation {}: {}", future_part->parts.size(),
                         result_part_info.getPartNameV1(), fmt::join(source_part_names, ", "));
 
-    thread_group = ThreadGroup::createForMergeMutate(context);
+    thread_group = thread_group_ ? std::move(thread_group_) : ThreadGroup::createForMergeMutate(context);
 }
 
 MergeInfo MergeListElement::getInfo() const

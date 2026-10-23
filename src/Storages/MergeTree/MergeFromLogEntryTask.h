@@ -37,6 +37,7 @@ public:
     }
 
 protected:
+    ContextMutablePtr createTaskContext() const override;
     /// Both return false if we can't execute merge.
     ReplicatedMergeMutateTaskBase::PrepareResult prepare() override;
     bool finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log) override;

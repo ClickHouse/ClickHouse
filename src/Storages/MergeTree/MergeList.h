@@ -137,10 +137,12 @@ struct MergeListElement : boost::noncopyable
     ThreadGroupPtr thread_group;
     CurrentMetrics::Increment num_parts_metric_increment;
 
+    /// `thread_group_` is the group of the task that runs the merge or mutation. If it is null, a new group is created.
     MergeListElement(
         const StorageID & table_id_,
         FutureMergedMutatedPartPtr future_part,
-        const ContextPtr & context);
+        const ContextPtr & context,
+        ThreadGroupPtr thread_group_ = nullptr);
 
     MergeInfo getInfo() const;
 
