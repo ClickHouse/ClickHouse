@@ -6229,37 +6229,47 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         }
 
         /// For the same reason a TTL expression may not start reading a column named like a subcolumn of another column
-        /// (`a.d` next to a `JSON` column `a`) while some part misses that column: the reader keeps the old meaning of a
-        /// name that a TTL expression reads for such a part, so adding the TTL would change what the part returns.
+        /// (`a.d` next to a `JSON` column `a`), or a subcolumn of such a column (`a.x.y` of a column `a.x` next to a `JSON`
+        /// column `a`), while some part misses that column: the reader keeps the old meaning of a name that a TTL expression
+        /// reads for such a part, so adding the TTL would change what the part returns. A part that records the column as
+        /// missing (`skip_empty_columns_on_insert`) reads its default either way, as the reader does.
         if (is_initial_alter && new_metadata.hasAnyTTL())
         {
             const auto & new_columns = new_metadata.getColumns();
             auto old_ttl_columns = getColumnsRequiredForTTL(old_metadata);
-            auto shadows_subcolumn = [&](const String & name)
+
+            /// The column of the table that holds the name, if it is named like a subcolumn of another column.
+            auto get_shadowing_column = [&](const String & name) -> std::optional<String>
             {
-                if (!new_columns.hasPhysical(name))
-                    return false;
-                for (const auto & [prefix, subcolumn] : Nested::getAllColumnAndSubcolumnPairs(name))
+                auto column = new_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
+                if (!column)
+                    return {};
+                String name_in_storage = column->getNameInStorage();
+                for (const auto & [prefix, subcolumn] : Nested::getAllColumnAndSubcolumnPairs(name_in_storage))
                 {
-                    if (prefix.size() >= name.size() || !new_columns.hasPhysical(String(prefix)))
+                    if (prefix.size() >= name_in_storage.size() || !new_columns.hasPhysical(String(prefix)))
                         continue;
                     if (new_columns.getPhysical(String(prefix)).type->tryGetSubcolumnType(subcolumn))
-                        return true;
+                        return name_in_storage;
                 }
-                return false;
+                return {};
             };
 
             std::optional<DataPartsVector> parts;
             for (const auto & ttl_column : getColumnsRequiredForTTL(new_metadata))
             {
-                if (std::ranges::find(old_ttl_columns, ttl_column) != old_ttl_columns.end() || !shadows_subcolumn(ttl_column))
+                if (std::ranges::find(old_ttl_columns, ttl_column) != old_ttl_columns.end())
+                    continue;
+                auto shadowing_column = get_shadowing_column(ttl_column);
+                if (!shadowing_column)
                     continue;
 
                 if (!parts)
                     parts = getDataPartsVectorForInternalUsage();
                 for (const auto & part : *parts)
                 {
-                    if (!part->tryGetColumnForTable(ttl_column, new_columns) && part->tryGetColumn(ttl_column))
+                    if (!part->tryGetColumnForTable(ttl_column, new_columns) && part->tryGetColumn(ttl_column)
+                        && !part->getSerializationInfos().getMissingColumnInfo(*shadowing_column))
                         throw Exception(
                             ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                             "Cannot use column {} in a TTL expression: part {} does not hold it and reads its name as a subcolumn "
