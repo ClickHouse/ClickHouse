@@ -345,6 +345,16 @@ void stripInitiatorOnlySettingsFromQuery(const ASTPtr & query)
     removeSettingsFromQuery(query, initiator_only_setting_names);
 }
 
+void stripInitiatorOnlySettingsFromDDLQuery(const ASTPtr & query)
+{
+    /// A stored view body keeps the setting that decides how the view reads its table.
+    std::vector<std::string_view> names;
+    for (std::string_view name : initiator_only_setting_names)
+        if (name != "parallel_replicas_for_object_storage_tables")
+            names.push_back(name);
+    removeSettingsFromQuery(query, names);
+}
+
 static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
     bool is_remote_function,
     ContextPtr context,

@@ -191,6 +191,30 @@ bool isClusterVariantDisabledForQuery(const IdentifierResolveScope & scope)
     return false;
 }
 
+/// A subquery inherits the distributed state that a cluster read gives the query, and a table on the right side of `IN`
+/// is resolved with it, so either would lose its own cluster read. Such a query reads its table itself in any case.
+bool hasSubqueryOrTableInIn(const QueryTreeNodePtr & query_node)
+{
+    bool found = false;
+    traverseQueryTree(
+        query_node,
+        [&](const QueryTreeNodePtr &, const QueryTreeNodePtr &) { return !found; },
+        [&](const QueryTreeNodePtr & node)
+        {
+            if (node == query_node)
+                return;
+            if (node->as<QueryNode>() || node->as<UnionNode>())
+                found = true;
+            else if (const auto * function = node->as<FunctionNode>(); function && isNameOfInFunction(function->getFunctionName()))
+            {
+                const auto & arguments = function->getArguments().getNodes();
+                if (arguments.size() == 2 && arguments[1]->as<IdentifierNode>())
+                    found = true;
+            }
+        });
+    return found;
+}
+
 /// A named `APPLY (x -> untuple(x), 'prefix')` resolves to a list of `tupleElement(arg, name)`
 /// calls (see `untuple` handling in resolveFunction). Recognize that shape so the matcher can
 /// expand it into one prefixed projection column per element, matching the legacy analyzer.
@@ -5022,6 +5046,9 @@ void QueryAnalyzer::replaceTableStorageForParallelReplicasReadIfNeeded(const Tab
         auto metadata = storage->getInMemoryMetadataPtr(scope.context, false);
         storage_snapshot = storage->getStorageSnapshot(metadata, scope.context);
     }
+
+    if (!storage->isObjectStorage() || hasSubqueryOrTableInIn(scope.scope_node))
+        return;
 
     auto cluster_storage = storage->getStorageForParallelReplicasRead(storage_snapshot, scope.context);
     if (!cluster_storage)

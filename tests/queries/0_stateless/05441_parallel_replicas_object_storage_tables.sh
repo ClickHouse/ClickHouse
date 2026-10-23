@@ -98,6 +98,16 @@ check "SELECT count() FROM t WHERE a IN (SELECT a FROM s3Cluster('test_cluster_o
 check "SELECT count() FROM t WHERE a IN (SELECT a FROM vc WHERE a < 50)"
 check "SELECT count() FROM t WHERE a IN (SELECT a FROM mt WHERE a < 50)"
 check "SELECT (SELECT count() FROM t WHERE a IN vc AND a < 50)"
+# A plain `s3` in a subquery with its own SETTINGS is still read with parallel replicas.
+$CLICKHOUSE_CLIENT --query_id "${CLICKHOUSE_DATABASE}_s3_in_subquery" -q "
+    SELECT count() FROM t WHERE a IN (
+        SELECT a FROM s3(s3_conn, filename = '${CLICKHOUSE_DATABASE}/*.parquet', format = 'Parquet') WHERE a < 50 SETTINGS max_threads = 2)
+    SETTINGS $PR_SETTINGS"
+$CLICKHOUSE_CLIENT -q "
+    SYSTEM FLUSH LOGS query_log;
+    SELECT ProfileEvents['Shards'] > 0 FROM system.query_log
+    WHERE event_date >= yesterday() AND current_database = currentDatabase() AND query_id = '${CLICKHOUSE_DATABASE}_s3_in_subquery'
+        AND type = 'QueryFinish'"
 
 echo "-- hive partitioning"
 $CLICKHOUSE_CLIENT -q "
