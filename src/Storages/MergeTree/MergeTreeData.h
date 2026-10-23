@@ -2462,12 +2462,14 @@ private:
     /// Returns default settings for storage with possible changes from global config.
     virtual std::unique_ptr<MergeTreeSettings> getDefaultSettings() const = 0;
 
+    /// @param is_last_attempt - if false, an I/O error is rethrown instead of marking the part broken, so that the load is retried.
     LoadPartResult loadDataPart(
         const MergeTreePartInfo & part_info,
         const String & part_name,
         const DiskPtr & part_disk_ptr,
         MergeTreeDataPartState to_state,
-        DB::SharedMutex & part_loading_mutex);
+        DB::SharedMutex & part_loading_mutex,
+        bool is_last_attempt);
 
     LoadPartResult loadDataPartWithRetries(
         const MergeTreePartInfo & part_info,
