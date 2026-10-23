@@ -81,5 +81,20 @@ INSERT INTO t_05233_using_right VALUES (1, 11), (5, 55);
 SELECT a, v, w FROM t_05233_using_left FULL JOIN t_05233_using_right USING (a) PREWHERE arrayMap(z -> tuple(* EXCEPT w), [1])[1].1 = 9 ORDER BY a SETTINGS join_use_nulls = 1;
 SELECT a, v, w FROM t_05233_using_left RIGHT JOIN t_05233_using_right USING (a) PREWHERE arrayMap(z -> tuple(* EXCEPT w), [1])[1].1 = 1 ORDER BY a SETTINGS join_use_nulls = 1;
 SELECT a, v, w FROM t_05233_using_left FULL JOIN t_05233_using_right USING (a) PREWHERE arrayMap(z -> tuple(*), [1])[1].1 = 9 ORDER BY a SETTINGS join_use_nulls = 1; -- { serverError ILLEGAL_PREWHERE }
+
+-- The `USING` column keeps the storage type of the left table even when the common `USING` type differs,
+-- because `PREWHERE` reads it before the join.
+DROP TABLE IF EXISTS t_05233_using_wide;
+CREATE TABLE t_05233_using_wide (a Int256, w UInt64) ENGINE = MergeTree ORDER BY a;
+INSERT INTO t_05233_using_wide VALUES (1, 11), (5, 55);
+SELECT a, v, w FROM t_05233_using_left FULL JOIN t_05233_using_wide USING (a) PREWHERE arrayMap(z -> tuple(* EXCEPT w), [1])[1].1 = 9 ORDER BY a SETTINGS join_use_nulls = 1;
+SELECT a, v, w FROM t_05233_using_left FULL JOIN t_05233_using_wide USING (a) PREWHERE arrayMap(z -> tuple(* EXCEPT w), [1])[1].1 = 9 ORDER BY a SETTINGS join_use_nulls = 0;
+SELECT a, v, w FROM t_05233_using_left FULL JOIN t_05233_using_wide USING (a) PREWHERE arrayMap(z -> tuple(* EXCEPT w), [1])[1].1 = materialize(toNullable(toUInt128(9))) ORDER BY a SETTINGS join_use_nulls = 1;
+
+-- With nested joins the `USING` column is still the column of the leftmost table.
+SELECT a, v FROM t_05233_using_left FULL JOIN t_05233_using_right USING (a) FULL JOIN t_05233_using_wide USING (a) PREWHERE arrayMap(z -> tuple(* EXCEPT (w)), [1])[1].1 = 9 ORDER BY a SETTINGS join_use_nulls = 1;
+SELECT a, v FROM t_05233_using_left FULL JOIN t_05233_using_right USING (a) FULL JOIN t_05233_using_wide USING (a) PREWHERE arrayMap(z -> tuple(* EXCEPT (w)), [1])[1].1 = 9 ORDER BY a SETTINGS join_use_nulls = 0;
+
 DROP TABLE t_05233_using_left;
 DROP TABLE t_05233_using_right;
+DROP TABLE t_05233_using_wide;
