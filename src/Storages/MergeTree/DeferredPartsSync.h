@@ -13,7 +13,7 @@ namespace DB
 
 class MergeTreeData;
 
-/// With `fsync_after_insert` and `defer_fsync_after_insert`, the inserted parts are written and committed
+/// With `fsync_after_insert` and `group_fsync_before_insert_finish`, the inserted parts are written and committed
 /// without fsync, and the files of all parts written by an insert sink are fsynced together when the sink
 /// finishes, before the insert is acknowledged. Meanwhile the OS writes the data back in the background,
 /// so the final fsync is cheap, and the insert does not wait for the disk after every part.

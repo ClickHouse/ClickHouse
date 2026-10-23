@@ -3,7 +3,7 @@
 
 -- With `fsync_after_insert`, an `INSERT` that writes many parts fsyncs the files of all of them before
 -- it is acknowledged, even if the parts are merged while the `INSERT` is still running.
--- With `defer_fsync_after_insert` (the default), the fsync is done at the end of the `INSERT`, otherwise after every part.
+-- With `group_fsync_before_insert_finish` (the default), the fsync is done at the end of the `INSERT`, otherwise after every part.
 
 DROP TABLE IF EXISTS t_fsync_many_parts;
 DROP TABLE IF EXISTS t_fsync_many_parts_no_defer;
@@ -15,7 +15,7 @@ CREATE TABLE t_fsync_many_parts (k UInt64, s String) ENGINE = MergeTree ORDER BY
 SETTINGS fsync_after_insert = 1;
 
 CREATE TABLE t_fsync_many_parts_no_defer (k UInt64, s String) ENGINE = MergeTree ORDER BY k
-SETTINGS fsync_after_insert = 1, defer_fsync_after_insert = 0;
+SETTINGS fsync_after_insert = 1, group_fsync_before_insert_finish = 0;
 
 CREATE TABLE t_fsync_many_parts_replicated (k UInt64, s String)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_fsync_many_parts_replicated', 'r1') ORDER BY k

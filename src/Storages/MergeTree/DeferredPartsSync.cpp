@@ -20,7 +20,7 @@ namespace ErrorCodes
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool fsync_after_insert;
-    extern const MergeTreeSettingsBool defer_fsync_after_insert;
+    extern const MergeTreeSettingsBool group_fsync_before_insert_finish;
 }
 
 namespace
@@ -60,7 +60,7 @@ private:
 bool DeferredPartsSync::isEnabled(const MergeTreeData & storage, const StorageMetadataPtr & metadata_snapshot)
 {
     const auto settings = storage.getSettings();
-    if (!(*settings)[MergeTreeSetting::fsync_after_insert] || !(*settings)[MergeTreeSetting::defer_fsync_after_insert])
+    if (!(*settings)[MergeTreeSetting::fsync_after_insert] || !(*settings)[MergeTreeSetting::group_fsync_before_insert_finish])
         return false;
 
     /// `MergeTreeSink::commitUniqueKeyPart` commits the parts by its own path, so they keep the inline fsync.
