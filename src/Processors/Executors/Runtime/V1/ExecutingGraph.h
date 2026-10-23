@@ -84,7 +84,7 @@ class ExecutingGraph
         /// Stable, monotonically-assigned id. Never reused. Used only for diagnostics (logs, system.processors_profile_log).
         uint64_t processors_id = 0;
 
-        /// Node whose `updatePipeline` added this one; nullptr for processors of the initial pipeline.
+        /// Node whose `updatePipeline` added this one.
         Node * expanded_from = nullptr;
 
         IProcessor * processor() const { return processor_iter->get(); }
