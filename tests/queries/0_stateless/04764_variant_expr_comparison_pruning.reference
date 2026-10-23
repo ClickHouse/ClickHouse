@@ -138,6 +138,22 @@ SELECT 'off1', countIf(g0 AND g1) AS oracle,
        (SELECT count() FROM v_fs_u WHERE v = 'ab'::FixedString(4) AND v = 'ab'::FixedString(2)) AS keyed
 FROM (SELECT (v = 'ab'::FixedString(4)) AS g0, (v = 'ab'::FixedString(2)) AS g1 FROM v_fs_u);
 off1	1	1
+-- At the default setting `equals` compares each row within its own alternative, so `'7'` matches the
+-- `UInt64` row, while a set holds `'7'` only as a `String`. The `OR` chain must not become `IN`.
+SET use_variant_default_implementation_for_comparisons = 1;
+SELECT 'in1', countIf(g0 OR g1 OR g2) AS oracle,
+       (SELECT count() FROM v_str_u WHERE v = '7' OR v = '8' OR v = '9') AS keyed
+FROM (SELECT (v = '7') AS g0, (v = '8') AS g1, (v = '9') AS g2 FROM v_str_u);
+in1	1	1
+-- The same with the `Variant` one level down.
+DROP TABLE IF EXISTS v_tuple_str_u;
+CREATE TABLE v_tuple_str_u (v Tuple(Variant(String, UInt64))) ENGINE = Memory;
+INSERT INTO v_tuple_str_u VALUES (tuple('ab'::String)), (tuple(7::UInt64));
+SELECT 'in2', countIf(g0 OR g1 OR g2) AS oracle,
+       (SELECT count() FROM v_tuple_str_u WHERE v = tuple('7') OR v = tuple('8') OR v = tuple('9')) AS keyed
+FROM (SELECT (v = tuple('7')) AS g0, (v = tuple('8')) AS g1, (v = tuple('9')) AS g2 FROM v_tuple_str_u);
+in2	1	1
+DROP TABLE v_tuple_str_u;
 DROP TABLE v_fs_u;
 DROP TABLE v_single;
 DROP TABLE v_tuple;

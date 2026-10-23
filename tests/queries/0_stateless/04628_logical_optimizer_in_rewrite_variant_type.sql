@@ -46,10 +46,10 @@ SELECT (j = '{"a":2}'::JSON) OR (j = '{"a":3}'::JSON) OR (j = '{"a":4}'::JSON) F
 
 -- Optimization-preservation: the guard must skip only the Variant-under-adaptor case, and keep
 -- firing for every type where `in`/`notIn` preserves the result type.
--- OR -> IN skipped for Variant only while equals is not nullable (setting = 0):
+-- OR -> IN skipped for Variant while equals is not nullable (setting = 0):
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT (b = '1') OR (b = '2') OR (b = '3') FROM t_var) WHERE explain ILIKE '%function_name: in%';
--- ... and still fires for the same Variant column once equals is nullable too (setting = 1), so the
--- guard must key on the drift and not on the type:
+-- ... and also once equals is nullable too (setting = 1), where `equals` and `in` can match
+-- different rows of a Variant:
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT (b = '1') OR (b = '2') OR (b = '3') FROM t_var
     SETTINGS use_variant_default_implementation_for_comparisons = 1) WHERE explain ILIKE '%function_name: in%';
 -- ... but still fires for plain String:

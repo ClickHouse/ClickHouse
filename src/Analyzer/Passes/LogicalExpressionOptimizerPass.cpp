@@ -2615,6 +2615,14 @@ private:
                 continue;
             }
 
+            /// `equals` on a `Variant` may compare the constant within each row's own alternative, while
+            /// the set stores it in one alternative, so the two can match different rows.
+            if (anyInTypeTree(*expression.node->getResultType(), [](const IDataType & type) { return isVariant(type); }))
+            {
+                std::move(equals_functions.begin(), equals_functions.end(), std::back_inserter(or_operands));
+                continue;
+            }
+
             /// `transform_null_in` renames the `in` family during resolution, which every pass runs after.
             const auto in_function_name
                 = getInFunctionNameForPassCreatedNode("in", expression.node->getResultType(), getContext());
