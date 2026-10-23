@@ -202,6 +202,9 @@ struct Reader
         std::vector<ColumnIndexCondition> column_index_conditions;
         size_t first_step_to_calculate = 0;
         bool only_for_prewhere = false; // can remove this column after applying prewhere
+        /// Only the last prewhere step reads this column; read dictionary-encoded pages as a
+        /// `ColumnReplicated` of dictionary values, so that functions applied to it run once per value.
+        bool decode_dictionary_as_replicated = false;
 
         /// A filter extracted from a substring search condition on this column in PREWHERE.
         /// String values that do not match it are decoded as empty strings (they are guaranteed
@@ -391,6 +394,8 @@ struct Reader
         /// zero when the dictionary is decoded later on the throttled data-read path instead.
         PruningMemoryReservation dictionary_reservation;
         size_t dictionary_reserved_bytes = 0;
+        /// All values of `dictionary` as a column of `decoded_type`; built by `getDictionaryValues`.
+        ColumnPtr dictionary_values;
 
         std::vector<std::pair</*start*/ size_t, /*end*/ size_t>> row_ranges_after_column_index;
 
@@ -418,6 +423,9 @@ struct Reader
         /// in ColumnNullable. Kept separate from `null_map` so it survives even when the leaf itself
         /// is materialized as Nullable(...) (which moves `null_map` into the leaf's ColumnNullable).
         MutableColumnPtr group_null_map;
+
+        /// If set, `column` is a `ColumnUInt32` of indexes into these values.
+        ColumnPtr dictionary_values;
 
         /// If this primitive column is inside an array, this is the offsets for `ColumnArray`s at
         /// all nesting levels, from outer to inner. Index is repetition level - 1.
@@ -653,6 +661,23 @@ struct Reader
     /// By Parquet column index, nullptr for the columns that are not parsed.
     const std::vector<FileColumnChunksPtr> & getColumnChunks() const { return column_chunks; }
     size_t numColumnChunks(size_t row_group_idx) const;
+
+    struct KeyConditionColumnRanges
+    {
+        /// Position in `extended_sample_block`.
+        size_t idx = 0;
+        std::vector<Range> ranges;
+        /// `sizeof(Range)` and the heap bytes of the bounds, for every range.
+        size_t bytes = 0;
+    };
+    /// Statistics ranges of key condition columns for every non-empty row group, as `prefilterAndInitRowGroups` checked
+    /// them. Complete only if every row group was checked by statistics alone.
+    std::vector<KeyConditionColumnRanges> key_condition_column_ranges;
+    bool key_condition_column_ranges_complete = false;
+    /// The key condition columns whose ranges `prefilterAndInitRowGroups` collects. While the ranges of all of them take
+    /// more than `max_key_condition_column_ranges_bytes`, it drops the column whose ranges take the most.
+    std::vector<size_t> collect_key_condition_column_ranges;
+    size_t max_key_condition_column_ranges_bytes = 0;
     void preparePrewhere();
 
     /// Deserialize bf header and determine which bf blocks to read.
@@ -801,6 +826,7 @@ private:
     void createPageDecoder(PageState & page, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     bool skipRowsInPage(size_t target_row_idx, PageState & page, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     void readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowSubgroup * row_subgroup = nullptr);
+    const ColumnPtr & getDictionaryValues(ColumnChunk & column, const PrimitiveColumnInfo & column_info);
 
     /// By Parquet column index, nullptr if not parsed. Immutable, ColumnChunk::meta points into them.
     std::vector<FileColumnChunksPtr> column_chunks;
