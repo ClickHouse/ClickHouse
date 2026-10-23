@@ -749,6 +749,8 @@ struct LongestCommonSubsequenceImpl
     static constexpr size_t W = sizeof(Word) * 8;
 
     /// Requires needle_len > 0
+    /// The bit-parallel algorithm adds multi-word integers with a carry, which wraps around on purpose.
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     static UInt32 length(const SymbolT * __restrict haystack, UInt32 haystack_len, const SymbolT * __restrict needle, UInt32 needle_len)
     {
         using PatternMasks = std::conditional_t<is_utf8,
