@@ -191,28 +191,63 @@ bool isClusterVariantDisabledForQuery(const IdentifierResolveScope & scope)
     return false;
 }
 
-/// A subquery inherits the distributed state that a cluster read gives the query, so a source it reads would lose its own
-/// cluster read. A query with a subquery that reads a source reads its table itself in any case.
-bool hasSubqueryReadingSource(const QueryTreeNodePtr & query_node)
+/// A subquery, a CTE or an alias inherits the distributed state that a cluster read gives the query, so a source read through one
+/// of them, or a table that `IN` names, would lose its own cluster read. A query with such a source reads its table itself in any case.
+bool readsOtherSource(const IdentifierResolveScope & scope, const StorageSnapshotPtr & storage_snapshot)
 {
-    bool found = false;
-    traverseQueryTree(
-        query_node,
-        [&](const QueryTreeNodePtr &, const QueryTreeNodePtr &) { return !found; },
-        [&](const QueryTreeNodePtr & node)
+    /// `resolveQuery` has already moved the CTEs and the `WITH` aliases out of the query tree.
+    auto find_named_nodes = [&](const std::string & name)
+    {
+        QueryTreeNodes nodes;
+        for (const auto * current_scope = &scope; current_scope; current_scope = current_scope->parent_scope)
         {
-            const auto * subquery = node->as<QueryNode>();
-            if (node == query_node || !subquery || !subquery->getJoinTreeNode())
-                return;
+            if (auto it = current_scope->cte_name_to_query_node.find(name); it != current_scope->cte_name_to_query_node.end())
+                nodes.insert(nodes.end(), it->second.begin(), it->second.end());
+            for (const auto * aliases : {&current_scope->aliases, &current_scope->global_with_aliases})
+                if (auto it = aliases->alias_name_to_expression_node.find(name); it != aliases->alias_name_to_expression_node.end())
+                    nodes.push_back(it->second);
+        }
+        return nodes;
+    };
 
-            const auto & join_tree = subquery->getJoinTreeNode();
-            if (const auto * identifier = join_tree->as<IdentifierNode>(); identifier && identifier->getIdentifier().getFullName() == "system.one")
-                return;
-            if (const auto * table = join_tree->as<TableNode>(); table && table->getStorageID().getFullTableName() == "system.one")
-                return;
-            found = true;
-        });
-    return found;
+    std::unordered_set<std::string> visited_names;
+    std::function<bool(const QueryTreeNodePtr &)> reads_source = [&](const QueryTreeNodePtr & root)
+    {
+        bool found = false;
+        traverseQueryTree(
+            root,
+            [&](const QueryTreeNodePtr &, const QueryTreeNodePtr &) { return !found; },
+            [&](const QueryTreeNodePtr & node)
+            {
+                if (found)
+                    return;
+
+                if (const auto * subquery = node->as<QueryNode>(); subquery && node != scope.scope_node && subquery->getJoinTreeNode())
+                {
+                    const auto & join_tree = subquery->getJoinTreeNode();
+                    const auto * identifier = join_tree->as<IdentifierNode>();
+                    const auto * table = join_tree->as<TableNode>();
+                    found = !(identifier && identifier->getIdentifier().getFullName() == "system.one")
+                        && !(table && table->getStorageID().getFullTableName() == "system.one");
+                }
+                else if (const auto * identifier = node->as<IdentifierNode>())
+                {
+                    if (visited_names.insert(identifier->getIdentifier().front()).second)
+                        for (const auto & named_node : find_named_nodes(identifier->getIdentifier().front()))
+                            found = found || reads_source(named_node);
+                }
+                else if (const auto * function = node->as<FunctionNode>(); function && isNameOfInFunction(function->getFunctionName()))
+                {
+                    const auto & arguments = function->getArguments().getNodes();
+                    const auto * set = arguments.size() == 2 ? arguments[1]->as<IdentifierNode>() : nullptr;
+                    found = set && find_named_nodes(set->getIdentifier().front()).empty()
+                        && !storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), set->getIdentifier().getFullName());
+                }
+            });
+        return found;
+    };
+
+    return reads_source(scope.scope_node);
 }
 
 /// A named `APPLY (x -> untuple(x), 'prefix')` resolves to a list of `tupleElement(arg, name)`
@@ -5047,7 +5082,7 @@ void QueryAnalyzer::replaceTableStorageForParallelReplicasReadIfNeeded(const Tab
         storage_snapshot = storage->getStorageSnapshot(metadata, scope.context);
     }
 
-    if (!storage->isObjectStorage() || hasSubqueryReadingSource(scope.scope_node))
+    if (!storage->isObjectStorage() || readsOtherSource(scope, storage_snapshot))
         return;
 
     auto cluster_storage = storage->getStorageForParallelReplicasRead(storage_snapshot, scope.context);
