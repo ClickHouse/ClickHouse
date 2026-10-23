@@ -8,7 +8,9 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
 #include <DataTypes/NestedUtils.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 
@@ -49,6 +51,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreePartMinMaxIndexColumns part_minmax_index_columns;
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
     extern const MergeTreeSettingsBool materialize_projections_on_merge;
+    extern const MergeTreeSettingsBool materialize_skip_indexes_on_merge;
+    extern const MergeTreeSettingsString exclude_materialize_skip_indexes_on_merge;
     extern const MergeTreeSettingsUInt64 merge_selector_small_parts_threshold;
     extern const MergeTreeSettingsUInt64 merge_selector_small_parts_min_count;
     extern const MergeTreeSettingsUInt64 merge_selector_small_parts_max_age;
@@ -173,8 +177,21 @@ NameSet getColumnsMergedOnHorizontalStageOfVerticalMergeSet(const ChooseContext 
             key_columns.insert(physical_columns.front().name);
     }
 
+    /// The merge does not compute the skip indexes of `exclude_materialize_skip_indexes_on_merge`, so their columns
+    /// stay on the vertical stage, see `MergeTask::ExecuteAndFinalizeHorizontalPart::prepare`.
+    std::unordered_set<String> exclude_index_names;
+    if (ctx.merge_tree_settings[MergeTreeSetting::materialize_skip_indexes_on_merge])
+    {
+        auto exclude_indexes_string = ctx.merge_tree_settings[MergeTreeSetting::exclude_materialize_skip_indexes_on_merge].toString();
+        if (!exclude_indexes_string.empty())
+            exclude_index_names = parseIdentifiersOrStringLiteralsToSet(exclude_indexes_string, ctx.data.getContext()->getSettingsRef());
+    }
+
     for (const auto & index : metadata.getSecondaryIndices())
     {
+        if (exclude_index_names.contains(index.name))
+            continue;
+
         /// A skip index over a single column is computed on the vertical stage along with the column.
         /// Count the source columns of the index expression, not its output columns (`column_names`):
         /// an index like `cityHash64(a, b)` has one output column but needs both `a` and `b`.
