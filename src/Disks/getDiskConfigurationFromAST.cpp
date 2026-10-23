@@ -228,29 +228,33 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             has_include = true;
         else if (key == "type" || key == "object_storage_type")
         {
+            /// `Poco::Util::AbstractConfiguration` expands a `${key}` property reference whenever the value is
+            /// read, so `type = '${name}', name = 'gcs'` selects whatever the referenced key holds. Such a value
+            /// is indirect as well: it cannot be classified here and must go through the resolved checks.
+            const bool type_indirect = indirect || value_str.contains("${");
             const bool is_s3_value = (value_str == "s3" || value_str.starts_with("s3_"));
             is_s3_disk |= is_s3_value;
-            type_is_indirect |= indirect;
+            type_is_indirect |= type_indirect;
 
             if (key == "type")
             {
-                if (!indirect && value_str == "object_storage")
+                if (!type_indirect && value_str == "object_storage")
                     type_is_object_storage = true;
-                else if (!indirect && !is_s3_value)
+                else if (!type_indirect && !is_s3_value)
                     has_concrete_non_s3_type = true;
-                if (!indirect && value_str == "gcs")
+                if (!type_indirect && value_str == "gcs")
                     is_gcs_disk_via_type = true;
-                if (!indirect && value_str != "gcs" && value_str != "object_storage")
+                if (!type_indirect && value_str != "gcs" && value_str != "object_storage")
                     has_concrete_non_gcs_type = true;
             }
             else /// object_storage_type
             {
                 has_object_storage_type = true;
-                if (!indirect && !is_s3_value)
+                if (!type_indirect && !is_s3_value)
                     has_explicit_non_s3_object_storage_type = true;
-                if (!indirect && value_str == "gcs")
+                if (!type_indirect && value_str == "gcs")
                     is_gcs_disk_via_object_storage_type = true;
-                if (!indirect && value_str != "gcs")
+                if (!type_indirect && value_str != "gcs")
                     has_explicit_non_gcs_object_storage_type = true;
             }
         }
@@ -776,7 +780,10 @@ void validateResolvedGCSDiskCredentials(
                 "the server read an arbitrary local file path. Configure `service_account_key_file` on a "
                 "server-managed disk in the server configuration instead.");
 
-        if (!info.has_include)
+        /// Without an `include`, the resolved credentials are the literal ones the pre-resolution checks saw,
+        /// unless those checks could not tell that the backend is GCS: its type is supplied by `from_env`,
+        /// `from_zk` or a `${key}` property reference that only resolves here.
+        if (!info.has_include && !info.has_indirect_backend_type)
             continue;
 
         /// The other credential fields are allowed only when the SQL definition itself supplied them as literal
