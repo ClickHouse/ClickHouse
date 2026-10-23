@@ -1,5 +1,5 @@
 -- Tags: no-parallel-replicas
--- no-parallel-replicas: `tryTopKThroughArrayJoin` skips rewrite when `ReadFromMergeTree` uses parallel replicas.
+-- no-parallel-replicas: the rewrite is skipped with parallel replicas
 
 DROP TABLE IF EXISTS t_aj_explain;
 
@@ -10,7 +10,7 @@ INSERT INTO t_aj_explain
 SELECT number, sipHash64(number), toString(number), range(number % 5), range(number % 3)
 FROM numbers(100);
 
-SET query_plan_read_in_order = 0;
+SET optimize_read_in_order = 0;
 SET query_plan_optimize_lazy_materialization = 0;
 SET query_plan_optimize_prewhere = 0;
 SET optimize_move_to_prewhere = 0;
@@ -81,5 +81,15 @@ SETTINGS serialize_query_plan = 0, query_plan_top_k_through_array_join = 1;
 SELECT '-- serialized moved plan';
 SELECT count() FROM (SELECT x FROM t_aj_explain ARRAY JOIN arr ORDER BY x LIMIT 10)
 SETTINGS serialize_query_plan = 1, query_plan_top_k_through_array_join = 1;
+
+SELECT '-- read in order replaces the sort: not rewritten';
+EXPLAIN PLAN description = 0
+SELECT x FROM t_aj_explain ARRAY JOIN arr ORDER BY pk LIMIT 10
+SETTINGS optimize_read_in_order = 1, read_in_order_use_virtual_row = 0, query_plan_top_k_through_array_join = 1;
+
+SELECT '-- read in order does not reach a read below a final DISTINCT: rewritten';
+EXPLAIN PLAN description = 0
+SELECT pk FROM (SELECT DISTINCT pk, x, arr FROM t_aj_explain) ARRAY JOIN arr ORDER BY pk LIMIT 10
+SETTINGS optimize_read_in_order = 1, optimize_distinct_in_order = 0, allow_distinct_partitions_independently = 0, query_plan_top_k_through_array_join = 1;
 
 DROP TABLE t_aj_explain;

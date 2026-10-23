@@ -165,3 +165,40 @@ Limit
             Output: x, arr
 -- serialized moved plan
 10
+-- read in order replaces the sort: not rewritten
+Output: x
+
+Limit
+│  Limit 10
+│  Offset 0
+└──Sorting
+   │  Prefix sort description: pk ASC
+   │  Result sort description: pk ASC
+   │  Limit 10
+   └──ArrayJoin
+      │  ARRAY JOIN arr
+      └──ReadFromMergeTree
+            Read type: InOrder
+            Parts: 1 | Granules: 1
+            Output: x, arr, pk
+-- read in order does not reach a read below a final DISTINCT: rewritten
+Output: pk
+
+Limit
+│  Limit 10
+│  Offset 0
+└──ArrayJoin
+   │  ARRAY JOIN arr
+   └──Sorting
+      │  Sort description: pk ASC
+      │  Limit 10
+      └──Filter
+         │  Filter column: notEmpty(arr)
+         └──Distinct
+            │  Columns: pk, x, arr
+            └──Distinct
+               │  Columns: pk, x, arr
+               └──ReadFromMergeTree
+                     Read type: Default
+                     Parts: 1 | Granules: 1
+                     Output: pk, x, arr
