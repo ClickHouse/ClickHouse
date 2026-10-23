@@ -3762,17 +3762,22 @@ void MergeTreeData::forgetRetiredParts(const DataPartsVector & retired_parts, Da
         if (it == data_parts_by_info.end())
             continue;
 
-        /// The part is still `Active` here, so it counts towards the table's size counters and
-        /// the column and secondary index size caches (`loadDataPart` adds that contribution
-        /// when it loads a part into the `Active` state). Forgetting it without subtracting
-        /// the contribution would leave `totalRows` / `totalBytes` / `getActivePartsCount`
-        /// reporting a table that no longer has any active parts, and everything built on
-        /// `getTotalActiveSizeInBytes` — the `RESTORE` non-empty-table check, the drop-size
-        /// check, the insert part-limit throttling — acting on that stale value. This mirrors
-        /// the active branch of `removePartsFromWorkingSet` and inverts `restoreAndActivatePart`.
-        removePartContributionToColumnAndSecondaryIndexSizes(part);
-        removePartContributionToUncompressedBytesInPatches(part);
-        removePartContributionToDataVolume(part);
+        /// An `Outdated` part no longer contributes to the counters below: forgetting it only drops
+        /// the in-memory record.
+        if (part->getState() == DataPartState::Active)
+        {
+            /// The part is still `Active` here, so it counts towards the table's size counters and
+            /// the column and secondary index size caches (`loadDataPart` adds that contribution
+            /// when it loads a part into the `Active` state). Forgetting it without subtracting
+            /// the contribution would leave `totalRows` / `totalBytes` / `getActivePartsCount`
+            /// reporting a table that no longer has any active parts, and everything built on
+            /// `getTotalActiveSizeInBytes` — the `RESTORE` non-empty-table check, the drop-size
+            /// check, the insert part-limit throttling — acting on that stale value. This mirrors
+            /// the active branch of `removePartsFromWorkingSet` and inverts `restoreAndActivatePart`.
+            removePartContributionToColumnAndSecondaryIndexSizes(part);
+            removePartContributionToUncompressedBytesInPatches(part);
+            removePartContributionToDataVolume(part);
+        }
 
         /// Forget the part entirely instead of moving it to `Outdated`: there is nothing left
         /// for this replica to clean up on the storage, and a follower must not attempt such a
@@ -3884,6 +3889,10 @@ size_t MergeTreeData::retirePartsReplacedOnStorage(
     /// every file in it. Comparing that key with the one recorded when the part was loaded tells the
     /// two apart. Forgetting the stale part BEFORE the newly appeared parts are seeded lets the same
     /// scan load the replacement, as for a part relocated to another disk.
+    ///
+    /// `Outdated` parts are reconciled too: the seeding treats any indexed part with the same part info
+    /// as already known, so a cached `Outdated` part (e.g. covered by the leader's `TRUNCATE` before the
+    /// name was reused) would otherwise suppress loading the replacement forever.
     if (!mayRetirePartsFromMemory(strict_takeover))
         return 0;
 
@@ -3892,7 +3901,12 @@ size_t MergeTreeData::retirePartsReplacedOnStorage(
     {
         auto parts_lock = lockParts();
 
-        for (const auto & part : getDataPartsStateRange(DataPartState::Active))
+        DataPartsVector candidates;
+        for (auto state : {DataPartState::Active, DataPartState::Outdated})
+            for (const auto & part : getDataPartsStateRange(state))
+                candidates.push_back(part);
+
+        for (const auto & part : candidates)
         {
             if (!part->shared_storage_incarnation)
                 continue;
@@ -3907,8 +3921,8 @@ size_t MergeTreeData::retirePartsReplacedOnStorage(
             if (!current_incarnation || *current_incarnation == *part->shared_storage_incarnation)
                 continue;
 
-            LOG_INFO(log, "Retiring active part {}: its directory on the shared storage was replaced by another one with the same name",
-                part->name);
+            LOG_INFO(log, "Retiring {} part {}: its directory on the shared storage was replaced by another one with the same name",
+                part->stateString(), part->name);
             replaced_parts.push_back(part);
         }
 
@@ -3919,7 +3933,7 @@ size_t MergeTreeData::retirePartsReplacedOnStorage(
 }
 
 size_t MergeTreeData::retirePartsVanishedFromStorage(
-    const PartDirectoriesByDisk & part_directories_by_disk, bool strict_takeover)
+    const PartDirectoriesByDisk & part_directories_by_disk, bool strict_takeover, const ActiveDataPartSet * listed_parts)
 {
     /// Under `leader_election` the refresh scan is the only channel through which a replica learns
     /// about changes made by the current leader, and it used to be additive-only: a part that the
@@ -3954,6 +3968,18 @@ size_t MergeTreeData::retirePartsVanishedFromStorage(
     /// on the strength of bytes that no longer exist. `forgetRetiredParts` already inverts the
     /// patch-byte accounting (`removePartContributionToUncompressedBytesInPatches`), exactly as the
     /// commit path adds it, so the two converge together.
+    ///
+    /// `Outdated` parts are forgotten the same way. A replica that does not write never removes them
+    /// itself: on a follower the cleanup thread does not run, so once the leader has deleted their
+    /// directories the in-memory record is the only thing left of them, and keeping it would grow the
+    /// memory of a long-lived follower with the table's merge history.
+    ///
+    /// With `listed_parts` (the pass that runs before the newly appeared parts are loaded), an active
+    /// part covered by one of the listed parts is left for the commit of that covering part, which
+    /// replaces it without a window in which neither is visible to reads. Every other vanished active
+    /// part has to be forgotten before the seeding: an active part covering a listed part with the
+    /// same block range (a name reused after an empty-table restart, see `retirePartsReplacedOnStorage`)
+    /// would otherwise make the commit of the listed part mark it `Outdated` right away.
     if (!mayRetirePartsFromMemory(strict_takeover))
         return 0;
 
@@ -3962,17 +3988,34 @@ size_t MergeTreeData::retirePartsVanishedFromStorage(
     {
         auto parts_lock = lockParts();
 
-        for (const auto & part : getDataPartsStateRange(DataPartState::Active))
+        auto is_vanished = [&](const DataPartPtr & part)
         {
             /// A broken disk is not scanned at all, so its parts are unknown, not vanished.
             auto directories_on_disk = part_directories_by_disk.find(part->getDataPartStorage().getDiskName());
             if (directories_on_disk == part_directories_by_disk.end())
+                return false;
+
+            return !directories_on_disk->second.contains(part->getDataPartStorage().getPartDirectory());
+        };
+
+        for (const auto & part : getDataPartsStateRange(DataPartState::Active))
+        {
+            if (!is_vanished(part))
                 continue;
 
-            if (directories_on_disk->second.contains(part->getDataPartStorage().getPartDirectory()))
+            if (listed_parts && !listed_parts->getContainingPart(part->info).empty())
                 continue;
 
             LOG_INFO(log, "Retiring active part {}: it no longer exists on the shared storage", part->name);
+            vanished_parts.push_back(part);
+        }
+
+        for (const auto & part : getDataPartsStateRange(DataPartState::Outdated))
+        {
+            if (!is_vanished(part))
+                continue;
+
+            LOG_TEST(log, "Forgetting outdated part {}: it no longer exists on the shared storage", part->name);
             vanished_parts.push_back(part);
         }
 
@@ -4029,6 +4072,15 @@ size_t MergeTreeData::loadNewlyAppearedParts(bool strict_takeover)
     /// be loaded at all — once the stale one is gone.
     size_t relocated_parts = retirePartsRelocatedToAnotherDisk(part_directories_by_disk, strict_takeover);
     size_t replaced_parts = retirePartsReplacedOnStorage(part_directories_by_disk, strict_takeover);
+
+    size_t retired_parts = 0;
+    if (mayRetirePartsFromMemory(strict_takeover))
+    {
+        ActiveDataPartSet listed_parts(format_version);
+        for (const auto & part_to_load : parts_to_load)
+            listed_parts.tryAdd(part_to_load.name);
+        retired_parts += retirePartsVanishedFromStorage(part_directories_by_disk, strict_takeover, &listed_parts);
+    }
 
     auto loading_tree = PartLoadingTree::build(std::move(parts_to_load), relative_data_path);
 
@@ -4199,13 +4251,20 @@ size_t MergeTreeData::loadNewlyAppearedParts(bool strict_takeover)
     if (have_parts_with_version_metadata)
         transactions_enabled.store(true);
 
-    size_t retired_parts = retirePartsVanishedFromStorage(part_directories_by_disk, strict_takeover);
+    retired_parts += retirePartsVanishedFromStorage(part_directories_by_disk, strict_takeover);
 
-    auto old_parts = grabOldParts(true);
+    /// Under `leader_election` the outdated parts are not grabbed here: nothing would remove the
+    /// grabbed parts, so they would stay in the `Deleting` state forever, invisible to
+    /// `getCoveredOutdatedParts` while their directories still exist. A follower forgets them once
+    /// the leader has deleted them (`retirePartsVanishedFromStorage`), and a leader removes them
+    /// with its regular cleanup.
+    size_t removed_parts = 0;
+    if (!(*settings)[MergeTreeSetting::leader_election])
+        removed_parts = grabOldParts(true).size();
 
     watch.stop();
     LOG_DEBUG(log, "Refreshing data parts (added {} items, relocated {} items, replaced {} items, retired {} items, removed {} items) took {:.3f} seconds",
-        parts_to_add.size(), relocated_parts, replaced_parts, retired_parts, old_parts.size(), watch.elapsedSeconds());
+        parts_to_add.size(), relocated_parts, replaced_parts, retired_parts, removed_parts, watch.elapsedSeconds());
 
     ProfileEvents::increment(ProfileEvents::LoadedDataParts, parts_to_add.size());
     ProfileEvents::increment(ProfileEvents::LoadedDataPartsMicroseconds, watch.elapsedMicroseconds());
@@ -13612,7 +13671,18 @@ void MergeTreeData::Transaction::clear()
 
 void MergeTreeData::Transaction::renameParts()
 {
-    for (const auto & part_need_rename : precommitted_parts_need_rename)
+    /// Publish the parts with data before the empty ones. An empty part in the same batch is a
+    /// retirement marker (e.g. the covering parts of `REPLACE PARTITION` under `leader_election`), and
+    /// it sorts before the new parts because it covers the older block ranges. If the publish is
+    /// interrupted and cannot be undone (the lease was lost, see `undoPublishedRenames`), a published
+    /// marker without the published replacement would let the next leader delete the old rows while
+    /// the new ones are lost with the temporary directories. In this order, an interrupted batch leaves
+    /// the new parts next to the old ones instead, which keeps the data.
+    std::vector<MutableDataPartPtr> parts_in_publish_order(precommitted_parts_need_rename.begin(), precommitted_parts_need_rename.end());
+    std::stable_partition(parts_in_publish_order.begin(), parts_in_publish_order.end(),
+        [](const MutableDataPartPtr & part) { return part->rows_count != 0; });
+
+    for (const auto & part_need_rename : parts_in_publish_order)
     {
         if (publish_fence_epoch)
         {

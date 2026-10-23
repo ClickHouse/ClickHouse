@@ -956,9 +956,11 @@ public:
     /// unused patch parts (`clearUnusedPatchParts`) without publishing a covering part, so the
     /// storage listing is the only record of that removal. Returns the number of retired parts.
     /// See the implementation for why this is what makes coverage-based retirements converge
-    /// across replicas.
+    /// across replicas. `Outdated` parts whose directories are gone are forgotten too. With
+    /// `listed_parts`, active parts covered by one of the listed parts are kept.
     size_t retirePartsVanishedFromStorage(
-        const PartDirectoriesByDisk & part_directories_by_disk, bool strict_takeover);
+        const PartDirectoriesByDisk & part_directories_by_disk, bool strict_takeover,
+        const ActiveDataPartSet * listed_parts = nullptr);
 
     /// Retire (forget) active parts whose directory is gone from the disk this replica holds them
     /// on and is present on another disk of the storage policy: the leader moved them. Runs before
@@ -968,7 +970,7 @@ public:
     size_t retirePartsRelocatedToAnotherDisk(
         const PartDirectoriesByDisk & part_directories_by_disk, bool strict_takeover);
 
-    /// Forget the active parts whose directory is still listed under the same name, but is no longer
+    /// Forget the active and outdated parts whose directory is still listed under the same name, but is no longer
     /// the directory this replica loaded (see `IMergeTreeDataPart::shared_storage_incarnation`), so that
     /// the replacement is loaded by the same scan. Same gating as `retirePartsVanishedFromStorage`.
     /// Returns the number of parts forgotten.

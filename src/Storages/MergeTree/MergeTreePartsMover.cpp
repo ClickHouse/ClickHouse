@@ -348,6 +348,11 @@ try
     part.setState(MergeTreeDataPartState::DeleteOnDestroy);
     /// Don't remove new directory but throw an error because it may contain part which is currently in use.
     part.renameTo(part.name, /* remove_new_dir_if_exists */ false);
+
+    /// `swapActivePart` installs the clone directly, without `preparePartForCommit`, so record the identity
+    /// of its directory here, as `preparePartForCommit` does for the other parts that become active.
+    if (data->hasLeaderElection())
+        part.shared_storage_incarnation = data->getPartSharedStorageIncarnation(part);
 }
 catch (...)
 {
