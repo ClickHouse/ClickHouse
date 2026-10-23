@@ -33,10 +33,8 @@ namespace
 constexpr size_t chunk_bytes = CompressionCodecGDeflate::chunk_bytes;
 constexpr size_t chunk_alignment = 4;
 
-/// Set in the number of chunks of a block whose chunks have descriptors of `packed_descriptor_bytes`.
+/// Set in the number of chunks of a block whose chunks have packed descriptors.
 constexpr UInt32 packed_flag = UInt32{1} << 31;
-constexpr size_t plain_descriptor_bytes = sizeof(UInt32);
-constexpr size_t packed_descriptor_bytes = 16;
 
 /// The most bits an integer is packed in, which a read of 8 bytes holds at any bit offset.
 constexpr UInt32 max_packed_bits = 56;
@@ -54,13 +52,8 @@ size_t numChunks(size_t uncompressed_bytes)
     return (uncompressed_bytes + chunk_bytes - 1) / chunk_bytes;
 }
 
-size_t headerBytes(size_t num_chunks, bool packed)
-{
-    return sizeof(UInt32) + num_chunks * (packed ? packed_descriptor_bytes : plain_descriptor_bytes);
-}
-
-/// The most a GDeflate page of `chunk_bytes` compresses to, the room each chunk has in a block.
-size_t maxCompressedChunkBytes()
+/// The most a GDeflate page of `chunk_bytes` compresses to.
+size_t maxPageBytes()
 {
     return libdeflate_gdeflate_compress_bound(nullptr, chunk_bytes, nullptr);
 }
@@ -164,16 +157,16 @@ struct DecompressorDeleter
     }
 };
 
-/// Compresses one chunk into `out`, of `maxCompressedChunkBytes`, and returns its compressed size.
-size_t compressChunk(libdeflate_gdeflate_compressor * compressor, const char * chunk, size_t chunk_size, char * out)
+/// Compresses one page into `out`, of `maxPageBytes`, and returns its compressed size.
+size_t compressPage(libdeflate_gdeflate_compressor * compressor, const char * page_data, size_t page_size, char * out)
 {
-    libdeflate_gdeflate_out_page page{.data = out, .nbytes = maxCompressedChunkBytes()};
-    if (libdeflate_gdeflate_compress(compressor, chunk, chunk_size, &page, 1) == 0)
-        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress a chunk of {} bytes with GDeflate", chunk_size);
+    libdeflate_gdeflate_out_page page{.data = out, .nbytes = maxPageBytes()};
+    if (libdeflate_gdeflate_compress(compressor, page_data, page_size, &page, 1) == 0)
+        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress a chunk of {} bytes with GDeflate", page_size);
     return page.nbytes;
 }
 
-void decompressChunk(const char * compressed, size_t compressed_size, char * out, size_t out_size)
+void decompressPage(const char * compressed, size_t compressed_size, char * out, size_t out_size)
 {
     thread_local std::unique_ptr<libdeflate_gdeflate_decompressor, DecompressorDeleter> decompressor;
     if (!decompressor)
@@ -192,6 +185,131 @@ void decompressChunk(const char * compressed, size_t compressed_size, char * out
         throw Exception(
             ErrorCodes::CANNOT_DECOMPRESS, "A GDeflate chunk expands to {} bytes, where {} were expected", decompressed_size, out_size);
 }
+
+class Chunk
+{
+public:
+    explicit Chunk(bool packed_descriptor_) : packed_descriptor(packed_descriptor_) {}
+
+    static size_t descriptorBytes(bool packed_descriptor) { return packed_descriptor ? 16 : sizeof(UInt32); }
+
+    static size_t maxCompressedBytes() { return alignUp(maxPageBytes()); }
+
+    size_t compressedBytes() const { return alignUp(compressed_size); }
+
+    void compress(
+        libdeflate_gdeflate_compressor * compressor,
+        const char * source,
+        size_t size,
+        UInt8 element_size_,
+        bool is_signed,
+        char * out,
+        char * packed,
+        char * compressed_packed)
+    {
+        compressed_size = static_cast<UInt32>(compressPage(compressor, source, size, out));
+        if (packed_descriptor)
+        {
+            element_size = element_size_;
+            const PackedChunk packed_chunk = pack(source, size, element_size, is_signed, packed);
+            if (packed_chunk.bits)
+            {
+                const size_t packed_size
+                    = compressPage(compressor, packed, packedBytes(size / element_size, packed_chunk.bits), compressed_packed);
+                if (packed_size < compressed_size)
+                {
+                    memcpy(out, compressed_packed, packed_size);
+                    compressed_size = static_cast<UInt32>(packed_size);
+                    bits = static_cast<UInt8>(packed_chunk.bits);
+                    reference = packed_chunk.reference;
+                }
+            }
+        }
+        memset(out + compressed_size, 0, compressedBytes() - compressed_size);
+    }
+
+    void decompress(const char * in, size_t size, char * out, PODArray<char> & unpacked) const
+    {
+        if (bits == 0)
+        {
+            decompressPage(in, compressed_size, out, size);
+            return;
+        }
+
+        if (bits > max_packed_bits || !isPackedElementSize(element_size) || size % element_size != 0)
+            throw Exception(
+                ErrorCodes::CANNOT_DECOMPRESS,
+                "A GDeflate chunk packs integers of {} bytes in {} bits",
+                static_cast<UInt32>(element_size),
+                static_cast<UInt32>(bits));
+
+        const size_t count = size / element_size;
+        const size_t packed_size = packedBytes(count, bits);
+        unpacked.resize(packed_size + packed_padding);
+        memset(unpacked.data() + packed_size, 0, packed_padding);
+        decompressPage(in, compressed_size, unpacked.data(), packed_size);
+        unpack(unpacked.data(), count, bits, element_size, reference, out);
+    }
+
+    void serialize(char * out) const
+    {
+        unalignedStoreLittleEndian<UInt32>(out, compressed_size);
+        if (!packed_descriptor)
+            return;
+        unalignedStoreLittleEndian<UInt8>(out + 4, bits);
+        unalignedStoreLittleEndian<UInt8>(out + 5, element_size);
+        unalignedStoreLittleEndian<UInt16>(out + 6, 0);
+        unalignedStoreLittleEndian<UInt64>(out + 8, reference);
+    }
+
+    void deserialize(const char * in)
+    {
+        compressed_size = unalignedLoadLittleEndian<UInt32>(in);
+        if (!packed_descriptor)
+            return;
+        bits = unalignedLoadLittleEndian<UInt8>(in + 4);
+        element_size = unalignedLoadLittleEndian<UInt8>(in + 5);
+        reference = unalignedLoadLittleEndian<UInt64>(in + 8);
+    }
+
+    UInt32 compressed_size = 0;
+
+private:
+    bool packed_descriptor;
+    UInt8 bits = 0;
+    UInt8 element_size = 0;
+    UInt64 reference = 0;
+};
+
+class Header
+{
+public:
+    Header() = default;
+    Header(size_t num_chunks_, bool packed_) : num_chunks(num_chunks_), packed(packed_) {}
+
+    static size_t maxCompressedBytes(size_t num_chunks) { return descriptorOffset(num_chunks, true); }
+
+    size_t compressedBytes() const { return descriptorOffset(num_chunks, packed); }
+    size_t descriptorOffset(size_t chunk) const { return descriptorOffset(chunk, packed); }
+
+    void serialize(char * out) const
+    {
+        unalignedStoreLittleEndian<UInt32>(out, static_cast<UInt32>(num_chunks) | (packed ? packed_flag : 0));
+    }
+
+    void deserialize(const char * in)
+    {
+        const UInt32 word = unalignedLoadLittleEndian<UInt32>(in);
+        packed = word & packed_flag;
+        num_chunks = word & ~packed_flag;
+    }
+
+    size_t num_chunks = 0;
+    bool packed = false;
+
+private:
+    static size_t descriptorOffset(size_t chunk, bool packed) { return sizeof(UInt32) + chunk * Chunk::descriptorBytes(packed); }
+};
 
 }
 
@@ -220,15 +338,14 @@ void CompressionCodecGDeflate::updateHash(SipHash & hash) const
 UInt32 CompressionCodecGDeflate::getMaxCompressedDataSize(UInt32 uncompressed_size) const
 {
     const size_t num_chunks = numChunks(uncompressed_size);
-    return static_cast<UInt32>(headerBytes(num_chunks, true) + num_chunks * alignUp(maxCompressedChunkBytes()));
+    return static_cast<UInt32>(Header::maxCompressedBytes(num_chunks) + num_chunks * Chunk::maxCompressedBytes());
 }
 
 UInt32 CompressionCodecGDeflate::doCompressData(const char * source, UInt32 source_size, char * dest) const
 {
-    const size_t num_chunks = numChunks(source_size);
     /// A block that ends in the middle of an integer is not packed: its chunks do not hold whole integers.
-    const bool packing = isPackedElementSize(element_size) && source_size % element_size == 0;
-    unalignedStoreLittleEndian<UInt32>(dest, static_cast<UInt32>(num_chunks) | (packing ? packed_flag : 0));
+    const Header header(numChunks(source_size), isPackedElementSize(element_size) && source_size % element_size == 0);
+    header.serialize(dest);
 
     std::unique_ptr<libdeflate_gdeflate_compressor, CompressorDeleter> compressor(
         libdeflate_alloc_gdeflate_compressor(level));
@@ -238,50 +355,27 @@ UInt32 CompressionCodecGDeflate::doCompressData(const char * source, UInt32 sour
     /// The packed form of a chunk and what it compresses to, kept where it is smaller than the plain one.
     PODArray<char> packed;
     PODArray<char> compressed_packed;
-    if (packing)
+    if (header.packed)
     {
         packed.resize(chunk_bytes + packed_padding);
-        compressed_packed.resize(maxCompressedChunkBytes());
+        compressed_packed.resize(maxPageBytes());
     }
 
-    size_t at = headerBytes(num_chunks, packing);
-    for (size_t i = 0; i < num_chunks; ++i)
+    size_t at = header.compressedBytes();
+    for (size_t i = 0; i < header.num_chunks; ++i)
     {
-        const char * const chunk = source + i * chunk_bytes;
-        const size_t chunk_size = std::min(chunk_bytes, source_size - i * chunk_bytes);
-        size_t compressed_size = compressChunk(compressor.get(), chunk, chunk_size, dest + at);
-
-        PackedChunk packed_chunk;
-        if (packing)
-        {
-            packed_chunk = pack(chunk, chunk_size, element_size, is_signed, packed.data());
-            if (packed_chunk.bits)
-            {
-                const size_t packed_size = compressChunk(
-                    compressor.get(), packed.data(), packedBytes(chunk_size / element_size, packed_chunk.bits), compressed_packed.data());
-                if (packed_size < compressed_size)
-                {
-                    memcpy(dest + at, compressed_packed.data(), packed_size);
-                    compressed_size = packed_size;
-                }
-                else
-                    packed_chunk = {};
-            }
-        }
-
-        char * const descriptor = dest + headerBytes(i, packing);
-        unalignedStoreLittleEndian<UInt32>(descriptor, static_cast<UInt32>(compressed_size));
-        if (packing)
-        {
-            unalignedStoreLittleEndian<UInt8>(descriptor + 4, static_cast<UInt8>(packed_chunk.bits));
-            unalignedStoreLittleEndian<UInt8>(descriptor + 5, element_size);
-            unalignedStoreLittleEndian<UInt16>(descriptor + 6, 0);
-            unalignedStoreLittleEndian<UInt64>(descriptor + 8, packed_chunk.reference);
-        }
-
-        const size_t next = alignUp(at + compressed_size);
-        memset(dest + at + compressed_size, 0, next - at - compressed_size);
-        at = next;
+        Chunk chunk(header.packed);
+        chunk.compress(
+            compressor.get(),
+            source + i * chunk_bytes,
+            std::min(chunk_bytes, source_size - i * chunk_bytes),
+            element_size,
+            is_signed,
+            dest + at,
+            packed.data(),
+            compressed_packed.data());
+        chunk.serialize(dest + header.descriptorOffset(i));
+        at += chunk.compressedBytes();
     }
     return static_cast<UInt32>(at);
 }
@@ -291,54 +385,33 @@ UInt32 CompressionCodecGDeflate::doDecompressData(const char * source, UInt32 so
     if (source_size < sizeof(UInt32))
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "A GDeflate block of {} bytes", source_size);
 
-    const UInt32 header = unalignedLoadLittleEndian<UInt32>(source);
-    const bool packed = header & packed_flag;
-    const size_t num_chunks = header & ~packed_flag;
-    if (num_chunks != numChunks(uncompressed_size) || headerBytes(num_chunks, packed) > source_size)
+    Header header;
+    header.deserialize(source);
+    if (header.num_chunks != numChunks(uncompressed_size) || header.compressedBytes() > source_size)
         throw Exception(
             ErrorCodes::CANNOT_DECOMPRESS,
             "A GDeflate block of {} bytes holds {} chunks, where {} expanded bytes make {}",
             source_size,
-            num_chunks,
+            header.num_chunks,
             uncompressed_size,
             numChunks(uncompressed_size));
 
     PODArray<char> unpacked;
-    size_t at = headerBytes(num_chunks, packed);
-    for (size_t i = 0; i < num_chunks; ++i)
+    size_t at = header.compressedBytes();
+    for (size_t i = 0; i < header.num_chunks; ++i)
     {
-        const char * const descriptor = source + headerBytes(i, packed);
-        const size_t compressed_size = unalignedLoadLittleEndian<UInt32>(descriptor);
-        const size_t chunk_size = std::min(chunk_bytes, uncompressed_size - i * chunk_bytes);
-        if (at + compressed_size > source_size)
+        Chunk chunk(header.packed);
+        chunk.deserialize(source + header.descriptorOffset(i));
+        if (at + chunk.compressed_size > source_size)
             throw Exception(
-                ErrorCodes::CANNOT_DECOMPRESS, "Chunk {} of a GDeflate block of {} bytes ends at {}", i, source_size, at + compressed_size);
+                ErrorCodes::CANNOT_DECOMPRESS,
+                "Chunk {} of a GDeflate block of {} bytes ends at {}",
+                i,
+                source_size,
+                at + chunk.compressed_size);
 
-        const UInt32 bits = packed ? unalignedLoadLittleEndian<UInt8>(descriptor + 4) : 0;
-        char * const out = dest + i * chunk_bytes;
-        if (bits == 0)
-        {
-            decompressChunk(source + at, compressed_size, out, chunk_size);
-        }
-        else
-        {
-            const UInt32 chunk_element_size = unalignedLoadLittleEndian<UInt8>(descriptor + 5);
-            if (bits > max_packed_bits || !isPackedElementSize(chunk_element_size) || chunk_size % chunk_element_size != 0)
-                throw Exception(
-                    ErrorCodes::CANNOT_DECOMPRESS,
-                    "Chunk {} of a GDeflate block packs integers of {} bytes in {} bits",
-                    i,
-                    chunk_element_size,
-                    bits);
-
-            const size_t count = chunk_size / chunk_element_size;
-            const size_t packed_size = packedBytes(count, bits);
-            unpacked.resize(packed_size + packed_padding);
-            memset(unpacked.data() + packed_size, 0, packed_padding);
-            decompressChunk(source + at, compressed_size, unpacked.data(), packed_size);
-            unpack(unpacked.data(), count, bits, chunk_element_size, unalignedLoadLittleEndian<UInt64>(descriptor + 8), out);
-        }
-        at = alignUp(at + compressed_size);
+        chunk.decompress(source + at, std::min(chunk_bytes, uncompressed_size - i * chunk_bytes), dest + i * chunk_bytes, unpacked);
+        at += chunk.compressedBytes();
     }
     return uncompressed_size;
 }
