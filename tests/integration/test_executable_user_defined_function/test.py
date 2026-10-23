@@ -605,7 +605,7 @@ def test_executable_function_in_alias_with_implicit_index_after_restart(started_
     node.query("DROP TABLE IF EXISTS t_alias_implicit_index SYNC")
     node.query(
         "CREATE TABLE t_alias_implicit_index (id UInt64, a String ALIAS test_function_bash_deterministic(id)) "
-        "ENGINE = MergeTree ORDER BY id SETTINGS add_minmax_index_for_string_columns = 1"
+        "ENGINE = MergeTree ORDER BY id SETTINGS add_minmax_index_for_string_columns = 1, add_minmax_index_for_numeric_columns = 0"
     )
     node.query("INSERT INTO t_alias_implicit_index VALUES (1)")
     assert (
@@ -620,7 +620,7 @@ def test_executable_function_in_alias_with_implicit_index_after_restart(started_
     node.query(
         "ATTACH TABLE t_alias_implicit_index_legacy UUID '6d1f0c3e-5b8a-4c2e-9f47-3a0b8e2d1c75' "
         "(id UInt64, a String ALIAS test_function_bash_deterministic(id), INDEX auto_minmax_index_a a TYPE minmax() GRANULARITY 1) "
-        "ENGINE = MergeTree ORDER BY id SETTINGS add_minmax_index_for_string_columns = 1"
+        "ENGINE = MergeTree ORDER BY id SETTINGS add_minmax_index_for_string_columns = 1, add_minmax_index_for_numeric_columns = 0"
     )
     node.query("INSERT INTO t_alias_implicit_index_legacy VALUES (1)")
 
