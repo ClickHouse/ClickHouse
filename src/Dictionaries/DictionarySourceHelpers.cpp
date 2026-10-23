@@ -94,18 +94,11 @@ ContextMutablePtr copyContextAndApplySettingsFromDictionaryConfig(
 
 void checkDictionarySourcePathIsInsideUserFiles(const String & path, const String & user_files_path)
 {
-    /// Resolving probes the filesystem, which would see the path truncated at an embedded NUL byte.
-    bool is_inside = false;
-    if (!path.contains('\0'))
-    {
-        std::error_code ec;
-        const fs::path checked_path = resolveDotDotForContainmentCheck(path, ec);
-        if (ec)
-            throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "Cannot check whether file {} is inside {}: {}",
-                path, user_files_path, ec.message());
-
-        is_inside = fileOrSymlinkPathStartsWith(checked_path.string(), user_files_path);
-    }
+    std::error_code ec;
+    const bool is_inside = fileOrSymlinkPathStartsWithResolvingDotDot(path, user_files_path, ec);
+    if (ec)
+        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "Cannot check whether file {} is inside {}: {}",
+            path, user_files_path, ec.message());
 
     if (!is_inside)
         throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File {} is not inside {}", path, user_files_path);

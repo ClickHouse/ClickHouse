@@ -74,6 +74,11 @@ bool fileOrSymlinkPathStartsWith(const String & path, const String & prefix_path
 /// `ec` is set only if resolving fails.
 std::filesystem::path resolveDotDotForContainmentCheck(const std::filesystem::path & path, std::error_code & ec);
 
+/// Same as `fileOrSymlinkPathStartsWith`, but a path with a `..` is passed through `resolveDotDotForContainmentCheck`
+/// and then compared with the canonical `prefix_path`. A path with an embedded NUL byte is not inside.
+/// If resolving fails, `ec` is set and false is returned.
+bool fileOrSymlinkPathStartsWithResolvingDotDot(const String & path, const String & prefix_path, std::error_code & ec);
+
 size_t getSizeFromFileDescriptor(int fd, const String & file_name = "");
 
 std::optional<size_t> tryGetSizeFromFilePath(const String & path);
