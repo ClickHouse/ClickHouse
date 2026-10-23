@@ -11355,7 +11355,7 @@ Memory limit in bytes per WebAssembly UDF instance.
     DECLARE(UInt64, webassembly_udf_max_input_block_size, 0, R"(
 Maximum number of rows passed to a WebAssembly UDF in a single call. A non-zero value caps the rows per call and applies to every ABI.
 
-Set to 0 to size the calls by their serialized input instead. That applies to `ABI BUFFERED_V1` alone, the only ABI that serializes a whole input block into guest memory: its blocks are split so that a call's input stays within `webassembly_udf_input_split_memory_ratio` of the module's linear memory. `ROW_DIRECT` passes its arguments as WebAssembly values and `ASSEMBLYSCRIPT` builds one object per row, so neither has a serialized input to size a call by, and 0 leaves their pipeline block whole.
+Set to 0 to size the calls by their serialized input instead. That applies to `ABI BUFFERED_V1` and `ABI COLUMNAR_V1`, the ABIs that put a whole input block into guest memory: their blocks are split so that a call's input stays within `webassembly_udf_input_split_memory_ratio` of the module's linear memory. `ROW_DIRECT` passes its arguments as WebAssembly values and `ASSEMBLYSCRIPT` builds one object per row, so neither has a serialized input to size a call by, and 0 leaves their pipeline block whole.
 )", EXPERIMENTAL, \
         {"26.3", 0, 0, "New setting to limit input block size for WebAssembly UDFs."}) \
     DECLARE(Float, webassembly_udf_input_split_memory_ratio, 0.5, R"(
@@ -11363,7 +11363,7 @@ Fraction of a WebAssembly UDF instance's linear memory that one call's serialize
 
 The margin below 1 is what makes the batching safe: the guest's own data, stack and allocator share that memory and are invisible to the host. A ratio close to 1 leaves nothing for them, so a call sized against it can still fail inside the guest's allocator.
 
-Read only for `ABI BUFFERED_V1`, and it sizes the calls only while `webassembly_udf_max_input_block_size` is 0 - a non-zero block size caps the rows per call instead.
+Read only for `ABI BUFFERED_V1` and `ABI COLUMNAR_V1`, and it sizes the calls only while `webassembly_udf_max_input_block_size` is 0 - a non-zero block size caps the rows per call instead.
 
 A batch is never taken below a single row, so a row whose own serialized size is past the budget is passed on its own, and one too large for the module's linear memory fails inside the guest's allocator.
 
