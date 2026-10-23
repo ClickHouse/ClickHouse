@@ -26,16 +26,9 @@
 namespace DB::QueryPlanOptimizations
 {
 
-/// True if the actions depend on the block they run on, which the threshold filter shrinks: a stateful
-/// function, or one not deterministic within a query (`blockSize`, `rand`, but not `today`).
-static bool dependsOnItsBlock(const ActionsDAG & actions)
+bool dependsOnItsBlock(const ActionsDAG & actions)
 {
-    for (const auto & node : actions.getNodes())
-        if (node.type == ActionsDAG::ActionType::FUNCTION
-            && (node.function_base->isStateful() || !node.function_base->isDeterministicInScopeOfQuery()))
-            return true;
-
-    return false;
+    return actions.hasNonDeterministicOrStatefulFunctions();
 }
 
 /// True if a value of this type can contain a floating-point number anywhere inside it - directly,
@@ -504,6 +497,11 @@ void installTopKDynamicFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     const auto & top_k_filter_info = *read_from_mergetree_step->getTopKFilterInfo();
     read_from_mergetree_step->clearPendingTopKDynamicFilter();
 
+    /// A projection read inherits the stamp but reads a stored `_part_offset` as `_parent_part_offset`.
+    const auto & read_columns = read_from_mergetree_step->getAllColumnNames();
+    if (std::ranges::find(read_columns, top_k_filter_info.column_name) == read_columns.end())
+        return;
+
     auto initial_header = read_from_mergetree_step->getOutputHeader();
 
     auto prewhere_info = buildTopKDynamicFilterPrewhere(read_from_mergetree_step->getPrewhereInfo(), top_k_filter_info);
@@ -513,6 +511,13 @@ void installTopKDynamicFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     /// The reader resolves the prewhere column by name and then removes it, so the name must not be one the read produces.
     if (initial_header->has(prewhere_info->prewhere_column_name))
         return;
+
+    /// Nor the threshold filter's: the reader does not read a column after PREWHERE when a PREWHERE step
+    /// computes a node of the same name.
+    for (const auto & dag_node : prewhere_info->prewhere_actions.getNodes())
+        if (dag_node.type == ActionsDAG::ActionType::FUNCTION && dag_node.function_base
+            && dag_node.function_base->getName() == "__topKFilter" && initial_header->has(dag_node.result_name))
+            return;
 
     read_from_mergetree_step->updatePrewhereInfo(prewhere_info);
     auto updated_header = read_from_mergetree_step->getOutputHeader();

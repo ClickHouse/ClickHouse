@@ -52,11 +52,35 @@ SETTINGS use_query_condition_cache = true;
 will store ranges of the table which do not satisfy the predicate.
 Subsequent executions of the same query, also with parameter `use_query_condition_cache = true`, will utilize the query condition cache to scan less data.
 
+### Parquet files {#parquet-files}
+
+The query condition cache also works for Parquet files read through the `File`, `S3`, `AzureBlobStorage`, `URL` and data lake table engines (not through table functions, as the cache entries belong to a table).
+For such files, the cache remembers row groups instead of granules.
+The entries of a file are tied to its version, so that a modified file is read anew: the ETag for object storage, and the modification time and the size for local files and for `URL`.
+As a web server reports the modification time (`Last-Modified`) with a precision of one second only, a file read through `URL` uses the cache only if it was modified more than a minute ago by the clock of the web server (the `Date` of its response), and the server reports its modification time, its size, and the date.
+
+### Conditions involving the current time {#time-conditions}
+
+A condition like `WHERE time >= now() - INTERVAL 10 DAY` is non-deterministic: the folded value of `now()` changes with every query, so such conditions cannot be cached directly.
+Instead, ClickHouse derives a deterministic condition from them by rounding the current-time constant onto a time grid, e.g. `time >= '2026-08-09 12:34:56'` is cached as `time >= '2026-08-09 00:00:00'` (rounded down when the cache is read and up when it is written, which keeps the cached information correct).
+The grid step is proportional to the distance between the constant and the current time - one day for a condition looking back ten days, one hour for a condition looking back ninety minutes - and is clamped to the range from one second to one day; the proportionality factor can be configured with the setting `query_condition_cache_time_condition_grid_factor` (default: 1.0).
+
+If the constant is already aligned to the grid, for example in `WHERE time >= today() - 10` or `WHERE time >= toStartOfDay(now()) - INTERVAL 10 DAY`, the very next query can already reuse the cache, and the cache stays effective until the constant changes (e.g. until the end of the day).
+For an unaligned constant as in `WHERE time >= now() - INTERVAL 10 DAY`, cache entries written during one grid cell serve the queries of the next one: yesterday's queries prime the cache for today's.
+This reuse works for lower bounds on the time only. An upper bound like `WHERE time < now()`, alone or in a sliding window bounded by the current time on both sides, like `WHERE time >= now() - INTERVAL 10 DAY AND time < now()`, is reused only if its constants are aligned to the grid (e.g. `WHERE time < today()` or `WHERE time >= today() - 10 AND time < today()`): with unaligned constants, the condition of a later query is not contained in the condition of an earlier one, so the cache entries of the earlier query cannot be applied soundly, whatever the grid.
+
+The derivation can be disabled with the setting [`use_query_condition_cache_for_time_conditions`](/reference/settings/session-settings/use-query) (default: enabled), which only takes effect if `use_query_condition_cache` is also enabled.
+It applies to `MergeTree` tables; reads from files and object storage (`file`, `s3`, and similar) still use the query condition cache only for deterministic conditions.
+Queries of the form `ORDER BY ... LIMIT N` which use dynamic filtering (`use_top_k_dynamic_filtering`) reuse the entries written by other queries with the same condition.
+When the dynamic filter is added to `PREWHERE`, or the condition stays in `WHERE`, such queries do not write entries for conditions involving the current time themselves: the rows they skip depend on the top `N` rows matching the condition, which differ between two conditions mapped onto the same grid point.
+If the dynamic filter cannot be added to `PREWHERE` (for example, for some types of the sort column), the granules skipped by a `PREWHERE` with a condition involving the current time do not depend on the top `N` rows, so they are recorded under the derived condition, in entries reused only by queries with the same TopK plan (see [below](#top-k-queries)).
+
 ### `ORDER BY ... LIMIT n` (TopK) queries {#top-k-queries}
 
 Queries which use the TopK optimization (`ORDER BY <column> LIMIT n`, accelerated by dynamic filtering or by a minmax skip index on the sort column) use the query condition cache as well.
 TopK reads can skip granules based on a threshold that changes while the query runs, so their cache entries are partitioned by the TopK plan parameters and by the set of parts read: only a query with the same plan over the same parts reuses them.
 This also applies to TopK reads of Parquet files through the `File` table engine: there, the cache remembers the row groups which held no row of the result, and the entries are partitioned by the TopK plan parameters, the filter condition (if any), and the set of files read together with their versions, so that a modification of any of the files leads to a fresh entry.
+The same holds for TopK reads of data lake tables with Parquet data files (e.g. `Iceberg`, `DeltaLake`, `Paimon`): their entries are partitioned by the TopK plan parameters, the filter condition (if any), and the snapshot of the table, so that each new snapshot leads to a fresh entry.
 Unlike other reads, such a TopK read uses the cache even without a filter condition, e.g. `SELECT * FROM hits ORDER BY EventTime LIMIT 10`.
 Such reads can be kept out of the cache entirely with the setting [`use_query_condition_cache_for_top_k`](/reference/settings/session-settings/use-query) (default: enabled), which only takes effect if `use_query_condition_cache` is also enabled.
 Reads of Parquet files that use the threshold only to skip row groups by their statistics (a `String` sort column with `use_top_k_dynamic_filtering_for_variable_length_types` disabled) use the cache like reads without TopK, whatever the value of `use_query_condition_cache_for_top_k`.
