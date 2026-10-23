@@ -10,6 +10,9 @@
 namespace DB
 {
 
+struct AggregatingTransformParams;
+using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams>;
+
 Block appendGroupingSetColumn(Block header);
 Block generateOutputHeader(const Block & input_header, const Names & keys, bool use_nulls);
 
@@ -75,6 +78,18 @@ public:
     const Aggregator::Params & getParams() const { return params; }
     bool isFinal() const { return final; }
 
+    /// See `Aggregator::Params::threshold_top_k`; called by the plan optimization.
+    void enableThresholdTopK(Aggregator::Params::ThresholdTopKParams threshold_top_k)
+    {
+        params.threshold_top_k = threshold_top_k;
+    }
+
+    void disableThresholdTopK() { params.threshold_top_k.reset(); }
+
+    /// Whether the radix partitioned `uniqExact` (see `RadixUniqExactTransform.h`) may compute this aggregation.
+    /// Shared by the plan optimization that stamps the statistics key and by `transformPipeline`.
+    bool canUseRadixUniqExact() const;
+
     /// See `Aggregator::Params::bucket_top_k`; called by the plan optimization.
     void enableBucketTopK(size_t n, bool ascending, size_t count_index)
     {
@@ -82,6 +97,8 @@ public:
         params.bucket_top_k_ascending = ascending;
         params.bucket_top_k_count_index = count_index;
     }
+
+    void disableBucketTopK() { params.bucket_top_k = 0; }
 
     /// See `Aggregator::Params::having_prefilter_op`; called by the plan optimization.
     void enableHavingPrefilter(Aggregator::Params::HavingPrefilterOp op, UInt64 threshold, size_t count_index)
@@ -102,7 +119,14 @@ public:
     void applyTopKOptimization(Aggregator::Params::TopKParams top_k);
     void setTopKThresholdTracker(TopKThresholdTrackerPtr threshold_tracker);
     bool memoryBoundMergingWillBeUsed() const;
-    void skipMerging() { skip_merging = true; }
+    void skipMerging()
+    {
+        skip_merging = true;
+        /// The skip-merging path (`ConvertingAggregatedToChunksSource`) only calls
+        /// `Aggregator::convertOneBucketToChunk` and never reaches the top-K threshold merge,
+        /// which the first optimization pass may have set. Drop it, like `applyOrder` does.
+        params.threshold_top_k.reset();
+    }
     /// `prefix_columns` is the number of leading columns of the group-by sort description
     /// the query is ordered by; the in-order streams may stop only at a boundary of them.
     void setLimitHint(size_t limit, size_t prefix_columns)
@@ -172,6 +196,13 @@ public:
 
 private:
     void updateOutputHeader() override;
+
+    /// Replaces the aggregation by the radix partitioned `uniqExact` (see `RadixUniqExactTransform.h`), if `canUseRadixUniqExact`.
+    void buildRadixUniqExact(
+        QueryPipelineBuilder & pipeline,
+        const AggregatingTransformParamsPtr & transform_params,
+        size_t max_threads,
+        const StatsCollectingParams & stats_collecting_params) const;
 
     Aggregator::Params params;
     GroupingSetsParamsList grouping_sets_params;
