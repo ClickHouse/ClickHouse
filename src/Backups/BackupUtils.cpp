@@ -14,10 +14,8 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageMaterializedView.h>
-#include <Storages/StorageProxy.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
-#include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 
 
@@ -166,27 +164,17 @@ namespace
 
 /// The `MergeTreeData` behind `storage` if it is on a storage policy marked `backup_metadata_only`. Only a `MergeTreeData`
 /// keeps its data on a storage policy: `Alias`, `Distributed` and `StorageProxy` report one but keep no data of their own.
-/// Loads a lazily loaded table, whose `StorageTableProxy` reports no storage policy, but never runs the table function
-/// behind a `StorageTableFunctionProxy`, which is checked for every table backed up or restored.
+/// A proxy is not resolved here, unlike on master, where `resolveStorageProxyLoading` loads a lazily loaded table: the
+/// helpers it needs are not on this branch, so a table behind a proxy keeps its data backed up as usual.
 std::shared_ptr<MergeTreeData> getMergeTreeOnBackupMetadataOnlyStoragePolicy(const StoragePtr & storage)
 {
-    auto merge_tree = castStorage<MergeTreeData>(resolveStorageProxyLoading(storage), DeferredTable::Skip);
+    auto merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
     if (!merge_tree)
         return nullptr;
     auto policy = merge_tree->getStoragePolicy();
     if (!policy || !policy->isBackupMetadataOnly())
         return nullptr;
     return merge_tree;
-}
-
-void warnBackupMetadataOnlyIgnored(const StoragePtr & storage, const String & reason)
-{
-    LOG_WARNING(
-        getLogger("BackupUtils"),
-        "{} is on a storage policy marked backup_metadata_only, which BACKUP and RESTORE support only for tables of the MergeTree "
-        "family that are neither replicated nor shared, but {}: its data is backed up and restored as usual",
-        storage->getStorageID().getNameForLogs(),
-        reason);
 }
 
 }
@@ -197,32 +185,18 @@ bool isDataOnBackupMetadataOnlyStoragePolicy(const StoragePtr & storage, [[maybe
     /// Only a table of the plain `MergeTree` family reopens the parts it finds on the storage. `RESTORE` creates a
     /// `ReplicatedMergeTree` table in a mode that refuses them, a `SharedMergeTree` table sees only the parts in Keeper,
     /// and a view looks for the data of its inner tables in the backup. For the others the flag is ignored.
-    if (const auto * materialized_view = typeid_cast<const StorageMaterializedView *>(storage.get()))
-    {
-        if (materialized_view->hasInnerTable())
-        {
-            auto target = materialized_view->tryGetTargetTable();
-            if (target && getMergeTreeOnBackupMetadataOnlyStoragePolicy(target))
-                warnBackupMetadataOnlyIgnored(storage, fmt::format("it is a materialized view with the inner table {}", target->getStorageID().getNameForLogs()));
-        }
-        return false;
-    }
-
-    /// The warning for the inner tables of a `TimeSeries` table is left out: it needs `getTargetKinds`, which is
-    /// not static on this branch. The flag is ignored for such a table either way, as it keeps no data itself.
-    if (typeid_cast<const StorageTimeSeries *>(storage.get()))
+    ///
+    /// Master warns when it ignores the flag, naming the inner table that carries it. The warning is left out here:
+    /// it needs the inner tables of a `TimeSeries` table through `getTargetKinds`, which is not static on this
+    /// branch, and the answer below does not depend on it.
+    if (typeid_cast<const StorageMaterializedView *>(storage.get()) || typeid_cast<const StorageTimeSeries *>(storage.get()))
         return false;
 
     auto merge_tree = getMergeTreeOnBackupMetadataOnlyStoragePolicy(storage);
     if (!merge_tree)
         return false;
 
-    if (!castStorage<StorageMergeTree>(merge_tree, DeferredTable::Skip))
-    {
-        warnBackupMetadataOnlyIgnored(storage, fmt::format("it is a {} table", merge_tree->getName()));
-        return false;
-    }
-    return true;
+    return std::dynamic_pointer_cast<StorageMergeTree>(merge_tree) != nullptr;
 }
 
 bool isDataOnBackupMetadataOnlyStoragePolicy(const StoragePtr & storage, const ASTPtr & create_table_query, const ContextPtr & context)
