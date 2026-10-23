@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
-# - no-fasttest: writes and reads Parquet files, needs S3 (MinIO)
+# - no-fasttest: writes and reads Parquet files, needs S3 (MinIO) and Iceberg
 
 # ORDER BY <String column> LIMIT over Parquet skips row groups by the statistics of the sort column
 # also without `use_top_k_dynamic_filtering_for_variable_length_types`, but then without a per-row filter.
@@ -210,6 +210,27 @@ check_query_condition_cache() {
 check_query_condition_cache t_05339
 check_query_condition_cache t_05339_s3
 
+check_query_condition_cache_written() {
+    # $1: table
+    local predicate
+    for attempt in 1 2 3; do
+        predicate="intDiv(v, 1000) != 8 AND v != ${attempt}100000"
+        ${CLICKHOUSE_CLIENT} --query "
+            SELECT s FROM $1 WHERE ${predicate} ORDER BY s DESC LIMIT 3
+            SETTINGS ${qcc_settings}, use_query_condition_cache = 1, use_query_condition_cache_for_top_k = 0" > /dev/null
+        ${CLICKHOUSE_CLIENT} --query_id "${query_id}_$1_written_${attempt}" --query "
+            SELECT count() FROM $1 WHERE ${predicate} SETTINGS ${qcc_settings}, use_query_condition_cache = 1" > /dev/null
+    done
+    ${CLICKHOUSE_CLIENT} --query "
+        SYSTEM FLUSH LOGS query_log;
+        SELECT '$1: the read populates the cache without use_query_condition_cache_for_top_k:', max(ProfileEvents['QueryConditionCacheHits'] > 0)
+        FROM system.query_log
+        WHERE current_database = currentDatabase() AND startsWith(query_id, '${query_id}_$1_written_') AND type = 'QueryFinish';
+    "
+}
+check_query_condition_cache_written t_05339
+check_query_condition_cache_written t_05339_s3
+
 # Unlike a TopK read of a `File` table with the per-row filter, it does not use the cache without a filter condition.
 ${CLICKHOUSE_CLIENT} --query_id "${query_id}_no_filter" --query "
     SELECT s FROM t_05339 ORDER BY s DESC LIMIT 3 SETTINGS ${qcc_settings}, use_query_condition_cache = 1" > /dev/null
@@ -219,6 +240,30 @@ ${CLICKHOUSE_CLIENT} --query "
         ProfileEvents['QueryConditionCacheHits'] + ProfileEvents['QueryConditionCacheMisses'] = 0
     FROM system.query_log
     WHERE current_database = currentDatabase() AND query_id = '${query_id}_no_filter' AND type = 'QueryFinish';
+"
+
+# Nor does a read of a data lake table, which uses the cache without a filter condition with the per-row filter.
+ICEBERG_DIR="${USER_FILES_PATH}/lakehouses/${CLICKHOUSE_DATABASE}_05339"
+rm -rf "${ICEBERG_DIR}"
+${CLICKHOUSE_CLIENT} --query "
+    DROP TABLE IF EXISTS t_05339_iceberg;
+    CREATE TABLE t_05339_iceberg (s String, v Int64) ENGINE = IcebergLocal('${ICEBERG_DIR}', 'Parquet')
+        SETTINGS output_format_parquet_row_group_size = 1000, output_format_parallel_formatting = 0"
+${CLICKHOUSE_CLIENT} --allow_experimental_insert_into_iceberg 1 --query "
+    INSERT INTO t_05339_iceberg SELECT s, toInt64(v) FROM (${DATA}) SETTINGS max_threads = 1, max_insert_threads = 1, max_block_size = 65409"
+for opt_in in 0 1; do
+    ${CLICKHOUSE_CLIENT} --query_id "${query_id}_iceberg_${opt_in}" --query "
+        SELECT s FROM t_05339_iceberg ORDER BY s DESC LIMIT 3
+        SETTINGS ${SETTINGS}, use_query_condition_cache = 1, use_query_condition_cache_for_top_k = 1, enable_parallel_replicas = 0,
+            use_top_k_dynamic_filtering_for_variable_length_types = ${opt_in}" > /dev/null
+done
+${CLICKHOUSE_CLIENT} --query "
+    SYSTEM FLUSH LOGS query_log;
+    SELECT 't_05339_iceberg: the read uses the cache, with the opt-in ' || splitByChar('_', query_id)[-1] || ':',
+        ProfileEvents['QueryConditionCacheHits'] + ProfileEvents['QueryConditionCacheMisses'] > 0
+    FROM system.query_log
+    WHERE current_database = currentDatabase() AND startsWith(query_id, '${query_id}_iceberg_') AND type = 'QueryFinish'
+    ORDER BY query_id;
 "
 
 echo "-- in object storage, also for row groups skipped after the read of their file has started"
@@ -249,5 +294,6 @@ ${CLICKHOUSE_CLIENT} --query "
 "
 check_query_condition_cache t_05339_s3_glob
 
-${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05339; DROP TABLE t_05339_s3; DROP TABLE t_05339_s3_glob"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05339; DROP TABLE t_05339_s3; DROP TABLE t_05339_s3_glob; DROP TABLE t_05339_iceberg"
 rm -f "${USER_FILES_PATH}/${CLICKHOUSE_DATABASE}/05339.parquet"
+rm -rf "${ICEBERG_DIR}"

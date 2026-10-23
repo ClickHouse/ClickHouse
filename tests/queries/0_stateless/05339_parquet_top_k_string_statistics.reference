@@ -67,7 +67,11 @@ t_05339_s3: count without the cache: 19000
 t_05339_s3: count with the cache is the count without it: 1
 t_05339_s3: the count is read from the cache:	1
 t_05339_s3: the read consults the cache without use_query_condition_cache_for_top_k:	1
+t_05339: the read populates the cache without use_query_condition_cache_for_top_k:	1
+t_05339_s3: the read populates the cache without use_query_condition_cache_for_top_k:	1
 t_05339: a read without a filter does not use the cache:	1
+t_05339_iceberg: the read uses the cache, with the opt-in 0:	0
+t_05339_iceberg: the read uses the cache, with the opt-in 1:	1
 -- in object storage, also for row groups skipped after the read of their file has started
 10	0
 t_05339_s3_glob: count without the cache: 2000

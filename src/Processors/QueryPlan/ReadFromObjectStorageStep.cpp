@@ -262,6 +262,9 @@ ObjectStorageTopKQueryConditionCacheKeyPtr ReadFromObjectStorageStep::makeTopKQu
         || !settings[Setting::use_query_condition_cache] || !settings[Setting::use_query_condition_cache_for_top_k])
         return {};
 
+    if (!top_k_filter->filter_rows)
+        return {};
+
     /// Only a table with a UUID has cache entries. With distributed processing each worker reads a
     /// set of files that differs from run to run, and makes its own threshold from them.
     if (storage_id.uuid == UUIDHelpers::Nil || distributed_processing)

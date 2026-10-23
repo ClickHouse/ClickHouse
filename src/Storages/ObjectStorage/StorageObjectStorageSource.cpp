@@ -1086,9 +1086,10 @@ Chunk StorageObjectStorageSource::generate()
         /// A file the filter was not applied to (see `createReader`; the reader also declines it for a
         /// file that does not store the sort column) writes them as without TopN - unless the entries of the
         /// TopK key made it skip row groups that the predicate alone would not, or
-        /// `use_query_condition_cache_for_top_k` is off, which makes a TopN read not populate the cache at all.
+        /// `use_query_condition_cache_for_top_k` is off, which makes a TopN read (unless statistics-only) not populate the cache at all.
         else if (format_filter_info->condition_hash && !reader.skipped_row_groups_by_top_k_entry
-            && !(format_filter_info->top_k_filter && !read_context->getSettingsRef()[Setting::use_query_condition_cache_for_top_k])
+            && !(format_filter_info->top_k_filter && format_filter_info->top_k_filter->filter_rows
+                && !read_context->getSettingsRef()[Setting::use_query_condition_cache_for_top_k])
             && !(reader.getInputFormat() && reader.getInputFormat()->isTopKFilterApplied()))
         {
             const auto & object_info = reader.getObjectInfo();
