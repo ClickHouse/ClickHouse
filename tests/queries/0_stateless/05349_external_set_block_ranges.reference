@@ -1,0 +1,10 @@
+consecutive	40
+every eighth	5
+every ninth	5
+cached	60
+small buffer	80
+consecutive	1	40	0
+every eighth	1	5	0
+every ninth	1	5	0
+cached	1	40	20
+small buffer	1	40	40

@@ -1,0 +1,14 @@
+rows before:
+1000
+rows after empty checksums.txt reload:
+1000
+empty checksums.txt recovered (rows after reload):
+1000
+empty checksums.txt recovered (check passed, no recount message):
+1	
+rows after absent checksums.txt reload:
+1000
+check table result:
+1
+rows after CHECK TABLE repair and reload:
+1000

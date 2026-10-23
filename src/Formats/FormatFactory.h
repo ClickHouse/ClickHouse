@@ -64,6 +64,9 @@ using BucketSplitter = std::shared_ptr<IBucketSplitter>;
 
 FormatSettings getFormatSettings(const ContextPtr & context);
 FormatSettings getFormatSettings(const ContextPtr & context, const Settings & settings);
+/// For the `Native` blocks of the native protocol. A secondary query carries type names in both directions,
+/// because a server-side `Connection` never takes format settings.
+FormatSettings getNativeWireFormatSettings(const ContextPtr & context);
 
 /** A hash of the session settings `getFormatSettings` derives a `FormatSettings` from, for whatever
   * keys a value by the settings that produced it: a function that captured a `FormatSettings` when it
