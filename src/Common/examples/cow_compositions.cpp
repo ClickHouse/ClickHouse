@@ -71,7 +71,6 @@ void print(const ColumnPtr & x, const ColPtr & y)
 {
     std::cerr << "values:    " << x->get()        << ", " << y->get()       << "\n";
     std::cerr << "refcounts: " << x->use_count()  << ", " << y->use_count() << "\n";
-    std::cerr << "addresses: " << reinterpret_cast<uintptr_t>(x.get()) << ", " << reinterpret_cast<uintptr_t>(y.get()) << "\n";
 }
 
 }
