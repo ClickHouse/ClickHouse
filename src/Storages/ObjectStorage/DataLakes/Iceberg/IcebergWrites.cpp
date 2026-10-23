@@ -1195,7 +1195,7 @@ IcebergStorageSink::IcebergStorageSink(
         catalog,
         table_id.getTableName(),
         persistent_table_components.table_path,
-        data_lake_settings,
+        *data_lake_settings,
         persistent_table_components.metadata_cache,
         context_,
         log.get(),
@@ -1203,14 +1203,14 @@ IcebergStorageSink::IcebergStorageSink(
         persistent_table_components.metadata_compression_method,
         /* ignore_metadata_pointer_overrides */ true);
 
-    metadata = getMetadataJSONObject(
+    metadata = deepCopy(getMetadataJSONObject(
         metadata_path,
         object_storage,
         persistent_table_components.metadata_cache,
         context,
         log,
         compression_method,
-        persistent_table_components.table_uuid);
+        persistent_table_components.table_uuid));
     metadata_compression_method = compression_method;
     filename_generator = FileNamesGenerator(
         persistent_table_components.path_resolver.getTableLocation(),
@@ -1528,7 +1528,7 @@ bool IcebergStorageSink::initializeMetadata()
                 catalog,
                 table_id.getTableName(),
                 persistent_table_components.table_path,
-                data_lake_settings,
+                *data_lake_settings,
                 persistent_table_components.metadata_cache,
                 context,
                 getLogger("IcebergWrites").get(),
@@ -1541,14 +1541,14 @@ bool IcebergStorageSink::initializeMetadata()
             metadata_compression_method = compression_method;
             filename_generator.setVersion(last_version + 1);
 
-            metadata = getMetadataJSONObject(
+            metadata = deepCopy(getMetadataJSONObject(
                 metadata_path,
                 object_storage,
                 persistent_table_components.metadata_cache,
                 context,
                 getLogger("IcebergWrites"),
                 compression_method,
-                persistent_table_components.table_uuid);
+                persistent_table_components.table_uuid));
 
             auto new_schema_id = metadata->getValue<Int64>(Iceberg::f_current_schema_id);
             if (new_schema_id != current_schema_id)
@@ -1696,7 +1696,7 @@ bool IcebergStorageSink::initializeMetadata()
                         hint_path,
                         object_storage,
                         context,
-                        data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
+                        (*data_lake_settings)[DataLakeStorageSetting::iceberg_use_version_hint]))
                 {
                     LOG_DEBUG(log, "Failed to write metadata {}, retrying", metadata_info.path);
                     cleanup(true);
