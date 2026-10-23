@@ -680,6 +680,12 @@ object_storages_properties = {
     "web": {},
 }
 
+# Object storage elements that only one metadata storage reads: the server rejects them on any other.
+metadata_type_properties = {
+    "metadata_keep_free_space_bytes": {"local"},
+    "object_metadata_cache_size": {"plain"},
+}
+
 s3_with_keeper_properties = {
     "metadata_cache_cleanup_interval": threshold_generator(0.2, 0.2, 1, 60),
     "metadata_cache_enabled": true_false_lambda,
@@ -756,13 +762,31 @@ policy_properties = {
 
 
 all_disks_properties = {
-    "description": lambda: generate_xml_safe_string(random.randint(1, 1024)),
-    "keep_free_space_bytes": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
-    "min_bytes_for_seek": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
-    "perform_ttl_move_on_insert": true_false_lambda,
-    "readonly": lambda: 1 if random.randint(0, 9) < 2 else 0,
     # "skip_access_check": true_false_lambda, may break the startup
     "thread_pool_size": no_zero_threads_lambda,
+}
+
+# The server rejects a disk element that its disk type does not read, so these go only to the
+# kinds that read them (`object_storage/<type>` for an object storage disk).
+disk_kind_properties = {
+    "keep_free_space_bytes": (
+        threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
+        {"local", "object_storage/local"},
+    ),
+    "min_bytes_for_seek": (
+        threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
+        {"object_storage/azure"},
+    ),
+    "readonly": (
+        lambda: 1 if random.randint(0, 9) < 2 else 0,
+        {
+            "object_storage/local",
+            "object_storage/s3",
+            "object_storage/s3_with_keeper",
+            "object_storage/azure",
+            "s3_with_keeper",
+        },
+    ),
 }
 
 
@@ -1073,8 +1097,12 @@ def add_single_disk(
             allowed_path_xml = ET.SubElement(backups_element, "allowed_path")
             allowed_path_xml.text = f"/var/lib/clickhouse/disk{i}/"
 
-        # Add a endpoint_subpath
-        if metadata_type == "plain_rewritable" and random.randint(1, 100) <= 70:
+        # Add a endpoint_subpath, read only by the S3 and Azure object storages
+        if (
+            metadata_type == "plain_rewritable"
+            and object_storage_type in ("s3", "s3_with_keeper", "azure")
+            and random.randint(1, 100) <= 70
+        ):
             endpoint_subpath_xml = ET.SubElement(next_disk, "endpoint_subpath")
             endpoint_subpath_xml.text = (
                 f"node{random.choice(range(0, len(args.replica_values)))}"
@@ -1085,9 +1113,12 @@ def add_single_disk(
             "s3" if object_storage_type == "s3_with_keeper" else object_storage_type
         )
         if object_storages_properties[dict_entry] and random.randint(1, 100) <= 70:
-            apply_properties_recursively(
-                next_disk, object_storages_properties[dict_entry]
-            )
+            storage_properties = {
+                name: generator
+                for name, generator in object_storages_properties[dict_entry].items()
+                if metadata_type in metadata_type_properties.get(name, {metadata_type})
+            }
+            apply_properties_recursively(next_disk, storage_properties)
         if (
             is_private_binary
             and (object_storage_type == "s3_with_keeper" or metadata_type == "keeper")
@@ -1145,7 +1176,16 @@ def add_single_disk(
                 )
 
     if disk_type != "cache" and random.randint(1, 100) <= 50:
-        apply_properties_recursively(next_disk, all_disks_properties)
+        kind = (
+            f"object_storage/{final_type}"
+            if disk_type == "object_storage"
+            else disk_type
+        )
+        disk_properties = dict(all_disks_properties)
+        for name, (generator, kinds) in disk_kind_properties.items():
+            if kind in kinds:
+                disk_properties[name] = generator
+        apply_properties_recursively(next_disk, disk_properties)
     return (prev_disk, final_type, final_super_type, final_metadata_type)
 
 
