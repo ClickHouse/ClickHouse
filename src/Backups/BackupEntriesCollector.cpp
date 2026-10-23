@@ -589,14 +589,15 @@ void BackupEntriesCollector::gatherTablesMetadata()
     {
         res_table_info.should_backup_data = shouldBackupTableData(qualified_name, res_table_info.storage, res_table_info.create_table_query, rmv_replace_target_ids);
 
-        if (!res_table_info.should_backup_data)
-            continue;
-
         const auto & database_info = database_infos.at(qualified_name.database);
         auto it = database_info.tables.find(qualified_name.table);
         if (it == database_info.tables.end())
             continue;
 
+        /// Validated before `should_backup_data` is acted on, so it holds however the data came to be left out -
+        /// `structure_only`, a refreshable materialized view target, or a `backup_metadata_only` storage policy.
+        /// Naming a partition is a user error in each of those cases, and answering it by silently ignoring the
+        /// clause is worse than refusing the query.
         const auto & partitions = it->second.partitions;
         if (partitions && res_table_info.storage && !res_table_info.storage->supportsBackupPartition())
         {
@@ -618,6 +619,10 @@ void BackupEntriesCollector::gatherTablesMetadata()
                 "definition is backed up, and it is restored with all the data of its storage",
                 tableNameWithTypeToString(qualified_name.database, qualified_name.table, false));
         }
+
+        /// An excluded table contributes no partitions, so the scope below is left unset for it.
+        if (!res_table_info.should_backup_data)
+            continue;
 
         res_table_info.partitions = partitions;
     }
