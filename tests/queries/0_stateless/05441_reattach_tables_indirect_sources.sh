@@ -4,8 +4,9 @@
 # no-replicated-database: like the rest of the reattach suite
 
 # Sources the preflights of `reattach_tables_before_query_execution` cannot see: the target of an `Alias`,
-# the tables a table function resolves while it runs, and a column named like an unused CTE.
-# Also `SYSTEM START` through an `Alias` releasing a `SYSTEM STOP` taken on its target.
+# the tables a table function resolves while it runs,
+# the storages scalar functions read by name, and a column named like an unused CTE.
+# Also `SYSTEM START` through an `Alias` releasing a `SYSTEM STOP` taken on its target, only with the access to it.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -61,6 +62,32 @@ ${CLICKHOUSE_CLIENT} -q "INSERT INTO t_reattach_ind_dim VALUES (2)"
 ${CLICKHOUSE_CLIENT} -q "SYSTEM START MERGES t_reattach_ind_alias"
 ${CLICKHOUSE_CLIENT} -q "OPTIMIZE TABLE t_reattach_ind_dim FINAL"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_reattach_ind_dim' AND active"
+
+# 5. A user with the access to the `Alias` only cannot release a `SYSTEM STOP MERGES` taken on its target.
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_ind_protected_alias"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_ind_protected"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_ind_protected (y UInt64) ENGINE = MergeTree ORDER BY y"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_ind_protected_alias ENGINE = Alias('t_reattach_ind_protected')"
+${CLICKHOUSE_CLIENT} -q "SYSTEM STOP MERGES t_reattach_ind_protected"
+${CLICKHOUSE_CLIENT} -q "INSERT INTO t_reattach_ind_protected VALUES (1)"
+${CLICKHOUSE_CLIENT} -q "INSERT INTO t_reattach_ind_protected VALUES (2)"
+MERGES_USER="user_reattach_ind_merges_${CLICKHOUSE_DATABASE}"
+${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${MERGES_USER}"
+${CLICKHOUSE_CLIENT} -q "CREATE USER ${MERGES_USER} IDENTIFIED WITH no_password"
+${CLICKHOUSE_CLIENT} -q "GRANT SYSTEM MERGES ON ${CLICKHOUSE_DATABASE}.t_reattach_ind_protected_alias TO ${MERGES_USER}"
+${CLICKHOUSE_CLIENT} --user "${MERGES_USER}" -q "SYSTEM START MERGES ${CLICKHOUSE_DATABASE}.t_reattach_ind_protected_alias"
+${CLICKHOUSE_CLIENT} -q "OPTIMIZE TABLE t_reattach_ind_protected FINAL" 2>/dev/null
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_reattach_ind_protected' AND active"
+${CLICKHOUSE_CLIENT} -q "DROP USER ${MERGES_USER}"
+${CLICKHOUSE_CLIENT} -q "SYSTEM START MERGES t_reattach_ind_protected"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_reattach_ind_protected_alias"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_reattach_ind_protected"
+
+# 6. `joinGet` resolves the storage named in its arguments only when it runs, so it skips the hook.
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_ind_join"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_ind_join (k UInt64, v UInt64) ENGINE = Join(ANY, LEFT, k)"
+check_if_not_detached "SELECT joinGet('${CLICKHOUSE_DATABASE}.t_reattach_ind_join', 'v', x) FROM t_reattach_ind_src" "t_reattach_ind_src"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_reattach_ind_join"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_reattach_ind_alias"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_reattach_ind_src"
