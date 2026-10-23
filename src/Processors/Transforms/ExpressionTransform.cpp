@@ -49,7 +49,8 @@ void ExpressionTransform::transform(Chunk & chunk)
     }
 
     /// A function may throw on the intermediate values of a preview (see `QueryResultPreview.h`).
-    /// The chunk without columns is skipped by `ISimpleTransform`, so the preview is dropped.
+    /// Then the preview is dropped: nothing is pushed, not even an empty chunk, which would lose
+    /// the preview marker and reach the main output format as part of the real result.
     try
     {
         executeExpression(chunk);
@@ -58,6 +59,7 @@ void ExpressionTransform::transform(Chunk & chunk)
     {
         onQueryResultPreviewEvaluationError(e, *preview, isCancelled());
         chunk.clear();
+        dropOutput();
     }
 }
 

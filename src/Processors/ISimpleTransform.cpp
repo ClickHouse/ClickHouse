@@ -1,4 +1,5 @@
 #include <Processors/ISimpleTransform.h>
+#include <utility>
 
 
 namespace DB
@@ -108,6 +109,12 @@ void ISimpleTransform::work()
     }
 
     has_input = !needInputData();
+
+    if (std::exchange(drop_output, false))
+    {
+        output_data.chunk.clear();
+        return;
+    }
 
     if (!skip_empty_chunks || output_data.chunk)
         has_output = true;
