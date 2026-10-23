@@ -9,20 +9,34 @@
 namespace DB
 {
 
-/// GDeflate of nvcomp (https://docs.nvidia.com/cuda/nvcomp/gdeflate.html), a variant of Deflate that a GPU expands in
-/// parallel: a block is compressed in chunks of 64 KiB, each on its own, see `GPU::gdeflate_chunk_bytes`. Both the
-/// compression and the expansion run on the server's GPU, and the device reads the chunks of a column with the other
-/// compressed blocks it aggregates. Of a column of integers, a chunk whose integers lie close together is packed before it
-/// is compressed, each in as many bits as it differs from the least of the chunk by, where that makes it smaller.
+/** GDeflate (https://github.com/NVIDIA/libdeflate/tree/gdeflate) is a variant of Deflate whose bit stream is split
+  * into 32 interleaved sub-streams, so that a GPU can expand it in parallel, as nvcomp and DirectStorage do, while the
+  * CPU compresses and expands it about as fast as Deflate. The host compresses, and expands what it reads itself; the
+  * GPU aggregation expands the chunks of the blocks it reads with nvcomp, with those of `LZ4` and `ZSTD`.
+  *
+  * A block is compressed in chunks of `chunk_bytes`, the last one shorter, each a GDeflate page of its own, which is
+  * what a GPU expands in parallel with the others. Of a column of integers, a chunk whose integers lie close together
+  * is packed before it is compressed, where that makes it smaller: each integer as its difference from the least of
+  * the chunk, in as many bits as the largest difference takes.
+  *
+  * The block holds the number of chunks, a little-endian 32-bit integer, then a descriptor of each chunk, then the
+  * chunks, each from a multiple of 4 bytes, as nvcomp reads them. The descriptor is the size of the compressed chunk, a
+  * 32-bit integer; where the highest bit of the number of chunks is set, it is followed by the bits each integer is
+  * packed in, 0 for a chunk that is not packed, the size of an integer, 2 bytes to spare and the least integer, as 64
+  * bits.
+  */
 class CompressionCodecGDeflate : public ICompressionCodec
 {
 public:
-    /// nvcomp's GDeflate algorithms, from the fastest, 0, to the densest, 5, of which 4 and 5 compress alike.
-    static constexpr int DEFAULT_ALGORITHM = 4;
-    static constexpr int MAX_ALGORITHM = 5;
+    static constexpr size_t chunk_bytes = 64 * 1024;
+
+    /// The levels of libdeflate, from the fastest, 1, to the densest, 12.
+    static constexpr int MIN_LEVEL = 1;
+    static constexpr int MAX_LEVEL = 12;
+    static constexpr int DEFAULT_LEVEL = 6;
 
     /// `element_size` 0 packs nothing.
-    explicit CompressionCodecGDeflate(int algorithm_, UInt8 element_size_ = 0, bool is_signed_ = false);
+    CompressionCodecGDeflate(int level_, UInt8 element_size_, bool is_signed_);
 
     uint8_t getMethodByte() const override;
     ASTPtr getCodecDescription() const override;
@@ -41,11 +55,12 @@ protected:
 
     String getDescription() const override
     {
-        return "GDeflate of nvcomp, a Deflate a GPU expands in parallel, compressed and expanded on the server's GPU. Algorithms 0..5.";
+        return "GDeflate, a Deflate that a GPU can expand in parallel, in chunks of 64 KiB, with the integers of a chunk packed "
+               "where that makes it smaller. Levels 1..12.";
     }
 
 private:
-    const int algorithm;
+    const int level;
     /// Of the integers whose chunks are packed; not a part of the description, as a block holds how it is packed.
     const UInt8 element_size;
     const bool is_signed;

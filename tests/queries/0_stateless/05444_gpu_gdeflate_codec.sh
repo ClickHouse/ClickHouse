@@ -27,10 +27,10 @@ if [ "$HAS_GPU" == "0" ]; then
     exit 0
 fi
 
-for algorithm in 0 4; do
+for level in 1 6; do
     $CLICKHOUSE_CLIENT --enable_gdeflate_codec 1 --query "
-        CREATE TABLE gpu_gdeflate (k UInt32 CODEC(GDeflate($algorithm)), v Float64 CODEC(GDeflate($algorithm)), d Date CODEC(GDeflate($algorithm)),
-                                   s String CODEC(GDeflate($algorithm)))
+        CREATE TABLE gpu_gdeflate (k UInt32 CODEC(GDeflate($level)), v Float64 CODEC(GDeflate($level)), d Date CODEC(GDeflate($level)),
+                                   s String CODEC(GDeflate($level)))
         ENGINE = MergeTree ORDER BY tuple()
         SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 1;
         CREATE TABLE gpu_lz4 (k UInt32, v Float64, d Date, s String) ENGINE = MergeTree ORDER BY tuple();
@@ -38,7 +38,7 @@ for algorithm in 0 4; do
         INSERT INTO gpu_lz4 SELECT number % 1000, (number % 977) / 8, toDate('2024-01-01') + number % 365, toString(number % 5003) FROM numbers(1000003);
     "
 
-    echo "- algorithm $algorithm"
+    echo "- level $level"
 
     # Read through the CPU.
     $CLICKHOUSE_CLIENT --query "

@@ -12,10 +12,10 @@
 namespace DB::GPU
 {
 
-/** A block of the `GDeflate` codec: its bytes in chunks of `gdeflate_chunk_bytes`, the last one shorter, each compressed by
-  * nvcomp's GDeflate on its own, which the device expands in parallel. A chunk of a block of integers may be packed
-  * before it is compressed: each integer as its difference from the least of the chunk, in as many bits as the largest
-  * difference takes, which the device unpacks after it expands the chunk.
+/** A block of the `GDeflate` codec, see `CompressionCodecGDeflate`: its bytes in chunks of `gdeflate_chunk_bytes`, the
+  * last one shorter, each a GDeflate page of its own, which the device expands in parallel with the others. A chunk of a
+  * block of integers may be packed before it is compressed: each integer as its difference from the least of the chunk,
+  * in as many bits as the largest difference takes, which the device unpacks after it expands the chunk.
   *
   * The block holds the number of chunks, a little-endian 32-bit integer, then a descriptor of each chunk, then the chunks,
   * each from a multiple of 4 bytes, as the device reads them. The descriptor is the size of the compressed chunk, a
@@ -37,17 +37,6 @@ struct GDeflateChunk
     uint32_t element_size = 0;
     uint64_t reference = 0;
 };
-
-/// The most a block of `uncompressed_bytes` takes.
-size_t gdeflateMaxCompressedBytes(size_t uncompressed_bytes, int algorithm);
-
-/// Compresses on the device, with GDeflate's `algorithm`, from 0, the fastest, to 5, the densest. Of integers of
-/// `element_size` bytes, signed or not, a chunk is packed where that makes it compress to fewer bytes; `element_size` 0 packs
-/// nothing. Returns the bytes written to `dest`, of at least `gdeflateMaxCompressedBytes`.
-size_t gdeflateCompress(const char * source, size_t source_bytes, char * dest, int algorithm, uint32_t element_size, bool is_signed);
-
-/// Expands a block on the device into `dest`, of `uncompressed_bytes`.
-void gdeflateDecompress(const char * source, size_t source_bytes, char * dest, size_t uncompressed_bytes);
 
 /// Calls `on_chunk` for each chunk of a block that expands to `uncompressed_bytes`. Throws if the block does not hold as
 /// many chunks as its bytes make, or a chunk that reaches past the block.

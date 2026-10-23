@@ -2,11 +2,11 @@
 
 #if USE_GPU
 
+#include <GPU/GPUGDeflate.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/registerCompressionCodecs.h>
 #include <DataTypes/IDataType.h>
-#include <GPU/GPUGDeflate.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/IAST.h>
 #include <Common/PODArray.h>
@@ -15,13 +15,16 @@
 #include <gdeflate.h>
 
 #include <algorithm>
+#include <bit>
 #include <cstring>
 #include <memory>
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
+    extern const int CANNOT_COMPRESS;
     extern const int CANNOT_DECOMPRESS;
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
@@ -31,9 +34,9 @@ namespace ErrorCodes
 namespace
 {
 
-/// The block format is that of `GPU::forEachGDeflateChunk`, which the host expands here with the GDeflate pages of
-/// NVIDIA's fork of libdeflate: a device is no faster for a block at a time, and is not there for every read.
-constexpr size_t chunk_bytes = GPU::gdeflate_chunk_bytes;
+constexpr size_t chunk_bytes = CompressionCodecGDeflate::chunk_bytes;
+/// The device reads the chunks of a block by the same format, see `GPU::forEachGDeflateChunk`.
+static_assert(chunk_bytes == GPU::gdeflate_chunk_bytes);
 constexpr size_t chunk_alignment = 4;
 
 /// Set in the number of chunks of a block whose chunks have descriptors of `packed_descriptor_bytes`.
@@ -62,19 +65,27 @@ size_t headerBytes(size_t num_chunks, bool packed)
     return sizeof(UInt32) + num_chunks * (packed ? packed_descriptor_bytes : plain_descriptor_bytes);
 }
 
+/// The most a GDeflate page of `chunk_bytes` compresses to, the room each chunk has in a block.
+size_t maxCompressedChunkBytes()
+{
+    return libdeflate_gdeflate_compress_bound(nullptr, chunk_bytes, nullptr);
+}
+
 bool isPackedElementSize(size_t size)
 {
     return size == 1 || size == 2 || size == 4 || size == 8;
 }
 
-void storeInteger(char * at, UInt64 value, UInt32 element_size)
+/// An integer of `element_size` bytes, widened to 64 bits as what it is, signed or not, so that the integers of a chunk
+/// order as their type does.
+UInt64 integerAt(const char * at, UInt8 element_size, bool is_signed)
 {
     switch (element_size)
     {
-        case 1: unalignedStoreLittleEndian<UInt8>(at, static_cast<UInt8>(value)); break;
-        case 2: unalignedStoreLittleEndian<UInt16>(at, static_cast<UInt16>(value)); break;
-        case 4: unalignedStoreLittleEndian<UInt32>(at, static_cast<UInt32>(value)); break;
-        default: unalignedStoreLittleEndian<UInt64>(at, value); break;
+        case 1: return is_signed ? static_cast<UInt64>(static_cast<Int64>(unalignedLoadLittleEndian<Int8>(at))) : unalignedLoadLittleEndian<UInt8>(at);
+        case 2: return is_signed ? static_cast<UInt64>(static_cast<Int64>(unalignedLoadLittleEndian<Int16>(at))) : unalignedLoadLittleEndian<UInt16>(at);
+        case 4: return is_signed ? static_cast<UInt64>(static_cast<Int64>(unalignedLoadLittleEndian<Int32>(at))) : unalignedLoadLittleEndian<UInt32>(at);
+        default: return unalignedLoadLittleEndian<UInt64>(at);
     }
 }
 
@@ -83,18 +94,73 @@ size_t packedBytes(size_t count, UInt32 bits)
     return (count * bits + 7) / 8;
 }
 
-/// Writes the `count` integers of `element_size` bytes packed in `bits` bits at `packed`, readable for `packed_padding`
-/// bytes past them.
-void unpack(const char * packed, size_t count, UInt32 bits, UInt32 element_size, UInt64 reference, char * out)
+struct PackedChunk
+{
+    UInt32 bits = 0;
+    UInt64 reference = 0;
+};
+
+/// Packs the chunk into `out`, of `packedBytes` and `packed_padding` more, if its integers take fewer bits than they are
+/// wide; otherwise returns a chunk of 0 bits.
+PackedChunk pack(const char * chunk, size_t chunk_size, UInt8 element_size, bool is_signed, char * out)
+{
+    const size_t count = chunk_size / element_size;
+    UInt64 least = integerAt(chunk, element_size, is_signed);
+    UInt64 most = least;
+    for (size_t i = 1; i < count; ++i)
+    {
+        const UInt64 value = integerAt(chunk + i * element_size, element_size, is_signed);
+        if (is_signed ? static_cast<Int64>(value) < static_cast<Int64>(least) : value < least)
+            least = value;
+        if (is_signed ? static_cast<Int64>(value) > static_cast<Int64>(most) : value > most)
+            most = value;
+    }
+
+    const auto bits = std::max<UInt32>(1, static_cast<UInt32>(std::bit_width(most - least)));
+    if (bits > max_packed_bits || bits >= 8u * element_size)
+        return {};
+
+    /// Each integer is ORed into the bytes from the lowest bit of the byte its first bit is in, 8 bytes at a time, which
+    /// hold any 56 bits from any bit offset.
+    memset(out, 0, packedBytes(count, bits) + packed_padding);
+    for (size_t i = 0; i < count; ++i)
+    {
+        const UInt64 delta = integerAt(chunk + i * element_size, element_size, is_signed) - least;
+        const size_t first_bit = i * bits;
+        char * const at = out + first_bit / 8;
+        unalignedStoreLittleEndian<UInt64>(at, unalignedLoadLittleEndian<UInt64>(at) | (delta << (first_bit % 8)));
+    }
+    return {.bits = bits, .reference = least};
+}
+
+/// Writes the `count` integers of `T` packed in `bits` bits at `packed`, readable for `packed_padding` bytes past them.
+template <typename T>
+void unpackAs(const char * packed, size_t count, UInt32 bits, UInt64 reference, char * out)
 {
     const UInt64 mask = (UInt64{1} << bits) - 1;
     for (size_t i = 0; i < count; ++i)
     {
         const size_t first_bit = i * bits;
         const UInt64 delta = (unalignedLoadLittleEndian<UInt64>(packed + first_bit / 8) >> (first_bit % 8)) & mask;
-        storeInteger(out + i * element_size, reference + delta, element_size);
+        unalignedStoreLittleEndian<T>(out + i * sizeof(T), static_cast<T>(reference + delta));
     }
 }
+
+void unpack(const char * packed, size_t count, UInt32 bits, UInt32 element_size, UInt64 reference, char * out)
+{
+    switch (element_size)
+    {
+        case 1: unpackAs<UInt8>(packed, count, bits, reference, out); break;
+        case 2: unpackAs<UInt16>(packed, count, bits, reference, out); break;
+        case 4: unpackAs<UInt32>(packed, count, bits, reference, out); break;
+        default: unpackAs<UInt64>(packed, count, bits, reference, out); break;
+    }
+}
+
+struct CompressorDeleter
+{
+    void operator()(libdeflate_gdeflate_compressor * compressor) const { libdeflate_free_gdeflate_compressor(compressor); }
+};
 
 struct DecompressorDeleter
 {
@@ -103,6 +169,15 @@ struct DecompressorDeleter
         libdeflate_free_gdeflate_decompressor(decompressor);
     }
 };
+
+/// Compresses one chunk into `out`, of `maxCompressedChunkBytes`, and returns its compressed size.
+size_t compressChunk(libdeflate_gdeflate_compressor * compressor, const char * chunk, size_t chunk_size, char * out)
+{
+    libdeflate_gdeflate_out_page page{.data = out, .nbytes = maxCompressedChunkBytes()};
+    if (libdeflate_gdeflate_compress(compressor, chunk, chunk_size, &page, 1) == 0)
+        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress a chunk of {} bytes with GDeflate", chunk_size);
+    return page.nbytes;
+}
 
 void decompressChunk(const char * compressed, size_t compressed_size, char * out, size_t out_size)
 {
@@ -126,8 +201,8 @@ void decompressChunk(const char * compressed, size_t compressed_size, char * out
 
 }
 
-CompressionCodecGDeflate::CompressionCodecGDeflate(int algorithm_, UInt8 element_size_, bool is_signed_)
-    : algorithm(algorithm_)
+CompressionCodecGDeflate::CompressionCodecGDeflate(int level_, UInt8 element_size_, bool is_signed_)
+    : level(level_)
     , element_size(element_size_)
     , is_signed(is_signed_)
 {
@@ -140,7 +215,7 @@ uint8_t CompressionCodecGDeflate::getMethodByte() const
 
 ASTPtr CompressionCodecGDeflate::getCodecDescription() const
 {
-    return makeCodecDescription("GDeflate", {make_intrusive<ASTLiteral>(static_cast<UInt64>(algorithm))});
+    return makeCodecDescription("GDeflate", {make_intrusive<ASTLiteral>(static_cast<UInt64>(level))});
 }
 
 void CompressionCodecGDeflate::updateHash(SipHash & hash) const
@@ -150,12 +225,71 @@ void CompressionCodecGDeflate::updateHash(SipHash & hash) const
 
 UInt32 CompressionCodecGDeflate::getMaxCompressedDataSize(UInt32 uncompressed_size) const
 {
-    return static_cast<UInt32>(GPU::gdeflateMaxCompressedBytes(uncompressed_size, algorithm));
+    const size_t num_chunks = numChunks(uncompressed_size);
+    return static_cast<UInt32>(headerBytes(num_chunks, true) + num_chunks * alignUp(maxCompressedChunkBytes()));
 }
 
 UInt32 CompressionCodecGDeflate::doCompressData(const char * source, UInt32 source_size, char * dest) const
 {
-    return static_cast<UInt32>(GPU::gdeflateCompress(source, source_size, dest, algorithm, element_size, is_signed));
+    const size_t num_chunks = numChunks(source_size);
+    /// A block that ends in the middle of an integer is not packed: its chunks do not hold whole integers.
+    const bool packing = isPackedElementSize(element_size) && source_size % element_size == 0;
+    unalignedStoreLittleEndian<UInt32>(dest, static_cast<UInt32>(num_chunks) | (packing ? packed_flag : 0));
+
+    std::unique_ptr<libdeflate_gdeflate_compressor, CompressorDeleter> compressor(
+        libdeflate_alloc_gdeflate_compressor(level));
+    if (!compressor)
+        throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Cannot allocate a GDeflate compressor of level {}", level);
+
+    /// The packed form of a chunk and what it compresses to, kept where it is smaller than the plain one.
+    PODArray<char> packed;
+    PODArray<char> compressed_packed;
+    if (packing)
+    {
+        packed.resize(chunk_bytes + packed_padding);
+        compressed_packed.resize(maxCompressedChunkBytes());
+    }
+
+    size_t at = headerBytes(num_chunks, packing);
+    for (size_t i = 0; i < num_chunks; ++i)
+    {
+        const char * const chunk = source + i * chunk_bytes;
+        const size_t chunk_size = std::min(chunk_bytes, source_size - i * chunk_bytes);
+        size_t compressed_size = compressChunk(compressor.get(), chunk, chunk_size, dest + at);
+
+        PackedChunk packed_chunk;
+        if (packing)
+        {
+            packed_chunk = pack(chunk, chunk_size, element_size, is_signed, packed.data());
+            if (packed_chunk.bits)
+            {
+                const size_t packed_size = compressChunk(
+                    compressor.get(), packed.data(), packedBytes(chunk_size / element_size, packed_chunk.bits), compressed_packed.data());
+                if (packed_size < compressed_size)
+                {
+                    memcpy(dest + at, compressed_packed.data(), packed_size);
+                    compressed_size = packed_size;
+                }
+                else
+                    packed_chunk = {};
+            }
+        }
+
+        char * const descriptor = dest + headerBytes(i, packing);
+        unalignedStoreLittleEndian<UInt32>(descriptor, static_cast<UInt32>(compressed_size));
+        if (packing)
+        {
+            unalignedStoreLittleEndian<UInt8>(descriptor + 4, static_cast<UInt8>(packed_chunk.bits));
+            unalignedStoreLittleEndian<UInt8>(descriptor + 5, element_size);
+            unalignedStoreLittleEndian<UInt16>(descriptor + 6, 0);
+            unalignedStoreLittleEndian<UInt64>(descriptor + 8, packed_chunk.reference);
+        }
+
+        const size_t next = alignUp(at + compressed_size);
+        memset(dest + at + compressed_size, 0, next - at - compressed_size);
+        at = next;
+    }
+    return static_cast<UInt32>(at);
 }
 
 UInt32 CompressionCodecGDeflate::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
@@ -215,7 +349,6 @@ UInt32 CompressionCodecGDeflate::doDecompressData(const char * source, UInt32 so
     return uncompressed_size;
 }
 
-
 namespace
 {
 
@@ -230,7 +363,7 @@ std::pair<UInt8, bool> getPackedTypeInfo(const IDataType * column_type)
         return {0, false};
 
     const size_t size = column_type->getSizeOfValueInMemory();
-    if (size == 1 || size == 2 || size == 4 || size == 8)
+    if (isPackedElementSize(size))
         return {static_cast<UInt8>(size), !column_type->isValueRepresentedByUnsignedInteger()};
     return {0, false};
 }
@@ -242,7 +375,7 @@ void registerCodecGDeflate(CompressionCodecFactory & factory)
     const UInt8 method_code = static_cast<UInt8>(CompressionMethodByte::GDeflate);
     factory.registerCompressionCodecWithType("GDeflate", method_code, [&](const ASTPtr & arguments, const IDataType * column_type) -> CompressionCodecPtr
     {
-        int algorithm = CompressionCodecGDeflate::DEFAULT_ALGORITHM;
+        int level = CompressionCodecGDeflate::DEFAULT_LEVEL;
         if (arguments && !arguments->children.empty())
         {
             if (arguments->children.size() != 1)
@@ -250,20 +383,22 @@ void registerCodecGDeflate(CompressionCodecFactory & factory)
                     ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "GDeflate codec must have 1 parameter, given {}", arguments->children.size());
 
             const auto * literal = arguments->children[0]->as<ASTLiteral>();
-            if (!literal)
-                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "GDeflate codec argument must be integer");
+            if (!literal || literal->value.getType() != Field::Types::UInt64)
+                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "GDeflate codec argument must be a positive integer");
 
             const UInt64 value = literal->value.safeGet<UInt64>();
-            if (value > CompressionCodecGDeflate::MAX_ALGORITHM)
+            if (value < static_cast<UInt64>(CompressionCodecGDeflate::MIN_LEVEL) || value > static_cast<UInt64>(CompressionCodecGDeflate::MAX_LEVEL))
                 throw Exception(
                     ErrorCodes::ILLEGAL_CODEC_PARAMETER,
-                    "GDeflate codec algorithm must be between 0 and {}, given {}",
-                    CompressionCodecGDeflate::MAX_ALGORITHM,
+                    "GDeflate codec level must be between {} and {}, given {}",
+                    CompressionCodecGDeflate::MIN_LEVEL,
+                    CompressionCodecGDeflate::MAX_LEVEL,
                     value);
-            algorithm = static_cast<int>(value);
+            level = static_cast<int>(value);
         }
+
         const auto [element_size, is_signed] = getPackedTypeInfo(column_type);
-        return std::make_shared<CompressionCodecGDeflate>(algorithm, element_size, is_signed);
+        return std::make_shared<CompressionCodecGDeflate>(level, element_size, is_signed);
     });
 }
 
