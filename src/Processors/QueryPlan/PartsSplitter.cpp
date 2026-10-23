@@ -14,6 +14,7 @@
 #include <Interpreters/TreeRewriter.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterSortedStreamByRange.h>
@@ -911,8 +912,13 @@ static ASTs buildFilters(const KeyDescription & primary_key, const std::vector<V
         {
             const auto & type = primary_key.data_types.at(i);
 
-            // PK may contain functions of the table columns, so we need the actual PK AST with all expressions it contains.
-            auto pk_ast = primary_key.expression_list_ast->children.at(i)->clone();
+            // Refer to the key column by name instead of inlining the key AST. `applyRangeFilterFromAST`
+            // composes this predicate with the table's own key expression, so the name resolves to the value
+            // the table computed. Inlining the key AST here and re-resolving it in the query context would
+            // instead give different values for a key expression whose result type depends on a setting
+            // (`CAST(json.b, 'String')` under `cast_keep_nullable`), and rows the table sorted into a layer
+            // would fall out of that layer's filter.
+            ASTPtr pk_ast = make_intrusive<ASTIdentifier>(primary_key.column_names.at(i));
 
             // If PK is nullable, prepend a null mask column for > comparison.
             // Also transform the AST into assumeNotNull(pk) so that the result type is not-nullable.
@@ -1247,6 +1253,7 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
 
     auto split_ranges = splitIntersectingPartsRangesIntoLayers(
         intersecting_parts_ranges, max_layers, primary_key.column_names.size(), in_reverse_order, logger);
+    result.borders = split_ranges.borders;
     result.merging_pipes = readByLayers(std::move(split_ranges), primary_key, create_merging_pipe, context);
     return result;
 }
@@ -1270,9 +1277,35 @@ static void applyRangeFilterFromAST(Pipe & pipe, ASTPtr & filter_function, const
     if (!filter_function || pipe.empty())
         return;
 
-    auto syntax_result = TreeRewriter(context).analyze(filter_function, primary_key.expression->getRequiredColumnsWithTypes());
-    auto actions = ExpressionAnalyzer(filter_function, syntax_result, context).getActionsDAG(false);
+    /// The filter refers to the key columns by name, see `buildFilters`. It is resolved against the key
+    /// sample block and then composed with the table's own key expression, so the values it compares are
+    /// the ones the table computed - the ones the layer borders came from. Inlining the key AST into the
+    /// filter and resolving it with the query's `ExpressionAnalyzer` instead made a key expression whose
+    /// result type depends on a setting a different function: `CAST(json.b, 'String')` is `String` for a
+    /// table created under `cast_keep_nullable = 0` and `Nullable(String)` in a session with
+    /// `cast_keep_nullable = 1`, the row whose `json.b` is missing is `''` for the table and `NULL` for
+    /// the query, and `FilterSortedStreamByRange` dropped it from every layer.
+    ///
+    /// Composing with the key expression - rather than reading the key columns off the stream header -
+    /// is what keeps the two shapes of caller working: `readByLayers` and `MergeTreeFinalMerge` run the
+    /// sorting expression on the pipe first, but the join-by-shards layers of
+    /// `ReadFromMergeTree::readByLayers` are read without it and carry the plain table columns only.
+    /// Either way the key expression needs the same source columns the filter needed before.
+    ///
+    /// The filter is resolved against `column_names` rather than the names of `sample_block`: the latter
+    /// carry the aliases of the key (`PRIMARY KEY (k AS a)` gives `a`), while `column_names` and the
+    /// outputs of `primary_key.expression` are alias-free.
+    NamesAndTypesList key_columns;
+    for (size_t i = 0; i < primary_key.column_names.size(); ++i)
+        key_columns.emplace_back(primary_key.column_names[i], primary_key.data_types.at(i));
+    auto syntax_result = TreeRewriter(context).analyze(filter_function, key_columns);
+    auto filter_actions = ExpressionAnalyzer(filter_function, syntax_result, context).getActionsDAG(false);
+    auto actions = ActionsDAG::merge(primary_key.expression->getActionsDAG().clone(), std::move(filter_actions));
     reorderColumns(actions, pipe.getHeader(), filter_function->getColumnName());
+    /// The key expression computes every key column, but the filter may use only a prefix of them
+    /// (the join-by-shards layers split on the common prefix of the join keys and read only the
+    /// columns of the query). Drop the computations of the rest, so that their source columns are not required.
+    actions.removeUnusedActions();
     ExpressionActionsPtr expression_actions = std::make_shared<ExpressionActions>(std::move(actions));
     pipe.addSimpleTransform(
         [&](const SharedHeader & header)

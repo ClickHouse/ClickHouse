@@ -540,27 +540,20 @@ void stampMTimeAfterReplacedVersion(const String & temp_path, const struct stat 
         static_cast<Int64>(replaced_mtime.tv_nsec));
 }
 
-/// How a completely written temporary file becomes the object.
+/// How a fully written temporary file is published under the target name.
 enum class PublishMode : uint8_t
 {
-    /// Only if the object does not exist (If-None-Match: *).
-    IfNoneMatch,
-    /// Only if the object exists and has the expected etag (If-Match).
-    IfMatch,
-    /// Unconditionally, replacing the object if it exists.
+    /// If-None-Match: `*`.
+    CreateIfAbsent,
+    /// If-Match: the etag of the current version.
+    ReplaceIfMatch,
+    /// Replace whatever is there, but at once, so that a reader sees either the previous version or the new one.
     Replace,
 };
 
 void publishConditionally(const String & temp_path, const String & target_path, PublishMode mode, const std::optional<String> & if_match_etag)
 {
-    if (mode == PublishMode::Replace)
-    {
-        if (0 != ::rename(temp_path.c_str(), target_path.c_str()))
-            ErrnoException::throwFromPath(ErrorCodes::SYSTEM_ERROR, target_path, "Cannot rename {} to {}", temp_path, target_path);
-        return;
-    }
-
-    if (mode == PublishMode::IfNoneMatch)
+    if (mode == PublishMode::CreateIfAbsent)
     {
         if (0 == ::link(temp_path.c_str(), target_path.c_str()))
             return;
@@ -587,6 +580,13 @@ void publishConditionally(const String & temp_path, const String & target_path, 
     struct stat file_stat{};
     if (0 != ::stat(target_path.c_str(), &file_stat))
     {
+        if (errno == ENOENT && mode == PublishMode::Replace)
+        {
+            if (0 != ::rename(temp_path.c_str(), target_path.c_str()))
+                ErrnoException::throwFromPath(ErrorCodes::SYSTEM_ERROR, target_path, "Cannot rename {} to {}", temp_path, target_path);
+            return;
+        }
+
         if (errno == ENOENT)
             throw Exception(
                 ErrorCodes::STALE_VERSION,
@@ -596,7 +596,7 @@ void publishConditionally(const String & temp_path, const String & target_path, 
         ErrnoException::throwFromPath(ErrorCodes::CANNOT_STAT, target_path, "Cannot stat file {}", target_path);
     }
 
-    if (auto etag = makeETag(file_stat); etag != *if_match_etag)
+    if (auto etag = makeETag(file_stat); mode == PublishMode::ReplaceIfMatch && etag != *if_match_etag)
         throw Exception(
             ErrorCodes::STALE_VERSION,
             "Object {} was modified concurrently (etag {}, expected {}), PreconditionFailed for If-Match",
@@ -755,11 +755,11 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
         std::optional<String> if_match_etag;
         if (!if_match.empty())
         {
-            publish_mode = PublishMode::IfMatch;
+            publish_mode = PublishMode::ReplaceIfMatch;
             if_match_etag = if_match;
         }
         else if (!if_none_match.empty())
-            publish_mode = PublishMode::IfNoneMatch;
+            publish_mode = PublishMode::CreateIfAbsent;
 
         /// Both filenames have to come out of `resolved_path`, exactly like the
         /// direct write below: a key relative to `settings.key_prefix` would
