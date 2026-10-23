@@ -46,7 +46,8 @@ namespace
 {
 
 /// Collects the identifiers on the right-hand side of `IN` which name an argument of an enclosing lambda,
-/// e.g. `z` in `arrayCount(z -> a IN z, arrs)`. Such an identifier is an array, not a table.
+/// e.g. `z` in `arrayCount(z -> a IN z, arrs)`, or a field of such an argument, e.g. `z.v` in
+/// `arrayCount(z -> a IN z.v, arrs)`. Such an identifier is an array, not a table.
 void collectInLambdaArgumentIdentifiers(
     const IAST & ast, std::vector<String> & lambda_arguments, std::unordered_set<const IAST *> & result)
 {
@@ -73,7 +74,7 @@ void collectInLambdaArgumentIdentifiers(
     {
         const auto & rhs = func->arguments->children[1];
         if (const auto * rhs_identifier = rhs->as<ASTIdentifier>(); rhs_identifier && !rhs->as<ASTTableIdentifier>()
-            && std::find(lambda_arguments.begin(), lambda_arguments.end(), rhs_identifier->name()) != lambda_arguments.end())
+            && std::find(lambda_arguments.begin(), lambda_arguments.end(), rhs_identifier->name_parts.front()) != lambda_arguments.end())
             result.insert(rhs.get());
     }
 
