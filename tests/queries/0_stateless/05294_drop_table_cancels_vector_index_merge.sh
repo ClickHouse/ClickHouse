@@ -35,13 +35,17 @@ for _ in {1..600}; do
     sleep 0.1
 done
 
+# DROP TABLE SYNC also waits for the server-wide queue of dropped tables, which a concurrent drop of another table
+# can hold for a long time, so time only the cancellation of the merge: the OPTIMIZE that runs it returns then.
 start=$(date +%s)
-$CLICKHOUSE_CLIENT -q "DROP TABLE tab SYNC"
-elapsed=$(( $(date +%s) - start ))
+$CLICKHOUSE_CLIENT -q "DROP TABLE tab SYNC" &
+drop_pid=$!
 wait $optimize_pid
+elapsed=$(( $(date +%s) - start ))
+wait $drop_pid
 
 if [ "$elapsed" -lt 30 ]; then
     echo "OK"
 else
-    echo "DROP TABLE took $elapsed seconds"
+    echo "Cancelling the merge took $elapsed seconds"
 fi
