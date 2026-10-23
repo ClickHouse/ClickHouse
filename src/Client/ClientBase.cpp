@@ -5466,6 +5466,13 @@ void ClientBase::runInteractive()
                 next_query_to_prepopulate.clear();
             }
 
+            if (on_waiting_for_query_input)
+                on_waiting_for_query_input(true);
+            SCOPE_EXIT_SAFE({
+                if (on_waiting_for_query_input)
+                    on_waiting_for_query_input(false);
+            });
+
             input = lr->readLine(getPrompt(), ":-] ");
         }
 
