@@ -3875,8 +3875,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     /// JOIN - answers `true` here as well, and skipping would leave it reading every mark with nobody to
     /// narrow it. Such a read has to analyze itself in any case: an analysis made on the initiator names
     /// the initiator's parts, which are not the parts this replica reads.
-    /// The analysis on the initiator is done by its local plan, so without one (`parallel_replicas_prefer_local_replica = 0`,
-    /// or parallel replicas inside a `Distributed` subquery) no replica analyzes and the coordinator has only whole parts.
+    /// The initiator must also run a local plan: without one nobody analyzes the indexes or checks the
+    /// partition limit for the followers.
     if (context_->canUseParallelReplicasOnFollower() && is_parallel_reading_from_replicas_
         && ClusterProxy::canUseLocalPlanForParallelReplicas(context_)
         && settings[Setting::parallel_replicas_index_analysis_only_on_coordinator]
