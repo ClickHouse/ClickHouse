@@ -2098,7 +2098,34 @@ void InterpreterCreateQuery::resolveHierarchicalNames(ASTCreateQuery & create, b
     /// (possibly `a.b`): the names inside the query (the `SELECT` of a view) are relative to it.
     StorageID as_written(create.database ? create.getDatabase() : "", create.getTable());
     std::optional<StorageID> placement;
-    if (is_on_cluster)
+
+    /// A short `ATTACH TABLE a.b.c` attaches an existing (detached) table: the name is resolved against the stored
+    /// definitions, like a reference to an existing table, and not by the rule for creating a new one. The namespace
+    /// of the table (`b.*` of the database `a`) may have no attached tables while it is detached.
+    /// A name with a single candidate takes the same code path as before.
+    bool is_short_attach = create.attach && (!create.storage || !create.storage->engine) && !create.columns_list;
+    if (is_short_attach)
+    {
+        auto candidates = DatabaseCatalog::getHierarchicalNameCandidates(as_written, current_database);
+        if (candidates.size() > 1)
+        {
+            for (const auto & candidate : candidates)
+            {
+                auto database = catalog.tryGetDatabase(candidate.database_name);
+                if (database && database->tryGetCreateTableQuery(candidate.table_name, getContext()))
+                {
+                    placement = candidate;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (placement)
+    {
+        /// Already resolved: the stored definition of the attached table.
+    }
+    else if (is_on_cluster)
     {
         /// The database may exist on the other hosts of the cluster only: then the name is shipped as written, and every
         /// host resolves it against its own catalog.
