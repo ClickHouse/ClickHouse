@@ -1,0 +1,1 @@
+CREATE USER test_user IDENTIFIED WITH no_password HOST IP \'::0.0.0.6\', \'::0.1.2.3\', \'::ffff:0.0.0.6\', \'::ffff:0.0.0.0\', \'::1.2.3.4\'

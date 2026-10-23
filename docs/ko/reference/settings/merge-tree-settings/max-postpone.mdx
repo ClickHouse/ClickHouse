@@ -13,37 +13,29 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이러한 설정은 [system.merge&#95;tree&#95;settings](/ko/reference/system-tables/merge_tree_settings)에서 확인할 수 있으며, ClickHouse 소스에서 자동으로 생성됩니다.
 
-<div id="max_postpone_time_for_failed_mutations_ms">
-  ## max_postpone_time_for_failed_mutations_ms
-</div>
+## max_postpone_time_for_failed_mutations_ms {#max_postpone_time_for_failed_mutations_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="300000" />
 
-Failed 상태의 뮤테이션에 대한 최대 연기 시간입니다.
+동일한 데이터 파트(data part)에서 실패한 뮤테이션을 재시도하기 전에 적용되는 최대 지수 백오프(exponential backoff) 시간(밀리초)입니다. 실패가 반복될수록 지연 시간이 늘어나지만 이 값을 넘지는 않습니다. 연기 없이 바로 재시도하려면 `0`으로 설정하십시오.
 
-<div id="max_postpone_time_for_failed_replicated_fetches_ms">
-  ## max_postpone_time_for_failed_replicated_fetches_ms
-</div>
+## max_postpone_time_for_failed_replicated_fetches_ms {#max_postpone_time_for_failed_replicated_fetches_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="60000" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "60000"},{"label": "복제 큐에서 fetch 작업을 연기할 수 있도록 하는 새로운 설정이 추가되었습니다."}]}]} />
 
-실패한 복제 fetch의 최대 연기 시간입니다.
+`ReplicatedMergeTree` 복제 큐에서 실패한 `GET_PART` 작업을 재시도하기 전에 적용되는 최대 지수 백오프 시간(밀리초)입니다. 지연 시간은 실패가 반복될수록 늘어나며, 최대 이 값까지 증가합니다. 연기를 비활성화하려면 `0`으로 설정하십시오.
 
-<div id="max_postpone_time_for_failed_replicated_merges_ms">
-  ## max_postpone_time_for_failed_replicated_merges_ms
-</div>
+## max_postpone_time_for_failed_replicated_merges_ms {#max_postpone_time_for_failed_replicated_merges_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="60000" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "60000"},{"label": "복제 큐에서 머지 작업을 연기할 수 있도록 새로운 설정이 추가되었습니다."}]}]} />
 
-실패한 복제 머지의 최대 연기 시간입니다.
+`ReplicatedMergeTree` 복제 큐에서 실패한 `MERGE_PARTS` 작업을 재시도하기 전까지 대기하는 최대 지수 백오프 시간(밀리초)입니다. 실패가 반복될수록 지연 시간이 늘어나며, 최대 이 값까지 증가합니다. 연기를 비활성화하려면 `0`으로 설정하십시오.
 
-<div id="max_postpone_time_for_failed_replicated_tasks_ms">
-  ## max_postpone_time_for_failed_replicated_tasks_ms
-</div>
+## max_postpone_time_for_failed_replicated_tasks_ms {#max_postpone_time_for_failed_replicated_tasks_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="300000" />
 

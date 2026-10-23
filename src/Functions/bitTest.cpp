@@ -20,6 +20,12 @@ struct BitTestImpl
     using ResultType = UInt8;
     static const constexpr bool allow_fixed_string = false;
     static const constexpr bool allow_string_integer = false;
+    /// Documentation-only: the legacy validator stays authoritative, including
+    /// the `IPv4`/`IPv6` casts the DSL can't express yet; see `bitAnd.cpp`.
+    static constexpr auto signature_documentation =
+        /// Float arguments are rejected by the runtime (`valid_on_float_arguments=false`);
+        /// see the matching comment in `bitAnd.cpp`.
+        "(Integer, NativeInteger) -> UInt8";
 
     template <typename Result = ResultType>
     static Result apply(A a [[maybe_unused]], B b [[maybe_unused]])
