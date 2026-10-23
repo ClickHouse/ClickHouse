@@ -104,7 +104,7 @@ SELECT 'short needle', arraySort(groupArray(id)) FROM tab WHERE position(message
 SELECT 'short needle', arraySort(groupArray(id)) FROM tab WHERE position(message, 'bar') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
 SELECT 'short needle', arraySort(groupArray(id)) FROM tab WHERE position(message, 'bar') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
 
--- A needle with 'k' uses the index: these functions fold ASCII letters only, unlike ILIKE.
+-- A needle with 'k' uses the index.
 SELECT 'case-insensitive with k', arraySort(groupArray(id)) FROM tab WHERE positionCaseInsensitive(message, 'KELVIN') > 0 SETTINGS use_skip_indexes = 0;
 SELECT 'case-insensitive with k', arraySort(groupArray(id)) FROM tab WHERE positionCaseInsensitive(message, 'KELVIN') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
 SELECT 'case-insensitive with k', arraySort(groupArray(id)) FROM tab WHERE positionCaseInsensitive(message, 'KELVIN') > 0 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
@@ -217,7 +217,7 @@ FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE position(message, 'lpha'
 SELECT countIf(explain LIKE '%\_\_text\_index\_%') > 0, countIf(explain LIKE '%FUNCTION position(%') > 0
 FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE position(message, 'foo bar baz') > 0);
 
--- A needle with 'k': the ASCII-only function is answered by the index, the UTF-8 one is not.
+-- A needle with 'k': both functions are answered by the index.
 SELECT countIf(explain LIKE '%\_\_text\_index\_%') > 0, countIf(explain LIKE '%FUNCTION positionCaseInsensitive(%') > 0
 FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE positionCaseInsensitive(message, 'KELVIN') > 0);
 
@@ -241,7 +241,7 @@ ENGINE = MergeTree
 ORDER BY id
 SETTINGS index_granularity = 1;
 
--- Row 3 starts with U+212A, the Kelvin sign, which ILIKE and the UTF-8 functions match with 'k'.
+-- Row 3 starts with U+212A, the Kelvin sign.
 INSERT INTO tab VALUES (1, 'kelvin scale'), (2, 'KELVIN SCALE'), (3, '\xE2\x84\xAAelvin scale'), (4, 'zz');
 
 SELECT 'kelvin sign', arraySort(groupArray(id)) FROM tab WHERE positionCaseInsensitive(message, 'kelvin') > 0 SETTINGS use_skip_indexes = 0;

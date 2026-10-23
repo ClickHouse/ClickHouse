@@ -115,7 +115,7 @@ Granules: 2/15
 1	0
 1	1
 1	0
-0
+1
 0
 -- The ASCII-only functions do not fold the Kelvin sign to k
 kelvin sign	[1,2]
