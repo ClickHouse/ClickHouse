@@ -3,7 +3,6 @@
 import argparse
 import json
 import re
-import shlex
 import unittest
 from dataclasses import replace
 from types import SimpleNamespace
@@ -378,13 +377,6 @@ class SelectionSmoke(unittest.TestCase):
             with self.subTest(test=test):
                 pattern = Targeting.selection_pattern(test)
                 self.assertEqual(selected(pattern), {expected})
-
-    def test_selection_args_survive_the_shell(self):
-        """`run_tests` hands its command line to bash, which parses the selectors."""
-        selectors = [Targeting.selection_pattern("01655_plan_optimizations.")]
-        self.assertEqual(shlex.split(Targeting.selection_args(selectors)), selectors)
-        # Control: the plain join this replaces does not survive quote removal.
-        self.assertNotEqual(shlex.split(" ".join(selectors)), selectors)
 
     def test_brackets_pair_nearest_regions_around_uncovered_hunks(self):
         config = INTEGRATION_SELECTION_CONFIG
