@@ -358,6 +358,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
                 DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
             }
 
+            context_->onQueryExecutionStarted();
             table->flushAndShutdown();
             TableExclusiveLockHolder table_lock;
 
@@ -414,6 +415,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             if (database->getUUID() != UUIDHelpers::Nil && table_shared_lock && table->supportsReplication())
                 ddl_guard.reset();
 
+            context_->onQueryExecutionStarted();
             /// Drop table data, don't touch metadata
             table->truncate(current_query_ptr, metadata_snapshot, context_, table_excl_lock);
         }
@@ -436,6 +438,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];
             DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
 
+            context_->onQueryExecutionStarted();
             table->flushAndShutdown(true);
 
             TableExclusiveLockHolder table_lock;
@@ -584,6 +587,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             tryLogCurrentException("InterpreterDropQuery", "Async loading failed", LogsLevel::warning);
     }
 
+    getContext()->onQueryExecutionStarted();
     if (!truncate && database->hasReplicationThread())
         database->stopReplication();
 

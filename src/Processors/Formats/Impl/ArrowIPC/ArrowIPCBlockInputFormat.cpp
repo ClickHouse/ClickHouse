@@ -448,7 +448,7 @@ void ArrowIPCBlockInputFormat::prepareStreamReader()
     if (msg.header->header_type() != ArrowIPC::flatbuf::MessageHeader_Schema)
         throw Exception(ErrorCodes::INCORRECT_DATA, "The first Arrow IPC message must be the schema");
 
-    arrow_schema = ArrowIPC::parseSchema(*msg.header->header_as_Schema());
+    arrow_schema = ArrowIPC::parseSchema(*msg.header->header_as_Schema(), msg.header->version());
     /// The schema message has no body, but be defensive in case a producer emits a (zero-length) one.
     message_reader->skipBody(msg.body_length);
 }
@@ -1332,6 +1332,7 @@ The table below shows the supported data types and how they correspond to ClickH
 | `FIXED_SIZE_BINARY`, `BINARY`           | [Int128/UInt128/Int256/UInt256](/reference/data-types/int-uint)                             | `FIXED_SIZE_BINARY`        |
 | `DURATION`                              | [Interval](/reference/data-types/special-data-types/interval) (Nanosecond/Microsecond/Millisecond/Second) | `DURATION`    |
 | `INT64`                                 | [Interval](/reference/data-types/special-data-types/interval) (Minute/Hour/Day/Week/Month/Quarter/Year) | `INT64`         |
+| `INTERVAL`                              | [Interval](/reference/data-types/special-data-types/interval) (Month), or a [Tuple](/reference/data-types/tuple) of intervals for `DAY_TIME` and `MONTH_DAY_NANO` | `INT64`, `STRUCT` |
 
 Arrays can be nested and can have a value of the `Nullable` type as an argument. `Tuple` and `Map` types can also be nested.
 

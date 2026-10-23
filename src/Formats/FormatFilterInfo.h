@@ -173,6 +173,9 @@ struct FormatFilterInfo
 
     /// Output columns are consumed only by `min` / `max`: the format may return any rows with the same per-column min and max.
     bool min_max_from_statistics = false;
+
+    /// The caller calls `IInputFormat::cacheFilterColumnStatistics` after reading a file.
+    bool keep_filter_column_statistics = false;
 private:
     /// For lazily initializing the fields above.
     std::once_flag init_flag;
