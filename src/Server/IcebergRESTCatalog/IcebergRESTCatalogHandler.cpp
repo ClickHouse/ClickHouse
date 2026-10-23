@@ -172,7 +172,7 @@ Poco::JSON::Object tableIdentifierToJSON(const IcebergNamespaceName & ns, const 
 
 }
 
-IcebergRESTCatalogHandler::IcebergRESTCatalogHandler(IServer & server_, IcebergRESTCatalogWarehousesPtr warehouses_)
+IcebergRESTCatalogHandler::IcebergRESTCatalogHandler(IServer & server_, IcebergRESTCatalogWarehouseRegistryPtr warehouses_)
     : log(getLogger("IcebergRESTCatalogHandler"))
     , server(server_)
     , warehouses(std::move(warehouses_))

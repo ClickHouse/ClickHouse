@@ -16,20 +16,25 @@ from pyiceberg.types import LongType, NestedField, StringType
 
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_access_key, minio_secret_key
+from test_storage_s3.test_sts import run_s3_mocks
 
 cluster = ClickHouseCluster(__file__)
+
+# Ambient credentials of the server. Only the STS call is signed with them.
+AWS_ENV = {"AWS_ACCESS_KEY_ID": "aws", "AWS_SECRET_ACCESS_KEY": "aws123"}
 
 node = cluster.add_instance(
     "node",
     main_configs=[
         "configs/iceberg_rest_catalog.xml",
-        "configs/named_collections.xml",
+        "configs/s3.xml",
         "configs/ssl_conf.xml",
         "configs/server.crt",
         "configs/server.key",
         "configs/dhparam.pem",
     ],
     user_configs=["configs/users.xml"],
+    env_variables=AWS_ENV,
     with_minio=True,
     with_zookeeper=True,
     stay_alive=True,
@@ -40,20 +45,40 @@ node_aux = cluster.add_instance(
     main_configs=[
         "configs/iceberg_rest_catalog_aux.xml",
         "configs/auxiliary_zookeeper.xml",
-        "configs/named_collections.xml",
+        "configs/s3.xml",
     ],
+    env_variables=AWS_ENV,
     with_minio=True,
     with_zookeeper=True,
 )
+
+# Mock STS. It hands out the MinIO credentials when the session name and external id match.
+sts = cluster.add_instance(
+    name="sts.amazonaws.com",
+    hostname="sts.amazonaws.com",
+    image="clickhouse/python-bottle",
+    tag="latest",
+    stay_alive=True,
+)
+sts.stop_clickhouse(kill=True)
 
 DEFAULT_AUTH = ("default", "")
 
 CATALOG_PORT = 8182
 CATALOG_SECURE_PORT = 8183
-KEEPER_ROOT = "/clickhouse/iceberg_rest_catalog/my_warehouse"
-FORMAT_MARKER = b"IcebergRESTCatalog\nformat_version: 1"
+KEEPER_PARENT = "/clickhouse/iceberg_rest_catalog"
+KEEPER_ROOT = f"{KEEPER_PARENT}/my_warehouse"
+FORMAT = "IcebergRESTCatalog\nformat_version: 2"
 BUCKET = "warehouse"
 BASE_LOCATION = f"s3://{BUCKET}/my_warehouse"
+ROLE_SESSION_NAME = "miniorole"
+EXTERNAL_ID = "miniexternalid"
+CREDENTIAL = {
+    "type": "aws_role",
+    "role_arn": "arn:aws:iam::123456789012:role/warehouse",
+    "external_id": EXTERNAL_ID,
+    "role_session_name": ROLE_SESSION_NAME,
+}
 
 # Iceberg JSON schema as a client sends it in CreateTableRequest.
 DEFAULT_SCHEMA = {
@@ -78,13 +103,30 @@ def wait_catalog_ready(timeout=60, instance=None):
     raise AssertionError("Catalog port did not start accepting connections")
 
 
+def warehouse_definition(base_location, credential=CREDENTIAL):
+    return {"format": FORMAT, "base_location": base_location, "credential": credential}
+
+
+# TODO: Replace with `POST /management/v1/warehouses` when the management API lands.
+def create_warehouse_in_keeper(name, base_location, keeper_parent=KEEPER_PARENT, credential=CREDENTIAL):
+    path = f"{keeper_parent}/{name}"
+    zk = get_keeper()
+    zk.create(path, json.dumps(warehouse_definition(base_location, credential)).encode(), makepath=True)
+    zk.create(f"{path}/namespaces")
+    return path
+
+
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
         cluster.start()
+        run_s3_mocks(cluster, [ROLE_SESSION_NAME, EXTERNAL_ID])
         get_keeper().ensure_path("/aux_root")
         if not cluster.minio_client.bucket_exists(BUCKET):
             cluster.minio_client.make_bucket(BUCKET)
+        create_warehouse_in_keeper("my_warehouse", BASE_LOCATION)
+        # The aux Keeper is chrooted to /aux_root. A bucket root with a trailing slash as the base location.
+        create_warehouse_in_keeper("my_warehouse", f"s3://{BUCKET}/", keeper_parent=f"/aux_root{KEEPER_PARENT}")
         wait_catalog_ready()
         wait_catalog_ready(instance=node_aux)
         yield cluster
@@ -572,7 +614,7 @@ def test_keeper_layout(started_cluster):
     result = create_table(f"{ns}\x1feu-west", "my.table").json()
 
     zk = get_keeper()
-    assert zk.get(KEEPER_ROOT)[0] == FORMAT_MARKER
+    assert json.loads(zk.get(KEEPER_ROOT)[0]) == warehouse_definition(BASE_LOCATION)
 
     # Levels are escaped like file names, so the tree stays walkable with a Keeper client.
     escaped = ns.replace("-", "%2D")
@@ -878,10 +920,10 @@ def test_slash_at_name_edge_does_not_retarget(started_cluster):
 
 def test_unsupported_format_is_refused(started_cluster):
     zk = get_keeper()
-    zk.set(KEEPER_ROOT, b"IcebergRESTCatalog\nformat_version: 999")
+    definition = warehouse_definition(BASE_LOCATION)
+    zk.set(KEEPER_ROOT, json.dumps({**definition, "format": "IcebergRESTCatalog\nformat_version: 999"}).encode())
     try:
-        # The marker is checked when a new Keeper session is opened.
-        restart_node()
+        # The definition is re-read when the node changes, no restart needed.
         for _ in range(2):
             response = catalog_request(
                 "GET", "/v1/my_warehouse/namespaces", expected_code=500
@@ -889,15 +931,50 @@ def test_unsupported_format_is_refused(started_cluster):
             assert_error_shape(response, "InternalServerError")
         assert node.contains_in_log("has an unsupported format")
     finally:
-        zk.set(KEEPER_ROOT, FORMAT_MARKER)
-        restart_node()
+        zk.set(KEEPER_ROOT, json.dumps(definition).encode())
 
     list_namespaces()
 
 
+def test_warehouse_discovery(started_cluster):
+    name = f"fresh_{uuid.uuid4().hex[:8]}"
+    catalog_request("GET", "/v1/config", params={"warehouse": name}, expected_code=404)
+
+    # A warehouse written to Keeper is served on the next request, on every server.
+    path = create_warehouse_in_keeper(name, f"s3://{BUCKET}/{name}")
+    response = catalog_request("GET", "/v1/config", params={"warehouse": name})
+    assert response.json()["overrides"]["prefix"] == name
+    namespaces_url = f"/v1/{name}/namespaces"
+    catalog_request("POST", namespaces_url, json={"namespace": ["ns"]})
+    result = catalog_request("POST", f"{namespaces_url}/ns/tables", json={"name": "t", "schema": DEFAULT_SCHEMA}).json()
+    assert result["metadata"]["location"].startswith(f"s3://{BUCKET}/{name}/ns/t-")
+
+    get_keeper().delete(path, recursive=True)
+    catalog_request("GET", "/v1/config", params={"warehouse": name}, expected_code=404)
+    response = catalog_request("GET", namespaces_url, expected_code=404)
+    assert_error_shape(response, "NotFoundException")
+
+
+def test_warehouse_role_is_used(started_cluster):
+    # The mock STS returns bad keys for an unknown session name, so S3 refuses the write.
+    name = f"badrole_{uuid.uuid4().hex[:8]}"
+    credential = {**CREDENTIAL, "role_session_name": "unknown"}
+    path = create_warehouse_in_keeper(name, f"s3://{BUCKET}/{name}", credential=credential)
+    try:
+        namespaces_url = f"/v1/{name}/namespaces"
+        catalog_request("POST", namespaces_url, json={"namespace": ["ns"]})
+        response = catalog_request(
+            "POST", f"{namespaces_url}/ns/tables", json={"name": "t", "schema": DEFAULT_SCHEMA}, expected_code=500
+        )
+        assert_error_shape(response, "InternalServerError")
+        assert list(cluster.minio_client.list_objects(BUCKET, f"{name}/", recursive=True)) == []
+    finally:
+        get_keeper().delete(path, recursive=True)
+
+
 def test_bucket_root_base_location(started_cluster):
-    # node_aux is configured with `s3://warehouse/`, the bucket root with a trailing slash.
-    # The server accepted that config at startup. Tables land directly under the bucket.
+    # The warehouse of node_aux has `s3://warehouse/` as the base location, the bucket root with a trailing slash.
+    # Tables land directly under the bucket.
     ns = f"root_{uuid.uuid4().hex[:8]}"
     ns_url = catalog_url("/v1/my_warehouse/namespaces", node_aux)
     assert requests.post(ns_url, json={"namespace": [ns]}).status_code == 200

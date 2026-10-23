@@ -1,0 +1,12 @@
+<clickhouse>
+    <!-- The server signs the STS AssumeRole call with these ambient credentials, then uses the assumed role for S3. -->
+    <s3>
+        <use_environment_credentials>1</use_environment_credentials>
+    </s3>
+    <!-- Warehouse locations are s3:// URIs. Route them to MinIO instead of AWS. -->
+    <url_scheme_mappers>
+        <s3>
+            <to>http://minio1:9001/{bucket}</to>
+        </s3>
+    </url_scheme_mappers>
+</clickhouse>
