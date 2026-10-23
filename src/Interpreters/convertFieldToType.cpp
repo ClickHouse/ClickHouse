@@ -48,6 +48,7 @@ namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
+    extern const int BAD_ARGUMENTS;
     extern const int DECIMAL_OVERFLOW;
     extern const int LOGICAL_ERROR;
     extern const int TYPE_MISMATCH;
@@ -484,6 +485,39 @@ const IDataType * removeNullableAndLowCardinalityFromHint(const IDataType * from
     return unwrapped_hint;
 }
 
+/// The type, `UUID` or `UUID2`, of a `Field::UUID` value of the source type `hint`, or nothing if the hint does not tell.
+/// A `Variant` value loses its discriminator when it becomes a `Field`, so the layout of the value is known only if
+/// the `Variant` has a single alternative of these types; with both of them the value is ambiguous.
+std::optional<TypeIndex> getUUIDSourceType(const IDataType * hint)
+{
+    hint = removeNullableAndLowCardinalityFromHint(hint);
+    if (!hint)
+        return {};
+
+    const WhichDataType which(*hint);
+    if (which.isUUID() || which.isUUID2())
+        return which.idx;
+
+    if (const auto * variant_hint = typeid_cast<const DataTypeVariant *>(hint))
+    {
+        std::optional<TypeIndex> res;
+        for (const auto & alternative : variant_hint->getVariants())
+        {
+            auto alternative_type = getUUIDSourceType(alternative.get());
+            if (!alternative_type)
+                continue;
+            if (res && *res != *alternative_type)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot convert a UUID value of type {}: it is not known whether the value is a UUID or a UUID2",
+                    hint->getName());
+            res = alternative_type;
+        }
+        return res;
+    }
+
+    return {};
+}
+
 /// `FieldVisitorToString` does not know the type and formats a `Field::UUID` with the historical `UUID` layout.
 /// Bring the `UUID2` leaves of `src` (of type `src_type`) to that layout, so that the text keeps the identifier.
 Field uuid2LeavesToUUIDLayout(const Field & src, const IDataType & src_type)
@@ -492,8 +526,12 @@ Field uuid2LeavesToUUIDLayout(const Field & src, const IDataType & src_type)
     if (src.isNull() || !unwrapped_type)
         return src;
 
-    if (WhichDataType(*unwrapped_type).isUUID2() && src.getType() == Field::Types::UUID)
-        return UUIDHelpers::swapHalves(src.safeGet<UUID>());
+    if (src.getType() == Field::Types::UUID)
+    {
+        if (getUUIDSourceType(unwrapped_type) == TypeIndex::UUID2)
+            return UUIDHelpers::swapHalves(src.safeGet<UUID>());
+        return src;
+    }
 
     if (const auto * array_type = typeid_cast<const DataTypeArray *>(unwrapped_type); array_type && src.getType() == Field::Types::Array)
     {
@@ -1169,10 +1207,9 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         /// while `UUID2` keeps the big-endian, correctly-sorting one. When the source constant came from the other
         /// type - which we can tell only from `from_type_hint` - swap the halves so the value matches the destination
         /// encoding; otherwise (same type, or no hint) it is expected to be already in the needed layout.
-        WhichDataType which_unwrapped_from_type;
-        if (const auto * unwrapped_hint = removeNullableAndLowCardinalityFromHint(from_type_hint))
-            which_unwrapped_from_type = WhichDataType(*unwrapped_hint);
-        if ((which_type.isUUID() && which_unwrapped_from_type.isUUID2()) || (which_type.isUUID2() && which_unwrapped_from_type.isUUID()))
+        /// A `Variant` source tells the type by its single `UUID` or `UUID2` alternative.
+        const auto source_type = getUUIDSourceType(from_type_hint);
+        if ((which_type.isUUID() && source_type == TypeIndex::UUID2) || (which_type.isUUID2() && source_type == TypeIndex::UUID))
             return UUIDHelpers::swapHalves(src.safeGet<UUID>());
         return src;
     }
