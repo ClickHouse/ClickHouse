@@ -10,6 +10,7 @@
 #include <IO/Operators.h>
 #include <Interpreters/ClientInfo.h>
 #include <base/getThreadId.h>
+#include <base/scope_guard.h>
 #include <Common/Hex.h>
 
 namespace DB
@@ -89,6 +90,9 @@ MultiplexedConnections::MultiplexedConnections(
 
 void MultiplexedConnections::sendScalarsData(Scalars & data)
 {
+    send_in_progress = true;
+    SCOPE_EXIT({ send_in_progress = false; });
+
     if (!sent_query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send scalars data: query not yet sent.");
 
@@ -102,6 +106,9 @@ void MultiplexedConnections::sendScalarsData(Scalars & data)
 
 void MultiplexedConnections::sendQueryPlan(const QueryPlan & query_plan)
 {
+    send_in_progress = true;
+    SCOPE_EXIT({ send_in_progress = false; });
+
     if (!sent_query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send query plan: query not yet sent.");
 
@@ -126,6 +133,9 @@ bool MultiplexedConnections::supportsQueryPlanSerializationVersion(UInt64 versio
 
 void MultiplexedConnections::sendExternalTablesData(std::vector<ExternalTablesData> & data)
 {
+    send_in_progress = true;
+    SCOPE_EXIT({ send_in_progress = false; });
+
     if (!sent_query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send external tables data: query not yet sent.");
 
@@ -153,6 +163,9 @@ void MultiplexedConnections::sendQuery(
     bool with_pending_data,
     const std::vector<String> & external_roles)
 {
+    send_in_progress = true;
+    SCOPE_EXIT({ send_in_progress = false; });
+
     if (sent_query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query already sent.");
 
@@ -280,6 +293,8 @@ void MultiplexedConnections::disconnect()
 
 void MultiplexedConnections::sendCancel()
 {
+    chassert(!send_in_progress);
+
     std::lock_guard lock(cancel_mutex);
 
     if (!sent_query || cancelled)

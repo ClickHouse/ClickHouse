@@ -1,6 +1,7 @@
 #pragma once
 #if defined(OS_LINUX) || defined(OS_DARWIN)
 
+#include <atomic>
 #include <functional>
 #include <queue>
 #include <optional>
@@ -223,6 +224,7 @@ private:
     ThrottlerPtr throttler;
     bool sent_query = false;
     bool cancelled = false;
+    std::atomic<bool> send_in_progress = false;
 
     ReplicaInfo replica_info;
 

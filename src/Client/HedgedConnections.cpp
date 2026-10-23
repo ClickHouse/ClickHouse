@@ -9,6 +9,7 @@
 #include <Core/ProtocolDefines.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
+#include <base/scope_guard.h>
 
 namespace ProfileEvents
 {
@@ -104,6 +105,9 @@ void HedgedConnections::Pipeline::run(ReplicaState & replica)
 
 void HedgedConnections::sendScalarsData(Scalars & data)
 {
+    send_in_progress = true;
+    SCOPE_EXIT({ send_in_progress = false; });
+
     if (!sent_query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send scalars data: query not yet sent.");
 
@@ -119,6 +123,9 @@ void HedgedConnections::sendScalarsData(Scalars & data)
 
 void HedgedConnections::sendQueryPlan(const QueryPlan & query_plan)
 {
+    send_in_progress = true;
+    SCOPE_EXIT({ send_in_progress = false; });
+
     if (!sent_query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send query plan: query not yet sent.");
 
@@ -155,6 +162,9 @@ bool HedgedConnections::supportsQueryPlanSerializationVersion(UInt64 version) co
 
 void HedgedConnections::sendExternalTablesData(std::vector<ExternalTablesData> & data)
 {
+    send_in_progress = true;
+    SCOPE_EXIT({ send_in_progress = false; });
+
     if (!sent_query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send external tables data: query not yet sent.");
 
@@ -184,6 +194,9 @@ void HedgedConnections::sendQuery(
     bool with_pending_data,
     const std::vector<String> & external_roles)
 {
+    send_in_progress = true;
+    SCOPE_EXIT({ send_in_progress = false; });
+
     if (sent_query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query already sent.");
 
@@ -318,6 +331,8 @@ std::string HedgedConnections::dumpAddresses() const
 
 void HedgedConnections::sendCancel()
 {
+    chassert(!send_in_progress);
+
     std::lock_guard lock(cancel_mutex);
 
     if (!sent_query || cancelled)

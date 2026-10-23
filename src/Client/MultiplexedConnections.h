@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <mutex>
 #include <Common/Throttler.h>
 #include <Client/Connection.h>
@@ -106,6 +107,7 @@ private:
 
     bool sent_query = false;
     bool cancelled = false;
+    std::atomic<bool> send_in_progress = false;
 
     /// std::nullopt if parallel reading from replicas is not used
     std::optional<ReplicaInfo> replica_info;
@@ -115,11 +117,7 @@ private:
     size_t distributed_fanout = 0;
 
     /// A mutex for the sendCancel function to execute safely in separate thread.
-    /// It does not cover sending the query, scalars, external tables and the query plan:
-    /// the caller serializes those against sendCancel.
     mutable std::mutex cancel_mutex;
-
-    friend struct RemoteQueryExecutorRoutine;
 };
 
 }

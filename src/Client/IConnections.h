@@ -12,6 +12,9 @@ struct ClusterFunctionReadTaskResponse;
 class IConnections : boost::noncopyable
 {
 public:
+    /// `sendQuery`, `sendScalarsData`, `sendExternalTablesData` and `sendQueryPlan` are not
+    /// synchronized with `sendCancel`: the caller must not cancel while one of them is in progress.
+
     /// Send all scalars to replicas.
     virtual void sendScalarsData(Scalars & data) = 0;
     /// Send all content of external tables to replicas.
