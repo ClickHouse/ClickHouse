@@ -44,7 +44,6 @@ import difflib
 import os
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import List
 
@@ -289,8 +288,7 @@ class PlanItem:
         start. For a START: just start a stopped instance. Either way the start
         blocks on the Dedicated Host scrub (see `start_instances`).
         """
-        # The default boto3 session is not thread-safe; `--parallel` applies items in threads.
-        ec2 = boto3.session.Session().client("ec2", region_name=self.region)
+        ec2 = boto3.client("ec2", region_name=self.region)
         if self.action == UPDATE:
             install_user_data(ec2, self.instance_id, self.state, self.user_data)
         elif self.action == START and self.state == "stopping":
@@ -413,16 +411,6 @@ def main():
         ),
     )
     parser.add_argument(
-        "--parallel",
-        type=int,
-        default=1,
-        metavar="N",
-        help=(
-            "Apply up to N items at once. Each update keeps its runner offline "
-            "for the whole host scrub, so N runners are down together."
-        ),
-    )
-    parser.add_argument(
         "--apply",
         action="store_true",
         help=(
@@ -442,11 +430,9 @@ def main():
         print(f"{len(plan)} change(s) planned - pass --apply to execute")
         return
 
-    assert args.parallel >= 1, f"--parallel must be at least 1, got [{args.parallel}]"
-    print(f"applying {len(plan)} change(s), {args.parallel} at a time...")
-    with ThreadPoolExecutor(max_workers=args.parallel) as executor:
-        for future in [executor.submit(item.apply) for item in plan]:
-            future.result()
+    print(f"applying {len(plan)} change(s)...")
+    for item in plan:
+        item.apply()
 
 
 if __name__ == "__main__":
