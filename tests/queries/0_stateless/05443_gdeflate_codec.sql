@@ -1,10 +1,9 @@
--- The `GDeflate` codec: values read back as they were written, for each kind of column, with chunks of integers that
--- are packed and chunks that are not, blocks of several chunks and a last chunk shorter than the others; and errors.
+-- The `GDeflate` codec: values read back as they were written, for each kind of column, with blocks of several chunks
+-- and a last chunk shorter than the others; and errors.
 
 DROP TABLE IF EXISTS t_gdeflate;
 DROP TABLE IF EXISTS t_gdeflate_plain;
 DROP TABLE IF EXISTS t_gdeflate_levels;
-DROP TABLE IF EXISTS t_gdeflate_packing;
 
 -- `GDeflate` is experimental: without the setting it is rejected.
 SET enable_gdeflate_codec = 0;
@@ -17,8 +16,6 @@ CREATE TABLE t_gdeflate (x UInt64 CODEC(GDeflate(13))) ENGINE = MergeTree ORDER 
 CREATE TABLE t_gdeflate (x UInt64 CODEC(GDeflate('6'))) ENGINE = MergeTree ORDER BY x; -- { serverError ILLEGAL_CODEC_PARAMETER }
 CREATE TABLE t_gdeflate (x UInt64 CODEC(GDeflate(1, 2))) ENGINE = MergeTree ORDER BY x; -- { serverError ILLEGAL_SYNTAX_FOR_CODEC_TYPE }
 
--- Rows where `number` is below 100000 hold integers close together, which are packed; the rest spread over all the
--- bits of their type, which are not.
 CREATE TABLE t_gdeflate
 (
     k UInt64,
@@ -94,23 +91,6 @@ FROM numbers(100000);
 SELECT 'levels', count(), sum(l1), sum(l1) = sum(l6) AND sum(l6) = sum(l9) AND sum(l9) = sum(l12), sum(cityHash64(s1)) = sum(cityHash64(s12))
 FROM t_gdeflate_levels;
 
--- An integer column packs its chunks, so it takes fewer bytes than the same bytes in a `FixedString`, which is not packed.
-CREATE TABLE t_gdeflate_packing
-(
-    k UInt64,
-    x UInt64 CODEC(GDeflate),
-    b FixedString(8) CODEC(GDeflate)
-)
-ENGINE = MergeTree ORDER BY k
-SETTINGS min_bytes_for_wide_part = 0;
-
-INSERT INTO t_gdeflate_packing SELECT number, cityHash64(number) % 1048576 AS x, reinterpretAsFixedString(x) FROM numbers(200000);
-SELECT 'packing', (SELECT sum(x) FROM t_gdeflate_packing) = (SELECT sum(reinterpretAsUInt64(b)) FROM t_gdeflate_packing);
-SELECT 'packed smaller',
-    sumIf(data_compressed_bytes, name = 'x') < 0.9 * sumIf(data_compressed_bytes, name = 'b')
-FROM system.columns WHERE database = currentDatabase() AND table = 't_gdeflate_packing';
-
 DROP TABLE t_gdeflate;
 DROP TABLE t_gdeflate_plain;
 DROP TABLE t_gdeflate_levels;
-DROP TABLE t_gdeflate_packing;

@@ -14,7 +14,7 @@ public:
     static constexpr int MAX_LEVEL = 12;
     static constexpr int DEFAULT_LEVEL = 6;
 
-    CompressionCodecGDeflate(int level_, UInt8 element_size_, bool is_signed_);
+    explicit CompressionCodecGDeflate(int level_);
 
     uint8_t getMethodByte() const override;
     ASTPtr getCodecDescription() const override;
@@ -33,15 +33,11 @@ protected:
 
     String getDescription() const override
     {
-        return "GDeflate, a Deflate that a GPU can expand in parallel, in chunks of 64 KiB, with the integers of a chunk packed "
-               "where that makes it smaller. Levels 1..12.";
+        return "GDeflate, a Deflate that a GPU can expand in parallel, in chunks of 64 KiB. Levels 1..12.";
     }
 
 private:
     const int level;
-    /// Of the integers whose chunks are packed; not a part of the description, as a block holds how it is packed.
-    const UInt8 element_size;
-    const bool is_signed;
 };
 
 }
