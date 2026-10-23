@@ -277,6 +277,13 @@ SELECT k FROM t_sleep_dist_04402 GROUP BY k HAVING k = 0 LIMIT 1 BY sum(sleepEac
 SELECT k, row_number() OVER () FROM t_sleep_dist_04402 GROUP BY k HAVING k = 0 QUALIFY sum(sleepEachRow(0.001)) = 0
     SETTINGS query_plan_enable_optimizations = 0, max_threads = 1, max_block_size = 100,
         function_sleep_max_microseconds_per_block = 20000; -- { serverError TOO_SLOW }
+-- The same for an aggregate function in `LIMIT AFTER` or `LIMIT UNTIL`.
+SELECT k FROM t_sleep_dist_04402 GROUP BY k HAVING k = 0 ORDER BY k LIMIT 1 AFTER sum(sleepEachRow(0.001)) = 0
+    SETTINGS query_plan_enable_optimizations = 0, max_threads = 1, max_block_size = 100,
+        function_sleep_max_microseconds_per_block = 20000; -- { serverError TOO_SLOW }
+SELECT k FROM t_sleep_dist_04402 GROUP BY k HAVING k = 0 ORDER BY k LIMIT 1 UNTIL sum(sleepEachRow(0.001)) > 0
+    SETTINGS query_plan_enable_optimizations = 0, max_threads = 1, max_block_size = 100,
+        function_sleep_max_microseconds_per_block = 20000; -- { serverError TOO_SLOW }
 DROP TABLE t_sleep_dist_04402;
 DROP TABLE t_sleep_local_04402;
 
@@ -431,8 +438,18 @@ SELECT k, row_number() OVER () FROM t_stateful_dist_04402 GROUP BY k HAVING k = 
 SELECT k FROM t_stateful_dist_04402 GROUP BY k HAVING k IN (0, 5) ORDER BY k LIMIT 1 BY sum(rowNumberInAllBlocks()) > 950
     SETTINGS prefer_localhost_replica = 0, max_threads = 1, max_block_size = 100;
 -- A function that is not deterministic in the scope of the query, like `blockSize`, also depends on the rows it sees.
+-- The same for an aggregate function in `LIMIT AFTER` or `LIMIT UNTIL`.
+SELECT k FROM t_stateful_dist_04402 GROUP BY k HAVING k = 0 ORDER BY k LIMIT 1 AFTER sum(rowNumberInAllBlocks()) > 100
+    SETTINGS prefer_localhost_replica = 0, max_threads = 1, max_block_size = 100;
+SELECT k FROM t_stateful_dist_04402 GROUP BY k HAVING k = 0 ORDER BY k LIMIT 1 UNTIL sum(rowNumberInAllBlocks()) < 100
+    SETTINGS prefer_localhost_replica = 0, max_threads = 1, max_block_size = 100;
 SELECT k, sum(blockSize()) FROM t_stateful_dist_04402 GROUP BY k HAVING k = 0
     SETTINGS prefer_localhost_replica = 0, max_threads = 1, max_block_size = 100;
+-- The same for an aggregate function only in `HAVING`: the sibling conjunct must not be moved before aggregation.
+SELECT k FROM t_stateful_dist_04402 GROUP BY k HAVING sum(blockSize()) > 1000 AND k = 0
+    SETTINGS prefer_localhost_replica = 0, max_threads = 1, max_block_size = 100;
+SELECT k FROM t_stateful_dist_04402 GROUP BY k HAVING sum(blockSize()) > 1000 AND k = 0
+    SETTINGS prefer_localhost_replica = 0, max_threads = 1, max_block_size = 100, query_plan_enable_optimizations = 0;
 DROP TABLE t_stateful_dist_04402;
 DROP TABLE t_stateful_local_04402;
 

@@ -1,5 +1,6 @@
 #include <Analyzer/moveNonAggregateHavingConjunctsToWhere.h>
 
+#include <Analyzer/AggregationUtils.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -344,14 +345,22 @@ void moveNonAggregateHavingConjunctsToWhere(
     /// or a function depending on the block, like `sum(blockSize())`, would see fewer rows and change the result even
     /// for the groups that pass the filter, and a function with observable side effects, like `sum(sleepEachRow(0.001))`,
     /// would be evaluated fewer times. Aggregate functions may appear in every section after `GROUP BY`,
-    /// like `QUALIFY` and `LIMIT BY`, so all of them are checked.
+    /// like `QUALIFY`, `LIMIT BY`, `LIMIT AFTER` and `LIMIT UNTIL`, so all of them are checked. In `HAVING` itself only
+    /// the arguments of aggregate functions are computed before aggregation; the rest is classified per conjunct below.
     if (keep_pre_aggregation_expressions)
     {
         for (const auto & node : {query_node.getProjectionNode(), query_node.getPrewhere(), query_node.getWhere(),
                  query_node.getGroupByNode(), query_node.getWindowNode(), query_node.getQualify(), query_node.getOrderByNode(),
-                 query_node.getInterpolate(), query_node.getLimitByNode()})
+                 query_node.getInterpolate(), query_node.getLimitByNode(), query_node.getLimitAfter(),
+                 query_node.getLimitUntil()})
         {
             if (node && hasRowSensitiveFunction(node))
+                return;
+        }
+
+        for (const auto & aggregate_function_node : collectAggregateFunctionNodes(query_node.getHaving()))
+        {
+            if (hasRowSensitiveFunction(aggregate_function_node))
                 return;
         }
     }
