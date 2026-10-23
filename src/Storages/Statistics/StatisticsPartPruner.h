@@ -7,11 +7,10 @@
 namespace DB
 {
 
-/// Part pruner based on column statistics (min/max and NULL count from `Basic` statistics,
-/// plus the deprecated `MinMax` statistics).
+/// Part pruner based on column statistics, now only supports MinMax.
 /// Similar to PartitionPruner but uses per-column statistics instead of partition keys.
-/// When usable statistics are available for columns used in the filter condition,
-/// this pruner can skip entire parts where the column ranges don't overlap with the query condition.
+/// When MinMax statistics are available for columns used in the filter condition,
+/// this pruner can skip entire parts where the min/max range doesn't overlap with the query condition.
 class StatisticsPartPruner
 {
 public:
@@ -29,17 +28,12 @@ public:
     /// Get the list of column names used in the filter condition that have statistics.
     Names getUsedColumns() const { return {used_column_names.begin(), used_column_names.end()}; }
 
-    /// Get the columns whose estimates `checkPartCanMatch` may use.
-    NameSet getRequiredColumns() const;
-
 private:
     /// Get or create a KeyCondition for the given columns, using cache to avoid recreating for each part.
-    KeyCondition * getKeyConditionForEstimates(const NamesAndTypesList & columns_and_types, bool record_used_columns = true);
+    KeyCondition * getKeyConditionForEstimates(const NamesAndTypesList & columns_and_types);
 
     /// Cache key_condition by column names to avoid recreating them for each part.
     std::unordered_map<Names, std::unique_ptr<KeyCondition>, NamesHash> key_condition_cache;
-
-    std::vector<std::pair<String, bool>> null_predicates;
 
     const ActionsDAGWithInversionPushDown filter_dag;
     const ContextPtr context;

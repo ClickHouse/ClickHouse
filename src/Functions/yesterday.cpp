@@ -70,7 +70,7 @@ public:
 
     static FunctionOverloadResolverPtr create(ContextPtr) { return std::make_unique<YesterdayOverloadResolver>(); }
 
-    String getSignatureString() const override { return "() -> Date"; }
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeDate>(); }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName &, const DataTypePtr &) const override
     {
@@ -96,10 +96,10 @@ SELECT today() - 1;
         )",
         R"(
 ┌─yesterday()─┐
-│  2026-08-01 │
+│  2025-06-09 │
 └─────────────┘
 ┌─minus(today(), 1)─┐
-│        2026-08-01 │
+│        2025-06-09 │
 └───────────────────┘
         )"}
     };

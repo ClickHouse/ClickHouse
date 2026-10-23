@@ -29,6 +29,8 @@
 
 namespace ProfileEvents
 {
+    extern const Event AIInputTokens;
+    extern const Event AIAPICalls;
     extern const Event AIRowsProcessed;
     extern const Event AIRowsSkipped;
 }
@@ -102,7 +104,6 @@ public:
 
     bool isSuitableForConstantFolding() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
-    bool isExpensive() const override { return true; }
 
     /// Handle Nullable cols explicitly, since setting this to true may call func with arbitrary input values
     bool useDefaultImplementationForNulls() const override { return false; }
@@ -197,12 +198,11 @@ public:
             }
         }
 
-        FunctionBaseAI::EmbeddingResult embedding_result;
-        FunctionBaseAI::embedTexts(
-            *provider, model, dimensions, getName(),
-            getContext()->getCurrentQueryId(), getContext()->getClientInfo().initial_query_id,
-            inputs, max_batch_size, max_retries,
-            retry_delay_ms, throw_on_error, *quota_tracker, timeouts, embedding_result);
+        auto embedding_result = FunctionBaseAI::embedTexts(
+            *provider, model, dimensions, getName(), inputs, max_batch_size, max_retries, retry_delay_ms, throw_on_error, *quota_tracker, timeouts);
+
+        ProfileEvents::increment(ProfileEvents::AIAPICalls, embedding_result.api_calls);
+        ProfileEvents::increment(ProfileEvents::AIInputTokens, embedding_result.input_tokens);
 
         const auto & embeddings = embedding_result.embeddings;
 

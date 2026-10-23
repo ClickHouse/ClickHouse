@@ -1,7 +1,6 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <DataTypes/DataTypeString.h>
-#include <Analyzer/Resolve/FunctionCompositionRewrite.h>
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 
 #include <Analyzer/ColumnNode.h>
@@ -21,11 +20,9 @@
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/SetUtils.h>
 
-#include <Storages/getEffectiveRowPolicyFilter.h>
+#include <Access/EnabledRowPolicies.h>
 
-#include <Common/StringUtils.h>
 #include <Common/FieldVisitorConvertToNumber.h>
-#include <Common/HiddenSecret.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 
 #include <Core/Settings.h>
@@ -33,7 +30,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/hasNullable.h>
 #include <DataTypes/DataTypeFunction.h>
@@ -42,7 +38,6 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/exists.h>
 #include <Columns/validateColumnType.h>
-#include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
@@ -77,13 +72,10 @@ namespace ErrorCodes
     extern const int UNKNOWN_FUNCTION;
     extern const int UNKNOWN_AGGREGATE_FUNCTION;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
-    extern const int TYPE_MISMATCH;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int UNSUPPORTED_METHOD;
     extern const int SUPPORT_IS_DISABLED;
-    extern const int SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED;
 }
 
 namespace Setting
@@ -97,7 +89,7 @@ namespace Setting
     extern const SettingsUInt64 max_rows_in_set;
     extern const SettingsUInt64 max_bytes_in_set;
     extern const SettingsOverflowMode set_overflow_mode;
-    extern const SettingsBool allow_correlated_subqueries;
+    extern const SettingsBool allow_experimental_correlated_subqueries;
     extern const SettingsBool rewrite_in_to_join;
     extern const SettingsMap additional_table_filters;
 }
@@ -112,93 +104,6 @@ void checkFunctionNodeHasEmptyNullsAction(FunctionNode const & node)
             "Function with name {} cannot use {} NULLS",
             backQuote(node.getFunctionName()),
             node.getNullsAction() == NullsAction::IGNORE_NULLS ? "IGNORE" : "RESPECT");
-}
-
-/// The arity of a registered function name, or nothing when no function with this name is
-/// registered. Used by the rewrites that turn a function name into a lambda (the bare function
-/// name in a higher-order function and the operands of the function composition operator).
-struct RegisteredFunctionArity
-{
-    size_t fixed_arity = 0;
-    bool is_variadic = false;
-};
-
-/** Determine the arity of a registered function without resolving it.
-  *
-  * Built-in, executable, and WebAssembly UDFs are all `IFunction` implementations exposed as
-  * regular `FunctionOverloadResolverPtr`s, just stored in different factories — so they share
-  * the resolver-arity path. SQL UDFs are not `IFunction`s; their body is an arbitrary SQL
-  * expression inlined at analysis time by `UserDefinedSQLFunctionVisitor`, not evaluated by a
-  * runtime resolver, so their arity is read from the stored `CREATE FUNCTION` AST.
-  *
-  * These checks don't create tree nodes, so they don't affect node ID numbering. This probe
-  * must stay strictly non-throwing — it runs before column/alias resolution, so a throw would
-  * break the documented "column/alias names take priority" contract and would also be
-  * disruptive for queries run with `terminate_on_any_exception` enabled.
-  */
-std::optional<RegisteredFunctionArity> tryGetRegisteredFunctionArity(const String & function_name, const ContextPtr & context)
-{
-    auto resolver = FunctionFactory::instance().tryGet(function_name, context);
-    if (!resolver && UserDefinedExecutableFunctionFactory::has(function_name, context)) /// NOLINT(readability-static-accessed-through-instance)
-    {
-        /// `has` first: `tryGet` instantiates `UserDefinedFunction` with empty parameters,
-        /// whose constructor throws `BAD_ARGUMENTS` when the UDF declares command parameters.
-        /// Such UDFs cannot be turned into a lambda anyway (we have no parameters to supply),
-        /// so swallow `BAD_ARGUMENTS` and let identifier resolution proceed.
-        try
-        {
-            resolver = UserDefinedExecutableFunctionFactory::tryGet(function_name, context);
-        }
-        catch (const Exception & e)
-        {
-            if (e.code() != ErrorCodes::BAD_ARGUMENTS)
-                throw;
-        }
-    }
-    if (!resolver)
-    {
-        /// Use `tryGet` (returns nullptr if missing) instead of `has` + `get`:
-        /// a `has` + `get` sequence has a TOCTOU race with concurrent
-        /// `DROP FUNCTION`, where `get` would throw `RESOURCE_NOT_FOUND`
-        /// and preempt the documented "column/alias names take priority"
-        /// behavior.
-        resolver = UserDefinedWebAssemblyFunctionFactory::instance().tryGet(function_name, context);
-    }
-
-    if (resolver)
-        return RegisteredFunctionArity{resolver->getNumberOfArguments(), resolver->isVariadic()};
-
-    if (ASTPtr stored_udf_ast = UserDefinedSQLFunctionFactory::instance().tryGet(function_name))
-    {
-        /// A `CREATE FUNCTION ... LANGUAGE WASM` definition is kept in the same storage and
-        /// outlives the engine that runs it: after a restart with
-        /// `allow_experimental_webassembly_udf` turned off, or on a build without a WebAssembly
-        /// engine at all, the definition is still stored while the registry probed above is
-        /// empty. Take the arity from the stored definition anyway, so that resolving the
-        /// rewritten call reports that WebAssembly support is unavailable instead of failing as
-        /// an unknown identifier. A WebAssembly UDF declares its arguments in the statement.
-        if (const auto * wasm_function_query = stored_udf_ast->as<ASTCreateWasmFunctionQuery>())
-            return RegisteredFunctionArity{wasm_function_query->getNumberOfArguments(), false};
-
-        if (const auto * create_function_query = stored_udf_ast->as<ASTCreateSQLFunctionQuery>())
-        {
-            if (create_function_query->function_core)
-            {
-                if (const auto * lambda_expr = create_function_query->function_core->as<ASTFunction>())
-                {
-                    if (lambda_expr->name == "lambda" && lambda_expr->arguments
-                        && lambda_expr->arguments->children.size() >= 2)
-                    {
-                        const auto * tuple_ast = lambda_expr->arguments->children[0]->as<ASTFunction>();
-                        if (tuple_ast && tuple_ast->arguments)
-                            return RegisteredFunctionArity{tuple_ast->arguments->children.size(), false};
-                    }
-                }
-            }
-        }
-    }
-
-    return {};
 }
 
 /** Finds a decisive constant in the direct prefix of an AND/OR expression before its
@@ -380,16 +285,7 @@ bool hasFunctionNotSuitableForEarlyShortCircuit(const QueryTreeNodePtr & node, b
                 arguments.reserve(argument_nodes.size());
 
                 for (const auto & argument : argument_nodes)
-                {
-                    /// IN-family functions keep their set subquery as a QueryNode/UnionNode
-                    /// argument. Such nodes have no expression result type, and the speculative
-                    /// early-fold check must fall back instead of trying to inspect one.
-                    if (argument->getNodeType() == QueryTreeNodeType::QUERY
-                        || argument->getNodeType() == QueryTreeNodeType::UNION)
-                        return true;
-
                     arguments.push_back({argument->getResultType(), argument->as<ConstantNode>() != nullptr});
-                }
 
                 if (!function_base->isSuitableForShortCircuitArgumentsExecution(arguments)
                     && !isComparisonOfEarlyShortCircuitScalar(*function))
@@ -538,7 +434,9 @@ bool hasLateAttachedTableFilter(
 
     const auto has_nontrivial_row_policy = [&](const ContextPtr & context)
     {
-        return getEffectiveRowPolicyFilter(*table->getStorage(), context) != nullptr;
+        const auto row_policy_filter = context->getRowPolicyFilter(
+            storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+        return row_policy_filter && !row_policy_filter->isAlwaysTrue();
     };
 
     /// A scalar query can have its own context. Check both contexts even though they normally
@@ -570,8 +468,6 @@ bool isSafeCountScalarSubqueryForEarlyShortCircuit(
         || query.hasOrderBy()
         || query.hasLimitBy()
         || query.hasLimit()
-        || query.hasLimitAfter()
-        || query.hasLimitUntil()
         || query.hasOffset())
         return false;
 
@@ -768,9 +664,9 @@ static std::shared_ptr<ListNode> makeInArrayArgumentsList(
     /// (`nullIn` compares `NULL`s, `in` does not), not of the `transform_null_in` setting, which
     /// only renames `in` to `nullIn` before this rewrite. Types that cannot be inside `Nullable`,
     /// such as `Array(...)` or `Map(...)`, are left as they are - the `Nullable` wrapper would be
-    /// rejected when the column is created. `Tuple(...)` is left as it is as well: a tuple array
-    /// that contains `NULL` already has `Nullable(Tuple(...))` elements, and the tuple comparison
-    /// gives the same results as the scalar one without the wrapper.
+    /// rejected when the column is created. `Tuple(...)` is excluded explicitly, because it reports
+    /// that it can be inside `Nullable` while a `Nullable(Tuple(...))` column cannot be created by
+    /// default.
     if ((rhs_has_null || !compare_nulls)
         && !isTuple(common_type))
         common_type = makeNullableOrLowCardinalityNullableSafe(common_type);
@@ -937,226 +833,6 @@ static void flattenArrayTableExpressionOnRightOfIn(
     in_second_argument = std::move(subquery);
 
     flattenArraySubqueryOnRightOfIn(in_second_argument, in_first_argument, context);
-}
-
-/// Validate that the number of columns on the left side of IN matches the number of columns
-/// in the subquery (or table) on the right side. This must happen during analysis, before
-/// constant folding can optimize away the IN expression and silently hide the mismatch.
-/// Both arguments must already be resolved (and the right side already flattened by the
-/// `flattenArray*OnRightOfIn` helpers where applicable). Shared by the regular IN handling
-/// and the `rewrite_in_to_join` EXISTS rewrite, so the reported error and the moment it is
-/// thrown do not depend on that setting.
-static void validateInColumnsCountMatch(const QueryTreeNodePtr & in_first_argument, const QueryTreeNodePtr & in_second_argument)
-{
-    auto in_second_argument_type = in_second_argument->getNodeType();
-    auto in_first_argument_result_type = in_first_argument->getResultType();
-    if ((in_second_argument_type == QueryTreeNodeType::QUERY
-            || in_second_argument_type == QueryTreeNodeType::UNION
-            || in_second_argument_type == QueryTreeNodeType::TABLE)
-        && in_first_argument_result_type)
-    {
-        /// `FunctionIn::getReturnTypeImpl` rejects every left operand whose type has a dynamic
-        /// structure with `ILLEGAL_TYPE_OF_ARGUMENT` before it ever looks at the set arity, and it
-        /// does so at analysis time too, so constant folding cannot hide that error. This includes
-        /// types whose dynamic structure comes from a nested member, such as
-        /// `Tuple(Dynamic, UInt8)`. Report nothing here for them: otherwise the arity check below
-        /// would win and replace the existing unsupported-type contract with
-        /// `NUMBER_OF_COLUMNS_DOESNT_MATCH`.
-        if (in_first_argument_result_type->hasDynamicStructure())
-            return;
-
-        /// `getResultType` may be null for unresolved nodes (e.g. a lambda used as the left side of IN).
-        /// Such cases are rejected later with a more informative error, so skip the column-count check here.
-        /// Count tuple elements only for a top-level `DataTypeTuple`, matching how `FunctionIn`
-        /// unpacks the left operand at runtime: it inspects the raw left column/type and unpacks
-        /// only a top-level `ColumnTuple`/`DataTypeTuple`. A `Nullable(Tuple(...))` (or a
-        /// `LowCardinality(...)` wrapper) is kept as a single key column, so we must count it as one
-        /// here as well - otherwise a real mismatch like
-        /// `CAST((1, 1), 'Nullable(Tuple(UInt8, UInt8))') IN (SELECT 1, 1)` would slip through.
-        size_t left_columns_count = 1;
-        const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(in_first_argument_result_type.get());
-        if (left_tuple_type)
-            left_columns_count = left_tuple_type->getElements().size();
-
-        NamesAndTypes right_projection_columns;
-        /// Whether we could determine the right-side column set at all. An empty
-        /// `right_projection_columns` means "no columns" only when this is true; otherwise the
-        /// shape is simply unknown here (e.g. a `TableNode` whose set is built later in the
-        /// Planner and has no storage snapshot yet) and the check must be skipped.
-        bool right_columns_determined = false;
-        if (const auto * query_node = in_second_argument->as<QueryNode>())
-        {
-            right_projection_columns = query_node->getProjectionColumns();
-            right_columns_determined = true;
-        }
-        else if (const auto * union_node = in_second_argument->as<UnionNode>())
-        {
-            right_projection_columns = union_node->computeProjectionColumns();
-            right_columns_determined = true;
-        }
-        else if (const auto * in_table_node = in_second_argument->as<TableNode>())
-        {
-            /// `x IN table` is a documented equivalent of `x IN (SELECT * FROM table)`: the set is
-            /// built from the table's ordinary columns (a `StorageSet` keeps its declared columns,
-            /// other tables build the set in the Planner). The `TableNode` is left intact above
-            /// rather than rewritten into a subquery, so derive the right-side columns from the
-            /// storage snapshot here - the same columns the table-function rewrite selects. Without
-            /// this, an empty one-column table lets `(1, 1) IN table` reach `FunctionIn`'s empty-set
-            /// fast path and silently return `0` instead of throwing `NUMBER_OF_COLUMNS_DOESNT_MATCH`.
-            if (const auto & storage_snapshot = in_table_node->getStorageSnapshot())
-            {
-                auto table_columns = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::Ordinary));
-                right_projection_columns = NamesAndTypes(table_columns.begin(), table_columns.end());
-                right_columns_determined = true;
-            }
-        }
-
-        /// A right-hand side that resolves to no columns (a table whose only columns are special
-        /// ones, a parameterized view carrying empty metadata, or an already-normalized
-        /// zero-projection query) is turned into a single synthesized `UInt64` constant column by
-        /// the set builder / `buildQueryToReadColumnsFromTableExpression` (which appends a constant
-        /// `1` to preserve the row count). Mirror that here so the arity check runs against the same
-        /// single column the executor will see - otherwise a multi-column left side would skip the
-        /// check and reach `FunctionIn`'s empty-set fast path, silently returning `0` instead of
-        /// throwing `NUMBER_OF_COLUMNS_DOESNT_MATCH`.
-        if (right_columns_determined && right_projection_columns.empty())
-            right_projection_columns.emplace_back("1", std::make_shared<DataTypeUInt64>());
-
-        size_t right_columns_count = right_projection_columns.size();
-
-        /// A scalar is not a one-element tuple. Both sides have one physical column in
-        /// this shape, so the ordinary column-count check below cannot detect it. The
-        /// set builder also rejects this conversion, but it must be reported here before
-        /// constant folding can remove the `IN` expression from an unreachable predicate.
-        if (right_columns_count == 1 && !left_tuple_type
-            && !isNothing(removeNullable(in_first_argument_result_type)))
-        {
-            /// Compare the types the set actually uses as keys, i.e. after stripping the wrappers
-            /// that `Set::getElementTypes` removes (`LowCardinality` recursively and a top-level
-            /// `Nullable`). A `Nullable(Tuple(...))` (or `LowCardinality(...)`) left side is a tuple
-            /// key, not a scalar: `FunctionIn` keeps it as one key and `Set::execute` compares it
-            /// element by element against a single right `Tuple` column, which is a perfectly valid
-            /// one-key comparison and must not be rejected here.
-            const auto left_single_key_type = removeNullable(recursiveRemoveLowCardinality(in_first_argument_result_type));
-            const auto right_single_key_type = removeNullable(recursiveRemoveLowCardinality(right_projection_columns.front().type));
-            if (typeid_cast<const DataTypeTuple *>(right_single_key_type.get())
-                && !typeid_cast<const DataTypeTuple *>(left_single_key_type.get()))
-            {
-                /// Not every non-tuple left type is a mismatch either: `Set::execute` casts the whole
-                /// left value to the single right key type, and that cast is defined for some
-                /// non-tuple sources - `String`, for instance, is parsed into the tuple by
-                /// `FunctionCast::createTupleWrapper`. So reject only when no cast path exists at
-                /// all, probing at the type level with an *empty* column exactly like the
-                /// column-count probe below (the cast wrapper is built before any row is touched,
-                /// and a fabricated row could fail a per-value check the real rows would pass).
-                bool left_castable_to_single_key = false;
-                try
-                {
-                    castColumnAccurate({left_single_key_type->createColumn(), left_single_key_type, "left"}, right_single_key_type);
-                    left_castable_to_single_key = true;
-                }
-                catch (const Exception &)  /// NOLINT(bugprone-empty-catch)
-                {
-                    /// No cast path exists - report the mismatch below.
-                }
-
-                if (!left_castable_to_single_key)
-                    throw Exception(
-                        ErrorCodes::TYPE_MISMATCH,
-                        "Cannot cast {} to {} in IN",
-                        in_first_argument_result_type->getName(),
-                        right_projection_columns.front().type->getName());
-            }
-        }
-
-        if (right_columns_count > 0 && left_columns_count != right_columns_count)
-        {
-            /// When the right side returns a single column, `FunctionIn` does not unpack the
-            /// left tuple: it compares the whole left-side value against that one column as a
-            /// single key (see `FunctionIn::executeImpl`, which unpacks only when the set has
-            /// more than one key column whose count equals the left tuple size). Such a
-            /// comparison is valid whenever the left value can be cast to the right column type:
-            /// a single `Tuple` of the same arity, but also `String`, `Dynamic`, or a
-            /// `Variant`/`Nullable`/`LowCardinality` that can hold the whole tuple. So we reject
-            /// the query only when that cast is impossible, which is exactly when the runtime
-            /// would throw (e.g. `(1, 1) IN (SELECT 1)`, where a `Tuple` cannot be cast to
-            /// `UInt8`). Mirroring the runtime here avoids false positives while still catching
-            /// the genuine mismatch before constant folding can optimize the IN away and hide it.
-            bool left_comparable_as_single_key = false;
-            if (right_columns_count == 1)
-            {
-                const auto & right_single_type = right_projection_columns.front().type;
-
-                /// A single right `Tuple` column of the same arity as a top-level left tuple is
-                /// always an arity match: the whole left tuple is compared against it as one key,
-                /// element by element. Whether the element types are compatible is a runtime
-                /// question - an incompatible pair (e.g. `(id1, id2) IN (SELECT tuple(id2, id1))` where the
-                /// elements are `Decimal` vs `Date`) surfaces at runtime as `ILLEGAL_COLUMN` /
-                /// `ILLEGAL_TYPE_OF_ARGUMENT`, not as a column-count mismatch. The structural probe
-                /// below would instead reject such a same-arity tuple whenever an element cast is
-                /// impossible (e.g. a nested-tuple element that cannot be cast to the corresponding
-                /// right element), misreporting it as a column-count mismatch, so short-circuit on
-                /// matching arity here rather than running the probe.
-                /// Detect the arity on the set key type, i.e. after stripping the wrappers that
-                /// `Set::getElementTypes` removes (`LowCardinality` recursively, and a top-level
-                /// `Nullable` with the default `transform_null_in = 0`); otherwise a single right
-                /// column typed as `Nullable(Tuple(...))` would not be recognized as a tuple and
-                /// would fall through to the probe, which then misreports a `NULL`-element default
-                /// cast failure as a column-count mismatch.
-                auto right_single_key_type = removeNullable(recursiveRemoveLowCardinality(right_single_type));
-                const auto * right_tuple_type = typeid_cast<const DataTypeTuple *>(right_single_key_type.get());
-                if (left_tuple_type && right_tuple_type && right_tuple_type->getElements().size() == left_columns_count)
-                {
-                    left_comparable_as_single_key = true;
-                }
-                else
-                {
-                    /// The right side is a single non-tuple column (or a tuple of a different
-                    /// arity). The whole left tuple is compared against it as one key, so this is a
-                    /// genuine column-count mismatch only when the left type cannot be cast to the
-                    /// right type at all - i.e. no cast path exists between the two types, as for a
-                    /// `Tuple` to a plain number (`(1, 1) IN (SELECT 1)`). It is *not* a mismatch
-                    /// when the left type can be held as one key by the right type (`String`,
-                    /// `Dynamic`, a `Variant` that lists the tuple type, ...); any per-value
-                    /// incompatibility of such a cast (a `NULL` in a nullable element, a number out
-                    /// of range, a string too long for a `FixedString`) is a runtime question that
-                    /// surfaces at execution as its own error, not a column-count mismatch.
-                    ///
-                    /// So probe castability at the type level only, with an *empty* left column:
-                    /// `castColumnAccurate` builds the cast wrapper before touching any row
-                    /// (`FunctionCast::prepare` -> `createFunctionAdaptor(...).build()`), and that
-                    /// build throws for a structurally impossible cast regardless of the row count,
-                    /// so zero rows are enough to tell "a cast path exists" from "cannot be cast".
-                    /// A populated probe row must be avoided: inserting a default fabricates data
-                    /// the runtime never sees (e.g. a `NULL` for a nullable element) that can fail a
-                    /// per-value check the actual rows would pass, turning a runtime concern into a
-                    /// spurious analysis-time column-count error.
-                    auto left_probe_column = in_first_argument_result_type->createColumn();
-                    try
-                    {
-                        /// Use a plain accurate cast (not `accurateOrNull`): the latter casts to
-                        /// `Nullable(target)`, which is itself invalid for targets that cannot be
-                        /// wrapped in `Nullable` (e.g. `Dynamic`, `Variant`), so it would spuriously
-                        /// fail for valid right column types. `Set::execute` likewise uses the plain
-                        /// accurate cast for such types.
-                        castColumnAccurate(
-                            {ColumnPtr(std::move(left_probe_column)), in_first_argument_result_type, "left"},
-                            right_single_type);
-                        left_comparable_as_single_key = true;
-                    }
-                    catch (const Exception &)  /// NOLINT(bugprone-empty-catch)
-                    {
-                        /// No cast path exists - fall through and report the mismatch below.
-                    }
-                }
-            }
-
-            if (!left_comparable_as_single_key)
-                throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH,
-                    "Number of columns in section IN doesn't match. {} at left, {} at right.",
-                    left_columns_count, right_columns_count);
-        }
-    }
 }
 
 /// Builds and resolves `IF(isNull(element), NULL, has(array, element))`
@@ -1396,31 +1072,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     FunctionNodePtr function_node_ptr = std::static_pointer_cast<FunctionNode>(node);
     auto function_name = function_node_ptr->getFunctionName();
 
-    /// The parser cannot distinguish the single element array constructor `ARRAY[x]` from subscripting
-    /// a column named `ARRAY`, and parses it as a subscript. If there is no such column, it is the constructor.
-    /// Only the bracket syntax is rewritten, not an explicit `arrayElement(array, x)` call.
-    if (function_name == "arrayElement"
-        && function_node_ptr->isOperator()
-        && !function_node_ptr->isWindowFunction()
-        && function_node_ptr->getParameters().getNodes().empty()
-        && function_node_ptr->getArguments().getNodes().size() == 2)
-    {
-        const auto & arguments = function_node_ptr->getArguments().getNodes();
-        const auto * array_identifier = arguments[0]->as<IdentifierNode>();
-        if (array_identifier
-            && array_identifier->getIdentifier().isShort()
-            && equalsCaseInsensitive(array_identifier->getIdentifier().getFullName(), "array")
-            && !tryResolveIdentifier({array_identifier->getIdentifier(), IdentifierLookupContext::EXPRESSION}, scope).resolved_identifier)
-        {
-            auto array_function_node = std::make_shared<FunctionNode>("array");
-            array_function_node->getArguments().getNodes().push_back(arguments[1]);
-            array_function_node->setAlias(node->getAlias());
-            array_function_node->setOriginalAST(node->getOriginalAST());
-            node = std::move(array_function_node);
-            return resolveFunction(node, scope, allow_niladic_functions);
-        }
-    }
-
     /// Resolve function parameters
 
     auto parameters_projection_names = resolveExpressionNodeList(
@@ -1450,23 +1101,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         parameters.push_back(constant_node->getValue());
     }
 
-    /** The `f | g` operator parses into `__compose(f, g)`, which is not a function but a rewrite
-      * to a lambda (see FunctionCompositionRewrite.h), applied by the parent function when its
-      * argument is a composition. A composition being resolved by itself denotes a function,
-      * not a value, so explain the operator instead of resolving further. Only a node the parser
-      * marked as operator syntax is a composition, so no name is reserved: an ordinary call to a
-      * function named `__compose` (or `compose`) resolves as usual. The check runs before the
-      * function name is looked up in the scope, so that a lambda bound in the query under the
-      * name `__compose` (`WITH (x, y) -> x + y AS __compose`) applies to an ordinary call only
-      * and cannot change the meaning of the operator syntax.
-      */
-    if (isFunctionComposition(*function_node_ptr))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "The function composition `f | g` can be used only where a function is expected: "
-            "as an argument of a higher-order function such as arrayMap. "
-            "For bitwise OR, use the function bitOr. In scope {}",
-            scope.scope_node->formatASTForErrorMessage());
-
     //// If function node is not window function try to lookup function node name as lambda identifier.
     QueryTreeNodePtr lambda_expression_untyped;
     if (!function_node_ptr->isWindowFunction())
@@ -1488,7 +1122,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         && !function_node_ptr->isWindowFunction()
         /// JOIN planning unwraps root constant source expressions. Keep JOIN ON expressions on
         /// the regular path so a preserved scalar-subquery source is never sent to the planner.
-        && !(scope.resolving_join_on_expression && scope.resolving_join_on_expression->getNodeType() == QueryTreeNodeType::JOIN)
+        && !scope.resolving_join_on_expression
         && !lambda_expression_untyped
         && !UserDefinedSQLFunctionFactory::instance().tryGet(function_name)
         && !UserDefinedExecutableFunctionFactory::instance().tryGet(function_name, scope.context, parameters)) /// NOLINT(readability-static-accessed-through-instance)
@@ -1530,7 +1164,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             type_inference_analyzer.subquery_counter = subquery_counter;
 
             bool type_inference_succeeded = false;
-            bool post_resolution_is_safe = false;
             ProjectionNames type_inference_projection_names;
             try
             {
@@ -1542,13 +1175,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     false /*ignore_alias*/,
                     allow_niladic_functions);
                 type_inference_succeeded = !type_inference_analyzer.early_short_circuit_type_inference_failed;
-
-                /// Post-resolution safety is also speculative: an unfamiliar non-expression
-                /// argument must decline the optimization, never make the original query fail.
-                if (type_inference_succeeded)
-                    post_resolution_is_safe = !hasFunctionNode(node_for_type_inference, "arrayJoin")
-                        && !hasUnsafeEarlyShortCircuitScalarUsage(node_for_type_inference)
-                        && !hasFunctionNotSuitableForEarlyShortCircuit(node_for_type_inference);
             }
             catch (...)
             {
@@ -1557,6 +1183,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 /// cannot provide it, so fall back to the regular path which evaluates the scalar.
                 type_inference_succeeded = false;
             }
+
+            const bool post_resolution_is_safe = !hasFunctionNode(node_for_type_inference, "arrayJoin")
+                && !hasUnsafeEarlyShortCircuitScalarUsage(node_for_type_inference)
+                && !hasFunctionNotSuitableForEarlyShortCircuit(node_for_type_inference);
             if (type_inference_succeeded && (is_strict_safe_logical_tree || post_resolution_is_safe))
             {
                 auto result_type = node_for_type_inference->getResultType();
@@ -1574,7 +1204,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
     bool is_special_function_in = false;
     bool is_special_function_dict_get = false;
-    bool is_special_function_assign_centroid = false;
     bool is_special_function_join_get = false;
     bool is_special_function_exists = false;
     bool is_special_function_if = false;
@@ -1584,7 +1213,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     {
         is_special_function_in = isNameOfInFunction(function_name);
         is_special_function_dict_get = functionIsDictGet(function_name);
-        is_special_function_assign_centroid = function_name == "assignCentroid";
         is_special_function_join_get = functionIsJoinGet(function_name);
         is_special_function_exists = function_name == "exists";
         is_special_function_if = function_name == "if";
@@ -1734,14 +1362,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     false /*allow_table_expression*/,
                     allow_niladic_functions);
             }
-            catch (const Exception & e)
+            catch (const Exception &)
             {
-                /// SEMI/ANTI JOIN column access violations must not be masked by dead-branch
-                /// folding: they are compile-time access-control errors, not "unknown column"
-                /// lookups. Rethrow so the query is rejected even when the offending reference
-                /// sits in a statically unreachable branch of `if`.
-                if (e.code() == ErrorCodes::SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED)
-                    throw;
                 apply_constant_if_optimization = true;
             }
 
@@ -1873,12 +1495,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                             false /*allow_table_expression*/,
                             allow_niladic_functions);
                     }
-                    catch (const Exception & e)
+                    catch (const Exception &)
                     {
-                        /// See the `if` special case above: SEMI/ANTI JOIN access violations
-                        /// must not be swallowed by dead-branch folding.
-                        if (e.code() == ErrorCodes::SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED)
-                            throw;
                         apply_constant_multi_if_optimization = true;
                     }
                 }
@@ -1949,63 +1567,19 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             if (in_second_argument->as<QueryNode>())
             {
+                /// The rewrite below produces a correlated subquery, so it requires the setting.
+                /// Checked here (not at the gate) so constant/tuple `IN` is never rejected.
+                if (!scope.context->getSettingsRef()[Setting::allow_experimental_correlated_subqueries])
+                    throw Exception(
+                        ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Setting 'rewrite_in_to_join' requires 'allow_experimental_correlated_subqueries' to also be enabled");
+
                 /// An array subquery on the right of IN is the set of its elements (see
                 /// `flattenArraySubqueryOnRightOfIn`). Flatten it with arrayJoin before building the
                 /// EXISTS rewrite, so the comparison below is `x = <element>` rather than `x = <array>`.
                 /// Otherwise this branch would keep the reported bug alive whenever `rewrite_in_to_join`
                 /// is enabled, making the new behavior depend on an unrelated setting.
                 flattenArraySubqueryOnRightOfIn(in_second_argument, in_first_argument, scope.context);
-
-                /// Validate the column-count match before building the EXISTS rewrite. The rewrite
-                /// wraps a multi-column right side into a single `tuple(...)` column and compares it
-                /// with `equals`, so without this check an arity mismatch would surface later as
-                /// `BAD_ARGUMENTS` ("Cannot compare tuples of different sizes") from the tuple
-                /// comparison - or be folded away entirely - instead of the analysis-time
-                /// `NUMBER_OF_COLUMNS_DOESNT_MATCH` the regular IN path reports.
-                validateInColumnsCountMatch(in_first_argument, in_second_argument);
-            }
-
-            /// When the right side is a single column and the left side is kept as one key,
-            /// regular IN does not unpack the left value: the whole left value is one set key, and
-            /// `Set::execute` accurately casts it to the right column type before probing (so
-            /// e.g. `(toUInt16(256), x) IN (SELECT CAST((0, 0), 'Tuple(Int8, UInt64)'))` throws
-            /// when `256` does not fit into `Int8`). The `equals` predicate built by this rewrite
-            /// compares element-wise over a common supertype instead and cannot reproduce those
-            /// semantics, so skip the rewrite for this shape and fall through to the regular IN
-            /// handling below - the observable behavior must not depend on `rewrite_in_to_join`.
-            /// The mutated clones are discarded; the regular path re-resolves the original
-            /// arguments and flattens/validates them again itself.
-            /// A wrapped tuple such as `Nullable(Tuple(...))` (or a `LowCardinality(...)` wrapper) is
-            /// kept as a single key by `FunctionIn` as well - it unpacks only a raw top-level
-            /// `ColumnTuple`/`DataTypeTuple`. The same is true for every type with dynamic
-            /// structure, which regular `IN` rejects before building the set, and for plain
-            /// `Variant`, which still needs the accurate set-key cast when it has no dynamic
-            /// member. Scalar values also need that cast when their type differs from the sole
-            /// subquery column type. Unwrap the wrappers before identifying the structural types.
-            bool left_value_compared_as_single_key = false;
-            if (const auto * rhs_query_node = in_second_argument->as<QueryNode>())
-            {
-                const auto & left_result_type = in_first_argument->getResultType();
-                const auto left_key_type = left_result_type ? removeNullable(removeLowCardinality(left_result_type)) : nullptr;
-                left_value_compared_as_single_key = rhs_query_node->getProjectionColumns().size() == 1
-                    && left_key_type
-                    && (typeid_cast<const DataTypeTuple *>(left_key_type.get()) || left_key_type->hasDynamicStructure() || isVariant(left_key_type)
-                        || isNullableOrLowCardinalityNullable(left_result_type)
-                        || !left_result_type->equals(*rhs_query_node->getProjectionColumns().front().type));
-            }
-
-            if (in_second_argument->as<QueryNode>() && !left_value_compared_as_single_key)
-            {
-                /// The rewrite below produces a correlated subquery, so it requires the setting.
-                /// Checked here rather than at the gate above, so that the shapes which are not
-                /// rewritten at all are never rejected because of it: a constant or tuple `IN`, and
-                /// the single-key shape just identified, which stays on the regular `IN` path.
-                /// Otherwise enabling `rewrite_in_to_join` alone would change query acceptance even
-                /// though no correlated rewrite happens.
-                if (!scope.context->getSettingsRef()[Setting::allow_correlated_subqueries])
-                    throw Exception(
-                        ErrorCodes::SUPPORT_IS_DISABLED,
-                        "Setting 'rewrite_in_to_join' requires 'allow_correlated_subqueries' to also be enabled");
 
                 /// Rewrite 'x IN subquery' to 'EXISTS (SELECT 1 FROM (SELECT * AS _unique_name_ FROM subquery) WHERE x = _unique_name_ LIMIT 1)'
 
@@ -2014,27 +1588,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 /// query "SELECT * FROM numbers(3)" returns column `number` which will collide with outer column `number`
                 auto subquery_node = std::move(in_second_argument);
 
-                /// Name the column after the subquery it projects rather than at random: two
-                /// identical `IN` expressions have to stay identical through the rewrite, or the
-                /// analyzer rejects a query that repeats one of them under a single alias with
-                /// `MULTIPLE_EXPRESSIONS_FOR_ALIAS` - a query it accepts without the rewrite. The
-                /// name only has to differ from the names of the outer scope, which the prefix
-                /// already takes care of.
-                const auto subquery_hash = subquery_node->getTreeHash(/*compare_options=*/ {.compare_aliases = false});
-                String unique_column_name
-                    = fmt::format("__subquery_column_{}_{}", subquery_hash.low64, subquery_hash.high64);
-
-                /// The set of a regular IN ignores the totals of the whole subquery plan (including the
-                /// totals of the queries in its join tree), so drop `WITH TOTALS` here as well, recursively:
-                /// otherwise the `TotalsHaving` step ends up on the right side of the join built by the
-                /// decorrelation, leaks the totals row into the outer query, and fails with `LOGICAL_ERROR`
-                /// when the outer query has `WITH TOTALS` itself.
-                for (const auto & table_expression : extractTableExpressions(
-                         std::static_pointer_cast<ITableExpressionNode>(subquery_node), /*add_array_join=*/ false, /*recursive=*/ true))
-                {
-                    if (auto * table_expression_query_node = table_expression->as<QueryNode>())
-                        table_expression_query_node->setIsGroupByWithTotals(false);
-                }
+                String unique_column_name = "__subquery_column_" + toString(UUIDHelpers::generateV4());
 
                 /// Re-resolve subquery columns setting the unique alias
                 auto subquery_projection_columns = subquery_node->as<QueryNode>()->getProjectionColumns();
@@ -2168,7 +1722,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             auto function_exists = std::make_shared<FunctionExists>();
             function_node_ptr->resolveAsFunction(
                 std::make_shared<FunctionToFunctionBaseAdaptor>(
-                    function_exists, DataTypes{}, function_exists->getReturnTypeImpl(DataTypes{})
+                    function_exists, DataTypes{}, function_exists->getReturnTypeImpl({})
                 )
             );
 
@@ -2248,12 +1802,88 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     {
                         const auto & identifier_name = identifier.getFullName();
 
-                        if (auto inner_arity = tryGetRegisteredFunctionArity(identifier_name, scope.context))
+                        /// These checks don't create tree nodes, so they don't affect node ID
+                        /// numbering. We must not throw from this rewrite-candidate check — it
+                        /// runs before column/alias resolution, so a throw would break the
+                        /// documented "column/alias names take priority" contract and would also
+                        /// be disruptive for queries run with `terminate_on_any_exception` enabled.
+                        ///
+                        /// Built-in, executable, and WebAssembly UDFs are all `IFunction`
+                        /// implementations exposed as regular `FunctionOverloadResolverPtr`s,
+                        /// just stored in different factories — so they share the resolver-arity
+                        /// path below. SQL UDFs are not `IFunction`s; their body is an arbitrary
+                        /// SQL expression inlined at analysis time, so arity is read from the
+                        /// stored `CREATE FUNCTION` AST.
+                        auto inner_resolver = FunctionFactory::instance().tryGet(identifier_name, scope.context);
+                        if (!inner_resolver && UserDefinedExecutableFunctionFactory::has(identifier_name, scope.context))
                         {
+                            /// `has` first: `tryGet` instantiates `UserDefinedFunction` with empty
+                            /// parameters, whose constructor throws `BAD_ARGUMENTS` when the UDF
+                            /// declares command parameters. Such UDFs are not eligible for the
+                            /// lambda rewrite anyway (we have no parameters to supply), so swallow
+                            /// `BAD_ARGUMENTS` and let identifier resolution proceed.
+                            try
+                            {
+                                inner_resolver = UserDefinedExecutableFunctionFactory::tryGet(identifier_name, scope.context);
+                            }
+                            catch (const Exception & e)
+                            {
+                                if (e.code() != ErrorCodes::BAD_ARGUMENTS)
+                                    throw;
+                            }
+                        }
+                        if (!inner_resolver)
+                        {
+                            /// Use `tryGet` (returns nullptr if missing) instead of `has` + `get`:
+                            /// a `has` + `get` sequence has a TOCTOU race with concurrent
+                            /// `DROP FUNCTION`, where `get` would throw `RESOURCE_NOT_FOUND`
+                            /// and preempt the documented "column/alias names take priority"
+                            /// behavior. This rewrite probe must stay strictly non-throwing.
+                            inner_resolver = UserDefinedWebAssemblyFunctionFactory::instance().tryGet(identifier_name, scope.context);
+                        }
+
+                        ASTPtr sql_udf_ast;
+                        if (!inner_resolver)
+                        {
+                            sql_udf_ast = UserDefinedSQLFunctionFactory::instance().tryGet(identifier_name);
+                            if (!sql_udf_ast || !sql_udf_ast->as<ASTCreateSQLFunctionQuery>())
+                                sql_udf_ast.reset();
+                        }
+
+                        if (inner_resolver || sql_udf_ast)
+                        {
+                            /// Determine arity from the inner function itself. This handles
+                            /// cases like `arrayMap(plus, arr1, arr2)` where `plus` has a
+                            /// fixed arity of 2, regardless of how many array args are passed.
+                            size_t inner_arity = inner_resolver ? inner_resolver->getNumberOfArguments() : 0;
+
+                            /// SQL UDFs are not registered in `FunctionFactory` because they are not
+                            /// `IFunction` implementations: their body is an arbitrary SQL expression
+                            /// inlined at analysis time by `UserDefinedSQLFunctionVisitor`, not evaluated
+                            /// by a runtime resolver. So when the inner function is a SQL UDF we extract
+                            /// arity directly from the stored `CREATE FUNCTION` AST.
+                            if (!inner_resolver && sql_udf_ast)
+                            {
+                                if (const auto * lambda = sql_udf_ast->as<ASTCreateSQLFunctionQuery>())
+                                {
+                                    if (lambda->function_core)
+                                    {
+                                        if (const auto * lambda_expr = lambda->function_core->as<ASTFunction>())
+                                        {
+                                            if (lambda_expr->name == "lambda" && lambda_expr->arguments
+                                                && lambda_expr->arguments->children.size() >= 2)
+                                            {
+                                                const auto * tuple_ast = lambda_expr->arguments->children[0]->as<ASTFunction>();
+                                                if (tuple_ast && tuple_ast->arguments)
+                                                    inner_arity = tuple_ast->arguments->children.size();
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
                             /// Determine the lambda arity:
-                            /// - Inner function with fixed arity: use it directly. This handles
-                            ///   cases like `arrayMap(plus, arr1, arr2)` where `plus` has a
-                            ///   fixed arity of 2, regardless of how many array args are passed.
+                            /// - Inner function with fixed arity: use it directly.
                             /// - Variadic inner function (e.g. `concat`): fall back to the
                             ///   number of array arguments, which is correct for the common
                             ///   higher-order functions (`arrayMap`, `arrayFilter`, `arrayFold`).
@@ -2267,9 +1897,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                             ///   the rewrite makes no sense — a zero-arg function can't be
                             ///   applied to lambda arguments — leave the call unchanged.
                             size_t lambda_arity = 0;
-                            if (inner_arity->fixed_arity > 0)
-                                lambda_arity = inner_arity->fixed_arity;
-                            else if (inner_arity->is_variadic)
+                            if (inner_arity > 0)
+                                lambda_arity = inner_arity;
+                            else if (inner_resolver && inner_resolver->isVariadic())
                                 lambda_arity = argument_nodes_size - 1;
 
                             if (lambda_arity > 0)
@@ -2315,131 +1945,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
     }
 
-    /** The function composition operator `f | g` and the argument placeholders `_`, `_1`, `_2`, ...
-      * (see FunctionCompositionRewrite.h). Both are pure rewrites to ordinary lambdas performed
-      * before the arguments are resolved, so downstream only the standard lambda machinery is
-      * involved and no runtime support is needed.
-      */
-    {
-        auto & argument_nodes = function_node_ptr->getArguments().getNodes();
-
-        IsHigherOrderFunction is_higher_order_function = [&](const String & name)
-        {
-            auto resolver = FunctionFactory::instance().tryGet(name, scope.context);
-            return resolver && resolver->isHigherOrderFunction();
-        };
-
-        /// Resolves an identifier operand of a composition: a lambda bound to the name in an
-        /// enclosing scope (WITH (x -> x + 1) AS f SELECT arrayMap(f | f, ...)) or the name of
-        /// a registered function, for which (x1, ..., xn) -> name(x1, ..., xn) is synthesized.
-        auto resolve_identifier_operand = [&](const IdentifierNode & operand, std::optional<size_t> required_arity) -> QueryTreeNodePtr
-        {
-            const auto & operand_identifier = operand.getIdentifier();
-            if (!operand_identifier.isShort())
-                return nullptr;
-
-            auto function_lookup = tryResolveIdentifier({operand_identifier, IdentifierLookupContext::FUNCTION}, scope, {});
-            if (function_lookup.resolved_identifier && function_lookup.resolved_identifier->getNodeType() == QueryTreeNodeType::LAMBDA)
-                return function_lookup.resolved_identifier->clone();
-
-            /// Mirroring the bare-function-name rewrite above, a column or an alias with the same
-            /// name keeps priority over a registered function (and over the placeholder syntax):
-            /// `WITH 10 AS negate SELECT arrayMap(negate | toString, [7])` is an error rather
-            /// than a composition of the function `negate`.
-            auto expression_lookup = tryResolveIdentifier({operand_identifier, IdentifierLookupContext::EXPRESSION}, scope, {});
-            if (expression_lookup.isResolved())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Each operand of the function composition operator `|` must be a function, but the identifier {} "
-                    "resolves to an expression. In scope {}",
-                    backQuote(operand_identifier.getFullName()),
-                    scope.scope_node->formatASTForErrorMessage());
-
-            auto operand_arity = tryGetRegisteredFunctionArity(operand_identifier.getFullName(), scope.context);
-            if (!operand_arity)
-                return nullptr;
-
-            size_t lambda_arity = operand_arity->fixed_arity;
-            if (lambda_arity == 0 && operand_arity->is_variadic)
-            {
-                if (!required_arity)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Cannot compose the variadic function {}: its number of arguments is not known. "
-                        "Use argument placeholders: {}(_1, ..., _N). In scope {}",
-                        backQuote(operand_identifier.getFullName()),
-                        operand_identifier.getFullName(),
-                        scope.scope_node->formatASTForErrorMessage());
-                lambda_arity = *required_arity;
-            }
-
-            /// A fixed-arity zero-argument function: composing it makes no sense.
-            if (lambda_arity == 0)
-                return nullptr;
-
-            Names lambda_argument_names;
-            lambda_argument_names.reserve(lambda_arity);
-
-            auto function_call = std::make_shared<FunctionNode>(operand_identifier.getFullName());
-            auto & function_call_arguments = function_call->getArguments().getNodes();
-            function_call_arguments.reserve(lambda_arity);
-
-            for (size_t i = 0; i < lambda_arity; ++i)
-            {
-                String argument_name = "__function_ref_arg_" + std::to_string(i);
-                lambda_argument_names.push_back(argument_name);
-                function_call_arguments.push_back(std::make_shared<IdentifierNode>(Identifier{argument_name}));
-            }
-
-            auto lambda_arguments_node = std::make_shared<LambdaArgumentsNode>(std::move(lambda_argument_names));
-            return std::make_shared<LambdaNode>(std::move(lambda_arguments_node), std::move(function_call), false /*is_operator*/);
-        };
-
-        /// A composition in any argument position is fused into a single lambda. The composition
-        /// has no other possible meaning, so this needs no gating; where a lambda is not allowed
-        /// the standard diagnostics apply.
-        for (auto & argument_node : argument_nodes)
-        {
-            if (isFunctionComposition(*argument_node))
-                argument_node = fuseCompositionToLambda(argument_node->as<FunctionNode &>(), resolve_identifier_operand, is_higher_order_function);
-        }
-
-        /// Free placeholders in the lambda position of a higher-order function lift the
-        /// expression to a lambda: arrayMap(plus(_1, 1), x) is resolved as
-        /// arrayMap(_1 -> plus(_1, 1), x). This applies to any expression, including a bare
-        /// placeholder: arrayMap(_1, x) is the identity lambda. An argument that is already a
-        /// lambda is left alone: a free placeholder in its body is an ordinary identifier, and
-        /// lifting it would produce a lambda returning a lambda.
-        ///
-        /// Mirroring the bare-function-name rewrite above, the lift applies only when the parent
-        /// is a higher-order function, and only when none of the placeholder names resolves to
-        /// anything in scope, so columns and aliases keep priority (a higher-order function like
-        /// arrayPartialSort can legitimately take a non-lambda first argument). Every query the
-        /// lift activates on is an error without it, so no previously valid query changes meaning.
-        if (argument_nodes.size() >= 2 && argument_nodes[0]->getNodeType() != QueryTreeNodeType::LAMBDA)
-        {
-            if (is_higher_order_function(function_name))
-            {
-                auto placeholder_names = collectFreePlaceholderNames(argument_nodes[0], is_higher_order_function);
-
-                /// A name bound in the query keeps priority, whether it is bound as an
-                /// expression (a column or an alias) or as a function (a lambda bound with
-                /// `WITH (x -> x + 10) AS _1`), which lives in a separate lookup.
-                bool any_placeholder_resolves = false;
-                for (const auto & placeholder_name : placeholder_names)
-                {
-                    if (isFunctionAliasInScope(placeholder_name, scope)
-                        || tryResolveIdentifier({Identifier{placeholder_name}, IdentifierLookupContext::EXPRESSION}, scope, {}).isResolved())
-                    {
-                        any_placeholder_resolves = true;
-                        break;
-                    }
-                }
-
-                if (!placeholder_names.empty() && !any_placeholder_resolves)
-                    argument_nodes[0] = liftPlaceholdersToLambda(argument_nodes[0], is_higher_order_function);
-            }
-        }
-    }
-
     /// Resolve function arguments
     bool allow_table_expressions = is_special_function_in || is_special_function_exists;
     auto arguments_projection_names = resolveExpressionNodeList(
@@ -2452,7 +1957,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     /// Mask arguments if needed
     if (!canDisplaySecrets(scope.context))
     {
-        if (SecretArgumentsResult secret_arguments = findSecretArguments(*function_node_ptr); secret_arguments.hasSecrets())
+        if (FunctionSecretArgumentsFinder::Result secret_arguments = FunctionSecretArgumentsFinderTreeNode(*function_node_ptr).getResult(); secret_arguments.hasSecrets())
         {
             auto & argument_nodes = function_node_ptr->getArgumentsNode()->as<ListNode &>().getNodes();
 
@@ -2493,15 +1998,15 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     if (auto * constant = secret_node->as<ConstantNode>())
                         arguments_projection_names[n] = "[HIDDEN id: " + std::to_string(assign_mask(*constant)) + "]";
                     else if (mask_secret_constants(secret_node))
-                        arguments_projection_names[n] = HIDDEN_SECRET;
+                        arguments_projection_names[n] = "[HIDDEN]";
                 });
         }
     }
 
     /** Bind an unqualified dictionary name to the current database.
       *
-      * The dictionary name of `dictGet` and its variations, and of `assignCentroid`, is resolved against
-      * the current database of the server that evaluates the function. A shard of a `Distributed` table evaluates it in a session
+      * The dictionary name of `dictGet` and its variations is resolved against the current database of
+      * the server that evaluates the function. A shard of a `Distributed` table evaluates it in a session
       * whose current database comes from the cluster configuration - `default` unless `<default_database>`
       * is set - and not from the initiator, so an unqualified name shipped to a shard either fails to
       * resolve or, worse, silently resolves to a different dictionary that happens to have the same name.
@@ -2515,25 +2020,20 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
       * belongs to an XML dictionary, and when no such dictionary exists in the current database - in the
       * last case the name may still be meant for a dictionary that only exists on the shards.
       */
-    if (is_special_function_dict_get || is_special_function_assign_centroid)
+    if (is_special_function_dict_get)
     {
-        const size_t dictionary_name_position = is_special_function_dict_get ? 0 : 1;
-        auto & arguments = function_node_ptr->getArguments().getNodes();
-        if (dictionary_name_position < arguments.size())
+        auto & dict_get_arguments = function_node_ptr->getArguments().getNodes();
+        if (!dict_get_arguments.empty())
         {
-            auto & dictionary_name_argument = arguments[dictionary_name_position];
-            const auto * dictionary_name_node = dictionary_name_argument->as<ConstantNode>();
+            const auto * dictionary_name_node = dict_get_arguments[0]->as<ConstantNode>();
             if (dictionary_name_node && dictionary_name_node->getValue().getType() == Field::Types::String)
             {
                 const auto & dictionary_name = dictionary_name_node->getValue().safeGet<String>();
                 auto qualified_dictionary_name = scope.context->getExternalDictionariesLoader()
                     .qualifyDictionaryNameWithDatabase(dictionary_name, scope.context).getFullName();
 
-                /// `assignCentroid` also takes a Nullable or LowCardinality name and its result type follows it.
                 if (qualified_dictionary_name != dictionary_name)
-                    dictionary_name_argument = is_special_function_dict_get
-                        ? std::make_shared<ConstantNode>(qualified_dictionary_name)
-                        : std::make_shared<ConstantNode>(qualified_dictionary_name, dictionary_name_node->getResultType());
+                    dict_get_arguments[0] = std::make_shared<ConstantNode>(qualified_dictionary_name);
             }
         }
     }
@@ -2545,7 +2045,24 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     {
         checkFunctionNodeHasEmptyNullsAction(function_node);
         if (scope.context->getSettingsRef()[Setting::transform_null_in])
-            function_name = getNullInFunctionName(function_name);
+        {
+            static constexpr std::array<std::pair<std::string_view, std::string_view>, 4> in_function_to_replace_null_in_function_map =
+            {{
+                {"in", "nullIn"},
+                {"notIn", "notNullIn"},
+                {"globalIn", "globalNullIn"},
+                {"globalNotIn", "globalNotNullIn"},
+            }};
+
+            for (const auto & [in_function_name, in_function_name_to_replace] : in_function_to_replace_null_in_function_map)
+            {
+                if (function_name == in_function_name)
+                {
+                    function_name = in_function_name_to_replace;
+                    break;
+                }
+            }
+        }
 
         auto & function_in_arguments_nodes = function_node.getArguments().getNodes();
         if (function_in_arguments_nodes.size() != 2)
@@ -2608,22 +2125,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             {
                 column_nodes_to_select->getNodes().emplace_back(std::make_shared<ColumnNode>(column, static_pointer_cast<ITableExpressionNode>(in_second_argument)));
                 projection_columns.emplace_back(column.name, column.type);
-            }
-
-            /// A table function whose storage exposes no ordinary columns (for example `cluster()` /
-            /// `remote()` against a parameterized view, whose metadata carries no stored columns) would
-            /// otherwise be rewritten into a subquery with an empty projection. `buildQueryToReadColumnsFromTableExpression`
-            /// - the helper the `TableNode` right-hand side goes through - appends a single constant `1`
-            /// column in that case to preserve the row count, so mirror it here. This keeps the rewritten
-            /// subquery well-formed (a single-column set the executor can build) and, crucially, makes the
-            /// analysis-time IN column-count check below see exactly the one-column shape the executor will,
-            /// so `(1, 1) IN table_function(...)` is rejected with `NUMBER_OF_COLUMNS_DOESNT_MATCH` instead
-            /// of diverging into `FunctionIn`'s empty-set fast path.
-            if (column_nodes_to_select->getNodes().empty())
-            {
-                auto constant_data_type = std::make_shared<DataTypeUInt64>();
-                column_nodes_to_select->getNodes().emplace_back(std::make_shared<ConstantNode>(1UL, constant_data_type));
-                projection_columns.emplace_back("1", std::move(constant_data_type));
             }
 
             auto in_second_argument_query_node = std::make_shared<QueryNode>(Context::createCopy(scope.context));
@@ -2733,7 +2234,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     /// element into the tuple type, so a non-parseable value raises the same parsing
                     /// error (e.g. `('a', 'b') IN (_table)` over a `merge` table) instead of
                     /// `NO_COMMON_TYPE`. The cast target stays non-`Nullable`: `Nullable(Tuple)`
-                    /// columns are gated by `enable_nullable_tuple_type`, and the
+                    /// columns are gated by `allow_experimental_nullable_tuple_type`, and the
                     /// constant `Set` path throws for a non-parseable tuple element rather than
                     /// skipping it, so a throwing `CAST` matches it.
                     if (left_is_tuple && !right_is_tuple)
@@ -2962,7 +2463,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             }
         }
 
-        validateInColumnsCountMatch(in_first_argument, in_second_argument);
     }
 
     /// Initialize function argument columns
@@ -3018,12 +2518,23 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             argument_is_deterministic = constant_node->isDeterministic();
             argument_is_constant = true;
         }
-        else if (auto scalar_column = tryGetScalarConstantColumn(function_argument, scope.context))
+        else if (const auto * get_scalar_function_node = function_argument->as<FunctionNode>();
+                get_scalar_function_node && get_scalar_function_node->getFunctionName() == "__getScalar")
         {
             /// Allow constant folding through getScalar
-            argument_column.column = std::move(scalar_column);
-            argument_column.type = function_argument->getResultType();
-            argument_is_constant = true;
+            const auto * get_scalar_const_arg = get_scalar_function_node->getArguments().getNodes().at(0)->as<ConstantNode>();
+            if (get_scalar_const_arg && scope.context->hasQueryContext())
+            {
+                auto query_context = scope.context->getQueryContext();
+                auto scalar_string = fieldToString(get_scalar_const_arg->getValue());
+                if (query_context->hasScalar(scalar_string))
+                {
+                    auto scalar = query_context->getScalar(scalar_string);
+                    argument_column.column = ColumnConst::create(scalar.getByPosition(0).column, 1);
+                    argument_column.type = get_scalar_function_node->getResultType();
+                    argument_is_constant = true;
+                }
+            }
         }
 
         all_arguments_constants &= argument_is_constant;
@@ -3177,10 +2688,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     {
         if (!AggregateFunctionFactory::instance().isAggregateFunctionName(function_name))
         {
-            throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Aggregate function with name '{}' does not exist{}. In scope {}",
-                            function_name,
-                            getHintsErrorMessageSuffix(AggregateFunctionFactory::instance().getHints(function_name)),
-                            scope.scope_node->formatASTForErrorMessage());
+            throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Aggregate function with name '{}' does not exist. In scope {}{}",
+                            function_name, scope.scope_node->formatASTForErrorMessage(),
+                            getHintsErrorMessageSuffix(AggregateFunctionFactory::instance().getHints(function_name)));
         }
 
         if (!function_lambda_arguments_indexes.empty())
@@ -3190,10 +2700,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         auto action = function_node_ptr->getNullsAction();
         std::string aggregate_function_name = rewriteAggregateFunctionNameIfNeeded(function_name, action, scope.context);
-
-        argument_types = bindWindowFunctionArgumentTypes(function_name, std::move(argument_types));
-        for (size_t i = 0; i < argument_types.size(); ++i)
-            function_arguments[i] = castNodeToType(function_arguments[i], argument_types[i], scope);
 
         AggregateFunctionProperties properties;
         auto aggregate_function
@@ -3239,7 +2745,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         if (const auto * create_function_query = typeid_cast<const ASTCreateWasmFunctionQuery *>(user_defined_function.get()))
         {
             UNUSED(create_function_query);
-            UserDefinedWebAssemblyFunctionFactory::checkWebAssemblyIsAvailable(scope.context);
             function = UserDefinedWebAssemblyFunctionFactory::instance().get(function_name, scope.context);
         }
     }
@@ -3311,10 +2816,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             auto hints = NamePrompter<2>::getHints(function_name, possible_function_names);
 
             throw Exception(ErrorCodes::UNKNOWN_FUNCTION,
-                "Function with name {} does not exist{}. In scope {}",
+                "Function with name {} does not exist. In scope {}{}",
                 backQuote(function_name),
-                getHintsErrorMessageSuffix(hints),
-                scope.scope_node->formatASTForErrorMessage());
+                scope.scope_node->formatASTForErrorMessage(),
+                getHintsErrorMessageSuffix(hints));
         }
 
         if (!function_lambda_arguments_indexes.empty())

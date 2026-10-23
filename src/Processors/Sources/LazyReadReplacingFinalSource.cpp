@@ -101,9 +101,9 @@ IProcessor::Status LazyReadReplacingFinalSource::prepare()
 
 static void calculateGlobalOffset(ActionsDAG & dag, ReadFromMergeTree & reading_step)
 {
-    const auto part_offset_columns = reading_step.addStartingPartOffsetAndPartOffset();
-    const bool added_part_starting_offset = part_offset_columns.added_part_starting_offset;
-    const bool added_part_offset = part_offset_columns.added_part_offset;
+    bool added_part_starting_offset = false;
+    bool added_part_offset = false;
+    reading_step.addStartingPartOffsetAndPartOffset(added_part_starting_offset, added_part_offset);
     DataTypePtr uint64_type = std::make_shared<DataTypeUInt64>();
     const auto * part_starting_offset_in = &dag.addInput("_part_starting_offset", uint64_type);
     const auto * part_offset_in = &dag.addInput("_part_offset", uint64_type);
@@ -271,7 +271,6 @@ QueryPlan LazyReadReplacingFinalSource::buildPlanFromReadingStep(
             /*group_by_two_level_threshold_=*/settings[Setting::group_by_two_level_threshold],
             /*group_by_two_level_threshold_bytes_=*/settings[Setting::group_by_two_level_threshold_bytes],
             /*max_bytes_before_external_group_by_=*/0,
-            /*min_bytes_before_external_group_by_=*/0,
             /*empty_result_for_aggregation_by_empty_set_=*/true,
             /*tmp_data_scope_=*/nullptr,
             /*max_threads_=*/settings[Setting::max_threads],
@@ -313,7 +312,8 @@ QueryPlan LazyReadReplacingFinalSource::buildPlanFromReadingStep(
             /*group_by_sort_description_=*/SortDescription{},
             /*should_produce_results_in_order_of_bucket_number_=*/false,
             /*memory_bound_merging_of_aggregation_results_enabled_=*/false,
-            /*explicit_sorting_required_for_aggregation_in_order_=*/false);
+            /*explicit_sorting_required_for_aggregation_in_order_=*/false,
+            /*enable_sharding_aggregator_=*/false);
         plan.addStep(std::move(aggregating_step));
 
         /// Rename aggregate columns back to original names and project only needed columns.

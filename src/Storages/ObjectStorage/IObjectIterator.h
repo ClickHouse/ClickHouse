@@ -48,7 +48,6 @@ struct ObjectInfo
     virtual std::string getPathOrPathToArchiveIfArchive() const;
     virtual std::optional<std::string> getFileFormat() const { return std::nullopt; }
 
-    /// The exact size of the object as the table metadata records it, if it records a positive one.
     virtual std::optional<size_t> getFileSizeHint() const { return std::nullopt; }
 
     std::optional<ObjectMetadata> getObjectMetadata() const { return relative_path_with_metadata.metadata; }
@@ -59,9 +58,6 @@ struct ObjectInfo
     /// Lazy materialization: if set, read only these rows of the file.
     /// Sorted absolute row indexes within the file, see FormatFilterInfo::rows_to_read.
     std::shared_ptr<const PaddedPODArray<UInt64>> rows_to_read;
-
-    /// Set for an archive entry whose name an earlier entry of the archive has, see `ArchiveEntryPositions`.
-    std::optional<size_t> archive_entry_index;
 
     String getIdentifier(bool include_file_bucket_info = true) const;
     String getIdentifierForPath(const String & path, bool include_file_bucket_info = true) const;
@@ -97,7 +93,7 @@ public:
         const DB::ActionsDAG & filter_,
         const NamesAndTypesList & virtual_columns_,
         const NamesAndTypesList & hive_partition_columns_,
-        StorageObjectStorageConfigurationPtr configuration_,
+        const std::string & object_namespace_,
         const ContextPtr & context_,
         std::function<void(FileProgress)> file_progress_callback_ = {});
 
@@ -113,7 +109,7 @@ public:
 
 private:
     const ObjectIterator iterator;
-    const StorageObjectStorageConfigurationPtr configuration;
+    const std::string object_namespace;
     const NamesAndTypesList virtual_columns;
     const NamesAndTypesList hive_partition_columns;
     const std::shared_ptr<ExpressionActions> filter_actions;

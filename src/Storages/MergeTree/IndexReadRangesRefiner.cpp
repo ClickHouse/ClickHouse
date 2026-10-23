@@ -27,15 +27,13 @@ MarkRanges IndexReadRangesRefiner::refine(const MergeTreeReadTaskInfo & info, Ma
     if (!has_projection_ranges && !index_build_context->index_reader_pool->hasSkipIndexReader())
         return ranges;
 
-    const auto & skip_index_input = index_build_context->read_ranges.at(info.part_index_in_query);
+    const auto & part_ranges = index_build_context->read_ranges.at(info.part_index_in_query);
     const auto & all_updated_columns = info.alter_conversions->getAllUpdatedColumns();
 
     /// Built once per part; concurrent callers wait on a shared future inside the pool.
     /// The same cached result is later reused by MergeTreeReaderIndex for granule- and row-level filtering.
     auto index_read_result = index_build_context->index_reader_pool->getOrBuildIndexReadResult(
-        info.part_index_in_query,
-        info.data_part_info,
-        skip_index_input,
+        part_ranges,
         has_projection_ranges ? projection_it->second : RangesInDataParts{},
         metadata_snapshot,
         all_updated_columns);
@@ -73,7 +71,7 @@ MarkRanges IndexReadRangesRefiner::refine(const MergeTreeReadTaskInfo & info, Ma
         bool part_fully_processed = remaining_marks.fetch_sub(dropped_marks, std::memory_order_acq_rel) == dropped_marks;
 
         if (part_fully_processed)
-            index_build_context->index_reader_pool->clear(info.part_index_in_query);
+            index_build_context->index_reader_pool->clear(info.data_part_info->getDataPart());
     }
 
     return result;

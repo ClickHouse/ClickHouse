@@ -211,11 +211,6 @@ public:
     {
         chassert(mapped.get());
 
-        /// A limit of 0 means that the cache stores nothing. Otherwise an entry with a weight of 0 would fit into a cache with
-        /// `max_size_in_bytes = 0`.
-        if (max_size_in_bytes == 0 || max_count == 0)
-            return;
-
         const size_t old_size_in_bytes = size_in_bytes;
         const size_t old_size = cache.size();
         const size_t entry_size_in_bytes = weight_function(*mapped);
