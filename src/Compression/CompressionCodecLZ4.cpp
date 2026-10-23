@@ -118,9 +118,8 @@ namespace
 {
 
 constexpr size_t max_columns_with_statistics = 256;
-/// Measurements per variant a new read stream inherits, and a column keeps, so that both adapt to a change of the data.
+/// Measurements per variant a new read stream inherits, so that it still adapts to its own data.
 constexpr double inherited_measurements = 8;
-constexpr double max_shared_measurements = 64;
 
 void limitMeasurements(LZ4::PerformanceStatistics::Element & element, double limit)
 {
@@ -189,10 +188,7 @@ UInt32 CompressionCodecLZ4::doDecompressData(const char * source, UInt32 source_
     if (shared)
     {
         for (size_t i = 0; i < Stats::NUM_ELEMENTS; ++i)
-        {
             addBlock(shared->data[i], before[i], lz4_stat.data[i]);
-            limitMeasurements(shared->data[i], max_shared_measurements);
-        }
     }
 
     /// LZ4::decompress only returns true when the dest buffer has been fully written (uncompressed_size)
