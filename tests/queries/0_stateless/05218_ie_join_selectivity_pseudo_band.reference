@@ -1,0 +1,16 @@
+-- row pairs passing each candidate key pair
+c < d AND a > x	1260
+a > x AND a < y	2462480
+-- chosen key conditions
+Conditions: __table1.c < __table2.d AND __table1.a > __table2.x
+-- result does not depend on the choice
+420
+420
+-- ends out of order: row pairs passing each candidate key pair
+c < d AND a > x	1440
+a > x AND a < y	2750252
+-- chosen key conditions
+Conditions: __table1.c < __table2.d AND __table1.a > __table2.x
+-- result does not depend on the choice
+1440
+1440

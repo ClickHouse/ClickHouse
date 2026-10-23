@@ -1,8 +1,6 @@
 #pragma once
 
 #include <Core/Block_fwd.h>
-#include <Processors/Executors/WorkInterval.h>
-#include <Processors/StepWallClock.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <QueryPipeline/StreamLocalLimits.h>
@@ -24,10 +22,9 @@ class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
 using Processors = std::list<ProcessorPtr>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
-class StepWallClockRegistry;
-using StepWallClockRegistryPtr = std::unique_ptr<StepWallClockRegistry>;
-
 class QueryStatus;
+class StepProfiler;
+using StepProfilerPtr = std::shared_ptr<StepProfiler>;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 
 struct Progress;
@@ -94,7 +91,7 @@ public:
         OutputPort * totals_ = nullptr,
         OutputPort * extremes_ = nullptr);
 
-    bool initialized() const { return !processors->empty(); }
+    bool initialized() const { return processors && !processors->empty(); }
     /// When initialized, exactly one of the following is true.
     /// Use PullingPipelineExecutor or PullingAsyncPipelineExecutor.
     bool pulling() const { return output != nullptr; }
@@ -127,13 +124,6 @@ public:
     void setLimitsAndQuota(const StreamLocalLimits & limits, std::shared_ptr<const EnabledQuota> quota_);
     bool tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & result_bytes) const;
 
-    void setStepWallClockRegistry(StepWallClockRegistryPtr step_wall_clock_registry_);
-    StepWallClockRegistry * getStepClocks() const { return step_wall_clock_registry.get(); }
-
-    void setCollectWorkIntervals(bool collect_work_intervals_) { collect_work_intervals = collect_work_intervals_; }
-    /// Moves the collected intervals out; the pipeline holds none afterwards.
-    WorkIntervalsPerThread takeWorkIntervals() { return std::move(work_intervals); }
-
     void writeResultIntoQueryResultCache(std::shared_ptr<QueryResultCacheWriter> query_result_cache_writer);
     void finalizeWriteInQueryResultCache();
     void readFromQueryResultCache(
@@ -161,6 +151,10 @@ public:
     /// Create progress callback from limits and quotas.
     std::unique_ptr<ReadProgressCallback> getReadProgressCallback() const;
 
+    /// EXPLAIN ANALYZE: the executor of this pipeline records step timings into it.
+    void setStepProfiler(StepProfilerPtr step_profiler_);
+    StepProfilerPtr getStepProfiler() const { return step_profiler; }
+
     /// Add processors and resources from other pipeline. Other pipeline should be completed.
     void addCompletedPipeline(QueryPipeline && other);
     void addCompletedPipeline(const QueryPipeline & other);
@@ -182,7 +176,7 @@ private:
     UInt64 normalized_query_hash = 0;
     bool update_profile_events = true;
     bool report_read_progress = true;
-    StepWallClockRegistryPtr step_wall_clock_registry;
+    StepProfilerPtr step_profiler;
 
     std::shared_ptr<Processors> processors;
 
@@ -198,9 +192,6 @@ private:
 
     size_t num_threads = 0;
     bool concurrency_control = false;
-    bool collect_work_intervals = false;
-
-    WorkIntervalsPerThread work_intervals;
 
     friend class PushingPipelineExecutor;
     friend class PullingPipelineExecutor;

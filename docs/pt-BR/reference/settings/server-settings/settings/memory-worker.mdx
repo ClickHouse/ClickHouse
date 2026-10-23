@@ -12,25 +12,25 @@ import SettingsInfoBlock from "/snippets/pt-BR/components/SettingsInfoBlock/Sett
 
 Estas configurações definem o servidor ClickHouse e são geradas automaticamente a partir do código-fonte do ClickHouse.
 
-<div id="memory_worker_correct_memory_tracker">
-  ## memory_worker_correct_memory_tracker
-</div>
+## memory_worker_correct_memory_tracker {#memory_worker_correct_memory_tracker}
 
-<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
-Se o worker de memória em segundo plano deve corrigir o rastreador de memória interno com base em informações de fontes externas, como jemalloc e cgroups
+Define se o worker de memória em segundo plano corrige o rastreador de memória global, a cada tick, com base em uma medição externa da memória efetivamente usada pelo processo: o uso de memória do cgroup quando há cgroups disponíveis (consulte `memory_worker_use_cgroup`) ou, caso contrário, o `stats.resident` do jemalloc.
 
-<div id="memory_worker_decay_adjustment_period_ms">
-  ## memory_worker_decay_adjustment_period_ms
-</div>
+O rastreador de memória global é um contador: as alocações o incrementam e as desalocações o decrementam. Qualquer assimetria na contabilização permanece nele durante todo o ciclo de vida do processo, pois nada mais o reduz, e um desvio para cima nunca é compensado — a memória que ele representa já foi liberada. Quando apenas o desvio já ultrapassa `max_server_memory_usage`, todas as alocações falham, até mesmo a verificação de zero bytes no início de uma conexão, e o servidor rejeita todas as consultas mesmo usando apenas uma fração do seu limite. Corrigir com base em uma medição limita o ciclo de vida desse desvio a um tick do worker (`memory_worker_period_ms`, por padrão 50 ms ao ler de cgroups e 100 ms ao ler do jemalloc).
+
+A correção não oculta o desvio. `MemoryTrackingUncorrected` mantém o valor que o rastreador teria se nenhuma correção fosse aplicada (um snapshot do contador bruto, atualizado a cada tick do worker), de modo que `MemoryTrackingUncorrected - MemoryTracking` corresponde ao desvio acumulado até o momento.
+
+Definir esta configuração como `0` restaura o comportamento das versões anteriores: o rastreador é corrigido apenas no primeiro tick do worker e sempre que fica negativo.
+
+## memory_worker_decay_adjustment_period_ms {#memory_worker_decay_adjustment_period_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="5000" changeable_without_restart="No" />
 
 Duração, em milissegundos, pela qual a pressão de memória deve persistir antes de ajustar dinamicamente o `dirty_decay_ms` do jemalloc. Quando o uso de memória permanece acima do limiar de purga durante esse período, o decaimento automático de páginas sujas é desativado (`dirty_decay_ms=0`) para recuperar memória de forma agressiva. Quando o uso permanece abaixo do limiar durante esse período, o comportamento de decaimento padrão é restaurado. Defina como 0 para desativar o ajuste dinâmico e usar as configurações de decaimento padrão do jemalloc.
 
-<div id="memory_worker_dynamic_hard_limit">
-  ## memory_worker_dynamic_hard_limit
-</div>
+## memory_worker_dynamic_hard_limit {#memory_worker_dynamic_hard_limit}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
 
@@ -40,33 +40,25 @@ Quando desativado, `max_server_memory_usage_to_ram_ratio` apenas restringe estat
 
 Não tem efeito quando `max_server_memory_usage_to_ram_ratio` é `0`.
 
-<div id="memory_worker_period_ms">
-  ## memory_worker_period_ms
-</div>
+## memory_worker_period_ms {#memory_worker_period_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />
 
 Período de tick do worker de memória em segundo plano, que corrige o uso de memória do rastreador de memória e limpa páginas não utilizadas durante períodos de maior uso de memória. Se definido como 0, será usado o valor padrão, dependendo da origem do uso de memória.
 
-<div id="memory_worker_purge_dirty_pages_threshold_ratio">
-  ## memory_worker_purge_dirty_pages_threshold_ratio
-</div>
+## memory_worker_purge_dirty_pages_threshold_ratio {#memory_worker_purge_dirty_pages_threshold_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.2" changeable_without_restart="No" />
 
 A razão de limiar das páginas sujas do jemalloc em relação à memória disponível para o servidor ClickHouse. Quando o tamanho das páginas sujas excede essa razão, o worker de memória em segundo plano força a purga dessas páginas. Se definido como 0, a purga forçada com base na razão de páginas sujas é desativada.
 
-<div id="memory_worker_purge_total_memory_threshold_ratio">
-  ## memory_worker_purge_total_memory_threshold_ratio
-</div>
+## memory_worker_purge_total_memory_threshold_ratio {#memory_worker_purge_total_memory_threshold_ratio}
 
 <SettingsInfoBlock type="Double" default_value="0.9" changeable_without_restart="No" />
 
 A razão de limiar para a purga do jemalloc em relação à memória disponível para o servidor ClickHouse. Quando o uso total de memória excede essa razão, o worker de memória em segundo plano força a purga de páginas sujas. Se definido como 0, a purga forçada com base na memória total é desativada.
 
-<div id="memory_worker_rss_speculative_reserve_ratio">
-  ## memory_worker_rss_speculative_reserve_ratio
-</div>
+## memory_worker_rss_speculative_reserve_ratio {#memory_worker_rss_speculative_reserve_ratio}
 
 <SettingsInfoBlock type="Double" default_value="1" changeable_without_restart="No" />
 
@@ -87,9 +79,7 @@ sanitizers (`ASan`, `UBSan`, `MSan`, `TSan`), o padrão é `0`, porque a
 lacuna `resident - tracked` é dominada pela sobrecarga de shadow/runtime do sanitizer,
 e não pela defasagem na contabilidade do rastreador.
 
-<div id="memory_worker_use_cgroup">
-  ## memory_worker_use_cgroup
-</div>
+## memory_worker_use_cgroup {#memory_worker_use_cgroup}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />Usa as informações atuais de uso de memória do cgroup para corrigir o rastreamento de memória.
 

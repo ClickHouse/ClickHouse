@@ -1,0 +1,110 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-10-08
+title: 'Demo days - 2026-10-08'
+sidebarTitle: '2026-10-08'
+description: 'ClickStack demo days for 2026-10-08'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## Heatmap series mode, PromQL heatmaps and explicit granularity {#heatmap-series-mode-promql-heatmaps-and-explicit-granularity}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iBMSK9QPXuA" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Previously, heatmaps only showed numeric distributions: the y-axis was a bucketed value such as span duration, and the colour showed the event count in each bucket. We've now added a series mode, where the y-axis shows the group-by value and the colour shows your chosen aggregate for each time bucket. It works much like a multi-series line chart, with the value represented by colour instead of height. The builder and generated query follow the same approach as time charts.
+
+In the demo, we're grouping by service name over the last day. The error-count heatmap makes the demo environment's staged incident easy to spot, with two clearly elevated cells. The same chart using a non-error aggregate alongside it looks flat. If the group-by returns more than 50 series, we show a warning and plot the top 50, using the same client-side limit logic as time charts. Series mode also works through the external dashboards API and MCP.
+
+For PromQL sources, there are three heatmap modes. Series mode works as above, using a range query with support for macros, variables and legend templates. In the demo, we're using it to show p95 latency per endpoint.
+
+Histogram mode uses metrics that Prometheus has already bucketed. The bucket bounds come from the `le` labels, and cumulative values are converted into values for each individual bucket. Use `sum by (le) (...)` to combine series with the same bucket bounds.
+
+Distribution mode is for non-histogram data where you still want a numeric distribution. At each timestamp, the returned samples are bucketed client-side, with linear or log-spaced buckets selected in the chart settings. The colour shows the number of samples in each bucket. In the demo, we're showing 14 CPU cores by utilization over time, using `sum by (system_cpu_logical_number) (system_cpu_utilization{system_cpu_state!="idle"})`. The histogram and distribution PRs are still open.
+
+We've also fixed granularity selection. Heatmaps previously ignored an explicit selection and always used auto, which targets 245 time buckets. They now respect your selection, so you can match the granularity of the other charts on a dashboard. Auto also respects a metric source's minimum granularity.
+
+The count and value expression inputs have moved from display settings into the chart editor, both on dashboards and in the chart explorer. Heatmaps now support number formatting too.
+
+Finally, the hover highlight is centred on the cell instead of being offset down and to the right. It picks the closest cell whose bounds fall within the cursor margin, rather than requiring the centre to be within it. The hover state also updates when the data refreshes while your cursor is still over the chart.
+
+**Related PRs:** [#3273](https://github.com/hyperdxio/hyperdx/pull/3273) Improve heatmap hover state alignment and reliability, [#3277](https://github.com/hyperdxio/hyperdx/pull/3277) Move heatmap inputs to editor form, [#3291](https://github.com/hyperdxio/hyperdx/pull/3291) Support series mode on builder heatmaps, [#3298](https://github.com/hyperdxio/hyperdx/pull/3298) Support series-mode heatmap in API and MCP, [#3305](https://github.com/hyperdxio/hyperdx/pull/3305) Respect explicit granularity on heatmaps, [#3313](https://github.com/hyperdxio/hyperdx/pull/3313) Support PromQL heatmaps (series-mode), [#3326](https://github.com/hyperdxio/hyperdx/pull/3326) Add distribution heatmaps calculated from PromQL values (open), [#3332](https://github.com/hyperdxio/hyperdx/pull/3332) Support heatmaps on Prometheus histograms (open)
+
+## Single-select dashboard variables {#single-select-dashboard-variables}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iBMSK9QPXuA?start=208" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Previously, all dashboard variables were multi-select. You can now configure a variable as single-select, so choosing another value replaces the current one. If the URL contains multiple values for a single-select variable, we use the first.
+
+This is particularly useful for PromQL. Multi-select variables expand to a regular expression alternation, which works with `=~` but not `=`, so there wasn't a good way to use a variable with the equality matcher.
+
+We've also added a `promql` variable format, which replaces `regex` as the default for variable references in PromQL expressions when no format is specified. It behaves the same way, except single-select values aren't regex-escaped. That means you can use `field="$var"` with a single-select variable. Multi-select values are still regex-escaped and should use `field=~"$var"`.
+
+**Related PRs:** [#3295](https://github.com/hyperdxio/hyperdx/pull/3295) Support single-select dashboard filters, [#3297](https://github.com/hyperdxio/hyperdx/pull/3297) Add promql var format for flexible escaping
+
+## Stacked line charts {#stacked-line-charts}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iBMSK9QPXuA?start=271" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+We've added `stacked_line` alongside `stacked_bar` as a time series chart type. You can switch a line chart to stacked line in the chart explorer or on a dashboard. This stacks the series on top of one another and fills the area under each, so you can see the total as well as each series' contribution.
+
+In the CLI, these render as stacked bar charts. The two views show much the same thing, and the stacking and fill are easier to read as bars in a terminal.
+
+**Related PRs:** [#3290](https://github.com/hyperdxio/hyperdx/pull/3290) Support stacked line charts
+
+## Attributing ClickHouse queries to the surface that issued them {#attributing-clickhouse-queries-to-the-surface-that-issued-them}
+
+*Demo by [@tommyzli](https://github.com/tommyzli)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iBMSK9QPXuA?start=526" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Every SQL query ClickStack sends to ClickHouse now includes a JSON `log_comment` and a `query_id` in the form `hdx-<surface>-<uuid>`. This lets you trace a row in `system.query_log` back to the dashboard tile, saved search, alert or MCP tool that issued it. A follow-up adds the same tagging to PromQL queries, which previously went out untagged.
+
+In the demo, querying the query log from Search showed all the queries labelled as coming from Search, including the `EXPLAIN` queries and the histogram bar chart. Opening the built-in ClickHouse dashboard showed dashboard queries with a `clickhouse` label identifying the pre-built dashboard. For a user-created dashboard, each query included the dashboard ID and the tile ID of the chart that issued it.
+
+If ClickStack shares your ClickHouse cluster with other workloads, this makes it easier to identify its queries, see which part of the app they came from, and track query cost by surface. Internally, we can use this to connect query logs to dashboard configurations when analysing usage. It's also a step towards automatic query optimizations, since we can now match a slow query to the tile that produced it.
+
+**Related PRs:** [#3155](https://github.com/hyperdxio/hyperdx/pull/3155) Attribute ClickHouse queries to the surface that issued them, [#3300](https://github.com/hyperdxio/hyperdx/pull/3300) PromQL query attribution
+
+## Inline name inputs for naming objects {#inline-name-inputs-for-naming-objects}
+
+*Demo by [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iBMSK9QPXuA?start=296" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Previously, naming worked differently depending on where you were in the app. Dashboards and saved searches had a click-to-edit title, with a pencil on hover or a double-click to edit, followed by a **Save Name** button. Other places used a bordered text field. There wasn't a documented pattern, so new screens tended to add their own. We now have a shared `InlineNameInput` component as the standard way to name objects.
+
+It looks like a title until you hover, which shows a light border. Clicking lets you edit in place. `Enter` or clicking away saves, while `Escape` or leaving the name empty reverts. There's no pencil or separate save button. After saving, it shows the saved value. If the rename fails or gets overwritten by a concurrent dashboard save, the displayed name reverts too, rather than leaving an unsaved name on screen.
+
+Long names are truncated, and the component comes in `xs`, `sm` and `md` sizes. Page titles use `md` at 18px, down from roughly 22px before. They still render inside a heading so screen readers can find them.
+
+Dashboard and saved search pages now use this, and the old `EditablePageName` component has been removed. There's also an `InlineNameInputControlled` variant that saves with the surrounding form, intended for drafts in the full-page tile editor, though it isn't used in the app yet. The chart editor keeps its existing **Chart Name** field for now, as the layout needs adjusting before the inline version fits.
+
+The pattern is documented in `agent_docs/naming_objects.md`, in the `naming-objects` agent skill, and under Guidelines and Components in Storybook. The idea is to make it easy for a coding agent working in the repo to find and reuse the component when adding another place to name something.
+
+**Related PRs:** [#3278](https://github.com/hyperdxio/hyperdx/pull/3278) Add InlineNameInput as the one way to name objects
+
+## Nesting saved searches under Search {#nesting-saved-searches-under-search}
+
+*Demo by [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/iBMSK9QPXuA?start=389" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+**This is exploratory work, with no commitment to ship it.**
+
+Saved searches currently have their own list page and sidebar item, separate from Search. You save a search in one place, then go somewhere else to find and manage it. A customer wanting to duplicate a search from the list had to open it first and duplicate it from there. A separate list makes sense for dashboards, but feels less natural for saved searches.
+
+This draft brings saved searches into Search. The top-level **Saved searches** sidebar item goes away, and favourited searches appear under Search, the way dashboards already do. A **Saved searches** button in the toolbar opens a drawer on the right, with search, **All** and **Favorites** tabs, tag filtering, and rename, duplicate and delete actions on each row. It opens on the right so it doesn't cover the app navigation. Existing `/search/list` links open the drawer too.
+
+When you select a saved search, the button shows its name. A badge beside it shows **Unsaved**, **Saved** or **Edited**, with **Edited** appearing once you've run a changed query. The comparison uses the search config in the URL and treats empty and missing values as equivalent, so simply loading a saved search doesn't mark it as edited.
+
+The separate saved-search header is removed, including the breadcrumb, title and created/updated line. Favourite, tags, Terraform and the actions menu move into the toolbar, while the created/updated details become a tooltip on the button. This keeps the layout consistent between saved and unsaved searches. Double-clicking the title to rename goes away with the header, but you can still rename from the drawer's row menu or the **Update** modal. Whether updates need a modal at all is still open. Ideally, updating would be a single action without also offering a rename.
+
+This is still a draft, and we'd love feedback on the behaviour. Four end-to-end tests in the drawer suite are still failing and need fixing before it leaves draft.
+
+**Related PRs:** [#3213](https://github.com/hyperdxio/hyperdx/pull/3213) Nest saved searches under Search in a drawer (open). (draft). This is an exploration rather than a shipped feature.
