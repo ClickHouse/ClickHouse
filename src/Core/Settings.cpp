@@ -7079,6 +7079,8 @@ Must be greater than zero.
     DECLARE(Bool, use_parquet_metadata_cache, true, R"(
 If turned on, parquet format may utilize the parquet metadata cache.
 
+For the `File` table engine and the `file` table function, a read with a filter also keeps the min/max statistics of the filter columns in the cache, and a later query skips a file without opening it if these statistics show that no row group of the file can match its filter. Errors that only opening such a file would raise (for example, a selected column missing from the file with `input_format_parquet_allow_missing_columns` disabled) then depend on whether the cache holds its statistics. Disabling this setting also disables keeping the statistics and skipping files.
+
 Possible values:
 
 - 0 - Disabled
