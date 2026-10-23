@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
+#include <Processors/Formats/Impl/Parquet/ALPEncoding.h>
 
 #include <base/arithmeticOverflow.h>
 #include <Columns/ColumnString.h>
@@ -212,13 +213,13 @@ struct BitPackedRLEDecoder : public PageDecoder
             /// bit_width == 0 means all values are 0.
             size_t count = num_values;
             if constexpr (filtered)
-            {
                 count = countBytesInFilter(filter, 0, num_values);
+            if constexpr (!skip)
+            {
                 if (count && limit == 0)
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Dict index or rep/def level out of bounds (rle)");
-            }
-            if constexpr (!skip)
                 memset(out, 0, count * sizeof(T));
+            }
             if constexpr (count_zeros)
                 *num_zeros += num_values;
             return;
@@ -337,20 +338,83 @@ struct PlainFixedSizeDecoder : public PageDecoder
     void decode(size_t num_values, IColumn & col, const UInt8 * filter, size_t filter_offset) override
     {
         const char * from = data;
-        if (!filter)
+        skip(num_values);
+        size_t pass_count = num_values;
+        if (filter)
         {
-            skip(num_values);
-            converter->convertColumn(std::span(from, num_values * converter->input_size), num_values, col);
+            filter += filter_offset;
+            pass_count = countBytesInFilter(filter, 0, num_values);
+            if (pass_count == 0)
+                return;
+        }
+        const size_t value_size = converter->input_size;
+        if (pass_count == num_values)
+        {
+            converter->convertColumn(std::span(from, num_values * value_size), num_values, col);
             return;
         }
-        size_t value_size = converter->input_size;
-        for (size_t i = 0; i < num_values; ++i)
+
+        const bool direct = converter->isTrivial();
+        char * to = nullptr;
+        if (direct)
         {
-            requireRemainingBytes(value_size);
-            if (filter[filter_offset + i])
-                converter->convertColumn(std::span(from + i * value_size, value_size), 1, col);
-            data += value_size;
+            auto to_span = col.insertRawUninitialized(pass_count);
+            chassert(to_span.size() == pass_count * value_size);
+            to = to_span.data();
         }
+        else
+        {
+            temp_buffer.resize(pass_count * value_size);
+            to = temp_buffer.data();
+        }
+        char * to_end = nullptr;
+        switch (value_size)
+        {
+            case 1: to_end = copyPassingValues<1>(from, filter, num_values, value_size, to); break;
+            case 2: to_end = copyPassingValues<2>(from, filter, num_values, value_size, to); break;
+            case 4: to_end = copyPassingValues<4>(from, filter, num_values, value_size, to); break;
+            case 8: to_end = copyPassingValues<8>(from, filter, num_values, value_size, to); break;
+            case 16: to_end = copyPassingValues<16>(from, filter, num_values, value_size, to); break;
+            default: to_end = copyPassingValues<0>(from, filter, num_values, value_size, to); break;
+        }
+        chassert(to_end == to + pass_count * value_size);
+        if (!direct)
+            converter->convertColumn(std::span(to, pass_count * value_size), pass_count, col);
+    }
+
+private:
+    PaddedPODArray<char> temp_buffer;
+
+    /// Appends the passing values to `to` and returns the new end; `static_value_size` 0 means `value_size`.
+    template <size_t static_value_size>
+    static char * copyPassingValues(const char * from, const UInt8 * filter, size_t num_values, size_t value_size, char * to)
+    {
+        const size_t size = static_value_size ? static_value_size : value_size;
+        size_t i = 0;
+        for (; i + 64 <= num_values; i += 64)
+        {
+            UInt64 mask = bytes64MaskToBits64Mask(filter + i);
+            if (mask == ~UInt64(0))
+            {
+                memcpy(to, from + i * size, 64 * size);
+                to += 64 * size;
+                continue;
+            }
+            for (; mask; mask &= mask - 1)
+            {
+                memcpy(to, from + (i + std::countr_zero(mask)) * size, size);
+                to += size;
+            }
+        }
+        for (; i < num_values; ++i)
+        {
+            if (filter[i])
+            {
+                memcpy(to, from + i * size, size);
+                to += size;
+            }
+        }
+        return to;
     }
 };
 
@@ -1411,6 +1475,10 @@ std::unique_ptr<PageDecoder> PageDecoderInfo::makeDecoder(
             if (fixed_size_converter)
                 return std::make_unique<ByteStreamSplitDecoder>(data, fixed_size_converter);
             break;
+        case parq::Encoding::ALP:
+            if (physical_type == parq::Type::FLOAT || physical_type == parq::Type::DOUBLE)
+                return makeALPDecoder(physical_type, data, fixed_size_converter);
+            break;
         default: throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected page encoding: {}", thriftToString(encoding));
     }
 
@@ -2455,6 +2523,9 @@ void Int96Converter::convertColumn(std::span<const char> data, size_t num_values
 
 void GeoConverter::convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn & col) const
 {
+    /// E.g. the dictionary page of a column chunk with only NULLs. `offsets[num_values - 1]` is not valid then.
+    if (num_values == 0)
+        return;
     col.reserve(col.size() + num_values);
     chassert(chars.size() >= offsets[num_values - 1]);
     for (ssize_t i = 0; i < ssize_t(num_values); ++i)
