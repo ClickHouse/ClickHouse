@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # Tags: long, no-fasttest
 
-# --dump-schema cases from review: result limits, dialect, stored query settings, table functions that read a
-# local table, accurateCastOrDefault types, codec settings, a `default` database with another engine, the `limit`
-# setting, SQL UDFs in a probed view, PromQL table functions and an `Overlay` over a materialized view.
+# --dump-schema cases from review: limits, dialect, stored settings, table functions reading a local table, cast types,
+# codec settings, a non-Atomic `default`, SQL UDFs in a probed view and an `Overlay` over a materialized view.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
