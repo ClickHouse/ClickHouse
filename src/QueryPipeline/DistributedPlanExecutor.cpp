@@ -2118,7 +2118,7 @@ protected:
                 }
                 catch (...)
                 {
-                    /// The query's failure record keeps the root cause over the failures it causes.
+                    /// The query's failure record keeps the root cause over the failures it causes. Ok.
                     cancellation->recordCurrentException();
                 }
             });
