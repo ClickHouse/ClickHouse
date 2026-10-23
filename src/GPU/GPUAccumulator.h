@@ -361,6 +361,8 @@ private:
         const std::vector<DeviceFixedColumn> & filter_columns);
 
     const std::vector<GPUElementType> group_keys;
+    /// Of each key, whether it is a float grouped by its bits, see `groupKeyElementTypeOf`.
+    const std::vector<bool> float_keys;
     const std::vector<GPUElementType> key_element_types;
     /// The columns aggregated, read and sent once each however many aggregates are of them.
     const std::vector<GPUElementType> values;

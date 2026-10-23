@@ -1017,23 +1017,18 @@ bool canAggregateOnDevice(
     if (planner_context->getQueryContext()->canUseTaskBasedParallelReplicas())
         return false;
 
-    /// A single local `MergeTree` table, which is where the columns this sums come from.
-    const auto & table_expression_node_to_data = planner_context->getTableExpressionNodeToData();
-    if (table_expression_node_to_data.size() != 1)
-        return false;
-
-    const auto & table_expression_node = table_expression_node_to_data.begin()->first;
-
-    StoragePtr storage;
-    if (const auto * table_node = table_expression_node->as<TableNode>())
-        storage = table_node->getStorage();
-    else if (const auto * table_function_node = table_expression_node->as<TableFunctionNode>())
-        storage = table_function_node->getStorageOrThrow();
-    else
-        return false;
-
-    if (!storage->isMergeTree() || storage->isRemote())
-        return false;
+    /// The rows may come from any tables and joins of them, but local ones: a remote table is aggregated in stages, the
+    /// first on its shards, of which this step does none.
+    for (const auto & [table_expression_node, _] : planner_context->getTableExpressionNodeToData())
+    {
+        StoragePtr storage;
+        if (const auto * table_node = table_expression_node->as<TableNode>())
+            storage = table_node->getStorage();
+        else if (const auto * table_function_node = table_expression_node->as<TableFunctionNode>())
+            storage = table_function_node->getStorageOrThrow();
+        if (storage && storage->isRemote())
+            return false;
+    }
 
     return GPUAggregatingStep::canRunOnDevice(*query_plan.getCurrentHeader(), aggregator_params);
 }

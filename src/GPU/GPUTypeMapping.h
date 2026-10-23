@@ -58,6 +58,14 @@ bool isStringKey(const IDataType & type);
 /// `FixedString` of 1, 2, 4 or 8 bytes, whose bytes are grouped by as they are.
 std::optional<GPUElementType> keyElementTypeOf(const IDataType & type);
 
+/// What a key of a `GROUP BY` on the device is grouped as: of `keyElementTypeOf`, and a `Float32` or a `Float64` as the
+/// unsigned integer of its bits, as ClickHouse groups floats by their bits: `0` and `-0` apart, and NaNs of different
+/// payloads apart, where IEEE equality, which cuDF groups floats by, would put the zeros together and every NaN apart.
+std::optional<GPUElementType> groupKeyElementTypeOf(const IDataType & type);
+
+/// Whether a key of `type` is grouped by its bits, see `groupKeyElementTypeOf`.
+bool isFloatKey(const IDataType & type);
+
 std::vector<GPUElementType> groupByKeysOrThrow(const DataTypes & key_types);
 
 /// What the rows of a column that the device collects, rather than groups, are carried as: a `String` as one, a

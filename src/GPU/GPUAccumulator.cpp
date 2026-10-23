@@ -267,6 +267,15 @@ std::vector<ColumnUploadPipe> pipesFor(const DataTypes & types, size_t batch_row
     return pipes;
 }
 
+std::vector<bool> floatKeysOf(const DataTypes & key_types)
+{
+    std::vector<bool> float_keys;
+    float_keys.reserve(key_types.size());
+    for (const auto & type : key_types)
+        float_keys.push_back(isFloatKey(*type));
+    return float_keys;
+}
+
 std::vector<GPUElementType> keyElementTypesOf(const std::vector<GPUElementType> & keys)
 {
     std::vector<GPUElementType> element_types;
@@ -356,6 +365,7 @@ GroupByGPUAccumulator::GroupByGPUAccumulator(
     std::function<void(MutableColumns)> on_collected_,
     std::vector<std::optional<uint32_t>> filter_aliases_)
     : group_keys(groupByKeysOrThrow(key_types))
+    , float_keys(floatKeysOf(key_types))
     , key_element_types(keyElementTypesOf(group_keys))
     , values(valueTypesOrThrow(value_types, key_types.empty()))
     , value_data_types(value_types)
@@ -564,8 +574,18 @@ void GroupByGPUAccumulator::sendBatchToDevice()
 
     std::vector<DeviceColumnView> keys;
     keys.reserve(key_pipes.size());
-    for (auto & pipe : key_pipes)
-        keys.push_back(pipe.flush().view());
+    for (size_t i = 0; i < key_pipes.size(); ++i)
+    {
+        const DeviceColumnView view = key_pipes[i].flush().view();
+        if (!float_keys[i])
+        {
+            keys.push_back(view);
+            continue;
+        }
+
+        /// A float key is grouped as the integer of its bits.
+        keys.push_back(DeviceFixedColumn{.element_type = group_keys[i], .data = view.fixed.data, .rows = view.fixed.rows});
+    }
 
     std::vector<DeviceColumnView> value_columns;
     value_columns.reserve(value_pipes.size());
@@ -1563,7 +1583,14 @@ void GroupByGPUAccumulator::copyGroupsTo(MutableColumns & key_columns, MutableCo
 
     for (size_t i = 0; i < group_keys.size(); ++i)
     {
-        const DeviceColumnView key = group_by->key(i);
+        const DeviceColumnView grouped = group_by->key(i);
+        /// The bits of a float key go back into its column as they are.
+        const DeviceColumnView key = float_keys[i]
+            ? DeviceColumnView(DeviceFixedColumn{
+                .element_type = sizeOf(group_keys[i]) == 8 ? GPUElementType::Float64 : GPUElementType::Float32,
+                .data = grouped.fixed.data,
+                .rows = grouped.fixed.rows})
+            : grouped;
         if (key.rows() != rows)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "The device holds {} rows of key {} of {} groups", key.rows(), i, rows);
         from.push_back(key);

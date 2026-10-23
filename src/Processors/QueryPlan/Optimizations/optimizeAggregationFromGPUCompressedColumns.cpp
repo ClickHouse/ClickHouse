@@ -445,7 +445,7 @@ std::optional<ReadColumns> matchReducedColumns(
     {
         if (key_position_by_read_name.contains(read_column.name))
         {
-            if (!GPU::isStringKey(*read_column.type) && !GPU::keyElementTypeOf(*read_column.type))
+            if (!GPU::isStringKey(*read_column.type) && !GPU::groupKeyElementTypeOf(*read_column.type))
                 GPU_COMPRESSED_REFUSE("a key column of a type the device has no element type for");
             continue;
         }

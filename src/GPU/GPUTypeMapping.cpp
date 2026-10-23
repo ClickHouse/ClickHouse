@@ -343,6 +343,21 @@ std::optional<GPUElementType> collectElementTypeOf(const IDataType & type)
     return filterElementTypeOf(type);
 }
 
+bool isFloatKey(const IDataType & type)
+{
+    return type.getTypeId() == TypeIndex::Float32 || type.getTypeId() == TypeIndex::Float64;
+}
+
+std::optional<GPUElementType> groupKeyElementTypeOf(const IDataType & type)
+{
+    switch (type.getTypeId())
+    {
+        case TypeIndex::Float32: return GPUElementType::UInt32;
+        case TypeIndex::Float64: return GPUElementType::UInt64;
+        default: return keyElementTypeOf(type);
+    }
+}
+
 std::vector<GPUElementType> groupByKeysOrThrow(const DataTypes & key_types)
 {
     std::vector<GPUElementType> keys;
@@ -354,7 +369,7 @@ std::vector<GPUElementType> groupByKeysOrThrow(const DataTypes & key_types)
             keys.push_back(GPUElementType::String);
             continue;
         }
-        const auto element_type = keyElementTypeOf(*key_type);
+        const auto element_type = groupKeyElementTypeOf(*key_type);
         if (!element_type)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "A key of {} in a `GROUP BY` on the GPU", key_type->getName());
         keys.push_back(*element_type);
@@ -372,12 +387,12 @@ bool canGroupByReduceOnDevice(
         || argument_types.size() != aggregations.size())
         return false;
 
-    /// `CudfGroupBy` takes keys of integers and strings.
+    /// `CudfGroupBy` takes keys of integers and strings, and floats as the integers of their bits.
     for (const auto & key_type : key_types)
     {
         if (isStringKey(*key_type))
             continue;
-        const auto key_element_type = keyElementTypeOf(*key_type);
+        const auto key_element_type = groupKeyElementTypeOf(*key_type);
         if (!key_element_type || !isInteger(*key_element_type))
             return false;
     }

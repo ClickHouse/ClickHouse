@@ -1,0 +1,23 @@
+- default
+device
+ok
+ok
+ok
+ok
+ok
+- SETTINGS gpu_aggregation_batch_bytes = 65536
+device
+ok
+ok
+ok
+ok
+ok
+- SETTINGS optimize_move_to_prewhere = 0
+device
+ok
+ok
+ok
+ok
+ok
+device
+ok
