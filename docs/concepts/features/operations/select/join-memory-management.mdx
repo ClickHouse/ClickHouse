@@ -7,7 +7,7 @@ doc_type: 'guide'
 
 Two groups of settings control JOIN memory. For most algorithms, hard limits stop a query when the JOIN state becomes too large. Spill thresholds make a JOIN write part of its state to disk so that the query can continue.
 
-## Hard limits
+## Hard limits {#hard-limits}
 
 - [`max_rows_in_join`](/reference/settings/session-settings/max-rows#max_rows_in_join) limits the number of rows in the right-hand data structure of a JOIN, which is typically a hash table.
 - [`max_bytes_in_join`](/reference/settings/session-settings/max-bytes#max_bytes_in_join) limits the size in bytes of the same data structure.
@@ -23,14 +23,14 @@ The limits act differently for other algorithms:
 - For the [block nested loop fallback](/concepts/features/operations/select/join-algorithms#block-nested-loop-fallback), the limits apply to the materialized right-hand side, including spilled blocks.
 - For [`partial_merge`](/concepts/features/operations/select/join-algorithms#partial-merge), reaching a limit changes the execution strategy instead of stopping the query: the JOIN starts writing its sorted right-hand blocks to disk.
 
-## Spill thresholds
+## Spill thresholds {#spill-thresholds}
 
 - [`max_bytes_before_external_join`](/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) sets an absolute spill threshold in bytes for the right-hand side of a hash-based JOIN.
 - [`max_bytes_ratio_before_external_join`](/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) sets the spill threshold as a ratio of the memory that remains under the user and server memory limits. If no memory limit is configured, the ratio has no effect.
 
 If both settings are set, the smaller resulting threshold applies. The thresholds apply to `hash`, `parallel_hash`, `grace_hash`, the `auto` value, and the block nested loop fallback. They require a configured temporary data path.
 
-## How spilling works
+## How spilling works {#how-spilling-works}
 
 Each algorithm that can spill writes a different part of its state to temporary files:
 
@@ -46,7 +46,7 @@ Temporary files are written to the storage that the [`tmp_path`](/reference/sett
 
 The `ExternalJoinWritePart`, `ExternalJoinCompressedBytes`, and `ExternalJoinUncompressedBytes` profile events report how many temporary files a JOIN wrote and how much data they contained. They are available in the `ProfileEvents` column of [`system.query_log`](/reference/system-tables/query_log).
 
-## Related pages
+## Related pages {#related-pages}
 
 - [JOIN algorithms](/concepts/features/operations/select/join-algorithms)
 - [How ClickHouse executes JOINs](/concepts/features/operations/select/join-execution)
