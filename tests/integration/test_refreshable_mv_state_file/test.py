@@ -658,6 +658,8 @@ def test_a_target_that_keeps_data_only_in_memory_is_refilled_after_restart():
     remote_distributed_target = "rmv_remote_distributed_target"
     remote_distributed = "rmv_remote_distributed"
     remote_distributed_view = "rmv_remote_distributed_view"
+    time_series = "rmv_time_series"
+    time_series_view = "rmv_time_series_view"
     views = [
         memory_view,
         join_view,
@@ -668,6 +670,7 @@ def test_a_target_that_keeps_data_only_in_memory_is_refilled_after_restart():
         forwarding_view,
         fanout_view,
         distributed_view,
+        time_series_view,
     ]
     durable_views = [durable_fanout_view, remote_distributed_view]
     tables = views + [
@@ -689,6 +692,7 @@ def test_a_target_that_keeps_data_only_in_memory_is_refilled_after_restart():
         distributed_target,
         remote_distributed,
         remote_distributed_target,
+        time_series,
     ]
     for table in tables:
         node.query(f"DROP TABLE IF EXISTS {table} SYNC")
@@ -790,6 +794,20 @@ def test_a_target_that_keeps_data_only_in_memory_is_refilled_after_restart():
             f"CREATE MATERIALIZED VIEW {remote_distributed_view} REFRESH AFTER 1 DAY APPEND "
             f"TO {remote_distributed} AS SELECT number b FROM numbers(2)"
         )
+        # A TimeSeries table writes the rows into its inner tables, here Memory.
+        node.query(
+            f"CREATE TABLE {time_series} ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0 "
+            f"SAMPLES INNER ENGINE = Memory TAGS INNER ENGINE = Memory "
+            f"TIME RANGES INNER ENGINE = Memory METRIC FAMILIES INNER ENGINE = Memory",
+            settings={"enable_time_series_table": 1},
+        )
+        node.query(
+            f"CREATE MATERIALIZED VIEW {time_series_view} REFRESH AFTER 1 DAY APPEND "
+            f"TO {time_series} AS SELECT 'metric' AS metric_name, "
+            f"map('instance', toString(number)) AS tags, "
+            f"[(toDateTime64('2026-10-23 00:00:00', 3), toFloat64(number))] AS samples "
+            f"FROM numbers(2)"
+        )
         before = {
             view: wait_for_refresh_info(
                 view, "last_success_time", lambda x: x not in ("", "\\N")
@@ -828,6 +846,10 @@ def test_a_target_that_keeps_data_only_in_memory_is_refilled_after_restart():
         assert node.query(f"SELECT count() FROM {forwarding_target}").strip() == "2"
         assert node.query(f"SELECT count() FROM {fanout_target}").strip() == "2"
         assert node.query(f"SELECT count() FROM {distributed_target}").strip() == "2"
+        assert (
+            node.query(f"SELECT count() FROM timeSeriesSamples({time_series})").strip()
+            == "2"
+        )
         for view in durable_views:
             assert refresh_info(view, "last_success_time") == before[view]
         assert node.query(f"SELECT count() FROM {durable_fanout_target}").strip() == "2"

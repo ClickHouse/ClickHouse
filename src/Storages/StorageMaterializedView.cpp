@@ -40,6 +40,7 @@
 #include <Storages/StorageMemory.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageSet.h>
+#include <Storages/StorageTimeSeries.h>
 #include <Storages/SelectQueryDescription.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -1109,6 +1110,9 @@ static bool keepsDataOnlyInMemory(StoragePtr table, bool follow_dependent_views,
     {
         /// A `Buffer` holds inserted rows in memory until it flushes them, even with a destination.
         if (castStorage<StorageMemory>(table, DeferredTable::Load) || castStorage<StorageBuffer>(table, DeferredTable::Load))
+            return true;
+        /// A `TimeSeries` table writes into target tables that need not be loaded yet when this view starts up.
+        if (castStorage<StorageTimeSeries>(table, DeferredTable::Load))
             return true;
         /// An insert also writes its rows to the targets of the materialized views over the table.
         if (follow_dependent_views && visited.insert(table->getStorageID()).second)
