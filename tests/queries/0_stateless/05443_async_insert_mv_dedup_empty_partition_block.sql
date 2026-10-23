@@ -22,11 +22,12 @@ SET optimize_on_insert = 1;
 -- Prevent an automatic flush between the two inserts; the flush below is explicit.
 SET async_insert_busy_timeout_min_ms = 600000;
 SET async_insert_busy_timeout_max_ms = 600000;
+SET async_insert_use_adaptive_busy_timeout = 0;
 
 INSERT INTO src_dedup_empty SETTINGS insert_deduplication_token = 'tok' VALUES (0, 1);
 INSERT INTO src_dedup_empty SETTINGS insert_deduplication_token = 'tok' VALUES (1, 2);
 
-SYSTEM FLUSH ASYNC INSERT QUEUE;
+SYSTEM FLUSH ASYNC INSERT QUEUE src_dedup_empty;
 
 -- The source table has no deduplication window, so it keeps both rows. In the target table the
 -- second insert is a duplicate of the first by token, so only the first row survives.
