@@ -2,15 +2,13 @@
 
 #include <Storages/MergeTree/WhatIfFilterAnalysis.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Storages/MergeTree/StatisticsCache.h>
-#include <Interpreters/Context.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
 
 bool tryEstimateWithStatistics(
-    WhatIfCandidateResult & result,
+    WhatIfIndexEstimator::IndexResult & result,
     const MergeTreeIndexPtr & index_helper,
     ReadFromMergeTree * read_step,
     const ReadFromMergeTree::AnalysisResult & analysis,
@@ -42,18 +40,22 @@ bool tryEstimateWithStatistics(
     ConditionSelectivityEstimatorBuilder builder(context);
     bool has_any_stats = false;
 
-    auto statistics_cache = context->getStatisticsCache();
     for (const auto & part : parts)
     {
-        /// Every analyzed part counts towards the baseline row count, like in `getConditionSelectivityEstimator`,
-        /// even if it has no statistics for the filter columns: `analysis.selected_marks` covers all parts.
-        builder.incrementRowCount(part.data_part->rows_count);
-        auto stats = part.data_part->loadStatistics(filter_input_columns, statistics_cache.get());
-        if (!stats.empty())
+        try
         {
-            for (const auto & [column_name, stat] : stats)
-                builder.addStatistics(column_name, stat);
-            has_any_stats = true;
+            auto stats = part.data_part->loadStatistics();
+            if (!stats.empty())
+            {
+                builder.markDataPart(part.data_part);
+                for (const auto & [column_name, stat] : stats)
+                    builder.addStatistics(column_name, stat);
+                has_any_stats = true;
+            }
+        }
+        catch (const Exception &) /// Ok — statistical estimation is best-effort
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
 
@@ -73,7 +75,7 @@ bool tryEstimateWithStatistics(
     double selectivity = std::min(1.0, static_cast<double>(profile.rows) / static_cast<double>(unfiltered.rows));
     result.skip_ratio = 1.0 - selectivity;
     result.estimated_marks = std::max<UInt64>(1, static_cast<UInt64>(static_cast<double>(analysis.selected_marks) * selectivity));
-    result.estimate_source = WhatIfCandidateResult::Statistical;
+    result.estimate_source = "statistical";
     return true;
 }
 

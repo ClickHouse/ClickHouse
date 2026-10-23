@@ -32,7 +32,9 @@ Si desea probar la integración de Redis antes de configurar su propio entorno, 
 * Acceso a los archivos de log de Redis
 
 <Steps>
-  <Step title="Verifique la configuración de logging de Redis" id="verify-redis">
+  <Step>
+    #### Verifique la configuración de logging de Redis
+
     Primero, verifique la configuración de logging de Redis. Conéctese a Redis y compruebe la ubicación del archivo de registro:
 
     ```bash
@@ -48,25 +50,27 @@ Si desea probar la integración de Redis antes de configurar su propio entorno, 
     Si Redis está enviando los logs a stdout, configúralo para que los escriba en un archivo actualizando `redis.conf`:
 
     ```bash
-    # Log to file instead of stdout
+    # Registrar en archivo en lugar de stdout
     logfile /var/log/redis/redis-server.log
 
-    # Set log level (options: debug, verbose, notice, warning)
+    # Establecer nivel de registro (opciones: debug, verbose, notice, warning)
     loglevel notice
     ```
 
     Después de cambiar la configuración, reinicie Redis:
 
     ```bash
-    # For systemd
+    # Para systemd
     sudo systemctl restart redis
 
-    # For Docker
+    # Para Docker
     docker restart <redis-container>
     ```
   </Step>
 
-  <Step title="Crear una configuración personalizada del OTel collector" id="custom-otel">
+  <Step>
+    #### Crear una configuración personalizada del OTel collector
+
     ClickStack permite ampliar la configuración base del OpenTelemetry Collector montando un archivo de configuración personalizado y definiendo una variable de entorno. La configuración personalizada se fusiona con la configuración base administrada por HyperDX mediante OpAMP.
 
     Crea un archivo llamado `redis-monitoring.yaml` con la siguiente configuración:
@@ -122,7 +126,9 @@ Si desea probar la integración de Redis antes de configurar su propio entorno, 
     </Note>
   </Step>
 
-  <Step title="Configura ClickStack para cargar una configuración personalizada" id="load-custom">
+  <Step>
+    #### Configura ClickStack para cargar una configuración personalizada
+
     Para habilitar una configuración personalizada del collector en tu despliegue actual de ClickStack, debes:
 
     1. Montar el archivo de configuración personalizado en `/etc/otelcol-contrib/custom.config.yaml`
@@ -136,14 +142,14 @@ Si desea probar la integración de Redis antes de configurar su propio entorno, 
     ```yaml
     services:
       clickstack:
-        # ... existing configuration ...
+        # ... configuración existente ...
         environment:
           - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
-          # ... other environment variables ...
+          # ... otras variables de entorno ...
         volumes:
           - ./redis-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
           - /var/log/redis:/var/log/redis:ro
-          # ... other volumes ...
+          # ... otros volúmenes ...
     ```
 
     ##### Opción 2: Docker Run (imagen todo en uno)
@@ -164,7 +170,9 @@ Si desea probar la integración de Redis antes de configurar su propio entorno, 
     </Note>
   </Step>
 
-  <Step title="Verificación de logs en HyperDX" id="verifying-logs">
+  <Step>
+    #### Verificación de logs en HyperDX
+
     Una vez configurado, inicia sesión en HyperDX y verifica que los logs se estén recibiendo:
 
     <Image img="/images/clickstack/redis/redis-log-view.webp" alt="Vista de logs" />
@@ -180,7 +188,9 @@ Si desea probar la integración de Redis antes de configurar su propio entorno, 
 Para los usuarios que quieran probar la integración de Redis antes de configurar sus sistemas de producción, proporcionamos un conjunto de datos de ejemplo con logs de Redis pregenerados y patrones realistas.
 
 <Steps>
-  <Step title="Descargar el conjunto de datos de ejemplo" id="download-sample">
+  <Step>
+    #### Descargar el conjunto de datos de ejemplo
+
     Descarga el archivo de log de ejemplo:
 
     ```bash
@@ -188,7 +198,9 @@ Para los usuarios que quieran probar la integración de Redis antes de configura
     ```
   </Step>
 
-  <Step title="Crear la configuración del collector de prueba" id="test-config">
+  <Step>
+    #### Crear la configuración del collector de prueba
+
     Crea un archivo llamado `redis-demo.yaml` con la siguiente configuración:
 
     ```yaml
@@ -230,7 +242,9 @@ Para los usuarios que quieran probar la integración de Redis antes de configura
     ```
   </Step>
 
-  <Step title="Ejecutar ClickStack con la configuración de demostración" id="run-demo">
+  <Step>
+    #### Ejecutar ClickStack con la configuración de demostración
+
     Ejecuta ClickStack con los logs de demostración y esta configuración:
 
     ```bash
@@ -244,6 +258,7 @@ Para los usuarios que quieran probar la integración de Redis antes de configura
 
     <Note>
       **Esto monta el archivo de log directamente en el contenedor. Se hace con fines de prueba usando datos de demostración estáticos.**
+
     </Note>
 
     ## Verificar los logs en HyperDX
@@ -267,17 +282,19 @@ Para los usuarios que quieran probar la integración de Redis antes de configura
 </Steps>
 
 <div id="dashboards">
-  ## Dashboards y visualización
+  ## Paneles y visualización
 </div>
 
 Para ayudarle a empezar a monitorizar Redis con ClickStack, proporcionamos visualizaciones esenciales para logs de Redis.
 
 <Steps>
-  <Step title="Descargar la configuración del dashboard" id="download">
-    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/redis-logs-dashboard.json'} download="redis-logs-dashboard.json" eventName="docs.redis_logs_monitoring.dashboard_download">Descargar el archivo de configuración del dashboard</TrackedLink>.
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/redis-logs-dashboard.json'} download="redis-logs-dashboard.json" eventName="docs.redis_logs_monitoring.dashboard_download">Descargar</TrackedLink> la configuración del dashboard
   </Step>
 
-  <Step title="Importar dashboard preconfigurado" id="import-dashboard">
+  <Step>
+    #### Importar dashboard preconfigurado
+
     1. Abra HyperDX y vaya a la sección Dashboards.
     2. Haga clic en &quot;Import Dashboard&quot; en la esquina superior derecha, dentro del menú de los tres puntos.
 
@@ -288,7 +305,9 @@ Para ayudarle a empezar a monitorizar Redis con ClickStack, proporcionamos visua
     <Image img="/images/clickstack/redis/redis-import-dashboard.webp" alt="Finalizar importación" />
   </Step>
 
-  <Step title="El dashboard se creará con todas las visualizaciones preconfiguradas" id="created-dashboard">
+  <Step>
+    #### El dashboard se creará con todas las visualizaciones preconfiguradas
+
     <Note>
       Para el conjunto de datos de demostración, establezca el intervalo de tiempo en **2025-10-27 10:00:00 - 2025-10-28 10:00:00 (UTC)** (ajústelo según su zona horaria local). De forma predeterminada, el dashboard importado no tendrá ningún intervalo de tiempo especificado.
     </Note>
@@ -399,7 +418,7 @@ Si tus logs de Redis tienen un formato distinto, es posible que debas ajustar el
 * Crea [dashboards](/es/clickstack/features/dashboards/overview) adicionales para casos de uso específicos (monitorización de API, eventos de seguridad)
 
 <div id="going-to-production">
-  ## Paso a producción
+  ## Puesta en producción
 </div>
 
-Esta guía amplía el OpenTelemetry Collector integrado de ClickStack para ofrecer una configuración rápida. Para implementaciones de producción, recomendamos ejecutar una instancia propia del OTel Collector y enviar los datos al endpoint OTLP de ClickStack. Consulte [Envío de datos de OpenTelemetry](/es/clickstack/ingesting-data/opentelemetry) para ver la configuración de producción.
+Esta guía se basa en el OpenTelemetry Collector integrado de ClickStack para ofrecer una configuración rápida. Para implementaciones de producción, recomendamos ejecutar tu propio OTel Collector y enviar los datos al endpoint OTLP de ClickStack. Consulta [Envío de datos de OpenTelemetry](/es/clickstack/ingesting-data/opentelemetry) para ver la configuración de producción.

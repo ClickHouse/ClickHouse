@@ -22,20 +22,13 @@
 #include <mutex>
 #include <shared_mutex>
 #include <unordered_map>
-/// WebAssembly cannot walk its own call stack from user code, and there is no libunwind for it.
-#if !defined(OS_WASM)
 #include <libunwind.h>
-#endif
 #include <fmt/format.h>
 
 #include <boost/algorithm/string/split.hpp>
 
 #if defined(THREAD_SANITIZER)
 #include <absl/debugging/stacktrace.h>
-#endif
-
-#if defined(__ELF__) && !defined(OS_FREEBSD)
-#include <link.h>
 #endif
 
 #if defined(OS_DARWIN)
@@ -69,22 +62,6 @@ bool shouldShowAddress(const void * addr)
 
     return show_addresses.load(std::memory_order_relaxed);
 }
-
-/// A fault address above the first page is shown only as an offset inside a loaded object:
-/// the runtime address of the heap, a stack or JIT code must not be published.
-std::optional<StackTrace::ResolvedAddress> resolveFaultAddress(const void * addr)
-{
-    if (!shouldShowAddress(addr))
-        return {};
-
-    if (reinterpret_cast<uintptr_t>(addr) < 4096)
-        return StackTrace::ResolvedAddress{.address = addr, .object = {}, .kind = StackTrace::AddressKind::Unsupported};
-
-    auto resolved = StackTrace::tryResolveAddress(addr);
-    if (!resolved.address)
-        return {};
-    return resolved;
-}
 }
 
 StackTrace::StackTrace()
@@ -97,11 +74,6 @@ void StackTrace::setShowAddresses(bool show)
     show_addresses.store(show, std::memory_order_relaxed);
 }
 
-bool StackTrace::showAddresses()
-{
-    return show_addresses.load(std::memory_order_relaxed);
-}
-
 std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused]] const ucontext_t & context)
 {
     std::string message = getSignalCodeDescription(sig, info.si_code);
@@ -110,11 +82,7 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused
     {
         using namespace std::string_literals;
 
-        std::string address;
-        if (info.si_addr == nullptr)
-            address = "NULL pointer";
-        else if (const auto resolved = resolveFaultAddress(info.si_addr))
-            address = resolved->object.empty() ? fmt::format("{}", resolved->address) : fmt::format("{} in {}", resolved->address, resolved->object);
+        std::string address = info.si_addr == nullptr ? "NULL pointer"s : (shouldShowAddress(info.si_addr) ? fmt::format("{}", info.si_addr) : ""s);
         std::string access = getFaultMemoryAccessType(sig, context);
         if (access.empty())
             access = "<not available>";
@@ -123,11 +91,6 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused
 
     if (sig == SIGTSTP)
         return "This is a signal used for debugging purposes by the user.";
-
-#if defined(si_syscall)
-    if (sig == SIGSYS)
-        return fmt::format("System call number: {}. {}", info.si_syscall, message);
-#endif
 
     return message;
 }
@@ -141,12 +104,10 @@ std::optional<UInt64> getFaultAddress(int sig, const siginfo_t & info)
     if (info.si_addr == nullptr)
         return 0;
 
-    /// An offset inside another object cannot be told apart from one inside the executable.
-    const auto resolved = resolveFaultAddress(info.si_addr);
-    if (!resolved || resolved->kind == StackTrace::AddressKind::OtherObject)
-        return std::nullopt;
+    if (shouldShowAddress(info.si_addr))
+        return reinterpret_cast<UInt64>(info.si_addr);
 
-    return reinterpret_cast<UInt64>(resolved->address);
+    return std::nullopt;
 }
 
 std::string getFaultMemoryAccessType(int sig, [[maybe_unused]] const ucontext_t & context)
@@ -322,29 +283,12 @@ std::string getSignalCodeDescription(int sig, int si_code)
                     return fmt::format("Unknown si_code: {}", si_code);
             }
         }
-        case SIGSYS:
-        {
-            switch (si_code)
-            {
-#if defined(SYS_SECCOMP)
-                case SYS_SECCOMP:
-                    return "The system call is not allowed by the seccomp policy that the server applied to itself. "
-                           "See the `seccomp` server setting.";
-#endif
-#if defined(SYS_USER_DISPATCH)
-                case SYS_USER_DISPATCH:
-                    return "The system call was redirected by syscall user dispatch.";
-#endif
-                default:
-                    return fmt::format("Unknown si_code: {}", si_code);
-            }
-        }
         default:
             return "";
     }
 }
 
-static void * getCallerAddress([[maybe_unused]] const ucontext_t & context)
+static void * getCallerAddress(const ucontext_t & context)
 {
 #if defined(__x86_64__)
     /// Get the address at the time the signal was raised from the RIP (x86-64)
@@ -378,109 +322,6 @@ static void * getCallerAddress([[maybe_unused]] const ucontext_t & context)
 #endif
 }
 
-#if defined(__ELF__) && !defined(OS_FREEBSD)
-namespace
-{
-/// Returns the address relative to the object that contains it plus that object, or the address
-/// unchanged and `nullptr` when no loaded object contains it.
-std::pair<uintptr_t, const DB::SymbolIndex::Object *>
-resolveAddressImpl(const DB::SymbolIndex & symbol_index, const void * virtual_addr)
-{
-    const auto * object = symbol_index.findObject(virtual_addr);
-    const uintptr_t virtual_offset = object ? uintptr_t(object->address_begin) : 0;
-    return {uintptr_t(virtual_addr) - virtual_offset, object};
-}
-}
-#endif
-
-#if defined(__ELF__) && !defined(OS_FREEBSD)
-/// Defined by the linker at the runtime address of the executable's ELF header.
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wreserved-identifier"
-extern "C" const ElfW(Ehdr) __ehdr_start; // NOLINT(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
-#pragma clang diagnostic pop
-
-namespace
-{
-/// The load bias and the address range of the main executable, read from its own program headers,
-/// so that they are known without the symbol index and without taking the loader lock.
-struct MainObjectBounds
-{
-    uintptr_t bias = 0;
-    uintptr_t begin = 0;
-    uintptr_t end = 0;
-};
-
-MainObjectBounds getMainObjectBounds()
-{
-    const auto header = reinterpret_cast<uintptr_t>(&__ehdr_start);
-    const auto * program_headers = reinterpret_cast<const ElfW(Phdr) *>(header + __ehdr_start.e_phoff);
-
-    MainObjectBounds bounds{.bias = header, .begin = UINTPTR_MAX, .end = 0};
-    for (size_t i = 0; i < __ehdr_start.e_phnum; ++i)
-    {
-        const auto & segment = program_headers[i];
-        if (segment.p_type != PT_LOAD)
-            continue;
-        if (segment.p_offset == 0)
-            bounds.bias = header - segment.p_vaddr;
-        bounds.begin = std::min<uintptr_t>(bounds.begin, segment.p_vaddr);
-        bounds.end = std::max<uintptr_t>(bounds.end, segment.p_vaddr + segment.p_memsz);
-    }
-    bounds.begin += bounds.bias;
-    bounds.end += bounds.bias;
-    return bounds;
-}
-
-StackTrace::ResolvedAddress resolveAddress(const DB::SymbolIndex & symbol_index, const void * virtual_addr)
-{
-    const auto [address, object] = resolveAddressImpl(symbol_index, virtual_addr);
-
-    if (!object)
-        return {nullptr, {}, StackTrace::AddressKind::UnknownMapping};
-    if (object == symbol_index.thisObject())
-        return {reinterpret_cast<const void *>(address), {}, StackTrace::AddressKind::MainObject};
-    return {reinterpret_cast<const void *>(address), object->name, StackTrace::AddressKind::OtherObject};
-}
-}
-#endif
-
-StackTrace::ResolvedAddress StackTrace::resolveAddress(const void * virtual_addr)
-{
-#if defined(__ELF__) && !defined(OS_FREEBSD)
-    return ::resolveAddress(DB::SymbolIndex::instance(), virtual_addr);
-#else
-    return {virtual_addr, {}, AddressKind::Unsupported};
-#endif
-}
-
-StackTrace::ResolvedAddress StackTrace::tryResolveAddress(const void * virtual_addr)
-{
-#if defined(__ELF__) && !defined(OS_FREEBSD)
-    if (const DB::SymbolIndex * symbol_index = DB::SymbolIndex::instanceIfInitialized())
-        return ::resolveAddress(*symbol_index, virtual_addr);
-
-    const auto main_object = getMainObjectBounds();
-    const auto address = reinterpret_cast<uintptr_t>(virtual_addr);
-    if (main_object.begin <= address && address < main_object.end)
-        return {reinterpret_cast<const void *>(address - main_object.bias), {}, AddressKind::MainObject};
-    return {nullptr, {}, AddressKind::UnknownMapping};
-#else
-    return {virtual_addr, {}, AddressKind::Unsupported};
-#endif
-}
-
-UInt64 StackTrace::resolveAddressForStorage(const void * virtual_addr)
-{
-    const ResolvedAddress resolved = resolveAddress(virtual_addr);
-    /// Only the main executable's offsets are unambiguous on their own: a column of bare numbers has
-    /// nowhere to record which object an offset belongs to. A runtime address keeps that information,
-    /// because the object that contains it is the one it is mapped into.
-    if (resolved.kind != AddressKind::MainObject)
-        return reinterpret_cast<UInt64>(virtual_addr);
-    return reinterpret_cast<UInt64>(resolved.address);
-}
-
 void StackTrace::forEachFrame(
     const FramePointers & frame_pointers,
     size_t offset,
@@ -500,8 +341,9 @@ void StackTrace::forEachFrame(
         StackTrace::Frame current_frame;
         DB::VectorWithMemoryTracking<DB::Dwarf::SymbolizedFrame> inline_frames;
         current_frame.virtual_addr = frame_pointers[i];
-        const auto [physical_addr, object] = resolveAddressImpl(symbol_index, current_frame.virtual_addr);
-        current_frame.physical_addr = reinterpret_cast<void *>(physical_addr);
+        const auto * object = symbol_index.findObject(current_frame.virtual_addr);
+        uintptr_t virtual_offset = object ? uintptr_t(object->address_begin) : 0;
+        current_frame.physical_addr = reinterpret_cast<void *>(uintptr_t(current_frame.virtual_addr) - virtual_offset);
 
         if (object)
         {
@@ -696,9 +538,7 @@ StackTrace::StackTrace(const ucontext_t & signal_context)
     asynchronous_stack_unwinding = true;
     if (0 == sigsetjmp(asynchronous_stack_unwinding_signal_jump_buffer, 1))
     {
-#if defined(OS_WASM)
-        size = 0;
-#elif defined(OS_DARWIN)
+#if defined(OS_DARWIN)
         size = backtrace(frame_pointers.data(), FRAMEPOINTER_CAPACITY);
 #else
         size = unw_backtrace(frame_pointers.data(), FRAMEPOINTER_CAPACITY);
@@ -744,10 +584,7 @@ StackTrace::StackTrace(FramePointers frame_pointers_, size_t size_, size_t offse
 
 void StackTrace::tryCapture()
 {
-#if defined(OS_WASM)
-    /// No way to walk the stack; every trace is empty.
-    size = 0;
-#elif defined(OS_DARWIN)
+#if defined(OS_DARWIN)
     /// backtrace()/__thread_stack_pcs walks the frame-pointer chain. Safe across boost::context fibers
     /// thanks to the make_fcontext null frame-pointer terminator (issue #111579); malloc-free, so it is
     /// also usable from allocator hooks (e.g. jemalloc sample tracking) that run under DENY_ALLOCATIONS.
@@ -764,6 +601,8 @@ void StackTrace::tryCapture()
 #endif
     __msan_unpoison(frame_pointers.data(), size * sizeof(frame_pointers[0]));
 }
+
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
 
 /// ClickHouse uses bundled libc++ so type names will be the same on every system thus it's safe to hardcode them
 constexpr std::pair<std::string_view, std::string_view> replacements[]
@@ -868,6 +707,8 @@ String StackTrace::collapseDemangledNames(std::optional<std::string_view> file, 
     return symbol_name;
 }
 
+#endif
+
 struct StackTraceRefTriple
 {
     const FramePointers & pointers;
@@ -927,8 +768,7 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
         else
             out << "?";
 
-        /// Without an object, `physical_addr` is the runtime address (e.g. JIT code).
-        if (frame.object && shouldShowAddress(frame.physical_addr))
+        if (shouldShowAddress(frame.physical_addr))
         {
             out << " @ ";
             DB::writePointerHex(frame.physical_addr, out);

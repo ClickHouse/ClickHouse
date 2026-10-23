@@ -1,9 +1,0 @@
-131072	8589869056
-building	['CreatingSet']	1
-40960	1677721600	40960
-reading	['CreatingSet']	1
-10000	99990000	10000
-prewhere	['ReadFromMergeTree']	1
-building	1	1	1	1
-prewhere	1	1	1	1
-reading	1	1	1	1

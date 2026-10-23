@@ -20,35 +20,7 @@ if (ENABLE_LLVM_LIBC_MATH)
     target_link_libraries(global-libs INTERFACE libllvmlibc)
     set (DEFAULT_LIBS "${DEFAULT_LIBS} -llibllvmlibc")
 
-    if (ARCH_AARCH64 AND NOT SANITIZE)
-        # AdvSIMD/MTE string routines from ARM's optimized-routines
-        # (see contrib/optimized-routines-cmake). Not linked under sanitizers at all:
-        # the definitions are strong, so the interceptors would otherwise only stay
-        # in effect for as long as every routine here is intercepted and the
-        # sanitizer runtimes stay ahead of `-laor` on the link line.
-        link_directories("${CMAKE_BINARY_DIR}/contrib/optimized-routines-cmake")
-        target_link_libraries(global-libs INTERFACE aor)
-        set (DEFAULT_LIBS "${DEFAULT_LIBS} -laor")
-    endif()
-
     if (NOT SANITIZE)
-        # Force every llvm-libc member into the link ahead of all objects and archives
-        # (linker flags precede them on the link line; -L placement does not matter to ld).
-        # Symbol resolution in archives is first-definition-wins in command-line order, and
-        # the Rust static libraries precede libllvmlibc there, so without this the libm
-        # functions Rust's compiler_builtins exports (cbrt, fmod, fma - baseline-CPU builds)
-        # would shadow the llvm-libc ones whenever symbol localization is bypassed. With all
-        # members pre-loaded, later archives can never supply an already-defined symbol, so
-        # this also covers the mem functions without per-symbol -u flags.
-        #
-        # Skipped under sanitizers, where the interceptors must wrap the libc mem functions
-        # instead (same reason the -u forcing was skipped before).
-        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--whole-archive -llibllvmlibc -Wl,--no-whole-archive")
-        if (ARCH_AARCH64)
-            set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--whole-archive -laor -Wl,--no-whole-archive")
-        endif()
-        # Redundant with --whole-archive above, but kept as a backstop for the mem functions
-        # in case the whole-archive link is ever weakened or repositioned.
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-u,memcpy -Wl,-u,memmove -Wl,-u,memset -Wl,-u,memcmp")
     endif()
 endif()
@@ -59,25 +31,16 @@ if (OS_ANDROID)
 elseif (USE_MUSL)
     # musl itself is linked in cmake/musl.cmake. -nostartfiles: don't use glibc's crt*.o
     # from the sysroot; musl's own startup files (copied to stable paths in
-    # contrib/musl-cmake) are wired here in the canonical order: rcrt1.o and crti.o go
+    # contrib/musl-cmake) are wired here in the canonical order: crt1.o and crti.o go
     # through CMAKE_EXE_LINKER_FLAGS, which the link line places before all object
     # files, and crtn.o goes at the end of DEFAULT_LIBS, after all libraries — crti and
     # crtn provide the prologue/epilogue of the `.init`/`.fini` sections and must wrap
     # every other contribution to them.
     set (MUSL_CRT_DIR "${CMAKE_BINARY_DIR}/contrib/musl-cmake")
-    # -static-pie: a static executable that relocates itself at startup (rcrt1.o), so it keeps ASLR.
-    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${MUSL_CRT_DIR}/rcrt1.o ${MUSL_CRT_DIR}/crti.o")
-    set (DEFAULT_LIBS "${DEFAULT_LIBS} -static-pie -nostartfiles ${MUSL_CRT_DIR}/crtn.o")
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${MUSL_CRT_DIR}/crt1.o ${MUSL_CRT_DIR}/crti.o")
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} -static -nostartfiles ${MUSL_CRT_DIR}/crtn.o")
 else ()
     set (DEFAULT_LIBS "${DEFAULT_LIBS} -lc -lm -lrt -lpthread -ldl")
-endif ()
-
-# The GPU island is built against the system libstdc++, so a binary carrying it needs that library.
-# It must stay last: both runtimes define `__gxx_personality_v0`, the linker binds the first on the
-# command line, and libstdc++'s does not recognize a libc++ exception - earlier, and the server dies
-# on the first `throw` anywhere.
-if (ENABLE_GPU)
-    set (DEFAULT_LIBS "${DEFAULT_LIBS} ${GPU_LIBSTDCXX_LIBRARY}")
 endif ()
 
 message(STATUS "Default libraries: ${DEFAULT_LIBS}")
@@ -87,21 +50,8 @@ set(CMAKE_C_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 
 add_library(Threads::Threads INTERFACE IMPORTED)
 if (USE_MUSL)
-    # Sanitizer builds link the copy of musl with the intercepted functions
-    # renamed to __real_* (see contrib/compiler-rt-cmake). Standalone UBSan is
-    # the one sanitizer without libc interceptors (no REAL() bindings), so it
-    # links the plain musl; contrib/compiler-rt-cmake does not produce
-    # musl_intercepted for it. Any future sanitizer mode intentionally falls
-    # into the musl_intercepted branch: if compiler-rt does not build the
-    # archive for it, the configure fails loudly instead of silently linking
-    # a libc whose functions the runtime expects to intercept.
-    if (SANITIZE AND NOT SANITIZE STREQUAL "undefined")
-        set (MUSL_LIBC_TARGET musl_intercepted)
-    else ()
-        set (MUSL_LIBC_TARGET musl)
-    endif ()
     # musl provides pthread in libc.
-    set_target_properties(Threads::Threads PROPERTIES INTERFACE_LINK_LIBRARIES ${MUSL_LIBC_TARGET})
+    set_target_properties(Threads::Threads PROPERTIES INTERFACE_LINK_LIBRARIES musl)
 else ()
     set_target_properties(Threads::Threads PROPERTIES INTERFACE_LINK_LIBRARIES pthread)
 endif ()

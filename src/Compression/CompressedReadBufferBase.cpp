@@ -7,11 +7,11 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
 #include <base/demangle.h>
-#include <Common/Hex.h>
-#include <base/unaligned.h>
+#include <base/hex.h>
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/ReadBuffer.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <Compression/CompressionInfo.h>
 #include <IO/WithFileName.h>
@@ -42,12 +42,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-CompressedReadBufferBase::Checksum CompressedReadBufferBase::readChecksum(const char * source)
-{
-    return {unalignedLoadLittleEndian<UInt64>(source), unalignedLoadLittleEndian<UInt64>(source + sizeof(UInt64))};
-}
+using Checksum = CityHash_v1_0_2::uint128;
 
-void CompressedReadBufferBase::validateChecksum(const char * data, size_t size, const Checksum expected_checksum, bool external_data)
+
+/// Validate checksum of data, and if it mismatches, find out possible reason and throw exception.
+static void validateChecksum(char * data, size_t size, const Checksum expected_checksum, bool external_data)
 {
     auto calculated_checksum = CityHash_v1_0_2::CityHash128(data, size);
     if (expected_checksum == calculated_checksum)
@@ -189,7 +188,11 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
     if (!always_copy && compressed_in->available() >= size_header_plus_checksum)
     {
         own_compressed_buffer_header_init = false;
-        checksum = readChecksum(compressed_in->position());
+        {
+            ReadBufferFromMemory checksum_in(compressed_in->position(), sizeof(checksum));
+            readBinaryLittleEndian(checksum.low64, checksum_in);
+            readBinaryLittleEndian(checksum.high64, checksum_in);
+        }
 
         readHeaderAndGetCodecAndSize(
             compressed_in->position() + sizeof(Checksum),
@@ -206,7 +209,12 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
         own_compressed_buffer.resize(size_header_plus_checksum);
         compressed_in->readStrict(own_compressed_buffer.data(), size_header_plus_checksum);
         own_compressed_buffer_header_init = true;
-        checksum = readChecksum(own_compressed_buffer.data());
+
+        {
+            ReadBufferFromMemory checksum_in(own_compressed_buffer.data(), sizeof(checksum));
+            readBinaryLittleEndian(checksum.low64, checksum_in);
+            readBinaryLittleEndian(checksum.high64, checksum_in);
+        }
 
         readHeaderAndGetCodecAndSize(
             own_compressed_buffer.data() + sizeof(Checksum),

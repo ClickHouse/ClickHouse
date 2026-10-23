@@ -34,12 +34,9 @@
                :type :ok
                :value (long (count (zk-list conn root-path))))
              (catch Exception _ (assoc op :type :info, :error :connect-error)))
-      :final-read (chu/exec-with-retries 30 (fn []
-                                              (with-fresh-conn nodename (:with-auth test)
-                                                (fn [conn]
-                                                  (assoc op
-                                                         :type :ok
-                                                         :value (long (count (zk-list conn root-path))))))))
+      :final-read (chu/exec-with-retries 30 (fn [] (assoc op
+                                                     :type :ok
+                                                     :value (long (count (zk-list conn root-path))))))
       :add (try
              (do
                (zk-multi-create-many-seq-nodes conn (concat-path root-path "seq-") (:value op) :with-acl (:with-auth test))

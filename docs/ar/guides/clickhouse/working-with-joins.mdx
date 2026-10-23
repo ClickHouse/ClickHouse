@@ -20,18 +20,18 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 كما أن مجموعة البيانات متاحة أيضًا في [Playground](https://sql.clickhouse.com?query_id=AACTS8ZBT3G7SSGN8ZJBJY) إذا كنت لا تريد إنشاء
 الجداول وتحميلها محليًا.
 
-ستستخدم الجداول الأربع التالية من مجموعة البيانات النموذجية:
+ستستخدم الجداول الأربع التالية من مجموعة البيانات التجريبية:
 
 <Image img="/images/starter_guides/joins/imdb_schema.webp" alt="مخطط IMDB" />
 
 تمثل البيانات في هذه الجداول الأربع أفلامًا يمكن أن تنتمي إلى نوع واحد أو عدة أنواع.
-ويؤدي الممثلون الأدوار في هذه الأفلام.
+ويؤدي الممثلون الأدوار في الفيلم.
 
 تمثل الأسهم في المخطط أعلاه [علاقات المفتاح الأجنبي بالمفتاح الأساسي](https://en.wikipedia.org/wiki/Foreign_key). على سبيل المثال، يحتوي العمود `movie_id` في صف من جدول `genres` على القيمة `id` من صف في جدول `movies`.
 
-توجد [علاقة متعددة إلى متعددة](https://en.wikipedia.org/wiki/Many-to-many_\(data_model\)) بين الأفلام والممثلين.
-وتُطبَّع هذه العلاقة متعددة إلى متعددة إلى [علاقتين من واحد إلى متعدد](https://en.wikipedia.org/wiki/One-to-many_\(data_model\)) باستخدام جدول `roles`.
-ويحتوي كل صف في جدول `roles` على قيم العمود `id` من جدولي `movies` و`actors`.
+توجد [علاقة متعدد إلى متعدد](https://en.wikipedia.org/wiki/Many-to-many_\(data_model\)) بين الأفلام والممثلين.
+وتُطبَّع هذه العلاقة متعددة-إلى-متعددة إلى [علاقتين من واحد إلى متعدد](https://en.wikipedia.org/wiki/One-to-many_\(data_model\)) باستخدام جدول `roles`.
+ويحتوي كل صف في جدول `roles` على قيمتي العمود `id` من جدولي `movies` و`actors`.
 
 <div id="join-types-supported-in-clickhouse">
   ## أنواع JOIN التي يدعمها ClickHouse
@@ -107,7 +107,7 @@ LIMIT 10;
 <Image img="/images/starter_guides/joins/outer_join.webp" alt="الربط الخارجي" />
 
 <Note>
-  يمكن [تهيئة](/ar/reference/settings/session-settings/join#join_use_nulls) ClickHouse لإرجاع [NULL](/ar/reference/syntax#null)s بدلًا من القيم الافتراضية (لكن ذلك أقل توصيةً [لأسباب تتعلق بالأداء](/ar/reference/data-types/nullable#storage-features)).
+  يمكن [تهيئة](/ar/reference/settings/session-settings#join_use_nulls) ClickHouse لإرجاع [NULL](/ar/reference/syntax#null)s بدلًا من القيم الافتراضية (لكن ذلك أقل توصيةً [لأسباب تتعلق بالأداء](/ar/reference/data-types/nullable#storage-features)).
 </Note>
 
 يعثر هذا الاستعلام على جميع الأفلام التي ليس لها نوع، وذلك عبر الاستعلام عن كل الصفوف من جدول `movies` التي لا تحتوي على تطابقات في جدول `genres`، وبالتالي تحصل (وقت الاستعلام) على القيمة الافتراضية 0 للعمود `movie_id`:
@@ -232,7 +232,7 @@ LIMIT 10;
 └─────────────────────────────────────────────┘
 ```
 
-تتضمن عبارة `INNER JOIN` في نسخة الاستعلام `CROSS JOIN` المُحسَّنة نحويًا الكلمة المفتاحية `ALL`، وقد أُضيفت صراحةً للحفاظ على دلالات الجداء الديكارتي في `CROSS JOIN` حتى عند إعادة كتابته إلى `INNER JOIN`، حيث يمكن [تعطيل](/ar/reference/settings/session-settings/join#join_default_strictness) الجداء الديكارتي في هذه الحالة.
+تتضمن عبارة `INNER JOIN` في نسخة الاستعلام `CROSS JOIN` المحسَّنة نحويًا الكلمة المفتاحية `ALL`، وقد أُضيفت صراحةً للحفاظ على دلالات الجداء الديكارتي في `CROSS JOIN` حتى عند إعادة كتابته إلى `INNER JOIN`، حيث يمكن [تعطيل](/ar/reference/settings/session-settings#join_default_strictness) الجداء الديكارتي في هذه الحالة.
 
 ```sql
 ALL
@@ -457,5 +457,5 @@ final_price:        9645
   ## الملخص
 </div>
 
-يوضح هذا الدليل كيف يدعم ClickHouse جميع أنواع JOIN القياسية في SQL، بالإضافة إلى أنواع JOIN متخصصة تدعم الاستعلامات التحليلية.
-راجع وثائق عبارة [JOIN](/ar/reference/statements/select/join) لمزيد من التفاصيل حول JOIN.
+يوضح هذا الدليل كيف يدعم ClickHouse جميع أنواع JOIN القياسية في SQL، بالإضافة إلى أنواع JOIN المتخصصة التي تُستخدم في الاستعلامات التحليلية.
+راجِع وثائق عبارة [JOIN](/ar/reference/statements/select/join) لمزيد من التفاصيل حول عمليات JOIN.

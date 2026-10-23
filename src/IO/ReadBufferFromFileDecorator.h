@@ -31,12 +31,6 @@ public:
     std::optional<size_t> tryGetFileSize() override;
     std::optional<Field> getMetadata(const String & name) const override;
 
-    /// Forward positional reads so that decorators don't silently drop the capability.
-    bool supportsReadAt() override { return impl->supportsReadAt(); }
-    size_t readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t)> & progress_callback) const override { return impl->readBigAt(to, n, offset, progress_callback); }
-    bool supportsReadAtRetainCells() const override { return impl->supportsReadAtRetainCells(); }
-    VectorWithMemoryTracking<CachedRegion> readBigAtRetainCells(size_t n, size_t offset) const override { return impl->readBigAtRetainCells(n, offset); }
-
     /// The swap-based `nextImpl` calls `impl->next()` while `impl` may still have pending data,
     /// tripping `ReadBuffer::next`'s `chassert(!hasPendingData)` under set()+next(). Force the
     /// `read(dest, n)` fallback, which drains via `eof() -> next()` at the outer level. Inherited

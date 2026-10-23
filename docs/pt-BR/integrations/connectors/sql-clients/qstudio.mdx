@@ -13,7 +13,7 @@ integration:
 import ConnectionDetails from '/snippets/pt-BR/_gather_your_details_http.mdx';
 
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
-import { CommunityMaintainedBadge } from "/snippets/pt-BR/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+import CommunityMaintainedBadge from "/snippets/pt-BR/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
 
@@ -21,51 +21,57 @@ QStudio é uma interface gráfica SQL gratuita que permite executar scripts SQL,
 
 O QStudio se conecta ao ClickHouse usando JDBC.
 
-<Steps>
-  <Step title="Obtenha os detalhes do seu ClickHouse" id="1-gather-your-clickhouse-details">
-    O QStudio usa JDBC sobre HTTP(S) para se conectar ao ClickHouse; você precisa de:
+<div id="1-gather-your-clickhouse-details">
+  ## 1. Reúna as informações do seu ClickHouse
+</div>
 
-    * endpoint
-    * número da porta
-    * nome de usuário
-    * senha
+O QStudio usa JDBC via HTTP(S) para se conectar ao ClickHouse; você precisará de:
 
-    <ConnectionDetails />
-  </Step>
+* endpoint
+* número da porta
+* nome de usuário
+* senha
 
-  <Step title="Baixe o QStudio" id="2-download-qstudio">
-    O QStudio está disponível em https://www.timestored.com/qstudio/download/
-  </Step>
+<ConnectionDetails />
 
-  <Step title="Adicione um banco de dados" id="3-add-a-database">
-    * Ao abrir o QStudio pela primeira vez, clique nas opções de menu **Server-&gt;Add Server** ou no botão de adicionar servidor na barra de ferramentas.
-    * Em seguida, preencha os detalhes:
+<div id="2-download-qstudio">
+  ## 2. Baixe o QStudio
+</div>
 
-    <Image img="/images/integrations/sql-clients/qstudio-add-connection.webp" size="lg" border alt="Tela de configuração da conexão com o banco de dados no QStudio mostrando as configurações de conexão do ClickHouse" />
+O QStudio está disponível em https://www.timestored.com/qstudio/download/
 
-    1. Tipo de servidor: ClickHouse.com
-    2. Observação: em Host, você DEVE incluir https://
-       Host: https://abc.def.clickhouse.cloud
-       Port: 8443
-    3. Nome de usuário: default
-       Senha: `XXXXXXXXXXX`
-    4. Clique em Add
+<div id="3-add-a-database">
+  ## 3. Adicione um banco de dados
+</div>
 
-    Se o QStudio detectar que você não tem o ClickHouse JDBC driver instalado, ele oferecerá baixá-lo para você:
-  </Step>
+* Ao abrir o QStudio pela primeira vez, clique nas opções do menu **Server-&gt;Add Server** ou no botão de adicionar servidor na barra de ferramentas.
+* Em seguida, preencha os detalhes:
 
-  <Step title="Consultar o ClickHouse" id="4-query-clickhouse">
-    * Abra um editor de consultas e execute uma consulta. Você pode executar consultas usando:
+<Image img="/images/integrations/sql-clients/qstudio-add-connection.webp" size="lg" border alt="Tela de configuração da conexão com o banco de dados no QStudio mostrando as configurações de conexão do ClickHouse" />
 
-    * Ctrl + e - Executa o texto destacado
+1. Tipo de servidor: Clickhouse.com
+2. Observação: em Host, você DEVE incluir https://
+   Host: https://abc.def.clickhouse.cloud
+   Porta: 8443
+3. Nome de usuário: default
+   Senha: `XXXXXXXXXXX`
+4. Clique em Add
 
-    * Ctrl + Enter - Executa a linha atual
+Se o QStudio detectar que você não tem o ClickHouse JDBC driver instalado, ele oferecerá fazer o download para você:
 
-    * Um exemplo de consulta:
+<div id="4-query-clickhouse">
+  ## 4. Consultar o ClickHouse
+</div>
 
-    <Image img="/images/integrations/sql-clients/qstudio-running-query.webp" size="lg" border alt="Interface do QStudio mostrando a execução de uma consulta SQL de exemplo no banco de dados ClickHouse" />
-  </Step>
-</Steps>
+* Abra um editor de consultas e execute uma consulta. Você pode executar consultas usando:
+
+* Ctrl + e - Executa o texto selecionado
+
+* Ctrl + Enter - Executa a linha atual
+
+* Um exemplo de consulta:
+
+<Image img="/images/integrations/sql-clients/qstudio-running-query.webp" size="lg" border alt="Interface do QStudio mostrando a execução de uma consulta SQL de exemplo no banco de dados ClickHouse" />
 
 <div id="next-steps">
   ## Próximos passos

@@ -60,24 +60,6 @@ private:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    /// Documentation-only — combines maps (or pairs of `Array(K)`+`Array(V)`)
-    /// element-wise on matching keys, summing or subtracting the values.
-    /// Value-type promotion follows the same rule as the underlying numeric
-    /// op (e.g. `Map(K, UInt8) + Map(K, UInt8)` → `Map(K, UInt64)`), which
-    /// isn't expressible in the DSL.
-    String getSignatureString() const override
-    {
-        return "(Map(K : Any, Any), ...) -> Map(K, Any)";
-    }
-
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        DataTypes data_types(arguments.size());
-        for (size_t i = 0; i < arguments.size(); ++i)
-            data_types[i] = arguments[i].type;
-        return getReturnTypeImpl(data_types);
-    }
-
     void checkTypes(
         DataTypePtr & key_type, DataTypePtr & promoted_val_type, const DataTypePtr & check_key_type, DataTypePtr & check_val_type) const
     {
@@ -274,12 +256,7 @@ private:
                     {
                         const auto [it, inserted] = summing_map.insert({key, first ? value : common::negateIgnoreOverflow(value)});
                         if (!inserted)
-                        {
-                            if (first)
-                                it->second = common::addIgnoreOverflow(it->second, value);
-                            else
-                                it->second = common::subIgnoreOverflow(it->second, value);
-                        }
+                            it->second = common::subIgnoreOverflow(it->second, value);
                     }
                 }
 
@@ -485,7 +462,7 @@ Collect all the keys and sum corresponding values.
     FunctionDocumentation::ReturnedValue returned_value_mapAdd = {"Returns a map or returns a tuple, where the first array contains the sorted keys and the second array contains values.", {"Map(K, V)", "Tuple(Array(T), Array(T))"}};
     FunctionDocumentation::Examples examples_mapAdd = {
         {"With Map type", "SELECT mapAdd(map(1, 1), map(1, 1))", "{1:2}"},
-        {"With tuple", "SELECT mapAdd(([toUInt8(1), 2], [1, 1]), ([toUInt8(1), 2], [1, 1]))", "([1,2],[2,2])"}
+        {"With tuple", "SELECT mapAdd(([toUInt8(1), 2], [1, 1]), ([toUInt8(1), 2], [1, 1]))", "([1, 2], [2, 2])"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_mapAdd = {20, 7};
     FunctionDocumentation::Category category_mapAdd = FunctionDocumentation::Category::Map;
@@ -503,7 +480,7 @@ Collect all the keys and subtract corresponding values.
     FunctionDocumentation::ReturnedValue returned_value_mapSubtract = {"Returns one map or tuple, where the first array contains the sorted keys and the second array contains values.", {"Map(K, V)", "Tuple(Array(T), Array(T))"}};
     FunctionDocumentation::Examples examples_mapSubtract = {
         {"With Map type", "SELECT mapSubtract(map(1, 1), map(1, 1))", "{1:0}"},
-        {"With tuple map", "SELECT mapSubtract(([toUInt8(1), 2], [toInt32(1), 1]), ([toUInt8(1), 2], [toInt32(2), 1]))", "([1,2],[-1,0])"}
+        {"With tuple map", "SELECT mapSubtract(([toUInt8(1), 2], [toInt32(1), 1]), ([toUInt8(1), 2], [toInt32(2), 1]))", "([1, 2], [-1, 0])"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_mapSubtract = {20, 7};
     FunctionDocumentation::Category category_mapSubtract = FunctionDocumentation::Category::Map;

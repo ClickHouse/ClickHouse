@@ -7,6 +7,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 
+#include <boost/algorithm/string.hpp>
 
 namespace DB
 {
@@ -78,10 +79,7 @@ bool ParserShowColumnsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
             return false;
 
     if (like)
-    {
         query->like = like->as<ASTLiteral &>().value.safeGet<String>();
-        query->has_like = true;
-    }
 
     node = query;
 

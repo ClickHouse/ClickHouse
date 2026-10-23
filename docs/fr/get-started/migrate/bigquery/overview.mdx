@@ -10,7 +10,9 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/fr/components/Image.jsx";
 
-## Organisation des ressources {#resource-organization}
+<div id="resource-organization">
+  ## Organisation des ressources
+</div>
 
 L’organisation des ressources dans ClickHouse Cloud est similaire à la [hiérarchie des ressources de BigQuery](https://cloud.google.com/bigquery/docs/resource-hierarchy). Nous décrivons ci-dessous les différences propres à ClickHouse Cloud à partir du schéma suivant, qui présente sa hiérarchie des ressources :
 
@@ -60,7 +62,7 @@ Enfin, la planification des E/S vous permet de restreindre les accès aux disque
   ### Autorisations
 </div>
 
-ClickHouse Cloud contrôle l&#39;accès des utilisateurs à deux niveaux : via la [console Cloud](/fr/products/cloud/guides/security/cloud-access-management/manage-cloud-users) et via la [base de données](/fr/products/cloud/guides/security/cloud-access-management/manage-database-users). L&#39;accès à la console est géré via l&#39;interface utilisateur [clickhouse.cloud](https://console.clickhouse.cloud). L&#39;accès à la base de données est géré via des comptes d&#39;utilisateurs de base de données et des rôles. En outre, des rôles peuvent être accordés aux utilisateurs de la console dans la base de données afin de leur permettre d&#39;interagir avec celle-ci via notre [SQL Console](/fr/integrations/connectors/sql-clients/sql-console).
+ClickHouse Cloud contrôle l&#39;accès des utilisateurs à deux niveaux : via la [console Cloud](/fr/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments) et via la [base de données](/fr/products/cloud/guides/security/cloud-access-management/manage-database-users). L&#39;accès à la console est géré via l&#39;interface utilisateur [clickhouse.cloud](https://console.clickhouse.cloud). L&#39;accès à la base de données est géré via des comptes d&#39;utilisateurs de base de données et des rôles. En outre, des rôles peuvent être accordés aux utilisateurs de la console dans la base de données afin de leur permettre d&#39;interagir avec celle-ci via notre [SQL Console](/fr/integrations/connectors/sql-clients/sql-console).
 
 <div id="data-types">
   ## Types de données

@@ -1,6 +1,6 @@
 -- { echo }
 
-{% for analyzer, label in [(1, 'Analyzer')] -%}
+{% for analyzer, label in [(0, 'Old Analyzer'), (1, 'Analyzer')] -%}
 SET enable_analyzer = {{ analyzer }};
 -- {{ label }}
 

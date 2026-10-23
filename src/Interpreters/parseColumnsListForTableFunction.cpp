@@ -5,7 +5,6 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/DataTypeObject.h>
-#include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -19,7 +18,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool enable_time_time64_type;
-    extern const SettingsBool enable_nullable_tuple_type;
+    extern const SettingsBool allow_experimental_nullable_tuple_type;
     extern const SettingsBool allow_suspicious_fixed_string_types;
     extern const SettingsBool allow_suspicious_low_cardinality_types;
     extern const SettingsBool allow_suspicious_variant_types;
@@ -43,7 +42,7 @@ DataTypeValidationSettings::DataTypeValidationSettings(const DB::Settings & sett
     , allow_suspicious_variant_types(settings[Setting::allow_suspicious_variant_types])
     , validate_nested_types(settings[Setting::validate_experimental_and_suspicious_types_inside_nested_types])
     , enable_time_time64_type(settings[Setting::enable_time_time64_type])
-    , enable_nullable_tuple_type(settings[Setting::enable_nullable_tuple_type])
+    , allow_experimental_nullable_tuple_type(settings[Setting::allow_experimental_nullable_tuple_type])
 {
 }
 
@@ -140,7 +139,7 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
             }
         }
 
-        if (!settings.enable_nullable_tuple_type)
+        if (!settings.allow_experimental_nullable_tuple_type)
         {
             if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&data_type))
             {
@@ -156,10 +155,9 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
         }
     };
 
+    validate_callback(*type_to_check);
     if (settings.validate_nested_types)
-        forEachInTypeTree(*type_to_check, validate_callback);
-    else
-        validate_callback(*type_to_check);
+        type_to_check->forEachChild(validate_callback);
 }
 
 ColumnsDescription parseColumnsListFromString(const std::string & structure, const ContextPtr & context)

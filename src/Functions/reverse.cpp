@@ -43,14 +43,6 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    /// `FunctionReverse` covers String/FixedString/Tuple inputs — the
-    /// `ReverseOverloadResolver` routes Array(...) inputs to `arrayReverse`
-    /// before this class is built, so Array is not part of this signature.
-    String getSignatureString() const override
-    {
-        return "(S : StringOrFixedString) -> S OR (T : Tuple) -> reverseTuple(T)";
-    }
-
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isStringOrFixedString(arguments[0]) && !isArray(arguments[0]) && !isTuple(arguments[0]))
@@ -139,15 +131,6 @@ public:
 
     bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
 
-    /// `reverse` works on arrays (delegated to `arrayReverse`), strings,
-    /// fixed strings, and tuples. The DSL signature is authoritative.
-    String getSignatureString() const override
-    {
-        return "(Array(T : Any)) -> Array(T)"
-               " OR (S : StringOrFixedString) -> S"
-               " OR (T : Tuple) -> reverseTuple(T)";
-    }
-
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         if (isArray(arguments.at(0).type))
@@ -175,8 +158,8 @@ REGISTER_FUNCTION(Reverse)
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an array or string with the order of elements or characters reversed."};
     FunctionDocumentation::Examples examples = {
-        {"Reverse array", "SELECT reverse([1, 2, 3, 4]);", "[4,3,2,1]"},
-        {"Reverse string", "SELECT reverse('abcd');", "dcba"}
+        {"Reverse array", "SELECT reverse([1, 2, 3, 4]);", "[4, 3, 2, 1]"},
+        {"Reverse string", "SELECT reverse('abcd');", "'dcba'"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;

@@ -14,7 +14,9 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 > と、ClickHouseのサンプルデータセットに接続する方法を説明します。
 
 <Steps>
-  <Step title="Dockerをインストールする" id="install-docker">
+  <Step>
+    ## Dockerをインストールする
+
     LibreChatとMCPサーバーを実行するには、Dockerが必要です。Dockerを入手するには、以下の手順に従ってください。
 
     1. [docker.com](https://www.docker.com/products/docker-desktop) にアクセスします
@@ -27,7 +29,9 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     詳細は、[Docker のドキュメント](https://docs.docker.com/get-docker/)を参照してください。
   </Step>
 
-  <Step title="LibreChatリポジトリをクローンする" id="clone-librechat-repo">
+  <Step>
+    ## LibreChatリポジトリをクローンする
+
     ターミナル (コマンドプロンプト、ターミナル、または PowerShell) を開き、次のコマンドで
     LibreChatリポジトリをクローンします。
 
@@ -37,7 +41,9 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     ```
   </Step>
 
-  <Step title=".env ファイルを作成・編集する" id="create-and-edit-env-file">
+  <Step>
+    ## .env ファイルを作成・編集する
+
     `.env.example` の設定ファイル例を `.env` にコピーします。
 
     ```bash
@@ -62,13 +68,13 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     <Info>
       **ローカルLLMを使用する場合**
 
-      APIキーがない場合は、Ollama のようなローカルLLMを使用できます。方法については、
-      後の手順 [&quot;Install Ollama&quot;](#add-local-llm-using-ollama) で説明します。ここでは
-      .env ファイルは変更せず、そのまま次の手順に進んでください。
+      APIキーがない場合は、Ollama のようなローカルLLMを使用できます。方法については、後の手順 [&quot;Install Ollama&quot;](#add-local-llm-using-ollama) で説明します。ここでは .env ファイルは変更せず、そのまま次の手順に進んでください。
     </Info>
   </Step>
 
-  <Step title="librechat.yaml ファイルを作成する" id="create-librechat-yaml-file">
+  <Step>
+    ## librechat.yaml ファイルを作成する
+
     次のコマンドを実行して、新しい `librechat.yaml` ファイルを作成します。
 
     ```bash
@@ -78,7 +84,9 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     これにより、LibreChat のメインの[設定ファイル](https://www.librechat.ai/docs/configuration/librechat_yaml)が作成されます。
   </Step>
 
-  <Step title="Docker composeにClickHouse MCPサーバーを追加する" id="add-clickhouse-mcp-server-to-docker-compose">
+  <Step>
+    ## Docker composeにClickHouse MCPサーバーを追加する
+
     次に、LLMが
     [ClickHouse SQL playground](https://sql.clickhouse.com/)と対話できるよう、
     LibreChatのDocker composeファイルにClickHouse MCPサーバーを追加します。
@@ -107,12 +115,14 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
     独自のデータを確認したい場合は、ご自身の ClickHouse Cloud サービスの[ホスト、ユーザー名、パスワード](/ja/get-started/setup/cloud#connect-with-your-app)を使用できます。
 
-    <Card title="ClickHouse Cloud を使い始める" href="https://clickhouse.cloud/signUp?loc=docs-guides-use-cases-ai-ml-mcp-librechat" icon="cloud">
+    <Card title="ClickHouse Cloud を使い始める" href="https://cloud.clickhouse.com/" icon="cloud">
       まだ Cloud アカウントをお持ちでない場合は、今すぐ ClickHouse Cloud を使い始めると、300 ドル分のクレジットを受け取れます。30 日間の無料トライアル終了後は、従量課金制プランに移行するか、使用量ベースの割引の詳細についてお問い合わせください。詳しくは料金ページをご覧ください。
     </Card>
   </Step>
 
-  <Step title="librechat.yaml でMCPサーバーを設定する" id="configure-mcp-server-in-librechat-yaml">
+  <Step>
+    ## librechat.yaml でMCPサーバーを設定する
+
     `librechat.yaml` を開き、次の設定をファイルの末尾に追加します。
 
     ```yml
@@ -137,8 +147,10 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     ```
   </Step>
 
-  <Step title="Ollama を使ってローカル LLM を追加する (任意)" id="add-local-llm-using-ollama">
-### Ollama をインストールする {#install-ollama}
+  <Step>
+    ## Ollama を使ってローカル LLM を追加する (任意)
+
+    ### Ollama をインストールする
 
     [Ollama のウェブサイト](https://ollama.com/download) にアクセスし、お使いのシステム向けの Ollama をインストールします。
 
@@ -152,7 +164,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
     モデルの一覧は、[Ollama library](https://ollama.com/library)を参照してください
 
-### librechat.yaml で Ollama を設定する {#configure-ollama-in-librechat-yaml}
+    ### librechat.yaml で Ollama を設定する
 
     モデルのダウンロードが完了したら、`librechat.yaml` で設定します。
 
@@ -176,7 +188,9 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     ```
   </Step>
 
-  <Step title="すべてのサービスを起動する" id="start-all-services">
+  <Step>
+    ## すべてのサービスを起動する
+
     LibreChat プロジェクトフォルダのルートで、次のコマンドを実行してサービスを起動します。
 
     ```bash
@@ -186,7 +200,9 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     すべてのサービスが完全に起動するまで待機します。
   </Step>
 
-  <Step title="ブラウザで LibreChat を開く" id="open-librechat-in-browser">
+  <Step>
+    ## ブラウザで LibreChat を開く
+
     すべてのサービスが起動したら、ブラウザで `http://localhost:3080/` を開きます。
 
     まだ無料の LibreChat アカウントを作成していない場合は作成してサインインします。すると、
@@ -200,7 +216,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     これで、ClickHouse のサンプルデータセットを調べるよう LLM にプロンプトを送れるようになります。試してみましょう。
 
     ```text title="Prompt"
-    What datasets do you have access to?
+    どのデータセットにアクセスできますか？
     ```
   </Step>
 </Steps>

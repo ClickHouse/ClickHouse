@@ -49,8 +49,8 @@ materialized view 来实现，并且能够显著提升常见查询的性能。
 | [`TIMETZ`](https://docs.aws.amazon.com/redshift/latest/dg/r_Datetime_types.html#r_Datetime_types-timetz)                             | [`DateTime`](/zh/reference/data-types/datetime), [`DateTime64`](/zh/reference/data-types/datetime64)                                                                                                                              |
 | [`VARBYTE`](https://docs.aws.amazon.com/redshift/latest/dg/r_VARBYTE_type.html) **                                                   | [`String`](/zh/reference/data-types/string) 配合 [`Bit`](/zh/reference/functions/regular-functions/bit-functions) 和 [编码](/zh/reference/functions/regular-functions/encoding-functions#hex) 函数使用                                        |
 
-<sub><span>*</span> ClickHouse 还支持取值范围更大的无符号整数，即 <a href="/zh/reference/data-types/int-uint">`UInt8`, `UInt32`, `UInt32` and `UInt64`</a>。</sub><br />
-<sub><span>**</span>ClickHouse 的 String 类型默认长度不受限制，但也可以使用 <a href="/zh/reference/statements/create/table#constraints">约束</a> 将其限定为特定长度。</sub>
+<sub><span>*</span> ClickHouse 还支持取值范围更大的无符号整数，即 <a href="http://clickhouse.com/docs/sql-reference/data-types/int-uint">`UInt8`, `UInt32`, `UInt32` and `UInt64`</a>。</sub><br />
+<sub><span>**</span>ClickHouse 的 String 类型默认长度不受限制，但也可以使用 <a href="http://clickhouse.com/docs/sql-reference/statements/create/table#constraints">约束</a> 将其限定为特定长度。</sub>
 
 <div id="compression">
   ## DDL 语法
