@@ -128,7 +128,10 @@ public:
 
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override { getTargetTable()->checkMutationIsPossible(commands, settings); }
 
-    void checkInsertIsAllowed(ContextPtr local_context) const override { getTargetTable()->checkInsertIsAllowed(local_context); }
+    void checkInsertIsAllowed(ContextPtr local_context) const override
+    {
+        getTargetTable(TargetAccess{local_context, AccessType::INSERT})->checkInsertIsAllowed(local_context);
+    }
 
     /// Mutate target table
     void mutate(

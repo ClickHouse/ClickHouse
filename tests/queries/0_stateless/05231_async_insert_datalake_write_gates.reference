@@ -39,3 +39,11 @@ the table is in readonly mode
 -- entries it left in the queue: 0
 -- plain object storage, ordinary path: still accepted on the initiator
 -- accepted on the initiator: rc=0 output_lines=0
+-- archive path through an alias, user without access to the target, synchronous and asynchronous insert
+ACCESS_DENIED
+ACCESS_DENIED
+-- archive path through a definer view whose definer may not insert into the target, both insert modes
+ACCESS_DENIED
+ACCESS_DENIED
+-- archive path through a definer view whose definer may insert one column, asynchronous insert that does not wait
+Write into archive is not supported

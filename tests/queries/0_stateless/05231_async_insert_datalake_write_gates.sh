@@ -192,9 +192,47 @@ echo "-- accepted on the initiator: rc=${rc} output_lines=$(printf '%s' "${out}"
 # outcome depends on the endpoint and is not this test's subject.
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE t_plain" 2>/dev/null || true
 
+# A delegating table may report its target's refusal only to a user its `write` would let write to the
+# target: the refusal names the target's path. Both carriers here check `INSERT` on the target first.
+RESTRICTED_USER="restricted_${CLICKHOUSE_DATABASE}"
+COLUMN_USER="column_${CLICKHOUSE_DATABASE}"
 ${CLICKHOUSE_CLIENT} -q "
-    DROP VIEW mv_iceberg_definer; DROP VIEW mv_delta; DROP TABLE t_src;
+    CREATE TABLE a_archive ENGINE = Alias('t_archive');
+    CREATE USER ${RESTRICTED_USER} IDENTIFIED WITH no_password;
+    CREATE USER ${COLUMN_USER} IDENTIFIED WITH no_password;
+    GRANT INSERT ON ${CLICKHOUSE_DATABASE}.a_archive TO ${RESTRICTED_USER};
+    GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t_src TO ${RESTRICTED_USER}, ${COLUMN_USER};
+    GRANT INSERT(k) ON ${CLICKHOUSE_DATABASE}.t_archive TO ${COLUMN_USER};
+    CREATE MATERIALIZED VIEW mv_archive_no_insert TO t_archive
+        DEFINER = ${RESTRICTED_USER} SQL SECURITY DEFINER AS SELECT toUInt64(id) AS k FROM t_src;
+    CREATE MATERIALIZED VIEW mv_archive_column TO t_archive
+        DEFINER = ${COLUMN_USER} SQL SECURITY DEFINER AS SELECT toUInt64(id) AS k FROM t_src;
+"
+
+echo '-- archive path through an alias, user without access to the target, synchronous and asynchronous insert'
+for mode in "--async_insert=0" "${ASYNC_NOWAIT[*]}"; do
+    # shellcheck disable=SC2086
+    ${CLICKHOUSE_CLIENT} --user "${RESTRICTED_USER}" ${mode} -q "INSERT INTO a_archive VALUES (1)" 2>&1 \
+        | grep -o -m1 -E 'ACCESS_DENIED|Write into archive is not supported'
+done
+
+echo '-- archive path through a definer view whose definer may not insert into the target, both insert modes'
+for mode in "--async_insert=0" "${ASYNC_NOWAIT[*]}"; do
+    # shellcheck disable=SC2086
+    ${CLICKHOUSE_CLIENT} ${mode} -q "INSERT INTO mv_archive_no_insert VALUES (1)" 2>&1 \
+        | grep -o -m1 -E 'ACCESS_DENIED|Write into archive is not supported'
+done
+
+# Column-level grants on every insertable column are enough to insert, so the target's refusal still reaches the initiator.
+echo '-- archive path through a definer view whose definer may insert one column, asynchronous insert that does not wait'
+${CLICKHOUSE_CLIENT} "${ASYNC_NOWAIT[@]}" -q "INSERT INTO mv_archive_column VALUES (1)" 2>&1 \
+    | grep -o -m1 -E 'ACCESS_DENIED|Write into archive is not supported'
+
+# `SYNC`: a definer stays in use, and cannot be dropped, until its view is actually removed.
+${CLICKHOUSE_CLIENT} -q "
+    DROP VIEW mv_archive_no_insert SYNC; DROP VIEW mv_archive_column SYNC; DROP TABLE a_archive;
+    DROP VIEW mv_iceberg_definer SYNC; DROP VIEW mv_delta; DROP TABLE t_src;
     DROP TABLE t_delta; DROP TABLE t_iceberg; DROP TABLE t_paimon;
     DROP TABLE t_globs; DROP TABLE t_archive; DROP TABLE t_plain;
-    DROP USER ${DEFINER_USER};
+    DROP USER ${DEFINER_USER}; DROP USER ${RESTRICTED_USER}; DROP USER ${COLUMN_USER};
 "
