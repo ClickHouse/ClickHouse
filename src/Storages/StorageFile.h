@@ -245,6 +245,7 @@ private:
     std::unique_ptr<ReadBuffer> peekable_read_buffer_from_fd;
     std::atomic<bool> has_peekable_read_buffer_from_fd = false;
     bool inferred_fd_reader_is_positional = false;
+    bool inferred_fd_reader_uses_mmap = false;
 
     // Counts the number of readers
     std::atomic<int32_t> readers_counter = 0;

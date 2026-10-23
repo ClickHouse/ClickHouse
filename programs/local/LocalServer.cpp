@@ -1349,11 +1349,13 @@ void LocalServer::executeInitialTableQuery(const String & initial_query, bool pr
     getClientConfiguration().setBool("print-time-to-stderr", false);
     SCOPE_EXIT({ getClientConfiguration().setBool("print-time-to-stderr", print_time_to_stderr); });
 
-    if (preserve_stdin_for_query_files)
+    const auto read_method = client_context->getSettingsRef()[Setting::storage_file_read_method];
+    if (preserve_stdin_for_query_files
+        && read_method != LocalFSReadMethod::pread
+        && read_method != LocalFSReadMethod::mmap)
     {
-        /// Schema inference must not advance stdin before query files read it.
-        /// Positional reads preserve the shared descriptor; restore the user's
-        /// read method before running their queries.
+        /// Only consuming descriptor readers require a temporary positional reader.
+        /// pread and mmap already leave stdin available to the query files.
         const Settings original_settings = client_context->getSettingsCopy();
         SCOPE_EXIT({ client_context->setSettings(original_settings); });
         client_context->setSetting("storage_file_read_method", String{"pread"});
@@ -1400,21 +1402,17 @@ void LocalServer::beforeExecutingCommandLineQueries()
     if (!implicit_stdin_table_to_activate)
         return;
 
-    const String & table_name = *implicit_stdin_table_to_activate;
     auto session_context = static_cast<LocalConnection &>(*connection).getSessionContext();
-    String name = table_name;
 
-    /// Query files may have created their own table with the default input-table name.
-    /// Preserve their explicit table references while still supporting implicit SELECTs on stdin.
-    if (session_context->findExternalTable(name)
-        || DatabaseCatalog::instance().isTableExist(StorageID(session_context->getCurrentDatabase(), name), session_context))
-    {
-        name = fmt::format("_clickhouse_local_stdin_{}", UUIDHelpers::generateV4());
-        std::replace(name.begin(), name.end(), '-', '_');
-    }
-
+    /// A private name must not shadow user tables when the query changes database
+    /// through SET database or per-query SETTINGS database.
+    String name = fmt::format("_clickhouse_local_stdin_{}", UUIDHelpers::generateV4());
+    std::replace(name.begin(), name.end(), '-', '_');
     session_context->addExternalTable(name, std::move(deferred_implicit_stdin_table));
-    client_context->setSetting("implicit_table_at_top_level", name);
+
+    /// A setting explicitly assigned by query files (even to an empty string) wins.
+    if (!client_context->getSettingsRef().isChanged("implicit_table_at_top_level"))
+        client_context->setSetting("implicit_table_at_top_level", name);
 }
 
 int LocalServer::main(const std::vector<std::string> & /*args*/)

@@ -1294,6 +1294,7 @@ std::pair<ColumnsDescription, String> StorageFile::getTableStructureAndFormatFro
     const auto read_method = context->getSettingsRef()[Setting::storage_file_read_method];
     inferred_fd_reader_is_positional = S_ISREG(file_stat.st_mode)
         && (read_method == LocalFSReadMethod::pread || read_method == LocalFSReadMethod::mmap);
+    inferred_fd_reader_uses_mmap = inferred_fd_reader_is_positional && read_method == LocalFSReadMethod::mmap;
     /// We will use PeekableReadBuffer to create a checkpoint, so we need a place
     /// where we can store the original read buffer.
     read_buffer_from_fd = createReadBuffer("", file_stat, true, table_fd, compression_method, context, /*preserve_fd_offset=*/true);
@@ -2934,11 +2935,14 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
         std::unique_ptr<ReadBuffer> read_buffer;
         if (storage->has_peekable_read_buffer_from_fd.exchange(false))
         {
-            /// Inference can use pread to preserve stdin for query files. Once the query
-            /// requests read(), use the shared descriptor so subsequent reads see its
-            /// consumed offset instead of replaying the inference buffer.
-            if (storage->inferred_fd_reader_is_positional
-                && ctx->getSettingsRef()[Setting::storage_file_read_method] == LocalFSReadMethod::read)
+            /// A positional inference buffer must not replace a consuming descriptor
+            /// reader (read, io_uring, or pread_threadpool) or a different positional
+            /// read method selected by the query files.
+            const auto read_method = ctx->getSettingsRef()[Setting::storage_file_read_method];
+            const bool consumes_fd = read_method != LocalFSReadMethod::pread && read_method != LocalFSReadMethod::mmap;
+            const bool switched_positional_method =
+                storage->inferred_fd_reader_uses_mmap != (read_method == LocalFSReadMethod::mmap);
+            if (storage->inferred_fd_reader_is_positional && (consumes_fd || switched_positional_method))
             {
                 storage->peekable_read_buffer_from_fd.reset();
                 storage->read_buffer_from_fd.reset();

@@ -162,3 +162,48 @@ echo "SELECT 'init' FROM system.one;" > "$TEMP_SQL_FILE_NAME"
     -q 'SELECT sum(c1); SELECT sum(c1)'; } < "$STDIN_DATA_FILE_NAME"
 { IFS= read -r _; $CLICKHOUSE_LOCAL --storage_file_read_method=pread --use_cache_for_count_from_files=0 \
     --queries-file="$TEMP_SQL_FILE_NAME" -q 'SELECT sum(c1); SELECT sum(c1)'; } < "$STDIN_DATA_FILE_NAME"
+
+# A SET database change must not let inferred stdin shadow an explicit table.
+printf '1\n2\n3\n' > "$STDIN_DATA_FILE_NAME"
+printf '%s\n' 'CREATE DATABASE db_01523;' \
+    'CREATE TABLE db_01523.`table` (x UInt8) ENGINE=Memory;' \
+    "SET database = 'db_01523';" > "$TEMP_SQL_FILE_NAME"
+$CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" \
+    -q 'SELECT count() FROM `table`; TRUNCATE TABLE `table`; SELECT count() FROM `table`' 0<>"$STDIN_DATA_FILE_NAME"
+cat "$STDIN_DATA_FILE_NAME"
+
+# Per-query database settings must not expose the same collision either.
+printf '%s\n' 'CREATE DATABASE db_01523;' \
+    'CREATE TABLE db_01523.`table` (x UInt8) ENGINE=Memory;' > "$TEMP_SQL_FILE_NAME"
+$CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" \
+    -q "SELECT count() FROM `table` SETTINGS database = 'db_01523'" < "$STDIN_DATA_FILE_NAME"
+
+# A query-file setting must override the inferred stdin default, including ''.
+echo "SET implicit_table_at_top_level = '';" > "$TEMP_SQL_FILE_NAME"
+$CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" -q 'SELECT 42' < "$STDIN_DATA_FILE_NAME"
+printf '%s\n' 'CREATE TABLE selected_01523 (x UInt8) ENGINE=Memory;' \
+    'INSERT INTO selected_01523 VALUES (7), (8);' \
+    "SET implicit_table_at_top_level = 'selected_01523';" > "$TEMP_SQL_FILE_NAME"
+$CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" -q 'SELECT sum(x)' < "$STDIN_DATA_FILE_NAME"
+
+# mmap already preserves descriptor position. Its first and later reads must
+# use the same range, even if the caller consumed a line before clickhouse-local.
+echo 'SELECT 99 FROM system.one;' > "$TEMP_SQL_FILE_NAME"
+{ IFS= read -r _; $CLICKHOUSE_LOCAL --storage_file_read_method=mmap --use_cache_for_count_from_files=0 \
+    -q 'SELECT sum(c1); SELECT sum(c1)'; } < "$STDIN_DATA_FILE_NAME"
+{ IFS= read -r _; $CLICKHOUSE_LOCAL --storage_file_read_method=mmap --use_cache_for_count_from_files=0 \
+    --queries-file="$TEMP_SQL_FILE_NAME" -q 'SELECT sum(c1); SELECT sum(c1)'; } < "$STDIN_DATA_FILE_NAME"
+
+# For descriptor input, io_uring and pread_threadpool consume the shared fd,
+# just like read. The deferred inference buffer must not replay stdin.
+for method in io_uring pread_threadpool; do
+    $CLICKHOUSE_LOCAL --storage_file_read_method="$method" --use_cache_for_count_from_files=0 \
+        --queries-file="$TEMP_SQL_FILE_NAME" -q 'SELECT count(); SELECT count(); SELECT count()' < "$STDIN_DATA_FILE_NAME"
+done
+
+# Switching to mmap inside a query file must replace the forced pread
+# inference reader; otherwise the first result would start at a different offset.
+printf '%s\n' "SET storage_file_read_method = 'mmap';" \
+    'SELECT 99 FROM system.one;' > "$TEMP_SQL_FILE_NAME"
+{ IFS= read -r _; $CLICKHOUSE_LOCAL --storage_file_read_method=read --use_cache_for_count_from_files=0 \
+    --queries-file="$TEMP_SQL_FILE_NAME" -q 'SELECT sum(c1); SELECT sum(c1)'; } < "$STDIN_DATA_FILE_NAME"
