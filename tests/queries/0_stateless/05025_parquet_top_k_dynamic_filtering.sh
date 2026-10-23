@@ -23,6 +23,23 @@ LOCAL=(${CLICKHOUSE_LOCAL}
 ON=(--use_top_k_dynamic_filtering=1)
 OFF=(--use_top_k_dynamic_filtering=0)
 
+# Print the optimized answer of each query (only "OK" with `--quiet`) and assert it against the
+# unoptimized one. The runtime is dominated by `clickhouse-local` startups, so all the queries of a
+# call share one process per setting.
+compare() {
+    local quiet=0 script="" query on off
+    if [ "$1" = "--quiet" ]; then quiet=1; shift; fi
+    for query in "$@"; do script+="${query}; SELECT '@@';"; done
+    on=$("${LOCAL[@]}" "${ON[@]}" --query "${script}" 2>&1)
+    off=$("${LOCAL[@]}" "${OFF[@]}" --query "${script}" 2>&1)
+    if [ "${on}" = "${off}" ]; then
+        awk -v quiet="${quiet}" '$0 == "@@" { print "OK"; next } !quiet' <<< "${on}"
+    else
+        echo "MISMATCH"
+        diff <(echo "${on}") <(echo "${off}")
+    fi
+}
+
 # part1 is a single row group, so it can never be pruned as a whole: the `rows_read` bound below
 # stays valid no matter how reading races with the sorting. part2 has 10 row groups, k strictly
 # greater than everything in part1, and no nulls: once part1 has been read (files of a glob are
@@ -66,12 +83,7 @@ queries=(
     "SELECT k, v FROM file('${DIR}/part{1,2}.parquet', Parquet) ORDER BY k, v LIMIT 7"
     "SELECT k FROM file('${DIR}/part1.parquet', Parquet) WHERE k < 3 ORDER BY k LIMIT 100"
 )
-for query in "${queries[@]}"; do
-    diff \
-        <("${LOCAL[@]}" "${ON[@]}" --query "${query}") \
-        <("${LOCAL[@]}" "${OFF[@]}" --query "${query}") \
-        && echo "OK"
-done
+compare --quiet "${queries[@]}"
 
 echo "-- sort keys the Parquet reader never sees: virtual columns and Hive partition columns are"
 echo "-- appended after the file is read, so the reader-side filter must not be armed for them;"
@@ -92,12 +104,7 @@ virtual_queries=(
     "SELECT p, k FROM file('${DIR}/hive/**/*.parquet', Parquet) ORDER BY p, k LIMIT 3 SETTINGS use_hive_partitioning = 1"
     "SELECT p, k FROM file('${DIR}/hive/**/*.parquet', Parquet) ORDER BY p DESC, k DESC LIMIT 3 SETTINGS use_hive_partitioning = 1"
 )
-for query in "${virtual_queries[@]}"; do
-    diff \
-        <("${LOCAL[@]}" "${ON[@]}" --query "${query}") \
-        <("${LOCAL[@]}" "${OFF[@]}" --query "${query}") \
-        && echo "OK"
-done
+compare --quiet "${virtual_queries[@]}"
 "${LOCAL[@]}" "${ON[@]}" --query "SELECT p, k FROM file('${DIR}/hive/**/*.parquet', Parquet) ORDER BY p, k LIMIT 3 SETTINGS use_hive_partitioning = 1"
 echo "-- all rows of both Hive files are read (nothing is pruned by a filter the reader cannot evaluate)"
 "${LOCAL[@]}" "${ON[@]}" --query "SELECT p, k FROM file('${DIR}/hive/**/*.parquet', Parquet) ORDER BY p, k LIMIT 3 SETTINGS use_hive_partitioning = 1" --format JSON | python3 -c "
@@ -115,14 +122,8 @@ echo "-- bytes are above 'z', so a stats-based skip of the second file would los
     INSERT INTO FUNCTION file('${DIR}/coll2.parquet', Parquet)
     SELECT arrayJoin(['z', 'ä']) AS s SETTINGS engine_file_truncate_on_insert = 1;
 "
-collate_query="SELECT s FROM file('${DIR}/coll{1,2}.parquet', Parquet) ORDER BY s COLLATE 'de' LIMIT 3"
 # `LOCAL` pins the variable-length opt-in to 0; a String sort column needs it on.
-LOCAL_STRING=("${LOCAL[@]/--use_top_k_dynamic_filtering_for_variable_length_types=0/--use_top_k_dynamic_filtering_for_variable_length_types=1}")
-"${LOCAL_STRING[@]}" "${ON[@]}" --query "${collate_query}"
-diff \
-    <("${LOCAL_STRING[@]}" "${ON[@]}" --query "${collate_query}") \
-    <("${LOCAL_STRING[@]}" "${OFF[@]}" --query "${collate_query}") \
-    && echo "OK"
+compare "SELECT s FROM file('${DIR}/coll{1,2}.parquet', Parquet) ORDER BY s COLLATE 'de' LIMIT 3 SETTINGS use_top_k_dynamic_filtering_for_variable_length_types = 1"
 
 echo "-- a sort key the reader does not physically read: a column with a DEFAULT expression that"
 echo "-- the file does not store is filled with type defaults inside the reader and only computed"
@@ -139,17 +140,11 @@ default_queries=(
     "SELECT k, d FROM file('${DIR}/part1.parquet', Parquet, '${default_structure}') ORDER BY d LIMIT 3"
     "SELECT k, d FROM file('${DIR}/part1.parquet', Parquet, 'k UInt64, d UInt64 DEFAULT 100000 - k') ORDER BY d LIMIT 3"
 )
-for query in "${default_queries[@]}"; do
-    "${LOCAL[@]}" "${ON[@]}" --query "${query}"
-    diff \
-        <("${LOCAL[@]}" "${ON[@]}" --query "${query}") \
-        <("${LOCAL[@]}" "${OFF[@]}" --query "${query}") \
-        && echo "OK"
-done
+compare "${default_queries[@]}"
 
-echo "-- floating-point sort keys: ORDER BY sorts 'nan' together with the NULLs while the reader's"
-echo "-- comparison does not, and Parquet min/max statistics legally omit 'nan', so neither the"
-echo "-- per-row filter nor the row-group shortcut may be armed for them (see issue #116705)"
+echo "-- floating-point sort keys: ORDER BY sorts 'nan' together with the NULLs, and Parquet min/max"
+echo "-- statistics legally omit 'nan', so the per-row filter is armed and must order 'nan' the same"
+echo "-- way, while the row-group shortcut must stay off (see issue #116705)"
 "${LOCAL[@]}" --query "
     INSERT INTO FUNCTION file('${DIR}/f1.parquet', Parquet)
     SELECT toFloat64(100 + number) AS f FROM numbers(65536)
@@ -158,6 +153,10 @@ echo "-- per-row filter nor the row-group shortcut may be armed for them (see is
     INSERT INTO FUNCTION file('${DIR}/f2.parquet', Parquet)
     SELECT arrayJoin([toFloat64(1000), nan]) AS f
     SETTINGS engine_file_truncate_on_insert = 1;
+
+    INSERT INTO FUNCTION file('${DIR}/f3.parquet', Parquet)
+    SELECT toFloat64(1000000 + number) AS f FROM numbers(65536)
+    SETTINGS output_format_parquet_row_group_size = 65536, engine_file_truncate_on_insert = 1;
 "
 # f1 is read first in the `f{1,2}` order and second in the `f{2,1}` order, which exercises both
 # failure modes: a threshold established from finite values skipping the row group that holds the
@@ -170,13 +169,27 @@ float_queries=(
     "SELECT f FROM file('${DIR}/f{2,1}.parquet', Parquet) ORDER BY f LIMIT 2"
     "SELECT f FROM file('${DIR}/f{2,1}.parquet', Parquet) ORDER BY f DESC LIMIT 2"
 )
+compare "${float_queries[@]}"
+# With no WHERE, the per-row filter is the only filter step the reader runs, so the rows passed
+# through a filter step show whether it was armed at all.
+filter_armed() {
+    "${LOCAL[@]}" "$@" --print-profile-events --format Null 2>&1 \
+        | awk '/ParquetRowsFilterExpression:/ { rows += $(NF-1) } END { print (rows > 0 ? "filter armed" : "filter not armed") }'
+}
 for query in "${float_queries[@]}"; do
-    "${LOCAL[@]}" "${ON[@]}" --query "${query}"
-    diff \
-        <("${LOCAL[@]}" "${ON[@]}" --query "${query}") \
-        <("${LOCAL[@]}" "${OFF[@]}" --query "${query}") \
-        && echo "OK"
+    filter_armed "${ON[@]}" --query "${query}"
 done
+filter_armed "${OFF[@]}" --query "${float_queries[0]}"
+# Once f1 sets the threshold no row of f3 can enter the top 2, and a float column gets no
+# statistics shortcut, so only the per-row filter can skip f3.
+f3_skipped() {
+    "${LOCAL[@]}" "$@" --format JSON --query "SELECT f FROM file('${DIR}/f{1,3}.parquet', Parquet) ORDER BY f LIMIT 2" | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+print([list(r.values()) for r in d['data']], 'all of f3 skipped:', d['statistics']['rows_read'] <= 65536)"
+}
+f3_skipped "${ON[@]}"
+f3_skipped "${OFF[@]}"
 
 echo "-- a statistic that cannot be decoded (here a negative Int64 read as UInt64) leaves the bound"
 echo "-- at the Range infinity sentinel, which is a Null Field and would be compared as a SQL NULL;"
@@ -190,12 +203,7 @@ echo "-- an unbounded side can never prove exclusion, so the row group must not 
     SELECT arrayJoin([toInt64(5), toInt64(6), toInt64(-1)]) AS k
     SETTINGS engine_file_truncate_on_insert = 1;
 "
-stat_query="SELECT k FROM file('${DIR}/stat{1,2}.parquet', Parquet, 'k UInt64') ORDER BY k LIMIT 3"
-"${LOCAL[@]}" "${ON[@]}" --query "${stat_query}"
-diff \
-    <("${LOCAL[@]}" "${ON[@]}" --query "${stat_query}") \
-    <("${LOCAL[@]}" "${OFF[@]}" --query "${stat_query}") \
-    && echo "OK"
+compare "SELECT k FROM file('${DIR}/stat{1,2}.parquet', Parquet, 'k UInt64') ORDER BY k LIMIT 3"
 
 echo "-- a tuple-element sort key whose storage parent carries a DEFAULT. The reading step answers"
 echo "-- from the very ColumnsDescription that AddingDefaultsTransform is built from, so a name it"
@@ -215,10 +223,18 @@ tuple_queries=(
     "SELECT k, t.a, t.b FROM file('${DIR}/tup.parquet', Parquet, '${tuple_structure}') ORDER BY t.a, k LIMIT 3 SETTINGS input_format_null_as_default = 1"
     "SELECT k, t, t.a FROM file('${DIR}/tup.parquet', Parquet, '${tuple_structure}') ORDER BY t.a DESC, k LIMIT 3 SETTINGS input_format_null_as_default = 1"
 )
-for query in "${tuple_queries[@]}"; do
-    "${LOCAL[@]}" "${ON[@]}" --query "${query}"
-    diff \
-        <("${LOCAL[@]}" "${ON[@]}" --query "${query}") \
-        <("${LOCAL[@]}" "${OFF[@]}" --query "${query}") \
-        && echo "OK"
-done
+compare "${tuple_queries[@]}"
+
+echo "-- a Variant nested in the sort key: the threshold keeps a value but not which alternative"
+echo "-- holds it, while ORDER BY ranks the alternatives first, so no filter may be armed for a"
+echo "-- runtime-typed column at any depth (v.1 is UInt8 in var1 and UInt64 in var2)"
+"${LOCAL[@]}" --query "
+    INSERT INTO FUNCTION file('${DIR}/var1.parquet', Parquet)
+    SELECT number AS id, tuple(toUInt8(3)) AS v FROM numbers(1000)
+    SETTINGS engine_file_truncate_on_insert = 1;
+
+    INSERT INTO FUNCTION file('${DIR}/var2.parquet', Parquet)
+    SELECT 1000 + number AS id, tuple(toUInt64(900)) AS v FROM numbers(1000)
+    SETTINGS engine_file_truncate_on_insert = 1;
+"
+compare "SELECT v, id FROM file('${DIR}/var{1,2}.parquet', Parquet, 'id UInt64, v Tuple(Variant(UInt64, UInt8))') ORDER BY v, id DESC LIMIT 2 SETTINGS allow_suspicious_types_in_order_by = 1, allow_suspicious_variant_types = 1"

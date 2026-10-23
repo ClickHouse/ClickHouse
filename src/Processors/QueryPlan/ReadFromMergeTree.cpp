@@ -15,6 +15,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/TypeTree.h>
+#include <DataTypes/hasNullable.h>
 #include <Formats/FormatSettings.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
@@ -3352,10 +3353,13 @@ void ReadFromMergeTree::buildIndexes(
 
                 /// The `minmax` index leaves NaN out of the granule bounds. That is harmless while NaN ranks last,
                 /// but under NULLS FIRST a granule whose finite values are all beyond the threshold would be
-                /// skipped together with the NaN rows it holds, which rank before the threshold.
-                if (top_k_filter_info->threshold_tracker
-                    && isFloat(removeLowCardinality(top_k_filter_info->data_type))
-                    && top_k_filter_info->threshold_tracker->getNullsDirection() != top_k_filter_info->threshold_tracker->getDirection())
+                /// skipped together with the NaN rows it holds, which rank before the threshold. The max is also
+                /// NaN for an all-NaN granule and for an index granule merging an all-NaN range with finite ones,
+                /// which a DESC ranking puts first and a DESC threshold skips. So a float key needs ASC NULLS LAST;
+                /// without a threshold tracker, tryOptimizeTopK has already checked NULLS FIRST.
+                if (hasTypeThatCanContainFloat(top_k_filter_info->data_type)
+                    && (top_k_filter_info->direction != 1
+                        || (top_k_filter_info->threshold_tracker && top_k_filter_info->threshold_tracker->getNullsDirection() != 1)))
                     return false;
 
                 return true;

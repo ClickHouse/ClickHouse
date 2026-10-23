@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/TypeTree.h>
+#include <DataTypes/hasNullable.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
@@ -40,15 +41,6 @@ bool hasEmptyTuple(const DataTypePtr & type)
             return true;
 
     return false;
-}
-
-/// `lessOrEquals` and `greaterOrEquals` are false for NaN, while the sort places NaN first or last by
-/// `nulls_direction`, so the comparison functions would drop NaN rows that rank before the threshold.
-/// The column comparison path places NaN the way the sort does. Container types (`Tuple`, `Array`,
-/// `Map`) compare their elements lexicographically, so a float anywhere inside them matters too.
-bool hasFloatingPoint(const DataTypePtr & type)
-{
-    return anyInTypeTree(*type, [](const IDataType & node) { return isFloat(node); });
 }
 
 /// A `NULL` nested inside a container type (e.g. `Tuple(Nullable(UInt32))`) makes the comparison functions
@@ -121,8 +113,11 @@ public:
             auto current_threshold = threshold_tracker->getValue();
             auto data_type = arguments[0].type;
 
+            /// `lessOrEquals` and `greaterOrEquals` do not place NaN by `nulls_direction` (a NaN scalar fails both,
+            /// a NaN inside an `Array` compares as greatest), so they would drop NaN rows that rank before the
+            /// threshold. The column comparison path places NaN the way the sort does.
             if (collator || data_type->isNullable() || isDynamic(data_type) || isVariant(data_type) || hasEmptyTuple(data_type)
-                || hasFloatingPoint(data_type) || hasNestedNullable(data_type))
+                || hasTypeThatCanContainFloat(data_type) || hasNestedNullable(data_type))
                 return executeGeneral(arguments[0], current_threshold, data_type, input_rows_count);
 
             return executeVectorized(arguments[0], current_threshold, data_type, input_rows_count);

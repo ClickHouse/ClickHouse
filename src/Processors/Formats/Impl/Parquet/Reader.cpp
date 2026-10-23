@@ -19,7 +19,7 @@
 #include <Columns/FilterDescription.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/TypeTree.h>
+#include <DataTypes/hasNullable.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/checkStackSize.h>
@@ -526,12 +526,7 @@ std::optional<Range> Reader::getTopKSortColumnRange(size_t row_group_idx) const
         /// for NaN values, min and max should be ignored"), while `ORDER BY` sorts `nan` together
         /// with the NULLs. So, exactly like a chunk that may contain nulls, a floating-point chunk
         /// that may contain a `nan` is not bounded by its statistics and cannot be skipped by them.
-        /// (`tryTopKForFormatSource` keeps floating-point sort keys off this path entirely for now,
-        /// because the per-row filter is not `nan`-aware either - see
-        /// https://github.com/ClickHouse/ClickHouse/issues/116705 - but the statistics shortcut is
-        /// unsound on its own and stays unsound after that is fixed.)
-        bool can_contain_float = anyInTypeTree(*output_block_type_ptr, [](const IDataType & node) { return isFloat(node); });
-        if (can_contain_float)
+        if (hasTypeThatCanContainFloat(output_block_type_ptr))
             return std::nullopt;
 
         /// Parquet orders `UUID` statistics bytewise (parquet.thrift gives the `UUID` logical type
