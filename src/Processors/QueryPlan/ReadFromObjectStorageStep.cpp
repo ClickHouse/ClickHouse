@@ -1,26 +1,28 @@
-#include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
-#include <Processors/QueryPlan/LazilyReadFromObjectStorage.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Core/Settings.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#include <Interpreters/ActionsDAG.h>
-#include <Processors/Sources/NullSource.h>
-#include <Processors/QueryPlan/Serialization.h>
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
-#include <IO/Operators.h>
-#include <Storages/ObjectStorage/S3/Configuration.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
-#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatParserSharedResources.h>
+#include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
-#include <IO/WriteBufferFromString.h>
-#include <Storages/prepareReadingFromFormat.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
+#include <Processors/QueryPlan/LazilyReadFromObjectStorage.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
+#include <Processors/QueryPlan/Serialization.h>
+#include <Processors/Sources/NullSource.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
+#include <Storages/ObjectStorage/S3/Configuration.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/prepareReadingFromFormat.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/functional/hash.hpp>
 #include <Common/SipHash.h>
@@ -162,10 +164,45 @@ std::optional<DataLakeReadEstimate> ReadFromObjectStorageStep::estimateReadFromD
 
 void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & build_settings)
 {
+    auto context = getContext();
+    auto make_format_filter_info = [&](std::shared_ptr<const ActionsDAG> filter)
+    {
+        auto result = std::make_shared<FormatFilterInfo>(
+            std::move(filter),
+            context,
+            configuration->getColumnMapperForCurrentSchema(storage_snapshot->metadata, context),
+            query_info.row_level_filter,
+            query_info.prewhere_info);
+        result->top_k_filter = top_k_filter;
+        return result;
+    };
+
+    /// A dataset reader gets the whole filter, including the conjuncts on virtual columns: it pushes
+    /// down `LIMIT` and `count` only when it can evaluate the whole filter itself.
+    if (auto dataset_pipe = configuration->readDataset(
+            storage_snapshot,
+            info,
+            format_settings,
+            context,
+            max_block_size,
+            num_streams,
+            make_format_filter_info(info.formatReadsHivePartitionColumns() ? nullptr : filter_actions_dag),
+            need_only_count,
+            limit,
+            distributed_processing))
+    {
+        auto pipe = std::move(*dataset_pipe);
+        if (pipe.empty())
+            pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(info.source_header)));
+        for (const auto & processor : pipe.getProcessors())
+            processors.emplace_back(processor);
+        pipeline.init(std::move(pipe));
+        return;
+    }
+
     createIterator();
 
     Pipes pipes;
-    auto context = getContext();
     size_t estimated_keys_count = iterator_wrapper->estimatedKeysCount();
 
     if (estimated_keys_count > 1)
@@ -176,18 +213,15 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
         /// We will keep one stream for this particular case.
         num_streams = 1;
     }
+    if (auto custom_read_cap = configuration->getMaxCustomReadThreads(distributed_processing))
+        num_streams = std::min(num_streams, std::max<size_t>(1, *custom_read_cap));
 
     // here create for node -> query -> level thread pool
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), num_streams);
 
     /// Iceberg reads the row lineage columns from the data file.
-    auto format_filter_info = std::make_shared<FormatFilterInfo>(
-        info.getFormatFilter(filter_actions_dag, /*keep_row_lineage_columns=*/ configuration->isIcebergConfiguration()),
-        context,
-        configuration->getColumnMapperForCurrentSchema(storage_snapshot->metadata, context),
-        query_info.row_level_filter,
-        query_info.prewhere_info);
-    format_filter_info->top_k_filter = top_k_filter;
+    auto format_filter_info = make_format_filter_info(
+        info.getFormatFilter(filter_actions_dag, /*keep_row_lineage_columns=*/ configuration->isIcebergConfiguration()));
     auto top_k_query_condition_cache_key = makeTopKQueryConditionCacheKey();
     if (top_k_query_condition_cache_key)
     {
@@ -215,6 +249,7 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
             format_filter_info,
             need_only_count,
             lazy_row_index_registry,
+            limit,
             top_k_query_condition_cache_key);
 
         pipes.emplace_back(std::move(source));

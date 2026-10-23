@@ -397,6 +397,9 @@ static struct InitFiu
     REGULAR(datalake_get_tables_throw) \
     REGULAR(datalake_paimon_list_page_size_one) \
     REGULAR(datalake_simulate_missing_table_state) \
+    REGULAR(datalake_distributed_worker_latest_snapshot) \
+    PAUSEABLE_ONCE(lance_metadata_schema_pause) \
+    PAUSEABLE_ONCE(lance_metadata_iterate_pause) \
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
     PAUSEABLE_ONCE(rename_database_after_dependency_check) \
     PAUSEABLE_ONCE(create_or_replace_before_rename) \
