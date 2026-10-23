@@ -3,6 +3,7 @@
 #include <boost/noncopyable.hpp>
 #include <fmt/format.h>
 
+#include <Common/SettingsChanges.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
 #include <Databases/DataLake/ICatalog.h>
@@ -90,6 +91,9 @@ public:
     /// given pinned state. Only called when schema reload for consistency is enabled.
     virtual std::unique_ptr<StorageInMemoryMetadata> buildStorageMetadataFromState(
         const DataLakeTableStateSnapshot &, ContextPtr) const { return nullptr; }
+
+    /// Table settings with which another server resolves exactly `state` instead of the latest table version.
+    virtual SettingsChanges getSettingsToResolveState(const DataLakeTableStateSnapshot &) const { return {}; }
 
     /// Whether to reload the schema (columns) from metadata before each query in order
     /// to keep the columns stored in the in-memory metadata in sync with the datalake.
