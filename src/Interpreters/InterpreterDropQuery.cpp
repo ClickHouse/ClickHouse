@@ -83,24 +83,13 @@ static DatabasePtr tryGetDatabase(const String & database_name, bool if_exists)
     return if_exists ? DatabaseCatalog::instance().tryGetDatabase(database_name) : DatabaseCatalog::instance().getDatabase(database_name);
 }
 
-/// A dictionary created with DDL registers its named collection dependency only when its source is
-/// loaded, which may not have happened yet (`dictionary_lazy_load`), and `flushAndShutdown` removes
-/// the definition from the loader, after which it cannot be found by `DROP NAMED COLLECTION` either.
-/// Register the collections referenced by the definition the storage holds, so that they are moved to
-/// the detached list along with the other dependencies of the table.
+/// See `StorageDictionary::addNamedCollectionDependencies`: on `DETACH` the registered dependencies are
+/// moved to the detached list along with the other dependencies of the table, and on `DROP` they stay
+/// registered if `dropTable` fails.
 static void addDictionaryNamedCollectionDependencies(const StoragePtr & table)
 {
-    const auto * dictionary = typeid_cast<const StorageDictionary *>(table.get());
-    if (!dictionary)
-        return;
-
-    const auto configuration = dictionary->getConfiguration();
-    if (!configuration)
-        return;
-
-    const auto table_id = table->getStorageID();
-    for (const auto & collection_name : getNamedCollectionsReferencedByDictionaryConfig(*configuration, "dictionary"))
-        NamedCollectionFactory::instance().addDependency(collection_name, table_id);
+    if (const auto * dictionary = typeid_cast<const StorageDictionary *>(table.get()))
+        dictionary->addNamedCollectionDependencies();
 }
 
 
@@ -428,6 +417,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];
             DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
 
+            addDictionaryNamedCollectionDependencies(table);
             context_->onQueryExecutionStarted();
             table->flushAndShutdown(true);
 

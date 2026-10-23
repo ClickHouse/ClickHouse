@@ -404,6 +404,9 @@ static struct InitFiu
     PAUSEABLE_ONCE(create_database_pause_after_engine) \
     ONCE(database_remove_detached_permanently_flag_fail) \
     ONCE(database_atomic_drop_table_fail_before_replace) \
+    ONCE(database_atomic_rename_database_fail_after_publish) \
+    ONCE(database_rename_table_fail_before_create_in_destination) \
+    ONCE(database_rename_table_fail_before_removing_source_metadata) \
     PAUSEABLE_ONCE(rename_database_after_dependency_check) \
     PAUSEABLE_ONCE(create_or_replace_before_rename) \
     REGULAR(atomic_populate_fail_before_subscription) \

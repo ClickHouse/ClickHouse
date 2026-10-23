@@ -257,7 +257,19 @@ BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery &, const 
         auto db_guard = catalog.getExclusiveDDLGuardForDatabase(old_name);
 
         catalog.assertDatabaseDoesntExist(new_name);
-        db->renameDatabase(getContext(), new_name);
+        try
+        {
+            db->renameDatabase(getContext(), new_name);
+        }
+        catch (...)
+        {
+            /// `renameDatabase` can throw after the database was already published under the new name
+            /// (`DatabaseAtomic` moves the directory of table symlinks after updating the catalog). The
+            /// dependencies have to follow the published identity then, for the same reason as below.
+            if (db->getDatabaseName() == new_name)
+                NamedCollectionFactory::instance().renameDatabaseDependencies(old_name, new_name);
+            throw;
+        }
         /// The `CREATE DATABASE` metadata of an engine that uses a named collection - `MaterializedPostgreSQL`,
         /// for one - is rewritten under the new name and keeps referencing the collection, so the
         /// dependency of the database itself has to follow the rename. Otherwise the entry of the old

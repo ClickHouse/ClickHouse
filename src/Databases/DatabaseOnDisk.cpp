@@ -33,6 +33,7 @@
 #include <Parsers/parseQuery.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageDictionary.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageTimeSeries.h>
@@ -96,6 +97,8 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char database_remove_detached_permanently_flag_fail[];
+    extern const char database_rename_table_fail_before_create_in_destination[];
+    extern const char database_rename_table_fail_before_removing_source_metadata[];
 }
 
 
@@ -588,6 +591,11 @@ void DatabaseOnDisk::renameTable(
 
     table_lock = table->lockExclusively(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
+    /// A dictionary that was never loaded has no named collection dependencies registered, so the
+    /// failure paths below would have nothing to keep protected for the surviving source metadata.
+    if (const auto * dictionary_storage = typeid_cast<const StorageDictionary *>(table.get()))
+        dictionary_storage->addNamedCollectionDependencies();
+
     detachTable(local_context, table_name);
 
     UUID prev_uuid = UUIDHelpers::Nil;
@@ -646,6 +654,10 @@ void DatabaseOnDisk::renameTable(
     /// Now table data are moved to new database, so we must add metadata and attach table to new database
     try
     {
+        fiu_do_on(FailPoints::database_rename_table_fail_before_create_in_destination,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault: failed to create the table in the destination database");
+        });
         to_database.createTable(local_context, to_table_name, table, attach_query);
     }
     catch (...)
@@ -657,9 +669,31 @@ void DatabaseOnDisk::renameTable(
         /// published table and keep the source metadata protected like the one of a detached table:
         /// otherwise `DROP NAMED COLLECTION` takes the entries for leftovers and drops a collection that
         /// both definitions still reference.
+        /// If the destination did not publish the table (e.g. writing its metadata failed), the table is
+        /// left detached and its source metadata survives, so it is attached from there at the next start:
+        /// keep the collections it references protected like the ones of a detached table.
+        const StorageID source_table_id(getDatabaseName(), table_name, prev_uuid);
         if (to_database.tryGetTable(to_table_name, local_context) == table)
-            NamedCollectionFactory::instance().rekeyDependencies(
-                StorageID(getDatabaseName(), table_name, prev_uuid), table->getStorageID(), /*keep_source_as_detached=*/ true);
+            NamedCollectionFactory::instance().rekeyDependencies(source_table_id, table->getStorageID(), /*keep_source_as_detached=*/ true);
+        else
+            NamedCollectionFactory::instance().markDependenciesDetached(source_table_id);
+        throw;
+    }
+
+    try
+    {
+        fiu_do_on(FailPoints::database_rename_table_fail_before_removing_source_metadata,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault: failed to remove the source metadata of the renamed table");
+        });
+        db_disk->removeFileIfExists(table_metadata_path);
+    }
+    catch (...)
+    {
+        /// The table is published in the destination, but the source metadata survives as well: move the
+        /// entries to the published table and keep the source metadata protected, like above.
+        NamedCollectionFactory::instance().rekeyDependencies(
+            StorageID(getDatabaseName(), table_name, prev_uuid), table->getStorageID(), /*keep_source_as_detached=*/ true);
         throw;
     }
 
@@ -671,8 +705,6 @@ void DatabaseOnDisk::renameTable(
     if (from_ordinary_to_atomic || from_atomic_to_ordinary)
         NamedCollectionFactory::instance().rekeyDependencies(
             StorageID(getDatabaseName(), table_name, prev_uuid), table->getStorageID());
-
-    db_disk->removeFileIfExists(table_metadata_path);
 
     if (from_atomic_to_ordinary)
     {

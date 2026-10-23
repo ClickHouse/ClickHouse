@@ -39,6 +39,7 @@ namespace FailPoints
 {
     extern const char rename_database_after_dependency_check[];
     extern const char database_atomic_drop_table_fail_before_replace[];
+    extern const char database_atomic_rename_database_fail_after_publish[];
 }
 
 namespace ErrorCodes
@@ -852,6 +853,11 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
         old_path_to_table_symlinks = path_to_table_symlinks;
         path_to_table_symlinks = DatabaseCatalog::getDataDirPath(new_name) / "";
     }
+
+    fiu_do_on(FailPoints::database_atomic_rename_database_fail_after_publish,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault: failed to move the table symlinks of the renamed database");
+    });
 
     auto db_disk = getDisk();
     if (db_disk->isSymlinkSupported())
