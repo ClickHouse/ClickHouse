@@ -228,6 +228,25 @@ $CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" \
 $CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" --table data_01523 \
     -q 'SELECT sum(c1) FROM data_01523' < "$STDIN_DATA_FILE_NAME"
 
+# Public input names must not be hidden by tables in unrelated databases.
+echo 'SELECT 99 FROM system.one;' > "$TEMP_SQL_FILE_NAME"
+$CLICKHOUSE_LOCAL --table numbers --queries-file="$TEMP_SQL_FILE_NAME" \
+    -q 'SELECT sum(c1) FROM numbers' < "$STDIN_DATA_FILE_NAME"
+printf '%s\n' 'CREATE DATABASE unrelated_01523;' \
+    'CREATE TABLE unrelated_01523.`table` (x UInt8) ENGINE=Memory;' \
+    'SELECT 99 FROM system.one;' > "$TEMP_SQL_FILE_NAME"
+$CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" -q 'SELECT sum(c1) FROM `table`' < "$STDIN_DATA_FILE_NAME"
+
+# Each statement must resolve public aliases against its effective database.
+$CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" \
+    -q "SELECT sum(c1) FROM \`table\`; SELECT count() FROM \`table\` SETTINGS database='unrelated_01523'; SELECT sum(c1) FROM \`table\`" \
+    < "$STDIN_DATA_FILE_NAME"
+
+# A profile-supplied implicit-table setting must not be overwritten.
+printf '%s\n' "CREATE SETTINGS PROFILE profile_01523 SETTINGS implicit_table_at_top_level = '' READONLY;" \
+    "SET profile = 'profile_01523';" > "$TEMP_SQL_FILE_NAME"
+$CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" -q 'SELECT 42' < "$STDIN_DATA_FILE_NAME"
+
 # An error before the -q phase must not leave a dangling temporary table holder.
 echo "SELECT throwIf(1, 'prelude failed');" > "$TEMP_SQL_FILE_NAME"
 if output=$($CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" -q 'SELECT count()' < "$STDIN_DATA_FILE_NAME" 2>&1); then
