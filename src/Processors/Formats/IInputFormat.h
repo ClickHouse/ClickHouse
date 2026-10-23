@@ -148,6 +148,8 @@ public:
     virtual bool isTopKFilterApplied() const { return false; }
     /// Whether the rows returned for this file were built from statistics (`FormatFilterInfo::min_max_from_statistics`).
     virtual bool isMinMaxFromStatisticsApplied() const { return false; }
+    /// Called after the file was read, if its version provably did not change during the read.
+    virtual void cacheFilterColumnStatistics() {}
 
     /// Query condition cache row blocks: consecutive ranges of this many rows, numbered from the first row of the file.
     static constexpr size_t QUERY_CONDITION_CACHE_ROWS_PER_BLOCK = 8192;

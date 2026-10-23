@@ -1159,6 +1159,7 @@ void ReadManager::clearColumnChunk(ColumnChunk & column, MemoryUsageDiff & diff)
     /// concurrent pruning task never observes this budget as free while the dictionary is still
     /// allocated (which would let the stage transiently oversubscribe the watermark).
     column.dictionary.reset();
+    column.dictionary_values.reset();
     column.dictionary_reservation.release(column.dictionary_reserved_bytes);
     column.dictionary_reserved_bytes = 0;
     for (auto & page : column.data_pages)
@@ -1348,7 +1349,10 @@ ReadManager::ReadResult ReadManager::read()
     chassert(row_subgroup.stage == ReadStage::Deliver);
     Columns output_columns(reader.sample_block->columns());
     for (size_t i = 0; i < output_columns.size(); ++i)
+    {
         output_columns[i] = std::move(reader.getOrFormOutputColumn(row_group, row_subgroup, i));
+        output_columns[i] = output_columns[i]->convertToFullColumnIfReplicated();
+    }
     Chunk chunk(std::move(output_columns), row_subgroup.filter.rows_pass);
     if (reader.top_k_best_value_column_pos)
         reader.updateTopKBestValue(row_group, *chunk.getColumns()[*reader.top_k_best_value_column_pos]);

@@ -49,6 +49,7 @@ public:
     bool isMinMaxFromStatisticsApplied() const override { return underlying->isMinMaxFromStatisticsApplied(); }
     std::optional<std::vector<bool>> getMatchedRowBlocks() const override { return underlying->getMatchedRowBlocks(); }
     void setRowBlocksToRead(std::shared_ptr<const std::vector<bool>> row_blocks) override { underlying->setRowBlocksToRead(std::move(row_blocks)); }
+    void cacheFilterColumnStatistics() override { underlying->cacheFilterColumnStatistics(); }
 
 protected:
     /// The underlying format already annotates the exceptions with the file name, no need to do it twice.
