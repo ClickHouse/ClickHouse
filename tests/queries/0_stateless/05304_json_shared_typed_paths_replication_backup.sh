@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-replicated-database
+# Tags: zookeeper, no-replicated-database, long
 # no-replicated-database: the two replicas are created with explicit paths and replica names.
+# long: the flaky check on S3 with the engine replacer runs it past the limit.
 
 # Parts moved around whole: fetched by a second replica, the type with SHARED set through Keeper, backed up and restored,
 # detached and attached as a table, a partition and a part, and moved between tables, with the plain type rejected. Every
