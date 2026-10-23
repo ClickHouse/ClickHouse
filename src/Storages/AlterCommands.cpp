@@ -2170,7 +2170,11 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
         {
             /// Compared as ASTs of the extracted key expression lists, so `MODIFY ORDER BY (a)`
             /// and `MODIFY ORDER BY tuple(a)` are no-ops on a table with `ORDER BY a`.
-            if (sameAST(extractKeyExpressionList(command.order_by), extractKeyExpressionList(metadata.sorting_key.definition_ast)))
+            /// The extraction drops an alias of the whole tuple, so compare it separately: otherwise
+            /// `MODIFY ORDER BY ((a, b) AS x)` would be ignored instead of rejected for its alias.
+            auto top_level_alias = [](const ASTPtr & ast) { return ast ? ast->tryGetAlias() : String{}; };
+            if (top_level_alias(command.order_by) == top_level_alias(metadata.sorting_key.definition_ast)
+                && sameAST(extractKeyExpressionList(command.order_by), extractKeyExpressionList(metadata.sorting_key.definition_ast)))
                 command.ignore = true;
         }
     }
