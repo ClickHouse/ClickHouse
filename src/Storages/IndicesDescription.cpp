@@ -77,7 +77,7 @@ void checkTransformPermissions(const ASTPtr & arguments, const ContextPtr & cont
             UserDefinedSQLFunctionVisitor::visit(expression, context);
 
         /// Resolving a name runs the function's `create`, where `checkAccess` lives. Names only:
-        /// building the expression would also report its type errors from here, not from the validator.
+        /// building the expression would report its type errors from here, not from the validator.
         resolveFunctionsAsUser(expression, context);
     }
 }
@@ -97,8 +97,7 @@ void checkTextIndexPreAndPostProcessorPermissions(
     if (!type || Poco::toLower(type->name) != TEXT_INDEX_NAME || !type->arguments)
         return;
 
-    /// On a clone: the expansion rewrites in place, and `getIndexFromAST` stores what it produces, so
-    /// an alias is what the index ends up running. Without `columns` an alias stays an identifier here.
+    /// The expansion rewrites in place, hence the clone.
     auto arguments = type->arguments->clone();
     expandTextIndexTransformAliases(arguments, columns);
     checkTransformPermissions(arguments, context);

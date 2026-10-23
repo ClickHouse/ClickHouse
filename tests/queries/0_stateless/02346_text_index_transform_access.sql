@@ -110,7 +110,13 @@ SET allow_introspection_functions = 0;
 
 ALTER TABLE tab ADD INDEX idx_alias(val2) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = mangled) GRANULARITY 1; -- { serverError FUNCTION_NOT_ALLOWED }
 
-SELECT '12. Redeclaring with a privileged function is denied.';
+SELECT '12. So is an alias renamed by an earlier command of the same ALTER.';
+
+-- The rename is applied before the index is added, so `renamed` is what expands to `demangle(val2)`.
+ALTER TABLE tab RENAME COLUMN mangled TO renamed,
+                ADD INDEX idx_renamed(val2) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = renamed) GRANULARITY 1; -- { serverError FUNCTION_NOT_ALLOWED }
+
+SELECT '13. Redeclaring with a privileged function is denied.';
 
 ALTER TABLE tab DROP INDEX idx,
                 ADD INDEX idx(val2) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = demangle(val2)) GRANULARITY 1; -- { serverError FUNCTION_NOT_ALLOWED }

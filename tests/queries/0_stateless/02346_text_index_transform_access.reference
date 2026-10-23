@@ -14,4 +14,5 @@
 10. Neither does DETACH/ATTACH.
 1
 11. An ALIAS column hiding a privileged function is denied.
-12. Redeclaring with a privileged function is denied.
+12. So is an alias renamed by an earlier command of the same ALTER.
+13. Redeclaring with a privileged function is denied.

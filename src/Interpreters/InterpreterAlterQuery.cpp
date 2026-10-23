@@ -101,11 +101,10 @@ namespace ErrorCodes
 namespace
 {
 
-/// `ON CLUSTER` and a `Replicated` database both hand the query to workers that run it without the
-/// submitting user, so an added index is authorised here, on the node the query was submitted to.
+/// `ON CLUSTER` and `Replicated`-database hosts run the query without the submitting user.
 void checkAddedIndexPermissions(const ASTAlterQuery & alter, const StoragePtr & table, const ContextPtr & context)
 {
-    /// `ON CLUSTER` may run from a host that does not have the table, leaving aliases unexpandable.
+    /// A host without the table cannot expand aliases.
     StorageMetadataHandle metadata;
     if (table)
         metadata = table->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);

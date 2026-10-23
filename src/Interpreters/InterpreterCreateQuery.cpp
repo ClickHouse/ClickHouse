@@ -4084,10 +4084,8 @@ BlockIO InterpreterCreateQuery::execute()
                 && create.storage->engine->name == "Backup" && create.storage->engine->arguments)
                 DatabaseBackup::parseAndAuthorizeLocator(create.storage->engine->arguments->children, getContext());
 
-            /// The normalized path authorizes these in `getTablePropertiesAndNormalizeCreateQuery`,
-            /// which this branch returns before reaching. Without a `ColumnsDescription` an alias in a
-            /// transform stays unexpanded, and indices inherited from `AS src` are materialized on the
-            /// worker and are not in this query at all, so neither is covered here.
+            /// The normalized path does this in `getTablePropertiesAndNormalizeCreateQuery`. Aliases
+            /// and indices inherited from `AS src` are not in this query, so they stay uncovered.
             if (create.columns_list && create.columns_list->indices)
             {
                 for (const auto & index : create.columns_list->indices->children)
