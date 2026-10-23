@@ -1,0 +1,62 @@
+-- Map keys numbered differently
+Map(LowCardinality(String), Int64)
+metric_log	{'ProfileEvent_Query':10,'CurrentMetric_Query':20}	10	0
+metric_log_0	{'CurrentMetric_Query':5,'ProfileEvent_Query':7}	7	0
+metric_log_1	{'CurrentMetric_Merge':3}	0	3
+-- one enum extends the other
+Int8	t_new	2
+Int8	t_new	3
+Int8	t_old	2
+2
+-- disjoint names and numbers
+x	Int8					
+-- identical enums
+x	Enum8(\'a\' = 1, \'b\' = 2)					
+y	UInt16					
+-- an enum and a String
+x	String					
+-- a name with different numbers
+x	LowCardinality(String)					
+e8_1	a
+e8_1	b
+e8_2	a
+2
+-- Enum8 and Enum16
+x	LowCardinality(String)					
+e16_1	a
+e16_2	a
+e16_2	b
+-- a number with different names
+x	LowCardinality(String)					
+names_1	a
+names_2	b
+1
+-- Array and Tuple
+arr	Array(LowCardinality(String))					
+tup	Tuple(\n    e LowCardinality(String),\n    n UInt16)					
+m	Map(UInt8, LowCardinality(String))					
+nested_1	['a','b']	('a',1)	{1:'a'}
+nested_2	['b']	('b',2)	{2:'b'}
+-- Nullable
+x	LowCardinality(Nullable(String))					
+nullable_1	a
+nullable_1	\N
+nullable_2	b
+-- the conflict is only with the third table
+x	LowCardinality(String)					
+three_1	a
+three_2	c
+three_3	a
+-- conflicting enums with a String or an integer
+s	String					
+i	Int32					
+other_1	a
+other_2	b
+other_3	c
+-- a Merge table without columns
+x	LowCardinality(String)					
+e8_1	a
+e8_1	b
+e8_2	a
+-- merge_table_infer_conflicting_enums_as_string = 0
+x	Int8					

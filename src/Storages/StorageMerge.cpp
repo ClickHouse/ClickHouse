@@ -24,8 +24,10 @@
 #include <Columns/getLeastSuperColumn.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/Utils.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -108,6 +110,7 @@ namespace Setting
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsFloat max_streams_multiplier_for_merge_tables;
+    extern const SettingsBool merge_table_infer_conflicting_enums_as_string;
     extern const SettingsUInt64 merge_table_max_tables_to_look_for_schema_inference;
     extern const SettingsBool parallel_replicas_allow_merge_tables;
     extern const SettingsBool parallel_replicas_plan_based;
@@ -207,6 +210,78 @@ bool isSubcolumnOfAliasColumn(const ColumnsDescription & storage_columns, const 
     }
 
     return false;
+}
+
+/// Whether some name has different numbers in the enums among `types`, or some number has different names.
+bool enumNumberingConflicts(const DataTypes & types)
+{
+    std::unordered_map<std::string_view, Int16> value_by_name;
+    std::unordered_map<Int16, std::string_view> name_by_value;
+    auto conflicts = [&](const auto & values)
+    {
+        for (const auto & [name, value] : values)
+            if (value_by_name.emplace(name, value).first->second != value || name_by_value.emplace(value, name).first->second != name)
+                return true;
+        return false;
+    };
+
+    for (const auto & type : types)
+    {
+        if (const auto * enum8 = typeid_cast<const DataTypeEnum8 *>(type.get()); enum8 && conflicts(enum8->getValues()))
+            return true;
+        if (const auto * enum16 = typeid_cast<const DataTypeEnum16 *>(type.get()); enum16 && conflicts(enum16->getValues()))
+            return true;
+    }
+    return false;
+}
+
+/// Replaces the enums at the same position of `types` with `LowCardinality(String)` where their numbering conflicts,
+/// looking through `Nullable`, `Array`, `Map` and `Tuple`. Returns whether any enum was replaced.
+bool replaceConflictingEnums(DataTypes & types)
+{
+    DataTypes nested(types.size());
+    std::ranges::transform(types, nested.begin(), [](const DataTypePtr & type) { return removeNullable(type); });
+
+    if (enumNumberingConflicts(nested))
+    {
+        for (auto & type : nested)
+            if (isEnum(type))
+                type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+    }
+    else
+    {
+        /// As in `getLeastSupertype`, elements are compared only if all types are the same kind of container.
+        const auto & first = *nested.front();
+        if (!(isArray(first) || isMap(first) || isTuple(first)) || !std::ranges::all_of(nested, [&](const DataTypePtr & type)
+            { return type->getTypeId() == first.getTypeId() && type->getNumberOfChildren() == first.getNumberOfChildren(); }))
+            return false;
+
+        std::vector<DataTypes> children;
+        for (const auto & type : nested)
+            children.push_back(type->getChildren());
+
+        bool replaced = false;
+        for (size_t position = 0; position < first.getNumberOfChildren(); ++position)
+        {
+            DataTypes children_at_position;
+            for (const auto & type_children : children)
+                children_at_position.push_back(type_children[position]);
+
+            replaced |= replaceConflictingEnums(children_at_position);
+            for (size_t i = 0; i < children.size(); ++i)
+                children[i][position] = children_at_position[i];
+        }
+
+        if (!replaced)
+            return false;
+
+        for (size_t i = 0; i < nested.size(); ++i)
+            nested[i] = nested[i]->cloneWithChildren(children[i]);
+    }
+
+    for (size_t i = 0; i < types.size(); ++i)
+        types[i] = types[i]->isNullable() ? makeNullableOrLowCardinalityNullable(nested[i]) : nested[i];
+    return true;
 }
 
 }
@@ -313,8 +388,10 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTablesImpl(
     auto access = query_context->getAccess();
     size_t table_num = 0;
     ColumnsDescription res;
+    /// The types of each column in the order of tables, without consecutive repeats.
+    std::unordered_map<String, DataTypes> column_types;
 
-    traverseTablesUntilImpl(query_context, ignore_self, database_name_or_regexp, [&table_num, &access, &res, max_tables_to_look, &query_context, source_metadata](auto && t)
+    traverseTablesUntilImpl(query_context, ignore_self, database_name_or_regexp, [&table_num, &access, &res, &column_types, max_tables_to_look, &query_context, source_metadata](auto && t)
     {
         if (!t)
             return false;
@@ -344,6 +421,10 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTablesImpl(
         String prev_column_name;
         for (const ColumnDescription & column : structure)
         {
+            auto & types = column_types[column.name];
+            if (types.empty() || !types.back()->equals(*column.type))
+                types.push_back(column.type);
+
             if (!res.has(column.name))
             {
                 res.add(column, prev_column_name);
@@ -363,6 +444,27 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTablesImpl(
         ++table_num;
         return table_num >= max_tables_to_look;
     });
+
+    if (!query_context->getSettingsRef()[Setting::merge_table_infer_conflicting_enums_as_string])
+        return res;
+
+    /// Enums numbered differently in different tables are read by name. Without a common type the column keeps
+    /// the type inferred above, because an enum cannot be cast to a `Variant` that does not contain it.
+    for (auto & [name, types] : column_types)
+    {
+        if (types.size() < 2 || !replaceConflictingEnums(types))
+            continue;
+
+        if (auto type = tryGetLeastSupertype(types))
+        {
+            res.modify(name, [&type](ColumnDescription & what)
+            {
+                what.type = type;
+                /// A codec of an enum, such as `T64`, may not support `String`.
+                what.codec = {};
+            });
+        }
+    }
 
     return res;
 }

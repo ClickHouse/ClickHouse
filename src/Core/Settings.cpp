@@ -10234,6 +10234,11 @@ When creating a `Merge` table without an explicit schema or when using the `merg
 If there is a larger number of tables, the schema will be inferred from the first specified number of tables.
 )", 0, \
         {"25.1", 1, 1000, "A new setting"}) \
+    DECLARE(Bool, merge_table_infer_conflicting_enums_as_string, true, R"(
+When creating a `Merge` table without an explicit schema or when using the `merge` table function, infer `LowCardinality(String)` for an enum column whose values are numbered differently in different tables, so that each table is read by name.
+If disabled, such a column gets the underlying integer type, and the same number can mean different values in rows from different tables.
+)", 0, \
+        {"26.11", true, true, "New setting. The previous value is deliberately equal to the new one, so `compatibility` does not restore the integer type that mixes the numbers of different enums."}) \
     DECLARE(Bool, validate_enum_literals_in_operators, false, R"(
 If enabled, validate enum literals in operators like `IN`, `NOT IN`, `==`, `!=` against the enum type and throw an exception if the literal is not a valid enum value.
 )", 0, \
