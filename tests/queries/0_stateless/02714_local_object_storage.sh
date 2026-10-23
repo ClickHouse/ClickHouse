@@ -38,6 +38,7 @@ $CLICKHOUSE_CLIENT "${settings[@]}" -nm -q "
     SETTINGS disk = disk(
         type = 'cache',
         max_size = '10Mi',
+        max_file_segment_size = '4Mi',
         path = '${CLICKHOUSE_TEST_UNIQUE_NAME}/',
         disk = disk(type='local_blob_storage', path='${server_path}/disks/${CLICKHOUSE_TEST_UNIQUE_NAME}/'));
 
