@@ -1440,12 +1440,15 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
     }
 
     /// Startup may already have dropped tables, e.g. `SystemLog::prepareUnionTable` replaces union tables.
-    /// They are queued with their storage and still hold their UUIDs, so only drops of previous runs are loaded here.
-    std::unordered_set<UUID> queued_drop_uuids;
+    /// They are queued with their storage and their UUID mapping is still registered, so only drops of previous runs are loaded here.
+    auto is_drop_queued = [this](const DiskPtr & disk, const String & metadata_path)
     {
         std::lock_guard lock(tables_marked_dropped_mutex);
-        queued_drop_uuids.insert(tables_marked_dropped_ids.begin(), tables_marked_dropped_ids.end());
-    }
+        return std::ranges::any_of(tables_marked_dropped, [&](const TableMarkedAsDropped & dropped)
+        {
+            return dropped.metadata_path == metadata_path && dropped.db_disk->getName() == disk->getName();
+        });
+    };
 
     /// /clickhouse_root/metadata_dropped/ contains files with metadata of tables,
     /// which where marked as dropped by Atomic databases.
@@ -1484,10 +1487,14 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
             if (dot_pos == std::string::npos)
                 continue;
             dropped_id.uuid = parse<UUID>(sub_path_filename.substr(prev_dot_pos + 1, dot_pos - prev_dot_pos - 1));
-            if (queued_drop_uuids.contains(dropped_id.uuid))
-                continue;
 
             String full_path = path + sub_path_filename;
+            if (is_drop_queued(db_disk, full_path))
+            {
+                LOG_DEBUG(log, "Table {} was dropped during this startup and is already queued for removal", dropped_id.getNameForLogs());
+                continue;
+            }
+
             dropped_metadata.emplace(std::move(full_path), std::pair{std::move(dropped_id), db_disk});
         }
     }
