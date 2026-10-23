@@ -24,9 +24,6 @@ public:
     virtual void setHasDependentMaterializedViews(bool /*has_dependent_views*/) {}
 
 protected:
-    /// In `onPipelineFinished`: the sink was stopped by `timeout_overflow_mode = 'break'`, not by an exception.
-    bool isStoppedByBreak() const { return isCancelled() && stage != Stage::Exception; }
-
     virtual void consume(Chunk & chunk) = 0;
 
 private:

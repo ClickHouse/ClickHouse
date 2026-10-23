@@ -46,10 +46,6 @@ public:
     /// Stop execution. It is not necessary, but helps to stop execution before executor is destroyed.
     void cancel();
 
-    /// Stops the pipeline as a `timeout_overflow_mode = 'break'` timeout does: nothing more is processed,
-    /// but the processors get `onPipelineFinished`.
-    void stopOnTimeout();
-
 private:
     QueryPipeline & pipeline;
     std::atomic_bool input_wait_flag = false;

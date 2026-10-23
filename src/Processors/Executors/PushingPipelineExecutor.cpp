@@ -143,16 +143,4 @@ void PushingPipelineExecutor::cancel()
     }
 }
 
-void PushingPipelineExecutor::stopOnTimeout()
-{
-    if (!executor || finished)
-        return;
-    finished = true;
-
-    executor->cancel(IProcessor::CancelReason::CancelledByTimeout);
-    /// The executor is finished now, so this only runs its `finalizeExecution`.
-    [[maybe_unused]] auto res = executor->executeUntil(nullptr);
-    chassert(!res);
-}
-
 }

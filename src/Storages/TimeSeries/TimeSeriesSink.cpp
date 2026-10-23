@@ -857,12 +857,9 @@ void TimeSeriesSink::onFinish()
 
 void TimeSeriesSink::onPipelineFinished()
 {
-    if (!isStoppedByBreak())
-        return;
-
-    for (const auto * pipeline : {tags_pipeline.get(), samples_pipeline.get(), recent_samples_pipeline.get(), metric_families_pipeline.get()})
-        if (pipeline && pipeline->executor)
-            pipeline->executor->stopOnTimeout();
+    /// Stopped by `timeout_overflow_mode = 'break'`: the target INSERTs finish as if the input had ended.
+    if (isCancelled() && stage != Stage::Exception)
+        onFinish();
 }
 
 }

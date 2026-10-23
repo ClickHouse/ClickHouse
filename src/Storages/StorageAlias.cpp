@@ -252,11 +252,9 @@ public:
 
     void onPipelineFinished() override
     {
-        if (isStoppedByBreak() && executor)
-        {
-            executor->stopOnTimeout();
-            executor.reset();
-        }
+        /// Stopped by `timeout_overflow_mode = 'break'`: the nested INSERT finishes as if the input had ended.
+        if (isCancelled() && stage != Stage::Exception && executor)
+            onFinish();
     }
 
     void onException(std::exception_ptr) override
