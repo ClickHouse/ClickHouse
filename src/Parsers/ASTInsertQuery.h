@@ -23,6 +23,10 @@ public:
     ASTPtr table;
 
     ASTPtr columns;
+    bool by_name = false;
+    /// Set while INSERT ... BY NAME is lowered to an explicit positional column list.
+    /// It is execution metadata and is intentionally not serialized or hashed.
+    bool by_name_resolved = false;
     String format;
     ASTPtr table_function;
     ASTPtr partition_by;
