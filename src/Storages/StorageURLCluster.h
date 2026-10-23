@@ -42,7 +42,8 @@ private:
         ASTPtr & query,
         const StorageSnapshotPtr & storage_snapshot,
         const ContextPtr & context,
-        const String & target_cluster_name) override;
+        const String & target_cluster_name,
+        bool forward_structure) override;
 
     String uri;
     String format_name;

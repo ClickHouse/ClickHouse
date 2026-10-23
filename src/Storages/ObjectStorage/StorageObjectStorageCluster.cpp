@@ -370,7 +370,8 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     ASTPtr & query,
     const DB::StorageSnapshotPtr & storage_snapshot,
     const ContextPtr & context,
-    const String & target_cluster_name)
+    const String & target_cluster_name,
+    bool forward_structure)
 {
     auto * table_function = extractTableFunctionFromSelectQuery(query);
     if (!table_function)
@@ -385,7 +386,7 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     }
 
     ASTs & args = expression_list->children;
-    const auto & structure = storage_snapshot->metadata->getColumns().getAll().toNamesAndTypesDescription();
+    const String structure = forward_structure ? storage_snapshot->metadata->getColumns().getAll().toNamesAndTypesDescription() : "auto";
     if (args.empty())
     {
         throw Exception(

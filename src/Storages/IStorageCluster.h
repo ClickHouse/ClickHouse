@@ -75,11 +75,20 @@ public:
     /// cluster has no name anywhere to begin with. A function the user already wrote as `*Cluster` then
     /// keeps the name it carries, which is what it did before the destination's cluster started being
     /// named here.
+    ///
+    /// `forward_structure` tells whether to put the initiator's structure into the query. A `SELECT` needs it:
+    /// the initiator merges the streams of the nodes, so they must all produce its header. A forwarded
+    /// `INSERT ... SELECT` must not get it: every node inserts on its own, and with `'auto'` it takes the
+    /// structure from the insertion table (`use_structure_from_insertion_table_in_table_functions`), which
+    /// carries the `DEFAULT` expressions for the fields missing in the files. The structure of the storage has
+    /// names and types only, so forwarding it would make the nodes fill those fields with the default values
+    /// of their types.
     virtual void updateQueryToSendIfNeeded(
         ASTPtr & /*query*/,
         const StorageSnapshotPtr & /*storage_snapshot*/,
         const ContextPtr & /*context*/,
-        const String & /*target_cluster_name*/) {}
+        const String & /*target_cluster_name*/,
+        bool /*forward_structure*/) {}
 
 protected:
     virtual void updateBeforeRead(const ContextPtr &) {}

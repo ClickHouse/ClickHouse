@@ -1605,7 +1605,8 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     src_storage_cluster.updateExternalDynamicMetadataIfExists(local_context);
     const auto storage_metadata = src_storage_cluster.getInMemoryMetadataPtr(local_context, false);
     const auto src_snapshot = src_storage_cluster.getStorageSnapshot(storage_metadata, local_context);
-    src_storage_cluster.updateQueryToSendIfNeeded(source_to_send, src_snapshot, local_context, cluster_name);
+    /// The structure stays `'auto'`, so that the shards take it from the insertion table with its `DEFAULT` expressions.
+    src_storage_cluster.updateQueryToSendIfNeeded(source_to_send, src_snapshot, local_context, cluster_name, /*forward_structure=*/false);
 
     /// Drop the initiator-only settings from the query text forwarded to the shards (the settings
     /// packet is stripped separately, on `query_context` below).

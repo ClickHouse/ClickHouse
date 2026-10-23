@@ -1,0 +1,15 @@
+--- s3Cluster, column list ---
+1	2000-01-01	7	unknown	10
+2	2001-02-03	5	x	6
+--- s3Cluster, asterisk ---
+1	2000-01-01	7	unknown	10
+2	2001-02-03	5	x	6
+--- urlCluster ---
+1	2000-01-01	7	unknown	10
+2	2001-02-03	5	x	6
+--- s3 with parallel replicas ---
+1	2000-01-01	7	unknown	10
+2	2001-02-03	5	x	6
+--- s3 with parallel replicas into Distributed ---
+1	2000-01-01	7	unknown	10
+2	2001-02-03	5	x	6

@@ -113,7 +113,8 @@ void StorageURLCluster::updateQueryToSendIfNeeded(
     ASTPtr & query,
     const StorageSnapshotPtr & storage_snapshot,
     const ContextPtr & context,
-    const String & target_cluster_name)
+    const String & target_cluster_name,
+    bool forward_structure)
 {
     auto * table_function = extractTableFunctionFromSelectQuery(query);
     if (!table_function)
@@ -125,7 +126,7 @@ void StorageURLCluster::updateQueryToSendIfNeeded(
 
     TableFunctionURLCluster::updateStructureAndFormatArgumentsIfNeeded(
         table_function,
-        storage_snapshot->metadata->getColumns().getAll().toNamesAndTypesDescription(),
+        forward_structure ? storage_snapshot->metadata->getColumns().getAll().toNamesAndTypesDescription() : "auto",
         format_name,
         context
     );

@@ -86,7 +86,8 @@ private:
         ASTPtr & query,
         const StorageSnapshotPtr & storage_snapshot,
         const ContextPtr & context,
-        const String & target_cluster_name) override;
+        const String & target_cluster_name,
+        bool forward_structure) override;
 
     const String engine_name;
     const StorageObjectStorageConfigurationPtr configuration;
