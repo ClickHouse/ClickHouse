@@ -20,6 +20,10 @@ solely over the interserver connection. Every pipeline is built twice with the s
 `tenant`, who has no grants on `node2` and whose rows must be rejected there, and by `writer`, who
 has `INSERT` on the target and whose rows must arrive. In both cases the shard must see the
 definer's name in `system.query_log`.
+
+The push is also checked with `distributed_foreground_insert = 0`, where the rows go through the
+background directory queue of the `Distributed` table: the persisted insert must keep the definer's
+name, although the streaming context has `query_kind = NO_QUERY`.
 """
 
 import json
@@ -125,9 +129,12 @@ def started_cluster():
         )
         for user in (WRITER, TENANT):
             db = database(user)
+            # Send to the shard synchronously by default, so that a push either delivers the rows
+            # or fails right away, without a background directory queue in between.
             node1.query(
                 f"""
-                CREATE USER {user} IDENTIFIED WITH plaintext_password BY '{CREDENTIALS[user]["password"]}';
+                CREATE USER {user} IDENTIFIED WITH plaintext_password BY '{CREDENTIALS[user]["password"]}'
+                    SETTINGS distributed_foreground_insert = 1;
                 CREATE DATABASE {db};
                 GRANT ALL ON {db}.* TO {user};
                 GRANT TABLE ENGINE ON Distributed, TABLE ENGINE ON Kafka, TABLE ENGINE ON RabbitMQ TO {user};
@@ -156,13 +163,13 @@ def drop_pipeline(user, source):
     query_as(user, f"DROP TABLE {db}.{source} SYNC")
 
 
-def create_definer_view(user, source):
+def create_definer_view(user, source, target="dist"):
     """A view owned by `user` that pushes the source rows into the user's `Distributed` table."""
     db = database(user)
     query_as(
         user,
         f"""
-        CREATE MATERIALIZED VIEW {db}.{source}_to_dist TO {db}.dist
+        CREATE MATERIALIZED VIEW {db}.{source}_to_dist TO {db}.{target}
         DEFINER = CURRENT_USER SQL SECURITY DEFINER
         AS SELECT key FROM {db}.{source}
         """,
@@ -199,9 +206,10 @@ def test_direct_insert(user):
 
 
 @users
-def test_kafka(user):
+@pytest.mark.parametrize("foreground", [1, 0])
+def test_kafka(user, foreground):
     db = database(user)
-    topic = f"definer_interserver_{user}"
+    topic = f"definer_interserver_{user}_{foreground}"
     k.kafka_create_topic(k.get_admin_client(cluster), topic)
 
     query_as(
@@ -215,7 +223,17 @@ def test_kafka(user):
                  kafka_flush_interval_ms = 1000
         """,
     )
-    create_definer_view(user, "kafka")
+    # A separate `Distributed` table per mode, so that a rejected file left in the background queue
+    # is dropped together with the table and is not retried into the next test.
+    target = f"dist_{foreground}"
+    query_as(
+        user,
+        f"CREATE TABLE {db}.{target} (key Int) ENGINE = Distributed(secure, default, secret_data)",
+    )
+    # The definer's settings apply to the push. It is not set in the server's profile, because the
+    # settings of the context the push starts from would override the definer's ones.
+    node1.query(f"ALTER USER {user} SETTINGS distributed_foreground_insert = {foreground}")
+    create_definer_view(user, "kafka", target)
 
     try:
         finished_before = shard_finished_inserts(user)
@@ -226,6 +244,8 @@ def test_kafka(user):
         check_delivery(user, finished_before, denied_before)
     finally:
         drop_pipeline(user, "kafka")
+        query_as(user, f"DROP TABLE {db}.{target} SYNC")
+        node1.query(f"ALTER USER {user} SETTINGS distributed_foreground_insert = 1")
 
 
 @users
