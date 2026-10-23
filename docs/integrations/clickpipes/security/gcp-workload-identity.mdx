@@ -8,7 +8,7 @@ keywords: ['clickpipes', 'gcp', 'workload identity', 'iam', 'service account', '
 ---
 
 <Note>
-GCP workload identity authentication is in Private Preview. Contact ClickHouse Support to enable it for your organization.
+GCP workload identity authentication is in Beta.
 </Note>
 
 GCP workload identity lets ClickPipes access supported Google Cloud sources without storing a customer service account key. This guide shows you how to retrieve the ClickPipes-managed Google service account, grant it access to your source, and create a ClickPipe that uses short-lived credentials.
@@ -17,7 +17,6 @@ GCP workload identity lets ClickPipes access supported Google Cloud sources with
 
 You need:
 
-- Private Preview access enabled for your ClickHouse Cloud organization.
 - A ClickHouse Cloud service running on GCP. Its ClickPipes deployment must also run on GCP.
 - A ClickHouse Cloud API key with permission to manage ClickPipes on the service.
 - Permission to grant IAM roles on the Google Cloud source resources.
@@ -107,6 +106,8 @@ The service context fields have these meanings:
 Use `serviceAccount:<principal>` as the IAM member, where `<principal>` is the email returned in the service context. Grant it only the roles required by your source, as described in the source's permissions section:
 
 - [BigQuery](/integrations/clickpipes/bigquery/overview#permissions)
+- [Cloud SQL for Postgres](/integrations/clickpipes/postgres/source/google-cloudsql#iam-database-authentication)
+- [Cloud SQL for MySQL](/integrations/clickpipes/mysql/source/gcp#iam-database-authentication)
 - [Google Managed Service for Apache Kafka](/integrations/clickpipes/kafka/reference#gcp-workload-identity)
 - [Google Cloud Storage](/integrations/clickpipes/object-storage/gcs/overview#permissions)
 - [Google Cloud Pub/Sub](/integrations/clickpipes/pubsub/auth#use-workload-identity)
@@ -128,7 +129,7 @@ See the programmatic examples for each source:
 ## Troubleshooting {#troubleshooting}
 
 <Accordion title="Workload identity is not supported">
-Confirm that Private Preview access is enabled and that both the ClickHouse Cloud service and its ClickPipes deployment run on GCP. Contact ClickHouse Support if the service meets these requirements but `supported` is `false`.
+Confirm that both the ClickHouse Cloud service and its ClickPipes deployment run on GCP. Contact ClickHouse Support if the service meets these requirements but `supported` is `false`.
 </Accordion>
 
 <Accordion title="The identity is not ready">

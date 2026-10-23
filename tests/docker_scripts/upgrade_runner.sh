@@ -452,6 +452,10 @@ echo "Drop the row policies that cannot be applied to a table they cover"
 : > /test_output/undropped_row_policy_errors.txt
 row_policy_check_failed=0
 row_policy_drop_failed=0
+# The errors of the server failing to analyze a query: an unknown column, table, database or function, a wrong type or
+# number of arguments or columns, or an invalid constant. A resource limit, a timeout, a lost connection or an error
+# that depends on the reader (access, settings) is none of them.
+analysis_errors='6|20|36|38|41|42|43|44|46|47|53|59|60|69|81|153|184|190|386|407|675'
 if timeout 1m clickhouse-client --query "
         SELECT id FROM system.row_policies WHERE storage != 'users_xml' AND select_filter IS NOT NULL" > /tmp/row_policy_ids.txt
 then
@@ -460,26 +464,72 @@ then
         # `DESCRIBE` of `view()` only analyzes the query: apart from those in table function arguments, the subqueries
         # of the filter do not run, so the row policies of the tables they read cannot fail this check. Unqualified
         # tables of the filter resolve in the current database, so use the policy's one, where its test reads the table.
+        # One line per covered table: the check of the filter on it and the same check without the filter.
+        # A parameterized view is not checked: it cannot be read without the values of its parameters.
         if ! timeout 1m clickhouse-client --param_id="$row_policy_id" --query "
-                SELECT format('USE {0}{1}{0}; DESCRIBE TABLE view(SELECT 1 FROM {0}{1}{0}.{0}{2}{0} WHERE {3});', char(96),
+                WITH format('USE {0}{1}{0}; DESCRIBE TABLE view(SELECT 1 FROM {0}{1}{0}.{0}{2}{0}', char(96),
                     replaceAll(replaceAll(t.database, char(92), char(92, 92)), char(96), char(92, 96)),
-                    replaceAll(replaceAll(t.name, char(92), char(92, 92)), char(96), char(92, 96)),
-                    p.select_filter)
+                    replaceAll(replaceAll(t.name, char(92), char(92, 92)), char(96), char(92, 96))) AS table_check
+                SELECT base64Encode(table_check || ' WHERE ' || p.select_filter || ');'), base64Encode(table_check || ');')
                 FROM system.row_policies AS p
                 INNER JOIN system.tables AS t ON t.database = p.database AND (p.table = '' OR t.name = p.table)
-                WHERE p.id = {id:UUID}
-                FORMAT TSVRaw" > /tmp/row_policy_check.sql 2>> /test_output/unchecked_row_policy_errors.txt
+                WHERE p.id = {id:UUID} AND empty(t.parameterized_view_parameters)
+                FORMAT TSVRaw" > /tmp/row_policy_checks.tsv 2>> /test_output/unchecked_row_policy_errors.txt
         then
             row_policy_check_failed=1
             continue
         fi
+        while read -r row_policy_check _
+        do
+            base64 -d <<< "$row_policy_check"
+            echo
+        done < /tmp/row_policy_checks.tsv > /tmp/row_policy_check.sql
         timeout 5m clickhouse-client --queries-file /tmp/row_policy_check.sql > /dev/null 2> /tmp/row_policy_check_errors.txt \
             && continue
-        # Only the server failing to analyze the filter shows that it cannot be applied: an unknown column, table,
-        # database or function, a wrong type or number of arguments or columns, or an invalid constant. A resource
-        # limit, a timeout, a lost connection or an error that depends on the reader (access, settings) does not.
-        if ! grep -qE '^Code: (6|20|36|38|41|42|43|44|46|47|53|59|60|69|81|153|184|190|386|407|675)\. DB::Exception: Received from ' \
-            /tmp/row_policy_check_errors.txt
+        # The run stops at the first table that fails. When that can be the table's own failure, check the tables one by
+        # one: a table that fails the same way without the filter, because it cannot be analyzed or its files are gone
+        # (107 for Iceberg, 742 for Delta Lake) like those of a data lake table its test deleted, tells nothing about
+        # the filter.
+        if grep -qE "^Code: ($analysis_errors|107|742)\. DB::Exception: Received from " /tmp/row_policy_check_errors.txt
+        then
+            row_policy_verdict=keep
+            row_policy_check_deadline=$((SECONDS + 300))
+            while read -r -u 3 row_policy_check table_check
+            do
+                if [ "$SECONDS" -ge "$row_policy_check_deadline" ]
+                then
+                    echo "The check of the row policy $row_policy_id did not finish in 5 minutes" > /tmp/row_policy_check_errors.txt
+                    row_policy_verdict=fail
+                    break
+                fi
+                base64 -d <<< "$row_policy_check" > /tmp/row_policy_check.sql
+                timeout 1m clickhouse-client --queries-file /tmp/row_policy_check.sql > /dev/null 2> /tmp/row_policy_check_errors.txt \
+                    && continue
+                base64 -d <<< "$table_check" > /tmp/table_check.sql
+                if timeout 1m clickhouse-client --queries-file /tmp/table_check.sql > /dev/null 2> /tmp/table_check_errors.txt
+                then
+                    row_policy_verdict=judge
+                    break
+                fi
+                table_check_error=$(grep -m1 -oE "^Code: ($analysis_errors|107|742)\. DB::Exception: Received from " /tmp/table_check_errors.txt ||:)
+                if [ -z "$table_check_error" ] || [ "$table_check_error" != "$(grep -m1 -oE '^Code: [0-9]+\. DB::Exception: Received from ' /tmp/row_policy_check_errors.txt ||:)" ]
+                then
+                    cat /tmp/table_check_errors.txt >> /tmp/row_policy_check_errors.txt
+                    row_policy_verdict=fail
+                    break
+                fi
+                cat /tmp/table_check_errors.txt >> /test_output/unreadable_row_policy_tables.txt
+            done 3< /tmp/row_policy_checks.tsv
+            [ "$row_policy_verdict" != keep ] || continue
+            if [ "$row_policy_verdict" = fail ]
+            then
+                cat /tmp/row_policy_check_errors.txt >> /test_output/unchecked_row_policy_errors.txt
+                row_policy_check_failed=1
+                continue
+            fi
+        fi
+        # Only the server failing to analyze the filter shows that it cannot be applied.
+        if ! grep -qE "^Code: ($analysis_errors)\. DB::Exception: Received from " /tmp/row_policy_check_errors.txt
         then
             cat /tmp/row_policy_check_errors.txt >> /test_output/unchecked_row_policy_errors.txt
             row_policy_check_failed=1
@@ -513,10 +563,18 @@ fi
 [ -s /test_output/dropped_row_policies.txt ] || rm -f /test_output/dropped_row_policies.txt
 [ -s /test_output/unchecked_row_policy_errors.txt ] || rm -f /test_output/unchecked_row_policy_errors.txt
 [ -s /test_output/undropped_row_policy_errors.txt ] || rm -f /test_output/undropped_row_policy_errors.txt
+[ -s /test_output/unreadable_row_policy_tables.txt ] || rm -f /test_output/unreadable_row_policy_tables.txt
 
 # Use bigger timeout for previous version and disable additional hang check
 stop_server 300 false || (echo "Failed to stop server" && exit 1)
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.stress.log
+
+# Profiles of the previous release can only be symbolized with its binary; keep them apart so
+# collect_jemalloc_profiles renders a profile of the new server with the new binary.
+if compgen -G "$JEMALLOC_PROFILES_DIR/*.heap" > /dev/null; then
+    mkdir -p "$JEMALLOC_PROFILES_DIR/previous_release"
+    mv "$JEMALLOC_PROFILES_DIR"/*.heap "$JEMALLOC_PROFILES_DIR/previous_release/"
+fi
 
 # Install and start new server
 install_packages $PACKAGES_DIR
@@ -555,6 +613,7 @@ then
   LEFT JOIN old_settings ON new_settings.name = old_settings.name
   WHERE (old_value IS NULL OR new_value != old_value)
       AND NOT (old_value IS NOT NULL AND new_value LIKE 'auto(%' AND old_value = concat('''', new_value, ''''))
+      AND new_settings.alias_for = ''
       AND (name NOT IN (
       SELECT arrayJoin(tupleElement(changes, 'name'))
       FROM
@@ -592,7 +651,7 @@ then
   WHERE (name NOT IN (
       SELECT name
       FROM old_settings
-  )) AND (name NOT IN (
+  )) AND alias_for = '' AND (name NOT IN (
       SELECT arrayJoin(tupleElement(changes, 'name'))
       FROM
       (
@@ -1035,5 +1094,7 @@ check_logs_for_critical_errors
 tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 
 collect_query_and_trace_logs
+# Only the upgraded server's log: the previous release's profiles were moved aside above.
+collect_jemalloc_profiles /var/log/clickhouse-server/clickhouse-server.upgrade.log
 
 mv /var/log/clickhouse-server/stderr.log /test_output/
