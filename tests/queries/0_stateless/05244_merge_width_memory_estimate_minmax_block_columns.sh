@@ -20,7 +20,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 MEMORY_LIMIT=$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.server_settings WHERE name = 'max_server_memory_usage'")
 # The same successive integer divisions as the server does: `limit / 16 / columns / estimate`.
-ESTIMATE=$(( MEMORY_LIMIT / 16 / 1 / 8 ))
+# The estimate leaves some margin below the exact width, because the effective limit of the server can drift
+# down a little between reading it here and the merge, which would cut the width by one.
+ESTIMATE=$(( MEMORY_LIMIT / 16 * 2 / 17 ))
 
 # `merge_selector_base = 1000` is far above what eight fresh parts reach, so background merges do not take the
 # parts, and `OPTIMIZE`, which selects with the base of one, merges them synchronously. A background merge
