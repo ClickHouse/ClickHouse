@@ -6,7 +6,6 @@
 #include <IO/HTTPCommon.h>
 #include <IO/ParallelReadBuffer.h>
 #include <IO/ReadBuffer.h>
-#include <IO/ReadBufferFromIStream.h>
 #include <IO/IReadBufferMetadataProvider.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadSettings.h>
@@ -63,10 +62,12 @@ public:
         // nullopt if the server doesn't report it.
         std::optional<size_t> file_size;
         std::optional<time_t> last_modified;
+        /// The `Date` of the response: the time by the clock of the server that reported `last_modified`.
+        std::optional<time_t> response_date;
         bool seekable = false;
     };
 
-    using OutStreamCallback = std::function<void(std::ostream &)>;
+    using OutStreamCallback = std::function<void(WriteBuffer &)>;
     using NextCallback = std::function<void(size_t)>;
     using RedirectCallback = std::function<void(const Poco::URI &, const Poco::URI &)>;
 
@@ -142,20 +143,8 @@ private:
         std::optional<size_t> end;
     };
 
-    struct CallResult
-    {
-        HTTPSessionPtr session;
-        std::istream * response_stream = nullptr;
-
-        CallResult(HTTPSessionPtr && session_, std::istream & response_stream_)
-            : session(session_)
-            , response_stream(&response_stream_)
-        {}
-        CallResult(CallResult &&) = default;
-        CallResult & operator= (CallResult &&) = default;
-
-        std::unique_ptr<ReadBuffer> transformToReadBuffer(size_t buf_size) &&;
-    };
+    /// The body of the response, which keeps the session it reads from alive.
+    using CallResult = std::unique_ptr<HTTPResponseReadBuffer>;
 
     const HTTPConnectionGroupType connection_group;
     const Poco::URI initial_uri;
@@ -230,14 +219,14 @@ private:
     /// catch block.
     void rethrowIfReadInterrupted() const;
 
-    CallResult  callImpl(
+    CallResult callImpl(
         Poco::Net::HTTPResponse & response,
         const std::string & method_,
         const std::optional<HTTPRange> & range,
         bool allow_redirects,
         bool with_request_body = true) const;
 
-    CallResult  callWithRedirects(
+    CallResult callWithRedirects(
         Poco::Net::HTTPResponse & response,
         const String & method_,
         const std::optional<HTTPRange> & range);
@@ -309,6 +298,10 @@ public:
     const std::string & getCompressionMethod() const;
 
     std::optional<time_t> tryGetLastModificationTime();
+
+    /// The `Date` of the response which the file metadata came from, if the metadata is already known.
+    /// Does not send any request.
+    std::optional<time_t> tryGetResponseDateOfFileInfo() const { return file_info ? file_info->response_date : std::nullopt; }
 
     bool hasNotFoundURL() const { return has_not_found_url; }
 
