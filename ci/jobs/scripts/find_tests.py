@@ -2,7 +2,6 @@ import argparse
 import json
 import os
 import re
-import shlex
 import sys
 from pathlib import Path
 from collections import Counter
@@ -1148,15 +1147,6 @@ class Targeting:
         name = re.escape(cls.selection_test_name(test).rstrip("."))
         extensions = "|".join(re.escape(ext) for ext in cls._TEST_FILE_EXTENSIONS)
         return f"^{name}(?:{extensions})$"
-
-    @staticmethod
-    def selection_args(tests):
-        """Render selectors as the argument list of a `clickhouse-test` command line.
-
-        `run_tests` executes that command line through bash, whose quote removal would
-        otherwise consume the regex syntax before `clickhouse-test` parses it.
-        """
-        return " ".join(shlex.quote(test) for test in tests) if tests else ""
 
     def get_most_relevant_tests(self):
         changed_lines = self.get_changed_lines_from_diff()
