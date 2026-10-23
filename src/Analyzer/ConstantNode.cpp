@@ -207,17 +207,10 @@ boost::intrusive_ptr<ASTLiteral> ConstantNode::getCachedAST(const F &ast_generat
 
 bool ConstantNode::valueRequiresCastCall() const
 {
-    try
-    {
-        auto field_type = applyVisitor(FieldToDataType(), getValue());
-        return requiresCastCall(field_type, getResultType());
-    }
-    catch (...)
-    {
-        /// FieldToDataType may throw for complex cases like mixed-type arrays.
-        /// If we can't determine the natural type, a cast is needed.
-        return true;
-    }
+    /// Elements without a common type (a mixed-type array, with `use_variant_as_common_type`) get a `Variant`
+    /// instead of an exception; otherwise the type is the same as without it.
+    auto field_type = applyVisitor(FieldToDataType<LeastSupertypeOnError::Variant>(), getValue());
+    return requiresCastCall(field_type, getResultType());
 }
 
 ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const

@@ -103,7 +103,7 @@ public:
     static bool requiresCastCall(const DataTypePtr & field_type, const DataTypePtr & data_type);
 
     /// Check if the value of this constant needs a _CAST to keep its type when converted to AST: when the type that
-    /// a literal of the value would get differs from the type of the constant, or can't be determined.
+    /// a literal of the value would get differs from the type of the constant.
     bool valueRequiresCastCall() const;
 
     /// Check if constant is a result of _CAST function constant folding.

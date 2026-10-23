@@ -73,7 +73,6 @@ String calculateActionNodeNameWithCastIfNeeded(const ConstantNode & constant_nod
 {
     const auto & name = constant_node.getValueName({.optimize_const_name_size = optimize_const_name_size});
     /// The same decision as in `ConstantNode::toASTImpl`, so that the name matches the AST sent to remote servers.
-    /// (A mixed-type array, valid with `use_variant_as_common_type`, has no type of its own and needs the cast.)
     bool requires_cast_call = constant_node.hasSourceExpression() || constant_node.valueRequiresCastCall();
 
     WriteBufferFromOwnString buffer;
