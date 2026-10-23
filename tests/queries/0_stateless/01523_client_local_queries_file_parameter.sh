@@ -190,6 +190,13 @@ printf '%s\n' 'CREATE TABLE selected_01523 (x UInt8) ENGINE=Memory;' \
     "SET implicit_table_at_top_level = 'selected_01523';" > "$TEMP_SQL_FILE_NAME"
 $CLICKHOUSE_LOCAL --async_insert=0 --queries-file="$TEMP_SQL_FILE_NAME" -q 'SELECT sum(x)' < "$STDIN_DATA_FILE_NAME"
 
+# Consuming stdin in a query file must not move the start of later pread scans.
+printf '1\n2\n3\n' > "$STDIN_DATA_FILE_NAME"
+printf '%s\n' 'CREATE TABLE prelude_stdin_01523 (x UInt8) ENGINE=File(TSV, stdin);' \
+    "SELECT sum(x) FROM prelude_stdin_01523 SETTINGS storage_file_read_method='read';" > "$TEMP_SQL_FILE_NAME"
+$CLICKHOUSE_LOCAL --storage_file_read_method=pread --use_cache_for_count_from_files=0 \
+    --queries-file="$TEMP_SQL_FILE_NAME" -q 'SELECT sum(c1); SELECT sum(c1)' < "$STDIN_DATA_FILE_NAME"
+
 # mmap already preserves descriptor position. Its first and later reads must
 # use the same range, even if the caller consumed a line before clickhouse-local.
 echo 'SELECT 99 FROM system.one;' > "$TEMP_SQL_FILE_NAME"

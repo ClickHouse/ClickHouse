@@ -562,7 +562,7 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
     int table_fd,
     const struct stat & file_stat,
     ContextPtr context,
-    bool preserve_fd_offset)
+    std::optional<off_t> descriptor_start_offset)
 {
     auto read_method = context->getSettingsRef()[Setting::storage_file_read_method];
 
@@ -613,15 +613,10 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
         if (use_table_fd)
         {
             auto reader = std::make_unique<ReadBufferFromFileDescriptorPRead>(table_fd, read_buffer_size);
-            if (preserve_fd_offset)
-            {
-                /// Schema inference must start at the inherited file position, even when pread is
-                /// used to keep the descriptor available to queries from --queries-file.
-                const off_t offset = ::lseek(table_fd, 0, SEEK_CUR);
-                if (offset < 0)
-                    throw ErrnoException(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Cannot get current position of file descriptor {}", table_fd);
-                reader->seek(offset, SEEK_SET);
-            }
+            /// A positional reader must use the schema inference boundary, not a
+            /// mutable descriptor offset advanced by an earlier query-file statement.
+            if (descriptor_start_offset)
+                reader->seek(*descriptor_start_offset, SEEK_SET);
             res = std::move(reader);
         }
         else
@@ -751,7 +746,7 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
     int table_fd,
     const String & compression_method,
     ContextPtr context,
-    bool preserve_fd_offset = false)
+    std::optional<off_t> descriptor_start_offset = std::nullopt)
 {
     CompressionMethod method = {};
     if (use_table_fd)
@@ -759,7 +754,7 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
     else
         method = chooseCompressionMethod(current_path, compression_method);
 
-    std::unique_ptr<ReadBuffer> nested_buffer = selectReadBuffer(current_path, use_table_fd, table_fd, file_stat, context, preserve_fd_offset);
+    std::unique_ptr<ReadBuffer> nested_buffer = selectReadBuffer(current_path, use_table_fd, table_fd, file_stat, context, descriptor_start_offset);
 
     const auto & file_settings = context->getSettingsRef();
     int zstd_window_log_max = static_cast<int>(file_settings[Setting::zstd_window_log_max]);
@@ -1295,9 +1290,16 @@ std::pair<ColumnsDescription, String> StorageFile::getTableStructureAndFormatFro
     inferred_fd_reader_is_positional = S_ISREG(file_stat.st_mode)
         && (read_method == LocalFSReadMethod::pread || read_method == LocalFSReadMethod::mmap);
     inferred_fd_reader_uses_mmap = inferred_fd_reader_is_positional && read_method == LocalFSReadMethod::mmap;
+    if (inferred_fd_reader_is_positional)
+    {
+        const off_t offset = ::lseek(table_fd, 0, SEEK_CUR);
+        if (offset < 0)
+            throw ErrnoException(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Cannot get current position of file descriptor {}", table_fd);
+        inferred_fd_start_offset = offset;
+    }
     /// We will use PeekableReadBuffer to create a checkpoint, so we need a place
     /// where we can store the original read buffer.
-    read_buffer_from_fd = createReadBuffer("", file_stat, true, table_fd, compression_method, context, /*preserve_fd_offset=*/true);
+    read_buffer_from_fd = createReadBuffer("", file_stat, true, table_fd, compression_method, context, inferred_fd_start_offset);
     auto read_buf = std::make_unique<PeekableReadBuffer>(*read_buffer_from_fd);
     read_buf->setCheckpoint();
     auto read_buffer_iterator = SingleReadBufferIterator(std::move(read_buf));
@@ -2081,7 +2083,7 @@ Chunk StorageFileSource::generate()
                         storage->table_fd,
                         storage->compression_method,
                         getContext(),
-                        storage->inferred_fd_reader_is_positional);
+                        storage->inferred_fd_start_offset);
 
                     /// `createReadBuffer` opens the file by path, strictly after the `stat` above computed
                     /// `current_file_cache_version`. Another writer - e.g. a second `File` table pointing at
