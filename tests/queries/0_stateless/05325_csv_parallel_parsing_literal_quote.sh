@@ -16,7 +16,7 @@ printf '12" pizza\n"x\ny\nz\nw"\n' > "${tmp_dir}/literal.csv"
 printf 'a,"x\ny\nz\nw"\nb,"p\nq\nr\ns"\n' > "${tmp_dir}/quoted_after_delimiter.csv"
 printf 'a, "x\ny\nz\nw"\n' > "${tmp_dir}/quoted_after_space.csv"
 
-SETTINGS="input_format_csv_detect_header = 0, min_chunk_bytes_for_parallel_parsing = 1, max_threads = 2, max_parsing_threads = 2"
+SETTINGS="input_format_csv_detect_header = 0, use_cache_for_count_from_files = 0, min_chunk_bytes_for_parallel_parsing = 1, max_threads = 2, max_parsing_threads = 2"
 
 for parallel in 0 1
 do
@@ -47,6 +47,25 @@ do
     ${CLICKHOUSE_CLIENT} -q "SELECT 'single_quoted', ${parallel}, s FROM file('${unique_name}/single_quoted.csv', 'CSV', 's String') SETTINGS input_format_parallel_parsing = ${parallel}, ${SQ_SETTINGS}"
     ${CLICKHOUSE_CLIENT} -q "SELECT 'count_array_after_space', ${parallel}, count() FROM file('${unique_name}/array_after_space.csv', 'CSV', 's Array(UInt8)') SETTINGS input_format_parallel_parsing = ${parallel}, ${ARR_SETTINGS}"
     ${CLICKHOUSE_CLIENT} -q "SELECT 'count_single_quoted', ${parallel}, count() FROM file('${unique_name}/single_quoted.csv', 'CSV', 's String') SETTINGS input_format_parallel_parsing = ${parallel}, ${SQ_SETTINGS}"
+done
+
+# A BOM before the first field, a double quote inside a single-quoted field preceded by text,
+# and tuple elements separated by vertical tab / form feed whitespace.
+printf '\xEF\xBB\xBF"[1,\n2,\n3,\n4]"\n' > "${tmp_dir}/bom_array.csv"
+printf "'a\"x\ny\nz\nw\"'\n" > "${tmp_dir}/single_quoted_text.csv"
+printf '1,\v"x\ny\nz\nw"\n' > "${tmp_dir}/tuple_vt.csv"
+printf '1,\f"x\ny\nz\nw"\n' > "${tmp_dir}/tuple_ff.csv"
+
+for parallel in 0 1
+do
+    ${CLICKHOUSE_CLIENT} -q "SELECT 'bom_array', ${parallel}, s FROM file('${unique_name}/bom_array.csv', 'CSV', 's Array(UInt8)') SETTINGS input_format_parallel_parsing = ${parallel}, ${SETTINGS}"
+    ${CLICKHOUSE_CLIENT} -q "SELECT 'count_bom_array', ${parallel}, count() FROM file('${unique_name}/bom_array.csv', 'CSV', 's Array(UInt8)') SETTINGS input_format_parallel_parsing = ${parallel}, ${SETTINGS}"
+    ${CLICKHOUSE_CLIENT} -q "SELECT 'single_quoted_text', ${parallel}, s FROM file('${unique_name}/single_quoted_text.csv', 'CSV', 's String') SETTINGS input_format_parallel_parsing = ${parallel}, ${SQ_SETTINGS}"
+    ${CLICKHOUSE_CLIENT} -q "SELECT 'count_single_quoted_text', ${parallel}, count() FROM file('${unique_name}/single_quoted_text.csv', 'CSV', 's String') SETTINGS input_format_parallel_parsing = ${parallel}, ${SQ_SETTINGS}"
+    ${CLICKHOUSE_CLIENT} -q "SELECT 'tuple_vt', ${parallel}, s FROM file('${unique_name}/tuple_vt.csv', 'CSV', 's Tuple(Int32, String)') SETTINGS input_format_parallel_parsing = ${parallel}, ${SETTINGS}"
+    ${CLICKHOUSE_CLIENT} -q "SELECT 'count_tuple_vt', ${parallel}, count() FROM file('${unique_name}/tuple_vt.csv', 'CSV', 's Tuple(Int32, String)') SETTINGS input_format_parallel_parsing = ${parallel}, ${SETTINGS}"
+    ${CLICKHOUSE_CLIENT} -q "SELECT 'tuple_ff', ${parallel}, s FROM file('${unique_name}/tuple_ff.csv', 'CSV', 's Tuple(Int32, String)') SETTINGS input_format_parallel_parsing = ${parallel}, ${SETTINGS}"
+    ${CLICKHOUSE_CLIENT} -q "SELECT 'count_tuple_ff', ${parallel}, count() FROM file('${unique_name}/tuple_ff.csv', 'CSV', 's Tuple(Int32, String)') SETTINGS input_format_parallel_parsing = ${parallel}, ${SETTINGS}"
 done
 
 rm -rf "${tmp_dir:?}"

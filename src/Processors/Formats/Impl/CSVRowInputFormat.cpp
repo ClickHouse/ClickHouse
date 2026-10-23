@@ -126,23 +126,25 @@ void CSVFormatReader::skipRow()
     bool quotes = false;
     /// A `"` opens a quoted field only at the start of a field (same as readCSVStringInto).
     bool at_field_start = true;
+    char quote_char = '"';
     ReadBuffer & istr = *buf;
+    const bool at_stream_start = istr.count() == 0;
 
     while (!istr.eof())
     {
         if (quotes)
         {
-            auto * pos = find_first_symbols<'"'>(istr.position(), istr.buffer().end());
+            auto * pos = (quote_char == '"') ? find_first_symbols<'"'>(istr.position(), istr.buffer().end()) : find_first_symbols<'\''>(istr.position(), istr.buffer().end());
             istr.position() = pos;
 
             if (pos > istr.buffer().end())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
             if (pos == istr.buffer().end())
                 continue;
-            if (*pos == '"')
+            if (*pos == quote_char)
             {
                 ++istr.position();
-                if (!istr.eof() && *istr.position() == '"')
+                if (!istr.eof() && *istr.position() == quote_char)
                     ++istr.position();
                 else
                 {
@@ -154,7 +156,7 @@ void CSVFormatReader::skipRow()
         else
         {
             const char * span_start = istr.position();
-            auto * pos = find_first_symbols<'"', '\r', '\n'>(istr.position(), istr.buffer().end());
+            auto * pos = find_first_symbols<'"', '\'', '\r', '\n'>(istr.position(), istr.buffer().end());
             istr.position() = pos;
 
             if (pos > istr.buffer().end())
@@ -166,19 +168,30 @@ void CSVFormatReader::skipRow()
             for (const char * p = pos; p > span_start; --p)
             {
                 char c = *(p - 1);
-                if (c != format_settings.csv.delimiter && (c == ' ' || c == '\t'))
+                if (at_stream_start && span_start == istr.buffer().begin() && p == span_start + 3
+                    && static_cast<unsigned char>(span_start[0]) == 0xEF && static_cast<unsigned char>(span_start[1]) == 0xBB
+                    && static_cast<unsigned char>(span_start[2]) == 0xBF)
+                {
+                    at_field_start = true;
+                    break;
+                }
+                if (c != format_settings.csv.delimiter && (c == ' ' || c == '\t' || c == '\v' || c == '\f'))
                     continue;
-                at_field_start = (c == format_settings.csv.delimiter || c == format_settings.csv.tuple_delimiter
-                                  || (format_settings.csv.allow_single_quotes && c == '\''));
+                at_field_start = (c == format_settings.csv.delimiter || c == format_settings.csv.tuple_delimiter);
                 break;
             }
 
             if (pos == istr.buffer().end())
                 continue;
 
-            if (*pos == '"')
+            if (*pos == '"' || *pos == '\'')
             {
-                quotes = at_field_start;
+                if (*pos == '"' || format_settings.csv.allow_single_quotes)
+                {
+                    quotes = at_field_start;
+                    if (quotes)
+                        quote_char = *pos;
+                }
                 at_field_start = false;
                 ++istr.position();
                 continue;
@@ -848,10 +861,12 @@ std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memor
 {
     char * pos = in.position();
     bool quotes = false;
+    char quote_char = '"';
     /// A `"` opens a quoted field only at the start of a field (same as readCSVStringInto).
     bool at_field_start = true;
     bool need_more_data = true;
     size_t number_of_rows = 0;
+    const bool at_stream_start = in.count() == 0;
 
     if (max_rows && (max_rows < min_rows))
         max_rows = min_rows;
@@ -860,15 +875,15 @@ std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memor
     {
         if (quotes)
         {
-            pos = find_first_symbols<'"'>(pos, in.buffer().end());
+            pos = (quote_char == '"') ? find_first_symbols<'"'>(pos, in.buffer().end()) : find_first_symbols<'\''>(pos, in.buffer().end());
             if (pos > in.buffer().end())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
             if (pos == in.buffer().end())
                 continue;
-            if (*pos == '"')
+            if (*pos == quote_char)
             {
                 ++pos;
-                if (loadAtPosition(in, memory, pos) && *pos == '"')
+                if (loadAtPosition(in, memory, pos) && *pos == quote_char)
                     ++pos;
                 else
                 {
@@ -880,7 +895,7 @@ std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memor
         else
         {
             const char * span_start = pos;
-            pos = find_first_symbols<'"', '\r', '\n'>(pos, in.buffer().end());
+            pos = find_first_symbols<'"', '\'', '\r', '\n'>(pos, in.buffer().end());
             if (pos > in.buffer().end())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
 
@@ -890,19 +905,28 @@ std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memor
             for (const char * p = pos; p > span_start; --p)
             {
                 char c = *(p - 1);
-                if (c != settings.csv.delimiter && (c == ' ' || c == '\t'))
+                if (at_stream_start && span_start == in.buffer().begin() && p == span_start + 3 && static_cast<unsigned char>(span_start[0]) == 0xEF && static_cast<unsigned char>(span_start[1]) == 0xBB && static_cast<unsigned char>(span_start[2]) == 0xBF)
+                {
+                    at_field_start = true;
+                    break;
+                }
+                if (c != settings.csv.delimiter && (c == ' ' || c == '\t' || c == '\v' || c == '\f'))
                     continue;
-                at_field_start = (c == settings.csv.delimiter || c == settings.csv.tuple_delimiter
-                                  || (settings.csv.allow_single_quotes && c == '\''));
+                at_field_start = (c == settings.csv.delimiter || c == settings.csv.tuple_delimiter);
                 break;
             }
 
             if (pos == in.buffer().end())
                 continue;
 
-            if (*pos == '"')
+            if (*pos == '"' || *pos == '\'')
             {
-                quotes = at_field_start;
+                if (*pos == '"' || settings.csv.allow_single_quotes)
+                {
+                    quotes = at_field_start;
+                    if (quotes)
+                        quote_char = *pos;
+                }
                 at_field_start = false;
                 ++pos;
                 continue;
