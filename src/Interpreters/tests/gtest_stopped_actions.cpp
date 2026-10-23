@@ -1,4 +1,5 @@
 #include <Interpreters/ActionLocksManager.h>
+#include <Interpreters/ActionLockTypes.h>
 #include <Storages/IStorage.h>
 #include <Common/ActionBlocker.h>
 #include <Common/tests/gtest_global_context.h>
@@ -11,24 +12,6 @@
 
 namespace DB
 {
-namespace ActionLocks
-{
-    extern const StorageActionBlockType PartsMerge;
-    extern const StorageActionBlockType PartsFetch;
-    extern const StorageActionBlockType PartsSend;
-    extern const StorageActionBlockType ReplicationQueue;
-    extern const StorageActionBlockType DistributedSend;
-    extern const StorageActionBlockType PartsTTLMerge;
-    extern const StorageActionBlockType PartsMove;
-    extern const StorageActionBlockType PullReplicationLog;
-    extern const StorageActionBlockType Cleanup;
-    extern const StorageActionBlockType ViewRefresh;
-    extern const StorageActionBlockType VirtualPartsUpdate;
-    extern const StorageActionBlockType ReduceBlockingParts;
-    extern const StorageActionBlockType ViewRefreshPause;
-    extern const StorageActionBlockType StreamConsume;
-}
-
 namespace
 {
 class StoppedActionsTestStorage final : public IStorage
@@ -51,21 +34,12 @@ TEST(StoppedActions, DisplayNamesAndReadOnlyObservation)
 {
     /// Some action types have no SQL-accessible implementation in this build. Exercise the
     /// display mapping directly without changing which locks real engines register.
+    /// Generate the test inputs from the same list as the constants and display mapping.
+    /// SQL reference files independently pin the names exposed by real engines.
     const std::vector<std::pair<StorageActionBlockType, String>> action_names = {
-        {ActionLocks::PartsMerge, "merges"},
-        {ActionLocks::PartsFetch, "fetches"},
-        {ActionLocks::PartsSend, "replicated_sends"},
-        {ActionLocks::ReplicationQueue, "replication_queue"},
-        {ActionLocks::DistributedSend, "distributed_sends"},
-        {ActionLocks::PartsTTLMerge, "ttl_merges"},
-        {ActionLocks::PartsMove, "moves"},
-        {ActionLocks::PullReplicationLog, "pull_replication_log"},
-        {ActionLocks::Cleanup, "cleanup"},
-        {ActionLocks::ViewRefresh, "view_refresh"},
-        {ActionLocks::VirtualPartsUpdate, "virtual_parts_update"},
-        {ActionLocks::ReduceBlockingParts, "reduce_blocking_parts"},
-        {ActionLocks::ViewRefreshPause, "view_refresh_pause"},
-        {ActionLocks::StreamConsume, "streaming_consumption"},
+#define ACTION_NAME_PAIR(ID, VALUE, NAME) {ActionLocks::ID, NAME},
+        ACTION_LOCK_TYPES(ACTION_NAME_PAIR)
+#undef ACTION_NAME_PAIR
     };
     ActionLocksManager manager(getContext().context);
     ActionBlocker blocker;
@@ -76,10 +50,12 @@ TEST(StoppedActions, DisplayNamesAndReadOnlyObservation)
     Names expected;
     for (const auto & [type, name] : action_names)
     {
+        EXPECT_FALSE(name.empty()) << "Empty display name for action type " << type;
         manager.add(storage, type);
         expected.push_back(name);
     }
     std::ranges::sort(expected);
+    EXPECT_EQ(std::adjacent_find(expected.begin(), expected.end()), expected.end()) << "Action display names must be unique";
     manager.add(storage, ActionLocks::PartsMerge);
     EXPECT_EQ(manager.getStoppedActions(storage), expected);
     EXPECT_EQ(manager.getStoppedActions(storage), expected);

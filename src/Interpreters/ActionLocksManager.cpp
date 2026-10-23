@@ -1,4 +1,5 @@
 #include <Interpreters/ActionLocksManager.h>
+#include <Interpreters/ActionLockTypes.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Databases/IDatabase.h>
@@ -18,20 +19,7 @@ namespace ErrorCodes
 
 namespace ActionLocks
 {
-    extern const StorageActionBlockType PartsMerge = 1;
-    extern const StorageActionBlockType PartsFetch = 2;
-    extern const StorageActionBlockType PartsSend = 3;
-    extern const StorageActionBlockType ReplicationQueue = 4;
-    extern const StorageActionBlockType DistributedSend = 5;
-    extern const StorageActionBlockType PartsTTLMerge = 6;
-    extern const StorageActionBlockType PartsMove = 7;
-    extern const StorageActionBlockType PullReplicationLog = 8;
-    extern const StorageActionBlockType Cleanup = 9;
-    extern const StorageActionBlockType ViewRefresh = 10;
-    extern const StorageActionBlockType VirtualPartsUpdate = 11;
-    extern const StorageActionBlockType ReduceBlockingParts = 12;
-    extern const StorageActionBlockType ViewRefreshPause = 13;
-    extern const StorageActionBlockType StreamConsume = 14;
+    ACTION_LOCK_TYPES(ACTION_LOCK_DEFINE)
 }
 
 
@@ -41,20 +29,9 @@ const char * getActionName(StorageActionBlockType action_type)
 {
     switch (action_type)
     {
-        case ActionLocks::PartsMerge: return "merges";
-        case ActionLocks::PartsFetch: return "fetches";
-        case ActionLocks::PartsSend: return "replicated_sends";
-        case ActionLocks::ReplicationQueue: return "replication_queue";
-        case ActionLocks::DistributedSend: return "distributed_sends";
-        case ActionLocks::PartsTTLMerge: return "ttl_merges";
-        case ActionLocks::PartsMove: return "moves";
-        case ActionLocks::PullReplicationLog: return "pull_replication_log";
-        case ActionLocks::Cleanup: return "cleanup";
-        case ActionLocks::ViewRefresh: return "view_refresh";
-        case ActionLocks::VirtualPartsUpdate: return "virtual_parts_update";
-        case ActionLocks::ReduceBlockingParts: return "reduce_blocking_parts";
-        case ActionLocks::ViewRefreshPause: return "view_refresh_pause";
-        case ActionLocks::StreamConsume: return "streaming_consumption";
+#define ACTION_NAME_CASE(ID, VALUE, NAME) case ActionLocks::ID: return NAME;
+        ACTION_LOCK_TYPES(ACTION_NAME_CASE)
+#undef ACTION_NAME_CASE
         default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown action type: {}", action_type);
     }
 }
