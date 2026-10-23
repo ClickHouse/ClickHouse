@@ -223,12 +223,18 @@ static NamesAndTypesList getColumnsList(const ASTExpressionList * columns_defini
             /// Note: Enum would be transformed to Enum8 if number of elements is less then 128, otherwise it would be transformed to Enum16.
             if (type_name_upper.contains("ENUM"))
             {
+                ASTPtr arguments = data_type_node->getArguments();
+                if (!arguments)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Type {} in MySQL dump requires a list of values", data_type_node->name);
+
                 UInt16 i = 0;
-                for (ASTPtr & child : data_type_node->getArguments()->children)
+                for (ASTPtr & child : arguments->children)
                 {
                     auto new_child = make_intrusive<ASTFunction>();
                     new_child->name = "equals";
                     auto * literal = child->as<ASTLiteral>();
+                    if (!literal || literal->value.getType() != Field::Types::String)
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Values of type {} in MySQL dump must be string literals", data_type_node->name);
 
                     new_child->arguments = make_intrusive<ASTExpressionList>();
                     new_child->arguments->children.push_back(make_intrusive<ASTLiteral>(literal->value.safeGet<String>()));
