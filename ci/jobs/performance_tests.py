@@ -20,7 +20,12 @@ from threading import Thread
 
 import yaml
 
-from ci.defs.defs import S3_REPORT_BUCKET_HTTP_ENDPOINT, BuildTypes, JobNames
+from ci.defs.defs import (
+    NIGHTLY_PERF_PLACEMENT,
+    S3_REPORT_BUCKET_HTTP_ENDPOINT,
+    BuildTypes,
+    JobNames,
+)
 from ci.jobs.scripts import log_export
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
 from ci.jobs.scripts.dataset_download import (
@@ -1314,7 +1319,7 @@ class CHServer:
     # JemallocSample flamegraphs. Must match compare.sh.
     JEMALLOC_PROFILER_SAMPLING_RATE = 16
 
-    def __init__(self, is_left=False):
+    def __init__(self, is_left=False, nightly=False):
         if is_left:
             server_port = self.LEFT_SERVER_PORT
             keeper_port = self.LEFT_SERVER_KEEPER_PORT
@@ -1362,6 +1367,12 @@ class CHServer:
             --keeper_server.storage_path {serever_path}/coordination --zookeeper.node.port {keeper_port} \
             --interserver_http_port {inter_server_port} \
             --jemalloc_profiler_sampling_rate {self.JEMALLOC_PROFILER_SAMPLING_RATE}"
+        # Nightly Arrow Flight tests: a ticket is freed after its `DoGet`, tickets expire after 60 s (default 600 s).
+        if nightly:
+            self.start_cmd += (
+                f" --arrowflight_port {server_port + 4}"
+                " --arrowflight.cancel_ticket_after_do_get 1 --arrowflight.tickets_lifetime_seconds 60"
+            )
 
     def start(self):
         print(f"Starting [{self.name}] ClickHouse server")
@@ -2682,6 +2693,17 @@ def main():
     # changed_files = info.get_custom_data("changed_files")
     if test_keyword:
         test_files = [file for file in test_files if test_keyword in file]
+    elif nightly:
+        # This job, the last test option: `N/M`, or the name of an extra job (`NIGHTLY_PERF_PLACEMENT`).
+        job = test_options[-1]
+        print(f"Placed tests absent at this commit: {[file for file in NIGHTLY_PERF_PLACEMENT if file not in test_files]}")
+        pinned = [file for file in test_files if NIGHTLY_PERF_PLACEMENT.get(file) == job]
+        if "/" in job:
+            # Slice before removing the pinned tests, so that pinning one test does not move the others.
+            test_files = [file for file in test_files[batch_num::total_batches] if file not in NIGHTLY_PERF_PLACEMENT] + pinned
+        else:
+            assert pinned, f"No test placed in the job `{job}` exists"
+            test_files = pinned
     else:
         test_files = test_files[batch_num::total_batches]
     if nightly:
@@ -2692,22 +2714,28 @@ def main():
     assert test_files
 
     # Test metadata keeps S3 off for old release_base vintages and shards without S3 tests.
-    needs_s3 = any(
-        test_discovery.test_requires_s3(f"./tests/performance/{file}")
-        for file in test_files
-    )
-    needs_s3_read_dataset = any(
-        test_discovery.test_requires_read_dataset(f"./tests/performance/{file}")
-        for file in test_files
-    )
+    # PR and master shards list the `long` tests too but skip them.
+    run_paths = [f"./tests/performance/{file}" for file in test_files]
+    if not nightly:
+        run_paths = [path for path in run_paths if not test_discovery.test_is_long(path)]
+    s3_paths = [path for path in run_paths if test_discovery.test_requires_s3(path)]
+    needs_s3 = bool(s3_paths)
+    needs_s3_read_dataset = any(map(test_discovery.test_requires_read_dataset, run_paths))
+    needs_s3_public_data = nightly and any(map(test_discovery.test_requires_public_data, run_paths))
+    needs_s3_catalog = nightly and any(map(test_discovery.test_requires_s3_catalog, run_paths))
 
     def prepare_s3():
-        # Configure and stage re-entry must produce the same S3 fixture.
+        # Configure and stage re-entry must produce the same S3 endpoint; the fixtures are seeded only if tests follow.
+        seed = JobStages.TEST in stages
         if not s3_service.ensure(f"{perf_wd}/s3_server.log"):
             return False
-        if needs_s3_read_dataset and not s3_service.seed_read_dataset(
+        if seed and needs_s3_read_dataset and not s3_service.seed_read_dataset(
             f"{db_path}/user_files/{s3_service.READ_DATASET_DIRECTORY}"
         ):
+            return False
+        if seed and needs_s3_public_data and not s3_service.seed_public_data(f"{perf_wd}/s3_public_data"):
+            return False
+        if seed and needs_s3_catalog and not s3_service.seed_catalog(f"{perf_right}/clickhouse"):
             return False
         if not s3_service.write_side_override(perf_left_config, "left"):
             return False
@@ -2997,8 +3025,8 @@ def main():
         )
         res = results[-1].is_ok()
 
-    leftCH = CHServer(is_left=True)
-    rightCH = CHServer(is_left=False)
+    leftCH = CHServer(is_left=True, nightly=nightly)
+    rightCH = CHServer(is_left=False, nightly=nightly)
     log_export_servers = (("left", leftCH), ("right", rightCH))
 
     if res and JobStages.RESTART in stages:
@@ -3109,6 +3137,12 @@ def main():
                     long=nightly,
                 )
                 cleanup_user_files()
+                # After a complete teardown; a failed S3 cleanup is an error record and ends the batch, the report still runs.
+                if clean and nightly and f"./tests/performance/{test}" in s3_paths and not s3_service.clear_write_namespaces():
+                    name = test.removesuffix(".xml")
+                    with open(f"{perf_wd}/{name}-err.log", "a") as f:
+                        f.write(f"{name}: S3 cleanup failed, stopping the batch\n")
+                    clean = False
                 if nightly and time.monotonic() - last_flush >= NIGHTLY_FLUSH_INTERVAL_SEC:
                     flush_log_export(log_export_servers)
                     last_flush = time.monotonic()
