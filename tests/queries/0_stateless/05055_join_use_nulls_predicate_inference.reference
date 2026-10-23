@@ -18,7 +18,7 @@ Condition: (_CAST(rk, \'Nullable(UInt64)\') in [80, 80])
 Type: LEFT
 -- FULL JOIN converted to INNER, join_use_nulls = 1: each key is inferred next to its own predicate
 Condition: and((_CAST(lk, \'Nullable(UInt64)\') in [80, 80]), (toNullable(lk) in [80, 80]))
-Condition: and((_CAST(rk, \'Nullable(UInt64)\') in [80, 80]), (toNullable(rk) in [80, 80]))
+Condition: and((toNullable(rk) in [80, 80]), (_CAST(rk, \'Nullable(UInt64)\') in [80, 80]))
 Type: INNER
 -- a predicate on a non-key column infers nothing, so lk stays unconstrained
 Condition: true
