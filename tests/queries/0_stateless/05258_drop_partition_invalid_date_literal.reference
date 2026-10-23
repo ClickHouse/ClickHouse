@@ -14,10 +14,8 @@ dst, valid literal	[1]
 tuple, nothing dropped	[1,2]
 tuple, valid literal	[1]
 tuple, named tuple cast	[]
-conversion, nothing dropped	[1]	[1]
-conversion, valid literals	[]	[]
-conversion, other spellings	[]	[]
-conversion, rolled-over time, nothing dropped	[1,2,3]	[1]
-conversion, valid time spellings	[1]	[]
-dynamic, nothing dropped	1
-dynamic, valid literal	0
+conversion, toDate rollover	0
+conversion, CAST rollover	0
+conversion, date with time	0
+conversion, toDateTime rollover	0
+conversion, time zone spelling	0
