@@ -107,6 +107,14 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"model = 'test-model', "
             f"api_key = 'test-key'"
         )
+        # Slow endpoint, used to observe how many requests an AI function sends before it is stopped.
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_slow AS "
+            f"provider = 'openai', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/slow', "
+            f"model = 'test-model', "
+            f"api_key = 'test-key'"
+        )
         instance.query(
             f"CREATE NAMED COLLECTION ai_error AS "
             f"provider = 'openai', "
@@ -792,6 +800,54 @@ def test_filter_where(started_cluster):
     )
     lines = result.strip().split("\n")
     assert lines == ["also good", "great product"]
+
+
+PREWHERE_SETTINGS = {
+    "enable_analyzer": 1,
+    "optimize_move_to_prewhere": 1,
+    "move_all_conditions_to_prewhere": 1,
+    "allow_reorder_prewhere_conditions": 1,
+}
+
+
+def count_filter_calls(prefix, where):
+    """Runs `SELECT count()` over 16 rows, half of them with `flag = 1`, and returns the number of
+    rows and of AI requests."""
+    instance.query(
+        "CREATE TABLE IF NOT EXISTS prewhere_ai (flag UInt8, text String) ENGINE = MergeTree ORDER BY tuple()"
+    )
+    instance.query("TRUNCATE TABLE prewhere_ai")
+    instance.query(
+        "INSERT INTO prewhere_ai SELECT number % 2, 'row ' || toString(number) FROM numbers(16)"
+    )
+    qid = unique_query_id(prefix)
+    rows = instance.query(
+        f"SELECT count() FROM prewhere_ai WHERE {where}",
+        query_id=qid,
+        settings=PREWHERE_SETTINGS,
+    )
+    return int(rows), int(get_profile_events(qid)["api_calls"])
+
+
+def test_filter_prewhere_after_cheap_condition(started_cluster):
+    """The AI condition is moved to PREWHERE after `flag = 1`, so only the rows passing it are sent."""
+    rows, api_calls = count_filter_calls(
+        "filter_prewhere_after_cheap",
+        "aiFilter(text, 'matches', map('credentials', 'ai_mock')) AND flag = 1",
+    )
+    assert rows == 8
+    assert api_calls == 8
+
+
+def test_filter_prewhere_behind_condition_left_in_where(started_cluster):
+    """`length(text) = flag` uses every queried column, so it stays in WHERE. The AI condition
+    stays there too and is evaluated only for the rows passing it, which are none."""
+    rows, api_calls = count_filter_calls(
+        "filter_prewhere_behind_where",
+        "length(text) = flag AND aiFilter(text, 'matches', map('credentials', 'ai_mock'))",
+    )
+    assert rows == 0
+    assert api_calls == 0
 
 
 def test_filter_truncated_response_throw(started_cluster):
@@ -1790,6 +1846,75 @@ def test_function_name_header(started_cluster):
         assert last_request()["headers"].get("x-clickhouse-ai-function") == name
 
 
+def test_query_id_header(started_cluster):
+    """The OpenAI provider sends the `query_id` of the query that makes the request as the
+    `X-ClickHouse-Query-Id` header and its `initial_query_id` as the `X-ClickHouse-Initial-Query-Id` header:
+    on a remote shard the first is the shard's own query id, the second is the initiator's one.
+    Covers the chat and the embedding paths."""
+    local_cases = [
+        "SELECT aiGenerate('hi', map('credentials', 'ai_mock'))",
+        "SELECT aiEmbed('hi', 'test-embed-model', map('credentials', 'ai_embed'))",
+    ]
+    for i, query in enumerate(local_cases):
+        qid = unique_query_id(f"query_id_header_{i}")
+        instance.query(query, query_id=qid)
+        headers = last_request()["headers"]
+        assert headers.get("x-clickhouse-query-id") == qid
+        assert headers.get("x-clickhouse-initial-query-id") == qid
+
+    remote_cases = [
+        "SELECT aiGenerate(toString(dummy), map('credentials', 'ai_mock')) FROM remote('127.0.0.2', system.one)",
+        "SELECT aiEmbed(toString(dummy), 'test-embed-model', map('credentials', 'ai_embed')) FROM remote('127.0.0.2', system.one)",
+    ]
+    for i, query in enumerate(remote_cases):
+        qid = unique_query_id(f"query_id_header_remote_{i}")
+        instance.query(query, query_id=qid)
+        headers = last_request()["headers"]
+        sent_query_id = headers.get("x-clickhouse-query-id")
+        assert sent_query_id and sent_query_id != qid
+        assert headers.get("x-clickhouse-initial-query-id") == qid
+        instance.query("SYSTEM FLUSH LOGS query_log")
+        assert (
+            instance.query(
+                f"SELECT initial_query_id FROM system.query_log WHERE query_id = '{sent_query_id}' AND NOT is_initial_query AND type = 'QueryFinish'"
+            ).strip()
+            == qid
+        )
+
+    # A background mutation sends the mutation task's own `current_query_id` and has no `initial_query_id`.
+    instance.query("DROP TABLE IF EXISTS query_id_header SYNC")
+    instance.query("CREATE TABLE query_id_header (k UInt64, s String) ENGINE = MergeTree ORDER BY k")
+    instance.query("INSERT INTO query_id_header VALUES (1, 'a')")
+    instance.query(
+        "ALTER TABLE query_id_header UPDATE s = aiGenerate('hi', map('credentials', 'ai_mock')) WHERE 1",
+        settings={"mutations_sync": 2, "allow_nondeterministic_mutations": 1},
+    )
+    table_uuid = instance.query("SELECT uuid FROM system.tables WHERE database = 'default' AND name = 'query_id_header'").strip()
+    headers = last_request()["headers"]
+    assert headers.get("x-clickhouse-query-id") == f"{table_uuid}::all_1_1_0_2"
+    assert "x-clickhouse-initial-query-id" not in headers
+    instance.query("DROP TABLE query_id_header SYNC")
+
+
+def test_query_id_header_control_characters(started_cluster):
+    """A query id from the native protocol can contain control characters. They are replaced with spaces
+    in the `X-ClickHouse-Query-Id` and `X-ClickHouse-Initial-Query-Id` headers, so no extra header is injected."""
+    suffix = uuid.uuid4().hex[:8]
+    qid = f"query_id_crlf_{suffix}\r\nX-Injected: 1"
+    instance.query("SELECT aiGenerate('hi', map('credentials', 'ai_mock'))", query_id=qid)
+    instance.query("SYSTEM FLUSH LOGS query_log")
+    assert (
+        instance.query(
+            f"SELECT count() FROM system.query_log WHERE query_id = 'query_id_crlf_{suffix}\\r\\nX-Injected: 1' AND type = 'QueryFinish'"
+        ).strip()
+        == "1"
+    )
+    headers = last_request()["headers"]
+    assert headers.get("x-clickhouse-query-id") == f"query_id_crlf_{suffix}  X-Injected: 1"
+    assert headers.get("x-clickhouse-initial-query-id") == f"query_id_crlf_{suffix}  X-Injected: 1"
+    assert "x-injected" not in headers
+
+
 def test_embed_retry_respects_api_call_quota(started_cluster):
     """The embedding path enforces the same per-attempt API-call quota: a retriable HTTP 500 is not
     retried past `ai_function_max_api_calls_per_query`."""
@@ -2406,3 +2531,76 @@ def test_api_call_quota_ignores_subquery_settings(started_cluster):
     assert subquery_only == 64, (
         f"expected all 64 rows to run (a quota set only in the subquery is ignored), got {subquery_only}"
     )
+
+
+SLOW_CHAT_CALL = "aiClassify(toString(number), ['positive','negative'], map('credentials', 'ai_slow'))"
+
+
+def _concurrency_stats():
+    return json.loads(
+        instance.exec_in_container(
+            ["curl", "-s", f"http://localhost:{MOCK_PORT}/concurrency"]
+        )
+    )
+
+
+def _reset_concurrency():
+    instance.exec_in_container(
+        ["curl", "-s", f"http://localhost:{MOCK_PORT}/reset-concurrency"]
+    )
+
+
+def test_kill_query_stops_issuing_requests(started_cluster):
+    """`KILL QUERY` stops an AI function mid-block: no new request is sent after the kill. The 400 rows
+    form one block, which at 0.5s per request would otherwise take 200s and send all 400 requests."""
+    _reset_concurrency()
+    qid = unique_query_id("ai_kill")
+    request = instance.get_query_request(
+        f"SELECT {SLOW_CHAT_CALL} FROM numbers(400) FORMAT Null",
+        query_id=qid,
+    )
+
+    wait_condition(
+        _concurrency_stats, lambda stats: stats["requests"] >= 2, max_attempts=100, delay=0.1
+    )
+    instance.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC")
+
+    assert "Query was cancelled" in request.get_error()
+    requests = _concurrency_stats()["requests"]
+    assert requests < 40, f"the killed query kept sending requests: {requests} of 400 were sent"
+
+    instance.query("SYSTEM FLUSH LOGS")
+    exception_code = instance.query(
+        f"SELECT exception_code FROM system.query_log "
+        f"WHERE query_id = '{qid}' AND type = 'ExceptionWhileProcessing'"
+    ).strip()
+    assert exception_code == "394"
+    assert int(get_profile_events(qid, "ExceptionWhileProcessing")["api_calls"]) == requests
+
+
+def test_max_execution_time_stops_issuing_requests(started_cluster):
+    """`max_execution_time` stops an AI function mid-block like `KILL QUERY`: the 400 rows form one block
+    that would take 200s at 0.5s per request, and the query fails after 2s having sent a fraction of them."""
+    _reset_concurrency()
+    error = instance.query_and_get_error(
+        f"SELECT countIf(r != '') FROM (SELECT {SLOW_CHAT_CALL} AS r FROM numbers(400))",
+        settings={"max_execution_time": 2},
+    )
+    assert "TIMEOUT_EXCEEDED" in error
+    requests = _concurrency_stats()["requests"]
+    assert requests < 40, f"the timed-out query kept sending requests: {requests} of 400 were sent"
+
+
+def test_max_execution_time_break_stops_issuing_requests(started_cluster):
+    """With `timeout_overflow_mode = 'break'` the query returns without an error once the time limit is
+    reached, and no further requests are sent."""
+    _reset_concurrency()
+    instance.query(
+        f"SELECT countIf(r != '') FROM (SELECT {SLOW_CHAT_CALL} AS r FROM numbers(400))",
+        settings={
+            "max_execution_time": 2,
+            "timeout_overflow_mode": "break",
+        },
+    )
+    requests = _concurrency_stats()["requests"]
+    assert requests < 40, f"the query kept sending requests past the time limit: {requests} of 400 were sent"
