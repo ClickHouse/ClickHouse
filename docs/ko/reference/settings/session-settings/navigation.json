@@ -1,6 +1,7 @@
 {
-  "directory": "none",
   "group": "세션 설정",
+  "root": "ko/reference/settings/session-settings",
+  "directory": "none",
   "pages": [
     "ko/reference/settings/session-settings/additional",
     "ko/reference/settings/session-settings/aggregate",
@@ -263,6 +264,5 @@
     "ko/reference/settings/session-settings/weight-lowering",
     "ko/reference/settings/session-settings/write-through-distributed-cache",
     "ko/reference/settings/session-settings/other"
-  ],
-  "root": "ko/reference/settings/session-settings"
+  ]
 }

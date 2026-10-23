@@ -302,8 +302,8 @@
         {
           "group": "Référence de l’API",
           "openapi": {
-            "directory": "fr/products/cloud/api-reference",
-            "source": "_specs/cloud-openapi.json"
+            "source": "_specs/cloud-openapi.json",
+            "directory": "fr/products/cloud/api-reference"
           },
           "pages": {
             "$ref": "./api-reference/navigation.json"

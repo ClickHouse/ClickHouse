@@ -296,8 +296,8 @@
       "expanded": true,
       "group": "API リファレンス",
       "openapi": {
-        "directory": "ja/clickstack/api-reference",
-        "source": "https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json"
+        "source": "https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json",
+        "directory": "ja/clickstack/api-reference"
       },
       "root": "ja/clickstack/api-reference"
     }

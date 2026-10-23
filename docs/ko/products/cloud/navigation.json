@@ -302,8 +302,8 @@
         {
           "group": "API 참조",
           "openapi": {
-            "directory": "ko/products/cloud/api-reference",
-            "source": "_specs/cloud-openapi.json"
+            "source": "_specs/cloud-openapi.json",
+            "directory": "ko/products/cloud/api-reference"
           },
           "pages": {
             "$ref": "./api-reference/navigation.json"

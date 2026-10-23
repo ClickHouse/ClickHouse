@@ -1,6 +1,7 @@
 {
   "icon": "/images/icons/icon-clickpipes.svg",
   "item": "ClickPipes",
+  "root": "es/integrations/clickpipes/home",
   "pages": [
     "es/integrations/clickpipes/home",
     {
@@ -224,6 +225,5 @@
     },
     "es/integrations/clickpipes/monitoring",
     "es/integrations/clickpipes/dynamodb"
-  ],
-  "root": "es/integrations/clickpipes/home"
+  ]
 }

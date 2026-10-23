@@ -302,8 +302,8 @@
         {
           "group": "API 参考文档",
           "openapi": {
-            "directory": "zh/products/cloud/api-reference",
-            "source": "_specs/cloud-openapi.json"
+            "source": "_specs/cloud-openapi.json",
+            "directory": "zh/products/cloud/api-reference"
           },
           "pages": {
             "$ref": "./api-reference/navigation.json"

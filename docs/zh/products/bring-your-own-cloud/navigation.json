@@ -54,6 +54,7 @@
         {
           "group": "连接器模式",
           "hidden": true,
+          "tag": "Preview",
           "pages": [
             "zh/products/bring-your-own-cloud/connector/overview",
             "zh/products/bring-your-own-cloud/connector/onboarding",
@@ -68,8 +69,7 @@
             "zh/products/bring-your-own-cloud/connector/reference/configuration",
             "zh/products/bring-your-own-cloud/connector/reference/faq",
             "zh/products/bring-your-own-cloud/connector/reference/privilege-model"
-          ],
-          "tag": "Preview"
+          ]
         }
       ]
     }

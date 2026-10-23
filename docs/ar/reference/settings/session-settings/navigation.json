@@ -1,6 +1,7 @@
 {
-  "directory": "none",
   "group": "إعدادات session",
+  "root": "ar/reference/settings/session-settings",
+  "directory": "none",
   "pages": [
     "ar/reference/settings/session-settings/additional",
     "ar/reference/settings/session-settings/aggregate",
@@ -263,6 +264,5 @@
     "ar/reference/settings/session-settings/weight-lowering",
     "ar/reference/settings/session-settings/write-through-distributed-cache",
     "ar/reference/settings/session-settings/other"
-  ],
-  "root": "ar/reference/settings/session-settings"
+  ]
 }

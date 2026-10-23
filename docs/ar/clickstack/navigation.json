@@ -296,8 +296,8 @@
       "expanded": true,
       "group": "مرجع واجهة برمجة التطبيقات",
       "openapi": {
-        "directory": "ar/clickstack/api-reference",
-        "source": "https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json"
+        "source": "https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json",
+        "directory": "ar/clickstack/api-reference"
       },
       "root": "ar/clickstack/api-reference"
     }
