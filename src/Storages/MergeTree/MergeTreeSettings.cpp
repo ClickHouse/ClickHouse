@@ -261,6 +261,20 @@ bytes) with some gap to avoid filesystem errors.
     DECLARE(UInt64, min_rows_for_full_part_storage, 0, R"(
     Minimal number of rows to use full type of storage for data part instead of packed
     )", 0) \
+    DECLARE(UInt64, max_bytes_to_buffer_for_packed_part, 0, R"(
+    Maximum amount of memory taken by the buffered data of a packed data part while it is written
+    by an insert, a merge or a mutation. A packed part keeps the data of all its files in memory until
+    the part is finalized. Once the buffered data exceeds this limit, the data of the largest files is
+    moved to temporary files in the server temporary storage (`tmp_path`, `tmp_policy` or
+    `temporary_data_in_cache`) and read back on finalization. The temporary files are accounted by
+    `max_temporary_data_on_disk_size_for_query` and `max_temporary_data_on_disk_size_for_user`.
+    The last block (up to 64 KiB) of each file that is still being written cannot be moved, so a part
+    with many files written at once, such as a wide part with many columns, can take more memory.
+    The data of a part is moved to one temporary file, whose write buffers (about 2 MiB with the default
+    `temporary_files_buffer_size`) stay in memory until the part is finalized.
+    The limit applies separately to the part and to each of its projections. 0 means unlimited.
+    )", 0, \
+        {"26.11", 0, 0, "New setting. Bounds the memory taken by the buffered data of a packed part being written by moving it to temporary data. 0 keeps all the data in memory, as before."}) \
     DECLARE(UInt64, compact_parts_max_bytes_to_buffer, 128 * 1024 * 1024, R"(
 Only available in ClickHouse Cloud. Maximal number of bytes to write in a
 single stripe in compact parts
@@ -2262,6 +2276,9 @@ Supported for object-storage disks whose metadata lives on the object storage it
 (s3_plain, s3_plain_rewritable, web, web_index) and their cached variants. Encrypted
 variants are supported only over the writable s3_plain / s3_plain_rewritable disks, not
 over the read-only web / web_index disks.
+A writable disk holds the data of only one table: the other tables over the same path,
+or over a path inside or above it, have to use a read-only disk.
+`ALTER` cannot change the disk of a table with this setting.
 The parts already present under the path are trusted to match the columns and the sorting
 key this table declares. Nothing records the sorting key a part was written with, so a
 table declaring a different one over the same parts returns wrong results or an error.

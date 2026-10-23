@@ -20,7 +20,7 @@ from threading import Thread
 
 import yaml
 
-from ci.defs.defs import S3_REPORT_BUCKET_HTTP_ENDPOINT
+from ci.defs.defs import S3_REPORT_BUCKET_HTTP_ENDPOINT, BuildTypes, JobNames
 from ci.jobs.scripts import log_export
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
 from ci.jobs.scripts.dataset_download import (
@@ -73,6 +73,14 @@ WHERE event_date BETWEEN today() - INTERVAL 1 MONTH - INTERVAL 1 WEEK AND today(
     AND metric = 'client_time'
     AND pr_number = 0
     AND workflow_name = 'MasterCI'
+    -- The same runs, selected by the key prefix so that the PR runs are not read.
+    AND new_sha IN (
+        SELECT new_sha FROM perf_test_times_v1
+        -- The job writes both tables, so their dates differ by a day at most.
+        WHERE event_date BETWEEN today() - INTERVAL 1 MONTH - INTERVAL 1 WEEK - INTERVAL 1 DAY
+                AND today() - INTERVAL 1 WEEK + INTERVAL 1 DAY
+            AND pr_number = 0
+            AND workflow_name = 'MasterCI')
 -- The display name is part of the key: compare.sh joins this file on all three.
 GROUP BY test, query_index, query_display_name
 HAVING count() > 100"""
@@ -1279,6 +1287,11 @@ def match_reference_debug_info():
         print("Patched binary has comparable line info, leaving reference as-is")
 
 
+# Both servers start with ASLR disabled, so that they load the executable at the same address (checked in the
+# Start stage). Linux only, like the CPU pinning.
+NO_ASLR_PREFIX = f"setarch {os.uname().machine} -R " if os.uname().sysname == "Linux" else ""
+
+
 class CHServer:
     # `tpcds_sf100`: 2.7–3 h.
     NIGHTLY_TEST_TIMEOUT_SEC = 4 * 3600
@@ -1341,7 +1354,7 @@ class CHServer:
         # command line (a documented config override, see Server.cpp) with a
         # distinct port per server, so that shell-script tests can talk to the
         # server over HTTP.
-        self.start_cmd = f"{taskset_prefix}{serever_path}/clickhouse-server --config-file={serever_path}/config/config.xml \
+        self.start_cmd = f"{taskset_prefix}{NO_ASLR_PREFIX}{serever_path}/clickhouse-server --config-file={serever_path}/config/config.xml \
             -- --path {serever_path}/db --user_files_path {serever_path}/db/user_files \
             --top_level_domains_path {perf_wd}/top_level_domains --tcp_port {server_port} \
             --http_port {http_port} \
@@ -1434,13 +1447,15 @@ class CHServer:
             strip=False,
         )
         duration = sw.duration
-        clean = not long or "teardown-complete" in out.splitlines()
+        lines = out.splitlines()
+        # A skipped test exits before it connects, so it created nothing.
+        clean = "teardown-complete" in lines or any(line.startswith("skipped\t") for line in lines)
         if long:
             print(f"test-end {format_utc_date_time(utc_now())}")
             if res != 0:
                 err += f"{test_name}: perf.py exited with status {res} (124 = wall-clock budget {cls.NIGHTLY_TEST_TIMEOUT_SEC}s expired, 137 = killed)\n"
-            if not clean:
-                err += f"{test_name}: teardown incomplete, stopping the batch\n"
+        if not clean:
+            err += f"{test_name}: teardown incomplete, stopping the batch\n"
         if res != 0 or not clean:
             with open(f"{results_path}/{test_name}-err.log", "w") as f:
                 f.write(err)
@@ -1572,12 +1587,66 @@ LOCAL_REFERENCE_FALLBACK_WARNING = (
 )
 
 
+# MasterCI builds these exactly like a PR build. The official build keeps debug
+# info and sets the official-build flag, which change the code and move it.
+PERFORMANCE_REFERENCE_BUILD_JOBS = {
+    "build_amd_release": f"{JobNames.BUILD} ({BuildTypes.AMD_RELEASE_PERFORMANCE_REFERENCE})",
+    "build_arm_release": f"{JobNames.BUILD} ({BuildTypes.ARM_RELEASE_PERFORMANCE_REFERENCE})",
+}
+PERFORMANCE_REFERENCE_BUILD_IMAGE = "clickhouse/binary-builder"
+
+
+def find_performance_reference_build(commits, build_type):
+    """The newest performance reference build of `commits` and the index in `commits`
+    of the commit whose sources it was built from, or `(None, None)`.
+
+    Commits before the first one with an official build are passed over, as in
+    `find_master_build`. Past that commit, only the newest older reference build is
+    taken, and only when `MasterCI` recorded the same sources and builder image
+    digests for the job at both commits."""
+    job_name = PERFORMANCE_REFERENCE_BUILD_JOBS[build_type]
+    official_index = None
+    sources = None
+    for index, sha in enumerate(commits):
+        link, _ = find_master_build([sha], Utils.normalize_string(job_name))
+        if official_index is None:
+            if link:
+                return link, index
+            if find_master_build([sha], build_type)[0] is None:
+                continue
+            official_index = index
+            state, sources = master_job_build_inputs_digest(job_name, sha)
+            if state != FETCH_OK or not sources:
+                return None, None
+            continue
+        if not link:
+            continue
+        state, digest = master_job_build_inputs_digest(job_name, sha)
+        if state != FETCH_OK or digest != sources:
+            print(
+                f"INFO: [{job_name}] build inputs digest at master {sha} is {digest}, "
+                f"not {sources} as at master {commits[official_index]}"
+            )
+            return None, None
+        print(f"INFO: [{job_name}] of master {sha} has the sources and builder image of master {commits[official_index]}")
+        return link, official_index
+    return None, None
+
+
 def find_prev_build(info, build_type):
     """The reference build link and the master commits from the tested one down to the reference."""
     commits = info.get_kv_data("master_track_commits_sha") or []
     if not commits and info.is_local_run:
         # for a local run let's check 50 commits
         commits = local_master_track_commits(50)
+    # A PR candidate is compared with the performance reference build, made like
+    # it. Master runs compare official builds. Private PR builds keep debug info.
+    if info.pr_number > 0 and info.repo_name == "ClickHouse/ClickHouse":
+        link, index = find_performance_reference_build(commits, build_type)
+        if link:
+            print(f"Reference: performance reference build {link}")
+            return link, commits[: index + 1]
+        print("WARNING: no performance reference build, the reference is the official build")
     link, index = find_master_build(commits, build_type)
     if link or not info.is_local_run:
         return link, commits[: index + 1] if link else []
@@ -2153,6 +2222,70 @@ def master_report_link(sha, file_name):
     return f"https://{S3_REPORT_BUCKET_HTTP_ENDPOINT}/{prefix}/{file_name}"
 
 
+def master_job_status(job_name, sha):
+    """The status of `job_name` in the `MasterCI` run of master commit `sha`.
+
+    Returns `(FETCH_MISSING, None)` when `sha` has no `MasterCI` run,
+    `(FETCH_ERROR, None)` when its report cannot be fetched or parsed,
+    `(FETCH_OK, None)` when that run did not schedule the job, and
+    `(FETCH_OK, <status>)` otherwise."""
+    link = master_report_link(sha, MASTER_WORKFLOW_RESULT_FILE)
+    state, out = fetch_prev_master_result(link)
+    if state == FETCH_ERROR:
+        print(f"WARNING: failed to fetch the master workflow report [{link}]")
+    if state != FETCH_OK:
+        return state, None
+    try:
+        jobs = json.loads(out).get("results") or []
+    except Exception:
+        print(f"WARNING: failed to parse the master workflow report [{link}]")
+        return FETCH_ERROR, None
+    for job in jobs:
+        if isinstance(job, dict) and job.get("name") == job_name:
+            return FETCH_OK, job.get("status") or ""
+    return FETCH_OK, None
+
+
+def master_job_build_inputs_digest(job_name, sha):
+    """The builder image digest and the sources part of the praktika digest that the `MasterCI`
+    run of master commit `sha` recorded for `job_name`, with the states of `master_job_status`.
+    The job digest does not include the image; its dropped last part hashes the job config,
+    which depends on the runner."""
+    link = master_report_link(sha, MASTER_WORKFLOW_RESULT_FILE)
+    state, out = fetch_prev_master_result(link)
+    if state != FETCH_OK:
+        return state, None
+    try:
+        config_link = next(
+            (
+                job_link
+                for job in json.loads(out).get("results") or []
+                if job.get("name") == Settings.CI_CONFIG_JOB_NAME
+                for job_link in job.get("links") or []
+                if job_link.endswith("/workflow_config_masterci.json")
+            ),
+            None,
+        )
+    except Exception:
+        print(f"WARNING: failed to parse the master workflow report [{link}]")
+        return FETCH_ERROR, None
+    if not config_link:
+        return FETCH_OK, None
+    state, out = fetch_prev_master_result(config_link)
+    if state != FETCH_OK:
+        return state, None
+    try:
+        config = json.loads(out)
+        digest = (config.get("digest_jobs") or {}).get(job_name)
+        image = (config.get("digest_dockers") or {}).get(PERFORMANCE_REFERENCE_BUILD_IMAGE)
+    except Exception:
+        print(f"WARNING: failed to parse the master workflow config [{config_link}]")
+        return FETCH_ERROR, None
+    if not isinstance(digest, str) or not digest or not isinstance(image, str) or not image:
+        return FETCH_OK, None
+    return FETCH_OK, f"{image}-{digest.rsplit('-', 1)[0]}"
+
+
 def classify_missing_prev_master_run(job_name, sha):
     """Tell whether this job was ever scheduled at master commit `sha`, given
     that its `result_*.json` is missing there.
@@ -2178,34 +2311,23 @@ def classify_missing_prev_master_run(job_name, sha):
     or parsed. Those all stop the walk, and the caller falls back to the
     absolute gate for this one run - the next master run finds this run's own
     result and gets its delta back."""
-    link = master_report_link(sha, MASTER_WORKFLOW_RESULT_FILE)
-    state, out = fetch_prev_master_result(link)
+    state, status = master_job_status(job_name, sha)
     if state == FETCH_MISSING:
         print(f"INFO: master commit {sha} has no {MASTER_WORKFLOW_RESULT_FILE}")
         return MASTER_RUN_NEVER_SCHEDULED
     if state == FETCH_ERROR:
-        print(f"WARNING: failed to fetch the master workflow report [{link}]")
         return MASTER_RUN_INCOMPLETE
-    try:
-        jobs = json.loads(out).get("results") or []
-    except Exception:
-        print(f"WARNING: failed to parse the master workflow report [{link}]")
-        return MASTER_RUN_INCOMPLETE
-    for job in jobs:
-        if not isinstance(job, dict) or job.get("name") != job_name:
-            continue
-        status = job.get("status")
-        if status == Result.Status.SKIPPED:
-            print(f"INFO: [{job_name}] was skipped at master commit {sha}")
-            return MASTER_RUN_NEVER_SCHEDULED
-        print(
-            f"WARNING: [{job_name}] at master commit {sha} is {status} but "
-            "published no result"
-        )
-        return MASTER_RUN_INCOMPLETE
-    # The job is absent from the report: this master run did not schedule it.
-    print(f"INFO: [{job_name}] is not part of the master run of {sha}")
-    return MASTER_RUN_NEVER_SCHEDULED
+    if status is None:
+        print(f"INFO: [{job_name}] is not part of the master run of {sha}")
+        return MASTER_RUN_NEVER_SCHEDULED
+    if status == Result.Status.SKIPPED:
+        print(f"INFO: [{job_name}] was skipped at master commit {sha}")
+        return MASTER_RUN_NEVER_SCHEDULED
+    print(
+        f"WARNING: [{job_name}] at master commit {sha} is {status} but "
+        "published no result"
+    )
+    return MASTER_RUN_INCOMPLETE
 
 
 def find_prev_master_slower_count(job_name, commits, release_base_sha):
@@ -2896,6 +3018,10 @@ def main():
             restart_ch1,
             restart_ch2,
         ]
+        if NO_ASLR_PREFIX:
+            commands.append(
+                f"python3 {Path(__file__).resolve().parent}/scripts/perf/check_executable_base.py {perf_left}/db {perf_right}/db"
+            )
         results.append(Result.from_commands_run(name="Start", command=commands))
         # TODO : check datasets are loaded:
         print(

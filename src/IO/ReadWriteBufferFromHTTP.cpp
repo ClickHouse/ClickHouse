@@ -70,6 +70,15 @@ bool isQueryTimeLimitReached()
     return false;
 }
 
+/// The credentials that `prepareRequest` puts into the headers of a request, see `requestCredentialSecrets`.
+Strings headerCredentialSecrets(const HTTPHeaderEntries & entries)
+{
+    Poco::Net::HTTPRequest request;
+    for (const auto & [header, value] : entries)
+        request.set(header, value);
+    return requestCredentialSecrets(request);
+}
+
 }
 
 namespace ErrorCodes
@@ -316,7 +325,7 @@ ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callImpl(
     /// buffer needs none of its own.
     auto response_body = receiveHTTPResponse(session, response, use_external_buffer ? 0 : buffer_size);
 
-    assertResponseIsOk(maskedURI(current_uri), response, *response_body, allow_redirects, requestCredentialSecrets(request));
+    assertResponseIsOk(current_uri.toString(), response, *response_body, allow_redirects, requestCredentialSecrets(request));
 
     return response_body;
 }
@@ -662,10 +671,11 @@ std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::initialize()
                 /// it is retriable error
                 throw HTTPException(
                     ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
-                    maskedURI(current_uri),
+                    current_uri.toString(),
                     Poco::Net::HTTPResponse::HTTP_REQUESTED_RANGE_NOT_SATISFIABLE,
                     response.getReason(),
-                    explanation);
+                    explanation,
+                    headerCredentialSecrets(http_header_entries));
             }
             throw Exception(
                 ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
@@ -673,7 +683,7 @@ std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::initialize()
                 getOffset(),
                 read_range.end ? toString(*read_range.end) : "-",
                 toString(response.getStatus()),
-                response.getReason());
+                scrubRequestCredentials(response.getReason(), current_uri.toString(), headerCredentialSecrets(http_header_entries)));
         }
         if (read_range.end)
         {
@@ -790,10 +800,11 @@ size_t ReadWriteBufferFromHTTP::readBigAt(char * to, size_t n, size_t offset, co
 
                 throw HTTPException(
                     ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
-                    maskedURI(current_uri),
+                    current_uri.toString(),
                     Poco::Net::HTTPResponse::HTTP_REQUESTED_RANGE_NOT_SATISFIABLE,
                     response.getReason(),
-                    explanation);
+                    explanation,
+                    headerCredentialSecrets(http_header_entries));
             }
 
             copyFromReadBufferWithProgressCallback(*result, to, n, progress_callback, &bytes_copied, &is_canceled);
@@ -1063,6 +1074,9 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::parseFileInfo(con
 
     if (response.has("Last-Modified"))
         res.last_modified = tryParseHTTPDate(response.get("Last-Modified"));
+
+    if (response.has("Date"))
+        res.response_date = tryParseHTTPDate(response.get("Date"));
 
     return res;
 }
