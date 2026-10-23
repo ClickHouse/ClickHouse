@@ -3287,6 +3287,30 @@ static bool containsSQLUserDefinedFunctionCall(const IAST & ast)
     return false;
 }
 
+/// `joinGet`, the `dictGet` family and `hasColumnInTable` take the storage they read as a string argument,
+/// resolve it and check the access to it only when they run, so it is seen by none of the preflights.
+static bool containsStorageReadingScalarFunctionCall(const IAST & ast)
+{
+    std::vector<const IAST *> stack{&ast};
+    while (!stack.empty())
+    {
+        const IAST * node = stack.back();
+        stack.pop_back();
+
+        if (const auto * function = node->as<ASTFunction>())
+        {
+            const String & name = function->name;
+            if (name.starts_with("dict") || name == "joinGet" || name == "joinGetOrNull" || name == "hasColumnInTable")
+                return true;
+        }
+
+        for (const auto & child : node->children)
+            stack.push_back(child.get());
+    }
+
+    return false;
+}
+
 static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr context)
 {
     /// Both halves of this hook can reach Keeper, and neither goes through an interpreter that would have
@@ -3301,6 +3325,11 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
     /// preflight: a query that fails on a table read only by the body would still detach its other tables.
     /// Skip the hook for such statements altogether.
     if (containsSQLUserDefinedFunctionCall(*query))
+        return;
+
+    /// The same goes for the storages that scalar functions read by name: a query rejected on such a storage
+    /// would still detach the tables the preflights do see.
+    if (containsStorageReadingScalarFunctionCall(*query))
         return;
 
     CollectTablesData data(context);
