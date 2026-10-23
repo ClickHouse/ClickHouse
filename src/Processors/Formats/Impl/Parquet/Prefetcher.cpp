@@ -15,6 +15,7 @@ namespace DB::ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 namespace ProfileEvents
@@ -42,6 +43,11 @@ void Prefetcher::init(ReadBuffer * reader_, const ReadOptions & options, FormatP
 void Prefetcher::shutdownTasks()
 {
     shutdown->shutdown();
+}
+
+void Prefetcher::cancelReads()
+{
+    shutdown->begin_shutdown();
 }
 
 Prefetcher::~Prefetcher()
@@ -123,7 +129,7 @@ void Prefetcher::readImpl(char * to, size_t n, size_t offset)
     switch (read_mode)
     {
         case ReadMode::RandomRead:
-            nread = reader->readBigAt(to, n, offset, /*progress_callback*/ nullptr);
+            nread = reader->readBigAt(to, n, offset, [this](size_t) { return shutdown->shutdown_requested(); });
             ProfileEvents::increment(ProfileEvents::ParquetPrefetcherReadRandomRead);
             ProfileEvents::increment(ProfileEvents::ParquetPrefetcherReadBytes, nread);
             break;
@@ -148,7 +154,11 @@ void Prefetcher::readImpl(char * to, size_t n, size_t offset)
             break;
     }
     if (nread != n)
+    {
+        if (shutdown->shutdown_requested())
+            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Read was cancelled: offset {}, length {}, bytes read {}", offset, n, nread);
         throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected eof: offset {}, length {}, bytes read {}, expected file size {}", offset, n, nread, file_size);
+    }
 }
 
 PrefetchHandle Prefetcher::registerRange(size_t offset, size_t length, bool likely_to_be_used)
@@ -527,6 +537,9 @@ Prefetcher::Task::State Prefetcher::runTask(Task * task)
     auto final_state = Task::State::Done;
     try
     {
+        if (shutdown->shutdown_requested())
+            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Read was cancelled before it started");
+
         /// When the reader supports zero-copy cached reads, get retained cache cells
         /// instead of allocating a buffer and copying data into it.
         if (read_mode == ReadMode::RandomRead && reader->supportsReadAtRetainCells() && task->length > 0)

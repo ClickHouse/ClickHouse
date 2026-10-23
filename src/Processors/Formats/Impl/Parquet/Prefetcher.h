@@ -33,6 +33,10 @@ public:
     /// ReadBuffer passed to init() anymore, so that buffer may be destroyed. Idempotent.
     void shutdownTasks();
 
+    /// Makes running reads stop early and reads that haven't started fail, without waiting for them.
+    /// shutdownTasks() still has to be called to wait.
+    void cancelReads();
+
     /// Not thread safe.
     /// All ranges must be registered before any reading happens (except direct readSync).
     /// Ranges are allowed to overlap a little, but this decreases the effectiveness of range

@@ -150,6 +150,9 @@ public:
     virtual bool isMinMaxFromStatisticsApplied() const { return false; }
     /// Called after the file was read, if its version provably did not change during the read.
     virtual void cacheFilterColumnStatistics() {}
+    /// Whether cancel() may be called while read() runs in another thread: it returns without waiting, and a read()
+    /// that waits for data returns soon (end of data). Reading the file metadata is not interrupted.
+    virtual bool supportsCancellationDuringRead() const { return false; }
 
 protected:
     ReadBuffer & getReadBuffer() const { chassert(in); return *in; }

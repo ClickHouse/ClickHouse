@@ -21,7 +21,6 @@ namespace DB::ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
-    extern const int QUERY_WAS_CANCELLED;
 }
 
 namespace ProfileEvents
@@ -177,6 +176,8 @@ void ReadManager::releaseTopKAdmission(size_t row_group_idx, MemoryUsageDiff & d
 
 void ReadManager::shutdownTasks()
 {
+    /// Decode tasks may be waiting for reads, so the reads are stopped before waiting for the tasks.
+    reader.prefetcher.cancelReads();
     shutdown->shutdown();
     reader.prefetcher.shutdownTasks();
 }
@@ -190,9 +191,7 @@ void ReadManager::cancel() noexcept
 {
     {
         std::lock_guard lock(delivery_mutex);
-        if (exception)
-            return;
-        exception = std::make_exception_ptr(Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Cancelled"));
+        cancelled = true;
     }
     delivery_cv.notify_all();
 }
@@ -1260,6 +1259,9 @@ ReadManager::ReadResult ReadManager::read()
 
             if (exception)
                 std::rethrow_exception(copyMutableException(exception));
+
+            if (cancelled)
+                return {};
 
             /// If `preserve_order`, only deliver chunks from `first_incomplete_row_group`.
             /// This ensures that row groups are delivered in order. Within a row group, row

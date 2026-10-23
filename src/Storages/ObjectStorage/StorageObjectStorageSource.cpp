@@ -802,7 +802,11 @@ void StorageObjectStorageSource::lazyInitialize()
     if (initialized)
         return;
 
-    reader = createReader();
+    auto first_reader = createReader();
+    {
+        std::lock_guard lock(reader_mutex);
+        reader = std::move(first_reader);
+    }
     if (reader)
     {
         ++total_files_read;
@@ -814,6 +818,14 @@ void StorageObjectStorageSource::lazyInitialize()
 void StorageObjectStorageSource::onFinish()
 {
     parser_shared_resources->finishStream();
+}
+
+void StorageObjectStorageSource::onCancel() noexcept
+{
+    /// Wakes up the read of the current file, which `generate` may be waiting for in another thread.
+    std::lock_guard lock(reader_mutex);
+    if (auto * input_format = reader.getInputFormat(); input_format && input_format->supportsCancellationDuringRead())
+        input_format->cancel();
 }
 
 Chunk StorageObjectStorageSource::generate()
@@ -1079,6 +1091,11 @@ Chunk StorageObjectStorageSource::generate()
 
             return chunk;
         }
+
+        /// A cancelled read may have ended before the end of the file, so nothing is cached about the file.
+        if (isCancelled())
+            break;
+
         /// With TopN dynamic filtering the matched buckets depend on the running threshold, which comes
         /// from the rows of all files the query reads: a row group can end up without a returned row
         /// only because the threshold had excluded it. The key covers just the predicate, so such an
@@ -1087,7 +1104,7 @@ Chunk StorageObjectStorageSource::generate()
         /// file that does not store the sort column) writes them as without TopN - unless the entries of the
         /// TopK key made it skip row groups that the predicate alone would not, or
         /// `use_query_condition_cache_for_top_k` is off, which makes a TopN read not populate the cache at all.
-        else if (format_filter_info->condition_hash && !reader.skipped_row_groups_by_top_k_entry
+        if (format_filter_info->condition_hash && !reader.skipped_row_groups_by_top_k_entry
             && !(format_filter_info->top_k_filter && !read_context->getSettingsRef()[Setting::use_query_condition_cache_for_top_k])
             && !(reader.getInputFormat() && reader.getInputFormat()->isTopKFilterApplied()))
         {
@@ -1180,10 +1197,17 @@ Chunk StorageObjectStorageSource::generate()
         total_rows_in_file = 0;
 
         chassert(reader_future.valid());
+        ReaderHolder next_reader;
         {
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ObjectStorageReaderWaitMicroseconds);
-            reader = reader_future.get();
+            next_reader = reader_future.get();
         }
+        {
+            std::lock_guard lock(reader_mutex);
+            std::swap(reader, next_reader);
+        }
+        /// Destroys the finished reader outside the lock: that waits for its background tasks.
+        next_reader = ReaderHolder();
         current_file_index.reset();
 
         if (!reader)
