@@ -1174,7 +1174,10 @@ String StatementGenerator::getTableStructure(RandomGenerator & rg, const SQLTabl
         /// modifier the external catalog can't express. Don't return an empty structure string, use all columns
         flatTableColumnPath(to_remote_entries, t.cols, [](const SQLColumn &) { return true; });
     }
-    std::shuffle(this->remote_entries.begin(), this->remote_entries.end(), rg.generator);
+    if (this->allow_not_deterministic)
+    {
+        std::shuffle(this->remote_entries.begin(), this->remote_entries.end(), rg.generator);
+    }
     for (const auto & entry : this->remote_entries)
     {
         buf += fmt::format(
@@ -1523,6 +1526,18 @@ void StatementGenerator::generateEngineDetails(
     {
         /// Optional PARTITION BY
         generateTableKey(rg, rel, b, false, te->mutable_partition_by());
+        if (b.isAnyIcebergEngine() && te->partition_by().exprs_size() > 0)
+        {
+            /// Keep it to find the values of existing partitions for DROP PARTITION
+            String key = "(";
+
+            for (int i = 0; i < te->partition_by().exprs_size(); i++)
+            {
+                key += i == 0 ? "" : ", ";
+                SQLExprToString(key, te->partition_by().exprs(i).expr());
+            }
+            b.iceberg_partition_key = key + ")";
+        }
     }
     if (te->has_engine())
     {
@@ -3281,9 +3296,21 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         }
     }
 
+    SettingValues * dsvs = nullptr;
     if (rg.nextSmallNumber() < 3)
     {
-        generateSettingValues(rg, formatSettings, cd->mutable_setting_values());
+        dsvs = cd->mutable_setting_values();
+        generateSettingValues(rg, formatSettings, dsvs);
+    }
+    if (rg.nextSmallNumber() < 4)
+    {
+        /// Honored only in the dictionary DDL, a session value has no effect
+        static const DB::Strings lazyLoadChoices = {"'auto'", "0", "1"};
+
+        dsvs = dsvs ? dsvs : cd->mutable_setting_values();
+        SetValue * sv = dsvs->has_set_value() ? dsvs->add_other_values() : dsvs->mutable_set_value();
+        sv->set_property("dictionary_lazy_load");
+        sv->set_value(rg.pickRandomly(lazyLoadChoices));
     }
     this->enforce_final = prev_enforce_final;
     this->allow_not_deterministic = prev_allow_not_deterministic;
@@ -3325,6 +3352,18 @@ DatabaseEngineValues StatementGenerator::getNextDatabaseEngine(RandomGenerator &
     if (std::ranges::any_of(backups, [](const auto & b) { return !b.second.databases.empty(); }) && (fc.engine_mask & allow_backup) != 0)
     {
         this->ids.emplace_back(DBackup);
+    }
+    if (!fc.clusters.empty() && (fc.engine_mask & allow_cluster_database) != 0)
+    {
+        this->ids.emplace_back(DCluster);
+    }
+    if ((fc.engine_mask & allow_remote_database) != 0)
+    {
+        this->ids.emplace_back(rg.nextSmallNumber() < 4 ? DRemoteSecure : DRemote);
+    }
+    if ((fc.engine_mask & allow_overlay_database) != 0)
+    {
+        this->ids.emplace_back(DOverlay);
     }
     const auto res = static_cast<DatabaseEngineValues>(rg.pickRandomly(this->ids));
     this->ids.clear();
@@ -3378,6 +3417,57 @@ void StatementGenerator::generateDatabaseEngineDetails(RandomGenerator & rg, SQL
         de->add_params()->mutable_backup_out()->CopyFrom(backup.bout);
         d.backup_number = backup.bout.backup_number();
     }
+    else if (d.isProxyDatabase())
+    {
+        /// Proxy another database, sometimes another proxy one (a chain)
+        const auto next_proxy_target = [&]() -> String
+        {
+            const uint32_t noption = rg.nextMediumNumber();
+
+            if (noption < 6)
+            {
+                /// A missing database, or the new database itself, which the server rejects as a cycle
+                return rg.nextBool() ? d.getName() : "nonexistent";
+            }
+            if (noption < 61 && collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases))
+            {
+                return rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases)).get()->getName();
+            }
+            return rg.nextSmallNumber() < 9 ? "default" : "system";
+        };
+
+        d.proxy_target = next_proxy_target();
+        if (d.isOverlayDatabase())
+        {
+            const uint32_t nsources = rg.randomInt<uint32_t>(1, 3);
+
+            de->add_params()->set_svalue(d.proxy_target);
+            for (uint32_t i = 1; i < nsources; i++)
+            {
+                de->add_params()->set_svalue(next_proxy_target());
+            }
+        }
+        else if (d.isClusterDatabase())
+        {
+            /// Cluster('cluster_name', 'database')
+            de->add_params()->set_svalue(rg.pickRandomly(fc.clusters));
+            de->add_params()->set_svalue(d.proxy_target);
+        }
+        else
+        {
+            /// Remote('addresses_expr', 'database'[, 'user'[, 'password']])
+            de->add_params()->set_svalue(getNextRandomServerAddresses(rg, d.deng == DatabaseEngineValues::DRemoteSecure));
+            de->add_params()->set_svalue(d.proxy_target);
+            if (rg.nextBool())
+            {
+                de->add_params()->set_svalue("default");
+                if (rg.nextBool())
+                {
+                    de->add_params()->set_svalue("");
+                }
+            }
+        }
+    }
     d.finishDatabaseSpecification(de);
 }
 
@@ -3414,12 +3504,13 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
     {
         cd->set_comment(nextComment(rg));
     }
-    if (rg.nextSmallNumber() < 4)
+    /// The Cluster, Remote and Overlay engines take no settings
+    if (!next.isProxyDatabase() && rg.nextSmallNumber() < 4)
     {
         /// Add general database settings
         generateSettingValues(rg, allDatabaseSettings, deng->mutable_setting_values());
     }
-    if (!next.isReplicatedOrSharedDatabase() && !next.isDataLakeCatalogDatabase() && rg.nextSmallNumber() < 4)
+    if (!next.isReplicatedOrSharedDatabase() && !next.isDataLakeCatalogDatabase() && !next.isProxyDatabase() && rg.nextSmallNumber() < 4)
     {
         /// Add server settings
         generateSettingValues(rg, formatSettings, deng->mutable_setting_values());

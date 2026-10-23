@@ -117,6 +117,10 @@ public:
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Reconnection is not implemented");
     }
+
+    /// The callback is called with `true` when the interactive client starts waiting for the user
+    /// to type a query, and with `false` when it stops waiting to process the query.
+    void setWaitingForQueryInputCallback(std::function<void(bool)> callback) { on_waiting_for_query_input = std::move(callback); }
 protected:
     void runInteractive();
     void runNonInteractive();
@@ -627,6 +631,8 @@ protected:
 
     std::atomic_bool cancelled = false;
     std::atomic_bool cancelled_printed = false;
+
+    std::function<void(bool)> on_waiting_for_query_input;
 
     /// Unpacked descriptors and streams for the ease of use.
     std::istream & input_stream;
