@@ -1830,8 +1830,33 @@ std::map<std::string, MutationCommands> StorageMergeTree::getUnfinishedMutationC
 
 bool StorageMergeTree::areAllPartsMutatedTo(Int64 version) const
 {
-    const auto parts = getDataPartsVectorForInternalUsage({DataPartState::Active}, {DataPartKind::Regular, DataPartKind::Patch});
-    return std::ranges::none_of(parts, [version](const auto & part) { return part->info.getDataVersion() < version; });
+    const auto regular_parts = getDataPartsVectorForInternalUsage();
+    if (std::ranges::any_of(regular_parts, [version](const auto & part) { return part->info.getDataVersion() < version; }))
+        return false;
+
+    std::unordered_map<std::string_view, Int64> min_data_version_by_partition;
+    for (const auto & part : regular_parts)
+    {
+        Int64 data_version = part->info.getDataVersion();
+        auto [it, inserted] = min_data_version_by_partition.emplace(part->info.getPartitionId(), data_version);
+        if (!inserted)
+            it->second = std::min(it->second, data_version);
+    }
+
+    /// A patch part matters only while a regular part of its original partition may still read it,
+    /// because only then the mutation is applied on the fly to the patch. A patch already
+    /// materialized into all regular parts of its partition is obsolete (the same criterion as in
+    /// `clearUnusedPatchParts`) and is kept only with `remove_unused_patch_parts = 0`; its data
+    /// version says nothing about the mutation.
+    const auto patch_parts = getPatchPartsVectorForInternalUsage();
+    return std::ranges::none_of(patch_parts, [&](const auto & patch)
+    {
+        if (patch->info.getDataVersion() >= version)
+            return false;
+
+        auto it = min_data_version_by_partition.find(patch->info.getOriginalPartitionId());
+        return it != min_data_version_by_partition.end() && static_cast<Int64>(patch->getPatchPartIndex().getMaxDataVersion()) > it->second;
+    });
 }
 
 Strings StorageMergeTree::getMutationsWithLegacyPartitionScope() const

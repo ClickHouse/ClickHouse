@@ -129,7 +129,7 @@ public:
     std::map<std::string, MutationCommands> getUnfinishedMutationCommands() const override;
     Strings getMutationsWithLegacyPartitionScope() const override;
 
-    /// True if no active part, including patch parts, has a data version below `version`.
+    /// True if no active part, including patch parts still in use, has a data version below `version`.
     /// Used by `MergeTreeMutationEntry` while the mutations are loaded.
     bool areAllPartsMutatedTo(Int64 version) const;
 

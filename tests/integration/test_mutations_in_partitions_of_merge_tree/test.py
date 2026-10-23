@@ -351,23 +351,40 @@ def test_legacy_mutation_file_partition_scope_upgrade(started_cluster):
         node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
 
 
-def test_legacy_finished_mutation_file_key_change(started_cluster):
+@pytest.mark.parametrize("with_obsolete_patches", [False, True])
+def test_legacy_finished_mutation_file_key_change(started_cluster, with_obsolete_patches):
     """
     Upgrade regression: an older server version applied an `IN PARTITION <value>` mutation of
     `MergeTree` to all parts and kept the original literal in `mutation_*.txt`
     (`finished_mutations_to_keep`). A key-safe partition key type change (`Enum8 -> Int8`) after
     that mutation has finished, but before the first load with the current version, makes the
     literal undecodable. The finished entry must not prevent the table from loading.
+
+    With `with_obsolete_patches`, a lightweight update leaves patch parts with a lower data version
+    that are already materialized into all regular parts and are retained only because of
+    `remove_unused_patch_parts = 0`. They must not make the finished mutation look pending.
     """
     name = "test_legacy_finished_mutation_file_key_change"
+    table_settings = ""
+    if with_obsolete_patches:
+        table_settings = (
+            " SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1,"
+            " remove_unused_patch_parts = 0"
+        )
 
     try:
         node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
         node1.query(
             f"CREATE TABLE {name} (p Enum8('a' = 1, 'b' = 2), n Int64) "
-            "ENGINE = MergeTree PARTITION BY p ORDER BY tuple()"
+            "ENGINE = MergeTree PARTITION BY p ORDER BY tuple()" + table_settings
         )
         node1.query(f"INSERT INTO {name} VALUES ('a', 1), ('b', 2)")
+        if with_obsolete_patches:
+            node1.query(
+                f"UPDATE {name} SET n = n + 10 WHERE 1",
+                settings={"allow_experimental_lightweight_update": "1"},
+            )
+        base = 10 if with_obsolete_patches else 0
 
         node1.query(
             f"ALTER TABLE {name} UPDATE n = n + 100 IN PARTITION 'a' WHERE 1",
@@ -389,7 +406,7 @@ def test_legacy_finished_mutation_file_key_change(started_cluster):
         first_mutation = node1.query(
             "SELECT mutation_id FROM system.mutations "
             f"WHERE database = currentDatabase() AND table = '{name}' "
-            "ORDER BY mutation_id LIMIT 1"
+            "ORDER BY length(mutation_id), mutation_id LIMIT 1"
         ).strip()
         mutation_file = data_dir + first_mutation
 
@@ -415,13 +432,19 @@ def test_legacy_finished_mutation_file_key_change(started_cluster):
             "(UPDATE n = n + 100 IN PARTITION \\'a\\' WHERE 1)\t1\n"
             "(UPDATE n = n WHERE 1)\t1\n"
         )
-        assert node1.query(f"SELECT p, n FROM {name} ORDER BY p") == "1\t101\n2\t2\n"
+        assert (
+            node1.query(f"SELECT p, n FROM {name} ORDER BY p")
+            == f"1\t{101 + base}\n2\t{2 + base}\n"
+        )
 
         # The table stays usable: new mutations of the converted partition key work.
         node1.query(
             f"ALTER TABLE {name} UPDATE n = n + 1000 IN PARTITION 2 WHERE 1",
             settings={"mutations_sync": "2"},
         )
-        assert node1.query(f"SELECT p, n FROM {name} ORDER BY p") == "1\t101\n2\t1002\n"
+        assert (
+            node1.query(f"SELECT p, n FROM {name} ORDER BY p")
+            == f"1\t{101 + base}\n2\t{1002 + base}\n"
+        )
     finally:
         node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
