@@ -1,6 +1,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnSet.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -10,6 +11,8 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/PreparedSets.h>
+#include <Interpreters/Set.h>
 #include <Interpreters/TableJoin.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -308,7 +311,56 @@ bool equalsMatchesSeveralValues(
     return false;
 }
 
+/// Whether `set_node` is a ready set with exactly one element, like the right side of `x IN ('a')`,
+/// so that `probe IN set` fixes `probe` to a single value.
+/// Only `FutureSetFromTuple` is filled at planning time; sets from subqueries or storages are not.
+/// A `FutureSetFromTuple` may also be a shipped subquery set that kept the subquery's type,
+/// e.g. `d IN (SELECT 1.0)` for `d Decimal`. `Set::execute` converts the probe to the set key type,
+/// and this conversion may be non-injective, so require the key type to be the probe type
+/// (up to `LowCardinality` and `Nullable`), so that the conversion is an identity.
+bool isSingleElementSetForProbe(const ActionsDAG::Node & set_node, const ActionsDAG::Node & probe)
+{
+    if (set_node.type != ActionsDAG::ActionType::COLUMN || !set_node.column)
+        return false;
+
+    const auto * column_set = checkAndGetColumn<const ColumnSet>(&set_node.column->getDataColumn());
+    if (!column_set)
+        return false;
+
+    const auto * set_from_tuple = typeid_cast<const FutureSetFromTuple *>(column_set->getData().get());
+    if (!set_from_tuple)
+        return false;
+
+    auto set = set_from_tuple->get();
+    if (!set || !set->isCreated() || set->getTotalRowCount() != 1)
+        return false;
+
+    const auto & set_types = set->getDataTypes();
+    if (set_types.size() != 1)
+        return false;
+
+    auto probe_type = removeLowCardinalityAndNullable(probe.result_type);
+    auto set_type = removeLowCardinalityAndNullable(set_types.front());
+    return probe_type->equals(*set_type);
+}
+
+void addFixedColumn(const ActionsDAG::Node * fixed_column, FixedColumns & fixed_columns)
+{
+    fixed_columns.insert(fixed_column);
+
+    /// Support injective functions chain.
+    const ActionsDAG::Node * maybe_injective = fixed_column;
+    while (maybe_injective->type == ActionsDAG::ActionType::FUNCTION
+        && maybe_injective->children.size() == 1
+        && maybe_injective->function_base->isInjective(getFunctionArgumentColumns(*maybe_injective)))
+    {
+        maybe_injective = maybe_injective->children.front();
+        fixed_columns.insert(maybe_injective);
+    }
+}
+
 /// Right now we find only simple cases like 'and(..., and(..., and(column = value, ...), ...'
+/// A single-element `IN`, like `column IN (value)`, fixes the column the same way as `column = value`.
 /// Injective functions are supported here. For a condition 'injectiveFunction(x) = 5' column 'x' is fixed.
 void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expression, FixedColumns & fixed_columns)
 {
@@ -347,20 +399,13 @@ void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expr
 
                 if (maybe_fixed_column && num_constant_columns + 1 == node->children.size()
                     && !equalsMatchesSeveralValues(maybe_fixed_column->result_type, constant->column, constant->result_type))
-                {
-                    //std::cerr << "====== Added fixed column " << maybe_fixed_column->result_name << ' ' << static_cast<const void *>(maybe_fixed_column) << std::endl;
-                    fixed_columns.insert(maybe_fixed_column);
-
-                    /// Support injective functions chain.
-                    const ActionsDAG::Node * maybe_injective = maybe_fixed_column;
-                    while (maybe_injective->type == ActionsDAG::ActionType::FUNCTION
-                        && maybe_injective->children.size() == 1
-                        && maybe_injective->function_base->isInjective(getFunctionArgumentColumns(*maybe_injective)))
-                    {
-                        maybe_injective = maybe_injective->children.front();
-                        fixed_columns.insert(maybe_injective);
-                    }
-                }
+                    addFixedColumn(maybe_fixed_column, fixed_columns);
+            }
+            else if (name == "in" || name == "globalIn" || name == "nullIn" || name == "globalNullIn")
+            {
+                if (node->children.size() == 2 && !node->children[0]->column
+                    && isSingleElementSetForProbe(*node->children[1], *node->children[0]))
+                    addFixedColumn(node->children[0], fixed_columns);
             }
         }
     }
@@ -443,8 +488,8 @@ void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & d
     if (const auto * array_join = typeid_cast<const ArrayJoinStep *>(step))
     {
         /// Should ignore limit because ARRAY JOIN can reduce the number of rows in case of empty array.
-        /// But in case of LEFT ARRAY JOIN the result number of rows is always bigger.
-        if (!array_join->isLeft())
+        /// But in case of LEFT ARRAY JOIN the result number of rows is always bigger, unless a fused filter drops them.
+        if (!array_join->isLeft() || array_join->hasElementFilter())
             limit = 0;
 
         if (dag)
@@ -1341,7 +1386,7 @@ InputOrderInfoPtr buildInputOrderInfo(
 {
     FindReadingStepContext find_reading_ctx{
         .allow_existing_order = false,
-        .read_in_order_through_join = optimization_settings.read_in_order_through_join,
+        .read_in_order_through_join = optimization_settings.read_in_order_through_join != 0,
         .distributed_plan_read_in_order = optimization_settings.distributed_plan_read_in_order,
     };
     QueryPlan::Node * reading_node = findReadingStep(node, find_reading_ctx);
@@ -1387,22 +1432,24 @@ InputOrderInfoPtr buildInputOrderInfo(
                 virtual_row_reader = reading;
             }
 
-            if (!uses_virtual_row)
-            {
-                /// Virtual row is required for INNER JOIN to maintain read-in-order optimization.
-                /// Without it, the sorting step after join cannot correctly determine
-                /// which input stream to read from when most rows are filtered out,
-                /// potentially reading excessive amount of data.
-                for (const auto * join_step : find_reading_ctx.joins_to_keep_in_order)
+            /// Joins that can discard left rows need virtual rows from every selected part to avoid
+            /// excessive reading by the merge after the join. `LEFT ALL` and `LEFT ANY` preserve left rows.
+            /// `query_plan_read_in_order_through_join = 'force'` accepts the over-read.
+            const bool join_requires_virtual_rows = std::ranges::any_of(
+                find_reading_ctx.joins_to_keep_in_order,
+                [](const auto * join_step)
                 {
                     const auto & table_join = join_step->getJoin()->getTableJoin();
-                    auto strictness = table_join.strictness();
-                    if (table_join.kind() != JoinKind::Left || (strictness != JoinStrictness::All && strictness != JoinStrictness::Any))
-                    {
-                        LOG_DEBUG(getLogger("optimizeReadInOrder"), "Skip using read in order for inner join without virtual row optimization");
-                        return nullptr;
-                    }
-                }
+                    const auto strictness = table_join.strictness();
+                    return table_join.kind() != JoinKind::Left
+                        || (strictness != JoinStrictness::All && strictness != JoinStrictness::Any);
+                });
+            if (join_requires_virtual_rows && optimization_settings.read_in_order_through_join != 2
+                && (!uses_virtual_row || !reading->everyPartHasVirtualRowBound(order_info.input_order->direction < 0)))
+            {
+                LOG_DEBUG(getLogger("optimizeReadInOrder"), "Skip using read in order for inner join without virtual row optimization");
+                reading->resetVirtualRowConversions();
+                return nullptr;
             }
 
             bool can_read = reading->requestReadingInOrder(
@@ -1412,7 +1459,11 @@ InputOrderInfoPtr buildInputOrderInfo(
                 query_limit);
 
             if (!can_read)
+            {
+                /// E.g. a reverse `FINAL` read the engine does not support: the read stays as it was.
+                reading->resetVirtualRowConversions();
                 return nullptr;
+            }
 
             for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
                 join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
@@ -1467,7 +1518,7 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
 {
     FindReadingStepContext find_reading_ctx {
         .allow_existing_order = false,
-        .read_in_order_through_join = optimization_settings.read_in_order_through_join,
+        .read_in_order_through_join = optimization_settings.read_in_order_through_join != 0,
         .distributed_plan_read_in_order = optimization_settings.distributed_plan_read_in_order,
     };
     QueryPlan::Node * reading_node = findReadingStep(node, find_reading_ctx);
@@ -1610,7 +1661,7 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
 
     FindReadingStepContext find_reading_ctx {
         .allow_existing_order = true,
-        .read_in_order_through_join = optimization_settings.read_in_order_through_join,
+        .read_in_order_through_join = optimization_settings.read_in_order_through_join != 0,
         .distributed_plan_read_in_order = optimization_settings.distributed_plan_read_in_order,
     };
     QueryPlan::Node * reading_node = findReadingStep(node, find_reading_ctx);
@@ -1715,7 +1766,7 @@ InputOrder buildInputOrderInfo(LimitByStep & limit_by, QueryPlan::Node & node, c
 
     FindReadingStepContext find_reading_ctx{
         .allow_existing_order = true,
-        .read_in_order_through_join = optimization_settings.read_in_order_through_join,
+        .read_in_order_through_join = optimization_settings.read_in_order_through_join != 0,
         .distributed_plan_read_in_order = optimization_settings.distributed_plan_read_in_order,
     };
     QueryPlan::Node * reading_node = findReadingStep(node, find_reading_ctx);

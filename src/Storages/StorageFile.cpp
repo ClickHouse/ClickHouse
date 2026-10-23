@@ -45,6 +45,10 @@
 #include <Disks/IO/getIOUringReader.h>
 
 #include <Formats/FormatFactory.h>
+#include "config.h"
+#if USE_PARQUET
+#include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
+#endif
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
@@ -134,6 +138,7 @@ namespace Setting
     extern const SettingsSnappyMode snappy_mode;
     extern const SettingsLocalFSReadMethod storage_file_read_method;
     extern const SettingsBool use_cache_for_count_from_files;
+    extern const SettingsBool use_parquet_metadata_cache;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool use_query_condition_cache_for_top_k;
     extern const SettingsInt64 zstd_window_log_max;
@@ -1797,6 +1802,39 @@ StorageFileSource::~StorageFileSource()
     }
 }
 
+bool StorageFileSource::canSkipFileByCachedStatistics()
+{
+#if USE_PARQUET
+    /// Only a settled version token proves that the file was not rewritten since its statistics were kept.
+    if (storage->use_table_fd || storage->archive_info || !current_file_version_settled || !current_file_cache_version
+        || !format_filter_info || !format_filter_info->filter_actions_dag || format_filter_info->column_mapper
+        || !boost::iequals(storage->format_name, "Parquet") || !getContext()->getSettingsRef()[Setting::use_parquet_metadata_cache])
+        return false;
+
+    if (!cached_statistics_filter_prepared)
+    {
+        cached_statistics_filter_prepared = true;
+        cached_statistics_filter = ParquetCachedStatisticsFilter::create(
+            format_filter_info, block_for_format, storage->format_settings ? *storage->format_settings : getFormatSettings(getContext()));
+    }
+    if (!cached_statistics_filter)
+        return false;
+
+    auto metadata_cache = getContext()->tryGetParquetMetadataCache();
+    if (!metadata_cache)
+        return false;
+    auto num_row_groups = cached_statistics_filter->canSkipFile(*metadata_cache, current_path, *current_file_cache_version);
+    /// The file may have been rewritten since it was stat-ed; then it is opened, and the read fails close.
+    if (!num_row_groups || !fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
+        return false;
+
+    ParquetCachedStatisticsFilter::countSkippedFile(*num_row_groups);
+    return true;
+#else
+    return false;
+#endif
+}
+
 void StorageFileSource::writePendingTopKQueryConditionCacheEntries()
 {
     /// A file changed during the query: the files read are not the ones the key describes.
@@ -2046,6 +2084,13 @@ Chunk StorageFileSource::generate()
 
                 if (need_only_count && tryGetCountFromCache(file_stat))
                     continue;
+
+                if (canSkipFileByCachedStatistics())
+                {
+                    /// As if the reader had skipped every row group of the file by its statistics.
+                    checkTopKQueryConditionCacheKeyHolds(/*still_holds=*/ true);
+                    continue;
+                }
 
                 if (is_one_format)
                 {
@@ -2462,6 +2507,9 @@ Chunk StorageFileSource::generate()
                         std::unordered_set<size_t>(buckets_opt->first.begin(), buckets_opt->first.end()),
                         getContext());
                 }
+
+                if (getContext()->getSettingsRef()[Setting::use_parquet_metadata_cache])
+                    input_format->cacheFilterColumnStatistics();
             }
             catch (...)
             {
@@ -2889,6 +2937,8 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     format_filter_info->top_k_filter = top_k_filter;
     format_filter_info->min_max_from_statistics = read_min_max_from_statistics && !filter_actions_dag
         && !query_info.prewhere_info && !query_info.row_level_filter;
+    format_filter_info->keep_filter_column_statistics = filter_actions_dag && !storage->use_table_fd && !storage->archive_info
+        && ctx->getSettingsRef()[Setting::use_parquet_metadata_cache];
     auto top_k_query_condition_cache_key = makeTopKQueryConditionCacheKey();
     if (top_k_query_condition_cache_key)
     {
@@ -3513,6 +3563,28 @@ bool StorageFile::storesDataOnDisk() const
     return is_db_table;
 }
 
+bool StorageFile::hasUnreplicatedTableDataOnDisk() const
+{
+    /// A table over a file descriptor owns nothing.
+    if (use_table_fd)
+        return false;
+
+    /// Read-only variants over an explicit path are deliberately not recognized here, even though `write` rejects
+    /// them, because whether a path denotes such a variant is not decided by the `CREATE TABLE` query alone, so
+    /// the same query could be accepted on one replica and rejected on another:
+    /// - an archive: the `::` path syntax is interpreted only when `allow_archive_path_syntax` is enabled, and a
+    ///   `Replicated` database applies on other replicas only the settings changed by the initiating query, not
+    ///   each replica's own profile, so the path can denote an archive on one replica and a plain file on another;
+    /// - a glob: `is_path_with_globs` follows the number of files the pattern matches on the local filesystem
+    ///   right now, so a table accepted as read-only could also later become writable.
+    /// Rejecting such a read-only table is a false rejection, which this gate tolerates; accepting a table that
+    /// turns out to own local unreplicated data is not.
+
+    /// A table over an explicit path keeps its own data in a local file just like a table inside the database
+    /// directory does, and that data is not replicated.
+    return true;
+}
+
 Strings StorageFile::getPathsSnapshot() const
 {
     std::lock_guard lock{paths_mutex};
@@ -3616,6 +3688,21 @@ void registerStorageFile(StorageFactory & factory)
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                                 "Storage File requires from 1 to 3 arguments: "
                                 "name of used format, source and compression_method.");
+
+            /// Only a table over a file descriptor does not own its data, see `StorageFile::hasUnreplicatedTableDataOnDisk`.
+            /// Checked before the storage is constructed, because the construction resolves the path and may infer the schema
+            /// from the file, which would turn a deterministic rejection into a file or schema error. This also covers
+            /// `ENGINE = URL('file://...')`, which creates its delegate with this creator.
+            bool is_table_over_fd = false;
+            if (engine_args_ast.size() >= 2)
+            {
+                if (tryGetIdentifierName(engine_args_ast[1]))
+                    is_table_over_fd = true;
+                else if (const auto * literal = engine_args_ast[1]->as<ASTLiteral>())
+                    is_table_over_fd = literal->value.getType() == Field::Types::Int64 || literal->value.getType() == Field::Types::UInt64;
+            }
+            if (!is_table_over_fd)
+                throwIfUnreplicatedTableDataNotAllowed(factory_args);
 
             engine_args_ast[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args_ast[0], factory_args.getLocalContext());
             storage_args.format_name = checkAndGetLiteralArgument<String>(engine_args_ast[0], "format_name");

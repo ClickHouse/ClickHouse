@@ -477,22 +477,6 @@ Possible values:
 - 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
 - 1 — `SELECT` returns empty result for empty file.
 
-## exact_division_for_integers {#exact_division_for_integers}
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "New setting to enable exact integer division for `\/` and `divide`."}]}]}/>
-
-Makes `/` and `divide` return an integer when both operands are integer types, including `Int128`, `UInt128`, `Int256`, and `UInt256`.
-The quotient is truncated toward zero. The result has the width of the first operand and is signed if either operand is signed.
-Division by zero or a quotient outside the result type's range throws an exception. `Nullable` operands propagate `NULL`.
-
-By default, division of two integers returns `Float64`. This setting does not change division involving `Decimal` or floating-point operands,
-or the explicit functions `intDiv`, `divideDecimal`, and `divideOrNull`.
-
-The choice is recorded in newly submitted SQL before expressions are stored in table metadata, views, SQL functions, or mutations.
-Existing definitions and `ATTACH` queries retain their original division semantics, independently of this setting.
-
 ## exact_rows_before_limit {#exact_rows_before_limit}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -846,10 +830,10 @@ Function 'geoToH3' accepts (lon, lat) if set to 'lon_lat' and (lat, lon) if set 
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "120000"},{"label": "New setting"}]}]}/>
 
-Defines how many milliseconds a Keeper client waits to acquire the corresponding `Context` mutex before failing.
+Defines how many milliseconds a query waits for a Keeper client: for the `Context` mutex of the client, and for a connection attempt that another thread is making for it. When the time is exceeded, the query fails with `TIMEOUT_EXCEEDED`. The query also stops waiting when it is cancelled.
 
-The value is taken from the `Context` that performs the acquisition. A per-query override applies only when the operation uses the query context, such as reads from `system.zookeeper`, `zookeeperSessionUptime`, `SYSTEM RECONNECT ZOOKEEPER`, and query-context auxiliary Keeper access.
-Operations that use a global or background context, including `BACKUP` and `RESTORE` coordination and `Replicated` database activity, use that context's value instead, and get the timeout as a Keeper error (`ZOPERATIONTIMEOUT`) that they handle like other Keeper errors.
+The value is taken from the query context, so it applies to operations that use it, such as reads from `system.zookeeper`, `zookeeperSessionUptime`, `SYSTEM RECONNECT ZOOKEEPER`, and query-context auxiliary Keeper access.
+Operations that use a global or background context, including `BACKUP` and `RESTORE` coordination and `Replicated` database activity, wait until the connection attempt ends and get its client or its Keeper error.
 `SYSTEM RELOAD CONFIG` and `SYSTEM RELOAD ASYNCHRONOUS METRICS` are not covered because they use independently serialized reload paths.
 
 Possible values:
@@ -966,13 +950,13 @@ Disabled by default.
 
 ## kill_throw_if_noop {#kill_throw_if_noop}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "New setting"}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "1"},{"label": "Enable `kill_throw_if_noop` by default so that `KILL QUERY` and `KILL MUTATION` report empty matches."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "New setting"}]}]}/>
 
 Controls whether [`KILL QUERY`](/reference/statements/kill#kill-query) and [`KILL MUTATION`](/reference/statements/kill#kill-mutation) throw an exception when their `WHERE` clauses match no rows.
 
-If set to true, `KILL QUERY` throws when there are no eligible rows in `system.processes` after excluding the current `KILL` statement, and `KILL MUTATION` throws when no rows match in `system.mutations`. By default, an empty match returns without an exception. `ON CLUSTER` execution does not throw for empty matches because match results are not aggregated across hosts.
+Enabled by default. `KILL QUERY` throws when there are no eligible rows in `system.processes` after excluding the current `KILL` statement, and `KILL MUTATION` throws when no rows match in `system.mutations`. Set to `false` to allow empty matches without an exception. `TEST` dry runs return an empty preview without throwing. `ON CLUSTER` execution does not throw for empty matches because match results are not aggregated across hosts.
 
 Possible values:
 
@@ -1053,7 +1037,7 @@ Load MergeTree marks asynchronously in a background thread pool (see the server 
 
 Defines how many seconds a locking request waits before failing.
 
-Locking timeout is used to protect from deadlocks while executing read/write operations with tables. When the timeout expires and the locking request fails, the ClickHouse server throws an exception "Locking attempt timed out! Possible deadlock avoided. Client should retry." with error code `DEADLOCK_AVOIDED`.
+Locking timeout is used to protect from deadlocks while executing read/write operations with tables. When the timeout expires and the locking request fails, the ClickHouse server throws an exception "Locking attempt timed out. Possible deadlock avoided. Client should retry." with error code `DEADLOCK_AVOIDED`.
 
 Possible values:
 
@@ -1525,7 +1509,7 @@ When enabled, ClickHouse will provide exact value for rows_before_aggregation st
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "New setting to run a query in the background, detached from the connection that submitted it, discarding the result."}]}]}/>
 
-If enabled, the server schedules the query in the background, immediately returns an empty successful result, and runs the query to completion regardless of what happens to the connection.
+If enabled, the server schedules the query in the background, waits until the query has passed its checks (for example, that the tables exist and the user has the required grants) and is about to start its main work, returns an empty successful result, and runs the query to completion regardless of what happens to the connection. An error raised before that point is returned to the client; a later one is recorded only in `system.query_log`.
 
 A background query does not survive a server restart. On shutdown it obeys the same server settings as a foreground query: `shutdown_wait_unfinished_queries` chooses between cancelling it and waiting for it (queued entries are discarded either way, without a `system.query_log` entry), and `shutdown_wait_unfinished` limits how long the server waits.
 
@@ -1793,6 +1777,22 @@ Possible values:
 
 - `0` - The remaining string will not be included in the last element of the result array.
 - `1` - The remaining string will be included in the last element of the result array. This is the behavior of Spark's [`split()`](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.functions.split.html) function and Python's ['string.split()'](https://docs.python.org/3/library/stdtypes.html#str.split) method.
+
+## sql_compatible_division_for_integers {#sql_compatible_division_for_integers}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Use the SQL-compatible name for the integer division setting."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "0"},{"label": "New setting to enable exact integer division for `\/` and `divide`."}]}]}/>
+
+Makes `/` and `divide` return an integer when both operands are integer types, including `Int128`, `UInt128`, `Int256`, and `UInt256`.
+The quotient is truncated toward zero. The result has the width of the first operand and is signed if either operand is signed.
+Division by zero or a quotient outside the result type's range throws an exception. `Nullable` operands propagate `NULL`.
+
+By default, division of two integers returns `Float64`. This setting does not change division involving `Decimal` or floating-point operands,
+or the explicit functions `intDiv`, `divideDecimal`, and `divideOrNull`.
+
+The choice is recorded in newly submitted SQL before expressions are stored in table metadata, views, SQL functions, or mutations.
+Existing definitions and `ATTACH` queries retain their original division semantics, independently of this setting.
 
 ## statistics_max_set_size_for_exact_selectivity_estimation {#statistics_max_set_size_for_exact_selectivity_estimation}
 
