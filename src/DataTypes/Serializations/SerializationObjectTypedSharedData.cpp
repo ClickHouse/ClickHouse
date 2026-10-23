@@ -108,7 +108,7 @@ GranuleEntry writeGranulePathsData(
     /// caller still writes its marks entry, which the reader expects for every granule.
     if (num_rows == 0)
     {
-        std::fill(entry.marks.begin(), entry.marks.end(), get_data_mark());
+        std::ranges::fill(entry.marks, get_data_mark());
         return entry;
     }
 
@@ -673,12 +673,14 @@ void SerializationObjectTypedSharedData::deserializeRequestedPaths(
             decodeGranuleIntoPathDestinations(entry, all_paths, seek_to, path_settings, destinations, rows_left, state);
         }
     }
-    else if (!settings.seek_stream_to_mark_callback)
+    else if (!settings.seek_stream_to_current_mark_callback)
     {
-        /// Without substream marks there is one buffer and no seeking: the granule's region is read in write order, the
-        /// paths' data and then the entry, which only confirms the row count. Only the whole column is read this way.
+        /// The container cannot position the substreams (a Compact part without substream marks, a value read whole from
+        /// the dynamic shared data): one buffer, read in write order, the paths' data and then the entry, which only
+        /// confirms the row count. Only the whole column is read this way. An absolute seek callback alone does not
+        /// mean the substreams can be positioned.
         if (!all_paths)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Some paths of the typed shared data of Object are read from a Compact part without substream marks");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Some paths of the typed shared data of Object are read from a stream without substream marks");
 
         auto * data_stream = getReadStream(Substream::ObjectTypedSharedDataPathsData, settings);
         auto path_settings = getPathDataDeserializeSettings(data_stream);
