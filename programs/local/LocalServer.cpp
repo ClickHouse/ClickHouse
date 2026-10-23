@@ -1404,10 +1404,31 @@ void LocalServer::beforeExecutingCommandLineQueries()
 
     auto session_context = static_cast<LocalConnection &>(*connection).getSessionContext();
 
-    /// A private name must not shadow user tables when the query changes database
-    /// through SET database or per-query SETTINGS database.
-    String name = fmt::format("_clickhouse_local_stdin_{}", UUIDHelpers::generateV4());
-    std::replace(name.begin(), name.end(), '-', '_');
+    /// Keep the public input-table name for ordinary queries (including explicit
+    /// FROM table and --table custom_name). If a query file created a table with
+    /// that name, keep the inferred table private instead of shadowing user data.
+    const String & public_name = *implicit_stdin_table_to_activate;
+    bool has_name_collision = static_cast<bool>(session_context->findExternalTable(public_name));
+    if (!has_name_collision)
+    {
+        /// Check every local database, not just getCurrentDatabase(): SET database
+        /// and per-query SETTINGS database can change how unqualified names resolve.
+        for (const auto & database_entry : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
+        {
+            if (database_entry.second->isTableExist(public_name, session_context))
+            {
+                has_name_collision = true;
+                break;
+            }
+        }
+    }
+
+    String name = public_name;
+    if (has_name_collision)
+    {
+        name = fmt::format("_clickhouse_local_stdin_{}", UUIDHelpers::generateV4());
+        std::replace(name.begin(), name.end(), '-', '_');
+    }
     session_context->addExternalTable(name, std::move(deferred_implicit_stdin_table));
 
     /// A setting explicitly assigned by query files (even to an empty string) wins.

@@ -207,3 +207,12 @@ printf '%s\n' "SET storage_file_read_method = 'mmap';" \
     'SELECT 99 FROM system.one;' > "$TEMP_SQL_FILE_NAME"
 { IFS= read -r _; $CLICKHOUSE_LOCAL --storage_file_read_method=read --use_cache_for_count_from_files=0 \
     --queries-file="$TEMP_SQL_FILE_NAME" -q 'SELECT sum(c1); SELECT sum(c1)'; } < "$STDIN_DATA_FILE_NAME"
+
+# After query files finish, the inferred table is available by its public name.
+# The prelude must not change the meaning of an explicit FROM table.
+printf '1\n2\n3\n' > "$STDIN_DATA_FILE_NAME"
+echo 'SELECT 99 FROM system.one;' > "$TEMP_SQL_FILE_NAME"
+$CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" \
+    -q 'SELECT sum(c1) FROM `table`' < "$STDIN_DATA_FILE_NAME"
+$CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" --table data_01523 \
+    -q 'SELECT sum(c1) FROM data_01523' < "$STDIN_DATA_FILE_NAME"
