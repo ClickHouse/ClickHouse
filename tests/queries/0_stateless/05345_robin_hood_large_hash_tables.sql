@@ -24,13 +24,14 @@ SELECT 'uniqExact';
 SELECT uniqExact(number) FROM numbers(9000000);
 
 SELECT 'Merge of two large uniqExact states';
--- About 35 thousand keys per bucket in each state: together they outnumber the cells of a bucket.
-SELECT uniqExactMerge(s) FROM
-(
-    SELECT uniqExactState(number) AS s FROM numbers(9000000)
-    UNION ALL
-    SELECT uniqExactState(number + 9000000) FROM numbers(9000000)
-);
+-- The states are read back as two-level sets with about 35 thousand keys per bucket each: together they outnumber
+-- the cells of a bucket.
+DROP TABLE IF EXISTS t_uniq_exact_states;
+CREATE TABLE t_uniq_exact_states (s AggregateFunction(uniqExact, UInt64)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_uniq_exact_states SELECT uniqExactState(number) FROM numbers(9000000);
+INSERT INTO t_uniq_exact_states SELECT uniqExactState(number + 9000000) FROM numbers(9000000);
+SELECT uniqExactMerge(s) FROM t_uniq_exact_states;
+DROP TABLE t_uniq_exact_states;
 
 SELECT 'Merge of two-level states';
 -- With `prefer_localhost_replica = 1` the single thread aggregates the local shard and does not finish the handshake
