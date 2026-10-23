@@ -26,7 +26,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_KEY;
-    extern const int BAD_ARGUMENTS;
 }
 
 KeyDescription::KeyDescription(const KeyDescription & other)
