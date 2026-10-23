@@ -211,11 +211,8 @@ void MergeTreeDataPartWriterWide::initStreamsToOpenCount()
     streams_to_open_in_part = stream_names.size();
 }
 
-void MergeTreeDataPartWriterWide::addStreams(
-    const NameAndTypePair & name_and_type,
-    const ASTPtr & effective_codec_desc)
+void MergeTreeDataPartWriterWide::addStreams(const NameAndTypePair & name_and_type)
 {
-    const bool column_uses_default_codec = columnUsesDefaultCodec(name_and_type.getNameInStorage());
     ISerialization::StreamCallback callback = [&](const auto & substream_path)
     {
         chassert(!substream_path.empty());
@@ -247,7 +244,7 @@ void MergeTreeDataPartWriterWide::addStreams(
                 " It is a collision between a filename for one column and a hash of filename for another column or a bug",
                 stream_name, it->second, full_stream_name);
 
-        auto compression_codec = getSubstreamCodec(effective_codec_desc, substream_path, column_uses_default_codec);
+        auto compression_codec = getSubstreamCodec(name_and_type, substream_path);
 
         CompressionCodecPtr marks_compression_codec = CompressionCodecFactory::instance().get(settings.marks_compression_codec);
 

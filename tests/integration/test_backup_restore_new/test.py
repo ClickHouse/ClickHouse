@@ -1633,6 +1633,134 @@ def test_system_users_required_privileges():
     instance.query("DROP USER u2")
 
 
+# Access backups include every entity of a type, so these checks need this module's isolated server.
+def test_restore_row_policy_replace_requires_scoped_drop():
+    instance.query("CREATE DATABASE test")
+    instance.query(
+        "CREATE TABLE test.table (owner UInt64) ENGINE = MergeTree ORDER BY owner"
+    )
+    instance.query("CREATE USER u2")
+    instance.query("GRANT READ ON DISK TO u2")
+    instance.query("GRANT CREATE ROW POLICY ON test.table TO u2")
+    instance.query(
+        "CREATE ROW POLICY rowpol1 ON test.table AS RESTRICTIVE USING 1 TO ALL"
+    )
+    backup_name = new_backup_name()
+    instance.query(f"BACKUP TABLE system.row_policies TO {backup_name}")
+    instance.query("ALTER ROW POLICY rowpol1 ON test.table USING owner = 1")
+
+    restore = f"RESTORE TABLE system.row_policies FROM {backup_name}"
+    select_filter = "SELECT select_filter FROM system.row_policies WHERE short_name = 'rowpol1' AND database = 'test' AND table = 'table'"
+    instance.query(f"{restore} SETTINGS create_access='if-not-exists'", user="u2")
+    assert instance.query(select_filter) == "owner = 1\n"
+
+    error = instance.query_and_get_error(
+        f"{restore} SETTINGS create_access='replace'", user="u2"
+    )
+    assert "ACCESS_DENIED" in error
+    assert "DROP ROW POLICY" in error
+    assert instance.query(select_filter) == "owner = 1\n"
+
+    instance.query("GRANT DROP ROW POLICY ON test.another_table TO u2")
+    error = instance.query_and_get_error(
+        f"{restore} SETTINGS create_access='replace'", user="u2"
+    )
+    assert "ACCESS_DENIED" in error
+    assert "DROP ROW POLICY" in error
+    assert instance.query(select_filter) == "owner = 1\n"
+
+    instance.query("DROP ROW POLICY rowpol1 ON test.table")
+    error = instance.query_and_get_error(
+        f"{restore} SETTINGS create_access='replace'", user="u2"
+    )
+    assert "ACCESS_DENIED" in error
+    assert "DROP ROW POLICY" in error
+    assert instance.query(select_filter) == ""
+
+    instance.query(f"{restore} SETTINGS create_access='create'", user="u2")
+    assert instance.query(select_filter) == "1\n"
+    instance.query("ALTER ROW POLICY rowpol1 ON test.table USING owner = 1")
+    instance.query("GRANT DROP ROW POLICY ON test.table TO u2")
+    instance.query(f"{restore} SETTINGS create_access='replace'", user="u2")
+    assert instance.query(select_filter) == "1\n"
+
+
+@pytest.mark.parametrize(
+    "kind,system_table,target", [("USER", "users", "u1"), ("ROLE", "roles", "r1")]
+)
+def test_restore_access_partial_revoke_cannot_cancel_drop(kind, system_table, target):
+    instance.query(f"CREATE {kind} {target} SETTINGS max_threads = 1")
+    instance.query(f"GRANT DROP {kind} ON * TO {target}")
+    instance.query(f"REVOKE DROP {kind} ON {target} FROM {target}")
+    backup_name = new_backup_name()
+    instance.query(f"BACKUP TABLE system.{system_table} TO {backup_name}")
+    instance.query(f"ALTER {kind} {target} SETTINGS max_threads = 2")
+
+    # Create the actor after the backup so its grants cannot mask the target's partial revoke.
+    instance.query("CREATE USER u2")
+    instance.query("GRANT READ ON DISK TO u2")
+    instance.query(f"GRANT CREATE {kind} ON {target} TO u2")
+    instance.query(f"GRANT DROP {kind} ON * TO u2 WITH GRANT OPTION")
+    instance.query(f"REVOKE DROP {kind} ON {target} FROM u2")
+    restore = f"RESTORE TABLE system.{system_table} FROM {backup_name} SETTINGS create_access='replace'"
+    error = instance.query_and_get_error(restore, user="u2")
+    assert "ACCESS_DENIED" in error
+    assert f"DROP {kind}" in error
+    assert "max_threads = 2" in instance.query(f"SHOW CREATE {kind} {target}")
+
+    # Ordinary `DROP` is sufficient; the target's grants exclude `DROP` on itself.
+    instance.query(f"GRANT DROP {kind} ON {target} TO u2")
+    instance.query(restore, user="u2")
+    assert "max_threads = 1" in instance.query(f"SHOW CREATE {kind} {target}")
+
+
+def test_restore_access_partial_revokes_preserve_grant_and_table_requirements():
+    instance.query("CREATE DATABASE test")
+    instance.query(
+        "CREATE TABLE test.table (owner UInt64) ENGINE = MergeTree ORDER BY owner"
+    )
+    instance.query("INSERT INTO test.table VALUES (1)")
+    instance.query("CREATE ROLE r1 SETTINGS max_threads = 1")
+    instance.query("GRANT SELECT, INSERT ON test.* TO r1 WITH GRANT OPTION")
+    instance.query("REVOKE GRANT OPTION FOR SELECT ON test.table FROM r1")
+    instance.query("REVOKE INSERT ON test.table FROM r1")
+    backup_name = new_backup_name()
+    backup_tables = "TABLE system.roles, TABLE test.table"
+    instance.query(f"BACKUP {backup_tables} TO {backup_name}")
+    instance.query("ALTER ROLE r1 SETTINGS max_threads = 2")
+
+    instance.query("CREATE USER u2")
+    instance.query("GRANT READ ON DISK TO u2")
+    instance.query("GRANT CREATE ROLE, DROP ROLE ON r1 TO u2")
+    instance.query("GRANT CREATE TABLE ON test.table TO u2")
+    instance.query("GRANT SELECT, INSERT ON test.* TO u2 WITH GRANT OPTION")
+    instance.query("REVOKE GRANT OPTION FOR SELECT ON test.table FROM u2")
+    restore = f"RESTORE TABLE system.roles FROM {backup_name} SETTINGS create_access='replace'"
+    error = instance.query_and_get_error(restore, user="u2")
+    assert "ACCESS_DENIED" in error
+    assert "SELECT" in error
+    assert "WITH GRANT OPTION" in error
+    assert "max_threads = 2" in instance.query("SHOW CREATE ROLE r1")
+
+    instance.query("GRANT SELECT ON test.table TO u2 WITH GRANT OPTION")
+    instance.query(restore, user="u2")
+    assert "max_threads = 1" in instance.query("SHOW CREATE ROLE r1")
+
+    instance.query("TRUNCATE TABLE test.table")
+    instance.query("REVOKE INSERT ON test.table FROM u2")
+    restore_with_table = (
+        f"RESTORE {backup_tables} FROM {backup_name} SETTINGS create_access='replace'"
+    )
+    error = instance.query_and_get_error(restore_with_table, user="u2")
+    assert "ACCESS_DENIED" in error
+    assert "INSERT" in error
+    assert instance.query("SELECT count() FROM test.table") == "0\n"
+
+    instance.query("GRANT INSERT ON test.table TO u2")
+    instance.query(restore_with_table, user="u2")
+    assert instance.query("SELECT * FROM test.table") == "1\n"
+
+
 def test_system_users_async():
     instance.query("CREATE USER u1 IDENTIFIED BY 'qwe123' SETTINGS custom_c = 3")
 
