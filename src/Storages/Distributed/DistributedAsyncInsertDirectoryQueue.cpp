@@ -546,18 +546,27 @@ struct DistributedAsyncInsertDirectoryQueue::BatchHeader
 
 bool DistributedAsyncInsertDirectoryQueue::addFileAndSchedule(const std::string & file_path, size_t file_size, size_t ms)
 {
-    if (!pending_files.push(fs::absolute(file_path).string()))
-    {
-        LOG_DEBUG(log, "File {} had not been scheduled, since the table had been detached", file_path);
-        return false;
-    }
-
+    /// Count the file before it is pushed: the background task can send it and uncount it in `markAsSend`
+    /// as soon as it is in the queue, which would take the counters below zero for a while.
     {
         std::lock_guard lock(status_mutex);
         metric_pending_files.add();
         metric_pending_bytes.add(file_size);
         status.bytes_count += file_size;
         ++status.files_count;
+    }
+
+    if (!pending_files.push(fs::absolute(file_path).string()))
+    {
+        {
+            std::lock_guard lock(status_mutex);
+            metric_pending_files.sub();
+            metric_pending_bytes.sub(file_size);
+            status.bytes_count -= file_size;
+            --status.files_count;
+        }
+        LOG_DEBUG(log, "File {} had not been scheduled, since the table had been detached", file_path);
+        return false;
     }
 
     return task_handle->scheduleAfter(ms, false);
