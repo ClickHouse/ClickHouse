@@ -356,6 +356,7 @@ private:
         FilesIteratorPtr files_iterator_,
         std::unique_ptr<ReadBuffer> read_buf_,
         bool need_only_count_,
+        bool count_in_one_chunk_,
         FormatParserSharedResourcesPtr parser_shared_resources_,
         FormatFilterInfoPtr format_filter_info_,
         LazyFileRegistryPtr lazy_row_index_registry_ = nullptr,
@@ -457,6 +458,7 @@ private:
 
     bool finished_generate = false;
     bool need_only_count = false;
+    const bool count_in_one_chunk = false;
     size_t total_rows_in_file = 0;
 
     /// Lazy materialization: when set, a `__global_row_index` column is appended to every chunk

@@ -241,6 +241,7 @@ public:
         const URIParams & params = {},
         bool glob_url = false,
         bool need_only_count_ = false,
+        bool count_in_one_chunk_ = false,
         StorageID storage_id_ = StorageID::createEmpty());
 
     ~StorageURLSource() override;
@@ -306,6 +307,7 @@ private:
     /// see `makeQueryConditionCacheFileKey`. The OpenTelemetry headers added per query are not included.
     UInt128 request_headers_hash;
     bool need_only_count;
+    const bool count_in_one_chunk;
     StorageID storage_id;
     size_t total_rows_in_file = 0;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;

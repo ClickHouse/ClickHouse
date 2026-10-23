@@ -605,6 +605,7 @@ StorageURLSource::StorageURLSource(
     const URIParams & params,
     bool glob_url,
     bool need_only_count_,
+    bool count_in_one_chunk_,
     StorageID storage_id_)
     : ISource(std::make_shared<const Block>(info.source_header), false)
     , WithContext(context_)
@@ -622,6 +623,7 @@ StorageURLSource::StorageURLSource(
     , headers(getHeaders(headers_, context_))
     , request_headers_hash(hashRequestHeaders(headers_))
     , need_only_count(need_only_count_)
+    , count_in_one_chunk(count_in_one_chunk_)
     , storage_id(std::move(storage_id_))
     , hive_partition_columns_to_read_from_file_path(info.hive_partition_columns_to_read_from_file_path)
     , allow_query_condition_cache((http_method.empty() || http_method == Poco::Net::HTTPRequest::HTTP_GET) && !callback && params.empty())
@@ -777,7 +779,9 @@ StorageURLSource::StorageURLSource(
             /// (it can cause memory problems even with default values in columns or when virtual columns are requested).
             /// Instead, we use special ConstChunkGenerator that will generate chunks
             /// with max_block_size rows until total number of rows is reached.
-            auto source = std::make_shared<ConstChunkGenerator>(std::make_shared<const Block>(block_for_format), *num_rows_from_cache, max_block_size);
+            /// One chunk is fine when nothing reads the columns, see `readsOnlyRowCount`.
+            auto source = std::make_shared<ConstChunkGenerator>(
+                std::make_shared<const Block>(block_for_format), *num_rows_from_cache, count_in_one_chunk ? *num_rows_from_cache : max_block_size);
             builder.init(Pipe(source));
         }
         else
@@ -2189,6 +2193,8 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
         info.getFormatFilter(filter_actions_dag), context, nullptr, query_info.row_level_filter, query_info.prewhere_info);
     format_filter_info->top_k_filter = top_k_filter;
 
+    const bool count_in_one_chunk = need_only_count && readsOnlyRowCount(query_info, info);
+
     for (size_t i = 0; i < num_streams; ++i)
     {
         auto source = std::make_shared<StorageURLSource>(
@@ -2209,6 +2215,7 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
             read_uri_params,
             is_url_with_globs,
             need_only_count,
+            count_in_one_chunk,
             storage->getStorageID());
 
         pipes.emplace_back(std::move(source));

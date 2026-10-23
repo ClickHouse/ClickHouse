@@ -11,6 +11,7 @@
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/IStorage.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <IO/ReadHelpers.h>
@@ -762,6 +763,12 @@ std::optional<ReadFromFormatInfo> splitLazilyReadColumnsFromFormatInfo(ReadFromF
     info.requested_columns = std::move(main_requested_columns);
 
     return lazy_info;
+}
+
+bool readsOnlyRowCount(const SelectQueryInfo & query_info, const ReadFromFormatInfo & info)
+{
+    return query_info.optimize_trivial_count && query_info.trivial_count_without_arguments
+        && info.requested_virtual_columns.empty() && info.hive_partition_columns_to_read_from_file_path.empty();
 }
 
 }

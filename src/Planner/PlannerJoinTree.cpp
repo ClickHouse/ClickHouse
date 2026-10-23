@@ -660,6 +660,7 @@ bool applyTrivialCountIfPossible(
     /// However, we may still not be able to rewrite the plan in this function (e.g. `totalRows()` may return `std::nullopt` for some
     /// storages), and the following checks are devoted to verify that we can do it right here.
     select_query_info.optimize_trivial_count = true;
+    select_query_info.trivial_count_without_arguments = count_aggregate->as<const FunctionNode &>().getArguments().getNodes().empty();
 
     /// Do not apply trivial count optimization if we're the follower. Because if every follower blindly returns totalRows(),
     /// the result will be R times the actual count of rows, where R is the number of replicas.

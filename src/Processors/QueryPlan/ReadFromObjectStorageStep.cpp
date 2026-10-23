@@ -198,6 +198,8 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
         format_filter_info->top_k_filter = std::move(top_k_filter_tracking_best_values);
     }
 
+    const bool count_in_one_chunk = need_only_count && readsOnlyRowCount(query_info, info);
+
     for (size_t i = 0; i < num_streams; ++i)
     {
         auto source = std::make_shared<StorageObjectStorageSource>(
@@ -214,6 +216,7 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
             parser_shared_resources,
             format_filter_info,
             need_only_count,
+            count_in_one_chunk,
             lazy_row_index_registry,
             top_k_query_condition_cache_key);
 
