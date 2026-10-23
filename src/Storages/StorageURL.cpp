@@ -186,8 +186,9 @@ bool urlPathHasListableGlobs(std::string_view uri)
     return path.contains('*');
 }
 
-String getSampleURI(String uri, ContextPtr context)
+String getSamplePath(const String & uri, ContextPtr context)
 {
+    String sample_uri = uri;
     if (urlWithGlobs(uri))
     {
         /// Only the first address is needed, to read the hive partitioning and the virtual columns off
@@ -196,9 +197,10 @@ String getSampleURI(String uri, ContextPtr context)
             uri, 0, uri.size(), ',', context->getSettingsRef()[Setting::glob_expansion_max_elements], "url");
         String first_uri;
         if (generator.next(first_uri))
-            return first_uri;
+            sample_uri = std::move(first_uri);
     }
-    return uri;
+    /// Parse as the reader does, or the inferred hive partition values differ from the read ones (`a b` vs `a%20b`).
+    return Poco::URI(encodeSpacesInURI(sample_uri), context->getSettingsRef()[Setting::enable_url_encoding]).getPath();
 }
 
 static ConnectionTimeouts getHTTPTimeouts(ContextPtr context)
@@ -263,7 +265,7 @@ IStorageURLBase::IStorageURLBase(
 
     auto & storage_columns = storage_metadata.columns;
 
-    const auto sample_path = getSampleURI(uri, context_);
+    const auto sample_path = getSamplePath(uri, context_);
     std::tie(hive_partition_columns_to_read_from_file_path, file_columns) = HivePartitioningUtils::setupHivePartitioningForFileURLLikeStorage(
         storage_columns,
         sample_path,
@@ -1624,6 +1626,8 @@ namespace
             auto & schema_cache = StorageURL::getSchemaCache(getContext());
             for (const auto & url : urls)
             {
+                const String cache_url = Poco::URI(encodeSpacesInURI(url), context->getSettingsRef()[Setting::enable_url_encoding]).toString();
+
                 auto get_last_mod_time = [&]() -> std::optional<time_t>
                 {
                     auto last_mod_time = StorageURL::tryGetLastModificationTime(url, headers, credentials, context);
@@ -1637,7 +1641,7 @@ namespace
 
                 if (format)
                 {
-                    auto cache_key = getKeyForSchemaCache(url, *format, format_settings, context);
+                    auto cache_key = getKeyForSchemaCache(cache_url, *format, format_settings, context);
                     if (auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time))
                         return columns;
                 }
@@ -1648,7 +1652,7 @@ namespace
                     /// If we have such entry for some format, we can use this format to read the file.
                     for (const auto & format_name : FormatFactory::instance().getAllInputFormats())
                     {
-                        auto cache_key = getKeyForSchemaCache(url, format_name, format_settings, context);
+                        auto cache_key = getKeyForSchemaCache(cache_url, format_name, format_settings, context);
                         if (auto columns = schema_cache.tryGetColumns(cache_key, get_last_mod_time))
                         {
                             format = format_name;
