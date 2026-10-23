@@ -1835,6 +1835,8 @@ public:
 
     /// Provides storage politics schemes
     StoragePolicyPtr getStoragePolicy(const String & name) const;
+    /// Returns `nullptr` instead of throwing when the policy is not configured.
+    StoragePolicyPtr tryGetStoragePolicy(const String & name) const;
 
     StoragePolicyPtr getStoragePolicyFromDisk(const String & disk_name) const;
 
