@@ -15,7 +15,7 @@
 
 #include <Processors/ConcatProcessor.h>
 #include <Processors/IProcessor.h>
-#include <Processors/QueryPlan/AnalyzePlanStats.h>
+#include <Processors/QueryPlan/Profiling/Analysis/AnalyzePlanStats.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <QueryPipeline/receiveExchangeStreams.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
@@ -307,6 +307,12 @@ static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map,
     map.add("Node Type", step.getName());
     map.add("Node Id", step.getUniqID());
 
+    if (options.step_hashes)
+    {
+        if (auto it = options.step_hashes->find(&step); it != options.step_hashes->end())
+            map.add("Node Hash", fmt::format("{}", it->second));
+    }
+
     if (options.description)
     {
         const auto & description = step.getStepDescription();
@@ -397,7 +403,7 @@ JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options) 
         }
         else
         {
-            auto child_plans = frame.node->step->getChildPlans();
+            auto child_plans = frame.node->step->getChildPlans(/*for_explain=*/ true);
 
             if (!frame.children_array && !child_plans.empty())
                 frame.children_array = std::make_unique<JSONBuilder::JSONArray>();
@@ -444,6 +450,12 @@ static void explainStep(
         description = description.substr(0, max_description_length);
     if (options.description && !description.empty())
         settings.out <<" (" << description << ')';
+
+    if (options.step_hashes)
+    {
+        if (auto it = options.step_hashes->find(&step); it != options.step_hashes->end())
+            settings.out << fmt::format(" hash={}", it->second);
+    }
 
     if (options.estimates)
     {
@@ -595,7 +607,7 @@ static void buildTreeOffset(
     settings_format.header_prefix = parent_tree_prefix;
     settings_format.detail_prefix = parent_tree_prefix;
 
-    bool has_children = !current.node->children.empty() || !current.node->step->getChildPlans().empty();
+    bool has_children = !current.node->children.empty() || !current.node->step->getChildPlans(/*for_explain=*/ true).empty();
 
     if (frames.size() == 1)
     {
@@ -721,7 +733,7 @@ void QueryPlan::explainPlan(
         {
             size_t child_idx = frame.next_child;
 
-            bool has_child_plans_below = !frame.node->step->getChildPlans().empty();
+            bool has_child_plans_below = !frame.node->step->getChildPlans(/*for_explain=*/ true).empty();
             bool is_last = (frame.next_child + 1) == (frame.node->children.size()) && !has_child_plans_below;
             /// Skip the expression steps if we are in the compact mode
             auto * next_node = skip_expressions(frame.node->children[child_idx]);
@@ -734,7 +746,7 @@ void QueryPlan::explainPlan(
         }
         else
         {
-            auto child_plans = frame.node->step->getChildPlans();
+            auto child_plans = frame.node->step->getChildPlans(/*for_explain=*/ true);
 
             std::string base_prefix;
             if (options.pretty && !child_plans.empty())
@@ -887,6 +899,7 @@ bool QueryPlan::applyDistributedPlanFallbackToLocal(QueryPlanOptimizationSetting
         getLogger("makeDistributedPlan"), "Cannot make a distributed query plan, falling back to local execution: {}", reason->text);
     settings.make_distributed_plan = false;
     distributed_plan_decision = DistributedPlanDecision::FellBack;
+    distributed_plan_fallback_reason = reason->text;
     for (const auto & context : resources.distributed_plan_decision_contexts)
         context->setSetting("make_distributed_plan", false);
     return true;
@@ -953,7 +966,7 @@ static void shareMaxThreadsAmongLocalTasks(DistributedQueryPlan & distributed_pl
         stage.query_plan_fragment.setMaxThreads(std::max<size_t>(1, limit / std::max<size_t>(1, stage.tasks.size())));
 }
 
-void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optimization_settings)
+DistributedPlanCut QueryPlan::cutIntoDistributedPlan(const QueryPlanOptimizationSettings & optimization_settings)
 {
     /// A non-serializable step found here
     /// means either a caller skipped the call to `applyDistributedPlanFallbackToLocal`  or an optimization pass created the step after
@@ -968,16 +981,19 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
                 "make_distributed_plan error: the query resolved {} {} of the initiator after the plan was accepted for distributed execution.",
                 DistributedPlanLocalObject::kindName(entry->kind), entry->name);
 
-    /// Take the IN-subquery sets out of the plan before it is split into fragments, so the
-    /// fragments never carry their placeholder steps; the sets are added back below.
-    auto delayed_sets = extractSetsForDistributedPlan(root);
+    DistributedPlanCut cut;
 
-    SharedHeader result_header = root->step->getOutputHeader();
+    /// Take the IN-subquery sets out of the plan before it is split into fragments, so the
+    /// fragments never carry their placeholder steps; `convertToDistributed` adds the sets back.
+    cut.delayed_sets = extractSetsForDistributedPlan(root);
+
+    cut.result_header = root->step->getOutputHeader();
 
     QueryPlan::Nodes old_nodes = std::move(nodes);
     QueryPlan::Node * old_root = root;
     root = nullptr;
-    auto distributed_plan = QueryPlanOptimizations::makeDistributedPlan(std::move(old_nodes), old_root, optimization_settings);
+    cut.distributed_plan = QueryPlanOptimizations::makeDistributedPlan(std::move(old_nodes), old_root, optimization_settings);
+    auto & distributed_plan = cut.distributed_plan;
 
     for (const auto & stage : distributed_plan.stages)
     {
@@ -987,31 +1003,47 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
             stage.first, fmt::join(dependencies, ", "), dumpQueryPlan(stage.second.query_plan_fragment));
     }
 
+    auto & main_stage = distributed_plan.stages["main"];
+
+    /// The main stage produces the final result, so the exchange takes its id. It is not cut from
+    /// a logical exchange step, so `exchange_step_name` stays empty.
+    cut.final_result_exchange = ExchangeDescription
     {
-        ExchangeDescription final_result_exchange
-        {
-            .name = "final_result",
-            .kind = optimization_settings.distributed_plan_force_exchange_kind == "Persisted" ? ExchangeDescription::Kind::Persisted : ExchangeDescription::Kind::Streaming,
-            .source_bucket_count = 1,
-            .destination_bucket_count = 1
-        };
-        auto result_stream_id = ExchangeStreamId(final_result_exchange.name, 0, 0);
+        .name = "final_result",
+        .id = main_stage.id,
+        .kind = optimization_settings.distributed_plan_force_exchange_kind == "Persisted" ? ExchangeDescription::Kind::Persisted : ExchangeDescription::Kind::Streaming,
+        .source_bucket_count = 1,
+        .destination_bucket_count = 1,
+        .exchange_step_name = {},
+        .keys = {},
+        .sort_description = {},
+    };
+    const auto & final_result_exchange = cut.final_result_exchange;
+    auto result_stream_id = ExchangeStreamId(final_result_exchange.name, 0, 0);
 
-        /// Add a step that writes the result of the main stage to the file
-        auto & main_stage = distributed_plan.stages["main"];
-        if (!main_stage.query_plan_fragment.isCompleted())
-        {
-            main_stage.query_plan_fragment.addStep(std::make_unique<GatherSendStep>(result_header, final_result_exchange.name));
-            main_stage.tasks.front().output_exchange_streams.emplace_back(result_stream_id);
-            distributed_plan.exchange_descriptions[final_result_exchange.name] = final_result_exchange;
-            distributed_plan.final_result_stream_name = result_stream_id.toString();
-        }
+    /// Add a step that writes the result of the main stage to the file
+    if (!main_stage.query_plan_fragment.isCompleted())
+    {
+        main_stage.query_plan_fragment.addStep(std::make_unique<GatherSendStep>(cut.result_header, final_result_exchange.name));
+        main_stage.tasks.front().output_exchange_streams.emplace_back(result_stream_id);
+        distributed_plan.exchange_descriptions[final_result_exchange.name] = final_result_exchange;
+        distributed_plan.final_result_stream_name = result_stream_id.toString();
+    }
 
-        /// Fail early (before execution) if any fragment contains a step that cannot be serialized
-        /// for remote execution, instead of throwing late from serializeQueryPlan.
-        for (const auto & [stage_name, stage] : distributed_plan.stages)
-            assertFragmentSerializable(stage.query_plan_fragment, stage_name);
+    /// Fail early (before execution) if any fragment contains a step that cannot be serialized
+    /// for remote execution, instead of throwing late from serializeQueryPlan.
+    for (const auto & [stage_name, stage] : distributed_plan.stages)
+        assertFragmentSerializable(stage.query_plan_fragment, stage_name);
 
+    return cut;
+}
+
+void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optimization_settings)
+{
+    auto [distributed_plan, final_result_exchange, result_header, delayed_sets] = cutIntoDistributedPlan(optimization_settings);
+    auto result_stream_id = ExchangeStreamId(final_result_exchange.name, 0, 0);
+
+    {
         /// Collect the list of all temporary files
         Strings all_temporary_files_for_cleanup;
         for (const auto & stage : distributed_plan.stages)
@@ -1082,7 +1114,8 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
             settings.exchange_lookup = exchange_lookup;
             VectorWithMemoryTracking<ExchangeStreamId> stream_ids;
             stream_ids.push_back(result_stream_id);
-            auto builder = receiveExchangeStreams(result_header, exchange_name, stream_ids, settings, /*spread_over_max_threads=*/ false);
+            auto builder = receiveExchangeStreams(
+                result_header, exchange_name, stream_ids, settings, /*spread_over_max_threads=*/ false, /*advisory=*/ false);
             /// An in-memory exchange source emits zero-row chunks as scheduling ticks while
             /// waiting for data; drop them so they do not reach the client as empty `Data` packets.
             builder.addSimpleTransform([](const SharedHeader & header) { return makeSkipZeroRowChunksTransform(header); });

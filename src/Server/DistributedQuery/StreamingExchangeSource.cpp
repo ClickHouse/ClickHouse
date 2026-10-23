@@ -7,6 +7,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <QueryPipeline/DistributedPlanExecutor.h>
 #include <Poco/Net/NetException.h>
+#include <Common/DNSResolver.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
@@ -24,6 +25,7 @@ namespace ProfileEvents
     extern const Event StreamingExchangePacketsReceived;
     extern const Event StreamingExchangeReceiveWaitMicroseconds;
     extern const Event StreamingExchangeEarlyCloses;
+    extern const Event RuntimeFilterReceivesAbandoned;
 }
 
 namespace DB
@@ -53,13 +55,14 @@ void StreamingExchangeSource::onStart()
     /// Register the socket so the waiting source wakes on incoming data or peer close.
     wait_events_epoll.add(socket->sockfd());
 #endif
+    handshake_completed = true;
 }
 
 bool StreamingExchangeSource::connect(const Stopwatch & handshake_watch)
 {
     LOG_TRACE(log, "Connecting to {}:{} for query id {} exchange stream {}", host, port, query_id, stream_name);
     socket = std::make_unique<Poco::Net::StreamSocket>();
-    Poco::Net::SocketAddress address(host, port);
+    Poco::Net::SocketAddress address = DNSResolver::instance().resolveAddress(host, port);
     /// Apply a connect timeout so a blackholed or filtered peer cannot stall the worker
     /// thread for the default kernel connect timeout (minutes) and ignore cancellation.
     socket->connectNB(address);
@@ -376,7 +379,18 @@ std::optional<Chunk> StreamingExchangeSource::tryGenerate()
     }
     catch (const Exception & e)
     {
-        if (!cancellation || e.code() != ErrorCodes::EXCHANGE_PEER_DISCONNECTED)
+        if (e.code() != ErrorCodes::EXCHANGE_PEER_DISCONNECTED)
+            throw;
+
+        if (advisory && handshake_completed)
+        {
+            LOG_DEBUG(log, "Exchange stream {} lost its peer, ending it early: {}", stream_name, e.message());
+            ProfileEvents::increment(ProfileEvents::RuntimeFilterReceivesAbandoned);
+            finished_reading = true;
+            return std::nullopt;
+        }
+
+        if (!cancellation)
             throw;
 
         /// The producer went away, most likely because the query is failing elsewhere. The driving

@@ -7,10 +7,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # A subset read with the native Arrow IPC reader must skip the `DictionaryBatch` bodies of dictionaries
 # referenced only by unrequested columns, instead of decoding (and possibly failing or allocating) on them.
-# The file has a plain column `a` and a dictionary-encoded column `b` whose dictionary contains a duplicate
-# value, which the reader rejects when it decodes the dictionary. Reading only `a` must therefore succeed
-# (the dictionary of `b` is unreachable and skipped); reading `b` must fail with `INCORRECT_DATA`. The file
-# is built with pyarrow because ClickHouse's writer never emits a dictionary with duplicate values.
+# The file has a plain column `a` and a dictionary-encoded column `b` whose dictionary has a corrupted string
+# offset, which the reader rejects when it decodes the dictionary. Reading only `a` must therefore succeed
+# (the dictionary of `b` is unreachable and skipped); reading `b` must fail with `INCORRECT_DATA`.
 
 DATA_FILE="${CLICKHOUSE_TMP}/04344_pruned_dict"
 
@@ -20,22 +19,30 @@ import pyarrow as pa
 
 base = sys.argv[1]
 indices = pa.array([0, 1, 2, 0, 1], type=pa.int32())
-dictionary = pa.array(["x", "x", "y"])  # duplicate "x": decoding this dictionary must be rejected
+dictionary = pa.array(["x", "y", "z"])
 batch = pa.record_batch(
     [pa.array([10, 20, 30, 40, 50], type=pa.int32()), pa.DictionaryArray.from_arrays(indices, dictionary)],
     names=["a", "b"],
 )
+offsets = b"".join(i.to_bytes(4, "little") for i in range(4))  # the dictionary's string offsets 0, 1, 2, 3
 for fmt, opener in [("Arrow", pa.ipc.new_file), ("ArrowStream", pa.ipc.new_stream)]:
-    with pa.OSFile(f"{base}.{fmt}", "wb") as sink:
-        with opener(sink, batch.schema) as writer:
-            writer.write_batch(batch)
+    sink = pa.BufferOutputStream()
+    with opener(sink, batch.schema) as writer:
+        writer.write_batch(batch)
+    data = bytearray(sink.getvalue().to_pybytes())
+    # Corrupt the dictionary: its last string offset now points far past its values buffer.
+    assert data.count(offsets) == 1
+    i = data.find(offsets) + 12
+    data[i:i + 4] = (1 << 28).to_bytes(4, "little")
+    with open(f"{base}.{fmt}", "wb") as f:
+        f.write(bytes(data))
 PY
 
 for FMT in Arrow ArrowStream; do
     echo "--- ${FMT}: SELECT a (b unrequested) -> b's corrupt dictionary is skipped ---"
     ${CLICKHOUSE_LOCAL} --query "
         SELECT a FROM file('${DATA_FILE}.${FMT}', '${FMT}', 'a Int32')"
-    echo "--- ${FMT}: SELECT b (requested) -> duplicate dictionary values rejected ---"
+    echo "--- ${FMT}: SELECT b (requested) -> corrupt dictionary rejected ---"
     ${CLICKHOUSE_LOCAL} --query "
         SELECT b FROM file('${DATA_FILE}.${FMT}', '${FMT}', 'a Int32, b LowCardinality(String)')" 2>&1 | grep -o "INCORRECT_DATA" | head -1
 

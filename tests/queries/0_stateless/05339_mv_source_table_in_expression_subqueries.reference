@@ -1,0 +1,5 @@
+correlated	2	1	0
+in_join	2	1	0
+in_table	2	1	0
+not_exists	2	1	0
+null_in_table	2	1	0
