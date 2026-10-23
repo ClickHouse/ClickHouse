@@ -56,9 +56,9 @@ ColumnPtr FunctionComparison<LessOrEqualsOp, NameLessOrEquals>::executeTupleImpl
     FunctionOverloadResolverPtr func_builder_and
         = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
 
-    /// The prefix equality reads a constant string compared with an `Enum` by name, as the ordering does.
+    /// The prefix equality compares a string with an `Enum` by value, as the ordering does.
     ComparisonParams equals_params = params;
-    equals_params.format_settings.tsv.enum_as_number = false;
+    equals_params.compare_enum_with_string_by_value = true;
     FunctionOverloadResolverPtr func_builder_equals
         = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionEquals>(equals_params));
 

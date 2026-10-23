@@ -949,6 +949,8 @@ struct ComparisonParams
     bool check_decimal_overflow = false;
     bool validate_enum_literals_in_operators = false;
     bool use_variant_default_implementation = true;
+    /// Set for the prefix equality of a tuple ordering: `=` and `!=` then compare a string with an `Enum` by value, as the ordering does.
+    bool compare_enum_with_string_by_value = false;
     FormatSettings format_settings;
     /// The hash of the session settings `format_settings` was derived from (see `getFormatSettingsHash`).
     UInt64 format_settings_hash = 0;
@@ -981,10 +983,9 @@ public:
     /// of a `LowCardinality` dictionary and for a value behind a NULL.
     bool canBeExecutedOnDefaultArguments(const DataTypes & arguments) const override
     {
-        if constexpr (IsOperation<Op>::equals || IsOperation<Op>::not_equals)
+        if ((IsOperation<Op>::equals || IsOperation<Op>::not_equals) && !params.compare_enum_with_string_by_value)
             return true;
-        else
-            return arguments.size() != 2 || !ordersEnumWithString(arguments[0], arguments[1]);
+        return arguments.size() != 2 || !ordersEnumWithString(arguments[0], arguments[1]);
     }
 
 private:
@@ -2200,7 +2201,7 @@ public:
                 return res;
         }
         /// Compare by the `Enum` value. A constant string takes the same `CAST` as a column, without the format settings of `executeWithConstString`.
-        if (!IsOperation<Op>::equals && !IsOperation<Op>::not_equals
+        if (((!IsOperation<Op>::equals && !IsOperation<Op>::not_equals) || params.compare_enum_with_string_by_value)
             && ((isEnum(left_type) && right_is_string) || (left_is_string && isEnum(right_type))))
         {
             const DataTypePtr & enum_type = isEnum(left_type) ? left_type : right_type;

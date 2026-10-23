@@ -71,6 +71,8 @@ SELECT e < nullIf(s, 'q') FROM values('e Enum8(''z'' = 1, ''a'' = 2), s String',
 SELECT if(s = 'q', NULL, tuple(s)) < tuple(e) FROM values('e Enum8(''z'' = 1, ''a'' = 2), s String', ('z', 'q'), ('z', 'a')) SETTINGS short_circuit_function_evaluation_for_nulls = 0;
 SELECT if(s = 'q', NULL, tuple(s)) < tuple(CAST(CAST('a', 'Enum8(''z'' = 1, ''a'' = 2)') AS Dynamic)) FROM values('s String', 'q', 'z') SETTINGS short_circuit_function_evaluation_for_nulls = 0;
 SELECT if(s = 'q', NULL, tuple(s)) < tuple(CAST(CAST('a', 'Enum8(''z'' = 1, ''a'' = 2)') AS Variant(Array(UInt8), Enum8('z' = 1, 'a' = 2)))) FROM values('s String', 'q', 'z') SETTINGS short_circuit_function_evaluation_for_nulls = 0;
+SELECT tuple(nullIf(s, 'q'), 0) < tuple(e, 1) FROM values('e Enum8(''z'' = 1, ''a'' = 2), s String', ('z', 'q'), ('z', 'a')) SETTINGS short_circuit_function_evaluation_for_nulls = 0;
+SELECT tuple(s, 0) < tuple(CAST('a', 'Enum8(''z'' = 1, ''a'' = 2)'), 1) FROM values('s LowCardinality(String)', 'z', 'a');
 
 -- a condition can skip the rows with an unknown name
 SELECT if(s = 'q', 0, e < s) FROM values('e Enum8(''z'' = 1, ''a'' = 2), s String', ('z', 'q'), ('z', 'a')) SETTINGS short_circuit_function_evaluation = 'enable';
@@ -93,6 +95,14 @@ SELECT tuple(tuple('1'), 0) < tuple(tuple(CAST('1', 'Enum8(''z'' = 1, ''a'' = 2,
 SELECT tuple('1', 0) < tuple(CAST(CAST('1', 'Enum8(''z'' = 1, ''a'' = 2, ''1'' = 3)') AS Dynamic), 1), materialize(tuple('1', 0)) < tuple(CAST(CAST('1', 'Enum8(''z'' = 1, ''a'' = 2, ''1'' = 3)') AS Dynamic), 1) SETTINGS input_format_tsv_enum_as_number = 1;
 SELECT count() FROM numbers(2) WHERE materialize(tuple('1', 0)) < tuple(CAST('1', 'Enum8(''z'' = 1, ''a'' = 2, ''1'' = 3)'), 1) SETTINGS input_format_tsv_enum_as_number = 1;
 SELECT count() FROM t_enum_number_chain WHERE x < e AND e < '1' SETTINGS input_format_tsv_enum_as_number = 1, optimize_use_implicit_projections = 0;
+
+-- the prefix equality of a tuple ordering reads a number as the Enum value, as the ordering does
+SELECT countIf(materialize(tuple('1', 0)) < tuple(CAST('z', 'Enum8(''z'' = 1, ''a'' = 2)'), 1)) FROM numbers(2);
+SELECT count() FROM numbers(2) WHERE materialize(tuple('1', 0)) < tuple(CAST('z', 'Enum8(''z'' = 1, ''a'' = 2)'), 1);
+SELECT tuple('1', 0) < tuple(CAST('z', 'Enum8(''z'' = 1, ''a'' = 2)'), 1), tuple('1', 0) <= tuple(CAST('z', 'Enum8(''z'' = 1, ''a'' = 2)'), 1), tuple('1', 0) > tuple(CAST('z', 'Enum8(''z'' = 1, ''a'' = 2)'), 1), tuple('1', 0) >= tuple(CAST('z', 'Enum8(''z'' = 1, ''a'' = 2)'), 1), tuple(CAST('z', 'Enum8(''z'' = 1, ''a'' = 2)'), 1) > tuple('1', 0);
+SELECT materialize(tuple('1', 0)) < tuple(CAST('z', 'Enum8(''z'' = 1, ''a'' = 2)'), 1), materialize(tuple('1', 0)) <= tuple(CAST('z', 'Enum8(''z'' = 1, ''a'' = 2)'), 1), materialize(tuple('1', 0)) > tuple(CAST('z', 'Enum8(''z'' = 1, ''a'' = 2)'), 1), materialize(tuple('1', 0)) >= tuple(CAST('z', 'Enum8(''z'' = 1, ''a'' = 2)'), 1), tuple(CAST('z', 'Enum8(''z'' = 1, ''a'' = 2)'), 1) > materialize(tuple('1', 0));
+SELECT tuple(tuple('1'), 0) < tuple(tuple(CAST('z', 'Enum8(''z'' = 1, ''a'' = 2)')), 1), materialize(tuple(tuple('1'), 0)) < tuple(tuple(CAST('z', 'Enum8(''z'' = 1, ''a'' = 2)')), 1);
+SELECT tuple('1', 0) < tuple(CAST(CAST('z', 'Enum8(''z'' = 1, ''a'' = 2)') AS Dynamic), 1), materialize(tuple('1', 0)) < tuple(CAST(CAST('z', 'Enum8(''z'' = 1, ''a'' = 2)') AS Dynamic), 1);
 
 -- equality keeps the primary key of a string column
 SELECT s FROM t_string_key WHERE isNotDistinctFrom(s, CAST('a', 'Enum8(''z'' = 1, ''a'' = 2, ''m'' = 3)')) SETTINGS force_primary_key = 1, optimize_use_implicit_projections = 0;
