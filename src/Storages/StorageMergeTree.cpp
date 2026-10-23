@@ -368,6 +368,32 @@ StorageMergeTree::StorageMergeTree(
                     disk->getName());
             }
         }
+
+        /// Create the election state before the storage is exposed: `CREATE` / `ATTACH` publish the
+        /// table before calling `startup`, and a concurrent `INSERT` must already see a follower then.
+        /// Until `startup` starts the lease task, `isLeader` is false, so every write is rejected.
+
+        /// The first disk should be the main data disk.
+        ObjectStoragePtr object_storage = getDisks().front()->getObjectStorage();
+
+        auto heartbeat_ms = (*getSettings())[MergeTreeSetting::leader_election_heartbeat_interval].totalMilliseconds();
+        auto session_timeout_ms = (*getSettings())[MergeTreeSetting::leader_election_session_timeout].totalMilliseconds();
+
+        /// The lease is accessed through the object storage directly, not through the disk's
+        /// metadata, so resolve its key inside the disk's configured key prefix the same way the
+        /// data objects are: otherwise a disk configured with an endpoint like `.../bucket/team-a/data/`
+        /// would keep its lease at the bucket root, outside the prefix its credentials may be
+        /// restricted to, and disks with different prefixes would share one lease namespace.
+        String lease_path = ObjectStorageKey::createAsRelative(
+            object_storage->getCommonKeyPrefix(), getRelativeDataPath() + "leader_election").serialize();
+
+        leader_election_ptr = std::make_unique<MergeTreeLeaderElection>(
+            getStorageID(),
+            std::move(object_storage),
+            std::move(lease_path),
+            getContext(),
+            heartbeat_ms,
+            session_timeout_ms);
     }
 }
 
@@ -410,27 +436,8 @@ void StorageMergeTree::startup()
 
         if ((*getSettings())[MergeTreeSetting::leader_election])
         {
-            /// The first disk should be the main data disk.
-            ObjectStoragePtr object_storage = getDisks().front()->getObjectStorage();
-
-            auto heartbeat_ms = (*getSettings())[MergeTreeSetting::leader_election_heartbeat_interval].totalMilliseconds();
-            auto session_timeout_ms = (*getSettings())[MergeTreeSetting::leader_election_session_timeout].totalMilliseconds();
-
-            /// The lease is accessed through the object storage directly, not through the disk's
-            /// metadata, so resolve its key inside the disk's configured key prefix the same way the
-            /// data objects are: otherwise a disk configured with an endpoint like `.../bucket/team-a/data/`
-            /// would keep its lease at the bucket root, outside the prefix its credentials may be
-            /// restricted to, and disks with different prefixes would share one lease namespace.
-            String lease_path = ObjectStorageKey::createAsRelative(
-                object_storage->getCommonKeyPrefix(), getRelativeDataPath() + "leader_election").serialize();
-
-            leader_election_ptr = std::make_unique<MergeTreeLeaderElection>(
-                getStorageID(),
-                std::move(object_storage),
-                std::move(lease_path),
-                getContext(),
-                heartbeat_ms,
-                session_timeout_ms);
+            /// Created in the constructor, so that no write is admitted before this point.
+            chassert(leader_election_ptr);
 
             leader_election_ptr->setOnLeadershipChangeCallback([this](bool became_leader)
             {
@@ -921,7 +928,7 @@ void StorageMergeTree::drop()
     /// The decision is keyed on the persisted setting rather than `leader_election_ptr`
     /// because `dropTableFinally` may invoke this method on a partially-dropped table
     /// reconstructed via `createTableFromAST` (server-restart recovery path), where
-    /// `startup` was never called and `leader_election_ptr` is therefore null.
+    /// `startup` was never called.
     bool skip_data_cleanup = (*getSettings())[MergeTreeSetting::leader_election];
     shutdown(true);
     if (!skip_data_cleanup)
@@ -1814,9 +1821,24 @@ void StorageMergeTree::addPreparedMutationEntry(PreparedMutationEntry prepared)
     background_operations_assignee.trigger();
 }
 
-void StorageMergeTree::restoreKilledMutationEntry(UInt64 mutation_version, MergeTreeMutationEntry entry)
+void StorageMergeTree::restoreKilledMutationEntry(UInt64 mutation_version, MergeTreeMutationEntry entry, UInt64 admission_epoch)
 {
     std::lock_guard lock(currently_processing_in_background_mutex);
+
+    /// A leadership acquisition after the command was admitted makes the takeover reload
+    /// (`loadMutations(true)`) the owner of the mutation: it re-registers the entry from the file on
+    /// shared storage, and a command of the new epoch may already have killed it, removing both the
+    /// entry and the file. An absent entry is then not a permission to put the old one back: that
+    /// would resurrect a mutation whose cancellation succeeded, without a durable file. The epoch
+    /// is incremented before the reload runs, and the reload registers entries under this mutex,
+    /// so checking it here is not racy. The entry keeps `is_registered`, so dropping it does not
+    /// remove the file.
+    if (leader_election_ptr && currentLeadershipEpoch() != admission_epoch)
+    {
+        LOG_INFO(log, "Not restoring mutation {}: the leadership was reacquired after the command was admitted, "
+            "and the takeover reload owns it", mutation_version);
+        return;
+    }
 
     auto [it, inserted] = current_mutations_by_version.try_emplace(mutation_version, std::move(entry));
     if (!inserted)
@@ -2448,7 +2470,7 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
         /// covers the freshness check too: if it rejects the command, the same unexpired lease
         /// can be renewed by the next heartbeat without a takeover reload, so nothing else would
         /// put the entry back.
-        restoreKilledMutationEntry(mutation_version, std::move(*to_kill));
+        restoreKilledMutationEntry(mutation_version, std::move(*to_kill), admission_epoch);
         throw;
     }
     to_kill->removeFile();
@@ -6341,7 +6363,8 @@ bool StorageMergeTree::mayMutateSharedStorage() const
     /// `isLeader()` (lease freshness), matching `canRunDestructiveCleanup`: during the
     /// post-failover takeover sync `writes_enabled` is still false but the lease is held, and
     /// the callback must be able to reconcile shared state. `leader_election_ptr` is null until
-    /// `startup` creates it, so initial part/mutation/dedup loading runs read-only.
+    /// the end of the constructor and is not a leader until `startup` starts it, so initial
+    /// part/mutation/dedup loading runs read-only.
     return leader_election_ptr && leader_election_ptr->isLeader();
 }
 
