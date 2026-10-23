@@ -16,7 +16,6 @@
 #include <algorithm>
 #include <cstring>
 #include <limits>
-#include <mutex>
 
 #include <Common/Stopwatch.h>
 #include <Common/CurrentMetrics.h>
@@ -150,7 +149,16 @@ private:
     size_t offset = 0;
 };
 
-GPUHashJoin::~GPUHashJoin() = default;
+GPUHashJoin::~GPUHashJoin()
+{
+    /// The blocks of a build that did not end, as of a query cancelled while it read the right table.
+    for (BuildChunk * node = build_chunks.exchange(nullptr, std::memory_order_acquire); node;)
+    {
+        BuildChunk * const next = node->next;
+        delete node;
+        node = next;
+    }
+}
 
 void GPUHashJoin::checkTypesOfKeys(const Block & block) const
 {
@@ -177,19 +185,20 @@ bool GPUHashJoin::addBlockToJoin(const Block & block, size_t num_rows, JoinBuild
         chunk.push_back(std::move(source));
     }
 
+    if (built.load(std::memory_order_acquire))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A block of the right table after the build of a GPU hash join ended");
+
+    if (key_column->size() != num_rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A block of {} rows with {} keys for a GPU hash join", num_rows, key_column->size());
+
+    auto * node = new BuildChunk{.keys = key_column, .payload = std::move(chunk)};
+    node->next = build_chunks.load(std::memory_order_relaxed);
+    while (!build_chunks.compare_exchange_weak(node->next, node, std::memory_order_release, std::memory_order_relaxed))
     {
-        std::lock_guard lock(device_mutex);
-        if (built)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "A block of the right table after the build of a GPU hash join ended");
-
-        build_chunks.push_back(std::move(chunk));
-
-        /// From the block's own memory, which a copy from pageable memory does not return before it has read.
-        build_keys.append(GPU::rawValuesOf(*key_column, num_rows, GPU::sizeOf(key_type)));
-
-        build_rows.fetch_add(num_rows, std::memory_order_relaxed);
-        build_bytes.fetch_add(bytes, std::memory_order_relaxed);
     }
+
+    build_rows.fetch_add(num_rows, std::memory_order_relaxed);
+    build_bytes.fetch_add(bytes, std::memory_order_relaxed);
 
     if (!context.joinChecksLimits())
         return true;
@@ -197,21 +206,46 @@ bool GPUHashJoin::addBlockToJoin(const Block & block, size_t num_rows, JoinBuild
     return table_join->sizeLimits().check(getTotalRowCount(), getTotalByteCount(), "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
 
-void GPUHashJoin::finishBuildUnlocked()
+void GPUHashJoin::finishBuild()
 {
-    if (built)
-        return;
-    built = true;
+    if (hash_join)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The build of a GPU hash join ended twice");
 
     Stopwatch watch;
+
+    /// No block is added any more: every thread of the right side has finished.
+    std::vector<std::unique_ptr<BuildChunk>> chunks;
+    for (BuildChunk * node = build_chunks.exchange(nullptr, std::memory_order_acquire); node;)
+    {
+        BuildChunk * const next = node->next;
+        chunks.emplace_back(node);
+        node = next;
+    }
+
+    const size_t rows = build_rows.load(std::memory_order_relaxed);
+    if (rows > static_cast<size_t>(std::numeric_limits<Int32>::max()))
+        throw Exception(
+            ErrorCodes::SET_SIZE_LIMIT_EXCEEDED, "The right table of a GPU hash join has {} rows, more than cuDF indexes", rows);
+
+    /// The keys in one pinned buffer, in the order of the chunks, which the payload takes as well, and to the device in one
+    /// copy.
+    const size_t key_size = GPU::sizeOf(key_type);
+    GPU::PinnedBuffer host_keys;
+    host_keys.reserve(rows * key_size);
+    for (const auto & chunk : chunks)
+        GPU::appendHostBytes(host_keys, GPU::rawValuesOf(*chunk->keys, chunk->keys->size(), key_size));
+    if (host_keys.size() != rows * key_size)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "{} bytes of the keys of {} rows of the right table of a GPU hash join", host_keys.size(), rows);
+    build_keys.append(GPU::bytesOf(host_keys));
+
     build_block = build_payload_header.cloneEmpty();
     const size_t num_columns = build_payload_header.columns();
     const auto put_together = [&](size_t i)
     {
         VectorWithMemoryTracking<ColumnPtr> parts;
-        parts.reserve(build_chunks.size());
-        for (const auto & chunk : build_chunks)
-            parts.push_back(chunk[i]);
+        parts.reserve(chunks.size());
+        for (const auto & chunk : chunks)
+            parts.push_back(chunk->payload[i]);
         MutableColumnPtr column = build_payload_header.getByPosition(i).type->createColumn();
         column->prepareForSquashing(parts, 1);
         for (const auto & part : parts)
@@ -241,16 +275,12 @@ void GPUHashJoin::finishBuildUnlocked()
             });
         pool.wait();
     }
-    build_chunks.clear();
-
-    const size_t rows = build_rows.load(std::memory_order_relaxed);
-    if (rows > static_cast<size_t>(std::numeric_limits<Int32>::max()))
-        throw Exception(
-            ErrorCodes::SET_SIZE_LIMIT_EXCEEDED, "The right table of a GPU hash join has {} rows, more than cuDF indexes", rows);
+    chunks.clear();
 
     const UInt64 moved_us = watch.elapsedMicroseconds();
     hash_join = std::make_unique<GPU::CudfHashJoin>(
         key_type, GPU::DeviceFixedColumn{.element_type = key_type, .data = build_keys.data(), .rows = rows});
+    built.store(true, std::memory_order_release);
     LOG_DEBUG(
         getLogger("GPUHashJoin"),
         "Built the hash table of {} rows of the right table, {} bytes, on the GPU: {} us to take the columns, {} us to build",
@@ -262,8 +292,7 @@ void GPUHashJoin::finishBuildUnlocked()
 
 void GPUHashJoin::onBuildPhaseFinish()
 {
-    std::lock_guard lock(device_mutex);
-    finishBuildUnlocked();
+    finishBuild();
 }
 
 Block GPUHashJoin::assembleOutputBlock(const Block & probe_block, const ColumnPtr & probe_indices, const ColumnPtr & build_indices) const
@@ -314,10 +343,9 @@ JoinResultPtr GPUHashJoin::joinBlock(Block block)
     {
         const ColumnPtr probe_key = block.getByName(key_name_left).column->convertToFullIfWrapped()->convertToFullColumnIfSparse();
 
-        {
-            std::lock_guard lock(device_mutex);
-            finishBuildUnlocked();
-        }
+        /// `FillingRightJoinSideTransform` ends the build before the left side is probed.
+        if (!built.load(std::memory_order_acquire))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The left table of a GPU hash join is probed before the build ended");
 
         /// Each thread probes on a stream of its own, so that the blocks of the threads are probed at once, through
         /// pinned host memory, which the copies to and from the device need to be asynchronous, and buffers of its own

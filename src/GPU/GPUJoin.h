@@ -13,7 +13,6 @@
 
 #include <atomic>
 #include <memory>
-#include <mutex>
 #include <vector>
 
 namespace DB
@@ -93,7 +92,7 @@ private:
     class Result;
 
     /// Builds the hash table over the keys sent so far, once.
-    void finishBuildUnlocked();
+    void finishBuild();
 
     Block assembleOutputBlock(const Block & probe_block, const ColumnPtr & probe_indices, const ColumnPtr & build_indices) const;
 
@@ -112,14 +111,21 @@ private:
     Block required_right_keys;
     std::vector<String> required_right_keys_sources;
 
-    std::mutex device_mutex;
+    /// A block of the right table as it arrived: its keys and the columns the result takes of it.
+    struct BuildChunk
+    {
+        ColumnPtr keys;
+        Columns payload;
+        BuildChunk * next = nullptr;
+    };
 
-    /// The right table's payload columns of each block as it arrives, kept as they are, and the block of them, put
-    /// together once the build ends, a column at a time in parallel: the threads of the right side add their blocks under
-    /// one lock, which a copy of their columns would hold for as long as the copy takes.
-    std::vector<Columns> build_chunks;
+    /// The blocks of the right table, which its threads add at once, without a lock, to the front of a list; they are put
+    /// together once the build ends, the payload a column at a time in parallel, and the keys sent to the device in one
+    /// copy.
+    std::atomic<BuildChunk *> build_chunks{nullptr};
     Block build_block;
-    bool built = false;
+    /// Set once the hash table is built, before `onBuildPhaseFinish` returns and so before the left table is probed.
+    std::atomic<bool> built{false};
 
     GPU::DeviceBuffer build_keys;
     std::unique_ptr<GPU::CudfHashJoin> hash_join;
