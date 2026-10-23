@@ -18,6 +18,8 @@ SET max_rows_to_group_by = 0;
 SET distributed_aggregation_memory_efficient = 1, enable_memory_bound_merging_of_aggregation_results = 0, optimize_aggregation_in_order = 0;
 -- The test harness randomizes these too: a random join order or probe-row threshold changes or drops the runtime filters.
 SET join_runtime_filter_min_probe_rows = 0, query_plan_optimize_join_order_randomize = 0, use_hash_table_stats_for_join_reordering = 0;
+-- A join order limit below the number of tables keeps the three-table join in query order, which changes where the filters are built.
+SET query_plan_optimize_join_order_limit = 10;
 -- In ClickHouse Cloud a scan on shared storage is replaced by `ReadFromMergeTreeAtWorker`, which prints no table name.
 SET distributed_plan_prefer_replicas_over_workers = 1;
 
