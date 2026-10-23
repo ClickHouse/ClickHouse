@@ -239,8 +239,17 @@ bool enumNumberingConflicts(const DataTypes & types)
 /// looking through `Nullable`, `Array`, `Map` and `Tuple`. Returns whether any enum was replaced.
 bool replaceConflictingEnums(DataTypes & types)
 {
-    DataTypes nested(types.size());
-    std::ranges::transform(types, nested.begin(), [](const DataTypePtr & type) { return removeNullable(type); });
+    /// As in `getLeastSupertype`, a `NULL` fits any type, so it is not compared.
+    std::vector<size_t> compared;
+    DataTypes nested;
+    for (size_t i = 0; i < types.size(); ++i)
+    {
+        if (auto type = removeNullable(types[i]); !isNothing(type))
+        {
+            compared.push_back(i);
+            nested.push_back(type);
+        }
+    }
 
     if (enumNumberingConflicts(nested))
     {
@@ -251,36 +260,38 @@ bool replaceConflictingEnums(DataTypes & types)
     else
     {
         /// As in `getLeastSupertype`, elements are compared only if all types are the same kind of container.
+        if (nested.empty())
+            return false;
         const auto & first = *nested.front();
         if (!(isArray(first) || isMap(first) || isTuple(first)) || !std::ranges::all_of(nested, [&](const DataTypePtr & type)
             { return type->getTypeId() == first.getTypeId() && type->getNumberOfChildren() == first.getNumberOfChildren(); }))
             return false;
 
-        std::vector<DataTypes> children;
+        std::vector<DataTypes> children_by_position(first.getNumberOfChildren());
         for (const auto & type : nested)
-            children.push_back(type->getChildren());
+            for (size_t position = 0; position < children_by_position.size(); ++position)
+                children_by_position[position].push_back(type->getChild(position));
 
         bool replaced = false;
-        for (size_t position = 0; position < first.getNumberOfChildren(); ++position)
-        {
-            DataTypes children_at_position;
-            for (const auto & type_children : children)
-                children_at_position.push_back(type_children[position]);
-
-            replaced |= replaceConflictingEnums(children_at_position);
-            for (size_t i = 0; i < children.size(); ++i)
-                children[i][position] = children_at_position[i];
-        }
-
+        for (auto & children : children_by_position)
+            replaced |= replaceConflictingEnums(children);
         if (!replaced)
             return false;
 
         for (size_t i = 0; i < nested.size(); ++i)
-            nested[i] = nested[i]->cloneWithChildren(children[i]);
+        {
+            DataTypes children;
+            for (const auto & children_at_position : children_by_position)
+                children.push_back(children_at_position[i]);
+            nested[i] = nested[i]->cloneWithChildren(children);
+        }
     }
 
-    for (size_t i = 0; i < types.size(); ++i)
-        types[i] = types[i]->isNullable() ? makeNullableOrLowCardinalityNullable(nested[i]) : nested[i];
+    for (size_t i = 0; i < compared.size(); ++i)
+    {
+        auto & type = types[compared[i]];
+        type = type->isNullable() ? makeNullableOrLowCardinalityNullable(nested[i]) : nested[i];
+    }
     return true;
 }
 
