@@ -5,7 +5,7 @@ Header: json.a.:`Array(JSON)`.@`b` Array(Dynamic(max_types=16))
 3
 nested fields
 ReadFromMergeTree (default.t_push_subcolumns_json_array)
-Header: json.a.:`Array(JSON)`.@`c.e` Array(Dynamic(max_types=16))
+Header: json.a.:`Array(JSON)`.@`c` Array(Dynamic(max_types=16))
 10
 30
 two levels of subqueries

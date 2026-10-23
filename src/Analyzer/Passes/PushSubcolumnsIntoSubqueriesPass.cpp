@@ -98,9 +98,8 @@ enum class ReplacementKind
     ArrayExistsLike,
     /// `count(x)` -> `sum(not(x.null))`.
     SumNot,
-    /// The chained `Dynamic`/JSON-array access
-    /// `tupleElement(...tupleElement(arrayElement(x.p, i), 'f1')..., 'fN')`
-    /// -> `arrayElement(x.p.:`Array(JSON)`.f1...fN, i)`, mirroring `optimizeJSONArrayElement`
+    /// The chained `Dynamic`/JSON-array access `tupleElement(arrayElement(x.p, i), 'f')`
+    /// -> `arrayElement(x.p.:`Array(JSON)`.f, i)`, mirroring `optimizeJSONArrayElement`
     /// of `FunctionToSubcolumnsPass`.
     ArrayElement,
 };
@@ -360,55 +359,33 @@ DataTypePtr resolveExportedJSONArraySubcolumnType(
     return subcolumn ? subcolumn->type : nullptr;
 }
 
-/// Match the chained `Dynamic`/JSON-array access `json.a[i].b1...bN`, where `json` is a column
-/// exported by a subquery: a chain of `tupleElement` over an `arrayElement` over a chain of
+/// Match the chained `Dynamic`/JSON-array access `json.a[i].b`, where `json` is a column
+/// exported by a subquery: a `tupleElement` over an `arrayElement` over a chain of
 /// `getSubcolumn`. For a column read directly from a table the equivalent expression is rewritten
 /// by `FunctionToSubcolumnsPass::optimizeJSONArrayElement` into `arrayElement` over the nested
-/// subcolumn `json.a.:`Array(JSON)`.b1...bN`; that pass only handles table sources, so without
+/// subcolumn `json.a.:`Array(JSON)`.b`; that pass only handles table sources, so without
 /// this the same rewrite would be lost as soon as the column comes from a subquery.
 std::optional<CandidateMatch> matchChainedJSONArrayElement(FunctionNode & function_node)
 {
-    /// Field names of the `tupleElement` chain, from the outermost inwards.
-    std::vector<String> field_names;
-    auto push_field_name = [&](const FunctionNode & tuple_element_node)
-    {
-        const auto & arguments = tuple_element_node.getArguments().getNodes();
-        if (arguments.size() != 2)
-            return false;
-
-        const auto * constant_node = arguments[1]->as<ConstantNode>();
-        if (!constant_node || constant_node->getValue().getType() != Field::Types::String)
-            return false;
-
-        field_names.push_back(constant_node->getValue().safeGet<String>());
-        return true;
-    };
-
-    if (!push_field_name(function_node))
+    const auto & arguments = function_node.getArguments().getNodes();
+    if (arguments.size() != 2)
         return {};
 
-    /// Descend through the intermediate `tupleElement` calls down to the `arrayElement`.
-    const FunctionNode * array_element_node = nullptr;
-    QueryTreeNodePtr current = function_node.getArguments().getNodes()[0];
-    while (const auto * inner_function_node = current->as<FunctionNode>())
-    {
-        const auto & inner_arguments = inner_function_node->getArguments().getNodes();
-        if (inner_arguments.empty())
-            return {};
+    const auto * field_name_node = arguments[1]->as<ConstantNode>();
+    if (!field_name_node || field_name_node->getValue().getType() != Field::Types::String)
+        return {};
 
-        if (inner_function_node->getFunctionName() == "arrayElement" && inner_arguments.size() == 2)
-        {
-            array_element_node = inner_function_node;
-            break;
-        }
+    const auto & field_name = field_name_node->getValue().safeGet<String>();
 
-        if (inner_function_node->getFunctionName() != "tupleElement" || !push_field_name(*inner_function_node))
-            return {};
-
-        current = inner_arguments[0];
-    }
-
-    if (!array_element_node)
+    /// Only a single field access directly over the `arrayElement` is pushed. A chain of
+    /// `tupleElement` is not always equivalent to one combined JSON path: `tupleElement` also
+    /// applies element-wise to an intermediate array of objects (`x.a[1].c.e` with `c` holding
+    /// `[{"e":10},{"e":20}]` is `[10,20]`), while the combined subcolumn `@c.e` looks for a flat
+    /// path. For a longer chain the innermost access is matched on its own when the children are
+    /// visited, and the remaining `tupleElement` calls stay over its replacement.
+    const auto * array_element_node = arguments[0]->as<FunctionNode>();
+    if (!array_element_node || array_element_node->getFunctionName() != "arrayElement"
+        || array_element_node->getArguments().getNodes().size() != 2)
         return {};
 
     const auto & array_element_arguments = array_element_node->getArguments().getNodes();
@@ -459,13 +436,9 @@ std::optional<CandidateMatch> matchChainedJSONArrayElement(FunctionNode & functi
         return {};
 
     /// `tupleElement` over a JSON value reads the combined subcolumn `@path` holding the literal at
-    /// the path or, if there is none, the sub-object at it. A chain of such accesses is the combined
-    /// subcolumn of the joined path, while the plain path would read only the literal and lose an
-    /// object-valued field.
-    String field_path;
-    for (auto it = field_names.rbegin(); it != field_names.rend(); ++it)
-        field_path += (field_path.empty() ? "" : ".") + *it;
-    String array_subcolumn_path = String(JSON_ARRAY_SUBCOLUMN) + "." + DataTypeObject::getCombinedSubcolumnName(field_path);
+    /// the path or, if there is none, the sub-object at it, while the plain path would read only
+    /// the literal and lose an object-valued field.
+    String array_subcolumn_path = String(JSON_ARRAY_SUBCOLUMN) + "." + DataTypeObject::getCombinedSubcolumnName(field_name);
 
     const auto & column_type = column_node->getColumnType();
     String subcolumn_path;
@@ -1908,7 +1881,8 @@ bool readsContainingColumn(const IQueryTreeNode * node, const IQueryTreeNode * s
 /// value already read. A projection slot that trivially exports a column is covered by the liveness
 /// of the exports in the parent queries; a computed projection slot (`cityHash64(tup) AS h`) is
 /// skipped only when its exported name (`exported_names` are the exported names of the target,
-/// positionally) is not referenced by the parent query (`references`).
+/// positionally) is not referenced by the parent query (`references`) and projection pruning does
+/// not keep it anyway (`arrayJoin`, an aggregate without `GROUP BY`, `DISTINCT`).
 bool leafReadsContainingColumn(
     const QueryNode & leaf,
     const IQueryTreeNode * source,
@@ -1933,7 +1907,14 @@ bool leafReadsContainingColumn(
         if (resolveCanonicalColumn(projection_nodes[i]))
             continue;
 
-        if (i < exported_names.size())
+        /// A slot that projection pruning keeps regardless of the parent query (see
+        /// `RemoveUnusedProjectionColumnsPass::updateUsedProjectionIndexes`) is evaluated even if
+        /// its exported name is not referenced.
+        bool retained_by_pruning = leaf.isDistinct()
+            || (!leaf.hasGroupBy() && hasAggregateFunctionNodes(projection_nodes[i]))
+            || hasFunctionNode(projection_nodes[i], "arrayJoin");
+
+        if (i < exported_names.size() && !retained_by_pruning)
         {
             auto references_it = references.find(exported_names[i]);
             if (references_it == references.end() || references_it->second == 0)
