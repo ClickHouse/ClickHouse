@@ -136,11 +136,12 @@ void MergeTreeReadTask::Readers::updateReadRequestMap(const MarkRangesPtr & requ
         patches[i]->getReader()->updateReadRequestMap(patch_request_maps[i]);
 }
 
-void MergeTreeReadTask::Readers::setMaxSampleBytesOfStringValuesSkippedByFilters(size_t max_sample_bytes)
+void MergeTreeReadTask::Readers::measureCompressedSizeOfStringValuesSkippedByFilters(
+    const std::function<CompressionCodecPtr(const String &)> & get_codec, const std::function<bool()> & should_measure)
 {
-    main->setMaxSampleBytesOfStringValuesSkippedByFilters(max_sample_bytes);
+    main->measureCompressedSizeOfStringValuesSkippedByFilters(get_codec, should_measure);
     for (auto & reader : prewhere)
-        reader->setMaxSampleBytesOfStringValuesSkippedByFilters(max_sample_bytes);
+        reader->measureCompressedSizeOfStringValuesSkippedByFilters(get_codec, should_measure);
 }
 
 MergeTreeReadTask::MergeTreeReadTask(
@@ -178,11 +179,19 @@ MergeTreeReadTask::MergeTreeReadTask(
         }
 
         /// Without the sizes of the columns of the part, the compression ratio is taken from a sample of the read
-        /// blocks, which misses the values replaced with empty strings by a string value filter, so a sample of
-        /// them is kept aside. The default `min_compress_block_size` is enough to see how they compress.
+        /// blocks, which misses the values replaced with empty strings by a string value filter, so the reader
+        /// measures how they compress while the blocks may still be sampled.
         const auto part_column_sizes = info->data_part_info->getColumnSizes();
         if (!part_column_sizes || part_column_sizes->empty())
-            readers.setMaxSampleBytesOfStringValuesSkippedByFilters(64 * 1024);
+        {
+            readers.measureCompressedSizeOfStringValuesSkippedByFilters(
+                [&](const String & name)
+                {
+                    const auto it = resolved_codecs.find(name);
+                    return it == resolved_codecs.end() ? default_codec : it->second.generic;
+                },
+                [updater_ptr = updater.get()] { return updater_ptr->maySampleInputBlocks(); });
+        }
 
         dataflow_cache_update_cb = [this, default_codec, column_codecs = std::move(resolved_codecs)](const ColumnsWithTypeAndName & columns,
                                                            const NameSet & partially_read_columns,

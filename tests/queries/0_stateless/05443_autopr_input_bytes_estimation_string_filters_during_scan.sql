@@ -25,12 +25,15 @@ DROP TABLE IF EXISTS t_compact_unread_compressible;
 DROP TABLE IF EXISTS t_compact_unread_incompressible;
 DROP TABLE IF EXISTS t_compact_compressibility_changes;
 DROP TABLE IF EXISTS t_compact_varying_lengths;
+DROP TABLE IF EXISTS t_wide_varying_lengths;
+DROP TABLE IF EXISTS t_wide_repetitive_long_values_zstd;
 DROP TABLE IF EXISTS t_compact_empty_granules;
 DROP TABLE IF EXISTS t_compact_long_values;
 DROP TABLE IF EXISTS t_compact_large_matching_value;
 DROP TABLE IF EXISTS t_compact_large_replaced_value;
 DROP TABLE IF EXISTS t_compact_repetitive_long_values;
 DROP TABLE IF EXISTS t_compact_repetitive_long_values_zstd;
+DROP TABLE IF EXISTS t_compact_long_records_zstd;
 DROP TABLE IF EXISTS t_compact_large_values;
 DROP TABLE IF EXISTS t_compact_large_matching_values;
 DROP TABLE IF EXISTS t_compact_skip_index;
@@ -65,10 +68,11 @@ SELECT count(), max(id) FROM t_wide WHERE s LIKE '%needle%' SETTINGS log_comment
 SELECT count() FROM t_compact_unread_compressible WHERE s LIKE '%needle%' SETTINGS log_comment='query_compact_unread_compressible';
 SELECT count() FROM t_compact_unread_incompressible WHERE s LIKE '%needle%' SETTINGS log_comment='query_compact_unread_incompressible';
 
--- In the next two cases the estimate with the filter is compared with the one without it, which samples the same
+-- In the next cases the estimate with the filter is compared with the one without it, which samples the same
 -- blocks in a single thread: how close either is to what is read depends on the blocks that happen to be sampled.
+-- The estimate without the filter takes somewhat more for the sizes of the values, see the cases further below.
 
--- The replaced values are sampled in each sampled block: here they compress well in the first block only.
+-- The replaced values are measured in each sampled block: here they compress well in the first block only.
 CREATE TABLE t_compact_compressibility_changes(id UInt64, s String) ENGINE=MergeTree ORDER BY id
 SETTINGS auto_statistics_types='', index_granularity=8192, min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18;
 INSERT INTO t_compact_compressibility_changes SELECT number, concat(if(number % 100 = 0, 'needle', ''), if(number < 8192, repeat('abcdefgh', 8),
@@ -78,14 +82,7 @@ FROM numbers(100000);
 SELECT count() FROM t_compact_compressibility_changes WHERE s LIKE '%needle%' SETTINGS max_threads=1, log_comment='same_compressibility_changes_1';
 SELECT count() FROM t_compact_compressibility_changes WHERE s LIKE '%needle%' SETTINGS max_threads=1, apply_string_filters_during_scan=0, log_comment='same_compressibility_changes_0';
 
--- The sizes of the replaced values are read too: here they vary, while the characters compress to nothing.
-CREATE TABLE t_compact_varying_lengths(id UInt64, s String) ENGINE=MergeTree ORDER BY id
-SETTINGS auto_statistics_types='', index_granularity=8192, min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18;
-INSERT INTO t_compact_varying_lengths SELECT number, concat(if(number % 100 = 0, 'needle', ''), repeat('x', 1 + cityHash64(number) % 64)) FROM numbers(100000);
-SELECT count() FROM t_compact_varying_lengths WHERE s LIKE '%needle%' SETTINGS max_threads=1, log_comment='same_varying_lengths_1';
-SELECT count() FROM t_compact_varying_lengths WHERE s LIKE '%needle%' SETTINGS max_threads=1, apply_string_filters_during_scan=0, log_comment='same_varying_lengths_0';
-
--- The sample is taken anew for each block also when only empty values were replaced: here the values of the first
+-- The measurement is taken anew for each block also when only empty values were replaced: here the values of the first
 -- five granules either match or are empty, and the sixth granule, which is the next to be sampled, has the usual ones.
 -- With the sizes inline, every value is checked by itself, and the filter turns itself off on so many empty values;
 -- and the filter does not apply to the `Sparse` serialization, which so many empty values would get.
@@ -96,8 +93,7 @@ INSERT INTO t_compact_empty_granules SELECT id, if(id < 5 * 8192, if(id % 10 < 7
 SELECT count() FROM t_compact_empty_granules WHERE s LIKE '%needle%' SETTINGS max_threads=1, log_comment='same_empty_granules_1';
 SELECT count() FROM t_compact_empty_granules WHERE s LIKE '%needle%' SETTINGS max_threads=1, apply_string_filters_during_scan=0, log_comment='same_empty_granules_0';
 
--- A value longer than the sample is sampled along all of it: here a compressible beginning is followed by a long
--- tail that does not compress at all.
+-- Here a compressible beginning of each value is followed by a long tail that does not compress at all.
 CREATE TABLE t_compact_long_values(id UInt64, s String) ENGINE=MergeTree ORDER BY id
 SETTINGS auto_statistics_types='', index_granularity=8192, min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18;
 INSERT INTO t_compact_long_values SELECT number, concat(if(number = 0, 'needle', ''), repeat('a', 65536),
@@ -118,8 +114,8 @@ OPTIMIZE TABLE t_compact_large_matching_value FINAL;
 SELECT count() FROM t_compact_large_matching_value WHERE s LIKE '%needle%' SETTINGS max_threads=1, log_comment='same_large_matching_value_1';
 SELECT count() FROM t_compact_large_matching_value WHERE s LIKE '%needle%' SETTINGS max_threads=1, apply_string_filters_during_scan=0, log_comment='same_large_matching_value_0';
 
--- A long replaced value is sampled by itself as well: here it is the first value, it compresses well, and the many
--- short values replaced after it do not compress at all.
+-- Here the first value is long, replaced, and compresses well, and the many short values replaced after it do not
+-- compress at all.
 CREATE TABLE t_compact_large_replaced_value(id UInt64, s String) ENGINE=MergeTree ORDER BY id
 SETTINGS auto_statistics_types='', index_granularity=8192, min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18;
 INSERT INTO t_compact_large_replaced_value
@@ -132,30 +128,54 @@ OPTIMIZE TABLE t_compact_large_replaced_value FINAL;
 SELECT count() FROM t_compact_large_replaced_value WHERE s LIKE '%needle%' SETTINGS max_threads=1, log_comment='same_large_replaced_value_1';
 SELECT count() FROM t_compact_large_replaced_value WHERE s LIKE '%needle%' SETTINGS max_threads=1, apply_string_filters_during_scan=0, log_comment='same_large_replaced_value_0';
 
--- A long value is estimated from a short sample of it, which compresses worse by itself than the whole value does
--- when the value is repetitive. Here the values are 1 MiB each, with `LZ4` and with `ZSTD`, which compresses them
--- to so few bytes that a sample cannot tell how few: the bound for it is wider.
+-- Here the values are 1 MiB each and repetitive, so that a part of one compresses much worse by itself than the whole.
 CREATE TABLE t_compact_repetitive_long_values(id UInt64, s String CODEC(LZ4)) ENGINE=MergeTree ORDER BY id
 SETTINGS auto_statistics_types='', index_granularity=8192, index_granularity_bytes=1073741824, min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18;
 INSERT INTO t_compact_repetitive_long_values SELECT number, concat(if(number = 0, 'needle', ''), repeat(hex(cityHash64(number)), 65536)) FROM numbers(64);
 SELECT count() FROM t_compact_repetitive_long_values WHERE s LIKE '%needle%' SETTINGS max_threads=1, log_comment='same_repetitive_long_values_1';
 SELECT count() FROM t_compact_repetitive_long_values WHERE s LIKE '%needle%' SETTINGS max_threads=1, apply_string_filters_during_scan=0, log_comment='same_repetitive_long_values_0';
 
+-- Here the values consist of records of 256 pseudo-random bytes followed by 768 bytes of padding.
+CREATE TABLE t_compact_long_records_zstd(id UInt64, s String CODEC(ZSTD(3))) ENGINE=MergeTree ORDER BY id
+SETTINGS auto_statistics_types='', index_granularity=8192, index_granularity_bytes=1073741824, min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18;
+INSERT INTO t_compact_long_records_zstd SELECT number, concat(if(number = 0, 'needle', ''), arrayStringConcat(arrayMap(record -> concat(
+    arrayStringConcat(arrayMap(i -> reinterpretAsString(cityHash64(number, record, i)), range(32))), repeat('\0', 768)), range(1024))))
+FROM numbers(16);
+SELECT count() FROM t_compact_long_records_zstd WHERE s LIKE '%needle%' SETTINGS max_threads=1, log_comment='same_long_records_zstd_1';
+SELECT count() FROM t_compact_long_records_zstd WHERE s LIKE '%needle%' SETTINGS max_threads=1, apply_string_filters_during_scan=0, log_comment='same_long_records_zstd_0';
+
+-- In the next cases the estimate without the filter is not close to what the part has: it serializes the sampled
+-- columns as they are sent over the network, where a `String` column has offsets instead of the sizes of the values.
+-- So the estimate with the filter is compared with the compressed size of the column in a wide part with the same data.
+
+-- The sizes of the replaced values are read too: here they vary, while the characters compress to nothing.
+CREATE TABLE t_compact_varying_lengths(id UInt64, s String) ENGINE=MergeTree ORDER BY id
+SETTINGS auto_statistics_types='', index_granularity=8192, min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18;
+INSERT INTO t_compact_varying_lengths SELECT number, concat(if(number % 100 = 0, 'needle', ''), repeat('x', 1 + cityHash64(number) % 64)) FROM numbers(100000);
+CREATE TABLE t_wide_varying_lengths(id UInt64, s String) ENGINE=MergeTree ORDER BY id
+SETTINGS auto_statistics_types='', index_granularity=8192, min_bytes_for_wide_part=0, min_rows_for_wide_part=0;
+INSERT INTO t_wide_varying_lengths SELECT * FROM t_compact_varying_lengths;
+SELECT count() FROM t_compact_varying_lengths WHERE s LIKE '%needle%' SETTINGS max_threads=1, log_comment='disk_varying_lengths';
+
+-- Here the repetitive values of 1 MiB compress to so few bytes that the offsets matter.
 CREATE TABLE t_compact_repetitive_long_values_zstd(id UInt64, s String CODEC(ZSTD(3))) ENGINE=MergeTree ORDER BY id
 SETTINGS auto_statistics_types='', index_granularity=8192, index_granularity_bytes=1073741824, min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18;
 INSERT INTO t_compact_repetitive_long_values_zstd SELECT * FROM t_compact_repetitive_long_values;
-SELECT count() FROM t_compact_repetitive_long_values_zstd WHERE s LIKE '%needle%' SETTINGS max_threads=1, log_comment='same_repetitive_long_values_zstd_1';
-SELECT count() FROM t_compact_repetitive_long_values_zstd WHERE s LIKE '%needle%' SETTINGS max_threads=1, apply_string_filters_during_scan=0, log_comment='same_repetitive_long_values_zstd_0';
+CREATE TABLE t_wide_repetitive_long_values_zstd(id UInt64, s String CODEC(ZSTD(3))) ENGINE=MergeTree ORDER BY id
+SETTINGS auto_statistics_types='', index_granularity=8192, index_granularity_bytes=1073741824, min_bytes_for_wide_part=0, min_rows_for_wide_part=0;
+INSERT INTO t_wide_repetitive_long_values_zstd SELECT * FROM t_compact_repetitive_long_values;
+SELECT count() FROM t_compact_repetitive_long_values_zstd WHERE s LIKE '%needle%' SETTINGS max_threads=1, log_comment='disk_repetitive_long_values_zstd';
 
--- Only a bounded sample of the replaced values is kept to estimate how they compress: they can be long, and holding
--- them in full would take far more memory than the read itself. The values are 1 MiB each, a granule has all of them.
+-- The replaced values are compressed as they are read to measure their compressed size, not kept: they can be long,
+-- and holding them in full would take far more memory than the read itself. The values are 1 MiB each, a granule has
+-- all of them.
 CREATE TABLE t_compact_large_values(id UInt64, s String) ENGINE=MergeTree ORDER BY id
 SETTINGS auto_statistics_types='', index_granularity=8192, index_granularity_bytes=1073741824, min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18;
 INSERT INTO t_compact_large_values SELECT number, concat(if(number = 0, 'needle', ''), repeat(hex(cityHash64(number)), 65536)) FROM numbers(64);
 SELECT count() FROM t_compact_large_values WHERE s LIKE '%needle%' SETTINGS max_threads=1, max_memory_usage='32Mi', log_comment='large_values';
 
--- The same holds for the matching values, which are restored together with the replaced ones: here the granule
--- has 16 matching values of 1 MiB, and 16 short values that do not match. The memory used to collect the statistics
+-- Nor are the matching values copied to estimate how they compress: here the granule has 16 matching values of 1 MiB,
+-- and 16 short values that do not match. The memory used to collect the statistics
 -- is compared with the memory of the same query without them, because the memory of reading depends on the build.
 CREATE TABLE t_compact_large_matching_values(id UInt64, s String) ENGINE=MergeTree ORDER BY id
 SETTINGS auto_statistics_types='', index_granularity=8192, index_granularity_bytes=1073741824, min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18;
@@ -167,7 +187,7 @@ SELECT count() FROM t_compact_large_matching_values WHERE s LIKE '%needle%'
 SETTINGS max_threads=1, enable_parallel_replicas=0, automatic_parallel_replicas_mode=0, log_comment='memory_large_matching_values_0';
 
 -- The parts without matches are rejected by the skip index while reading, and a rejected read task must not
--- use up the blocks to sample, or the part with matches, which comes last, has no sample to estimate the input.
+-- use up the blocks to sample, or the part with matches, which comes last, is not measured to estimate the input.
 -- `max_rows_to_read` is checked before reading, and the skip indexes are then applied before reading as well.
 CREATE TABLE t_compact_skip_index(id UInt64, s String, INDEX idx s TYPE ngrambf_v1(3, 32768, 2, 0) GRANULARITY 1) ENGINE=MergeTree
 PARTITION BY intDiv(id, 1024) ORDER BY id
@@ -190,7 +210,7 @@ SELECT log_comment, ProfileEvents['RuntimeDataflowStatisticsInputBytes'] > 0
 FROM system.query_log
 WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTES') AND (current_database = currentDatabase()) AND (log_comment = 'skip_index') AND (type = 'QueryFinish');
 
-SELECT name, filter_applied, greatest(with_filter, without_filter) / least(with_filter, without_filter) < if(endsWith(name, '_zstd'), 3, 1.1)
+SELECT name, filter_applied, greatest(with_filter, without_filter) / least(with_filter, without_filter) < 1.2
 FROM (
     SELECT
         replaceRegexpOne(log_comment, '_[01]$', '') AS name,
@@ -201,6 +221,23 @@ FROM (
     WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTES') AND (current_database = currentDatabase()) AND (log_comment LIKE 'same_%') AND (type = 'QueryFinish')
     GROUP BY name
 )
+ORDER BY name;
+
+SELECT name, filter_applied, greatest(estimate, on_disk) / least(estimate, on_disk) < 1.2
+FROM (
+    SELECT
+        replaceRegexpOne(log_comment, '^disk_', '') AS name,
+        ProfileEvents['RuntimeDataflowStatisticsInputBytes'] AS estimate,
+        ProfileEvents['StringValueFilterValuesReplaced'] > 0 AS filter_applied
+    FROM system.query_log
+    WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTES') AND (current_database = currentDatabase()) AND (log_comment LIKE 'disk_%') AND (type = 'QueryFinish')
+) AS queries
+INNER JOIN (
+    SELECT replaceRegexpOne(table, '^t_wide_', '') AS name, sum(column_data_compressed_bytes) AS on_disk
+    FROM system.parts_columns
+    WHERE (database = currentDatabase()) AND startsWith(table, 't_wide_') AND (column = 's') AND active
+    GROUP BY table
+) AS parts USING (name)
 ORDER BY name;
 
 SELECT
@@ -227,12 +264,15 @@ DROP TABLE t_compact_unread_compressible;
 DROP TABLE t_compact_unread_incompressible;
 DROP TABLE t_compact_compressibility_changes;
 DROP TABLE t_compact_varying_lengths;
+DROP TABLE t_wide_varying_lengths;
+DROP TABLE t_wide_repetitive_long_values_zstd;
 DROP TABLE t_compact_empty_granules;
 DROP TABLE t_compact_long_values;
 DROP TABLE t_compact_large_matching_value;
 DROP TABLE t_compact_large_replaced_value;
 DROP TABLE t_compact_repetitive_long_values;
 DROP TABLE t_compact_repetitive_long_values_zstd;
+DROP TABLE t_compact_long_records_zstd;
 DROP TABLE t_compact_large_values;
 DROP TABLE t_compact_large_matching_values;
 DROP TABLE t_compact_skip_index;

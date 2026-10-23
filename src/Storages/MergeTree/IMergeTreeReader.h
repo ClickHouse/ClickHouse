@@ -106,8 +106,10 @@ public:
     /// columns misses these values, although they were read from disk.
     StringValuesSkippedInBlockByColumn takeStringValuesSkippedByFilters();
 
-    /// Keeps samples of the skipped values, see `StringValuesSkippedInBlock`.
-    void setMaxSampleBytesOfStringValuesSkippedByFilters(size_t max_sample_bytes);
+    /// Measures the compressed size of the skipped values with the codec that `get_codec` returns for the column
+    /// (by its name in the part), in the blocks for which `should_measure` returns true before they are read.
+    void measureCompressedSizeOfStringValuesSkippedByFilters(
+        const std::function<CompressionCodecPtr(const String &)> & get_codec, std::function<bool()> should_measure);
 
     size_t getFirstMarkToRead() const { return all_mark_ranges.front().begin; }
 
@@ -275,15 +277,24 @@ private:
     /// The same as above but with converted Arrays to subcolumns of Nested.
     NamesAndTypesList converted_requested_columns;
 
+    struct CompressedSizeMeasurement;
+
     struct StringValueFilterForColumn
     {
         StringValueFilterPtr filter;
         StringValuesSkippedByFilter skipped;
+        /// See `measureCompressedSizeOfStringValuesSkippedByFilters`.
+        CompressionCodecPtr codec;
+        std::shared_ptr<CompressedSizeMeasurement> compressed_size_measurement;
     };
 
     /// String value filters from `settings.string_value_filters` for the columns that pass all
     /// the applicability checks, keyed by the column name in the part. Filled in the constructor.
     std::unordered_map<String, StringValueFilterForColumn> string_value_filters_by_part_column_name;
+    std::function<bool()> should_measure_compressed_size_of_string_values_skipped_by_filters;
+
+    /// Decides whether to measure the compressed size of the values skipped in the next block.
+    void startMeasuringCompressedSizeOfStringValuesSkippedByFilters();
 
     /// Fields of virtual columns that were filled in previous stages.
     VirtualFields virtual_fields;

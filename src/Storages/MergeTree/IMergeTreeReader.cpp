@@ -17,6 +17,8 @@
 #include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <Common/escapeForFileName.h>
 #include <Compression/CachedCompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
+#include <IO/NullWriteBuffer.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Interpreters/inplaceBlockConversions.h>
@@ -153,7 +155,7 @@ IMergeTreeReader::IMergeTreeReader(
 
             /// The key is the name in the part: it may differ from the requested name
             /// when the column is affected by a pending RENAME.
-            string_value_filters_by_part_column_name.emplace(columns_to_read[current_pos].name, StringValueFilterForColumn{.filter = it->second, .skipped = {}});
+            string_value_filters_by_part_column_name.emplace(columns_to_read[current_pos].name, StringValueFilterForColumn{.filter = it->second, .skipped = {}, .codec = {}, .compressed_size_measurement = {}});
         }
     }
 }
@@ -174,25 +176,79 @@ void IMergeTreeReader::setStringValueFilter(const NameAndTypePair & column_in_pa
     deserialize_settings.string_values_skipped_by_filter = &it->second.skipped;
 }
 
+/// The data is compressed into nowhere, in blocks of the default `max_compress_block_size`, only to count the bytes.
+struct IMergeTreeReader::CompressedSizeMeasurement
+{
+    struct Stream
+    {
+        NullWriteBuffer out;
+        CompressedWriteBuffer compressed;
+        /// The compressed size of the data of the previous blocks.
+        size_t compressed_bytes_taken = 0;
+
+        explicit Stream(CompressionCodecPtr codec) : compressed(out, std::move(codec)) {}
+
+        ~Stream()
+        {
+            compressed.cancel();
+            out.cancel();
+        }
+
+        size_t takeCompressedBytes()
+        {
+            compressed.next();
+            return out.count() - std::exchange(compressed_bytes_taken, out.count());
+        }
+    };
+
+    Stream values;
+    Stream sizes;
+
+    explicit CompressedSizeMeasurement(const CompressionCodecPtr & codec) : values(codec), sizes(codec) {}
+};
+
 StringValuesSkippedInBlockByColumn IMergeTreeReader::takeStringValuesSkippedByFilters()
 {
     StringValuesSkippedInBlockByColumn res;
     for (auto & [name, filter_for_column] : string_value_filters_by_part_column_name)
     {
-        /// The sample is taken anew for each block, so that it follows the values as they change along the part.
-        /// It is reset even if no bytes were skipped: the empty values replaced in this block are in it too.
-        auto & skipped = static_cast<StringValuesSkippedInBlock &>(filter_for_column.skipped);
+        auto & skipped = filter_for_column.skipped;
+        std::optional<size_t> compressed_bytes;
+        if (skipped.values_compressed_size_measurement)
+        {
+            /// The values of a block are compressed apart from those of the next one, as a granule is in a part.
+            auto & measurement = *filter_for_column.compressed_size_measurement;
+            compressed_bytes = measurement.values.takeCompressedBytes() + measurement.sizes.takeCompressedBytes();
+        }
         if (skipped.bytes)
-            res.emplace(name, std::move(skipped));
-        skipped = {};
+            res.emplace(name, StringValuesSkippedInBlock{.bytes = std::exchange(skipped.bytes, 0), .compressed_bytes = compressed_bytes});
     }
+    startMeasuringCompressedSizeOfStringValuesSkippedByFilters();
     return res;
 }
 
-void IMergeTreeReader::setMaxSampleBytesOfStringValuesSkippedByFilters(size_t max_sample_bytes)
+void IMergeTreeReader::measureCompressedSizeOfStringValuesSkippedByFilters(
+    const std::function<CompressionCodecPtr(const String &)> & get_codec, std::function<bool()> should_measure)
 {
+    for (auto & [name, filter_for_column] : string_value_filters_by_part_column_name)
+        filter_for_column.codec = get_codec(name);
+    should_measure_compressed_size_of_string_values_skipped_by_filters = std::move(should_measure);
+    startMeasuringCompressedSizeOfStringValuesSkippedByFilters();
+}
+
+void IMergeTreeReader::startMeasuringCompressedSizeOfStringValuesSkippedByFilters()
+{
+    const bool should_measure = should_measure_compressed_size_of_string_values_skipped_by_filters
+        && should_measure_compressed_size_of_string_values_skipped_by_filters();
     for (auto & [_, filter_for_column] : string_value_filters_by_part_column_name)
-        filter_for_column.skipped.max_sample_bytes = max_sample_bytes;
+    {
+        /// Created only when needed: the buffer of the compressor is as large as a compressed block.
+        if (should_measure && !filter_for_column.compressed_size_measurement)
+            filter_for_column.compressed_size_measurement = std::make_shared<CompressedSizeMeasurement>(filter_for_column.codec);
+        auto * measurement = should_measure ? filter_for_column.compressed_size_measurement.get() : nullptr;
+        filter_for_column.skipped.values_compressed_size_measurement = measurement ? &measurement->values.compressed : nullptr;
+        filter_for_column.skipped.sizes_compressed_size_measurement = measurement ? &measurement->sizes.compressed : nullptr;
+    }
 }
 
 const ValueSizeMap & IMergeTreeReader::getAvgValueSizeHints() const

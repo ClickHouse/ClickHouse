@@ -236,9 +236,15 @@ catch (...)
 
 /// Reads one string value of a known size from the buffer and appends it to `data` (updating `offset`)
 /// if it matches the filter; a non-matching value is consumed from the buffer but not appended
-/// (only added to the sample of `skipped`, if it is set). Returns true if the value matched.
+/// (only accounted in `skipped`, if it is set, with its size inline or not). Returns true if the value matched.
 static ALWAYS_INLINE bool readFilteredStringValue(
-    ColumnString::Chars & data, size_t & offset, ReadBuffer & istr, size_t size, const StringValueFilter & filter, StringValuesSkippedByFilter * skipped)
+    ColumnString::Chars & data,
+    size_t & offset,
+    ReadBuffer & istr,
+    size_t size,
+    const StringValueFilter & filter,
+    StringValuesSkippedByFilter * skipped,
+    bool size_is_inline)
 {
     /// Note: `istr.available()` instead of `istr.position() + size <= istr.buffer().end()`,
     /// because the buffer may be empty and its pointers null, and offsetting a null pointer is UB.
@@ -254,7 +260,7 @@ static ALWAYS_INLINE bool readFilteredStringValue(
             offset += size;
         }
         else if (skipped)
-            skipped->addToSample(istr.position(), size);
+            skipped->add(istr.position(), size, size_is_inline);
         istr.position() += size;
         return matched;
     }
@@ -268,7 +274,7 @@ static ALWAYS_INLINE bool readFilteredStringValue(
     if (matched)
         offset += size;
     else if (skipped)
-        skipped->addToSample(reinterpret_cast<const char *>(&data[offset]), size);
+        skipped->add(reinterpret_cast<const char *>(&data[offset]), size, size_is_inline);
     return matched;
 }
 
@@ -281,7 +287,7 @@ static ALWAYS_INLINE bool readFilteredStringValue(
 /// buffer of concatenated values is scanned for the needle only once, and the found occurrences
 /// are mapped to values. This is much faster than a search per value, and together with the
 /// skipped copying it is faster than reading all the values.
-/// Returns the total size of the replaced values, and adds them to the sample of `skipped` if it is set.
+/// Returns the total size of the replaced values, and accounts them in `skipped` if it is set.
 static NO_INLINE size_t deserializeBinaryFilteredWithKnownSizes(
     ColumnString::Chars & data,
     ColumnString::Offsets & offsets,
@@ -339,12 +345,10 @@ static NO_INLINE size_t deserializeBinaryFilteredWithKnownSizes(
                 ++values_checked;
 
                 /// An empty string never matches the filter.
-                if (value_size == 0 || !readFilteredStringValue(data, offset, istr, value_size, filter, skipped))
+                if (value_size == 0 || !readFilteredStringValue(data, offset, istr, value_size, filter, skipped, /* size_is_inline = */ false))
                 {
                     ++values_replaced;
                     bytes_skipped += value_size;
-                    if (value_size == 0 && skipped)
-                        skipped->addToSample(nullptr, 0);
                 }
 
                 original_pos += value_size;
@@ -391,7 +395,7 @@ static NO_INLINE size_t deserializeBinaryFilteredWithKnownSizes(
                     ++bulk_values_replaced;
                     bulk_bytes_skipped += value_size;
                     if (skipped)
-                        skipped->addToSample(value_data, value_size);
+                        skipped->add(value_data, value_size, /* size_is_inline = */ false);
                 }
 
                 offsets[i] = offset;
@@ -417,7 +421,7 @@ static NO_INLINE size_t deserializeBinaryFilteredWithKnownSizes(
 /// Deserialization which checks every value against the filter and reads non-matching values as empty strings.
 /// See the comment for `StringValueFilter`: it is only correct because the rows with non-matching values
 /// are guaranteed to be filtered out later by PREWHERE.
-/// Returns the total size of the replaced values, and adds them to the sample of `skipped` if it is set.
+/// Returns the total size of the replaced values, and accounts them in `skipped` if it is set.
 static NO_INLINE size_t deserializeBinaryFiltered(
     ColumnString::Chars & data,
     ColumnString::Offsets & offsets,
@@ -450,12 +454,10 @@ try
         ++values_checked;
 
         /// An empty string never matches the filter.
-        if (size == 0 || !readFilteredStringValue(data, offset, istr, size, filter, skipped))
+        if (size == 0 || !readFilteredStringValue(data, offset, istr, size, filter, skipped, /* size_is_inline = */ true))
         {
             ++values_replaced;
             bytes_skipped += size;
-            if (size == 0 && skipped)
-                skipped->addToSample(nullptr, 0);
         }
 
         offsets.push_back(offset);

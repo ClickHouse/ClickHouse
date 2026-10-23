@@ -185,7 +185,8 @@ public:
         void updateAllMarkRanges(const MarkRanges & ranges, const std::vector<MarkRanges> & patches_ranges);
         void updateReadRequestMap(const MarkRangesPtr & request_map, const std::vector<MarkRangesPtr> & patch_request_maps);
 
-        void setMaxSampleBytesOfStringValuesSkippedByFilters(size_t max_sample_bytes);
+        void measureCompressedSizeOfStringValuesSkippedByFilters(
+            const std::function<CompressionCodecPtr(const String &)> & get_codec, const std::function<bool()> & should_measure);
     };
 
     struct BlockSizeParams

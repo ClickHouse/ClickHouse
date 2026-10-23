@@ -2,12 +2,9 @@
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnString.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/SortDescription.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <IO/NullWriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
@@ -31,6 +28,11 @@ extern const Event RuntimeDataflowStatisticsOutputNanoseconds;
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
 
 std::optional<RuntimeDataflowStatisticsCache::Entry> RuntimeDataflowStatisticsCache::getStats(size_t key) const
 {
@@ -172,30 +174,6 @@ static std::pair<size_t, size_t> estimateCompressedColumnSize(const ColumnWithTy
     return std::make_pair(compressed_buf.count(), null_buf.count());
 }
 
-/// A column of sampled string values, concatenated in `data` with their `sizes`.
-static ColumnWithTypeAndName columnOfStringValues(const String & data, const std::vector<size_t> & sizes)
-{
-    auto column = ColumnString::create();
-    size_t offset = 0;
-    for (const size_t size : sizes)
-    {
-        column->insertData(data.data() + offset, size);
-        offset += size;
-    }
-    return {std::move(column), std::make_shared<DataTypeString>(), ""};
-}
-
-/// The number of empty strings in a `String` or `Nullable(String)` column.
-static size_t countEmptyStrings(const IColumn & column)
-{
-    const auto * nullable = typeid_cast<const ColumnNullable *>(&column);
-    const auto & offsets = assert_cast<const ColumnString &>(nullable ? nullable->getNestedColumn() : column).getOffsets();
-    size_t res = 0;
-    for (size_t i = 0; i < offsets.size(); ++i)
-        res += offsets[i] == offsets[i - 1];
-    return res;
-}
-
 /// The replicas merge their aggregation output with memory-bound merging, which sorts it by the group
 /// by keys; the single-node merge this sample is taken from leaves it in hash-table order. So what a
 /// replica puts on the wire is a sorted block, and pricing an unsorted sample of the very same rows
@@ -224,13 +202,24 @@ static IColumn::Permutation keyOrderPermutation(
     return permutation;
 }
 
+/// One in this many blocks is sampled, out of the first `MAX_BLOCKS_TO_SAMPLE_FROM`.
+static constexpr size_t SAMPLE_EVERY_NTH_BLOCK = 5;
+static constexpr size_t MAX_BLOCKS_TO_SAMPLE_FROM = 25;
+
 bool RuntimeDataflowStatisticsCacheUpdater::shouldSampleBlock(Statistics & statistics, size_t block_rows)
 {
     // Empty blocks produced during planning, when we calculate output headers. Skip them.
     if (!block_rows)
         return false;
     const auto counter = statistics.counter.fetch_add(1, std::memory_order_relaxed);
-    return counter % 5 == 0 && counter < 25;
+    return counter % SAMPLE_EVERY_NTH_BLOCK == 0 && counter < MAX_BLOCKS_TO_SAMPLE_FROM;
+}
+
+bool RuntimeDataflowStatisticsCacheUpdater::maySampleInputBlocks() const
+{
+    const auto & statistics = duplicated ? block->duplicated_bytes_statistics : block->input_bytes_statistics;
+    return std::ranges::any_of(
+        statistics, [](const auto & stats) { return stats.counter.load(std::memory_order_relaxed) < MAX_BLOCKS_TO_SAMPLE_FROM; });
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
@@ -520,63 +509,22 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
                         }
                         else
                         {
-                            /// The values replaced with empty strings are missing from the column. They compress
-                            /// differently from the values that are there, so the two are estimated separately, and so
-                            /// are the samples of the replaced values (see `StringValuesSkippedInBlock`), each weighted by
-                            /// the size it represents, in the proportion of the rows sampled from the other columns.
-                            /// Every empty string is a replaced value, because a matching value is never empty,
-                            /// and the size of its offset belongs to the replaced values.
+                            /// The values replaced with empty strings are missing from the column, and they compress
+                            /// differently from the values that are there, so their compressed size is measured by the
+                            /// reader. It is added in the proportion of the rows sampled from the column.
                             const auto & skipped = skipped_it->second;
+                            if (!skipped.compressed_bytes)
+                                throw Exception(
+                                    ErrorCodes::LOGICAL_ERROR,
+                                    "The compressed size of the values replaced by a string value filter in column {} is not measured in a sampled block",
+                                    column.name);
+                            const auto [sample, compressed] = estimateCompressedColumnSize(column, codecs);
+                            sample_bytes += sample;
+                            compressed_bytes += compressed;
                             const size_t rows = column.column->size();
                             const double rows_fraction = static_cast<double>(numRowsToSample(rows)) / static_cast<double>(rows);
-                            const size_t replaced_offsets_bytes = countEmptyStrings(*column.column) * sizeof(ColumnString::Offset);
-
-                            auto add = [&](const ColumnWithTypeAndName & part, size_t part_bytes)
-                            {
-                                const auto [part_sample, part_compressed] = estimateCompressedColumnSize(part, codecs);
-                                if (!part_sample)
-                                    return;
-                                const double weight = static_cast<double>(part_bytes) * rows_fraction;
-                                sample_bytes += static_cast<size_t>(weight);
-                                compressed_bytes += static_cast<size_t>(
-                                    weight * static_cast<double>(part_compressed) / static_cast<double>(part_sample));
-                            };
-                            add(column, column.column->byteSize() - std::min(column.column->byteSize(), replaced_offsets_bytes));
-
-                            const size_t long_values_bytes = std::min(skipped.long_values_bytes, skipped.bytes);
-                            const size_t short_values_bytes = skipped.bytes - long_values_bytes;
-                            add(columnOfStringValues(skipped.short_values_sample, skipped.short_values_sample_sizes),
-                                short_values_bytes + replaced_offsets_bytes);
-
-                            /// A long value compresses better as a whole than its sample does by itself when it is
-                            /// repetitive, and the sample pays for the framing of a compressed block alone. So the size of
-                            /// the compressed value is extrapolated from the size of the compressed sample by how much
-                            /// it grows from a shorter sample of the same pieces, so that it is extrapolated from all of them.
-                            size_t long_values_sampled_bytes = 0;
-                            double long_values_sampled_compressed_bytes = 0;
-                            for (const auto & [sample, size] : skipped.long_values_samples)
-                            {
-                                constexpr size_t pieces = StringValuesSkippedInBlock::PIECES_IN_SAMPLE_OF_LONG_VALUE;
-                                const size_t piece_size = sample.size() / pieces;
-                                String shorter;
-                                for (size_t i = 0; i < pieces; ++i)
-                                    shorter.append(sample, i * piece_size, piece_size / 4);
-                                const size_t compressed = estimateCompressedColumnSize(columnOfStringValues(sample, {sample.size()}), codecs).second;
-                                const size_t shorter_compressed
-                                    = estimateCompressedColumnSize(columnOfStringValues(shorter, {shorter.size()}), codecs).second;
-                                const double compressed_per_byte = static_cast<double>(compressed - std::min(compressed, shorter_compressed))
-                                    / static_cast<double>(sample.size() - shorter.size());
-                                long_values_sampled_bytes += size;
-                                long_values_sampled_compressed_bytes
-                                    += static_cast<double>(compressed) + static_cast<double>(size - sample.size()) * compressed_per_byte;
-                            }
-                            if (long_values_sampled_bytes)
-                            {
-                                const double weight = static_cast<double>(long_values_bytes) * rows_fraction;
-                                sample_bytes += static_cast<size_t>(weight);
-                                compressed_bytes += static_cast<size_t>(
-                                    weight * long_values_sampled_compressed_bytes / static_cast<double>(long_values_sampled_bytes));
-                            }
+                            sample_bytes += static_cast<size_t>(static_cast<double>(skipped.bytes) * rows_fraction);
+                            compressed_bytes += static_cast<size_t>(static_cast<double>(*skipped.compressed_bytes) * rows_fraction);
                         }
                     }
                 }

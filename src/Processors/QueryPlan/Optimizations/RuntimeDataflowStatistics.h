@@ -244,6 +244,9 @@ public:
         size_t read_bytes,
         std::optional<bool> & should_continue_sampling);
 
+    /// Whether an input block recorded from now on may be sampled by `recordInputColumns`.
+    bool maySampleInputBlocks() const;
+
     /// Ignored for duplicated reads: they only refine the duplicated-read gate, so a read that cannot be
     /// measured there must not drop the statistics that decide whether parallel replicas are considered at all.
     void markUnsupportedCase()

@@ -3,8 +3,8 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/StringSearcher.h>
+#include <IO/WriteHelpers.h>
 
-#include <algorithm>
 #include <cstring>
 
 namespace ProfileEvents
@@ -207,27 +207,13 @@ void StringValueFilter::updateStatsOfIndividualChecks(size_t checked_individuall
         disabled.store(true, std::memory_order_relaxed);
 }
 
-void StringValuesSkippedByFilter::addShortValueToSample(const char * data, size_t size)
+void StringValuesSkippedByFilter::writeToCompressedSizeMeasurement(const char * data, size_t size, bool size_is_inline)
 {
-    short_values_sample.append(data, size);
-    short_values_sample_sizes.push_back(size);
-}
-
-void StringValuesSkippedByFilter::addLongValueToSample(const char * data, size_t size)
-{
-    long_values_bytes += size;
-    if (long_values_samples.size() >= MAX_LONG_VALUES_IN_SAMPLE)
-        return;
-
-    /// Pieces spread along the value, so that a value whose beginning compresses differently from the rest is still
-    /// represented. The last one ends with the value.
-    constexpr size_t pieces = PIECES_IN_SAMPLE_OF_LONG_VALUE;
-    const size_t piece_size = maxSampleBytesOfLongValue() / pieces;
-    String sample;
-    sample.reserve(pieces * piece_size);
-    for (size_t i = 0; i < pieces; ++i)
-        sample.append(data + i * (size - piece_size) / (pieces - 1), piece_size);
-    long_values_samples.emplace_back(std::move(sample), size);
+    if (size_is_inline)
+        writeVarUInt(size, *values_compressed_size_measurement);
+    else
+        writeBinaryLittleEndian(static_cast<UInt64>(size), *sizes_compressed_size_measurement);
+    values_compressed_size_measurement->write(data, size);
 }
 
 }
