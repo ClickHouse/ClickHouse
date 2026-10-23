@@ -24,7 +24,7 @@ PlanAnalysisSnapshot PlanAnalysisSnapshot::capture(const PlanWalk & walk)
     return snapshot;
 }
 
-const StepAnalyzer * PlanAnalysisSnapshot::find(const String & step_id) const
+const StepAnalyzer * PlanAnalysisSnapshot::find(UInt64 step_id) const
 {
     const auto it = analyzers.find(step_id);
     return it != analyzers.end() ? &it->second : nullptr;

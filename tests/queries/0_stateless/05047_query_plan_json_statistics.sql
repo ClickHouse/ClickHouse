@@ -28,13 +28,13 @@ SELECT
     anyLast(JSONExtractUInt(source, 'Statistics', 'IO', 'OutputBytes')),
     -- Two steps, and the root names the one below it.
     anyLast(length(nodes)),
-    anyLast(JSONExtractString(arrayElement(JSONExtractArrayRaw(root, 'Children'), 1))) = anyLast(JSONExtractString(source, 'Node Id'))
+    anyLast(JSONExtractUInt(arrayElement(JSONExtractArrayRaw(root, 'Children'), 1))) = anyLast(JSONExtractUInt(source, 'Node Id'))
 FROM
 (
     SELECT
         JSONExtractArrayRaw(toJSONString(query_plan), 'Nodes') AS nodes,
         arrayFilter(n -> JSONExtractString(n, 'Node Type') = 'ReadFromSystemNumbers', nodes)[1] AS source,
-        arrayFilter(n -> JSONExtractString(n, 'Node Id') = JSONExtractString(toJSONString(query_plan), 'Root'), nodes)[1] AS root
+        arrayFilter(n -> JSONExtractUInt(n, 'Node Id') = JSONExtractUInt(toJSONString(query_plan), 'Root'), nodes)[1] AS root
     FROM system.query_log
     WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05047_stats'
 );

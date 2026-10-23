@@ -213,7 +213,7 @@ bool ExecutionThreadContext::executeTask(ISpillable * spill_target)
     {
         auto & cached_clock = processor->query_plan_step_wall_clock_ptr;
         if (!cached_clock)
-            cached_clock = step_profiler->findClockForStep(processor->getStepUniqID(), group);
+            cached_clock = step_profiler->findClockForStep(processor->getQueryPlanStepIndex(), group);
 
         clock = cached_clock;
         if (clock)
@@ -254,7 +254,7 @@ bool ExecutionThreadContext::executeTask(ISpillable * spill_target)
         clock->onLeave();
 
     if (collect_work_intervals)
-        work_intervals.emplace_back(execution_time_watch->getStart(), elapsed_ns, processor->getStepUniqID());
+        work_intervals.emplace_back(execution_time_watch->getStart(), elapsed_ns, processor->getQueryPlanStepIndex());
 
 #ifndef NDEBUG
     execution_time_ns += execution_time_watch->elapsed();

@@ -55,7 +55,7 @@ void IProcessor::setQueryPlanStep(const IQueryPlanStep * step, size_t group)
     {
         plan_step_name = step->getName();
         plan_step_description = step->getStepDescription();
-        step_uniq_id = step->getUniqID();
+        query_plan_step_index = step->getStepIndex();
     }
 }
 
@@ -72,7 +72,7 @@ void IProcessor::inheritQueryPlanStepFromParent(const IProcessor & parent, size_
     query_plan_step_wall_clock_ptr = nullptr;
     plan_step_name = parent.plan_step_name;
     plan_step_description = parent.plan_step_description;
-    step_uniq_id = parent.step_uniq_id;
+    query_plan_step_index = parent.query_plan_step_index;
 }
 
 IProcessor::Status IProcessor::prepare()
@@ -192,7 +192,8 @@ ProcessorsProfileLogInfo IProcessor::getProcessorsProfileLogInfo() const
     info.plan_step_description = plan_step_description;
     info.plan_group = query_plan_step_group;
     info.processor_uniq_id = getUniqID();
-    info.step_uniq_id = step_uniq_id;
+    if (query_plan_step_index != PlanStepIndex::NONE)
+        info.step_uniq_id = fmt::format("{}_{}", plan_step_name, query_plan_step_index);
 
     info.processor_name = getName();
 

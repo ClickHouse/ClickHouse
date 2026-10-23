@@ -8,7 +8,7 @@
 namespace DB
 {
 
-using CardinalityByJoinStep = std::unordered_map<String, std::optional<UInt64>>;
+using CardinalityByJoinStep = std::unordered_map<UInt64, std::optional<UInt64>>;
 
 /// The cost of a join is its own cardinality plus the cardinality of every join of the same cluster
 /// below it. A cost is absent as soon as any contributor's is.
@@ -17,10 +17,10 @@ class JoinBranchCosts
 public:
     JoinBranchCosts(const PlanAnalysisSnapshot & plan_snapshot, const CardinalityByJoinStep & cardinality_by_join_step);
 
-    std::optional<UInt64> getBranchCost(const String & step_id) const;
+    std::optional<UInt64> getBranchCost(UInt64 step_id) const;
 
 private:
-    std::unordered_map<String, std::optional<UInt64>> cost_by_join_step;
+    std::unordered_map<UInt64, std::optional<UInt64>> cost_by_join_step;
 };
 
 }

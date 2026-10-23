@@ -7,21 +7,23 @@
 #include <Common/Stopwatch.h>
 #include <base/types.h>
 
+#include <boost/container_hash/hash.hpp>
+
 #include <atomic>
-#include <map>
 #include <memory>
 #include <mutex>
+#include <unordered_map>
 #include <utility>
 
 namespace DB
 {
 
 
-/// Keyed by the step's uniq id rather than its address: the clocks are read while the query runs
+/// Keyed by the step's index rather than its address: the clocks are read while the query runs
 /// and once it has finished, and by then the plan the steps belonged to may be long gone. The
-/// processors carry the same id, so they can find their clock without the step.
-using PlanStepGroup = std::pair<String, size_t>;
-using StepWallClocks = std::map<PlanStepGroup, std::unique_ptr<StepWallClock>>;
+/// processors carry the same index, so they can find their clock without the step.
+using PlanStepGroup = std::pair<UInt64, size_t>;
+using StepWallClocks = std::unordered_map<PlanStepGroup, std::unique_ptr<StepWallClock>, boost::hash<PlanStepGroup>>;
 
 /// Everything the statistics of a query are produced from: the clocks the processors stamp while
 /// it runs, and the analyzer each step handed out for shaping what they measured.
@@ -34,7 +36,7 @@ class StepProfiler
 public:
     StepProfiler(const PlanWalk & walk, bool collect_work_intervals_);
 
-    StepWallClock * findClockForStep(const String & step_id, size_t group) const;
+    StepWallClock * findClockForStep(UInt64 step_id, size_t group) const;
 
     const PlanAnalysisSnapshot & getPlanSnapshot() const { return plan_snapshot; }
 

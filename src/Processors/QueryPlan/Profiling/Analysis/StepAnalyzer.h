@@ -42,12 +42,12 @@ using JoinCardinalityReader = std::function<std::optional<UInt64>(const StepAnal
 /// The stages are read before all of it, to gather the per-stage timings the context carries.
 struct StepAnalyzer
 {
-    /// `IQueryPlanStep::getUniqID` of the step this analyses.
-    String id;
+    /// `IQueryPlanStep::getStepIndex` of the step this analyses.
+    UInt64 id = 0;
 
     /// The steps below this one: its own children, then the roots of the child plans it holds.
     /// Filled by the walk, which is the only thing that knows the shape.
-    std::vector<String> children;
+    std::vector<UInt64> children;
 
     /// What the passes that run across steps need to know about this one. A step declares these
     /// for itself, so that nothing has to ask what kind of step it is after the fact.

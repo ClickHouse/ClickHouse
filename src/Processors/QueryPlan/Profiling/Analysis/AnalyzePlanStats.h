@@ -27,21 +27,20 @@ class StepProfiler;
 
 class AnalyzeStepsStats
 {
-    /// Everything below is keyed by the step's uniq id rather than its address, so the collected
-    /// statistics outlive the plan. The processors carry the same id (`IProcessor::getStepUniqID`),
-    /// and it is unique within a query: the counter behind `PlanStepIndex` lives in the thread
-    /// group's local data, so every thread building steps for one query draws from it.
-    using StepAndGroup = std::pair<String, size_t>;
+    /// Everything below is keyed by the step's index rather than its address, so the collected
+    /// statistics outlive the plan. The processors carry the same index
+    /// (`IProcessor::getQueryPlanStepIndex`), and it is unique within a query: see `PlanStepIndex`.
+    using StepAndGroup = std::pair<UInt64, size_t>;
 
     /// Per-processor elapsed times collected per (step, group) to compute the distribution.
     /// A multiset keeps the values sorted and preserves duplicates so the median stays correct.
     using ElapsedTimes = std::multiset<UInt64>;
     using ElapsedTimesPerStepGroup = std::unordered_map<StepAndGroup, ElapsedTimes, boost::hash<StepAndGroup>>;
 
-    using StatsByStep = std::unordered_map<String, StepIOStats>;
+    using StatsByStep = std::unordered_map<UInt64, StepIOStats>;
     using StatsByStepAndGroup = std::unordered_map<StepAndGroup, StepGroupStats, boost::hash<StepAndGroup>>;
-    using ProcessorsByStep = std::unordered_map<String, std::vector<IProcessor *>>;
-    using ReportsByStep = std::unordered_map<String, StepAnalysisReport>;
+    using ProcessorsByStep = std::unordered_map<UInt64, std::vector<IProcessor *>>;
+    using ReportsByStep = std::unordered_map<UInt64, StepAnalysisReport>;
 
 public:
     /// `step_profiler` carries everything this needs from the plan -- the analyzers, the shape
@@ -63,7 +62,7 @@ public:
     AnalyzedStepData analyzeStep(const IQueryPlanStep * step) const;
 
     /// The same, for a caller that no longer has the step -- the logged plan, after execution.
-    AnalyzedStepData analyzeStep(const String & step_id) const;
+    AnalyzedStepData analyzeStep(UInt64 step_id) const;
 
     /// How long the query executed, and the thread count that caps how parallel any stage could be.
     UInt64 getExecutionTimeNs() const { return execution_query_time_ns; }
@@ -76,13 +75,13 @@ private:
     void computeDistribution(const ElapsedTimesPerStepGroup & elapsed_per_step_group);
     void computeJoinBranchCosts();
 
-    StepStatsContext makeContext(const String & step_id, const StepAnalyzer & analyzer) const;
+    StepStatsContext makeContext(UInt64 step_id, const StepAnalyzer & analyzer) const;
     void renderStep(const AnalyzedStepData & step_data, WriteBuffer & out, const std::string & prefix, bool processors_info) const;
 
     StatsByStep stats_by_step;
     StatsByStepAndGroup stats_by_step_group;
     ProcessorsByStep processors_by_step;
-    std::unordered_map<String, UInt64> spilled_bytes_by_step;
+    std::unordered_map<UInt64, UInt64> spilled_bytes_by_step;
 
     const PlanAnalysisSnapshot & plan_snapshot;
 

@@ -12,10 +12,10 @@ class QueryPlan;
 /// One step, as a walk of the plan found it.
 struct VisitedStep
 {
-    String id;
+    UInt64 id = 0;
 
     /// This step's own children, then the roots of the child plans it holds.
-    std::vector<String> children;
+    std::vector<UInt64> children;
 
     IQueryPlanStep * step = nullptr;
 
@@ -36,7 +36,7 @@ struct PlanWalk
 {
     /// The plan that was walked. Null when it had nothing to walk.
     const QueryPlan * plan = nullptr;
-    String root_id;
+    UInt64 root_id = 0;
     std::vector<VisitedStep> steps;
 
     /// `only_built_child_plans` keeps the walk from asking a step to build a child plan it does

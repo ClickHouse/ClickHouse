@@ -22,14 +22,14 @@ struct PrettyNamesPerPlan;
 
 struct CapturedStep
 {
-    String id;
+    UInt64 id = 0;
     String type;
     String description;
     std::vector<String> details;
 
     /// Ids of this step's children, and of the roots of any plans it has already built
     /// (`getBuiltChildPlans`).
-    std::vector<String> children;
+    std::vector<UInt64> children;
 
     std::optional<AnalyzedStepData> statistics;
 
@@ -42,7 +42,7 @@ struct CapturedStep
 struct CapturedPlan
 {
     /// Id of the root node
-    String root_id;
+    UInt64 root_id = 0;
     /// Output columns
     std::vector<String> output;
     /// Execution totals

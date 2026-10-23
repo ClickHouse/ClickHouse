@@ -17,11 +17,11 @@ namespace DB
 /// then shaped once the query has run without the plan being around at all.
 struct PlanAnalysisSnapshot
 {
-    String root_id;
+    UInt64 root_id = 0;
 
-    /// The analyzer each step handed out, keyed by `IQueryPlanStep::getUniqID`. Each one carries
+    /// The analyzer each step handed out, keyed by `IQueryPlanStep::getStepIndex`. Each one carries
     /// the ids below it, so this is the shape of the plan as well as the means to analyse it.
-    std::unordered_map<String, StepAnalyzer> analyzers;
+    std::unordered_map<UInt64, StepAnalyzer> analyzers;
 
     static PlanAnalysisSnapshot capture(const PlanWalk & walk);
 
@@ -29,7 +29,7 @@ struct PlanAnalysisSnapshot
     /// join's branch, the time of one -- finds its children already retired when it reaches it.
     std::vector<const StepAnalyzer *> stepsInPostOrder() const;
 
-    const StepAnalyzer * find(const String & step_id) const;
+    const StepAnalyzer * find(UInt64 step_id) const;
 };
 
 }

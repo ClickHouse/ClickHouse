@@ -253,14 +253,14 @@ void AnalyzeStepsStats::collectIOStats(const Processors & processors)
 {
     auto crosses_step_boundary = [](const IProcessor & owner, const IProcessor & neighbour)
     {
-        return owner.getStepUniqID() != neighbour.getStepUniqID();
+        return owner.getQueryPlanStepIndex() != neighbour.getQueryPlanStepIndex();
     };
 
     for (const auto & proc : processors)
     {
-        const auto & step_id = proc->getStepUniqID();
+        const UInt64 step_id = proc->getQueryPlanStepIndex();
 
-        if (step_id.empty())
+        if (step_id == PlanStepIndex::NONE)
             continue;
 
         auto & step_stats = stats_by_step[step_id];
@@ -297,18 +297,18 @@ void AnalyzeStepsStats::collectIOStats(const Processors & processors)
 
 void AnalyzeStepsStats::collectSpillStats(const Processors & processors)
 {
-    /// By id rather than by step: the processors outlive the plan, and so does this.
-    const auto creates_a_set = [this](const String & step_id)
+    /// By index rather than by step: the processors outlive the plan, and so does this.
+    const auto creates_a_set = [this](UInt64 step_id)
     {
         const auto * analyzer = plan_snapshot.find(step_id);
         return analyzer && analyzer->isCreatingSet();
     };
 
-    std::unordered_map<const TemporaryDataOnDiskScope *, String> steps_by_scope;
+    std::unordered_map<const TemporaryDataOnDiskScope *, UInt64> steps_by_scope;
     for (const auto & processor : processors)
     {
-        const String & step_id = processor->getStepUniqID();
-        if (step_id.empty())
+        const UInt64 step_id = processor->getQueryPlanStepIndex();
+        if (step_id == PlanStepIndex::NONE)
             continue;
 
         for (const auto * spillable : processor->getSpillables())
@@ -335,9 +335,9 @@ AnalyzeStepsStats::ElapsedTimesPerStepGroup AnalyzeStepsStats::collectTimingStat
 
     for (const auto & proc : processors)
     {
-        const auto & step_id = proc->getStepUniqID();
+        const UInt64 step_id = proc->getQueryPlanStepIndex();
 
-        if (step_id.empty())
+        if (step_id == PlanStepIndex::NONE)
             continue;
 
         const size_t group = proc->getQueryPlanStepGroup();
@@ -415,7 +415,7 @@ void AnalyzeStepsStats::computeJoinBranchCosts()
     }
 }
 
-StepStatsContext AnalyzeStepsStats::makeContext(const String & step_id, const StepAnalyzer & analyzer) const
+StepStatsContext AnalyzeStepsStats::makeContext(UInt64 step_id, const StepAnalyzer & analyzer) const
 {
     StepStatsContext context;
     context.execution_query_time_ns = execution_query_time_ns;
@@ -438,10 +438,10 @@ StepStatsContext AnalyzeStepsStats::makeContext(const String & step_id, const St
 
 AnalyzedStepData AnalyzeStepsStats::analyzeStep(const IQueryPlanStep * step) const
 {
-    return analyzeStep(step->getUniqID());
+    return analyzeStep(step->getStepIndex());
 }
 
-AnalyzedStepData AnalyzeStepsStats::analyzeStep(const String & step_id) const
+AnalyzedStepData AnalyzeStepsStats::analyzeStep(UInt64 step_id) const
 {
     /// Every step analysed here comes from the walk that filled the snapshot, so it has an entry.
     /// One without would be shaped as a plain single-stage step and report none of its metrics.

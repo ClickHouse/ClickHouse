@@ -18,7 +18,7 @@ PlanWalk PlanWalk::of(const QueryPlan & plan, bool only_built_child_plans)
         return walk;
 
     walk.plan = &plan;
-    walk.root_id = root->step->getUniqID();
+    walk.root_id = root->step->getStepIndex();
 
     struct Frame
     {
@@ -39,7 +39,7 @@ PlanWalk PlanWalk::of(const QueryPlan & plan, bool only_built_child_plans)
         auto & step = *frame.node->step;
 
         VisitedStep visited;
-        visited.id = step.getUniqID();
+        visited.id = step.getStepIndex();
         visited.step = &step;
         visited.owning_plan = frame.owning_plan;
 
@@ -47,7 +47,7 @@ PlanWalk PlanWalk::of(const QueryPlan & plan, bool only_built_child_plans)
         {
             if (!child || !child->step)
                 continue;
-            visited.children.push_back(child->step->getUniqID());
+            visited.children.push_back(child->step->getStepIndex());
             to_visit.push_back({frame.owning_plan, child});
         }
 
@@ -58,7 +58,7 @@ PlanWalk PlanWalk::of(const QueryPlan & plan, bool only_built_child_plans)
             auto * child_root = child_plan->getRootNode();
             if (!child_root || !child_root->step)
                 continue;
-            visited.children.push_back(child_root->step->getUniqID());
+            visited.children.push_back(child_root->step->getStepIndex());
             to_visit.push_back({child_plan, child_root});
         }
 

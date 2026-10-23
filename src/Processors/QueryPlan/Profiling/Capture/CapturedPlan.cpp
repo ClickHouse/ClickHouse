@@ -143,7 +143,7 @@ CapturedStep captureStep(
 {
     CapturedStep captured;
 
-    captured.id = step.getUniqID();
+    captured.id = step.getStepIndex();
     captured.type = step.getName();
     captured.description = stepDescription(step, options, max_description_length);
     captured.details = stepDetails(step, options, max_description_length, plan_pretty_names);

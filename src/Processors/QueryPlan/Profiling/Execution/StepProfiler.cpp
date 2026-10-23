@@ -28,7 +28,7 @@ StepProfiler::StepProfiler(const PlanWalk & walk, bool collect_work_intervals_)
 {
 }
 
-StepWallClock * StepProfiler::findClockForStep(const String & step_id, size_t group) const
+StepWallClock * StepProfiler::findClockForStep(UInt64 step_id, size_t group) const
 {
     auto it = clocks.find({step_id, group});
     return it != clocks.end() ? it->second.get() : nullptr;

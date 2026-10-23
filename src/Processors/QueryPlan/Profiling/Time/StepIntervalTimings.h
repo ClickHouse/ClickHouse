@@ -24,14 +24,14 @@ public:
     /// plan is gone, like the rest of the analysis.
     StepIntervalTimings(const WorkIntervalsPerThread & intervals_per_thread, const PlanAnalysisSnapshot & plan_snapshot);
 
-    const StepTimeAndConcurrency * findTiming(const String & step_id) const;
+    const StepTimeAndConcurrency * findTiming(UInt64 step_id) const;
 
     /// `execution_time_ns` is the wall-clock time of the whole pipeline execution, the denominator of every time share.
     ExecutionTimeBreakdown executionTimeBreakdown(UInt64 execution_time_ns) const;
 
 private:
 
-    using TimeIntervalsByStep = std::unordered_map<String, TimeIntervals>;
+    using TimeIntervalsByStep = std::unordered_map<UInt64, TimeIntervals>;
 
     /// One sorted, non-overlapping sequence per step, merged from the per-thread runs.
     TimeIntervalsByStep collectStepIntervals(const WorkIntervalsPerThread & intervals_per_thread) const;
@@ -41,10 +41,10 @@ private:
 
     std::vector<TimeIntervals> collectLowerBranchIntervals(
         TimeIntervals && current_step_intervals,
-        const std::vector<String> & children,
+        const std::vector<UInt64> & children,
         TimeIntervalsByStep & branch_intervals_by_step) const;
 
-    std::unordered_map<String, StepTimeAndConcurrency> timing_by_step;
+    std::unordered_map<UInt64, StepTimeAndConcurrency> timing_by_step;
     ConcurrencyProfile concurrency_profile;
 
     /// Length of the union of the intervals of every step of the plan: the branch time of the root step.

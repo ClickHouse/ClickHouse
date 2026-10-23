@@ -11,6 +11,7 @@
 #include <vector>
 #include <Processors/ProcessorsProfileLogInfo.h>
 #include <Processors/IProcessor_fwd.h>
+#include <Processors/QueryPlan/PlanStepIndex.h>
 #include <fmt/format.h>
 
 class EventCounter;
@@ -332,7 +333,8 @@ public:
     void inheritQueryPlanStepFromParent(const IProcessor & parent, size_t group);
 
     const IQueryPlanStep * getQueryPlanStep() const { return query_plan_step; }
-    const String & getStepUniqID() const { return step_uniq_id; }
+    /// `IQueryPlanStep::getStepIndex` of the step, or `PlanStepIndex::NONE` if there is none.
+    UInt64 getQueryPlanStepIndex() const { return query_plan_step_index; }
     size_t getQueryPlanStepGroup() const { return query_plan_step_group; }
     const String & getPlanStepName() const { return plan_step_name; }
     const String & getPlanStepDescription() const { return plan_step_description; }
@@ -435,7 +437,7 @@ private:
     size_t stream_number = NO_STREAM;
 
     const IQueryPlanStep * query_plan_step = nullptr;
-    String step_uniq_id;
+    UInt64 query_plan_step_index = PlanStepIndex::NONE;
     size_t query_plan_step_group = 0;
     StepWallClock * query_plan_step_wall_clock_ptr = nullptr;
 

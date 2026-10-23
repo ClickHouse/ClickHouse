@@ -33,7 +33,7 @@ StepIntervalTimings::StepIntervalTimings(const WorkIntervalsPerThread & interval
     computeBranchTime(plan_snapshot, collectStepIntervals(intervals_per_thread));
 }
 
-const StepTimeAndConcurrency * StepIntervalTimings::findTiming(const String & step_id) const
+const StepTimeAndConcurrency * StepIntervalTimings::findTiming(UInt64 step_id) const
 {
     const auto it = timing_by_step.find(step_id);
     return it != timing_by_step.end() ? &it->second : nullptr;
@@ -66,7 +66,7 @@ StepIntervalTimings::TimeIntervalsByStep StepIntervalTimings::collectStepInterva
         size_t last_thread = no_thread;
     };
 
-    std::unordered_map<String, StepIntervalsByThread> step_to_thread_intervals;
+    std::unordered_map<UInt64, StepIntervalsByThread> step_to_thread_intervals;
     step_to_thread_intervals.reserve(timing_by_step.size());
 
     for (const auto & [step_id, _] : timing_by_step)
@@ -131,7 +131,7 @@ void StepIntervalTimings::computeBranchTime(const PlanAnalysisSnapshot & plan_sn
 }
 
 std::vector<TimeIntervals> StepIntervalTimings::collectLowerBranchIntervals(
-    TimeIntervals && current_step_intervals, const std::vector<String> & children, TimeIntervalsByStep & branch_intervals_by_step) const
+    TimeIntervals && current_step_intervals, const std::vector<UInt64> & children, TimeIntervalsByStep & branch_intervals_by_step) const
 {
     std::vector<TimeIntervals> current_step_branch_intervals;
 
