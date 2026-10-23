@@ -156,7 +156,7 @@ public:
     virtual bool supportsFullyQualifiedPaths() const { return false; }
 
     virtual bool supportsTotalRows(ContextPtr, ObjectStorageType) const { return false; }
-    virtual std::optional<size_t> totalRows(ContextPtr) { return {}; }
+    virtual std::optional<size_t> totalRows(ContextPtr, const std::optional<DataLakeTableStateSnapshot> &) { return {}; }
     virtual bool supportsTotalBytes(ContextPtr, ObjectStorageType) const { return false; }
     virtual std::optional<size_t> totalBytes(ContextPtr) { return {}; }
     /// NOTE: In this function we are going to check is data which we are going to read sorted by sorting key specified in StorageMetadataPtr.
@@ -296,9 +296,14 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter partition commands are not supported by storage {}", getEngineName());
     }
 
-    virtual const DataLakeStorageSettings & getDataLakeSettings() const
+    virtual DataLakeStorageSettingsPtr getDataLakeSettings() const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataLakeSettings() is not implemented for configuration type {}", getTypeName());
+    }
+
+    virtual void setDataLakeSettings(ContextPtr /*context*/, DataLakeStorageSettingsPtr /*new_settings*/)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method setDataLakeSettings() is not implemented for configuration type {}", getTypeName());
     }
 
     virtual ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr /**/) const { return nullptr; }
@@ -394,6 +399,7 @@ public:
     /// Set by the storage when it is being loaded from existing metadata (server startup or RESTORE), so the
     /// S3 client build can downgrade restricted server-managed credentials to anonymous instead of aborting
     /// startup (see `getClient` and the `s3_load_table_anonymously_if_credentials_restricted` server setting).
+    /// Azure uses it the same way.
     bool is_loading_from_existing_metadata = false;
 
     /// Set by the storage when the table definition is replayed from stored metadata (see `isReplayedTableDefinition`):

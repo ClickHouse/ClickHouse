@@ -130,6 +130,41 @@ TEST(CoordinationSettingsValidation, WriteSnapshotVersionHotReload)
     EXPECT_EQ(ctx->getWriteSnapshotVersion(), DB::SnapshotVersion::V9);
 }
 
+TEST(CoordinationKeeperContext, WaitLocalLogsPreprocessedOrShutdown)
+{
+    const auto make_context = []
+    { return std::make_shared<DB::KeeperContext>(true, std::make_shared<DB::CoordinationSettings>()); };
+
+    /// The caller is a thread of the Raft event loop, so the wait has to end on its own deadline
+    /// and report that the logs are still not preprocessed.
+    {
+        auto ctx = make_context();
+        Stopwatch watch;
+        EXPECT_FALSE(ctx->waitLocalLogsPreprocessedOrShutdown(50));
+        EXPECT_GE(watch.elapsedMilliseconds(), 50);
+    }
+
+    /// Already preprocessed: returns without waiting, and says so.
+    {
+        auto ctx = make_context();
+        ctx->setLocalLogsPreprocessed();
+        Stopwatch watch;
+        EXPECT_TRUE(ctx->waitLocalLogsPreprocessedOrShutdown(60000));
+        EXPECT_LT(watch.elapsedMilliseconds(), 1000);
+    }
+
+    /// Shutdown ends the wait as well, but that is not the same thing as the logs being
+    /// preprocessed: reporting true here would have the caller log `preprocessed=true` for a
+    /// replay that never finished.
+    {
+        auto ctx = make_context();
+        ctx->setShutdownCalled();
+        Stopwatch watch;
+        EXPECT_FALSE(ctx->waitLocalLogsPreprocessedOrShutdown(60000));
+        EXPECT_LT(watch.elapsedMilliseconds(), 1000);
+    }
+}
+
 TEST(CoordinationSettingsParse, NuraftSnapshotSyncCtxTimeout)
 {
     auto load = [](const std::string & xml)
@@ -432,6 +467,49 @@ TEST_P(CoordinationTest, PlainCreateWithContainerFlagRejected)
     auto request_read = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Create);
     DB::ReadBufferFromNuraftBuffer rbuf(wbuf.getBuffer());
     EXPECT_THROW(request_read->readImpl(rbuf), Coordination::Exception);
+}
+
+TEST_P(CoordinationTest, CreateRequestDoesNotPreallocateOversizedACLs)
+{
+    /// Invariant: memory must track bytes actually read, not the declared element count.
+    {
+        Coordination::ACLs acls;
+        acls.push_back(Coordination::ACL{Coordination::ACL::All, "world", "anyone"});
+        acls.push_back(Coordination::ACL{Coordination::ACL::Read, "digest", "user:hash"});
+
+        DB::WriteBufferFromNuraftBuffer wbuf;
+        Coordination::write(std::string{"/node"}, wbuf);
+        Coordination::write(std::string{"data"}, wbuf);
+        Coordination::write(acls, wbuf);
+        Coordination::write(static_cast<int32_t>(0), wbuf);
+
+        auto request_read = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Create);
+        DB::ReadBufferFromNuraftBuffer rbuf(wbuf.getBuffer());
+        request_read->readImpl(rbuf);
+        auto & create_read = dynamic_cast<Coordination::ZooKeeperCreateRequest &>(*request_read);
+        ASSERT_EQ(create_read.acls.size(), 2);
+        EXPECT_EQ(create_read.acls[0].permissions, Coordination::ACL::All);
+        EXPECT_EQ(create_read.acls[0].scheme, "world");
+        EXPECT_EQ(create_read.acls[0].id, "anyone");
+        EXPECT_EQ(create_read.acls[1].permissions, Coordination::ACL::Read);
+        EXPECT_EQ(create_read.acls[1].scheme, "digest");
+        EXPECT_EQ(create_read.acls[1].id, "user:hash");
+    }
+
+    {
+        /// Declared ACL count is above the pre-allocation bound, but no element bytes follow.
+        /// The reservation must stay bounded by the cap, not by the declared count.
+        DB::WriteBufferFromNuraftBuffer wbuf;
+        Coordination::write(std::string{"/node"}, wbuf);
+        Coordination::write(std::string{}, wbuf);
+        Coordination::write(static_cast<int32_t>(2 * Coordination::MAX_ARRAY_PREALLOCATION), wbuf);
+
+        auto request_read = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Create);
+        DB::ReadBufferFromNuraftBuffer rbuf(wbuf.getBuffer());
+        EXPECT_THROW(request_read->readImpl(rbuf), DB::Exception);
+        auto & create_read = dynamic_cast<Coordination::ZooKeeperCreateRequest &>(*request_read);
+        EXPECT_LE(create_read.acls.capacity(), static_cast<size_t>(Coordination::MAX_ARRAY_PREALLOCATION));
+    }
 }
 
 template <typename StateMachine>
