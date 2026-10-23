@@ -101,6 +101,21 @@ namespace ErrorCodes
 namespace
 {
 
+/// `ON CLUSTER` and a `Replicated` database both hand the query to workers that run it without the
+/// submitting user, so an added index is authorised here, on the node the query was submitted to.
+void checkAddedIndexPermissions(const ASTAlterQuery & alter, const ContextPtr & context)
+{
+    for (const auto & child : alter.command_list->children)
+    {
+        const auto & command = child->as<const ASTAlterCommand &>();
+        if (command.type != ASTAlterCommand::ADD_INDEX || !command.index_decl)
+            continue;
+
+        if (const auto * declaration = command.index_decl->as<ASTIndexDeclaration>())
+            checkTextIndexPreAndPostProcessorPermissions(*declaration, context);
+    }
+}
+
 void normalizeLegacyToTimeInAlterMetadataDefinitions(ASTAlterQuery & alter)
 {
     for (const auto & child : alter.command_list->children)
@@ -580,6 +595,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
                 if (command.type == ASTAlterCommand::DELETE || command.type == ASTAlterCommand::UPDATE)
                     checkNoRowPolicyForSetOperands(child, default_database, context, throw_if_unresolved);
             }
+            checkAddedIndexPermissions(captured_alter, context);
         };
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
@@ -600,14 +616,9 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
             is_mutation = true;
             checkNoRowPolicyForSetOperands(child, table_id.database_name, getContext());
         }
-        /// Not where the command is applied: a `Replicated` database enqueues it below and the
-        /// replicas apply it without the submitting user.
-        else if (command.type == ASTAlterCommand::ADD_INDEX && command.index_decl)
-        {
-            if (const auto * declaration = command.index_decl->as<ASTIndexDeclaration>())
-                checkTextIndexPreAndPostProcessorPermissions(*declaration, getContext());
-        }
     }
+
+    checkAddedIndexPermissions(alter, getContext());
 
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {

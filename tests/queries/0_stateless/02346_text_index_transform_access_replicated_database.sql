@@ -1,8 +1,8 @@
 -- Tags: zookeeper, no-replicated-database
--- no-replicated-database: the test creates its own Replicated database
+-- no-replicated-database: the test creates its own Replicated database and runs ON CLUSTER
 
--- A Replicated database enqueues DDL and the replicas apply it without the submitting user, so the
--- permission check has to happen on the node the query was submitted to. See
+-- A Replicated database and `ON CLUSTER` both hand the DDL to nodes that run it without the
+-- submitting user, so the permission check has to happen on the node it was submitted to. See
 -- 02346_text_index_transform_access for the checks themselves.
 
 SET allow_introspection_functions = 0;
@@ -30,11 +30,22 @@ CREATE TABLE {CLICKHOUSE_DATABASE_2:Identifier}.tab_denied
 )
 ENGINE = MergeTree ORDER BY id; -- { serverError FUNCTION_NOT_ALLOWED }
 
-SELECT '3. Accepted with the privilege.';
+SELECT '3. ALTER ADD INDEX ON CLUSTER is denied.';
+
+CREATE TABLE tab_on_cluster (id UInt64, val String) ENGINE = MergeTree ORDER BY id;
+
+ALTER TABLE tab_on_cluster ON CLUSTER test_shard_localhost
+    ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = demangle(val)) GRANULARITY 1; -- { serverError FUNCTION_NOT_ALLOWED }
+
+SELECT '4. Accepted with the privilege.';
 
 SET allow_introspection_functions = 1;
 
 ALTER TABLE {CLICKHOUSE_DATABASE_2:Identifier}.tab
     ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = demangle(val)) GRANULARITY 1 FORMAT Null;
 
+ALTER TABLE tab_on_cluster ON CLUSTER test_shard_localhost
+    ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = demangle(val)) GRANULARITY 1 FORMAT Null;
+
+DROP TABLE tab_on_cluster;
 DROP DATABASE {CLICKHOUSE_DATABASE_2:Identifier} FORMAT Null;

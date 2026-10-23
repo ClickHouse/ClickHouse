@@ -1,3 +1,4 @@
 1. ALTER ADD INDEX is denied.
 2. CREATE TABLE is denied.
-3. Accepted with the privilege.
+3. ALTER ADD INDEX ON CLUSTER is denied.
+4. Accepted with the privilege.
