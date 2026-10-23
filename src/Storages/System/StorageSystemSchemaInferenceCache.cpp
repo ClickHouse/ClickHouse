@@ -1,5 +1,4 @@
 #include <Columns/IColumn.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/System/StorageSystemSchemaInferenceCache.h>
 #include <Storages/StorageFile.h>
 #include <Storages/StorageURL.h>
@@ -18,6 +17,27 @@
 
 namespace DB
 {
+
+/// Whether a value starts with an RFC 3986 scheme followed by `://` (`^[a-zA-Z][a-zA-Z0-9+.-]*://`).
+/// `Common/maskURIPassword.h` has no `findURIAuthority` on this release; this is the same check.
+static bool startsWithURIScheme(std::string_view uri)
+{
+    static constexpr std::string_view SEPARATOR = "://";
+
+    /// The character classes are spelled out rather than taken from `<cctype>`, which depends on the locale.
+    auto is_letter = [](char c) { return ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z'); };
+    auto is_letter_or_digit = [&](char c) { return is_letter(c) || ('0' <= c && c <= '9'); };
+
+    if (uri.empty() || !is_letter(uri[0]))
+        return false;
+
+    size_t scheme_end = 1;
+    while (scheme_end < uri.length()
+           && (is_letter_or_digit(uri[scheme_end]) || uri[scheme_end] == '+' || uri[scheme_end] == '.' || uri[scheme_end] == '-'))
+        ++scheme_end;
+
+    return uri.compare(scheme_end, SEPARATOR.length(), SEPARATOR) == 0;
+}
 
 static String getSchemaString(const ColumnsDescription & columns)
 {
@@ -63,7 +83,7 @@ static void fillDataImpl(MutableColumns & res_columns, SchemaCache & schema_cach
         String source = key.source;
         /// Only a URL can carry a credential. A `File` key is a local path, where the presigned
         /// parameter scan would rewrite a '?' in a file name and swallow everything after it.
-        if (findURIAuthority(source) != String::npos)
+        if (startsWithURIScheme(source))
             maskURICredentials(source);
         res_columns[1]->insert(source);
         res_columns[2]->insert(key.format);
@@ -97,6 +117,3 @@ void StorageSystemSchemaInferenceCache::fillData(MutableColumns & res_columns, C
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemSchemaInferenceCache) }

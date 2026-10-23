@@ -46,10 +46,9 @@ void ProtobufListOutputFormat::finalizeImpl()
 
 void ProtobufListOutputFormat::resetFormatterImpl()
 {
-    serializer->resetState();
+    (*serializer).reset();
 }
 
-void registerOutputFormatProtobufList(FormatFactory & factory);
 void registerOutputFormatProtobufList(FormatFactory & factory)
 {
     factory.registerOutputFormat(
@@ -64,7 +63,6 @@ void registerOutputFormatProtobufList(FormatFactory & factory)
                 settings.protobuf.google_protos_path);
         });
     factory.markOutputFormatNotTTYFriendly("ProtobufList");
-    factory.markFormatHasNoAppendSupport("ProtobufList");
     factory.setContentType("ProtobufList", "application/octet-stream");
 }
 
@@ -75,7 +73,6 @@ void registerOutputFormatProtobufList(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
-void registerOutputFormatProtobufList(FormatFactory &);
 void registerOutputFormatProtobufList(FormatFactory &) {}
 }
 

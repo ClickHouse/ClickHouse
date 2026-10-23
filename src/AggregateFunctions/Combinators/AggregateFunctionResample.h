@@ -5,7 +5,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <Common/FailPoint.h>
 #include <Common/assert_cast.h>
-#include <Common/memory.h>
 #include <base/arithmeticOverflow.h>
 
 
@@ -65,7 +64,7 @@ public:
         , step{step_}
         , total{0}
         , align_of_data{nested_function->alignOfData()}
-        , size_of_data{::Memory::alignUp(nested_function->sizeOfData(), align_of_data)}
+        , size_of_data{(nested_function->sizeOfData() + align_of_data - 1) / align_of_data * align_of_data}
     {
         // notice: argument types has been checked before
         if (step == 0)
@@ -76,7 +75,7 @@ public:
         else
         {
             Key dif;
-            size_t sum = 0;
+            size_t sum;
             if (common::subOverflow(end, begin, dif)
                 || common::addOverflow(static_cast<size_t>(dif), step, sum))
             {
@@ -87,11 +86,6 @@ public:
             total = (sum - 1) / step; // total = (end - begin + step - 1) / step
         }
 
-        /// A state of an empty range holds no nested state and serializes to zero bytes, and a column of
-        /// states is read back one state at a time with no length in front of any of them.
-        if (total == 0)
-            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The range given in function {} is empty", getName());
-
         if (total > max_elements)
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The range given in function {} contains too many elements",
                     getName());
@@ -100,30 +94,6 @@ public:
     String getName() const override
     {
         return nested_function->getName() + "Resample";
-    }
-
-    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
-    {
-        if (!this->haveSameDefinition(rhs))
-            return false;
-
-        auto rhs_nested = rhs.getNestedFunction();
-        chassert(rhs_nested != nullptr);
-
-        return nested_function->canMergeStateFromDifferentVariant(*rhs_nested);
-    }
-
-    void mergeStateFromDifferentVariant(
-        AggregateDataPtr __restrict place, const IAggregateFunction & rhs, ConstAggregateDataPtr rhs_place, Arena * arena) const override
-    {
-        auto rhs_nested = rhs.getNestedFunction();
-        chassert(rhs_nested != nullptr);
-
-        const size_t rhs_align_of_data = rhs_nested->alignOfData();
-        const size_t rhs_size_of_data = ::Memory::alignUp(rhs_nested->sizeOfData(), rhs_align_of_data);
-
-        for (size_t i = 0; i < total; ++i)
-            nested_function->mergeStateFromDifferentVariant(place + i * size_of_data, *rhs_nested, rhs_place + i * rhs_size_of_data, arena);
     }
 
     bool isState() const override
@@ -144,11 +114,6 @@ public:
     size_t getDefaultVersion() const override
     {
         return nested_function->getDefaultVersion();
-    }
-
-    DataTypePtr getStateType() const override
-    {
-        return this->getStateTypeWithVersionOf(*nested_function);
     }
 
     bool allocatesMemoryInArena() const override
@@ -223,58 +188,10 @@ public:
         nested_function->add(place + pos * size_of_data, columns, row_num, arena);
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         for (size_t i = 0; i < total; ++i)
             nested_function->merge(place + i * size_of_data, rhs + i * size_of_data, arena);
-    }
-
-    bool isParallelizeMergePrepareNeeded() const override { return nested_function->isParallelizeMergePrepareNeeded(); }
-    bool isAbleToParallelizeMerge() const override { return nested_function->isAbleToParallelizeMerge(); }
-
-    bool isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const override
-    {
-        /// The whole state with all its buckets is deferred as one unit (the deferred pointers are later passed
-        /// to `parallelizeMergeMulti` of this function), so it is large as soon as one bucket pair is.
-        for (size_t i = 0; i < total; ++i)
-            if (nested_function->isLargeMergePair(place + i * size_of_data, rhs + i * size_of_data))
-                return true;
-        return false;
-    }
-
-    void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const override
-    {
-        AggregateDataPtrs nested_places(places.size());
-        for (size_t i = 0; i < total; ++i)
-        {
-            for (size_t p = 0; p < places.size(); ++p)
-                nested_places[p] = places[p] + i * size_of_data;
-            nested_function->parallelizeMergePrepare(nested_places, thread_pool, is_cancelled);
-        }
-    }
-
-    void mergeImpl(
-        AggregateDataPtr __restrict place,
-        ConstAggregateDataPtr rhs,
-        ThreadPool & thread_pool,
-        std::atomic<bool> & is_cancelled,
-        Arena * arena) const override
-    {
-        for (size_t i = 0; i < total; ++i)
-            nested_function->merge(place + i * size_of_data, rhs + i * size_of_data, thread_pool, is_cancelled, arena);
-    }
-
-    void parallelizeMergeMulti(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
-    {
-        AggregateDataPtrs nested_places(places.size());
-        for (size_t i = 0; i < total; ++i)
-        {
-            if (is_cancelled.load(std::memory_order_seq_cst))
-                return;
-            for (size_t p = 0; p < places.size(); ++p)
-                nested_places[p] = places[p] + i * size_of_data;
-            nested_function->parallelizeMergeMulti(nested_places, thread_pool, is_cancelled, arena);
-        }
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override

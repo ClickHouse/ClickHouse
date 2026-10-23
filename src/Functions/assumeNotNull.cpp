@@ -25,7 +25,7 @@ namespace
 /// - if the argument is a nullable column, return its embedded column;
 /// - otherwise return the original argument.
 /// NOTE: assumeNotNull may not be called with the NULL value.
-class FunctionAssumeNotNull final : public IFunction
+class FunctionAssumeNotNull : public IFunction
 {
 public:
     static constexpr auto name = "assumeNotNull";
@@ -62,7 +62,10 @@ public:
         return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = !can_contain_null };
     }
 
-    String getSignatureString() const override { return "(MaybeNullable(U)) -> U"; }
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        return removeNullable(arguments[0].type);
+    }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
@@ -98,7 +101,7 @@ public:
 REGISTER_FUNCTION(AssumeNotNull)
 {
     FunctionDocumentation::Description description = R"(
-Returns the corresponding non-`Nullable` value for a value of type [`Nullable`](/reference/data-types/nullable).
+Returns the corresponding non-`Nullable` value for a value of type [`Nullable`](../data-types/nullable.md).
 If the original value is `NULL`, an arbitrary result can be returned.
 
 See also: functions [`ifNull`](#ifNull) and [`coalesce`](#coalesce).
@@ -117,7 +120,7 @@ ORDER BY x;
 
 INSERT INTO t_null VALUES (1, NULL), (2, 3);
 
-SELECT assumeNotNull(y) FROM t_null;
+SELECT assumeNotNull(y) FROM table;
 SELECT toTypeName(assumeNotNull(y)) FROM t_null;
         )",
          R"(

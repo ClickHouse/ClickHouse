@@ -2,12 +2,12 @@
 #include <Parsers/Access/ASTShowCreateAccessEntityQuery.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
 #include <Parsers/Access/ParserRowPolicyName.h>
-#include <Parsers/Access/parseAccessEntityName.h>
 #include <Parsers/Access/parseUserName.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <base/range.h>
+#include <cassert>
 
 
 namespace DB
@@ -53,14 +53,8 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!ParserKeyword{Keyword::ON}.ignore(pos, expected)
-                || !parseDatabaseAndTableNameOrAsterisks(pos, expected, database, table, wildcard, default_database))
-                return false;
-
-            /// A prefix wildcard like `db*.*` or `table*` cannot be represented by the
-            /// (database, table) pair this query type carries; reject it explicitly
-            /// instead of silently narrowing it to the non-wildcard form.
-            return !wildcard;
+            return ParserKeyword{Keyword::ON}.ignore(pos, expected)
+                && parseDatabaseAndTableNameOrAsterisks(pos, expected, database, table, wildcard, default_database);
         });
     }
 }
@@ -71,8 +65,8 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
     if (!ParserKeyword{Keyword::SHOW_CREATE}.ignore(pos, expected))
         return false;
 
-    AccessEntityType type = {};
-    bool plural = false;
+    AccessEntityType type;
+    bool plural;
     if (!parseEntityType(pos, expected, type, plural))
         return false;
 
@@ -90,7 +84,7 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
         {
             if (parseCurrentUserTag(pos, expected))
                 current_user = true;
-            else if (!atQueryOutputTail(pos, expected) && parseUserNames(pos, expected, names, /*allow_query_parameter=*/ false))
+            else if (parseUserNames(pos, expected, names, /*allow_query_parameter=*/ false))
             {
             }
             else if (plural)
@@ -101,7 +95,7 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
         }
         case AccessEntityType::ROLE:
         {
-            if (!atQueryOutputTail(pos, expected) && parseRoleNames(pos, expected, names))
+            if (parseRoleNames(pos, expected, names))
             {
             }
             else if (plural)
@@ -126,7 +120,7 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
                 else
                     database_and_table_name.emplace(database, table_name);
             }
-            else if (!atQueryOutputTail(pos, expected) && parseIdentifierOrStringLiteral(pos, expected, short_name))
+            else if (parseIdentifierOrStringLiteral(pos, expected, short_name))
             {
             }
             else if (plural)
@@ -137,7 +131,7 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
         }
         case AccessEntityType::SETTINGS_PROFILE:
         {
-            if (!atQueryOutputTail(pos, expected) && parseIdentifiersOrStringLiterals(pos, expected, names))
+            if (parseIdentifiersOrStringLiterals(pos, expected, names))
             {
             }
             else if (plural)
@@ -148,9 +142,7 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
         }
         case AccessEntityType::QUOTA:
         {
-            if (ParserKeyword{Keyword::CURRENT}.ignore(pos, expected))
-                current_quota = true;
-            else if (!atQueryOutputTail(pos, expected) && parseIdentifiersOrStringLiterals(pos, expected, names))
+            if (parseIdentifiersOrStringLiterals(pos, expected, names))
             {
             }
             else if (plural)
@@ -165,8 +157,7 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
             String table_name;
             bool wildcard = false;
             bool default_database = false;
-            if (!atQueryOutputTail(pos, expected)
-                && parseIdentifierOrStringLiteral(pos, expected, short_name)
+            if (parseIdentifierOrStringLiteral(pos, expected, short_name)
                 && parseOnDBAndTableName(pos, expected, database, table_name, wildcard, default_database))
             {
                 database_and_table_name.emplace(database, table_name);
@@ -182,7 +173,7 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
             {
                 // Already parsed short_name in the first condition
             }
-            else if (!atQueryOutputTail(pos, expected) && parseIdentifiersOrStringLiterals(pos, expected, names))
+            else if (parseIdentifiersOrStringLiterals(pos, expected, names))
             {
             }
             else if (plural)

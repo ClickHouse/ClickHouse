@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemRowPolicies.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/RowPolicy.h>
@@ -131,14 +130,12 @@ void StorageSystemRowPolicies::fillData(MutableColumns & res_columns, ContextPtr
         auto apply_to_ast = apply_to.toASTWithNames(access_control);
         column_apply_to_all.push_back(apply_to_ast->all);
 
-        if (apply_to_ast->names)
-            for (const auto & role_name : apply_to_ast->names->toStrings())
-                column_apply_to_list.insertData(role_name.data(), role_name.length());
+        for (const auto & role_name : apply_to_ast->names)
+            column_apply_to_list.insertData(role_name.data(), role_name.length());
         column_apply_to_list_offsets.push_back(column_apply_to_list.size());
 
-        if (apply_to_ast->except_names)
-            for (const auto & role_name : apply_to_ast->except_names->toStrings())
-                column_apply_to_except.insertData(role_name.data(), role_name.length());
+        for (const auto & role_name : apply_to_ast->except_names)
+            column_apply_to_except.insertData(role_name.data(), role_name.length());
         column_apply_to_except_offsets.push_back(column_apply_to_except.size());
     };
 
@@ -170,6 +167,3 @@ void StorageSystemRowPolicies::restoreDataFromBackup(
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemRowPolicies) }

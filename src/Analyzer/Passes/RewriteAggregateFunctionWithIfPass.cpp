@@ -2,10 +2,8 @@
 
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
-#include <DataTypes/DataTypesNumber.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/IAggregateFunction.h>
 
 #include <Core/Settings.h>
 
@@ -22,109 +20,10 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool optimize_rewrite_aggregate_function_with_if;
-    extern const SettingsShortCircuitFunctionEvaluation short_circuit_function_evaluation;
 }
 
 namespace
 {
-
-/// An aggregate preserves NULL payload rows when its null handling keeps them instead of skipping
-/// them: rewriting f(if(cond, x, NULL)) -> fIf(x, cond) drops those rows and is only valid for
-/// NULL-skipping aggregates. The *_respect_nulls family keeps them and signals this by returning
-/// itself from getOwnNullAdapter (the Null combinator's "do not wrap me, I keep NULL rows"
-/// contract). NULL-skipping aggregates return a wrapping adapter or nullptr.
-bool aggregateFunctionPreservesNullPayload(const AggregateFunctionPtr & function)
-{
-    if (!function)
-        return false;
-
-    /// Look through combinators (-OrNull / -OrDefault / -Distinct / -State / ...): they inherit
-    /// NULL-row handling from the function they wrap, so only the wrapped leaf can belong to the
-    /// *_respect_nulls family. Without this, first_value_respect_nullsOrNull(...) would be rewritten.
-    if (auto nested = function->getNestedFunction())
-        return aggregateFunctionPreservesNullPayload(nested);
-
-    /// The *_respect_nulls family is unary; a nullary aggregate (count()) cannot belong to it.
-    const auto & argument_types = function->getArgumentTypes();
-    if (argument_types.size() != 1)
-        return false;
-
-    /// canContainNull() (not isNullable()): Variant/Dynamic carry NULL via a discriminator without
-    /// being wrapped in Nullable, so makeNullableSafe() leaves them unchanged. The rewrite is safe
-    /// only when the argument cannot hold a NULL payload.
-    if (!canContainNull(*argument_types[0]))
-        return false;
-
-    /// Probe with a Nullable argument, exactly as the Null combinator consults getOwnNullAdapter.
-    /// count's adapter (AggregateFunctionCountNotNullUnary) rejects a non-Nullable argument, and
-    /// Variant/Dynamic cannot be wrapped in Nullable, so fall back to a plain Nullable stand-in. The
-    /// respect_nulls adapters ignore the argument and count only checks isNullable(), so the
-    /// substitution does not change which adapter is returned.
-    auto nullable_argument_type = makeNullableSafe(argument_types[0]);
-    if (!nullable_argument_type->isNullable())
-        nullable_argument_type = makeNullable(std::make_shared<DataTypeUInt8>());
-
-    AggregateFunctionProperties properties;
-    return function->getOwnNullAdapter(function, {nullable_argument_type}, function->getParameters(), properties) == function;
-}
-
-/// A branch of `if` runs only on the rows its condition selects when lazy execution picks it up.
-/// A nested short-circuit mask is not assumed to protect the rows the outer condition excluded, so
-/// the walk continues through it.
-bool branchCanBeSkippedByShortCircuit(const QueryTreeNodePtr & branch, bool every_function_is_lazy)
-{
-    std::vector<const IQueryTreeNode *> nodes_to_process;
-    nodes_to_process.push_back(branch.get());
-
-    while (!nodes_to_process.empty())
-    {
-        const auto * node = nodes_to_process.back();
-        nodes_to_process.pop_back();
-
-        /// A constant is already evaluated when the query tree is built, so it cannot throw per row.
-        if (node->as<ConstantNode>())
-            continue;
-
-        /// A table expression or a subquery in an argument slot is evaluated in its own scope, as a
-        /// set or a scalar, so lazy execution of this expression never reaches inside it.
-        switch (node->getNodeType())
-        {
-            case QueryTreeNodeType::TABLE:
-            case QueryTreeNodeType::TABLE_FUNCTION:
-            case QueryTreeNodeType::QUERY:
-            case QueryTreeNodeType::UNION:
-                continue;
-            default:
-                break;
-        }
-
-        if (const auto * function_node = node->as<FunctionNode>())
-        {
-            if (auto function_base = function_node->getFunction())
-            {
-                if (every_function_is_lazy)
-                    return true;
-
-                /// getArgumentColumns describes each slot the way the resolver did, so the `in`
-                /// right-hand side is reported as a set instead of being asked for a result type.
-                const auto argument_columns = function_node->getArgumentColumns();
-                DataTypesWithConstInfo argument_types;
-                argument_types.reserve(argument_columns.size());
-                for (const auto & argument_column : argument_columns)
-                    argument_types.push_back({argument_column.type, argument_column.column != nullptr});
-
-                if (function_base->isSuitableForShortCircuitArgumentsExecution(argument_types))
-                    return true;
-            }
-        }
-
-        for (const auto & child : node->getChildren())
-            if (child)
-                nodes_to_process.push_back(child.get());
-    }
-
-    return false;
-}
 
 class RewriteAggregateFunctionWithIfVisitor : public InDepthQueryTreeVisitorWithContext<RewriteAggregateFunctionWithIfVisitor>
 {
@@ -153,39 +52,11 @@ public:
         if (!if_node || if_node->getFunctionName() != "if")
             return;
 
-        /// The rewrite f(if(cond, x, NULL)) -> fIf(x, cond) turns the NULL branch into rows the -If
-        /// condition skips, which is only valid when that NULL is a Nullable NULL the aggregate's null
-        /// handling discards. Variant and Dynamic absorb the NULL as a discriminator value (a real
-        /// payload row), so even NULL-skipping aggregates like count and any still process it; dropping
-        /// it via the condition changes the result (count(if(number = 0, NULL, number::Variant(...)))
-        /// goes from 4 to 3). Skip the rewrite whenever the if result can contain NULL but is not
-        /// Nullable, regardless of the aggregate.
-        auto if_result_type = if_node->getResultType();
-        if (canContainNull(*if_result_type) && !isNullableOrLowCardinalityNullable(if_result_type))
-            return;
-
-        /// Do not rewrite aggregates that preserve NULL payload rows (the *_respect_nulls family,
-        /// directly or wrapped in a combinator): the -If form drops those rows and changes the result.
-        if (aggregateFunctionPreservesNullPayload(function_node->getAggregateFunction()))
-            return;
-
         FunctionNodePtr replaced_node;
 
         auto if_arguments_nodes = if_node->getArguments().getNodes();
         auto * first_const_node = if_arguments_nodes[1]->as<ConstantNode>();
         auto * second_const_node = if_arguments_nodes[2]->as<ConstantNode>();
-
-        const auto short_circuit = getSettings()[Setting::short_circuit_function_evaluation];
-        if (short_circuit != ShortCircuitFunctionEvaluation::DISABLE && (second_const_node || first_const_node))
-        {
-            /// The -If combinator evaluates its argument for every row, so lifting a branch that lazy
-            /// execution would have skipped makes a throwing expression run on the rows the condition
-            /// excluded.
-            const auto & lifted_branch = second_const_node ? if_arguments_nodes[1] : if_arguments_nodes[2];
-            if (branchCanBeSkippedByShortCircuit(lifted_branch, short_circuit == ShortCircuitFunctionEvaluation::FORCE_ENABLE))
-                return;
-        }
-
         if (second_const_node)
         {
             const auto & second_const_value = second_const_node->getValue();
@@ -203,22 +74,7 @@ public:
 
                 /// We need to preserve the output type from if(). Notice that the return type of count() is the same either way
                 if (if_arguments_nodes[1]->getResultType()->getName() != if_node->getResultType()->getName() && lower_name != "count")
-                {
-                    /// For constant arguments, directly convert to Nullable instead of
-                    /// wrapping in _CAST. This avoids column name mismatches in distributed
-                    /// queries where the _CAST FunctionNode (on initiator) vs folded
-                    /// ConstantNode (on remote) produce different type annotations.
-                    if (if_arguments_nodes[1]->as<ConstantNode>())
-                    {
-                        auto converted = if_arguments_nodes[1]->clone();
-                        converted->as<ConstantNode &>().convertToNullable();
-                        new_arguments[0] = std::move(converted);
-                    }
-                    else
-                    {
-                        new_arguments[0] = createCastFunction(std::move(if_arguments_nodes[1]), if_node->getResultType(), getContext());
-                    }
-                }
+                    new_arguments[0] = createCastFunction(std::move(if_arguments_nodes[1]), if_node->getResultType(), getContext());
                 else
                     new_arguments[0] = std::move(if_arguments_nodes[1]);
 
@@ -232,13 +88,6 @@ public:
         }
         else if (first_const_node)
         {
-            /// This direction has to negate the condition, and `not(NULL)` is `NULL`: the `-If`
-            /// combinator then skips a row that `if(NULL, const, x)` sends down the else branch, so
-            /// the row silently leaves the aggregate. `SumIfToCountIfPass` refuses a `Nullable`
-            /// condition in its own negated direction for the same reason.
-            if (isNullableOrLowCardinalityNullable(if_arguments_nodes[0]->getResultType()))
-                return;
-
             const auto & first_const_value = first_const_node->getValue();
             if (first_const_value.isNull()
                 || (lower_name == "sum" && isInt64OrUInt64FieldType(first_const_value.getType()) && first_const_value.safeGet<UInt64>() == 0
@@ -252,18 +101,7 @@ public:
 
                 /// We need to preserve the output type from if(). Notice that the return type of count() is the same either way
                 if (if_arguments_nodes[2]->getResultType()->getName() != if_node->getResultType()->getName() && lower_name != "count")
-                {
-                    if (if_arguments_nodes[2]->as<ConstantNode>())
-                    {
-                        auto converted = if_arguments_nodes[2]->clone();
-                        converted->as<ConstantNode &>().convertToNullable();
-                        new_arguments[0] = std::move(converted);
-                    }
-                    else
-                    {
-                        new_arguments[0] = createCastFunction(std::move(if_arguments_nodes[2]), if_node->getResultType(), getContext());
-                    }
-                }
+                    new_arguments[0] = createCastFunction(std::move(if_arguments_nodes[2]), if_node->getResultType(), getContext());
                 else
                     new_arguments[0] = std::move(if_arguments_nodes[2]);
 

@@ -51,21 +51,10 @@ function thread_alter_settings()
 function thread_query_table()
 {
     local TIMELIMIT=$((SECONDS+$1))
-    local MARKER=$2
-    local READER_ID=$3
-    local SUCCEEDED=0
     while [ $SECONDS -lt "$TIMELIMIT" ]; do
         COUNT=$($CLICKHOUSE_CLIENT --query "SELECT count() FROM t where not ignore(*);")
-        # Empty $COUNT is a transiently interrupted read; skip it so the compare emits no bash error.
-        if [ -n "$COUNT" ]; then
-            if [ "$COUNT" != "2000" ]; then
-                echo "wrong count: $COUNT"
-            elif [ "$SUCCEEDED" -eq 0 ]; then
-                # Record this reader's id once so the check can count distinct readers
-                # that landed a valid count, not just a single fleet-wide bit.
-                SUCCEEDED=1
-                echo "$READER_ID" >> "$MARKER"
-            fi
+        if [ "$COUNT" -ne "2000" ];  then
+          echo "$COUNT"
         fi
     done
 }
@@ -74,31 +63,13 @@ export -f thread_alter_settings
 export -f thread_query_table
 
 TIMEOUT=10
-READERS=10
-# Require a strict majority of readers to succeed: tolerates a couple of transiently
-# interrupted readers without re-flaking, but a starvation regression in most of the
-# fleet (e.g. 1/10 or 9/10 readers empty) still fails here.
-MIN_SUCCESSFUL_READERS=$(( READERS / 2 + 1 ))
 
-SUCCESS_MARKER="$CLICKHOUSE_TMP/03151_reader_success_${CLICKHOUSE_TEST_UNIQUE_NAME}"
-rm -f "$SUCCESS_MARKER"
-
-# Drop the churn thread's stderr at the job level (not per-command): if its client is
-# SIGKILLed, bash's job-control "Killed" line goes to stderr and fails this test. The
-# churn thread asserts nothing; readers keep stderr so real read-path errors surface.
-thread_alter_settings $TIMEOUT 2>/dev/null &
-for reader_id in $(seq 1 $READERS);
+thread_alter_settings $TIMEOUT &
+for _ in $(seq 1 10);
 do
-  thread_query_table $TIMEOUT "$SUCCESS_MARKER" "$reader_id" &
+  thread_query_table $TIMEOUT &
 done
 
 wait
-
-# Fail unless a strict majority of distinct readers each landed at least one valid count.
-SUCCESSFUL_READERS=$(sort -u "$SUCCESS_MARKER" 2>/dev/null | grep -c .)
-if [ "$SUCCESSFUL_READERS" -lt "$MIN_SUCCESSFUL_READERS" ]; then
-  echo "only $SUCCESSFUL_READERS of $READERS readers got a successful count"
-fi
-rm -f "$SUCCESS_MARKER"
 
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM t FORMAT Null"

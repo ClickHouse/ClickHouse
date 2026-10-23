@@ -1,8 +1,0 @@
-<clickhouse>
-    <query_log>
-        <database>system</database>
-        <table>query_log</table>
-        <partition_by>toYYYYMM(event_date)</partition_by>
-        <flush_interval_milliseconds>300</flush_interval_milliseconds>
-    </query_log>
-</clickhouse>

@@ -1,7 +1,6 @@
 #include <Common/ThreadFuzzer.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Columns/ColumnConst.h>
 #include <Core/Field.h>
 
 
@@ -13,7 +12,7 @@ namespace
 /** Returns whether Thread Fuzzer is effective.
   * It can be used in tests to prevent too long runs.
   */
-class FunctionHasThreadFuzzer final : public IFunction
+class FunctionHasThreadFuzzer : public IFunction
 {
 public:
     static constexpr auto name = "hasThreadFuzzer";
@@ -34,9 +33,9 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
-        return "() -> UInt8";
+        return std::make_shared<DataTypeUInt8>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override

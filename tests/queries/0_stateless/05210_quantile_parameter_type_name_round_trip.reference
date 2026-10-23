@@ -1,6 +1,0 @@
-AggregateFunction(quantile(\'0.5\'::Decimal32(1)), Float64)
-AggregateFunction(quantileExactTuple(\'0.5\'::Decimal32(1)), Tuple(Float64))
-AggregateFunction(quantile(\'00000000-0000-0000-0000-000000000000\'::UUID), Float64)
-AggregateFunction(quantile(\'1\'::Int256), Float64)
-1	2	3	(4)
-AggregateFunction(quantile(\'0.5\'::Decimal32(1)), UInt64)

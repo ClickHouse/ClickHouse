@@ -112,7 +112,7 @@ function (google_cloud_cpp_generate_proto SRCS)
         set(pb_h "${OUT_DIR}/${D}/${file_stem}.pb.h")
         list(APPEND ${SRCS} "${pb_cc}" "${pb_h}")
 
-        if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR OR USE_MUSL)
+        if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR)
             set(NATIVE_protoc "${PROJECT_BINARY_DIR}/native/contrib/google-protobuf-cmake/protoc")
         else ()
             set(NATIVE_protoc $<TARGET_FILE:protoc>)
@@ -121,8 +121,7 @@ function (google_cloud_cpp_generate_proto SRCS)
             OUTPUT "${pb_cc}" "${pb_h}"
             COMMAND ${NATIVE_protoc} ARGS --cpp_out "${OUT_DIR}"
                     ${protobuf_include_path} "${file_path}"
-            # Depend on the compiler too, so that the files are regenerated when protobuf is updated.
-            DEPENDS "${file_path}" ${NATIVE_protoc}
+            DEPENDS "${file_path}"
             COMMENT "Running C++ protocol buffer compiler on ${file_path}"
             VERBATIM)
     endforeach ()
@@ -213,7 +212,7 @@ function (google_cloud_cpp_generate_grpcpp SRCS)
                 --plugin=protoc-gen-grpc=${GOOGLE_CLOUD_CPP_GRPC_PLUGIN_EXECUTABLE}
                 "--grpc_out=${OUT_DIR}" "--cpp_out=${OUT_DIR}"
                 ${protobuf_include_path} "${file_path}"
-            DEPENDS "${file_path}" ${Protobuf_PROTOC_EXECUTABLE} ${GOOGLE_CLOUD_CPP_GRPC_PLUGIN_EXECUTABLE}
+            DEPENDS "${file_path}"
             COMMENT "Running gRPC C++ protocol buffer compiler on ${file_path}"
             VERBATIM)
     endforeach ()

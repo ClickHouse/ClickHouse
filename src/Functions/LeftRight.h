@@ -11,8 +11,8 @@
 #include <Functions/GatherUtils/Sinks.h>
 #include <Functions/GatherUtils/Slices.h>
 #include <Functions/GatherUtils/Algorithms.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/Context_fwd.h>
-#include <base/arithmeticOverflow.h>
 
 
 namespace DB
@@ -23,7 +23,7 @@ using namespace GatherUtils;
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 enum class SubstringDirection : uint8_t
@@ -33,7 +33,7 @@ enum class SubstringDirection : uint8_t
 };
 
 template <bool is_utf8, SubstringDirection direction>
-class FunctionLeftRight final : public IFunction
+class FunctionLeftRight : public IFunction
 {
 public:
     static constexpr auto name = direction == SubstringDirection::Left
@@ -56,12 +56,16 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if constexpr (is_utf8)
-            return "(String, NativeNumber) -> String";
-        else
-            return "(StringOrFixedString, NativeNumber) -> String";
+        if ((is_utf8 && !isString(arguments[0])) || !isStringOrFixedString(arguments[0]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
+
+        if (!isNativeNumber(arguments[1]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of second argument of function {}",
+                    arguments[1]->getName(), getName());
+
+        return std::make_shared<DataTypeString>();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -95,45 +99,11 @@ public:
                 // According to the docs, if length_value < 0, we need to take a suffix of the string starting from the position abs(length_value)
                 else
                 {
-                    Int64 abs_length_value = 0;
-                    if (common::subOverflow(Int64(0), length_value, abs_length_value))
-                        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                            "Argument of function {} is out of bound: {}", getName(), length_value);
-                    sliceFromLeftConstantOffsetUnbounded(source, StringSink(*col_res, input_rows_count), static_cast<size_t>(abs_length_value));
+                    sliceFromLeftConstantOffsetUnbounded(source, StringSink(*col_res, input_rows_count), -length_value);
                 }
             }
             else
-            {
-                /// Per-row handling so that negative lengths use the same code path as the
-                /// constant-length case: `getSliceFromLeft(|length|)` (unbounded). The
-                /// previous `sliceFromRightDynamicLength` reformulated `right(s, -k)` as
-                /// `getSliceFromRight(elemSize - k, elemSize - k)`, which on a UTF-8 source
-                /// trips an internal inconsistency for invalid UTF-8 input: `countCodePoints`
-                /// (used for `elemSize`) skips lone continuation bytes while
-                /// `skipCodePointsForward/Backward` treats them as 1-byte code points, so
-                /// the result silently lost trailing bytes.
-                StringSink sink(*col_res, input_rows_count);
-                while (!source.isEnd())
-                {
-                    const size_t row = source.rowNum();
-                    const Int64 length = column_length->getInt(row);
-                    typename std::decay_t<decltype(source)>::Slice slice;
-                    if (length > 0)
-                        slice = source.getSliceFromRight(static_cast<UInt64>(length), static_cast<UInt64>(length));
-                    else if (length < 0)
-                    {
-                        Int64 abs_length = 0;
-                        if (common::subOverflow(Int64(0), length, abs_length))
-                            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                                "Argument of function {} is out of bound: {}", getName(), length);
-                        slice = source.getSliceFromLeft(static_cast<size_t>(abs_length));
-                    }
-                    if (length != 0)
-                        writeSlice(slice, sink);
-                    sink.next();
-                    source.next();
-                }
-            }
+                sliceFromRightDynamicLength(source, StringSink(*col_res, input_rows_count), *column_length);
         }
 
         return col_res;
