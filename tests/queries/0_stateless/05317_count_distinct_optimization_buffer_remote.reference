@@ -1,0 +1,7 @@
+-- { echoOn }
+SELECT uniqExact(c0) FROM t_buf;
+15
+SELECT countDistinct(c0) FROM t_buf;
+15
+SELECT uniqExact(c0) FROM t_buf SETTINGS count_distinct_optimization = 0;
+15
