@@ -588,6 +588,19 @@ When off, any table expression using the `STREAM` modifier is rejected
 at plan-build time. This is the umbrella gate for the streaming-queries
 feature; additional capabilities may be gated by their own settings.
 
+## enable_subcolumn_codecs {#enable_subcolumn_codecs}
+
+<ExperimentalBadge/>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "New setting to enable codec declarations for subcolumns."}]}]}/>
+
+Allows declaring compression codecs for subcolumns of a column, such as elements of a `Tuple` or the keys and values of a `Map`,
+with `CODEC name (...)` entries in `CREATE TABLE` and with `ALTER TABLE ... MODIFY COLUMN name CODEC(...)`.
+Tables that already have such declarations work regardless of this setting, and the declarations can always be removed.
+A table with subcolumn codecs cannot be attached by a server of an older version.
+
 ## enable_sz3_codec {#enable_sz3_codec}
 
 <ExperimentalBadge/>

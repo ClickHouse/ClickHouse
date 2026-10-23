@@ -377,8 +377,12 @@ static bool tryToExtractStructureFromCreateQuery(ReadBuffer & in, NamesAndTypesL
     if (!create_query)
         return false;
 
+    /// `CREATE TABLE ... LIKE` has no column list, and a column list with only indexes or constraints has no columns.
+    if (!create_query->columns_list)
+        return false;
+
     const auto * create_defines = create_query->columns_list->as<MySQLParser::ASTCreateDefines>();
-    if (!create_defines)
+    if (!create_defines || !create_defines->columns)
         return false;
 
     structure = getColumnsList(create_defines->columns);
@@ -431,7 +435,8 @@ static void readFirstCreateAndInsertQueries(ReadBuffer & in, String & table_name
     if (type == MySQLQueryType::CREATE)
     {
         /// If we have CREATE query, we can extract columns names and types from it.
-        /// This reads the CREATE query up to and including its ';', so the next query can be the INSERT itself.
+        /// `tryToExtractStructureFromCreateQuery` reads the CREATE query up to and including its `;`,
+        /// so the next query must not be skipped: it can be the first INSERT query.
         if (tryToExtractStructureFromCreateQuery(in, structure_from_create))
             column_names = structure_from_create.getNames();
         insert_query_present = skipToInsertQuery(table_name, in);
