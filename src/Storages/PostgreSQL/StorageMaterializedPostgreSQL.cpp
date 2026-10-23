@@ -40,13 +40,14 @@
 #include <Storages/StoragePostgreSQL.h>
 
 #include <QueryPipeline/Pipe.h>
+#include <Storages/NamedCollectionsHelpers.h>
 
 
 namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_materialized_postgresql_table;
+    extern const SettingsBool enable_materialized_postgresql_table;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 postgresql_connection_attempt_timeout;
 }
@@ -702,9 +703,13 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
         metadata.setComment(args.comment);
 
         if (args.mode <= LoadingStrictnessLevel::CREATE
-            && !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_materialized_postgresql_table])
+            && !args.getLocalContext()->getSettingsRef()[Setting::enable_materialized_postgresql_table])
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "MaterializedPostgreSQL is an experimental table engine."
-                                " You can enable it with the `allow_experimental_materialized_postgresql_table` setting");
+                                " You can enable it with the `enable_materialized_postgresql_table` setting");
+
+        /// Checked before the storage is constructed: the constructor starts replication, which creates the publication
+        /// and the replication slot in PostgreSQL and the nested table, and a rejected `CREATE` would not remove them.
+        throwIfUnreplicatedTableDataNotAllowed(args);
 
         if (!args.storage_def->order_by && args.storage_def->primary_key)
             args.storage_def->set(args.storage_def->order_by, args.storage_def->primary_key->clone());
@@ -764,6 +769,10 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
         if (has_settings)
             postgresql_replication_settings->loadFromQuery(*args.storage_def);
 
+        /// A definition stored by an older version, which did not check it, must still be loaded.
+        if (!isReplayedTableDefinition(args.mode, args.query, args.getLocalContext()))
+            postgresql_replication_settings->checkConsistencyForFreshDefinition();
+
         /// For the table engine the user declares the column types explicitly, so this setting cannot
         /// affect anything (it would be a silent no-op). It is only meaningful for the database engine,
         /// where the nested table structure is derived from PostgreSQL.
@@ -784,6 +793,7 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
     factory.registerStorage(
         "MaterializedPostgreSQL",
         creator_fn,
+        mysqlPostgreSQLSecretArguments(4),
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .supports_sort_order = true,
@@ -800,19 +810,19 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>
 
-:::note
+<Note>
 ClickHouse Cloud users are recommended to use [ClickPipes](/integrations/clickpipes/home) for PostgreSQL replication to ClickHouse. This natively supports high-performance Change Data Capture (CDC) for PostgreSQL.
-:::
+</Note>
 
 Creates ClickHouse table with an initial data dump of PostgreSQL table and starts the replication process, i.e. it executes a background job to apply new changes as they happen on PostgreSQL table in the remote PostgreSQL database.
 
-:::note
-This table engine is experimental. To use it, set `allow_experimental_materialized_postgresql_table` to 1 in your configuration files or by using the `SET` command:
+<Note>
+This table engine is experimental. To use it, set `enable_materialized_postgresql_table` to 1 in your configuration files or by using the `SET` command:
 
 ```sql
-SET allow_experimental_materialized_postgresql_table=1
+SET enable_materialized_postgresql_table=1
 ```
-:::
+</Note>
 
 If more than one table is required, it is highly recommended to use the [MaterializedPostgreSQL](/reference/engines/database-engines/materialized-postgresql) database engine instead of the table engine and use the `materialized_postgresql_tables_list` setting, which specifies the tables to be replicated (will also be possible to add database `schema`). It will be much better in terms of CPU, fewer connections and fewer replication slots inside the remote PostgreSQL database.
 
@@ -876,9 +886,9 @@ PRIMARY KEY key;
 SELECT key, value, _version FROM postgresql_db.postgresql_replica;
 ```
 
-:::note
-Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.html) values is not supported. The default value for the data type will be used.
-:::
+<Note>
+[**TOAST**](https://www.postgresql.org/docs/current/storage-toast.html) values are replicated. When PostgreSQL sends an unchanged TOAST reference during an update, the existing value is preserved. An unchanged TOAST replica identity column requires PostgreSQL to send an old key tuple, otherwise the row cannot be identified.
+</Note>
 )DOCS_MD",
             .syntax = "ENGINE = MaterializedPostgreSQL('host:port', 'database', 'table', 'user', 'password') ORDER BY key",
             .related = {"PostgreSQL"}});

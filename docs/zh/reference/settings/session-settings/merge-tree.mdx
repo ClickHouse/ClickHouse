@@ -130,6 +130,26 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 * 任意正整数。
 
+<div id="merge_tree_min_bytes_per_read_stream">
+  ## merge_tree_min_bytes_per_read_stream
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="65536" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "65536"},{"label": "新增设置：使用 sqrt 成本模型限制常规本地 unordered `MergeTree` 窄列扫描的流数量，从而降低高核心数机器上的每流开销。previous_value=0（禁用），因此与 26.8 之前版本的 `compatibility` 会恢复原有的流数量。"}]}]} />
+
+以字节当量表示的每流开销成本。控制为常规本地 unordered `MergeTree` 扫描创建的最大读取流数量。不会影响 ordered、`FINAL`、分层读取和并行副本读取。基于数据量的上限为 `ceil(sqrt(estimated_read_bytes / this_setting))`。ClickHouse 还会保留至少 16 个流，以及应用此上限前请求流数量的至少四分之一，因此有效流数量为 `min(requested_streams, max(volume_based_cap, 16, floor(requested_streams / 4)))`。这些下限可为 CPU 密集型表达式和聚合保留下游并行度，因为其成本未体现在 `estimated_read_bytes` 中。
+
+`estimated_read_bytes` 是经索引和分区裁剪后保留的标记范围内待读取列的未压缩大小。之所以使用未压缩大小，是因为需要在每流开销与每个流完成的工作量之间进行权衡；工作量取决于处理的值数量，而非压缩率。
+
+当无法以保守方式估算读取量时，不会应用此上限。例如，旧分片需要读取其他物理列以计算新添加的 `DEFAULT` 列，或所选范围仅读取可变宽度列的一部分时。
+
+默认值 64 KB 源自成本模型 `T(N) = W/N + F + V·N`，其中 `W` 是有效工作量，`F` 是固定管道开销，`V` 是每流可变成本。最优流数量为 `sqrt(W/V)`。通过吞吐量将 `W` 以字节表示，可得 `C = throughput · V ≈ 400 MB/s · 0.17 ms ≈ 64 KB`。增大该值会减少流数量 (更保守) ；减小该值则允许使用更多流。设置为 0 可禁用此优化。
+
+可能的值：
+
+* 非负整数。
+
 <div id="merge_tree_min_bytes_per_task_for_remote_reading">
   ## merge_tree_min_bytes_per_task_for_remote_reading
 </div>

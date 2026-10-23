@@ -1,0 +1,52 @@
+gt where b	10
+gt where n.null	5
+pw count	10
+pw select k	100
+pw select b	10
+pw select star	10
+pw subcolumn count	5
+pw subcolumn select k	40
+pw subcolumn select star	5
+star shape	1	1	1	1
+star shape	3	1	0	3
+star shape where	1	1	1	1
+star shape where	3	1	0	3
+ctl not b	10
+ctl b = 1	10
+ctl materialize	10
+ctl b and other	7
+ctl no final	10
+ctl not deferred	10
+policy count	10
+policy select k	100
+policy select star	10
+policy star shape	1	1	1	1
+policy star shape	3	1	0	3
+policy and pw same column	10
+policy and pw same column gt	10
+policy and pw other column	7
+policy and pw other column gt	7
+policy not deferred	10
+policy subcolumn count	5
+policy subcolumn select k	40
+policy subcolumn and pw	3
+policy subcolumn and pw gt	3
+issue repro	4
+issue ground truth	4
+coalescing	10
+aggregating	10
+summing	10
+wrapper nullable	10
+wrapper lowcardinality	10
+wrapper lc nullable	10
+wrapper float	10
+flip pw deferred	2
+flip pw before final	3
+flip pw deferred keys	5
+flip pw before final keys	6
+flip pw values	2	7
+flip pw values	3	1
+flip policy deferred	2
+flip policy before final	3
+flip policy values	2	7
+flip policy values	3	1

@@ -20,16 +20,19 @@
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
+#include <Interpreters/DistributedPlanLocalObject.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
 #include <Parsers/IAST_fwd.h>
 #include <Server/HTTP/HTTPContext.h>
 #include <Storages/IStorage_fwd.h>
 #include <Backups/BackupsInMemoryHolder.h>
+#include <Server/StatelessWorker/StatelessWorkerAllocation_fwd.h>
 
 #include <Poco/AutoPtr.h>
 
 #include "config.h"
 
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -74,6 +77,7 @@ class ContextAccess;
 class ContextAccessWrapper;
 class Field;
 struct User;
+struct IAccessEntity;
 using UserPtr = std::shared_ptr<const User>;
 struct SettingsProfilesInfo;
 struct EnabledRolesInfo;
@@ -100,17 +104,31 @@ class MovesList;
 class ReplicatedFetchList;
 class RefreshSet;
 class Cluster;
+class IStatelessWorkersProvider;
+using StatelessWorkersProviderPtr = std::shared_ptr<IStatelessWorkersProvider>;
+class StatelessWorkersProviderRegistry;
 class Compiler;
 class MarkCache;
 class UniqueKeyIndexCache;
 class DeleteBitmapCache;
 class PrimaryIndexCache;
+class StatisticsCache;
 class PageCache;
 class MMappedFileCache;
 class UncompressedCache;
+class ColumnsCache;
+using ColumnsCachePtr = std::shared_ptr<ColumnsCache>;
+struct ColumnsCacheWriteBudget;
+using ColumnsCacheWriteBudgetPtr = std::shared_ptr<ColumnsCacheWriteBudget>;
 class IcebergMetadataFilesCache;
 class PaimonMetadataFilesCache;
 class ParquetMetadataCache;
+#if USE_GPU
+namespace GPU
+{
+class GPUDevice;
+}
+#endif
 class VectorSimilarityIndexCache;
 class TextIndexTokensCache;
 class TextIndexHeaderCache;
@@ -157,7 +175,8 @@ class AsynchronousInsertLog;
 class BackupLog;
 class BlobStorageLog;
 class DeadLetterQueue;
-class HypotheticalIndexStore;
+class HypotheticalObjectStore;
+class SessionQueryIdsHistory;
 class IAsynchronousReader;
 class IOUringReader;
 struct MergeTreeSettings;
@@ -174,6 +193,10 @@ class DDLWorker;
 class ITableFunction;
 using TableFunctionPtr = std::shared_ptr<ITableFunction>;
 class Block;
+/// An entry of the query scalar map: the scalar block plus whether it came from the client.
+/// Defined in Context.cpp, where `Block` is complete; here `std::map` only needs the forward
+/// declaration, the same way `Scalars` is a `std::map` over the forward-declared `Block`.
+struct ScalarEntry;
 class ActionLocksManager;
 using ActionLocksManagerPtr = std::shared_ptr<ActionLocksManager>;
 class ShellCommand;
@@ -203,6 +226,8 @@ class AsyncLoader;
 class LongConnectionLimit;
 class HTTPHeaderFilter;
 struct AsyncReadCounters;
+struct QueryExecutionCounters;
+using QueryExecutionCountersPtr = std::shared_ptr<QueryExecutionCounters>;
 struct ICgroupsReader;
 class WasmModuleManager;
 
@@ -286,6 +311,9 @@ using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 class ReverseLookupCache;
 using ReverseLookupCachePtr = std::shared_ptr<ReverseLookupCache>;
 
+class AIQuotaTracker;
+using AIQuotaTrackerPtr = std::shared_ptr<AIQuotaTracker>;
+
 /// IRuntimeFilterLookup stores and finds per-query join runtime-filter handles under (random) names.
 /// Runtime filters optimize some JOINs by building a filter from the right side and pre-filtering the left side.
 struct IRuntimeFilterLookup;
@@ -311,6 +339,14 @@ class SystemAllocatedMemoryHolder;
 using SystemAllocatedMemoryHolderPtr = std::shared_ptr<SystemAllocatedMemoryHolder>;
 
 class QueryMetadataCache;
+class CursorTreeNode;
+using CursorTreeNodePtr = std::shared_ptr<CursorTreeNode>;
+
+struct StreamingCursor
+{
+    std::mutex mutex;
+    CursorTreeNodePtr tree;
+};
 using QueryMetadataCachePtr = std::shared_ptr<QueryMetadataCache>;
 using QueryMetadataCacheWeakPtr = std::weak_ptr<QueryMetadataCache>;
 
@@ -370,6 +406,15 @@ protected:
     std::optional<UUID> user_id;
     std::shared_ptr<std::vector<UUID>> current_roles;
     std::shared_ptr<std::vector<UUID>> external_roles;
+    /// If not null, the access rights are limited to the intersection with these elements.
+    /// This comes from the GRANTS clause of the authentication method the user logged in with.
+    std::shared_ptr<const AccessRightsElements> authentication_grants;
+    /// Expiry (VALID UNTIL) of the authentication method the user logged in with, 0 if none.
+    /// Carried alongside `authentication_grants` so deferred-execution paths (asynchronous insert
+    /// flush, `QueryRunner` invoker jobs) can fail closed if the credential has expired between
+    /// enqueue and execution; the synchronous path re-checks it per query in
+    /// `Session::makeQueryContextImpl` (via `Session::checkIfUserIsStillValid`) for every protocol.
+    time_t authentication_valid_until = 0;
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> settings_constraints_and_current_profiles;
     mutable std::shared_ptr<const ContextAccess> access;
     mutable bool need_recalculate_access = true;
@@ -388,6 +433,9 @@ protected:
 
     using InteractiveCancelCallback = std::function<bool()>;
     InteractiveCancelCallback interactive_cancel_callback; /// Callback for usage in interactive sessions with CompletedPipelineExecutor
+
+    using ClientConnectedCallback = std::function<bool()>;
+    ClientConnectedCallback client_connected_callback; /// Returns false once the client has disconnected. Not inherited by copies.
 
     std::weak_ptr<QueryStatus> process_list_elem;  /// For tracking total resource usage for query.
     bool has_process_list_elem = false;     /// It's impossible to check if weak_ptr was initialized or not
@@ -414,9 +462,16 @@ protected:
     String http_combined_filter;
 
     TemporaryTablesMapping external_tables_mapping;
-    mutable std::shared_ptr<HypotheticalIndexStore> hypothetical_index_store;
-    /// Query scalars
-    Scalars scalars;
+    /// History of query ids for `system.session_query_ids`, lives on the session context.
+    mutable std::shared_ptr<SessionQueryIdsHistory> session_query_ids_history;
+    mutable std::shared_ptr<HypotheticalObjectStore> hypothetical_object_store;
+    /// Query scalars. Each entry carries whether it was supplied by the client over the wire (the
+    /// `Scalar` packet, i.e. the `clickhouse-client --external ... --scalar` feature or an initiator
+    /// shipping scalars to a shard) rather than computed by the server itself. The origin travels with
+    /// the block so that the analyzer's scalar-subquery cache (which keys on the query-tree hash) never
+    /// mistakes a client-supplied block for an already-computed subquery result; without this a client
+    /// could forge the result of a scalar subquery used in a row policy and bypass the policy.
+    std::map<String, ScalarEntry> scalars;
     /// Used to store constant values which are different on each instance during distributed plan, such as _shard_num.
     Scalars special_scalars;
 
@@ -569,9 +624,13 @@ public:
 protected:
     /// Needs to be changed while having const context in factories methods
     mutable QueryFactoriesInfo query_factories_info;
+    /// Created by `makeQueryContext` and shared by every context copied from the query context.
+    DistributedPlanLocalObjectPtr distributed_plan_local_object;
     QueryPrivilegesInfoPtr query_privileges_info;
     /// Query metrics for reading data asynchronously with IAsynchronousReader.
     mutable std::shared_ptr<AsyncReadCounters> async_read_counters;
+    /// Query metrics about the execution of a query.
+    mutable QueryExecutionCountersPtr query_execution_counters;
 
     /// TODO: maybe replace with temporary tables?
     StoragePtr view_source;                 /// Temporary StorageValues used to generate alias columns for materialized views
@@ -588,6 +647,9 @@ protected:
 
     /// A flag, used to distinguish between user query and internal query to a database engine (MaterializedPostgreSQL).
     bool is_internal_query = false;
+    /// True for a query that originates from server-owned SQL text. It must be inherited by interpreters
+    /// which serialize and reparse a part of that text.
+    bool parse_server_owned_query_without_limits = false;
     /// A flag, used to detect sub-operations of background operations - in this case we won't need to build another background contexts
     bool is_background_operation = false;
     /// Set for queries created internally by the server for DDL replication (ON CLUSTER, DatabaseReplicated)
@@ -595,21 +657,21 @@ protected:
     /// Unlike query_kind == SECONDARY_QUERY (which comes from the client and can be spoofed),
     /// this flag can only be set server-side and is safe to use for security-sensitive checks.
     bool is_ddl_or_on_cluster_internal = false;
+    /// Set for CREATE queries a Replicated database replays from a definition it already stored.
+    /// Such a definition describes existing state, so validation that may reject a new one must not run.
+    bool is_recovery_from_stored_metadata = false;
+    /// `EXPLAIN WHATIF` plans the query without the projections that it weighs, so its plans skip the forced projection check
+    bool skip_forced_projection_check = false;
     /// True when this context belongs to the inner query of an expanded view.
-    /// Positional arguments inside views must be resolved even on remote/secondary nodes where
-    /// enable_positional_arguments would otherwise be skipped (views are expanded on remote nodes,
-    /// not on the initiator).
     bool is_view_inner_query = false;
-    /// True when positional arguments in the outer query have already been resolved by the
-    /// initiator node. Set by distributed/parallel-replicas local plan builders to prevent
-    /// double-resolution. Unlike disabling enable_positional_arguments, this flag is a context
-    /// field and does not propagate through settings copies (e.g. getSQLSecurityOverriddenContext),
-    /// so view-inner queries on the same node are unaffected.
-    bool positional_arguments_already_resolved = false;
     /// Which join statistics EXPLAIN ANALYZE needs. It is a context field rather than a setting on
     /// purpose: only Interpreter may turn it on, but it must reach every join of the
     /// query, including joins in nested plans, which EXPLAIN also prints.
     JoinAnalyzeMode join_analyze_mode = JoinAnalyzeMode::None;
+    /// True while building the plan with parallel replicas that `automatic_parallel_replicas_mode` costs against the
+    /// single-node plan. It is a context field rather than a setting, because it must reach every planning of that
+    /// plan, including views analyzed later by their own interpreters, and no `SETTINGS` clause there may undo it.
+    bool is_automatic_parallel_replicas_probe = false;
 
     /// Defined out of line: a definition in the header gives every shared object its own copy.
     static ContextPtr global_context_instance;
@@ -653,6 +715,9 @@ protected:
     /// This is a per query cache and not shared across queries.
     mutable ReverseLookupCachePtr reverse_lookup_cache;
 
+    /// AI-function quota usage for the current query, shared by every AI function call in it.
+    mutable AIQuotaTrackerPtr ai_quota_tracker;
+
     /// this is a mode of parallel replicas where we set parallel_replicas_count and parallel_replicas_offset
     /// and generate specific filters on the replicas (e.g. when using parallel replicas with sample key)
     /// if we already use a different mode of parallel replicas we want to disable this mode
@@ -660,6 +725,11 @@ protected:
 
     /// Used at query runtime to save per-query runtime-filter handles and find them by (random) names.
     RuntimeFilterLookupPtr runtime_filter_lookup;
+
+    /// Per-query shared accounting for columns cache writes. Created in
+    /// makeQueryContext and shared across all of the query's read pools so the
+    /// columns-cache write budgets apply per query rather than per pool.
+    ColumnsCacheWriteBudgetPtr columns_cache_write_budget;
 
 public:
     /// Some counters for current query execution.
@@ -726,6 +796,12 @@ protected:
 
     std::shared_ptr<BackupsInMemoryHolder> backups_in_memory; /// Backups stored in memory (see "BACKUP ... TO Memory()" statement)
 
+    /// Final `STREAM [BOUNDED]` cursor holder (tree + its mutex), shared across `Context::createCopy` so
+    /// parallel reading streams serialize their merges into the one tree.
+    std::shared_ptr<StreamingCursor> streaming_cursor;
+
+    QueryExecutionStartedCallback query_execution_started_callback;
+
     /// Use copy constructor or createGlobal() instead
     ContextData();
     ContextData(const ContextData &);
@@ -754,6 +830,11 @@ class Context: public ContextData, public std::enable_shared_from_this<Context>
 private:
     /// ContextData mutex
     mutable ContextSharedMutex mutex;
+
+    /// Held across the blocking allocation, so separate from `mutex`.
+    mutable std::mutex stateless_worker_allocation_mutex;
+    mutable StatelessWorkerAllocationPtr stateless_worker_allocation;
+    mutable StatelessWorkersProviderPtr stateless_worker_provider;
 
     Context();
     Context(const Context &);
@@ -822,17 +903,19 @@ public:
         MAX_PENDING_MUTATIONS_OVER_THRESHOLD,
         MAYBE_BROKEN_TABLES,
         MERGE_TREE_JEMALLOC_ARENA_POOL_DEGRADED,
+        JEMALLOC_PERCPU_ARENA_DISABLED,
         OBSOLETE_MONGO_TABLE_DEFINITION,
         OBSOLETE_SETTINGS,
         PROCESS_USER_MATCHES_DATA_OWNER,
         RABBITMQ_UNSUPPORTED_COLUMNS,
         REPLICATED_DB_WITH_ALL_GROUPS_CLUSTER_PREFIX,
         ROTATIONAL_DISK_WITH_DISABLED_READHEAD,
-        SERVER_BUILT_IN_DEBUG_MODE,
-        SERVER_BUILT_WITH_COVERAGE,
-        SERVER_BUILT_WITH_SANITIZERS,
+        CLICKHOUSE_BUILT_IN_DEBUG_MODE,
+        CLICKHOUSE_BUILT_WITH_COVERAGE,
+        CLICKHOUSE_BUILT_WITH_SANITIZERS,
+        CLICKHOUSE_LOGGING_LEVEL_TEST,
+        CUSTOM_DISK_NOT_ALLOWED_BY_REMOTE_URL_ALLOW_HOSTS,
         SERVER_CPU_OVERLOAD,
-        SERVER_LOGGING_LEVEL_TEST,
         SERVER_MEMORY_OVERLOAD,
         SERVER_RUN_UNDER_DEBUGGER,
         SETTING_ZERO_COPY_REPLICATION_ENABLED,
@@ -894,8 +977,32 @@ public:
 
     /// Sets the current user, assuming they are already authenticated.
     /// WARNING: This function doesn't check the password!
-    void setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_ = {});
+    /// `authentication_grants_` limits the access rights to the intersection with these elements
+    /// (it comes from the GRANTS clause of the authentication method the user logged in with);
+    /// it is reset if not specified, because it is a property of the authentication, not of the user.
+    /// `authentication_valid_until_` records the method's expiry (0 = none) for the same reason; it is
+    /// likewise reset if not specified, so switching the principal never keeps a stale expiry.
+    /// Callers that switch the principal within the SAME authenticated session (e.g. `EXECUTE AS`)
+    /// must read both limits back from the source context and pass them here, so the session cannot
+    /// escape its credential's limit by impersonating a less restricted principal.
+    void setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_ = {}, const std::shared_ptr<const AccessRightsElements> & authentication_grants_ = nullptr, time_t authentication_valid_until_ = 0);
     UserPtr getUser() const;
+
+    /// Limits the access rights to the intersection with the elements (or resets the limit if null).
+    /// See the GRANTS clause of the authentication methods in CREATE USER.
+    void setAuthenticationGrants(const std::shared_ptr<const AccessRightsElements> & authentication_grants_);
+
+    /// Returns the credential grant limit of the current session (null if the session is not limited).
+    /// Deferred executors that re-create a context for the same session (asynchronous insert flush,
+    /// the `QueryRunner` invoker) must carry this over, otherwise a limited credential would regain
+    /// full rights when its work is replayed under a freshly-built context.
+    std::shared_ptr<const AccessRightsElements> getAuthenticationGrants() const;
+
+    /// Records the expiry (VALID UNTIL) of the authentication method used to log in (0 = no expiry).
+    /// Like `authentication_grants`, deferred executors carry this over so a credential's queued work
+    /// can be failed closed if the credential has expired before the deferred job runs.
+    void setAuthenticationValidUntil(time_t authentication_valid_until_);
+    time_t getAuthenticationValidUntil() const;
 
     std::optional<UUID> getUserID() const;
     String getUserName() const;
@@ -905,6 +1012,11 @@ public:
     void setCurrentRoles(const RolesOrUsersSet & new_current_roles, bool check_grants = true);
     void setCurrentRolesDefault();
     std::vector<UUID> getCurrentRoles() const;
+    /// The external (pushed) roles received from another node over the interserver protocol.
+    /// Deferred executors that re-create a context for the same session (asynchronous insert flush,
+    /// the `QueryRunner` invoker) must carry these over and re-apply them via `setUser`, otherwise a
+    /// role that exists only as an external role fails revalidation with `SET_NON_GRANTED_ROLE`.
+    std::vector<UUID> getExternalRoles() const;
     std::vector<UUID> getEnabledRoles() const;
     std::shared_ptr<const EnabledRolesInfo> getRolesInfo() const;
 
@@ -957,6 +1069,8 @@ public:
     UInt64 getCPUSlotQuantum() const;
     UInt64 getCPUSlotPreemptionTimeout() const;
     void setCPUSlotPreemption(bool cpu_slot_preemption, UInt64 cpu_slot_quantum_ns, UInt64 cpu_slot_preemption_timeout_ms);
+    bool getCPUSlotParking() const;
+    void setCPUSlotParking(bool value);
     UInt64 getConcurrentThreadsSoftLimitNum() const;
     UInt64 getConcurrentThreadsSoftLimitRatioToCores() const;
     String getConcurrentThreadsScheduler() const;
@@ -995,6 +1109,7 @@ public:
     void setClientName(const String & client_name);
     void setClientInterface(ClientInfo::Interface interface);
     void setClientVersion(UInt64 client_version_major, UInt64 client_version_minor, UInt64 client_version_patch, unsigned client_tcp_protocol_version);
+    void setInitiatorVersionIfUnset();
     void setClientConnectionId(uint32_t connection_id);
     void setScriptQueryAndLineNumber(uint32_t query_number, uint32_t line_number);
     void setHTTPClientInfo(const Poco::Net::HTTPRequest & request);
@@ -1014,6 +1129,7 @@ public:
     void increaseDistributedDepth();
     const OpenTelemetry::TracingContext & getClientTraceContext() const { return client_info.client_trace_context; }
     OpenTelemetry::TracingContext & getClientTraceContext() { return client_info.client_trace_context; }
+    void setClientTraceContext(const OpenTelemetry::TracingContext & trace_context);
 
     enum StorageNamespace
     {
@@ -1040,12 +1156,25 @@ public:
     std::shared_ptr<TemporaryTableHolder> findExternalTable(const String & table_name) const;
     std::shared_ptr<TemporaryTableHolder> removeExternalTable(const String & table_name);
 
-    HypotheticalIndexStore & getHypotheticalIndexStore() const;
+    /// Per-session history of query ids for `system.session_query_ids`.
+    SessionQueryIdsHistory & getSessionQueryIdsHistory() const;
+
+    HypotheticalObjectStore & getHypotheticalObjectStore() const;
 
     Scalars getScalars() const;
     Block getScalar(const String & name) const;
     void addScalar(const String & name, const Block & block);
     bool hasScalar(const String & name) const;
+
+    /// Add a scalar received from the client over the wire (the `Scalar` packet). Unlike `addScalar`,
+    /// the entry is marked as client-supplied so that `hasComputedScalar` will not report it as a
+    /// server-computed subquery result. Explicit readers (`__getScalar`, `_shard_num`, forwarding to
+    /// shards) still see it through `getScalar` / `hasScalar` / `getScalars`.
+    void addClientScalar(const String & name, const Block & block);
+    /// Like `hasScalar`, but returns true only for scalars the server computed itself, never for
+    /// client-supplied ones. The analyzer's scalar-subquery cache must use this so that a forged
+    /// client scalar cannot stand in for the result of a (e.g. row-policy) scalar subquery.
+    bool hasComputedScalar(const String & name) const;
 
     std::optional<Block> tryGetSpecialScalar(const String & name) const;
     void addSpecialScalar(const String & name, const Block & block);
@@ -1104,6 +1233,11 @@ public:
     QueryFactoriesInfo getQueryFactoriesInfo() const;
     void addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const;
 
+    /// Records that the query resolved an object of this server by name (see `DistributedPlanLocalObject`). Written by
+    /// the resolvers, read by the `make_distributed_plan` fallback decision. No-op outside a query.
+    void addDistributedPlanLocalObject(DistributedPlanLocalObject::Kind kind, const String & name) const;
+    std::shared_ptr<const DistributedPlanLocalObject> getDistributedPlanLocalObject() const;
+
     /// RAII scope that suppresses calls to addQueryFactoriesInfo() on the current thread.
     /// Use it in introspection paths (e.g. reading system.functions) where instantiating
     /// every function — and the helper functions they construct internally — must not
@@ -1146,6 +1280,7 @@ public:
 
     void addViewSource(const StoragePtr & storage);
     StoragePtr getViewSource() const;
+    void clearViewSource();
 
     String getCurrentDatabase() const;
     String getCurrentQueryId() const { return client_info.current_query_id; }
@@ -1214,17 +1349,31 @@ public:
 
     /// Checks the constraints.
     void checkSettingsConstraints(const AlterSettingsProfileElements & profile_elements, SettingSource source);
+    /// A write which overwrites users, roles or settings profiles must not remove a setting the current user
+    /// is constrained on: `ALTER` gives each new definition by `update`, `CREATE ... OR REPLACE` by `new_entities`.
+    using AccessEntityUpdate
+        = std::function<std::shared_ptr<const IAccessEntity>(const std::shared_ptr<const IAccessEntity> &, const UUID &)>;
+    void checkSettingsConstraintsForOverwrite(const std::vector<UUID> & ids, const AccessEntityUpdate & update) const;
+    void checkSettingsConstraintsForOverwrite(
+        const std::vector<std::shared_ptr<const IAccessEntity>> & new_entities, const String & storage_name) const;
     void checkSettingsConstraints(const SettingChange & change, SettingSource source);
     void checkSettingsConstraints(const SettingsChanges & changes, SettingSource source);
     void checkSettingsConstraints(SettingsChanges & changes, SettingSource source);
+    void checkSettingsConstraintsForSettingsReset(const std::vector<String> & names, SettingSource source);
+    /// Clamping counterpart of `checkSettingsConstraintsForSettingsReset`: reduces `names` to the resets
+    /// allowed by the constraints and returns in `clamped_changes` the assignments replacing the clamped ones.
+    void clampSettingsConstraintsForSettingsReset(std::vector<String> & names, SettingsChanges & clamped_changes, SettingSource source);
+    /// For the resets of a statement that also changes `profile`: `changes_applied_first` decides their constraints.
+    void checkSettingsConstraintsForSettingsReset(const std::vector<String> & names, const SettingsChanges & changes_applied_first, SettingSource source);
     void clampToSettingsConstraints(SettingsChanges & changes, SettingSource source);
     void checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 
-    /// Reset settings to default value
+    /// Reset settings to the default in effect for them, which under an active `compatibility` is the value of that version.
     void resetSettingsToDefaultValue(const std::vector<String> & names);
 
     /// Returns the current constraints (can return null).
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfiles() const;
+    void setSettingsConstraintsAndCurrentProfiles(std::shared_ptr<const SettingsConstraintsAndProfileIDs> constraints_and_profiles);
 
     AsyncLoader & getAsyncLoader() const;
 
@@ -1260,10 +1409,28 @@ public:
 #endif
 
     BackupsWorker & getBackupsWorker() const;
+
+    /// Makes further BACKUP and RESTORE queries fail instead of starting a new operation.
+    void stopAcceptingNewBackupsAndRestores() const;
+
     void waitAllBackupsAndRestores() const;
-    void cancelAllBackupsAndRestores() const;
+
+    /// Stopping the DDL worker first registers every part of an ON CLUSTER backup or restore it runs, so that the wait covers them.
+    void stopDDLWorkerAndWaitAllBackupsAndRestores() const;
+
+    /// Returns false if `deadline` was reached while some operation was still running.
+    bool cancelAllBackupsAndRestores(std::optional<std::chrono::steady_clock::time_point> deadline = {}) const;
+
+    /// Returns true if some backup or restore has not reached a final status yet. Never waits.
+    bool hasUnfinishedBackupsAndRestores() const;
+
     std::shared_ptr<BackupsInMemoryHolder> getBackupsInMemory();
     std::shared_ptr<const BackupsInMemoryHolder> getBackupsInMemory() const;
+
+    /// The outer query sets an empty holder before a `STREAM [BOUNDED]` read; the reading sources merge into
+    /// it (under its mutex), and the outer query reads it back.
+    void setStreamingCursor(std::shared_ptr<StreamingCursor> cursor);
+    std::shared_ptr<StreamingCursor> getStreamingCursor() const;
 
     /// I/O formats.
     InputFormatPtr getInputFormat(
@@ -1346,7 +1513,20 @@ public:
     void setS3QueueDisableStreaming(bool s3queue_disable_streaming) const;
 
     bool getMessageQueueDisableInsertion() const;
-    void setMessageQueueDisableInsertion(bool message_queue_disable_insertion) const;
+
+    /// The server-level distributed cache switches. They live in `shared`, which is common to every context
+    /// (including the background and buffer contexts created once at startup), so a config reload is observed
+    /// by background operations as well. A query may deviate from them with the `force_*` settings.
+    bool getReadThroughDistributedCache() const;
+    void setReadThroughDistributedCache(bool read_through_distributed_cache) const;
+
+    bool getWriteThroughDistributedCache() const;
+    void setWriteThroughDistributedCache(bool write_through_distributed_cache) const;
+
+    /// The switches with this context's `force_*` setting applied. The global context ignores that setting:
+    /// it is the startup snapshot serving operations without a query context, which follow the server switch.
+    bool resolveReadThroughDistributedCache() const;
+    bool resolveWriteThroughDistributedCache() const;
 
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
@@ -1410,6 +1590,9 @@ public:
     void setInteractiveCancelCallback(InteractiveCancelCallback && callback) { interactive_cancel_callback = callback; }
     InteractiveCancelCallback getInteractiveCancelCallback() const { return interactive_cancel_callback; }
 
+    void setClientConnectedCallback(ClientConnectedCallback && callback) { client_connected_callback = callback; }
+    ClientConnectedCallback getClientConnectedCallback() const { return client_connected_callback; }
+
     /** Set in executeQuery and InterpreterSelectQuery. Then it is used in QueryPipeline,
       *  to update and monitor information about the total number of resources spent for the query.
       */
@@ -1472,8 +1655,18 @@ public:
 #endif
     void initializeKeeperDispatcher(bool start_async) const;
     void signalKeeperDispatcherShutdown() const;
-    void shutdownKeeperDispatcher(bool closed_all_connections) const;
+    void shutdownKeeperDispatcherBeforeConnectionsFinish() const;
+    void shutdownKeeperDispatcherAfterConnectionsFinish(bool closed_all_connections) const;
     void updateKeeperConfiguration(const Poco::Util::AbstractConfiguration & config) const;
+
+    /// The provider for the named worker cluster (empty = default), built on first use.
+    StatelessWorkersProviderPtr getStatelessWorkersProvider(const String & cluster_name) const;
+    std::shared_ptr<StatelessWorkersProviderRegistry> getStatelessWorkersProviderRegistry() const;
+    void reloadStatelessWorkersConfig(const Poco::Util::AbstractConfiguration & config) const;
+    /// The query's provider, resolved once so plan sizing and the allocation use the same workers.
+    StatelessWorkersProviderPtr getStatelessWorkersProvider() const;
+    /// The query's allocation, shared by all of its distributed plans.
+    StatelessWorkerAllocationPtr getOrCreateStatelessWorkerAllocation() const;
 
     /// Set auxiliary zookeepers configuration at server starting or configuration reloading.
     void reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config);
@@ -1502,6 +1695,14 @@ public:
     std::shared_ptr<PageCache> getPageCache() const;
     void clearPageCache() const;
 
+#if USE_GPU
+    /// Takes the GPU with the `gpu_*` server settings. It is called at the start of the server when `enable_gpu` is
+    /// set, before any query, and the device is released at shutdown.
+    void setGPU(const ServerSettings & server_settings);
+    /// Throws when `enable_gpu` is not set.
+    GPU::GPUDevice & getGPU() const;
+#endif
+
     void setMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
     void updateMarkCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
     std::shared_ptr<MarkCache> getMarkCache() const;
@@ -1527,6 +1728,16 @@ public:
     void updatePrimaryIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
     std::shared_ptr<PrimaryIndexCache> getPrimaryIndexCache() const;
     void clearPrimaryIndexCache() const;
+
+    void setStatisticsCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
+    void updateStatisticsCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
+    std::shared_ptr<StatisticsCache> getStatisticsCache() const;
+    void clearStatisticsCache() const;
+    void setColumnsCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
+    /// `default_size` is the size to use when `columns_cache_size` is absent from `config`, see `getDefaultColumnsCacheSize`.
+    void updateColumnsCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t default_size, size_t max_cache_size);
+    ColumnsCachePtr getColumnsCache() const;
+    void clearColumnsCache() const;
 
     /// Untracked memory holder for SYSTEM ALLOCATE UNTRACKED MEMORY / SYSTEM FREE UNTRACKED MEMORY
     SystemAllocatedMemoryHolderPtr getSystemAllocatedMemoryHolder() const;
@@ -1636,6 +1847,7 @@ public:
 
     ThreadPool & getBuildVectorSimilarityIndexThreadPool() const;
     ThreadPool & getIcebergCatalogThreadpool() const;
+    ThreadPool & getBackgroundQueryPool() const;
 
     /// Settings for MergeTree background tasks stored in config.xml
     BackgroundTaskSchedulingSettings getBackgroundProcessingTaskSchedulingSettings() const;
@@ -1668,6 +1880,7 @@ public:
 
     std::map<String, std::shared_ptr<Cluster>> getClusters() const;
     std::shared_ptr<Cluster> getCluster(const std::string & cluster_name) const;
+    std::shared_ptr<Cluster> getCluster(const std::string & cluster_name, bool treat_local_port_as_remote) const;
     std::shared_ptr<Cluster> tryGetCluster(const std::string & cluster_name) const;
     void setClustersConfig(const ConfigurationPtr & config, bool enable_discovery = false, const String & config_name = "remote_servers");
     size_t getClustersVersion() const;
@@ -1685,6 +1898,7 @@ public:
 
     /// Call after initialization before using system logs. Call for global context.
     void initializeSystemLogs();
+    bool hasSystemLogs() const;
 
     /// Call after initialization before using trace collector.
     void createTraceCollector();
@@ -1763,12 +1977,6 @@ public:
     void setConfigReloaderInterval(size_t value_ms);
     size_t getConfigReloaderInterval() const;
 
-    /// Server-wide override for the analyzer in mutations.
-    /// `std::nullopt` means there is no override (the session setting `allow_experimental_analyzer` is used).
-    /// Set from the main config reload callback.
-    void setMutationsUseAnalyzerOverride(std::optional<bool> value);
-    std::optional<bool> getMutationsUseAnalyzerOverride() const;
-
     /// Lets you select the compression codec according to the conditions described in the configuration file.
     std::shared_ptr<ICompressionCodec> chooseCompressionCodec(size_t part_size, double part_size_ratio) const;
 
@@ -1784,6 +1992,8 @@ public:
 
     /// Provides storage politics schemes
     StoragePolicyPtr getStoragePolicy(const String & name) const;
+    /// Returns `nullptr` instead of throwing when the policy is not configured.
+    StoragePolicyPtr tryGetStoragePolicy(const String & name) const;
 
     StoragePolicyPtr getStoragePolicyFromDisk(const String & disk_name) const;
 
@@ -1804,22 +2014,34 @@ public:
     void startServers(const ServerType & server_type) const;
     void stopServers(const ServerType & server_type) const;
 
+    using StopIntrospectionServersCallback = std::function<void()>;
+    void setStopIntrospectionServersCallback(StopIntrospectionServersCallback && callback);
+
     void shutdown();
 
     bool isInternalQuery() const { return is_internal_query; }
     void setInternalQuery(bool internal) { is_internal_query = internal; }
 
+    bool shouldParseServerOwnedQueryWithoutLimits() const { return parse_server_owned_query_without_limits; }
+    void setParseServerOwnedQueryWithoutLimits(bool value) { parse_server_owned_query_without_limits = value; }
+
     bool isDDLOrOnClusterInternal() const { return is_ddl_or_on_cluster_internal; }
     void setDDLOrOnClusterInternal(bool value) { is_ddl_or_on_cluster_internal = value; }
+
+    bool isRecoveryFromStoredMetadata() const { return is_recovery_from_stored_metadata; }
+
+    bool skipsForcedProjectionCheck() const { return skip_forced_projection_check; }
+    void setSkipForcedProjectionCheck() { skip_forced_projection_check = true; }
+    void setRecoveryFromStoredMetadata(bool value) { is_recovery_from_stored_metadata = value; }
 
     bool isViewInnerQuery() const { return is_view_inner_query; }
     void setIsViewInnerQuery(bool value) { is_view_inner_query = value; }
 
-    bool isPositionalArgumentsAlreadyResolved() const { return positional_arguments_already_resolved; }
-    void setPositionalArgumentsAlreadyResolved(bool value) { positional_arguments_already_resolved = value; }
-
     JoinAnalyzeMode getJoinAnalyzeMode() const { return join_analyze_mode; }
     void setJoinAnalyzeMode(JoinAnalyzeMode value) { join_analyze_mode = value; }
+
+    bool isAutomaticParallelReplicasProbe() const { return is_automatic_parallel_replicas_probe; }
+    void setIsAutomaticParallelReplicasProbe(bool value) { is_automatic_parallel_replicas_probe = value; }
 
     ActionLocksManagerPtr getActionLocksManager() const;
 
@@ -1907,6 +2129,12 @@ public:
     void setDDLAdditionalChecksOnEnqueue(Coordination::Requests requests);
     Coordination::Requests getDDLAdditionalChecksOnEnqueue() const;
 
+    /// Called by the interpreter after the query has passed its checks,
+    /// right before it starts its main work.
+    void onQueryExecutionStarted() const;
+    void setQueryExecutionStartedCallback(QueryExecutionStartedCallback callback);
+    const QueryExecutionStartedCallback & getQueryExecutionStartedCallback() const;
+
     void checkTransactionsAreAllowed(bool explicit_tcl_query = false) const;
     void initCurrentTransaction(MergeTreeTransactionPtr txn);
     void setCurrentTransaction(MergeTreeTransactionPtr txn);
@@ -1954,6 +2182,8 @@ public:
 
     std::shared_ptr<AsyncReadCounters> getAsyncReadCounters() const;
 
+    QueryExecutionCountersPtr getQueryExecutionCounters() const;
+
     ThreadPool & getThreadPoolWriter() const;
 
     /** Get settings for reading from filesystem. */
@@ -1963,7 +2193,17 @@ public:
     WriteSettings getWriteSettings() const;
 
     /** There are multiple conditions that have to be met to be able to use parallel replicas */
+    /// Whether parallel replicas are enabled, in any `parallel_replicas_mode`. Use it rather than reading
+    /// `enable_parallel_replicas`: in `read_tasks` mode `automatic_parallel_replicas_mode` decides instead on the initiator, so they do
+    /// not count as enabled there, although the setting stays on for cluster engines.
+    bool isParallelReplicasEnabled() const;
+    /// `automatic_parallel_replicas_mode`, except that forcing parallel replicas (`enable_parallel_replicas = 2`) turns the
+    /// automatic mode off. Read the mode through it rather than from the setting.
+    static UInt64 getAutomaticParallelReplicasMode(const Settings & settings_ref);
     bool canUseTaskBasedParallelReplicas() const;
+    /// Whether a cluster engine (`s3`, `url`, a table of a data lake catalog, ...) may be replaced by its `*Cluster`
+    /// variant over `cluster_for_parallel_replicas`, which ships the query text to the replicas.
+    bool canReplaceClusterEngineWithClusterVariant() const;
     bool canUseParallelReplicasOnInitiator() const;
     bool canUseParallelReplicasOnFollower() const;
     bool canUseParallelReplicasCustomKey() const;
@@ -1979,10 +2219,16 @@ public:
 
     ReverseLookupCache & getReverseLookupCache() const;
 
+    AIQuotaTrackerPtr getAIQuotaTracker() const;
+
     /// IRuntimeFilterLookup stores and finds per-query join runtime-filter handles by (random) names,
     /// used to optimize some JOINs by early pre-filtering the left side with a filter built from the right.
     void setRuntimeFilterLookup(const RuntimeFilterLookupPtr & filter_lookup);
     RuntimeFilterLookupPtr getRuntimeFilterLookup() const;
+
+    /// Per-query shared accounting for columns cache writes (see ColumnsCacheWriteBudget).
+    /// Shared across all read pools of the query so the write budgets apply per query.
+    ColumnsCacheWriteBudgetPtr getColumnsCacheWriteBudget() const;
 
     void setPartitionIdToMaxBlock(const UUID & table_uuid, PartitionIdToMaxBlockPtr partitions);
     PartitionIdToMaxBlockPtr getPartitionIdToMaxBlock(const UUID & table_uuid) const;
@@ -1990,6 +2236,7 @@ public:
     /// A pinned storage snapshot to be returned by the table's getStorageSnapshot instead of a fresh one.
     /// Used by atomic `CREATE MATERIALIZED VIEW ... POPULATE`.
     void setPinnedStorageSnapshot(const UUID & table_uuid, StorageSnapshotPtr snapshot);
+    /// Looks in this context, then in its query context. Returns nullptr if the table has no pin.
     StorageSnapshotPtr getPinnedStorageSnapshot(const UUID & table_uuid) const;
 
     const ServerSettings & getServerSettings() const;
@@ -2002,6 +2249,11 @@ public:
     ServerSettings getServerSettingsCopy() const;
 
 private:
+    /// `ignore_automatic_parallel_replicas` is for cluster engines (`s3`, `url`, a table of a data lake catalog, ...):
+    /// `automatic_parallel_replicas_mode` only decides for `MergeTree` reads, so they use parallel replicas whenever
+    /// they are enabled. It is also set for a follower, which reads the way the initiator decided.
+    bool canUseTaskBasedParallelReplicasImpl(bool ignore_automatic_parallel_replicas) const;
+
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfilesWithLock() const;
 
     void setCurrentProfileWithLock(const String & profile_name, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock);
@@ -2009,10 +2261,15 @@ private:
     void setCurrentProfileWithLock(const UUID & profile_id, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock);
 
     void setCurrentProfilesWithLock(const SettingsProfilesInfo & profiles_info, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock);
+    void restrictSettingsChangedByCompatibilityWithLock(const std::lock_guard<ContextSharedMutex> & lock);
 
     void setCurrentRolesWithLock(const std::vector<UUID> & new_current_roles, const std::lock_guard<ContextSharedMutex> & lock);
 
     void setExternalRolesWithLock(const std::vector<UUID> & new_external_roles, const std::lock_guard<ContextSharedMutex> & lock);
+
+    void setAuthenticationGrantsWithLock(const std::shared_ptr<const AccessRightsElements> & authentication_grants_, const std::lock_guard<ContextSharedMutex> & lock);
+
+    void setAuthenticationValidUntilWithLock(time_t authentication_valid_until_, const std::lock_guard<ContextSharedMutex> & lock);
 
     void setSettingWithLock(std::string_view name, const String & value, const std::lock_guard<ContextSharedMutex> & lock);
 
@@ -2023,6 +2280,12 @@ private:
     void applySettingsChangesWithLock(const SettingsChanges & changes, const std::lock_guard<ContextSharedMutex> & lock);
 
     void setUserIDWithLock(const UUID & user_id_, const std::lock_guard<ContextSharedMutex> & lock);
+
+    /// Whether the given / current user is defined in the server config (`users.xml`) rather than via SQL.
+    /// Config-defined identities are the admin's root configuration and are trusted to manage settings/profiles.
+    bool isUserDefinedInConfig(const UUID & user_id_) const;
+    bool isCurrentUserDefinedInConfigWithLock() const;
+    void checkRemovedSettings(const std::shared_ptr<const IAccessEntity> & old_entity, const std::shared_ptr<const IAccessEntity> & new_entity) const;
 
     void setCurrentDatabaseWithLock(const String & name, const std::lock_guard<ContextSharedMutex> & lock);
 
@@ -2078,11 +2341,22 @@ public:
     ThrottlerPtr getReplicatedFetchesThrottler() const;
     ThrottlerPtr getReplicatedSendsThrottler() const;
 
-    ThrottlerPtr getRemoteReadThrottler() const;
-    ThrottlerPtr getRemoteWriteThrottler() const;
+    /// `bandwidth` is the matching `max_*_bandwidth` setting, read by the caller under the settings
+    /// lock and passed in once that lock is released, never while it is held: these getters take
+    /// `mutex` exclusively themselves. Without it the setting is read here under a shared lock.
+    ThrottlerPtr getRemoteReadThrottler(std::optional<UInt64> bandwidth = {}) const;
+    ThrottlerPtr getRemoteWriteThrottler(std::optional<UInt64> bandwidth = {}) const;
 
-    ThrottlerPtr getLocalReadThrottler() const;
-    ThrottlerPtr getLocalWriteThrottler() const;
+    ThrottlerPtr getLocalReadThrottler(std::optional<UInt64> bandwidth = {}) const;
+    ThrottlerPtr getLocalWriteThrottler(std::optional<UInt64> bandwidth = {}) const;
+
+    /// The server-wide throttlers, without the per-query limit (and, for the remote pair, the per-user
+    /// limit) that the getters above compose on top of them. Use these to report a server-wide limit, not
+    /// to throttle a request.
+    ThrottlerPtr getServerWideRemoteReadThrottler() const;
+    ThrottlerPtr getServerWideRemoteWriteThrottler() const;
+    ThrottlerPtr getServerWideLocalReadThrottler() const;
+    ThrottlerPtr getServerWideLocalWriteThrottler() const;
 
     ThrottlerPtr getBackupsThrottler() const;
 
@@ -2092,9 +2366,16 @@ public:
     ThrottlerPtr getDistributedCacheReadThrottler() const;
     ThrottlerPtr getDistributedCacheWriteThrottler() const;
 
+    /// The bare server-wide distributed-cache throttlers, for reporting a server-wide limit rather than
+    /// throttling: getDistributedCacheReadThrottler() may compose a request-scoped throttler (e.g. the
+    /// per-user network limit) on top of the server-wide one; these return it unwrapped.
+    ThrottlerPtr getServerWideDistributedCacheReadThrottler() const;
+    ThrottlerPtr getServerWideDistributedCacheWriteThrottler() const;
+
     void reloadRemoteThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const;
     void reloadLocalThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const;
     void reloadLongConnectionLimitConfig(size_t max_remote_read_connections) const;
+    void reloadDistributedCacheThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const;
 
     /// Kitchen sink
     using ContextData::KitchenSink;

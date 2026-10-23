@@ -12,7 +12,6 @@
 
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnSparse.h>
-#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnReplicated.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -111,11 +110,21 @@ std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> NativeWriter::getS
                 result_column = recursiveRemoveSparse(result_column);
         }
 
-        auto info = column.type->getSerializationInfo(*result_column);
+        /// The size-stream String layout follows the peer revision and needs no per-column wire marker.
+        auto info = column.type->getSerializationInfo(
+            *result_column,
+            SerializationInfoSettings::enableAllSupportedSerializations(
+                client_revision >= DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION));
         return {column.type->getSerialization(*info), info, result_column};
     }
 
-    return {column.type->getDefaultSerialization(), nullptr, recursiveRemoveSparse(column.column->convertToFullColumnIfReplicated())};
+    return {column.type->getDefaultSerialization(), nullptr, removeSpecialRepresentations(column.column)};
+}
+
+void NativeWriter::setAggregateFunctionStateVersions(DataTypePtr & type, UInt64 client_revision)
+{
+    bool include_version = client_revision >= DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING;
+    setVersionToAggregateFunctions(type, /* if_empty= */ client_revision == 0, include_version ? std::optional<size_t>(client_revision) : std::nullopt);
 }
 
 size_t NativeWriter::write(const Block & block)
@@ -188,8 +197,7 @@ size_t NativeWriter::write(const Block & block)
         /// nothing from a revision and trusts the type name in the stream, so a version pinned on a
         /// stored column (`pinCurrentStateVersionToAggregateFunctions`) has to survive, or the state
         /// would silently degrade to version 0 on every round trip through local persistence.
-        bool include_version = client_revision >= DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING;
-        setVersionToAggregateFunctions(column.type, /* if_empty= */ client_revision == 0, include_version ? std::optional<size_t>(client_revision) : std::nullopt);
+        setAggregateFunctionStateVersions(column.type, client_revision);
 
         /// Type
         if (format_settings && format_settings->native.encode_types_in_binary_format)

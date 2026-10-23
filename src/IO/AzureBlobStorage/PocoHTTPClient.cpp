@@ -16,6 +16,7 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/Net/HTTPClientSession.h>
+#include <Poco/Net/NetException.h>
 #include <Poco/String.h>
 #include <Poco/URI.h>
 #include <azure/core/http/http.hpp>
@@ -39,6 +40,8 @@ namespace DB::FailPoints
     extern const char azure_inject_auth_failure_on_request_once[];
     extern const char azure_inject_poco_timeout[];
     extern const char azure_inject_poco_timeout_once[];
+    extern const char azure_inject_poco_network_error[];
+    extern const char azure_inject_poco_network_error_once[];
     extern const char azure_inject_bad_request[];
 }
 
@@ -108,20 +111,19 @@ public:
     }
 };
 
-class IStreamBodyStream : public Azure::Core::IO::BodyStream
+/// The body of a response, read straight from the socket of the session, which the buffer keeps
+/// alive. A read lands in the memory the SDK provides, without a copy in between.
+class ReadBufferBodyStream : public Azure::Core::IO::BodyStream
 {
 private:
-    std::istream & stream;
-    std::istream::pos_type start_pos;
-    DB::HTTPSessionPtr session;
+    std::unique_ptr<DB::HTTPResponseReadBuffer> body;
     Int64 length;
+
 public:
-    IStreamBodyStream(std::istream & stream_, DB::HTTPSessionPtr session_, Int64 length_)
-        : stream(stream_)
-        , session(session_)
+    ReadBufferBodyStream(std::unique_ptr<DB::HTTPResponseReadBuffer> body_, Int64 length_)
+        : body(std::move(body_))
         , length(length_)
     {
-        start_pos = stream.tellg();
     }
 
     int64_t Length() const override
@@ -131,8 +133,12 @@ public:
 
     void Rewind() override
     {
-        stream.clear(); // Clear any error flags
-        stream.seekg(start_pos);
+        /// Nothing has been read yet, so the stream is already at its beginning. Going back to
+        /// an earlier position is impossible: the data is gone from the socket. The SDK retries
+        /// by sending the request again, which produces a new response and a new body.
+        if (body->count() != 0)
+            throw DB::Exception(
+                DB::ErrorCodes::NOT_IMPLEMENTED, "Cannot rewind the body of an HTTP response after {} bytes were read", body->count());
     }
 
 private:
@@ -141,8 +147,7 @@ private:
         if (!buffer || count == 0)
             return 0;
 
-        stream.read(reinterpret_cast<char *>(buffer), static_cast<std::streamsize>(count));
-        return static_cast<size_t>(stream.gcount());
+        return body->readBig(reinterpret_cast<char *>(buffer), count);
     }
 };
 
@@ -384,6 +389,11 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
             { throw Poco::TimeoutException("connect timed out (injected by failpoint)"); });
         fiu_do_on(DB::FailPoints::azure_inject_poco_timeout_once,
             { throw Poco::TimeoutException("connect timed out (injected by failpoint)"); });
+        /// Test-only: raise a real Poco network error so the IOException -> TransportException path is what's tested.
+        fiu_do_on(DB::FailPoints::azure_inject_poco_network_error,
+            { throw Poco::Net::ConnectionResetException("connection reset (injected by failpoint)"); });
+        fiu_do_on(DB::FailPoints::azure_inject_poco_network_error_once,
+            { throw Poco::Net::ConnectionResetException("connection reset (injected by failpoint)"); });
 
         Poco::Net::HTTPRequest poco_request(Poco::Net::HTTPRequest::HTTP_1_1);
 
@@ -459,7 +469,7 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
         );
 
         Stopwatch watch;
-        std::ostream & request_stream = session->sendRequest(poco_request, &connect_time, &first_byte_time);
+        auto request_body = sendHTTPRequest(*session, poco_request, DBMS_DEFAULT_BUFFER_SIZE, &connect_time, &first_byte_time);
 
         observeLatency(method, AzureLatencyType::Connect, static_cast<HistogramMetrics::Value>(connect_time));
         observeLatency(method, first_byte_latency_type, static_cast<HistogramMetrics::Value>(first_byte_time));
@@ -470,16 +480,21 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
             setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte*/ false));
             body_stream->Rewind();
 
-            /// Manual copy
-            VectorWithMemoryTracking<uint8_t> buffer(8192);
-            while (auto read = body_stream->Read(buffer.data(), 8192))
+            /// The SDK writes into the memory of the request buffer, which is sent to the socket
+            /// as it fills up, so the body is copied exactly once.
+            while (true)
             {
-                if (read > 0)
-                    request_stream.write(reinterpret_cast<const char *>(buffer.data()), read);
-                else
+                request_body->nextIfAtEnd();
+
+                const size_t read = body_stream->Read(reinterpret_cast<uint8_t *>(request_body->position()), request_body->available());
+                if (!read)
                     break;
+
+                request_body->position() += read;
             }
         }
+
+        request_body->finalize();
 
         // Set timeouts for receiving response
         setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte=*/false));
@@ -490,7 +505,7 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
         poco_response.setNameLengthLimit(static_cast<int>(http_max_field_name_size));
         poco_response.setValueLengthLimit(static_cast<int>(http_max_field_value_size));
 
-        std::istream & response_stream = session->receiveResponse(poco_response);
+        auto response_body = receiveHTTPResponse(session, poco_response, DBMS_DEFAULT_BUFFER_SIZE);
 
         int status = static_cast<int>(poco_response.getStatus());
 
@@ -499,7 +514,7 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
             static_cast<Azure::Core::Http::HttpStatusCode>(status),
             poco_response.getReason());
 
-        response->SetBodyStream(std::make_unique<IStreamBodyStream>(response_stream, session, poco_response.getContentLength()));
+        response->SetBodyStream(std::make_unique<ReadBufferBodyStream>(std::move(response_body), poco_response.getContentLength()));
 
         for (const auto & [header_name, header_value] : poco_response)
             response->SetHeader(header_name, header_value);
@@ -564,6 +579,30 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
         addMetric(method, AzureMetricType::Errors);
 
         /// Throw TransportException (retryable) for a timeout instead of a synthetic 408 that read as a broken part.
+        throw Azure::Core::Http::TransportException(getCurrentExceptionMessageAndPattern(true).text);
+    }
+    catch (const Poco::IOException &)
+    {
+        if (!latency_recorded)
+        {
+            observeLatency(method, AzureLatencyType::Connect, static_cast<HistogramMetrics::Value>(connect_time));
+            observeLatency(method, first_byte_latency_type, static_cast<HistogramMetrics::Value>(first_byte_time));
+        }
+
+        addMetric(method, AzureMetricType::Errors);
+
+        throw Azure::Core::Http::TransportException(getCurrentExceptionMessageAndPattern(true).text);
+    }
+    catch (const NetException &)
+    {
+        if (!latency_recorded)
+        {
+            observeLatency(method, AzureLatencyType::Connect, static_cast<HistogramMetrics::Value>(connect_time));
+            observeLatency(method, first_byte_latency_type, static_cast<HistogramMetrics::Value>(first_byte_time));
+        }
+
+        addMetric(method, AzureMetricType::Errors);
+
         throw Azure::Core::Http::TransportException(getCurrentExceptionMessageAndPattern(true).text);
     }
     catch (...)

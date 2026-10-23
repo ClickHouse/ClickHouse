@@ -12,33 +12,41 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Эти настройки используются для конфигурации сервера ClickHouse и автоматически сгенерированы на основе исходного кода ClickHouse.
 
-<div id="allow_feature_tier">
-  ## allow_feature_tier
-</div>
+## allow_feature_tier {#allow_feature_tier}
 
 <SettingsInfoBlock type="UInt32" default_value="0" changeable_without_restart="Yes" />
 
 Определяет, может ли пользователь изменять настройки, относящиеся к различным уровням возможностей.
 
-* `0` - Разрешено изменять любые настройки (экспериментальные, бета, продакшн).
-* `1` - Разрешено изменять только настройки возможностей уровней бета и продакшн. Изменения экспериментальных настроек отклоняются.
-* `2` - Разрешено изменять только настройки возможностей уровня продакшн. Изменения экспериментальных настроек и настроек уровня бета отклоняются.
+* `0` - Разрешено изменять любые настройки (экспериментальные, закрытая предварительная версия, бета, продакшн).
+* `1` - Разрешено изменять только настройки возможностей уровней закрытой предварительной версии, бета и продакшн. Изменения экспериментальных настроек отклоняются.
+* `2` - Разрешено изменять только настройки возможностей уровней бета и продакшн. Изменения экспериментальных настроек или настроек закрытой предварительной версии отклоняются.
+* `3` - Разрешено изменять только настройки возможностей уровня продакшн. Изменения экспериментальных настроек, настроек закрытой предварительной версии или уровня бета отклоняются.
 
-Это эквивалентно установке ограничения «только для чтения» для всех возможностей `EXPERIMENTAL` / `BETA`.
+Это эквивалентно установке ограничения «только для чтения» для всех возможностей `EXPERIMENTAL` / `PRIVATE PREVIEW` / `BETA`.
+
+Оператор, применяемый к пользователю, роли или профилю настроек, отклоняется, если он устанавливает такую настройку в значение, отличное
+от действующего в сеансе, в котором он выполняется, а также если он меняет такую настройку для какого-либо пользователя, даже
+не упоминая явно ни одной настройки: выдача или отзыв роли, содержащей такую настройку, назначение профиля настроек,
+удаление роли или профиля либо удаление переопределения за счёт его отсутствия. Пользователь, определённый через SQL, не может войти в систему,
+если такое значение содержится в его собственных настройках или в настройках его ролей. Настройки, которые сервер сам применяет через
+файл конфигурации, а также определённые в нём пользователи никогда не отклоняются. Настройка `compatibility` оставляет
+настройку отключённого уровня в значении по умолчанию, а не применяет значение по умолчанию из предыдущей версии.
 
 <Note>
   Значение `0` означает, что можно изменять все настройки.
 </Note>
 
-<div id="allow_impersonate_user">
-  ## allow_impersonate_user
-</div>
+<Note>
+  `2` ранее означало «только настройки продакшн». Теперь оно также разрешает настройки бета, поэтому конфигурация,
+  в которой `2` было закреплено для разрешения только настроек продакшн, должна использовать `3`.
+</Note>
+
+## allow_impersonate_user {#allow_impersonate_user}
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Включает или отключает возможность IMPERSONATE (EXECUTE AS target&#95;user). Эта настройка устарела.
 
-<div id="allow_implicit_no_password">
-  ## allow_implicit_no_password
-</div>
+## allow_implicit_no_password {#allow_implicit_no_password}
 
 Запрещает создавать пользователя без пароля, если только явно не указано &#39;IDENTIFIED WITH no&#95;password&#39;.
 
@@ -48,9 +56,7 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 <allow_implicit_no_password>1</allow_implicit_no_password>
 ```
 
-<div id="allow_no_password">
-  ## allow_no_password
-</div>
+## allow_no_password {#allow_no_password}
 
 Определяет, разрешён ли небезопасный тип пароля no&#95;password.
 
@@ -60,9 +66,7 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 <allow_no_password>1</allow_no_password>
 ```
 
-<div id="allow_plaintext_password">
-  ## allow_plaintext_password
-</div>
+## allow_plaintext_password {#allow_plaintext_password}
 
 Определяет, разрешены ли типы паролей в незашифрованном виде (небезопасные).
 
@@ -72,9 +76,7 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 <allow_plaintext_password>1</allow_plaintext_password>
 ```
 
-<div id="allow_use_jemalloc_memory">
-  ## allow_use_jemalloc_memory
-</div>
+## allow_use_jemalloc_memory {#allow_use_jemalloc_memory}
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="Нет" />Разрешает использовать jemalloc для управления памятью.
 

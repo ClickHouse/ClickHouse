@@ -1,8 +1,9 @@
 ---
-sidebarTitle: 'ClickPipes용 AWS PrivateLink'
+sidebarTitle: 'AWS PrivateLink'
+icon: 'aws'
 description: 'AWS PrivateLink를 사용하여 ClickPipes와 데이터 소스 간에 보안 연결을 설정합니다.'
 slug: /integrations/clickpipes/networking/aws-privatelink
-title: 'ClickPipes용 AWS PrivateLink'
+title: 'AWS PrivateLink'
 doc_type: 'guide'
 keywords: ['aws privatelink', 'ClickPipes 보안', 'vpc 엔드포인트', '프라이빗 연결', 'vpc 리소스']
 integration:
@@ -13,15 +14,13 @@ integration:
 import { Image } from "/snippets/ko/components/Image.jsx";
 import { PrivatePreviewBadge } from "/snippets/ko/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
-[AWS PrivateLink](https://aws.amazon.com/privatelink/)를 사용하면 ClickPipes와 AWS에서 호스팅되는 데이터 소스 간에 보안 연결을 설정할 수 있습니다. ClickPipes는 VPC에 **역방향 프라이빗 엔드포인트(RPE)**를 생성하고 이를 데이터 소스용으로 게시된 프라이빗 엔드포인트 서비스에 연결하므로, 트래픽이 퍼블릭 인터넷에 노출되지 않습니다.
+[AWS PrivateLink](https://aws.amazon.com/privatelink/)를 사용하면 ClickPipes와 AWS에서 호스팅되는 데이터 소스 간에 보안 연결을 설정할 수 있습니다. ClickPipes는 VPC에 **역방향 private 엔드포인트(RPE)**를 생성하고 이를 데이터 소스용으로 게시된 프라이빗 엔드포인트 서비스에 연결하므로, 트래픽이 퍼블릭 인터넷에 노출되지 않습니다.
 
 <Note>
   시작하기 전에 [지원되는 AWS 리전](#aws-privatelink-regions)을 확인하십시오.
 </Note>
 
-<div id="supported-sources">
-  ## 지원되는 ClickPipes 데이터 소스
-</div>
+## 지원되는 ClickPipes 데이터 소스 {#supported-sources}
 
 ClickPipes Reverse Private Endpoint 기능은 다음 데이터 소스 유형에서만 지원됩니다.
 
@@ -34,9 +33,7 @@ ClickPipes Reverse Private Endpoint 기능은 다음 데이터 소스 유형에�
   Kafka의 경우, 호스트명이 엔드포인트의 private IP 주소로 해석되면 [Confluent 호환 스키마 레지스트리](/ko/integrations/clickpipes/kafka/schema-registries#confluent-compatible-registries)에도 브로커와 동일한 Reverse Private Endpoint를 통해 연결할 수 있습니다. 따라서 공개적으로 액세스할 수 있을 필요가 없습니다.
 </Note>
 
-<div id="aws-privatelink-endpoint-types">
-  ## 지원되는 AWS PrivateLink 엔드포인트 유형
-</div>
+## 지원되는 AWS PrivateLink 엔드포인트 유형 {#aws-privatelink-endpoint-types}
 
 ClickPipes 역방향 Private Endpoint는 다음 AWS PrivateLink 방식 중 하나를 사용하여 구성할 수 있습니다.
 
@@ -44,9 +41,7 @@ ClickPipes 역방향 Private Endpoint는 다음 AWS PrivateLink 방식 중 하�
 * [MSK ClickPipe용 MSK 다중 VPC 연결](#msk-multi-vpc)
 * [VPC 엔드포인트 서비스](#vpc-endpoint-service)
 
-<div id="vpc-resource">
-  ### VPC 리소스
-</div>
+### VPC 리소스 {#vpc-resource}
 
 <Info>
   리전 간 연결은 지원되지 않습니다.
@@ -163,27 +158,23 @@ VPC 리소스와 함께 PrivateLink를 설정하려면 다음을 수행하십시
   </Step>
 </Steps>
 
-<div id="msk-multi-vpc">
-  ### MSK multi-VPC connectivity
-</div>
+### MSK multi-VPC connectivity {#msk-multi-vpc}
 
 [Multi-VPC connectivity](https://docs.aws.amazon.com/msk/latest/developerguide/aws-access-mult-vpc.html)는 여러 VPC를 하나의 MSK 클러스터에 연결할 수 있는 AWS MSK의 기본 제공 기능입니다.
 Private DNS는 별도 구성 없이 기본 지원됩니다.
-cross-region은 지원되지 않습니다.
+교차 리전은 지원되지 않습니다.
 
 ClickPipes for MSK에 권장되는 옵션입니다.
 자세한 내용은 [시작하기](https://docs.aws.amazon.com/msk/latest/developerguide/mvpc-getting-started.html) 가이드를 참조하십시오.
 
 <Info>
-  MSK 클러스터 정책을 업데이트하고 MSK 클러스터의 허용된 주체에 `072088201116`을 추가하십시오.
+  ClickPipes는 클라이언트 VPC를 소유하고 관리형 VPC 연결을 생성합니다. 네트워크 연결을 설정하려면 MSK 클러스터에서 multi-VPC 프라이빗 연결을 활성화하고 클러스터 정책에서 ClickPipes AWS 계정을 승인하십시오.
   자세한 내용은 [클러스터 정책 연결](https://docs.aws.amazon.com/msk/latest/developerguide/mvpc-cluster-owner-action-policy.html)에 관한 AWS 가이드를 참조하십시오.
 </Info>
 
 연결을 설정하는 방법은 [ClickPipes용 MSK 설정 가이드](/ko/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-msk-clickpipes)를 참조하십시오.
 
-<div id="vpc-endpoint-service">
-  ### VPC 엔드포인트 서비스
-</div>
+### VPC 엔드포인트 서비스 {#vpc-endpoint-service}
 
 [VPC 엔드포인트 서비스](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html)는 데이터 소스를 ClickPipes와 공유하는 또 다른 방법입니다.
 데이터 소스 앞에 NLB(Network Load Balancer)를 설정하고
@@ -219,9 +210,7 @@ AWS PrivateLink 관리형 Private DNS가 항상 적합한 옵션은 아닙니다
 MSK 클러스터에서 Custom private DNS 이름을 사용하는 엔드포인트 서비스당 브로커 설정은 [MSK 클러스터용 AWS PrivateLink VPC 엔드포인트 서비스](/ko/resources/support-center/knowledge-base/cloud-services/aws-privatelink-vpc-endpoint-service-for-msk-cluster)를
 참조하십시오.
 
-<div id="custom-private-dns">
-  ## 사용자 지정 Private DNS
-</div>
+## 사용자 지정 Private DNS {#custom-private-dns}
 
 <PrivatePreviewBadge />
 
@@ -270,9 +259,7 @@ source에 프라이빗 연결을 통해 자체 호스트명으로 연결할 수 
   [`clickhouse_clickpipes_reverse_private_endpoint_custom_private_dns`](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/clickpipes_reverse_private_endpoint_custom_private_dns)
   리소스를 사용하여 기존 역방향 private 엔드포인트의 매핑을 관리하십시오.
 
-<div id="creating-clickpipe">
-  ## reverse private endpoint를 사용하여 ClickPipe 만들기
-</div>
+## reverse private endpoint를 사용하여 ClickPipe 만들기 {#creating-clickpipe}
 
 1. ClickHouse Cloud 서비스의 SQL 콘솔에 액세스합니다.
 
@@ -328,9 +315,7 @@ source에 프라이빗 연결을 통해 자체 호스트명으로 연결할 수 
 
    전체 DNS 이름 목록은 Cloud 서비스 설정에서 확인할 수 있습니다.
 
-<div id="managing-rpes">
-  ## Reverse Private Endpoint 관리
-</div>
+## Reverse Private Endpoint 관리 {#managing-rpes}
 
 ClickHouse Cloud 서비스 설정에서 기존 Reverse Private Endpoint를 관리할 수 있습니다.
 
@@ -346,18 +331,14 @@ ClickHouse Cloud 서비스 설정에서 기존 Reverse Private Endpoint를 관�
 
    엔드포인트는 생성한 후 편집할 수 없습니다. 엔드포인트의 `×`를 클릭하고 확인하면 삭제할 수 있습니다. 삭제하면 복구할 수 없으며, 해당 엔드포인트를 사용 중인 모든 ClickPipe가 중단됩니다.
 
-<div id="aws-privatelink-regions">
-  ## 지원되는 AWS 리전
-</div>
+## 지원되는 AWS 리전 {#aws-privatelink-regions}
 
 ClickPipes의 AWS PrivateLink는 특정 AWS 리전에서만 지원됩니다.
 사용 가능한 리전은 [ClickPipes 리전 목록](/ko/integrations/clickpipes/networking/static-ips)을 참조하십시오.
 
 이 제한은 교차 리전 연결이 활성화된 PrivateLink VPC 엔드포인트 서비스에는 적용되지 않습니다.
 
-<div id="limitations">
-  ## 제한 사항
-</div>
+## 제한 사항 {#limitations}
 
 ClickHouse Cloud에서 생성한 ClickPipes용 AWS PrivateLink 엔드포인트가 ClickHouse Cloud 서비스와 동일한 AWS 리전에 생성된다는 보장은 없습니다.
 
@@ -368,9 +349,18 @@ Private 엔드포인트는 특정 ClickHouse 서비스에 연결되며 서비스
 
 AWS MSK는 인증 유형(SASL&#95;IAM 또는 SASL&#95;SCRAM)별로 MSK 클러스터당 하나의 PrivateLink(VPC 엔드포인트)만 지원합니다. 따라서 여러 ClickHouse Cloud 서비스 또는 조직은 동일한 인증 유형을 사용해 동일한 MSK 클러스터에 별도의 PrivateLink 연결을 생성할 수 없습니다.
 
-<div id="automatic-cleanup">
-  ### 비활성 엔드포인트 자동 정리
-</div>
+### 역방향 프라이빗 엔드포인트당 레플리카 제한 {#rpe-replica-limit}
+
+하나의 역방향 프라이빗 엔드포인트는 최대 총 190개의 ClickPipe 레플리카를 지원합니다. 동일한 엔드포인트를 공유하는 모든 ClickPipe의 레플리카가 이 제한에 포함되며, 일시 중지된 ClickPipe의 레플리카도 포함됩니다.
+
+ClickPipe를 생성하거나 스케일 업할 때 해당 엔드포인트의 총 레플리카 수가 제한을 초과하게 되면 ClickPipes는 요청을 거부합니다. 오류 메시지에는 역방향 프라이빗 엔드포인트 ID, 다른 ClickPipe가 이미 사용 중인 레플리카 수, 요청한 레플리카 수가 표시됩니다. 축소는 언제든지 가능합니다.
+
+용량을 확보하려면 다음 방법을 사용하십시오.
+
+* 동일한 엔드포인트를 사용하는 다른 ClickPipe를 축소합니다.
+* 추가 ClickPipe용으로 별도의 역방향 프라이빗 엔드포인트를 생성합니다.
+
+### 비활성 엔드포인트 자동 정리 {#automatic-cleanup}
 
 종료 상태에 머무르는 Reverse Private Endpoint는 정해진 유예 기간이 지나면 자동으로 제거됩니다.
 이를 통해 사용되지 않거나 잘못 구성된 엔드포인트가 무기한 남아 있지 않도록 합니다.

@@ -1,8 +1,9 @@
 ---
-sidebarTitle: 'AWS PrivateLink для ClickPipes'
+sidebarTitle: 'AWS PrivateLink'
+icon: 'aws'
 description: 'Установите защищённое соединение между ClickPipes и источником данных с помощью AWS PrivateLink.'
 slug: /integrations/clickpipes/networking/aws-privatelink
-title: 'AWS PrivateLink для ClickPipes'
+title: 'AWS PrivateLink'
 doc_type: 'guide'
 keywords: ['aws privatelink', 'безопасность ClickPipes', 'конечная точка VPC', 'частное подключение', 'ресурс VPC']
 integration:
@@ -19,9 +20,7 @@ import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge
   Перед началом работы проверьте [поддерживаемые регионы AWS](#aws-privatelink-regions).
 </Note>
 
-<div id="supported-sources">
-  ## Поддерживаемые источники данных ClickPipes
-</div>
+## Поддерживаемые источники данных ClickPipes {#supported-sources}
 
 Функция обратной частной конечной точки ClickPipes доступна только для следующих
 типов источников данных:
@@ -35,9 +34,7 @@ import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge
   Для Kafka доступ к [совместимому с Confluent реестру схем](/ru/integrations/clickpipes/kafka/schema-registries#confluent-compatible-registries) можно получить через ту же обратную частную конечную точку, что и к брокерам. Он не обязательно должен быть общедоступным, если его имя хоста разрешается в частные IP-адреса конечной точки.
 </Note>
 
-<div id="aws-privatelink-endpoint-types">
-  ## Поддерживаемые типы конечных точек AWS PrivateLink
-</div>
+## Поддерживаемые типы конечных точек AWS PrivateLink {#aws-privatelink-endpoint-types}
 
 Обратную частную конечную точку ClickPipes можно настроить одним из следующих способов с использованием AWS PrivateLink:
 
@@ -45,9 +42,7 @@ import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge
 * [подключение MSK multi-VPC для MSK ClickPipe](#msk-multi-vpc)
 * [сервис конечной точки VPC](#vpc-endpoint-service)
 
-<div id="vpc-resource">
-  ### Ресурс VPC
-</div>
+### Ресурс VPC {#vpc-resource}
 
 <Info>
   Межрегиональное подключение не поддерживается.
@@ -165,9 +160,7 @@ import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge
   </Step>
 </Steps>
 
-<div id="msk-multi-vpc">
-  ### Подключение MSK multi-VPC
-</div>
+### Подключение MSK multi-VPC {#msk-multi-vpc}
 
 [Подключение Multi-VPC](https://docs.aws.amazon.com/msk/latest/developerguide/aws-access-mult-vpc.html) — встроенная возможность AWS MSK, позволяющая подключать несколько VPC к одному кластеру MSK.
 Поддержка private DNS доступна по умолчанию и не требует дополнительной настройки.
@@ -177,15 +170,13 @@ import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge
 Подробнее см. в [руководстве по началу работы](https://docs.aws.amazon.com/msk/latest/developerguide/mvpc-getting-started.html).
 
 <Info>
-  Обновите политику кластера MSK и добавьте `072088201116` в список разрешённых субъектов.
+  ClickPipes владеет клиентской VPC и создаёт управляемое VPC-подключение. Чтобы установить сетевое подключение, включите частное подключение multi-VPC в кластере MSK и разрешите доступ аккаунту AWS ClickPipes в политике кластера.
   Подробнее см. в руководстве AWS по [привязке политики кластера](https://docs.aws.amazon.com/msk/latest/developerguide/mvpc-cluster-owner-action-policy.html).
 </Info>
 
 Следуйте нашему [руководству по настройке MSK для ClickPipes](/ru/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-msk-clickpipes), чтобы узнать, как настроить подключение.
 
-<div id="vpc-endpoint-service">
-  ### Сервис конечных точек VPC
-</div>
+### Сервис конечных точек VPC {#vpc-endpoint-service}
 
 [Сервис конечных точек VPC](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html) — ещё один способ предоставить ClickPipes доступ к вашему источнику данных.
 Для этого необходимо развернуть NLB (Network Load Balancer) перед источником данных
@@ -220,9 +211,7 @@ import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge
 Для кластеров MSK см. [сервис конечных точек AWS PrivateLink VPC для кластера MSK](/ru/resources/support-center/knowledge-base/cloud-services/aws-privatelink-vpc-endpoint-service-for-msk-cluster)
 с конфигурацией «один брокер на сервис конечных точек», использующей пользовательские имена private DNS.
 
-<div id="custom-private-dns">
-  ## Пользовательский private DNS
-</div>
+## Пользовательский private DNS {#custom-private-dns}
 
 <PrivatePreviewBadge />
 
@@ -273,9 +262,7 @@ AWS PrivateLink предоставляет [управляемый private DNS](
   ресурс [`clickhouse_clickpipes_reverse_private_endpoint_custom_private_dns`](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/clickpipes_reverse_private_endpoint_custom_private_dns)
   для управления сопоставлениями в существующей обратной частной конечной точке.
 
-<div id="creating-clickpipe">
-  ## Создание ClickPipe с обратной частной конечной точкой
-</div>
+## Создание ClickPipe с обратной частной конечной точкой {#creating-clickpipe}
 
 1. Откройте SQL Console своего сервиса ClickHouse Cloud.
 
@@ -332,9 +319,7 @@ AWS PrivateLink предоставляет [управляемый private DNS](
 
    Полный список DNS-имён доступен в настройках сервиса Cloud.
 
-<div id="managing-rpes">
-  ## Управление обратными частными конечными точками
-</div>
+## Управление обратными частными конечными точками {#managing-rpes}
 
 Управлять существующими обратными частными конечными точками можно в настройках сервиса ClickHouse Cloud:
 
@@ -350,18 +335,14 @@ AWS PrivateLink предоставляет [управляемый private DNS](
 
    После создания конечную точку нельзя редактировать. Её можно удалить, нажав `×` рядом с конечной точкой и подтвердив удаление — это действие необратимо и нарушит работу всех ClickPipe, которые используют эту конечную точку.
 
-<div id="aws-privatelink-regions">
-  ## Поддерживаемые регионы AWS
-</div>
+## Поддерживаемые регионы AWS {#aws-privatelink-regions}
 
 Поддержка AWS PrivateLink для ClickPipes доступна только в определенных регионах AWS.
 Список доступных регионов приведен в [списке регионов ClickPipes](/ru/integrations/clickpipes/networking/static-ips).
 
 Это ограничение не распространяется на сервис конечной точки VPC PrivateLink с включенным межрегиональным подключением.
 
-<div id="limitations">
-  ## Ограничения
-</div>
+## Ограничения {#limitations}
 
 Не гарантируется, что конечные точки AWS PrivateLink для ClickPipes, созданные в ClickHouse Cloud, будут находиться
 в том же регионе AWS, что и сервис ClickHouse Cloud.
@@ -374,9 +355,18 @@ AWS PrivateLink предоставляет [управляемый private DNS](
 
 AWS MSK поддерживает только один PrivateLink (конечную точку VPC) для каждого типа аутентификации (SASL&#95;IAM или SASL&#95;SCRAM) на кластер MSK. Поэтому несколько сервисов ClickHouse Cloud или организаций не могут создавать отдельные подключения PrivateLink к одному и тому же кластеру MSK с использованием одного типа аутентификации.
 
-<div id="automatic-cleanup">
-  ### Автоматическая очистка неактивных конечных точек
-</div>
+### Ограничение на число реплик для обратной частной конечной точки {#rpe-replica-limit}
+
+Одна обратная частная конечная точка поддерживает не более 190 реплик ClickPipe в сумме. В этот лимит входят реплики всех ClickPipe, использующих одну и ту же конечную точку, включая приостановленные.
+
+ClickPipes не позволит создать ClickPipe или увеличить число его реплик, если в результате общее количество реплик для конечной точки превысит лимит. В сообщении об ошибке указываются ID обратной частной конечной точки, количество реплик, уже занятых другими ClickPipe, и запрошенное количество реплик. Уменьшать число реплик можно всегда.
+
+Чтобы освободить ресурсы, можно:
+
+* Уменьшить число реплик других ClickPipe, использующих ту же конечную точку.
+* Создать отдельную обратную частную конечную точку для дополнительных ClickPipe.
+
+### Автоматическая очистка неактивных конечных точек {#automatic-cleanup}
 
 Обратные частные конечные точки, находящиеся в терминальном состоянии, автоматически удаляются по истечении установленного льготного периода.
 Это предотвращает бессрочное сохранение неиспользуемых или неправильно настроенных конечных точек.

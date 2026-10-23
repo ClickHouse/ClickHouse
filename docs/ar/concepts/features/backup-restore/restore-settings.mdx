@@ -1,0 +1,100 @@
+---
+description: 'إعدادات استعلام RESTORE التي تتحكم في فئات الكائنات المستعادة من النسخة الاحتياطية.'
+sidebarTitle: 'إعدادات الاستعادة'
+slug: /operations/backup/restore-settings
+title: 'إعدادات الاستعادة'
+keywords: ['backup', 'restore', 'structure_only', 'restore_table_data', 'restore_access_entities', 'restore_functions']
+doc_type: 'reference'
+---
+
+يقبل استعلام [`RESTORE`](/ar/concepts/features/backup-restore/overview#syntax)
+إعدادات في عبارة `SETTINGS` تحدد فئات الكائنات التي تُقرأ
+من النسخة الاحتياطية. توثق هذه الصفحة الإعدادات التي تحدد ما تتم استعادته: بيانات الجداول،
+وكيانات الوصول، والدوال المعرّفة من قِبل المستخدم.
+
+<div id="structure-only">
+  ## `structure_only`
+</div>
+
+النوع: `Bool`. القيمة الافتراضية: `false`.
+
+عند ضبطه على `true`، لا تُقرأ من النسخة الاحتياطية سوى استعلامات `CREATE`، من دون
+محتويات الكائنات المستعادة. وهو اختصار ملائم يضبط القيم الافتراضية
+الفعّالة لإعدادات الفئات الثلاثة أدناه على `false`:
+
+* `restore_table_data`
+* `restore_access_entities`
+* `restore_functions`
+
+<div id="restore-table-data">
+  ## `restore_table_data`
+</div>
+
+النوع: `Bool`. اختياري؛ إذا لم يُعيَّن، تكون قيمته الافتراضية `!structure_only` (أي `true`
+ما لم يُعيَّن `structure_only`).
+
+يحدد ما إذا كانت بيانات الجداول ستُستعاد. عند تعيينه صراحةً، يتجاوز
+`structure_only`: عيّنه إلى `true` لاستعادة بيانات الجداول حتى عند ضبط
+`structure_only=true`، أو إلى `false` لتخطي بيانات الجداول حتى إذا لم يكن `structure_only`
+مُعيَّنًا.
+
+<div id="restore-access-entities">
+  ## `restore_access_entities`
+</div>
+
+النوع: `Bool`. اختياري؛ إذا لم يُعيَّن، تكون قيمته الافتراضية `!structure_only`.
+
+يحدد ما إذا كان يجب استعادة كيانات الوصول، مثل المستخدمين والأدوار وملفات تعريف الإعدادات وسياسات الصفوف
+والحصص. وعند تعيينه صراحةً، يتجاوز `structure_only`.
+
+<div id="restore-functions">
+  ## `restore_functions`
+</div>
+
+النوع: `Bool`. اختياري؛ إذا لم يُعيَّن، تكون قيمته الافتراضية `!structure_only`.
+
+يحدد ما إذا كان ينبغي استعادة الدوال المعرّفة من قِبل المستخدم. عند تعيينه صراحةً، يتجاوز
+`structure_only`.
+
+<div id="effective-behavior">
+  ## السلوك الفعلي
+</div>
+
+تُستعاد كل فئة عندما يكون إعدادها المقابل `true`. وإذا لم يُحدَّد إعداد
+الفئة، تُستمد قيمته من `structure_only`: تكون القيم الثلاث `true` افتراضيًا،
+وتصبح جميعها `false` عندما يكون `structure_only=true`.
+
+| `structure_only` | لم يتم تعيين `restore_*` | `restore_* = true` | `restore_* = false` |
+| :--------------: | :----------------------: | :----------------: | :-----------------: |
+|      `false`     |       تمت الاستعادة      |    تمت الاستعادة   |      تم التخطي      |
+|      `true`      |         تم التخطي        |    تمت الاستعادة   |      تم التخطي      |
+
+هذا متوافق تمامًا مع الإصدارات السابقة: إذ يتصرف استعلام `RESTORE` الذي لا يعيّن أيًا من
+الإعدادات الجديدة تمامًا كما كان من قبل.
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+استعِد تعريفات الجداول وكيانات الوصول، دون استعادة بيانات الجداول — على سبيل المثال،
+لإعداد بيئة لاختبار الاستعلامات أو إعادة تشغيلها دون نسخ البيانات:
+
+```sql
+RESTORE ALL FROM backup_name
+SETTINGS structure_only = true, restore_access_entities = true
+```
+
+استعد بيانات الجدول فقط، من دون إعادة إنشاء كيانات الوصول أو الدوال
+المعرّفة من قِبل المستخدم:
+
+```sql
+RESTORE ALL FROM backup_name
+SETTINGS structure_only = true, restore_table_data = true
+```
+
+استعد كل شيء باستثناء الدوال المعرّفة من قِبل المستخدم:
+
+```sql
+RESTORE ALL FROM backup_name
+SETTINGS restore_functions = false
+```

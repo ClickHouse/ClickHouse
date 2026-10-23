@@ -1,7 +1,7 @@
 const FormatSettingsExplorer = ({ href: baseRoute }) => {
   // El renderizador de producción de Mintlify evalúa el componente exportado sin
-  // preservar los bindings de ámbito de módulo. El estado perezoso mantiene los datos
-  // generados en ese ámbito de evaluación y los construye una sola vez por montaje.
+  // preservar las vinculaciones (bindings) de ámbito de módulo. El estado perezoso mantiene
+  // los datos generados en ese ámbito de evaluación y los construye una sola vez por montaje.
   const [entries] = useState(() => [
     {
       label: "bool_*",
@@ -132,7 +132,7 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "input_format_*",
-      count: 128,
+      count: 132,
       settings: [
         { name: "input_format_allow_errors_num", path: "/input-format#input_format_allow_errors_num", default: "0" },
         { name: "input_format_allow_errors_ratio", path: "/input-format#input_format_allow_errors_ratio", default: "0" },
@@ -182,6 +182,7 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
         { name: "input_format_custom_skip_trailing_empty_lines", path: "/input-format#input_format_custom_skip_trailing_empty_lines", default: "0" },
         { name: "input_format_defaults_for_omitted_fields", path: "/input-format#input_format_defaults_for_omitted_fields", default: "1" },
         { name: "input_format_force_null_for_omitted_fields", path: "/input-format#input_format_force_null_for_omitted_fields", default: "0" },
+        { name: "input_format_freeform_max_search_steps", path: "/input-format#input_format_freeform_max_search_steps", default: "4096" },
         { name: "input_format_geojson_unsupported_geometry_handling", path: "/input-format#input_format_geojson_unsupported_geometry_handling", default: "throw" },
         { name: "input_format_hive_text_allow_variable_number_of_columns", path: "/input-format#input_format_hive_text_allow_variable_number_of_columns", default: "1" },
         { name: "input_format_hive_text_collection_items_delimiter", path: "/input-format#input_format_hive_text_collection_items_delimiter", default: "\u0002" },
@@ -199,6 +200,7 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
         { name: "input_format_json_infer_incomplete_types_as_strings", path: "/input-format#input_format_json_infer_incomplete_types_as_strings", default: "1" },
         { name: "input_format_json_map_as_array_of_tuples", path: "/input-format#input_format_json_map_as_array_of_tuples", default: "0" },
         { name: "input_format_json_max_depth", path: "/input-format#input_format_json_max_depth", default: "1000" },
+        { name: "input_format_json_max_object_size", path: "/input-format#input_format_json_max_object_size", default: "536870912" },
         { name: "input_format_json_max_string_column_growth_step", path: "/input-format#input_format_json_max_string_column_growth_step", default: "0" },
         { name: "input_format_json_named_tuples_as_objects", path: "/input-format#input_format_json_named_tuples_as_objects", default: "1" },
         { name: "input_format_json_read_arrays_as_strings", path: "/input-format#input_format_json_read_arrays_as_strings", default: "1" },
@@ -245,6 +247,7 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
         { name: "input_format_parquet_enable_json_parsing", path: "/input-format#input_format_parquet_enable_json_parsing", default: "1" },
         { name: "input_format_parquet_enable_row_group_prefetch", path: "/input-format#input_format_parquet_enable_row_group_prefetch", default: "1" },
         { name: "input_format_parquet_filter_push_down", path: "/input-format#input_format_parquet_filter_push_down", default: "1" },
+        { name: "input_format_parquet_footer_read_size", path: "/input-format#input_format_parquet_footer_read_size", default: "0" },
         { name: "input_format_parquet_local_file_min_bytes_for_seek", path: "/input-format#input_format_parquet_local_file_min_bytes_for_seek", default: "8192" },
         { name: "input_format_parquet_local_time_as_utc", path: "/input-format#input_format_parquet_local_time_as_utc", default: "1" },
         { name: "input_format_parquet_max_block_size", path: "/input-format#input_format_parquet_max_block_size", default: "65409" },
@@ -271,6 +274,7 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
         { name: "input_format_read_datetime_number_as_raw_value", path: "/input-format#input_format_read_datetime_number_as_raw_value", default: "0" },
         { name: "input_format_record_errors_file_path", path: "/input-format#input_format_record_errors_file_path", default: '""' },
         { name: "input_format_skip_unknown_fields", path: "/input-format#input_format_skip_unknown_fields", default: "1" },
+        { name: "input_format_sqlite_table_name", path: "/input-format#input_format_sqlite_table_name", default: '""' },
         { name: "input_format_try_infer_dates", path: "/input-format#input_format_try_infer_dates", default: "1" },
         { name: "input_format_try_infer_datetimes", path: "/input-format#input_format_try_infer_datetimes", default: "1" },
         { name: "input_format_try_infer_datetimes_only_datetime64", path: "/input-format#input_format_try_infer_datetimes_only_datetime64", default: "0" },
@@ -295,14 +299,17 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "output_format_*",
-      count: 106,
+      count: 113,
       settings: [
         { name: "output_format_always_write_decimal_point_in_float_and_decimal", path: "/output-format#output_format_always_write_decimal_point_in_float_and_decimal", default: "0" },
         { name: "output_format_arrow_compression_method", path: "/output-format#output_format_arrow_compression_method", default: "lz4_frame" },
         { name: "output_format_arrow_date_as_uint16", path: "/output-format#output_format_arrow_date_as_uint16", default: "0" },
         { name: "output_format_arrow_fixed_string_as_fixed_byte_array", path: "/output-format#output_format_arrow_fixed_string_as_fixed_byte_array", default: "1" },
         { name: "output_format_arrow_low_cardinality_as_dictionary", path: "/output-format#output_format_arrow_low_cardinality_as_dictionary", default: "0" },
+        { name: "output_format_arrow_record_batch_size", path: "/output-format#output_format_arrow_record_batch_size", default: "0" },
+        { name: "output_format_arrow_record_batch_size_bytes", path: "/output-format#output_format_arrow_record_batch_size_bytes", default: "0" },
         { name: "output_format_arrow_string_as_string", path: "/output-format#output_format_arrow_string_as_string", default: "1" },
+        { name: "output_format_arrow_unsupported_types", path: "/output-format#output_format_arrow_unsupported_types", default: "binary" },
         { name: "output_format_arrow_unsupported_types_as_binary", path: "/output-format#output_format_arrow_unsupported_types_as_binary", default: "1" },
         { name: "output_format_arrow_use_64_bit_indexes_for_dictionary", path: "/output-format#output_format_arrow_use_64_bit_indexes_for_dictionary", default: "0" },
         { name: "output_format_arrow_use_signed_indexes_for_dictionary", path: "/output-format#output_format_arrow_use_signed_indexes_for_dictionary", default: "1" },
@@ -365,10 +372,12 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
         { name: "output_format_parquet_row_group_size", path: "/output-format#output_format_parquet_row_group_size", default: "1000000" },
         { name: "output_format_parquet_row_group_size_bytes", path: "/output-format#output_format_parquet_row_group_size_bytes", default: "536870912" },
         { name: "output_format_parquet_string_as_string", path: "/output-format#output_format_parquet_string_as_string", default: "1" },
+        { name: "output_format_parquet_wide_integer_as_decimal", path: "/output-format#output_format_parquet_wide_integer_as_decimal", default: "0" },
         { name: "output_format_parquet_write_bloom_filter", path: "/output-format#output_format_parquet_write_bloom_filter", default: "1" },
         { name: "output_format_parquet_write_checksums", path: "/output-format#output_format_parquet_write_checksums", default: "1" },
         { name: "output_format_parquet_write_page_index", path: "/output-format#output_format_parquet_write_page_index", default: "1" },
         { name: "output_format_pretty_color", path: "/output-format#output_format_pretty_color", default: "auto" },
+        { name: "output_format_pretty_display_control_characters", path: "/output-format#output_format_pretty_display_control_characters", default: "1" },
         { name: "output_format_pretty_display_footer_column_names", path: "/output-format#output_format_pretty_display_footer_column_names", default: "1" },
         { name: "output_format_pretty_display_footer_column_names_min_rows", path: "/output-format#output_format_pretty_display_footer_column_names_min_rows", default: "50" },
         { name: "output_format_pretty_fallback_to_vertical", path: "/output-format#output_format_pretty_fallback_to_vertical", default: "1" },
@@ -387,6 +396,7 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
         { name: "output_format_pretty_max_value_width_apply_for_single_value", path: "/output-format#output_format_pretty_max_value_width_apply_for_single_value", default: "0" },
         { name: "output_format_pretty_multiline_fields", path: "/output-format#output_format_pretty_multiline_fields", default: "1" },
         { name: "output_format_pretty_named_tuples_as_json", path: "/output-format#output_format_pretty_named_tuples_as_json", default: "1" },
+        { name: "output_format_pretty_named_tuples_as_subcolumns", path: "/output-format#output_format_pretty_named_tuples_as_subcolumns", default: "1" },
         { name: "output_format_pretty_row_numbers", path: "/output-format#output_format_pretty_row_numbers", default: "1" },
         { name: "output_format_pretty_single_large_number_tip_threshold", path: "/output-format#output_format_pretty_single_large_number_tip_threshold", default: "1000000" },
         { name: "output_format_pretty_squash_consecutive_ms", path: "/output-format#output_format_pretty_squash_consecutive_ms", default: "50" },
@@ -399,6 +409,7 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
         { name: "output_format_sql_insert_quote_names", path: "/output-format#output_format_sql_insert_quote_names", default: "1" },
         { name: "output_format_sql_insert_table_name", path: "/output-format#output_format_sql_insert_table_name", default: "table" },
         { name: "output_format_sql_insert_use_replace", path: "/output-format#output_format_sql_insert_use_replace", default: "0" },
+        { name: "output_format_sqlite_table_name", path: "/output-format#output_format_sqlite_table_name", default: "table" },
         { name: "output_format_trim_fixed_string", path: "/output-format#output_format_trim_fixed_string", default: "0" },
         { name: "output_format_tsv_crlf_end_of_line", path: "/output-format#output_format_tsv_crlf_end_of_line", default: "0" },
         { name: "output_format_values_escape_quote_with_quote", path: "/output-format#output_format_values_escape_quote_with_quote", default: "0" },
@@ -428,11 +439,12 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "type_json_*",
-      count: 4,
+      count: 5,
       settings: [
         { name: "type_json_allow_duplicated_key_with_literal_and_nested_object", path: "/type-json#type_json_allow_duplicated_key_with_literal_and_nested_object", default: "1" },
         { name: "type_json_skip_duplicated_paths", path: "/type-json#type_json_skip_duplicated_paths", default: "0" },
         { name: "type_json_skip_invalid_typed_paths", path: "/type-json#type_json_skip_invalid_typed_paths", default: "0" },
+        { name: "type_json_skip_null_typed_paths", path: "/type-json#type_json_skip_null_typed_paths", default: "0" },
         { name: "type_json_use_partial_match_to_skip_paths_by_regexp", path: "/type-json#type_json_use_partial_match_to_skip_paths_by_regexp", default: "1" }
       ],
       children: []
@@ -546,7 +558,7 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
     const key = [...path, entry.label].join("/")
     const isOpen = isSearching || expandedGroups.has(key)
     const items = [...entry.settings.map((setting) => ({ type: "setting", value: setting })), ...entry.children.map((child) => ({ type: "group", value: child }))]
-    const countLabel = `${entry.count} ${entry.count === 1 ? "ajuste" : "ajustes"}`
+    const countLabel = `${entry.count} ${entry.count === 1 ? "setting" : "settings"}`
 
     return (
       <div key={key} className="min-w-max">

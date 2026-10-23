@@ -213,11 +213,6 @@ SELECT number, nonNegativeDerivative(number * 10, toDateTime(number)) OVER (ORDE
 FROM numbers(5) ORDER BY number;
 
 SELECT '-- invalid GROUPS frames (start after end) are rejected';
-SET enable_analyzer = 0;
-SELECT count() OVER (ORDER BY number GROUPS BETWEEN 1 FOLLOWING AND CURRENT ROW) FROM numbers(3); -- { serverError BAD_ARGUMENTS }
-SELECT count() OVER (ORDER BY number GROUPS BETWEEN 1 FOLLOWING AND 1 PRECEDING) FROM numbers(3); -- { serverError BAD_ARGUMENTS }
-SELECT count() OVER (ORDER BY number GROUPS BETWEEN CURRENT ROW AND 1 PRECEDING) FROM numbers(3); -- { serverError BAD_ARGUMENTS }
-
 SET enable_analyzer = 1;
 SELECT count() OVER (ORDER BY number GROUPS BETWEEN 1 FOLLOWING AND CURRENT ROW) FROM numbers(3); -- { serverError BAD_ARGUMENTS }
 SELECT count() OVER (ORDER BY number GROUPS BETWEEN 1 FOLLOWING AND 1 PRECEDING) FROM numbers(3); -- { serverError BAD_ARGUMENTS }

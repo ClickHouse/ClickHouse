@@ -159,7 +159,7 @@ for _ in {1..60}; do
             anyIf(http_handler_name = '${HA}', query_id = '${QID}') AS name_ok,
             -- http_request_url must equal the path only: the query string (here \`?query_id=...\`) is not persisted.
             anyIf(http_request_url = '${P}/exact', query_id = '${QID}') AS url_is_path_only,
-            -- PUT and DELETE are logged as http_method 4 and 5, and a HEAD request as 6 (not 0/UNKNOWN).
+            -- PUT and DELETE requests are logged as http_method PUT and DELETE, and a HEAD request as HEAD (not UNKNOWN).
             anyIf(http_method, query_id = '${QIDP}') AS put_m,
             anyIf(http_method, query_id = '${QIDD}') AS del_m,
             anyIf(http_method, query_id = '${QIDH}') AS head_m

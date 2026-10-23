@@ -12,7 +12,7 @@
 namespace DB
 {
 
-class OptimizerContext;
+class CascadesOptimizer;
 
 class IOptimizationRule;
 using OptimizationRulePtr = std::shared_ptr<const IOptimizationRule>;
@@ -25,12 +25,12 @@ class IOptimizationTask : boost::noncopyable
 {
 public:
     virtual ~IOptimizationTask() = default;
-    virtual void execute(OptimizerContext & optimizer_context) = 0;
+    virtual void execute(CascadesOptimizer & optimizer) = 0;
     /// One line for logs and the task-budget error: which task and on what.
     virtual String describe() const = 0;
 };
 
-using OptimizationTaskPtr = std::shared_ptr<IOptimizationTask>;
+using OptimizationTaskPtr = std::unique_ptr<IOptimizationTask>;
 
 /// Optimization tasks as described in "Extensible Query Optimizers in Practice":
 /// https://www.microsoft.com/en-us/research/wp-content/uploads/2024/12/Extensible-Query-Optimizers-in-Practice.pdf#section.2.3
@@ -43,13 +43,13 @@ public:
         , required_properties(required_properties_)
     {}
 
-    void execute(OptimizerContext & optimizer_context) override;
+    void execute(CascadesOptimizer & optimizer) override;
     String describe() const override { return fmt::format("optimize group #{} for {}", group_id, required_properties.dump()); }
 
 private:
     /// Stage 3: run the enforcer rules to a fixed point over the group's physical expressions
     /// and return the expressions they inserted; satisfying expressions update the best plan.
-    std::vector<GroupExpressionPtr> runEnforcementStage(OptimizerContext & optimizer_context, const GroupPtr & group) const;
+    std::vector<GroupExpressionPtr> runEnforcementStage(CascadesOptimizer & optimizer, const GroupPtr & group) const;
 
     GroupId group_id;
     ExpressionProperties required_properties;
@@ -63,7 +63,7 @@ public:
         : group_id(group_id_)
     {}
 
-    void execute(OptimizerContext & optimizer_context) override;
+    void execute(CascadesOptimizer & optimizer) override;
     String describe() const override { return fmt::format("explore group #{}", group_id); }
 
 private:
@@ -78,7 +78,7 @@ public:
         : expression(expression_)
     {}
 
-    void execute(OptimizerContext & optimizer_context) override;
+    void execute(CascadesOptimizer & optimizer) override;
     String describe() const override;
 
 private:
@@ -94,7 +94,7 @@ public:
         , required_properties(required_properties_)
     {}
 
-    void execute(OptimizerContext & optimizer_context) override;
+    void execute(CascadesOptimizer & optimizer) override;
     String describe() const override;
 
 private:
@@ -112,11 +112,11 @@ public:
         , rule(rule_)
     {}
 
-    void execute(OptimizerContext & optimizer_context) override;
+    void execute(CascadesOptimizer & optimizer) override;
     String describe() const override;
 
 private:
-    void updateMemo(const std::vector<GroupExpressionPtr> & new_expressions, OptimizerContext & optimizer_context);
+    void updateMemo(const std::vector<GroupExpressionPtr> & new_expressions, CascadesOptimizer & optimizer);
 
     GroupExpressionPtr expression;
     ExpressionProperties required_properties;
@@ -132,7 +132,7 @@ public:
         , input_index_to_optimize(input_index_to_optimize_)
     {}
 
-    void execute(OptimizerContext & optimizer_context) override;
+    void execute(CascadesOptimizer & optimizer) override;
     String describe() const override;
 
 private:

@@ -20,7 +20,6 @@ nodes = [
         image="clickhouse/clickhouse-server",
         tag="25.12",
         stay_alive=True,
-        use_old_analyzer=False,
         with_installed_binary=True,
     )
     for num in range(2)
@@ -29,7 +28,6 @@ nodes = [
         "node2",
         main_configs=["configs/clusters.xml"],
         with_zookeeper=True,
-        use_old_analyzer=False,
     )
 ]
 

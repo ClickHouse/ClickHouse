@@ -1,5 +1,7 @@
 #pragma once
 
+#include "config.h"
+
 #include <ctime>
 #include <map>
 #include <memory>
@@ -111,6 +113,35 @@ public:
     /// This function does the same as `read(file_name)->getSize()` but faster.
     virtual UInt64 getFileSize(const String & file_name) const = 0;
 
+#if CLICKHOUSE_CLOUD
+    /// Methods guarded by CLICKHOUSE_CLOUD are deliberately not pure: they do not exist in the public
+    /// build, so a subclass written there cannot know it must override them.
+
+    /// Returns the disk name where the object is stored, e.g., in a lightweight snapshot.
+    /// Throws BACKUP_ENTRY_NOT_FOUND if the object_key is not found in the snapshot.
+    virtual const String & getRemoteDiskName(const String & object_key) const;
+
+    /// Converts a backup file name to its object key in remote storage.
+    /// Returns empty string if the file is not stored as a remote object (i.e., not part of a snapshot).
+    /// This is used for lightweight snapshot backups.
+    virtual String getObjectKey(const String & file_name) const;
+
+    /// Returns whether the file referenced by a lightweight snapshot is stored in the encrypted form
+    /// (i.e. it belongs to an encrypted disk and the object contains the raw encrypted bytes),
+    /// according to the metadata of the snapshot.
+    /// object_key is the remote storage path (e.g. S3 key) where the file is located.
+    virtual bool isFileEncryptedByDisk(const String & /* object_key */) const { return false; }
+
+    /// Returns the namespace (e.g. S3 bucket) of the object storage the files referenced by
+    /// a lightweight snapshot are located in, according to the metadata of the snapshot.
+    /// Empty if the backup is not a lightweight snapshot.
+    virtual String getOriginalNamespace() const { return ""; }
+
+    /// Returns the endpoint of the object storage the files referenced by a lightweight snapshot
+    /// are located in, according to the metadata of the snapshot.
+    /// Empty if the backup is not a lightweight snapshot.
+    virtual String getOriginalEndpoint() const { return ""; }
+#endif
     /// Returns the checksum of the entry's data.
     /// This function does the same as `read(file_name)->getChecksum()` but faster.
     virtual UInt128 getFileChecksum(const String & file_name) const = 0;
@@ -121,6 +152,13 @@ public:
     /// Reads an entry from the backup.
     virtual std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name) const = 0;
     virtual std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name, const SizeAndChecksum & size_and_checksum) const = 0;
+
+#if CLICKHOUSE_CLOUD
+    /// Reads a file directly from remote storage using its object key.
+    /// Used for lightweight snapshot backups.
+    /// object_key is the remote storage path (e.g., S3 key) where the file is located.
+    virtual std::unique_ptr<ReadBufferFromFileBase> readRemoteFile(const String & object_key) const;
+#endif
 
     /// Copies a file from the backup to a specified destination disk. Returns the number of bytes written.
     /// When `sync` is true the destination file's contents are fsynced before this call returns, so a

@@ -28,6 +28,24 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
+    String getSignatureString() const override
+    {
+        /// Nullable(String) prompt -> Nullable(String) return; otherwise String.
+        ///
+        /// `temperature` is only valid once `system_prompt` is present, so the
+        /// optional positions are spelled as explicit prefix alternatives rather
+        /// than two independent optionals — otherwise `aiGenerate(c, p, 0.5)` would
+        /// type-check as a temperature-only call while execution treats argument 3
+        /// as `system_prompt`.
+        return
+            "(const String, Nullable(String)) -> Nullable(String)"
+            " OR (const String, Nullable(String), const String) -> Nullable(String)"
+            " OR (const String, Nullable(String), const String, const Number) -> Nullable(String)"
+            " OR (const String, String) -> String"
+            " OR (const String, String, const String) -> String"
+            " OR (const String, String, const String, const Number) -> String";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
@@ -37,7 +55,6 @@ public:
             {"params", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringToStringMap), &isColumnConst, "const Map(String, String)"},
         };
         validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
-
         return wrapReturnTypeForNullablePrompt(arguments, 0, std::make_shared<DataTypeString>());
     }
 
@@ -89,7 +106,7 @@ not set, the default is: `)" + String(default_system_prompt) + R"(`
         .examples
         = {{"Simple question", "SELECT aiGenerate('What is 2 + 2? Reply with just the number.')", "4"},
            {"With explicit credentials and system prompt", "SELECT aiGenerate('Explain ClickHouse', map('credentials', 'ai_text_credentials', 'system_prompt', 'You are a database expert. Be concise.'))", ""},
-           {"Summarize column values", "SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5", ""}},
+           {"Summarize column values", "CREATE TABLE articles (article_title String, article_body String) ENGINE = Memory;\nINSERT INTO articles VALUES ('ClickHouse', 'ClickHouse is an open-source column-oriented database for online analytical processing.');\nSELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5", ""}},
         .introduced_in = {26, 4},
         .category = FunctionDocumentation::Category::AI});
 

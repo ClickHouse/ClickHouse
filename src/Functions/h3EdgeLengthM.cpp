@@ -44,12 +44,9 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors mandatory_args{{"resolution", &isUInt8, nullptr, "UInt8"}};
-        validateFunctionArguments(*this, arguments, mandatory_args);
-
-        return std::make_shared<DataTypeFloat64>();
+        return "(UInt8) -> Float64";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -118,7 +115,7 @@ Calculates the average length of an [H3](https://h3geo.org/docs/core-library/h3I
             "SELECT h3EdgeLengthM(15) AS edgeLengthM",
             R"(
 ┌─edgeLengthM─┐
-│ 0.509713273 │
+│  0.58416863 │
 └─────────────┘
             )"
         }

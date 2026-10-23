@@ -13,16 +13,20 @@ public:
     using ElementSerializations = std::vector<ElementSerializationPtr>;
 
 private:
-    SerializationTuple(ElementSerializations elems_, bool has_explicit_names_)
-        : elems(std::move(elems_)), has_explicit_names(has_explicit_names_)
-    {
-    }
+    SerializationTuple(ElementSerializations elems_, bool has_explicit_names_);
 
 public:
     static UInt128 getHash(const ElementSerializations & elems_, bool has_explicit_names_);
     static SerializationPtr create(ElementSerializations elems_, bool has_explicit_names_);
+
+    /// Whether a resolved subcolumn is really this element, which its name alone cannot tell: a
+    /// sibling element can flatten to the same name. `QBit` elements are the same substream.
+    static bool isElementSubcolumn(const SubstreamPath & path, const String & element_name);
     size_t allocatedBytes() const override;
     bool supportsPooling() const override;
+
+    /// Wrap each tuple element into the layout its serialization deserializes into (e.g. a sparse element).
+    MutableColumnPtr wrapColumnForDeserialization(MutableColumnPtr column) const override;
 
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;
@@ -73,8 +77,7 @@ public:
             SerializeBinaryBulkStatePtr & state) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
-            ColumnPtr & column,
-            size_t rows_offset,
+            IColumn & column,
             size_t limit,
             DeserializeBinaryBulkSettings & settings,
             DeserializeBinaryBulkStatePtr & state,
@@ -87,6 +90,8 @@ public:
 private:
     ElementSerializations elems;
     bool has_explicit_names;
+    /// Cached result of `supportsPooling` of all elements, see `SerializationArray`.
+    bool elems_support_pooling;
 
     size_t getPositionByName(const String & name) const;
 

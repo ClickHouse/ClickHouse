@@ -1,8 +1,9 @@
 ---
-sidebarTitle: 'ClickPipes 向け AWS PrivateLink'
+sidebarTitle: 'AWS PrivateLink'
+icon: 'aws'
 description: 'AWS PrivateLink を使用して、ClickPipes とデータソース間のセキュアな接続を確立します。'
 slug: /integrations/clickpipes/networking/aws-privatelink
-title: 'ClickPipes 向け AWS PrivateLink'
+title: 'AWS PrivateLink'
 doc_type: 'guide'
 keywords: ['aws privatelink', 'ClickPipes security', 'vpc endpoint', 'private connectivity', 'vpc resource']
 integration:
@@ -19,9 +20,7 @@ import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge
   開始前に、[サポートされている AWS リージョン](#aws-privatelink-regions)を確認してください。
 </Note>
 
-<div id="supported-sources">
-  ## サポートされる ClickPipes のデータソース
-</div>
+## サポートされる ClickPipes のデータソース {#supported-sources}
 
 ClickPipes のリバースプライベートエンドポイント機能は、以下の
 データソースタイプにのみ対応しています。
@@ -35,9 +34,7 @@ ClickPipes のリバースプライベートエンドポイント機能は、以
   Kafka では、ホスト名がエンドポイントのプライベート IP アドレスに解決される場合、[Confluent 互換スキーマレジストリ](/ja/integrations/clickpipes/kafka/schema-registries#confluent-compatible-registries)にもブローカーと同じリバースプライベートエンドポイント経由でアクセスできます。パブリックにアクセス可能である必要はありません。
 </Note>
 
-<div id="aws-privatelink-endpoint-types">
-  ## サポートされる AWS PrivateLink エンドポイントの種類
-</div>
+## サポートされる AWS PrivateLink エンドポイントの種類 {#aws-privatelink-endpoint-types}
 
 ClickPipes のリバース プライベート エンドポイントは、次のいずれかの AWS PrivateLink 方式で設定できます。
 
@@ -45,9 +42,7 @@ ClickPipes のリバース プライベート エンドポイントは、次の�
 * [MSK ClickPipe 向け MSK マルチ VPC 接続](#msk-multi-vpc)
 * [VPC エンドポイントサービス](#vpc-endpoint-service)
 
-<div id="vpc-resource">
-  ### VPC リソース
-</div>
+### VPC リソース {#vpc-resource}
 
 <Info>
   クロスリージョンはサポートされていません。
@@ -164,27 +159,23 @@ VPC リソースで PrivateLink を設定するには:
   </Step>
 </Steps>
 
-<div id="msk-multi-vpc">
-  ### MSK マルチ VPC 接続
-</div>
+### MSK マルチ VPC 接続 {#msk-multi-vpc}
 
 [マルチ VPC 接続](https://docs.aws.amazon.com/msk/latest/developerguide/aws-access-mult-vpc.html)は、複数の VPC を単一の MSK クラスターに接続できる AWS MSK の組み込み機能です。
-private DNS は標準でサポートされており、追加の設定は不要です。
+プライベート DNS は標準でサポートされており、追加の設定は不要です。
 クロスリージョン接続には対応していません。
 
 ClickPipes for MSK では、このオプションを推奨します。
 詳細については、[開始ガイド](https://docs.aws.amazon.com/msk/latest/developerguide/mvpc-getting-started.html)を参照してください。
 
 <Info>
-  MSK クラスターのポリシーを更新し、MSK クラスターで許可するプリンシパルに `072088201116` を追加してください。
+  ClickPipes はクライアント VPC を所有し、マネージド VPC 接続を作成します。ネットワーク接続を確立するには、MSK クラスターでマルチ VPC プライベート接続を有効にし、クラスター ポリシーで ClickPipes AWS アカウントを認可してください。
   詳細については、[クラスター ポリシーのアタッチ](https://docs.aws.amazon.com/msk/latest/developerguide/mvpc-cluster-owner-action-policy.html)に関する AWS ガイドを参照してください。
 </Info>
 
 接続の設定方法については、[ClickPipes 向け MSK セットアップガイド](/ja/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-msk-clickpipes)を参照してください。
 
-<div id="vpc-endpoint-service">
-  ### VPC エンドポイントサービス
-</div>
+### VPC エンドポイントサービス {#vpc-endpoint-service}
 
 [VPC エンドポイントサービス](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html)は、データソースを ClickPipes と共有するためのもう一つの方法です。
 データソースの前段に NLB (Network Load Balancer) を設定し、
@@ -220,9 +211,7 @@ VPC エンドポイントサービスは、ClickPipes VPC からアクセスで�
 MSK クラスターについては、カスタム プライベート DNS 名を使用する、エンドポイントサービスごとにブローカーを設定する構成の詳細を、[MSK クラスター用 AWS PrivateLink VPC エンドポイントサービス](/ja/resources/support-center/knowledge-base/cloud-services/aws-privatelink-vpc-endpoint-service-for-msk-cluster)
 で確認してください。
 
-<div id="custom-private-dns">
-  ## カスタム プライベート DNS
-</div>
+## カスタム プライベート DNS {#custom-private-dns}
 
 <PrivatePreviewBadge />
 
@@ -271,9 +260,7 @@ AWS PrivateLink は、検証済みドメインを持つ VPC エンドポイン�
   [`clickhouse_clickpipes_reverse_private_endpoint_custom_private_dns`](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/clickpipes_reverse_private_endpoint_custom_private_dns)
   リソースを使用して、既存のリバース プライベート エンドポイントのマッピングを管理します。
 
-<div id="creating-clickpipe">
-  ## リバース プライベート エンドポイントを使用した ClickPipe の作成
-</div>
+## リバース プライベート エンドポイントを使用した ClickPipe の作成 {#creating-clickpipe}
 
 1. ClickHouse Cloud サービスの SQL Console にアクセスします。
 
@@ -330,9 +317,7 @@ AWS PrivateLink は、検証済みドメインを持つ VPC エンドポイン�
 
    DNS 名の一覧全体を確認するには、Cloud サービスの設定にアクセスしてください。
 
-<div id="managing-rpes">
-  ## リバースプライベートエンドポイントの管理
-</div>
+## リバースプライベートエンドポイントの管理 {#managing-rpes}
 
 既存のリバースプライベートエンドポイントは、ClickHouse Cloud のサービス設定で管理できます。
 
@@ -348,18 +333,14 @@ AWS PrivateLink は、検証済みドメインを持つ VPC エンドポイン�
 
    エンドポイントは作成後に編集できません。エンドポイントの `×` をクリックし、確認すると削除できます。削除は元に戻せず、そのエンドポイントを使用中の ClickPipe は機能しなくなります。
 
-<div id="aws-privatelink-regions">
-  ## サポート対象の AWS リージョン
-</div>
+## サポート対象の AWS リージョン {#aws-privatelink-regions}
 
 ClickPipes の AWS PrivateLink は、特定の AWS リージョンでのみサポートされています。
 利用可能なリージョンについては、[ClickPipes リージョン一覧](/ja/integrations/clickpipes/networking/static-ips)を参照してください。
 
 この制限は、クロスリージョン接続が有効になっている PrivateLink VPC エンドポイントサービスには適用されません。
 
-<div id="limitations">
-  ## 制限事項
-</div>
+## 制限事項 {#limitations}
 
 ClickHouse Cloud で作成される ClickPipes 用 AWS PrivateLink エンドポイントは、ClickHouse Cloud サービスと同じ AWS リージョンに作成されるとは限りません。
 
@@ -371,9 +352,18 @@ VPC エンドポイントサービスのみです。
 
 AWS MSK では、認証タイプ (SASL&#95;IAM または SASL&#95;SCRAM) ごとに、MSK クラスターあたり 1 つの PrivateLink (VPC エンドポイント) のみがサポートされます。そのため、複数の ClickHouse Cloud サービスまたは組織が、同じ認証タイプを使用して同じ MSK クラスターへの個別の PrivateLink 接続を作成することはできません。
 
-<div id="automatic-cleanup">
-  ### 非アクティブなエンドポイントの自動クリーンアップ
-</div>
+### リバース プライベート エンドポイントあたりのレプリカ上限 {#rpe-replica-limit}
+
+1 つのリバース プライベート エンドポイントで利用できる ClickPipe レプリカは、合計で最大 190 個です。同じエンドポイントを共有するすべての ClickPipe のレプリカがこの上限の対象となり、一時停止中の ClickPipe も含まれます。
+
+エンドポイントのレプリカ総数が上限を超える場合、ClickPipes は ClickPipe の作成やスケールアップを拒否します。エラーメッセージには、リバース プライベート エンドポイントの ID、他の ClickPipe がすでに使用しているレプリカ数、および要求されたレプリカ数が表示されます。スケールダウンはいつでも実行できます。
+
+空き容量を確保するには、次のいずれかを行ってください。
+
+* 同じエンドポイントを使用する他の ClickPipe をスケールダウンする。
+* 追加の ClickPipe 用に別のリバース プライベート エンドポイントを作成する。
+
+### 非アクティブなエンドポイントの自動クリーンアップ {#automatic-cleanup}
 
 終端状態にあるリバースプライベートエンドポイントは、所定の猶予期間が経過すると自動的に削除されます。
 これにより、未使用または設定に問題のあるエンドポイントが無期限に残るのを防ぎます。

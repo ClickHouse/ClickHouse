@@ -26,10 +26,12 @@ public:
     /// Returns an empty dictionary with nullable nested type and all required special values.
     virtual MutableColumnPtr cloneEmptyNullable() const = 0;
 
-    /// Returns array with StringViewHash calculated for each row of getNestedNotNullableColumn() column.
-    /// Returns nullptr if nested column doesn't contain strings. Otherwise calculates hash (if it wasn't).
+    /// Returns a span of StringViewHash calculated for each row of getNestedNotNullableColumn() column.
+    /// Returns an empty span if nested column doesn't contain strings. Otherwise calculates hash (if it wasn't).
     /// Uses thread-safe cache.
-    virtual const UInt64 * tryGetSavedHash() const = 0;
+    /// The span is computed once and is not extended afterwards, so the dictionary may grow past its
+    /// end: a position outside the span has no saved hash and must be hashed from the key instead.
+    virtual std::span<const UInt64> tryGetSavedHash() const = 0;
 
     size_t size() const override { return getNestedNotNullableColumn()->size(); }
 
@@ -42,6 +44,9 @@ public:
     virtual bool tryUniqueInsert(const Field & x, size_t & index) = 0;
 
     virtual size_t uniqueInsertFrom(const IColumn & src, size_t n) = 0;
+    /// Inserts rows `rows` of `src` with the rules of `uniqueInsertRangeFrom`, which differ from `uniqueInsertFrom` for NULL
+    /// and for values that compare equal to the default, such as `-0.0`, and replaces each row number with its index.
+    virtual void uniqueInsertRowsFrom(const IColumn & src, std::span<UInt64> rows) = 0;
     /// Appends range of elements from other column.
     /// Could be used to concatenate columns.
     virtual MutableColumnPtr uniqueInsertRangeFrom(const IColumn & src, size_t start, size_t length) = 0;

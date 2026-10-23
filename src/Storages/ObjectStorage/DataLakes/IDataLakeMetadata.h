@@ -9,7 +9,6 @@
 #include <Formats/FormatFilterInfo.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/StorageID.h>
-#include <Processors/ISimpleTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage_fwd.h>
@@ -45,9 +44,22 @@ struct ObjectInfo;
 using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
 using ObjectIterator = std::shared_ptr<IObjectIterator>;
 using ObjectStoragePtr = std::shared_ptr<IObjectStorage>;
+struct PartitionCommand;
+using PartitionCommands = std::vector<PartitionCommand>;
 
 struct FormatParserSharedResources;
 using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
+
+/// Rows of a read, estimated from the data lake metadata without reading data (see `IDataLakeMetadata::estimateRead`).
+struct DataLakeReadEstimate
+{
+    /// Rows of the live data files left after pruning, deleted rows included; std::nullopt if the metadata is malformed.
+    std::optional<UInt64> rows;
+    /// Pruning by the filter dropped at least one live data file or a whole data manifest.
+    bool pruned_data_files = false;
+    /// The snapshot has live delete files.
+    bool has_delete_files = false;
+};
 
 class IDataLakeMetadata : boost::noncopyable
 {
@@ -102,13 +114,19 @@ public:
     /// Update metadata to the latest version.
     virtual void update(const ContextPtr &) { }
 
+    virtual void setExplicitMetadataFilePath(const String & /*path*/) { }
+
     virtual bool supportsWrites() const { return false; }
     virtual bool supportsParallelInsert() const { return false; }
+
+    /// Reads the incremental refreshable-MV cursor persisted in the current table snapshot (as stored),
+    /// or nullopt if absent/unsupported. The write path commits it atomically with the appended data.
+    virtual std::optional<String> getRefreshCursor(ContextPtr) const { return std::nullopt; }
 
     virtual void modifyFormatSettings(FormatSettings &, const Context &) const {}
 
     static bool supportsTotalRows(ContextPtr, ObjectStorageType) { return false; }
-    virtual std::optional<size_t> totalRows(ContextPtr) const { return {}; }
+    virtual std::optional<size_t> totalRows(ContextPtr, const std::optional<DataLakeTableStateSnapshot> &) const { return {}; }
     static bool supportsTotalBytes(ContextPtr, ObjectStorageType) { return false; }
     virtual std::optional<size_t> totalBytes(ContextPtr) const { return {}; }
 
@@ -123,6 +141,13 @@ public:
     /// It requires that every data file can be re-read by physical row numbers with the
     /// deferred columns pruned from the main read.
     virtual bool supportsLazyMaterialization(StorageMetadataPtr, ContextPtr) const { return false; }
+
+    /// Estimates from the metadata only the rows a read of the pinned data snapshot returns, with the data files
+    /// pruned by `filter` as the read prunes them. std::nullopt if this data lake gives no estimate.
+    virtual std::optional<DataLakeReadEstimate> estimateRead(StorageMetadataPtr, const ActionsDAG * /*filter*/, ContextPtr) const
+    {
+        return std::nullopt;
+    }
 
     /// Some data lakes specify information for reading files from disks.
     /// For example, Iceberg has Parquet schema field ids in its metadata for reading files.
@@ -142,9 +167,12 @@ public:
     }
 
     virtual bool optimize(
-        const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, const std::optional<FormatSettings> & /*format_settings*/)
+        const StorageMetadataPtr & /*metadata_snapshot*/,
+        ContextPtr /*context*/,
+        const std::optional<FormatSettings> & /*format_settings*/,
+        std::shared_ptr<DataLake::ICatalog> /*catalog*/)
     {
-        return false;
+        throwNotImplemented("optimize");
     }
 
     virtual bool supportsDelete() const { return false; }
@@ -164,11 +192,17 @@ public:
 
     virtual void addDeleteTransformers(ObjectInfoPtr, QueryPipelineBuilder &, const std::optional<FormatSettings> &, FormatParserSharedResourcesPtr, ContextPtr) const { }
     virtual void checkAlterIsPossible(const AlterCommands & /*commands*/) { throwNotImplemented("alter"); }
+    virtual void checkAlterPartitionIsPossible(const PartitionCommands & /*commands*/) const { throwNotImplemented("alterPartition"); }
     virtual void alter(
         const AlterCommands & /*params*/,
         ContextPtr /*context*/,
         const StorageID & /*storage_id*/,
         std::shared_ptr<DataLake::ICatalog> /*catalog*/) { throwNotImplemented("alter"); }
+    virtual Pipe alterPartition(
+        const PartitionCommands & /* commands */,
+        ContextPtr /* context */,
+        std::shared_ptr<DataLake::ICatalog> /* catalog */,
+        StorageID /* storage_id */) { throwNotImplemented("alterPartition"); }
 
     virtual Pipe executeCommand(
         const String & command_name,
@@ -183,6 +217,11 @@ public:
     }
 
     virtual void drop(ContextPtr) { }
+
+    virtual std::unique_ptr<IDataLakeMetadata> cloneWithNewSettings(StorageObjectStorageConfigurationPtr /*configuration*/, ContextPtr /*context*/) const
+    {
+        throwNotImplemented("cloneWithNewSettings");
+    }
 
     virtual ObjectStorageType getObjectStorageType() const { return ObjectStorageType::None; }
 

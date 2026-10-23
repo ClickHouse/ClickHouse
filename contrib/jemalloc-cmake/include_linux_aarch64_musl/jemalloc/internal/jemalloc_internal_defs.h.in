@@ -200,7 +200,7 @@
 /* #undef LG_QUANTUM */
 
 /* One page is 2^LG_PAGE bytes. */
-#define LG_PAGE 16
+#define LG_PAGE @JEMALLOC_LG_PAGE@
 
 /* Maximum number of regions in a slab. */
 /* #undef CONFIG_LG_SLAB_MAXREGS */
@@ -210,7 +210,7 @@
  * system does not explicitly support huge pages; system calls that require
  * explicit huge page support are separately configured.
  */
-#define LG_HUGEPAGE 29
+#define LG_HUGEPAGE @JEMALLOC_LG_HUGEPAGE@
 
 /*
  * If defined, adjacent virtual memory mappings with identical attributes
@@ -425,6 +425,9 @@
 
 /* Is C++ support being built? */
 /* #undef JEMALLOC_ENABLE_CXX */
+
+/* Are C++ exceptions enabled? */
+#define JEMALLOC_HAVE_CXX_EXCEPTIONS
 
 /* Performs additional size checks when defined. */
 /* #undef JEMALLOC_OPT_SIZE_CHECKS */

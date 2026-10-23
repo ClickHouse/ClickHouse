@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/RuleUtils.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
@@ -48,7 +49,7 @@ std::vector<GroupExpressionPtr> SortingEnforcer::applyImpl(GroupExpressionPtr ex
     const SortDescription & sort_desc = required_properties.sorting;
     /// The environment carries the query's sort settings (size limits, spill thresholds), seeded
     /// at optimizer setup, so the enforcer-built sort matches the rest of the query's pipeline.
-    const auto & captured_settings = memo.getEnvironment().sort_settings;
+    const auto & captured_settings = memo.getContext().sort_settings;
     if (!captured_settings)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "SortingEnforcer has no sort settings; they must be seeded at optimizer setup");
     const SortingStep::Settings & sort_settings = *captured_settings;
@@ -67,7 +68,7 @@ std::vector<GroupExpressionPtr> SortingEnforcer::applyImpl(GroupExpressionPtr ex
         std::make_unique<SortingStep>(input_header, sort_desc, /*limit=*/0, sort_settings),
         input_required,
         std::move(output_properties),
-        EnforcerAxis::Sorting);
+        EnforcedProperty::Sorting);
 
     return addPhysicalToMemo(sort_expr, required_properties, memo);
 }

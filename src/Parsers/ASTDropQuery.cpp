@@ -2,6 +2,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
+#include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTJSONHelpers.h>
@@ -29,16 +30,47 @@ String ASTDropQuery::getID(char delim) const
     throw Exception(ErrorCodes::SYNTAX_ERROR, "Not supported kind of drop query.");
 }
 
+void ASTDropQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    /// These query modes and filters are not children. `no_ddl_lock` and `no_access_check` are
+    /// internal execution details, never represented in SQL, and deliberately stay out of the hash.
+    hash_state.update(static_cast<UInt8>(kind));
+    const auto update_string = [&hash_state](const String & value)
+    {
+        hash_state.update(value.size());
+        hash_state.update(value);
+    };
+
+    update_string(cluster);
+    hash_state.update(if_exists);
+    hash_state.update(if_empty);
+    hash_state.update(has_all);
+    hash_state.update(has_tables);
+    hash_state.update(has_like);
+    update_string(like);
+    hash_state.update(not_like);
+    hash_state.update(case_insensitive_like);
+    hash_state.update(is_dictionary);
+    hash_state.update(is_view);
+    hash_state.update(sync);
+    hash_state.update(permanently);
+    ASTQueryWithTableAndOutput::updateTreeHashImpl(hash_state, ignore_aliases);
+}
+
 ASTPtr ASTDropQuery::clone() const
 {
     auto res = make_intrusive<ASTDropQuery>(*this);
+    /// The copy constructor shares `children` (and `database_and_tables`) with the source; rebuild
+    /// them as deep copies in the parser's order - the target first, the output options last - so
+    /// the clone is independent of the source and has the same tree hash.
     res->children.clear();
-    cloneTableOptions(*res);
+    res->database_and_tables = nullptr;
     if (database_and_tables)
     {
         res->database_and_tables = database_and_tables->clone();
         res->children.push_back(res->database_and_tables);
     }
+    cloneTableOptions(*res);
     cloneOutputOptions(*res);
     return res;
 }
@@ -62,11 +94,12 @@ void ASTDropQuery::writeJSON(WriteBuffer & out) const
 
     w.writeBool("if_exists", if_exists);
     w.writeBool("if_empty", if_empty);
-    w.writeBool("no_ddl_lock", no_ddl_lock);
+    /// `no_ddl_lock` is internal interpreter state and has no SQL spelling, so it must not be
+    /// exposed through `clickhouse_json`.
     w.writeBool("has_all", has_all);
     w.writeBool("has_tables", has_tables);
 
-    if (!like.empty())
+    if (has_like)
         w.writeString("like", like);
 
     w.writeBool("not_like", not_like);
@@ -138,11 +171,14 @@ void ASTDropQuery::readJSON(const Poco::JSON::Object & json)
 
     if_exists = r.getBool("if_exists");
     if_empty = r.getBool("if_empty");
-    no_ddl_lock = r.getBool("no_ddl_lock");
+    if (r.has("no_ddl_lock"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'no_ddl_lock' is internal-only and is not allowed during AST JSON deserialization");
     has_all = r.getBool("has_all");
     has_tables = r.getBool("has_tables");
 
     like = r.getString("like");
+    has_like = r.has("like");
     not_like = r.getBool("not_like");
     case_insensitive_like = r.getBool("case_insensitive_like");
     is_dictionary = r.getBool("is_dictionary");
@@ -161,6 +197,15 @@ void ASTDropQuery::readJSON(const Poco::JSON::Object & json)
         for (const auto & entry : child->children)
             if (!entry || !entry->as<ASTTableIdentifier>())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Each entry of 'database_and_tables' must be a table identifier during AST JSON deserialization");
+
+        /// `ParserDropQuery` allows a multi-entry target list only for DROP ("Only Support DROP
+        /// multiple tables currently"), yet `InterpreterDropQuery` would happily execute each entry,
+        /// so a JSON payload could perform a multi-table DETACH / TRUNCATE that SQL cannot express
+        /// (and whose formatted SQL does not parse back). Enforce the parser's cardinality rule.
+        if (child->children.size() > 1 && kind != Kind::Drop)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'database_and_tables' can have multiple entries only for DROP during AST JSON deserialization");
+
         database_and_tables = child;
         children.push_back(database_and_tables);
     }
@@ -202,9 +247,9 @@ void ASTDropQuery::readJSON(const Poco::JSON::Object & json)
     /// `InterpreterDropQuery` consults it only when `kind == Truncate && has_tables`, so on any other
     /// shape the formatted SQL is parser-impossible and the filter is silently ignored. Reject it,
     /// including the orphaned modifier flags without a pattern.
-    if ((!like.empty() || not_like || case_insensitive_like) && !has_tables)
+    if ((has_like || not_like || case_insensitive_like) && !has_tables)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "'like', 'not_like' and 'case_insensitive_like' are only valid for TRUNCATE [ALL] TABLES FROM during AST JSON deserialization");
-    if (like.empty() && (not_like || case_insensitive_like))
+    if (!has_like && (not_like || case_insensitive_like))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "'not_like'/'case_insensitive_like' require a non-empty 'like' pattern during AST JSON deserialization");
 
     /// A database-only target (no `table`, no `database_and_tables`) is formatted and executed
@@ -289,7 +334,7 @@ void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & se
         table->format(ostr, settings, state, frame);
     }
 
-    if (!like.empty())
+    if (has_like)
     {
         ostr
             << (not_like ? " NOT" : "")

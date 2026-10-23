@@ -39,6 +39,10 @@ struct HTTPHandlerConnectionConfig
 {
     std::optional<AlwaysAllowCredentials> credentials;
 
+    /// If set, overrides the `default_session_user` server setting for requests
+    /// without credentials (composable protocols allow a per-endpoint default user).
+    std::optional<String> default_session_user;
+
     /// TODO:
     /// String quota;
     /// String default_database;
@@ -58,7 +62,7 @@ public:
     /// This method is called right before the query execution.
     virtual void customizeContext(HTTPServerRequest & /* request */, ContextMutablePtr /* context */, ReadBuffer & /* body */) {}
 
-    virtual bool customizeQueryParam(ContextMutablePtr context, const std::string & key, const std::string & value) = 0;
+    virtual bool customizeQueryParam(NameToNameMap & query_parameters, const std::string & key, const std::string & value) = 0;
 
     /// Only the dynamic query handler interprets arbitrary request paths as query inputs. Configured
     /// and SQL-defined handlers own their matched path and must execute their stored query unchanged.
@@ -77,6 +81,10 @@ protected:
     /// Set by SQL-defined handlers so that `currentHandler()` and the query_log can report the handler name.
     void setIntrospectionHandlerName(const String & name_) { introspection_handler_name = name_; }
 
+    /// The query text belongs to the server rather than to the HTTP request. Its parsing limits must therefore
+    /// not be lowered by request settings.
+    void setHasServerOwnedQuery() { has_server_owned_query = true; }
+
     /// Set by SQL-defined handlers, whose query is fully known in advance, so it is known whether it can consume
     /// the request body at all (see `SQLDefinedHandler`). The other handlers do not know it: for them the body may
     /// be the rest of the query text or the data of an `INSERT`, so they have to assume that it is consumed.
@@ -89,6 +97,8 @@ protected:
 
 private:
     String introspection_handler_name;
+
+    bool has_server_owned_query = false;
 
     /// Whether `consumes_request_body` carries a definitive answer. Only SQL-defined handlers set it: for them a
     /// `POST` request needs `Content-Length` up front only when the body is actually consumed. For the other
@@ -232,6 +242,7 @@ class DynamicQueryHandler : public HTTPHandler
 {
 private:
     std::string param_name;
+    bool parse_http_path;
 
 public:
     explicit DynamicQueryHandler(
@@ -240,13 +251,17 @@ public:
         const std::string & param_name_ = "query",
         const HTTPResponseHeaderSetup & http_response_headers_override_ = std::nullopt,
         const std::string & url_prefix_ = "",
-        HTTPPathHintsPtr path_hints_ = nullptr);
+        HTTPPathHintsPtr path_hints_ = nullptr,
+        bool parse_http_path_ = true);
 
     std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body) override;
 
-    bool customizeQueryParam(ContextMutablePtr context, const std::string &key, const std::string &value) override;
+    bool customizeQueryParam(NameToNameMap & query_parameters, const std::string &key, const std::string &value) override;
 
-    bool parsesHTTPPath() const override { return true; }
+    /// The catch-all query handler interprets the request path. A configured `dynamic_query_handler`
+    /// rule owns the path it is matched by, so it interprets only the part below its `url_prefix`,
+    /// and nothing at all when it has none.
+    bool parsesHTTPPath() const override { return parse_http_path; }
 };
 
 class PredefinedQueryHandler : public HTTPHandler
@@ -271,7 +286,7 @@ public:
 
     std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body) override;
 
-    bool customizeQueryParam(ContextMutablePtr context, const std::string & key, const std::string & value) override;
+    bool customizeQueryParam(NameToNameMap & query_parameters, const std::string & key, const std::string & value) override;
 };
 
 /// A handler defined from SQL via CREATE HANDLER. It executes a stored query, exactly like

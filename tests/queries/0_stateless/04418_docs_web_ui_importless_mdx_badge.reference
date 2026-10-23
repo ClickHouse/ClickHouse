@@ -1,4 +1,4 @@
 ClickHouse <span class="accent">Reference</span>
-function badgeLabel(name) {
+function badgeLabel(name, attributes) {
 [A-Z][A-Za-z0-9]*Badge
 1

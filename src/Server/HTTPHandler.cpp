@@ -1,9 +1,11 @@
 #include <Server/HTTPHandler.h>
+#include <Server/ConnectionRegistry.h>
 #include <Server/HTTPQueryConstructor.h>
 
 #include <Access/AccessControl.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <Compression/chooseNetworkCompressionCodec.h>
 #include <Core/ExternalTable.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -24,7 +26,9 @@
 #include <Interpreters/TableNameHints.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Parsers/Lexer.h>
+#include <Parsers/ParserQuery.h>
 #include <Parsers/QueryParameterVisitor.h>
+#include <Parsers/parseQuery.h>
 #include <Common/SQLDefinedHandlers/SQLDefinedHandler.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Session.h>
@@ -82,16 +86,21 @@ namespace Setting
     extern const SettingsBool http_wait_end_of_query;
     extern const SettingsBool http_write_exception_in_output_format;
     extern const SettingsInt64 http_zlib_compression_level;
+    extern const SettingsUInt64 output_format_compression_level;
     extern const SettingsUInt64 input_format_max_block_wait_ms;
+    extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 readonly;
+    extern const SettingsBool run_query_in_background;
     extern const SettingsBool send_progress_in_http_headers;
     extern const SettingsSnappyMode snappy_mode;
+    extern const SettingsBool throw_on_unsupported_query_inside_transaction;
     extern const SettingsInt64 zstd_window_log_max;
 
     extern const SettingsBool http_allow_database_as_path;
     extern const SettingsBool http_allow_table_as_file;
     extern const SettingsBool http_allow_filters_as_path;
     extern const SettingsBool http_allow_filters_as_unrecognized_url_parameters;
+    extern const SettingsBool http_x_clickhouse_format_overrides_output_format;
     extern const SettingsString compression;
     extern const SettingsString filter;
     extern const SettingsString format;
@@ -114,6 +123,7 @@ namespace ErrorCodes
     extern const int SESSION_ID_EMPTY;
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_TABLE;
+    extern const int NOT_IMPLEMENTED;
     extern const int FAULT_INJECTED;
 }
 
@@ -303,52 +313,10 @@ void HTTPHandler::processQuery(
     /// after releasing the session below, this whole call will be no-op (due to named_session being nullptr already inside a session).
     SCOPE_EXIT_SAFE({ releaseOrCloseSession(session_id, close_session); });
 
-    /// === Authentication and user profile are applied first ===
-    /// Authentication has already happened above (line `authenticateUser`); makeQueryContext()
-    /// loads the user's default profile. Auth-related parameters (role) are applied immediately
-    /// after, so that the resulting settings/constraints are in effect before we process any
-    /// general settings.
-    auto context = session->makeQueryContext();
-
-    /// Expose the HTTP request URL and the SQL-defined handler name (if any) to the query
-    /// via `currentRequestURL()` / `currentHandler()` and the query_log.
-    context->setHTTPRequestURL(request.getURI());
-    if (!introspection_handler_name.empty())
-    {
-        context->setHTTPHandlerName(introspection_handler_name);
-
-        /// The query a SQL-defined handler executes is the server's own stored text, parsed and validated
-        /// when the handler was created (possibly in a session with raised parser limits) and re-parsed
-        /// with unlimited limits on every reload (see `SQLDefinedHandlersMetadataStorage::readHandler`).
-        /// Parse it with unlimited depth and backtracks (`0` disables the limit) here too, so a handler
-        /// that was accepted at creation stays invokable under ordinary session limits instead of failing
-        /// each request until the caller raises `max_parser_depth` / `max_parser_backtracks` themselves.
-        /// The client controls only the typed query parameters, never the query text, and could raise
-        /// these settings per-request anyway (they are changeable under `readonly = 2`); `parseQuery`
-        /// still guards against stack overflow via `checkStackSize`.
-        context->setSetting("max_parser_depth", Field(0));
-        context->setSetting("max_parser_backtracks", Field(0));
-    }
-
-    auto roles = params.getAll("role");
-    if (!roles.empty())
-        context->setCurrentRoles(roles);
-
-    /// POST always allows modifying queries. For SQL-defined handlers (which set `introspection_handler_name`)
-    /// the mutating idempotent methods PUT and DELETE are allowed to modify data too, as decided per handler in
-    /// `makeSQLDefinedHandler`. Config-defined and built-in handlers keep the POST-only behavior.
-    setReadOnlyIfHTTPMethodIdempotent(context, request.getMethod(), /*allow_mutating_idempotent_methods=*/ !introspection_handler_name.empty());
-
-    /// Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.
-    String query_id = params.get("query_id", request.get("X-ClickHouse-Query-Id", ""));
-
-    /// Sanitize query_id: remove ASCII control characters to prevent CRLF injection
-    /// into HTTP response headers (the query_id is reflected in X-ClickHouse-Query-Id).
-    std::erase_if(query_id, [](unsigned char c) { return isControlASCII(c) || c == 0x7F; });
-
-    context->setCurrentQueryId(query_id);
-
     bool has_external_data = startsWith(request.getContentType(), "multipart/form-data");
+
+    const AccessControl & access_control = session->sessionContext()->getAccessControl();
+    NameToNameMap query_parameters = session->sessionContext()->getQueryParameters();
 
     auto param_could_be_skipped = [&] (const String & name)
     {
@@ -379,7 +347,7 @@ void HTTPHandler::processQuery(
             for (const String & suffix : reserved_param_suffixes)
             {
                 if (endsWith(name, suffix))
-                    return (!context->getAccessControl().isSettingNameAllowed(name));
+                    return (!access_control.isSettingNameAllowed(name));
             }
         }
 
@@ -396,7 +364,7 @@ void HTTPHandler::processQuery(
         /// filter expressions.
         if (name == "profile")
             return true;
-        return context->getAccessControl().isSettingNameAllowed(name);
+        return access_control.isSettingNameAllowed(name);
     };
 
     /// Collect filter URL parameters and unrecognized parameters (as filters when enabled).
@@ -412,7 +380,7 @@ void HTTPHandler::processQuery(
     {
         if (param_could_be_skipped(key))
             continue;
-        if (customizeQueryParam(context, key, value))
+        if (customizeQueryParam(query_parameters, key, value))
             continue;
         /// `filter` is a construction setting, but the HTTP interface allows multiple `?filter=`
         /// parameters combined with AND, so collect them here rather than letting the single-valued
@@ -432,23 +400,148 @@ void HTTPHandler::processQuery(
             deferred_unrecognized_params.emplace_back(key, value);
     }
 
-    /// The `X-ClickHouse-Database` header is an alias for the `database` setting, and
-    /// `X-ClickHouse-Format` is an alias for the `output_format` setting. They override any matching
-    /// URL parameter (preserving the historical precedence).
-    ///
-    /// `X-ClickHouse-Format` maps to `output_format` rather than to `default_format`: sending this
-    /// header means the client definitely wants the response in that format, so it is an explicit
-    /// override (winning over the query's `FORMAT` clause and the path extension), not a fallback
-    /// used only when nothing else selects a format. It maps to `output_format` and not to the
-    /// bidirectional `format`, because the header has always described the response only: the same
-    /// header on `INSERT INTO t FORMAT JSONEachRow …` must not reinterpret the request body.
+    /// The `X-ClickHouse-Database` header is an alias for the `database` setting. It overrides a
+    /// matching URL parameter (preserving the historical precedence).
     if (auto header_value = request.get("X-ClickHouse-Database", ""); !header_value.empty())
         settings_changes.setSetting("database", header_value);
-    if (auto header_value = request.get("X-ClickHouse-Format", ""); !header_value.empty())
-        settings_changes.setSetting("output_format", header_value);
+
+    /// The `X-ClickHouse-Format` header is applied below, once the settings from the URL and the user
+    /// profile are in effect: which setting it aliases depends on
+    /// `http_x_clickhouse_format_overrides_output_format`.
+    const String format_header_value = request.get("X-ClickHouse-Format", "");
+
+    ContextMutablePtr context;
+    {
+        /// To decide whether to make a detached query context, we need the run_query_in_background setting's value.
+        /// But the setting value may be altered by setting the profile via HTTP params.
+        /// So, we construct settings_changes (including profile) and then we apply them to a temporary context,
+        /// which was copied from the session context.
+        /// And from that we derive the effective value of run_query_in_background.
+        /// For HTTP handler, run_query_in_background cannot be enabled in the SETTINGS clause of the query.
+
+        auto tmp_context = Context::createCopy(session->sessionContext());
+        SettingsChanges settings_changes_copy = settings_changes;
+
+        tmp_context->checkSettingsConstraints(settings_changes_copy, SettingSource::QUERY);
+        tmp_context->applySettingsChanges(settings_changes_copy);
+
+        const bool run_query_in_background = tmp_context->getSettingsRef()[Setting::run_query_in_background];
+        const bool throw_on_unsupported_query_inside_transaction = tmp_context->getSettingsRef()[Setting::throw_on_unsupported_query_inside_transaction];
+
+        context = run_query_in_background ? session->makeDetachedQueryContext() : session->makeQueryContext();
+
+        if (run_query_in_background && session->sessionContext()->getCurrentTransaction()
+            && throw_on_unsupported_query_inside_transaction)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Background queries inside transactions are not supported");
+    }
+    context->setQueryParameters(query_parameters);
+
+    /// Expose the HTTP request URL and the SQL-defined handler name (if any) to the query
+    /// via `currentRequestURL()` / `currentHandler()` and the query_log.
+    context->setHTTPRequestURL(request.getURI());
+    if (!introspection_handler_name.empty())
+    {
+        context->setHTTPHandlerName(introspection_handler_name);
+
+    }
+
+    /// === Authentication and user profile are applied first ===
+    /// Authentication has already happened above (line `authenticateUser`); makeQueryContext()
+    /// loads the user's default profile. Auth-related parameters (role) are applied immediately
+    /// after, so that the resulting settings/constraints are in effect before we process any
+    /// general settings.
+    auto roles = params.getAll("role");
+    if (!roles.empty())
+        context->setCurrentRoles(roles);
+
+    /// POST always allows modifying queries. For SQL-defined handlers (which set `introspection_handler_name`)
+    /// the mutating idempotent methods PUT and DELETE are allowed to modify data too, as decided per handler in
+    /// `makeSQLDefinedHandler`. Config-defined and built-in handlers keep the POST-only behavior.
+    setReadOnlyIfHTTPMethodIdempotent(context, request.getMethod(), /*allow_mutating_idempotent_methods=*/ !introspection_handler_name.empty());
+
+    /// Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.
+    String query_id = params.get("query_id", request.get("X-ClickHouse-Query-Id", ""));
+
+    /// Sanitize query_id: remove ASCII control characters to prevent CRLF injection
+    /// into HTTP response headers (the query_id is reflected in X-ClickHouse-Query-Id).
+    std::erase_if(query_id, [](unsigned char c) { return isControlASCII(c) || c == 0x7F; });
+
+    context->setCurrentQueryId(query_id);
+
+    /// Set the connection of this request to active in `system.connections` until the request ends.
+    /// The connection gets its registration on its first query. The registration stays until the socket closes.
+    /// Between the requests, the connection is idle. See `HTTPConnectionRegistration`.
+    /// Refresh an existing registration also if `collect_connection_metrics` is `false` now.
+    /// The registry keeps such registrations and shows them again when the setting changes to `true`.
+    /// Thus, they must have the client properties and the state of the last request, not of a request before the change.
+    /// The setting controls only new registrations.
+    HTTPConnectionRegistration * connection_registration = request.getConnectionRegistration();
+    if (connection_registration && (connection_registration->handle || ConnectionRegistry::instance().isEnabled()))
+    {
+        /// Each request sets the client properties again.
+        /// A reverse proxy can send the requests of different clients and users on one keep-alive connection.
+        /// Use `current_address` for the address and for the port. Do not use `request.clientAddress`.
+        /// `request.clientAddress` is always the direct TCP peer. Behind a proxy, it is the address of the proxy.
+        /// `authenticateUserByHTTP` sets `current_address`. If `auth_use_forwarded_address` is `true`, this address comes from `X-Forwarded-For`.
+        /// Thus, `system.connections`, `system.processes`, and `system.query_log` show the same address and port.
+        const auto & http_client_info = context->getClientInfo();
+        ConnectionPeer peer;
+        peer.user = http_client_info.current_user;
+        peer.user_id = context->getUserID();
+        peer.client_address = http_client_info.current_address->host();
+        peer.client_port = http_client_info.current_address->port();
+        peer.client_name = request.get("User-Agent", "");
+
+        if (!connection_registration->handle)
+        {
+            ConnectionInfo info;
+            info.protocol = "HTTP";
+            info.server_port = request.serverAddress().port();
+            info.connected_time = connection_registration->connected_time;
+            connection_registration->handle = ConnectionRegistry::instance().add(std::move(info), peer);
+        }
+        connection_registration->handle.setActive(context->getCurrentQueryId(), std::move(peer));
+    }
+    SCOPE_EXIT({
+        if (connection_registration)
+            connection_registration->handle.setIdle();
+    });
 
     context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
     context->applySettingsChanges(settings_changes);
+
+    /// The query a SQL-defined handler executes is the server's own stored text, parsed and validated
+    /// when the handler was created (possibly in a session with raised parser limits) and re-parsed
+    /// with unlimited limits on every reload (see `SQLDefinedHandlersMetadataStorage::readHandler`).
+    /// The parser limits are not zeroed on the query context here: `executeQuery` lifts them only for
+    /// the stored text itself via the `parse_server_owned_query_without_limits` flag (`has_server_owned_query`
+    /// is set by `PredefinedQueryHandler`, from which `SQLDefinedQueryHandler` inherits), so the
+    /// request-controlled construction snippets (`select`/`filter`/`order`/`page`) keep the caller's limits. The
+    /// same flag also pins the stored text to the ClickHouse SQL parser, so a request cannot make the handler
+    /// unparsable by asking for another `dialect`.
+
+    /// The `X-ClickHouse-Format` header is an alias for the `output_format` setting, or - when
+    /// `http_x_clickhouse_format_overrides_output_format` is disabled - for the `default_format`
+    /// setting, which is what it meant before 26.8. Either way it overrides the URL parameter of the
+    /// same name (preserving the historical precedence). The choice is read from the context after
+    /// the URL parameters and the user profile have been applied, so the compatibility setting can
+    /// come from either of them.
+    ///
+    /// By default `X-ClickHouse-Format` maps to `output_format` rather than to `default_format`:
+    /// sending this header means the client definitely wants the response in that format, so it is
+    /// an explicit override (winning over the query's `FORMAT` clause and the path extension), not a
+    /// fallback used only when nothing else selects a format. It maps to `output_format` and not to
+    /// the bidirectional `format`, because the header has always described the response only: the
+    /// same header on `INSERT INTO t FORMAT JSONEachRow …` must not reinterpret the request body.
+    if (!format_header_value.empty())
+    {
+        SettingsChanges format_header_changes;
+        format_header_changes.setSetting(
+            context->getSettingsRef()[Setting::http_x_clickhouse_format_overrides_output_format] ? "output_format" : "default_format",
+            format_header_value);
+        context->checkSettingsConstraints(format_header_changes, SettingSource::QUERY);
+        context->applySettingsChanges(format_header_changes);
+    }
 
     const auto & settings = context->getSettingsRef();
 
@@ -672,6 +765,15 @@ void HTTPHandler::processQuery(
     bool enable_http_compression = params.getParsedLast<bool>("enable_http_compression", settings[Setting::enable_http_compression]);
     Int64 http_zlib_compression_level
         = params.getParsed<Int64>("http_zlib_compression_level", settings[Setting::http_zlib_compression_level]);
+    /// `http_zlib_compression_level` is for the zlib-based methods only. Other methods have their own ranges
+    /// and meanings of levels (e.g. `lz4` switches to the slow high-compression mode starting from level 2),
+    /// so they use the generic `output_format_compression_level`.
+    auto compression_level_for_method = [&](CompressionMethod method)
+    {
+        if (method == CompressionMethod::Gzip || method == CompressionMethod::Zlib)
+            return static_cast<int>(http_zlib_compression_level);
+        return static_cast<int>(settings[Setting::output_format_compression_level]);
+    };
     /// HTTP `Content-Encoding: snappy` is standardized to use the snappy framing format,
     /// independent of the user-tunable `snappy_mode` (which controls generic `file()`/`url()` reads).
     auto snappy_mode = SnappyMode::Framed;
@@ -690,7 +792,7 @@ void HTTPHandler::processQuery(
         used_output.wrap_compressed_holder = wrapWriteBufferWithCompressionMethod(
             used_output.out.get(),
             http_response_compression_method,
-            static_cast<int>(http_zlib_compression_level),
+            compression_level_for_method(http_response_compression_method),
             0,
             snappy_mode,
             DBMS_DEFAULT_BUFFER_SIZE,
@@ -716,7 +818,7 @@ void HTTPHandler::processQuery(
             used_output.generic_compression_holder = wrapWriteBufferWithCompressionMethod(
                 used_output.out.get(),
                 response_compression_method,
-                static_cast<int>(http_zlib_compression_level),
+                compression_level_for_method(response_compression_method),
                 0,
                 settings[Setting::snappy_mode],
                 DBMS_DEFAULT_BUFFER_SIZE,
@@ -730,7 +832,12 @@ void HTTPHandler::processQuery(
 
     if (internal_compression)
     {
-        used_output.out_compressed_holder = std::make_shared<CompressedWriteBuffer>(*used_output.out);
+        /// The frames are the same self-describing format as the native protocol's, so the codec comes from
+        /// the same setting. It must not come from the default codec for table data: that one is chosen for
+        /// how data sits on disk, and tying the two together silently changes, on every such change, what
+        /// each `compress=1` client has to be able to decode.
+        used_output.out_compressed_holder
+            = std::make_shared<CompressedWriteBuffer>(*used_output.out, chooseNetworkCompressionCodec(&settings));
         used_output.out_maybe_compressed = used_output.out_compressed_holder;
         used_output.out = used_output.out_compressed_holder;
     }
@@ -985,19 +1092,22 @@ void HTTPHandler::processQuery(
     };
 
     /// While still no data has been sent, we will report about query execution progress by sending HTTP headers.
-    /// Note that we add it unconditionally so the progress is available for `X-ClickHouse-Summary`
-    append_callback([&used_output, &context](const Progress & progress)
-    {
-        used_output.out_holder->onProgress(progress, context);
-    });
-
-    if (settings[Setting::readonly] > 0 && settings[Setting::cancel_http_readonly_queries_on_client_close])
-    {
-        append_callback([&context, &request](const Progress &)
+    /// Note that for foreground queries we add it unconditionally so the progress is available for `X-ClickHouse-Summary`
+    if (!settings[Setting::run_query_in_background])
+        append_callback([&used_output, &context](const Progress & progress)
         {
-            /// Assume that at the point this method is called no one is reading data from the socket any more:
-            /// should be true for read-only queries.
-            if (!request.checkPeerConnected())
+            used_output.out_holder->onProgress(progress, context);
+        });
+
+    if (!settings[Setting::run_query_in_background] && settings[Setting::readonly] > 0 && settings[Setting::cancel_http_readonly_queries_on_client_close])
+    {
+        /// Assume that at the point this method is called no one is reading data from the socket any more:
+        /// should be true for read-only queries.
+        auto client_connected = [&request] { return request.checkPeerConnected(); };
+        context->setClientConnectedCallback(client_connected);
+        append_callback([&context, client_connected](const Progress &)
+        {
+            if (!client_connected())
                 context->killCurrentQuery();
         });
     }
@@ -1332,6 +1442,7 @@ void HTTPHandler::processQuery(
     };
     query_flags.parse_query_from_initial_buffer
         = settings[Setting::input_format_max_block_wait_ms] != 0 && url_query_starts_with_insert();
+    query_flags.parse_server_owned_query_without_limits = has_server_owned_query;
 
     executeQuery(
         std::move(in),
@@ -1601,13 +1712,15 @@ DynamicQueryHandler::DynamicQueryHandler(
     const std::string & param_name_,
     const HTTPResponseHeaderSetup & http_response_headers_override_,
     const std::string & url_prefix_,
-    HTTPPathHintsPtr path_hints_)
+    HTTPPathHintsPtr path_hints_,
+    bool parse_http_path_)
     : HTTPHandler(server_, connection_config_, "DynamicQueryHandler", http_response_headers_override_, url_prefix_, std::move(path_hints_))
     , param_name(param_name_)
+    , parse_http_path(parse_http_path_)
 {
 }
 
-bool DynamicQueryHandler::customizeQueryParam(ContextMutablePtr context, const std::string & key, const std::string & value)
+bool DynamicQueryHandler::customizeQueryParam(NameToNameMap & query_parameters, const std::string & key, const std::string & value)
 {
     if (key == param_name)
         return true;    /// do nothing
@@ -1617,8 +1730,7 @@ bool DynamicQueryHandler::customizeQueryParam(ContextMutablePtr context, const s
         /// Save name and values of substitution in dictionary.
         const String parameter_name = key.substr(strlen(QUERY_PARAMETER_NAME_PREFIX));
 
-        if (!context->getQueryParameters().contains(parameter_name))
-            context->setQueryParameter(parameter_name, value);
+        query_parameters.emplace(parameter_name, value);
         return true;
     }
 
@@ -1642,6 +1754,7 @@ std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm 
     params.load(request, body, handler);
 
     std::string full_query;
+    NameToNameMap query_parameters = context->getQueryParameters();
     /// Params are of both form params POST and uri (GET params)
     for (const auto & it : params)
     {
@@ -1651,9 +1764,10 @@ std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm 
         }
         else
         {
-            customizeQueryParam(context, it.first, it.second);
+            customizeQueryParam(query_parameters, it.first, it.second);
         }
     }
+    context->setQueryParameters(query_parameters);
 
     return full_query;
 }
@@ -1672,13 +1786,20 @@ PredefinedQueryHandler::PredefinedQueryHandler(
     , url_regexp(url_regexp_)
     , header_name_with_capture_regexp(header_name_with_regexp_)
 {
+    setHasServerOwnedQuery();
 }
 
-bool PredefinedQueryHandler::customizeQueryParam(ContextMutablePtr context, const std::string & key, const std::string & value)
+bool PredefinedQueryHandler::customizeQueryParam(NameToNameMap & query_parameters, const std::string & key, const std::string & value)
 {
+    auto set_query_parameter = [&query_parameters](const String & name, const String & parameter_value)
+    {
+        if (!query_parameters.emplace(name, parameter_value).second)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate name {} of query parameter", backQuote(name));
+    };
+
     if (receive_params.contains(key))
     {
-        context->setQueryParameter(key, value);
+        set_query_parameter(key, value);
         return true;
     }
 
@@ -1688,7 +1809,7 @@ bool PredefinedQueryHandler::customizeQueryParam(ContextMutablePtr context, cons
         const String parameter_name = key.substr(strlen(QUERY_PARAMETER_NAME_PREFIX));
 
         if (receive_params.contains(parameter_name))
-            context->setQueryParameter(parameter_name, value);
+            set_query_parameter(parameter_name, value);
         return true;
     }
 
@@ -1844,7 +1965,8 @@ std::string SQLDefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLFo
 HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
-    std::unordered_map<String, String> & common_headers)
+    std::unordered_map<String, String> & common_headers,
+    const std::optional<String> & default_session_user)
 {
     auto query_param_name = config.getString(config_prefix + ".handler.query_param_name", "query");
 
@@ -1863,6 +1985,7 @@ HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,
         url_prefix.pop_back();
 
     HTTPHandlerConnectionConfig connection_config(config, config_prefix);
+    connection_config.default_session_user = default_session_user;
     HTTPResponseHeaderSetup http_response_headers_override = parseHTTPResponseHeaders(config, config_prefix);
     if (!common_headers.empty())
     {
@@ -1872,7 +1995,12 @@ HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,
     }
 
     auto creator = [&server, query_param_name, http_response_headers_override, connection_config, url_prefix]() -> std::unique_ptr<DynamicQueryHandler>
-    { return std::make_unique<DynamicQueryHandler>(server, connection_config, query_param_name, http_response_headers_override, url_prefix); };
+    {
+        /// A rule without `url_prefix` is matched by its own `url`, which is not a `database/table.format` path.
+        const bool parse_http_path = !url_prefix.empty();
+        return std::make_unique<DynamicQueryHandler>(
+            server, connection_config, query_param_name, http_response_headers_override, url_prefix, nullptr, parse_http_path);
+    };
 
     auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(std::move(creator));
     factory->addFiltersFromConfig(config, config_prefix);
@@ -1885,7 +2013,8 @@ HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,
 HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
-    std::unordered_map<String, String> & common_headers)
+    std::unordered_map<String, String> & common_headers,
+    const std::optional<String> & default_session_user)
 {
     if (!config.has(config_prefix + ".handler.query"))
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "There is no path '{}.handler.query' in configuration file.", config_prefix);
@@ -1894,9 +2023,18 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
     /// Remove leading and trailing whitespace that may come from XML formatting in the config file.
     /// This prevents whitespace from being interpreted as data for binary formats like MsgPack.
     boost::algorithm::trim(predefined_query);
-    NameSet analyze_receive_params = analyzeReceiveQueryParams(predefined_query);
+
+    /// The stored query is server-owned and can be accepted with parser limits higher than the defaults.
+    /// Parse it without parser depth or backtrack limits while discovering its query parameters, just as it
+    /// is parsed when the handler serves a request.
+    const char * query_begin = predefined_query.data();
+    const char * query_end = query_begin + predefined_query.size();
+    ParserQuery parser(query_end);
+    auto query_ast = parseQuery(parser, query_begin, query_end, "predefined query handler", 0, 0, 0);
+    NameSet analyze_receive_params = analyzeReceiveQueryParams(query_ast);
 
     HTTPHandlerConnectionConfig connection_config(config, config_prefix);
+    connection_config.default_session_user = default_session_user;
 
     /// Regular expressions from the rule's url/headers whose named capturing groups are referenced by the query;
     /// their captured values are passed to the query as parameters by PredefinedQueryHandler::customizeContext.

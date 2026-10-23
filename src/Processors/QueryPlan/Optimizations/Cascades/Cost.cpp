@@ -347,7 +347,7 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "CostEstimator: statistics not derived for group #{} (expression '{}') before estimateCost.\n"
             "Group state:\n{}",
-            expression->group_id, expression->getDescription(), group->dump(memo.getEnvironment().cost_config));
+            expression->group_id, expression->getDescription(), group->dump(memo.getContext().cost_config));
 
     const Float64 distribution_node_count = static_cast<Float64>(std::max<size_t>(expression->properties.distribution.node_count, 1));
     /// Partitioned = 1/N per node; replicated = full work per node.
@@ -367,10 +367,10 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
             /// Self-referential enforcer input: price it against an acyclic source (excluding
             /// itself), so the cost reflects a plan that can actually be built.
             best = memo.getGroup(input.group_id)->selectInputImplementation(
-                input.required_properties, memo.getEnvironment().cost_config,
+                input.required_properties, memo.getContext().cost_config,
                 std::unordered_set<GroupExpression *>{expression.get()}, /*input_is_self_referential=*/true);
         else
-            best = memo.getGroup(input.group_id)->getBestImplementation(input.required_properties, memo.getEnvironment().cost_config);
+            best = memo.getGroup(input.group_id)->getBestImplementation(input.required_properties, memo.getContext().cost_config);
 
         if (!best.expression)
             has_unsatisfiable_input = true;
@@ -391,7 +391,7 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
         .parallelism = parallelism,
         .node_count = distribution_node_count,
         .exchange_rows_override = exchange_rows_override,
-        .config = memo.getEnvironment().cost_config,
+        .config = memo.getContext().cost_config,
     };
     inputs.input_stats.reserve(expression->inputs.size());
     for (const auto & input : expression->inputs)
@@ -430,8 +430,8 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
 
     LOG_TEST(log, "Cost of '{}': local {}; subtree {}",
         expression->getName(),
-        total_cost.cost.dump(memo.getEnvironment().cost_config),
-        total_cost.subtree_cost.dump(memo.getEnvironment().cost_config));
+        total_cost.cost.dump(memo.getContext().cost_config),
+        total_cost.subtree_cost.dump(memo.getContext().cost_config));
     return total_cost;
 }
 

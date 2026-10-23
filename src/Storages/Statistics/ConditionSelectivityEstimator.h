@@ -13,11 +13,14 @@ class RPNBuilderTreeNode;
 
 struct ColumnStats
 {
-    /// TODO: Support min max
-    /// Field min_value, max_value;
     UInt64 num_distinct_values = 0;
     /// Average uncompressed size of one value; 0 means unknown.
     Float64 avg_bytes = 0;
+    /// Value range from `basic`/`minmax` statistics; unset when unknown.
+    std::optional<Field> min_value = {};
+    std::optional<Field> max_value = {};
+    /// Fraction of NULL values; unset when unknown.
+    std::optional<Float64> null_fraction = {};
 };
 
 struct RelationProfile
@@ -26,11 +29,8 @@ struct RelationProfile
     std::unordered_map<String, ColumnStats> column_stats = {};
 };
 
-class IMergeTreeDataPart;
-using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
-struct RangesInDataParts;
 
 /// Estimates the selectivity of a condition and cardinality of columns.
 class ConditionSelectivityEstimator : public WithContext
@@ -65,12 +65,6 @@ public:
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const std::vector<RPNBuilderTreeNode> & nodes) const;
     RelationProfile estimateRelationProfile() const;
 
-    /// Return true if the estimator was built from a different ordered sequence of data parts.
-    bool isStale(const std::vector<DataPartPtr> & data_parts) const;
-    /// Perform the same check against an analyzed query part set. Mark ranges are intentionally
-    /// ignored because the estimator contains whole-part statistics.
-    bool isStale(const RangesInDataParts & parts) const;
-
     struct RPNElement
     {
         enum Function
@@ -102,6 +96,34 @@ public:
         std::unordered_set<String> not_null_check_columns;
         bool finalized = false;
         Selectivity selectivity;
+        /// Selectivity of the atoms that were absorbed by a conjunctive merge without contributing
+        /// any range - currently only `FUNCTION_UNKNOWN`. Merging carries ranges across, so such an
+        /// atom has nothing to add to the merged clause, but it still has to be accounted for.
+        /// Keeping it here instead of finalizing the clause lets the ranges of a later conjunct on
+        /// the same column still merge with the earlier ones. `finalize` applies it at the end.
+        /// Only meaningful under `FUNCTION_AND`: `P(a OR unknown)` is not `P(a) * f`.
+        Selectivity absorbed_and_selectivity{1.0, 0.0};
+
+        bool hasAbsorbed() const { return absorbed_and_selectivity.true_sel != 1.0 || absorbed_and_selectivity.null_sel != 0.0; }
+
+        /// Carries no ranges and no null checks, so it contributes a bare number and nothing a merge
+        /// could represent: an unknown atom, a `LIKE` estimated by a default, or a clause already
+        /// reduced to a selectivity. Under `AND` such a factor is absorbed rather than forcing both
+        /// sides to be finalized, which is what keeps the ranges around it mergeable.
+        ///
+        /// `ALWAYS_TRUE` and `ALWAYS_FALSE` are deliberately excluded although they carry no ranges
+        /// either. They are read back as a `function` - the `AND`/`OR` folding drops or propagates a
+        /// constant operand by its tag, and `NOT` flips the tag - while `finalize` only ever sets
+        /// `selectivity`. Treating them as a factor would leave the tag saying the opposite of the
+        /// number and the folding would act on the tag.
+        bool isConstantFactor() const
+        {
+            if (function == ALWAYS_TRUE || function == ALWAYS_FALSE)
+                return false;
+
+            return column_ranges.empty() && column_not_ranges.empty()
+                && null_check_columns.empty() && not_null_check_columns.empty();
+        }
 
         bool tryToMergeClauses(RPNElement & lhs, RPNElement & rhs);
         void finalize(const ColumnEstimators & column_estimators_, const StorageMetadataPtr & metadata);
@@ -124,29 +146,45 @@ private:
 
     RelationProfile estimateRelationProfileImpl(std::vector<RPNElement> & rpn, const StorageMetadataPtr & metadata) const;
     bool extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const;
+
+    /// Selectivity of `column IN (set)` derived from the size of the set rather than from its contents:
+    /// the share of rows inside the set's bounding range, capped by the share of distinct values the set
+    /// can possibly cover. Costs one pass for the bounds and a single statistics probe, where turning the
+    /// set into ranges costs a `Field` per element, a sort and one probe per element.
+    Selectivity estimateSelectivityFromSetSize(
+        const StorageMetadataPtr & metadata, const String & column_name, const IColumn & set_elements,
+        const DataTypePtr & set_type, bool negative) const;
     UInt64 estimateSelectivity(const RPNBuilderTreeNode & node) const;
+
+    /// Selectivity of an equality with any of `num_values` values of `type` when no statistics can estimate it.
+    /// Only a `Bool` counts the values: the default for other types is flat.
+    static Float64 getEqualFactor(const DataTypePtr & type, size_t num_values = 1);
 
     /// Magic constants for estimating the selectivity of a condition no statistics exists.
     static constexpr Float64 default_cond_range_factor = 0.33;
     static constexpr Float64 default_cond_equal_factor = 0.01;
+    static constexpr Float64 default_bool_equal_factor = 0.5;
     static constexpr Float64 default_unknown_cond_factor = 0.33;
     static constexpr Float64 default_like_factor = 0.1;
     static constexpr Float64 default_cardinality_ratio = 0.1;
 
     UInt64 total_rows = 0;
     ColumnEstimators column_estimators;
-    Strings parts_names;
 };
 
 using ConditionSelectivityEstimatorPtr = std::shared_ptr<ConditionSelectivityEstimator>;
 
+/// `equals(x, x)` of one node whose type makes `x = x` true on every row (no NULL, NaN or composite values).
+bool isAlwaysTrueEquality(const ActionsDAG::Node & node);
+
+/// Builds an estimator for a set of data parts by merging their statistics column by column.
+/// The statistics passed in are not modified, so they may come from the statistics cache.
 class ConditionSelectivityEstimatorBuilder
 {
 public:
     explicit ConditionSelectivityEstimatorBuilder(ContextPtr context_);
     void addStatistics(const String & column_name, const ColumnStatisticsPtr & column_stats);
     void incrementRowCount(UInt64 rows);
-    void markDataPart(const DataPartPtr & data_part);
     ConditionSelectivityEstimatorPtr getEstimator() const;
 
 private:

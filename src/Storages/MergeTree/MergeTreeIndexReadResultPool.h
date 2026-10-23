@@ -4,6 +4,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/MergeTree/ConditionTemplate.h>
+#include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/KeyCondition.h>
@@ -17,11 +18,26 @@ namespace DB
 class IMergeTreeDataPart;
 using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 
+struct SkipIndexReadInput;
+
 struct SkipIndexReadResult
 {
     std::vector<bool> granules_selected; /// granules selected by skip index(es) at read time
     std::shared_ptr<MergeTreeIndexBulkGranulesMinMax> min_max_index_for_top_k;
     TopKThresholdTrackerPtr threshold_tracker;
+
+    /// The primary index of the part, for skipping granules by the running top-K threshold through the
+    /// primary key: `top_k_primary_key_column_position` is the position of the threshold column among the
+    /// key columns. Null when the threshold column is not a primary key column.
+    std::shared_ptr<const Columns> primary_index_for_top_k;
+    size_t top_k_primary_key_column_position = 0;
+
+    /// Whether every row of the granule lies beyond the running top-K threshold according to the primary index.
+    bool isGranuleBeyondTopKThreshold(size_t mark) const;
+
+    /// Whether granules may be dropped by something other than the primary-key top-K check above: skip indexes
+    /// (the `minmax` top-K one included) or JOIN runtime filters.
+    bool may_skip_granules_besides_top_k_primary_key = true;
     /// Pre-computed index granules for indexes created for the whole part.
     IndexGranulesMap index_granules;
 };
@@ -52,11 +68,20 @@ public:
         ContextPtr context_,
         LoggerPtr log_);
 
-    SkipIndexReadResultPtr read(const RangesInDataPart & part, const StorageMetadataPtr & metadata_snapshot, const NameSet & all_updated_columns);
+    SkipIndexReadResultPtr read(
+        const MergeTreeDataPartInfoForReaderPtr & part_info,
+        const SkipIndexReadInput & input,
+        const StorageMetadataPtr & metadata_snapshot,
+        const NameSet & all_updated_columns);
 
     /// Whether `read` prunes by JOIN runtime filters. It snapshots them once per part, fail-open,
     /// so its result must not be built before the build side has published the filters.
     bool hasRuntimeFilters() const;
+
+    /// Lets `canSkipMark` skip granules by the primary key against a top-K threshold that becomes known
+    /// while reading (see `TopKThresholdTracker`): the threshold column is the primary key column at
+    /// `primary_key_column_position`.
+    void setTopKPrimaryKeyPruning(size_t primary_key_column_position, TopKThresholdTrackerPtr tracker);
 
     void cancel() noexcept { is_cancelled = true; }
 
@@ -73,6 +98,9 @@ private:
     bool prune_primary_key = false;
     MergeTreeIndices dynamic_skip_indexes;
     DynamicSkipIndexFilter dynamic_skip_index_filter;
+
+    std::optional<size_t> top_k_primary_key_column_position;
+    TopKThresholdTrackerPtr top_k_threshold_tracker;
     ContextPtr context;
     LoggerPtr log;
 
@@ -192,6 +220,9 @@ struct MergeTreeIndexReadResult
     /// Whether index read result is useful and marks can be skipped.
     bool canSkipAnyMark() const;
 
+    /// Like `canSkipAnyMark`, but leaving out the granules skipped by the primary key against a top-K threshold.
+    bool canSkipAnyMarkBesidesTopKPrimaryKey() const;
+
     /// Whether all rows of the granule are filtered out by the present index read results.
     bool canSkipMark(size_t mark, const MergeTreeIndexGranularity & index_granularity) const;
 };
@@ -232,12 +263,18 @@ public:
     /// Lazily constructs and caches the MergeTreeIndexReadResult for a given data part. If it is already being built by
     /// another thread, waits for its result. Throws if the builder fails.
     ///
-    /// This map uses raw pointer of data part as key because it is unique and stable for the lifetime of the part.
-    MergeTreeIndexReadResultPtr getOrBuildIndexReadResult(const RangesInDataPart & part, const RangesInDataParts & projection_parts, const StorageMetadataPtr & metadata_snapshot, const NameSet & all_updated_columns);
+    /// This map is keyed by `part_index_in_query`, which is unique and stable for the query.
+    MergeTreeIndexReadResultPtr getOrBuildIndexReadResult(
+        size_t part_index,
+        const MergeTreeDataPartInfoForReaderPtr & part_info,
+        const SkipIndexReadInput & input,
+        const RangesInDataParts & projection_parts,
+        const StorageMetadataPtr & metadata_snapshot,
+        const NameSet & all_updated_columns);
 
     /// Cleans up the cached MergeTreeIndexReadResult for a given part if it exists.
     /// Should be called when the last task for the part has finished.
-    void clear(const DataPartPtr & part);
+    void clear(size_t part_index);
 
     /// Whether index read results may include a skip index part (for any part of the query).
     bool hasSkipIndexReader() const { return skip_index_reader != nullptr; }
@@ -252,7 +289,7 @@ private:
     MergeTreeProjectionIndexReaderPtr projection_index_reader;
 
     /// Stores MergeTreeIndexReadResult instances per part to avoid redundant construction.
-    std::unordered_map<const IMergeTreeDataPart *, IndexReadResultEntry> index_read_result_registry;
+    std::unordered_map<size_t, IndexReadResultEntry> index_read_result_registry;
     SharedMutex index_read_result_registry_mutex;
 };
 

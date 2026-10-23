@@ -1,0 +1,19 @@
+test 1: tuple partition multi-delete
+2	y	1	20
+test 2: three partitions
+4	d	2024-01-04
+test 3: mixed partition ID
+2	b	2024-01-02
+test 4: update with tuple partition
+1	new	1	x
+2	old	1	y
+3	new	2	x
+test 5: single partition (backward compat)
+2	b	2024-01-02
+test 6: lightweight delete multi-partition
+2	b	2024-01-02
+test 8: non-existing partition
+1	a	2024-01-01
+test 10: multi-partition with new partition
+2	b	2024-01-01
+3	c	2024-01-02

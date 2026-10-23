@@ -1,6 +1,8 @@
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/MaterializingCTEStep.h>
 
+#include <Analyzer/TableNode.h>
+#include <Analyzer/traverseQueryTree.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -124,6 +126,12 @@ void DelayedMaterializingCTEsStep::optimizePlans(const QueryPlanOptimizationSett
 {
     for (const auto & cte : ctes)
     {
+        /// The plan is absent when `makePlansForCTEs` already moved it out, or when the
+        /// reference reached this list before its plan was built. Skipping before the
+        /// claim leaves the flag for whoever holds the plan, so that plan is optimized.
+        if (!cte->plan)
+            continue;
+
         /// Multiple `DelayedMaterializingCTEsStep` instances can reference the
         /// same `MaterializedCTE` (e.g. a UNION-level step plus one per UNION
         /// branch, all planted by `addBuildSubqueriesForMaterializedCTEsIfNeeded`).
@@ -134,13 +142,7 @@ void DelayedMaterializingCTEsStep::optimizePlans(const QueryPlanOptimizationSett
         if (cte->is_plan_optimized.exchange(true))
             continue;
 
-        /// `cte->plan` can already be `nullptr` if a recursive `buildSetInplace`
-        /// path won an earlier `is_materialization_planned` race and
-        /// `std::move`d the plan out via `makePlansForCTEs`. Skip the call
-        /// rather than throwing an exception; the materialization has
-        /// already run inplace.
-        if (cte->plan)
-            cte->plan->optimize(optimization_settings);
+        cte->plan->optimize(optimization_settings);
     }
 }
 
@@ -155,6 +157,11 @@ std::vector<DelayedMaterializingCTEsStep::ClaimedCTE> DelayedMaterializingCTEsSt
     std::vector<ClaimedCTE> claimed;
     for (auto & materialized_cte : step.ctes)
     {
+        /// Every claimed entry carries a plan, so the attach site can dereference it. Skipping
+        /// before the claim leaves the flag for whoever holds the subquery that will plan it.
+        if (!materialized_cte->plan)
+            continue;
+
         if (materialized_cte->is_materialization_planned.exchange(true))
             continue;
 
@@ -279,6 +286,25 @@ void removeDelayedMaterializingCTEsStepFor(QueryPlan & plan, const MaterializedC
 
     removeDelayedMaterializingCTEsStepIf(
         plan, [&](DelayedMaterializingCTEsStep & step) { return step.eraseCTEs(ctes_to_remove); });
+}
+
+MaterializedCTESet collectMaterializedCTEsFromQueryTree(const QueryTreeNodePtr & node)
+{
+    MaterializedCTESet result;
+    if (!node)
+        return result;
+
+    traverseQueryTree(node, Everything{},
+        [&](const QueryTreeNodePtr & current_node)
+        {
+            if (const auto * table_node = current_node->as<TableNode>())
+            {
+                if (auto cte = table_node->getMaterializedCTE())
+                    result.insert(std::move(cte));
+            }
+        });
+
+    return result;
 }
 
 }

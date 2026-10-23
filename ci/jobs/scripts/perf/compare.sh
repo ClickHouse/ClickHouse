@@ -8,6 +8,8 @@ trap 'kill $(jobs -pr) ${watchdog_pid:-} ||:' EXIT
 
 stage=${stage:-}
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+# The server resolves a relative user_files_path against the resolved --path, not against the cwd.
+perf_wd="$(pwd -P)"
 
 # upstream/master
 LEFT_SERVER_PORT=9001
@@ -69,22 +71,6 @@ function wait_for_server # port, pid
     fi
 }
 
-function left_or_right()
-{
-    local from=$1 && shift
-    local basename=$1 && shift
-
-    if [ -e "$from/$basename" ]; then
-        echo "$from/$basename"
-        return
-    fi
-
-    case "$from" in
-        left) echo "right/$basename" ;;
-        right) echo "left/$basename" ;;
-    esac
-}
-
 function configure
 {
     # Use the new config for both servers, so that we can change it in a PR.
@@ -106,8 +92,8 @@ function configure
         --
         # server *config* directives overrides
         --path db0
-        --user_files_path db0/user_files
-        --top_level_domains_path "$(left_or_right right top_level_domains)"
+        --user_files_path "$perf_wd/db0/user_files"
+        --top_level_domains_path "$perf_wd/top_level_domains"
         --keeper_server.storage_path coordination0
         --tcp_port $LEFT_SERVER_PORT
     )
@@ -315,9 +301,15 @@ function restart
 
     match_reference_debug_info
 
-    # Intentionally unquoted below: expands to nothing on non-x86_64.
+    # Intentionally unquoted below: both expand to nothing when unused.
     local pinning_prefix
     pinning_prefix=$(cpu_pinning_prefix)
+    # ASLR off, so that both servers load the executable at the same address (Linux only).
+    local no_aslr_prefix=""
+    if [ "$(uname -s)" = "Linux" ]
+    then
+        no_aslr_prefix="setarch $(uname -m) -R"
+    fi
 
     set -m # Spawn servers in their own process groups
 
@@ -327,8 +319,8 @@ function restart
         --
         # server *config* directives overrides
         --path left/db
-        --user_files_path left/db/user_files
-        --top_level_domains_path "$(left_or_right left top_level_domains)"
+        --user_files_path "$perf_wd/left/db/user_files"
+        --top_level_domains_path "$perf_wd/top_level_domains"
         --tcp_port $LEFT_SERVER_PORT
         # The perf-comparison config removes <http_port>; re-enable it on the
         # command line (a documented config override) with a distinct port per
@@ -341,7 +333,7 @@ function restart
         --interserver_http_port $LEFT_SERVER_INTERSERVER_PORT
         --jemalloc_profiler_sampling_rate $JEMALLOC_PROFILER_SAMPLING_RATE
     )
-    $pinning_prefix left/clickhouse-server "${left_server_opts[@]}" &>> left-server-log.log &
+    $pinning_prefix $no_aslr_prefix left/clickhouse-server "${left_server_opts[@]}" &>> left-server-log.log &
     left_pid=$!
     kill -0 $left_pid
     disown $left_pid
@@ -352,8 +344,8 @@ function restart
         --
         # server *config* directives overrides
         --path right/db
-        --user_files_path right/db/user_files
-        --top_level_domains_path "$(left_or_right right top_level_domains)"
+        --user_files_path "$perf_wd/right/db/user_files"
+        --top_level_domains_path "$perf_wd/top_level_domains"
         --tcp_port $RIGHT_SERVER_PORT
         --http_port $RIGHT_SERVER_HTTP_PORT
         --keeper_server.tcp_port $RIGHT_SERVER_KEEPER_PORT
@@ -363,7 +355,7 @@ function restart
         --interserver_http_port $RIGHT_SERVER_INTERSERVER_PORT
         --jemalloc_profiler_sampling_rate $JEMALLOC_PROFILER_SAMPLING_RATE
     )
-    $pinning_prefix right/clickhouse-server "${right_server_opts[@]}" &>> right-server-log.log &
+    $pinning_prefix $no_aslr_prefix right/clickhouse-server "${right_server_opts[@]}" &>> right-server-log.log &
     right_pid=$!
     kill -0 $right_pid
     disown $right_pid
@@ -380,6 +372,13 @@ function restart
     clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.build_options"
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.tables where database NOT IN ('system', 'INFORMATION_SCHEMA', 'information_schema')"
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.build_options"
+
+    # Compare only two running servers: a server that failed to start keeps the callers' handling.
+    # exit, not return: confirm_changes only skips its rerun when the restart fails.
+    if [ -n "$no_aslr_prefix" ] && kill -0 $left_pid && kill -0 $right_pid
+    then
+        python3 "$script_dir/check_executable_base.py" left/db right/db || exit 1
+    fi
 
     # Check again that both servers we started are running -- this is important
     # for running locally, when there might be some other servers started and we
@@ -417,7 +416,7 @@ function run_tests
     then
         # Run only explicitly specified tests, if any.
         # shellcheck disable=SC2010
-        test_files=($(ls "$test_prefix" | rg "$CHPC_TEST_GREP" | xargs -I{} -n1 readlink -f "$test_prefix/{}"))
+        test_files=($(ls "$test_prefix" | rg '\.xml$' | rg "$CHPC_TEST_GREP" | xargs -I{} -n1 readlink -f "$test_prefix/{}"))
 # TODO: remove
 #    elif [ "$PR_TO_TEST" -ne 0 ] \
 #        && [ "$(wc -l < changed-test-definitions.txt)" -gt 0 ] \
@@ -450,6 +449,15 @@ function run_tests
         # to have sequential indexes...
         test_files=("${test_files[@]}")
     fi
+
+    for test in "${test_files[@]}"
+    do
+        if rg -q 'requires_s3="1"' "$test"
+        then
+            echo "Cannot compare $test: perf_s3 requires the Praktika performance job for S3 provisioning and per-side namespaces" >&2
+            exit 1
+        fi
+    done
 
     if [ "$run_only_changed_tests" -ne 0 ]; then
         if [ ${#test_files[@]} -eq 0 ]; then
@@ -541,8 +549,11 @@ function run_tests
                 # Only when the caller explicitly set CHPC_RUNS ("at least N
                 # runs"); otherwise the adaptive run policy decides.
                 ${CHPC_RUNS:+--runs "$CHPC_RUNS"}
+                # Setup queries marked do_not_check_in_pr="$PR_TO_TEST" may fail on the reference server.
+                ${PR_TO_TEST:+--pr-number "$PR_TO_TEST"}
                 --max-queries "$max_queries"
                 --profile-seconds "$profile_seconds"
+                --stop-merges
 
                 "$test"
             )
@@ -726,7 +737,7 @@ create table query_run_metric_arrays engine File(TSV, 'analyze/query-run-metric-
     right join query_runs
         on query_logs.query_id = query_runs.query_id
             and query_logs.version = query_runs.version
-    where (test, query_index) not in partial_queries
+    where (test, query_index) not in partial_queries or ${CHPC_NIGHTLY:-0}
     ;
 
 -- This is just for convenience -- human-readable + easy to make plots.
@@ -760,7 +771,7 @@ create table query_run_metrics_for_stats engine File(
         -- not filtered.
         metric_values
     from query_run_metric_arrays
-    where (test, query_index) not in broken_queries
+    where (test, query_index) not in broken_queries and (test, query_index) not in partial_queries
     order by test, query_index, run, version
     ;
 
@@ -870,8 +881,13 @@ create table query_metric_stats_denorm engine File(TSVWithNamesAndTypes,
 # fall through the explicit guards below instead of killing the script).
 function confirm_changes
 {
-rm -rf analyze-confirm ||:
-mkdir analyze-confirm analyze-confirm/tmp ||:
+# The dashboard supplies its own query list and practical thresholds. Keep
+# its rerun artifacts separate from the shard report's confirmation.
+if [ "${CHPC_NIGHTLY:-0}" = 1 ]; then echo "confirm_changes: skipped in nightly mode"; return 0; fi
+local confirm_dir="${1:-analyze-confirm}"
+local flagged_input="${2:-}"
+rm -rf "$confirm_dir" || return 1
+mkdir -p "$confirm_dir/tmp" || return 1
 
 # report() joins the per-query thresholds from historical-thresholds.tsv,
 # which may be absent in manual runs. Use a private empty copy then, instead
@@ -879,16 +895,19 @@ mkdir analyze-confirm analyze-confirm/tmp ||:
 # the inputs of the main flow).
 if [ -e historical-thresholds.tsv ]
 then
-    cp historical-thresholds.tsv analyze-confirm/historical-thresholds.tsv
+    cp historical-thresholds.tsv ${confirm_dir}/historical-thresholds.tsv
 else
-    touch analyze-confirm/historical-thresholds.tsv
+    touch ${confirm_dir}/historical-thresholds.tsv
 fi
 
 # 1. Collect the (test, query_index) pairs flagged as changed_fail, with the
 # same rule and thresholds as the 'queries' table in report(): client_time
 # metric, per-query threshold = ceil(greatest(0.15, historical, per-test), 2),
 # non-strict comparison with stat_threshold.
-if ! clickhouse-local --query "
+if [ -n "$flagged_input" ]
+then
+    cp "$flagged_input" "${confirm_dir}/flagged-queries.tsv" || return 1
+elif ! clickhouse-local --query "
 create view query_metric_stats as
     select * from file('analyze/query-metric-stats-denorm.tsv',
         TSVWithNamesAndTypes,
@@ -901,7 +920,7 @@ create view query_display_names as select * from
         'test text, query_index int, query_display_name text')
     ;
 
-create table flagged_queries engine File(TSV, 'analyze-confirm/flagged-queries.tsv')
+create table flagged_queries engine File(TSV, '${confirm_dir}/flagged-queries.tsv')
     as select
         query_metric_stats.test test, query_metric_stats.query_index query_index,
         diff, stat_threshold,
@@ -914,7 +933,7 @@ create table flagged_queries engine File(TSV, 'analyze-confirm/flagged-queries.t
     left join query_display_names
         on query_metric_stats.test = query_display_names.test
             and query_metric_stats.query_index = query_display_names.query_index
-    left join file('analyze-confirm/historical-thresholds.tsv', TSV,
+    left join file('${confirm_dir}/historical-thresholds.tsv', TSV,
         'test text, query_index int, max_diff float, max_stat_threshold float,
             query_display_name text') historical_thresholds
         on query_metric_stats.test = historical_thresholds.test
@@ -929,14 +948,14 @@ create table flagged_queries engine File(TSV, 'analyze-confirm/flagged-queries.t
         and abs(diff) >= stat_threshold
     order by test, query_index
     ;
-" $CHPC_REPORT_LOCAL_QUERY_SETTINGS -- $CHPC_REPORT_LOCAL_SERVER_SETTINGS 2>> analyze-confirm/errors.log
+" $CHPC_REPORT_LOCAL_QUERY_SETTINGS -- $CHPC_REPORT_LOCAL_SERVER_SETTINGS 2>> ${confirm_dir}/errors.log
 then
     echo "confirm_changes: failed to compute the flagged query list, skipping confirmation"
     return 0
 fi
 
 local flagged_count
-flagged_count=$(wc -l < analyze-confirm/flagged-queries.tsv)
+flagged_count=$(wc -l < ${confirm_dir}/flagged-queries.tsv)
 if [ "$flagged_count" -eq 0 ]
 then
     echo "confirm_changes: no queries flagged as changed, nothing to confirm"
@@ -976,7 +995,7 @@ then
 fi
 
 # 3. Rerun each affected test limited to its flagged query indexes, writing
-# raw results into analyze-confirm/ so the main *-raw.tsv files stay intact.
+# raw results into the confirmation directory, keeping the main samples intact.
 # Mirror run_tests' test file resolution; fall back to the in-repo tests for
 # the CI flow where performance_tests.py runs the tests itself.
 local test_prefix
@@ -1000,7 +1019,7 @@ fi
 # original verdict (fail-open in the strict direction: no demotion).
 local confirm_deadline=$(( SECONDS + 1200 ))
 local confirm_test confirm_test_file confirm_indexes
-for confirm_test in $(cut -f1 analyze-confirm/flagged-queries.tsv | sort | uniq)
+for confirm_test in $(cut -f1 ${confirm_dir}/flagged-queries.tsv | sort | uniq)
 do
     if [ "$SECONDS" -ge "$confirm_deadline" ]
     then
@@ -1016,7 +1035,7 @@ do
     fi
 
     confirm_indexes=$(awk -F'\t' -v t="$confirm_test" '$1 == t { print $2 }' \
-        analyze-confirm/flagged-queries.tsv | sort -n | uniq | tr '\n' ' ')
+        ${confirm_dir}/flagged-queries.tsv | sort -n | uniq | tr '\n' ' ')
 
     # The test file goes first: argparse would swallow it into the greedy
     # nargs='*' --queries-to-run otherwise. No profiling on reruns.
@@ -1029,15 +1048,16 @@ do
         --port "$LEFT_SERVER_PORT" "$RIGHT_SERVER_PORT" \
         --binary left/clickhouse right/clickhouse \
         --http-port "$LEFT_SERVER_HTTP_PORT" "$RIGHT_SERVER_HTTP_PORT" \
-        ${CHPC_RUNS:+--runs "$CHPC_RUNS"} --max-queries 0 --profile-seconds 0 \
+        ${CHPC_RUNS:+--runs "$CHPC_RUNS"} ${PR_TO_TEST:+--pr-number "$PR_TO_TEST"} \
+        --max-queries 0 --profile-seconds 0 --stop-merges \
         --queries-to-run $confirm_indexes \
-        > "analyze-confirm/$confirm_test-raw.tsv.tmp" \
-        2> "analyze-confirm/$confirm_test-err.log"
+        > "${confirm_dir}/$confirm_test-raw.tsv.tmp" \
+        2> "${confirm_dir}/$confirm_test-err.log"
     then
-        mv "analyze-confirm/$confirm_test-raw.tsv.tmp" "analyze-confirm/$confirm_test-raw.tsv"
+        mv "${confirm_dir}/$confirm_test-raw.tsv.tmp" "${confirm_dir}/$confirm_test-raw.tsv"
     else
         echo "confirm_changes: rerun of $confirm_test failed, its queries keep their original verdict"
-        rm -f "analyze-confirm/$confirm_test-raw.tsv.tmp" ||:
+        rm -f "${confirm_dir}/$confirm_test-raw.tsv.tmp" ||:
     fi
 done
 
@@ -1051,36 +1071,38 @@ echo all killed
 # same metric as changed_fail), which comes from the perf.py-reported run
 # times, so the query logs are not needed and the metrics array has a single
 # element.
-touch analyze-confirm/query-runs.tsv
+touch ${confirm_dir}/query-runs.tsv
 local raw_file rerun_test_name
-for raw_file in analyze-confirm/*-raw.tsv
+for raw_file in ${confirm_dir}/*-raw.tsv
 do
     [ -e "$raw_file" ] || continue
     rerun_test_name=$(basename "$raw_file" "-raw.tsv")
-    sed -n "s/^query\t/$rerun_test_name\t/p" < "$raw_file" >> analyze-confirm/query-runs.tsv
+    sed -n "s/^query\t/$rerun_test_name\t/p" < "$raw_file" >> ${confirm_dir}/query-runs.tsv
 done
 
 if ! clickhouse-local --query "
-create view query_runs as select * from file('analyze-confirm/query-runs.tsv', TSV,
+create view query_runs as select * from file('${confirm_dir}/query-runs.tsv', TSV,
     'test text, query_index int, query_id text, version UInt8, time float');
 
--- Same even-run-count filter as analyze_queries: a server death mid-test
--- leaves an odd number of runs, which would break the median split.
+-- Require balanced, finite measurements from both servers. Missing a side
+-- must never turn a failed rerun into evidence against the original slowdown.
 create view broken_queries as
     select test, query_index
     from query_runs
     group by test, query_index
-    having count(*) % 2 != 0
+    having countIf(version = 0) != countIf(version = 1)
+        or countIf(version = 0) < 2
+        or countIf(version NOT IN (0, 1) OR NOT isFinite(time) OR time <= 0) > 0
     ;
 
 create table query_run_metrics_for_stats engine File(
-        TSV, 'analyze-confirm/query-run-metrics-for-stats.tsv')
+        TSV, '${confirm_dir}/query-run-metrics-for-stats.tsv')
     as select test, query_index, 0 run, version, [toFloat64(time)] metrics
     from query_runs
     where (test, query_index) not in broken_queries
     order by test, query_index, run, version
     ;
-" $CHPC_REPORT_LOCAL_QUERY_SETTINGS -- $CHPC_REPORT_LOCAL_SERVER_SETTINGS 2>> analyze-confirm/errors.log
+" $CHPC_REPORT_LOCAL_QUERY_SETTINGS -- $CHPC_REPORT_LOCAL_SERVER_SETTINGS 2>> ${confirm_dir}/errors.log
 then
     echo "confirm_changes: failed to prepare the rerun measurements, skipping confirmation"
     return 0
@@ -1089,13 +1111,13 @@ fi
 # The same per-query eqmed.sql invocation path as in analyze_queries. A failed
 # invocation only loses that query's rerun stats, so it keeps its original
 # verdict.
-touch analyze-confirm/commands.txt analyze-confirm/query-metric-stats.tsv
+touch ${confirm_dir}/commands.txt ${confirm_dir}/query-metric-stats.tsv
 ( set +x # do not bloat the log
 IFS=$'\n'
-for prefix in $(cut -f1,2 "analyze-confirm/query-run-metrics-for-stats.tsv" | sort | uniq)
+for prefix in $(cut -f1,2 "${confirm_dir}/query-run-metrics-for-stats.tsv" | sort | uniq)
 do
-    file="analyze-confirm/tmp/${prefix//	/_}.tsv"
-    rg "^$prefix	" "analyze-confirm/query-run-metrics-for-stats.tsv" > "$file" &
+    file="${confirm_dir}/tmp/${prefix//	/_}.tsv"
+    rg "^$prefix	" "${confirm_dir}/query-run-metrics-for-stats.tsv" > "$file" &
     printf "%s\0\n" \
         "clickhouse-local \
             --file \"$file\" \
@@ -1103,9 +1125,9 @@ do
             --query \"$(cat "$script_dir/eqmed.sql")\" \
             $CHPC_REPORT_LOCAL_QUERY_SETTINGS \
             -- $CHPC_REPORT_LOCAL_SERVER_SETTINGS \
-            >> \"analyze-confirm/query-metric-stats.tsv\"" \
-            2>> analyze-confirm/errors.log \
-        >> analyze-confirm/commands.txt
+            >> \"${confirm_dir}/query-metric-stats.tsv\"" \
+            2>> ${confirm_dir}/errors.log \
+        >> ${confirm_dir}/commands.txt
 done
 wait
 unset IFS
@@ -1113,8 +1135,8 @@ unset IFS
 
 # The rerun arrays are single-metric and tiny, no need for the memory-bounded
 # job count of the main analysis.
-parallel -v -j "$(nproc --all)" --joblog analyze-confirm/parallel-log.txt --null \
-    < analyze-confirm/commands.txt 2>> analyze-confirm/errors.log \
+parallel -v -j "$(nproc --all)" --joblog ${confirm_dir}/parallel-log.txt --null \
+    < ${confirm_dir}/commands.txt 2>> ${confirm_dir}/errors.log \
     || echo "confirm_changes: some rerun stats failed to compute, those queries keep their original verdict"
 
 # 5. Demote the flagged queries whose rerun does not reproduce the change.
@@ -1124,19 +1146,19 @@ parallel -v -j "$(nproc --all)" --joblog analyze-confirm/parallel-log.txt --null
 # only queries with rerun stats can be demoted: if the rerun failed or
 # produced no stats, the original verdict stands (fail-open).
 if ! clickhouse-local --query "
-create view flagged_queries as select * from file('analyze-confirm/flagged-queries.tsv',
+create view flagged_queries as select * from file('${confirm_dir}/flagged-queries.tsv',
     TSV, 'test text, query_index int, diff float, stat_threshold float,
         changed_threshold float');
 
 create view rerun_stats as
     select test, query_index,
         diff[1] diff_rerun, stat_threshold[1] stat_threshold_rerun
-    from file('analyze-confirm/query-metric-stats.tsv', TSV,
+    from file('${confirm_dir}/query-metric-stats.tsv', TSV,
         'left Array(float), right Array(float), diff Array(float),
             stat_threshold Array(float), test text, query_index int')
     ;
 
-create table unconfirmed_queries engine File(TSV, 'analyze-confirm/unconfirmed-queries.tsv')
+create table unconfirmed_queries engine File(TSV, '${confirm_dir}/unconfirmed-queries.tsv')
     as select flagged_queries.test test, flagged_queries.query_index query_index,
         diff_rerun, stat_threshold_rerun
     from flagged_queries
@@ -1148,14 +1170,14 @@ create table unconfirmed_queries engine File(TSV, 'analyze-confirm/unconfirmed-q
         and abs(diff_rerun) >= stat_threshold_rerun)
     order by test, query_index
     ;
-" $CHPC_REPORT_LOCAL_QUERY_SETTINGS -- $CHPC_REPORT_LOCAL_SERVER_SETTINGS 2>> analyze-confirm/errors.log
+" $CHPC_REPORT_LOCAL_QUERY_SETTINGS -- $CHPC_REPORT_LOCAL_SERVER_SETTINGS 2>> ${confirm_dir}/errors.log
 then
     echo "confirm_changes: failed to compute the confirmation verdicts, skipping confirmation"
-    rm -f analyze-confirm/unconfirmed-queries.tsv ||:
+    rm -f ${confirm_dir}/unconfirmed-queries.tsv ||:
     return 0
 fi
 
-echo "confirm_changes: $(wc -l < analyze-confirm/unconfirmed-queries.tsv) of $flagged_count flagged queries did not reproduce after restart"
+echo "confirm_changes: $(wc -l < ${confirm_dir}/unconfirmed-queries.tsv) of $flagged_count flagged queries did not reproduce after restart"
 }
 
 # Analyze results
@@ -1764,8 +1786,8 @@ do
     {
         # The second grep is a heuristic for error messages like
         # "socket.timeout: timed out".
-        rg --no-filename --max-count=2 -i '\(Exception\|Error\):[^:]' "$log" \
-            || rg --no-filename --max-count=2 -i '^[^ ]\+: ' "$log" \
+        rg --no-filename --max-count=2 -i '(Exception|Error):[^:]' "$log" \
+            || rg --no-filename --max-count=2 -i '^[^ ]+: ' "$log" \
             || head -10 "$log"
     } | sed "s/^/$test\t/" >> run-errors.tsv ||:
 done
@@ -1783,14 +1805,70 @@ do
 done
 }
 
+# The `SELECT` list that brings one side of the asynchronous metric log to the flat
+# per-entity metric names the report has always used, e.g. `BlockReadBytes_sda`.
+#
+# `system.asynchronous_metric_log` gained a `key` column when the per-entity metrics
+# (per CPU core, block device, network interface, disk, ...) were collapsed into
+# key-value metrics. A comparison can put a server from before that change against a
+# server from after it, and once the change reaches master both sides carry the `key`
+# column, so every side is projected on its own according to the columns its own dump
+# has. A log without a `key` column is already in the flat form and is taken as is.
+function async_metric_log_select
+{
+    local log_file=$1
+
+    # `TSVWithNamesAndTypes` puts the column names on the first line. Read them without a
+    # pipeline: `set -o pipefail` would see the `SIGPIPE` of a writer whose reader stops at
+    # the first match, and report the pipeline as failed.
+    local header_columns=()
+    IFS=$'\t' read -r -a header_columns < "$log_file" ||:
+
+    local has_key=0
+    local column
+    for column in ${header_columns[@]+"${header_columns[@]}"}
+    do
+        if [ "$column" = "key" ]
+        then
+            has_key=1
+        fi
+    done
+
+    if [ "$has_key" = 1 ]
+    then
+        cat <<'SELECT_LIST'
+        multiIf(
+            key = '', metric,
+            startsWith(metric, 'OS') AND endsWith(metric, 'CPU'), concat(metric, key),
+            metric = 'Temperature' AND match(key, '^[0-9]+$'), concat(metric, key),
+            metric IN ('EDACCorrectable', 'EDACUncorrectable'), concat('EDAC', key, '_', substring(metric, 5)),
+            metric IN ('DeadBlobsQueueEstimate', 'MissingBlobsQueueEstimate'), concat(key, metric),
+            metric = 'AsyncLoggingQueueSize', concat('AsyncLogging', key, 'QueueSize'),
+            concat(metric, '_', key)) AS metric,
+        event_time,
+        value
+SELECT_LIST
+    else
+        echo "        metric, event_time, value"
+    fi
+}
+
 function report_metrics
 {
 rm -rf metrics ||:
 mkdir metrics
 
 clickhouse-local --query "
+create view left_async_metric_log as
+    select
+$(async_metric_log_select left-async-metric-log.tsv)
+    from file('left-async-metric-log.tsv', TSVWithNamesAndTypes)
+    ;
+
 create view right_async_metric_log as
-    select * from file('right-async-metric-log.tsv', TSVWithNamesAndTypes)
+    select
+$(async_metric_log_select right-async-metric-log.tsv)
+    from file('right-async-metric-log.tsv', TSVWithNamesAndTypes)
     ;
 
 -- Use the right log as time reference because it may have higher precision.
@@ -1798,7 +1876,7 @@ create table metrics engine File(TSV, 'metrics/metrics.tsv') as
     with (select min(event_time) from right_async_metric_log) as min_time
     select metric, r.event_time - min_time event_time, l.value as left, r.value as right
     from right_async_metric_log r
-    asof join file('left-async-metric-log.tsv', TSVWithNamesAndTypes) l
+    asof join left_async_metric_log l
     on l.metric = r.metric and r.event_time <= l.event_time
     order by metric, event_time
     ;
@@ -1854,8 +1932,6 @@ function upload_results
     # The rename is chained with `&&` on purpose: `||:` on the call suppresses
     # errexit for this whole function, so a separate `mv` statement would run
     # after a failed write and publish the torn file.
-    # The anchors below delimit the region ci/tests/test_perf_upload_results_atomic.py
-    # extracts and runs under bash, so that contract is tested rather than assumed.
     # --- publish ci-checks.tsv atomically ---
     rm -f ci-checks.tsv ci-checks.tsv.tmp
 
@@ -1948,6 +2024,10 @@ clickhouse-local --version > /dev/null
 clickhouse-client --version > /dev/null
 
 case "$stage" in
+"confirm_dashboard")
+    # Standalone stage: never rebuild or upload the original measurements.
+    time confirm_changes analyze-dashboard-confirm "${CHPC_CONFIRM_QUERIES:?}" || exit 1
+    ;;
 "")
     ;&
 "configure")
@@ -1991,7 +2071,7 @@ case "$stage" in
     # to collect the logs. Prefer not to restart, because addresses might change
     # and we won't be able to process trace_log data. Start in a subshell, so that
     # it doesn't interfere with the watchdog through `wait`.
-    ( get_profiles || { restart && get_profiles ; } ) ||:
+    ( get_profiles ) || { restart && ( get_profiles ) ; } ||:
 
     # Kill the whole process group, because somehow when the subshell is killed,
     # the sleep inside remains alive and orphaned.

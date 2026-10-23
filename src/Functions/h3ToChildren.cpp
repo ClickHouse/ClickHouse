@@ -6,6 +6,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Functions/CancellationBudget.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
@@ -19,7 +20,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int TOO_LARGE_ARRAY_SIZE;
     extern const int ILLEGAL_COLUMN;
@@ -43,25 +43,15 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+    /// row references it, and `0` is not a valid H3 index, so executing on the whole dictionary would
+    /// fail on entirely valid data.
+    bool canBeExecutedOnDefaultArguments() const override { return !validator.throw_on_error; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        const auto * arg = arguments[0].get();
-        if (!WhichDataType(arg).isUInt64())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be UInt64",
-                arg->getName(), 1, getName());
-
-        arg = arguments[1].get();
-        if (!WhichDataType(arg).isUInt8())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be UInt8",
-                arg->getName(), 2, getName());
-
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
+        return "(UInt64, UInt8) -> Array(UInt64)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -99,6 +89,12 @@ public:
         auto & dst_offsets = dst_offsets_column->getData();
         auto current_offset = 0;
 
+        /// The whole block is expanded inside this one call and the size of each row's result is driven by the
+        /// arguments rather than by the input size, so the executor's between-blocks cancellation check cannot
+        /// bound it: a cancelled query would keep a thread busy until the last row was done.
+        const std::function<void()> check_cancellation = makeCancellationCheck(name);
+        CancellationBudget budget(check_cancellation);
+
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             const UInt64 parent_hindex = data_hindex[row];
@@ -125,11 +121,14 @@ public:
                     "The result of function {} (array of {} elements) will be too large with resolution argument = {}",
                     getName(), vec_size, toString(child_resolution));
 
+            budget.charge(vec_size * sizeof(H3Index));
+
             VectorWithMemoryTracking<H3Index> hindex_vec;
             hindex_vec.resize(vec_size);
             cellToChildren(parent_hindex, child_resolution, hindex_vec.data());
 
-            dst_data.reserve(dst_data.size() + vec_size);
+            /// Go through PODArray::reserve: it grows capacity geometrically, IColumn::reserve sizes it exactly.
+            dst_data.getData().reserve(dst_data.size() + vec_size);
             for (auto hindex : hindex_vec)
             {
                 if (hindex != 0)

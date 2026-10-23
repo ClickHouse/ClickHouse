@@ -52,10 +52,10 @@ ExpressionProperties propsFull(size_t node_count, SortDescription sorting, Distr
 
 /// A self-referential enforcer candidate: produces `output`, requires `input_required` from its
 /// own group (group 0 in these tests).
-GroupExpressionPtr enforcerExpr(EnforcerAxis axis, ExpressionProperties output, Float64 cost, ExpressionProperties input_required)
+GroupExpressionPtr enforcerExpr(EnforcedProperty axis, ExpressionProperties output, Float64 cost, ExpressionProperties input_required)
 {
     auto expression = costedExpr(std::move(output), cost);
-    expression->enforcer_axis = axis;
+    expression->enforced_property = axis;
     expression->inputs.push_back({.group_id = 0, .required_properties = std::move(input_required)});
     return expression;
 }
@@ -72,7 +72,7 @@ TEST(CascadesSelectInputImplementation, StrategyBComposesOverKeyedData)
     CostConfig cost_config;
 
     auto keyed = DistributionColumns{NameSet{"a"}};
-    auto sort_enforcer = enforcerExpr(EnforcerAxis::Sorting,
+    auto sort_enforcer = enforcerExpr(EnforcedProperty::Sorting,
         propsFull(4, sortByColumns({"k"}), keyed), 50,
         propsFull(4, {}, keyed));
     group.physical_expressions.push_back(sort_enforcer);
@@ -90,7 +90,7 @@ TEST(CascadesSelectInputImplementation, StrategyAComposes)
     Group group(0);
     CostConfig cost_config;
 
-    auto gather = enforcerExpr(EnforcerAxis::Distribution,
+    auto gather = enforcerExpr(EnforcedProperty::Distribution,
         propsAt(1), 30, propsAt(4));
     group.physical_expressions.push_back(gather);
 
@@ -105,7 +105,7 @@ TEST(CascadesSelectInputImplementation, SortSelfLoopBlocked)
     Group group(0);
     CostConfig cost_config;
 
-    auto sort_enforcer = enforcerExpr(EnforcerAxis::Sorting,
+    auto sort_enforcer = enforcerExpr(EnforcedProperty::Sorting,
         propsAt(4, sortByColumns({"k"})), 5, propsAt(4));
     group.physical_expressions.push_back(sort_enforcer);
 
@@ -128,7 +128,7 @@ TEST(CascadesSelectInputImplementation, ShuffleSelfLoopBlocked)
     CostConfig cost_config;
 
     auto keyed = DistributionColumns{NameSet{"a"}};
-    auto shuffle = enforcerExpr(EnforcerAxis::Distribution,
+    auto shuffle = enforcerExpr(EnforcedProperty::Distribution,
         propsFull(4, {}, keyed), 5, propsAt(4));
     group.physical_expressions.push_back(shuffle);
 
@@ -148,7 +148,7 @@ TEST(CascadesSelectInputImplementation, BroadcastOverGatherValid)
     Group group(0);
     CostConfig cost_config;
 
-    auto gather = enforcerExpr(EnforcerAxis::Distribution, propsAt(1), 30, propsAt(4));
+    auto gather = enforcerExpr(EnforcedProperty::Distribution, propsAt(1), 30, propsAt(4));
     group.physical_expressions.push_back(gather);
 
     auto picked = group.selectInputImplementation(propsAt(1), cost_config, {}, /*input_is_self_referential=*/true);
@@ -163,7 +163,7 @@ TEST(CascadesSelectInputImplementation, EvictionGuardKeepsBase)
     CostConfig cost_config;
 
     auto base = costedExpr(propsAt(1), 100);
-    auto sorted_gather = enforcerExpr(EnforcerAxis::Distribution,
+    auto sorted_gather = enforcerExpr(EnforcedProperty::Distribution,
         propsAt(1, sortByColumns({"k"})), 10, propsAt(4, sortByColumns({"k"})));
 
     group.updateBestImplementation(base, cost_config);
@@ -184,7 +184,7 @@ TEST(CascadesSelectInputImplementation, FallbackScansPhysicalExpressions)
     Group group(0);
     CostConfig cost_config;
 
-    auto sorted_gather = enforcerExpr(EnforcerAxis::Distribution,
+    auto sorted_gather = enforcerExpr(EnforcedProperty::Distribution,
         propsAt(1, sortByColumns({"k"})), 10, propsAt(4, sortByColumns({"k"})));
     group.updateBestImplementation(sorted_gather, cost_config);
 

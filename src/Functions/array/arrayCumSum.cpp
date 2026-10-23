@@ -17,6 +17,12 @@ namespace ErrorCodes
 
 struct ArrayCumSumImpl
 {
+    /// Authoritative — array of cumulative sums; the result element type widens to fit the
+    /// running total (e.g. `Array(UInt8)` → `Array(UInt64)`) via the `arraySumResult` type function.
+    static constexpr auto signature =
+        "(Function((Any, ...), T : Number), Array, ...) -> Array(arraySumResult(T))"
+        " OR (Array(T : Number)) -> Array(arraySumResult(T))";
+
     static bool needBoolean() { return false; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
@@ -184,8 +190,8 @@ REGISTER_FUNCTION(ArrayCumSum)
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of the partial sums of the elements in the source array. The result type matches the input array's numeric type.", {"Array(T)"}};
     FunctionDocumentation::Examples examples = {
-        {"Basic usage", "SELECT arrayCumSum([1, 1, 1, 1]) AS res", "[1, 2, 3, 4]"},
-        {"With lambda", "SELECT arrayCumSum(x -> x * 2, [1, 2, 3]) AS res", "[2, 6, 12]"}
+        {"Basic usage", "SELECT arrayCumSum([1, 1, 1, 1]) AS res", "[1,2,3,4]"},
+        {"With lambda", "SELECT arrayCumSum(x -> x * 2, [1, 2, 3]) AS res", "[2,6,12]"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;

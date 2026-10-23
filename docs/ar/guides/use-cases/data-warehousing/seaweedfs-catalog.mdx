@@ -1,0 +1,270 @@
+---
+slug: /use-cases/data-lake/seaweedfs-catalog
+sidebarTitle: 'كتالوج SeaweedFS'
+title: 'كتالوج SeaweedFS'
+description: 'يوضح هذا الدليل خطوات الاستعلام عن بياناتك باستخدام ClickHouse وكتالوج Iceberg في SeaweedFS.'
+keywords: ['SeaweedFS', 'Table Buckets', 'REST', 'Data Lake', 'Iceberg']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<ExperimentalBadge />
+
+<Note>
+  يعمل التكامل مع كتالوج SeaweedFS مع جداول Iceberg فقط.
+</Note>
+
+يدعم ClickHouse التكامل مع عدة كتالوجات (Unity وGlue وREST وPolaris وغيرها). يوضح لك هذا الدليل خطوات الاستعلام عن بياناتك باستخدام ClickHouse وكتالوج [SeaweedFS](https://github.com/seaweedfs/seaweedfs).
+
+SeaweedFS هو مخزن موزّع مفتوح المصدر للملفات والكائنات، مزود ببوابة متوافقة مع S3. توفر S3 Table Buckets فيه جانبي نشر Iceberg: إذ يوفّر كتالوج Iceberg REST المضمّن البيانات الوصفية للجداول، بينما تخزن حاوية الجداول بياناتها كملفات Parquet عبر نقطة نهاية S3 نفسها:
+
+* **خدمة واحدة** - تُقدَّم البيانات الوصفية للكتالوج وبيانات Parquet من خلال عملية واحدة، دون قاعدة بيانات منفصلة للبيانات الوصفية
+* التوافق مع مواصفة كتالوج Iceberg REST عبر **واجهة برمجة تطبيقات REST**
+* **صيانة من جانب الخادم** - ضغط تلقائي لملفات Parquet وانتهاء صلاحية اللقطات، دون خدمة صيانة خارجية
+
+<Note>
+  بما أن هذه الميزة تجريبية، ستحتاج إلى تفعيلها باستخدام:
+  `SET allow_experimental_database_iceberg = 1;`
+</Note>
+
+<div id="local-development-setup">
+  ## إعداد بيئة التطوير المحلية
+</div>
+
+لأغراض التطوير والاختبار محليًا، يمكنك تشغيل SeaweedFS وClickHouse باستخدام Docker Compose. يُعد هذا النهج مثاليًا للتعلّم وإنشاء النماذج الأولية وبيئات التطوير.
+
+<div id="local-prerequisites">
+  ### المتطلبات الأساسية
+</div>
+
+1. **Docker وDocker Compose**: تأكد من تثبيت Docker وتشغيله
+2. **الإصدارات**: SeaweedFS 4.42 أو أحدث؛ وClickHouse 26.8 أو أحدث (تدعم الإصدارات بدءًا من 25.8 القراءة والإدراج، لكن إنشاء الجداول عبر كتالوج يتطلب الإصدار 26.8)
+3. **بايثون مع PyIceberg** (اختياري): يُستخدم أدناه لإدخال بيانات نموذجية أولية
+
+<div id="setting-up-local-seaweedfs-catalog">
+  ### إعداد كتالوج SeaweedFS المحلي
+</div>
+
+**الخطوة 1:** أنشئ مجلدًا جديدًا لتشغيل المثال، ثم أنشئ ملفًا باسم `s3config.json` يتضمن بيانات اعتماد بوابة S3 والكتالوج:
+
+```json
+{
+  "identities": [
+    {
+      "name": "analyst",
+      "credentials": [
+        {
+          "accessKey": "tutorialkey",
+          "secretKey": "tutorialsecret"
+        }
+      ],
+      "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+    }
+  ]
+}
+```
+
+**الخطوة 2:** أنشئ ملفًا باسم `docker-compose.yml` يتضمن الإعدادات التالية:
+
+```yaml
+services:
+  seaweedfs:
+    image: chrislusf/seaweedfs:latest
+    command: mini -dir=/data -s3.config=/etc/seaweedfs/s3config.json -tableBucket=analytics -admin.port=12646
+    ports:
+      - "8333:8333"   # S3 endpoint
+      - "8181:8181"   # Iceberg REST catalog
+    volumes:
+      - ./s3config.json:/etc/seaweedfs/s3config.json
+      - seaweedfs_data:/data
+    networks:
+      - iceberg_net
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: seaweedfs-clickhouse
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    depends_on:
+      - seaweedfs
+    networks:
+      - iceberg_net
+
+volumes:
+  seaweedfs_data:
+
+networks:
+  iceberg_net:
+    driver: bridge
+```
+
+يشغّل الأمر `mini` حزمة SeaweedFS كاملةً ضمن حاوية واحدة. ينشئ الخيار `-tableBucket=analytics` مسبقًا bucket لـ S3 Tables باسم `analytics`، ويُستخدم هذا الـbucket باعتباره warehouse لـ Iceberg. يُبقي `-admin.port=12646` منفذ gRPC للمسؤول، الذي يشتقه SeaweedFS منه، دون نطاق المنافذ المؤقتة في Linux، إذ قد تحجزه وصلة عند بدء التشغيل قبل ذلك لولا هذا الإعداد.
+
+**الخطوة 3:** شغّل الأمر التالي لبدء الخدمات:
+
+```bash
+docker compose up -d
+```
+
+<div id="seeding-sample-data">
+  ### إضافة بيانات نموذجية
+</div>
+
+يكون الـ كتالوج فارغًا في البداية. أنشئ جدول وألحِق بها بضعة rows باستخدام PyIceberg (`pip install pyiceberg pyarrow`):
+
+```python
+import pyarrow as pa
+from pyiceberg.catalog.rest import RestCatalog
+
+catalog = RestCatalog(
+    "seaweedfs",
+    uri="http://localhost:8181",
+    warehouse="s3://analytics",
+    credential="tutorialkey:tutorialsecret",
+    **{
+        "s3.endpoint": "http://localhost:8333",
+        "s3.access-key-id": "tutorialkey",
+        "s3.secret-access-key": "tutorialsecret",
+        "s3.region": "us-east-1",
+        "s3.path-style-access": "true",
+    },
+)
+
+rows = pa.table({
+    "id": pa.array([1, 2, 3, 4, 5, 6], pa.int64()),
+    "region": ["NA", "EU", "EU", "APAC", "NA", "EU"],
+    "amount": pa.array([12.5, 40.0, 7.25, 99.9, 3.5, 61.0], pa.float64()),
+})
+
+catalog.create_namespace("sales")
+table = catalog.create_table("sales.orders", schema=rows.schema)
+table.append(rows)
+```
+
+<div id="connecting-to-local-seaweedfs-catalog">
+  ### الاتصال بكتالوج SeaweedFS المحلي
+</div>
+
+اتصل بحاوية ClickHouse لديك:
+
+```bash
+docker exec -it seaweedfs-clickhouse clickhouse-client
+```
+
+ثم أنشئ اتصال قاعدة البيانات بكتالوج SeaweedFS:
+
+```sql
+SET allow_experimental_database_iceberg = 1;
+
+CREATE DATABASE lake
+ENGINE = DataLakeCatalog('http://seaweedfs:8181/v1', 'tutorialkey', 'tutorialsecret')
+SETTINGS catalog_type = 'rest',
+    warehouse = 's3://analytics',
+    storage_endpoint = 'http://seaweedfs:8333/analytics',
+    catalog_credential = 'tutorialkey:tutorialsecret',
+    oauth_server_uri = 'http://seaweedfs:8181/v1/oauth/tokens'
+```
+
+تتضمن وسائط المحرك بيانات اعتماد S3 التي يستخدمها ClickHouse لقراءة بيانات الجدول، بينما تُستخدم `catalog_credential` و`oauth_server_uri` للمصادقة مع الكتالوج نفسه عبر تدفق بيانات اعتماد عميل OAuth2. يقبل SeaweedFS مفتاح الوصول والمفتاح السري نفسيهما لكليهما.
+
+<div id="querying-seaweedfs-catalog-tables-using-clickhouse">
+  ## الاستعلام عن جداول كتالوج في SeaweedFS باستخدام ClickHouse
+</div>
+
+بعد إعداد الاتصال، يمكنك البدء بالاستعلام عن جداول كتالوج في SeaweedFS. على سبيل المثال:
+
+```sql
+USE lake;
+
+SHOW TABLES;
+```
+
+```response
+┌─name─────────┐
+│ sales.orders │
+└──────────────┘
+```
+
+<Info>
+  **علامات الاقتباس المعكوسة مطلوبة**
+
+  علامات الاقتباس المعكوسة مطلوبة لأن ClickHouse لا يدعم أكثر من مساحة اسم واحدة.
+</Info>
+
+للاستعلام عن جدول:
+
+```sql
+SELECT region, sum(amount) AS total
+FROM `sales.orders`
+GROUP BY region
+ORDER BY total DESC;
+```
+
+```response
+┌─region─┬──total─┐
+│ EU     │ 108.25 │
+│ APAC   │   99.9 │
+│ NA     │     16 │
+└────────┴────────┘
+```
+
+<div id="creating-tables-and-writing-data-from-clickhouse">
+  ## إنشاء الجداول وكتابة البيانات من ClickHouse
+</div>
+
+يمكنك أيضًا إنشاء جداول في كتالوج SeaweedFS والكتابة فيها مباشرةً من ClickHouse:
+
+```sql
+SET allow_experimental_database_iceberg = 1;
+SET allow_experimental_insert_into_iceberg = 1;
+SET write_full_path_in_iceberg_metadata = 1;
+
+CREATE TABLE lake.`sales.returns` (id Int64, reason String)
+ENGINE = IcebergS3('http://seaweedfs:8333/analytics/sales/returns/', 'tutorialkey', 'tutorialsecret');
+
+INSERT INTO lake.`sales.returns` VALUES (1, 'damaged'), (2, 'wrong size');
+
+SELECT * FROM lake.`sales.returns` ORDER BY id;
+```
+
+```response
+┌─id─┬─reason─────┐
+│  1 │ damaged    │
+│  2 │ wrong size │
+└────┴────────────┘
+```
+
+تحدد عبارة محرك `IcebergS3` مسار التخزين للجدول الجديد، ويجعل `write_full_path_in_iceberg_metadata` ClickHouse يسجّل الموقع الكامل للجدول في الكتالوج.
+
+<Note>
+  يتطلب إنشاء الجداول عبر كتالوج استخدام ClickHouse 26.8 أو إصدار أحدث. تكتب الإصدارات من 26.4 إلى 26.7 ملفات الجدول قبل تسجيل مساحة الاسم، وهو ما يرفضه SeaweedFS ما لم تكن مساحة الاسم موجودة مسبقًا في الكتالوج؛ أما الإصدارات السابقة للإصدار 26.4 فتبدو ناجحة، لكن تُكتب ملفات الجدول في تخزين الكائنات دون تسجيلها في الكتالوج.
+</Note>
+
+عندما يثبّت ClickHouse عملية إدراج، يصلح كتالوج SeaweedFS البيانات الوصفية التي لا ينتجها الكاتب التجريبي بعد: فيملأ معرّفات الحقول المفقودة في ملفات manifest، ويعيد كتابة مسارات الملفات النسبية بالنسبة إلى الحاوية لتصبح مواقع مطلقة، ويضيف تعيينًا افتراضيًا للأسماء إلى الجدول. عندئذٍ، يمكن للقارئات الصارمة مثل PyIceberg وSpark قراءة الصفوف التي كتبها ClickHouse. يتطلب ذلك SeaweedFS 4.42 أو إصدارًا أحدث.
+
+<div id="loading-data-from-your-data-lake-into-clickhouse">
+  ## تحميل البيانات من بحيرة البيانات إلى ClickHouse
+</div>
+
+إذا كنت بحاجة إلى تحميل البيانات من كتالوج SeaweedFS إلى ClickHouse، فابدأ بإنشاء جدول ClickHouse محلي:
+
+```sql
+CREATE TABLE default.orders
+(
+    `id` Int64,
+    `region` String,
+    `amount` Float64
+)
+ENGINE = MergeTree()
+ORDER BY (region, id);
+```
+
+ثم حمّل البيانات من جدول الكتالوج في SeaweedFS باستخدام `INSERT INTO SELECT`:
+
+```sql
+INSERT INTO default.orders
+SELECT * FROM lake.`sales.orders`;
+```
