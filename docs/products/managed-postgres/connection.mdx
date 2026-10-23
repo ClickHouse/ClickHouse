@@ -94,3 +94,24 @@ To connect with a verified TLS connection, add `sslmode=verify-full` and the pat
 ```bash
 psql 'postgresql://postgres:PASSWORD@your-instance.pg.clickhouse.cloud:5432/postgres?sslmode=verify-full&sslrootcert=/path/to/ca-certificate.pem'
 ```
+
+## Using clickhousectl {#using-clickhousectl}
+
+With [clickhousectl](/concepts/features/interfaces/cli), look up the hostname and username, save the CA certificate, and connect with verified TLS. `psql` prompts for the password:
+
+```bash
+clickhousectl cloud postgres get <postgres-id>
+clickhousectl cloud postgres certs get <postgres-id> --output ca.pem
+psql "host=<hostname> port=5432 dbname=postgres user=postgres sslmode=verify-full sslrootcert=ca.pem"
+```
+
+`get` never returns the password. It's shown once, when you create the service; `clickhousectl cloud postgres reset-password <postgres-id> --generate` sets a new one.
+
+To run a read-only query without `psql` or the password, use `cloud postgres query`. It accepts only an OAuth login, so remove any API key credentials (a saved key, `--api-key` flags, or the `CLICKHOUSE_CLOUD_API_KEY` and `CLICKHOUSE_CLOUD_API_SECRET` environment variables) first:
+
+```bash
+clickhousectl cloud auth login
+clickhousectl cloud postgres query <postgres-id> --query "SELECT version()"
+```
+
+Use `psql` for writes and interactive sessions.
