@@ -1,10 +1,7 @@
 -- Tags: no-parallel-replicas
--- no-parallel-replicas: `rows_before_limit_at_least` depends on the local limit/sort pipeline, not the parallel-replicas read path.
+-- no-parallel-replicas: the counted rows depend on the local pipeline
 
--- `rows_before_limit_at_least` remains the number of expanded rows actually seen by the outer
--- query limit. With the optimization enabled only the three selected input rows are expanded, so
--- this lower bound decreases from all 5000 expanded rows to 15. `exact_rows_before_limit` refuses
--- the rewrite and is covered by the EXPLAIN test.
+-- `rows_before_limit_at_least` counts the expanded rows the limit sees: all 5000, or 15 when only the top 3 rows are expanded
 
 DROP TABLE IF EXISTS t_aj_rbl;
 

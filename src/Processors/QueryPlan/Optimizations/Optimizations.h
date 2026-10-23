@@ -253,8 +253,7 @@ size_t tryPushHavingPrefilterIntoAggregation(QueryPlan::Node * parent_node, Quer
 /// the preserved-side input must produce before joining.
 size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 
-/// Push ORDER BY ... LIMIT n down through an ARRAY JOIN when the sort key does not reference any
-/// joined column. Restricts how many rows the ARRAY JOIN has to expand.
+/// move `ORDER BY ... LIMIT n` below an `ARRAY JOIN` whose joined columns are not sort keys, so fewer rows are expanded
 size_t tryTopKThroughArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 /// Let a format source answer key-less, unfiltered `min` / `max` of its columns from format statistics.
 size_t tryMinMaxFromFormatStatistics(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
@@ -297,8 +296,7 @@ inline const auto & getOptimizations()
          &QueryPlanOptimizationSettings::convert_any_join_to_semi_or_anti_join},
         {tryOptimizeTopK, "tryOptimizeTopK", &QueryPlanOptimizationSettings::try_use_top_k_optimization},
         {tryTopKThroughJoin, "topKThroughJoin", &QueryPlanOptimizationSettings::top_k_through_join},
-        /// Runs after liftUpArrayJoin/liftUpFunctions/mergeExpressions, so the sort key computation
-        /// has already been pushed below the ARRAY JOIN and the SortingStep is usually its direct parent.
+        /// after `liftUpArrayJoin`, so the sort keys are already computed below the `ARRAY JOIN`
         {tryTopKThroughArrayJoin, "topKThroughArrayJoin", &QueryPlanOptimizationSettings::top_k_through_array_join},
         {tryMinMaxFromFormatStatistics, "minMaxFromFormatStatistics", &QueryPlanOptimizationSettings::min_max_from_files},
     });

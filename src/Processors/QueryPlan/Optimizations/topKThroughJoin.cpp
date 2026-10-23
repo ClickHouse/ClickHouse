@@ -220,8 +220,7 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     if (sort_node->children.size() != 1)
         return 0;
 
-    /// Peel the expressions between Sort and Join. An `arrayJoin` above the join changes the number of rows of the
-    /// preserved side, so the top-n of that side no longer gives the top-n of the result (see `#82279`).
+    /// an `arrayJoin` above the join changes the row count of the preserved side, so its top-n is not the result's (#82279)
     SortDescription description = sort_step->getSortDescription();
     QueryPlan::Node * join_node = sort_node->children.front();
     if (!peelPassThroughExpressions(join_node, description))

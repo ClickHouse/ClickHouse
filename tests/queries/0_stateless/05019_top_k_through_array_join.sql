@@ -1,11 +1,8 @@
--- Results of `ORDER BY ... LIMIT` over an `ARRAY JOIN` must not depend on
--- `query_plan_top_k_through_array_join`. Every query below is run twice, once with the
--- optimization off and once with it on, and the two outputs must match.
+-- each query runs with `query_plan_top_k_through_array_join` off and on, the results must match
 
 DROP TABLE IF EXISTS t_aj;
 
--- No primary key: `ORDER BY x` cannot be satisfied by reading in order, so the rewrite is not
--- skipped in favour of `optimizeReadInOrder`.
+-- no primary key, so read in order does not replace the rewrite
 CREATE TABLE t_aj
 (
     x UInt64,
@@ -16,11 +13,8 @@ CREATE TABLE t_aj
 )
 ENGINE = MergeTree ORDER BY tuple();
 
--- `x` is unique, so the ordering of `x` values in any top-N is unambiguous.
--- Every second row has all-empty containers: an inner ARRAY JOIN drops those rows, a
--- LEFT ARRAY JOIN keeps them with one default element. The non-empty rows all have
--- exactly 2 elements, so a LIMIT that is a multiple of 2 never splits an expanded run
--- and the full result rows are deterministic.
+-- `x` is unique, every second row has only empty containers and the others have 2 elements,
+-- so an even LIMIT gives deterministic rows
 INSERT INTO t_aj
 SELECT
     number,
@@ -82,9 +76,7 @@ SELECT '-- WITH FILL';
 SELECT x FROM (SELECT x FROM t_aj ARRAY JOIN arr ORDER BY x WITH FILL STEP 1 LIMIT 7) ORDER BY x SETTINGS query_plan_top_k_through_array_join = 0;
 SELECT x FROM (SELECT x FROM t_aj ARRAY JOIN arr ORDER BY x WITH FILL STEP 1 LIMIT 7) ORDER BY x SETTINGS query_plan_top_k_through_array_join = 1;
 
--- With `query_plan_fuse_filter_into_array_join` (default), the WHERE on the joined column is fused
--- into the ARRAY JOIN as an element filter. That can drop every element of a non-empty array, so
--- `topKThroughArrayJoin` must not move the sort below the join.
+-- the fused element filter can empty a non-empty array, so the sort must not move
 SELECT '-- a WHERE on the joined column is fused into the ARRAY JOIN';
 SELECT x, e FROM (SELECT x, arr AS e FROM t_aj ARRAY JOIN arr WHERE arr > 500 ORDER BY x LIMIT 6) ORDER BY x, e SETTINGS query_plan_top_k_through_array_join = 0;
 SELECT x, e FROM (SELECT x, arr AS e FROM t_aj ARRAY JOIN arr WHERE arr > 500 ORDER BY x LIMIT 6) ORDER BY x, e SETTINGS query_plan_top_k_through_array_join = 1;
@@ -94,7 +86,7 @@ SELECT x, e FROM (SELECT x, arr AS e FROM t_aj ARRAY JOIN arr WHERE x > 20 ORDER
 SELECT x, e FROM (SELECT x, arr AS e FROM t_aj ARRAY JOIN arr WHERE x > 20 ORDER BY x LIMIT 6) ORDER BY x, e SETTINGS query_plan_top_k_through_array_join = 1;
 
 SELECT '-- LIMIT BY between the sort and the ARRAY JOIN';
--- Tie-break on `e` so `LIMIT 1 BY x` picks a deterministic row per `x` after ARRAY JOIN.
+-- tie-break on `e` for a deterministic row per `x`
 SELECT x, e FROM (SELECT x, arr AS e FROM t_aj ARRAY JOIN arr ORDER BY x, e LIMIT 1 BY x LIMIT 5) ORDER BY x, e SETTINGS query_plan_top_k_through_array_join = 0;
 SELECT x, e FROM (SELECT x, arr AS e FROM t_aj ARRAY JOIN arr ORDER BY x, e LIMIT 1 BY x LIMIT 5) ORDER BY x, e SETTINGS query_plan_top_k_through_array_join = 1;
 
@@ -108,8 +100,7 @@ SELECT count() FROM (SELECT x FROM t_aj ARRAY JOIN CAST([], 'Array(UInt32)') AS 
 
 DROP TABLE t_aj;
 
--- Every array is empty, but in a real column, so the guard cannot be folded away: it must
--- discard every row and the inner ARRAY JOIN must produce nothing.
+-- all arrays are empty but not constant, so the filter stays and must drop every row
 DROP TABLE IF EXISTS t_aj_all_empty;
 
 CREATE TABLE t_aj_all_empty (x UInt64, arr Array(UInt32))
@@ -127,8 +118,7 @@ SELECT count(), sum(x) FROM (SELECT x FROM t_aj_all_empty LEFT ARRAY JOIN arr OR
 
 DROP TABLE t_aj_all_empty;
 
--- Ragged array sizes: which elements of the run at the LIMIT boundary are returned is not
--- specified, but the multiset of sort-key values in the top-N is, so aggregate over it only.
+-- with ragged sizes the elements at the limit boundary are not specified, so compare aggregates
 DROP TABLE IF EXISTS t_aj_ragged;
 
 CREATE TABLE t_aj_ragged (x UInt64, arr Array(UInt32), arr2 Array(UInt32))
@@ -156,10 +146,7 @@ SELECT count(), sum(x), min(x), max(x) FROM (SELECT x FROM t_aj_ragged LEFT ARRA
 
 DROP TABLE t_aj_ragged;
 
--- Arrays of unequal size under an aligned inner ARRAY JOIN must still throw. The emptiness
--- guard spans every joined column (`notEmpty(arr) OR notEmpty(arr2)`) rather than just the
--- first one, precisely so that a row like `([1], [7, 8])` reaches the step instead of being filtered.
--- Select the joined columns so the size check is not elided by lazy column replication.
+-- aligned arrays of unequal size must still throw; select the joined columns so lazy replication keeps the size check
 DROP TABLE IF EXISTS t_aj_mismatch;
 
 CREATE TABLE t_aj_mismatch (x UInt64, arr Array(UInt32), arr2 Array(UInt32))
@@ -178,7 +165,7 @@ SELECT '-- sizes do not match in a row after the limit';
 SELECT x, a, b FROM values('x UInt64, a Array(UInt64), b Array(UInt64)', (0, [1], [1]), (1, [1], [1, 2])) ARRAY JOIN a, b ORDER BY x LIMIT 1 SETTINGS query_plan_top_k_through_array_join = 1; -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
 SELECT x, a, b FROM values('x UInt64, a Array(UInt64), b Array(UInt64)', (0, [1], [1]), (1, [1], [1, 2])) LEFT ARRAY JOIN a, b ORDER BY x LIMIT 1 SETTINGS query_plan_top_k_through_array_join = 1; -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
 
--- Array(Nullable(T)): NULL elements must survive the guard, which only looks at array length.
+-- NULL elements must pass the filter, it checks only the array size
 DROP TABLE IF EXISTS t_aj_nullable;
 
 CREATE TABLE t_aj_nullable (x UInt64, arr Array(Nullable(UInt32)))

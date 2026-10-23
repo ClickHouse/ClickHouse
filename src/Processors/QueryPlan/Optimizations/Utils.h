@@ -98,13 +98,11 @@ enum class FilterResult
     const ActionsDAG & filter_dag,
     const String & filter_column_name);
 
-/// Move `node` down through `ExpressionStep`s that pass every sort key through as an alias of an input, and rename
-/// the keys in `description` to the inputs. Returns false if a step computes a key, has `arrayJoin`, or is sensitive
-/// to the number of rows it evaluates (`isSensitiveToEvaluationCount`). Then do not use `node` and `description`.
+/// move `node` below the `ExpressionStep`s that only pass the sort keys through and rename the keys to the inputs,
+/// false if a step computes a key, has `arrayJoin` or depends on the number of evaluated rows
 [[nodiscard]] bool peelPassThroughExpressions(QueryPlan::Node *& node, SortDescription & description, size_t max_peel = 4);
 
-/// Walk down a single-child chain looking for a `ReadFromMergeTree` step. Used by top-K
-/// pushdowns that must cooperate with parallel replicas and `optimizeReadInOrder`.
+/// the `ReadFromMergeTree` at the end of a chain of single-child steps, or nullptr
 const ReadFromMergeTree * findMergeTreeRead(const QueryPlan::Node * node);
 
 struct NoOp

@@ -259,7 +259,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
         }
         else if (limit_being_counted)
         {
-            /// a sorting below `ARRAY JOIN` sees the rows before the expansion, count the expanded rows at the limit (Case 7)
+            /// a sort below `ARRAY JOIN` sees the rows before the expansion, so count at the limit (Case 7)
             if (typeid_cast<ArrayJoinTransform *>(processor))
                 continue;
 
