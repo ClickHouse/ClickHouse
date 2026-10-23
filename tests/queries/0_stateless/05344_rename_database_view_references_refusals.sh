@@ -42,10 +42,11 @@ ${CLICKHOUSE_CLIENT} -q "
     CREATE TABLE ${R}.\`t)\` (a UInt64) ENGINE = Memory;
     CREATE VIEW ${R}.in_paren_header_v AS SELECT 1 IN ${R}.\`t)\`;
     CREATE VIEW ${R}.joinget_header_v AS SELECT joinGet('${R}.j', 'v', toUInt64(1));
+    CREATE VIEW ${R}.param_header_v AS SELECT {n:UInt64} IN ${R}.t;
 "
 DEFINITIONS="SELECT arraySort(groupArray((database, name, create_table_query))) FROM system.tables WHERE database IN ('${R}', '${EXT}')"
 before=$(${CLICKHOUSE_CLIENT} -q "${DEFINITIONS}")
-for view in alias_v dotted_alias_v expression_header_v header_v in_header_v in_paren_header_v joinget_header_v subquery_v; do
+for view in alias_v dotted_alias_v expression_header_v header_v in_header_v in_paren_header_v joinget_header_v param_header_v subquery_v; do
     ${CLICKHOUSE_CLIENT} -q "RENAME DATABASE ${R} TO ${RN}" 2>&1 | sed -n "s/.*the names in ${R}\.\([a-z_]*\) refer.*(\([A-Z_]*\)).*/\1: \2/p" | head -1
     # The definitions after the refused rename, then the ones the next rename starts from.
     definitions=$(${CLICKHOUSE_CLIENT} -q "${DEFINITIONS}; DROP VIEW ${R}.${view}; ${DEFINITIONS}")
@@ -58,10 +59,14 @@ C0="${CLICKHOUSE_DATABASE}_c0"
 ${CLICKHOUSE_CLIENT} -q "
     CREATE DATABASE ${C0} ENGINE = Atomic;
     CREATE TABLE ${C0}.t (a UInt64) ENGINE = MergeTree ORDER BY a;
+    CREATE TABLE ${C0}.j (k UInt64, v UInt64) ENGINE = Join(ANY, LEFT, k);
+    CREATE VIEW ${C0}.joinget_v AS SELECT joinGet('${C0}.j', 'v', toUInt64(1)) AS x;
     CREATE VIEW ${C0}.qualified_v AS SELECT ${C0}.t.a FROM ${C0}.t;
 "
-${CLICKHOUSE_CLIENT} -q "RENAME DATABASE ${C0} TO \`${C0}.x\`" 2>&1 | grep -o -m1 "a database name contains a dot"
-${CLICKHOUSE_CLIENT} -q "EXISTS DATABASE ${C0}"
+for view in joinget_v qualified_v; do
+    ${CLICKHOUSE_CLIENT} -q "RENAME DATABASE ${C0} TO \`${C0}.x\`" 2>&1 | sed -n "s/.*the names in ${C0}\.\([a-z_]*\) refer.*: \(a database name contains a dot\)\..*/\1: \2/p" | head -1
+    ${CLICKHOUSE_CLIENT} -q "EXISTS DATABASE ${C0}; DROP VIEW ${C0}.${view}"
+done
 
 echo "-- a table and a column named like the database, with no qualified name to rewrite"
 GA="${CLICKHOUSE_DATABASE}_ga"

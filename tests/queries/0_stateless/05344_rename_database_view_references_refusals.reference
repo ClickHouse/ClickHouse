@@ -13,10 +13,14 @@ in_paren_header_v: AMBIGUOUS_IDENTIFIER
 nothing changed
 joinget_header_v: AMBIGUOUS_IDENTIFIER
 nothing changed
+param_header_v: AMBIGUOUS_IDENTIFIER
+nothing changed
 subquery_v: AMBIGUOUS_IDENTIFIER
 nothing changed
 1
-a database name contains a dot
+joinget_v: a database name contains a dot
+1
+qualified_v: a database name contains a dot
 1
 -- a table and a column named like the database, with no qualified name to rewrite
 7

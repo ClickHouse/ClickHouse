@@ -540,6 +540,19 @@ namespace
         return false;
     }
 
+    /// The column names of the projections without an alias of the SELECTs in `ast`.
+    void collectProjectionNames(const IAST & ast, Names & names)
+    {
+        if (isRemoteTableFunction(ast))
+            return;
+        if (const auto * select = ast.as<ASTSelectQuery>(); select && select->select())
+            for (const auto & projection : select->select()->children)
+                if (projection->tryGetAlias().empty())
+                    names.push_back(projection->getColumnName());
+        for (const auto & child : ast.children)
+            collectProjectionNames(*child, names);
+    }
+
     /// The table expressions of a SELECT, ARRAY JOIN elements excluded.
     std::vector<const ASTTableExpression *> getTableExpressions(const ASTSelectQuery & select)
     {
@@ -828,7 +841,7 @@ void DatabaseRenamingInViewDefinition::check(const ColumnsDescription & view_col
 {
     auto is_renamed_database = [&](const String & name) { return name == old_database_name || name == new_database_name; };
 
-    if (!candidates.empty() && (old_database_name.contains('.') || new_database_name.contains('.')))
+    if ((!candidates.empty() || !function_literals.empty()) && (old_database_name.contains('.') || new_database_name.contains('.')))
         throwAmbiguous("a database name contains a dot");
 
     for (const auto & name : names)
@@ -841,6 +854,16 @@ void DatabaseRenamingInViewDefinition::check(const ColumnsDescription & view_col
     for (const auto & column : view_columns)
         if (containsNameQualifiedWithDatabase(column.name, old_database_name, in_tables, function_literals))
             throwAmbiguous(fmt::format("it has the column {}", column.name));
+
+    /// A parameterized view has no columns: its projections name the columns of its calls.
+    if (const auto * create = create_query->as<ASTCreateQuery>(); create && create->isParameterizedView())
+    {
+        Names projection_names;
+        collectProjectionNames(*create_query, projection_names);
+        for (const auto & name : projection_names)
+            if (containsNameQualifiedWithDatabase(name, old_database_name, in_tables, function_literals))
+                throwAmbiguous(fmt::format("it has the column {}", name));
+    }
 
     if (candidates.empty())
         return;
