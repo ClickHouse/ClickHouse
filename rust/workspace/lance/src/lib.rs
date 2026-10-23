@@ -1150,11 +1150,112 @@ async fn open_dataset(options: DatasetOpenOptions) -> FfiResult<OpenedDataset> {
             .map_err(|err| FfiError::from_lance(LanceOperation::Open, origin, err))?;
         Ok(OpenedDataset { dataset, origin })
     } else {
+        ensure_local_dataset_contained(&uri)?;
         let dataset = Dataset::open(&uri)
             .await
             .map_err(|err| FfiError::from_lance(LanceOperation::Open, origin, err))?;
+        ensure_no_external_base_paths(&dataset, origin)?;
         Ok(OpenedDataset { dataset, origin })
     }
+}
+
+// ClickHouse checks only that the dataset directory is inside `user_files_path`, while Lance reads the
+// files of a local dataset directly and follows symbolic links. Reject a dataset with a symbolic link
+// that resolves outside of the dataset directory, so that it cannot expose files outside of it.
+fn ensure_local_dataset_contained(uri: &str) -> FfiResult<()> {
+    let origin = ChLanceErrorOrigin::Local;
+    let path = uri.strip_prefix("file://").unwrap_or(uri);
+    let root = match std::fs::canonicalize(path) {
+        Ok(root) => root,
+        // Let `Dataset::open` report a missing dataset.
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(err) => {
+            return Err(FfiError::new(
+                ChLanceErrorKind::Storage,
+                origin,
+                format!("Cannot resolve Lance dataset path {}: {}", path, err),
+            ))
+        }
+    };
+
+    let mut pending = vec![root.clone()];
+    while let Some(directory) = pending.pop() {
+        let entries = std::fs::read_dir(&directory).map_err(|err| {
+            FfiError::new(
+                ChLanceErrorKind::Storage,
+                origin,
+                format!(
+                    "Cannot list Lance dataset directory {}: {}",
+                    directory.display(),
+                    err
+                ),
+            )
+        })?;
+        for entry in entries {
+            let entry = entry.map_err(|err| {
+                FfiError::new(
+                    ChLanceErrorKind::Storage,
+                    origin,
+                    format!(
+                        "Cannot list Lance dataset directory {}: {}",
+                        directory.display(),
+                        err
+                    ),
+                )
+            })?;
+            let entry_path = entry.path();
+            let file_type = entry.file_type().map_err(|err| {
+                FfiError::new(
+                    ChLanceErrorKind::Storage,
+                    origin,
+                    format!("Cannot stat {}: {}", entry_path.display(), err),
+                )
+            })?;
+            if file_type.is_symlink() {
+                let target = std::fs::canonicalize(&entry_path).map_err(|err| {
+                    FfiError::new(
+                        ChLanceErrorKind::PermissionDenied,
+                        origin,
+                        format!(
+                            "Cannot resolve symbolic link {} in a Lance dataset: {}",
+                            entry_path.display(),
+                            err
+                        ),
+                    )
+                })?;
+                if !target.starts_with(&root) {
+                    return Err(FfiError::new(
+                        ChLanceErrorKind::PermissionDenied,
+                        origin,
+                        format!(
+                            "Symbolic link {} in a Lance dataset points outside of the dataset directory {}",
+                            entry_path.display(),
+                            root.display()
+                        ),
+                    ));
+                }
+                // The target is inside the dataset directory, so it is checked by itself.
+            } else if file_type.is_dir() {
+                pending.push(entry_path);
+            }
+        }
+    }
+    Ok(())
+}
+
+// A manifest may reference data in other base paths, which are not checked by ClickHouse.
+fn ensure_no_external_base_paths(dataset: &Dataset, origin: ChLanceErrorOrigin) -> FfiResult<()> {
+    if origin == ChLanceErrorOrigin::Local && !dataset.manifest.base_paths.is_empty() {
+        return Err(FfiError::new(
+            ChLanceErrorKind::Unsupported,
+            origin,
+            format!(
+                "Lance dataset version {} references external base paths, which are not supported for local datasets",
+                dataset.version().version
+            ),
+        ));
+    }
+    Ok(())
 }
 
 fn digest_bytes(bytes: &[u8]) -> [u8; SNAPSHOT_DIGEST_SIZE] {
@@ -1310,6 +1411,8 @@ async fn checkout_exact_snapshot(
             })?
     };
 
+    ensure_no_external_base_paths(&checked_out, origin)?;
+
     let actual = snapshot_identity(&checked_out, origin)
         .await
         .map_err(|error| {
@@ -1345,15 +1448,24 @@ fn build_s3_store(
     uri: &str,
     storage_options: &HashMap<String, String>,
 ) -> FfiResult<Arc<DynObjectStore>> {
-    let mut builder = if storage_options
+    let use_environment_credentials = storage_options
         .get("aws_use_environment_credentials")
-        .is_some_and(|value| value == "true")
-    {
+        .is_some_and(|value| value == "true");
+    let mut builder = if use_environment_credentials {
         AmazonS3Builder::from_env()
     } else {
         AmazonS3Builder::new()
     }
     .with_url(uri);
+
+    // Without a key pair, `object_store` falls back to the instance metadata or IRSA credentials even
+    // for `AmazonS3Builder::new`. Unless the caller asked for the environment credentials, send the
+    // requests unsigned instead.
+    let has_key_pair = storage_options.contains_key("aws_access_key_id")
+        && storage_options.contains_key("aws_secret_access_key");
+    if !use_environment_credentials && !has_key_pair {
+        builder = builder.with_skip_signature(true);
+    }
 
     // Explicit ClientOptions so timeouts are applied even when only one is set.
     let mut client_options = ClientOptions::new();
@@ -1868,7 +1980,7 @@ unsafe fn ch_lance_total_rows_impl(
     }
     *has_value = false;
 
-    let dataset = &mut *dataset;
+    let dataset = &*dataset;
     let origin = dataset.origin;
     let snapshot = match snapshot_from_ffi(snapshot, origin) {
         Ok(snapshot) => snapshot,
@@ -1936,7 +2048,7 @@ unsafe fn ch_lance_count_rows_impl(
         }
     };
 
-    let dataset = &mut *dataset;
+    let dataset = &*dataset;
     let origin = dataset.origin;
     let snapshot = match snapshot_from_ffi(snapshot, origin) {
         Ok(snapshot) => snapshot,
@@ -3716,7 +3828,12 @@ mod tests {
 
         let mut snapshot = ch_lance_snapshot_info::default();
         assert!(unsafe {
-            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), ptr::null_mut(), addr_of_mut!(error))
+            ch_lance_current_snapshot(
+                dataset,
+                addr_of_mut!(snapshot),
+                ptr::null_mut(),
+                addr_of_mut!(error),
+            )
         });
 
         let ordered_rows =
@@ -3765,7 +3882,12 @@ mod tests {
 
         let mut snapshot = ch_lance_snapshot_info::default();
         assert!(unsafe {
-            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), ptr::null_mut(), addr_of_mut!(error))
+            ch_lance_current_snapshot(
+                dataset,
+                addr_of_mut!(snapshot),
+                ptr::null_mut(),
+                addr_of_mut!(error),
+            )
         });
 
         let mut list: *mut ch_lance_fragment_info = ptr::null_mut();
@@ -3942,7 +4064,12 @@ mod tests {
 
         let mut snapshot = ch_lance_snapshot_info::default();
         assert!(unsafe {
-            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), ptr::null_mut(), addr_of_mut!(error))
+            ch_lance_current_snapshot(
+                dataset,
+                addr_of_mut!(snapshot),
+                ptr::null_mut(),
+                addr_of_mut!(error),
+            )
         });
         assert!(snapshot.version > 0);
 
@@ -4077,7 +4204,12 @@ mod tests {
         assert!(!dataset.is_null());
         let mut snapshot = ch_lance_snapshot_info::default();
         assert!(unsafe {
-            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), ptr::null_mut(), addr_of_mut!(error))
+            ch_lance_current_snapshot(
+                dataset,
+                addr_of_mut!(snapshot),
+                ptr::null_mut(),
+                addr_of_mut!(error),
+            )
         });
 
         let scan = plan_full_scan(dataset, snapshot, addr_of_mut!(error));
@@ -4118,7 +4250,12 @@ mod tests {
         assert!(!dataset.is_null());
         let mut snapshot = ch_lance_snapshot_info::default();
         assert!(unsafe {
-            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), ptr::null_mut(), addr_of_mut!(error))
+            ch_lance_current_snapshot(
+                dataset,
+                addr_of_mut!(snapshot),
+                ptr::null_mut(),
+                addr_of_mut!(error),
+            )
         });
 
         let scan = plan_full_scan(dataset, snapshot, addr_of_mut!(error));
@@ -4231,7 +4368,12 @@ mod tests {
 
         let mut snapshot = ch_lance_snapshot_info::default();
         assert!(unsafe {
-            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), ptr::null_mut(), addr_of_mut!(error))
+            ch_lance_current_snapshot(
+                dataset,
+                addr_of_mut!(snapshot),
+                ptr::null_mut(),
+                addr_of_mut!(error),
+            )
         });
 
         // Cancel before plan: planScan must fail with CANCELLED.
@@ -4325,7 +4467,12 @@ mod tests {
         assert!(!dataset.is_null());
         let mut snapshot = ch_lance_snapshot_info::default();
         assert!(unsafe {
-            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), ptr::null_mut(), addr_of_mut!(error))
+            ch_lance_current_snapshot(
+                dataset,
+                addr_of_mut!(snapshot),
+                ptr::null_mut(),
+                addr_of_mut!(error),
+            )
         });
 
         let cancel = unsafe { ch_lance_cancel_handle_create() };
@@ -4451,7 +4598,12 @@ mod tests {
 
         let mut snapshot = ch_lance_snapshot_info::default();
         assert!(unsafe {
-            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), ptr::null_mut(), addr_of_mut!(error))
+            ch_lance_current_snapshot(
+                dataset,
+                addr_of_mut!(snapshot),
+                ptr::null_mut(),
+                addr_of_mut!(error),
+            )
         });
 
         let mut rows = 1;
@@ -4528,7 +4680,12 @@ mod tests {
 
         let mut snapshot = ch_lance_snapshot_info::default();
         assert!(unsafe {
-            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), ptr::null_mut(), addr_of_mut!(error))
+            ch_lance_current_snapshot(
+                dataset,
+                addr_of_mut!(snapshot),
+                ptr::null_mut(),
+                addr_of_mut!(error),
+            )
         });
 
         let mut rows = 0;
@@ -4642,7 +4799,12 @@ mod tests {
         assert!(!original.is_null());
         let mut pinned = ch_lance_snapshot_info::default();
         assert!(unsafe {
-            ch_lance_current_snapshot(original, addr_of_mut!(pinned), ptr::null_mut(), addr_of_mut!(error))
+            ch_lance_current_snapshot(
+                original,
+                addr_of_mut!(pinned),
+                ptr::null_mut(),
+                addr_of_mut!(error),
+            )
         });
         unsafe { ch_lance_free_dataset(original) };
 
@@ -4761,10 +4923,20 @@ mod tests {
         let mut first = ch_lance_snapshot_info::default();
         let mut second = ch_lance_snapshot_info::default();
         assert!(unsafe {
-            ch_lance_current_snapshot(dataset, addr_of_mut!(first), ptr::null_mut(), addr_of_mut!(error))
+            ch_lance_current_snapshot(
+                dataset,
+                addr_of_mut!(first),
+                ptr::null_mut(),
+                addr_of_mut!(error),
+            )
         });
         assert!(unsafe {
-            ch_lance_current_snapshot(dataset, addr_of_mut!(second), ptr::null_mut(), addr_of_mut!(error))
+            ch_lance_current_snapshot(
+                dataset,
+                addr_of_mut!(second),
+                ptr::null_mut(),
+                addr_of_mut!(error),
+            )
         });
         assert_eq!(first, second);
         assert!(first.manifest_size > 0);
@@ -4967,7 +5139,12 @@ mod tests {
 
         let mut snapshot = ch_lance_snapshot_info::default();
         assert!(unsafe {
-            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), ptr::null_mut(), addr_of_mut!(error))
+            ch_lance_current_snapshot(
+                dataset,
+                addr_of_mut!(snapshot),
+                ptr::null_mut(),
+                addr_of_mut!(error),
+            )
         });
 
         let projection = [CString::new("id").unwrap()];
@@ -5007,7 +5184,12 @@ mod tests {
 
         let mut snapshot = ch_lance_snapshot_info::default();
         assert!(unsafe {
-            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), ptr::null_mut(), addr_of_mut!(error))
+            ch_lance_current_snapshot(
+                dataset,
+                addr_of_mut!(snapshot),
+                ptr::null_mut(),
+                addr_of_mut!(error),
+            )
         });
 
         let predicate = CString::new("id = 1 OR id = 3").unwrap();
@@ -5449,7 +5631,12 @@ mod tests {
 
         let mut snapshot = ch_lance_snapshot_info::default();
         assert!(unsafe {
-            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), ptr::null_mut(), addr_of_mut!(error))
+            ch_lance_current_snapshot(
+                dataset,
+                addr_of_mut!(snapshot),
+                ptr::null_mut(),
+                addr_of_mut!(error),
+            )
         });
         let projection = [
             CString::new("id").unwrap(),

@@ -32,6 +32,7 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/ProfileEvents.h>
 #if USE_AWS_S3
+#include <IO/S3/Client.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #endif
 #include <Storages/StorageInMemoryMetadata.h>
@@ -85,13 +86,7 @@ extern const SettingsMaxThreads max_threads;
 #if USE_AWS_S3
 namespace S3AuthSetting
 {
-extern const S3AuthSettingsString access_key_id;
-extern const S3AuthSettingsString secret_access_key;
-extern const S3AuthSettingsString session_token;
 extern const S3AuthSettingsString region;
-extern const S3AuthSettingsString role_arn;
-extern const S3AuthSettingsString role_session_name;
-extern const S3AuthSettingsBool use_environment_credentials;
 extern const S3AuthSettingsBool no_sign_request;
 }
 #endif
@@ -441,7 +436,18 @@ std::optional<String> fieldToLanceLiteral(
     if (which.isString() && column.is_arrow_utf8)
         return quoteLanceStringLiteral(field.safeGet<String>());
     if (which.isNativeInt())
+    {
+        /// The Lance parser reads a bare integer as `i64` and falls back to a floating-point literal,
+        /// and it parses a negative literal as the negation of its magnitude. A floating-point
+        /// literal cannot be compared with an integer column, so values outside `(INT64_MIN, INT64_MAX]`
+        /// are not pushed down.
+        if (field.getType() == Field::Types::UInt64
+            && field.safeGet<UInt64>() > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+            return std::nullopt;
+        if (field.getType() == Field::Types::Int64 && field.safeGet<Int64>() == std::numeric_limits<Int64>::min())
+            return std::nullopt;
         return applyVisitor(FieldVisitorToString(), field);
+    }
     return std::nullopt;
 }
 
@@ -824,21 +830,22 @@ void validateExplicitLanceSchema(const NamesAndTypesList & explicit_schema, cons
 
 }
 
-LanceMetadata::LanceMetadata(StorageObjectStorageConfigurationWeakPtr configuration_)
-    : configuration(std::move(configuration_))
+LanceMetadata::LanceMetadata(ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationWeakPtr configuration_)
+    : object_storage(std::move(object_storage_))
+    , configuration(std::move(configuration_))
 {
 }
 
 DataLakeMetadataPtr LanceMetadata::create(
-    const ObjectStoragePtr &,
+    const ObjectStoragePtr & object_storage,
     const StorageObjectStorageConfigurationWeakPtr & configuration,
     const ContextPtr &)
 {
-    return std::make_unique<LanceMetadata>(configuration);
+    return std::make_unique<LanceMetadata>(object_storage, configuration);
 }
 
 void LanceMetadata::createInitial(
-    const ObjectStoragePtr &,
+    const ObjectStoragePtr & object_storage,
     const StorageObjectStorageConfigurationWeakPtr & configuration,
     const ContextPtr & local_context,
     const std::optional<ColumnsDescription> & columns,
@@ -851,7 +858,7 @@ void LanceMetadata::createInitial(
     if (!columns.has_value())
         return;
 
-    LanceMetadata metadata(configuration);
+    LanceMetadata metadata(object_storage, configuration);
     validateExplicitLanceSchema(columns->getAllPhysical(), metadata.getTableSchema(local_context));
 }
 
@@ -1370,13 +1377,20 @@ Lance::DatasetOptions LanceMetadata::getDatasetOptions(const ContextPtr & local_
         options.use_s3 = true;
         options.s3_endpoint = s3_configuration->url.endpoint;
         options.s3_region = auth_settings[S3AuthSetting::region].value;
-        options.s3_access_key_id = auth_settings[S3AuthSetting::access_key_id].value;
-        options.s3_secret_access_key = auth_settings[S3AuthSetting::secret_access_key].value;
-        options.s3_session_token = auth_settings[S3AuthSetting::session_token].value;
-        options.s3_role_arn = auth_settings[S3AuthSetting::role_arn].value;
-        options.s3_role_session_name = auth_settings[S3AuthSetting::role_session_name].value;
-        options.s3_use_environment_credentials = auth_settings[S3AuthSetting::use_environment_credentials].value;
-        options.s3_no_sign_request = auth_settings[S3AuthSetting::no_sign_request].value;
+
+        /// The `Lance` object store is a separate client, which would resolve ambient credentials by itself
+        /// (environment, IRSA, instance metadata) and cannot assume a role. Pass it the credentials resolved
+        /// by the S3 client of the storage instead: that client applies `s3_allow_server_credentials_in_user_queries`
+        /// and assumes `role_arn`. Without resolved credentials, the requests are not signed.
+        if (!object_storage)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No object storage for `Lance` metadata");
+        const auto credentials = object_storage->getS3StorageClient()->getCredentials();
+        options.s3_access_key_id = credentials.GetAWSAccessKeyId();
+        options.s3_secret_access_key = credentials.GetAWSSecretKey();
+        options.s3_session_token = credentials.GetSessionToken();
+        options.s3_use_environment_credentials = false;
+        options.s3_no_sign_request = auth_settings[S3AuthSetting::no_sign_request].value
+            || options.s3_access_key_id.empty() || options.s3_secret_access_key.empty();
         options.s3_allow_http = s3_configuration->url.uri.getScheme() == "http";
         options.s3_virtual_hosted_style_request = s3_configuration->url.is_virtual_hosted_style;
 

@@ -18,7 +18,7 @@ class LanceMetadata final : public IDataLakeMetadata
 public:
     static constexpr auto name = "Lance";
 
-    explicit LanceMetadata(StorageObjectStorageConfigurationWeakPtr configuration_);
+    LanceMetadata(ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationWeakPtr configuration_);
 
     const char * getName() const override { return name; }
 
@@ -111,6 +111,8 @@ private:
     /// When `local_context` is set, fills S3 HTTP timeouts from ClickHouse settings.
     Lance::DatasetOptions getDatasetOptions(const ContextPtr & local_context = {}) const;
 
+    /// The S3 client of the storage resolves the credentials of the `Lance` object store, see `getDatasetOptions`.
+    ObjectStoragePtr object_storage;
     StorageObjectStorageConfigurationWeakPtr configuration;
 };
 
