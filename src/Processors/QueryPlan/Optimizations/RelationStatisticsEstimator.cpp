@@ -23,6 +23,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 
@@ -31,10 +32,6 @@ namespace DB
 
 namespace Setting
 {
-extern const SettingsUInt64 max_rows_to_read;
-extern const SettingsUInt64 max_rows_to_read_leaf;
-extern const SettingsOverflowMode read_overflow_mode;
-extern const SettingsOverflowMode read_overflow_mode_leaf;
 extern const SettingsBool use_statistics;
 }
 
@@ -97,7 +94,8 @@ RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_s
     else
         total_number_of_distinct_values = input_stats.estimated_rows;
 
-    aggregation_stats.estimated_rows = total_number_of_distinct_values;
+    if (total_number_of_distinct_values)
+        aggregation_stats.estimated_rows = toUInt64Saturating(*total_number_of_distinct_values);
 
     return aggregation_stats;
 }
@@ -156,8 +154,44 @@ UnaryStepStatsKind classifyUnaryStepStats(const IQueryPlanStep & step)
     return UnaryStepStatsKind::Unsupported;
 }
 
-std::optional<RelationStats> estimateLeafRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * filter)
+/// A runtime filter prunes nothing at plan time, so it must not count as a filter when estimating.
+/// True for a `__applyFilter` call or an always-true `x = x`, an `and` of such predicates, or an `or`
+/// with at least one such operand. Aliases are looked through.
+bool prunesNothingAtPlanTime(const ActionsDAG::Node * node)
 {
+    if (!node)
+        return false;
+
+    if (node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
+        return prunesNothingAtPlanTime(node->children.front());
+
+    if (node->type != ActionsDAG::ActionType::FUNCTION || !node->function_base)
+        return false;
+
+    const auto & function_name = node->function_base->getName();
+    if (function_name == "__applyFilter" || isAlwaysTrueEquality(*node))
+        return true;
+
+    if (node->children.empty())
+        return false;
+
+    if (function_name == "and")
+        return std::ranges::all_of(node->children, prunesNothingAtPlanTime);
+
+    /// One operand passes every row at plan time, so the whole `or` does. `addNullBypassForAntiJoin`
+    /// builds this form for `LEFT ANTI JOIN`: `__applyFilter(...) OR isNull(key)`.
+    if (function_name == "or")
+        return std::ranges::any_of(node->children, prunesNothingAtPlanTime);
+
+    return false;
+}
+
+std::optional<RelationStats>
+estimateLeafRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * filter, bool for_runtime_filter_transport)
+{
+    if (prunesNothingAtPlanTime(filter))
+        filter = nullptr;
+
     IQueryPlanStep * step = node.step.get();
     if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
     {
@@ -169,16 +203,13 @@ std::optional<RelationStats> estimateLeafRelationStats(QueryPlan::Node & node, c
         ReadFromMergeTree::AnalysisResultPtr analyzed_result = reading->getAnalyzedResult();
         if (!analyzed_result)
         {
-            const auto & settings = reading->getContext()->getSettingsRef();
-            const bool has_throwing_row_limit
-                = (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
-                || (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && settings[Setting::max_rows_to_read_leaf]);
-
             /// Range analysis normally enforces throwing read limits and memoizes its result.
             /// At this stage, however, later planning may make the executed read exempt from those
             /// limits. In that case use an estimation-only analysis; execution will analyze again
             /// after its final read mode is known.
-            analyzed_result = has_throwing_row_limit ? reading->selectRangesToReadForEstimation() : reading->selectRangesToRead();
+            analyzed_result = reading->hasThrowingReadRowLimit()
+                ? reading->selectRangesToReadForEstimation(/*allow_query_condition_cache_=*/true)
+                : reading->selectRangesToRead();
         }
 
         /// An exact empty range selection proves that the relation is empty. Other empty
@@ -198,16 +229,58 @@ std::optional<RelationStats> estimateLeafRelationStats(QueryPlan::Node & node, c
                 .source = RowEstimateSource::NoStatistics};
         }
 
+        /// A PREWHERE that prunes nothing at plan time is likewise not a plan-time filter.
+        const PrewhereInfoPtr prewhere_info = reading->getPrewhereInfo();
+        const ActionsDAG::Node * prewhere_node = prewhere_info
+            ? static_cast<const ActionsDAG::Node *>(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
+            : nullptr;
+        const bool has_prewhere_filter = prewhere_info && !prunesNothingAtPlanTime(prewhere_node);
+        if (!has_prewhere_filter)
+            prewhere_node = nullptr;
+
+        bool is_filtered_by_index = false;
+        if (analyzed_result)
+        {
+            UInt64 total_parts = 0;
+            UInt64 total_granules = 0;
+            for (const auto & idx_stat : analyzed_result->index_stats)
+            {
+                /// We expect the first element to be an index with None type, which is used to estimate the total amount of data in the table.
+                /// Further index_stats are used to estimate amount of filtered data after applying the index.
+                if (ReadFromMergeTree::IndexType::None == idx_stat.type)
+                {
+                    total_parts = idx_stat.num_parts_after;
+                    total_granules = idx_stat.num_granules_after;
+                    continue;
+                }
+
+                is_filtered_by_index = is_filtered_by_index || (total_parts && idx_stat.num_parts_after < total_parts)
+                    || (total_granules && idx_stat.num_granules_after < total_granules);
+
+                if (is_filtered_by_index)
+                    break;
+            }
+        }
+        const bool has_filter = filter || has_prewhere_filter;
+
+        /// Runtime-filter transport may raise its hard exact-phase row cap to this estimate. Under an
+        /// unindexed plan-time filter, column statistics still produce a number, but it is only a guess
+        /// and would override the exact limit from the settings. So the transport gets no estimate and
+        /// keeps the settings geometry. Join-order estimation keeps using statistics.
+        if (for_runtime_filter_transport && has_filter && !is_filtered_by_index)
+        {
+            return RelationStats{
+                .estimated_rows = {},
+                .table_name = table_display_name,
+                .imprecise_estimate = true,
+                .source = RowEstimateSource::NoStatistics};
+        }
+
         const bool use_statistics = reading->getContext()->getSettingsRef()[Setting::use_statistics];
         if (use_statistics)
         {
             if (auto estimator = reading->getConditionSelectivityEstimator(reading->getAllColumnNames(), analyzed_result))
             {
-                auto prewhere_info = reading->getPrewhereInfo();
-                const ActionsDAG::Node * prewhere_node = prewhere_info
-                    ? static_cast<const ActionsDAG::Node *>(
-                          prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
-                    : nullptr;
                 auto relation_profile = estimator->estimateRelationProfile(reading->getStorageMetadata(), filter, prewhere_node);
                 RelationStats stats{
                     .estimated_rows = relation_profile.rows,
@@ -227,28 +300,6 @@ std::optional<RelationStats> estimateLeafRelationStats(QueryPlan::Node & node, c
                 .table_name = table_display_name,
                 .imprecise_estimate = true,
                 .source = RowEstimateSource::NoStatistics};
-
-        bool is_filtered_by_index = false;
-        UInt64 total_parts = 0;
-        UInt64 total_granules = 0;
-        for (const auto & idx_stat : analyzed_result->index_stats)
-        {
-            /// We expect the first element to be an index with None type, which is used to estimate the total amount of data in the table.
-            /// Further index_stats are used to estimate amount of filtered data after applying the index.
-            if (ReadFromMergeTree::IndexType::None == idx_stat.type)
-            {
-                total_parts = idx_stat.num_parts_after;
-                total_granules = idx_stat.num_granules_after;
-                continue;
-            }
-
-            is_filtered_by_index = is_filtered_by_index || (total_parts && idx_stat.num_parts_after < total_parts)
-                || (total_granules && idx_stat.num_granules_after < total_granules);
-
-            if (is_filtered_by_index)
-                break;
-        }
-        bool has_filter = filter || reading->getPrewhereInfo();
 
         /// If any conditions are pushed down to storage but not used in the index,
         /// we cannot precisely estimate the row count
@@ -283,6 +334,26 @@ std::optional<RelationStats> estimateLeafRelationStats(QueryPlan::Node & node, c
     {
         /// system.one always produces exactly one row — used to implement constant SELECTs like `SELECT 1`.
         return RelationStats{.estimated_rows = 1, .table_name = "system.one"};
+    }
+
+    /// A join that has already been optimized enters its parent's join graph as a single relation,
+    /// and the row count it settled on is the only estimate that relation has. It is a leaf of the
+    /// traversal: the single-child check in `estimateReadRowsCount`, which a join, having two children,
+    /// would never pass, comes after this.
+    if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step); join_step && join_step->isOptimized())
+    {
+        /// The origin of a sub-join's estimate is not tracked (`NoSource`), so the parent graph does not
+        /// re-report its tables as missing statistics; `imprecise_estimate` still records reliability.
+        /// The name is already a chain of the sub-joins with their own estimates, so mark it composite
+        /// to keep the parent from appending a second estimate to it.
+        /// A filter above the join (`filter`, from the `FilterStep` branch) is not accounted for, so like
+        /// a storage read with a filter it cannot use, the row count is then unknown.
+        return RelationStats{
+            .estimated_rows = filter ? std::nullopt : join_step->getResultRowsEstimation(),
+            .column_stats = join_step->getResultColumnStats(),
+            .table_name = join_step->getReadableRelationName(),
+            .imprecise_estimate = filter != nullptr || join_step->hasImpreciseEstimate(),
+            .composite = true};
     }
 
     return std::nullopt;
@@ -326,7 +397,9 @@ std::optional<RelationStats> estimateUnaryStepStats(const IQueryPlanStep & step,
         case UnaryStepStatsKind::LogicalExchange:
             /// Estimates must see through exchanges: they do not change row counts, and an
             /// already-distributed subtree would otherwise report unknown cardinality, degrading
-            /// broadcast-vs-shuffle and join order decisions.
+            /// broadcast-vs-shuffle and join order decisions. Runtime-filter transport sizes the
+            /// exact phase from this estimate, and the build filter sits below the join shuffle, so
+            /// the walk has to cross exchanges on every build.
             return input_stats;
         case UnaryStepStatsKind::PreservingTransform: return input_stats;
         case UnaryStepStatsKind::Unsupported: return std::nullopt;
@@ -334,7 +407,7 @@ std::optional<RelationStats> estimateUnaryStepStats(const IQueryPlanStep & step,
     return std::nullopt;
 }
 
-RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter)
+RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter, bool for_runtime_filter_transport)
 {
     enum class FrameKind : UInt8
     {
@@ -361,7 +434,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         auto & frame = stack.back();
         if (frame.kind == FrameKind::Unvisited)
         {
-            if (auto leaf_stats = estimateLeafRelationStats(*frame.node, frame.filter))
+            if (auto leaf_stats = estimateLeafRelationStats(*frame.node, frame.filter, for_runtime_filter_transport))
             {
                 result = std::move(*leaf_stats);
                 stack.pop_back();
@@ -379,22 +452,6 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                 if (frame.node->children.size() != 1)
                 {
                     result = {};
-                    stack.pop_back();
-                    continue;
-                }
-
-                /// Keep the optimized-join case after the unary-child check to preserve the previous
-                /// traversal behavior exactly; logical joins with another arity remain unsupported.
-                if (const auto * join_step = typeid_cast<const JoinStepLogical *>(frame.node->step.get());
-                    join_step && join_step->isOptimized())
-                {
-                    /// The origin of a sub-join's estimate is not tracked (`NoSource`), so the parent graph does not
-                    /// re-report its tables as missing statistics; `imprecise_estimate` still records reliability.
-                    result = RelationStats{
-                        .estimated_rows = join_step->getResultRowsEstimation(),
-                        .column_stats = join_step->getResultColumnStats(),
-                        .table_name = join_step->getReadableRelationName(),
-                        .imprecise_estimate = join_step->hasImpreciseEstimate()};
                     stack.pop_back();
                     continue;
                 }

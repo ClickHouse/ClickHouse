@@ -151,6 +151,11 @@ public:
         return variant_column_ptr->getDataAt(n);
     }
 
+    bool supportsGetDataAt() const override
+    {
+        return variant_column_ptr->supportsGetDataAt();
+    }
+
     void insertData(const char * pos, size_t length) override
     {
         variant_column_ptr->insertData(pos, length);
