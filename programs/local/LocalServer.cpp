@@ -1167,7 +1167,7 @@ bool queryFileReadsStdin(const String & path, const struct stat & stdin_stat, si
     }
     catch (...)
     {
-        /// Normal query-file execution reports missing or unreadable files.
+        /// Ok to skip failed preflight reads: normal query-file execution reports the error.
         return false;
     }
 
