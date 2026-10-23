@@ -372,8 +372,8 @@ struct StatisticsGeometry
     {
         if (!is_valid)
             return;
-        const UInt8 * pos = x.ptr;
-        const UInt8 * end = x.ptr + x.len;
+        const uint8_t * pos = x.ptr;
+        const uint8_t * end = x.ptr + x.len;
         if (!addGeometry(pos, end, /*record_type=*/ true, /*depth=*/ 0) || pos != end)
             is_valid = false;
     }
@@ -451,7 +451,7 @@ private:
     }
 
     template <typename T>
-    static bool read(const UInt8 *& pos, const UInt8 * end, bool little_endian, T & out)
+    static bool read(const uint8_t *& pos, const uint8_t * end, bool little_endian, T & out)
     {
         if (static_cast<size_t>(end - pos) < sizeof(T))
             return false;
@@ -461,7 +461,7 @@ private:
     }
 
     /// `dimensions`: 0 - XY, 1 - XYZ, 2 - XYM, 3 - XYZM.
-    bool addCoordinates(const UInt8 *& pos, const UInt8 * end, bool little_endian, UInt32 dimensions, UInt32 count)
+    bool addCoordinates(const uint8_t *& pos, const uint8_t * end, bool little_endian, UInt32 dimensions, UInt32 count)
     {
         const size_t num_values = (dimensions == 0) ? 2 : (dimensions == 3 ? 4 : 3);
         if (static_cast<UInt64>(end - pos) < static_cast<UInt64>(count) * num_values * sizeof(Float64))
@@ -495,17 +495,17 @@ private:
         max[i] = std::max(max[i], value);
     }
 
-    bool addGeometry(const UInt8 *& pos, const UInt8 * end, bool record_type, size_t depth)
+    bool addGeometry(const uint8_t *& pos, const uint8_t * end, bool record_type, size_t depth)
     {
         if (depth > 128)
             return false;
 
-        UInt8 endian;
+        UInt8 endian = 0;
         if (!read(pos, end, true, endian))
             return false;
         const bool little_endian = endian == 0x01;
 
-        UInt32 wkb_type;
+        UInt32 wkb_type = 0;
         if (!read(pos, end, little_endian, wkb_type))
             return false;
         const UInt32 geometry_type = wkb_type % 1000;
@@ -522,17 +522,17 @@ private:
                 return addCoordinates(pos, end, little_endian, dimensions, 1);
             case 2: /// LINESTRING
             {
-                UInt32 count;
+                UInt32 count = 0;
                 return read(pos, end, little_endian, count) && addCoordinates(pos, end, little_endian, dimensions, count);
             }
             case 3: /// POLYGON
             {
-                UInt32 num_rings;
+                UInt32 num_rings = 0;
                 if (!read(pos, end, little_endian, num_rings))
                     return false;
                 for (UInt32 i = 0; i < num_rings; ++i)
                 {
-                    UInt32 count;
+                    UInt32 count = 0;
                     if (!read(pos, end, little_endian, count) || !addCoordinates(pos, end, little_endian, dimensions, count))
                         return false;
                 }
@@ -540,7 +540,7 @@ private:
             }
             default: /// MULTIPOINT, MULTILINESTRING, MULTIPOLYGON, GEOMETRYCOLLECTION
             {
-                UInt32 num_parts;
+                UInt32 num_parts = 0;
                 if (!read(pos, end, little_endian, num_parts))
                     return false;
                 /// Only the type of the top-level geometry is recorded, e.g. `MULTIPOINT`, not `POINT`.
