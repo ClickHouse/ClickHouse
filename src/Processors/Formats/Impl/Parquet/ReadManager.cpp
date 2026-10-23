@@ -217,6 +217,17 @@ void ReadManager::shutdownTasks()
 ReadManager::~ReadManager()
 {
     shutdownTasks();
+
+    /// No task runs any more, so the row groups can be touched. A row group not read to the end has written
+    /// only some chunks of its columns to the columns cache, which are of no use without the rest.
+    try
+    {
+        reader.withdrawColumnsCacheWrites();
+    }
+    catch (...)
+    {
+        tryLogCurrentException("ParquetReadManager");
+    }
 }
 
 void ReadManager::cancel() noexcept
@@ -281,7 +292,8 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
     }
     else if (stage == ReadStage::Dictionary)
     {
-        if (!reader.applyBloomAndDictionaryFilters(row_group, pruningMemoryReservation(diff)))
+        /// Without a condition, the stage only decoded the dictionaries for `ColumnChunk::decode_dictionary_early`.
+        if (reader.bloom_filter_condition && !reader.applyBloomAndDictionaryFilters(row_group, pruningMemoryReservation(diff)))
         {
             ProfileEvents::increment(ProfileEvents::ParquetDictionaryFilterPrunedRowGroups);
             stage = ReadStage::Deliver; // skip the row group
@@ -321,7 +333,7 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
                 break;
             case ReadStage::Dictionary:
                 for (size_t i = 0; i < row_group.columns.size(); ++i)
-                    if (row_group.columns[i].use_dictionary_filter)
+                    if (row_group.columns[i].use_dictionary_filter || row_group.columns[i].decode_dictionary_early)
                         add_tasks.push_back(Task {
                             .stage = ReadStage::Dictionary,
                             .row_group_idx = row_group_idx, .column_idx = i});
@@ -1157,7 +1169,7 @@ void ReadManager::scheduleTask(Task task, bool is_first_in_group, MemoryUsageDif
             row_subgroup.filter.memory = MemoryUsageToken(row_subgroup.filter.rows_total, &diff);
 
         /// The columns of this step served from the columns cache have no task, but forming them
-        /// copies their rows (see `Reader::getOrFormOutputColumn`), and the copies are kept until
+        /// can copy their rows (see `Reader::getOrFormOutputColumn`), and the copies are kept until
         /// the subgroup is delivered. Account for them as for the columns that are decoded.
         if (!row_group.cached_columns.empty() && row_subgroup.filter.rows_pass > 0)
         {
@@ -1277,7 +1289,10 @@ void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
                 /// `Reader::applyBloomFilters` evaluates the condition.
                 break;
             case ReadStage::Dictionary:
-                if (column.use_dictionary_filter)
+                /// The dictionary is decoded here for the dictionary filter, or to estimate the size of the decoded
+                /// strings, see `ColumnChunk::decode_dictionary_early`. The same budget is used for both: if the
+                /// dictionary does not fit, the size of the strings stays unknown.
+                if (column.use_dictionary_filter || column.decode_dictionary_early)
                 {
                     /// Reserve the decoded dictionary's footprint live against the shared pruning-stage
                     /// budget so it is visible to every row group pruning in parallel the moment it is
