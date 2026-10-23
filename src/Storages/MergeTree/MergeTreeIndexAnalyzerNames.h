@@ -41,6 +41,9 @@ class MergeTreeIndexMinMax;
   * rewrites, or the index expression cannot be analyzed (best effort). Otherwise the result's
   * `column_names` is parallel to `index.column_names` and `expression` computes the same index
   * columns in the rewritten form.
+  *
+  * The result is cached by the key expression object and the query's changed settings and current
+  * database, because computing it runs the query tree passes.
   */
 AlternativeKeyExpressionPtr getAlternativeIndexExpression(const IndexDescription & index, const ContextPtr & context);
 

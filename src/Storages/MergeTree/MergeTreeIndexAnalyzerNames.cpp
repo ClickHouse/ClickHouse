@@ -6,6 +6,7 @@
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/TableNode.h>
 #include <Core/LogsLevel.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionActionsSettings.h>
@@ -24,7 +25,11 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Columns/ColumnConst.h>
 #include <Common/Exception.h>
+#include <Common/FieldVisitorHash.h>
+#include <Common/SipHash.h>
 #include <Common/logger_useful.h>
+
+#include <map>
 
 namespace DB
 {
@@ -163,7 +168,136 @@ NameSet getRequiredStorageColumns(const ActionsDAG::Node * output, const NameSet
 }
 
 /// The generic computation of the alternative (rewritten) form of a list of key expressions: it is
-/// the same for a skip index, a primary key and a partition key.
+/// the same for a skip index, a primary key and a partition key. Throws if the key expression
+/// cannot be analyzed.
+AlternativeKeyExpressionPtr computeAlternativeExpression(
+    const ASTPtr & expression_list_ast,
+    const ExpressionActionsPtr & expression,
+    const Names & column_names,
+    const std::function<void(StorageInMemoryMetadata &)> & register_key,
+    const ContextPtr & context)
+{
+    auto execution_context = Context::createCopy(context);
+
+    auto dag = buildRewrittenExpressionWithAnalyzer(expression_list_ast, expression, register_key, execution_context);
+    if (!dag)
+        return nullptr;
+
+    const auto & outputs = dag->getOutputs();
+    if (outputs.size() != column_names.size())
+        return nullptr;
+
+    /// A rewrite renames an expression, it does not change what it computes: the rewritten form
+    /// of every key column must have the same type and read the same storage columns. This
+    /// rejects the forms that the checks of the folded constants cannot see.
+    NameSet storage_columns;
+    for (const auto & column : expression->getRequiredColumns())
+        storage_columns.insert(column);
+
+    for (size_t i = 0; i < outputs.size(); ++i)
+    {
+        /// The key expression can have more outputs than the key columns (e.g. the sorting key
+        /// keeps its source columns), so look the key column up by name.
+        const auto * original_output = expression->getActionsDAG().tryFindInOutputs(column_names[i]);
+        if (!original_output
+            || !outputs[i]->result_type->equals(*original_output->result_type)
+            || getRequiredStorageColumns(outputs[i], storage_columns) != getRequiredStorageColumns(original_output, storage_columns))
+            return nullptr;
+    }
+
+    /// Re-clone the rewritten DAG with the same canonicalization index analysis (RPNBuilder over
+    /// `ActionsDAGWithInversionPushDown`) applies to the query filter expressions (e.g. of constant
+    /// names), so that every (sub)expression node is named the way the matching filter node is.
+    auto canonical_dag = cloneDAGForIndexAnalysisNames(outputs, context);
+    const auto & canonical_outputs = canonical_dag.getOutputs();
+
+    Names result(canonical_outputs.size());
+    bool has_difference = false;
+    for (size_t i = 0; i < canonical_outputs.size(); ++i)
+    {
+        result[i] = RPNBuilderTreeNode(canonical_outputs[i], context).getColumnName();
+        has_difference |= (result[i] != column_names[i]);
+    }
+
+    if (!has_difference)
+        return nullptr;
+
+    auto alternative_key = std::make_shared<AlternativeKeyExpression>();
+    alternative_key->column_names = std::move(result);
+    /// The expression carries the rewritten form of the key expressions; it is only searched
+    /// by index analysis, never executed.
+    alternative_key->expression = std::make_shared<ExpressionActions>(std::move(canonical_dag), ExpressionActionsSettings(execution_context));
+    return alternative_key;
+}
+
+/// The alternative form of a key is determined by the key expression and by the query's settings and
+/// current database, but computing it runs the query tree passes, which is noticeable for short
+/// queries. Cache it by the key expression object, which is rebuilt whenever the key or the types of
+/// its columns change, and a hash of the changed settings. The cache holds the key expression weakly,
+/// so an entry of a dropped key cannot be taken for another key allocated at the same address.
+class AlternativeExpressionCache
+{
+public:
+    static AlternativeExpressionCache & instance()
+    {
+        static AlternativeExpressionCache cache;
+        return cache;
+    }
+
+    template <typename Compute>
+    AlternativeKeyExpressionPtr getOrCompute(const ExpressionActionsPtr & expression, const ContextPtr & context, Compute && compute)
+    {
+        const Key key{expression.get(), getSettingsHash(context)};
+        {
+            std::lock_guard lock(mutex);
+            if (auto it = entries.find(key); it != entries.end())
+            {
+                if (it->second.expression.lock() == expression)
+                    return it->second.result;
+                entries.erase(it);
+            }
+        }
+
+        auto result = compute();
+
+        std::lock_guard lock(mutex);
+        if (entries.size() >= max_entries)
+        {
+            std::erase_if(entries, [](const auto & entry) { return entry.second.expression.expired(); });
+            if (entries.size() >= max_entries)
+                entries.clear();
+        }
+        entries.insert_or_assign(key, Entry{expression, result});
+        return result;
+    }
+
+private:
+    using Key = std::pair<const ExpressionActions *, UInt128>;
+
+    struct Entry
+    {
+        std::weak_ptr<ExpressionActions> expression;
+        AlternativeKeyExpressionPtr result;
+    };
+
+    static UInt128 getSettingsHash(const ContextPtr & context)
+    {
+        SipHash hash;
+        for (const auto & change : context->getSettingsRef().changes())
+        {
+            hash.update(change.name);
+            applyVisitor(FieldVisitorHash(hash), change.value);
+        }
+        hash.update(context->getCurrentDatabase());
+        return hash.get128();
+    }
+
+    static constexpr size_t max_entries = 10000;
+
+    std::mutex mutex;
+    std::map<Key, Entry> entries;
+};
+
 AlternativeKeyExpressionPtr getAlternativeExpression(
     const ASTPtr & expression_list_ast,
     const ExpressionActionsPtr & expression,
@@ -189,60 +323,13 @@ AlternativeKeyExpressionPtr getAlternativeExpression(
         return nullptr;
 
     /// The alternative names are a best-effort improvement of index analysis: on any failure
-    /// fall back to matching by the original names only.
+    /// fall back to matching by the original names only. A failure is not cached.
     try
     {
-        auto execution_context = Context::createCopy(context);
-
-        auto dag = buildRewrittenExpressionWithAnalyzer(expression_list_ast, expression, register_key, execution_context);
-        if (!dag)
-            return nullptr;
-
-        const auto & outputs = dag->getOutputs();
-        if (outputs.size() != column_names.size())
-            return nullptr;
-
-        /// A rewrite renames an expression, it does not change what it computes: the rewritten form
-        /// of every key column must have the same type and read the same storage columns. This
-        /// rejects the forms that the checks of the folded constants cannot see.
-        NameSet storage_columns;
-        for (const auto & column : expression->getRequiredColumns())
-            storage_columns.insert(column);
-
-        for (size_t i = 0; i < outputs.size(); ++i)
-        {
-            /// The key expression can have more outputs than the key columns (e.g. the sorting key
-            /// keeps its source columns), so look the key column up by name.
-            const auto * original_output = expression->getActionsDAG().tryFindInOutputs(column_names[i]);
-            if (!original_output
-                || !outputs[i]->result_type->equals(*original_output->result_type)
-                || getRequiredStorageColumns(outputs[i], storage_columns) != getRequiredStorageColumns(original_output, storage_columns))
-                return nullptr;
-        }
-
-        /// Re-clone the rewritten DAG with the same canonicalization index analysis (RPNBuilder over
-        /// `ActionsDAGWithInversionPushDown`) applies to the query filter expressions (e.g. of constant
-        /// names), so that every (sub)expression node is named the way the matching filter node is.
-        auto canonical_dag = cloneDAGForIndexAnalysisNames(outputs, context);
-        const auto & canonical_outputs = canonical_dag.getOutputs();
-
-        Names result(canonical_outputs.size());
-        bool has_difference = false;
-        for (size_t i = 0; i < canonical_outputs.size(); ++i)
-        {
-            result[i] = RPNBuilderTreeNode(canonical_outputs[i], context).getColumnName();
-            has_difference |= (result[i] != column_names[i]);
-        }
-
-        if (!has_difference)
-            return nullptr;
-
-        auto alternative_key = std::make_shared<AlternativeKeyExpression>();
-        alternative_key->column_names = std::move(result);
-        /// The expression carries the rewritten form of the key expressions; it is only searched
-        /// by index analysis, never executed.
-        alternative_key->expression = std::make_shared<ExpressionActions>(std::move(canonical_dag), ExpressionActionsSettings(execution_context));
-        return alternative_key;
+        return AlternativeExpressionCache::instance().getOrCompute(
+            expression,
+            context,
+            [&] { return computeAlternativeExpression(expression_list_ast, expression, column_names, register_key, context); });
     }
     catch (...)
     {
