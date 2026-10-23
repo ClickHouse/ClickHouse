@@ -894,8 +894,11 @@ static AddComparisonFilterResult addComparisonFilter(
 
     new_filter.converted_value = tryConvertToColumnType(new_filter.constant_node, expr_type);
     /// A string ordered against an `Enum` constant, also in a tuple element, compares by value, not by the converted name.
-    if (new_filter.function != ComparisonFunction::EQUALS && new_filter.function != ComparisonFunction::NOT_EQUALS
-        && comparesStringWithEnum(expr_type, new_filter.constant_node->getResultType()))
+    /// `=` and `!=` read a string constant as an `Enum` number under `input_format_tsv_enum_as_number`, the conversion above reads a name.
+    const bool is_equality = new_filter.function == ComparisonFunction::EQUALS || new_filter.function == ComparisonFunction::NOT_EQUALS;
+    const auto & constant_type = new_filter.constant_node->getResultType();
+    if (is_equality ? getFormatSettings(context).tsv.enum_as_number && comparesStringWithEnum(constant_type, expr_type)
+                    : comparesStringWithEnum(expr_type, constant_type))
         new_filter.converted_value.reset();
 
     /// Step 2: for integer columns, try boundary folding / float-literal rewriting.
