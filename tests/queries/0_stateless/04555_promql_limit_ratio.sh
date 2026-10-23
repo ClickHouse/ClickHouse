@@ -13,38 +13,16 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -m -q "
 DROP TABLE IF EXISTS ts;
-DROP TABLE IF EXISTS ts_data;
-DROP TABLE IF EXISTS ts_tags;
-DROP TABLE IF EXISTS ts_time_ranges;
-DROP TABLE IF EXISTS ts_metrics;
 
-CREATE TABLE ts_data (id UUID, timestamp DateTime64(3, 'UTC'), value Float64) ENGINE = MergeTree ORDER BY (id, timestamp);
-CREATE TABLE ts_tags (id UUID, metric_name LowCardinality(String), tags Map(LowCardinality(String), String))
-ENGINE = ReplacingMergeTree ORDER BY (metric_name, id);
-CREATE TABLE ts_time_ranges (
-    id UUID,
-    min_time SimpleAggregateFunction(min, DateTime64(3, 'UTC')),
-    max_time SimpleAggregateFunction(max, DateTime64(3, 'UTC')))
-ENGINE = AggregatingMergeTree ORDER BY id;
-CREATE TABLE ts_metrics (metric_family String, type String, unit String, help String) ENGINE = ReplacingMergeTree ORDER BY metric_family;
-CREATE TABLE ts ENGINE = TimeSeries DATA ts_data TAGS ts_tags TIME RANGES ts_time_ranges METRICS ts_metrics;
+CREATE TABLE ts (samples Array(Tuple(DateTime64(3, 'UTC'), Float64))) ENGINE = TimeSeries;
 
-INSERT INTO ts_tags VALUES
-    ('00000000-0000-0000-0000-000000000001', 'up', {'instance':'host1'}),
-    ('00000000-0000-0000-0000-000000000002', 'up', {'instance':'host2'}),
-    ('00000000-0000-0000-0000-000000000003', 'up', {'instance':'host3'}),
-    ('00000000-0000-0000-0000-000000000004', 'up', {'instance':'host4'}),
-    ('00000000-0000-0000-0000-000000000005', 'up', {'instance':'host5'}),
-    ('00000000-0000-0000-0000-000000000006', 'up', {'instance':'host6'});
-INSERT INTO ts_time_ranges SELECT id, toDateTime64(1699999000, 3, 'UTC'), toDateTime64(1700001000, 3, 'UTC') FROM ts_tags;
-
-INSERT INTO ts_data VALUES
-    ('00000000-0000-0000-0000-000000000001', toDateTime64(1700000000, 3, 'UTC'), 1),
-    ('00000000-0000-0000-0000-000000000002', toDateTime64(1700000000, 3, 'UTC'), 2),
-    ('00000000-0000-0000-0000-000000000003', toDateTime64(1700000000, 3, 'UTC'), 3),
-    ('00000000-0000-0000-0000-000000000004', toDateTime64(1700000000, 3, 'UTC'), 4),
-    ('00000000-0000-0000-0000-000000000005', toDateTime64(1700000000, 3, 'UTC'), 5),
-    ('00000000-0000-0000-0000-000000000006', toDateTime64(1700000000, 3, 'UTC'), 6);
+INSERT INTO ts (metric_name, tags, samples) VALUES
+    ('up', {'instance':'host1'}, [(toDateTime64(1700000000, 3, 'UTC'), 1)]),
+    ('up', {'instance':'host2'}, [(toDateTime64(1700000000, 3, 'UTC'), 2)]),
+    ('up', {'instance':'host3'}, [(toDateTime64(1700000000, 3, 'UTC'), 3)]),
+    ('up', {'instance':'host4'}, [(toDateTime64(1700000000, 3, 'UTC'), 4)]),
+    ('up', {'instance':'host5'}, [(toDateTime64(1700000000, 3, 'UTC'), 5)]),
+    ('up', {'instance':'host6'}, [(toDateTime64(1700000000, 3, 'UTC'), 6)]);
 "
 
 promql_instances()
@@ -110,7 +88,3 @@ $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 --dialect promql --p
     -q "limit_ratio(1, up)" | sort | head -1
 
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "DROP TABLE ts"
-$CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "DROP TABLE ts_data"
-$CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "DROP TABLE ts_tags"
-$CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "DROP TABLE ts_time_ranges"
-$CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "DROP TABLE ts_metrics"
