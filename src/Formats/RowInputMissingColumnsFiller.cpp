@@ -26,8 +26,7 @@ RowInputMissingColumnsFiller::RowInputMissingColumnsFiller(const NamesAndTypesLi
         const auto & name_and_type = *it;
         if (isArray(name_and_type.type))
         {
-            /// The `std::string_view` overload: the map keys must point into `names_and_types_`, not into `split`.
-            auto split = Nested::splitName(std::string_view(name_and_type.name));
+            auto split = Nested::splitName(std::string_view{name_and_type.name});
             if (!split.second.empty()) /// Is it really a column of Nested data structure?
                 nested_groups[split.first].push_back(i);
         }
@@ -42,8 +41,7 @@ RowInputMissingColumnsFiller::RowInputMissingColumnsFiller(const Names & names, 
     {
         if (isArray(types[i]))
         {
-            /// Same as above: the keys must point into `names`.
-            auto split = Nested::splitName(std::string_view(names[i]));
+            auto split = Nested::splitName(std::string_view{names[i]});
             if (!split.second.empty()) /// Is it really a column of Nested data structure?
                 nested_groups[split.first].push_back(i);
         }
