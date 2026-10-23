@@ -1423,23 +1423,45 @@ void LocalServer::beforeExecutingCommandLineQueries()
     /// Only expose the public alias when it cannot shadow a table in the query's
     /// effective database. Check per query because SET/USE and query-level
     /// SETTINGS database can change that database within the same -q argument.
-    local_connection.setBeforeQueryCallback([session_context, inferred_table, public_name](ContextPtr query_context)
+    /// Query contexts copy the session's external-table map when sendQuery starts.
+    /// Update both copies so a database collision cannot leave a stale alias in the current query.
+    /// Remember when the alias was visible: an unexpected removal is an explicit DROP,
+    /// whereas removal for a database collision must remain reversible.
+    local_connection.setBeforeQueryCallback(
+        [session_context, inferred_table, public_name, alias_was_exposed = false, alias_overridden_by_user = false]
+        (ContextMutablePtr query_context) mutable
     {
         auto database_name = query_context->getSettingsRef()[Setting::database].value;
         if (database_name.empty())
             database_name = query_context->getCurrentDatabase();
 
-        auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
-        const bool existing_database_table = database && database->isTableExist(public_name, query_context);
-        auto public_alias = session_context->findExternalTable(public_name);
+        const auto public_alias = session_context->findExternalTable(public_name);
+        if ((alias_was_exposed && !public_alias) || (public_alias && public_alias != inferred_table))
+            alias_overridden_by_user = true;
 
-        if (existing_database_table || (public_alias && public_alias != inferred_table))
+        /// An explicit DROP or a user-created temporary table retires the inferred public alias.
+        if (alias_overridden_by_user)
+            return;
+
+        auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+        const bool database_collision = database && database->isTableExist(public_name, query_context);
+        if (database_collision)
         {
             if (public_alias == inferred_table)
+            {
                 session_context->removeExternalTable(public_name);
+                query_context->removeExternalTable(public_name);
+            }
+            alias_was_exposed = false;
         }
         else if (!public_alias)
+        {
             session_context->addExternalTable(public_name, inferred_table);
+            query_context->addExternalTable(public_name, inferred_table);
+            alias_was_exposed = true;
+        }
+        else
+            alias_was_exposed = true;
     });
 
     /// The inferred table stays addressable by its private name for FROM-less

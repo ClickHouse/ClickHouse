@@ -242,6 +242,22 @@ $CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" \
     -q "SELECT sum(c1) FROM \`table\`; SELECT count() FROM \`table\` SETTINGS database='unrelated_01523'; SELECT sum(c1) FROM \`table\`" \
     < "$STDIN_DATA_FILE_NAME"
 
+# A USE switch must remove the alias from the active query context as well as the session.
+$CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" \
+    -q 'SELECT sum(c1) FROM `table`; USE unrelated_01523; SELECT count() FROM `table`; USE default; SELECT sum(c1) FROM `table`' \
+    < "$STDIN_DATA_FILE_NAME"
+
+# Dropping inferred input allows the user to replace its public temporary name.
+echo 'SELECT 99 FROM system.one;' > "$TEMP_SQL_FILE_NAME"
+$CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" \
+    -q 'CREATE TEMPORARY TABLE copied AS SELECT * FROM `table`; DROP TABLE `table`; CREATE TEMPORARY TABLE `table` AS SELECT * FROM copied; SELECT sum(c1) FROM `table`' \
+    < "$STDIN_DATA_FILE_NAME"
+
+# A replacement with different contents must not resurrect the inferred input alias.
+$CLICKHOUSE_LOCAL --async_insert=0 --queries-file="$TEMP_SQL_FILE_NAME" \
+    -q 'DROP TABLE `table`; CREATE TEMPORARY TABLE `table` (c1 UInt8) ENGINE=Memory; INSERT INTO `table` VALUES (9); SELECT sum(c1) FROM `table`' \
+    < "$STDIN_DATA_FILE_NAME"
+
 # A profile-supplied implicit-table setting must not be overwritten.
 printf '%s\n' "CREATE SETTINGS PROFILE profile_01523 SETTINGS implicit_table_at_top_level = '' READONLY;" \
     "SET profile = 'profile_01523';" > "$TEMP_SQL_FILE_NAME"
