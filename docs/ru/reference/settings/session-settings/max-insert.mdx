@@ -13,13 +13,13 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются из [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="max_insert_block_size">
-  ## max_insert_block_size
-</div>
+## max_insert_block_size {#max_insert_block_size}
 
 **Псевдонимы**: `max_insert_block_size_rows`
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1048449" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "1048449"},{"label": "Добавлен псевдоним `max_insert_block_size_rows`."}]}]} />
 
 Максимальный размер блоков (по числу строк), формируемых для вставки в таблицу.
 
@@ -44,9 +44,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 * Положительное целое число.
 
-<div id="max_insert_block_size_bytes">
-  ## max_insert_block_size_bytes
-</div>
+## max_insert_block_size_bytes {#max_insert_block_size_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -61,9 +59,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * Положительное целое число.
 * 0 — настройка не участвует в формировании блоков.
 
-<div id="max_insert_delayed_streams_for_parallel_write">
-  ## max_insert_delayed_streams_for_parallel_write
-</div>
+## max_insert_delayed_streams_for_parallel_write {#max_insert_delayed_streams_for_parallel_write}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -71,9 +67,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Значение по умолчанию в Cloud: `50`.
 
-<div id="max_insert_threads">
-  ## max_insert_threads
-</div>
+## max_insert_threads {#max_insert_threads}
 
 <SettingsInfoBlock type="MaxThreads" default_value="auto(N)" />
 
@@ -106,9 +100,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 Сторона записи распараллеливается, только когда это безопасно; в противном случае она остаётся однопоточной, и эта настройка на неё не влияет. В частности, запись остаётся однопоточной, если включён [`use_strict_insert_block_limits`](/ru/reference/settings/session-settings/use#use_strict_insert_block_limits), целевая таблица (или таблица, в которую она перенаправляет данные) выполняет дедупликацию вставляемых блоков и для запроса включена дедупликация вставок (см. [`deduplicate_insert`](/ru/reference/settings/session-settings/deduplicate-insert#deduplicate_insert)), если у пункта назначения есть зависимые materialized view — включая представления таблицы, в которую пункт назначения перенаправляет данные, например за `Alias`, — (если только не включён [`parallel_view_processing`](/ru/reference/settings/session-settings/parallel#parallel_view_processing) и в цепочках зависимых представлений отсутствуют риски дедупликации: дедупликация в представлениях отключена ([`deduplicate_blocks_in_dependent_materialized_views`](/ru/reference/settings/session-settings/other#deduplicate_blocks_in_dependent_materialized_views)) или ни один путь зависимых представлений не может выполнять дедупликацию), а также всегда для пунктов назначения `Buffer` и `Distributed`. `Buffer` сбрасывает данные в собственном контексте, а `Distributed` пересылает запись на удалённый шард (который сам может буферизовать данные), поэтому настройки дедупликации этого запроса не управляют конечной записью, и она остаётся однопоточной независимо от них. Непараллельная вставка с кворумом ([`insert_quorum`](/ru/reference/settings/session-settings/insert-quorum#insert_quorum) равно `2` или больше либо `'auto'`, а [`insert_quorum_parallel`](/ru/reference/settings/session-settings/insert-quorum#insert_quorum_parallel) отключён) также остаётся однопоточной, поскольку допускает только одну незавершённую кворумную часть на таблицу.
 Более высокие значения приводят к большему использованию памяти.
 
-<div id="max_insert_threads_min_free_memory_per_thread">
-  ## max_insert_threads_min_free_memory_per_thread
-</div>
+## max_insert_threads_min_free_memory_per_thread {#max_insert_threads_min_free_memory_per_thread}
 
 <SettingsInfoBlock type="UInt64" default_value="4294967296" />
 
