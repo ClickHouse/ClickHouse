@@ -83,8 +83,9 @@ bool hasLinks(const IOSchedulingSettings & io_scheduling)
     return io_scheduling.read_resource_link || io_scheduling.write_resource_link;
 }
 
-void countBoundCachedReader(const IOSchedulingSettings & io_scheduling, bool bind)
+void countBoundCachedReader([[maybe_unused]] const IOSchedulingSettings & io_scheduling, [[maybe_unused]] bool bind)
 {
+#ifdef DEBUG_OR_SANITIZER_BUILD
     for (const auto * link : {&io_scheduling.read_resource_link, &io_scheduling.write_resource_link})
     {
         if (!link->scheduling_context)
@@ -94,6 +95,7 @@ void countBoundCachedReader(const IOSchedulingSettings & io_scheduling, bool bin
         else
             link->scheduling_context->bound_cached_readers.fetch_sub(1);
     }
+#endif
 }
 
 }

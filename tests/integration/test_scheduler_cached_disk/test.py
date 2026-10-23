@@ -96,6 +96,15 @@ def test_background_download_after_query_end():
     )
     node.query("truncate table data_bg")
     node.query("insert into data_bg select randomString(1000) from numbers(16000)")
+    # Without the background download the query is the last holder, so only its own `complete` unbinds the reader.
+    node.query("system drop filesystem cache")
+    node.query(
+        "select s from data_bg limit 1 format Null settings workload = 'bg_download', max_threads = 1,"
+        " filesystem_cache_allow_background_download = 0",
+        query_id="bg_download_off_select",
+    )
+    wait_query_end("bg_download_off_select")
+    assert node.query("select 1").strip() == "1"
     node.query("system drop filesystem cache")
     node.query(
         "select s from data_bg limit 1 format Null settings workload = 'bg_download', max_threads = 1,"

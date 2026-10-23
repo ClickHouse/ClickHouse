@@ -2140,6 +2140,11 @@ void CachedOnDiskReadBufferFromFile::setReadUntilEnd()
 
 void CachedOnDiskReadBufferFromFile::setIOSchedulingSettings(const IOSchedulingSettings & io_scheduling)
 {
+    if (state && state->buf)
+        state->buf->setIOSchedulingSettings({});
+    if (info.remote_file_reader)
+        info.remote_file_reader->setIOSchedulingSettings({});
+
     /// Completes the file segments and destroys the readers while the previous links are valid.
     file_offset_of_buffer_end = getPosition();
     info.reset();
