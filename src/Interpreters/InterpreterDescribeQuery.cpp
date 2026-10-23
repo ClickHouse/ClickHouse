@@ -1,5 +1,4 @@
 #include <Storages/IStorage.h>
-#include <Storages/StorageAlias.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/BlockIO.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -242,10 +241,6 @@ void InterpreterDescribeQuery::fillColumnsFromTable(const ASTTableExpression & t
     query_context->checkAccess(AccessType::SHOW_COLUMNS, table_id);
 
     auto table = DatabaseCatalog::instance().getTable(table_id, query_context);
-
-    if (const auto * alias = table->as<StorageAlias>();
-        alias && !alias->isTargetTableGranted(query_context, AccessType::SHOW_COLUMNS, {}))
-        throw Exception(ErrorCodes::ACCESS_DENIED, "Not enough privileges to describe metadata exposed by {}", table_id.getNameForLogs());
 
     if (auto * storage_view = table->as<StorageView>())
     {

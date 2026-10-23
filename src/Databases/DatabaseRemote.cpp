@@ -19,7 +19,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
-#include <Storages/StorageAlias.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/getStructureOfRemoteTable.h>
@@ -579,14 +578,6 @@ ColumnsDescription DatabaseRemote::fetchTableStructure(
                         {
                             local_context->checkAccess(AccessType::SHOW_COLUMNS, remote_database, table_name);
 
-                            /// An `Alias` reports its target's columns, so reading them needs the
-                            /// privilege on the target that describing the target requires.
-                            if (const auto * alias = storage->as<StorageAlias>();
-                                alias && !alias->isTargetTableGranted(local_context, AccessType::SHOW_COLUMNS, {}))
-                                throw Exception(
-                                    ErrorCodes::ACCESS_DENIED,
-                                    "Not enough privileges to describe metadata exposed by {}",
-                                    StorageID{remote_database, table_name}.getNameForLogs());
                         }
                         auto metadata_snapshot = storage->getInMemoryMetadataPtr(local_context, /* bypass_metadata_cache = */ false);
                         auto columns = metadata_snapshot->getColumns();

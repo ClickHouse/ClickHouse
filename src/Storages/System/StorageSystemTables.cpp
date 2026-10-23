@@ -34,7 +34,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Storages/StorageAlias.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageView.h>
@@ -482,17 +481,6 @@ protected:
                         if (filter_by_table_name && !filter_by_table_name(table.first))
                             continue;
 
-                        const auto * alias = table.second->as<StorageAlias>();
-                        const bool can_expose_metadata
-                            = !alias || alias->isTargetTableGranted(context, AccessType::SHOW_TABLES, {});
-                        const bool can_show_columns_temp
-                            = !alias || alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, {});
-                        const bool can_expose_declared_definition
-                            = !alias || alias->isDeclaredTargetGranted(context, AccessType::SHOW_TABLES, {});
-                        /// As for a persistent alias below, the CREATE query is checked against the declared
-                        /// target rather than the whole chain.
-                        const bool can_show_declared_columns_temp
-                            = !alias || alias->isDeclaredTargetGranted(context, AccessType::SHOW_COLUMNS, {});
                         size_t src_index = 0;
                         size_t res_index = 0;
 
@@ -545,7 +533,7 @@ protected:
                         if (columns_mask[src_index++])
                         {
                             auto temp_db = DatabaseCatalog::instance().getDatabaseForTemporaryTables();
-                            ASTPtr ast = can_expose_declared_definition && can_show_declared_columns_temp && temp_db
+                            ASTPtr ast = temp_db
                                 ? temp_db->tryGetCreateTableQuery(table.second->getStorageID().getTableName(), context)
                                 : nullptr;
                             res_columns[res_index++]->insert(ast ? format({context, *ast}) : "");
@@ -563,15 +551,12 @@ protected:
                             if (src_index == 14 && columns_mask[src_index])
                             {
                                 // parameterized view parameters
-                                fillParametralizedViewData(
-                                    res_columns, can_expose_metadata && can_show_columns_temp ? table.second : nullptr, res_index);
+                                fillParametralizedViewData(res_columns, table.second, res_index);
                             }
                             // skipping_indices_types
                             else if (src_index == 20 && columns_mask[src_index])
                             {
-                                const auto metadata_snapshot = can_expose_metadata && can_show_columns_temp
-                                    ? table.second->getInMemoryMetadataPtr(context, false)
-                                    : nullptr;
+                                const auto metadata_snapshot = table.second->getInMemoryMetadataPtr(context, false);
                                 fillSkippingIndicesTypes(res_columns, metadata_snapshot, res_index);
                             }
                             else if (src_index == 22 && columns_mask[src_index])
@@ -669,24 +654,15 @@ protected:
                 /// whole system.tables scan. Every metadata-dependent column below is guarded on
                 /// `table` being non-null.
 
-                const auto * alias = table ? table->as<StorageAlias>() : nullptr;
-                const bool can_expose_metadata
-                    = table && (!alias || alias->isTargetTableGranted(context, AccessType::SHOW_TABLES, {}));
-                const bool can_expose_declared_definition
-                    = table && (!alias || alias->isDeclaredTargetGranted(context, AccessType::SHOW_TABLES, {}));
+                const bool can_expose_metadata = table != nullptr;
+                const bool can_expose_declared_definition = table != nullptr;
 
                 /// A table's schema -- its columns, their types, and any expression, index or view
                 /// parameter defined over them -- is `SHOW COLUMNS`-grade information, which is the
                 /// privilege `DESCRIBE` and `SHOW CREATE TABLE` require for the same object.
                 const bool can_show_columns = !need_to_check_access_for_columns
-                    || (access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name)
-                        && (!alias || alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, {})));
-
-                /// The CREATE query is the alias's own stored definition, which may carry its declared
-                /// target's columns inlined, so the declared target is checked rather than the whole chain.
-                const bool can_show_declared_columns = !need_to_check_access_for_columns
-                    || (access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name)
-                        && (!alias || alias->isDeclaredTargetGranted(context, AccessType::SHOW_COLUMNS, {})));
+                    || access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name);
+                const bool can_show_declared_columns = can_show_columns;
 
                 /// `SHOW CREATE DICTIONARY` is authorized by `SHOW DICTIONARIES`, which `SHOW COLUMNS` does not
                 /// imply, so on a row visible through `SHOW TABLES` that privilege also makes a dictionary's CREATE

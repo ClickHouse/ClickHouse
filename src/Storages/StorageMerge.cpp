@@ -325,15 +325,6 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTablesImpl(
 
         access->checkAccess(AccessType::SHOW_COLUMNS, storage_id.database_name, storage_id.table_name);
 
-        /// An `Alias` reports its target's columns, so reading them needs the same privilege on the
-        /// target that a `DESCRIBE` of the target requires.
-        if (const auto * alias = t->template as<StorageAlias>();
-            alias && !alias->isTargetTableGranted(query_context, AccessType::SHOW_COLUMNS, {}))
-            throw Exception(
-                ErrorCodes::ACCESS_DENIED,
-                "Not enough privileges to access the table that {} points to",
-                storage_id.getNameForLogs());
-
         /// Otherwise a data lake table reports the schema of the snapshot pinned by its last direct query,
         /// and a lazy stand-in that is not loaded yet reports the columns of its `CREATE` query.
         resolveStorageProxyLoading(t)->updateExternalDynamicMetadataIfExists(query_context);
@@ -672,15 +663,9 @@ StorageMetadataHandle StorageMerge::getInMemoryMetadataPtr(ContextPtr query_cont
     try
     {
         const auto & access = query_context->getAccess();
-        if (auto first_table = traverseTablesUntil([&access, &query_context](auto && table)
+        if (auto first_table = traverseTablesUntil([&access](auto && table)
         {
             if (!table)
-                return false;
-
-            /// An `Alias` reports its target's virtual columns, so inheriting them needs the
-            /// privilege on the target that reading the target's columns requires.
-            if (const auto * alias = table->template as<StorageAlias>();
-                alias && !alias->isTargetTableGranted(query_context, AccessType::SHOW_COLUMNS, {}))
                 return false;
 
             auto id = table->getStorageID();
