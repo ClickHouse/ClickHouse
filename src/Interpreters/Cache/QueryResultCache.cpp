@@ -837,6 +837,11 @@ void QueryResultCacheWriter::buffer(Chunk && chunk, ChunkType chunk_type)
     }
 }
 
+void QueryResultCacheWriter::markResultIncomplete()
+{
+    result_is_incomplete = true;
+}
+
 void QueryResultCacheWriter::finalizeWrite()
 {
     if (skip_insert)
@@ -853,6 +858,12 @@ void QueryResultCacheWriter::finalizeWrite()
     std::lock_guard lock(mutex);
 
     /// Check some reasons why the entry must not be cached:
+
+    if (result_is_incomplete)
+    {
+        LOG_TRACE(logger, "Skipped insert because the query result is incomplete (a consumer stopped reading it before the end), query: {}", doubleQuoteString(key.query_string));
+        return;
+    }
 
     if (auto query_runtime = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - query_start_time); query_runtime < min_query_runtime)
     {
