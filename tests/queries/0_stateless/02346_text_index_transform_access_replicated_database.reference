@@ -1,4 +1,5 @@
 1. ALTER ADD INDEX is denied.
 2. CREATE TABLE is denied.
 3. ALTER ADD INDEX ON CLUSTER is denied.
-4. Accepted with the privilege.
+4. CREATE TABLE ON CLUSTER is denied on the legacy entry-format path.
+5. Accepted with the privilege.

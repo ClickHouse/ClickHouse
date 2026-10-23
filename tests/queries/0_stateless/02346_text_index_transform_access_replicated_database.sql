@@ -37,7 +37,23 @@ CREATE TABLE tab_on_cluster (id UInt64, val String) ENGINE = MergeTree ORDER BY 
 ALTER TABLE tab_on_cluster ON CLUSTER test_shard_localhost
     ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = demangle(val)) GRANULARITY 1; -- { serverError FUNCTION_NOT_ALLOWED }
 
-SELECT '4. Accepted with the privilege.';
+SELECT '4. CREATE TABLE ON CLUSTER is denied on the legacy entry-format path.';
+
+-- Below NORMALIZE_CREATE_ON_INITIATOR_VERSION the query is shipped as written and normalized by the
+-- worker, which runs it with no user, so a separate check on the initiator covers that branch.
+SET distributed_ddl_entry_format_version = 2;
+
+CREATE TABLE tab_on_cluster_legacy ON CLUSTER test_shard_localhost
+(
+    id UInt64,
+    val String,
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = demangle(val))
+)
+ENGINE = MergeTree ORDER BY id; -- { serverError FUNCTION_NOT_ALLOWED }
+
+SET distributed_ddl_entry_format_version = DEFAULT;
+
+SELECT '5. Accepted with the privilege.';
 
 SET allow_introspection_functions = 1;
 

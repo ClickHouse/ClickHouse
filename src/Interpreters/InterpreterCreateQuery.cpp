@@ -43,6 +43,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
@@ -3973,6 +3974,18 @@ BlockIO InterpreterCreateQuery::execute()
             if (is_create_database && create.storage && create.storage->engine
                 && create.storage->engine->name == "Backup" && create.storage->engine->arguments)
                 DatabaseBackup::parseAndAuthorizeLocator(create.storage->engine->arguments->children, getContext());
+
+            /// The normalized path authorizes these in `getTablePropertiesAndNormalizeCreateQuery`,
+            /// which this branch returns before reaching. Indices inherited from `AS src` are
+            /// materialized on the worker and are not in this query, so they are not covered.
+            if (create.columns_list && create.columns_list->indices)
+            {
+                for (const auto & index : create.columns_list->indices->children)
+                {
+                    if (const auto * declaration = index->as<ASTIndexDeclaration>())
+                        checkTextIndexPreAndPostProcessorPermissions(*declaration, getContext());
+                }
+            }
 
             /// this branch returns before setEngine, and the worker builds AS src with no user, so
             /// check the inherited definition here, on a copy of the query
