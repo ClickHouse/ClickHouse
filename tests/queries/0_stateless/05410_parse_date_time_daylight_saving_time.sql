@@ -40,3 +40,12 @@ SELECT parseDateTimeInJodaSyntax('2026-10-25 02:30:00 Europe/Berlin', 'yyyy-MM-d
 SELECT parseDateTimeInJodaSyntax('2026-10-25 02:30:00 +0200 Europe/Berlin', 'yyyy-MM-dd HH:mm:ss Z z', 'UTC');
 SELECT parseDateTimeInJodaSyntax('2026-10-25 02:30:00 +0100 Europe/Berlin', 'yyyy-MM-dd HH:mm:ss Z z', 'UTC');
 SELECT parseDateTime64InJodaSyntax('2026-10-25 02:30:00.5 +0100 Europe/Berlin', 'yyyy-MM-dd HH:mm:ss.S Z z', 'UTC');
+
+-- A time zone name in the string builds the time once more, which added the 12 hours of PM twice.
+SELECT 'PM with a time zone name in the string';
+SELECT parseDateTimeInJodaSyntax('2026-10-25 01:30:00 PM Europe/Berlin', 'yyyy-MM-dd hh:mm:ss a z', 'UTC');
+SELECT parseDateTimeInJodaSyntax('2026-10-25 12:30:00 PM Europe/Berlin', 'yyyy-MM-dd hh:mm:ss a z', 'UTC');
+SELECT parseDateTimeInJodaSyntax('2026-10-25 12:30:00 AM Europe/Berlin', 'yyyy-MM-dd hh:mm:ss a z', 'UTC');
+SELECT parseDateTime64InJodaSyntax('2026-10-25 01:30:00.5 PM Europe/Berlin', 'yyyy-MM-dd hh:mm:ss.S a z', 'UTC');
+SELECT parseDateTimeInJodaSyntax('2026-03-10 01:30:00 PM UTC', 'yyyy-MM-dd hh:mm:ss a z', 'UTC');
+SELECT parseDateTimeInJodaSyntax('2026-10-25 01:30:00 PM +0100 Europe/Berlin', 'yyyy-MM-dd hh:mm:ss a Z z', 'UTC');

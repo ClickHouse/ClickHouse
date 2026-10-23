@@ -571,8 +571,10 @@ namespace
         [[nodiscard]]
         Int64OrError buildDateTime(const DateLUTImpl & time_zone)
         {
-            if (is_hour_of_half_day && !is_am)
-                hour += 12;
+            /// The hour of a half-day clock is stored in [0, 11], and PM adds 12 hours to it. They are added to a copy: for a
+            /// time zone name in the string (`z` in Joda syntax), this function also runs before the final conversion, so
+            /// adding them to `hour` itself added them twice.
+            const Int32 hour_of_day = is_hour_of_half_day && !is_am ? hour + 12 : hour;
 
             // Convert the parsed date/time into a timestamp.
             Int32 days_since_epoch = 0;
@@ -583,7 +585,7 @@ namespace
             else
                 ASSIGN_RESULT_OR_RETURN_ERROR(days_since_epoch, daysSinceEpochFromDate(year, month, day))
 
-            Int64 seconds_since_epoch = days_since_epoch * 86400UZ + hour * 3600UZ + minute * 60UZ + second;
+            Int64 seconds_since_epoch = days_since_epoch * 86400UZ + hour_of_day * 3600UZ + minute * 60UZ + second;
 
             /// Time zone is not specified, use local time zone
             if (!has_time_zone_offset)
@@ -606,7 +608,7 @@ namespace
                         local_year,
                         local_month,
                         local_day,
-                        static_cast<UInt8>(hour),
+                        static_cast<UInt8>(hour_of_day),
                         static_cast<UInt8>(minute),
                         static_cast<UInt8>(second));
             }
