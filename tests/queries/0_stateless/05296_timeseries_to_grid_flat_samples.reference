@@ -20,6 +20,8 @@ serialized unsorted state (1):
 1
 serialized big state (1):
 1
+repeated series (1 1 1):
+1	1	1
 state layout:
 06000A000000000000000200000000000000B0AD010000000000000000000000F03FE0220200000000000000000000000040
 corrupted states:

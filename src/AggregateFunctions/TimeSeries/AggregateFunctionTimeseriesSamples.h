@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <bit>
 #include <iterator>
+#include <limits>
 #include <span>
 #include <utility>
 
@@ -304,7 +305,8 @@ private:
     static void sortSamples(Sample * first, Sample * last)
     {
         const size_t size = last - first;
-        if (size < MIN_PARTITION_SORT_SIZE)
+        /// The group offsets below are 32-bit, so a tail of 2^32 samples or more is comparison-sorted.
+        if (size < MIN_PARTITION_SORT_SIZE || size > std::numeric_limits<UInt32>::max())
         {
             ::sort(first, last, lessByTimestamp);
             return;
@@ -436,8 +438,12 @@ private:
     /// An unsorted buffer is sorted before it grows, so duplicate timestamps collapse instead of taking memory.
     void compactIfFull(size_t count)
     {
-        if (!isSorted() && buffer.size() + count > buffer.capacity())
-            sort();
+        if (isSorted() || buffer.size() + count <= buffer.capacity())
+            return;
+        sort();
+        /// Grow when sorting freed less than half of the buffer, so a full sort happens at most once per half-buffer of new samples.
+        if (buffer.size() + count > buffer.capacity() / 2)
+            buffer.reserve(std::max(buffer.capacity() * 2, buffer.size() + count));
     }
 
     /// The samples: sorted by timestamp and deduplicated, except for an unsorted tail from `unsorted_begin`.

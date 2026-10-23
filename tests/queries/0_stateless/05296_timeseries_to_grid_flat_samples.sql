@@ -97,6 +97,17 @@ SELECT finalizeAggregation(CAST(CAST(timeSeriesRateToGridState(0, 70000, 1000, 1
     = timeSeriesRateToGrid(0, 70000, 1000, 1000)(toDateTime64(number, 3, 'UTC'), number::Float64)
 FROM numbers(70000);
 
+-- The same series sent again and again, with as many distinct timestamps as just below, at and just above a buffer capacity.
+SELECT 'repeated series (1 1 1):';
+SELECT
+    (SELECT timeSeriesRateToGrid(1000, 5100, 1, 60)(toDateTime(1000 + number % 4095), toFloat64(number % 4095)) FROM numbers(4095 * 20))
+        = (SELECT timeSeriesRateToGrid(1000, 5100, 1, 60)(toDateTime(1000 + number), toFloat64(number)) FROM numbers(4095)),
+    (SELECT timeSeriesRateToGrid(1000, 5100, 1, 60)(toDateTime(1000 + number % 4096), toFloat64(number % 4096)) FROM numbers(4096 * 20))
+        = (SELECT timeSeriesRateToGrid(1000, 5100, 1, 60)(toDateTime(1000 + number), toFloat64(number)) FROM numbers(4096)),
+    (SELECT timeSeriesRateToGrid(1000, 5100, 1, 60)(toDateTime(1000 + number % 4097), toFloat64(number % 4097)) FROM numbers(4097 * 20))
+        = (SELECT timeSeriesRateToGrid(1000, 5100, 1, 60)(toDateTime(1000 + number), toFloat64(number)) FROM numbers(4097))
+SETTINGS max_threads = 1;
+
 -- Format version 6: the version, the bucket count, the number of samples and the samples in timestamp order.
 SELECT 'state layout:';
 SELECT hex(CAST(timeSeriesRateToGridState(100, 200, 20, 100)(arrayMap(x -> toDateTime64(x, 3, 'UTC'), [140, 110]), [2., 1]) AS String));
