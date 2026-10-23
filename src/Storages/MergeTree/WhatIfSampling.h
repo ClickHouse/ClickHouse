@@ -20,7 +20,7 @@ size_t samplingStep(UInt64 rows_to_scan, size_t units, UInt64 budget, UInt64 max
 std::vector<size_t> sampleUnits(size_t units, size_t step, const String & part_name);
 
 /// the standard error of the mean of a systematic sample of at least two values, from the differences of successive values
-/// with `weights` (one for each value) the mean is weighted, and each difference counts with the mean weight of its two values
+/// with `weights` (one for each value) the mean is weighted, and the differences are of each weight times the distance of its value from the mean
 double standardErrorOfSample(const std::vector<double> & values, const std::vector<double> & weights = {});
 
 }
