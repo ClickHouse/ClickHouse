@@ -626,9 +626,9 @@ public:
 
     /// Non-destructively merges the live aggregation state of one participant of a parallel
     /// aggregation into `snapshot`, for query result previews (the `query_result_previews`
-    /// setting). The participant's states are merged into states freshly created in the snapshot's
-    /// own arena - `IAggregateFunction::merge` only reads the source state - so the live state
-    /// continues to aggregate unaffected. Only single-level variants and `without_key` are
+    /// setting). The participant's states are copied and merged into states freshly created in the
+    /// snapshot's own arena, so the live state continues to aggregate unaffected, and the snapshot
+    /// does not share any storage with it. Only single-level variants and `without_key` are
     /// supported; the caller must ensure exclusive access to `participant` for the duration of the
     /// call and keep the state small (the merge is linear in its size).
     ///
@@ -1399,18 +1399,30 @@ private:
     convertToBlockImplNotFinal(Method & method, Table & data, Arenas & aggregates_pools, size_t rows, bool return_single_block, size_t max_rows_per_block) const;
 
     /// See `mergeIntoQueryResultPreviewSnapshot`.
+    struct QueryResultPreviewStateCopy
+    {
+        Arena * arena;
+        /// Room for one temporary set of aggregate states, in `arena`.
+        AggregateDataPtr scratch;
+        String serialized;
+    };
+
+    /// Merges the states of `src` into `dst` through a copy that does not share any storage with `src`.
+    void mergeStatesIntoQueryResultPreviewSnapshot(AggregateDataPtr dst, ConstAggregateDataPtr src, QueryResultPreviewStateCopy & copy) const;
+
     template <typename Method, typename Table>
     requires MapAggregationMethod<Method>
-    void mergeIntoQueryResultPreviewSnapshotImpl(Table & table_src, Table & table_dst, Arena * arena) const;
+    void mergeIntoQueryResultPreviewSnapshotImpl(Table & table_src, Table & table_dst, QueryResultPreviewStateCopy & copy) const;
 
     template <typename Method, typename Table>
     requires SetAggregationMethod<Method>
-    void mergeIntoQueryResultPreviewSnapshotImpl(Table & table_src, Table & table_dst, Arena * arena) const;
+    void mergeIntoQueryResultPreviewSnapshotImpl(Table & table_src, Table & table_dst, QueryResultPreviewStateCopy & copy) const;
 
     template <typename Method, typename Table>
-    void mergeNullKeyIntoQueryResultPreviewSnapshot(Table & table_src, Table & table_dst, Arena * arena) const;
+    void mergeNullKeyIntoQueryResultPreviewSnapshot(Table & table_src, Table & table_dst, QueryResultPreviewStateCopy & copy) const;
 
-    void mergeWithoutKeyIntoQueryResultPreviewSnapshot(AggregatedDataVariants & participant, AggregatedDataVariants & snapshot) const;
+    void mergeWithoutKeyIntoQueryResultPreviewSnapshot(
+        AggregatedDataVariants & participant, AggregatedDataVariants & snapshot, QueryResultPreviewStateCopy & copy) const;
 
     /// `untruncated_keys`, when non-null and the bucket goes through a conversion that materializes
     /// only some of its groups (the Top-K one or the HAVING pre-filter), receives the byte size all

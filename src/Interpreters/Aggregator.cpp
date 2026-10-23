@@ -27,6 +27,8 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/Operators.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 #include <Interpreters/AggregationUtils.h>
 #include <Interpreters/AdaptiveAggregationImpl.h>
 #include <Interpreters/Aggregator.h>
@@ -4540,8 +4542,46 @@ Aggregator::convertToBlockImplNotFinal(Method & method, Table & data, Arenas & a
     return res_chunks;
 }
 
+void Aggregator::mergeStatesIntoQueryResultPreviewSnapshot(
+    AggregateDataPtr dst, ConstAggregateDataPtr src, QueryResultPreviewStateCopy & copy) const
+{
+    /// `IAggregateFunction::merge` may share the storage of the source state instead of copying
+    /// it: an empty `uniqExact` adopts a large two-level set of the source. The participant keeps
+    /// writing into its states once its lock is released, so the snapshot must not hold on to their
+    /// storage. Each state is first copied through its serialization into a temporary state, which
+    /// is solely owned by the snapshot, and merged from there.
+    for (size_t i = 0; i < params.aggregates_size; ++i)
+    {
+        const auto & function = aggregate_functions[i];
+        const size_t offset = offsets_of_aggregate_states[i];
+
+        copy.serialized.clear();
+        {
+            WriteBufferFromString out(copy.serialized);
+            function->serialize(src + offset, out);
+            out.finalize();
+        }
+
+        AggregateDataPtr tmp = copy.scratch + offset;
+        function->create(tmp);
+        try
+        {
+            ReadBufferFromString in(copy.serialized);
+            function->deserialize(tmp, in, std::nullopt, copy.arena);
+            function->merge(dst + offset, tmp, copy.arena);
+        }
+        catch (...)
+        {
+            function->destroy(tmp);
+            throw;
+        }
+        function->destroy(tmp);
+    }
+}
+
 template <typename Method, typename Table>
-void NO_INLINE Aggregator::mergeNullKeyIntoQueryResultPreviewSnapshot(Table & table_src, Table & table_dst, Arena * arena) const
+void NO_INLINE Aggregator::mergeNullKeyIntoQueryResultPreviewSnapshot(
+    Table & table_src, Table & table_dst, QueryResultPreviewStateCopy & copy) const
 {
     if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
     {
@@ -4559,7 +4599,7 @@ void NO_INLINE Aggregator::mergeNullKeyIntoQueryResultPreviewSnapshot(Table & ta
 
             /// A cell with no state yet is what `destroyImpl` expects if the creation throws.
             table_dst.getNullKeyData() = nullptr;
-            AggregateDataPtr place = arena->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+            AggregateDataPtr place = copy.arena->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
             createAggregateStates(place);
             table_dst.getNullKeyData() = place;
         }
@@ -4569,24 +4609,25 @@ void NO_INLINE Aggregator::mergeNullKeyIntoQueryResultPreviewSnapshot(Table & ta
             return;
         }
 
-        for (size_t i = 0; i < params.aggregates_size; ++i)
-            aggregate_functions[i]->merge(
-                table_dst.getNullKeyData() + offsets_of_aggregate_states[i],
-                table_src.getNullKeyData() + offsets_of_aggregate_states[i],
-                arena);
+        /// As for the cells below, the source state can be null if its creation once failed mid-way:
+        /// `executeImplBatch` marks the NULL group as present before it creates the state.
+        if (!table_src.getNullKeyData())
+            return;
+
+        mergeStatesIntoQueryResultPreviewSnapshot(table_dst.getNullKeyData(), table_src.getNullKeyData(), copy);
     }
 }
 
 template <typename Method, typename Table>
 requires MapAggregationMethod<Method>
-void NO_INLINE Aggregator::mergeIntoQueryResultPreviewSnapshotImpl(Table & table_src, Table & table_dst, Arena * arena) const
+void NO_INLINE Aggregator::mergeIntoQueryResultPreviewSnapshotImpl(Table & table_src, Table & table_dst, QueryResultPreviewStateCopy & copy) const
 {
     if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
-        mergeNullKeyIntoQueryResultPreviewSnapshot<Method, Table>(table_src, table_dst, arena);
+        mergeNullKeyIntoQueryResultPreviewSnapshot<Method, Table>(table_src, table_dst, copy);
 
-    /// Unlike `mergeDataImpl`, the source is left untouched: its states are only read by
-    /// `IAggregateFunction::merge`, never adopted, moved out or destroyed - the participant
-    /// continues to aggregate into them after this call.
+    /// Unlike `mergeDataImpl`, the source is left untouched: its states are only read, never
+    /// adopted, moved out or destroyed - the participant continues to aggregate into them after
+    /// this call.
     if (is_simple_count)
     {
         /// The state of a lone `count()` is the inline counter itself.
@@ -4608,7 +4649,7 @@ void NO_INLINE Aggregator::mergeIntoQueryResultPreviewSnapshotImpl(Table & table
         {
             /// A cell with no state yet is what `destroyImpl` expects if the creation throws.
             dst = nullptr;
-            AggregateDataPtr place = arena->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+            AggregateDataPtr place = copy.arena->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
             createAggregateStates(place);
             dst = place;
         }
@@ -4618,8 +4659,7 @@ void NO_INLINE Aggregator::mergeIntoQueryResultPreviewSnapshotImpl(Table & table
         if (!src)
             return;
 
-        for (size_t i = 0; i < params.aggregates_size; ++i)
-            aggregate_functions[i]->merge(dst + offsets_of_aggregate_states[i], src + offsets_of_aggregate_states[i], arena);
+        mergeStatesIntoQueryResultPreviewSnapshot(dst, src, copy);
     };
 
     table_src.template mergeToViaEmplace<decltype(merge), false>(table_dst, std::move(merge));
@@ -4627,7 +4667,7 @@ void NO_INLINE Aggregator::mergeIntoQueryResultPreviewSnapshotImpl(Table & table
 
 template <typename Method, typename Table>
 requires SetAggregationMethod<Method>
-void NO_INLINE Aggregator::mergeIntoQueryResultPreviewSnapshotImpl(Table & table_src, Table & table_dst, Arena *) const
+void NO_INLINE Aggregator::mergeIntoQueryResultPreviewSnapshotImpl(Table & table_src, Table & table_dst, QueryResultPreviewStateCopy &) const
 {
     /// The NULL group lives outside the cells; a set method has no state to merge alongside its key.
     if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
@@ -4639,25 +4679,23 @@ void NO_INLINE Aggregator::mergeIntoQueryResultPreviewSnapshotImpl(Table & table
     table_src.template mergeToViaEmplace<false>(table_dst);
 }
 
-void Aggregator::mergeWithoutKeyIntoQueryResultPreviewSnapshot(AggregatedDataVariants & participant, AggregatedDataVariants & snapshot) const
+void Aggregator::mergeWithoutKeyIntoQueryResultPreviewSnapshot(
+    AggregatedDataVariants & participant, AggregatedDataVariants & snapshot, QueryResultPreviewStateCopy & copy) const
 {
     AggregateDataPtr src = participant.without_key;
     if (!src)
         return;
 
-    Arena * arena = snapshot.aggregates_pool;
     if (!snapshot.without_key)
     {
-        AggregateDataPtr place = arena->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+        AggregateDataPtr place = copy.arena->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
         createAggregateStates(place);
         snapshot.without_key = place;
     }
 
     /// Unlike the keyed case, the state of a lone `count()` without keys is a regular allocated
     /// place, so the generic merge covers it as well.
-    for (size_t i = 0; i < params.aggregates_size; ++i)
-        aggregate_functions[i]->merge(
-            snapshot.without_key + offsets_of_aggregate_states[i], src + offsets_of_aggregate_states[i], arena);
+    mergeStatesIntoQueryResultPreviewSnapshot(snapshot.without_key, src, copy);
 }
 
 void Aggregator::mergeIntoQueryResultPreviewSnapshot(AggregatedDataVariants & participant, AggregatedDataVariants & snapshot) const
@@ -4690,9 +4728,14 @@ void Aggregator::mergeIntoQueryResultPreviewSnapshot(AggregatedDataVariants & pa
     for (const auto & pool : participant.aggregates_pools)
         snapshot.aggregates_pools.push_back(pool);
 
+    QueryResultPreviewStateCopy copy{
+        .arena = snapshot.aggregates_pool,
+        .scratch = snapshot.aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states),
+        .serialized = {}};
+
     if (participant.type == AggregatedDataVariants::Type::without_key)
     {
-        mergeWithoutKeyIntoQueryResultPreviewSnapshot(participant, snapshot);
+        mergeWithoutKeyIntoQueryResultPreviewSnapshot(participant, snapshot, copy);
         return;
     }
 
@@ -4700,7 +4743,7 @@ void Aggregator::mergeIntoQueryResultPreviewSnapshot(AggregatedDataVariants & pa
 #define M(NAME) \
     else if (participant.type == AggregatedDataVariants::Type::NAME) \
         mergeIntoQueryResultPreviewSnapshotImpl<typename decltype(participant.NAME)::element_type>( \
-            participant.NAME->data, snapshot.NAME->data, snapshot.aggregates_pool);
+            participant.NAME->data, snapshot.NAME->data, copy);
 
     APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
 #undef M
