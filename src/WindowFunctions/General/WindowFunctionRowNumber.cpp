@@ -22,7 +22,7 @@ public:
 
     WindowFunctionRequirements getRequirements(const WindowDescription &) const override
     {
-        return WindowFunctionRequirements{.frame = false};
+        return WindowFunctionRequirements{};
     }
 
     void evaluate(char *, const WindowBounds & bounds, const WindowArguments &, IColumn & result) const override

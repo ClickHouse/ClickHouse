@@ -25,7 +25,7 @@ public:
     const Array & getParameters() const override;
     const DataTypePtr & getResultType() const override;
 
-    virtual WindowFunctionRequirements getRequirements(const WindowDescription & window) const;
+    virtual WindowFunctionRequirements getRequirements(const WindowDescription & window) const = 0;
     virtual std::optional<WindowFrame> getDefaultFrame() const;
     virtual void checkWindowFrameType(const WindowDescription & window) const;
 

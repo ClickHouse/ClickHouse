@@ -85,6 +85,11 @@ public:
     {
     }
 
+    WindowFunctionRequirements getRequirements(const WindowDescription &) const override
+    {
+        return WindowFunctionRequirements{.frame = true};
+    }
+
     size_t sizeOfState() const override { return sizeof(NonNegativeDerivativeState); }
     size_t alignOfState() const override { return alignof(NonNegativeDerivativeState); }
     void createState(char * place) const override { new (place) NonNegativeDerivativeState(); }

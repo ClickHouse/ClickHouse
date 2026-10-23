@@ -89,6 +89,11 @@ public:
         checkValueAndTimeArguments(name_, argument_types);
     }
 
+    WindowFunctionRequirements getRequirements(const WindowDescription &) const override
+    {
+        return WindowFunctionRequirements{.frame = true};
+    }
+
     size_t sizeOfState() const override { return sizeof(DecayedSumState); }
     size_t alignOfState() const override { return alignof(DecayedSumState); }
     void createState(char * place) const override { new (place) DecayedSumState(); }
@@ -142,6 +147,11 @@ public:
         checkValueAndTimeArguments(name_, argument_types);
     }
 
+    WindowFunctionRequirements getRequirements(const WindowDescription &) const override
+    {
+        return WindowFunctionRequirements{.frame = true};
+    }
+
     void evaluate(char *, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
     {
         auto & data = assert_cast<ColumnFloat64 &>(result).getData();
@@ -181,6 +191,11 @@ public:
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} takes exactly one argument", name_);
 
         checkTimeArgument(argument_types, 0);
+    }
+
+    WindowFunctionRequirements getRequirements(const WindowDescription &) const override
+    {
+        return WindowFunctionRequirements{.frame = true};
     }
 
     size_t sizeOfState() const override { return sizeof(DecayedSumState); }
@@ -234,6 +249,11 @@ public:
         , decay_length(getDecayLength(parameters_, name_))
     {
         checkValueAndTimeArguments(name_, argument_types);
+    }
+
+    WindowFunctionRequirements getRequirements(const WindowDescription &) const override
+    {
+        return WindowFunctionRequirements{.frame = true};
     }
 
     size_t sizeOfState() const override { return sizeof(DecayedAvgState); }

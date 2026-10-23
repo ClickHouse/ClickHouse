@@ -37,7 +37,7 @@ public:
 
     WindowFunctionRequirements getRequirements(const WindowDescription &) const override
     {
-        return WindowFunctionRequirements{.frame = false, .peers = true, .partition = true};
+        return WindowFunctionRequirements{.peers = true, .partition = true};
     }
 
     std::optional<WindowFrame> getDefaultFrame() const override

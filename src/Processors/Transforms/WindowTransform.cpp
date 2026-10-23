@@ -295,7 +295,7 @@ void WindowTransform::flushBatch()
     for (const auto & slot : general_functions)
         slot.function->evaluate(slot.state, bounds, slot.arguments, *block.result_columns[slot.result_column]);
 
-    bounds.clear();
+    clearBounds(bounds);
 }
 
 void WindowTransform::startNextPartition()

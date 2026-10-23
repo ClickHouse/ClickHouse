@@ -65,9 +65,9 @@ public:
     WindowFunctionRequirements getRequirements(const WindowDescription &) const override
     {
         if (in_frame)
-            return {};
+            return WindowFunctionRequirements{.frame = true};
 
-        return WindowFunctionRequirements{.frame = false, .partition = true};
+        return WindowFunctionRequirements{.partition = true};
     }
 
     std::optional<WindowFrame> getDefaultFrame() const override

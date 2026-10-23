@@ -31,11 +31,6 @@ const DataTypePtr & IGeneralWindowFunction::getResultType() const
     return result_type;
 }
 
-WindowFunctionRequirements IGeneralWindowFunction::getRequirements(const WindowDescription &) const
-{
-    return {};
-}
-
 std::optional<WindowFrame> IGeneralWindowFunction::getDefaultFrame() const
 {
     return {};
