@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
 # Checks that `join_algorithm = 'gpu_hash'` returns what the CPU returns, with columns of any type on either side,
-# whose rows the host gathers by the indices of the pairs the device matched.
+# whose rows the host gathers by the indices of the pairs the device matched. The join on `k` keeps an eighth of the
+# left table, as the device is taken for joins that keep at most a third of it.
 #
 # Where the build has no GPU support, or the machine no usable device, the setting is not applied
 # and both sides of every comparison run on the CPU - the checks hold trivially. That is what makes
@@ -30,10 +31,10 @@ $CLICKHOUSE_CLIENT --query "
     FROM numbers(100000);
 
     INSERT INTO gpu_join_right
-    SELECT number % 2500, number % 256, number % 1000 - 500, number * 10 - 50000, number % 7,
+    SELECT number * 4, number % 256, number % 1000 - 500, number * 10 - 50000, number % 7,
            if(number % 3 = 0, NULL, number % 100), toString(number % 10),
            number * 3, number / 4, number % 300 - 150, toString(number)
-    FROM numbers(5000);
+    FROM numbers(1250);
 "
 
 GPU_SETTINGS=()

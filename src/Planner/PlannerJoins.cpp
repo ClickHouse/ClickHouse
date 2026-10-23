@@ -43,6 +43,7 @@
 #include <Interpreters/FullSortingMergeJoin.h>
 #include <GPU/GPUJoin.h>
 #include <Interpreters/GraceHashJoin.h>
+#include <Common/logger_useful.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/IKeyValueEntity.h>
@@ -1181,6 +1182,27 @@ QueryTreeNodePtr getJoinExpressionFromNode(const JoinNode & join_node)
     return join_expression;
 }
 
+#if USE_GPU
+/// The GPU hash join sends the keys of the left table to the device and brings back the row indices of each matching
+/// pair, so its cost grows with the result where `parallel_hash`'s grows with the input: measured against it, the device
+/// pays while the result is at most about a third of the left table, and loses by up to 2x where the result is many
+/// times the left table. Without an estimate of both the join is left to the CPU.
+constexpr double gpu_hash_join_max_result_share = 1.0 / 3;
+
+static bool gpuHashJoinPays(const JoinAlgorithmParams & params)
+{
+    const bool pays = params.lhs_size_estimation && params.result_rows_estimation
+        && static_cast<double>(*params.result_rows_estimation) <= gpu_hash_join_max_result_share * static_cast<double>(*params.lhs_size_estimation);
+    LOG_TRACE(
+        getLogger("GPUHashJoin"),
+        "{} a join of an estimated {} rows of the left table into {} rows on the GPU",
+        pays ? "Running" : "Not running",
+        params.lhs_size_estimation ? std::to_string(*params.lhs_size_estimation) : "unknown",
+        params.result_rows_estimation ? std::to_string(*params.result_rows_estimation) : "unknown");
+    return pays;
+}
+#endif
+
 static std::shared_ptr<IJoin> tryCreateJoin(
     JoinAlgorithm algorithm,
     std::shared_ptr<TableJoin> & table_join,
@@ -1299,7 +1321,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     }
 
 #if USE_GPU
-    if (algorithm == JoinAlgorithm::GPU_HASH
+    if (algorithm == JoinAlgorithm::GPU_HASH && gpuHashJoinPays(params)
         && GPUHashJoin::isSupported(*table_join, *left_table_expression_header, *right_table_expression_header))
         return std::make_shared<GPUHashJoin>(table_join, left_table_expression_header, right_table_expression_header);
 #endif

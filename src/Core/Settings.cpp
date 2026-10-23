@@ -4472,7 +4472,7 @@ Selecting `grace_hash` explicitly is intended primarily for diagnostic use. To e
 
  Supports only `ALL INNER JOIN` on a single equality of two non-nullable integer columns of the same type. The other columns of either side may be of any type.
 
- Unlike every other value here, this one is never reached by `default` or by `auto` and is used only when it is listed by name. A join that it cannot execute is passed to the next algorithm of the list, and fails with "none of the algorithms enabled by the `join_algorithm` setting" if there is none.
+ Unlike every other value here, this one is never reached by `default` or by `auto` and is used only when it is listed by name, and only where the join is estimated to keep at most a third of the rows of the left table: the device's cost grows with the result, and a join that keeps more is faster on the CPU. A join that it cannot execute, or that is not estimated to pay, is passed to the next algorithm of the list, and fails with "none of the algorithms enabled by the `join_algorithm` setting" if there is none.
 
  Only keys are sent to the device: those of the right table once, as its hash table is built, and those of each block of the left table, as it is probed. The row indices of the matching pairs come back, and the columns of both sides are gathered in host memory. The right table is kept in host memory, as for `hash`.
 

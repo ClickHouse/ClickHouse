@@ -11,6 +11,7 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Core/DecimalFunctions.h>
 #include <DataTypes/IDataType.h>
 
 #include <bit>
@@ -75,8 +76,8 @@ struct Register
     std::optional<uint32_t> constant;
     /// Of a column.
     DataTypePtr type;
-    /// A `String` constant, loaded only once a comparison says what it is compared as.
-    std::optional<Field> pending_string;
+    /// A `String` or a `Decimal` constant, loaded only once a comparison says what it is compared as.
+    std::optional<Field> pending;
 };
 
 GPUFilterConstant constantOf(GPUFilterValueKind kind, const Field & value)
@@ -181,7 +182,7 @@ private:
             result.columns.push_back(*std::next(required.begin(), result.columns.size()));
         }
 
-        registers[action.result_position] = {.kind = kindOf(*element_type), .constant = {}, .type = action.node->result_type, .pending_string = {}};
+        registers[action.result_position] = {.kind = kindOf(*element_type), .constant = {}, .type = action.node->result_type, .pending = {}};
         return emit(GPUFilterOp::LoadColumn, action.result_position, required_index);
     }
 
@@ -193,10 +194,11 @@ private:
 
         const Field value = (*node.column)[0];
 
-        /// A date written as a string, `date '1994-01-01'`, which a comparison with a column of dates converts.
-        if (isString(node.result_type) && value.getType() == Field::Types::String)
+        /// A date written as a string, `date '1994-01-01'`, which a comparison with a column of dates converts, or a
+        /// `Decimal`, which a comparison with a column of floats converts.
+        if ((isString(node.result_type) && value.getType() == Field::Types::String) || (isDecimal(node.result_type) && Field::isDecimal(value.getType())))
         {
-            registers[action.result_position] = {.kind = GPUFilterValueKind::Unsigned, .constant = {}, .type = {}, .pending_string = value};
+            registers[action.result_position] = {.kind = GPUFilterValueKind::Unsigned, .constant = {}, .type = {}, .pending = value};
             return true;
         }
 
@@ -209,7 +211,7 @@ private:
         if (!index)
             return false;
 
-        registers[action.result_position] = {.kind = constant.kind, .constant = *index, .type = {}, .pending_string = {}};
+        registers[action.result_position] = {.kind = constant.kind, .constant = *index, .type = {}, .pending = {}};
         return emit(GPUFilterOp::LoadConstant, action.result_position, *index);
     }
 
@@ -256,8 +258,8 @@ private:
 
         for (const auto & argument : arguments)
         {
-            if (registers[argument.pos].pending_string)
-                return refused("a string constant that is not compared with a column of dates or numbers");
+            if (registers[argument.pos].pending)
+                return refused("a string or decimal constant that is not an argument of a comparison");
         }
 
         if (const auto arithmetic = arithmeticOf(name))
@@ -268,7 +270,7 @@ private:
             if (filterElementTypeOf(*node.result_type) != GPUElementType::Float64)
                 return refused("an arithmetic function of a result other than a `Float64`");
 
-            registers[action.result_position] = {.kind = GPUFilterValueKind::Float, .constant = {}, .type = {}, .pending_string = {}};
+            registers[action.result_position] = {.kind = GPUFilterValueKind::Float, .constant = {}, .type = {}, .pending = {}};
             return emit(*arithmetic, action.result_position, arguments[0].pos, arguments[1].pos);
         }
 
@@ -300,31 +302,69 @@ private:
         return refused("a function the device does not evaluate: `" + name + "`");
     }
 
-    /// A string constant compared with a column of dates or numbers is the value it reads as, as ClickHouse compares them,
-    /// and is loaded as one.
+    /// A string constant compared with a column of dates or numbers is the value it reads as, and a `Decimal` constant
+    /// compared with a column of floats is the `Float64` it converts to, as ClickHouse compares them; it is loaded as one.
     bool loadPendingString(size_t own, size_t other)
     {
         Register & mine = registers[own];
-        if (!mine.pending_string)
+        if (!mine.pending)
             return true;
 
-        /// ClickHouse compares a column of dates or of numbers with a string constant as with the constant converted to
-        /// the column's type.
         const DataTypePtr & type = registers[other].type;
-        if (!type || !(isDateOrDate32(type) || isDateTime(type) || isNativeNumber(type)))
-            return refused("a string constant that is not compared with a column of dates or numbers");
+        if (!type)
+            return refused("a string or decimal constant that is not compared with a column");
 
-        const Field converted = tryConvertFieldToType(*mine.pending_string, *type);
-        const auto element_type = filterElementTypeOf(*type);
-        if (converted.isNull() || !element_type)
-            return refused("a string constant that is not a date of the column it is compared with");
+        GPUFilterConstant constant;
+        if (Field::isDecimal(mine.pending->getType()))
+        {
+            /// ClickHouse compares a `Decimal` with a float by converting both to `Float64`.
+            if (!isFloat(type))
+                return refused("a decimal constant that is not compared with a column of floats");
+            Float64 as_double = 0;
+            switch (mine.pending->getType())
+            {
+                case Field::Types::Decimal32:
+                {
+                    const auto & field = mine.pending->safeGet<DecimalField<Decimal32>>();
+                    as_double = DecimalUtils::convertTo<Float64>(field.getValue(), field.getScale());
+                    break;
+                }
+                case Field::Types::Decimal64:
+                {
+                    const auto & field = mine.pending->safeGet<DecimalField<Decimal64>>();
+                    as_double = DecimalUtils::convertTo<Float64>(field.getValue(), field.getScale());
+                    break;
+                }
+                case Field::Types::Decimal128:
+                {
+                    const auto & field = mine.pending->safeGet<DecimalField<Decimal128>>();
+                    as_double = DecimalUtils::convertTo<Float64>(field.getValue(), field.getScale());
+                    break;
+                }
+                default:
+                    return refused("a decimal constant wider than 128 bits");
+            }
+            constant = {GPUFilterValueKind::Float, std::bit_cast<uint64_t>(as_double)};
+        }
+        else
+        {
+            /// ClickHouse compares a column of dates or of numbers with a string constant as with the constant converted
+            /// to the column's type.
+            if (!(isDateOrDate32(type) || isDateTime(type) || isNativeNumber(type)))
+                return refused("a string constant that is not compared with a column of dates or numbers");
 
-        const GPUFilterConstant constant = constantOf(kindOf(*element_type), converted);
+            const Field converted = tryConvertFieldToType(*mine.pending, *type);
+            const auto element_type = filterElementTypeOf(*type);
+            if (converted.isNull() || !element_type)
+                return refused("a string constant that is not a date of the column it is compared with");
+
+            constant = constantOf(kindOf(*element_type), converted);
+        }
         const auto index = addConstant(constant);
         if (!index)
             return false;
 
-        mine = {.kind = constant.kind, .constant = *index, .type = {}, .pending_string = {}};
+        mine = {.kind = constant.kind, .constant = *index, .type = {}, .pending = {}};
         return emit(GPUFilterOp::LoadConstant, own, *index);
     }
 
@@ -363,7 +403,7 @@ private:
             return {};
         }
         const size_t spare = registers_used++;
-        registers[spare] = {.kind = GPUFilterValueKind::Float, .constant = *index, .type = {}, .pending_string = {}};
+        registers[spare] = {.kind = GPUFilterValueKind::Float, .constant = *index, .type = {}, .pending = {}};
         if (!emit(GPUFilterOp::LoadConstant, spare, *index))
             return {};
         return spare;

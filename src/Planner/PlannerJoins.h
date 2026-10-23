@@ -266,6 +266,7 @@ struct JoinAlgorithmParams
     String initial_query_id;
     std::chrono::milliseconds lock_acquire_timeout{};
 
+    std::optional<UInt64> lhs_size_estimation;
     std::optional<UInt64> rhs_size_estimation;
     std::optional<UInt64> result_rows_estimation;
 

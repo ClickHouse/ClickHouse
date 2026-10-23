@@ -2593,6 +2593,9 @@ void JoinStepLogical::buildPhysicalJoin(
             optimization_settings.initial_query_id,
             optimization_settings.lock_acquire_timeout);
 
+        if (join_step->left_relation.estimated_rows)
+            join_step->join_algorithm_params->lhs_size_estimation = join_step->left_relation.estimated_rows;
+
         if (join_step->right_relation.estimated_rows)
             join_step->join_algorithm_params->rhs_size_estimation = join_step->right_relation.estimated_rows;
 
