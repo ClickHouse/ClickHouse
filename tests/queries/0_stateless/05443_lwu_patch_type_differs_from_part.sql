@@ -135,3 +135,36 @@ ALTER TABLE t_lwu_type_h MODIFY COLUMN b Int64 DEFAULT a SETTINGS alter_sync = 0
 SELECT 'H types', groupArray(type) FROM (SELECT type FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_lwu_type_h' AND active AND column IN ('a', 'd') ORDER BY startsWith(name, 'patch-'), column);
 SELECT 'H read', groupArray(a), groupArray(b), groupArray(toString(d)) FROM (SELECT a, b, d FROM t_lwu_type_h ORDER BY id);
 DROP TABLE t_lwu_type_h;
+
+-- Parts Int32 and Nullable(Int32), patches Date32 and Nullable(Int64) with a NULL, and a pending MODIFY of `b` to Dynamic,
+-- which cannot be Nullable, with a DEFAULT that reads `a`: the NULLs of `b` are replaced from the patched `a`.
+DROP TABLE IF EXISTS t_lwu_type_i;
+CREATE TABLE t_lwu_type_i (id UInt64, a Int32, b Nullable(Int32)) ENGINE = MergeTree ORDER BY id
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
+INSERT INTO t_lwu_type_i VALUES (0, 1, NULL), (1, 2, NULL), (2, 3, NULL);
+SYSTEM STOP MERGES t_lwu_type_i;
+ALTER TABLE t_lwu_type_i MODIFY COLUMN a Date32, MODIFY COLUMN b Nullable(Int64) SETTINGS alter_sync = 0, mutations_sync = 0;
+KILL MUTATION WHERE database = currentDatabase() AND table = 't_lwu_type_i' SYNC FORMAT Null;
+UPDATE t_lwu_type_i SET a = toDate32(1000) WHERE id = 0;
+UPDATE t_lwu_type_i SET b = if(id = 1, 9, NULL) WHERE id > 0;
+ALTER TABLE t_lwu_type_i MODIFY COLUMN b Dynamic DEFAULT toInt64(a) SETTINGS alter_sync = 0, mutations_sync = 0;
+SELECT 'I types', groupArray(type) FROM (SELECT type FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_lwu_type_i' AND active AND column IN ('a', 'b') ORDER BY startsWith(name, 'patch-'), column);
+SELECT 'I read', groupArray(toInt32(a)), groupArray(b) FROM (SELECT a, b FROM t_lwu_type_i ORDER BY id);
+DROP TABLE t_lwu_type_i;
+
+-- Parts Nullable(Int32), Int32 and Nullable(Int32), a patch Nullable(Int64) of `a`, killed MODIFY of `a` to Dynamic with a
+-- DEFAULT that reads `b`, and a pending MODIFY of `c` with a DEFAULT that reads `a`.
+DROP TABLE IF EXISTS t_lwu_type_j;
+CREATE TABLE t_lwu_type_j (id UInt64, a Nullable(Int32), b Int32, c Nullable(Int32)) ENGINE = MergeTree ORDER BY id
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
+INSERT INTO t_lwu_type_j VALUES (0, 1, 7, NULL), (1, NULL, 8, NULL);
+SYSTEM STOP MERGES t_lwu_type_j;
+ALTER TABLE t_lwu_type_j MODIFY COLUMN a Nullable(Int64), MODIFY COLUMN b Int64 SETTINGS alter_sync = 0, mutations_sync = 0;
+KILL MUTATION WHERE database = currentDatabase() AND table = 't_lwu_type_j' SYNC FORMAT Null;
+UPDATE t_lwu_type_j SET a = 1000 WHERE id = 0;
+ALTER TABLE t_lwu_type_j MODIFY COLUMN a Dynamic DEFAULT b SETTINGS alter_sync = 0, mutations_sync = 0;
+KILL MUTATION WHERE database = currentDatabase() AND table = 't_lwu_type_j' SYNC FORMAT Null;
+ALTER TABLE t_lwu_type_j MODIFY COLUMN c Int64 DEFAULT toInt64(a) SETTINGS alter_sync = 0, mutations_sync = 0;
+SELECT 'J types', groupArray(type) FROM (SELECT type FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_lwu_type_j' AND active AND column = 'a' ORDER BY startsWith(name, 'patch-'));
+SELECT 'J read', groupArray(a), groupArray(b), groupArray(c) FROM (SELECT a, b, c FROM t_lwu_type_j ORDER BY id);
+DROP TABLE t_lwu_type_j;

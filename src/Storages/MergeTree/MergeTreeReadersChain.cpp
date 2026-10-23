@@ -507,13 +507,22 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
                     continue;
                 }
 
+                /// A type that keeps NULLs, which are replaced by a DEFAULT that may read other columns after the patches.
+                /// Without such a type the patch is applied after the conversions.
+                auto type_of_patched_column = type;
+                if (isNullableOrLowCardinalityNullable(type_before_conversions))
+                {
+                    type_of_patched_column = makeNullableOrLowCardinalityNullableSafe(type);
+                    if (!canContainNull(*type_of_patched_column))
+                    {
+                        column_it->order = ColumnForPatch::Order::AfterConversions;
+                        continue;
+                    }
+                }
+
                 column_it->order = ColumnForPatch::Order::AfterColumnConversion;
                 types_of_patched_columns.resize(reader_columns.size());
-
-                /// Nullable if possible, so that NULLs are replaced by a DEFAULT, which may read other columns, after the patches.
-                types_of_patched_columns[pos] = isNullableOrLowCardinalityNullable(type_before_conversions)
-                    ? makeNullableOrLowCardinalityNullableSafe(type)
-                    : type;
+                types_of_patched_columns[pos] = std::move(type_of_patched_column);
             }
         }
     }
@@ -549,11 +558,8 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
             }
         }
 
-        DB::performRequiredConversions(
-            block,
-            types,
-            merge_tree_reader->data_part_info_for_read->getContext(),
-            merge_tree_reader->getStorageSnapshot()->metadata->getColumns().getDefaults());
+        /// Without the DEFAULTs, so the NULLs are kept.
+        DB::performRequiredConversions(block, types, merge_tree_reader->data_part_info_for_read->getContext(), /*column_defaults=*/ {});
 
         for (size_t pos = 0; pos < types_of_patched_columns.size(); ++pos)
         {

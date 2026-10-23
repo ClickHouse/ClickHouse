@@ -684,20 +684,25 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns, const D
 
         /// We check types manually while iterating to avoid unnecessary copies
         Block copy_block;
+        NameSet columns_with_nulls_to_default;
         auto name_and_type = getColumns().begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
         {
             if (res_columns[pos] == nullptr)
                 continue;
 
+            auto type_before_conversions = getColumnTypeBeforeConversions(pos, name_and_type->type);
+
             /// Inserted even without a conversion, as an input of the `DEFAULT` expressions of other conversions.
             if (!types.empty() && types[pos])
             {
+                if (isNullableOrLowCardinalityNullable(type_before_conversions) && !isNullableOrLowCardinalityNullable(types[pos]))
+                    columns_with_nulls_to_default.insert(name_and_type->name);
+
                 copy_block.insert({res_columns[pos], types[pos], name_and_type->name});
                 continue;
             }
 
-            auto type_before_conversions = getColumnTypeBeforeConversions(pos, name_and_type->type);
             if (type_before_conversions->equals(*name_and_type->type))
                 continue;
             copy_block.insert({res_columns[pos], type_before_conversions, name_and_type->name});
@@ -708,7 +713,9 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns, const D
 
         DB::performRequiredConversions(copy_block, getColumns(),
             data_part_info_for_read->getContext(),
-            storage_snapshot->metadata->getColumns().getDefaults());
+            storage_snapshot->metadata->getColumns().getDefaults(),
+            /*forbid_default_defaults=*/ false,
+            columns_with_nulls_to_default);
 
         /// Move columns from block.
         name_and_type = getColumns().begin();

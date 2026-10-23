@@ -47,8 +47,9 @@ std::optional<ActionsDAG> evaluateMissingDefaults(
     bool null_as_default = false);
 
 /// Tries to convert columns in block to required_columns
+/// The NULLs of `columns_with_nulls_to_default` are replaced by a DEFAULT, as if their type in block were Nullable.
 void performRequiredConversions(Block & block, const NamesAndTypesList & required_columns, ContextPtr context,
-    const ColumnDefaults & column_defaults, bool forbid_default_defaults = false);
+    const ColumnDefaults & column_defaults, bool forbid_default_defaults = false, const NameSet & columns_with_nulls_to_default = {});
 
 void fillMissingColumns(
     Columns & res_columns,
