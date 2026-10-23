@@ -944,7 +944,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         applyCodecDeclarations(*columns_list.codec_declarations, res, context_, mode, is_restore_from_backup);
 
     if (mode <= LoadingStrictnessLevel::CREATE)
-        res.checkAliasColumnsAreNotCyclic(context_);
+        res.checkAliasColumnsAreNotCyclic();
 
     return res;
 }
@@ -1383,7 +1383,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     {
         properties.constraints.checkExpressionsPreserveRowCount();
         properties.constraints.checkNamesAreUnique();
-        properties.columns.checkAliasColumnsAreNotCyclic(getContext());
+        properties.columns.checkAliasColumnsAreNotCyclic();
     }
 
     ASTPtr new_columns = formatColumns(properties.columns);
