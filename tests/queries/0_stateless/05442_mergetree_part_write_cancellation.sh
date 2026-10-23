@@ -7,6 +7,7 @@
 # Every setting the timing depends on is pinned in the query or table SETTINGS:
 # * async_insert = 0: an async INSERT is written by a background flush, not by the query we KILL.
 # * auto_statistics_types = '': the per-block statistics pass runs before the column write, with no cancellation point.
+# * compute_exact_num_defaults_for_sparse_columns = 0: the exact count of default values is another such pass.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -33,7 +34,7 @@ for part_type in Compact Wide; do
     ${CLICKHOUSE_CLIENT} -q "
         CREATE TABLE t_write_cancel ($columns)
         ENGINE = MergeTree ORDER BY tuple()
-        SETTINGS index_granularity = 1, auto_statistics_types = '', $part_settings"
+        SETTINGS index_granularity = 1, auto_statistics_types = '', compute_exact_num_defaults_for_sparse_columns = 0, $part_settings"
 
     query_id="write_cancel_${CLICKHOUSE_DATABASE}_${part_type}_$$"
 
