@@ -4324,7 +4324,7 @@ ColumnPtr & Reader::getOrFormOutputColumn(const RowGroup & row_group, RowSubgrou
                 for (; i + 64 <= mask.size(); i += 64)
                 {
                     for (UInt64 bits = bytes64MaskToBits64Mask(mask.data() + i); bits; bits &= bits - 1)
-                        indexes_data.push_back(row_subgroup.start_row_idx + i + std::countr_zero(bits));
+                        indexes_data.push_back(offset_in_cached_column + i + std::countr_zero(bits));
                 }
                 for (; i < mask.size(); ++i)
                     if (mask[i])
