@@ -52,16 +52,17 @@ echo 'owner is not affected by the policy'
 $CLICKHOUSE_CLIENT -q "SELECT p, f FROM t_reader ORDER BY p"
 
 # The set is built under the query status of the read, so a limit of the read stops building it,
-# instead of scanning the whole right-hand side. `max_rows_to_read` is disabled, because the test
-# profile limits it and the estimated rows of the right-hand side would exceed it before the timeout.
+# instead of scanning the whole right-hand side. The set is built with the settings of the storage,
+# where the test profile limits `max_rows_to_read`, so the right-hand side reads `system.numbers`,
+# which has no estimate of the rows, and spends enough time on every row to stay below the limit.
 echo 'limit of the read stops building the set'
 $CLICKHOUSE_CLIENT -m -q "
-    CREATE VIEW slow_keys AS SELECT toUInt8(number) AS p FROM numbers(100000000000) WHERE sipHash64(number) = 0;
+    CREATE VIEW slow_keys AS SELECT toUInt8(number) AS p FROM system.numbers WHERE sipHash64(repeat(toString(number), 1000)) = 0;
     CREATE TABLE t_slow (p UInt8) ENGINE = MergeTree ORDER BY p;
     INSERT INTO t_slow VALUES (1);
     ALTER TABLE t_slow ADD COLUMN f UInt8 DEFAULT p IN slow_keys;
 "
-$CLICKHOUSE_CLIENT -q "SELECT f FROM t_slow SETTINGS max_execution_time = 1, max_rows_to_read = 0" 2>&1 | grep -o -m1 'TIMEOUT_EXCEEDED'
+$CLICKHOUSE_CLIENT -q "SELECT f FROM t_slow SETTINGS max_execution_time = 1" 2>&1 | grep -o -m1 'TIMEOUT_EXCEEDED'
 
 $CLICKHOUSE_CLIENT -m -q "
     DROP TABLE t_slow;
