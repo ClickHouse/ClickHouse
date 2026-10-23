@@ -318,6 +318,15 @@ std::optional<GPUElementType> keyElementTypeOf(const IDataType & type)
     return elementTypeOf(type);
 }
 
+std::optional<GPUElementType> collectElementTypeOf(const IDataType & type)
+{
+    if (isStringKey(type))
+        return GPUElementType::String;
+    if (typeid_cast<const DataTypeFixedString *>(&type))
+        return keyElementTypeOf(type);
+    return filterElementTypeOf(type);
+}
+
 std::vector<GPUElementType> groupByKeysOrThrow(const DataTypes & key_types)
 {
     std::vector<GPUElementType> keys;

@@ -191,18 +191,30 @@ Field GPUAccumulator::finalize()
 namespace
 {
 
-std::vector<GPUElementType> valueTypesOrThrow(const DataTypes & value_types)
+/// Of rows collected rather than grouped, the values are carried by their bytes, see `collectElementTypeOf`.
+std::vector<GPUElementType> valueTypesOrThrow(const DataTypes & value_types, bool collect)
 {
     std::vector<GPUElementType> element_types;
     element_types.reserve(value_types.size());
     for (const auto & type : value_types)
-        element_types.push_back(columnTypeOrThrow(*type));
+    {
+        if (!collect)
+        {
+            element_types.push_back(columnTypeOrThrow(*type));
+            continue;
+        }
+        const auto element_type = collectElementTypeOf(*type);
+        if (!element_type)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "A column of {} collected on the GPU", type->getName());
+        element_types.push_back(*element_type);
+    }
     return element_types;
 }
 
-std::vector<GPUGroupByAggregate> aggregatesOrThrow(size_t num_columns, std::vector<GPUGroupByAggregate> aggregates)
+std::vector<GPUGroupByAggregate> aggregatesOrThrow(size_t num_columns, std::vector<GPUGroupByAggregate> aggregates, bool collect)
 {
-    if (aggregates.empty())
+    /// Without keys, the rows are collected, not aggregated.
+    if (collect != aggregates.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU aggregation without aggregates");
 
     for (const auto & aggregate : aggregates)
@@ -342,9 +354,9 @@ GroupByGPUAccumulator::GroupByGPUAccumulator(
     std::vector<GPUDerivedValue> derived_)
     : group_keys(groupByKeysOrThrow(key_types))
     , key_element_types(keyElementTypesOf(group_keys))
-    , values(valueTypesOrThrow(value_types))
+    , values(valueTypesOrThrow(value_types, key_types.empty()))
     , derived(std::move(derived_))
-    , aggregates(aggregatesOrThrow(values.size() + derived.size(), std::move(aggregates_)))
+    , aggregates(aggregatesOrThrow(values.size() + derived.size(), std::move(aggregates_), key_types.empty()))
     , variable_column_indices(variableColumnIndicesOf(group_keys, values))
     , filter_element_types(filterElementTypesOrThrow(filter_types))
     , filter(std::move(filter_))
@@ -1302,14 +1314,16 @@ void GroupByGPUAccumulator::copyGroupsTo(MutableColumns & key_columns, MutableCo
 
     const size_t rows = *num_groups;
 
-    if (key_columns.size() != group_keys.size() || value_columns.size() != aggregates.size())
+    /// Of rows collected rather than grouped, the values are the columns collected.
+    const size_t num_values = group_keys.empty() ? values.size() : aggregates.size();
+    if (key_columns.size() != group_keys.size() || value_columns.size() != num_values)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "{} key and {} aggregate columns for the groups of a GPU aggregation of {} keys and {} aggregates",
             key_columns.size(),
             value_columns.size(),
             group_keys.size(),
-            aggregates.size());
+            num_values);
 
     if (rows == 0)
         return;
@@ -1318,8 +1332,8 @@ void GroupByGPUAccumulator::copyGroupsTo(MutableColumns & key_columns, MutableCo
 
     std::vector<DeviceColumnView> from;
     std::vector<IColumn *> to;
-    from.reserve(group_keys.size() + aggregates.size());
-    to.reserve(group_keys.size() + aggregates.size());
+    from.reserve(group_keys.size() + num_values);
+    to.reserve(group_keys.size() + num_values);
 
     for (size_t i = 0; i < group_keys.size(); ++i)
     {
@@ -1330,7 +1344,7 @@ void GroupByGPUAccumulator::copyGroupsTo(MutableColumns & key_columns, MutableCo
         to.push_back(key_columns[i].get());
     }
 
-    for (size_t i = 0; i < aggregates.size(); ++i)
+    for (size_t i = 0; i < num_values; ++i)
     {
         const DeviceColumnView value = group_by->value(i);
         if (value.rows() != rows)

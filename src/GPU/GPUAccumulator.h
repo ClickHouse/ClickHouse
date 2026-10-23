@@ -133,6 +133,9 @@ private:
 /// pieces the readers send, expands them and puts the rows of each reader together column by column, and hands the rows
 /// that are there in every column over to the grouping thread, which groups them through the `CudfGroupBy`. So the
 /// device expands and copies the next rows while it groups those before, each on a stream of its own.
+///
+/// Without keys and aggregates, it groups nothing: it collects the rows of the values that the `WHERE` keeps, which
+/// `copyGroupsTo` copies out as the values' columns.
 class GroupByGPUAccumulator
 {
 public:

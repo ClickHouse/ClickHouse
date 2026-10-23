@@ -72,6 +72,7 @@ struct SharedState
     size_t num_readers = 1;
     GPUDecompressionMode decompression = GPUDecompressionMode::RATIO;
     double device_decompression_max_ratio = 1;
+    bool collect = false;
 
     std::atomic<size_t> next_part{0};
 };
@@ -526,6 +527,9 @@ protected:
         if (num_groups == 0)
             return {};
 
+        if (state->collect)
+            return collectedRows(num_groups);
+
         /// The header is the aggregation's: the keys, then the result of each aggregate.
         const Block & header = getPort().getHeader();
         if (header.columns() != state->keys.size() + state->aggregates.size())
@@ -559,6 +563,28 @@ protected:
     }
 
 private:
+    /// The rows the device collected, in the read's header: the columns, as they are.
+    Chunk collectedRows(size_t num_rows)
+    {
+        const Block & header = getPort().getHeader();
+        if (header.columns() != state->columns.size())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "A GPU read of {} columns emits {} columns", state->columns.size(), header.columns());
+
+        MutableColumns no_keys;
+        MutableColumns columns;
+        columns.reserve(header.columns());
+        for (const auto & column : state->columns)
+            columns.push_back(header.getByName(column.column.name).type->createColumn());
+
+        accumulator.copyGroupsTo(no_keys, columns);
+
+        Columns result_columns(header.columns());
+        for (size_t i = 0; i < state->columns.size(); ++i)
+            result_columns[header.getPositionByName(state->columns[i].column.name)] = std::move(columns[i]);
+        return Chunk(std::move(result_columns), num_rows);
+    }
+
     static DataTypes argumentTypesOf(const std::vector<ColumnToReduce> & columns)
     {
         DataTypes types;
@@ -1034,7 +1060,8 @@ ReadFromGPUCompressedColumns::ReadFromGPUCompressedColumns(
     size_t num_streams_,
     size_t num_readers_,
     GPUDecompressionMode decompression_,
-    double device_decompression_max_ratio_)
+    double device_decompression_max_ratio_,
+    bool collect_)
     : ISourceStep(std::move(output_header_))
     , keys(std::move(keys_))
     , columns(std::move(columns_))
@@ -1049,8 +1076,12 @@ ReadFromGPUCompressedColumns::ReadFromGPUCompressedColumns(
     , num_readers(num_readers_)
     , decompression(decompression_)
     , device_decompression_max_ratio(device_decompression_max_ratio_)
+    , collect(collect_)
 {
-    if (filter && keys.empty())
+    if (collect && (!keys.empty() || !aggregates.empty() || !derived.empty() || columns.empty()))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU read that collects rows of {} columns with keys or aggregates", columns.size());
+
+    if (filter && keys.empty() && !collect)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A keyless GPU aggregation over compressed columns with a `WHERE` for the device");
 
     if (keys.empty() != aggregates.empty())
@@ -1075,10 +1106,11 @@ void ReadFromGPUCompressedColumns::initializePipeline(QueryPipelineBuilder & pip
     state->device_decompression_max_ratio = device_decompression_max_ratio;
     state->batch_bytes = batch_bytes;
     state->num_readers = num_readers != 0 ? num_readers : automaticReaders(*state);
+    state->collect = collect;
 
     Pipes pipes;
 
-    if (!keys.empty())
+    if (!keys.empty() || collect)
     {
         pipes.emplace_back(std::make_shared<GPUCompressedGroupBySource>(getOutputHeader(), state, settings.process_list_element));
     }
@@ -1100,6 +1132,8 @@ void ReadFromGPUCompressedColumns::initializePipeline(QueryPipelineBuilder & pip
 void ReadFromGPUCompressedColumns::describeActions(FormatSettings & format_settings) const
 {
     format_settings.out << format_settings.detail_prefix << "Parts: " << parts.size() << "\n";
+    if (collect)
+        format_settings.out << format_settings.detail_prefix << "Rows the filter keeps sent back\n";
     if (const size_t ranged = std::ranges::count_if(parts, [](const auto & part) { return !part.ranges.empty(); }))
         format_settings.out << format_settings.detail_prefix << "Parts read in ranges of marks: " << ranged << "\n";
     if (!keys.empty())
@@ -1143,6 +1177,7 @@ void ReadFromGPUCompressedColumns::describeActions(FormatSettings & format_setti
 void ReadFromGPUCompressedColumns::describeActions(JSONBuilder::JSONMap & map) const
 {
     map.add("Parts", parts.size());
+    map.add("Collected", collect);
     map.add("Parts Read In Ranges", std::ranges::count_if(parts, [](const auto & part) { return !part.ranges.empty(); }));
 
     if (!keys.empty())

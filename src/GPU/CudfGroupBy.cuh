@@ -13,6 +13,9 @@ namespace DB::GPU
 /// the batches: of keys of integers and strings, by the aggregates of value columns, several of one column or a `count` of
 /// none among them.
 ///
+/// Without keys and aggregates, it collects the rows of `values` that a batch's `WHERE` keeps instead, as they are, and
+/// `value` is of its collected columns.
+///
 /// The last `derived.size()` of `values` are not in the batches: they are computed on the device from the others, the
 /// `Float64` values of each `GPUDerivedValue`, over the rows of a batch that its `WHERE` keeps.
 class CudfGroupBy

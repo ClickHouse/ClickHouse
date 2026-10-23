@@ -55,6 +55,10 @@ std::optional<GPUElementType> keyElementTypeOf(const IDataType & type);
 
 std::vector<GPUElementType> groupByKeysOrThrow(const DataTypes & key_types);
 
+/// What the rows of a column that the device collects, rather than groups, are carried as: a `String` as one, a
+/// `FixedString` as `keyElementTypeOf`, and any other as `filterElementTypeOf`, the bytes of its values as they are.
+std::optional<GPUElementType> collectElementTypeOf(const IDataType & type);
+
 bool canGroupByReduceOnDevice(
     const DataTypes & key_types,
     const DataTypes & argument_types,

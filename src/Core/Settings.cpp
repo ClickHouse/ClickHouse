@@ -11414,6 +11414,19 @@ Possible values:
 - 1 - Supported aggregations are computed on a GPU.
 )", EXPERIMENTAL, \
         {"26.11", false, false, "New experimental setting to compute supported aggregations on a GPU."}) \
+    DECLARE(Bool, allow_experimental_gpu_filtered_read, false, R"(
+Read a `MergeTree` table whose `PREWHERE` a CUDA GPU evaluates through the device: the compressed blocks of its columns
+are sent to the device, which decompresses them, evaluates the conjuncts of the `PREWHERE` it can, and sends back only
+the rows they keep. The conjuncts it cannot evaluate, such as those over strings, are evaluated on the CPU over the rows
+sent back. It pays where the `PREWHERE` keeps few rows, and the CPU would spend more decompressing the columns than the
+link takes to carry their compressed blocks. Uses the settings of `allow_experimental_gpu_aggregation` for the reading.
+
+Possible values:
+
+- 0 - The table is read on the CPU.
+- 1 - A read whose `PREWHERE` the device can evaluate is filtered on a GPU.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New experimental setting to filter the reads of a `MergeTree` table on a GPU."}) \
     DECLARE(UInt64, gpu_aggregation_batch_bytes, 256 * 1024 * 1024, R"(
 How much of a column `allow_experimental_gpu_aggregation` gathers in host memory before sending it
 to the device.

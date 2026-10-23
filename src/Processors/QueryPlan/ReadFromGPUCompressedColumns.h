@@ -25,6 +25,9 @@ namespace DB
   * part's rows go through one `GROUP BY` on the device and the step takes the place of the
   * aggregation: it emits one row per group in the aggregation's header, the keys and then the
   * result of each aggregate, of which several may be of one column and a `count` of none.
+  *
+  * Collecting, without keys and aggregates, it takes the place of the read itself: the device evaluates the `WHERE` and
+  * sends back only the rows it keeps, of `columns` as they are, the step's header.
   */
 class ReadFromGPUCompressedColumns : public ISourceStep
 {
@@ -98,11 +101,13 @@ public:
         size_t num_streams_,
         size_t num_readers_,
         GPUDecompressionMode decompression_,
-        double device_decompression_max_ratio_);
+        double device_decompression_max_ratio_,
+        bool collect_ = false);
 
     String getName() const override { return "ReadFromGPUCompressedColumns"; }
 
     bool isGrouped() const { return !keys.empty(); }
+    bool isCollecting() const { return collect; }
 
     void setGroupFilter(GroupFilter group_filter_) { group_filter = std::move(group_filter_); }
 
@@ -133,6 +138,8 @@ private:
     /// A column of a part compressed to at most this fraction of its size is expanded on the
     /// device; one compressed worse is expanded on the CPU and sent as it is.
     double device_decompression_max_ratio;
+    /// The rows the filter keeps are sent back, of `columns`, rather than aggregated.
+    bool collect;
 };
 
 }
