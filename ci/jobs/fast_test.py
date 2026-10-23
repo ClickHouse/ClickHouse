@@ -289,6 +289,7 @@ def main():
                 name="Build ClickHouse",
                 command=f"command time -v cmake --build {build_dir_normalized} --"
                 " clickhouse-bundle clickhouse-stripped lexer_test",
+                info_extractor=Result.cpp_build_info_extractor,
             )
         )
         Shell.check(f"{build_dir}/rust/chcache/chcache stats", verbose=True)
