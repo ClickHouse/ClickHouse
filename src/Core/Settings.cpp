@@ -592,11 +592,11 @@ Possible values:
 - 0 — Retries are disabled.
 - A positive integer — The maximum number of retries.
 )", 0, \
-        {"26.10", 0, 0, "New setting to retry a distributed query after a network error, if no result data has been received from the remote server yet."}) \
+        {"26.11", 0, 0, "New setting to retry a distributed query after a network error, if no result data has been received from the remote server yet."}) \
     DECLARE(Milliseconds, distributed_query_retry_interval_ms, 1000, R"(
 The delay before a distributed query that failed with a network error is retried, see `distributed_query_retries`.
 )", 0, \
-        {"26.10", 1000, 1000, "New setting: the delay before a distributed query that failed with a network error is retried."}) \
+        {"26.11", 1000, 1000, "New setting: the delay before a distributed query that failed with a network error is retried."}) \
     DECLARE(UInt64, s3_strict_upload_part_size, S3::DEFAULT_STRICT_UPLOAD_PART_SIZE, R"(
 The exact size of part to upload during multipart upload to S3 (some implementations does not supports variable size parts).
 )", 0) \
