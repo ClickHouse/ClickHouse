@@ -500,6 +500,37 @@ SELECT count() FROM t_115999_converted WHERE hasAnyTokens(s, ['ab']);
 
 DROP TABLE t_115999_converted;
 
+-- The lookup key only selects which value is read, so it takes no part in matching the index, even when
+-- it comes from the other side of the join.
+SELECT 'a Map element whose key comes from the joined table';
+CREATE TABLE t_115999_keyed
+(
+    id UInt64,
+    group_id UInt64,
+    m Map(String, String),
+    INDEX idx_m mapValues(m) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+CREATE TABLE t_115999_keys
+(
+    group_id UInt64,
+    k String
+)
+ENGINE = MergeTree
+ORDER BY group_id;
+
+INSERT INTO t_115999_keyed VALUES (1, 1, map('k', 'alpha beta'));
+INSERT INTO t_115999_keys VALUES (1, 'k');
+
+SELECT count() FROM t_115999_keyed AS t INNER JOIN t_115999_keys AS kk ON t.group_id = kk.group_id
+WHERE hasAnyTokens(t.m[kk.k], ['alpha beta']);
+SELECT count() FROM t_115999_keyed WHERE hasAnyTokens(m['k'], ['alpha beta']);
+
+DROP TABLE t_115999_keys;
+DROP TABLE t_115999_keyed;
+
 -- A Distributed table carries no indexes of its own, so the initiator has to reach the shards' local
 -- table by name; otherwise a predicate it evaluates itself disagrees with the shard-local scans.
 SELECT 'a Distributed haystack, predicate on the initiator';

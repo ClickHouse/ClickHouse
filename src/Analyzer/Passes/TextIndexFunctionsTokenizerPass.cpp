@@ -348,22 +348,45 @@ private:
     String findTextIndexTokenizer(const QueryTreeNodePtr & expression, const String & function_name)
     {
         size_t substitutions = 0;
-        auto [resolved, storage] = resolveToTableColumns(expression, getContext(), substitutions);
-        if (!resolved)
-            return {};
+        auto resolution = resolveToTableColumns(expression, getContext(), substitutions);
+
+        /// `m[k]` reads a value that `mapValues(m)` indexes whatever the key is, so when the key is what
+        /// does not resolve - it may come from the other side of the join - the Map alone still answers.
+        bool map_only = false;
+        if (!resolution.expression)
+        {
+            const auto * element = expression->as<FunctionNode>();
+            if (!element || element->getFunctionName() != "arrayElement" || element->getArguments().getNodes().size() != 2)
+                return {};
+
+            resolution = resolveToTableColumns(element->getArguments().getNodes().front(), getContext(), substitutions);
+            if (!resolution.expression)
+                return {};
+
+            map_only = true;
+        }
+
+        const auto & resolved = *resolution.expression;
+        const auto & storage = resolution.storage;
 
         const auto metadata = storage->getInMemoryMetadataPtr(getContext(), /*bypass_metadata_cache=*/ false);
         const auto & indices = metadata->getSecondaryIndices();
         if (indices.empty())
             return {};
 
-        auto key = std::make_tuple(storage.get(), indexExpressionName(*resolved), function_name);
+        auto name = indexExpressionName(resolved);
+        if (map_only)
+            name = "mapValues(" + name + ")";
+
+        auto key = std::make_tuple(storage.get(), name, function_name);
 
         auto [it, inserted] = tokenizer_cache.try_emplace(key);
         if (!inserted)
             return it->second;
 
-        const Carriers carriers = carrierNames(*resolved, std::get<1>(key), *metadata);
+        /// An unresolved key makes the expression name describe nothing, so only the Map carries the index.
+        const Carriers carriers = map_only ? Carriers{.names = {name}, .json_subcolumn = {}}
+                                           : carrierNames(resolved, name, *metadata);
 
         for (const auto & index : indices)
         {
