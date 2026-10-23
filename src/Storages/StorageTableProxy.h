@@ -112,6 +112,41 @@ public:
             materialized->updateExternalDynamicMetadataIfExists(context_);
     }
 
+    /// Asked by every interpreter inside a transaction before the operation, which materializes the
+    /// nested table anyway - a lazy `MergeTree` table must not be rejected as an engine without them.
+    bool supportsTransactions() const override { return getNested()->supportsTransactions(); }
+
+    /// Forwarded here rather than in `StorageProxy`: there `getNested` of `StorageTableFunctionProxy` would run
+    /// the table function, which must not happen for `BACKUP` of a table whose source is missing.
+    /// Not forwarding these makes `BACKUP` write the table definition with no data at all, and the
+    /// restore of such a backup silently succeeds with an empty table. `supportsBackupPartition` is
+    /// answered by `BackupEntriesCollector` and `RestorerFromBackup` before they reach the two data
+    /// methods below, so it has to be forwarded as well - otherwise `BACKUP TABLE ... PARTITION ...`
+    /// is rejected with `Table engine TableProxy doesn't support partitions`.
+    bool supportsBackupPartition() const override { return getNested()->supportsBackupPartition(); }
+
+    /// `DatabaseWithOwnTablesBase::getTablesForBackup` calls it on the catalog object before the data is
+    /// collected, e.g. `ReplicatedMergeTree` puts the current metadata from ZooKeeper into the backed up
+    /// `CREATE TABLE` query here.
+    void applyMetadataChangesToCreateQueryForBackup(const ASTPtr & create_query) const override
+    {
+        getNested()->applyMetadataChangesToCreateQueryForBackup(create_query);
+    }
+
+    void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override
+    {
+        getNested()->backupData(backup_entries_collector, data_path_in_backup, partitions);
+    }
+
+    void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override
+    {
+        getNested()->restoreDataFromBackup(restorer, data_path_in_backup, partitions);
+    }
+
+    /// `RestorerFromBackup` calls it on the same object it restored the data into, after the data of all
+    /// tables has been restored, e.g. `EmbeddedRocksDB` reopens its read-only handles here.
+    void finalizeRestoreFromBackup() override { getNested()->finalizeRestoreFromBackup(); }
+
     StoragePtr getNested() const override
     {
         std::lock_guard lock{nested_mutex};
