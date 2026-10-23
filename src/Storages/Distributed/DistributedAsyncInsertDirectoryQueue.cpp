@@ -525,8 +525,11 @@ struct DistributedAsyncInsertDirectoryQueue::BatchHeader
 
     bool operator==(const BatchHeader & other) const
     {
-        return std::tie(settings, query, client_info.query_kind, client_info.client_agent, client_info.is_internal) ==
-               std::tie(other.settings, other.query, other.client_info.query_kind, other.client_info.client_agent, other.client_info.is_internal) &&
+        /// `initial_user` is the identity the shard authenticates the batch as (with the interserver `<secret>`),
+        /// and the whole batch is sent with the `ClientInfo` of its first file, so files of different users must
+        /// never be merged into one batch.
+        return std::tie(settings, query, client_info.query_kind, client_info.initial_user, client_info.client_agent, client_info.is_internal) ==
+               std::tie(other.settings, other.query, other.client_info.query_kind, other.client_info.initial_user, other.client_info.client_agent, other.client_info.is_internal) &&
                blocksHaveEqualStructure(header, other.header);
     }
 
@@ -536,6 +539,7 @@ struct DistributedAsyncInsertDirectoryQueue::BatchHeader
         {
             SipHash hash_state;
             hash_state.update(batch_header.query.data(), batch_header.query.size());
+            hash_state.update(batch_header.client_info.initial_user.data(), batch_header.client_info.initial_user.size());
             hash_state.update(batch_header.client_info.client_agent.data(), batch_header.client_info.client_agent.size());
             hash_state.update(batch_header.client_info.is_internal);
             batch_header.header.updateHash(hash_state);
