@@ -870,7 +870,9 @@ void AlterCommand::apply(
         /// Otherwise just clear data on disk
         if (!clear && !partition)
         {
-            if (should_skip_column_operation(column_name))
+            /// With shared offsets `n` names the group of `n.*` columns, the same as in `prepare` and `validate`.
+            bool column_exists = metadata.columns.has(column_name) || (share_nested_offsets && metadata.columns.hasNested(column_name));
+            if (if_exists && !column_exists)
                 return;
             metadata.columns.remove(column_name);
         }
