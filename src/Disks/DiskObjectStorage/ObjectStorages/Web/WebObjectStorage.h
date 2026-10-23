@@ -6,6 +6,7 @@
 
 #include <list>
 #include <mutex>
+#include <optional>
 #include <unordered_map>
 #include <vector>
 
@@ -27,6 +28,9 @@ public:
     {
         String base_url;
         String query_fragment;
+        /// An option-specific path used for path-level failover. The object keeps one logical path,
+        /// while each failover option can point to a different concrete URL path.
+        std::optional<String> path_override;
     };
 
     using URLOptions = std::vector<URL>;

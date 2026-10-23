@@ -52,7 +52,7 @@ struct ObjectInfo
     virtual std::optional<size_t> getFileSizeHint() const { return std::nullopt; }
 
     std::optional<ObjectMetadata> getObjectMetadata() const { return relative_path_with_metadata.metadata; }
-    void setObjectMetadata(const ObjectMetadata & metadata) { relative_path_with_metadata.metadata = metadata; }
+    void setObjectMetadata(const ObjectMetadata & metadata) { relative_path_with_metadata.setMetadata(metadata); }
 
     FileBucketInfoPtr file_bucket_info;
 

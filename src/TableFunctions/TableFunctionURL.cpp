@@ -19,6 +19,7 @@
 #include <Storages/StorageURLCluster.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
+#include <IO/Archives/ArchiveUtils.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromVector.h>
 #include <Storages/HivePartitioningUtils.h>
@@ -29,6 +30,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool allow_archive_path_syntax;
     extern const SettingsBool allow_url_wildcard_from_index_pages;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsString cluster_for_parallel_replicas;
@@ -44,17 +46,6 @@ namespace ErrorCodes
 
 namespace
 {
-    void checkExperimentalURLWildcardFromIndexPages(const ContextPtr & context)
-    {
-        if (context->getSettingsRef()[Setting::allow_url_wildcard_from_index_pages])
-            return;
-
-        throw Exception(
-            ErrorCodes::SUPPORT_IS_DISABLED,
-            "Wildcard expansion for `url` from HTTP index pages is experimental. "
-            "Set `allow_url_wildcard_from_index_pages = 1` to enable it");
-    }
-
     ASTs makeWebObjectStorageEngineArgs(
         const String & source,
         const String & format,
@@ -95,6 +86,30 @@ namespace
 
         return engine_args;
     }
+}
+
+void TableFunctionURL::checkExperimentalURLWildcardFromIndexPages(const ContextPtr & context) const
+{
+    if (context->getSettingsRef()[Setting::allow_url_wildcard_from_index_pages])
+        return;
+
+    throw Exception(
+        ErrorCodes::SUPPORT_IS_DISABLED,
+        "Wildcard expansion for `url` from HTTP index pages is experimental. "
+        "Set `allow_url_wildcard_from_index_pages = 1` to enable it");
+}
+
+std::shared_ptr<StorageWebConfiguration> TableFunctionURL::createWebObjectStorageConfiguration(
+    const String & source,
+    const String & format_,
+    const String & structure_,
+    const String & compression_method_,
+    ContextPtr context) const
+{
+    auto object_storage_configuration = std::make_shared<StorageWebConfiguration>();
+    auto engine_args = makeWebObjectStorageEngineArgs(source, format_, structure_, compression_method_, configuration.headers);
+    StorageObjectStorageConfiguration::initialize(*object_storage_configuration, engine_args, context, /* with_table_structure */ true);
+    return object_storage_configuration;
 }
 
 VectorWithMemoryTracking<size_t> TableFunctionURL::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
@@ -190,6 +205,13 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
         buildDelegate(target, context);
         return;
     }
+
+    /// Reject this combination before schema inference can treat the archive source as a literal URL.
+    /// Both `url` and `urlCluster` pass through this parser.
+    if (context->getSettingsRef()[Setting::allow_archive_path_syntax]
+        && !configuration.http_method.empty()
+        && getURLAndArchivePattern(filename).second.has_value())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Archive path syntax is not supported with a custom HTTP method");
 
     /// Re-derive format from the resolved URL if still auto, because the original
     /// filename may have been a relative reference (e.g. "?x=1") with no extension.
@@ -353,17 +375,24 @@ StoragePtr TableFunctionURL::getStorage(
     const auto is_secondary_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
     const auto parallel_replicas_cluster_name = settings[Setting::cluster_for_parallel_replicas].toString();
 
-    /// Listable `*` / `**` path wildcards are expanded by listing HTTP index pages through
+    /// Listable `*` / `**` path wildcards and HTTP archives are read through
     /// `StorageObjectStorage` (the branch below). `StorageURLCluster` still uses
     /// `DisclosedGlobIterator` / `parseRemoteDescription` and cannot list index pages, so it must not
     /// take over such queries via the parallel-replicas path — that would silently fall back to the
     /// old literal/template expansion and read different (or no) files than the non-cluster path.
-    const bool use_web_wildcard = !is_insert_query && configuration.http_method.empty() && urlPathHasListableGlobs(source);
+    const auto [url, archive_pattern] = settings[Setting::allow_archive_path_syntax]
+        ? getURLAndArchivePattern(source)
+        : std::pair<String, std::optional<String>>{source, std::nullopt};
+    const bool use_web_wildcard = !is_insert_query && configuration.http_method.empty() && urlPathHasListableGlobs(url);
+    /// `is_insert_query` also marks persistent table creation and metadata replay, not just writes.
+    /// Archives always need `StorageObjectStorage`; actual writes are rejected by its `createSink`.
+    /// Custom HTTP methods with archive syntax are already rejected by `parseArgumentsImpl`.
+    const bool use_web_object_storage = use_web_wildcard || archive_pattern.has_value();
 
     const bool can_use_parallel_replicas = context->canReplaceClusterEngineWithClusterVariant()
         && !is_secondary_query
         && !is_insert_query
-        && !use_web_wildcard;
+        && !use_web_object_storage;
 
     if (can_use_parallel_replicas)
     {
@@ -379,13 +408,12 @@ StoragePtr TableFunctionURL::getStorage(
             configuration);
     }
 
-    if (use_web_wildcard)
+    if (use_web_object_storage)
     {
-        checkExperimentalURLWildcardFromIndexPages(context);
-        auto object_storage_configuration = std::make_shared<StorageWebConfiguration>();
-
-        auto engine_args = makeWebObjectStorageEngineArgs(source, format_, structure, compression_method_, configuration.headers);
-        StorageObjectStorageConfiguration::initialize(*object_storage_configuration, engine_args, context, /* with_table_structure */ true);
+        if (use_web_wildcard)
+            checkExperimentalURLWildcardFromIndexPages(context);
+        auto object_storage_configuration
+            = createWebObjectStorageConfiguration(source, format_, structure, compression_method_, context);
 
         ObjectStoragePtr object_storage = object_storage_configuration->createObjectStorage(context, /* is_readonly */ true, std::nullopt);
 
@@ -437,13 +465,18 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
         ColumnsDescription columns;
         String sample_path = filename;
 
-        if (configuration.http_method.empty() && urlPathHasListableGlobs(filename))
-        {
-            checkExperimentalURLWildcardFromIndexPages(context);
+        const auto [url, archive_pattern] = context->getSettingsRef()[Setting::allow_archive_path_syntax]
+            ? getURLAndArchivePattern(filename)
+            : std::pair<String, std::optional<String>>{filename, std::nullopt};
+        const bool use_web_wildcard = configuration.http_method.empty() && urlPathHasListableGlobs(url);
 
-            auto object_storage_configuration = std::make_shared<StorageWebConfiguration>();
-            auto engine_args = makeWebObjectStorageEngineArgs(filename, format, structure, compression_method, configuration.headers);
-            StorageObjectStorageConfiguration::initialize(*object_storage_configuration, engine_args, context, /* with_table_structure */ true);
+        if (use_web_wildcard || (configuration.http_method.empty() && archive_pattern.has_value()))
+        {
+            if (use_web_wildcard)
+                checkExperimentalURLWildcardFromIndexPages(context);
+
+            auto object_storage_configuration
+                = createWebObjectStorageConfiguration(filename, format, structure, compression_method, context);
             object_storage_configuration->check(context);
 
             auto object_storage = object_storage_configuration->createObjectStorage(context, /* is_readonly */ true, std::nullopt);
@@ -579,6 +612,37 @@ Scheme dispatch is not yet wired through [`urlCluster`](/reference/functions/tab
 
 For the same reason, a dispatched `url` call is read on the node that received the query: the [parallel_replicas_for_cluster_engines](/reference/settings/session-settings/parallel-replicas#parallel_replicas_for_cluster_engines) fan-out is not applied to it. Use the corresponding cluster function directly when you want the read distributed across replicas.
 
+## Working with archives {#working-with-archives}
+
+Files in remote archives can be read by separating the archive URL and the path inside it with `::`. Globs are supported in both parts. The supported archive suffixes are aligned with the `file` and `s3` functions:
+
+- ZIP: `.zip`, `.zipx`
+- TAR: `.tar`, `.tar.gz`, `.tgz`, `.tar.zst`, `.tzst`, `.tar.xz`, `.tar.bz2`, `.tar.lzma`
+- 7Z: `.7z`
+
+```sql
+SELECT *
+FROM url('https://example.com/dataset.zip :: data/*.csv');
+```
+
+Archive URLs support the same union and failover templates as other `url` sources. Comma and numeric alternatives create independent archive reads, while `|` keeps alternatives in one failover group and uses the first URL that succeeds:
+
+```sql
+-- Read both numbered archives.
+SELECT * FROM url('https://example.com/dataset{0,1}.zip :: data.csv');
+
+-- Try the primary archive, then its mirror.
+SELECT * FROM url('https://example.com/dataset{primary|mirror}.zip :: data.csv');
+```
+
+Brace and numeric templates are expanded locally and do not require [`allow_url_wildcard_from_index_pages`](/reference/settings/session-settings/allow#allow_url_wildcard_from_index_pages). Archive URL patterns containing `*` or `**` use HTTP index-page listing and require that setting. Path-level `|` failover cannot be combined with `*` or `**` index-page expansion.
+
+The final combination of host/query shards, archive-path unions, and failover options is limited by [glob_expansion_max_elements](/reference/settings/session-settings/other#glob_expansion_max_elements).
+
+The [`allow_archive_path_syntax`](/reference/settings/session-settings/allow#allow_archive_path_syntax) setting is enabled by default. A `::` in a URL query string or fragment is treated as an archive separator only when the URL path itself looks like a supported archive path. For example, `api?x=::1` remains literal URL content, while `archive.zip?token=x::member.csv` reads `member.csv` from the archive without requiring spaces around `::`. A path such as `data.zip::v1` is inherently ambiguous and is interpreted as archive syntax while this setting is enabled; to use it as a literal URL path, disable `allow_archive_path_syntax` for the query.
+
+Archive access is read-only. The server must report the archive size so ClickHouse can issue range requests.
+
 ## Globs in URL {#globs-in-url}
 
 Patterns in `{ }` are used to generate a set of shards or to specify failover addresses. Supported pattern types and examples see in the description of the [remote](/reference/functions/table-functions/remote#globs-in-addresses) function.
@@ -623,11 +687,11 @@ SETTINGS max_threads = 1, allow_url_wildcard_from_index_pages = 1;
 
 ## Virtual Columns {#virtual-columns}
 
-- `_path` — Path to the `URL`. Type: `LowCardinality(String)`.
-- `_file` — Resource name of the `URL`. Type: `LowCardinality(String)`.
-- `_size` — Size of the resource in bytes. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
-- `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
-- `_headers` - HTTP response headers. Type: `Map(LowCardinality(String), LowCardinality(String))`.
+- `_path` — Path to the `URL`. For an archive member, the value is `<archive path>::<member path>`. Type: `LowCardinality(String)`.
+- `_file` — Resource name of the `URL`. For an archive member, the value is the member name. Type: `LowCardinality(String)`.
+- `_size` — Size of the resource in bytes. For an archive member, the value is its uncompressed size. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
+- `_time` — Last modified time of the file or archive member. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
+- `_headers` - HTTP response headers. For an archive member, these are the headers returned while reading the outer archive. Type: `Map(LowCardinality(String), LowCardinality(String))`.
 
 ## use_hive_partitioning setting {#hive-style-partitioning}
 

@@ -10231,6 +10231,8 @@ This setting defines the granularity of work distribution across the cluster:
 
 Choosing finer granularity (like `bucket`) can improve parallelism when working with a small number of large files.
 For instance, if a Parquet file contains multiple row groups, enabling `bucket` granularity allows each group to be processed independently by different workers.
+
+The `bucket` granularity is not supported for archive reads. Archive members must be processed with `file` granularity because splitting the outer archive object cannot preserve the identity of an individual member.
 )", 0, \
         {"25.11", "file", "file", "New setting."}) \
     DECLARE(UInt64, cluster_table_function_buckets_batch_size, 0, R"(

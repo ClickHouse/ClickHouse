@@ -4,6 +4,9 @@
 #include <Common/StringUtils.h>
 #include <Common/parseGlobs.h>
 #include <Disks/DiskType.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeString.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
@@ -193,12 +196,23 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     }
 
     metadata.setConstraints(constraints_);
-    metadata.setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
+    auto virtual_columns = VirtualColumnUtils::getVirtualsForFileLikeStorage(
         metadata.columns,
         context_,
         /* format_settings */std::nullopt,
         configuration->partition_strategy_type,
-        sample_path));
+        sample_path);
+    if (configuration->getType() == ObjectStorageType::Web && !metadata.columns.has("_headers"))
+    {
+        virtual_columns.addEphemeral(
+            "_headers",
+            std::make_shared<DataTypeMap>(
+                std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+                std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())),
+            "",
+            VirtualsMaterializationPlace::Reader);
+    }
+    metadata.setVirtuals(std::move(virtual_columns));
 
     setInMemoryMetadata(metadata);
 }
@@ -485,6 +499,20 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
     ClusterPtr cluster,
     StorageMetadataPtr storage_metadata_snapshot) const
 {
+    const auto split_granularity
+        = local_context->getSettingsRef()[Setting::cluster_table_function_split_granularity];
+    /// `ObjectIteratorSplitByBuckets` rebuilds split tasks as plain `ObjectInfo` objects from
+    /// `relative_path_with_metadata`. For `ObjectInfoInArchive`, that base field identifies the
+    /// outer archive rather than the member, so bucket splitting would read container bytes and
+    /// discard the archive-member identity before the task reaches a worker.
+    if (configuration->isArchive() && split_granularity == ObjectStorageGranularityLevel::BUCKET)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Setting `cluster_table_function_split_granularity = 'bucket'` is not supported for reading archives");
+
+    const bool send_over_whole_archive
+        = !local_context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes];
+
     auto iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
         configuration->getQuerySettings(local_context),
@@ -498,10 +526,10 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         hive_partition_columns_to_read_from_file_path,
         nullptr,
         local_context->getFileProgressCallback(),
-        /*ignore_archive_globs=*/false,
-        /*skip_object_metadata=*/true);
+        /* ignore_archive_globs */ send_over_whole_archive,
+        /* skip_object_metadata */ true);
 
-    if (local_context->getSettingsRef()[Setting::cluster_table_function_split_granularity] == ObjectStorageGranularityLevel::BUCKET)
+    if (split_granularity == ObjectStorageGranularityLevel::BUCKET)
     {
         iterator = std::make_shared<ObjectIteratorSplitByBuckets>(
             std::move(iterator),
@@ -527,7 +555,7 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
     auto task_distributor = std::make_shared<StorageObjectStorageStableTaskDistributor>(
         iterator,
         std::move(ids_of_hosts),
-        /* send_over_whole_archive */!local_context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes],
+        send_over_whole_archive,
         /* wait_for_owner */ std::chrono::milliseconds(local_context->getSettingsRef()[Setting::cluster_function_wait_for_replica_ms].totalMilliseconds()));
 
     auto callback = std::make_shared<TaskIterator>(
