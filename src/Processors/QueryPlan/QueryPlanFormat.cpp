@@ -122,7 +122,15 @@ namespace QueryPlanFormat
 
     void formatOutputColumns(const std::unordered_map<String, PrettyColumnName> & pretty_names, WriteBuffer & out, const IQueryPlanStep & step, const String & prefix)
     {
-        if (!step.hasOutputHeader() || step.getOutputHeader()->empty())
+        /// A sink, such as the send step at the root of a query fragment, has no output header: its output is the
+        /// data it sends, which is its input.
+        SharedHeader header;
+        if (step.hasOutputHeader())
+            header = step.getOutputHeader();
+        else if (step.getInputHeaders().size() == 1)
+            header = step.getInputHeaders().front();
+
+        if (!header || header->empty())
         {
             out << prefix << "Output: Empty\n";
             return;
@@ -130,7 +138,7 @@ namespace QueryPlanFormat
 
         out << prefix << "Output: ";
         bool first = true;
-        for (const auto & elem : *step.getOutputHeader())
+        for (const auto & elem : *header)
         {
             if (!first)
                 out << ", ";
