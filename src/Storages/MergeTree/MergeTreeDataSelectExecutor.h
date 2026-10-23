@@ -341,14 +341,16 @@ public:
         LoggerPtr log);
 
     /// Returns an error if the index depends on a column updated on the fly. A value update
-    /// (@value_updated_columns: ALTER UPDATE / patches) always makes it stale. A value-preserving type
-    /// change is tolerated when @part records the granules were built against the current read type.
+    /// (@value_updated_columns: ALTER UPDATE / patches / pending drops), or a MATERIALIZED column the read
+    /// recalculates from an updated one, always makes it stale. A value-preserving type change is tolerated
+    /// when @part records the granules were built against the current read type.
     /// @part is optional: some callers aggregate updated columns across parts and decide once.
     static std::expected<void, PreformattedMessage> canUseIndex(
         const MergeTreeIndexPtr & index,
         const StorageMetadataPtr & metadata_snapshot,
         const NameSet & all_updated_columns,
         const NameSet & value_updated_columns,
+        const ContextPtr & context,
         const IMergeTreeDataPart * part = nullptr);
 
 

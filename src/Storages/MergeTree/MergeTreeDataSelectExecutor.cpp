@@ -33,6 +33,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/MaterializedColumnDependencies.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Cache/QueryConditionCacheTimeConditions.h>
@@ -784,6 +785,7 @@ std::expected<void, PreformattedMessage> MergeTreeDataSelectExecutor::canUseInde
     const StorageMetadataPtr & metadata_snapshot,
     const NameSet & all_updated_columns,
     const NameSet & value_updated_columns,
+    const ContextPtr & context,
     const IMergeTreeDataPart * part)
 {
     if (all_updated_columns.empty() && value_updated_columns.empty())
@@ -812,6 +814,9 @@ std::expected<void, PreformattedMessage> MergeTreeDataSelectExecutor::canUseInde
             index->index.name, required_name, updated_by));
     };
 
+    /// Built on first use: analysing a MATERIALIZED default runs the analyzer.
+    std::optional<MaterializedColumnDependencies> materialized_dependencies;
+
     for (const auto & required_column : required_columns_list)
     {
         /// A value change makes the granules describe stale values, so the index is unusable however it
@@ -819,6 +824,20 @@ std::expected<void, PreformattedMessage> MergeTreeDataSelectExecutor::canUseInde
         for (const auto & updated_column : value_updated_columns)
             if (overlaps(updated_column, required_column.name))
                 return updated_on_the_fly(required_column.name, updated_column);
+
+        /// So does a MATERIALIZED column the read recalculates from an updated input. Same rule as in
+        /// `AlterConversions::buildMutationChainForRead`, so both agree on what is recalculated.
+        if (!all_updated_columns.empty())
+        {
+            if (!materialized_dependencies)
+                materialized_dependencies.emplace(metadata_snapshot->getColumns(), context);
+
+            const auto storage_name = required_column.getNameInStorage();
+            if (!materialized_dependencies->findColumnsToRecalculate(storage_name, all_updated_columns).empty())
+                return std::unexpected(PreformattedMessage::create(
+                    "Index {} depends on column `{}` which will be recalculated on the fly from updated columns",
+                    index->index.name, required_column.name));
+        }
 
         std::string_view updated_by;
         for (const auto & updated_column : all_updated_columns)
@@ -972,7 +991,7 @@ static bool partHasStaleTopKIndex(
         /// A pending update / patch / MODIFY COLUMN that touches the indexed column makes its minmax
         /// stale. Reuse the same overlap check the regular skip-index path uses (canUseIndex), so the
         /// top-k path is consistent with it. Changes to other columns leave the index valid.
-        if (!MergeTreeDataSelectExecutor::canUseIndex(top_k_index, metadata_snapshot, alter_conversions->getAllUpdatedColumns(), alter_conversions->getValueUpdatedColumns(), part.get()))
+        if (!MergeTreeDataSelectExecutor::canUseIndex(top_k_index, metadata_snapshot, alter_conversions->getAllUpdatedColumns(), alter_conversions->getValueUpdatedColumns(), context, part.get()))
             return true;
     }
 
@@ -1285,7 +1304,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                 auto can_use_index = [&](const MergeTreeIndexPtr & index) -> std::expected<void, PreformattedMessage>
                 {
-                    auto check_result = canUseIndex(index, metadata_snapshot, all_updated_columns, value_updated_columns, ranges.data_part.get());
+                    auto check_result = canUseIndex(index, metadata_snapshot, all_updated_columns, value_updated_columns, context, ranges.data_part.get());
                     if (!check_result)
                     {
                         return std::unexpected(PreformattedMessage::create(
