@@ -334,6 +334,7 @@ std::string_view sourceToString(MemoryWorker::MemoryUsageSource source)
     {
         case MemoryWorker::MemoryUsageSource::Cgroups: return "Cgroups";
         case MemoryWorker::MemoryUsageSource::Jemalloc: return "Jemalloc";
+        case MemoryWorker::MemoryUsageSource::OS: return "OS";
         case MemoryWorker::MemoryUsageSource::None: return "None";
     }
 }
@@ -344,6 +345,7 @@ std::string_view sourceToString(MemoryWorker::MemoryUsageSource source)
 /// Supported sources in order of priority
 /// - reading from cgroups' pseudo-files (fastest and most accurate)
 /// - reading jemalloc's resident stat (doesn't take into account allocations that didn't use jemalloc)
+/// - reading process RSS on illumos when jemalloc is unavailable
 /// Also, different tick rates are used because not all options are equally fast
 MemoryWorker::MemoryWorker(
     MemoryWorkerConfig config,
@@ -493,6 +495,15 @@ MemoryWorker::MemoryWorker(
     if (rss_update_period_ms == 0)
         rss_update_period_ms = jemalloc_memory_usage_tick_ms;
 #endif
+
+#if defined(OS_SUNOS) && !USE_JEMALLOC
+    static constexpr uint64_t os_memory_usage_tick_ms{100};
+
+    os_memory_statistics = std::make_unique<MemoryStatisticsOS>();
+    source = MemoryUsageSource::OS;
+    if (rss_update_period_ms == 0)
+        rss_update_period_ms = os_memory_usage_tick_ms;
+#endif
 }
 
 void MemoryWorker::setReleasableCache(std::shared_ptr<IMemoryReleasableCache> cache)
@@ -583,6 +594,15 @@ MemoryWorker::MemoryUsage MemoryWorker::getMemoryUsage(bool log_error)
 #else
             [[fallthrough]];
 #endif
+        case MemoryUsageSource::OS:
+#if defined(OS_SUNOS)
+            if (os_memory_statistics != nullptr)
+            {
+                usage.resident = os_memory_statistics->get().resident;
+                break;
+            }
+#endif
+            [[fallthrough]];
         case MemoryUsageSource::None:
         {
             if (log_error)
