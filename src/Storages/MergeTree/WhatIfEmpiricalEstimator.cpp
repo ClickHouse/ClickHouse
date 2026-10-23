@@ -77,20 +77,18 @@ size_t countWindows(const MarkRanges & windows, size_t granularity)
     return count;
 }
 
-/// all windows, or the windows of a sample of the baseline marks, so a window with more baseline marks is more likely in the sample
-/// one mark from every run of the marks of `step` windows on average, so the part reads no more windows than one of every `step`
+/// all windows (`run` = 0), or the windows of a sample of the baseline marks, so a window with more baseline marks is more likely in the sample
+/// one mark from every run of `run` baseline marks. All parts use the same run, so a part gets draws in proportion to its baseline marks
 /// the same `GRANULARITY` gives every candidate the same windows
 /// `weights` gets the baseline marks that each sampled window stands for: the runs that took it, and the last run can be shorter
 MarkRanges windowsToScan(
-    const MarkRanges & baseline, const MarkRanges & windows, size_t granularity, size_t total_marks, size_t step,
+    const MarkRanges & baseline, const MarkRanges & windows, size_t granularity, size_t total_marks, size_t run,
     const String & part_name, std::vector<double> & weights)
 {
-    if (step <= 1 || windows.empty())
+    if (run == 0 || windows.empty())
         return windows;
 
     const size_t marks = baseline.getNumberOfMarks();
-    const size_t count = countWindows(windows, granularity);
-    const size_t run = (marks * step + count - 1) / count;
     const auto sampled = sampleUnits(marks, run, part_name);
     MarkRanges ranges;
     const auto * range = baseline.begin();
@@ -174,6 +172,7 @@ bool tryEstimateEmpirical(
     std::vector<size_t> part_windows(saved_parts.size());
     UInt64 rows_to_scan = 0;
     size_t windows_to_scan = 0;
+    size_t marks_to_scan = 0;
     for (size_t i = 0; i < saved_parts.size(); ++i)
     {
         const auto & granularity = *saved_parts[i].data_part->index_granularity;
@@ -182,9 +181,12 @@ bool tryEstimateEmpirical(
         part_windows[i] = countWindows(read_ranges[i], skip_index_granularity);
         rows_to_scan += granularity.getRowsCountInRanges(read_ranges[i]);
         windows_to_scan += part_windows[i];
+        marks_to_scan += saved_parts[i].ranges.getNumberOfMarks();
     }
     const UInt64 read_limit = limit_settings[Setting::max_rows_to_read];
     const size_t step = samplingStep(rows_to_scan, windows_to_scan, index_scan_budget_rows, read_limit);
+    /// the baseline marks of `step` windows on average, so the sample reads about one window of every `step`
+    const size_t run = step <= 1 ? 0 : (marks_to_scan * step + windows_to_scan - 1) / windows_to_scan;
 
     bool sampled = false;
     std::vector<bool> part_sampled(saved_parts.size());
@@ -194,7 +196,7 @@ bool tryEstimateEmpirical(
     {
         const auto & part = *saved_parts[i].data_part;
         read_ranges[i] = windowsToScan(
-            saved_parts[i].ranges, read_ranges[i], skip_index_granularity, part.index_granularity->getMarksCountWithoutFinal(), step,
+            saved_parts[i].ranges, read_ranges[i], skip_index_granularity, part.index_granularity->getMarksCountWithoutFinal(), run,
             part.name, sample_weights[i]);
         part_sampled[i] = countWindows(read_ranges[i], skip_index_granularity) < part_windows[i];
         sampled |= part_sampled[i];
@@ -216,7 +218,8 @@ bool tryEstimateEmpirical(
     /// the sampled parts scale their surviving share to their baseline marks, and the sampling error widens the span
     double estimated_survivors = 0;
     UInt64 sampled_part_marks = 0;
-    size_t sampled_part_windows = 0;
+    /// the most baseline marks that one run stands for
+    double heaviest_draw = 0;
     UInt64 baseline_marks = 0;
     std::vector<double> window_survives;
     /// a sampled window counts with the baseline marks it stands for
@@ -424,7 +427,7 @@ bool tryEstimateEmpirical(
             continue;
         }
         sampled_part_marks += part_baseline_marks;
-        sampled_part_windows += part_windows[part_idx];
+        heaviest_draw = std::max(heaviest_draw, static_cast<double>(std::min<UInt64>(run, part_baseline_marks)));
     }
 
     if (total_data_granules == 0)
@@ -448,28 +451,25 @@ bool tryEstimateEmpirical(
 
     /// one share for all sampled parts: a share for each part would drop the marks of its windows when it samples few
     double weighted_marks = 0;
-    double squared_weights = 0;
     double weighted_survivors = 0;
     for (size_t i = 0; i < window_survives.size(); ++i)
     {
         weighted_marks += window_weights[i];
-        squared_weights += window_weights[i] * window_weights[i];
         weighted_survivors += window_survives[i] * window_weights[i];
     }
     /// the scan does not count a trailing window with an empty aggregator, so the sampled parts can count no marks
     estimated_survivors += weighted_survivors * static_cast<double>(sampled_part_marks) / std::max(weighted_marks, 1.0);
 
-    /// one range that the sample missed, with its ends known only to a step, and two standard errors of the surviving
+    /// one range that the sample missed, with its ends known only to a run, and two standard errors of the surviving
     /// share (successive differences, which fit a systematic sample)
-    const double window_marks = static_cast<double>(sampled_part_marks) / static_cast<double>(sampled_part_windows);
-    double spread = 2.0 * static_cast<double>(step) * window_marks;
+    double spread = 2.0 * static_cast<double>(run);
     if (!window_survives.empty())
     {
-        /// the rule of three is the least error, also for a sample with no change and no spread: the other outcome is under 3
-        /// in the count of draws. Draws of unequal weights count as fewer draws: the squared sum of the weights over the sum of squares
-        const double draws = weighted_marks * weighted_marks / squared_weights;
+        /// the rule of three is the least error, also for a sample with no change and no spread: a change that no draw found
+        /// has fewer marks than 3 heaviest draws, with a 95% chance. Light draws find less, so they do not make this error smaller
         const double sample_error = window_survives.size() > 1 ? standardErrorOfSample(window_survives, window_weights) : 0;
-        spread += 2.0 * std::max(sample_error, 1.5 / draws) * static_cast<double>(sampled_part_marks);
+        const double least_error = 1.5 * heaviest_draw / std::max(weighted_marks, 1.0);
+        spread += 2.0 * std::max(sample_error, least_error) * static_cast<double>(sampled_part_marks);
     }
 
     /// the sampled windows are exact, so they bound the estimate and the span

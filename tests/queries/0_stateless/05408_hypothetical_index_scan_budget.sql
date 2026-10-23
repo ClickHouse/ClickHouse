@@ -154,10 +154,11 @@ ORDER BY predicate;
 
 DROP TABLE t_mass;
 
--- a part of two windows keeps its 64 marks in one draw, and only its second window has v = 2.
--- the other part keeps 2 marks of each of its 58 windows, in draws of 4 marks, and only its window 50 has v = 1.
--- so 32 baseline marks survive for v = 2, and 34 for v >= 1
-SELECT '-- draws of unequal weights count as fewer draws, so the span holds the real granules';
+-- a part of two windows keeps its 64 marks, and only its second window has v = 2.
+-- the other part keeps 2 marks of each of its 58 windows, and only its window 50 has v = 1.
+-- so 32 baseline marks survive for v = 2, and 34 for v >= 1. Both parts take one draw from every 6 baseline marks,
+-- so the first part reads its two windows. A run for each part gave it one draw of 64 marks, so the sample found its survivors only by chance
+SELECT '-- all parts take draws in proportion to their baseline marks, so the span holds the real granules';
 -- part statistics on v would remove the parts with no surviving window from the baseline
 SET use_statistics_for_part_pruning = 0;
 DROP TABLE IF EXISTS t_weight;
