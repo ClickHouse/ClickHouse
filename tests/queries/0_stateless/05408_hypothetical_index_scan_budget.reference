@@ -41,10 +41,10 @@ empirical_reason: The estimate would read 12000 rows, over max_rows_to_read = 60
 -- windows with different marks count with their marks, so the estimate holds the real granules
 30	226 / 270	['252','224','268']	240	1
 -- a window joins the sample with a chance in proportion to its baseline marks, so the span holds the real granules
-236 / 19200	['216','192','427']	192	1
+88 / 960	['48','48','95']	48	1
 -- the sampled windows bound the estimate, so the estimate is in the span
-v != 200	236 / 19200	['722','549','722']	722	1	1
-v = 200	236 / 19200	['64','64','237']	64	1	1
+v != 25	88 / 960	['146','110','146']	146	1	1
+v = 25	88 / 960	['16','16','52']	16	1	1
 -- draws of unequal weights count as fewer draws, so the span holds the real granules
-v = 2	122 / 3840	['0','0','122']	64	1
-v >= 1	122 / 3840	['4','2','124']	66	1
+v = 2	90 / 1920	['0','0','88']	32	1
+v >= 1	90 / 1920	['4','2','92']	34	1

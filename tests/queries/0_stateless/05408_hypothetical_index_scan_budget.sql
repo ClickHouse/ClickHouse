@@ -123,13 +123,13 @@ FROM
 
 DROP TABLE t_uneven;
 
--- the baseline keeps every mark of each hundredth window and two marks of each other window. Only the full windows have v < 1000
+-- the baseline keeps every mark of each twentieth window and two marks of each other window. Only the full windows have v < 1000
 SELECT '-- a window joins the sample with a chance in proportion to its baseline marks, so the span holds the real granules';
 DROP TABLE IF EXISTS t_mass;
 CREATE TABLE t_mass (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY (a, b)
     SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
-INSERT INTO t_mass SELECT intDiv(number, 64) AS w, if(w % 100 = 0, 0, number % 64), if(w % 100 = 0, w, 1000 + w) FROM numbers(19200);
-CREATE HYPOTHETICAL INDEX idx_v ON t_mass (v) TYPE minmax GRANULARITY 64;
+INSERT INTO t_mass SELECT intDiv(number, 16) AS w, if(w % 20 = 5, 0, number % 16), if(w % 20 = 5, w, 1000 + w) FROM numbers(960);
+CREATE HYPOTHETICAL INDEX idx_v ON t_mass (v) TYPE minmax GRANULARITY 16;
 SELECT
     extract(report, 'sampled_marks: +(\\d+ / \\d+)') AS sampled_marks,
     extractGroups(report, 'With idx_v [^\\n]*\\n +status: +applicable\\n +marks: +(\\d+)\\n +marks_span: +(\\d+) to (\\d+)') AS estimate,
@@ -138,14 +138,14 @@ SELECT
 FROM
 (
     SELECT arrayStringConcat(groupArray(explain), '\n') AS report
-    FROM (EXPLAIN WHATIF index_scan_budget_rows = 1920 SELECT a FROM t_mass WHERE b = 0 AND v < 1000)
+    FROM (EXPLAIN WHATIF index_scan_budget_rows = 480 SELECT a FROM t_mass WHERE b = 0 AND v < 1000)
 ) AS estimated,
 (
     SELECT toUInt64(extract(arrayStringConcat(groupArray(explain), '\n'), 'With idx_v [^\\n]*\\n +status: +applicable\\n +marks: +(\\d+)')) AS real
     FROM (EXPLAIN WHATIF index_scan_budget_rows = 0 SELECT a FROM t_mass WHERE b = 0 AND v < 1000)
 ) AS exact;
 
--- only the full window 200 has v = 200. The sample reads it, so its 64 marks survive for v = 200 and are skipped for v != 200
+-- only the full window 25 has v = 25. The sample reads it, so its 16 marks survive for v = 25 and are skipped for v != 25
 SELECT '-- the sampled windows bound the estimate, so the estimate is in the span';
 SELECT
     predicate,
@@ -156,26 +156,26 @@ SELECT
     real BETWEEN toUInt64(estimate[2]) AND toUInt64(estimate[3]) AS real_in_span
 FROM
 (
-    SELECT 'v = 200' AS predicate, arrayStringConcat(groupArray(explain), '\n') AS report
-    FROM (EXPLAIN WHATIF index_scan_budget_rows = 1920 SELECT a FROM t_mass WHERE b = 0 AND v = 200)
+    SELECT 'v = 25' AS predicate, arrayStringConcat(groupArray(explain), '\n') AS report
+    FROM (EXPLAIN WHATIF index_scan_budget_rows = 480 SELECT a FROM t_mass WHERE b = 0 AND v = 25)
     UNION ALL
-    SELECT 'v != 200', arrayStringConcat(groupArray(explain), '\n')
-    FROM (EXPLAIN WHATIF index_scan_budget_rows = 1920 SELECT a FROM t_mass WHERE b = 0 AND v != 200)
+    SELECT 'v != 25', arrayStringConcat(groupArray(explain), '\n')
+    FROM (EXPLAIN WHATIF index_scan_budget_rows = 480 SELECT a FROM t_mass WHERE b = 0 AND v != 25)
 ) AS estimated
 INNER JOIN
 (
-    SELECT 'v = 200' AS predicate, toUInt64(extract(arrayStringConcat(groupArray(explain), '\n'), 'With idx_v [^\\n]*\\n +status: +applicable\\n +marks: +(\\d+)')) AS real
-    FROM (EXPLAIN WHATIF index_scan_budget_rows = 0 SELECT a FROM t_mass WHERE b = 0 AND v = 200)
+    SELECT 'v = 25' AS predicate, toUInt64(extract(arrayStringConcat(groupArray(explain), '\n'), 'With idx_v [^\\n]*\\n +status: +applicable\\n +marks: +(\\d+)')) AS real
+    FROM (EXPLAIN WHATIF index_scan_budget_rows = 0 SELECT a FROM t_mass WHERE b = 0 AND v = 25)
     UNION ALL
-    SELECT 'v != 200', toUInt64(extract(arrayStringConcat(groupArray(explain), '\n'), 'With idx_v [^\\n]*\\n +status: +applicable\\n +marks: +(\\d+)'))
-    FROM (EXPLAIN WHATIF index_scan_budget_rows = 0 SELECT a FROM t_mass WHERE b = 0 AND v != 200)
+    SELECT 'v != 25', toUInt64(extract(arrayStringConcat(groupArray(explain), '\n'), 'With idx_v [^\\n]*\\n +status: +applicable\\n +marks: +(\\d+)'))
+    FROM (EXPLAIN WHATIF index_scan_budget_rows = 0 SELECT a FROM t_mass WHERE b = 0 AND v != 25)
 ) AS exact USING (predicate)
 ORDER BY predicate;
 
 DROP TABLE t_mass;
 
--- 30 parts of two windows, one draw in each part. The first part keeps its 128 marks, and only its first window has v = 2.
--- each other part keeps 4 marks, and one window of the last part has v = 1
+-- a part of two windows keeps its 64 marks in one draw, and only its second window has v = 2.
+-- the other part keeps 2 marks of each of its 58 windows, in draws of 4 marks, and only its window 50 has v = 1
 SELECT '-- draws of unequal weights count as fewer draws, so the span holds the real granules';
 -- part statistics on v would remove the parts with no surviving window from the baseline
 SET use_statistics_for_part_pruning = 0;
@@ -183,11 +183,9 @@ DROP TABLE IF EXISTS t_weight;
 CREATE TABLE t_weight (a UInt64, b UInt64, v UInt8) ENGINE = MergeTree ORDER BY (a, b)
     SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
 SYSTEM STOP MERGES t_weight;
-INSERT INTO t_weight SELECT intDiv(number, 64), 0, if(number < 64, 2, 0) FROM numbers(128);
-INSERT INTO t_weight SELECT intDiv(number % 128, 64), number % 64, 0 FROM numbers(3584)
-    SETTINGS max_block_size = 128, max_insert_block_size = 128, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;
-INSERT INTO t_weight SELECT intDiv(number, 64), number % 64, number = 0 FROM numbers(128);
-CREATE HYPOTHETICAL INDEX idx_v ON t_weight (v) TYPE minmax GRANULARITY 64;
+INSERT INTO t_weight SELECT intDiv(number, 32), 0, if(number >= 32, 2, 0) FROM numbers(64);
+INSERT INTO t_weight SELECT intDiv(number, 32), number % 32, number = 1600 FROM numbers(1856);
+CREATE HYPOTHETICAL INDEX idx_v ON t_weight (v) TYPE minmax GRANULARITY 32;
 SELECT
     predicate,
     extract(report, 'sampled_marks: +(\\d+ / \\d+)') AS sampled_marks,
@@ -197,10 +195,10 @@ SELECT
 FROM
 (
     SELECT 'v = 2' AS predicate, arrayStringConcat(groupArray(explain), '\n') AS report
-    FROM (EXPLAIN WHATIF index_scan_budget_rows = 1920 SELECT a FROM t_weight WHERE b = 0 AND v = 2)
+    FROM (EXPLAIN WHATIF index_scan_budget_rows = 960 SELECT a FROM t_weight WHERE b = 0 AND v = 2)
     UNION ALL
     SELECT 'v >= 1', arrayStringConcat(groupArray(explain), '\n')
-    FROM (EXPLAIN WHATIF index_scan_budget_rows = 1920 SELECT a FROM t_weight WHERE b = 0 AND v >= 1)
+    FROM (EXPLAIN WHATIF index_scan_budget_rows = 960 SELECT a FROM t_weight WHERE b = 0 AND v >= 1)
 ) AS estimated
 INNER JOIN
 (
