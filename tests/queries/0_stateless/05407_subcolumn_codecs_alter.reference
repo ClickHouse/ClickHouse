@@ -1,0 +1,24 @@
+after alter
+CREATE TABLE default.t_subcolumn_codecs_alter (`id` UInt64, `payload` Tuple(ts DateTime64(3), value Float64, meta Tuple(seq UInt64, score Float32)), `attrs` Map(UInt64, Float64) CODEC(ZSTD(3)), CODEC `payload.ts` (Delta(8), ZSTD(2)), CODEC `payload.value` (Gorilla(8), ZSTD(1))) ENGINE = MergeTree ORDER BY id
+streams of the old and the new part
+all_1_1_0	payload%2Emeta%2Escore	['LZ4']
+all_1_1_0	payload%2Emeta%2Eseq	['LZ4']
+all_1_1_0	payload%2Ets	['DoubleDelta, ZSTD(1)']
+all_1_1_0	payload%2Evalue	['LZ4']
+all_2_2_0	payload%2Emeta%2Escore	['LZ4']
+all_2_2_0	payload%2Emeta%2Eseq	['LZ4']
+all_2_2_0	payload%2Ets	['Delta(1), ZSTD(1)']
+all_2_2_0	payload%2Evalue	['Gorilla(1), ZSTD(1)']
+switch
+CREATE TABLE default.t_subcolumn_codecs_alter (`id` UInt64, `payload` Tuple(ts DateTime64(3), value Float64, meta Tuple(seq UInt64, score Float32)), `attrs` Map(UInt64, Float64), CODEC `payload.ts` (Delta(8), ZSTD(2)), CODEC `payload.value` (Gorilla(8), ZSTD(1)), CODEC `attrs.keys` (Delta(8), LZ4), CODEC `attrs.values` (Gorilla(8), LZ4)) ENGINE = MergeTree ORDER BY id
+CREATE TABLE default.t_subcolumn_codecs_alter (`id` UInt64, `payload` Tuple(ts DateTime64(3), value Float64, meta Tuple(seq UInt64, score Float32)), `attrs` Map(UInt64, Float64) CODEC(ZSTD(3)), CODEC `payload.ts` (Delta(8), ZSTD(2)), CODEC `payload.value` (Gorilla(8), ZSTD(1))) ENGINE = MergeTree ORDER BY id
+after type change
+payload	{'meta.seq':'CODEC(T64, LZ4)','ts':'CODEC(Delta(8), ZSTD(2))','value':'CODEC(Gorilla(8), ZSTD(1))'}
+rename and drop
+p	{'meta.seq':'CODEC(T64, LZ4)','ts':'CODEC(Delta(8), ZSTD(2))','value':'CODEC(Gorilla(8), ZSTD(1))'}
+extra	{'x':'CODEC(ZSTD(1))'}
+extra	{'z':'CODEC(LZ4HC(4))'}
+CREATE TABLE default.t_subcolumn_codecs_alter (`id` UInt64, `payload` Tuple(ts DateTime64(3), value Float64, meta Tuple(seq UInt64, score Float32, extra UInt8)), `attrs` Map(UInt64, Float64) CODEC(ZSTD(3)), CODEC `payload.meta.seq` (T64, LZ4), CODEC `payload.ts` (Delta(8), ZSTD(2)), CODEC `payload.value` (Gorilla(8), ZSTD(1))) ENGINE = MergeTree ORDER BY id
+after remove without the setting
+CREATE TABLE default.t_subcolumn_codecs_alter (`id` UInt64, `payload` Tuple(ts DateTime64(3), value Float64, meta Tuple(seq UInt64, score Float32, extra UInt8)), `attrs` Map(UInt64, Float64) CODEC(ZSTD(3)), CODEC `payload.meta.seq` (T64, LZ4), CODEC `payload.ts` (Delta(8), ZSTD(2))) ENGINE = MergeTree ORDER BY id
+200	9900
