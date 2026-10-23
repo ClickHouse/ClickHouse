@@ -869,7 +869,16 @@ bool tryEstimateProjection(
 
     const size_t weighed = built.layouts_differ ? built.scenarios.size() : 1;
     for (size_t i = 0; i < weighed; ++i)
-        weigh(built.scenarios[i]);
+    {
+        /// a scenario with the parts of an earlier one takes its outcome, as each weigh plans the whole query again
+        size_t same = 0;
+        while (same < i && built.scenarios[same]->parts != built.scenarios[i]->parts)
+            ++same;
+        if (same == i)
+            weigh(built.scenarios[i]);
+        else
+            built.scenarios[i]->outcome = built.scenarios[same]->outcome;
+    }
 
     const auto & outcome = built.scenarios[0]->outcome;
     result.sampled_parts = built.scanned_parts;
@@ -1073,26 +1082,29 @@ WhatIfCandidateResult evaluateProjection(
     }
 
     /// offset conditions as `ReadFromMergeTree` builds them, except for projections storing parent offsets
+    const auto read_context = read_step->getContext();
     bool filters_on_offsets = false;
     if (const auto & filter_dag = read_step->getFilterActionsDAG())
     {
         const auto predicate_dag = std::make_shared<ActionsDAGWithInversionPushDown>(
-            filter_dag->getOutputs().front(), context, /* boolean_context */ true);
-        const bool skip_folding = !context->getSettingsRef()[Setting::use_constant_folding_in_index_analysis];
+            filter_dag->getOutputs().front(), read_context, /* boolean_context */ true);
+        const bool skip_folding = !read_context->getSettingsRef()[Setting::use_constant_folding_in_index_analysis];
         const auto & proj_columns = projection->metadata->getColumns();
         if (!projection->with_parent_part_offset && !proj_columns.has("_part_offset"))
         {
             const auto & proj_metadata = projection->metadata;
             filters_on_offsets
                 = (!proj_columns.has("_part")
-                   && MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(predicate_dag, proj_metadata, skip_folding, context))
+                   && MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(
+                       predicate_dag, proj_metadata, skip_folding, read_context))
                 || (!proj_columns.has("_part_starting_offset")
-                    && MergeTreeDataSelectExecutor::buildKeyConditionFromTotalOffset(predicate_dag, proj_metadata, skip_folding, context));
+                    && MergeTreeDataSelectExecutor::buildKeyConditionFromTotalOffset(
+                        predicate_dag, proj_metadata, skip_folding, read_context));
         }
     }
 
     /// read the setting from the context of the read, as the optimizer does
-    const auto & read_settings = read_step->getContext()->getSettingsRef();
+    const auto & read_settings = read_context->getSettingsRef();
     const std::string_view relaxing_setting = read_settings[Setting::force_optimize_projection] ? "force_optimize_projection"
         : read_settings[Setting::prefer_optimize_projection] ? "prefer_optimize_projection" : "";
 

@@ -1298,7 +1298,7 @@ Hypothetical projections defined with [`CREATE HYPOTHETICAL PROJECTION`](/refere
 
 The report gives the marks and rows it would read, a `read_ratio` against the base-table read, and a `verdict` on whether the optimizer would choose it. With `force_optimize_projection = 1` or `prefer_optimize_projection = 1` the optimizer uses any usable projection, so one it would not pick by cost is reported as `chosen (forced)`.
 
-When the result depends on how the projection part would be laid out, `marks_span` gives the range, and a decision that could go either way is reported as `too close to call`. On large tables the estimate reads a sample of granules (see `projection_scan_budget_rows`).
+When the result depends on how the projection part would be laid out, `marks_span` gives the range, and a decision that could go either way is reported as `too close to call`. On large tables the estimate reads a sample of granules (see `projection_scan_budget_rows`). To weigh a projection, WHATIF plans the query once with no projection parts, and then once for each different layout of the parts, at most 5 times in total.
 
 WHATIF reports aggregate projections and projections with their own skip indexes as `not_applicable`. It also reports projections with a commit-order key, a virtual-column key or a stored `_block_number` as `not_applicable`. The same applies to projections that do not have every column that the query reads. WHATIF ignores `force_optimize_projection_name` and `preferred_optimize_projection_name`, and `force_optimize_projection` does not fail the statement.
 
