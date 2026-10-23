@@ -128,6 +128,29 @@ SELECT count() FROM (
     SETTINGS allow_experimental_parallel_reading_from_replicas = 0
 ) WHERE explain ILIKE '%ReadFromRemoteParallelReplicas%';
 
+SELECT '-- the same when the sibling branch reads a CTE that the recursive CTE reads too';
+SELECT count() FROM (
+    EXPLAIN
+    WITH RECURSIVE
+        shared AS
+        (
+            SELECT span_id, parent_span_id FROM rcte_pr
+            SETTINGS allow_experimental_parallel_reading_from_replicas = 1,
+                     max_parallel_replicas = 3,
+                     cluster_for_parallel_replicas = 'parallel_replicas',
+                     parallel_replicas_for_non_replicated_merge_tree = 1,
+                     automatic_parallel_replicas_mode = 0
+        ),
+        d AS
+        (
+            SELECT span_id FROM shared WHERE parent_span_id = 0
+            UNION ALL
+            SELECT l.span_id FROM shared AS l INNER JOIN d AS dd ON l.parent_span_id = dd.span_id
+        )
+    SELECT * FROM (SELECT span_id FROM d UNION ALL SELECT span_id FROM shared)
+    SETTINGS allow_experimental_parallel_reading_from_replicas = 0, max_recursive_cte_evaluation_depth = 10
+) WHERE explain ILIKE '%ReadFromRemoteParallelReplicas%';
+
 -- Locality: a query counted by ParallelReplicasQueryCount reached the replica-reading coordinator,
 -- so the pair below distinguishes "ran on the initiator" from "did not run at all". Both aggregate
 -- over the parts rather than answering from part counters, which never reach the coordinator.

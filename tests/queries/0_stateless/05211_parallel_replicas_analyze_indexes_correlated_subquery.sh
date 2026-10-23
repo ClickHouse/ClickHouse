@@ -91,6 +91,12 @@ report 'uncorrelated predicate' \
     "SELECT count() FROM mergeTreeAnalyzeIndexes(currentDatabase(), t_pr_ai, (key IN (SELECT key FROM t_pr_ai_2)))" \
     uncorrelated positive
 
+# Control for the outer-off arm: the same subquery SETTINGS do enable parallel replicas for an
+# uncorrelated predicate subquery. Expect a coordinator.
+report 'uncorrelated predicate, subquery SETTINGS, outer parallel replicas off' \
+    "SELECT count() FROM mergeTreeAnalyzeIndexes(currentDatabase(), t_pr_ai, (key IN (SELECT key FROM t_pr_ai_2 SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 2, parallel_replicas_for_non_replicated_merge_tree = 1, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost')))" \
+    uncorrelated_outer_off positive "$pr_settings_outer_off"
+
 # Control: parallel replicas are available at all in this configuration. Without it every
 # assertion above would also hold on a server that cannot use parallel replicas.
 # An aggregate over a column, not count(), so that the query is not answered from part metadata.

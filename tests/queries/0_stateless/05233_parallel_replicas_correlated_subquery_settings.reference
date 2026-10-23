@@ -1,5 +1,7 @@
 correlated subquery, subquery SETTINGS: result 10, coordinators 0
 correlated subquery, nested one level deeper: result 10, coordinators 0
 uncorrelated subquery, subquery SETTINGS: result 100, any coordinator 1
+correlated subquery in SELECT, FROM subquery: result 100	161700, coordinators 0
+correlated subquery in WHERE, FROM subquery: result 2, coordinators 0
 plain query uses parallel replicas: 1
 correlated subquery result matches non-parallel: 1

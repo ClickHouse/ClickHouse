@@ -17,6 +17,8 @@
 1
 -- a sibling branch of the same union still ships, whichever branch is visited first
 1
+-- the same when the sibling branch reads a CTE that the recursive CTE reads too
+1
 -- ParallelReplicasQueryCount: 0 for the recursive CTE, non-zero for the plain query
 10
 10

@@ -77,6 +77,17 @@ report 'uncorrelated subquery, subquery SETTINGS' \
     "SELECT count() FROM t_cs_pr WHERE key IN (SELECT key FROM t_cs_pr_2 $inner_settings) $outer_settings" \
     uncorrelated positive
 
+# Parallel replicas on for the whole query. Decorrelation clones the plan of the FROM subquery the
+# correlated subquery reads from, so that subquery has to stay local as well, wherever the
+# correlated subquery is. Expect 100 rows summing to 161700, then 2 keys, with 0 coordinators.
+pr_settings="$inner_settings, correlated_subqueries_use_in_memory_buffer = 0, parallel_replicas_plan_based = 0"
+report 'correlated subquery in SELECT, FROM subquery' \
+    "SELECT count(), sum(s) FROM (SELECT (SELECT sum(b.key) FROM t_cs_pr_2 AS b WHERE b.key < a.key) AS s FROM (SELECT key FROM t_cs_pr) AS a) $pr_settings" \
+    projection zero
+report 'correlated subquery in WHERE, FROM subquery' \
+    "SELECT count() FROM (SELECT key FROM t_cs_pr) AS a WHERE a.key > (SELECT sum(b.key) FROM t_cs_pr_2 AS b WHERE b.key < a.key) $pr_settings" \
+    where zero
+
 # Control: parallel replicas are available at all in this configuration. Without it every assertion
 # above would also hold on a server that cannot use parallel replicas.
 # An aggregate over a column, not count(), so that the query is not answered from part metadata.

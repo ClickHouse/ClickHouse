@@ -68,7 +68,7 @@ private:
     static bool isBlocker(const QueryTreeNodePtr & node)
     {
         if (const auto * query_node = node->as<QueryNode>())
-            return query_node->isCorrelated();
+            return query_node->isCorrelated() || evaluatesCorrelatedSubquery(*query_node);
 
         if (const auto * union_node = node->as<UnionNode>())
         {
@@ -80,13 +80,50 @@ private:
         return false;
     }
 
+    /// Decorrelation may clone the input plan of the query that evaluates a correlated subquery, its FROM
+    /// subqueries included, and a parallel-replicas read step cannot be cloned.
+    static bool evaluatesCorrelatedSubquery(const QueryNode & query_node)
+    {
+        std::vector<const IQueryTreeNode *> nodes;
+        for (const auto & child : query_node.getChildren())
+            if (child)
+                nodes.push_back(child.get());
+
+        while (!nodes.empty())
+        {
+            const auto * node = nodes.back();
+            nodes.pop_back();
+
+            if (const auto * subquery = node->as<QueryNode>())
+            {
+                if (subquery->isCorrelated())
+                    return true;
+            }
+            else if (const auto * union_node = node->as<UnionNode>())
+            {
+                if (union_node->isCorrelated())
+                    return true;
+            }
+            else
+            {
+                for (const auto & child : node->getChildren())
+                    if (child)
+                        nodes.push_back(child.get());
+            }
+        }
+
+        return false;
+    }
+
     /// `canUseParallelReplicasOnInitiator` is false on a follower, which must keep reading the ranges
     /// it was assigned, and it reads this node's own context, which a nested `SETTINGS` clause can change.
-    static void disable(const ContextMutablePtr & node_context)
+    /// The clones of a non-materialized CTE share one context, so the node gets a copy of its own.
+    static void disable(ContextMutablePtr & node_context)
     {
         if (!node_context->canUseParallelReplicasOnInitiator())
             return;
 
+        node_context = Context::createCopy(node_context);
         node_context->setSetting("allow_experimental_parallel_reading_from_replicas", String("0"));
     }
 
