@@ -31,6 +31,8 @@ namespace ProfileEvents
     extern const Event ParquetReadRowGroups;
     extern const Event ParquetPrunedRowGroups;
     extern const Event ParquetTopKSkippedRowGroups;
+    extern const Event ParquetBloomFilterPrunedRowGroups;
+    extern const Event ParquetDictionaryFilterPrunedRowGroups;
 }
 
 namespace DB::Parquet
@@ -228,11 +230,16 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
         /// still change the outcome.
         bool any_dictionary_filter = false;
         if (reader.applyBloomFilters(row_group))
+        {
             any_dictionary_filter = std::any_of(
                 row_group.columns.begin(), row_group.columns.end(),
                 [](const ColumnChunk & c) { return c.use_dictionary_filter; });
+        }
         else
+        {
+            ProfileEvents::increment(ProfileEvents::ParquetBloomFilterPrunedRowGroups);
             stage = ReadStage::Deliver; // skip the row group
+        }
 
         /// Keep the blocks alive for `applyBloomAndDictionaryFilters`, which uses them as the
         /// fallback for a column whose dictionary does not fit the pruning memory budget.
@@ -242,7 +249,10 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
     else if (stage == ReadStage::Dictionary)
     {
         if (!reader.applyBloomAndDictionaryFilters(row_group, pruningMemoryReservation(diff)))
+        {
+            ProfileEvents::increment(ProfileEvents::ParquetDictionaryFilterPrunedRowGroups);
             stage = ReadStage::Deliver; // skip the row group
+        }
         release_bloom_filters();
     }
 
@@ -1161,6 +1171,7 @@ void ReadManager::clearColumnChunk(ColumnChunk & column, MemoryUsageDiff & diff)
     /// concurrent pruning task never observes this budget as free while the dictionary is still
     /// allocated (which would let the stage transiently oversubscribe the watermark).
     column.dictionary.reset();
+    column.dictionary_values.reset();
     column.dictionary_reservation.release(column.dictionary_reserved_bytes);
     column.dictionary_reserved_bytes = 0;
     for (auto & page : column.data_pages)
@@ -1357,7 +1368,10 @@ ReadManager::ReadResult ReadManager::read()
     const Block & output_header = *reader.sample_block;
     Columns output_columns(output_header.columns());
     for (size_t i = 0; i < output_columns.size(); ++i)
+    {
         output_columns[i] = std::move(reader.getOrFormOutputColumn(row_group, row_subgroup, i));
+        output_columns[i] = output_columns[i]->convertToFullColumnIfReplicated();
+    }
     Chunk chunk(std::move(output_columns), row_subgroup.filter.rows_pass);
     if (reader.top_k_best_value_column_pos)
         reader.updateTopKBestValue(row_group, *chunk.getColumns()[*reader.top_k_best_value_column_pos]);

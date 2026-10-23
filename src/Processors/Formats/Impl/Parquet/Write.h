@@ -48,6 +48,9 @@ struct WriteOptions
     /// If using dictionary, this encoding is used as a fallback when dictionary gets too big.
     /// Otherwise, this is used for everything.
     parq::Encoding::type encoding = parq::Encoding::PLAIN;
+    /// Encode `FLOAT` and `DOUBLE` columns with `ALP` instead of `encoding`, without a dictionary.
+    /// See `writeColumnImpl` for the reasoning.
+    bool use_alp_encoding = false;
 
     bool write_column_chunk_statistics = true;
     bool write_page_statistics = true;
@@ -77,6 +80,9 @@ struct WriteOptions
     size_t bloom_filter_flush_threshold_bytes = 1024 * 1024 * 128;
 
     bool write_geometadata = true;
+    /// Annotate the WKB-encoded geo columns (only written if `write_geometadata`) with the
+    /// `GEOMETRY` logical type and write `GeospatialStatistics` instead of min/max statistics.
+    bool write_geometry_logical_type = false;
 
     /// Write a named `Tuple` whose element names are fields of the `FILE` logical type as a
     /// `FILE`-annotated group. See getFileLogicalTypeElementTypes.
@@ -134,6 +140,10 @@ struct ColumnChunkWriteState
     Int64 datetime_multiplier = 1; // for converting e.g. seconds to milliseconds
     bool is_bool = false; // bool vs UInt8 have the same column type but are encoded differently
     bool use_binary_string_annotation = false; // write BYTE_ARRAY without UTF8/STRING logical annotation
+    /// WKB values of a column with the `GEOMETRY` logical type. Its sort order is undefined, so no
+    /// min/max statistics (and hence no column index) are written; `GeospatialStatistics` are
+    /// written instead.
+    bool is_geometry = false;
 
     /// Repetition and definition levels. Produced by prepareColumnForWrite().
     /// def is empty iff max_def == 0, which means no arrays or nullables.
