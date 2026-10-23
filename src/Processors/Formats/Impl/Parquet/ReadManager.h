@@ -47,7 +47,6 @@ public:
     /// Same handshake as the destructor, but keeps `reader` and its metadata intact. After this
     /// returns, no decode task runs anymore, so nothing can re-enter the prefetcher. Idempotent.
     /// Drain this before the prefetcher: decode tasks read ranges through it.
-    /// Reads in progress are stopped early where the ReadBuffer supports that.
     void shutdownTasks();
 
     struct ReadResult
@@ -60,7 +59,7 @@ public:
     /// Not thread safe.
     ReadResult read();
 
-    /// Thread safe. Makes read() return the end of data, also if it is waiting in another thread.
+    /// Thread safe. Makes `read` return end of data, also if it is waiting in another thread.
     void cancel() noexcept;
 
 private:

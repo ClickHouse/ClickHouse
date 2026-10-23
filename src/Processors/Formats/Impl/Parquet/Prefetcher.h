@@ -34,7 +34,7 @@ public:
     void shutdownTasks();
 
     /// Makes running reads stop early and reads that haven't started fail, without waiting for them.
-    /// shutdownTasks() still has to be called to wait.
+    /// `shutdownTasks` still has to be called to wait.
     void cancelReads();
 
     /// Not thread safe.

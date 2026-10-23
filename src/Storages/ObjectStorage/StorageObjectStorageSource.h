@@ -172,7 +172,7 @@ protected:
         std::unique_ptr<PullingPipelineExecutor> reader;
     };
 
-    /// Replaced only under `reader_mutex`, which onCancel() takes to reach the current reader from another thread.
+    /// `reader` is replaced only under `reader_mutex`, which `onCancel` takes from another thread.
     std::mutex reader_mutex;
     ReaderHolder reader;
     ThreadPoolCallbackRunnerUnsafe<ReaderHolder> create_reader_scheduler;

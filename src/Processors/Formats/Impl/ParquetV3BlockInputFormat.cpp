@@ -204,7 +204,7 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
         {
             std::unique_lock lock(reader_mutex);
             reader.emplace();
-            /// onCancel() may have run before the emplace and found no reader.
+            /// `onCancel` may have run before the emplace and found no reader.
             if (isCancelled())
                 reader->cancel();
             lock.unlock();
