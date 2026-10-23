@@ -8,26 +8,24 @@
            <name>col</name>
            <values>
                <value>UserID</value>
-               <value>WatchID</value>
                <value>SearchPhrase</value>
                <value>URL</value>
-               <value>ClientIP</value>
-               <value>EventTime</value>
            </values>
         </substitution>
     </substitutions>
 
-    <!-- Strings of 16 bytes or more are keyed by their `SipHash`, the shorter ones by their bytes. -->
-    <create_query>CREATE TABLE radix_long_strings (s String) ENGINE = Memory</create_query>
-    <fill_query>INSERT INTO radix_long_strings SELECT leftPad(toString(number % 1000), 20, 'x') FROM numbers(20000000)</fill_query>
+    <create_query>CREATE TABLE radix_low_cardinality (s LowCardinality(String)) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <fill_query>INSERT INTO radix_low_cardinality SELECT toString(number % 100000) FROM numbers(50000000)</fill_query>
 
     <query>SELECT count(DISTINCT {col}) FROM hits_100m_single FORMAT Null</query>
 
-    <query>SELECT uniqExact(number) FROM numbers_mt(100000000) FORMAT Null</query>
-    <query>SELECT uniqExact(number % 1000000) FROM numbers_mt(100000000) FORMAT Null</query>
-    <!-- Without the setting, `uniqExact(toString(number))` is rewritten to `uniqExact(number)`. -->
-    <query>SELECT uniqExact(toString(number)) FROM numbers_mt(20000000) SETTINGS optimize_injective_functions_inside_uniq = 0 FORMAT Null</query>
-    <query>SELECT uniqExact(s) FROM radix_long_strings FORMAT Null</query>
+    <!-- Without the setting, `uniqExact` of an injective function is rewritten to `uniqExact` of its arguments. -->
+    <query>SELECT uniqExact((number % 10000000, toUInt8(number % 7))) FROM numbers_mt(50000000) SETTINGS optimize_injective_functions_inside_uniq = 0 FORMAT Null</query>
+    <query>SELECT uniqExact([number % 10000000]) FROM numbers_mt(50000000) SETTINGS optimize_injective_functions_inside_uniq = 0 FORMAT Null</query>
+    <query>SELECT uniqExact(toDecimal128(number % 10000000, 4)) FROM numbers_mt(50000000) SETTINGS optimize_injective_functions_inside_uniq = 0 FORMAT Null</query>
+    <!-- Strings of up to 15 bytes are keyed by their bytes. -->
+    <query>SELECT uniqExact(toString(number % 1000)) FROM numbers_mt(50000000) SETTINGS optimize_injective_functions_inside_uniq = 0 FORMAT Null</query>
+    <query>SELECT uniqExact(s) FROM radix_low_cardinality FORMAT Null</query>
 
-    <drop_query>DROP TABLE IF EXISTS radix_long_strings</drop_query>
+    <drop_query>DROP TABLE IF EXISTS radix_low_cardinality</drop_query>
 </test>

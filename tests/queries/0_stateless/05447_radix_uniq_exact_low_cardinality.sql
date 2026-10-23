@@ -1,8 +1,9 @@
 -- `uniqExact` with radix partitioning routes the distinct dictionary values that the rows of each block use, and
 -- must count as many distinct values as without it. NULLs are skipped.
 
--- `count_distinct_optimization` would rewrite `uniqExact` to a `GROUP BY`.
-SET max_threads = 4, count_distinct_optimization = 0, collect_hash_table_stats_during_aggregation = 0;
+-- `count_distinct_optimization` would rewrite `uniqExact` to a `GROUP BY`. With parallel replicas, the replicas aggregate
+-- the table and their states are merged, which does not use the radix partitioning.
+SET max_threads = 4, count_distinct_optimization = 0, collect_hash_table_stats_during_aggregation = 0, enable_parallel_replicas = 0;
 
 SELECT count() > 0 FROM (EXPLAIN PIPELINE SELECT uniqExact(toLowCardinality(toString(number))) FROM numbers_mt(10) SETTINGS optimize_uniq_exact_radix_partitioning = 1)
 WHERE explain LIKE '%RadixUniqExactRouteTransform%';
