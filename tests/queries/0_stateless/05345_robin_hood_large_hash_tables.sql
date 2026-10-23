@@ -23,6 +23,15 @@ FROM (SELECT toString(number) AS s, count() AS c FROM numbers(9000000) GROUP BY 
 SELECT 'uniqExact';
 SELECT uniqExact(number) FROM numbers(9000000);
 
+SELECT 'Merge of two large uniqExact states';
+-- About 35 thousand keys per bucket in each state: together they outnumber the cells of a bucket.
+SELECT uniqExactMerge(s) FROM
+(
+    SELECT uniqExactState(number) AS s FROM numbers(9000000)
+    UNION ALL
+    SELECT uniqExactState(number + 9000000) FROM numbers(9000000)
+);
+
 SELECT 'Merge of two-level states';
 -- With `prefer_localhost_replica = 1` the single thread aggregates the local shard and does not finish the handshake
 -- with the remote one in time, so the remote server closes the connection after `handshake_timeout_milliseconds`.

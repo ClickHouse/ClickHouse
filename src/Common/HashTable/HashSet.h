@@ -57,6 +57,28 @@ public:
         /// there are no duplicates (might use more memory than needed in case of many duplicates between the 2 tables).
         if (rhs.grower.bufSize() > Base::grower.bufSize())
             Base::resize(rhs.size() + Base::size());
+        else if constexpr (GrowerWithRobinHood<Grower>)
+        {
+            /// The cells of `rhs` are inserted in the order of their positions, which are their positions here too, so keys that
+            /// outnumber the cells pile up behind the insertion point until the table grows. Grow first for the expected number
+            /// of keys, estimated on the first cells of `rhs`.
+            if (Base::size() + rhs.size() > Base::grower.bufSize())
+            {
+                constexpr size_t max_cells_to_estimate_new_keys = 256;
+                size_t sampled = 0;
+                size_t new_keys = 0;
+                for (size_t i = 0; i < rhs.grower.bufSize() && sampled < max_cells_to_estimate_new_keys; ++i)
+                {
+                    if (rhs.buf[i].isZero(*this))
+                        continue;
+                    ++sampled;
+                    new_keys += !this->has(rhs.buf[i].getKey(), rhs.buf[i].getHash(*this));
+                }
+                const size_t expected_size = Base::size() + (sampled ? rhs.size() * new_keys / sampled : 0);
+                if (expected_size > Base::grower.bufSize())
+                    Base::resize(expected_size);
+            }
+        }
 
         if (!this->hasZero() && rhs.hasZero())
         {
