@@ -54,3 +54,15 @@ count_space_apostrophe	1	4
 rows_space_apostrophe	1	4
 count_vt_apostrophe	1	4
 rows_vt_apostrophe	1	4
+ws_single_quote	0	a"x\ny\nz\nw"
+count_ws_single_quote	0	1
+count_bom_string	0	4	4
+rows_bom_string	0	4	4
+count_bom_string	0	1048576	4
+rows_bom_string	0	1048576	4
+ws_single_quote	1	a"x\ny\nz\nw"
+count_ws_single_quote	1	1
+count_bom_string	1	4	4
+rows_bom_string	1	4	4
+count_bom_string	1	1048576	4
+rows_bom_string	1	1048576	4

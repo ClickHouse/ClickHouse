@@ -121,15 +121,68 @@ void CSVRowInputFormat::resetReadBuffer()
     RowInputFormatWithNamesAndTypes::resetReadBuffer();
 }
 
+namespace
+{
+
+/// Whether a `"` (or `'`) seen now may open a quoted field. The row scanners do not know the column type, while the
+/// real parser does: e.g. for String a `\v`, `\f`, `\r` or an initial BOM before a quote is field data, for Array or
+/// Tuple it is skipped. So the state is three-valued:
+///  - Yes:   the quote is at a field start for every type (right after a delimiter, row start, or whitespace that is skipped for every type);
+///  - No:    some content byte precedes the quote in this field, so it is a literal for every type;
+///  - Maybe: only bytes that some types skip precede the quote. The previous behaviour is kept here (a `"` opens a quote, a `'` does not).
+enum class QuoteStart
+{
+    No,
+    Maybe,
+    Yes,
+};
+
+QuoteStart updateQuoteStart(
+    const char * span_start, const char * pos, QuoteStart state, bool at_stream_start,
+    char delimiter, char tuple_delimiter, bool whitespace_is_skipped)
+{
+    bool seen_ambiguous = false;
+    for (const char * p = pos; p > span_start; --p)
+    {
+        char c = *(p - 1);
+        /// A BOM at the very start of the stream is skipped by readPrefix for some types and is field data for others.
+        if (at_stream_start && p == span_start + 3
+            && static_cast<unsigned char>(span_start[0]) == 0xEF && static_cast<unsigned char>(span_start[1]) == 0xBB
+            && static_cast<unsigned char>(span_start[2]) == 0xBF)
+        {
+            seen_ambiguous = true;
+            break;
+        }
+        if (c == delimiter || c == tuple_delimiter)
+            return seen_ambiguous ? QuoteStart::Maybe : QuoteStart::Yes;
+        if (c == ' ' || c == '\t')
+        {
+            if (!whitespace_is_skipped)
+                seen_ambiguous = true;
+            continue;
+        }
+        if (c == '\v' || c == '\f')
+        {
+            seen_ambiguous = true;
+            continue;
+        }
+        return QuoteStart::No;
+    }
+    if (seen_ambiguous)
+        return state == QuoteStart::No ? QuoteStart::No : QuoteStart::Maybe;
+    return state;
+}
+
+}
+
 void CSVFormatReader::skipRow()
 {
     bool quotes = false;
-    /// A `"` opens a quoted field only at the start of a field (same as readCSVStringInto).
-    bool at_field_start = true;
+    QuoteStart quote_start = QuoteStart::Yes;
     char quote_char = '"';
     ReadBuffer & istr = *buf;
     bool at_stream_start = istr.count() == 0;
-    bool after_ws = false;
+    const bool whitespace_is_skipped = format_settings.csv.trim_whitespaces && !format_settings.csv.allow_whitespace_or_tab_as_delimiter;
 
     while (!istr.eof())
     {
@@ -150,43 +203,22 @@ void CSVFormatReader::skipRow()
                 else
                 {
                     quotes = false;
-                    at_field_start = false;
+                    quote_start = QuoteStart::No;
                 }
             }
         }
         else
         {
             const char * span_start = istr.position();
-            bool span_ws = false;
             auto * pos = find_first_symbols<'"', '\'', '\r', '\n'>(istr.position(), istr.buffer().end());
             istr.position() = pos;
 
             if (pos > istr.buffer().end())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
 
-            /// The last non-whitespace byte skipped above tells whether the next `"` starts a field.
-            /// Spaces and tabs are always skipped: whether the parser skips them depends on the column type,
-            /// which is unknown here, so treating a `"` after them as a quote start keeps the old behaviour.
-            for (const char * p = pos; p > span_start; --p)
-            {
-                char c = *(p - 1);
-                if (at_stream_start && span_start == istr.buffer().begin() && p == span_start + 3
-                    && static_cast<unsigned char>(span_start[0]) == 0xEF && static_cast<unsigned char>(span_start[1]) == 0xBB
-                    && static_cast<unsigned char>(span_start[2]) == 0xBF)
-                {
-                    at_field_start = true;
-                    break;
-                }
-                if (c != format_settings.csv.delimiter && (c == ' ' || c == '\t' || c == '\v' || c == '\f'))
-                {
-                    span_ws = true;
-                    continue;
-                }
-                at_field_start = (c == format_settings.csv.delimiter || c == format_settings.csv.tuple_delimiter);
-                break;
-            }
-            if (pos > span_start)
-                after_ws = span_ws;
+            quote_start = updateQuoteStart(
+                span_start, pos, quote_start, at_stream_start && span_start == istr.buffer().begin(),
+                format_settings.csv.delimiter, format_settings.csv.tuple_delimiter, whitespace_is_skipped);
             at_stream_start = false;
 
             if (pos == istr.buffer().end())
@@ -196,11 +228,11 @@ void CSVFormatReader::skipRow()
             {
                 if (*pos == '"' || format_settings.csv.allow_single_quotes)
                 {
-                    quotes = at_field_start && !(*pos == '\'' && after_ws);
+                    quotes = (*pos == '"') ? quote_start != QuoteStart::No : quote_start == QuoteStart::Yes;
                     if (quotes)
                         quote_char = *pos;
                 }
-                at_field_start = false;
+                quote_start = QuoteStart::No;
                 ++istr.position();
                 continue;
             }
@@ -223,6 +255,8 @@ void CSVFormatReader::skipRow()
                 }
                 if (format_settings.csv.allow_cr_end_of_line)
                     return;
+                if (quote_start == QuoteStart::Yes)
+                    quote_start = QuoteStart::Maybe;
             }
         }
     }
@@ -870,13 +904,11 @@ std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memor
     char * pos = in.position();
     bool quotes = false;
     char quote_char = '"';
-    /// A `"` opens a quoted field only at the start of a field (same as readCSVStringInto).
-    bool at_field_start = true;
+    QuoteStart quote_start = QuoteStart::Yes;
     bool need_more_data = true;
     size_t number_of_rows = 0;
     bool at_stream_start = in.count() == 0;
-    /// True if the whitespace directly before the current position was skipped when looking for a field start.
-    bool after_ws = false;
+    const bool whitespace_is_skipped = settings.csv.trim_whitespaces && !settings.csv.allow_whitespace_or_tab_as_delimiter;
 
     if (max_rows && (max_rows < min_rows))
         max_rows = min_rows;
@@ -898,40 +930,20 @@ std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memor
                 else
                 {
                     quotes = false;
-                    at_field_start = false;
+                    quote_start = QuoteStart::No;
                 }
             }
         }
         else
         {
             const char * span_start = pos;
-            bool span_ws = false;
             pos = find_first_symbols<'"', '\'', '\r', '\n'>(pos, in.buffer().end());
             if (pos > in.buffer().end())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
 
-            /// The last non-whitespace byte skipped above tells whether the next `"` starts a field.
-            /// Spaces and tabs are always skipped: whether the parser skips them depends on the column type,
-            /// which is unknown here, so treating a `"` after them as a quote start keeps the old behaviour.
-            for (const char * p = pos; p > span_start; --p)
-            {
-                char c = *(p - 1);
-                if (at_stream_start && span_start == in.buffer().begin() && p == span_start + 3 && static_cast<unsigned char>(span_start[0]) == 0xEF && static_cast<unsigned char>(span_start[1]) == 0xBB && static_cast<unsigned char>(span_start[2]) == 0xBF)
-                {
-                    at_field_start = true;
-                    break;
-                }
-                if (c != settings.csv.delimiter && (c == ' ' || c == '\t' || c == '\v' || c == '\f'))
-                {
-                    span_ws = true;
-                    continue;
-                }
-                at_field_start = (c == settings.csv.delimiter || c == settings.csv.tuple_delimiter);
-                break;
-            }
-            if (pos > span_start)
-                after_ws = span_ws;
-            /// A BOM is recognized only in the very first span of the stream, not at the start of a refilled buffer.
+            quote_start = updateQuoteStart(
+                span_start, pos, quote_start, at_stream_start && span_start == in.buffer().begin(),
+                settings.csv.delimiter, settings.csv.tuple_delimiter, whitespace_is_skipped);
             at_stream_start = false;
 
             if (pos == in.buffer().end())
@@ -941,11 +953,11 @@ std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memor
             {
                 if (*pos == '"' || settings.csv.allow_single_quotes)
                 {
-                    quotes = at_field_start && !(*pos == '\'' && after_ws);
+                    quotes = (*pos == '"') ? quote_start != QuoteStart::No : quote_start == QuoteStart::Yes;
                     if (quotes)
                         quote_char = *pos;
                 }
-                at_field_start = false;
+                quote_start = QuoteStart::No;
                 ++pos;
                 continue;
             }
@@ -963,17 +975,20 @@ std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memor
                 /// so it must not change whether the next `"` starts a field.
                 if (settings.csv.allow_cr_end_of_line)
                 {
-                    at_field_start = true;
+                    quote_start = QuoteStart::Yes;
                     continue;
                 }
                 if (loadAtPosition(in, memory, pos) && *pos == '\n')
                     ++pos;
                 else
+                {
+                    if (quote_start == QuoteStart::Yes)
+                        quote_start = QuoteStart::Maybe;
                     continue;
+                }
             }
 
-            at_field_start = true;
-            after_ws = false;
+            quote_start = QuoteStart::Yes;
             ++number_of_rows;
             if ((number_of_rows >= min_rows)
                 && ((memory.size() + static_cast<size_t>(pos - in.position()) >= min_bytes) || (number_of_rows == max_rows)))

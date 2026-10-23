@@ -89,4 +89,20 @@ do
     ${CLICKHOUSE_CLIENT} -q "SELECT 'rows_vt_apostrophe', ${parallel}, count() FROM (SELECT s FROM file('${unique_name}/vt_apostrophe.csv', 'CSV', 's String') SETTINGS input_format_parallel_parsing = ${parallel}, ${SQ_SETTINGS})"
 done
 
+# An apostrophe that really opens a single-quoted field after skipped whitespace (default trimming),
+# and an initial BOM that is String data (not a skipped prefix) before an apostrophe.
+printf " 'a\"x\ny\nz\nw\"'\n" > "${tmp_dir}/ws_single_quote.csv"
+printf "\xEF\xBB\xBF'x\nb\nc\nd\n" > "${tmp_dir}/bom_string.csv"
+
+for parallel in 0 1
+do
+    ${CLICKHOUSE_CLIENT} -q "SELECT 'ws_single_quote', ${parallel}, s FROM file('${unique_name}/ws_single_quote.csv', 'CSV', 's String') SETTINGS input_format_parallel_parsing = ${parallel}, ${SQ_SETTINGS}"
+    ${CLICKHOUSE_CLIENT} -q "SELECT 'count_ws_single_quote', ${parallel}, count() FROM file('${unique_name}/ws_single_quote.csv', 'CSV', 's String') SETTINGS input_format_parallel_parsing = ${parallel}, ${SQ_SETTINGS}"
+    for buf in 4 1048576
+    do
+        ${CLICKHOUSE_CLIENT} -q "SELECT 'count_bom_string', ${parallel}, ${buf}, count() FROM file('${unique_name}/bom_string.csv', 'CSV', 's String') SETTINGS input_format_parallel_parsing = ${parallel}, storage_file_read_method = 'pread', max_read_buffer_size = ${buf}, ${SQ_SETTINGS}"
+        ${CLICKHOUSE_CLIENT} -q "SELECT 'rows_bom_string', ${parallel}, ${buf}, count() FROM (SELECT s FROM file('${unique_name}/bom_string.csv', 'CSV', 's String') SETTINGS input_format_parallel_parsing = ${parallel}, storage_file_read_method = 'pread', max_read_buffer_size = ${buf}, ${SQ_SETTINGS})"
+    done
+done
+
 rm -rf "${tmp_dir:?}"
