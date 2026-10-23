@@ -40,6 +40,10 @@ Positions: 3 0 1
         Deferred filters (applied after FINAL)
           Deferred row level filter column: notEquals(y, \'ccc\'_String)
           Deferred prewhere filter column: notEquals(y, \'ccc\'_String)
+        Virtual row conversions
+        Actions: INPUT : 0 -> x UInt32 : 0
+                 ALIAS x :: 0 -> __table1.x UInt32 : 1
+        Positions: 1
 = full plan: nothing deferred =
 Expression (Project names)
 Actions: INPUT : 0 -> __table1.x UInt32 : 0
@@ -79,6 +83,10 @@ Positions: 3 0 1
                  COLUMN Const(String) -> \'ccc\'_String String : 1
                  FUNCTION notEquals(y : 0, \'ccc\'_String :: 1) -> notEquals(y, \'ccc\'_String) UInt8 : 2
         Positions: 2 0
+        Virtual row conversions
+        Actions: INPUT : 0 -> x UInt32 : 0
+                 ALIAS x :: 0 -> __table1.x UInt32 : 1
+        Positions: 1
 = row policy deferred =
         Deferred filters (applied after FINAL)
           Deferred row level filter column: notEquals(y, \'ccc\'_String)

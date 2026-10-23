@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/HiddenSecret.h>
+#include <Common/maskSensitiveQueryParameters.h>
 
 #include <algorithm>
 #include <array>
@@ -300,44 +301,24 @@ inline bool maskURIUserinfo(std::string & url)
     return true;
 }
 
-/** Mask the values of the query parameters that carry credentials in a presigned URL, so that
-  * `...?X-Amz-Signature=abc&foo=1` becomes `...?X-Amz-Signature=[HIDDEN]&foo=1`. Every occurrence
-  * is masked. Returns whether anything was masked.
-  *
-  * This used to be the regular expression
-  * `([?&](?:AWSAccessKeyId|Signature|Expires|GoogleAccessId|X-Amz-[A-Za-z0-9\-]*|X-Goog-[A-Za-z0-9\-]*)=)[^&#]*`
-  * rewritten to `\1[HIDDEN]` globally. The parameter set mirrors
-  * `BackupInfo::removeCredentialsFromS3URL`. Matching is case-sensitive, as in the expression, and
-  * `src/Common/tests/gtest_mask_uri_password.cpp` checks this against re2.
-  */
+/// Mask the values of the query parameters that carry credentials in a presigned URL, so that
+/// `...?X-Amz-Signature=abc&foo=1` becomes `...?X-Amz-Signature=[HIDDEN]&foo=1`. Every occurrence
+/// is masked. Returns whether anything was masked.
+///
+/// This used to be the regular expression
+/// `([?&](?:AWSAccessKeyId|Signature|Expires|GoogleAccessId|sig|(?i:X-Amz-|X-Goog-)[^=?&]*)=)[^&#]*`
+/// rewritten to `\1[HIDDEN]` globally; `src/Common/tests/gtest_mask_uri_password.cpp` checks this against re2.
+/// A name is also matched percent-decoded, as the storage endpoint reads it: `?%73ig=` is `?sig=`.
+/// `sig` is the signature of an Azure SAS.
 inline bool maskPresignedURLParameters(std::string & url)
 {
-    static constexpr std::array<std::string_view, 4> exact_names = {"AWSAccessKeyId", "Signature", "Expires", "GoogleAccessId"};
-    static constexpr std::array<std::string_view, 2> prefixes = {"X-Amz-", "X-Goog-"};
-
-    auto is_secret_parameter = [](std::string_view name)
+    auto is_secret_parameter = [](std::string_view raw_name)
     {
-        for (auto exact : exact_names)
-            if (name == exact)
-                return true;
-
-        for (auto prefix : prefixes)
-        {
-            if (!name.starts_with(prefix))
-                continue;
-            /// `[A-Za-z0-9\-]*` - the rest of the name, possibly empty.
-            bool rest_matches = true;
-            for (char c : name.substr(prefix.length()))
-                if (!(('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || ('0' <= c && c <= '9') || c == '-'))
-                    rest_matches = false;
-            if (rest_matches)
-                return true;
-        }
-
-        return false;
+        const std::string name = decodeQueryComponent(raw_name);
+        return name == "sig" || isPresignedURLParameterName(name);
     };
 
-        /// Built in one pass rather than replacing in place: a replacement of a different length shifts
+    /// Built in one pass rather than replacing in place: a replacement of a different length shifts
     /// the rest of the string, which is quadratic in the number of masked parameters. A setting value
     /// reaches this from the logging path and its length is chosen by whoever set the setting.
     std::string result;

@@ -64,7 +64,8 @@ static constexpr auto DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_PROJECTION = 5;
 static constexpr auto DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MIN_MARKS_PER_TASK = 6;
 static constexpr auto DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID = 7;
 static constexpr auto DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE = 8;
-static constexpr auto DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION = 8;
+static constexpr auto DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANALYZED_RANGES_REQUEST = 9;
+static constexpr auto DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION = 9;
 static constexpr auto DBMS_MIN_REVISION_WITH_PARALLEL_REPLICAS = 54453;
 static constexpr auto DBMS_MIN_REVISION_WITH_QUERY_AND_LINE_NUMBERS = 54475;
 
@@ -132,6 +133,10 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// result blocks can be shipped. A peer below it does not know the name and rejects the whole plan.
 /// Version 20 also adds `allow_block_nested_loop_join` to the join step settings. A peer below it does not
 /// know the name and has no block nested loop join: it rejects a join without equality keys by itself.
+/// Version 20 also registers the `ReadFromSystemOne` and `ReadFromSystemNumbers` steps, so a plan that
+/// reads `system.one` or `numbers(...)` can be shipped. These are new step names rather than a change
+/// of a step's own bytes, so the per-step version added in 19 does not cover them: an older peer does
+/// not know the names at all.
 /// Version 20 also registers the `MergeRuntimeFilters` step and adds the `join_runtime_filter_exact_bytes_limit`
 /// plan setting.
 /// Version 21 adds the `min_bytes_before_external_group_by` plan setting.
@@ -162,6 +167,10 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOCKS_MARS
 /// `max_rows_in_join` / `max_bytes_in_join` as the spill trigger and its standalone `grace_hash` ignores
 /// `max_bytes_before_external_join`, so it would run the plan with the other contract without saying so.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LEGACY_JOIN_SIZE_LIMITS = 20;
+/// First query-plan serialization version that registers the "ReadFromSystemOne" and
+/// "ReadFromSystemNumbers" steps. Passed to the registry as their `since_plan_version`, so a stream
+/// below it is never given a step whose name the peer does not know.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SYSTEM_SOURCE_STEPS = 20;
 /// First query-plan serialization version that knows `allow_block_nested_loop_join`. Below it, the name is not
 /// written: the older peer has no block nested loop join, so it runs a join exactly as with the setting disabled,
 /// and a join that needs the block nested loop join is rejected there with `INVALID_JOIN_ON_EXPRESSION` rather
