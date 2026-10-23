@@ -427,6 +427,8 @@ GroupByGPUAccumulator::GroupByGPUAccumulator(
             = deviceColumnsFor(key_element_types, values, filter_element_types, variable_column_indices.size(), compressed, compute());
         reader.variable_base.assign(variable_column_indices.size(), 0);
         reader.variable_checkpoints.resize(variable_column_indices.size());
+        if (!variable_column_indices.empty())
+            growBy(reader.checkpoint_ring, checkpoint_ring_slots * sizeof(UInt64));
     }
 
     work_queue = std::make_unique<ConcurrentBoundedQueue<DeviceWork>>(queued_buffers_per_column * (num_columns + 1) * num_readers_);
@@ -710,7 +712,7 @@ void GroupByGPUAccumulator::handOff(size_t reader_index, size_t column_index)
     work.uploaded = createEvent();
     checkCuda(cudaEventRecord(work.uploaded.get(), upload.get()), "Cannot mark a point in the upload stream");
 
-    column.staged = PinnedBuffer{};
+    column.staged = takeSpareStaging();
     column.blocks = {};
     column.packed = {};
     column.codec.reset();
@@ -942,7 +944,7 @@ void GroupByGPUAccumulator::flushPendingRaw(bool wait)
         /// Plain bytes of a column, or the sizes of a column of varying width expanded on the host.
         appendToDeviceColumn(readers[work.reader], work.column_index, work.on_device.data(), work.on_device.size());
 
-        work.staged = PinnedBuffer{};
+        returnSpareStaging(std::move(work.staged));
         CopiedRaw copied{.work = std::move(work), .copied = createEvent()};
         checkCuda(cudaEventRecord(copied.copied.get(), compute().get()), "Cannot mark a point in the compute stream");
         raw_in_flight.push_back(std::move(copied));
@@ -1048,16 +1050,48 @@ void GroupByGPUAccumulator::appendToDeviceColumn(Reader & reader, size_t column_
         auto * const sizes = reinterpret_cast<uint64_t *>(destination);
         offsetsFromSizes(sizes, count, sizes - 1, compute());
 
+        size_t live = 0;
+        for (const auto & checkpoints : reader.variable_checkpoints)
+            live += checkpoints.size();
+        if (live >= checkpoint_ring_slots)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "{} checkpoints of the offsets of a reader's columns of varying width at once", live);
+
         VariableCheckpoint checkpoint;
         checkpoint.rows = reader.sent_rows + column.rows() - 1;
-        growBy(checkpoint.end, sizeof(UInt64));
+        checkpoint.slot = reader.next_checkpoint_slot++ % checkpoint_ring_slots;
         checkCuda(
-            cudaMemcpyAsync(checkpoint.end.data(), sizes + count - 1, sizeof(UInt64), cudaMemcpyDeviceToHost, compute().get()),
+            cudaMemcpyAsync(
+                reinterpret_cast<UInt64 *>(reader.checkpoint_ring.data()) + checkpoint.slot,
+                sizes + count - 1,
+                sizeof(UInt64),
+                cudaMemcpyDeviceToHost,
+                compute().get()),
             "Cannot copy an offset back");
         checkpoint.ready = createEvent();
         checkCuda(cudaEventRecord(checkpoint.ready.get(), compute().get()), "Cannot mark a point in the compute stream");
         reader.variable_checkpoints[*variableOrdinalOfOffsetsColumn(column_index)].push_back(std::move(checkpoint));
     }
+}
+
+PinnedBuffer GroupByGPUAccumulator::takeSpareStaging()
+{
+    std::lock_guard lock(spare_staging_mutex);
+    if (spare_staging.empty())
+        return {};
+    PinnedBuffer buffer = std::move(spare_staging.back());
+    spare_staging.pop_back();
+    return buffer;
+}
+
+void GroupByGPUAccumulator::returnSpareStaging(PinnedBuffer && buffer)
+{
+    if (buffer.capacity() == 0)
+        return;
+    buffer.clear();
+    std::lock_guard lock(spare_staging_mutex);
+    /// As many as the readers stage at once, at most.
+    if (spare_staging.size() < readers.size() * numColumns())
+        spare_staging.push_back(std::move(buffer));
 }
 
 void GroupByGPUAccumulator::finishExpansion()
@@ -1080,6 +1114,9 @@ void GroupByGPUAccumulator::finishExpansion()
 
     checkCuda(cudaEventRecord(slot.released.get(), compute().get()), "Cannot mark a point in the compute stream");
     slot.released_recorded = true;
+    /// The pieces are on the device, expanded: their staging buffers go round.
+    for (DeviceWork & work : slot.works)
+        returnSpareStaging(std::move(work.staged));
     slot.works.clear();
     in_flight.pop_front();
 
@@ -1207,7 +1244,7 @@ size_t GroupByGPUAccumulator::rowsOnDeviceInEveryColumn(const Reader & reader, b
                 checkCuda(cudaEventSynchronize(it->ready.get()), "Cannot wait for an offset to come back");
             else if (!isComplete(it->ready.get()))
                 continue;
-            if (it->endOffset() <= chars_end)
+            if (reader.endOffsetOf(*it) <= chars_end)
             {
                 covered = it->rows - reader.sent_rows;
                 break;
@@ -1260,7 +1297,7 @@ void GroupByGPUAccumulator::sendRowsToGrouping(Reader & reader, size_t num_rows)
             if (checkpoint.rows == reader.sent_rows + num_rows)
             {
                 checkCuda(cudaEventSynchronize(checkpoint.ready.get()), "Cannot wait for an offset to come back");
-                end = checkpoint.endOffset();
+                end = reader.endOffsetOf(checkpoint);
                 break;
             }
         }

@@ -255,14 +255,15 @@ private:
         size_t num_rows = 0;
     };
 
+    /// The end offset is in slot `slot` of the reader's `checkpoint_ring`.
     struct VariableCheckpoint
     {
         size_t rows = 0;
-        PinnedBuffer end;
+        size_t slot = 0;
         EventPtr ready;
-
-        UInt64 endOffset() const { return *reinterpret_cast<const UInt64 *>(end.data()); }
     };
+
+    static constexpr size_t checkpoint_ring_slots = 1UL << 14;
 
     struct Reader
     {
@@ -279,8 +280,16 @@ private:
         /// writes to the host and `ready` marks. By them the host tells how many rows have all their bytes on the
         /// device without waiting for it.
         std::vector<std::deque<VariableCheckpoint>> variable_checkpoints;
+        /// Pinned once, a slot per checkpoint, used round and round.
+        PinnedBuffer checkpoint_ring;
+        size_t next_checkpoint_slot = 0;
         /// Of the part being read, the rows handed over to the grouping thread.
         size_t sent_rows = 0;
+
+        UInt64 endOffsetOf(const VariableCheckpoint & checkpoint) const
+        {
+            return reinterpret_cast<const UInt64 *>(checkpoint_ring.data())[checkpoint.slot];
+        }
     };
 
     /// Rows that the device thread hands over to the grouping thread, with the buffers they are in, from the first byte
@@ -343,6 +352,13 @@ private:
     /// Appends `bytes` from `device_source` to a column of the reader; to a column of offsets, as the sizes of its rows,
     /// which the device turns into the offsets they end at.
     void appendToDeviceColumn(Reader & reader, size_t column_index, const char * device_source, size_t bytes);
+
+    /// Pinned memory is slow to get, so the staging buffers of the pieces sent go round: a reader takes one for the
+    /// next piece, and the device thread returns one once its piece is on the device.
+    PinnedBuffer takeSpareStaging();
+    void returnSpareStaging(PinnedBuffer && buffer);
+    std::mutex spare_staging_mutex;
+    std::vector<PinnedBuffer> spare_staging;
 
     /// Hands the first `num_rows` rows on the device of `reader` over to the grouping thread, and keeps the rest.
     void sendRowsToGrouping(Reader & reader, size_t num_rows);

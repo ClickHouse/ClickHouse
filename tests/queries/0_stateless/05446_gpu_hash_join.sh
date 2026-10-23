@@ -13,15 +13,17 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT --query "
+# The device takes a join on the estimates the statistics of the tables give, so they are the usual ones, made as the
+# rows are inserted, whatever the test harness may set.
+$CLICKHOUSE_CLIENT --materialize_statistics_on_insert 1 --query "
     CREATE TABLE gpu_join_left (k UInt32, k8 UInt8, k16 Int16, k64 Int64, kf Float64, kn Nullable(UInt32), ks String,
                                 v_i32 Int32, v_f64 Float64, v_u8 UInt8, v_str String, v_fs FixedString(4),
                                 v_lc LowCardinality(String), v_n Nullable(Int64), v_arr Array(UInt16))
-    ENGINE = MergeTree ORDER BY tuple();
+    ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = 'basic, uniq_v2';
 
     CREATE TABLE gpu_join_right (k UInt32, k8 UInt8, k16 Int16, k64 Int64, kf Float64, kn Nullable(UInt32), ks String,
                                  w_u64 UInt64, w_f32 Float32, w_i16 Int16, w_str String)
-    ENGINE = MergeTree ORDER BY tuple();
+    ENGINE = MergeTree ORDER BY tuple() SETTINGS auto_statistics_types = 'basic, uniq_v2';
 
     INSERT INTO gpu_join_left
     SELECT number % 10000, number % 256, number % 1000 - 500, number - 50000, number % 7,
@@ -44,9 +46,10 @@ if [ "$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.build_options WHERE
     PROBE_ERROR=$($CLICKHOUSE_CLIENT --join_algorithm gpu_hash \
         --query "SELECT count() FROM gpu_join_left AS l INNER JOIN gpu_join_right AS r ON l.k = r.k" 2>&1 > /dev/null)
     if [ -z "$PROBE_ERROR" ]; then
-        # The device takes a join on its estimated size, so the estimates must be there and be the real ones: from the
-        # statistics, not the random ones the test harness may ask the join order optimizer for.
-        GPU_SETTINGS=(--join_algorithm "gpu_hash,hash" --enable_join_runtime_filters 0 --use_statistics 1 --query_plan_optimize_join_order_randomize 0)
+        # The device takes a join on its estimated size, so the estimates must be there - the join order optimizer
+        # makes them - and be the real ones: from the statistics, not the random ones the test harness may ask for.
+        GPU_SETTINGS=(--join_algorithm "gpu_hash,hash" --enable_join_runtime_filters 0 --use_statistics 1
+                      --query_plan_optimize_join_order_limit 10 --query_plan_optimize_join_order_randomize 0)
     elif [[ "$PROBE_ERROR" != *"There is no GPU"* ]]; then
         echo "$PROBE_ERROR"
     fi
