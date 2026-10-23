@@ -57,3 +57,21 @@ marks: 2
 rows: 200
 verdict: chosen
 real: 2 marks, 200 rows
+-- an exact count of whole ranges
+Baseline (after PK + partition + existing indexes):
+marks: 2
+rows: 200
+With p_c (aggregate projection, hypothetical):
+marks: 3
+rows: 90
+verdict: chosen
+real: 3 marks, 90 rows
+-- a key expression
+Baseline (after PK + partition + existing indexes):
+marks: 300
+rows: 30000
+With p_h (aggregate projection, hypothetical):
+marks: 1
+rows: 100
+verdict: chosen
+real: 1 marks, 100 rows
