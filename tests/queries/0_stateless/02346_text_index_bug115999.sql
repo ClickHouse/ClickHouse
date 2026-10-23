@@ -493,6 +493,9 @@ INSERT INTO t_115999_converted VALUES (1, 1, 'abc');
 
 SELECT count() FROM t_115999_converted AS t INNER JOIN t_115999_side AS b ON t.group_id = b.group_id
 WHERE hasAnyTokens(toNullable(t.s), ['ab']) OR b.category = 'nonexistent';
+-- Conversions nest, so they are peeled to the bottom rather than one layer.
+SELECT count() FROM t_115999_converted AS t INNER JOIN t_115999_side AS b ON t.group_id = b.group_id
+WHERE hasAnyTokens(toNullable(toLowCardinality(t.s)), ['ab']) OR b.category = 'nonexistent';
 -- Prints 0: no index is defined on the truncated value.
 SELECT count() FROM t_115999_converted AS t INNER JOIN t_115999_side AS b ON t.group_id = b.group_id
 WHERE hasAnyTokens(CAST(t.s, 'FixedString(3)'), ['ab']) OR b.category = 'nonexistent';
@@ -526,6 +529,14 @@ INSERT INTO t_115999_keys VALUES (1, 'k');
 
 SELECT count() FROM t_115999_keyed AS t INNER JOIN t_115999_keys AS kk ON t.group_id = kk.group_id
 WHERE hasAnyTokens(t.m[kk.k], ['alpha beta']);
+-- The same lookup reached through a subquery projection, and through a conversion around it.
+SELECT count() FROM
+(
+    SELECT t.m[kk.k] AS x FROM t_115999_keyed AS t CROSS JOIN t_115999_keys AS kk LIMIT 10
+)
+WHERE hasAnyTokens(x, ['alpha beta']);
+SELECT count() FROM t_115999_keyed AS t INNER JOIN t_115999_keys AS kk ON t.group_id = kk.group_id
+WHERE hasAnyTokens(toNullable(t.m[kk.k]), ['alpha beta']);
 SELECT count() FROM t_115999_keyed WHERE hasAnyTokens(m['k'], ['alpha beta']);
 
 DROP TABLE t_115999_keys;

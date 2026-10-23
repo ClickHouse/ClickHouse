@@ -42,6 +42,8 @@ struct Resolution
     /// Every column substituted by what it reads, so the AST column name can be compared with an index.
     QueryTreeNodePtr expression;
     StoragePtr storage;
+    /// A `m[k]` lookup whose key reads another table, so only the Map describes the expression.
+    bool foreign_map_key = false;
 };
 
 /// A table function reads a table too: `remote()` resolves to a `Distributed` storage.
@@ -191,11 +193,44 @@ Resolution resolveToTableColumns(const QueryTreeNodePtr & expression, const Cont
     /// Returns `{substituted, failed}`. `substituted` is null when nothing below `current` changed, so
     /// an expression over plain table columns is resolved without copying anything; a substitution is
     /// only ever written into a copy.
+    bool foreign_map_key = false;
+
     auto substitute = [&](const QueryTreeNodePtr & current, auto & self) -> std::pair<QueryTreeNodePtr, bool>
     {
         const auto * column_node = current->as<ColumnNode>();
         if (!column_node)
         {
+            /// `m[k]` reads a value `mapValues(m)` indexes whatever the key is, so a key reading another
+            /// table leaves the Map resolvable. Its own name then describes nothing, hence the flag.
+            if (const auto * element = current->as<FunctionNode>();
+                element && element->getFunctionName() == "arrayElement" && element->getArguments().getNodes().size() == 2)
+            {
+                const auto & lookup = element->getArguments().getNodes();
+
+                auto [map, map_failed] = self(lookup.front(), self);
+                if (map_failed)
+                    return {nullptr, true};
+
+                auto [found_key, key_failed] = self(lookup.back(), self);
+                if (key_failed)
+                {
+                    foreign_map_key = true;
+                    found_key = nullptr;
+                }
+
+                if (!map && !found_key)
+                    return {nullptr, false};
+
+                auto substituted = current->clone();
+                auto & substituted_lookup = substituted->as<FunctionNode &>().getArguments().getNodes();
+                if (map)
+                    substituted_lookup.front() = std::move(map);
+                if (found_key)
+                    substituted_lookup.back() = std::move(found_key);
+
+                return {substituted, false};
+            }
+
             QueryTreeNodePtr substituted;
             const auto & children = current->getChildren();
 
@@ -266,7 +301,28 @@ Resolution resolveToTableColumns(const QueryTreeNodePtr & expression, const Cont
     if (failed || !storage)
         return {};
 
-    return {substituted ? substituted : expression, storage};
+    return {substituted ? substituted : expression, storage, foreign_map_key};
+}
+
+/// The operand of a conversion that cannot change a value, by the rule the scan matches an index column
+/// under; null when `node` is not such a conversion.
+const IQueryTreeNode * losslessConversionArgument(const IQueryTreeNode & node)
+{
+    const auto * function_node = node.as<FunctionNode>();
+    if (!function_node)
+        return nullptr;
+
+    const auto & arguments = function_node->getArguments().getNodes();
+    const auto & function_name = function_node->getFunctionName();
+    const bool is_cast = (function_name == "CAST" || function_name == "_CAST") && arguments.size() == 2;
+    const bool is_wrapper = (function_name == "toNullable" || function_name == "toLowCardinality") && arguments.size() == 1;
+
+    if (!is_cast && !is_wrapper)
+        return nullptr;
+    if (!isLosslessConversion(arguments.front()->getResultType(), function_node->getResultType()))
+        return nullptr;
+
+    return arguments.front().get();
 }
 
 /// The names one indexed expression can be read through, as `MergeTreeIndexConditionText` accepts them.
@@ -289,27 +345,33 @@ Carriers carrierNames(const IQueryTreeNode & resolved, const String & resolved_n
             carriers.names.push_back("mapValues(" + parsed->first + ")");
     }
 
-    const auto * function_node = resolved.as<FunctionNode>();
-    if (!function_node)
-        return carriers;
+    const size_t names_before_conversions = carriers.names.size();
 
-    const auto & arguments = function_node->getArguments().getNodes();
-    if (arguments.empty())
+    const auto * function_node = resolved.as<FunctionNode>();
+    if (!function_node || function_node->getArguments().getNodes().empty())
         return carriers;
 
     const auto & function_name = function_node->getFunctionName();
-    const auto & argument = arguments.front();
-    const bool is_cast = (function_name == "CAST" || function_name == "_CAST") && arguments.size() == 2;
-    const bool is_wrapper = (function_name == "toNullable" || function_name == "toLowCardinality") && arguments.size() == 1;
+    const auto & arguments = function_node->getArguments().getNodes();
 
-    /// The same rule the scan matches an index column under, so `toNullable(s)` reads `s` while a
-    /// narrowing `CAST` reads an expression no index describes.
     if (function_name == "arrayElement" && arguments.size() == 2)
-        carriers.names.push_back("mapValues(" + indexExpressionName(*argument) + ")");
-    else if ((is_cast || is_wrapper) && isLosslessConversion(argument->getResultType(), function_node->getResultType()))
-        carriers.names.push_back(indexExpressionName(*argument));
-    else if (is_cast)
-        carriers.json_subcolumn = indexExpressionName(*argument);
+    {
+        carriers.names.push_back("mapValues(" + indexExpressionName(*arguments.front()) + ")");
+        return carriers;
+    }
+
+    /// Peeled to the bottom, not one layer: the scan matches an index column under any number of them.
+    const IQueryTreeNode * node = &resolved;
+    while (const auto * under = losslessConversionArgument(*node))
+    {
+        carriers.names.push_back(indexExpressionName(*under));
+        node = under;
+    }
+
+    /// A lossy `CAST` reads an expression no index describes, unless it is how a JSON path is read.
+    if (carriers.names.size() == names_before_conversions && (function_name == "CAST" || function_name == "_CAST")
+        && arguments.size() == 2)
+        carriers.json_subcolumn = indexExpressionName(*arguments.front());
 
     return carriers;
 }
@@ -348,23 +410,9 @@ private:
     String findTextIndexTokenizer(const QueryTreeNodePtr & expression, const String & function_name)
     {
         size_t substitutions = 0;
-        auto resolution = resolveToTableColumns(expression, getContext(), substitutions);
-
-        /// `m[k]` reads a value that `mapValues(m)` indexes whatever the key is, so when the key is what
-        /// does not resolve - it may come from the other side of the join - the Map alone still answers.
-        bool map_only = false;
+        const auto resolution = resolveToTableColumns(expression, getContext(), substitutions);
         if (!resolution.expression)
-        {
-            const auto * element = expression->as<FunctionNode>();
-            if (!element || element->getFunctionName() != "arrayElement" || element->getArguments().getNodes().size() != 2)
-                return {};
-
-            resolution = resolveToTableColumns(element->getArguments().getNodes().front(), getContext(), substitutions);
-            if (!resolution.expression)
-                return {};
-
-            map_only = true;
-        }
+            return {};
 
         const auto & resolved = *resolution.expression;
         const auto & storage = resolution.storage;
@@ -374,19 +422,31 @@ private:
         if (indices.empty())
             return {};
 
-        auto name = indexExpressionName(resolved);
-        if (map_only)
-            name = "mapValues(" + name + ")";
+        /// A key reading another table leaves the expression name describing nothing, so the Map alone
+        /// carries the index - reached through whatever conversions wrap the lookup.
+        String map_only_name;
+        if (resolution.foreign_map_key)
+        {
+            const IQueryTreeNode * node = &resolved;
+            while (const auto * under = losslessConversionArgument(*node))
+                node = under;
 
+            const auto * element = node->as<FunctionNode>();
+            if (!element || element->getFunctionName() != "arrayElement" || element->getArguments().getNodes().size() != 2)
+                return {};
+
+            map_only_name = "mapValues(" + indexExpressionName(*element->getArguments().getNodes().front()) + ")";
+        }
+
+        const auto name = map_only_name.empty() ? indexExpressionName(resolved) : map_only_name;
         auto key = std::make_tuple(storage.get(), name, function_name);
 
         auto [it, inserted] = tokenizer_cache.try_emplace(key);
         if (!inserted)
             return it->second;
 
-        /// An unresolved key makes the expression name describe nothing, so only the Map carries the index.
-        const Carriers carriers = map_only ? Carriers{.names = {name}, .json_subcolumn = {}}
-                                           : carrierNames(resolved, name, *metadata);
+        const Carriers carriers = map_only_name.empty() ? carrierNames(resolved, name, *metadata)
+                                                        : Carriers{.names = {name}, .json_subcolumn = {}};
 
         for (const auto & index : indices)
         {
