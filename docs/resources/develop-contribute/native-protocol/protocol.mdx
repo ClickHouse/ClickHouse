@@ -123,6 +123,8 @@ Every message after that uses the negotiated version to decide which fields are 
 
 A feature is identified by the protocol version that introduced it, and is **active** when the negotiated version is greater than or equal to that number.
 
+One feature is an exception: [`RESET_SESSION`](#reset-session-phase) adds a request that does not change the layout of any message. The client compares this feature's minimum version with the server's version from [`ServerHello`](#serverhello), not with the negotiated version, and the server accepts the request from a client with any version. A client can use it without support for the features of the versions before it.
+
 <Warning>
 When a feature is active, its fields **must** be present on the wire. The protocol is strictly positional, so omitting a feature-gated field corrupts the byte stream for every field that follows.
 </Warning>
@@ -184,6 +186,7 @@ When a feature is active, its fields **must** be present on the wire. The protoc
 | STRING_WITH_SIZE_STREAM_SERIALIZATION | 54492 | Block (Column)         | `String` columns switch from the per-value length-prefixed layout to a separate stream of cumulative byte offsets (the same offsets layout an `Array` uses), sent as-is: `[UInt64 × num_rows offsets][data blob]`. Gated on the negotiated revision; below 54492 the writer uses the per-value length prefixes. The wire carries no per-column marker for this — both peers derive it from the revision alone. See [String column layout](/resources/develop-contribute/native-protocol/format#string-type). |
 | UNIQ_STATE_VERSION_1 | 54493 | Block (Column) | Bumps the state version of `AggregateFunction(uniq, ...)` from `0` to `1`. A version `1` state starts with a flags byte, followed by the main sample in the version-`0` layout; when bit `0` of the flags is set, an additional small sample of full 64-bit hashes, each XOR-ed with the constant `0x9E3779B97F4A0000`, follows (`UInt8 skip_degree`, `VarUInt count`, then `count` 8-byte values) — it is thinned out to at most 16384 values and keeps the estimate accurate at cardinalities above two billion, where the 32-bit main sample degrades and used to overflow into garbage. Bit `1` marks the 64-bit sample as incomplete (the state has absorbed a version `0` state, whose elements the 64-bit sample never saw): no such sample is written, and the estimate comes from the 32-bit main sample alone. The two bits are mutually exclusive and no other bit is defined; a reader must reject a flags byte that sets both or any other bit. Only the state payload of that one aggregate function changes; the column framing is untouched, and every other aggregate function keeps its own version. Pass-through combinators over `uniq` (`uniqIf`, `uniqArray`, `uniqForEach`, `uniqMap`, `uniqArgMin` / `uniqArgMax`, `uniqOrNull` / `uniqOrDefault`, `uniqResample`, and the implicit `Nullable`-argument adaptor) follow the same gate and forward the version to the nested `uniq` states inside their payloads. Below this revision the writer emits version `0` states (the main sample only), so an older peer is unaffected. |
 | MERGE_COMBINATOR_STATE_VERSION | 54494 | Block (Column) | The state of a `-Merge` function itself (not the states it merges) takes the state version of the merged function at the negotiated revision, and the outer `AggregateFunction` announces it. For example, for a distributed `quantileDeterministicMerge(state)` a shard sends `AggregateFunction(1, quantileDeterministicMerge, AggregateFunction(1, quantileDeterministic, UInt64, UInt64))`, and the payload has the trailing `skip_degree`. Below this revision the outer version is `0`: the type string is `AggregateFunction(quantileDeterministicMerge, AggregateFunction(1, quantileDeterministic, UInt64, UInt64))` and the payload has no `skip_degree`, which is what older releases send and expect. The payload always follows the outer version, never the version inside the argument type. Only the state payload changes; the column framing is untouched. |
+| RESET_SESSION                   | 54495   | ResetSession packet    | Adds the [`ResetSession`](#resetsession) client packet (type 15). Gated on the **server's** version from ServerHello, not on the negotiated version: the server accepts the packet from a client with any version. No other message changes. See [Reset session phase](#reset-session-phase). |
 
 ## Packet envelope {#packet-envelope}
 
@@ -258,6 +261,7 @@ stateDiagram-v2
     READING_RESPONSE --> READY: EndOfStream / Exception
     READY --> READY: Ping / Pong, TablesStatusRequest / TablesStatusResponse
     READING_RESPONSE --> READING_RESPONSE: query input (Data / Scalar / QueryPlan) / Ping / Cancel
+    READY --> READY: ResetSession / EndOfStream or Exception
 
     HANDSHAKE --> Terminated: handshake error
     READY --> Terminated: protocol violation / I/O error
@@ -271,7 +275,7 @@ The happy path runs straight down — `HANDSHAKE → READY → READING_RESPONSE 
 | State              | Description |
 |--------------------|-------------|
 | `HANDSHAKE`        | Initial state after the TCP connection opens. Only [handshake](#handshake-phase) messages are valid. Transitions to `READY` on success or terminates on failure. |
-| `READY`            | Idle. The client may send [Ping](#ping-phase), [Query](#query-phase), `TablesStatusRequest` (5), or close. A `TablesStatusRequest` is answered with a `TablesStatusResponse` (9) and leaves the connection in `READY`; its body is not specified on this page. A `Cancel` (3) with no query running is ignored. The connection may stay in `READY` indefinitely (subject to `idle_connection_timeout`, see [connection limits](#connection-limits)). Any other packet here — for example `Hello` (0), `Data` (2), `Scalar` (7), `IgnoredPartUUIDs` (8), or `QueryPlan` (13) — is a protocol violation: the server terminates the connection without decoding the packet body, and without sending an `Exception` packet first. Because the body is left unread, the client may observe a TCP reset rather than an orderly close. See [Protocol violations](#protocol-violations). |
+| `READY`            | Idle. The client may send [Ping](#ping-phase), [ResetSession](#reset-session-phase), [Query](#query-phase), `TablesStatusRequest` (5), or close. A `TablesStatusRequest` is answered with a `TablesStatusResponse` (9) and leaves the connection in `READY`; its body is not specified on this page. A `Cancel` (3) with no query running is ignored. The connection may stay in `READY` indefinitely (subject to `idle_connection_timeout`, see [connection limits](#connection-limits)). Any other packet here — for example `Hello` (0), `Data` (2), `Scalar` (7), `IgnoredPartUUIDs` (8), or `QueryPlan` (13) — is a protocol violation: the server terminates the connection without decoding the packet body, and without sending an `Exception` packet first. Because the body is left unread, the client may observe a TCP reset rather than an orderly close. See [Protocol violations](#protocol-violations). |
 | `READING_RESPONSE` | Entered when the client sends a Query. The query may first need input from the client: the external-table and `input()` blocks, the [INSERT](#insert-phase) row stream, and the [QueryPlan](#queryplan) packet that follows a `Query` with `stage = QueryPlan` are all sent here as `Data` (2), `Scalar` (7), and `QueryPlan` (13) packets, each terminated as described in its phase. While the server is still reading that input the client may also send `Ping` (4); after it, while the server streams the result, only `Cancel` (3, no body) is accepted, plus — during distributed execution — the answers to the server's read-task requests (not specified on this page). `Cancel` is accepted in both parts. The client must fully drain the server's response stream before returning to `READY`. Any other packet is a protocol violation, see [Protocol violations](#protocol-violations). |
 | Terminated         | No longer usable. The client must open a new TCP connection and restart the handshake. |
 
@@ -340,6 +344,58 @@ sequenceDiagram
    | `Pong` (4)            | Liveness confirmed. Return to `READY`. |
    | `Exception` (2)       | Decode [`Exception`](#exception) and return as error. |
    | anything else         | Protocol violation. |
+
+### Reset session phase {#reset-session-phase}
+
+Returns the session to its state right after the handshake, without a new TCP connection. A connection pool can use it to clean a connection before it gives the connection to the next user. Reusing the connection avoids the extra TCP and TLS handshake round trips and reduces socket churn under frequent pool reuse. The client sends it only if the server's version from [`ServerHello`](#serverhello) is `54495` or more ([`RESET_SESSION`](#feature-table)). An older server terminates the connection when it receives an unknown packet type.
+
+Starting from `READY`, the flow is:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Client
+    participant S as Server
+
+    C->>S: ResetSession (0x0F)
+    alt success
+        S->>C: EndOfStream (0x05)
+    else error
+        S->>C: Exception
+    end
+```
+
+1. The client sends [`ResetSession`](#resetsession).
+2. The client reads the response:
+
+   | Packet type           | Action |
+   |-----------------------|--------|
+   | `EndOfStream` (5)     | The session is reset. Return to `READY`. |
+   | `Exception` (2)       | Decode [`Exception`](#exception) and return as error. The session did not change. Return to `READY`, except for `USER_EXPIRED`, after which the server closes the connection. |
+   | anything else         | Protocol violation. |
+
+A reset makes a fresh session context for the existing authenticated connection. It keeps the authentication method's grants and expiry, external roles, and the external authentication response from login; it does not authenticate again. The server rebuilds the session from the current local access control data:
+
+- The user is the authenticated user.
+- The settings, settings profiles, constraints and current roles are those of the user, with the settings that an external authentication server returned at login. This includes settings that the session cannot change back itself, such as `readonly` and `allow_ddl`.
+- The current database is the database from [`ClientHello`](#clienthello). If `ClientHello` had no database, it is the default database of the user.
+- Temporary tables, query parameters and in-memory backups (`BACKUP ... TO Memory`) are dropped.
+- The connection data (client name and version, address, quota key) does not change.
+
+The reset fails, and the session does not change, in these cases:
+
+- The session is inside a transaction (`INVALID_TRANSACTION`). The client must send `COMMIT` or `ROLLBACK` first.
+- The database from `ClientHello` does not exist any more, or the constraints of the user do not allow it. A new connection with the same `ClientHello` fails in the same way.
+- The authentication method of the user has expired (`USER_EXPIRED`).
+- The session runs as another user after `EXECUTE AS` (`ACCESS_DENIED`). A reset would give back the rights that `EXECUTE AS` dropped, without the credentials of the authenticated user. The client must open a new connection. After `EXECUTE AS` back to the authenticated user, the session can be reset.
+
+A SQL statement cannot send `ResetSession`, so the SQL that runs in a session cannot undo `EXECUTE AS`, `readonly` or `allow_ddl` with it. Only the client that owns the connection can reset the session. A proxy that forwards the packets of a less trusted client on its own connection must not forward `ResetSession`.
+
+A pool must wait for `EndOfStream` before reusing the connection as clean. An `Exception` can leave the previous session state intact; discard the connection if cleanup cannot be completed.
+
+The server does not send its settings again. A client that applies the server settings from [`ServerHello`](#serverhello) (`SERVER_SETTINGS`) keeps the values that it received at login.
+
+`ResetSession` is valid only in `READY`. If the server receives it during a query, while it reads the data of the query or while it runs the query, it cancels the query, sends an `Exception` (`UNEXPECTED_PACKET_FROM_CLIENT`) and terminates the connection.
 
 ### Query phase {#query-phase}
 
@@ -552,6 +608,10 @@ Client → Server. No body — the packet is a single byte `0x04` before chunked
 ### Pong (packet type 4) {#pong}
 
 Server → Client. No body — the packet is a single byte `0x04` before chunked framing; when chunking is negotiated the byte becomes the one-byte payload of a chunk (see [chunked framing](#chunked-framing)).
+
+### ResetSession (packet type 15) {#resetsession}
+
+Client → Server. No body — the packet is a single byte `0x0F` before chunked framing; when chunking is negotiated the byte becomes the one-byte payload of a chunk (see [chunked framing](#chunked-framing)). The server replies with `EndOfStream` (5) or `Exception` (2). See [Reset session phase](#reset-session-phase).
 
 ### Exception (packet type 2) {#exception}
 
@@ -964,6 +1024,7 @@ Below version `8` the announcement is fire-and-forget regardless of mode, and th
 | 12   | SSHChallengeResponse      | [SSH auth](#ssh-authentication) | SSH auth challenge response |
 | 13   | QueryPlan                 | [QueryPlan](#queryplan) | Query plan |
 | 14   | MergeTreeAllRangesAnnouncementResponse | [MergeTreeAllRangesAnnouncementResponse](#mergetreeallrangesannouncementresponse) | Initiator's reply to a follower's [`MergeTreeAllRangesAnnouncement`](#packet-type-reference) (gated on `parallel_replicas_protocol_version ≥ 8` — see [VERSIONED_PARALLEL_REPLICAS_PROTOCOL](#feature-table)). Inter-server only — external clients never send. |
+| 15   | ResetSession              | [ResetSession](#resetsession) | Return the session to its state after the handshake (gated on the server's version — see [RESET_SESSION](#feature-table)) |
 
 ### Server → Client {#server-to-client}
 

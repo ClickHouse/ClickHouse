@@ -138,7 +138,10 @@ namespace Protocol
                                             /// Initiator's reply to a follower's announcement,
                                             /// carrying the authoritative parts list for the stream.
 
-            MAX = MergeTreeAllRangesAnnouncementResponse,
+            ResetSession = 15,              /// Return the session to its state right after authentication.
+                                            /// Allowed between queries. The server replies with EndOfStream or Exception.
+
+            MAX = ResetSession,
         };
 
         /// See the note on Server::toString: returns the numeric value for out-of-range packets.

@@ -512,18 +512,7 @@ void TCPHandler::runImpl()
             /// So it's better to update the connection settings for flexibility.
             extractConnectionSettingsFromContext(session->sessionContext());
 
-            /// When connecting, the default database could be specified.
-            if (!default_database.empty())
-            {
-                /// `database` is a real setting, so enforce its constraints on the connect-time
-                /// database too: a profile that makes `database` `const` or restricts its values
-                /// must reject a database chosen in the connection handshake consistently with
-                /// `USE`, `SET database = ...` and the HTTP `?database=...` parameter.
-                SettingsChanges database_change;
-                database_change.setSetting("database", default_database);
-                session->sessionContext()->checkSettingsConstraints(database_change, SettingSource::QUERY);
-                session->sessionContext()->setCurrentDatabase(default_database);
-            }
+            applyHandshakeDatabase(session->sessionContext());
         }
     }
     catch (const Exception & e) /// Typical for an incorrect username, password, or address.
@@ -1285,6 +1274,56 @@ void TCPHandler::logQueryDuration(QueryState & state)
 }
 
 
+void TCPHandler::applyHandshakeDatabase(const ContextMutablePtr & context) const
+{
+    /// When connecting, the default database could be specified.
+    if (default_database.empty())
+        return;
+
+    /// `database` is a real setting, so enforce its constraints on the connect-time
+    /// database too: a profile that makes `database` `const` or restricts its values
+    /// must reject a database chosen in the connection handshake consistently with
+    /// `USE`, `SET database = ...` and the HTTP `?database=...` parameter.
+    SettingsChanges database_change;
+    database_change.setSetting("database", default_database);
+    context->checkSettingsConstraints(database_change, SettingSource::QUERY);
+    context->setCurrentDatabase(default_database);
+}
+
+
+void TCPHandler::processResetSession()
+{
+    /// In interserver mode queries are executed without a session context.
+    if (is_interserver_mode)
+        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet ResetSession received from client in interserver mode");
+
+    try
+    {
+        /// The new context gets the database from the handshake before it replaces the current one.
+        /// If the database is gone or the constraints reject it, the session stays unchanged,
+        /// the same as a new connection with this handshake fails.
+        session->resetSessionContext([this](const ContextMutablePtr & context) { applyHandshakeDatabase(context); });
+    }
+    catch (const Exception & e)
+    {
+        LOG_DEBUG(log, "Cannot reset the session: {}", e.message());
+        sendException(e, send_exception_with_stack_trace);
+
+        /// An expired user cannot run more queries on this connection, so close it, as `runImpl` does.
+        if (e.code() == ErrorCodes::USER_EXPIRED)
+            throw;
+        return;
+    }
+
+    /// The timeouts of the connection come from the settings, which the reset changed.
+    extractConnectionSettingsFromContext(session->sessionContext());
+
+    writeVarUInt(Protocol::Server::EndOfStream, *out);
+    out->finishChunk();
+    out->sync();
+}
+
+
 void TCPHandler::extractConnectionSettingsFromContext(const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
@@ -1334,6 +1373,10 @@ bool TCPHandler::receivePacketsExpectQuery(std::shared_ptr<QueryState> & state)
 
         case Protocol::Client::TablesStatusRequest:
             processTablesStatusRequest();
+            return false;
+
+        case Protocol::Client::ResetSession:
+            processResetSession();
             return false;
 
         case Protocol::Client::IgnoredPartUUIDs:
@@ -1391,6 +1434,9 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
             case Protocol::Client::Hello:
             case Protocol::Client::TablesStatusRequest:
                 throwUnexpectedPacket(packet_type);
+
+            case Protocol::Client::ResetSession:
+                throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet ResetSession received from client during a query");
 
             case Protocol::Client::IgnoredPartUUIDs:
                 processObsoleteIgnoredPartUUIDs();
@@ -3210,6 +3256,10 @@ void TCPHandler::receivePacketsExpectCancel(QueryState & state, bool force)
 
                 case Protocol::Client::IgnoredPartUUIDs:
                     processObsoleteIgnoredPartUUIDs();
+
+                case Protocol::Client::ResetSession:
+                    /// The packet has no body, so the input is in sync, and the client gets the exception.
+                    throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet ResetSession received from client during a query");
 
                 default:
                     throw NetException(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT, "Unknown packet from client {}", toString(packet_type));

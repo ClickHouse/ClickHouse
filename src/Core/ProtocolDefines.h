@@ -353,6 +353,13 @@ static constexpr auto DBMS_MIN_REVISION_WITH_UNIQ_STATE_VERSION_1 = 54493;
 /// A `-Merge` aggregate function state takes the state version of the function it merges, instead of always 0.
 static constexpr auto DBMS_MIN_REVISION_WITH_MERGE_COMBINATOR_STATE_VERSION = 54494;
 
+/// The client can send the `ResetSession` packet. A client checks this value against the revision
+/// that the server sends in its Hello packet, not against its own revision. The server accepts
+/// the packet from a client with any revision, because the request and the reply use no
+/// revision-dependent fields. This lets a client use the packet without support for all earlier
+/// protocol revisions.
+static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_RESET_SESSION = 54495;
+
 
 /// Version of ClickHouse TCP protocol.
 ///
@@ -361,5 +368,5 @@ static constexpr auto DBMS_MIN_REVISION_WITH_MERGE_COMBINATOR_STATE_VERSION = 54
 /// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
 /// later is just a number for server version (one number instead of commit SHA)
 /// for simplicity (sometimes it may be more convenient in some use cases).
-static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54494;
+static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54495;
 }

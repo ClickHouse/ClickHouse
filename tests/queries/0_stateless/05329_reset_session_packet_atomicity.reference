@@ -1,0 +1,3 @@
+missing handshake database preserves the entire old session
+reset succeeds after repairing the handshake database
+new database constraint preserves the entire old session
