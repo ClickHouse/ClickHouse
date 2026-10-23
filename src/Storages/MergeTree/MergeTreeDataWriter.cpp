@@ -96,6 +96,7 @@ namespace Setting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool assign_part_uuids;
+    extern const MergeTreeSettingsUInt64 max_bytes_to_buffer_for_packed_part;
     extern const MergeTreeSettingsBool fsync_after_insert;
     extern const MergeTreeSettingsBool fsync_after_insert_each_part;
     extern const MergeTreeSettingsBool fsync_part_directory;
@@ -1050,6 +1051,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     auto data_part_storage = new_data_part->getDataPartStoragePtr();
     data_part_storage->beginTransaction();
+    if (auto max_bytes_to_buffer = (*data_settings)[MergeTreeSetting::max_bytes_to_buffer_for_packed_part])
+        data_part_storage->setTemporaryDataForTransaction(context->getTempDataOnDisk(), max_bytes_to_buffer);
 
     if ((*data.storage_settings.get())[MergeTreeSetting::assign_part_uuids])
         new_data_part->uuid = UUIDHelpers::generateV4();
@@ -1265,6 +1268,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     bool merge_is_needed,
     bool try_adaptive_codec,
     bool sync,
+    ContextPtr context,
     bool use_selected_codec)
 {
     auto temp_part = std::make_unique<MergeTreeTemporaryPart>();
@@ -1281,8 +1285,14 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     auto projection_part_storage = new_data_part->getDataPartStoragePtr();
     auto data_settings = data.getSettings(&projection.settings_changes);
 
+    /// A temporary projection part has its own transaction, so it does not get the temporary data
+    /// of the parent part. Set it up the same way as a merge of projection parts does.
     if (is_temp)
+    {
         projection_part_storage->beginTransaction();
+        if (auto max_bytes_to_buffer = (*data_settings)[MergeTreeSetting::max_bytes_to_buffer_for_packed_part])
+            projection_part_storage->setTemporaryDataForTransaction(context->getTempDataOnDisk(), max_bytes_to_buffer);
+    }
 
     new_data_part->is_temp = is_temp;
 
@@ -1458,7 +1468,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPart(
         std::move(indices),
         merge_is_needed,
         /*try_adaptive_codec=*/ false,
-        sync);
+        sync,
+        context);
 }
 
 /// This is used for projection materialization process which may contain multiple stages of
@@ -1495,6 +1506,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempProjectionPart(
         /*merge_is_needed=*/ true,
         /*try_adaptive_codec=*/ !is_explicit_recompression,
         /*sync=*/ false,
+        context,
         use_selected_codec);
 
     new_part->part->temp_projection_block_number = block_num;

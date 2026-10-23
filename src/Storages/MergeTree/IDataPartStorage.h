@@ -79,6 +79,9 @@ struct WriteSettings;
 
 class TemporaryFileOnDisk;
 
+class TemporaryDataOnDiskScope;
+using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
+
 
 struct HardlinkedFiles
 {
@@ -280,6 +283,10 @@ public:
         /// the disk root) so the new hardlink directory entries survive a power loss. Only honored
         /// by freeze() on a local disk, outside an external transaction.
         bool fsync_part_directory = false;
+        /// Where the buffered data of the files is moved if the clone rewrites them, see `setTemporaryDataForTransaction`.
+        /// It is not moved if `max_bytes_to_buffer_for_packed_part` is 0.
+        TemporaryDataOnDiskScopePtr temporary_data = nullptr;
+        size_t max_bytes_to_buffer_for_packed_part = 0;
     };
 
     /// For packed storage the whole data.packed archive is rewritten (copied) during a clone whenever
@@ -404,6 +411,12 @@ public:
     /// It may be flush of buffered data or similar.
     virtual void precommitTransaction() = 0;
     virtual bool hasActiveTransaction() const = 0;
+
+    /// Lets the active transaction move the buffered data of the files being written to `tmp_data`
+    /// once it takes more than `max_bytes_in_memory` of memory. Applies until the transaction
+    /// is committed or rolled back, and to the projections that share the transaction.
+    /// Storages that write files directly instead of buffering them ignore it.
+    virtual void setTemporaryDataForTransaction(const TemporaryDataOnDiskScopePtr & /*tmp_data*/, size_t /*max_bytes_in_memory*/) {}
 
     /// Returns true if underlying filesystem is case-insensitive,
     /// e.g. file_name and FILE_NAME are the same files.
