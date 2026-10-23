@@ -1110,15 +1110,16 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
       * the outer interpretation unreachable.
       * Example: SELECT (SELECT db1.tbl.id FROM db2.db1 LIMIT 1) FROM db1.tbl;
       * The fall-through is only valid when there is an actual database-and-table interpretation to try:
-      * some table expression in this scope or in a parent scope is the table `identifier[1]` inside the
-      * database `path_start`. Without such a candidate a failed lookup must throw as before; e.g. a
-      * two-part `db.x` against the table `db` with no table `x` in the database `db` must not fall
-      * through to a column literally named `db.x` of a sibling table expression.
-      * For a two-part identifier the database-and-table interpretation is the table expression itself,
-      * which is not a valid column expression, so an expression lookup must still throw
-      * (e.g. plain `db.db` selected from the table `db.db`). The only exception is the qualifier of
-      * a qualified matcher (`db.db.*`): it is resolved as an expression first, and that lookup must be
-      * allowed to fail so that the matcher can resolve the qualifier as a table expression next.
+      * some table expression in this scope or in a parent scope is a table inside the database `path_start`
+      * whose name consumes the parts after `path_start`. Without such a candidate a failed lookup must throw
+      * as before; e.g. a two-part `db.x` against the table `db` with no table `x` in the database `db` must
+      * not fall through to a column literally named `db.x` of a sibling table expression.
+      * When the table name consumes all the remaining parts, the database-and-table interpretation is the
+      * table expression itself, which is not a valid column expression, so an expression lookup must still
+      * throw (e.g. plain `db.db` selected from the table `db.db`, or `db.ns.t` selected from the table `ns.t`
+      * of the database `db`). The only exception is the qualifier of a qualified matcher (`db.db.*`): it is
+      * resolved as an expression first, and that lookup must be allowed to fail so that the matcher can
+      * resolve the qualifier as a table expression next.
       * The candidate check is evaluated lazily, only after a failed qualifier lookup, to avoid
       * scanning the scope chain on the hot path of successful resolution.
       */
@@ -1131,9 +1132,15 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
         {
             for (const auto & [_, other_table_expression_data] : current_scope->table_expression_node_to_data)
             {
-                if (!other_table_expression_data.database_name.empty() && path_start == other_table_expression_data.database_name
-                    && identifier[1] == other_table_expression_data.table_name)
-                    return true;
+                if (other_table_expression_data.database_name.empty() || path_start != other_table_expression_data.database_name)
+                    continue;
+                const size_t consumed = numberOfPartsMatchingTableName(identifier, 1, other_table_expression_data.table_name, allow_table_paths);
+                if (consumed == 0)
+                    continue;
+                /// `db.table` alone is the table expression itself, not a column: a candidate only for a matcher qualifier
+                if (1 + consumed == identifier.getPartsSize() && !identifier_lookup.is_matcher_qualifier)
+                    continue;
+                return true;
             }
         }
 
@@ -1290,9 +1297,12 @@ static JoinTableSide choseSideForEqualIdenfifiersFromJoin(
 static std::optional<JoinTableSide> choseSideByQualifierAliasFromJoin(
     const QueryTreeNodePtr & left_resolved_identifier,
     const QueryTreeNodePtr & right_resolved_identifier,
-    const std::string & qualifier,
+    const Identifier & identifier,
     const IdentifierResolveScope & scope)
 {
+    const auto & qualifier = identifier.front();
+    const bool allow_table_paths = scope.context->getSettingsRef()[Setting::allow_experimental_table_namespaces];
+
     auto get_column_source = [](QueryTreeNodePtr resolved_identifier) -> TableExpressionNodePtr
     {
         while (const auto * function = resolved_identifier->as<FunctionNode>())
@@ -1334,7 +1344,7 @@ static std::optional<JoinTableSide> choseSideByQualifierAliasFromJoin(
         if (it == scope.table_expression_node_to_data.end())
             return false;
 
-        if (!it->second.table_name.empty() && it->second.table_name == qualifier)
+        if (numberOfPartsMatchingTableName(identifier, 0, it->second.table_name, allow_table_paths) > 0)
             return true;
 
         if (const auto * table_node = source->as<TableNode>())
@@ -1408,7 +1418,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromCrossJoin(co
         else if (auto qualifier_alias_side = identifier_lookup.identifier.isShort()
                      ? std::optional<JoinTableSide>{}
                      : choseSideByQualifierAliasFromJoin(
-                         resolve_result.resolved_identifier, identifier.resolved_identifier, identifier_lookup.identifier.front(), scope))
+                         resolve_result.resolved_identifier, identifier.resolved_identifier, identifier_lookup.identifier, scope))
         {
             if (*qualifier_alias_side == JoinTableSide::Right)
                 resolve_result = identifier;
@@ -1735,8 +1745,8 @@ void SemiAntiJoinSideChecker::throwIfTableAccessDenied(
 }
 
 /// With `database_qualified = false`, the qualifier is the first identifier part matched against
-/// aliases, table names and materialized CTE names. With `database_qualified = true`, the first two identifier parts are
-/// matched against the database and table names of the leaf table expressions (`db.table.column`);
+/// aliases, table names and materialized CTE names. With `database_qualified = true`, the database name and the parts the
+/// table name consumes are matched against the database and table names of the leaf table expressions (`db.table.column`);
 /// this binding is weaker and must not compete with a successful alias / table-name resolution,
 /// it is only used to rescue a miss (see tryResolveIdentifierFromJoin).
 static bool qualifierBindsToJoinSubtree(
@@ -1788,11 +1798,12 @@ static bool qualifierBindsToJoinSubtree(
     auto it = scope.table_expression_node_to_data.find(join_tree_node);
     if (it == scope.table_expression_node_to_data.end())
         return false;
+    const bool allow_table_paths = scope.context->getSettingsRef()[Setting::allow_experimental_table_namespaces];
     if (database_qualified)
         return !it->second.database_name.empty() && it->second.database_name == qualifier
-            && it->second.table_name == identifier[1];
+            && numberOfPartsMatchingTableName(identifier, 1, it->second.table_name, allow_table_paths) > 0;
 
-    if (!it->second.table_name.empty() && it->second.table_name == qualifier)
+    if (numberOfPartsMatchingTableName(identifier, 0, it->second.table_name, allow_table_paths) > 0)
         return true;
 
     /// A materialized CTE is registered under its internal temporary table name;
@@ -2116,7 +2127,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         else if (auto qualifier_alias_side = identifier_lookup.identifier.isShort()
                      ? std::optional<JoinTableSide>{}
                      : choseSideByQualifierAliasFromJoin(
-                         left_resolved_identifier, right_resolved_identifier, identifier_lookup.identifier.front(), scope))
+                         left_resolved_identifier, right_resolved_identifier, identifier_lookup.identifier, scope))
         {
             resolved_side = qualifier_alias_side;
             resolved_identifier = (resolved_side == JoinTableSide::Left) ? left_resolved_identifier : right_resolved_identifier;
