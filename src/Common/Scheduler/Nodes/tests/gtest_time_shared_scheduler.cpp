@@ -277,6 +277,23 @@ TEST(SchedulerTimeShared, ExceptionInSchedulerThreadTerminates)
     }, "Test exception in the scheduler thread");
 }
 
+/// The scheduler thread finishes without starting the scheduler loop, so its startup promise is broken
+TEST(SchedulerTimeShared, BrokenSchedulerThreadStartupTerminates)
+{
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+    EXPECT_DEATH(
+    {
+        std::future<void> started;
+        {
+            std::promise<void> promise;
+            started = promise.get_future();
+        }
+        EventQueue::waitSchedulerThreadStarted(started);
+    }, "Scheduler thread failed to start");
+}
+
+/// The injected allocation failure does not happen in sanitizer builds: the thread starts and the test fails to die
+#if !defined(SANITIZER)
 TEST(SchedulerTimeShared, SchedulerThreadStartupFailureTerminates)
 {
     ::testing::FLAGS_gtest_death_test_style = "threadsafe";
@@ -298,6 +315,7 @@ TEST(SchedulerTimeShared, SchedulerThreadStartupFailureTerminates)
         std::this_thread::sleep_for(std::chrono::seconds(60));
     }, "Scheduler thread failed to start");
 }
+#endif
 
 TEST(SchedulerTimeShared, MemoryTrackerDoesNotThrowInSchedulerThread)
 {
