@@ -26,4 +26,8 @@ t_unconvertible_discarded_v1	on fly	1	200
 t_unconvertible_discarded_v1	materialized	1	200
 t_unconvertible_discarded_v2	on fly	1	200
 t_unconvertible_discarded_v2	materialized	1	200
+t_recomputed_discarded_v1	on fly	1	200	200
+t_recomputed_discarded_v1	materialized	1	200	200
+t_recomputed_discarded_v2	on fly	1	200	200
+t_recomputed_discarded_v2	materialized	1	200	200
 t_killed_modify	on fly	['zz','zz','zz','zz','zz','5','6','7','8','9']	[100,101,102,103,104,105,106,107,108,109]	['q','q','q','q','q','q','q','q','q','q']

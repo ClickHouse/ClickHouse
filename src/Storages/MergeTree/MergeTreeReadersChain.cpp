@@ -30,11 +30,13 @@ LoggerPtr getMergeTreeReadersChainLogger()
 namespace
 {
 
-/// Storage names of the columns an on-fly mutation step genuinely consumes as a function input and of those it overwrites.
+/// Storage names of the columns an on-fly mutation step genuinely consumes as a function input, of the `UPDATE`
+/// targets it overwrites, and of the other columns it recomputes (`MATERIALIZED` dependents of those targets).
 struct ChainStepColumns
 {
     NameSet consumed;
     NameSet overwritten;
+    NameSet recomputed;
 };
 
 }
@@ -134,8 +136,7 @@ static bool ifConditionIsConstantTrue(const ActionsDAG::Node * node)
     }
 }
 
-/// For every reader, the storage names of the overwritten columns its on-fly mutation step genuinely
-/// consumes as a function input, and of those it overwrites. An on-disk value consumed before any step
+/// For every reader, the `ChainStepColumns` of its on-fly mutation step. An on-disk value consumed before any step
 /// overwrites it must STILL be converted to the post-`MODIFY` metadata type (`collectColumnsConsumedByChainActions`).
 ///
 /// Background: a column the on-fly chain overwrites is normally exempt from
@@ -233,7 +234,14 @@ static std::vector<ChainStepColumns> collectChainStepColumns(const RangeReaders 
                 continue;
             auto key = to_storage_key(output->result_name);
             if (!overwritten_by_chain->contains(key))
+            {
+                const auto * node = output;
+                while (node->type == ActionsDAG::ActionType::ALIAS && node->children.size() == 1)
+                    node = node->children.front();
+                if (node->type != ActionsDAG::ActionType::INPUT)
+                    result[step].recomputed.insert(key);
                 continue;
+            }
             overwritten_here.insert(key);
 
             /// Descend the assignment output to its `if`: strip the named ALIAS, then any
@@ -314,7 +322,7 @@ static NameSet collectColumnsConsumedByChainActions(const std::vector<ChainStepC
 }
 
 /// For every reader, the read names of the columns whose patches are discarded after its step: those still in their
-/// on-disk type, and those the next on-fly step that references them overwrites without reading them.
+/// on-disk type, and those the next on-fly step that references them overwrites or recomputes without reading them.
 static std::vector<NameSet> collectColumnsWithoutPatchesAfterStep(
     const RangeReaders & range_readers, const std::vector<ChainStepColumns> & chain_step_columns, const NameSet & consumed)
 {
@@ -325,6 +333,8 @@ static std::vector<NameSet> collectColumnsWithoutPatchesAfterStep(
     {
         result[i] = overwritten_next;
         for (const auto & column : chain_step_columns[i].overwritten)
+            overwritten_next.insert(column);
+        for (const auto & column : chain_step_columns[i].recomputed)
             overwritten_next.insert(column);
         for (const auto & column : chain_step_columns[i].consumed)
             overwritten_next.erase(column);
