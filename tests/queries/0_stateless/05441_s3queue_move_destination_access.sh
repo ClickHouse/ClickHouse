@@ -28,6 +28,7 @@ keys="after_processing_move_access_key_id = 'clickhouse', after_processing_move_
 azure_connection_string="DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://localhost:10000/devstoreaccount1;"
 
 $CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS ${db}.t_alias SYNC;
     DROP TABLE IF EXISTS ${db}.t SYNC;
     DROP TABLE IF EXISTS ${db}.t_create SYNC;
     DROP TABLE IF EXISTS ${db}.t_as SYNC;
@@ -149,6 +150,19 @@ $CLICKHOUSE_CLIENT -q "
     REVOKE WRITE ON S3 FROM ${user_alter};
 "
 
+echo "-- ALTER through an Alias"
+
+# The export checks see only the name in the query, which is the alias, so the change is refused for every user.
+$CLICKHOUSE_CLIENT --allow_experimental_alias_table_engine 1 -q "CREATE TABLE ${db}.t_alias ENGINE = Alias('${db}', 't')"
+$CLICKHOUSE_CLIENT -q "
+    ALTER TABLE ${db}.t_alias MODIFY SETTING after_processing_move_uri = '${dst}', ${keys}
+    -- { serverError NOT_IMPLEMENTED }
+"
+$CLICKHOUSE_CLIENT -q "
+    ALTER TABLE ${db}.t_alias MODIFY SETTING polling_max_timeout_ms = 20000
+" && echo "settings that are not a destination through an alias: allowed"
+$CLICKHOUSE_CLIENT -q "DROP TABLE ${db}.t_alias SYNC"
+
 echo "-- CREATE without WRITE on S3 or AZURE"
 
 $CLICKHOUSE_CLIENT --user "${user_create}" -q "
@@ -247,6 +261,7 @@ $CLICKHOUSE_CLIENT --user "${user_create}" -q "
 " && echo "RESTORE with WRITE on S3: restored"
 
 $CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS ${db}.t_alias SYNC;
     DROP TABLE IF EXISTS ${db}.t SYNC;
     DROP TABLE IF EXISTS ${db}.t_create SYNC;
     DROP TABLE IF EXISTS ${db}.t_as SYNC;
