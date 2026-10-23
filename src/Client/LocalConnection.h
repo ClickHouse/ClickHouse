@@ -119,6 +119,9 @@ public:
     /// Used by clickhouse-local to hide its inferred stdin table until query files finish.
     ContextMutablePtr getSessionContext() { return session->sessionContext(); }
 
+    /// Used only by clickhouse-local's deferred inferred-stdin table.
+    void setBeforeQueryCallback(std::function<void(ContextPtr)> callback) { before_query_callback = std::move(callback); }
+
     static ServerConnectionPtr createConnection(
         const ConnectionParameters & connection_parameters,
         ContextPtr current_context,
@@ -223,6 +226,7 @@ private:
     bool needSendProgressOrMetrics();
     bool needSendLogs();
 
+    std::function<void(ContextPtr)> before_query_callback;
     ContextMutablePtr query_context;
     std::unique_ptr<Session> session;
 

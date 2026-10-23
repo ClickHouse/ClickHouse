@@ -1411,43 +1411,42 @@ void LocalServer::beforeExecutingCommandLineQueries()
     if (!implicit_stdin_table_to_activate || query_file_reads_stdin)
         return;
 
-    auto session_context = static_cast<LocalConnection &>(*connection).getSessionContext();
+    auto & local_connection = static_cast<LocalConnection &>(*connection);
+    auto session_context = local_connection.getSessionContext();
+    const String & private_name = *private_stdin_table_name;
+    auto inferred_table = session_context->findExternalTable(private_name);
+    if (!inferred_table)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Deferred stdin table {} is missing", backQuote(private_name));
 
-    /// Keep the public input-table name for ordinary queries (including explicit
-    /// FROM table and --table custom_name). If a query file created a table with
-    /// that name, keep the inferred table private instead of shadowing user data.
-    const String & public_name = *implicit_stdin_table_to_activate;
-    bool has_name_collision = static_cast<bool>(session_context->findExternalTable(public_name));
-    if (!has_name_collision)
+    const String public_name = *implicit_stdin_table_to_activate;
+    /// Only expose the public alias when it cannot shadow a table in the query's
+    /// effective database. Check per query because SET/USE and query-level
+    /// SETTINGS database can change that database within the same -q argument.
+    local_connection.setBeforeQueryCallback([session_context, inferred_table, public_name](ContextPtr query_context)
     {
-        /// Check every local database, not just getCurrentDatabase(): SET database
-        /// and per-query SETTINGS database can change how unqualified names resolve.
-        const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false});
-        for (const auto & database_entry : databases)
+        auto database_name = query_context->getSettingsRef()[Setting::database].value;
+        if (database_name.empty())
+            database_name = query_context->getCurrentDatabase();
+
+        auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+        const bool existing_database_table = database && database->isTableExist(public_name, query_context);
+        auto public_alias = session_context->findExternalTable(public_name);
+
+        if (existing_database_table || (public_alias && public_alias != inferred_table))
         {
-            if (database_entry.second->isTableExist(public_name, session_context))
-            {
-                has_name_collision = true;
-                break;
-            }
+            if (public_alias == inferred_table)
+                session_context->removeExternalTable(public_name);
         }
-    }
+        else if (!public_alias)
+            session_context->addExternalTable(public_name, inferred_table);
+    });
 
-    String name = *private_stdin_table_name;
-    if (!has_name_collision)
-    {
-        /// Make the public name available only for the command-line query phase.
-        auto inferred_table = session_context->removeExternalTable(name);
-        if (!inferred_table)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Deferred stdin table {} is missing", backQuote(name));
-        session_context->addExternalTable(public_name, std::move(inferred_table));
-        name = public_name;
-    }
-
-    /// A setting explicitly assigned by query files (even to an empty string) wins.
+    /// The inferred table stays addressable by its private name for FROM-less
+    /// queries, even when an explicit user table owns the public name.
+    /// An explicit setting supplied by query files or a profile wins.
     if (!client_context->getSettingsRef().isChanged("implicit_table_at_top_level")
         && !session_context->getSettingsRef().isChanged("implicit_table_at_top_level"))
-        client_context->setSetting("implicit_table_at_top_level", name);
+        client_context->setSetting("implicit_table_at_top_level", private_name);
 }
 
 int LocalServer::main(const std::vector<std::string> & /*args*/)

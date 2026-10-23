@@ -303,6 +303,9 @@ void LocalConnection::sendQuery(
     if (!current_database.empty() && !session_diverged_database)
         query_context->setSetting("database", current_database);
 
+    if (before_query_callback)
+        before_query_callback(query_context);
+
     query_context->addQueryParameters(query_parameters);
 
     state.reset();
