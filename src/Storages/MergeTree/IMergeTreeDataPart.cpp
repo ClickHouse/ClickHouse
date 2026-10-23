@@ -26,6 +26,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadataOnDisk.h>
 #include <Interpreters/TransactionManager.h>
@@ -319,7 +320,7 @@ IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::s
     return written_files;
 }
 
-void IMergeTreeDataPart::MinMaxIndex::update(const Block & block, const NamesAndTypesList & columns_to_update)
+void IMergeTreeDataPart::MinMaxIndex::update(const Block & block, const NamesAndTypesList & columns_to_update, const ColumnsDescription * storage_columns)
 {
     if (block.rows() == 0)
         return;
@@ -332,7 +333,9 @@ void IMergeTreeDataPart::MinMaxIndex::update(const Block & block, const NamesAnd
     {
         FieldRef min_value;
         FieldRef max_value;
-        const ColumnWithTypeAndName & column_and_type = block.getColumnOrSubcolumnByName(column_name);
+        const ColumnWithTypeAndName & column_and_type = storage_columns
+            ? getColumnOrSubcolumnFromBlock(block, column_name, *storage_columns)
+            : block.getColumnOrSubcolumnByName(column_name);
         const auto & src_column = column_and_type.column;
         /// Only LowCardinality needs unwrapping to expose a nested Nullable; gate the call so other
         /// columns are untouched. LC(Nullable(T)) then takes getExtremesNullLast (keeps the +inf NULL

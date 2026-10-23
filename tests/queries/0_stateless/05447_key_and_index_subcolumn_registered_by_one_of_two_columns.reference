@@ -1,0 +1,51 @@
+-- skip index, horizontal and vertical merge
+t_horizontal	Horizontal
+t_vertical	Vertical
+200
+200
+Parts: 0 | Granules: 0
+Granules: 4/4
+Granules: 0/4
+200
+200
+Parts: 0 | Granules: 0
+Granules: 4/4
+Granules: 0/4
+-- untyped JSON declared first, insert and merge
+200
+200
+200
+200
+-- sorting key
+200	200
+200
+200
+-- partition key
+100	100
+100
+(['a'])
+-- mutation rewriting a compact part
+100
+100
+Parts: 0 | Granules: 0
+Granules: 2/2
+Granules: 0/2
+-- part written before the column was added
+Parts: 0 | Granules: 0
+Granules: 4/4
+Granules: 0/4
+100
+100
+Parts: 0 | Granules: 0
+Granules: 4/4
+Granules: 0/4
+-- TTL GROUP BY re-sorting by the sorting key
+20	20
+20
+20
+-- partition key min-max index after a merge or mutation that removes rows
+100	100
+100
+50	50
+50
+100

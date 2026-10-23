@@ -462,7 +462,8 @@ public:
         [[nodiscard]] WrittenFiles store(StorageMetadataPtr metadata_snapshot, IDataPartStorage & part_storage, Checksums & checksums, const MergeTreeSettingsPtr & storage_settings) const;
         [[nodiscard]] WrittenFiles store(const NamesAndTypesList & columns, IDataPartStorage & part_storage, Checksums & checksums, const MergeTreeSettingsPtr & storage_settings) const;
 
-        void update(const Block & block, const NamesAndTypesList & columns);
+        /// Takes a registered subcolumn from the column `storage_columns` registers it under, when set.
+        void update(const Block & block, const NamesAndTypesList & columns, const ColumnsDescription * storage_columns = nullptr);
         void merge(const MinMaxIndex & other);
 
         /// Repair the block column ranges of an index inherited from `source_part` when that part does not

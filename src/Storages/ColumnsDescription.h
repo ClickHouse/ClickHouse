@@ -244,7 +244,7 @@ public:
     std::optional<NameAndTypePair> tryGetColumn(const GetColumnsOptions & options, const String & column_name) const;
 
     /// A subcolumn of any column by its full name (`payload.ts`). Nothing for the name of a column or for an unknown name.
-    std::optional<NameAndTypePair> tryGetSubcolumn(const String & subcolumn_name) const;
+    std::optional<NameAndTypePair> tryGetSubcolumn(const String & subcolumn_name, GetColumnsOptions::Kind kind = GetColumnsOptions::All) const;
 
     std::optional<const ColumnDescription> tryGetColumnOrSubcolumnDescription(GetColumnsOptions::Kind kind, const String & column_name) const;
     std::optional<const ColumnDescription> tryGetColumnDescription(const GetColumnsOptions & options, const String & column_name) const;
