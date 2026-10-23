@@ -60,6 +60,7 @@
 #include <Parsers/ASTHypotheticalObjectQuery.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTUndropQuery.h>
 #include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/ASTSetQuery.h>
