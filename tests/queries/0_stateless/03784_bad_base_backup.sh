@@ -15,7 +15,7 @@ TIMEOUT=10
 function thread()
 {
   I=0
-  while true
+  while clickhouse_test_time_left
   do
     [[ $SECONDS -gt $TIMEOUT ]] && break
     I=$((I+1))
