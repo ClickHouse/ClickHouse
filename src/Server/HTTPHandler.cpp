@@ -1809,9 +1809,9 @@ void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, Conte
                 /// A capture binding `_request_body` would leave the body unread (see below). A configuration-defined
                 /// handler appends an unread body to the query text, because its query is not analyzed and the body
                 /// may be the data of an `INSERT`, so the body would extend the handler's SQL. A SQL-defined handler
-                /// appends the body only to an `INSERT`, which cannot use `_request_body`, so a capture may bind it.
-                if (capturing_value.data() && capturing_name == "_request_body" && receive_params.contains(capturing_name)
-                    && feedsRequestBodyToQuery())
+                /// never has a captured `_request_body` in `receive_params` (see `makeSQLDefinedHandler`): it binds
+                /// the capture and appends the body only to an `INSERT`, so it is not rejected here.
+                if (capturing_value.data() && capturing_name == "_request_body" && receive_params.contains(capturing_name))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "The query parameter `_request_body` is bound from the HTTP request body and cannot be captured "
                         "from the URL or a header");

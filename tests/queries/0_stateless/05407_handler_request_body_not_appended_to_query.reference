@@ -5,6 +5,9 @@ BAD_ARGUMENTS
 BAD_ARGUMENTS
 === _request_body bound from a URL capture group: the body is not appended to the query ===
 Welcome, bob
+=== _request_body bound from a URL capture group does not read the body: GET is allowed, no Content-Length needed ===
+Welcome, carol
+Welcome, dave
 === the body is still the data of an INSERT ===
 hello
 world
