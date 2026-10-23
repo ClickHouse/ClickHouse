@@ -291,7 +291,8 @@ When using the `iceberg` table function in ClickHouse, the system needs to locat
     *Filter for files containing a `table-uuid` field matching your specified UUID (case-insensitive)
 
 3. **Default Search**:
-*If neither of the above settings are provided, all `.metadata.json` files in the `metadata` directory become candidates
+* If neither of the above settings are provided, all `.metadata.json` files in the `metadata` directory become candidates
+* On S3 and Azure, with the query-level setting `iceberg_list_only_v_prefixed_metadata_files` enabled and `iceberg_use_version_hint` disabled, if some of these files have names starting with `v` (as ClickHouse and Hadoop catalogs name them), only those files are candidates, and only they are listed (by the key prefix `metadata/v`, so the manifests stored in the same directory are not). Enable it only for tables whose metadata files are all named this way: in a directory that holds both naming schemes, the `<N>-<uuid>.metadata.json` files are never candidates
 
 ### Selecting the Most Recent File {#most-recent-file}
 
@@ -304,7 +305,7 @@ After identifying candidate files using the above rules, the system determines w
 * The file with the highest version number is selected
 * (Version appears as `V` in filenames formatted as `V.metadata.json` or `V-uuid.metadata.json`)
 
-**Note**: All mentioned settings are table function settings (not global or query-level settings) and must be specified as shown below:
+**Note**: All mentioned settings except `iceberg_list_only_v_prefixed_metadata_files` are table function settings (not global or query-level settings) and must be specified as shown below:
 
 ```sql
 SELECT * FROM iceberg('s3://bucket/path/to/iceberg_table', 

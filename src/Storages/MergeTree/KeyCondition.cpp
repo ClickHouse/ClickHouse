@@ -29,6 +29,7 @@
 #include <Functions/geometryConverters.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/Hex.h>
 #include <Common/RegexpUtils.h>
 #include <Common/HilbertUtils.h>
 #include <Common/FieldVisitorConvertToNumber.h>
@@ -54,6 +55,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <base/itoa.h>
 
 #include <algorithm>
 #include <ranges>
@@ -118,6 +120,34 @@ auto expandAtomGroups(Elements && elements)
         return std::span<Element>(&element, 1);
     };
     return std::views::all(std::forward<Elements>(elements)) | std::views::transform(atoms_of) | std::views::join;
+}
+
+/// Calls `apply(atom, positive)` for every atom of `rpn`; `positive` is false for an atom under an odd number of `NOT`s.
+template <typename Elements, typename Apply>
+void forEachAtomWithPolarity(Elements & rpn, Apply && apply)
+{
+    /// The reversed RPN lists every operator before its operands, so the stack holds the polarities of the pending operands.
+    std::vector<bool> positive_stack = {true};
+    for (auto it = rpn.rbegin(); it != rpn.rend(); ++it)
+    {
+        auto & element = *it;
+        chassert(!positive_stack.empty());
+        bool positive = positive_stack.back();
+        positive_stack.pop_back();
+
+        if (element.function == KeyCondition::RPNElement::FUNCTION_NOT)
+            positive_stack.push_back(!positive);
+        else if (element.function == KeyCondition::RPNElement::FUNCTION_AND || element.function == KeyCondition::RPNElement::FUNCTION_OR)
+            positive_stack.insert(positive_stack.end(), {positive, positive});
+        else
+        {
+            /// Every atom in a group bounds the same predicate leaf and inherits its polarity.
+            for (auto & atom : expandAtomGroups(std::span(&element, 1)))
+                apply(atom, positive);
+        }
+    }
+
+    chassert(positive_stack.empty());
 }
 
 }
@@ -1857,30 +1887,11 @@ bool KeyCondition::hasUnknownAtoms() const
 KeyCondition KeyCondition::createWithUnknownAtomsAssumedTrue() const
 {
     KeyCondition result = *this;
-
-    /// The reversed RPN lists every operator before its operands, so the stack holds the polarities of the pending operands.
-    std::vector<bool> positive_stack = {true};
-    for (auto it = result.rpn.rbegin(); it != result.rpn.rend(); ++it)
+    forEachAtomWithPolarity(result.rpn, [](RPNElement & atom, bool positive)
     {
-        RPNElement & element = *it;
-        chassert(!positive_stack.empty());
-        bool positive = positive_stack.back();
-        positive_stack.pop_back();
-
-        if (element.function == RPNElement::FUNCTION_NOT)
-            positive_stack.push_back(!positive);
-        else if (element.function == RPNElement::FUNCTION_AND || element.function == RPNElement::FUNCTION_OR)
-            positive_stack.insert(positive_stack.end(), {positive, positive});
-        else
-        {
-            /// Every atom in a group bounds the same predicate leaf and inherits its polarity.
-            for (auto & atom : expandAtomGroups(std::span<RPNElement>(&element, 1)))
-                if (atom.function == RPNElement::FUNCTION_UNKNOWN)
-                    atom = RPNElement(positive ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE);
-        }
-    }
-
-    chassert(positive_stack.empty());
+        if (atom.function == RPNElement::FUNCTION_UNKNOWN)
+            atom = RPNElement(positive ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE);
+    });
     return result;
 }
 
@@ -1921,11 +1932,13 @@ static std::optional<FieldRef> applyFunction(const FunctionBasePtr & func, const
     /// We will cache the function result inside `field.columns`, because this function will call many times
     /// from many fields from same column. When the column is huge, for example there are thousands of marks, we need a cache.
     /// The cache key is like `_[function_pointer]_[param_column_id]` to identify a unique <function, param> pair.
-    WriteBufferFromOwnString buf;
-    writeText("_", buf);
-    writePointerHex(func.get(), buf);
-    writeText("_" + toString(field.column_idx), buf);
-    String result_name = buf.str();
+    char key_buf[3 + 2 * sizeof(uintptr_t) + 1 + std::numeric_limits<UInt64>::digits10 + 1];
+    memcpy(key_buf, "_0x", 3);
+    writeHexUIntLowercase(reinterpret_cast<uintptr_t>(func.get()), key_buf + 3);
+    char * key_end = key_buf + 3 + 2 * sizeof(uintptr_t);
+    *key_end++ = '_';
+    key_end = itoa(static_cast<UInt64>(field.column_idx), key_end);
+    const std::string_view result_name(key_buf, key_end - key_buf);
     const auto & columns = field.columns;
     size_t result_idx = columns->size();
 
@@ -1971,10 +1984,10 @@ static std::optional<FieldRef> applyFunction(const FunctionBasePtr & func, const
         }
         catch (...)
         {
-            field.columns->emplace_back(ColumnWithTypeAndName{nullptr, func->getResultType(), result_name});
+            field.columns->emplace_back(ColumnWithTypeAndName{nullptr, func->getResultType(), String(result_name)});
             throw;
         }
-        field.columns->emplace_back(ColumnWithTypeAndName{result_column, func->getResultType(), result_name});
+        field.columns->emplace_back(ColumnWithTypeAndName{result_column, func->getResultType(), String(result_name)});
     }
 
     return FieldRef(field.columns, field.row_idx, result_idx);
@@ -8821,13 +8834,20 @@ BoolMask KeyCondition::checkInHyperrectangle(
 void KeyCondition::prepareBloomFilterData(std::function<std::optional<uint64_t>(size_t column_idx, const Field &)> hash_one,
                                           std::function<std::optional<std::vector<uint64_t>>(size_t column_idx, const ColumnPtr &)> hash_many)
 {
-    for (auto & rpn_element : expandAtomGroups(rpn))
+    forEachAtomWithPolarity(rpn, [&](RPNElement & rpn_element, bool positive)
     {
+        /// A lookup can only rule out the positive form of an atom (`x = c` of `x != c`), and a row group is skipped
+        /// only when the whole condition cannot be true, so it is useless for an atom whose positive form ends up inverted.
+        const bool negated = rpn_element.function == RPNElement::FUNCTION_NOT_IN_RANGE
+            || rpn_element.function == RPNElement::FUNCTION_NOT_IN_SET;
+        if (negated == positive)
+            return;
+
         if (!rpn_element.monotonic_functions_chain.empty())
         {
             /// We could apply the inverse functions to get the key value when possible.
             /// This is currently not implemented.
-            continue;
+            return;
         }
 
         KeyCondition::BloomFilterData::HashesForColumns hashes;
@@ -8838,14 +8858,14 @@ void KeyCondition::prepareBloomFilterData(std::function<std::optional<uint64_t>(
             // Only FUNCTION_EQUALS is supported and for that extremes need to be the same
             if (rpn_element.range.left != rpn_element.range.right)
             {
-                continue;
+                return;
             }
 
             auto hashed_value = hash_one(rpn_element.getKeyColumn(), rpn_element.range.left);
 
             if (!hashed_value)
             {
-                continue;
+                return;
             }
 
             hashes.emplace_back(std::vector<uint64_t>{*hashed_value});
@@ -8903,12 +8923,12 @@ void KeyCondition::prepareBloomFilterData(std::function<std::optional<uint64_t>(
 
             if (hashes.empty())
             {
-                continue;
+                return;
             }
 
             rpn_element.bloom_filter_data = {std::move(hashes), std::move(key_columns_for_element)};
         }
-    }
+    });
 }
 
 bool KeyCondition::mayBeTrueInRange(

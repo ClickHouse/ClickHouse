@@ -19,8 +19,8 @@ namespace DB::Parquet
 {
 
 /// How a reader uses the columns cache (`use_columns_cache`). Set only for a file whose content is
-/// identified by a strong version token (an ETag, or the version token of a local file that has
-/// settled), see `Reader::initColumnsCache`.
+/// identified by a strong version token (an ETag, the identity of an immutable file recorded by its
+/// table, or the version token of a local file that has settled), see `Reader::initColumnsCache`.
 struct ColumnsCacheOptions
 {
     std::shared_ptr<ColumnsCache> cache;
@@ -36,8 +36,8 @@ struct ColumnsCacheOptions
     /// `system.columns_cache`.
     AccessTypeObjects::Source source = AccessTypeObjects::Source::FILE;
 
-    /// A hash of what identifies the content of the file - the path among all storages, the ETag (or the version token
-    /// of a local file) and the size - and of the format settings that change the values decoded
+    /// A hash of what identifies the content of the file - the path among all storages, its version token
+    /// and the size - and of the format settings that change the values decoded
     /// from it. Part of the key of every entry of the file.
     UInt64 file_identity = 0;
 
@@ -74,6 +74,9 @@ struct ReadOptions
     /// searching for 100 elements would have 63% false positive probability.
     size_t bloom_filter_max_set_size = 100;
 
+    /// The file is read from object storage or a URL.
+    bool is_remote_fs = false;
+
     /// Null if the columns cache is not used.
     std::shared_ptr<const ColumnsCacheOptions> columns_cache;
 };
@@ -91,6 +94,7 @@ struct SharedResourcesExt
     };
 
     static Limits getLimitsPerReader(const FormatParserSharedResources & parser_shared_resources, double fraction);
+    static double getMemoryFractionPerReader(const FormatParserSharedResources & parser_shared_resources, double fraction);
 };
 
 
