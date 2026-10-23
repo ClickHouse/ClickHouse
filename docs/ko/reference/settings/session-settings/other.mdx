@@ -824,10 +824,10 @@ false인 경우 h3 함수(예: h3CellAreaM2)는 입력이 유효하지 않으면
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "120000"},{"label": "새로운 설정"}]}]} />
 
-Keeper 클라이언트가 해당 `Context` 뮤텍스를 획득하기 위해 대기하는 최대 시간(밀리초)을 정의합니다. 이 시간 안에 획득하지 못하면 실패합니다.
+쿼리가 Keeper 클라이언트를 기다리는 최대 시간(밀리초)을 정의합니다. 여기에는 클라이언트의 `Context` 뮤텍스를 기다리는 시간과 다른 스레드가 해당 클라이언트를 위해 진행 중인 연결 시도를 기다리는 시간이 포함됩니다. 이 시간을 초과하면 쿼리는 `TIMEOUT_EXCEEDED` 오류와 함께 실패합니다. 쿼리가 취소된 경우에도 대기를 중단합니다.
 
-이 값은 획득을 수행하는 `Context`에서 가져옵니다. 쿼리별 재정의는 작업이 쿼리 컨텍스트를 사용할 때만 적용됩니다. `system.zookeeper` 읽기, `zookeeperSessionUptime`, `SYSTEM RECONNECT ZOOKEEPER`, 쿼리 컨텍스트를 통한 보조 Keeper 액세스 등이 이에 해당합니다.
-`BACKUP` 및 `RESTORE` 조정, `Replicated` 데이터베이스 작업처럼 전역 또는 백그라운드 컨텍스트를 사용하는 작업은 해당 컨텍스트의 값을 사용합니다. 이러한 작업에서 타임아웃이 발생하면 Keeper 오류(`ZOPERATIONTIMEOUT`)로 전달되며, 다른 Keeper 오류와 동일하게 처리됩니다.
+이 값은 쿼리 컨텍스트에서 가져오므로 쿼리 컨텍스트를 사용하는 작업에 적용됩니다. `system.zookeeper` 읽기, `zookeeperSessionUptime`, `SYSTEM RECONNECT ZOOKEEPER`, 쿼리 컨텍스트를 통한 보조 Keeper 액세스 등이 이에 해당합니다.
+`BACKUP` 및 `RESTORE` 조정, `Replicated` 데이터베이스 작업처럼 전역 또는 백그라운드 컨텍스트를 사용하는 작업은 연결 시도가 끝날 때까지 기다린 후 해당 클라이언트 또는 Keeper 오류를 받습니다.
 `SYSTEM RELOAD CONFIG` 및 `SYSTEM RELOAD ASYNCHRONOUS METRICS`는 별도로 직렬화된 다시 로드 경로를 사용하므로 이 설정이 적용되지 않습니다.
 
 가능한 값:

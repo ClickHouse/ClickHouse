@@ -105,30 +105,30 @@ SYSTEM RELOAD DICTIONARY model;
 
 仅接受下列参数；使用任何其他名称都会导致加载失败，因此拼写错误会在模型训练时暴露出来，而不会被静默忽略。`num_iterations` 由 ClickHouse 处理 (参见其描述) ；其余所有参数都会以字符串形式原样转发给 XGBoost booster，并沿用 XGBoost 自身的默认值和取值范围——参见 [XGBoost 参数参考文档](https://xgboost.readthedocs.io/en/stable/parameter.html)。
 
-| 参数                                                            | 描述                                                                                                           |
-| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `num_iterations`                                              | 提升轮数 (即训练多少棵树) 。正整数，用作训练循环次数，不会转发给 booster。默认值为 `100`。                                                       |
-| `booster`                                                     | Booster 类型：`gbtree`、`gblinear` 或 `dart`。                                                                     |
-| `objective`                                                   | 学习目标，例如 `reg:squarederror` 或 `binary:logistic`。必须是每行只预测单个值的目标；多分类目标 (`multi:softmax`、`multi:softprob`) 会被拒绝。 |
-| `seed`                                                        | 随机数种子。训练过程本身是确定性的，因此只有同时设置了随机性参数 (`subsample`、`sampling_method` 或任意 `colsample_*`) 时，该参数才会影响模型。              |
-| `verbosity`                                                   | XGBoost 的日志详细程度：从 `0` (静默) 到 `3` (调试) ，默认为 `1` (警告) 。仅影响 XGBoost 记录哪些消息，不会影响训练出的模型。消息的输出位置请参见[说明](#notes)。   |
-| `nthread`                                                     | 训练使用的并行线程数。该参数会被接受并转发，但目前不起作用：内置的 XGBoost 在构建时未启用 OpenMP，因此训练和预测始终以单线程运行。                                    |
-| `eta`                                                         | 每轮提升后应用的步长收缩。仅接受此写法，不接受 XGBoost 的别名 `learning_rate`。                                                         |
-| `gamma`                                                       | 在叶子节点上进一步拆分所需的最小损失减少量。                                                                                       |
-| `max_depth`                                                   | 树的最大深度。                                                                                                      |
-| `min_child_weight`                                            | 子节点所需的实例权重 (hessian) 之和的最小值。                                                                                 |
-| `max_delta_step`                                              | 每个叶子节点输出允许的最大变化步长。                                                                                           |
-| `subsample`                                                   | 每轮提升中采样的训练行比例。                                                                                               |
-| `sampling_method`                                             | 行采样方法：`uniform` 或 `gradient_based`。仅当 `subsample` 设置为小于 `1` 时才生效。                                            |
-| `colsample_bytree` / `colsample_bylevel` / `colsample_bynode` | 每棵树 / 每层 / 每次拆分时采样的列 (特征) 比例。                                                                                |
-| `lambda`                                                      | 权重的 L2 正则化项。仅接受此写法，不接受 XGBoost 的别名 `reg_lambda`。                                                             |
-| `alpha`                                                       | 权重的 L1 正则化项。仅接受此写法，不接受 XGBoost 的别名 `reg_alpha`。                                                              |
-| `tree_method`                                                 | 树构建算法：`auto`、`exact`、`approx` 或 `hist`。                                                                      |
-| `scale_pos_weight`                                            | 平衡正负样本权重，适用于类别不平衡的场景。                                                                                        |
-| `grow_policy`                                                 | 向树中添加新节点的方式：`depthwise` 或 `lossguide`。                                                                       |
-| `max_leaves`                                                  | 叶子节点的最大数量 (与 `grow_policy` `lossguide` 配合使用) 。                                                               |
-| `max_bin`                                                     | 对连续特征进行分桶时使用的最大离散分箱数 (与 `tree_method` `hist` 配合使用) 。                                                         |
-| `num_parallel_tree`                                           | 每轮提升生成的树数量 (值 `> 1` 时训练的是提升随机森林) 。                                                                           |
+| 参数                                                            | 描述                                                                                                                                      |
+| ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `num_iterations`                                              | 提升轮次 (即训练多少棵树) 。正整数，用作训练循环次数，不会转发给 booster。默认值为 `100`。                                                                                  |
+| `booster`                                                     | Booster 类型：`gbtree`、`gblinear` 或 `dart`。                                                                                                |
+| `objective`                                                   | 学习目标，例如 `reg:squarederror` 或 `binary:logistic`。必须是每行只预测单个值的目标；多分类目标 (`multi:softmax`、`multi:softprob`) 会被拒绝。                            |
+| `seed`                                                        | 随机数种子。训练过程本身是确定性的，因此只有同时设置了随机性参数 (`subsample`、`sampling_method` 或任意 `colsample_*`) 时，该参数才会影响模型。                                         |
+| `verbosity`                                                   | XGBoost 的日志详细程度：`0` (静默) 、`1` (警告，默认值) 或 `2` (信息) 。不接受调试级别 `3`，因为它启用的计时监视器不是线程安全的。仅影响 XGBoost 记录哪些消息，不会影响训练出的模型。消息的输出位置请参见[说明](#notes)。 |
+| `nthread`                                                     | 训练使用的并行线程数。该参数会被接受并转发，但目前不起作用：内置的 XGBoost 在构建时未启用 OpenMP，因此训练和预测始终以单线程运行。                                                               |
+| `eta`                                                         | 每个提升轮次后应用的步长收缩。仅接受此写法，不接受 XGBoost 的别名 `learning_rate`。                                                                                    |
+| `gamma`                                                       | 在叶子节点上进一步拆分所需的最小损失减少量。                                                                                                                  |
+| `max_depth`                                                   | 树的最大深度。                                                                                                                                 |
+| `min_child_weight`                                            | 子节点所需的实例权重 (hessian) 之和的最小值。                                                                                                            |
+| `max_delta_step`                                              | 每个叶子节点输出允许的最大变化步长。                                                                                                                      |
+| `subsample`                                                   | 每个提升轮次中采样的训练行比例。                                                                                                                          |
+| `sampling_method`                                             | 行采样方法：`uniform` 或 `gradient_based`。仅当 `subsample` 设置为小于 `1` 时才生效。                                                                       |
+| `colsample_bytree` / `colsample_bylevel` / `colsample_bynode` | 每棵树 / 每层 / 每次拆分时采样的列 (特征) 比例。                                                                                                           |
+| `lambda`                                                      | 权重的 L2 正则化项。仅接受此写法，不接受 XGBoost 的别名 `reg_lambda`。                                                                                        |
+| `alpha`                                                       | 权重的 L1 正则化项。仅接受此写法，不接受 XGBoost 的别名 `reg_alpha`。                                                                                         |
+| `tree_method`                                                 | 树构建算法：`auto`、`exact`、`approx` 或 `hist`。                                                                                                 |
+| `scale_pos_weight`                                            | 平衡正负样本权重，适用于类别不平衡的场景。                                                                                                                   |
+| `grow_policy`                                                 | 向树中添加新节点的方式：`depthwise` 或 `lossguide`。                                                                                                  |
+| `max_leaves`                                                  | 叶子节点的最大数量 (与 `grow_policy` `lossguide` 配合使用) 。                                                                                          |
+| `max_bin`                                                     | 对连续特征进行分桶时使用的最大离散分箱数 (与 `tree_method` `hist` 配合使用) 。                                                                                    |
+| `num_parallel_tree`                                           | 每个提升轮次生成的树数量 (值 `> 1` 时训练的是提升随机森林) 。                                                                                                      |
 
 参数名称不区分大小写，且每个参数只能指定一次。取值必须是正整数、浮点数或带引号的字符串：负数字面量在到达布局之前就会被字典 DDL 本身拒绝，因此无法将 `seed` 设为负数。
 

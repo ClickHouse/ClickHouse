@@ -420,6 +420,26 @@ ENGINE = <Engine>
 
 Para consultar los códecs de uso general, especializados y de cifrado disponibles, consulte [Códecs de compresión de columnas](/es/reference/statements/create/table/codec).
 
+### Códecs para subcolumnas {#subcolumn-codecs}
+
+Esta funcionalidad es experimental y requiere activar el parámetro de configuración [enable&#95;subcolumn&#95;codecs](/es/reference/settings/session-settings/enable#enable_subcolumn_codecs).
+
+Una entrada `CODEC name (codec, ...)` en la lista de columnas declara un códec para una subcolumna, como un elemento de un `Tuple` o los valores de un `Map`:
+
+```sql
+CREATE TABLE subcolumn_codec_example
+(
+    id UInt64,
+    payload Tuple(ts DateTime64(3), value Float64),
+    attrs Map(String, Float64),
+    CODEC payload.ts (DoubleDelta, ZSTD),
+    CODEC attrs.values (Gorilla, ZSTD)
+)
+ENGINE = MergeTree ORDER BY id
+```
+
+Solo los motores de la familia `MergeTree` admiten códecs para subcolumnas. Una columna tiene su propio códec o bien códecs para sus subcolumnas, pero no ambos. No se pueden especificar códecs para subcolumnas anidadas: si se declara un códec para `payload.meta`, no se puede declarar ninguno para `payload.meta.seq`. Para hacer referencia a un elemento de un `Tuple` sin nombres se usan nombres entre comillas, como en ``CODEC `pair`.`2` (ZSTD)``, ya que `pair.2` se interpretaría como un número. La subcolumna debe existir en el tipo de la columna y no puede estar dentro de un valor `JSON`, `Dynamic` o `Variant`. A los flujos que solo contienen estructura, como los tamaños de arrays o los mapas de valores nulos, se les aplica únicamente la parte de propósito general del códec. Las declaraciones se muestran en `SHOW CREATE TABLE` y en la columna `subcolumn_codecs` de `system.columns`.
+
 ## Crear tablas temporales {#temporary-tables}
 
 ClickHouse admite tablas temporales, que desaparecen al finalizar la sesión. Para más información, consulta [CREATE TEMPORARY TABLE](/es/reference/statements/create/table/temporary-table).

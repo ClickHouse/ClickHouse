@@ -17,8 +17,8 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
 ## 構文 {#syntax}
 
 ```sql
-elasticsearch('url', 'index'[, 'user', 'password'][, key = value, ...][, structure = 'document JSON'][, SETTINGS ...])
-elasticsearch(named_collection[, key = value, ...][, structure = 'document JSON'][, SETTINGS ...])
+elasticsearch('url', 'index'[, 'user', 'password'][, query('...')][, key = value, ...][, structure = 'document JSON'][, SETTINGS ...])
+elasticsearch(named_collection[, query('...')][, key = value, ...][, structure = 'document JSON'][, SETTINGS ...])
 ```
 
 <Note>
@@ -31,29 +31,31 @@ elasticsearch(named_collection[, key = value, ...][, structure = 'document JSON'
 
 ## 引数 {#arguments}
 
-| 引数         | 説明                                                                                                                       |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `url`      | Elasticsearch クラスターのベースURL(例: `https://localhost:9200`)。認証情報、クエリ文字列、フラグメントを含まない `http` または `https` の URL を指定する必要があります。   |
-| `index`    | 読み取るインデックス。Elasticsearch の point in time API が受け付ける形式であれば、エイリアス、カンマ区切りのリスト、ワイルドカードパターンも指定できます。どのインデックスにも一致しないパターンを指定するとエラーになります。 |
-| `user`     | HTTP 基本認証のユーザー名(任意)。                                                                                                     |
-| `password` | HTTP 基本認証のパスワード(任意。`user` の指定が必要)。                                                                                       |
+| 引数             | 説明                                                                                                                                                                                           |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `url`          | Elasticsearch クラスターのベースURL(例: `https://localhost:9200`)。認証情報、クエリ文字列、フラグメントを含まない `http` または `https` の URL を指定する必要があります。                                                                       |
+| `index`        | 読み取るインデックス。Elasticsearch の point in time API が受け付ける形式であれば、エイリアス、カンマ区切りのリスト、ワイルドカードパターンも指定できます。どのインデックスにも一致しないパターンを指定するとエラーになります。                                                             |
+| `user`         | HTTP 基本認証のユーザー名(任意)。                                                                                                                                                                         |
+| `password`     | HTTP 基本認証のパスワード(任意。`user` の指定が必要)。                                                                                                                                                           |
+| `query('...')` | 読み取るドキュメントを選択するための、JSON 形式の Elasticsearch [Query DSL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/querydsl) オブジェクト(任意)。位置引数の後に指定する必要があります。デフォルト: `{"match_all": {}}`。 |
 
 `url`、`index`、`user`、`password` の各引数は `key = value` 形式で指定することもできます。位置引数はこの順序で各引数に割り当てられます。同じ引数を位置引数とキーの両方で指定した場合(または同じキーを 2 回指定した場合)はエラーになります。
 
 以下の引数は `key = value` 形式(または名前付きコレクションのキー)で指定できます。
 
-| キー             | 説明                                                                                                                                                                    |
-| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `user`         | HTTP 基本認証のユーザー名。                                                                                                                                                      |
-| `password`     | HTTP 基本認証のパスワード。                                                                                                                                                      |
-| `bearer_token` | `Authorization: Bearer <token>` として送信されるトークン(例: Elasticsearch の service account トークン)。                                                                                |
-| `api_key`      | `Authorization: ApiKey <api_key>` として送信される Elasticsearch のAPIキー。値には、APIキー作成 API が返す base64-encoded の `id:api_key` 文字列を指定します。                                          |
-| `query`        | 読み取るドキュメントを選択するための、JSON 形式の Elasticsearch [Query DSL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/querydsl) オブジェクト。デフォルト: `{"match_all": {}}`。 |
+| キー             | 説明                                                                                                                           |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `user`         | HTTP 基本認証のユーザー名。                                                                                                             |
+| `password`     | HTTP 基本認証のパスワード。                                                                                                             |
+| `bearer_token` | `Authorization: Bearer <token>` として送信されるトークン(例: Elasticsearch の service account トークン)。                                       |
+| `api_key`      | `Authorization: ApiKey <api_key>` として送信される Elasticsearch のAPIキー。値には、APIキー作成 API が返す base64-encoded の `id:api_key` 文字列を指定します。 |
+
+名前付きコレクションには `query` キーを含めることができます。この値をオーバーライドするには、コレクション名の後に `query('...')` または `query = '...'` を指定します。
 
 さらに、このテーブル関数では以下も指定できます。
 
-| キー          | 説明                                                                                                           |
-| ----------- | ------------------------------------------------------------------------------------------------------------ |
+| キー          | 説明                                                                                                             |
+| ----------- | -------------------------------------------------------------------------------------------------------------- |
 | `structure` | `'name JSON'` 形式のテーブル構造。`JSON` 型のカラムを 1 つだけ含める必要があります。また、`_id` と `_index` は予約された名前です。デフォルト: `'document JSON'`。 |
 
 読み取り設定 `keep_alive` と `page_size` は、末尾の `SETTINGS` 句で指定できます。各設定の説明については [`Elasticsearch` テーブルエンジン](/ja/reference/engines/table-engines/integrations/elasticsearch#creating-a-table)を参照してください。
@@ -100,8 +102,8 @@ Query DSL オブジェクトを使って Elasticsearch 側でフィルタを適�
 ```sql
 SELECT _id
 FROM elasticsearch('https://localhost:9200', 'logs',
+                   query('{"term": {"level": "error"}}'),
                    bearer_token = '...',
-                   query = '{"term": {"level": "error"}}',
                    SETTINGS page_size = 1000);
 ```
 

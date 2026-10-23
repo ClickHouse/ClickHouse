@@ -418,6 +418,22 @@ SETTINGS iceberg_metadata_staleness_ms=120000
 
 **注意**：目前预期是，如果启用了异步预取，元数据缓存的大小应足以完整容纳所有活动表的最新元数据快照。
 
+## 修改表设置 {#modify-settings}
+
+仅存储在表定义中、而不存储在 Iceberg 元数据中的设置，可以通过 `ALTER TABLE ... MODIFY SETTING` 和 `ALTER TABLE ... RESET SETTING` 对现有表进行修改：
+
+* 元数据文件查找相关：`iceberg_use_version_hint`、`iceberg_recent_metadata_file_by_last_updated_ms_field` 和 `iceberg_metadata_async_prefetch_period_ms`；
+* 后台合并整理及其后续清理相关：`allow_experimental_iceberg_compaction`、`allow_experimental_cleanup_old_data_files_compaction`、`iceberg_compaction_lock_lease_seconds`、`iceberg_compaction_delay_bias`、`iceberg_compaction_data_cleanup`、`iceberg_read_with_snapshot_lease`、`iceberg_snapshot_lease_seconds`、`iceberg_outdated_snapshot_lifetime_seconds`、`iceberg_compaction_commit_batch_size`、`iceberg_compaction_max_rows_in_data_file`、`iceberg_compaction_max_bytes_in_data_file`、`iceberg_max_number_datafiles_to_compact`、`iceberg_data_file_size_lower_threshold_compaction` 和 `iceberg_data_file_size_upper_threshold_compaction`。
+
+新值对后续查询生效，并会存储在表定义中。修改设置时，该表的后台作业会先停止，再以新设置重新启动；因此，关闭 `allow_experimental_iceberg_compaction` 会停止该表的后台合并整理，开启则会启动它。其他设置均不可修改，且设置变更不能与其他 `ALTER` 命令在同一查询中组合使用。`DataLakeCatalog` 数据库中的表不支持修改设置。
+
+```sql
+ALTER TABLE example_table MODIFY SETTING iceberg_use_version_hint = 1;
+ALTER TABLE example_table RESET SETTING iceberg_use_version_hint;
+ALTER TABLE example_table MODIFY SETTING allow_experimental_iceberg_compaction = 0;
+ALTER TABLE example_table MODIFY SETTING iceberg_compaction_delay_bias = 600, iceberg_data_file_size_lower_threshold_compaction = 268435456;
+```
+
 ## 另请参见 {#see-also}
 
 * [Iceberg 表函数](/zh/reference/functions/table-functions/iceberg)

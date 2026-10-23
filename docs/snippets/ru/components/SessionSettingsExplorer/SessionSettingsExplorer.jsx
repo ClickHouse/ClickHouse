@@ -1,7 +1,7 @@
 const SessionSettingsExplorer = ({ href: baseRoute }) => {
-  // Рендерер Mintlify в продакшене вычисляет экспортируемый компонент, не
-  // сохраняя привязки на уровне модуля. Ленивое состояние удерживает сгенерированные данные
-  // в этой области вычисления и создаёт их лишь один раз при монтировании.
+  // Продакшн-рендерер Mintlify вычисляет экспортируемый компонент, не
+  // сохраняя привязки уровня модуля. Ленивая инициализация состояния удерживает сгенерированные данные в
+  // этой области вычисления и при этом создаёт их лишь один раз за монтирование.
   const [entries] = useState(() => [
     {
       label: "additional_*",
@@ -781,7 +781,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "enable_*",
-      count: 60,
+      count: 61,
       settings: [
         { name: "enable_adaptive_aggregator", path: "/enable#enable_adaptive_aggregator", default: "1" },
         { name: "enable_adaptive_memory_spill_scheduler", path: "/enable#enable_adaptive_memory_spill_scheduler", default: "0" },
@@ -829,6 +829,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "enable_shared_storage_snapshot_in_query", path: "/enable#enable_shared_storage_snapshot_in_query", default: "1" },
         { name: "enable_sharing_sets_for_mutations", path: "/enable#enable_sharing_sets_for_mutations", default: "1" },
         { name: "enable_streaming_queries", path: "/enable#enable_streaming_queries", default: "0" },
+        { name: "enable_subcolumn_codecs", path: "/enable#enable_subcolumn_codecs", default: "0" },
         { name: "enable_sz3_codec", path: "/enable#enable_sz3_codec", default: "0" },
         { name: "enable_time_series_aggregate_functions", path: "/enable#enable_time_series_aggregate_functions", default: "0" },
         { name: "enable_time_series_table", path: "/enable#enable_time_series_table", default: "0" },
@@ -2439,8 +2440,8 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "query_plan_merge_filters", path: "/query-plan#query_plan_merge_filters", default: "1" },
         { name: "query_plan_min_columns_for_join_lazy_indexing", path: "/query-plan#query_plan_min_columns_for_join_lazy_indexing", default: "3" },
         { name: "query_plan_optimize_count_from_text_index", path: "/query-plan#query_plan_optimize_count_from_text_index", default: "1" },
-        { name: "query_plan_optimize_join_order_algorithm", path: "/query-plan#query_plan_optimize_join_order_algorithm", default: "greedy" },
-        { name: "query_plan_optimize_join_order_conflict_detector", path: "/query-plan#query_plan_optimize_join_order_conflict_detector", default: '""' },
+        { name: "query_plan_optimize_join_order_algorithm", path: "/query-plan#query_plan_optimize_join_order_algorithm", default: "dpsub,greedy" },
+        { name: "query_plan_optimize_join_order_conflict_detector", path: "/query-plan#query_plan_optimize_join_order_conflict_detector", default: "c" },
         { name: "query_plan_optimize_join_order_limit", path: "/query-plan#query_plan_optimize_join_order_limit", default: "10" },
         { name: "query_plan_optimize_join_order_max_searched_plans", path: "/query-plan#query_plan_optimize_join_order_max_searched_plans", default: "100000" },
         { name: "query_plan_optimize_join_order_randomize", path: "/query-plan#query_plan_optimize_join_order_randomize", default: "0" },
@@ -3340,6 +3341,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     os_threads_nice_value_query: ["os_thread_priority"],
     promql_evaluation_time: ["evaluation_time"],
     query_plan_reuse_storage_ordering_for_window_functions: ["optimize_read_in_window_order"],
+    s3_allow_server_credentials_in_user_queries: ["allow_server_credentials_in_user_queries"],
     secondary_indexes_enable_bulk_filtering: ["secondary_indices_enable_bulk_filtering"],
     use_partition_pruning: ["use_partition_key"],
     vector_search_index_fetch_multiplier: ["vector_search_postfilter_multiplier"]
@@ -3434,7 +3436,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     const key = [...path, entry.label].join("/")
     const isOpen = isSearching || expandedGroups.has(key)
     const items = [...entry.settings.map((setting) => ({ type: "setting", value: setting })), ...entry.children.map((child) => ({ type: "group", value: child }))]
-    const countLabel = `${entry.count} ${entry.count % 10 === 1 && entry.count % 100 !== 11 ? "настройка" : [2, 3, 4].includes(entry.count % 10) && ![12, 13, 14].includes(entry.count % 100) ? "настройки" : "настроек"}`
+    const countLabel = `${entry.count} ${entry.count === 1 ? "setting" : "settings"}`
 
     return (
       <div key={key} className="min-w-max">

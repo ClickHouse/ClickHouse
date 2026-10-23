@@ -418,6 +418,22 @@ SETTINGS iceberg_metadata_staleness_ms=120000
 
 **Примечание**: В настоящее время предполагается, что размер кэша метаданных достаточен для полного хранения последнего снимка метаданных для всех активных таблиц, если включена асинхронная предварительная загрузка.
 
+## Изменение настроек таблицы {#modify-settings}
+
+Настройки, которые хранятся только в определении таблицы, но не в метаданных Iceberg, можно изменить для существующей таблицы с помощью `ALTER TABLE ... MODIFY SETTING` и `ALTER TABLE ... RESET SETTING`:
+
+* поиск файла метаданных: `iceberg_use_version_hint`, `iceberg_recent_metadata_file_by_last_updated_ms_field` и `iceberg_metadata_async_prefetch_period_ms`;
+* фоновая компакция и последующая очистка: `allow_experimental_iceberg_compaction`, `allow_experimental_cleanup_old_data_files_compaction`, `iceberg_compaction_lock_lease_seconds`, `iceberg_compaction_delay_bias`, `iceberg_compaction_data_cleanup`, `iceberg_read_with_snapshot_lease`, `iceberg_snapshot_lease_seconds`, `iceberg_outdated_snapshot_lifetime_seconds`, `iceberg_compaction_commit_batch_size`, `iceberg_compaction_max_rows_in_data_file`, `iceberg_compaction_max_bytes_in_data_file`, `iceberg_max_number_datafiles_to_compact`, `iceberg_data_file_size_lower_threshold_compaction` и `iceberg_data_file_size_upper_threshold_compaction`.
+
+Новые значения вступают в силу для последующих запросов и сохраняются в определении таблицы. На время изменения настроек фоновые задания таблицы останавливаются, а затем перезапускаются с новыми настройками. Поэтому отключение `allow_experimental_iceberg_compaction` останавливает фоновую компакцию таблицы, а включение — запускает её. Остальные настройки изменить нельзя; кроме того, изменение настроек нельзя совмещать с другими командами `ALTER` в одном запросе. Для таблиц базы данных `DataLakeCatalog` изменение настроек не поддерживается.
+
+```sql
+ALTER TABLE example_table MODIFY SETTING iceberg_use_version_hint = 1;
+ALTER TABLE example_table RESET SETTING iceberg_use_version_hint;
+ALTER TABLE example_table MODIFY SETTING allow_experimental_iceberg_compaction = 0;
+ALTER TABLE example_table MODIFY SETTING iceberg_compaction_delay_bias = 600, iceberg_data_file_size_lower_threshold_compaction = 268435456;
+```
+
 ## См. также {#see-also}
 
 * [табличная функция Iceberg](/ru/reference/functions/table-functions/iceberg)

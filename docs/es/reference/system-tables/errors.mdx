@@ -27,7 +27,7 @@ Para mostrar todos los códigos de error posibles, incluidos los que no se hayan
 * `last_error_time` ([DateTime](/es/reference/data-types/datetime)) — Hora en la que se produjo el último error.
 * `last_error_message` ([String](/es/reference/data-types/string)) — Mensaje del último error.
 * `last_error_format_string` ([String](/es/reference/data-types/string)) — Cadena de formato del último error.
-* `last_error_trace` ([Array(UInt64)](/es/reference/data-types/array)) — Una traza de pila del último error. En plataformas ELF, excepto FreeBSD, las direcciones dentro del binary principal de ClickHouse se almacenan como desplazamientos físicos de archivo, y las demás direcciones son direcciones de memoria virtual dentro del proceso del servidor de ClickHouse.
+* `last_error_trace` ([Array(UInt64)](/es/reference/data-types/array)) — Una traza de pila del último error. En plataformas ELF, excepto FreeBSD, las direcciones dentro del binary principal de ClickHouse se almacenan como desplazamientos físicos de archivo, y las tramas externas a él (bibliotecas compartidas, código JIT) se almacenan como 0.
 * `remote` ([UInt8](/es/reference/data-types/int-uint)) — Excepción remota (es decir, recibida durante una de las consultas distribuidas).
 * `query_id` ([String](/es/reference/data-types/string)) — ID de una consulta que provocó un error (si está disponible).
 * `last_error_symbols` ([Array(LowCardinality(String))](/es/reference/data-types/array)) — Nombres de símbolos decodificados (demangled) correspondientes a last&#95;error&#95;trace.

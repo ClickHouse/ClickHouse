@@ -420,6 +420,26 @@ ENGINE = <Engine>
 
 Pour découvrir les codecs de compression à usage général, spécialisés et de chiffrement disponibles, consultez [Codecs de compression des colonnes](/fr/reference/statements/create/table/codec).
 
+### Codecs pour les sous-colonnes {#subcolumn-codecs}
+
+Cette fonctionnalité est expérimentale et nécessite d&#39;activer le paramètre [enable&#95;subcolumn&#95;codecs](/fr/reference/settings/session-settings/enable#enable_subcolumn_codecs).
+
+Une entrée `CODEC name (codec, ...)` dans la liste de colonnes déclare un codec pour une sous-colonne, par exemple un élément d&#39;un `Tuple` ou les valeurs d&#39;une `Map` :
+
+```sql
+CREATE TABLE subcolumn_codec_example
+(
+    id UInt64,
+    payload Tuple(ts DateTime64(3), value Float64),
+    attrs Map(String, Float64),
+    CODEC payload.ts (DoubleDelta, ZSTD),
+    CODEC attrs.values (Gorilla, ZSTD)
+)
+ENGINE = MergeTree ORDER BY id
+```
+
+Seuls les moteurs de la famille `MergeTree` prennent en charge les codecs pour les sous-colonnes. Une colonne possède soit son propre codec, soit des codecs pour ses sous-colonnes. Il est impossible de spécifier des codecs pour des sous-colonnes imbriquées : si un codec est déclaré pour `payload.meta`, aucun ne peut l&#39;être pour `payload.meta.seq`. Un élément d&#39;un `Tuple` non nommé se désigne à l&#39;aide de noms entre guillemets, comme dans ``CODEC `pair`.`2` (ZSTD)``, car `pair.2` serait interprété comme un nombre. La sous-colonne doit exister dans le type de la colonne et ne peut pas se trouver à l&#39;intérieur d&#39;une valeur `JSON`, `Dynamic` ou `Variant`. Les flux qui ne contiennent que des informations de structure, comme les tailles de tableaux ou les cartes des valeurs nulles, ne reçoivent que la partie à usage général du codec. Les déclarations apparaissent dans `SHOW CREATE TABLE` ainsi que dans la colonne `subcolumn_codecs` de `system.columns`.
+
 ## Créer des tables temporaires {#temporary-tables}
 
 ClickHouse prend en charge les tables temporaires, qui disparaissent à la fin de la session. Pour en savoir plus, consultez [CREATE TEMPORARY TABLE](/fr/reference/statements/create/table/temporary-table).

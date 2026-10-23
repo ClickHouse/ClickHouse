@@ -4232,7 +4232,7 @@ SELECT minSampleSizeContinuous(112.25, 21.1, 0.03, 0.80, 0.05) AS sample_size
 
 计算在 A/B 测试中比较两个样本的转化率 (比例) 时所需的最小样本量。
 
-使用[这篇文章](https://towardsdatascience.com/required-sample-size-for-a-b-testing-6f6608dd330a)中描述的公式。假设 treatment 组和 control 组的规模相同。返回单个组所需的样本量 (即整个实验所需的样本量是返回值的两倍) 。
+使用[这篇文章](https://towardsdatascience.com/required-sample-size-for-a-b-testing-6f6608dd330a)中描述的公式。假设实验组和对照组的规模相同。返回单个组所需的样本量 (即整个实验所需的样本量是返回值的两倍) 。
 
 **语法**
 
@@ -4242,8 +4242,8 @@ minSampleSizeConversion(baseline, mde, power, alpha)
 
 **参数**
 
-* `baseline` — 基准转化率。[`Float*`](/zh/reference/data-types/float)
-* `mde` — 以百分点表示的最小可检测效应 (MDE)  (例如，基准转化率为 0.25 时，MDE 为 0.03 表示预期变化为 0.25 ± 0.03) 。[`Float*`](/zh/reference/data-types/float)
+* `baseline` — 基线转化率。[`Float*`](/zh/reference/data-types/float)
+* `mde` — 以百分点表示的最小可检测效应 (MDE)  (例如，基线转化率为 0.25 时，MDE 为 0.03 表示预期变化为 0.25 ± 0.03) 。[`Float*`](/zh/reference/data-types/float)
 * `power` — 测试所需的检验功效 (1 - II 类错误的概率) 。[`Float*`](/zh/reference/data-types/float)
 * `alpha` — 测试所需的显著性水平 (I 类错误的概率) 。[`Float*`](/zh/reference/data-types/float)
 
@@ -4260,7 +4260,7 @@ SELECT minSampleSizeConversion(0.25, 0.03, 0.80, 0.05) AS sample_size
 ```
 
 ```response title=Response
-(3396.077603219163,0.22,0.28)
+(3396.077603219162,0.22,0.28)
 ```
 
 ## neighbor {#neighbor}

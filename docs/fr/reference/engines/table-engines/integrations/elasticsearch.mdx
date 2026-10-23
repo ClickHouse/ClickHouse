@@ -25,7 +25,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
 [(
     name1 JSON
 )]
-ENGINE = Elasticsearch('url', 'index'[, 'user', 'password'][, key = value, ...])
+ENGINE = Elasticsearch('url', 'index'[, 'user', 'password'][, query('...')][, key = value, ...])
 [SETTINGS keep_alive = 60, page_size = 10000]
 ```
 
@@ -44,6 +44,7 @@ La liste de colonnes est facultative. Si elle est omise, la table comporte une s
 * `url` — L&#39;URL de base du cluster Elasticsearch, par exemple `https://localhost:9200`. Il doit s&#39;agir d&#39;une URL `http` ou `https` sans identifiants, chaîne de requête ni fragment.
 * `index` — L&#39;index à lire. Il peut également s&#39;agir d&#39;un alias, d&#39;un flux de données, d&#39;une liste séparée par des virgules, d&#39;un motif générique ou d&#39;une expression de calcul de date telle que `<logs-{now/d}>`, conformément à ce qu&#39;accepte l&#39;API point in time d&#39;Elasticsearch. La valeur correspond au nom littéral et ne doit pas être encodée pour les URL. Un motif qui ne correspond à aucun index provoque une erreur.
 * `user`, `password` — Identifiants facultatifs pour l&#39;authentification de base HTTP.
+* `query('...')` — Objet [Query DSL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/querydsl) Elasticsearch facultatif, au format JSON, qui sélectionne les documents à lire. Il doit suivre les arguments positionnels. Valeur par défaut : `{"match_all": {}}`.
 
 Les paramètres peuvent également être transmis sous forme de [collection nommée](/fr/concepts/features/configuration/server-config/named-collections), avec des surcharges `key = value`. Consultez la [fonction de table `elasticsearch`](/fr/reference/functions/table-functions/elasticsearch#arguments) pour la liste complète des clés et la description des [méthodes d’authentification](/fr/reference/functions/table-functions/elasticsearch#authentication).
 
@@ -81,8 +82,8 @@ Filtrez côté Elasticsearch à l&#39;aide d&#39;un objet Query DSL :
 ```sql
 CREATE TABLE errors_since_october
 ENGINE = Elasticsearch('https://localhost:9200', 'logs-*',
-                       api_key = '...',
-                       query = '{"bool": {"filter": [{"term": {"level": "error"}}, {"range": {"@timestamp": {"gte": "2026-10-01T00:00:00Z"}}}]}}');
+                       query('{"bool": {"filter": [{"term": {"level": "error"}}, {"range": {"@timestamp": {"gte": "2026-10-01T00:00:00Z"}}}]}}'),
+                       api_key = '...');
 ```
 
 Utilisez des dates absolues dans le paramètre `query` : les calculs de date tels que `now-1h` sont réévalués à chaque page, ce qui peut entraîner l&#39;omission de certains documents. Consultez les [limitations de la fonction de table `elasticsearch`](/fr/reference/functions/table-functions/elasticsearch#limitations).

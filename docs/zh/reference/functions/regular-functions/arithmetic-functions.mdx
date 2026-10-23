@@ -774,7 +774,7 @@ SELECT isNaN(NaN)
 
 将值向下取整为 `roundTo` 的倍数，行为与 Kusto 查询语言的 `bin()` 相同。
 
-具体规则取决于参数类型：数字按算术方式取整，时间跨度 (即 `Interval`) 按 时间跨度 取整，日期时间 同样按 时间跨度 取整。KQL 的 日期时间 对应 `DateTime64`；范围更窄的 `DateTime` 和 `Date` 载体会被拒绝，因为它们无法表示 KQL 日期时间 可能产生的所有 分桶。
+具体规则取决于参数类型：数字按算术方式取整，时间跨度 (即 `Interval`) 按 时间跨度 取整，日期时间 同样按 时间跨度 取整。KQL 的 日期时间 对应 `DateTime64`；范围更窄的 `DateTime`、`Date` 或 `Date32` 类型的值会先被转换为 `DateTime64`，因为它们无法表示 KQL 日期时间 可能产生的所有 分桶。
 
 当 `dialect = 'kusto'` 时，该函数为 `bin()` 提供底层实现，不适合在 SQL 中直接调用。
 
@@ -784,15 +784,15 @@ SELECT isNaN(NaN)
 kqlBin(value, roundTo)
 ```
 
-**Arguments**
+**参数**
 
-* `value` — 数字、时间跨度 或日期时间 (`DateTime64`) 。 - `roundTo` — 分桶 的大小。
+* `value` — 数字、时间跨度 或日期时间 (`DateTime64`、`DateTime`、`Date` 或 `Date32`) 。 - `roundTo` — 分桶 的大小。
 
-**Returned value**
+**返回值**
 
 `value` 向下取整到 `roundTo` 的最近倍数。
 
-**Examples**
+**示例**
 
 **number**
 
@@ -826,29 +826,29 @@ SELECT kqlBin(toDateTime64('2026-08-01 12:34:56', 7, 'UTC'), toIntervalHour(1))
 
 ## kqlBinAt {#kqlBinAt}
 
-Introduced in: v26.8.0
+引入版本： v26.8.0
 
 将值向下取整为从 `fixedPoint` 起算的 `binSize` 的整数倍，行为与 Kusto 查询语言的 `bin_at()` 相同。分桶的对齐位置可能位于该固定点之前或之后。
 
-具体规则取决于参数类型：数字按算术方式舍入；时间跨度 (即 `Interval`) 按另一个时间跨度 舍入；日期时间 则按从某个日期时间 固定点起算的时间跨度 舍入。KQL 的 日期时间 对应 `DateTime64`；范围更窄的 `DateTime` 和 `Date` 载体会被拒绝，因为它们无法表示 KQL 日期时间 可能产生的所有分桶。
+具体规则取决于参数类型：数字按算术方式舍入；时间跨度 (即 `Interval`) 按另一个时间跨度 舍入；日期时间 则按从某个日期时间 固定点起算的时间跨度 舍入。KQL 的 日期时间 对应 `DateTime64`；若值或固定点属于范围更窄的 `DateTime`、`Date` 或 `Date32` 类型，则会先转换为 `DateTime64`，因为这些类型无法表示 KQL 日期时间 可能产生的所有分桶。
 
 该函数在 `dialect = 'kusto'` 时为 `bin_at()` 提供底层实现，不应直接在 SQL 中调用。
 
-**Syntax**
+**语法**
 
 ```sql
 kqlBinAt(value, binSize, fixedPoint)
 ```
 
-**Arguments**
+**参数**
 
-* `value` — 一个数字、一个 时间跨度 或一个 日期时间 (`DateTime64`) 。- `binSize` — 分桶 大小。- `fixedPoint` — 分桶 的计数起点。
+* `value` — 一个数字、一个 时间跨度 或一个 日期时间 (`DateTime64`、`DateTime`、`Date` 或 `Date32`) 。- `binSize` — 分桶 大小。- `fixedPoint` — 分桶 的计数起点。
 
-**Returned value**
+**返回值**
 
 以 `fixedPoint` 为起点，将 `value` 向下取整到最接近的 `binSize` 倍数。
 
-**Examples**
+**示例**
 
 **number**
 

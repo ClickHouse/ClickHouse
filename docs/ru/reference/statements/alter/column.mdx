@@ -177,9 +177,16 @@ ALTER COLUMN [IF EXISTS] name
 
 Примеры изменения кодеков сжатия столбцов см. в разделе [Column Compression Codecs](/ru/reference/statements/create/table/codec).
 
+При включённой экспериментальной настройке `enable_subcolumn_codecs` в качестве `name` можно также указать подстолбец, например `payload.ts`. В этом случае изменить или удалить можно только `CODEC`; см. [Кодеки для подстолбцов](/ru/reference/statements/create/table#subcolumn-codecs):
+
+```sql
+ALTER TABLE visits MODIFY COLUMN payload.ts CODEC(DoubleDelta, ZSTD);
+ALTER TABLE visits MODIFY COLUMN payload.ts REMOVE CODEC;
+```
+
 Примеры изменения TTL столбцов см. в разделе [Column TTL](/ru/reference/engines/table-engines/mergetree-family/mergetree#mergetree-column-ttl).
 
-Примеры изменения настроек на уровне столбца см. в разделе [Column-level Settings](/ru/reference/engines/table-engines/mergetree-family/mergetree#column-level-settings).
+Примеры изменения настроек на уровне столбца см. в разделе [Настройки на уровне столбца](/ru/reference/engines/table-engines/mergetree-family/mergetree#column-level-settings).
 
 Если указано условие `IF EXISTS`, запрос не вернёт ошибку, если столбец отсутствует.
 

@@ -11,6 +11,7 @@ doc_type: 'reference'
 import SettingsInfoBlock from "/snippets/fr/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/fr/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
@@ -384,32 +385,34 @@ Ne prend effet que si `query_plan_direct_read_from_text_index` est activé.
 
 ## query_plan_optimize_join_order_algorithm {#query_plan_optimize_join_order_algorithm}
 
-<ExperimentalBadge />
+<BetaBadge />
 
-<SettingsInfoBlock type="JoinOrderAlgorithm" default_value="greedy" />
+<SettingsInfoBlock type="JoinOrderAlgorithm" default_value="dpsub,greedy" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "greedy"},{"label": "Nouveau paramètre expérimental."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "dpsub,greedy"},{"label": "`dpsub` est désormais l’algorithme d’ordre des jointures par défaut ; les requêtes comportant plus de 12 relations se rabattent sur `greedy`."}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "greedy"},{"label": "Nouveau paramètre expérimental."}]}]} />
 
 Spécifie quels algorithmes d’ordre des jointures essayer lors de l’optimisation du plan de requête. Les algorithmes suivants sont disponibles :
 
 * &#39;greedy&#39; - algorithme glouton de base - est rapide, mais peut ne pas produire le meilleur ordre de jointure
 * &#39;dpsize&#39; - implémente l’algorithme DPsize, actuellement uniquement pour les jointures internes - prend en compte tous les ordres de jointure possibles et trouve le plus optimal, mais peut être lent pour les requêtes comportant de nombreuses tables et de nombreux prédicats de jointure.
-* &#39;dpsub&#39; - implémente l’algorithme DPsub, qui prend en charge à la fois les jointures internes et les jointures autres qu’internes - prend en compte tous les ordres de jointure possibles et trouve le plus optimal, mais peut être lent pour les requêtes comportant de nombreuses tables et de nombreux prédicats de jointure.
+* &#39;dpsub&#39; - implémente l’algorithme DPsub, qui prend en charge à la fois les jointures internes et les jointures autres qu’internes - prend en compte tous les ordres de jointure possibles et trouve le plus optimal. Il ne s’applique qu’aux requêtes comportant au plus 12 relations ; au-delà, il cède la place à l’algorithme suivant de la liste.
 * &#39;dphyp&#39; - implémente l’algorithme DPhyp (Dynamic Programming via Hypergraph Partitioning), actuellement uniquement pour les jointures internes - explore le même espace de recherche que `dpsize`, mais n’énumère que les paires de sous-graphes connectés, ce qui génère moins de jointures intermédiaires sur des graphes de jointure clairsemés, au prix de ne pas prendre en compte les produits cartésiens
-  Plusieurs algorithmes peuvent être spécifiés sous forme de liste séparée par des virgules, par exemple `dphyp,greedy`. Ils sont essayés dans l’ordre ; si un algorithme ne peut pas traiter la requête (par exemple, en raison de jointures externes ou de composantes non connexes), le suivant est utilisé comme solution de repli.
+  Plusieurs algorithmes peuvent être spécifiés sous forme de liste séparée par des virgules, par exemple `dphyp,greedy`. Ils sont essayés dans l’ordre ; si un algorithme ne peut pas traiter la requête (par exemple, en raison d’un trop grand nombre de relations ou de composantes non connexes), le suivant est utilisé comme solution de repli.
 
 ## query_plan_optimize_join_order_conflict_detector {#query_plan_optimize_join_order_conflict_detector}
 
-<ExperimentalBadge />
+<BetaBadge />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "Nouveau paramètre sélectionnant le conflict detector qui détermine la validité des réordonnancements des JOIN dans l’algorithme d’ordre des jointures DPsub : `a` pour CD-A (correct mais incomplet), `c` pour CD-C (correct et complet), vide pour aucun."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": ""},{"label": "Nouveau paramètre sélectionnant le conflict detector qui détermine la validité des réordonnancements des JOIN dans l’algorithme d’ordre des jointures DPsub : `a` pour CD-A (correct mais incomplet), `c` pour CD-C (correct et complet), vide pour aucun."}]}]} />
+<SettingsInfoBlock type="JoinOrderConflictDetector" default_value="c" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "Nouveau paramètre sélectionnant le conflict detector qui détermine la validité des réordonnancements des JOIN dans l’algorithme d’ordre des jointures DPsub : `a` pour CD-A (correct mais incomplet), `c` pour CD-C (correct et complet), vide pour aucun."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "c"},{"label": "Nouveau paramètre sélectionnant le conflict detector qui détermine la validité des réordonnancements des JOIN dans l’algorithme d’ordre des jointures DPsub : `a` pour CD-A (correct mais incomplet), `c` pour CD-C (correct et complet), vide pour aucun. La valeur par défaut est CD-C, en combinaison avec la valeur par défaut `dpsub` de `query_plan_optimize_join_order_algorithm`, ce qui permet également aux semi-jointures et aux anti-jointures de participer au réordonnancement."}]}]} />
 
 N&#39;affecte que l’algorithme d’ordre des jointures `dpsub`. Sélectionne le conflict detector utilisé par DPsub pour
 déterminer quels réordonnancements des JOIN sont valides. Les valeurs suivantes sont disponibles :
 
-* `''` (par défaut) - aucun conflict detector, DPsub applique la restriction de la `ON` clause par relation
+* `''` - aucun conflict detector, DPsub applique la restriction de la `ON` clause par relation
 * `'a'` - le conflict detector CD-A, qui est correct mais incomplet
-* `'c'` - le conflict detector CD-C, qui est correct et complet
+* `'c'` (par défaut) - le conflict detector CD-C, qui est correct et complet
 
 ## query_plan_optimize_join_order_limit {#query_plan_optimize_join_order_limit}
 

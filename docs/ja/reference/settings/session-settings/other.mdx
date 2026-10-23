@@ -822,10 +822,10 @@ Function &#39;geoToH3&#39; は、&#39;lon&#95;lat&#39; に設定すると (lon, 
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "120000"},{"label": "新しい設定"}]}]} />
 
-Keeper クライアントが対応する `Context` のミューテックスの取得を待機する時間(ミリ秒)を定義します。この時間を超えると取得は失敗します。
+クエリが Keeper クライアントを待機する時間(ミリ秒)を定義します。対象となるのは、クライアントの `Context` のミューテックスの取得と、別のスレッドがそのクライアントのために行っている接続試行の完了です。この時間を超えると、クエリは `TIMEOUT_EXCEEDED` で失敗します。また、クエリがキャンセルされた場合も待機を終了します。
 
-この値は、取得を実行する `Context` から読み取られます。クエリ単位のオーバーライドが適用されるのは、操作がクエリコンテキストを使用する場合に限られます。たとえば、`system.zookeeper` からの読み取り、`zookeeperSessionUptime`、`SYSTEM RECONNECT ZOOKEEPER`、クエリコンテキストからの補助 Keeper へのアクセスなどが該当します。
-`BACKUP` および `RESTORE` の協調処理や `Replicated` データベースの処理など、グローバルコンテキストまたはバックグラウンドコンテキストを使用する操作では、そのコンテキストの値が使用され、タイムアウトは Keeper エラー(`ZOPERATIONTIMEOUT`)として返されます。これらの操作は、このエラーを他の Keeper エラーと同様に処理します。
+この値はクエリコンテキストから読み取られるため、クエリコンテキストを使用する操作に適用されます。たとえば、`system.zookeeper` からの読み取り、`zookeeperSessionUptime`、`SYSTEM RECONNECT ZOOKEEPER`、クエリコンテキストからの補助 Keeper へのアクセスなどが該当します。
+`BACKUP` および `RESTORE` の協調処理や `Replicated` データベースの処理など、グローバルコンテキストまたはバックグラウンドコンテキストを使用する操作では、接続試行が終了するまで待機し、その試行で得られたクライアント、または Keeper エラーを受け取ります。
 `SYSTEM RELOAD CONFIG` および `SYSTEM RELOAD ASYNCHRONOUS METRICS` は、それぞれ独立してシリアル化されたリロードパスを使用するため、この設定の対象外です。
 
 設定可能な値:

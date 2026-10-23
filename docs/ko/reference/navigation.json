@@ -1108,6 +1108,7 @@
         "ko/reference/system-tables/iceberg_files",
         "ko/reference/system-tables/iceberg_history",
         "ko/reference/system-tables/iceberg_metadata_log",
+        "ko/reference/system-tables/iceberg_metadata_log_entries",
         "ko/reference/system-tables/information_schema",
         "ko/reference/system-tables/instrumentation",
         "ko/reference/system-tables/jemalloc_arena_bins",

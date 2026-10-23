@@ -17,8 +17,8 @@ Permite ejecutar consultas `SELECT` sobre los documentos de un índice de [Elast
 ## Sintaxis {#syntax}
 
 ```sql
-elasticsearch('url', 'index'[, 'user', 'password'][, key = value, ...][, structure = 'document JSON'][, SETTINGS ...])
-elasticsearch(named_collection[, key = value, ...][, structure = 'document JSON'][, SETTINGS ...])
+elasticsearch('url', 'index'[, 'user', 'password'][, query('...')][, key = value, ...][, structure = 'document JSON'][, SETTINGS ...])
+elasticsearch(named_collection[, query('...')][, key = value, ...][, structure = 'document JSON'][, SETTINGS ...])
 ```
 
 <Note>
@@ -31,24 +31,26 @@ elasticsearch(named_collection[, key = value, ...][, structure = 'document JSON'
 
 ## Argumentos {#arguments}
 
-| Argumento  | Descripción                                                                                                                                                                                                                                   |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `url`      | La URL base del cluster de Elasticsearch, por ejemplo `https://localhost:9200`. Debe ser una URL `http` o `https` sin credenciales, cadena de consulta ni fragmento.                                                                          |
-| `index`    | El índice que se va a leer. También puede ser un alias, una lista separada por comas o un patrón con comodines, siempre que lo admita la API point in time de Elasticsearch. Si un patrón no coincide con ningún índice, se produce un error. |
-| `user`     | El nombre de usuario para la autenticación básica HTTP (opcional).                                                                                                                                                                            |
-| `password` | La contraseña para la autenticación básica HTTP (opcional; requiere `user`).                                                                                                                                                                  |
+| Argumento      | Descripción                                                                                                                                                                                                                                                                                |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `url`          | La URL base del cluster de Elasticsearch, por ejemplo `https://localhost:9200`. Debe ser una URL `http` o `https` sin credenciales, cadena de consulta ni fragmento.                                                                                                                       |
+| `index`        | El índice que se va a leer. También puede ser un alias, una lista separada por comas o un patrón con comodines, siempre que lo admita la API point in time de Elasticsearch. Si un patrón no coincide con ningún índice, se produce un error.                                              |
+| `user`         | El nombre de usuario para la autenticación básica HTTP (opcional).                                                                                                                                                                                                                         |
+| `password`     | La contraseña para la autenticación básica HTTP (opcional; requiere `user`).                                                                                                                                                                                                               |
+| `query('...')` | Un objeto [Query DSL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/querydsl) de Elasticsearch en formato JSON que selecciona los documentos que se van a leer (opcional). Debe ir después de los argumentos posicionales. Valor predeterminado: `{"match_all": {}}`. |
 
 Los argumentos `url`, `index`, `user` y `password` también pueden indicarse con la forma `key = value`. Los argumentos posicionales ocupan estas posiciones en ese orden, y especificar un argumento a la vez de forma posicional y como clave (o repetir la misma clave) produce un error.
 
 Los siguientes argumentos pueden especificarse con la forma `key = value` (o como claves de una colección con nombre):
 
-| Clave          | Descripción                                                                                                                                                                                                                     |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `user`         | El nombre de usuario para la autenticación básica HTTP.                                                                                                                                                                         |
-| `password`     | La contraseña para la autenticación básica HTTP.                                                                                                                                                                                |
-| `bearer_token` | Un token que se envía como `Authorization: Bearer <token>`, por ejemplo, un token de cuenta de servicio de Elasticsearch.                                                                                                       |
-| `api_key`      | Una clave de API de Elasticsearch, que se envía como `Authorization: ApiKey <api_key>`. El valor es la cadena `id:api_key` codificada en Base64 que devuelve la API de creación de claves de API.                               |
-| `query`        | Un objeto [Query DSL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/querydsl) de Elasticsearch en formato JSON que selecciona los documentos que se van a leer. Valor predeterminado: `{"match_all": {}}`. |
+| Clave          | Descripción                                                                                                                                                                                       |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `user`         | El nombre de usuario para la autenticación básica HTTP.                                                                                                                                           |
+| `password`     | La contraseña para la autenticación básica HTTP.                                                                                                                                                  |
+| `bearer_token` | Un token que se envía como `Authorization: Bearer <token>`, por ejemplo, un token de cuenta de servicio de Elasticsearch.                                                                         |
+| `api_key`      | Una clave de API de Elasticsearch, que se envía como `Authorization: ApiKey <api_key>`. El valor es la cadena `id:api_key` codificada en Base64 que devuelve la API de creación de claves de API. |
+
+Una colección con nombre puede contener la clave `query`. Para sobrescribirla, pase `query('...')` o `query = '...'` después del nombre de la colección.
 
 Además, la función de tabla admite:
 
@@ -100,8 +102,8 @@ Filtre del lado de Elasticsearch con un objeto de Query DSL y ajuste el tamaño 
 ```sql
 SELECT _id
 FROM elasticsearch('https://localhost:9200', 'logs',
+                   query('{"term": {"level": "error"}}'),
                    bearer_token = '...',
-                   query = '{"term": {"level": "error"}}',
                    SETTINGS page_size = 1000);
 ```
 

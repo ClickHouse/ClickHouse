@@ -835,10 +835,10 @@ La fonction `geoToH3` accepte (lon, lat) si le paramètre est réglé sur `lon_l
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "120000"},{"label": "New setting"}]}]} />
 
-Définit la durée, en millisecondes, pendant laquelle un client Keeper attend d&#39;acquérir le mutex `Context` correspondant avant d&#39;échouer.
+Définit la durée, en millisecondes, pendant laquelle une requête attend un client Keeper, qu&#39;il s&#39;agisse du mutex `Context` du client ou d&#39;une tentative de connexion qu&#39;un autre fil d’exécution effectue pour son compte. Une fois ce délai dépassé, la requête échoue avec `TIMEOUT_EXCEEDED`. La requête cesse également d&#39;attendre lorsqu&#39;elle est annulée.
 
-La valeur est issue du `Context` qui effectue l&#39;acquisition. Une surcharge au niveau de la requête ne s&#39;applique que lorsque l&#39;opération utilise le contexte de la requête, par exemple pour les lectures depuis `system.zookeeper`, `zookeeperSessionUptime`, `SYSTEM RECONNECT ZOOKEEPER` et l&#39;accès aux Keeper auxiliaires dans le contexte de la requête.
-Les opérations qui utilisent un contexte global ou d&#39;arrière-plan, notamment la coordination de `BACKUP` et `RESTORE` ainsi que l&#39;activité des bases de données `Replicated`, utilisent plutôt la valeur de ce contexte et reçoivent le dépassement du délai sous la forme d&#39;une erreur Keeper (`ZOPERATIONTIMEOUT`), qu&#39;elles traitent comme les autres erreurs Keeper.
+La valeur est issue du contexte de la requête ; elle s&#39;applique donc aux opérations qui l&#39;utilisent, par exemple les lectures depuis `system.zookeeper`, `zookeeperSessionUptime`, `SYSTEM RECONNECT ZOOKEEPER` et l&#39;accès aux Keeper auxiliaires dans le contexte de la requête.
+Les opérations qui utilisent un contexte global ou d&#39;arrière-plan, notamment la coordination de `BACKUP` et `RESTORE` ainsi que l&#39;activité des bases de données `Replicated`, attendent la fin de la tentative de connexion et obtiennent alors soit le client correspondant, soit l&#39;erreur Keeper renvoyée.
 `SYSTEM RELOAD CONFIG` et `SYSTEM RELOAD ASYNCHRONOUS METRICS` ne sont pas concernées, car elles s&#39;appuient sur des chemins de rechargement sérialisés indépendamment.
 
 Valeurs possibles :

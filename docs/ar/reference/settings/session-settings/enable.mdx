@@ -590,6 +590,19 @@ WHERE (_part, _part_offset) IN (
 أثناء بناء الخطة. هذا هو مفتاح التحكم الرئيسي لميزة
 الاستعلامات المتدفقة؛ وقد تُقيَّد إمكانات إضافية بإعداداتها الخاصة.
 
+## enable_subcolumn_codecs {#enable_subcolumn_codecs}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "إعداد جديد لتمكين التصريح بالمرمِّزات للأعمدة الفرعية."}]}]} />
+
+يتيح التصريح بمرمّزات الضغط للأعمدة الفرعية لعمود ما، مثل عناصر `Tuple` أو المفاتيح والقيم في `Map`،
+وذلك عبر إدخالات `CODEC name (...)` في `CREATE TABLE`، وعبر `ALTER TABLE ... MODIFY COLUMN name CODEC(...)`.
+تعمل الجداول التي تتضمن هذه التصريحات مسبقًا بصرف النظر عن قيمة هذا الإعداد، ويمكن إزالة هذه التصريحات في أي وقت.
+لا يمكن لخادم بإصدار أقدم إرفاق جدول يتضمن مرمِّزات للأعمدة الفرعية.
+
 ## enable_sz3_codec {#enable_sz3_codec}
 
 <ExperimentalBadge />

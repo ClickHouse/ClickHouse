@@ -1,7 +1,7 @@
 const SessionSettingsExplorer = ({ href: baseRoute }) => {
-  // Mintlify의 프로덕션 렌더러는 모듈 범위 바인딩을 유지하지 않고
-  // 내보낸 컴포넌트를 평가합니다. 지연 상태(lazy state)를 사용하면 생성된 데이터를
-  // 해당 평가 범위에 유지하면서 마운트당 한 번만 생성합니다.
+  // Mintlify의 프로덕션 렌더러는 모듈 스코프 바인딩을 유지하지 않은 채
+  // 내보낸 컴포넌트를 평가합니다. 지연 초기화 상태(lazy state)를 사용하면 생성된 데이터를
+  // 해당 평가 스코프 안에 유지하면서도 마운트당 한 번만 생성할 수 있습니다.
   const [entries] = useState(() => [
     {
       label: "additional_*",
@@ -781,7 +781,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "enable_*",
-      count: 60,
+      count: 61,
       settings: [
         { name: "enable_adaptive_aggregator", path: "/enable#enable_adaptive_aggregator", default: "1" },
         { name: "enable_adaptive_memory_spill_scheduler", path: "/enable#enable_adaptive_memory_spill_scheduler", default: "0" },
@@ -829,6 +829,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "enable_shared_storage_snapshot_in_query", path: "/enable#enable_shared_storage_snapshot_in_query", default: "1" },
         { name: "enable_sharing_sets_for_mutations", path: "/enable#enable_sharing_sets_for_mutations", default: "1" },
         { name: "enable_streaming_queries", path: "/enable#enable_streaming_queries", default: "0" },
+        { name: "enable_subcolumn_codecs", path: "/enable#enable_subcolumn_codecs", default: "0" },
         { name: "enable_sz3_codec", path: "/enable#enable_sz3_codec", default: "0" },
         { name: "enable_time_series_aggregate_functions", path: "/enable#enable_time_series_aggregate_functions", default: "0" },
         { name: "enable_time_series_table", path: "/enable#enable_time_series_table", default: "0" },
@@ -2439,8 +2440,8 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "query_plan_merge_filters", path: "/query-plan#query_plan_merge_filters", default: "1" },
         { name: "query_plan_min_columns_for_join_lazy_indexing", path: "/query-plan#query_plan_min_columns_for_join_lazy_indexing", default: "3" },
         { name: "query_plan_optimize_count_from_text_index", path: "/query-plan#query_plan_optimize_count_from_text_index", default: "1" },
-        { name: "query_plan_optimize_join_order_algorithm", path: "/query-plan#query_plan_optimize_join_order_algorithm", default: "greedy" },
-        { name: "query_plan_optimize_join_order_conflict_detector", path: "/query-plan#query_plan_optimize_join_order_conflict_detector", default: '""' },
+        { name: "query_plan_optimize_join_order_algorithm", path: "/query-plan#query_plan_optimize_join_order_algorithm", default: "dpsub,greedy" },
+        { name: "query_plan_optimize_join_order_conflict_detector", path: "/query-plan#query_plan_optimize_join_order_conflict_detector", default: "c" },
         { name: "query_plan_optimize_join_order_limit", path: "/query-plan#query_plan_optimize_join_order_limit", default: "10" },
         { name: "query_plan_optimize_join_order_max_searched_plans", path: "/query-plan#query_plan_optimize_join_order_max_searched_plans", default: "100000" },
         { name: "query_plan_optimize_join_order_randomize", path: "/query-plan#query_plan_optimize_join_order_randomize", default: "0" },
@@ -3340,6 +3341,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     os_threads_nice_value_query: ["os_thread_priority"],
     promql_evaluation_time: ["evaluation_time"],
     query_plan_reuse_storage_ordering_for_window_functions: ["optimize_read_in_window_order"],
+    s3_allow_server_credentials_in_user_queries: ["allow_server_credentials_in_user_queries"],
     secondary_indexes_enable_bulk_filtering: ["secondary_indices_enable_bulk_filtering"],
     use_partition_pruning: ["use_partition_key"],
     vector_search_index_fetch_multiplier: ["vector_search_postfilter_multiplier"]
@@ -3518,14 +3520,14 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
           type="search"
           value={searchTerm}
           onChange={(event) => setSearchTerm(event.target.value)}
-          placeholder="설정 검색 (예: parallel replicas 또는 %materialized%)"
+          placeholder="설정 검색(예: parallel replicas 또는 %materialized%)"
           className="w-full rounded-lg border border-gray-500 bg-gray-50 py-2 pl-9 pr-3 text-sm text-gray-900 placeholder:text-gray-600 focus:border-gray-600 focus:outline-0 focus-visible:outline-0 dark:border-white/30 dark:bg-white/5 dark:text-white dark:placeholder:text-gray-400 dark:focus:border-[#fdff75]"
         />
       </div>
       {isSearching && (
         <div className="mt-2 text-right text-xs text-gray-500 dark:text-gray-400">
           <span>
-            일치하는 {matchingCount === 1 ? "설정" : "설정"} {matchingCount}개
+            일치하는 설정 {matchingCount}개
           </span>
         </div>
       )}

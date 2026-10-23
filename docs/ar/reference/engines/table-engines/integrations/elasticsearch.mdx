@@ -25,7 +25,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
 [(
     name1 JSON
 )]
-ENGINE = Elasticsearch('url', 'index'[, 'user', 'password'][, key = value, ...])
+ENGINE = Elasticsearch('url', 'index'[, 'user', 'password'][, query('...')][, key = value, ...])
 [SETTINGS keep_alive = 60, page_size = 10000]
 ```
 
@@ -44,6 +44,7 @@ ENGINE = Elasticsearch('url', 'index'[, 'user', 'password'][, key = value, ...])
 * `url` — عنوان URL الأساسي لعنقود Elasticsearch، مثل `https://localhost:9200`. يجب أن يكون عنوان URL من نوع `http` أو `https` دون بيانات اعتماد أو سلسلة استعلام أو جزء (fragment).
 * `index` — الفهرس المراد قراءته. ويمكن أن يكون أيضًا اسمًا بديلًا، أو تدفق بيانات، أو قائمة مفصولة بفواصل، أو نمطًا يتضمن محارف بدل، أو تعبيرًا للعمليات الحسابية على التواريخ مثل `<logs-{now/d}>`، وفقًا لما تقبله واجهة برمجة النقطة الزمنية (point in time API) في Elasticsearch. القيمة هي الاسم الحرفي ويجب ألا تكون مرمّزة وفق URL. ويُعدّ النمط الذي لا يطابق أي فهرس خطأً.
 * `user`، `password` — بيانات اعتماد اختيارية للمصادقة الأساسية عبر HTTP.
+* `query('...')` — كائن اختياري بصيغة JSON من [Query DSL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/querydsl) في Elasticsearch يحدد المستندات المراد قراءتها. ويجب أن يأتي بعد الوسائط الموضعية. القيمة الافتراضية: `{"match_all": {}}`.
 
 يمكن أيضًا تمرير المعلمات على هيئة [مجموعة مسمّاة](/ar/concepts/features/configuration/server-config/named-collections) مع تجاوزات بصيغة `key = value`. راجع [دالة الجدول `elasticsearch`](/ar/reference/functions/table-functions/elasticsearch#arguments) للاطلاع على القائمة الكاملة للمفاتيح ووصف [طرق المصادقة](/ar/reference/functions/table-functions/elasticsearch#authentication).
 
@@ -81,8 +82,8 @@ LIMIT 10;
 ```sql
 CREATE TABLE errors_since_october
 ENGINE = Elasticsearch('https://localhost:9200', 'logs-*',
-                       api_key = '...',
-                       query = '{"bool": {"filter": [{"term": {"level": "error"}}, {"range": {"@timestamp": {"gte": "2026-10-01T00:00:00Z"}}}]}}');
+                       query('{"bool": {"filter": [{"term": {"level": "error"}}, {"range": {"@timestamp": {"gte": "2026-10-01T00:00:00Z"}}}]}}'),
+                       api_key = '...');
 ```
 
 استخدم تواريخ مطلقة في `query`: إذ يُعاد تقييم العمليات الحسابية على التواريخ مثل `now-1h` مع كل صفحة، مما قد يؤدي إلى تخطي بعض المستندات. راجع [قيود دالة الجدول `elasticsearch`](/ar/reference/functions/table-functions/elasticsearch#limitations).

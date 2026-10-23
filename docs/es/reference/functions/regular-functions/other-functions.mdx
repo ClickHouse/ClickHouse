@@ -4249,7 +4249,7 @@ minSampleSizeConversion(baseline, mde, power, alpha)
 
 **Valor devuelto**
 
-Devuelve un Tuple con nombre con 3 elementos: `minimum_sample_size`, `detect_range_lower`, `detect_range_upper`. Estos son, respectivamente: el tamaño de muestra requerido, el límite inferior del intervalo de valores no detectables con el tamaño de muestra requerido devuelto, calculado como `baseline - mde`, y el límite superior del intervalo de valores no detectables con el tamaño de muestra requerido devuelto, calculado como `baseline + mde`. [`Tuple(Float64, Float64, Float64)`](/es/reference/data-types/tuple)
+Devuelve un Tuple con nombre con 3 elementos: `minimum_sample_size`, `detect_range_lower`, `detect_range_upper`. Estos son, respectivamente: el tamaño de muestra requerido, el límite inferior del rango de valores no detectables con el tamaño de muestra requerido devuelto, calculado como `baseline - mde`, y el límite superior del rango de valores no detectables con el tamaño de muestra requerido devuelto, calculado como `baseline + mde`. [`Tuple(Float64, Float64, Float64)`](/es/reference/data-types/tuple)
 
 **Ejemplos**
 
@@ -4260,7 +4260,7 @@ SELECT minSampleSizeConversion(0.25, 0.03, 0.80, 0.05) AS sample_size
 ```
 
 ```response title=Response
-(3396.077603219163,0.22,0.28)
+(3396.077603219162,0.22,0.28)
 ```
 
 ## neighbor {#neighbor}

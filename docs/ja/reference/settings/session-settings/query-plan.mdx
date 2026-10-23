@@ -11,6 +11,7 @@ doc_type: 'reference'
 import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[ソース](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
@@ -384,31 +385,33 @@ JOIN で遅延索引最適化を有効にするために必要な、左側の pa
 
 ## query_plan_optimize_join_order_algorithm {#query_plan_optimize_join_order_algorithm}
 
-<ExperimentalBadge />
+<BetaBadge />
 
-<SettingsInfoBlock type="JoinOrderAlgorithm" default_value="greedy" />
+<SettingsInfoBlock type="JoinOrderAlgorithm" default_value="dpsub,greedy" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "greedy"},{"label": "新しい実験的な設定"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "dpsub,greedy"},{"label": "`dpsub` がデフォルトの JOIN 順序アルゴリズムになりました。relation が 12 個を超えるクエリでは `greedy` にフォールバックします。"}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "greedy"},{"label": "新しい実験的な設定"}]}]} />
 
 クエリプランの最適化時に試行する JOIN 順序アルゴリズムを指定します。利用可能なアルゴリズムは次のとおりです。
 
 * &#39;greedy&#39; - 基本的な貪欲アルゴリズムです。高速に動作しますが、最適な JOIN 順序にならない場合があります
 * &#39;dpsize&#39; - 現時点では INNER JOIN のみに対応する DPsize アルゴリズムを実装します。考えられるすべての JOIN 順序を検討して最適なものを見つけますが、テーブル数や JOIN 述語が多いクエリでは遅くなることがあります。
-* &#39;dpsub&#39; - INNER JOIN と INNER JOIN 以外の JOIN の両方に対応する DPsub アルゴリズムを実装します。考えられるすべての JOIN 順序を検討して最適なものを見つけますが、テーブル数や JOIN 述語が多いクエリでは遅くなることがあります。
+* &#39;dpsub&#39; - INNER JOIN と INNER JOIN 以外の JOIN の両方に対応する DPsub アルゴリズムを実装します。考えられるすべての JOIN 順序を検討して最適なものを見つけます。relation が 12 個以下のクエリにのみ適用され、それを超える場合はリスト内の次のアルゴリズムに処理を譲ります。
 * &#39;dphyp&#39; - 現時点では INNER JOIN のみに対応する DPhyp (ハイパーグラフ分割による動的計画法) アルゴリズムを実装します。`dpsize` と同じ探索空間を調べますが、連結された部分グラフのペアだけを列挙するため、クロス積を考慮しない代わりに、スパースな JOIN グラフでは中間 JOIN の数を減らせます
-  複数のアルゴリズムは、たとえば `dphyp,greedy` のようにカンマ区切りのリストで指定できます。指定した順に試行され、あるアルゴリズムでクエリを処理できない場合 (たとえば OUTER JOIN や非連結なコンポーネントがある場合) は、フォールバックとして次のアルゴリズムが使用されます。
+  複数のアルゴリズムは、たとえば `dphyp,greedy` のようにカンマ区切りのリストで指定できます。指定した順に試行され、あるアルゴリズムでクエリを処理できない場合 (たとえば relation が多すぎる場合や非連結なコンポーネントがある場合) は、フォールバックとして次のアルゴリズムが使用されます。
 
 ## query_plan_optimize_join_order_conflict_detector {#query_plan_optimize_join_order_conflict_detector}
 
-<ExperimentalBadge />
+<BetaBadge />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "DPsub JOIN 順序アルゴリズムにおいて JOIN の並べ替えの妥当性を判定する conflict detector を選択する新しい設定。`a` は（正しいが不完全な）CD-A、`c` は（正しく完全な）CD-C、空の場合はいずれも使用しません。"}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": ""},{"label": "DPsub JOIN 順序アルゴリズムにおいて JOIN の並べ替えの妥当性を判定する conflict detector を選択する新しい設定。`a` は（正しいが不完全な）CD-A、`c` は（正しく完全な）CD-C、空の場合はいずれも使用しません。"}]}]} />
+<SettingsInfoBlock type="JoinOrderConflictDetector" default_value="c" />
 
-`dpsub` JOIN 順序アルゴリズムにのみ影響します。DPsub がどの JOIN の並べ替えを有効とみなすかを判定するために使用する conflict detector を選択します。指定できる値は次のとおりです。
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "DPsub JOIN 順序アルゴリズムにおいて結合順序の変更の妥当性を判定する conflict detector を選択する新しい設定。`a` は（正しいが不完全な）CD-A、`c` は（正しく完全な）CD-C、空の場合はいずれも使用しません。"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "c"},{"label": "DPsub JOIN 順序アルゴリズムにおいて結合順序の変更の妥当性を判定する conflict detector を選択する新しい設定。`a` は（正しいが不完全な）CD-A、`c` は（正しく完全な）CD-C、空の場合はいずれも使用しません。デフォルトは CD-C で、`query_plan_optimize_join_order_algorithm` のデフォルト値 `dpsub` と組み合わせることで、semi JOIN および anti JOIN も並べ替えの対象になります。"}]}]} />
 
-* `''` (デフォルト) - conflict detector を使用せず、DPsub は relation ごとの `ON` 句による制限を使用します
+`dpsub` JOIN 順序アルゴリズムにのみ影響します。DPsub がどの結合順序の変更を有効とみなすかを判定するために使用する conflict detector を選択します。指定できる値は次のとおりです。
+
+* `''` - conflict detector を使用せず、DPsub は relation ごとの `ON` 句による制限を使用します
 * `'a'` - CD-A conflict detector。正しいが不完全です
-* `'c'` - CD-C conflict detector。正しく完全です
+* `'c'` (デフォルト) - CD-C conflict detector。正しく完全です
 
 ## query_plan_optimize_join_order_limit {#query_plan_optimize_join_order_limit}
 

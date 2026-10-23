@@ -811,12 +811,12 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 <SettingsInfoBlock type="Milliseconds" default_value="120000" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "120000"},{"label": "New setting"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "120000"},{"label": "新增设置"}]}]} />
 
-定义 Keeper 客户端获取对应 `Context` 互斥锁时的最长等待时间 (毫秒) ，超时则判定失败。
+定义查询等待 Keeper 客户端的最长时间 (毫秒) ，包括等待该客户端的 `Context` 互斥锁，以及等待其他线程为该客户端发起的连接尝试。超过该时间后，查询将失败并报错 `TIMEOUT_EXCEEDED`。查询被取消时也会停止等待。
 
-该值取自执行获取操作的 `Context`。仅当操作使用查询上下文时，查询级别的覆盖值才会生效，例如从 `system.zookeeper` 读取数据、`zookeeperSessionUptime`、`SYSTEM RECONNECT ZOOKEEPER`，以及基于查询上下文的辅助 Keeper 访问。
-使用全局上下文或后台上下文的操作 (包括 `BACKUP` 和 `RESTORE` 的协调以及 `Replicated` 数据库的相关活动) 则使用该上下文中的值；发生超时时，这些操作会收到一个 Keeper 错误 (`ZOPERATIONTIMEOUT`) ，并按与其他 Keeper 错误相同的方式进行处理。
+该值取自查询上下文，因此适用于使用查询上下文的操作，例如从 `system.zookeeper` 读取数据、`zookeeperSessionUptime`、`SYSTEM RECONNECT ZOOKEEPER`，以及基于查询上下文的辅助 Keeper 访问。
+使用全局上下文或后台上下文的操作 (包括 `BACKUP` 和 `RESTORE` 的协调以及 `Replicated` 数据库的相关活动) 则会一直等到连接尝试结束，并获得由此产生的客户端或 Keeper 错误。
 `SYSTEM RELOAD CONFIG` 和 `SYSTEM RELOAD ASYNCHRONOUS METRICS` 不受此设置影响，因为它们使用各自独立序列化的重新加载路径。
 
 可选值：

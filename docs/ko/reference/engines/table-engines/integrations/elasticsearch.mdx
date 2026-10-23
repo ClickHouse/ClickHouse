@@ -25,7 +25,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
 [(
     name1 JSON
 )]
-ENGINE = Elasticsearch('url', 'index'[, 'user', 'password'][, key = value, ...])
+ENGINE = Elasticsearch('url', 'index'[, 'user', 'password'][, query('...')][, key = value, ...])
 [SETTINGS keep_alive = 60, page_size = 10000]
 ```
 
@@ -44,6 +44,7 @@ ENGINE = Elasticsearch('url', 'index'[, 'user', 'password'][, key = value, ...])
 * `url` — Elasticsearch 클러스터의 기본 URL입니다(예: `https://localhost:9200`). 자격 증명, 쿼리 문자열, 프래그먼트가 포함되지 않은 `http` 또는 `https` URL이어야 합니다.
 * `index` — 읽을 인덱스입니다. Elasticsearch 특정 시점(point in time) API에서 허용하는 형식이라면 별칭, 데이터 스트림, 쉼표로 구분된 목록, 와일드카드 패턴, 또는 `<logs-{now/d}>`와 같은 날짜 연산 표현식도 사용할 수 있습니다. 값은 리터럴 이름 그대로 지정해야 하며 URL 인코딩하면 안 됩니다. 일치하는 인덱스가 없는 패턴을 지정하면 오류가 발생합니다.
 * `user`, `password` — HTTP 기본 인증에 사용하는 자격 증명입니다(선택 사항).
+* `query('...')` — 읽을 문서를 선택하는 JSON 형식의 Elasticsearch [Query DSL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/querydsl) 객체입니다(선택 사항). 위치 인수 뒤에 지정해야 합니다. 기본값: `{"match_all": {}}`.
 
 매개변수는 [명명된 컬렉션](/ko/concepts/features/configuration/server-config/named-collections)으로 전달할 수도 있으며, 이때 `key = value` 형식으로 값을 재정의할 수 있습니다. 전체 키 목록과 [인증 방식](/ko/reference/functions/table-functions/elasticsearch#authentication)에 대한 설명은 [`elasticsearch` 테이블 함수](/ko/reference/functions/table-functions/elasticsearch#arguments)를 참조하십시오.
 
@@ -81,8 +82,8 @@ Query DSL 객체를 사용하여 Elasticsearch 측에서 필터링합니다:
 ```sql
 CREATE TABLE errors_since_october
 ENGINE = Elasticsearch('https://localhost:9200', 'logs-*',
-                       api_key = '...',
-                       query = '{"bool": {"filter": [{"term": {"level": "error"}}, {"range": {"@timestamp": {"gte": "2026-10-01T00:00:00Z"}}}]}}');
+                       query('{"bool": {"filter": [{"term": {"level": "error"}}, {"range": {"@timestamp": {"gte": "2026-10-01T00:00:00Z"}}}]}}'),
+                       api_key = '...');
 ```
 
 `query`에는 절대 날짜를 사용하십시오. `now-1h`와 같은 날짜 연산은 페이지마다 새로 계산되므로 일부 문서가 누락될 수 있습니다. 자세한 내용은 [`elasticsearch` 테이블 함수의 제한 사항](/ko/reference/functions/table-functions/elasticsearch#limitations)을 참조하십시오.

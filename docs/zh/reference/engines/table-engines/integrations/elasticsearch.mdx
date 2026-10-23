@@ -25,7 +25,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
 [(
     name1 JSON
 )]
-ENGINE = Elasticsearch('url', 'index'[, 'user', 'password'][, key = value, ...])
+ENGINE = Elasticsearch('url', 'index'[, 'user', 'password'][, query('...')][, key = value, ...])
 [SETTINGS keep_alive = 60, page_size = 10000]
 ```
 
@@ -44,6 +44,7 @@ ENGINE = Elasticsearch('url', 'index'[, 'user', 'password'][, key = value, ...])
 * `url` — Elasticsearch 集群的基础 URL，例如 `https://localhost:9200`。必须是 `http` 或 `https` URL，且不能包含凭证、查询字符串或片段。
 * `index` — 要读取的索引。也可以是别名、数据流、逗号分隔的列表、通配符模式，或日期运算表达式 (例如 `<logs-{now/d}>`) ，只要 Elasticsearch 时间点 API 能够接受即可。该值为字面名称，不得进行 URL 编码。如果模式未匹配到任何索引，则会报错。
 * `user`、`password` — 用于 HTTP 基本身份验证的可选凭证。
+* `query('...')` — 可选的 JSON 格式 Elasticsearch [Query DSL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/querydsl) 对象，用于筛选要读取的文档。它必须位于位置参数之后。默认值：`{"match_all": {}}`。
 
 这些参数也可以通过[命名集合](/zh/concepts/features/configuration/server-config/named-collections)传递，并使用 `key = value` 覆盖其中的值。有关完整的键列表以及[身份验证方法](/zh/reference/functions/table-functions/elasticsearch#authentication)的说明，请参阅 [`elasticsearch` 表函数](/zh/reference/functions/table-functions/elasticsearch#arguments)。
 
@@ -81,8 +82,8 @@ LIMIT 10;
 ```sql
 CREATE TABLE errors_since_october
 ENGINE = Elasticsearch('https://localhost:9200', 'logs-*',
-                       api_key = '...',
-                       query = '{"bool": {"filter": [{"term": {"level": "error"}}, {"range": {"@timestamp": {"gte": "2026-10-01T00:00:00Z"}}}]}}');
+                       query('{"bool": {"filter": [{"term": {"level": "error"}}, {"range": {"@timestamp": {"gte": "2026-10-01T00:00:00Z"}}}]}}'),
+                       api_key = '...');
 ```
 
 请在 `query` 中使用绝对日期：`now-1h` 这类日期运算会在每次翻页时重新求值，因此可能会遗漏文档。详见 [`elasticsearch` 表函数的限制](/zh/reference/functions/table-functions/elasticsearch#limitations)。

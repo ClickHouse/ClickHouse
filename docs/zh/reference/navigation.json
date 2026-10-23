@@ -1108,6 +1108,7 @@
         "zh/reference/system-tables/iceberg_files",
         "zh/reference/system-tables/iceberg_history",
         "zh/reference/system-tables/iceberg_metadata_log",
+        "zh/reference/system-tables/iceberg_metadata_log_entries",
         "zh/reference/system-tables/information_schema",
         "zh/reference/system-tables/instrumentation",
         "zh/reference/system-tables/jemalloc_arena_bins",

@@ -584,6 +584,18 @@ WHERE (_part, _part_offset) IN (
 機能全体を制御するゲートであり、追加の機能は
 それぞれ独自の設定で制御される場合があります。
 
+## enable_subcolumn_codecs {#enable_subcolumn_codecs}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "サブカラムに対するコーデック宣言を有効にする新しい設定。"}]}]} />
+
+カラムのサブカラム (`Tuple` の要素や `Map` のキーと値など) に対して、`CREATE TABLE` 内の `CODEC name (...)` エントリや `ALTER TABLE ... MODIFY COLUMN name CODEC(...)` を使用して圧縮コーデックを宣言できるようにします。
+こうした宣言がすでに含まれているテーブルは、この設定に関係なく動作します。また、宣言はいつでも削除できます。
+サブカラムのコーデックを持つテーブルは、それより古いバージョンのサーバーではアタッチできません。
+
 ## enable_sz3_codec {#enable_sz3_codec}
 
 <ExperimentalBadge />

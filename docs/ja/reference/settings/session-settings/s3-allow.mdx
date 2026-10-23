@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で参照でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="s3_allow_multipart_copy">
-  ## s3_allow_multipart_copy
-</div>
+## s3_allow_multipart_copy {#s3_allow_multipart_copy}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -23,41 +21,45 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 S3 でのマルチパートコピーを有効にします。
 
-<div id="s3_allow_parallel_part_upload">
-  ## s3_allow_parallel_part_upload
-</div>
+## s3_allow_parallel_part_upload {#s3_allow_parallel_part_upload}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 S3 のマルチパートアップロードで複数のスレッドを使用します。これにより、メモリ使用量がわずかに増加する場合があります
 
-<div id="s3_allow_server_credentials_in_user_queries">
-  ## s3_allow_server_credentials_in_user_queries
-</div>
+## s3_allow_server_credentials_in_user_queries {#s3_allow_server_credentials_in_user_queries}
+
+**別名**: `allow_server_credentials_in_user_queries`
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "ユーザー SQL からの S3 アクセスで、サーバー自身の アンビエント認証情報（environment\/IMDS\/IRSA\/instance-profile\/AWS-config-file\/GCP-OAuth-metadata）が解決されないようにする新しい設定です。明示的な role_arn ベースの STS assume-role は引き続き許可されます。以前の動作（許可）は互換性設定で復元できます。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "ユーザー SQL からの S3 アクセスで、サーバー自身の 実行環境から暗黙的に取得される認証情報（environment\/IMDS\/IRSA\/instance-profile\/AWS-config-file\/GCP-OAuth-metadata）が解決されないようにする新しい設定です。明示的な role_arn ベースの STS assume-role は引き続き許可されます。以前の動作（許可）は互換性設定で復元できます。"}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "0"},{"label": "ユーザー SQL からの Azure Blob Storage アクセスについても、サーバー自身のアイデンティティ（AKS Workload Identity またはマシンのマネージド ID）による認証をブロックするようになりました。別名 `allow_server_credentials_in_user_queries` を追加しました。"}]}]} />
 
-ユーザー SQL に起因する S3 アクセスで、サーバー管理の認証情報 の使用を許可します。
+ユーザー SQL に起因する S3 および Azure Blob Storage アクセスで、サーバー管理の認証情報 の使用を許可します。
 
-無効時 (デフォルト) には、`s3`/`s3Cluster` table function、`S3`/`S3Queue` エンジン、S3 named collection、動的な `disk(type=s3, ...)` 定義、`BACKUP`/`RESTORE TO S3`、DataLake の table-data read、および `DataLakeCatalog` データベース (Glue、BigLake) は、環境、インスタンスメタデータ (IMDS) 、IRSA、ECS、instance profile、SSO、AWS config/credentials files、または GCP OAuth metadata service から 認証情報 を解決できません。これらの server-managed source のいずれか (たとえば `use_environment_credentials = 1` または `http_client = gcp_oauth`) を要求しながら、使用可能な明示的 認証情報 を指定していないリクエストは、`ACCESS_DENIED` で拒否されます。これらを一切要求しないリクエストは、`NOSIGN` を指定した場合と同様に、署名なし (anonymous) で送信されます。
+Azure にも適用されるため、別名 `allow_server_credentials_in_user_queries` でも利用できます。
 
-`role_arn` ベースの STS assume-role (`extra_credentials(role_arn = '...')`) は、この設定が無効でも引き続き許可されます。対象の role はサーバーが実行される identity を明示的に信頼する必要があり、クエリの S3 リクエストに署名するのは常に assume された role の認証情報だけであるため、サーバー自身の認証情報がクエリに公開されることはありません。これは、ClickHouse Cloud に private bucket へのアクセスを許可するための文書化された方法です。クエリが完全な pair を指定する場合、role はクエリ自身の base keys で assume されます。それ以外の場合、STS AssumeRole 呼び出しはサーバーの ambient identity によって署名されます。サーバー `<s3>`/endpoint config または named collection の静的なオプションが、クエリ指定の role の STS base として使用されることはなく、サーバー `<s3>` config で設定された `role_arn` はユーザークエリには一切適用されません。動的な `disk(type=s3, role_arn=...)` 定義は引き続きこの制限の対象です。
+無効時 (デフォルト) には、`s3`/`s3Cluster` テーブル関数、`S3`/`S3Queue` エンジン、S3 名前付きコレクション、動的な `disk(type=s3, ...)` 定義、`BACKUP`/`RESTORE TO S3`、DataLake の table-data read、および `DataLakeCatalog` データベース (Glue、BigLake) は、環境、インスタンスメタデータ (IMDS) 、IRSA、ECS、instance profile、SSO、AWS config/credentials files、または GCP OAuth metadata service から 認証情報 を解決できません。これらの server-managed source のいずれか (たとえば `use_environment_credentials = 1` または `http_client = gcp_oauth`) を要求しながら、使用可能な明示的 認証情報 を指定していないリクエストは、`ACCESS_DENIED` で拒否されます。これらを一切要求しないリクエストは、`NOSIGN` を指定した場合と同様に、署名なし (anonymous) で送信されます。
 
-認証情報 を持たないリクエストが environment 認証情報 を要求するかどうかは、`use_environment_credentials` によって決まります。named collection ではデフォルト値が `0` のため、URL だけを指定した collection は匿名で読み取られます。`s3`/`s3Cluster` table function と `S3`/`S3Queue` エンジンは、サーバーの `<s3>` config で別途設定されていない限り、組み込みのデフォルト値 (`1`) を使用します。認証情報 なしの read もデフォルトで匿名にしたい場合は、`<s3><use_environment_credentials>0</use_environment_credentials></s3>` を設定してください (そうしない場合、そのようなリクエストは拒否され、`NOSIGN` を使う必要があります) 。server configuration で定義されたディスクは影響を受けず、引き続きデフォルトで environment 認証情報 を使用します。一方、ユーザーが作成した動的な `disk(type = s3, ...)` 定義はこの制限の対象となり (上記参照) 、デフォルト値または environment 認証情報 に依存している場合は拒否されます。
+`role_arn` ベースの STS assume-role (`extra_credentials(role_arn = '...')`) は、この設定が無効でも引き続き許可されます。対象の role はサーバーが実行される アイデンティティ を明示的に信頼する必要があり、クエリの S3 リクエストに署名するのは常に assume された role の認証情報だけであるため、サーバー自身の認証情報がクエリに公開されることはありません。これは、ClickHouse Cloud に private bucket へのアクセスを許可するための文書化された方法です。クエリが完全な pair を指定する場合、role はクエリ自身の base keys で assume されます。それ以外の場合、STS AssumeRole 呼び出しはサーバーの ambient アイデンティティ によって署名されます。サーバー `<s3>`/endpoint config または 名前付きコレクション の静的なオプションが、クエリ指定の role の STS base として使用されることはなく、サーバー `<s3>` config で設定された `role_arn` はユーザークエリには一切適用されません。動的な `disk(type=s3, role_arn=...)` 定義は引き続きこの制限の対象です。
 
-これにより、authenticated user がサーバー自身の (アンビエント認証情報) を使って S3 にアクセスさせることを防げます。明示的に指定された 認証情報 は影響を受けません。クエリで渡されたオプション、named collection 内の静的なオプション (SQL で作成されたもの、または config で定義されたもの) 、およびサーバー `<s3>` config 内のオプションは、引き続き機能します。
+認証情報 を持たないリクエストが environment 認証情報 を要求するかどうかは、`use_environment_credentials` によって決まります。名前付きコレクション ではデフォルト値が `0` のため、URL だけを指定した collection は匿名で読み取られます。`s3`/`s3Cluster` テーブル関数 と `S3`/`S3Queue` エンジンは、サーバーの `<s3>` config で別途設定されていない限り、組み込みのデフォルト値 (`1`) を使用します。認証情報 なしの read もデフォルトで匿名にしたい場合は、`<s3><use_environment_credentials>0</use_environment_credentials></s3>` を設定してください (そうしない場合、そのようなリクエストは拒否され、`NOSIGN` を使う必要があります) 。サーバー構成 で定義されたディスクは影響を受けず、引き続きデフォルトで environment 認証情報 を使用します。一方、ユーザーが作成した動的な `disk(type = s3, ...)` 定義はこの制限の対象となり (上記参照) 、デフォルト値または environment 認証情報 に依存している場合は拒否されます。
 
-ユーザークエリに S3 アクセスを許可する推奨方法は、明示的 認証情報 を持つ named collection (または public buckets 用の `NOSIGN`) を使うことです。これにより、オプションをクエリテキストに含めずに済み、各 collection の利用は RBAC (`GRANT NAMED COLLECTION ON <name> TO <user>`) で制御されるため、サーバー自身の identity を公開する代わりに、特定のユーザーに特定の bucket へのアクセスだけを許可できます。
+これにより、authenticated user がサーバー自身の (実行環境から暗黙的に取得される認証情報) を使って S3 にアクセスさせることを防げます。明示的に指定された 認証情報 は影響を受けません。クエリで渡されたオプション、名前付きコレクション 内の静的なオプション (SQL で作成されたもの、または config で定義されたもの) 、およびサーバー `<s3>` config 内のオプションは、引き続き機能します。
 
-スコープ (意図的に対象外) : この設定がブロックするのは、上記に挙げたサーバーの ambient credential sources のみです。サーバー `<s3>` config や、config で定義された named collection にある、オペレーターがプロビジョニングした静的な `access_key_id`/`secret_access_key` はブロックしません。これらは明示的 認証情報 として扱われ、引き続き機能します。ただし、`access_header` や server-side-encryption keys のような config のリクエスト情報は、それ自体ではここで 認証情報 とは見なされない点に注意してください。そのような情報だけを持ち、明示的な key pair を持たないリクエストは (かつデフォルトの `use_environment_credentials = 1` の場合) 、そうでないとサーバーの アンビエント認証情報 にフォールバックしてしまうため、引き続き拒否されます。そのような endpoint では、明示的オプション、`NOSIGN`、`use_environment_credentials = 0`、または以下の escape hatch も指定する必要があります。
+ユーザークエリに S3 アクセスを許可する推奨方法は、明示的 認証情報 を持つ 名前付きコレクション (または public buckets 用の `NOSIGN`) を使うことです。これにより、オプションをクエリテキストに含めずに済み、各 collection の利用は RBAC (`GRANT NAMED COLLECTION ON <name> TO <user>`) で制御されるため、サーバー自身の アイデンティティ を公開する代わりに、特定のユーザーに特定の bucket へのアクセスだけを許可できます。
+
+スコープ (意図的に対象外としているもの): この設定がブロックするのは、上記のサーバーの実行環境から暗黙的に取得される認証情報ソースのみです。サーバーの `<s3>` 設定や、設定ファイルで定義された名前付きコレクションに含まれる、オペレーターが用意した静的な `access_key_id`/`secret_access_key` はブロックされません。これらは明示的な認証情報として扱われ、引き続き機能します。ただし、`access_header` やサーバー側暗号化オプションなど、設定由来のリクエスト情報は、それだけではここでいう認証情報として扱われない点に注意してください。そのような情報のみを含み、明示的なキーペアを含まない (かつ `use_environment_credentials = 1` がデフォルトのままの) リクエストは、許可するとサーバーの実行環境から暗黙的に取得される認証情報にフォールバックしてしまうため、引き続き拒否されます。このようなエンドポイントでは、明示的なオプション、`NOSIGN`、`use_environment_credentials = 0`、または後述の回避策のいずれかもあわせて指定する必要があります。
 
 信頼できる管理クライアントでは、正当な操作のために サーバー管理の認証情報 が必要になる場合があります (たとえば、SQL を介して `s3_plain_rewritable` ディスク上のシステムテーブルをアタッチする場合) 。これを許可するには、そのクライアントのセッションまたは設定プロファイルでこの設定を有効にしてください。
 
 `BACKUP`/`RESTORE ... ON CLUSTER` では、この設定のイニシエーター側の値が他のホストに伝播され、そこでそのまま使用されます。これらのホストは、デフォルトではイニシエーターのユーザーを使用せず、分散 DDL キューを介して操作のホストごとの継続処理を実行します。そのため、通常は各ホスト自身のデフォルトプロファイルに対して制限を評価します。しかし、イニシエーターはすでに自身の制限付き設定で同じバックアップ宛先を開いているため、代わりにイニシエーターの値が保持されます。イニシエーターに対する `readonly` 制約は引き続き適用されるため (信頼できないイニシエーターは自身のオン クラスター バックアップに対してこの設定を有効にできません) 、この動作によって制限が弱まることはありません。
 
 永続的な `S3` および `S3Queue` テーブルの耐久性: これをセッション単位またはプロファイル単位でのみ有効にしても、再起動後には維持されません。サーバーがそのようなテーブルを保存済みの定義 (起動時または `RESTORE` 時) から再読み込みすると、S3 クライアントを再構築し、起動時のコンテキストで制限を再適用します。そのため、サーバー管理の認証情報 に依存し、セッション/プロファイルの `s3_allow_server_credentials_in_user_queries = 1` のもとでのみ作成されたテーブルは、作成自体は成功しても、再起動後はアクセスできなくなります (テーブル自体はそのまま残りますが、認証情報が再び許可されたソースに解決されるまで、そのテーブルに対するクエリは失敗します) 。サーバー自体は引き続き起動します。このようなテーブルに永続的なアクセスを確保するには、明示的な認証情報を指定してください。あるいは、この設定をサーバー全体で有効にすると、すべての再読み込みで制限が緩和される代わりに、再起動後もそれらのテーブルが読み込まれるようになります。
+
+Azure Blob Storageもこの設定の対象です。この設定が無効の場合、`azureBlobStorage`/`azureBlobStorageCluster` テーブル関数、`AzureBlobStorage`/`AzureQueue` エンジン、Azure の名前付きコレクション、動的な `disk(type = azure_blob_storage, ...)` 定義、`BACKUP`/`RESTORE TO AzureBlobStorage`、および Azure 上の DataLake テーブルデータの読み取りでは、サーバー自身の実行アイデンティティで認証することはできません。具体的には、AKS Workload Identity (`AZURE_FEDERATED_TOKEN_FILE` から取得される投影済みサービスアカウントトークン) や、マシンの Azure マネージド ID が該当します。このようなリクエストは `ACCESS_DENIED` で拒否されます。明示的に指定された認証情報は影響を受けません。`account_name`/`account_key` のペア、接続文字列、SAS トークン、および名前付きコレクションまたはサーバーの `<storage_configuration>` 内の静的な認証情報は、いずれも引き続き機能します。Azure はストレージのベアラートークンを、送信先のホストではなく発行対象のアカウントに紐付けます。そのため、クエリで指定された URL にリクエストを送ると、その URL を管理する第三者に有効なトークンを渡してしまううえ、ユーザーに権限のないコンテナーまで読み取れてしまいます。
+
+Azure の場合、ワークロード ID またはマネージド ID に依存する名前付きコレクションも制限対象となり、これにはサーバー構成で定義されたものも含まれます。また、サーバー自身のフェデレーション トークンを指定されたクライアント用のトークンと交換する `extra_credentials(client_id = '...', tenant_id = '...')` も同様に制限されます。サーバー構成で定義されたディスクは、引き続きワークロード ID またはマネージド ID を使用します。動的な Azure ディスクはテーブルと同様に制限されますが、サーバー設定 `s3_allow_server_credentials_for_system_table_disks` が有効な場合の `system` データベース内のテーブルは例外です。この設定が有効な状態で作成された動的な Azure ディスクは、その旨を保存済みの定義に記録するため、再起動後もサーバーのアイデンティティを引き続き使用します。この記録はサーバーのみが書き込むものであり、`CREATE` または `ATTACH` クエリでは無視されます。`AzureQueue` の `after_processing = 'move'` の宛先は、この設定が有効であっても、独自の認証情報 (接続文字列または SAS トークン) を持つ必要があります。これは、`S3Queue` の移動先に独自のオプションが必要なのと同様です。サーバーのアイデンティティに依存していた永続的な `AzureBlobStorage` または `AzureQueue` テーブル、あるいは動的な Azure ディスク上のテーブルは、`s3_load_table_anonymously_if_credentials_restricted` に従い、起動時に認証情報を持たないクライアントで読み込まれます。`RESTORE` は `CREATE` と同様に Azure テーブルを作成するため、そのようなテーブルは `RESTORE` では拒否されます。
 
 信頼できないユーザーに対してこれを無効のままにしておくには、値を明示的に `0` に設定し、さらに `readonly` としてマークして、そのプロファイルに固定してください:
 
@@ -79,6 +81,6 @@ S3 のマルチパートアップロードで複数のスレッドを使用し�
 
 この設定は、ユーザーがオペレーターとなる `clickhouse-local` では効果がありません。
 
-`DataLakeCatalog` データベース (Glue、BigLake) も対象ですが、1 つだけ違いがあります。カタログオブジェクトは一度作成されると、そのデータベースのすべてのユーザーで共有されるため、値をクエリごとに読み取ることはできません。代わりに、`CREATE DATABASE` (またはユーザーによる `ATTACH DATABASE`) を実行したセッションから取り込まれます。この設定を有効にした状態で作成されたデータベース (たとえば、信頼されたセッションやプロファイルで作成されたもの) は、そのカタログでサーバーの アンビエント認証情報 を使用することがあり、そのデータベースにクエリできるすべてのユーザーがそれを共有することになります。デフォルト設定のまま作成された場合は、だれがクエリするかに関係なく、そのカタログは全員に対して制限されます。サーバーが自身のメタデータから既存のデータベースを読み込む場合 (起動時、`RESTORE`) 、永続的な `S3`/`S3Queue` テーブルと同様に、起動時のコンテキストでその制限が再適用されます。サーバー管理の認証情報 を解決するカタログは利用不可のままとなり、再起動後はそのデータベースにアクセスできなくなります (サーバー自体は起動します。データベースは `s3_load_table_anonymously_if_credentials_restricted` に従って利用不可のカタログを持つものとして読み込まれ、クエリではその制限が報告されます) 。明示的な認証情報が指定されたカタログ (Glue: `aws_access_key_id` と `aws_secret_access_key`、BigLake: 完全な Google ADC の 3 要素) は常に動作し、再起動後も有効です。
+`DataLakeCatalog` データベース (Glue、BigLake) も対象ですが、1 つだけ違いがあります。カタログオブジェクトは一度作成されると、そのデータベースのすべてのユーザーで共有されるため、値をクエリごとに読み取ることはできません。代わりに、`CREATE DATABASE` (またはユーザーによる `ATTACH DATABASE`) を実行したセッションから取り込まれます。この設定を有効にした状態で作成されたデータベース (たとえば、信頼されたセッションやプロファイルで作成されたもの) は、そのカタログでサーバーの 実行環境から暗黙的に取得される認証情報 を使用することがあり、そのデータベースにクエリできるすべてのユーザーがそれを共有することになります。デフォルト設定のまま作成された場合は、だれがクエリするかに関係なく、そのカタログは全員に対して制限されます。サーバーが自身のメタデータから既存のデータベースを読み込む場合 (起動時、`RESTORE`) 、永続的な `S3`/`S3Queue` テーブルと同様に、起動時のコンテキストでその制限が再適用されます。サーバー管理の認証情報 を解決するカタログは利用不可のままとなり、再起動後はそのデータベースにアクセスできなくなります (サーバー自体は起動します。データベースは `s3_load_table_anonymously_if_credentials_restricted` に従って利用不可のカタログを持つものとして読み込まれ、クエリではその制限が報告されます) 。明示的な認証情報が指定されたカタログ (Glue: `aws_access_key_id` と `aws_secret_access_key`、BigLake: 完全な Google ADC の 3 要素) は常に動作し、再起動後も有効です。
 
 {/*AUTOGENERATED_END*/}

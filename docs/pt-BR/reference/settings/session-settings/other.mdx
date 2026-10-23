@@ -833,12 +833,12 @@ A função &#39;geoToH3&#39; aceita (lon, lat) quando definida como &#39;lon&#95
 
 <SettingsInfoBlock type="Milliseconds" default_value="120000" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "120000"},{"label": "New setting"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "120000"},{"label": "Nova configuração"}]}]} />
 
-Define por quantos milissegundos um cliente do Keeper aguarda para adquirir o mutex do `Context` correspondente antes de falhar.
+Define por quantos milissegundos uma consulta aguarda por um cliente do Keeper: pelo mutex do `Context` do cliente e por uma tentativa de conexão que outra thread está realizando para ele. Quando esse tempo é excedido, a consulta falha com `TIMEOUT_EXCEEDED`. A consulta também deixa de aguardar quando é cancelada.
 
-O valor é obtido do `Context` que realiza a aquisição. Uma substituição por consulta só se aplica quando a operação usa o contexto da consulta, como leituras de `system.zookeeper`, `zookeeperSessionUptime`, `SYSTEM RECONNECT ZOOKEEPER` e o acesso ao Keeper auxiliar no contexto da consulta.
-Operações que usam um contexto global ou em segundo plano, incluindo a coordenação de `BACKUP` e `RESTORE` e a atividade de bancos de dados `Replicated`, usam o valor desse contexto e recebem o estouro do tempo limite como um erro do Keeper (`ZOPERATIONTIMEOUT`), que tratam da mesma forma que os demais erros do Keeper.
+O valor é obtido do contexto da consulta, portanto se aplica às operações que o utilizam, como leituras de `system.zookeeper`, `zookeeperSessionUptime`, `SYSTEM RECONNECT ZOOKEEPER` e o acesso ao Keeper auxiliar no contexto da consulta.
+Operações que usam um contexto global ou em segundo plano, incluindo a coordenação de `BACKUP` e `RESTORE` e a atividade de bancos de dados `Replicated`, aguardam até que a tentativa de conexão termine e recebem o cliente resultante ou o erro do Keeper correspondente.
 `SYSTEM RELOAD CONFIG` e `SYSTEM RELOAD ASYNCHRONOUS METRICS` não são abrangidos, pois usam caminhos de recarregamento serializados de forma independente.
 
 Valores possíveis:

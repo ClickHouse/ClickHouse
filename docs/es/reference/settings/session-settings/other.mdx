@@ -836,10 +836,10 @@ La función &#39;geoToH3&#39; acepta (lon, lat) si se establece en &#39;lon&#95;
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "120000"},{"label": "nueva configuración"}]}]} />
 
-Define cuántos milisegundos espera un Client de Keeper para adquirir el mutex de `Context` correspondiente antes de fallar.
+Define cuántos milisegundos espera una consulta por un Client de Keeper: por el mutex de `Context` del Client y por un intento de conexión que otro thread está realizando en su nombre. Cuando se supera este tiempo, la consulta falla con `TIMEOUT_EXCEEDED`. La consulta también deja de esperar si se cancela.
 
-El valor se obtiene del `Context` que realiza la adquisición. Una sobrescritura a nivel de consulta solo se aplica cuando la operación utiliza el contexto de la consulta, como en las lecturas de `system.zookeeper`, `zookeeperSessionUptime`, `SYSTEM RECONNECT ZOOKEEPER` y el acceso a Keeper auxiliar desde el contexto de la consulta.
-Las operaciones que utilizan un contexto global o en segundo plano, como la coordinación de `BACKUP` y `RESTORE` y la actividad de las bases de datos `Replicated`, utilizan en su lugar el valor de ese contexto y reciben el tiempo de espera agotado como un error de Keeper (`ZOPERATIONTIMEOUT`), que gestionan como cualquier otro error de Keeper.
+El valor se obtiene del contexto de la consulta, por lo que se aplica a las operaciones que lo utilizan, como en las lecturas de `system.zookeeper`, `zookeeperSessionUptime`, `SYSTEM RECONNECT ZOOKEEPER` y el acceso a Keeper auxiliar desde el contexto de la consulta.
+Las operaciones que utilizan un contexto global o en segundo plano, como la coordinación de `BACKUP` y `RESTORE` y la actividad de las bases de datos `Replicated`, esperan hasta que finaliza el intento de conexión y obtienen su Client o su error de Keeper.
 `SYSTEM RELOAD CONFIG` y `SYSTEM RELOAD ASYNCHRONOUS METRICS` quedan excluidos, ya que utilizan rutas de recarga serializadas de forma independiente.
 
 Valores posibles:

@@ -590,6 +590,19 @@ Lorsqu’il est désactivé, toute expression de table utilisant le modificateur
 lors de la construction du plan. Il s’agit du paramètre de contrôle global de la
 fonctionnalité de requêtes en continu ; des capacités supplémentaires peuvent être régies par leurs propres paramètres.
 
+## enable_subcolumn_codecs {#enable_subcolumn_codecs}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nouveau paramètre permettant d'activer les déclarations de codecs pour les sous-colonnes."}]}]} />
+
+Permet de déclarer des codecs de compression pour les sous-colonnes d&#39;une colonne, comme les éléments d&#39;un `Tuple` ou les clés et valeurs d&#39;une `Map`,
+à l&#39;aide d&#39;entrées `CODEC name (...)` dans `CREATE TABLE` et de `ALTER TABLE ... MODIFY COLUMN name CODEC(...)`.
+Les tables qui comportent déjà de telles déclarations fonctionnent quelle que soit la valeur de ce paramètre, et ces déclarations peuvent toujours être supprimées.
+Une table comportant des codecs de sous-colonnes ne peut pas être rattachée par un serveur d&#39;une version antérieure.
+
 ## enable_sz3_codec {#enable_sz3_codec}
 
 <ExperimentalBadge />

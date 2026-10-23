@@ -17,8 +17,8 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 ## 语法 {#syntax}
 
 ```sql
-elasticsearch('url', 'index'[, 'user', 'password'][, key = value, ...][, structure = 'document JSON'][, SETTINGS ...])
-elasticsearch(named_collection[, key = value, ...][, structure = 'document JSON'][, SETTINGS ...])
+elasticsearch('url', 'index'[, 'user', 'password'][, query('...')][, key = value, ...][, structure = 'document JSON'][, SETTINGS ...])
+elasticsearch(named_collection[, query('...')][, key = value, ...][, structure = 'document JSON'][, SETTINGS ...])
 ```
 
 <Note>
@@ -31,24 +31,26 @@ elasticsearch(named_collection[, key = value, ...][, structure = 'document JSON'
 
 ## 参数 {#arguments}
 
-| 参数         | 描述                                                                                          |
-| ---------- | ------------------------------------------------------------------------------------------- |
-| `url`      | Elasticsearch 集群的基准 URL，例如 `https://localhost:9200`。必须是不含凭证、查询字符串和片段的 `http` 或 `https` URL。 |
-| `index`    | 要读取的索引。也可以是别名、逗号分隔的列表或通配符模式，只要 Elasticsearch 时间点 API 支持即可。若模式未匹配到任何索引，则会报错。                 |
-| `user`     | 用于 HTTP 基本身份验证的用户名 (可选) 。                                                                   |
-| `password` | 用于 HTTP 基本身份验证的密码 (可选，须同时指定 `user`) 。                                                       |
+| 参数             | 描述                                                                                                                                                                      |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `url`          | Elasticsearch 集群的基准 URL，例如 `https://localhost:9200`。必须是不含凭证、查询字符串和片段的 `http` 或 `https` URL。                                                                             |
+| `index`        | 要读取的索引。也可以是别名、逗号分隔的列表或通配符模式，只要 Elasticsearch 时间点 API 支持即可。若模式未匹配到任何索引，则会报错。                                                                                             |
+| `user`         | 用于 HTTP 基本身份验证的用户名 (可选) 。                                                                                                                                               |
+| `password`     | 用于 HTTP 基本身份验证的密码 (可选，须同时指定 `user`) 。                                                                                                                                   |
+| `query('...')` | JSON 格式的 Elasticsearch [Query DSL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/querydsl) 对象，用于筛选要读取的文档 (可选) 。必须位于位置参数之后。默认值：`{"match_all": {}}`。 |
 
 `url`、`index`、`user` 和 `password` 参数也可以采用 `key = value` 形式指定；位置参数按上述顺序依次填入。如果同一参数既以位置参数形式又以键的形式指定 (或同一个键指定了两次) ，则会报错。
 
 以下参数可以采用 `key = value` 形式指定 (也可作为命名集合的键) ：
 
-| 键              | 描述                                                                                                                                                     |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `user`         | 用于 HTTP 基本身份验证的用户名。                                                                                                                                    |
-| `password`     | 用于 HTTP 基本身份验证的密码。                                                                                                                                     |
-| `bearer_token` | 以 `Authorization: Bearer <token>` 形式发送的令牌，例如 Elasticsearch 服务账号令牌。                                                                                     |
-| `api_key`      | Elasticsearch API key，以 `Authorization: ApiKey <api_key>` 形式发送。其值为创建 API key 的 API 所返回的、经 Base64 编码的 `id:api_key` 字符串。                                 |
-| `query`        | JSON 格式的 Elasticsearch [Query DSL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/querydsl) 对象，用于筛选要读取的文档。默认值：`{"match_all": {}}`。 |
+| 键              | 描述                                                                                                                     |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `user`         | 用于 HTTP 基本身份验证的用户名。                                                                                                    |
+| `password`     | 用于 HTTP 基本身份验证的密码。                                                                                                     |
+| `bearer_token` | 以 `Authorization: Bearer <token>` 形式发送的令牌，例如 Elasticsearch 服务账号令牌。                                                     |
+| `api_key`      | Elasticsearch API key，以 `Authorization: ApiKey <api_key>` 形式发送。其值为创建 API key 的 API 所返回的、经 Base64 编码的 `id:api_key` 字符串。 |
+
+命名集合中可以包含 `query` 键。如需覆盖该键，请在集合名称之后传入 `query('...')` 或 `query = '...'`。
 
 此外，该表函数还支持：
 
@@ -100,8 +102,8 @@ LIMIT 10;
 ```sql
 SELECT _id
 FROM elasticsearch('https://localhost:9200', 'logs',
+                   query('{"term": {"level": "error"}}'),
                    bearer_token = '...',
-                   query = '{"term": {"level": "error"}}',
                    SETTINGS page_size = 1000);
 ```
 

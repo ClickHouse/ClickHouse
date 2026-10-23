@@ -31,12 +31,12 @@ Il est possible de tronquer ou de supprimer cette table à tout moment sans risq
 * `thread_id` ([UInt64](/fr/reference/data-types/int-uint)) — ID du thread.
 * `query_id` ([String](/fr/reference/data-types/string)) — ID de la requête.
 * `query` ([String](/fr/reference/data-types/string)) — Texte de la requête en cours d’exécution au moment du plantage.
-* `trace` ([Array(UInt64)](/fr/reference/data-types/array)) — Trace de pile au moment du plantage. Sur les plateformes ELF, à l’exception de FreeBSD, les adresses situées dans le binaire principal de ClickHouse sont stockées sous forme d’offsets physiques de fichier, et les autres adresses sont des adresses de mémoire virtuelle à l’intérieur du processus du serveur ClickHouse.
+* `trace` ([Array(UInt64)](/fr/reference/data-types/array)) — Trace de pile au moment du plantage. Sur les plateformes ELF, à l’exception de FreeBSD, les adresses situées dans le binaire principal de ClickHouse sont stockées sous forme de décalages physiques de fichier, et les cadres de pile situés en dehors de celui-ci (bibliothèques partagées, code JIT) sont stockés avec la valeur 0.
 * `trace_full` ([Array(String)](/fr/reference/data-types/array)) — Trace de pile au moment du plantage. Chaque élément contient une méthode appelée à l’intérieur du processus du serveur ClickHouse.
 * `fault_address` ([Nullable(UInt64)](/fr/reference/data-types/nullable)) — Adresse mémoire à l’origine de la faute : l’adresse elle-même si elle est inférieure à 4096 (un pointeur nul avec un décalage), le décalage dans l’exécutable, ou NULL si l’adresse se trouve ailleurs ou est masquée.
 * `fault_access_type` ([String](/fr/reference/data-types/string)) — Type d’accès mémoire à l’origine de la faute (par ex., &#39;read&#39;, &#39;write&#39;).
 * `signal_description` ([String](/fr/reference/data-types/string)) — Description lisible basée sur signal&#95;code (par ex., &#39;Address not mapped to object&#39;).
-* `current_exception_trace_full` ([Array(String)](/fr/reference/data-types/array)) — Trace de pile de l’exception en cours avec des frames symbolisées (plantages std::terminate uniquement).
+* `current_exception_trace_full` ([Array(String)](/fr/reference/data-types/array)) — Trace de pile de l’exception en cours avec des cadres de pile symbolisés (plantages std::terminate uniquement).
 * `version` ([String](/fr/reference/data-types/string)) — Version du serveur ClickHouse.
 * `revision` ([UInt32](/fr/reference/data-types/int-uint)) — Révision du serveur ClickHouse.
 * `build_id` ([String](/fr/reference/data-types/string)) — BuildID généré par le compilateur.

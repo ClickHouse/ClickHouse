@@ -779,8 +779,9 @@ Redondea un valor hacia abajo hasta un múltiplo de `roundTo`, como lo hace `bin
 
 La regla depende de los tipos de los argumentos: un número se redondea aritméticamente, un intervalo de tiempo (que
 es un `Interval`) se redondea a un intervalo de tiempo y un DateTime se redondea a un intervalo de tiempo. Un DateTime de KQL
-es un `DateTime64`; los tipos portadores más restringidos, `DateTime` y `Date`, se rechazan porque
-no pueden representar todos los bins que puede producir un DateTime de KQL.
+es un `DateTime64`; un valor de los tipos más restringidos `DateTime`, `Date` o `Date32` se
+convierte primero a `DateTime64`, porque estos tipos no pueden representar todos los bins que puede
+producir un DateTime de KQL.
 
 Esta función implementa `bin()` cuando `dialect = 'kusto'`. No está pensada para invocarse directamente
 desde SQL.
@@ -793,7 +794,7 @@ kqlBin(value, roundTo)
 
 **Argumentos**
 
-* `value` — Un número, un intervalo de tiempo o un DateTime (un `DateTime64`). - `roundTo` — El tamaño del bin.
+* `value` — Un número, un intervalo de tiempo o un DateTime (un `DateTime64`, `DateTime`, `Date` o `Date32`). - `roundTo` — El tamaño del intervalo.
 
 **Valor devuelto**
 
@@ -833,16 +834,16 @@ SELECT kqlBin(toDateTime64('2026-08-01 12:34:56', 7, 'UTC'), toIntervalHour(1))
 
 ## kqlBinAt {#kqlBinAt}
 
-Disponible desde: v26.8.0
+Introducido en: v26.8.0
 
 Redondea un valor hacia abajo hasta un múltiplo de `binSize` contado desde `fixedPoint`, como hace
 `bin_at()` de Kusto Query Language. Los bins pueden alinearse antes o después del punto fijo.
 
 La regla depende de los tipos de los argumentos: un número se redondea aritméticamente; un intervalo de tiempo (que
 es un `Interval`) se redondea mediante un intervalo de tiempo respecto a otro intervalo de tiempo, y un DateTime se redondea mediante un
-intervalo de tiempo contado desde un punto fijo de DateTime. Un DateTime de KQL es un `DateTime64`; los tipos más restringidos
-`DateTime` y `Date` se rechazan, ya que no pueden representar todos los bins que puede
-producir un DateTime de KQL.
+intervalo de tiempo contado desde un punto fijo de DateTime. Un DateTime de KQL es un `DateTime64`; un valor o un
+punto fijo de los tipos más restringidos `DateTime`, `Date` o `Date32` se convierte primero a `DateTime64`,
+ya que estos tipos no pueden representar todos los bins que puede producir un DateTime de KQL.
 
 Esta función implementa `bin_at()` cuando `dialect = 'kusto'`. No está pensada para llamarse directamente
 desde SQL.
@@ -855,7 +856,7 @@ kqlBinAt(value, binSize, fixedPoint)
 
 **Argumentos**
 
-* `value` — Un número, un intervalo de tiempo o un DateTime (un `DateTime64`). - `binSize` — El tamaño del intervalo. - `fixedPoint` — El punto a partir del cual se cuentan los intervalos.
+* `value` — Un número, un intervalo de tiempo o un DateTime (un `DateTime64`, `DateTime`, `Date` o `Date32`). - `binSize` — El tamaño del intervalo. - `fixedPoint` — El punto a partir del cual se cuentan los intervalos.
 
 **Valor devuelto**
 

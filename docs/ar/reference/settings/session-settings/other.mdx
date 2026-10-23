@@ -830,14 +830,14 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 ## get_zookeeper_lock_acquire_timeout_ms {#get_zookeeper_lock_acquire_timeout_ms}
 
-<SettingsInfoBlock type="Milliseconds" default_value="120000" />
+<SettingsInfoBlock type="مللي ثانية" default_value="120000" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "120000"},{"label": "New setting"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "120000"},{"label": "إعداد جديد"}]}]} />
 
-يحدد مدة الانتظار بالمللي ثانية التي يقضيها عميل Keeper لحجز mutex الخاص بـ `Context` المقابل قبل أن يفشل.
+يحدد مدة الانتظار بالمللي ثانية التي يقضيها الاستعلام في انتظار عميل Keeper: سواء لحجز mutex الخاص بـ `Context` للعميل، أو لمحاولة اتصال يُجريها خيط تنفيذ آخر لصالحه. وعند تجاوز هذه المدة، يفشل الاستعلام مع الخطأ `TIMEOUT_EXCEEDED`. كما يتوقف الاستعلام عن الانتظار عند إلغائه.
 
-تُؤخذ القيمة من `Context` الذي يُجري عملية الحجز. ولا يسري التجاوز على مستوى الاستعلام إلا عندما تستخدم العملية سياق الاستعلام، مثل عمليات القراءة من `system.zookeeper`، و`zookeeperSessionUptime`، و`SYSTEM RECONNECT ZOOKEEPER`، والوصول إلى Keeper المساعد ضمن سياق الاستعلام.
-أما العمليات التي تستخدم سياقًا عامًا أو سياق خلفية، بما في ذلك تنسيق `BACKUP` و`RESTORE` ونشاط قاعدة البيانات `Replicated`، فتعتمد على قيمة ذلك السياق، ويصلها انتهاء المهلة على هيئة error من Keeper (`ZOPERATIONTIMEOUT`) تتعامل معه كما تتعامل مع سائر أخطاء Keeper.
+تُؤخذ القيمة من سياق الاستعلام، ولذا فهي تسري على العمليات التي تستخدمه، مثل عمليات القراءة من `system.zookeeper`، و`zookeeperSessionUptime`، و`SYSTEM RECONNECT ZOOKEEPER`، والوصول إلى Keeper المساعد ضمن سياق الاستعلام.
+أما العمليات التي تستخدم سياقًا عامًا أو سياق خلفية، بما في ذلك تنسيق `BACKUP` و`RESTORE` ونشاط قاعدة البيانات `Replicated`، فتنتظر حتى تنتهي محاولة الاتصال، ثم تحصل إما على العميل الناتج عنها أو على error من Keeper.
 ولا يشمل هذا الإعداد `SYSTEM RELOAD CONFIG` و`SYSTEM RELOAD ASYNCHRONOUS METRICS`، لأنهما تستخدمان مسارات إعادة تحميل متسلسلة بشكل مستقل.
 
 القيم الممكنة:

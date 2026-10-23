@@ -25,7 +25,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
 [(
     name1 JSON
 )]
-ENGINE = Elasticsearch('url', 'index'[, 'user', 'password'][, key = value, ...])
+ENGINE = Elasticsearch('url', 'index'[, 'user', 'password'][, query('...')][, key = value, ...])
 [SETTINGS keep_alive = 60, page_size = 10000]
 ```
 
@@ -44,14 +44,15 @@ ENGINE = Elasticsearch('url', 'index'[, 'user', 'password'][, key = value, ...])
 * `url` — Elasticsearch クラスターのベース URL (例: `https://localhost:9200`)。認証情報、クエリ文字列、フラグメントを含まない `http` または `https` の URL を指定する必要があります。
 * `index` — 読み取り対象のインデックス。Elasticsearch の point in time API が受け付ける形式であれば、別名、データストリーム、カンマ区切りのリスト、ワイルドカードパターン、`<logs-{now/d}>` のような日付演算式も指定できます。値は名前をそのまま指定し、URL エンコードしないでください。どのインデックスにも一致しないパターンはエラーになります。
 * `user`, `password` — HTTP 基本認証用の認証情報 (任意)。
+* `query('...')` — 読み取るドキュメントを選択するための、JSON 形式の Elasticsearch [Query DSL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/querydsl) オブジェクト (任意)。位置引数の後に指定する必要があります。デフォルト: `{"match_all": {}}`。
 
 パラメータは[名前付きコレクション](/ja/concepts/features/configuration/server-config/named-collections)として渡し、`key = value` で個別に上書きすることもできます。キーの完全な一覧と[認証方式](/ja/reference/functions/table-functions/elasticsearch#authentication)の説明については、[`elasticsearch` テーブル関数](/ja/reference/functions/table-functions/elasticsearch#arguments)を参照してください。
 
 **エンジン設定**
 
-| 設定           | デフォルト   | 説明                                                                                                                                                                                                                                                                     |
-| ------------ | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `keep_alive` | `60`    | 連続する 2 つのページリクエストの間、Elasticsearch が point in time を開いたまま保持する時間 (秒)。                                                                                                                                                                                                    |
+| 設定           | デフォルト   | 説明                                                                                                                                                                                                                                                                         |
+| ------------ | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `keep_alive` | `60`    | 連続する 2 つのページリクエストの間、Elasticsearch が point in time を開いたまま保持する時間 (秒)。                                                                                                                                                                                                        |
 | `page_size`  | `10000` | 1 回のリクエストで Elasticsearch に要求するドキュメント数。各ページが 1 つのブロックになるため、この設定によって読み取り時のブロックサイズも決まります。[`max_block_size`](/ja/reference/settings/session-settings/max#max_block_size) は無効です。Elasticsearch の `index.max_result_window` インデックス設定 (デフォルトは `10000`) を超える値は Elasticsearch 側で拒否されます。 |
 
 これらの設定は `ALTER TABLE ... MODIFY SETTING` では変更できません。変更するには、テーブルを再作成してください。
@@ -81,8 +82,8 @@ Query DSL オブジェクトを使用して、Elasticsearch 側でフィルタ�
 ```sql
 CREATE TABLE errors_since_october
 ENGINE = Elasticsearch('https://localhost:9200', 'logs-*',
-                       api_key = '...',
-                       query = '{"bool": {"filter": [{"term": {"level": "error"}}, {"range": {"@timestamp": {"gte": "2026-10-01T00:00:00Z"}}}]}}');
+                       query('{"bool": {"filter": [{"term": {"level": "error"}}, {"range": {"@timestamp": {"gte": "2026-10-01T00:00:00Z"}}}]}}'),
+                       api_key = '...');
 ```
 
 `query` には絶対日付を指定してください。`now-1h` のような日付演算はページごとに再評価されるため、一部のドキュメントが取りこぼされる可能性があります。詳しくは [`elasticsearch` テーブル関数の制限事項](/ja/reference/functions/table-functions/elasticsearch#limitations) を参照してください。

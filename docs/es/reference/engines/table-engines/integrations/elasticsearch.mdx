@@ -25,7 +25,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
 [(
     name1 JSON
 )]
-ENGINE = Elasticsearch('url', 'index'[, 'user', 'password'][, key = value, ...])
+ENGINE = Elasticsearch('url', 'index'[, 'user', 'password'][, query('...')][, key = value, ...])
 [SETTINGS keep_alive = 60, page_size = 10000]
 ```
 
@@ -44,8 +44,9 @@ La lista de columnas es opcional. Si se omite, la table tiene una única columna
 * `url` — La URL base del clúster de Elasticsearch, por ejemplo `https://localhost:9200`. Debe ser una URL `http` o `https` sin credenciales, cadena de consulta ni fragmento.
 * `index` — El índice que se va a leer. También puede ser un alias, un data stream, una lista separada por comas, un patrón con comodines o una expresión de cálculo de fechas como `<logs-{now/d}>`, tal como los acepta la API de point in time de Elasticsearch. El valor es el nombre literal y no debe estar URL-encoded. Si un patrón no coincide con ningún índice, se produce un error.
 * `user`, `password` — Credenciales opcionales para la autenticación básica HTTP.
+* `query('...')` — Un objeto opcional de [Query DSL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/querydsl) de Elasticsearch en JSON que selecciona los documentos que se van a leer. Debe ir después de los argumentos posicionales. Valor predeterminado: `{"match_all": {}}`.
 
-Los parámetros también pueden pasarse como una [colección con nombre](/es/concepts/features/configuration/server-config/named-collections) con sobrescrituras `key = value`. Consulte la [función de table `elasticsearch`](/es/reference/functions/table-functions/elasticsearch#arguments) para ver la lista completa de claves y la descripción de los [métodos de autenticación](/es/reference/functions/table-functions/elasticsearch#authentication).
+Los parámetros también pueden pasarse como una [colección con nombre](/es/concepts/features/configuration/server-config/named-collections) con sobrescrituras `key = value`. Consulte la [función de tabla `elasticsearch`](/es/reference/functions/table-functions/elasticsearch#arguments) para ver la lista completa de claves y la descripción de los [métodos de autenticación](/es/reference/functions/table-functions/elasticsearch#authentication).
 
 **Configuración del motor**
 
@@ -81,8 +82,8 @@ Aplique el filtro en Elasticsearch mediante un objeto de Query DSL:
 ```sql
 CREATE TABLE errors_since_october
 ENGINE = Elasticsearch('https://localhost:9200', 'logs-*',
-                       api_key = '...',
-                       query = '{"bool": {"filter": [{"term": {"level": "error"}}, {"range": {"@timestamp": {"gte": "2026-10-01T00:00:00Z"}}}]}}');
+                       query('{"bool": {"filter": [{"term": {"level": "error"}}, {"range": {"@timestamp": {"gte": "2026-10-01T00:00:00Z"}}}]}}'),
+                       api_key = '...');
 ```
 
 Use fechas absolutas en `query`: las expresiones de cálculo de fechas como `now-1h` se vuelven a evaluar en cada página, por lo que podrían omitirse documentos. Consulte las [limitaciones de la función de tabla `elasticsearch`](/es/reference/functions/table-functions/elasticsearch#limitations).

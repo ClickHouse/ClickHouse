@@ -773,7 +773,7 @@ SELECT isNaN(NaN)
 
 Kusto Query Language의 `bin()`과 동일하게, 값을 `roundTo`의 배수로 내림합니다.
 
-규칙은 인수 타입에 따라 달라집니다. 숫자는 산술적으로 내림되고, timespan(`Interval` 타입)은 timespan 단위로, datetime 역시 timespan 단위로 내림됩니다. KQL의 datetime은 `DateTime64`이며, 표현 범위가 더 좁은 `DateTime`과 `Date` 타입은 KQL datetime이 만들어낼 수 있는 모든 빈을 표현할 수 없으므로 허용되지 않습니다.
+규칙은 인수 타입에 따라 달라집니다. 숫자는 산술적으로 내림되고, timespan(`Interval` 타입)은 timespan 단위로, datetime 역시 timespan 단위로 내림됩니다. KQL의 datetime은 `DateTime64`이며, 표현 범위가 더 좁은 `DateTime`, `Date`, `Date32` 타입의 값은 KQL datetime이 만들어낼 수 있는 모든 빈을 표현할 수 없으므로 먼저 `DateTime64`로 변환됩니다.
 
 이 함수는 `dialect = 'kusto'`일 때 `bin()`의 구현을 담당합니다. SQL에서 직접 호출하기 위한 용도가 아닙니다.
 
@@ -785,7 +785,7 @@ kqlBin(value, roundTo)
 
 **인수**
 
-* `value` — 숫자, timespan 또는 datetime(`DateTime64`)입니다. - `roundTo` — 빈 크기입니다.
+* `value` — 숫자, timespan 또는 datetime(`DateTime64`, `DateTime`, `Date` 또는 `Date32`)입니다. - `roundTo` — 빈 크기입니다.
 
 **반환 값**
 
@@ -829,7 +829,7 @@ SELECT kqlBin(toDateTime64('2026-08-01 12:34:56', 7, 'UTC'), toIntervalHour(1))
 
 Kusto Query Language의 `bin_at()`과 마찬가지로, `fixedPoint`부터 세어 `binSize`의 배수가 되도록 값을 내림합니다. 빈은 기준 시점의 앞쪽 또는 뒤쪽으로 정렬될 수 있습니다.
 
-적용되는 규칙은 인수 타입에 따라 다릅니다. 숫자는 산술적으로 내림되고, timespan(즉 `Interval`)은 timespan 단위로 내림되며, datetime은 datetime 기준 시점부터 세어 timespan 단위로 내림됩니다. KQL datetime은 `DateTime64`입니다. 표현 범위가 더 좁은 `DateTime` 및 `Date` 타입은 KQL datetime이 만들어낼 수 있는 모든 빈을 표현할 수 없으므로 허용되지 않습니다.
+적용되는 규칙은 인수 타입에 따라 다릅니다. 숫자는 산술적으로 내림되고, timespan(즉 `Interval`)은 timespan 단위로 내림되며, datetime은 datetime 기준 시점부터 세어 timespan 단위로 내림됩니다. KQL datetime은 `DateTime64`입니다. 표현 범위가 더 좁은 `DateTime`, `Date` 또는 `Date32` 타입의 값이나 기준 시점은 KQL datetime이 만들어낼 수 있는 모든 빈을 표현할 수 없으므로 먼저 `DateTime64`로 변환됩니다.
 
 이 함수는 `dialect = 'kusto'`일 때 `bin_at()`의 구현을 담당합니다. SQL에서 직접 호출하기 위한 함수가 아닙니다.
 
@@ -841,7 +841,7 @@ kqlBinAt(value, binSize, fixedPoint)
 
 **인수**
 
-* `value` — 숫자, timespan 또는 datetime(`DateTime64`). - `binSize` — 빈 크기. - `fixedPoint` — 빈을 세기 시작하는 기준점.
+* `value` — 숫자, timespan 또는 datetime(`DateTime64`, `DateTime`, `Date` 또는 `Date32`). - `binSize` — 빈 크기. - `fixedPoint` — 빈을 세기 시작하는 기준점.
 
 **반환 값**
 

@@ -11,6 +11,7 @@ doc_type: 'reference'
 import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 이러한 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며, [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)를 기반으로 자동 생성됩니다.
 
@@ -378,32 +379,34 @@ JOIN에서 lazy indexing 최적화를 활성화하는 데 필요한 왼쪽 입�
 
 ## query_plan_optimize_join_order_algorithm {#query_plan_optimize_join_order_algorithm}
 
-<ExperimentalBadge />
+<BetaBadge />
 
-<SettingsInfoBlock type="JoinOrderAlgorithm" default_value="greedy" />
+<SettingsInfoBlock type="JoinOrderAlgorithm" default_value="dpsub,greedy" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "greedy"},{"label": "새 실험적 설정."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "dpsub,greedy"},{"label": "이제 `dpsub`가 기본 조인 순서 알고리즘입니다. 릴레이션이 12개를 초과하는 쿼리는 `greedy`로 폴백됩니다."}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "greedy"},{"label": "새 실험적 설정."}]}]} />
 
 쿼리 계획 최적화 시 시도할 조인 순서(Join Order) 알고리즘을 지정합니다. 사용할 수 있는 알고리즘은 다음과 같습니다.
 
 * &#39;greedy&#39; - 기본 탐욕 알고리즘으로, 빠르게 동작하지만 최적의 조인 순서(Join Order)를 찾지 못할 수 있습니다
 * &#39;dpsize&#39; - 현재 Inner 조인에만 적용되는 DPsize 알고리즘을 구현합니다. 가능한 모든 조인 순서(Join Order)를 고려해 가장 최적의 순서를 찾지만, 테이블 수와 조인 프레디케이트가 많은 쿼리에서는 느릴 수 있습니다.
-* &#39;dpsub&#39; - Inner 조인과 비-Inner 조인을 모두 지원하는 DPsub 알고리즘을 구현합니다. 가능한 모든 조인 순서(Join Order)를 고려해 가장 최적의 순서를 찾지만, 테이블 수와 조인 프레디케이트가 많은 쿼리에서는 느릴 수 있습니다.
+* &#39;dpsub&#39; - Inner 조인과 비-Inner 조인을 모두 지원하는 DPsub 알고리즘을 구현합니다. 가능한 모든 조인 순서(Join Order)를 고려해 가장 최적의 순서를 찾습니다. 릴레이션이 12개 이하인 쿼리에만 적용되며, 이를 초과하면 목록의 다음 알고리즘으로 넘어갑니다.
 * &#39;dphyp&#39; - 현재 Inner 조인에만 적용되는 DPhyp(Dynamic Programming via Hypergraph Partitioning) 알고리즘을 구현합니다. `dpsize`와 동일한 탐색 공간을 탐색하지만 연결된 서브그래프 쌍만 열거하므로, 교차 곱을 고려하지 않는 대신 희소 조인 그래프에서 생성되는 중간 조인이 더 적습니다
-  여러 알고리즘을 쉼표로 구분된 목록으로 지정할 수 있습니다. 예: `dphyp,greedy`. 알고리즘은 지정된 순서대로 시도되며, 어떤 알고리즘이 쿼리를 처리할 수 없으면(예: Outer 조인 또는 연결되지 않은 구성 요소 때문) 다음 알고리즘을 폴백으로 사용합니다.
+  여러 알고리즘을 쉼표로 구분된 목록으로 지정할 수 있습니다. 예: `dphyp,greedy`. 알고리즘은 지정된 순서대로 시도되며, 어떤 알고리즘이 쿼리를 처리할 수 없으면(예: 릴레이션이 너무 많거나 연결되지 않은 구성 요소가 있는 경우) 다음 알고리즘을 폴백으로 사용합니다.
 
 ## query_plan_optimize_join_order_conflict_detector {#query_plan_optimize_join_order_conflict_detector}
 
-<ExperimentalBadge />
+<BetaBadge />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "DPsub 조인 순서(Join Order) 알고리즘에서 JOIN 재정렬의 유효성을 판단하는 충돌 감지기를 선택하는 새로운 설정입니다. `a`는 (정확하지만 불완전한) CD-A, `c`는 (정확하고 완전한) CD-C, 빈 값은 사용하지 않음을 의미합니다."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": ""},{"label": "DPsub 조인 순서(Join Order) 알고리즘에서 JOIN 재정렬의 유효성을 판단하는 충돌 감지기를 선택하는 새로운 설정입니다. `a`는 (정확하지만 불완전한) CD-A, `c`는 (정확하고 완전한) CD-C, 빈 값은 사용하지 않음을 의미합니다."}]}]} />
+<SettingsInfoBlock type="JoinOrderConflictDetector" default_value="c" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "DPsub 조인 순서(Join Order) 알고리즘에서 JOIN 재정렬의 유효성을 판단하는 충돌 감지기를 선택하는 새로운 설정입니다. `a`는 (정확하지만 불완전한) CD-A, `c`는 (정확하고 완전한) CD-C, 빈 값은 사용하지 않음을 의미합니다."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "c"},{"label": "DPsub 조인 순서(Join Order) 알고리즘에서 JOIN 재정렬의 유효성을 판단하는 충돌 감지기를 선택하는 새로운 설정입니다. `a`는 (정확하지만 불완전한) CD-A, `c`는 (정확하고 완전한) CD-C, 빈 값은 사용하지 않음을 의미합니다. 기본값은 CD-C이며, `query_plan_optimize_join_order_algorithm`의 기본값인 `dpsub`와 함께 semi 조인과 anti 조인도 순서 재배치 대상에 포함됩니다."}]}]} />
 
 `dpsub` 조인 순서(Join Order) 알고리즘에만 적용됩니다. DPsub가 어떤 JOIN 재정렬이 유효한지
 판단할 때 사용하는 충돌 감지기를 선택합니다. 사용 가능한 값은 다음과 같습니다:
 
-* `''` (기본값) - 충돌 감지기를 사용하지 않으며, DPsub는 릴레이션별 `ON` 절 제약을 사용합니다
+* `''` - 충돌 감지기를 사용하지 않으며, DPsub는 릴레이션별 `ON` 절 제약을 사용합니다
 * `'a'` - 정확하지만 불완전한 CD-A 충돌 감지기
-* `'c'` - 정확하고 완전한 CD-C 충돌 감지기
+* `'c'` (기본값) - 정확하고 완전한 CD-C 충돌 감지기
 
 ## query_plan_optimize_join_order_limit {#query_plan_optimize_join_order_limit}
 

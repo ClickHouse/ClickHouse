@@ -582,6 +582,18 @@ WHERE (_part, _part_offset) IN (
 被拒绝。这是流式查询功能的总开关；
 其他能力也可能受其各自设置的控制。
 
+## enable_subcolumn_codecs {#enable_subcolumn_codecs}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "新增设置，用于启用子列的编解码器声明。"}]}]} />
+
+允许为列的子列 (例如 `Tuple` 的元素或 `Map` 的键和值) 声明压缩编解码器，可在 `CREATE TABLE` 中使用 `CODEC name (...)` 条目，或使用 `ALTER TABLE ... MODIFY COLUMN name CODEC(...)` 进行声明。
+已包含此类声明的表不受该设置影响，均可正常使用，且这些声明随时可以移除。
+包含子列编解码器的表无法被旧版本的服务器附加。
+
 ## enable_sz3_codec {#enable_sz3_codec}
 
 <ExperimentalBadge />

@@ -4228,7 +4228,7 @@ SELECT minSampleSizeContinuous(112.25, 21.1, 0.03, 0.80, 0.05) AS sample_size
 
 ## minSampleSizeConversion {#minSampleSizeConversion}
 
-Introduit dans : v22.6.0
+Introduit dans : v22.6.0
 
 Calcule la taille d’échantillon minimale requise pour un test A/B comparant les conversions (proportions) entre deux échantillons.
 
@@ -4249,7 +4249,7 @@ minSampleSizeConversion(baseline, mde, power, alpha)
 
 **Valeur renvoyée**
 
-Renvoie un Tuple nommé avec 3 éléments : `minimum_sample_size`, `detect_range_lower`, `detect_range_upper`. Il s’agit, respectivement, de la taille d’échantillon requise, de la borne inférieure de la plage de valeurs non détectables avec la taille d’échantillon requise renvoyée, calculée comme `baseline - mde`, et de la borne supérieure de la plage de valeurs non détectables avec la taille d’échantillon requise renvoyée, calculée comme `baseline + mde`. [`Tuple(Float64, Float64, Float64)`](/fr/reference/data-types/tuple)
+Renvoie un Tuple nommé avec 3 éléments : `minimum_sample_size`, `detect_range_lower`, `detect_range_upper`. Il s’agit, respectivement, de la taille d’échantillon requise, de la borne inférieure de la plage de valeurs non détectables avec la taille d’échantillon requise renvoyée, calculée comme `baseline - mde`, et de la borne supérieure de la plage de valeurs non détectables avec la taille d’échantillon requise renvoyée, calculée comme `baseline + mde`. [`Tuple(Float64, Float64, Float64)`](/fr/reference/data-types/tuple)
 
 **Exemples**
 
@@ -4260,7 +4260,7 @@ SELECT minSampleSizeConversion(0.25, 0.03, 0.80, 0.05) AS sample_size
 ```
 
 ```response title=Response
-(3396.077603219163,0.22,0.28)
+(3396.077603219162,0.22,0.28)
 ```
 
 ## neighbor {#neighbor}

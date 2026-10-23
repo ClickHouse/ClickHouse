@@ -420,6 +420,26 @@ ENGINE = <Engine>
 
 有关可用的通用、专用和加密编解码器，请参阅[列压缩编解码器](/zh/reference/statements/create/table/codec)。
 
+### 子列的编解码器 {#subcolumn-codecs}
+
+此功能为实验性功能，需要启用设置 [enable&#95;subcolumn&#95;codecs](/zh/reference/settings/session-settings/enable#enable_subcolumn_codecs)。
+
+在列列表中添加 `CODEC name (codec, ...)` 条目，即可为子列声明编解码器，例如 `Tuple` 的某个元素或 `Map` 的值：
+
+```sql
+CREATE TABLE subcolumn_codec_example
+(
+    id UInt64,
+    payload Tuple(ts DateTime64(3), value Float64),
+    attrs Map(String, Float64),
+    CODEC payload.ts (DoubleDelta, ZSTD),
+    CODEC attrs.values (Gorilla, ZSTD)
+)
+ENGINE = MergeTree ORDER BY id
+```
+
+只有 `MergeTree` 系列的引擎支持为子列指定编解码器。一个列要么使用自身的编解码器，要么为其子列分别指定编解码器，二者只能选其一。不能为嵌套子列指定编解码器：如果已为 `payload.meta` 声明了编解码器，就不能再为 `payload.meta.seq` 声明。引用未命名的 `Tuple` 中的元素时，需要使用用引号括起的名称，例如 ``CODEC `pair`.`2` (ZSTD)``，因为 `pair.2` 会被解析为数字。该子列必须存在于列的类型中，且不能位于 `JSON`、`Dynamic` 或 `Variant` 值内部。仅保存结构信息的流 (例如 array 大小或空值映射) 只会应用编解码器中的通用部分。这些声明会显示在 `SHOW CREATE TABLE` 的输出中，以及 `system.columns` 的 `subcolumn_codecs` 列中。
+
 ## 创建临时表 {#temporary-tables}
 
 ClickHouse 支持临时表，会话结束后这些表将自动消失。详情请参阅 [CREATE TEMPORARY TABLE](/zh/reference/statements/create/table/temporary-table)。

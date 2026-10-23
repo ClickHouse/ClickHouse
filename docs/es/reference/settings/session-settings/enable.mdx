@@ -591,6 +591,19 @@ Cuando está desactivado, cualquier expresión de tabla que use el modificador `
 en el momento de generar el plan. Este es el control general de la
 funcionalidad de consultas en streaming; otras capacidades pueden estar controladas por sus propios ajustes.
 
+## enable_subcolumn_codecs {#enable_subcolumn_codecs}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nueva configuración para habilitar la declaración de códecs en subcolumnas."}]}]} />
+
+Permite declarar códecs de compresión para las subcolumnas de una columna, como los elementos de un `Tuple` o las claves y valores de un `Map`,
+mediante entradas `CODEC name (...)` en `CREATE TABLE` y con `ALTER TABLE ... MODIFY COLUMN name CODEC(...)`.
+Las tablas que ya contienen estas declaraciones funcionan independientemente de este parámetro de configuración, y las declaraciones siempre pueden eliminarse.
+Un servidor de una versión anterior no puede adjuntar una tabla con códecs de subcolumnas.
+
 ## enable_sz3_codec {#enable_sz3_codec}
 
 <ExperimentalBadge />

@@ -592,6 +592,19 @@ WHERE (_part, _part_offset) IN (
 возможности стриминг-запросов; дополнительные возможности могут управляться
 собственными настройками.
 
+## enable_subcolumn_codecs {#enable_subcolumn_codecs}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Новая настройка, позволяющая объявлять кодеки для подстолбцов."}]}]} />
+
+Позволяет объявлять кодеки сжатия для подстолбцов столбца, например для элементов `Tuple` или ключей и значений `Map`,
+с помощью записей `CODEC name (...)` в `CREATE TABLE`, а также с помощью `ALTER TABLE ... MODIFY COLUMN name CODEC(...)`.
+Таблицы, в которых такие объявления уже есть, работают независимо от этой настройки, а сами объявления можно удалить в любой момент.
+Сервер более старой версии не сможет подключить таблицу с кодеками подстолбцов.
+
 ## enable_sz3_codec {#enable_sz3_codec}
 
 <ExperimentalBadge />

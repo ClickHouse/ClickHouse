@@ -774,7 +774,7 @@ SELECT isNaN(NaN)
 
 Kusto Query Language の `bin()` と同様に、値を `roundTo` の倍数に切り捨てます。
 
-丸めの規則は引数の型によって異なります。数値は算術的に丸められ、timespan (`Interval` に相当) は timespan 単位で、DateTime も timespan 単位で丸められます。KQL の DateTime は `DateTime64` です。表現範囲のより狭い `DateTime` および `Date` は、KQL の DateTime が生成し得るすべてのビンを表現できないため、キャリアとして使用できません。
+丸めの規則は引数の型によって異なります。数値は算術的に丸められ、timespan (`Interval` に相当) は timespan 単位で、日時も timespan 単位で丸められます。KQL の日時は `DateTime64` です。表現範囲のより狭い `DateTime`、`Date`、`Date32` 型の値は、KQL の日時が生成し得るすべてのビンを表現できないため、まず `DateTime64` に変換されます。
 
 この関数は `dialect = 'kusto'` の場合に `bin()` の実装として使用されます。SQL から直接呼び出すことは想定されていません。
 
@@ -786,13 +786,13 @@ kqlBin(value, roundTo)
 
 **引数**
 
-* `value` — 数値、timespan、または DateTime (`DateTime64`) 。 - `roundTo` — ビンのサイズ。
+* `value` — 数値、timespan、または日時 (`DateTime64`、`DateTime`、`Date` または `Date32`) 。 - `roundTo` — ビンサイズ。
 
 **戻り値**
 
 `roundTo` の最も近い倍数に切り下げられた `value`。
 
-**Examples**
+**例**
 
 **number**
 
@@ -814,7 +814,7 @@ SELECT kqlBin(toIntervalNanosecond(16 * 86400000000000), toIntervalNanosecond(7 
 1209600000000000
 ```
 
-**DateTime**
+**日時**
 
 ```sql title=Query
 SELECT kqlBin(toDateTime64('2026-08-01 12:34:56', 7, 'UTC'), toIntervalHour(1))
@@ -830,7 +830,7 @@ SELECT kqlBin(toDateTime64('2026-08-01 12:34:56', 7, 'UTC'), toIntervalHour(1))
 
 Kusto Query Language の `bin_at()` と同様に、`fixedPoint` を起点として数えた `binSize` の倍数へ値を切り下げます。ビンは固定点より前にも後にも整列し得ます。
 
-丸めの規則は引数の型によって異なります。数値は算術的に丸められ、timespan (`Interval` 型) は timespan 単位で丸められ、DateTime は DateTime の固定点から数えた timespan 単位で丸められます。KQL の DateTime は `DateTime64` です。表現範囲がより狭い `DateTime` および `Date` は、KQL の DateTime が生成し得るすべてのビンを表現できないため、受け付けられません。
+丸めの規則は引数の型によって異なります。数値は算術的に丸められ、timespan (`Interval` 型) は timespan 単位で丸められ、日時は日時の基準点から数えた timespan 単位で丸められます。KQL の日時は `DateTime64` です。表現範囲がより狭い `DateTime`、`Date`、`Date32` 型の値や固定点は、KQL の日時が生成し得るすべてのビンを表現できないため、事前に `DateTime64` へ変換されます。
 
 この関数は `dialect = 'kusto'` のときに `bin_at()` の実装として使用されます。SQL から直接呼び出すことは想定されていません。
 
@@ -842,13 +842,13 @@ kqlBinAt(value, binSize, fixedPoint)
 
 **引数**
 
-* `value` — 数値、timespan、または DateTime (`DateTime64`) 。 - `binSize` — ビンサイズ。 - `fixedPoint` — ビンの数え始めとなる基準点。
+* `value` — 数値、timespan、または日時 (`DateTime64`、`DateTime`、`Date` または `Date32`) 。 - `binSize` — ビンサイズ。 - `fixedPoint` — ビンの数え始めとなる基準点。
 
 **戻り値**
 
 `fixedPoint` を起点として数えた `binSize` の最も近い倍数に切り捨てられた `value`。
 
-**Examples**
+**例**
 
 **number**
 
@@ -860,7 +860,7 @@ SELECT kqlBinAt(6.5, 2.5, -0.5)
 4.5
 ```
 
-**DateTime**
+**日時**
 
 ```sql title=Query
 SELECT kqlBinAt(toDateTime64('2026-08-01 12:34:56', 7, 'UTC'), toIntervalHour(1), toDateTime64('2026-08-01 00:30:00', 7, 'UTC'))

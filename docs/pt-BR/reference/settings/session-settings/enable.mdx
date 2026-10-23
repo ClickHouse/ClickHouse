@@ -591,6 +591,19 @@ Quando desativado, qualquer expressão de tabela que use o modificador `STREAM` 
 na compilação do plano. Esta é a configuração principal para o recurso de
 consultas de streaming; capacidades adicionais podem ser controladas por suas próprias configurações.
 
+## enable_subcolumn_codecs {#enable_subcolumn_codecs}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "Nova configuração para habilitar declarações de codec em subcolunas."}]}]} />
+
+Permite declarar codecs de compressão para subcolunas de uma coluna, como os elementos de uma `Tuple` ou as chaves e valores de um `Map`,
+por meio de entradas `CODEC name (...)` em `CREATE TABLE` e de `ALTER TABLE ... MODIFY COLUMN name CODEC(...)`.
+Tabelas que já possuem essas declarações funcionam independentemente desta configuração, e as declarações podem ser removidas a qualquer momento.
+Uma tabela com codecs de subcoluna não pode ser anexada por um servidor de versão mais antiga.
+
 ## enable_sz3_codec {#enable_sz3_codec}
 
 <ExperimentalBadge />

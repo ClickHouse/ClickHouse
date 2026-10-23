@@ -418,6 +418,22 @@ SETTINGS iceberg_metadata_staleness_ms=120000
 
 **참고**: 비동기 프리페치가 활성화된 경우, 현재는 메타데이터 캐시 크기가 모든 활성 테이블의 최신 메타데이터 스냅샷 전체를 저장하기에 충분하다고 가정합니다.
 
+## 테이블 설정(table settings) 수정 {#modify-settings}
+
+Iceberg 메타데이터에는 저장되지 않고 테이블 정의(table definition)에만 저장되는 설정은 `ALTER TABLE ... MODIFY SETTING` 및 `ALTER TABLE ... RESET SETTING`을 사용하여 기존 테이블에서 변경할 수 있습니다.
+
+* 메타데이터 파일 조회(lookup): `iceberg_use_version_hint`, `iceberg_recent_metadata_file_by_last_updated_ms_field`, `iceberg_metadata_async_prefetch_period_ms`
+* 백그라운드 컴팩션 및 컴팩션 후 정리: `allow_experimental_iceberg_compaction`, `allow_experimental_cleanup_old_data_files_compaction`, `iceberg_compaction_lock_lease_seconds`, `iceberg_compaction_delay_bias`, `iceberg_compaction_data_cleanup`, `iceberg_read_with_snapshot_lease`, `iceberg_snapshot_lease_seconds`, `iceberg_outdated_snapshot_lifetime_seconds`, `iceberg_compaction_commit_batch_size`, `iceberg_compaction_max_rows_in_data_file`, `iceberg_compaction_max_bytes_in_data_file`, `iceberg_max_number_datafiles_to_compact`, `iceberg_data_file_size_lower_threshold_compaction`, `iceberg_data_file_size_upper_threshold_compaction`
+
+새로운 값은 이후 실행되는 쿼리부터 적용되며 테이블 정의에 저장됩니다. 설정을 변경하는 동안 해당 테이블의 백그라운드 작업은 중지되었다가 새 설정으로 다시 시작됩니다. 따라서 `allow_experimental_iceberg_compaction`을 끄면 테이블의 백그라운드 컴팩션이 중지되고, 켜면 다시 시작됩니다. 그 외의 설정은 수정할 수 없으며, 설정 변경은 다른 `ALTER` 명령어와 하나의 쿼리에서 함께 사용할 수 없습니다. `DataLakeCatalog` 데이터베이스의 테이블은 설정 수정을 지원하지 않습니다.
+
+```sql
+ALTER TABLE example_table MODIFY SETTING iceberg_use_version_hint = 1;
+ALTER TABLE example_table RESET SETTING iceberg_use_version_hint;
+ALTER TABLE example_table MODIFY SETTING allow_experimental_iceberg_compaction = 0;
+ALTER TABLE example_table MODIFY SETTING iceberg_compaction_delay_bias = 600, iceberg_data_file_size_lower_threshold_compaction = 268435456;
+```
+
 ## 관련 항목 {#see-also}
 
 * [Iceberg 테이블 함수](/ko/reference/functions/table-functions/iceberg)

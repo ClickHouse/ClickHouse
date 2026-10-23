@@ -11,6 +11,7 @@ doc_type: 'reference'
 import SettingsInfoBlock from "/snippets/pt-BR/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/VersionHistory.jsx";
 import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 
 Estas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são autogeradas com base no [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
@@ -384,32 +385,34 @@ Só tem efeito quando `query_plan_direct_read_from_text_index` está habilitada.
 
 ## query_plan_optimize_join_order_algorithm {#query_plan_optimize_join_order_algorithm}
 
-<ExperimentalBadge />
+<BetaBadge />
 
-<SettingsInfoBlock type="JoinOrderAlgorithm" default_value="greedy" />
+<SettingsInfoBlock type="JoinOrderAlgorithm" default_value="dpsub,greedy" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "greedy"},{"label": "Nova configuração experimental."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "dpsub,greedy"},{"label": "`dpsub` agora é o algoritmo de ordem de join padrão; consultas com mais de 12 relações recorrem a `greedy`."}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "greedy"},{"label": "Nova configuração experimental."}]}]} />
 
 Especifica quais algoritmos de ordem de join devem ser testados durante a otimização do plano de consulta. Os seguintes algoritmos estão disponíveis:
 
-* &#39;greedy&#39; - algoritmo guloso básico - é rápido, mas pode não produzir a melhor ordem de join
-* &#39;dpsize&#39; - implementa o algoritmo DPsize, atualmente apenas para INNER JOINs - considera todas as ordens de join possíveis e encontra a mais otimizada, mas pode ser lento para consultas com muitas tabelas e predicados de junção.
-* &#39;dpsub&#39; - implementa o algoritmo DPsub, que oferece suporte a junções INNER e não INNER - considera todas as ordens de join possíveis e encontra a mais otimizada, mas pode ser lento para consultas com muitas tabelas e predicados de junção.
+* &#39;greedy&#39; - algoritmo guloso básico - é rápido, mas pode não produzir a melhor ordem de junção
+* &#39;dpsize&#39; - implementa o algoritmo DPsize, atualmente apenas para junções INNER - considera todas as ordens de junção possíveis e encontra a mais otimizada, mas pode ser lento para consultas com muitas tabelas e predicados de junção.
+* &#39;dpsub&#39; - implementa o algoritmo DPsub, que oferece suporte a junções INNER e não INNER - considera todas as ordens de junção possíveis e encontra a mais otimizada. Aplica-se apenas a consultas com no máximo 12 relações; acima disso, dá lugar ao próximo algoritmo da lista.
 * &#39;dphyp&#39; - implementa o algoritmo DPhyp (Programação Dinâmica via Particionamento de Hipergrafo), atualmente apenas para junções INNER - explora o mesmo espaço de busca que `dpsize`, mas enumera apenas pares de subgrafos conectados, o que gera menos junções intermediárias em grafos de junção esparsos, em troca de não considerar produtos cartesianos
-  Vários algoritmos podem ser especificados como uma lista separada por vírgulas, por exemplo `dphyp,greedy`. Eles são testados na ordem informada; se um algoritmo não conseguir processar a consulta (por exemplo, devido a OUTER JOINs ou componentes desconectados), o próximo será usado como alternativa.
+  Vários algoritmos podem ser especificados como uma lista separada por vírgulas, por exemplo `dphyp,greedy`. Eles são testados na ordem informada; se um algoritmo não conseguir processar a consulta (por exemplo, devido a um número excessivo de relações ou a componentes desconectados), o próximo será usado como alternativa.
 
 ## query_plan_optimize_join_order_conflict_detector {#query_plan_optimize_join_order_conflict_detector}
 
-<ExperimentalBadge />
+<BetaBadge />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "Nova configuração que seleciona o conflict detector que define a validade da reordenação de junções baseada em custo no algoritmo de ordem de join DPsub: `a` para o CD-A (correto, porém incompleto), `c` para o CD-C (correto e completo), vazio para nenhum."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": ""},{"label": "Nova configuração que seleciona o conflict detector que define a validade da reordenação de junções baseada em custo no algoritmo de ordem de join DPsub: `a` para o CD-A (correto, porém incompleto), `c` para o CD-C (correto e completo), vazio para nenhum."}]}]} />
+<SettingsInfoBlock type="JoinOrderConflictDetector" default_value="c" />
 
-Afeta apenas o algoritmo de ordem de join `dpsub`. Seleciona o conflict detector que o DPsub utiliza para
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "Nova configuração que seleciona o conflict detector que define a validade da reordenação de junções baseada em custo no algoritmo de ordem de junção DPsub: `a` para o CD-A (correto, porém incompleto), `c` para o CD-C (correto e completo), vazio para nenhum."}]}, {"id": "row-2","items": [{"label": "26.11"},{"label": "c"},{"label": "Nova configuração que seleciona o conflict detector que define a validade da reordenação de junções baseada em custo no algoritmo de ordem de junção DPsub: `a` para o CD-A (correto, porém incompleto), `c` para o CD-C (correto e completo), vazio para nenhum. O padrão é o CD-C, em conjunto com o padrão `dpsub` de `query_plan_optimize_join_order_algorithm`, o que também permite que junções semi e junções anti participem da reordenação."}]}]} />
+
+Afeta apenas o algoritmo de ordem de junção `dpsub`. Seleciona o conflict detector que o DPsub utiliza para
 decidir quais reordenações de junções baseadas em custo são válidas. Os seguintes valores estão disponíveis:
 
-* `''` (padrão) - nenhum conflict detector; o DPsub usa a restrição da cláusula `ON` por relation
+* `''` - nenhum conflict detector; o DPsub usa a restrição da cláusula `ON` por relation
 * `'a'` - o conflict detector CD-A, que é correto, porém incompleto
-* `'c'` - o conflict detector CD-C, que é correto e completo
+* `'c'` (padrão) - o conflict detector CD-C, que é correto e completo
 
 ## query_plan_optimize_join_order_limit {#query_plan_optimize_join_order_limit}
 

@@ -420,6 +420,26 @@ ENGINE = <Engine>
 
 للاطلاع على برامج الترميز المتاحة للأغراض العامة والمتخصصة والتشفير، راجع [برامج ترميز ضغط الأعمدة](/ar/reference/statements/create/table/codec).
 
+### مرمِّزات الأعمدة الفرعية {#subcolumn-codecs}
+
+هذه الميزة تجريبية وتتطلب تفعيل الإعداد [enable&#95;subcolumn&#95;codecs](/ar/reference/settings/session-settings/enable#enable_subcolumn_codecs).
+
+يُعرِّف الإدخال `CODEC name (codec, ...)` ضمن قائمة الأعمدة مرمِّزًا لعمود فرعي، كعنصر من عناصر `Tuple` أو قيم `Map`:
+
+```sql
+CREATE TABLE subcolumn_codec_example
+(
+    id UInt64,
+    payload Tuple(ts DateTime64(3), value Float64),
+    attrs Map(String, Float64),
+    CODEC payload.ts (DoubleDelta, ZSTD),
+    CODEC attrs.values (Gorilla, ZSTD)
+)
+ENGINE = MergeTree ORDER BY id
+```
+
+لا تدعم مرمِّزات الأعمدة الفرعية سوى محركات عائلة `MergeTree`. فإمّا أن يكون للعمود مرمِّزه الخاص، وإمّا أن تكون لأعمدته الفرعية مرمِّزاتها. ولا يمكن تحديد مرمِّزات للأعمدة الفرعية المتداخلة: فإذا عُرِّف مرمِّز لـ `payload.meta`، فلا يمكن تعريف أي مرمِّز لـ `payload.meta.seq`. ويُشار إلى عنصر `Tuple` غير مُسمّى بأسماء محاطة بعلامات اقتباس، كما في ``CODEC `pair`.`2` (ZSTD)``، لأن `pair.2` ستُفسَّر على أنها رقم. ويجب أن يكون العمود الفرعي موجودًا ضمن نوع العمود، ولا يجوز أن يقع داخل قيمة من نوع `JSON` أو `Dynamic` أو `Variant`. أمّا التدفقات التي لا تحمل سوى البنية، مثل أحجام المصفوفات أو خرائط القيم الفارغة، فلا يُطبَّق عليها إلا الجزء العام من المرمِّز. وتظهر هذه التعريفات في مخرجات `SHOW CREATE TABLE` وفي العمود `subcolumn_codecs` من الجدول `system.columns`.
+
 ## إنشاء جداول مؤقتة {#temporary-tables}
 
 يدعم ClickHouse الجداول المؤقتة التي تُحذف عند انتهاء الجلسة. لمزيد من التفاصيل، راجع [CREATE TEMPORARY TABLE](/ar/reference/statements/create/table/temporary-table).

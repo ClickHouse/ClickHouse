@@ -418,6 +418,22 @@ SETTINGS iceberg_metadata_staleness_ms=120000
 
 **ملاحظة**: التوقع الحالي هو أن يكون حجم ذاكرة التخزين المؤقت للبيانات الوصفية كافيًا للاحتفاظ بالكامل بأحدث لقطة للبيانات الوصفية لجميع الجداول النشطة، إذا كان الجلب المسبق غير المتزامن مُمكّنًا.
 
+## تعديل إعدادات الجدول {#modify-settings}
+
+يمكن تغيير الإعدادات المخزَّنة في تعريف الجدول فقط، لا في البيانات الوصفية لـ Iceberg، لجدول موجود باستخدام `ALTER TABLE ... MODIFY SETTING` و`ALTER TABLE ... RESET SETTING`، وهي:
+
+* إعدادات البحث عن ملف البيانات الوصفية: `iceberg_use_version_hint` و`iceberg_recent_metadata_file_by_last_updated_ms_field` و`iceberg_metadata_async_prefetch_period_ms`؛
+* إعدادات الدمج في الخلفية والتنظيف الذي يليه: `allow_experimental_iceberg_compaction` و`allow_experimental_cleanup_old_data_files_compaction` و`iceberg_compaction_lock_lease_seconds` و`iceberg_compaction_delay_bias` و`iceberg_compaction_data_cleanup` و`iceberg_read_with_snapshot_lease` و`iceberg_snapshot_lease_seconds` و`iceberg_outdated_snapshot_lifetime_seconds` و`iceberg_compaction_commit_batch_size` و`iceberg_compaction_max_rows_in_data_file` و`iceberg_compaction_max_bytes_in_data_file` و`iceberg_max_number_datafiles_to_compact` و`iceberg_data_file_size_lower_threshold_compaction` و`iceberg_data_file_size_upper_threshold_compaction`.
+
+تسري القيم الجديدة على الاستعلامات اللاحقة، وتُخزَّن في تعريف الجدول. وتُوقَف المهام الخلفية للجدول أثناء تغيير الإعدادات، ثم يُعاد تشغيلها بالإعدادات الجديدة؛ لذا فإن تعطيل `allow_experimental_iceberg_compaction` يوقف الدمج في الخلفية لهذا الجدول، بينما يؤدي تفعيله إلى بدئه. لا يمكن تعديل الإعدادات الأخرى، ولا يمكن الجمع بين تغيير الإعدادات وأوامر `ALTER` أخرى في استعلام واحد. كما أن جداول قاعدة بيانات `DataLakeCatalog` لا تدعم تعديل الإعدادات.
+
+```sql
+ALTER TABLE example_table MODIFY SETTING iceberg_use_version_hint = 1;
+ALTER TABLE example_table RESET SETTING iceberg_use_version_hint;
+ALTER TABLE example_table MODIFY SETTING allow_experimental_iceberg_compaction = 0;
+ALTER TABLE example_table MODIFY SETTING iceberg_compaction_delay_bias = 600, iceberg_data_file_size_lower_threshold_compaction = 268435456;
+```
+
 ## انظر أيضًا {#see-also}
 
 * [دالة جدول Iceberg](/ar/reference/functions/table-functions/iceberg)

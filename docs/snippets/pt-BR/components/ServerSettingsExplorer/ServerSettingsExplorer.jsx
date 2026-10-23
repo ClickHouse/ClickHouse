@@ -1435,7 +1435,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
         { name: "openSSL.client.cipherList", path: "/other#openssl.client.cipherlist", default: "ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH" },
         { name: "openSSL.client.cipherSuites", path: "/other#openssl.client.ciphersuites", default: '""' },
         { name: "openSSL.client.disableProtocols", path: "/other#openssl.client.disableprotocols", default: '""' },
-        { name: "openSSL.client.extendedVerification", path: "/other#openssl.client.extendedverification", default: "0" },
+        { name: "openSSL.client.extendedVerification", path: "/other#openssl.client.extendedverification", default: "1" },
         { name: "openSSL.client.fips", path: "/other#openssl.client.fips", default: "0" },
         { name: "openSSL.client.invalidCertificateHandler.name", path: "/other#openssl.client.invalidcertificatehandler.name", default: "RejectCertificateHandler" },
         { name: "openSSL.client.loadDefaultCAFile", path: "/other#openssl.client.loaddefaultcafile", default: "1" },

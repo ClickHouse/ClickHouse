@@ -4242,8 +4242,8 @@ minSampleSizeConversion(baseline, mde, power, alpha)
 
 **Argumentos**
 
-* `baseline` — Conversão de base. [`Float*`](/pt-BR/reference/data-types/float)
-* `mde` — Efeito mínimo detectável (MDE), em pontos percentuais (por exemplo, para uma conversão de base de 0.25, um MDE de 0.03 significa uma mudança esperada para 0.25 ± 0.03). [`Float*`](/pt-BR/reference/data-types/float)
+* `baseline` — Conversão de referência. [`Float*`](/pt-BR/reference/data-types/float)
+* `mde` — Efeito mínimo detectável (MDE), em pontos percentuais (por exemplo, para uma conversão de referência de 0.25, um MDE de 0.03 significa uma mudança esperada para 0.25 ± 0.03). [`Float*`](/pt-BR/reference/data-types/float)
 * `power` — Poder estatístico exigido para um teste (1 - probabilidade de erro Tipo II). [`Float*`](/pt-BR/reference/data-types/float)
 * `alpha` — Nível de significância exigido para um teste (probabilidade de erro Tipo I). [`Float*`](/pt-BR/reference/data-types/float)
 
@@ -4260,7 +4260,7 @@ SELECT minSampleSizeConversion(0.25, 0.03, 0.80, 0.05) AS sample_size
 ```
 
 ```response title=Response
-(3396.077603219163,0.22,0.28)
+(3396.077603219162,0.22,0.28)
 ```
 
 ## neighbor {#neighbor}

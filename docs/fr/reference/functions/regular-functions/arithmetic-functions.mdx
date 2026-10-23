@@ -770,19 +770,20 @@ SELECT isNaN(NaN)
 
 ## kqlBin {#kqlBin}
 
-Introduced in: v26.8.0
+Introduit dans : v26.8.0
 
 Arrondit une valeur à l&#39;inférieur, vers un multiple de `roundTo`, comme le fait `bin()` en Kusto Query Language.
 
 La règle dépend des types des arguments : un nombre est arrondi arithmétiquement, une durée (qui
 est un `Interval`) est arrondie selon une durée, et une date-heure est arrondie selon une durée. Un date-heure
-KQL est un `DateTime64` ; les porteurs plus étroits `DateTime` et `Date` sont rejetés, car
-ils ne peuvent pas représenter tous les bins qu&#39;un date-heure KQL peut produire.
+KQL est un `DateTime64` ; une valeur des types plus étroits `DateTime`, `Date` ou `Date32` est
+d&#39;abord convertie en `DateTime64`, car ces types ne peuvent pas représenter tous les bins qu&#39;un date-heure KQL peut
+produire.
 
 Cette fonction sous-tend `bin()` lorsque `dialect = 'kusto'`. Elle n&#39;est pas destinée à être appelée directement
 depuis SQL.
 
-**Syntax**
+**syntaxe**
 
 ```sql
 kqlBin(value, roundTo)
@@ -790,7 +791,7 @@ kqlBin(value, roundTo)
 
 **Arguments**
 
-* `value` — Un nombre, une durée ou une date-heure (un `DateTime64`). - `roundTo` — La taille du bin.
+* `value` — Un nombre, une durée ou une date-heure (un `DateTime64`, `DateTime`, `Date` ou `Date32`). - `roundTo` — La taille du bin.
 
 **Valeur renvoyée**
 
@@ -834,7 +835,7 @@ Introduit dans : v26.8.0
 
 Arrondit une valeur à l&#39;inférieur, au multiple de `binSize` le plus proche compté à partir de `fixedPoint`, comme le fait la fonction `bin_at()` du Kusto Query Language. Les bins peuvent s&#39;aligner avant ou après le point de référence.
 
-La règle dépend des types d&#39;arguments : un nombre est arrondi arithmétiquement, une durée (qui est un `Interval`) est arrondie par une durée à partir d&#39;une durée, et une date-heure est arrondie par une durée comptée à partir d&#39;un point de référence de type date-heure. Une date-heure KQL est un `DateTime64` ; les types porteurs plus restreints `DateTime` et `Date` sont rejetés, car ils ne peuvent pas représenter tous les bins qu&#39;une date-heure KQL peut produire.
+La règle dépend des types d&#39;arguments : un nombre est arrondi arithmétiquement, une durée (qui est un `Interval`) est arrondie par une durée à partir d&#39;une durée, et une date-heure est arrondie par une durée comptée à partir d&#39;un point de référence de type date-heure. Une date-heure KQL est un `DateTime64` ; une valeur ou un point de référence relevant des types plus restreints `DateTime`, `Date` ou `Date32` est d&#39;abord converti en `DateTime64`, car ces types ne peuvent pas représenter tous les bins qu&#39;une date-heure KQL peut produire.
 
 Cette fonction implémente `bin_at()` lorsque `dialect = 'kusto'`. Elle n&#39;est pas destinée à être appelée directement depuis SQL.
 
@@ -846,7 +847,7 @@ kqlBinAt(value, binSize, fixedPoint)
 
 **Arguments**
 
-* `value` — Un nombre, une durée ou une date-heure (un `DateTime64`). - `binSize` — La taille du bin. - `fixedPoint` — Le point à partir duquel les bins sont comptés.
+* `value` — Un nombre, une durée ou une date-heure (un `DateTime64`, `DateTime`, `Date` ou `Date32`). - `binSize` — La taille du bin. - `fixedPoint` — Le point à partir duquel les bins sont comptés.
 
 **Valeur renvoyée**
 
@@ -864,7 +865,7 @@ SELECT kqlBinAt(6.5, 2.5, -0.5)
 4.5
 ```
 
-**datetime**
+**date-heure**
 
 ```sql title=Query
 SELECT kqlBinAt(toDateTime64('2026-08-01 12:34:56', 7, 'UTC'), toIntervalHour(1), toDateTime64('2026-08-01 00:30:00', 7, 'UTC'))

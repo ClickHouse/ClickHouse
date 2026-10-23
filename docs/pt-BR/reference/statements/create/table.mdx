@@ -420,6 +420,26 @@ ENGINE = <Engine>
 
 Para ver os codecs de uso geral, especializados e de criptografia disponíveis, consulte [Codecs de compressão de colunas](/pt-BR/reference/statements/create/table/codec).
 
+### Codecs para subcolunas {#subcolumn-codecs}
+
+Esta funcionalidade é experimental e requer a configuração [enable&#95;subcolumn&#95;codecs](/pt-BR/reference/settings/session-settings/enable#enable_subcolumn_codecs).
+
+Uma entrada `CODEC name (codec, ...)` na lista de colunas declara um codec para uma subcoluna, como um elemento de uma `Tuple` ou os valores de um `Map`:
+
+```sql
+CREATE TABLE subcolumn_codec_example
+(
+    id UInt64,
+    payload Tuple(ts DateTime64(3), value Float64),
+    attrs Map(String, Float64),
+    CODEC payload.ts (DoubleDelta, ZSTD),
+    CODEC attrs.values (Gorilla, ZSTD)
+)
+ENGINE = MergeTree ORDER BY id
+```
+
+Somente os motores da família `MergeTree` oferecem suporte a codecs para subcolunas. Uma coluna tem ou seu próprio codec ou codecs para suas subcolunas. Não é possível especificar codecs para subcolunas aninhadas: se um codec for declarado para `payload.meta`, nenhum poderá ser declarado para `payload.meta.seq`. Um elemento de um `Tuple` sem nome é referenciado por nomes entre aspas, como em ``CODEC `pair`.`2` (ZSTD)``, porque `pair.2` seria interpretado como um número. A subcoluna deve existir no tipo da coluna e não pode estar dentro de um valor `JSON`, `Dynamic` ou `Variant`. Fluxos que contêm apenas estrutura, como tamanhos de array ou mapas de nulos, recebem somente a parte de uso geral do codec. As declarações aparecem em `SHOW CREATE TABLE` e na coluna `subcolumn_codecs` de `system.columns`.
+
 ## Criar tabelas temporárias {#temporary-tables}
 
 O ClickHouse oferece suporte a tabelas temporárias, que desaparecem quando a sessão é encerrada. Para mais detalhes, consulte [CREATE TEMPORARY TABLE](/pt-BR/reference/statements/create/table/temporary-table).

@@ -418,6 +418,22 @@ SETTINGS iceberg_metadata_staleness_ms=120000
 
 **Remarque** : On considère actuellement que la taille du cache de métadonnées est suffisante pour contenir intégralement le dernier instantané de métadonnées de toutes les tables actives, si le préchargement asynchrone est activé.
 
+## Modification des paramètres de la table {#modify-settings}
+
+Les paramètres stockés uniquement dans la définition de table, et non dans les métadonnées Iceberg, peuvent être modifiés sur une table existante à l&#39;aide de `ALTER TABLE ... MODIFY SETTING` et `ALTER TABLE ... RESET SETTING` :
+
+* le lookup du fichier de métadonnées : `iceberg_use_version_hint`, `iceberg_recent_metadata_file_by_last_updated_ms_field` et `iceberg_metadata_async_prefetch_period_ms` ;
+* le compactage en arrière-plan et le nettoyage qui le suit : `allow_experimental_iceberg_compaction`, `allow_experimental_cleanup_old_data_files_compaction`, `iceberg_compaction_lock_lease_seconds`, `iceberg_compaction_delay_bias`, `iceberg_compaction_data_cleanup`, `iceberg_read_with_snapshot_lease`, `iceberg_snapshot_lease_seconds`, `iceberg_outdated_snapshot_lifetime_seconds`, `iceberg_compaction_commit_batch_size`, `iceberg_compaction_max_rows_in_data_file`, `iceberg_compaction_max_bytes_in_data_file`, `iceberg_max_number_datafiles_to_compact`, `iceberg_data_file_size_lower_threshold_compaction` et `iceberg_data_file_size_upper_threshold_compaction`.
+
+Les nouvelles valeurs s&#39;appliquent aux requêtes suivantes et sont stockées dans la définition de table. Les jobs en arrière-plan de la table sont arrêtés pendant la modification des paramètres, puis relancés avec les nouveaux paramètres : ainsi, désactiver `allow_experimental_iceberg_compaction` arrête le compactage en arrière-plan de la table, et l&#39;activer le démarre. Les autres paramètres ne sont pas modifiables, et une modification de paramètres ne peut pas être combinée à d&#39;autres commandes `ALTER` au sein d&#39;une même requête. Les tables d&#39;une base de données `DataLakeCatalog` ne permettent pas de modifier les paramètres.
+
+```sql
+ALTER TABLE example_table MODIFY SETTING iceberg_use_version_hint = 1;
+ALTER TABLE example_table RESET SETTING iceberg_use_version_hint;
+ALTER TABLE example_table MODIFY SETTING allow_experimental_iceberg_compaction = 0;
+ALTER TABLE example_table MODIFY SETTING iceberg_compaction_delay_bias = 600, iceberg_data_file_size_lower_threshold_compaction = 268435456;
+```
+
 ## Voir aussi {#see-also}
 
 * [fonction de table Iceberg](/fr/reference/functions/table-functions/iceberg)

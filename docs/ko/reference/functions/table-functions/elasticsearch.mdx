@@ -17,8 +17,8 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 ## 구문 {#syntax}
 
 ```sql
-elasticsearch('url', 'index'[, 'user', 'password'][, key = value, ...][, structure = 'document JSON'][, SETTINGS ...])
-elasticsearch(named_collection[, key = value, ...][, structure = 'document JSON'][, SETTINGS ...])
+elasticsearch('url', 'index'[, 'user', 'password'][, query('...')][, key = value, ...][, structure = 'document JSON'][, SETTINGS ...])
+elasticsearch(named_collection[, query('...')][, key = value, ...][, structure = 'document JSON'][, SETTINGS ...])
 ```
 
 <Note>
@@ -31,24 +31,26 @@ elasticsearch(named_collection[, key = value, ...][, structure = 'document JSON'
 
 ## 인수 {#arguments}
 
-| 인수         | 설명                                                                                                                                     |
-| ---------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `url`      | Elasticsearch 클러스터의 기준 URL입니다(예: `https://localhost:9200`). 자격 증명, 쿼리 문자열, 프래그먼트가 포함되지 않은 `http` 또는 `https` URL이어야 합니다.                |
-| `index`    | 읽을 인덱스입니다. Elasticsearch 특정 시점(point in time) API에서 허용하는 형식에 따라 별칭, 쉼표로 구분된 목록, 와일드카드 패턴도 지정할 수 있습니다. 일치하는 인덱스가 없는 패턴을 지정하면 오류가 발생합니다. |
-| `user`     | HTTP 기본 인증에 사용할 사용자 이름입니다(선택 사항).                                                                                                      |
-| `password` | HTTP 기본 인증에 사용할 비밀번호입니다(선택 사항이며, `user`와 함께 지정해야 합니다).                                                                                 |
+| 인수             | 설명                                                                                                                                                                                     |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `url`          | Elasticsearch 클러스터의 기준 URL입니다(예: `https://localhost:9200`). 자격 증명, 쿼리 문자열, 프래그먼트가 포함되지 않은 `http` 또는 `https` URL이어야 합니다.                                                                |
+| `index`        | 읽을 인덱스입니다. Elasticsearch 특정 시점(point in time) API에서 허용하는 형식에 따라 별칭, 쉼표로 구분된 목록, 와일드카드 패턴도 지정할 수 있습니다. 일치하는 인덱스가 없는 패턴을 지정하면 오류가 발생합니다.                                                 |
+| `user`         | HTTP 기본 인증에 사용할 사용자 이름입니다(선택 사항).                                                                                                                                                      |
+| `password`     | HTTP 기본 인증에 사용할 비밀번호입니다(선택 사항이며, `user`와 함께 지정해야 합니다).                                                                                                                                 |
+| `query('...')` | 읽을 문서를 선택하는 JSON 형식의 Elasticsearch [Query DSL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/querydsl) 객체입니다(선택 사항). 위치 인수 뒤에 지정해야 합니다. 기본값: `{"match_all": {}}`. |
 
 `url`, `index`, `user`, `password` 인수는 `key = value` 형식으로도 지정할 수 있습니다. 위치 인수는 이 순서대로 값이 할당되며, 같은 인수를 위치 인수와 키로 동시에 지정하거나 같은 키를 두 번 지정하면 오류가 발생합니다.
 
 다음 인수는 `key = value` 형식(또는 명명된 컬렉션의 키)으로 지정할 수 있습니다.
 
-| 키(Key)         | 설명                                                                                                                                                           |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `user`         | HTTP 기본 인증에 사용할 사용자 이름입니다.                                                                                                                                   |
-| `password`     | HTTP 기본 인증에 사용할 비밀번호입니다.                                                                                                                                     |
-| `bearer_token` | `Authorization: Bearer <token>` 형식으로 전송되는 토큰입니다(예: Elasticsearch 서비스 계정 토큰).                                                                                 |
-| `api_key`      | `Authorization: ApiKey <api_key>` 형식으로 전송되는 Elasticsearch API Key입니다. 값은 API Key 생성 API가 반환하는 Base64로 인코딩된 `id:api_key` 문자열입니다.                              |
-| `query`        | 읽을 문서를 선택하는 JSON 형식의 Elasticsearch [Query DSL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/querydsl) 객체입니다. 기본값: `{"match_all": {}}`. |
+| 키(Key)         | 설명                                                                                                                              |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `user`         | HTTP 기본 인증에 사용할 사용자 이름입니다.                                                                                                      |
+| `password`     | HTTP 기본 인증에 사용할 비밀번호입니다.                                                                                                        |
+| `bearer_token` | `Authorization: Bearer <token>` 형식으로 전송되는 토큰입니다(예: Elasticsearch 서비스 계정 토큰).                                                    |
+| `api_key`      | `Authorization: ApiKey <api_key>` 형식으로 전송되는 Elasticsearch API Key입니다. 값은 API Key 생성 API가 반환하는 Base64로 인코딩된 `id:api_key` 문자열입니다. |
+
+명명된 컬렉션에는 `query` 키를 포함할 수 있습니다. 이를 재정의하려면 컬렉션 이름 뒤에 `query('...')` 또는 `query = '...'`를 지정하십시오.
 
 이 외에도 테이블 함수에서는 다음 키를 사용할 수 있습니다.
 
@@ -100,8 +102,8 @@ Query DSL 객체를 사용해 Elasticsearch 측에서 데이터를 필터링하�
 ```sql
 SELECT _id
 FROM elasticsearch('https://localhost:9200', 'logs',
+                   query('{"term": {"level": "error"}}'),
                    bearer_token = '...',
-                   query = '{"term": {"level": "error"}}',
                    SETTINGS page_size = 1000);
 ```
 

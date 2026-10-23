@@ -33,7 +33,7 @@ Il est possible de faire un truncate ou un drop de cette table à tout moment en
 * `last_error_time` ([DateTime](/fr/reference/data-types/datetime)) — Heure à laquelle la dernière erreur s’est produite.
 * `last_error_message` ([String](/fr/reference/data-types/string)) — Message de la dernière erreur.
 * `last_error_query_id` ([String](/fr/reference/data-types/string)) — ID d’une requête ayant provoqué la dernière erreur (si disponible).
-* `last_error_trace` ([Array(UInt64)](/fr/reference/data-types/array)) — Trace de pile de la dernière erreur. Sur les plateformes ELF, à l’exception de FreeBSD, les adresses du binaire principal de ClickHouse sont stockées sous forme de décalages physiques dans le fichier, tandis que les autres sont des adresses de mémoire virtuelle au sein du processus du serveur ClickHouse.
+* `last_error_trace` ([Array(UInt64)](/fr/reference/data-types/array)) — Trace de pile de la dernière erreur. Sur les plateformes ELF, à l’exception de FreeBSD, les adresses du binaire principal de ClickHouse sont stockées sous forme de décalages physiques dans le fichier, tandis que les cadres situés en dehors de celui-ci (bibliothèques partagées, code JIT) sont stockés avec la valeur 0.
 * `last_error_symbols` ([Array(LowCardinality(String))](/fr/reference/data-types/array)) — Noms de symboles démanglés correspondant à last&#95;error&#95;trace.
 * `last_error_lines` ([Array(LowCardinality(String))](/fr/reference/data-types/array)) — Noms de fichiers et numéros de ligne correspondant à last&#95;error&#95;trace.
 

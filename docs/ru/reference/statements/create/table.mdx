@@ -420,6 +420,26 @@ ENGINE = <Engine>
 
 Сведения о доступных универсальных, специализированных кодеках и кодеках шифрования см. в разделе [Кодеки сжатия столбцов](/ru/reference/statements/create/table/codec).
 
+### Кодеки для подстолбцов {#subcolumn-codecs}
+
+Это экспериментальная возможность, для её использования необходимо включить настройку [enable&#95;subcolumn&#95;codecs](/ru/reference/settings/session-settings/enable#enable_subcolumn_codecs).
+
+Запись `CODEC name (codec, ...)` в списке столбцов задаёт кодек для подстолбца, например для элемента `Tuple` или для значений `Map`:
+
+```sql
+CREATE TABLE subcolumn_codec_example
+(
+    id UInt64,
+    payload Tuple(ts DateTime64(3), value Float64),
+    attrs Map(String, Float64),
+    CODEC payload.ts (DoubleDelta, ZSTD),
+    CODEC attrs.values (Gorilla, ZSTD)
+)
+ENGINE = MergeTree ORDER BY id
+```
+
+Кодеки для подстолбцов поддерживаются только движками семейства `MergeTree`. У столбца может быть либо собственный кодек, либо кодеки для его подстолбцов. Кодеки нельзя задавать для вложенных подстолбцов: если кодек объявлен для `payload.meta`, то для `payload.meta.seq` объявить его уже нельзя. К элементу безымянного `Tuple` обращаются по именам, заключённым в кавычки, например ``CODEC `pair`.`2` (ZSTD)``, поскольку `pair.2` будет интерпретировано как число. Подстолбец должен существовать в типе столбца и не может находиться внутри значения `JSON`, `Dynamic` или `Variant`. К потокам, которые хранят только структурную информацию, например размеры массивов или карты NULL, применяется только универсальная часть кодека. Объявления отображаются в выводе `SHOW CREATE TABLE` и в столбце `subcolumn_codecs` таблицы `system.columns`.
+
 ## Создание временных таблиц {#temporary-tables}
 
 ClickHouse поддерживает временные таблицы, которые удаляются после завершения сеанса. Подробнее см. [CREATE TEMPORARY TABLE](/ru/reference/statements/create/table/temporary-table).

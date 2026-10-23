@@ -587,6 +587,18 @@ IN 서브쿼리용으로 생성된 Set 객체를 동일한 뮤테이션의 여�
 기능을 위한 상위 제어 설정이며, 추가 기능은 각자의 설정으로
 별도로 제어될 수 있습니다.
 
+## enable_subcolumn_codecs {#enable_subcolumn_codecs}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "0"},{"label": "서브컬럼에 대한 코덱 선언을 활성화하는 새로운 설정입니다."}]}]} />
+
+`CREATE TABLE`의 `CODEC name (...)` 엔트리와 `ALTER TABLE ... MODIFY COLUMN name CODEC(...)`을 사용하여 `Tuple`의 원소나 `Map`의 키와 값(keys and values) 등 컬럼의 서브컬럼에 압축 코덱(compression codecs)을 선언할 수 있습니다.
+이러한 선언이 이미 있는 테이블(tables)은 이 설정과 관계없이 정상적으로 동작하며, 해당 선언은 언제든지 제거할 수 있습니다.
+서브컬럼 코덱이 선언된 테이블은 이전 버전의 서버에서 ATTACH할 수 없습니다.
+
 ## enable_sz3_codec {#enable_sz3_codec}
 
 <ExperimentalBadge />
