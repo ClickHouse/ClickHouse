@@ -19,7 +19,7 @@ MOCK_PORT = 18123
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance("node")
+instance = cluster.add_instance("node", stay_alive=True)
 
 
 def run_mock_server():
@@ -112,6 +112,13 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"CREATE NAMED COLLECTION ai_slow AS "
             f"provider = 'openai', "
             f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/slow', "
+            f"model = 'test-model', "
+            f"api_key = 'test-key'"
+        )
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_hang AS "
+            f"provider = 'openai', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/hang', "
             f"model = 'test-model', "
             f"api_key = 'test-key'"
         )
@@ -2853,5 +2860,26 @@ def test_cancelled_query_does_not_wait_for_other_queries_requests(started_cluste
         # A request that passed its cancellation check before the kill may still arrive.
         assert _concurrency_stats()["requests"] <= sent + 1
     finally:
-        instance.query(f"KILL QUERY WHERE query_id = '{qid_a}' SYNC")
+        # Fails with `NOTHING_TO_KILL` when the query was already killed above.
+        instance.query_and_get_answer_with_error(f"KILL QUERY WHERE query_id = '{qid_a}' SYNC")
         _set_ai_thread_pool_size(1000)
+
+
+def test_shutdown_after_cancelling_query_with_request_in_flight(started_cluster):
+    """A killed query does not wait for its request to `/v1/chat/hang`. The server shuts down right after,
+    while the request is still in flight, and must drain the AI request pool before destroying the context."""
+    _reset_concurrency()
+    qid = unique_query_id("ai_hang")
+    request = instance.get_query_request(
+        "SELECT aiGenerate(toString(number), map('credentials', 'ai_hang')) FROM numbers(1) FORMAT Null",
+        settings={"ai_function_max_retries": 0},
+        query_id=qid,
+    )
+    wait_condition(
+        _concurrency_stats, lambda stats: stats["requests"] >= 1, max_attempts=100, delay=0.1
+    )
+    instance.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC")
+    assert "Query was cancelled" in request.get_error()
+
+    instance.restart_clickhouse()
+    assert instance.query("SELECT aiGenerate('x', map('credentials', 'ai_slow'))").strip() != ""

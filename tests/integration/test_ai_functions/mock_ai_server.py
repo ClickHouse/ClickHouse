@@ -16,6 +16,8 @@ Endpoints:
   POST /v1/chat/slow                 — like `/v1/chat/completions`, but sleeps SLOW_RESPONSE_SECONDS
       before answering, so overlapping requests are observable in `/concurrency`.
   POST /v1/embeddings_slow           — like `/v1/embeddings`, but slow in the same way.
+  POST /v1/chat/hang                 — like `/v1/chat/slow`, but sleeps HANG_RESPONSE_SECONDS, so a
+      request is still in flight when the server shuts down.
   POST /v1/chat/jitter               — like `/v1/chat/completions` without a schema (echoes the user
       message), but sleeps a random 0 to JITTER_MAX_SECONDS first, so concurrent requests complete out
       of order.
@@ -95,6 +97,9 @@ FLAKY = {"fails_remaining": 0}
 # How long the slow endpoints take to answer. Long enough that concurrent requests overlap
 # observably, short enough not to slow the test down.
 SLOW_RESPONSE_SECONDS = 0.5
+
+# How long `/v1/chat/hang` takes to answer.
+HANG_RESPONSE_SECONDS = 5
 
 # Upper bound of the random delay of `/v1/chat/jitter`.
 JITTER_MAX_SECONDS = 0.3
@@ -323,6 +328,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._serve_slowly(lambda: make_embeddings_response(body))
             return
 
+        if parsed.path == "/v1/chat/hang":
+            self._serve_slowly(lambda: make_success_response(extract_user_message(body)), HANG_RESPONSE_SECONDS)
+            return
+
         if parsed.path == "/v1/chat/jitter":
             time.sleep(random.uniform(0, JITTER_MAX_SECONDS))
             self._send_json(200, make_success_response(extract_user_message(body)))
@@ -517,7 +526,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_response(404)
         self.end_headers()
 
-    def _serve_slowly(self, make_response):
+    def _serve_slowly(self, make_response, seconds=SLOW_RESPONSE_SECONDS):
         """Sleep, then answer, counting the request as in flight for the duration of the sleep.
         The window closes before the response is written, so a handler that has already answered
         can never overlap in `max_concurrency` with the request that answer unblocks."""
@@ -528,7 +537,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 CONCURRENCY["max_concurrency"], CONCURRENCY["in_flight"]
             )
         try:
-            time.sleep(SLOW_RESPONSE_SECONDS)
+            time.sleep(seconds)
             response = make_response()
         finally:
             with _LOCK:

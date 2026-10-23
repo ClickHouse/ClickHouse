@@ -164,7 +164,16 @@ std::optional<Response> runRequest(const AIRequestPolicy & policy, AIQuotaTracke
             {
                 ProfileEvents::increment(ProfileEvents::AIAPICallsRetried);
                 /// Exponential backoff. `makeRequestPolicy` bounds both settings, so the longest sleep is 160 seconds.
-                std::this_thread::sleep_for(std::chrono::milliseconds(policy.retry_initial_delay_ms << attempt));
+                /// Sleep in short steps, so the retry of a cancelled query does not hold the worker.
+                using Clock = std::chrono::steady_clock;
+                const Clock::time_point deadline = Clock::now() + std::chrono::milliseconds(policy.retry_initial_delay_ms << attempt);
+                while (!quota.isCancelled())
+                {
+                    const Clock::time_point now = Clock::now();
+                    if (now >= deadline)
+                        break;
+                    std::this_thread::sleep_for(std::min<Clock::duration>(deadline - now, std::chrono::milliseconds(100)));
+                }
                 continue;
             }
 
