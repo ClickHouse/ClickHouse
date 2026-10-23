@@ -31,6 +31,8 @@ public:
     std::optional<size_t> tryGetFileSize() override;
     std::optional<Field> getMetadata(const String & name) const override;
 
+    void setIOSchedulingSettings(const IOSchedulingSettings & io_scheduling) override;
+
     /// Forward positional reads so that decorators don't silently drop the capability.
     bool supportsReadAt() override { return impl->supportsReadAt(); }
     size_t readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t)> & progress_callback) const override { return impl->readBigAt(to, n, offset, progress_callback); }

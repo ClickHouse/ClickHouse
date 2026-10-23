@@ -2,12 +2,9 @@
 
 #include <base/types.h>
 
-#include <memory>
-
 namespace DB
 {
 
-class IClassifier;
 class ISchedulerQueue;
 class IAllocationQueue;
 class ResourceSchedulingContext;
@@ -26,7 +23,7 @@ struct ResourceLink
     IAllocationQueue * allocation_queue = nullptr; // queue for space-shared resources (memory, disk, etc)
 
     /// Per-query scheduling pointers, stamped by the classifier that produced this link (both
-    /// non-owning; owned by that classifier). `scheduling_context` is the
+    /// non-owning; the classifier owns them for the query's lifetime). `scheduling_context` is the
     /// query-global config (weight/priority/…); `scheduling_state` points straight at this query's
     /// per-resource slot for this leaf, so the query-aware schedulers reach it with one dereference.
     /// Requests tagged with this link carry both. `scheduling_context` is null for links not produced
@@ -65,14 +62,13 @@ struct ResourceLink
 
 /*
  * Everything required for IO scheduling.
- * `classifier` produced the links and owns what they point to, so a copy of these settings
- * keeps them valid after the query ends.
+ * Note that raw pointer are stored inside, so make sure that `ClassifierPtr` that produced
+ * resource links will outlive them. Usually classifier is stored in query `Context`.
  */
 struct IOSchedulingSettings
 {
     ResourceLink read_resource_link;
     ResourceLink write_resource_link;
-    std::shared_ptr<IClassifier> classifier;
 
     bool operator==(const IOSchedulingSettings &) const = default;
     explicit operator bool() const { return read_resource_link && write_resource_link; }

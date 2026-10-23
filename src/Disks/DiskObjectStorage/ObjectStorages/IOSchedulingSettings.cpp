@@ -17,12 +17,10 @@ Settings updateIOSchedulingSettingsImpl(const Settings & settings, const std::st
     if (auto query_context = CurrentThread::tryGetQueryContext())
     {
         Settings result(settings);
-        auto classifier = query_context->getWorkloadClassifier();
         if (!read_resource_name.empty())
-            result.io_scheduling.read_resource_link = classifier->get(read_resource_name);
+            result.io_scheduling.read_resource_link = query_context->getWorkloadClassifier()->get(read_resource_name);
         if (!write_resource_name.empty())
-            result.io_scheduling.write_resource_link = classifier->get(write_resource_name);
-        result.io_scheduling.classifier = std::move(classifier);
+            result.io_scheduling.write_resource_link = query_context->getWorkloadClassifier()->get(write_resource_name);
         return result;
     }
     return settings;
