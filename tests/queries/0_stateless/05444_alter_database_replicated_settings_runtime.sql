@@ -29,7 +29,7 @@ ALTER DATABASE {CLICKHOUSE_DATABASE_1:Identifier} MODIFY SETTING max_replication
 
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.after_lag (x UInt8) ENGINE = Memory;
 
-SELECT 'tables', name FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String} ORDER BY name;
+SHOW TABLES FROM {CLICKHOUSE_DATABASE_1:Identifier};
 
 -- Committing the entry sets `max_log_ptr` to its number, so the replica is consistent again.
 SELECT 'synced', max_log_ptr = log_ptr FROM system.database_replicas WHERE database = {CLICKHOUSE_DATABASE_1:String};
