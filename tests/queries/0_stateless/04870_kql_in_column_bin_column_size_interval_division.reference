@@ -82,3 +82,18 @@ Nullable(IntervalHour)
 15
 15
 -- a carrier the unwrapped form also rejects stays rejected --
+-- LowCardinality is transparent to the DateTime, Date and Date32 carriers --
+2026-08-01 12:00:00.0000000
+2026-08-01 12:00:00.0000000
+2026-08-01 00:00:00.0000000
+2026-08-01 00:00:00.0000000
+1950-03-04 00:00:00.0000000
+1950-03-04 00:00:00.0000000
+\N
+\N
+Nullable(DateTime64(7, \'UTC\'))
+Nullable(DateTime64(7, \'UTC\'))
+2026-08-01 12:30:00.0000000
+2026-08-01 12:30:00.0000000
+2026-08-01 10:00:00.0000000
+2026-08-01 10:00:00.0000000

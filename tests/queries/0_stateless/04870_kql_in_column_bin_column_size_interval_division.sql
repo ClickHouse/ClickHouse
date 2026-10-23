@@ -118,3 +118,19 @@ SELECT '-- a carrier the unwrapped form also rejects stays rejected --';
 SELECT kqlBin(toLowCardinality('x'), 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT kqlBin(toLowCardinality(toDate('2026-01-01')), 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT kqlBin(toLowCardinality(toDateTime('2026-01-01 00:00:00', 'UTC')), 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SELECT '-- LowCardinality is transparent to the DateTime, Date and Date32 carriers --';
+SELECT kqlBin(materialize(toLowCardinality(toDateTime('2026-08-01 12:34:56', 'UTC'))), toIntervalHour(1));
+SELECT kqlBin(materialize(toDateTime('2026-08-01 12:34:56', 'UTC')), toIntervalHour(1));
+SELECT kqlBin(toLowCardinality(toDate('2026-08-01')), toIntervalDay(1)) SETTINGS session_timezone = 'UTC';
+SELECT kqlBin(toDate('2026-08-01'), toIntervalDay(1)) SETTINGS session_timezone = 'UTC';
+SELECT kqlBin(toLowCardinality(toDate32('1950-03-04')), toIntervalDay(1)) SETTINGS session_timezone = 'UTC';
+SELECT kqlBin(toDate32('1950-03-04'), toIntervalDay(1)) SETTINGS session_timezone = 'UTC';
+SELECT kqlBin(toLowCardinality(nullIf(toNullable(toDateTime('2026-08-01 12:34:56', 'UTC')), toDateTime('2026-08-01 12:34:56', 'UTC'))), toIntervalHour(1));
+SELECT kqlBin(nullIf(toNullable(toDateTime('2026-08-01 12:34:56', 'UTC')), toDateTime('2026-08-01 12:34:56', 'UTC')), toIntervalHour(1));
+SELECT toTypeName(kqlBin(toLowCardinality(toNullable(toDateTime('2026-08-01 12:34:56', 'UTC'))), toIntervalHour(1)));
+SELECT toTypeName(kqlBin(toNullable(toDateTime('2026-08-01 12:34:56', 'UTC')), toIntervalHour(1)));
+SELECT kqlBinAt(materialize(toLowCardinality(toDateTime('2026-08-01 12:34:56', 'UTC'))), toIntervalHour(6), toDateTime64('2026-08-01 00:30:00', 7, 'UTC'));
+SELECT kqlBinAt(materialize(toDateTime('2026-08-01 12:34:56', 'UTC')), toIntervalHour(6), toDateTime64('2026-08-01 00:30:00', 7, 'UTC'));
+SELECT kqlBinAt(toDateTime64('2026-08-01 12:34:56', 7, 'UTC'), toIntervalHour(5), toLowCardinality(toDate('2026-08-01'))) SETTINGS session_timezone = 'UTC';
+SELECT kqlBinAt(toDateTime64('2026-08-01 12:34:56', 7, 'UTC'), toIntervalHour(5), toDate('2026-08-01')) SETTINGS session_timezone = 'UTC';
