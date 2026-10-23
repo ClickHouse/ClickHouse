@@ -1901,7 +1901,7 @@ SettingsChanges IcebergMetadata::getSettingsToResolveState(const DataLakeTableSt
     chassert(std::holds_alternative<Iceberg::TableStateSnapshot>(state));
 
     /// A user-given path is forwarded with the other table function settings.
-    if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed)
+    if ((*data_lake_settings)[DataLakeStorageSetting::iceberg_metadata_file_path].changed)
         return {};
 
     const String & path = std::get<Iceberg::TableStateSnapshot>(state).metadata_file_path;
