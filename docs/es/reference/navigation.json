@@ -188,7 +188,7 @@
             "es/reference/statements/system",
             "es/reference/statements/truncate",
             "es/reference/statements/undrop",
-            "reference/statements/update",
+            "es/reference/statements/update",
             "es/reference/statements/use"
           ]
         },
