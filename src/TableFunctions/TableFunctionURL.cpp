@@ -41,7 +41,6 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int NOT_IMPLEMENTED;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -385,11 +384,10 @@ StoragePtr TableFunctionURL::getStorage(
         ? getURLAndArchivePattern(source)
         : std::pair<String, std::optional<String>>{source, std::nullopt};
     const bool use_web_wildcard = !is_insert_query && configuration.http_method.empty() && urlPathHasListableGlobs(url);
-    const bool use_web_object_storage = use_web_wildcard
-        || (!is_insert_query && configuration.http_method.empty() && archive_pattern.has_value());
-
-    if (is_insert_query && archive_pattern)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Path '{}' contains archive. Write into archive is not supported", source);
+    /// `is_insert_query` also marks persistent table creation and metadata replay, not just writes.
+    /// Archives always need `StorageObjectStorage`; actual writes are rejected by its `createSink`.
+    /// Custom HTTP methods with archive syntax are already rejected by `parseArgumentsImpl`.
+    const bool use_web_object_storage = use_web_wildcard || archive_pattern.has_value();
 
     const bool can_use_parallel_replicas = context->canReplaceClusterEngineWithClusterVariant()
         && !is_secondary_query
