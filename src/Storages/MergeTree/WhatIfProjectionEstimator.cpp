@@ -217,7 +217,7 @@ Pipe makePartPipe(
     return pipe;
 }
 
-/// one row for each group with the merged states, as a merge of aggregate projection parts leaves
+/// one row for each group, with the merged states, as in a merged aggregate projection part
 Block mergeGroups(const Blocks & blocks)
 {
     Block all = concatenateBlocks(blocks);
