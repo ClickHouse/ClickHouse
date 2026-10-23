@@ -6,13 +6,19 @@
 --
 -- `merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once` is off so that the width comes
 -- from the memory estimate alone and not from how full the partition is.
+--
+-- `merge_selector_base = 1000` is far above what six fresh parts reach, so background merges do not take the
+-- parts, and `OPTIMIZE`, which selects with the base of one, merges them synchronously. Otherwise a background
+-- merge could take the parts first and `OPTIMIZE` would find nothing left to merge.
 
 DROP TABLE IF EXISTS t_merge_width;
 
 CREATE TABLE t_merge_width (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k
 SETTINGS merge_memory_estimate_per_source_part_column = 1000000000000,
     min_parts_to_merge_at_once = 2,
-    merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once = 0;
+    merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once = 0,
+    merge_selector_algorithm = 'Simple',
+    merge_selector_base = 1000;
 
 SYSTEM STOP MERGES t_merge_width;
 INSERT INTO t_merge_width VALUES (1, 1);
