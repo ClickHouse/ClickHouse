@@ -1584,7 +1584,7 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
     /// that only a freshly introduced definition needs.
     create.attach_short_syntax = true;
 
-    auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context, LoadingStrictnessLevel::ATTACH);
+    auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list, system_context, LoadingStrictnessLevel::ATTACH);
     auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints, columns, system_context);
     auto data_path = database->getTableDataPath(create);
 
