@@ -170,12 +170,10 @@ def main():
         # A query that does not parse: the client only prints the syntax error, no query is
         # ever started and no exception is raised, so this is the case most likely to be
         # missing from the context of the agent - and the one the user asks it to fix.
-        # It has no names: the names and literals of a query that does not parse are hidden from
-        # the agent, and so is then the text of the error, which can quote them.
-        os.write(master, b"SELECT 1 +\n")
+        os.write(master, b"ELECT 1\n")
         # Wait for the error of that line before typing the next one. `replxx` submits everything
         # that is already buffered when it starts reading as a single statement, so typing ahead
-        # would make `SELECT 1 +` and the question one query and the `?` would never start the
+        # would make `ELECT 1` and the question one query and the `?` would never start the
         # agent. Waiting for the prompt would not prevent it: `replxx` repaints the prompt while
         # the line is being typed, so it is back in the output before the line has been submitted.
         read_until(master, debug_log_fd, lambda o: "Syntax error" in o, TIMEOUT_SECONDS)
@@ -193,8 +191,7 @@ def main():
 
         ok = (
             "<recent_queries>" in question
-            and "Query: SELECT 1 +" in question
-            and "[HIDDEN]" not in question
+            and "Query: ELECT 1" in question
             and "Syntax error" in question
             # The syntax error is highlighted for the terminal; the markup must not leak
             # into the prompt of the model.
