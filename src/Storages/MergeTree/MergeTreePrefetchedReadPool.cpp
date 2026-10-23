@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+#include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreePrefetchedReadPool.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
@@ -450,11 +451,25 @@ void MergeTreePrefetchedReadPool::fillPerPartStatistics()
 
         part_stat.approx_size_of_mark = read_info.approx_size_of_mark;
 
+        /// A Compact part has no sizes of individual columns, but its reader prefetches a buffer
+        /// per column as well. The data of one column can be of any size up to the whole data file,
+        /// so the size of the data file is the bound of the buffer of every column.
+        /// Every requested column is charged, even if the part has no column with this name: the name
+        /// can be resolved to another column of the part by the reader (e.g. a pending `RENAME COLUMN`),
+        /// and every requested column has at most one buffer, so the estimate stays an upper bound.
+        std::optional<size_t> compact_part_column_size;
+        if (read_info.data_part_info->isCompactPart())
+            compact_part_column_size = std::max<size_t>(
+                read_info.data_part_info->getFileSizeOrZero(MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION), 1);
+
         auto update_stat_for_column = [&](const auto & column_name)
         {
             size_t column_size = 0;
-            auto column = read_info.data_part_info->tryGetColumn(column_name);
-            if (column)
+            if (compact_part_column_size)
+            {
+                column_size = *compact_part_column_size;
+            }
+            else if (auto column = read_info.data_part_info->tryGetColumn(column_name))
             {
                 if (column->isSubcolumn() && settings[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading])
                     column_size = read_info.data_part_info->getSubcolumnSize(column_name).data_compressed;
