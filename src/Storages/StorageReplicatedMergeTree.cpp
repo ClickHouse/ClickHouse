@@ -7667,9 +7667,7 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
     if (max_parts_metadata_version > 0)
     {
         auto zookeeper = getZooKeeper();
-        /// Raise it to the version, not by it, in version-checked batches. Each batch creates an ALTER_METADATA entry of
-        /// the version it reaches, so that every replica, including one that copied an intermediate version, reaches the
-        /// final version through the log. The intermediate SETs of a batch are never visible and write no data.
+        /// Each batch logs an ALTER_METADATA entry of the version it reaches, so a replica that cloned an earlier one catches up.
         Coordination::Stat metadata_stat;
         Coordination::Stat columns_stat;
         String metadata_str = zookeeper->get(zookeeper_path + "/metadata", &metadata_stat);
