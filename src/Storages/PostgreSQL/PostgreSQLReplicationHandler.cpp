@@ -2762,19 +2762,22 @@ void PostgreSQLReplicationHandler::ensureCoordinatedNamingCompatible()
 }
 
 
-void PostgreSQLReplicationHandler::ensureCoordinatedSourceClusterCompatible()
+String PostgreSQLReplicationHandler::fetchSourceSystemIdentifier()
 {
     /// `IDENTIFY_SYSTEM` reports the `system_identifier` of the PostgreSQL cluster, which is unique per
     /// cluster and shared by its physical standbys - exactly the identity of the source whose slot and
     /// publication the coordinated replicas share. It needs a replication connection, which this engine
     /// requires anyway.
-    String local_system_identifier;
-    {
-        postgres::Connection replication_connection(connection_info, /* replication */true);
-        pqxx::nontransaction tx(replication_connection.getRef());
-        pqxx::result result{tx.exec("IDENTIFY_SYSTEM")};
-        local_system_identifier = result[0][0].as<std::string>();
-    }
+    postgres::Connection replication_connection(connection_info, /* replication */true);
+    pqxx::nontransaction tx(replication_connection.getRef());
+    pqxx::result result{tx.exec("IDENTIFY_SYSTEM")};
+    return result[0][0].as<std::string>();
+}
+
+
+void PostgreSQLReplicationHandler::ensureCoordinatedSourceClusterCompatible()
+{
+    const String local_system_identifier = fetchSourceSystemIdentifier();
 
     auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::ensureCoordinatedSourceClusterCompatible");
 
@@ -2796,6 +2799,33 @@ void PostgreSQLReplicationHandler::ensureCoordinatedSourceClusterCompatible()
             "replication slot and publication. (If the existing setup was dropped incompletely, remove the leftover "
             "Keeper path manually.)",
             coordination_keeper_path, published_system_identifier, local_system_identifier);
+}
+
+
+void PostgreSQLReplicationHandler::checkTeardownTargetIsRecordedSourceCluster()
+{
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::checkTeardownTargetIsRecordedSourceCluster");
+
+    /// Fail closed: without a recorded identifier there is nothing to prove that the current target is the
+    /// source of this setup. Every replica publishes or checks the identifier before it creates or consumes
+    /// the shared slot and publication, and the teardown removes it only after the by-name drops, so a
+    /// missing node means that no replica of this setup ever created them, or that they are already dropped.
+    const String path = coordination_keeper_path + "/source_system_identifier";
+    String recorded_system_identifier;
+    if (!getContext()->getZooKeeper()->tryGet(path, recorded_system_identifier))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The source PostgreSQL cluster of the coordinated MaterializedPostgreSQL setup at Keeper path '{}' "
+            "is not recorded at {}, so the shared replication slot and publication are not dropped by name",
+            coordination_keeper_path, path);
+
+    const String target_system_identifier = fetchSourceSystemIdentifier();
+    if (target_system_identifier != recorded_system_identifier)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The coordinated MaterializedPostgreSQL setup at Keeper path '{}' replicates the PostgreSQL cluster with "
+            "system identifier {}, but the connection now points to the PostgreSQL cluster with system identifier {}. "
+            "The shared replication slot and publication are not dropped, because the objects with the same names "
+            "on that cluster do not belong to this setup",
+            coordination_keeper_path, recorded_system_identifier, target_system_identifier);
 }
 
 
@@ -3340,9 +3370,10 @@ void PostgreSQLReplicationHandler::removeCoordinationNodes(bool remove_metadata)
     if (remove_metadata)
     {
         remove_checked(coordination_keeper_path + "/naming");
-        remove_checked(coordination_keeper_path + "/source_system_identifier");
         remove_checked(coordination_keeper_path + "/table_set");
     }
+    /// The <keeper_path>/source_system_identifier node stays until the end of the teardown in shutdownFinal:
+    /// the by-name drops of the shared slot and publication check their target cluster against it.
     /// The nested Replicated tables remove their own trees under <keeper_path>/tables when they are
     /// dropped; only clean up the (then empty) parents. For the single-table engine the nested table is
     /// dropped after this handler shuts down, so this removal may legitimately fail as not-empty,
@@ -3911,6 +3942,12 @@ void PostgreSQLReplicationHandler::shutdownFinal()
         /// Do not use fault injection during cleanup: leaked replication slots
         /// can exhaust PostgreSQL's max_replication_slots and break subsequent
         /// MaterializedPostgreSQL databases.
+        /// The slot and publication are dropped by name, so make sure that the connection still points to the
+        /// PostgreSQL cluster they were created on. A mismatch throws, and the objects are reported below as
+        /// requiring manual cleanup.
+        if (coordination_enabled)
+            checkTeardownTargetIsRecordedSourceCluster();
+
         postgres::Connection connection(connection_info);
         connection.execWithRetry([&](pqxx::nontransaction & tx)
         {
@@ -3956,8 +3993,13 @@ void PostgreSQLReplicationHandler::shutdownFinal()
             auto zookeeper = getContext()->getZooKeeper();
             /// `tryRemove` reports recoverable Keeper failures (connection loss, operation timeout)
             /// through its return code, so it must be checked explicitly: a silently leftover token
-            /// would keep rejecting recreates on this keeper path.
-            auto code = zookeeper->tryRemove(coordination_keeper_path + "/teardown");
+            /// would keep rejecting recreates on this keeper path. The recorded source cluster goes
+            /// first, while the token still fences the path.
+            auto code = zookeeper->tryRemove(coordination_keeper_path + "/source_system_identifier");
+            if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
+                throw zkutil::KeeperException::fromPath(code, coordination_keeper_path + "/source_system_identifier");
+
+            code = zookeeper->tryRemove(coordination_keeper_path + "/teardown");
             if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
                 throw zkutil::KeeperException::fromPath(code, coordination_keeper_path + "/teardown");
 
