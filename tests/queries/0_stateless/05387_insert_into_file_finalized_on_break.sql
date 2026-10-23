@@ -48,6 +48,6 @@ SETTINGS max_block_size = 100, max_threads = 1, min_insert_block_size_rows = 1, 
     max_execution_time = 2, timeout_overflow_mode = 'break', max_rows_to_read = 0, max_bytes_to_read = 0, engine_file_truncate_on_insert = 1;
 
 SELECT count() > 0, min(value) = 0 AND max(value) + 1 = count() AND uniqExact(value) = count() FROM timeSeriesSamples(ts_05387);
-SELECT count() > 0 FROM timeSeriesTags(ts_05387);
+SELECT count() > 0, countIf(metric_name = 'm_05387') = count() FROM timeSeriesTags(ts_05387);
 
 DROP TABLE ts_05387;
