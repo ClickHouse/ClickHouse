@@ -221,7 +221,7 @@ void StringValuesSkippedByFilter::addLongValueToSample(const char * data, size_t
 
     /// Pieces spread along the value, so that a value whose beginning compresses differently from the rest is still
     /// represented. The last one ends with the value.
-    constexpr size_t pieces = 4;
+    constexpr size_t pieces = PIECES_IN_SAMPLE_OF_LONG_VALUE;
     const size_t piece_size = maxSampleBytesOfLongValue() / pieces;
     String sample;
     sample.reserve(pieces * piece_size);

@@ -160,6 +160,8 @@ struct StringValuesSkippedInBlock
     std::vector<size_t> short_values_sample_sizes;
     /// The total size of the long values, and samples of the first of them with their sizes. Each sample represents
     /// its value, and all of them together represent the long values beyond them in proportion to their sizes.
+    /// A sample consists of this many pieces of the same size spread along the value.
+    static constexpr size_t PIECES_IN_SAMPLE_OF_LONG_VALUE = 4;
     size_t long_values_bytes = 0;
     std::vector<std::pair<String, size_t>> long_values_samples;
 };

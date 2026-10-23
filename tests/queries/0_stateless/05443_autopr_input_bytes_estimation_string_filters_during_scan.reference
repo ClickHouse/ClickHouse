@@ -16,6 +16,10 @@
 1
 1
 1
+1
+1
+1
+1
 16
 16
 10
@@ -30,5 +34,7 @@ same_empty_granules	1	1
 same_large_matching_value	1	1
 same_large_replaced_value	1	1
 same_long_values	1	1
+same_repetitive_long_values	1	1
+same_repetitive_long_values_zstd	1	1
 same_varying_lengths	1	1
 1	1

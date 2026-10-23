@@ -548,13 +548,35 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
                             add(columnOfStringValues(skipped.short_values_sample, skipped.short_values_sample_sizes),
                                 short_values_bytes + replaced_offsets_bytes);
 
+                            /// A long value compresses better as a whole than its sample does by itself when it is
+                            /// repetitive, and the sample pays for the framing of a compressed block alone. So the size of
+                            /// the compressed value is extrapolated from the size of the compressed sample by how much
+                            /// it grows from a shorter sample of the same pieces, so that it is extrapolated from all of them.
                             size_t long_values_sampled_bytes = 0;
-                            for (const auto & [_, size] : skipped.long_values_samples)
-                                long_values_sampled_bytes += size;
+                            double long_values_sampled_compressed_bytes = 0;
                             for (const auto & [sample, size] : skipped.long_values_samples)
-                                add(columnOfStringValues(sample, {sample.size()}),
-                                    static_cast<size_t>(static_cast<double>(long_values_bytes) * static_cast<double>(size)
-                                                        / static_cast<double>(long_values_sampled_bytes)));
+                            {
+                                constexpr size_t pieces = StringValuesSkippedInBlock::PIECES_IN_SAMPLE_OF_LONG_VALUE;
+                                const size_t piece_size = sample.size() / pieces;
+                                String shorter;
+                                for (size_t i = 0; i < pieces; ++i)
+                                    shorter.append(sample, i * piece_size, piece_size / 4);
+                                const size_t compressed = estimateCompressedColumnSize(columnOfStringValues(sample, {sample.size()}), codecs).second;
+                                const size_t shorter_compressed
+                                    = estimateCompressedColumnSize(columnOfStringValues(shorter, {shorter.size()}), codecs).second;
+                                const double compressed_per_byte = static_cast<double>(compressed - std::min(compressed, shorter_compressed))
+                                    / static_cast<double>(sample.size() - shorter.size());
+                                long_values_sampled_bytes += size;
+                                long_values_sampled_compressed_bytes
+                                    += static_cast<double>(compressed) + static_cast<double>(size - sample.size()) * compressed_per_byte;
+                            }
+                            if (long_values_sampled_bytes)
+                            {
+                                const double weight = static_cast<double>(long_values_bytes) * rows_fraction;
+                                sample_bytes += static_cast<size_t>(weight);
+                                compressed_bytes += static_cast<size_t>(
+                                    weight * long_values_sampled_compressed_bytes / static_cast<double>(long_values_sampled_bytes));
+                            }
                         }
                     }
                 }

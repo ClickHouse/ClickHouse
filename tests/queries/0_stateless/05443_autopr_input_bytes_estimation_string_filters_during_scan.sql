@@ -29,6 +29,8 @@ DROP TABLE IF EXISTS t_compact_empty_granules;
 DROP TABLE IF EXISTS t_compact_long_values;
 DROP TABLE IF EXISTS t_compact_large_matching_value;
 DROP TABLE IF EXISTS t_compact_large_replaced_value;
+DROP TABLE IF EXISTS t_compact_repetitive_long_values;
+DROP TABLE IF EXISTS t_compact_repetitive_long_values_zstd;
 DROP TABLE IF EXISTS t_compact_large_values;
 DROP TABLE IF EXISTS t_compact_large_matching_values;
 DROP TABLE IF EXISTS t_compact_skip_index;
@@ -130,6 +132,21 @@ OPTIMIZE TABLE t_compact_large_replaced_value FINAL;
 SELECT count() FROM t_compact_large_replaced_value WHERE s LIKE '%needle%' SETTINGS max_threads=1, log_comment='same_large_replaced_value_1';
 SELECT count() FROM t_compact_large_replaced_value WHERE s LIKE '%needle%' SETTINGS max_threads=1, apply_string_filters_during_scan=0, log_comment='same_large_replaced_value_0';
 
+-- A long value is estimated from a short sample of it, which compresses worse by itself than the whole value does
+-- when the value is repetitive. Here the values are 1 MiB each, with `LZ4` and with `ZSTD`, which compresses them
+-- to so few bytes that a sample cannot tell how few: the bound for it is wider.
+CREATE TABLE t_compact_repetitive_long_values(id UInt64, s String CODEC(LZ4)) ENGINE=MergeTree ORDER BY id
+SETTINGS auto_statistics_types='', index_granularity=8192, index_granularity_bytes=1073741824, min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18;
+INSERT INTO t_compact_repetitive_long_values SELECT number, concat(if(number = 0, 'needle', ''), repeat(hex(cityHash64(number)), 65536)) FROM numbers(64);
+SELECT count() FROM t_compact_repetitive_long_values WHERE s LIKE '%needle%' SETTINGS max_threads=1, log_comment='same_repetitive_long_values_1';
+SELECT count() FROM t_compact_repetitive_long_values WHERE s LIKE '%needle%' SETTINGS max_threads=1, apply_string_filters_during_scan=0, log_comment='same_repetitive_long_values_0';
+
+CREATE TABLE t_compact_repetitive_long_values_zstd(id UInt64, s String CODEC(ZSTD(3))) ENGINE=MergeTree ORDER BY id
+SETTINGS auto_statistics_types='', index_granularity=8192, index_granularity_bytes=1073741824, min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18;
+INSERT INTO t_compact_repetitive_long_values_zstd SELECT * FROM t_compact_repetitive_long_values;
+SELECT count() FROM t_compact_repetitive_long_values_zstd WHERE s LIKE '%needle%' SETTINGS max_threads=1, log_comment='same_repetitive_long_values_zstd_1';
+SELECT count() FROM t_compact_repetitive_long_values_zstd WHERE s LIKE '%needle%' SETTINGS max_threads=1, apply_string_filters_during_scan=0, log_comment='same_repetitive_long_values_zstd_0';
+
 -- Only a bounded sample of the replaced values is kept to estimate how they compress: they can be long, and holding
 -- them in full would take far more memory than the read itself. The values are 1 MiB each, a granule has all of them.
 CREATE TABLE t_compact_large_values(id UInt64, s String) ENGINE=MergeTree ORDER BY id
@@ -173,7 +190,7 @@ SELECT log_comment, ProfileEvents['RuntimeDataflowStatisticsInputBytes'] > 0
 FROM system.query_log
 WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTES') AND (current_database = currentDatabase()) AND (log_comment = 'skip_index') AND (type = 'QueryFinish');
 
-SELECT name, filter_applied, greatest(with_filter, without_filter) / least(with_filter, without_filter) < 1.1
+SELECT name, filter_applied, greatest(with_filter, without_filter) / least(with_filter, without_filter) < if(endsWith(name, '_zstd'), 3, 1.1)
 FROM (
     SELECT
         replaceRegexpOne(log_comment, '_[01]$', '') AS name,
@@ -214,6 +231,8 @@ DROP TABLE t_compact_empty_granules;
 DROP TABLE t_compact_long_values;
 DROP TABLE t_compact_large_matching_value;
 DROP TABLE t_compact_large_replaced_value;
+DROP TABLE t_compact_repetitive_long_values;
+DROP TABLE t_compact_repetitive_long_values_zstd;
 DROP TABLE t_compact_large_values;
 DROP TABLE t_compact_large_matching_values;
 DROP TABLE t_compact_skip_index;
