@@ -244,6 +244,10 @@ struct Reader
         /// Column not in the file, fill it with default values.
         bool is_missing_column = false;
         bool needs_cast = false; // if output_type is different from input_type
+        /// The requested column is the `.size` subcolumn of this String column, never used for pruning.
+        bool string_sizes = false;
+        /// With `string_sizes`: the strings are decoded, and their sizes are taken after `needs_cast`.
+        bool string_sizes_from_strings = false;
 
         /// If set, the assembled column (a ColumnTuple) is wrapped in ColumnNullable using the group
         /// null map reconstructed from the leaves' definition levels. Used to read a physically

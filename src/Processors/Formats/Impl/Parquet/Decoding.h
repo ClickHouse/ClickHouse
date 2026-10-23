@@ -173,6 +173,8 @@ struct StringConverter
 {
     /// If true, the output is ColumnString, and no special conversion is needed.
     virtual bool isTrivial() const { return false; }
+    /// If true, the output is ColumnUInt64 with the sizes of the strings.
+    virtual bool isSizesOnly() const { return false; }
 
     /// i-th string is range [offsets[i-1], offsets[i]-separator_bytes) in `chars`.
     /// `offsets[-1]` must be valid and is not necessarily 0.
@@ -346,6 +348,15 @@ struct TrivialStringConverter : public StringConverter
 
     void convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn & col) const override;
     std::optional<Field> convertField(std::span<const char> data, bool /*is_max*/) const override;
+};
+
+/// Input physical type: BYTE_ARRAY.
+/// Output column type: UInt64, the sizes of the strings (the `.size` subcolumn of a String column).
+struct StringSizesConverter : public StringConverter
+{
+    bool isSizesOnly() const override { return true; }
+
+    void convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn & col) const override;
 };
 
 /// A thing that byteswaps and sign-extends integers up to 32 bytes long.

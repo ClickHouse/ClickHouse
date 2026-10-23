@@ -1055,7 +1055,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
                 continue;
             const OutputColumnInfo & output_info = output_columns[output_idx.value()];
 
-            if (output_info.is_primitive)
+            if (output_info.is_primitive && !output_info.string_sizes)
                 primitive_columns[output_info.primitive_start].used_by_key_condition = true;
         }
     }
@@ -4226,6 +4226,9 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
         chassert(col->use_count() == 1);
         res = IColumn::mutate(std::move(col));
     }
+
+    if (output_info.string_sizes_from_strings)
+        res = IColumn::mutate(assert_cast<const ColumnString &>(*res).createSizeSubcolumn());
 
     return res;
 }

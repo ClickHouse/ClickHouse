@@ -478,8 +478,13 @@ bool StorageObjectStorage::canMoveConditionsToPrewhere() const
 std::optional<NameSet> StorageObjectStorage::supportedPrewhereColumns() const
 {
     auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
-    return metadata_snapshot->getColumnsWithoutDefaultExpressions(
-        /*exclude=*/ hive_partitioning_columns.get()->hive_partition_columns_to_read_from_file_path);
+    const auto & hive_partition_columns = hive_partitioning_columns.get()->hive_partition_columns_to_read_from_file_path;
+    auto names = metadata_snapshot->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns);
+    /// A data lake may hold files in formats that cannot read `s.size`.
+    if (supports_prewhere && !configuration->isDataLakeConfiguration())
+        for (const auto & name : getStringColumnsWithNativeSizes(*metadata_snapshot, hive_partition_columns.getNameSet()))
+            names.insert(name + ".size");
+    return names;
 }
 
 IStorage::ColumnSizeByName StorageObjectStorage::getColumnSizes() const

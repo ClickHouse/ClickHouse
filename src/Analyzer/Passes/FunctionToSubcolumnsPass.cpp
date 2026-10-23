@@ -72,6 +72,8 @@ struct SubcolumnSupportAnswers
 {
     bool all_transformers;
     std::optional<bool> tuple_element_only;
+    /// PREWHERE columns of the storage, empty if it has no PREWHERE or admits all columns.
+    std::optional<NameSet> prewhere_columns;
 };
 
 using SubcolumnSupportCache = std::unordered_map<const IStorage *, SubcolumnSupportAnswers>;
@@ -80,7 +82,7 @@ SubcolumnSupportAnswers & getSubcolumnSupportAnswers(const IStorage & storage, S
 {
     auto it = cache.find(&storage);
     if (it == cache.end())
-        it = cache.emplace(&storage, SubcolumnSupportAnswers{storage.supportsOptimizationToSubcolumns(), std::nullopt}).first;
+        it = cache.emplace(&storage, SubcolumnSupportAnswers{storage.supportsOptimizationToSubcolumns(), std::nullopt, std::nullopt}).first;
     return it->second;
 }
 
@@ -1272,15 +1274,25 @@ ColumnNode * resolveTrivialAliasChain(ColumnNode * column_node)
 /// (see IStorage::supportsOptimizationToTupleElementSubcolumns). Applied by both passes through
 /// getTypedNodesForOptimization, so their decisions cannot diverge.
 bool storageAllowsTransformer(
-    const IStorage & storage, const IDataType & type, const String & function_name, SubcolumnSupportCache & cache)
+    const IStorage & storage, const IDataType & type, const String & column_name, const String & function_name, SubcolumnSupportCache & cache)
 {
     auto & answers = getSubcolumnSupportAnswers(storage, cache);
     if (answers.all_transformers)
         return true;
     if (!answers.tuple_element_only)
         answers.tuple_element_only = storage.supportsOptimizationToTupleElementSubcolumns();
+    if (!*answers.tuple_element_only)
+        return false;
     /// A `Nullable(Tuple(...))` element is a tuple element as well; `QBit` is not.
-    return *answers.tuple_element_only && function_name == "tupleElement" && isTuple(removeNullable(type.getPtr()));
+    if (function_name == "tupleElement")
+        return isTuple(removeNullable(type.getPtr()));
+
+    /// A storage lists `s.size` among its PREWHERE columns only if its format reads it without the strings.
+    if (type.getTypeId() != TypeIndex::String || (function_name != "length" && function_name != "empty" && function_name != "notEmpty"))
+        return false;
+    if (!answers.prewhere_columns)
+        answers.prewhere_columns = storage.supportsPrewhere() ? storage.supportedPrewhereColumns().value_or(NameSet{}) : NameSet{};
+    return answers.prewhere_columns->contains(column_name + ".size");
 }
 
 std::tuple<FunctionNode *, ColumnNode *, TableExpressionNodePtr>
@@ -1321,7 +1333,7 @@ getTypedNodesForOptimization(const QueryTreeNodePtr & node, const ContextPtr & c
     if (view_source && view_source->getStorageID().getFullNameNotQuoted() == storage->getStorageID().getFullNameNotQuoted())
         return {};
 
-    if (!storageAllowsTransformer(*storage, *column.type, function_node->getFunctionName(), subcolumn_support_cache)
+    if (!storageAllowsTransformer(*storage, *column.type, column.name, function_node->getFunctionName(), subcolumn_support_cache)
         || storage_snapshot->metadata->isVirtualColumn(column.name))
         return {};
 
@@ -1384,7 +1396,7 @@ getTypedNodesForChainedOptimization(
     if (view_source && view_source->getStorageID().getFullNameNotQuoted() == storage->getStorageID().getFullNameNotQuoted())
         return {};
 
-    if (!storageAllowsTransformer(*storage, *column.type, function_node->getFunctionName(), subcolumn_support_cache)
+    if (!storageAllowsTransformer(*storage, *column.type, column.name, function_node->getFunctionName(), subcolumn_support_cache)
         || storage_snapshot->metadata->isVirtualColumn(column.name))
         return {};
 

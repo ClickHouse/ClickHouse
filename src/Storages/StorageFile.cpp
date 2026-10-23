@@ -1393,7 +1393,11 @@ std::optional<NameSet> StorageFile::supportedPrewhereColumns() const
     /// Currently don't support prewhere for virtual columns, columns with default expressions,
     /// and columns taken from file path (hive partitioning).
     auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
-    return metadata_snapshot->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
+    auto names = metadata_snapshot->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
+    if (supports_prewhere)
+        for (const auto & name : getStringColumnsWithNativeSizes(*metadata_snapshot, hive_partition_columns_to_read_from_file_path.getNameSet()))
+            names.insert(name + ".size");
+    return names;
 }
 
 IStorage::ColumnSizeByName StorageFile::getColumnSizes() const
@@ -1726,6 +1730,7 @@ StorageFileSource::StorageFileSource(
     , requested_virtual_columns(info.requested_virtual_columns)
     , block_for_format(info.format_header)
     , serialization_hints(info.serialization_hints)
+    , string_sizes_columns(info.string_sizes_columns)
     , hive_partition_columns_to_read_from_file_path(info.hive_partition_columns_to_read_from_file_path)
     , max_block_size(max_block_size_)
     , need_only_count(need_only_count_)
@@ -2314,6 +2319,7 @@ Chunk StorageFileSource::generate()
 
             input_format->setBucketsToRead(buckets_to_read);
             input_format->setSerializationHints(serialization_hints);
+            input_format->setStringSizesColumns(string_sizes_columns);
 
             if (need_only_count)
                 input_format->needOnlyCount();
@@ -2802,7 +2808,8 @@ void StorageFile::read(
         context,
         supportsSubsetOfColumns(context),
         /*supports_tuple_elements=*/ supports_prewhere,
-        PrepareReadingFromFormatHiveParams {file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap()});
+        PrepareReadingFromFormatHiveParams {file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap()},
+        /*read_string_sizes=*/ true);
 
     if (query_info.prewhere_info)
         read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.prewhere_info);
@@ -3119,6 +3126,7 @@ public:
                         /*need_only_count=*/ false);
                 }
                 input_format->setSerializationHints(info.serialization_hints);
+                input_format->setStringSizesColumns(info.string_sizes_columns);
 
                 QueryPipelineBuilder builder;
                 builder.init(Pipe(input_format));

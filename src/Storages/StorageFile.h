@@ -451,6 +451,7 @@ private:
     NamesAndTypesList requested_virtual_columns;
     Block block_for_format;
     SerializationInfoByName serialization_hints;
+    NameSet string_sizes_columns;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 
     UInt64 max_block_size;

@@ -47,8 +47,10 @@ SELECT 'Q4', count(), sum(cityHash64(k, s, d)) = (SELECT sum(cityHash64(k, s, d)
 FROM file(currentDatabase() || '_05331_a.parquet') PREWHERE s LIKE '%o%';
 SELECT 'Q6', count(), sum(cityHash64(k, s, d)) = (SELECT sum(cityHash64(k, s, d)) FROM ref WHERE k % 3 = 0 AND s != 'a')
 FROM file(currentDatabase() || '_05331_a.parquet') PREWHERE k % 3 = 0 AND s != 'a' SETTINGS log_comment = '05331:q6';
+-- With `optimize_functions_to_subcolumns` this reads only the lengths `s.size`, not the dictionary indexes of `s`.
 SELECT 'Q7', count() = (SELECT count() FROM ref WHERE s != '')
-FROM file(currentDatabase() || '_05331_a.parquet') PREWHERE s != '' SETTINGS log_comment = '05331:q7';
+FROM file(currentDatabase() || '_05331_a.parquet') PREWHERE s != ''
+SETTINGS optimize_functions_to_subcolumns = 0, log_comment = '05331:q7';
 SELECT 'Q8', count(), sum(cityHash64(k, s, d)) = (SELECT sum(cityHash64(k, s, d)) FROM ref WHERE s != 'a' AND (k % 3 = 0 OR s = 'ab'))
 FROM file(currentDatabase() || '_05331_a.parquet') PREWHERE s != 'a' AND (k % 3 = 0 OR s = 'ab');
 SELECT 'Q9', count(), sum(cityHash64(upper(s))) = (SELECT sum(cityHash64(upper(s))) FROM ref WHERE k % 3 = 0 AND upper(s) != 'A')

@@ -38,6 +38,10 @@ namespace DB
         /// Hints for the serialization of columns.
         /// For example can be retrieved from the destination table in INSERT SELECT query.
         SerializationInfoByName serialization_hints{{}};
+        /// Requested `x.size` columns that are the sizes of the String column `x`; others are read by name.
+        NameSet string_sizes_columns;
+        /// `ReadFromObjectStorage` step serialization version from which `string_sizes_columns` is written.
+        static constexpr UInt64 STEP_VERSION_WITH_STRING_SIZES_COLUMNS = 1;
 
         void serialize(IQueryPlanStep::Serialization & ctx) const;
         static ReadFromFormatInfo deserialize(IQueryPlanStep::Deserialization & ctx);
@@ -95,16 +99,26 @@ namespace DB
     /// Note: currently `supports_tuple_elements` just means ParquetV3BlockInputFormat; if in future
     /// we add support for other subcolumn types in ParquetV3BlockInputFormat, we can just rename
     /// this bool instead of adding another one.
+    /// With `read_string_sizes`, `s.size` of `getStringColumnsWithNativeSizes` columns is requested as is.
     ReadFromFormatInfo prepareReadingFromFormat(
         const Strings & requested_columns,
         const StorageSnapshotPtr & storage_snapshot,
         const ContextPtr & context,
         bool supports_subset_of_columns,
         bool supports_tuple_elements = false,
-        const PrepareReadingFromFormatHiveParams & hive_parameters = {});
+        const PrepareReadingFromFormatHiveParams & hive_parameters = {},
+        bool read_string_sizes = false);
+
+    /// String columns whose `.size` the format reads from the file: no default expression, not an input
+    /// of a default expression, not a hive partition column, and no column named `<name>.size` up to case.
+    NameSet getStringColumnsWithNativeSizes(const StorageInMemoryMetadata & metadata, const NameSet & hive_partition_columns);
 
     /// Returns columns_to_read from file.
-    Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns);
+    /// `s.size` of a column in `string_columns_with_native_sizes` is requested as is and added to `string_sizes_columns`.
+    Names filterTupleColumnsToRead(
+        NamesAndTypesList & requested_columns,
+        const NameSet & string_columns_with_native_sizes = {},
+        NameSet * string_sizes_columns = nullptr);
 
     ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, const PrewhereInfoPtr & prewhere_info);
 

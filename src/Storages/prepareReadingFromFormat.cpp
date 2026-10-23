@@ -20,6 +20,8 @@
 #include <Common/assert_cast.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 
+#include <Poco/String.h>
+
 #include <unordered_map>
 
 namespace DB
@@ -28,6 +30,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace Setting
@@ -41,7 +44,8 @@ ReadFromFormatInfo prepareReadingFromFormat(
     const ContextPtr & context,
     bool supports_subset_of_columns,
     bool supports_tuple_elements,
-    const PrepareReadingFromFormatHiveParams & hive_parameters)
+    const PrepareReadingFromFormatHiveParams & hive_parameters,
+    bool read_string_sizes)
 {
     const NamesAndTypesList & columns_in_data_file =
         hive_parameters.file_columns.empty() ? storage_snapshot->metadata->getColumns().getAllPhysical() : hive_parameters.file_columns;
@@ -81,7 +85,15 @@ ReadFromFormatInfo prepareReadingFromFormat(
     {
         if (supports_tuple_elements)
         {
-            columns_to_read = filterTupleColumnsToRead(info.requested_columns);
+            NameSet string_columns_with_native_sizes;
+            if (read_string_sizes)
+            {
+                NameSet hive_partition_columns;
+                for (const auto & [name, _] : hive_parameters.hive_partition_columns_to_read_from_file_path_map)
+                    hive_partition_columns.insert(name);
+                string_columns_with_native_sizes = getStringColumnsWithNativeSizes(*storage_snapshot->metadata, hive_partition_columns);
+            }
+            columns_to_read = filterTupleColumnsToRead(info.requested_columns, string_columns_with_native_sizes, &info.string_sizes_columns);
         }
         else if (!columns_to_read.empty())
         {
@@ -141,7 +153,34 @@ ReadFromFormatInfo prepareReadingFromFormat(
     return info;
 }
 
-Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns)
+NameSet getStringColumnsWithNativeSizes(const StorageInMemoryMetadata & metadata, const NameSet & hive_partition_columns)
+{
+    const auto & columns = metadata.getColumns();
+    NameSet lowercase_names;
+    /// `AddingDefaultsTransform` evaluates a missing column's default from the columns read.
+    NameSet needed_by_defaults;
+    for (const auto & column : columns)
+    {
+        lowercase_names.insert(Poco::toLower(column.name));
+        if (column.default_desc.expression)
+        {
+            RequiredSourceColumnsVisitor::Data inputs;
+            RequiredSourceColumnsVisitor(inputs).visit(column.default_desc.expression);
+            needed_by_defaults.merge(inputs.requiredColumns());
+        }
+    }
+
+    NameSet res;
+    for (const auto & column : columns.getAllPhysical())
+        if (column.type->getTypeId() == TypeIndex::String && !columns.get(column.name).default_desc.expression
+            && !hive_partition_columns.contains(column.name) && !needed_by_defaults.contains(column.name)
+            && !lowercase_names.contains(Poco::toLower(column.name) + ".size"))
+            res.insert(column.name);
+    return res;
+}
+
+Names filterTupleColumnsToRead(
+    NamesAndTypesList & requested_columns, const NameSet & string_columns_with_native_sizes, NameSet * string_sizes_columns)
 {
     /// Format can read tuple element subcolumns, e.g. `t.x` or `t.a.x`.
     /// But we still need to do some processing on the set of requested columns:
@@ -159,6 +198,7 @@ Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns)
         String name;
         DataTypePtr type;
         bool is_duplicate = false;
+        bool is_string_sizes = false;
     };
 
     std::vector<SubcolumnInfo> columns_info(requested_columns.size());
@@ -177,7 +217,17 @@ Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns)
         auto & column_info = columns_info[idx];
         column_info.type = column_to_read.getTypeInStorage();
 
-        if (column_to_read.isSubcolumn())
+        if (column_to_read.isSubcolumn() && column_to_read.getSubcolumnName() == "size"
+            && column_info.type->getTypeId() == TypeIndex::String
+            && string_columns_with_native_sizes.contains(column_to_read.getNameInStorage()))
+        {
+            /// The sizes of a String column, read by the format itself. `StringSizes` is enumerated as
+            /// a stream only together with virtual streams, so add it directly.
+            column_info.path.push_back(ISerialization::Substream::StringSizes);
+            column_info.type = std::make_shared<DataTypeUInt64>();
+            column_info.is_string_sizes = true;
+        }
+        else if (column_to_read.isSubcolumn())
         {
             /// Element names may contain dots, so an element whose name prefixes the subcolumn name need not be on its path.
             /// Follow the substreams of the subcolumn the name resolves to, as getColumnFromBlock does.
@@ -237,7 +287,8 @@ Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns)
         ///  then to check this. E.g. consider `SELECT t.x, t.y, t`.)
         bool ancestor_requested = false;
         const auto & column_info = columns_info[idx];
-        for (size_t prefix_len = 0; prefix_len < column_info.path.size(); ++prefix_len)
+        /// `s.size` is read apart from `s`: it may be needed in an earlier PREWHERE step.
+        for (size_t prefix_len = 0; prefix_len < column_info.path.size() && !column_info.is_string_sizes; ++prefix_len)
         {
             String ancestor_name = column_to_read.getNameInStorage();
             if (prefix_len)
@@ -260,6 +311,8 @@ Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns)
         column_to_read.setDelimiterAndTypeInStorage(column_info.name, column_info.type);
         if (!column_info.is_duplicate)
             new_columns_to_read.push_back(column_info.name);
+        if (column_info.is_string_sizes && string_sizes_columns)
+            string_sizes_columns->insert(column_info.name);
     }
     return new_columns_to_read;
 
@@ -276,6 +329,8 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
 
     ReadFromFormatInfo new_info;
     new_info.prewhere_info = prewhere_info;
+    /// Also the columns read only as PREWHERE inputs: the format still reads them.
+    new_info.string_sizes_columns = info.string_sizes_columns;
 
     /// Removes columns that are only used as prewhere input.
     /// Adds prewhere outputs (the actual prewhere filter column is only added if
@@ -433,6 +488,21 @@ void ReadFromFormatInfo::serialize(IQueryPlanStep::Serialization & ctx) const
     if (prewhere_info != nullptr)
         prewhere_info->serialize(ctx);
 
+    /// Cache key bytes are only hashed in this process.
+    if (ctx.step_version >= STEP_VERSION_WITH_STRING_SIZES_COLUMNS || ctx.for_cache_key)
+    {
+        Names sorted_string_sizes_columns(string_sizes_columns.begin(), string_sizes_columns.end());
+        std::ranges::sort(sorted_string_sizes_columns);
+        writeVarUInt(sorted_string_sizes_columns.size(), ctx.out);
+        for (const auto & name : sorted_string_sizes_columns)
+            writeStringBinary(name, ctx.out);
+    }
+    else if (!string_sizes_columns.empty())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Reading the sizes of String columns from the format requires serialization version {} of the reading step, "
+            "but it is serialized at version {}; all nodes must be upgraded",
+            STEP_VERSION_WITH_STRING_SIZES_COLUMNS, ctx.step_version);
+
     ctx.out << "\n";
 }
 
@@ -472,6 +542,18 @@ ReadFromFormatInfo ReadFromFormatInfo::deserialize(IQueryPlanStep::Deserializati
     readBinary(has_prewhere_info, ctx.in);
     if (has_prewhere_info)
         result.prewhere_info = std::make_shared<PrewhereInfo>(PrewhereInfo::deserialize(ctx));
+
+    if (ctx.step_version >= STEP_VERSION_WITH_STRING_SIZES_COLUMNS)
+    {
+        size_t num_string_sizes_columns = 0;
+        readVarUInt(num_string_sizes_columns, ctx.in);
+        for (size_t i = 0; i < num_string_sizes_columns; ++i)
+        {
+            String name;
+            readStringBinary(name, ctx.in);
+            result.string_sizes_columns.insert(std::move(name));
+        }
+    }
 
     ctx.in >> "\n";
 
@@ -711,6 +793,7 @@ std::optional<ReadFromFormatInfo> splitLazilyReadColumnsFromFormatInfo(ReadFromF
     lazy_info.source_header = lazy_source_header;
     lazy_info.columns_description = info.columns_description;
     lazy_info.serialization_hints = info.serialization_hints;
+    lazy_info.string_sizes_columns = info.string_sizes_columns;
     for (const auto & column : info.requested_columns)
         if (lazy_names.contains(column.name))
             lazy_info.requested_columns.push_back(column);

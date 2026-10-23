@@ -124,6 +124,9 @@ public:
     /// in custom serializations (e.g. Sparse) for parsing and avoid extra conversion.
     virtual void setSerializationHints(const SerializationInfoByName & /*hints*/) {}
 
+    /// Requested `x.size` columns that are the sizes of the String column `x`, not columns named `x.size`.
+    virtual void setStringSizesColumns(const NameSet & /*columns*/) {}
+
     /// Not by value: if the insertion throws, `buffer` must stay with the caller, since this format still reads it.
     template <typename Buffer>
     void addBuffer(std::unique_ptr<Buffer> && buffer) { owned_buffers.emplace_back(std::move(buffer)); }

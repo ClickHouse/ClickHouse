@@ -29,10 +29,12 @@ CACHED="SELECT count() FROM system.columns_cache WHERE database = '' AND endsWit
 $CLICKHOUSE_CLIENT -q "SYSTEM DROP COLUMNS CACHE"
 
 # The admission control of the cache can skip a write: read the file until the payload column is there.
+# Without `optimize_functions_to_subcolumns = 0`, `length(s)` reads only the sizes of `s`, not `s` itself.
 for _ in {1..20}; do
     $CLICKHOUSE_CLIENT -q "SELECT sum(id), sum(length(s)) FROM ${SOURCE} FORMAT Null SETTINGS
         use_columns_cache = 1, enable_reads_from_columns_cache = 1, enable_writes_to_columns_cache = 1,
-        columns_cache_max_bytes_to_write_to_cache = 0, columns_cache_max_estimated_bytes_to_write_to_cache = 0"
+        columns_cache_max_bytes_to_write_to_cache = 0, columns_cache_max_estimated_bytes_to_write_to_cache = 0,
+        optimize_functions_to_subcolumns = 0"
     [ "$($CLICKHOUSE_CLIENT -q "${CACHED}")" = "1" ] && break
 done
 $CLICKHOUSE_CLIENT -q "${CACHED}"

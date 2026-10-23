@@ -1,0 +1,126 @@
+-- plan: s.size is read and filtered in PREWHERE, s is not read
+1	0
+1	0
+1	0
+1	0
+-- no rewrite: Nullable, LowCardinality, FixedString, tuple element, DEFAULT, CSV, Merge
+0
+0
+0
+0
+0
+0
+0
+-- positive control
+1
+-- results: PLAIN, dictionary, small pages with a page index, File engine, Merge
+424477	5000	15000	15000
+424477	5000	15000	15000
+57000	5000	15000	15000
+57000	5000	15000	15000
+375	1218750	10500
+375	1218750	10500
+5000	50000000	141492
+5000	50000000	141492
+19991	424253
+19991	424253
+-- results: block sizes
+26156	900
+26156	900
+424477	15000
+26156	900
+-- results: DELTA_BYTE_ARRAY, DELTA_LENGTH_BYTE_ARRAY, nulls read as non-Nullable String, dictionary falling back to PLAIN
+26156	26156	3591	11195	300	720	1028
+26156	26156	3591	11195	300	720	1028
+240	143880	5235	5235	1200	2231
+240	143880	5235	5235	1200	2231
+462
+462
+23	4
+23	4
+-- results: no pruning by the sizes
+100000
+100000
+100000
+100000
+-- s and s.size together
+14053	399013	https://example.com/99993213
+14053	399013	https://example.com/99993213
+15000
+15000
+v_0	3
+v_0	3
+v_0	3
+-- a column named s.size
+7
+7
+7
+abc	7
+abc	7
+abc	7
+abc	7
+abc	7
+abc	7
+3
+3
+3
+9	9	3
+3
+199990000	424477	0
+0
+9	21	9
+9	9	3
+-- a String column read from a tuple field
+59	11
+59	11
+11	112
+11	112
+-- a DEFAULT column missing from the file
+424477	424477	15000
+60000	60000	20000
+-- a DEFAULT column missing from the file, computed from s
+424477	444477
+15000	439477
+424477	444477
+-- a hive partition column
+0
+30	10	10
+-- an AggregateFunction column read from its values
+293	75	4950
+75	3750
+293	75	4950
+-- a table function whose schema changed
+5
+-- a table function whose schema changed, with a column named s.size
+3	21
+-- a table function whose file gained a column named s.size
+12	3
+12	3
+-- the same, and s changed type
+12	3
+12	3
+-- lazy materialization
+1
+19999	29
+19998	29
+19997	29
+19996	0
+19995	29
+19999	29
+19998	29
+19997	29
+19996	0
+19995	29
+-- s3
+1	0
+15000	150000000	424477
+15000	150000000	424477
+19999	29
+19998	29
+19997	29
+-- url
+1	0
+15000	150000000	424477
+-- iceberg
+0
+2168	750

@@ -197,7 +197,8 @@ public:
         auto actual_metadata = storage->getInMemoryMetadataPtr(query_context, false);
         auto cached_metadata = getInMemoryMetadataPtr(query_context, false);
         const auto & actual_columns = actual_metadata->getColumns();
-        auto cached_columns = cached_metadata->getColumns().getAllPhysical();
+        const auto & cached_columns_description = cached_metadata->getColumns();
+        auto cached_columns = cached_columns_description.getAllPhysical();
 
         NameSet drifted;
         for (const auto & cached : cached_columns)
@@ -207,11 +208,11 @@ public:
                 drifted.insert(cached.name);
         }
 
-        if (drifted.empty())
-            return supported;
-
         if (!supported)
         {
+            if (drifted.empty())
+                return supported;
+
             NameSet result;
             for (const auto & cached : cached_columns)
                 if (!drifted.contains(cached.name))
@@ -219,7 +220,19 @@ public:
             return result;
         }
 
-        std::erase_if(*supported, [&](const auto & name) { return drifted.contains(name); });
+        /// `x.size` is the column `x.size` if the storage has one, else the String size subcolumn of `x`
+        /// (see getStringColumnsWithNativeSizes). Keep it only if it means the same in both.
+        static constexpr std::string_view size_suffix = ".size";
+        std::erase_if(*supported, [&](const String & name)
+        {
+            if (drifted.contains(name))
+                return true;
+            if (!name.ends_with(size_suffix))
+                return false;
+            if (actual_columns.hasPhysical(name))
+                return !cached_columns_description.hasPhysical(name);
+            return drifted.contains(name.substr(0, name.size() - size_suffix.size()));
+        });
         return supported;
     }
 

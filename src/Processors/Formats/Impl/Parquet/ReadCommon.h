@@ -3,6 +3,7 @@
 #include <Access/Common/AccessType.h>
 #include <Core/UUID.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include <Core/Names.h>
 #include <Formats/FormatSettings.h>
 
 namespace DB
@@ -73,6 +74,9 @@ struct ReadOptions
     /// probability becomes very high. E.g. if bloom filter has 1% false positive probability,
     /// searching for 100 elements would have 63% false positive probability.
     size_t bloom_filter_max_set_size = 100;
+
+    /// Requested `x.size` columns to read as the sizes of the String column `x`, see IInputFormat::setStringSizesColumns.
+    NameSet string_sizes_columns;
 
     /// Null if the columns cache is not used.
     std::shared_ptr<const ColumnsCacheOptions> columns_cache;
