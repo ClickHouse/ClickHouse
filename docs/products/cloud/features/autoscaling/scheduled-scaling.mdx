@@ -53,7 +53,7 @@ A rule that changes the memory per replica while the replica range stays open (m
 
 Horizontal autoscaling compares per-replica usage from the last 3 and 30 hours with the current replica size. After a rule shrinks each replica, usage from the larger replicas reads as high utilization. For example, replicas that peaked at 13 vCPU out of 41 (32%) read as 130% once the rule drops them to 10 vCPU, so the autoscaler adds replicas. When the next rule grows the replicas again, the same history reads as low utilization and the replicas are removed, so the service oscillates with the schedule.
 
-To avoid this, change one dimension per rule: either keep the memory per replica fixed and schedule the replica range, or keep the replica range fixed (minimum equal to maximum) and schedule the memory. If you need both, set the maximum replicas in the smaller-memory window to a count you are willing to run.
+To avoid this, let the schedule change only one of the two settings. If horizontal autoscaling is enabled (minimum replicas below maximum), keep the memory per replica the same in every rule. If vertical autoscaling is enabled (minimum memory below maximum), keep the replica count the same in every rule. If you need to change both, reduce memory in smaller steps, for example 160 GiB to 80 GiB rather than 160 GiB to 40 GiB, so usage from the last 3 hours stays below the 80% watermark at the new size, and set the maximum replicas in the smaller-memory rule to a count you are willing to run.
 
 ## Handling spikes in workload {#handling-bursty-workloads}
 
