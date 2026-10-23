@@ -155,11 +155,12 @@ SELECT count() > 0 FROM (EXPLAIN ANALYZE indexes = 1
 -- The ' | ' delimiter is the pretty form, which EXPLAIN ANALYZE enables by default.
 WHERE explain ILIKE '%Parts: 1 | Granules: 16%';
 
--- Known gap, deliberately out of scope: reusing an index NAME after a killed DROP INDEX leaves the
--- old index files in the part while the name now means a different column. Both columns share a
--- type, so no type comparison can detect it and the stale granules still prune. Asserting the
--- current (wrong) answer keeps the gap visible; a fix for index identity staleness flips this line.
-SELECT '-- 10. known gap: index name reuse after a killed DROP INDEX';
+-- Reusing an index NAME after a killed DROP INDEX would leave the old index files in the part while
+-- the name means a different column. Both columns share a type, so no type comparison can detect it;
+-- the name reuse is refused instead (MergeTreeData::checkAddedIndexNameHasNoStaleFiles), so the
+-- granules of the previous definition can never be reached under the new one. The table keeps no
+-- index at all afterwards, which is why both reads below agree.
+SELECT '-- 10. index name reuse after a killed DROP INDEX is refused';
 DROP TABLE IF EXISTS t_name_reuse;
 CREATE TABLE t_name_reuse (k UInt64, v1 String, v2 String, INDEX idx v1 TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 4;
@@ -167,7 +168,7 @@ INSERT INTO t_name_reuse SELECT number, toString(number * 1000), toString(number
 SYSTEM STOP MERGES t_name_reuse;
 ALTER TABLE t_name_reuse DROP INDEX idx;
 KILL MUTATION WHERE table = 't_name_reuse' AND database = currentDatabase() FORMAT Null;
-ALTER TABLE t_name_reuse ADD INDEX idx v2 TYPE set(100) GRANULARITY 1;
+ALTER TABLE t_name_reuse ADD INDEX idx v2 TYPE set(100) GRANULARITY 1; -- { serverError BAD_ARGUMENTS }
 SELECT count() FROM t_name_reuse WHERE v2 = '7';
 SELECT count() FROM t_name_reuse WHERE v2 = '7' SETTINGS use_skip_indexes = 0;
 

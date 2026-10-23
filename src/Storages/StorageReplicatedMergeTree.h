@@ -353,6 +353,12 @@ public:
 
     std::map<std::string, MutationCommands> getUnfinishedMutationCommands() const override;
 
+    void checkSkipIndexNameCanBeForgotten(const String & index_name) const override;
+
+    /// Whether any replica may still have to apply this mutation, and so may still hold the parts it
+    /// has to rewrite. Reads the `mutation_pointer` of every replica; see the definition.
+    bool isMutationUnfinishedOnSomeReplica(const String & mutation_id) const;
+
     /// Check if there are new broken disks and enqueue part recovery tasks.
     void checkBrokenDisks();
 

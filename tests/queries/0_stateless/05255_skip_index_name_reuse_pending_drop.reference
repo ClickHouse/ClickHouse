@@ -1,0 +1,9 @@
+-- filter
+1
+1
+-- top-k at analysis time
+999999
+-- top-k at read time
+990000
+-- after the mutations are applied, the new index is used
+1

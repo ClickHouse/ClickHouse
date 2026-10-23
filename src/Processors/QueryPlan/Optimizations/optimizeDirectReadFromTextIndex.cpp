@@ -237,12 +237,27 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
 
     auto updated_columns = getColumnsUpdatedOnFly(*read_from_merge_tree_step);
 
+    /// An index whose name is reused by a `DROP INDEX` mutation that a part has not applied yet would
+    /// read the granules of the dropped index on that part, so it is refused for the whole step.
+    NameSet stale_indices;
+    const auto & mutations_snapshot = read_from_merge_tree_step->getMutationsSnapshot();
+    for (const auto & part : unique_parts)
+    {
+        const auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, read_from_merge_tree_step->getContext()
+#if CLICKHOUSE_CLOUD
+            , read_from_merge_tree_step->getContext()->getAccess()->getEnabledMaskingPolicies()
+#endif
+        );
+        const auto & part_stale_indices = alter_conversions->getStaleIndices();
+        stale_indices.insert(part_stale_indices.begin(), part_stale_indices.end());
+    }
+
     for (const auto & index : indexes->skip_indexes.useful_indices)
     {
         if (!index.index->isTextIndex())
             continue;
 
-        if (auto result = MergeTreeDataSelectExecutor::canUseIndex(index.index, metadata_snapshot, updated_columns); !result)
+        if (auto result = MergeTreeDataSelectExecutor::canUseIndex(index.index, metadata_snapshot, updated_columns, stale_indices); !result)
         {
             LOG_TRACE(logger, "Cannot use direct reading from text index. Reason: {}", result.error().text);
             continue;

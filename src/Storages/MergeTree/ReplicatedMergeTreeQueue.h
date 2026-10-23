@@ -462,6 +462,11 @@ public:
 
     std::map<std::string, MutationCommands> getUnfinishedMutations() const;
 
+    /// Commands of one mutation, whether or not this replica has finished it. `getUnfinishedMutations`
+    /// answers about this replica alone, which is not enough to decide what killing the mutation -
+    /// an operation that takes it away from every replica - would leave behind.
+    std::optional<MutationCommands> getCommandsOfMutation(const String & mutation_id) const;
+
     /// Returns functor which used by MergeTreeMergerMutator to select parts for merge
     std::shared_ptr<ReplicatedMergeTreeZooKeeperMergePredicate> getMergePredicate(zkutil::ZooKeeperPtr & zookeeper, std::optional<PartitionIdsHint> && partition_ids_hint);
 

@@ -2312,6 +2312,17 @@ std::map<std::string, MutationCommands> ReplicatedMergeTreeQueue::getUnfinishedM
     return result;
 }
 
+std::optional<MutationCommands> ReplicatedMergeTreeQueue::getCommandsOfMutation(const String & mutation_id) const
+{
+    std::lock_guard lock(state_mutex);
+
+    auto it = mutations_by_znode.find(mutation_id);
+    if (it == mutations_by_znode.end())
+        return {};
+
+    return it->second.entry->commands;
+}
+
 std::shared_ptr<ReplicatedMergeTreeZooKeeperMergePredicate> ReplicatedMergeTreeQueue::getMergePredicate(
     zkutil::ZooKeeperPtr & zookeeper, std::optional<PartitionIdsHint> && partition_ids_hint)
 {

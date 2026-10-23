@@ -8965,6 +8965,16 @@ CancellationCode StorageReplicatedMergeTree::killMutation(const String & mutatio
 
     LOG_INFO(log, "Killing mutation {}", mutation_id);
 
+    /// Checked before the entry leaves the queue, which is what the check reads. `killMutation`
+    /// removes the mutation for every replica, so a replica that has already applied the drop must
+    /// not forget it on behalf of one that has not: ask for the commands whatever the local progress
+    /// is, and decide while any replica may still hold the files the drop has to remove.
+    if (auto commands = queue.getCommandsOfMutation(mutation_id);
+        commands && dropsSkipIndex(*commands) && isMutationUnfinishedOnSomeReplica(mutation_id))
+    {
+        checkDroppedSkipIndexNamesCanBeForgotten(*commands);
+    }
+
     auto mutation_entry = queue.removeMutation(zookeeper, mutation_id);
     if (!mutation_entry)
         return CancellationCode::NotFound;
@@ -10870,6 +10880,56 @@ String StorageReplicatedMergeTree::getTableSharedID() const
 std::map<std::string, MutationCommands> StorageReplicatedMergeTree::getUnfinishedMutationCommands() const
 {
     return queue.getUnfinishedMutations();
+}
+
+bool StorageReplicatedMergeTree::isMutationUnfinishedOnSomeReplica(const String & mutation_id) const
+{
+    /// A replica has applied every mutation up to its `mutation_pointer`, so one whose pointer has
+    /// not passed this mutation may still have parts holding what the mutation removes. Compared as
+    /// strings, the way `waitMutationToFinishOnReplicas` compares them. A replica with no pointer at
+    /// all - being created, or being dropped - and an inactive replica that is simply behind both
+    /// count as unfinished: the question is what is left on disk, not who is up.
+    auto zookeeper = getZooKeeper();
+    const fs::path replicas_path = fs::path(zookeeper_path) / "replicas";
+
+    for (const auto & replica : zookeeper->getChildren(replicas_path))
+    {
+        String mutation_pointer;
+        if (!zookeeper->tryGet(replicas_path / replica / "mutation_pointer", mutation_pointer) || mutation_pointer < mutation_id)
+            return true;
+    }
+
+    return false;
+}
+
+void StorageReplicatedMergeTree::checkSkipIndexNameCanBeForgotten(const String & index_name) const
+{
+    /// `killMutation` removes the mutation for every replica, so this replica must not answer from a
+    /// metadata snapshot it has not caught up with: an `ALTER` that gave the dropped index's name to a
+    /// new index may already be applied elsewhere, while here the name still looks free and the drop
+    /// would be forgotten for the whole table. The version of the `metadata` node is the metadata
+    /// version - `alterTableMetadata` sets that node with it as the expected version - so compare
+    /// against it and refuse while behind.
+    Coordination::Stat metadata_stat;
+    getZooKeeper()->get(zookeeper_path + "/metadata", &metadata_stat);
+
+    const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    const auto local_metadata_version = metadata_snapshot->getMetadataVersion();
+    if (metadata_stat.version > local_metadata_version)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot decide whether the drop of skip index {} of table {} may be forgotten: this replica "
+            "is at metadata version {} while the table is at {}, so an `ALTER` that gave this name to "
+            "another index may already be applied on another replica. Retry after this replica has "
+            "applied it, for example after SYSTEM SYNC REPLICA",
+            backQuoteIfNeed(index_name),
+            getStorageID().getNameForLogs(),
+            local_metadata_version,
+            metadata_stat.version);
+    }
+
+    MergeTreeData::checkSkipIndexNameCanBeForgotten(index_name);
 }
 
 void StorageReplicatedMergeTree::createTableSharedID(const ZooKeeperRetriesInfo & zookeeper_retries_info)
