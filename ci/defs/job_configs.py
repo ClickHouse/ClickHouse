@@ -1743,6 +1743,13 @@ class JobConfigs:
                 # Copied into the server config by `run-fuzzer.sh`
                 "./tests/config/config.d/clusters.xml",
                 "./tests/config/config.d/core_dump.yaml",
+                "./tests/config/config.d/named_collection.xml",
+                "./tests/config/config.d/disable_s3_env_credentials.xml",
+                "./tests/config/config.d/keeper_port.xml",
+                "./tests/config/config.d/zookeeper.xml",
+                "./tests/config/config.d/macros.xml",
+                # `run-fuzzer.sh` starts the S3 emulator with it
+                "./ci/jobs/scripts/functional_tests/setup_seaweedfs.sh",
                 "./tests/config/config.d/jemalloc_enable_global_profiler.yaml",
                 "./tests/config/config.d/jemalloc_flush_profile.yaml",
                 "./tests/config/config.d/listen.xml",
@@ -1802,6 +1809,13 @@ class JobConfigs:
                 # Copied into the server config by `run-fuzzer.sh`
                 "./tests/config/config.d/clusters.xml",
                 "./tests/config/config.d/core_dump.yaml",
+                "./tests/config/config.d/named_collection.xml",
+                "./tests/config/config.d/disable_s3_env_credentials.xml",
+                "./tests/config/config.d/keeper_port.xml",
+                "./tests/config/config.d/zookeeper.xml",
+                "./tests/config/config.d/macros.xml",
+                # `run-fuzzer.sh` starts the S3 emulator with it
+                "./ci/jobs/scripts/functional_tests/setup_seaweedfs.sh",
                 "./tests/config/config.d/jemalloc_enable_global_profiler.yaml",
                 "./tests/config/config.d/jemalloc_flush_profile.yaml",
                 "./tests/config/config.d/listen.xml",
@@ -1846,6 +1860,13 @@ class JobConfigs:
                 # Copied into the server config by `run-fuzzer.sh`
                 "./tests/config/config.d/clusters.xml",
                 "./tests/config/config.d/core_dump.yaml",
+                "./tests/config/config.d/named_collection.xml",
+                "./tests/config/config.d/disable_s3_env_credentials.xml",
+                "./tests/config/config.d/keeper_port.xml",
+                "./tests/config/config.d/zookeeper.xml",
+                "./tests/config/config.d/macros.xml",
+                # `run-fuzzer.sh` starts the S3 emulator with it
+                "./ci/jobs/scripts/functional_tests/setup_seaweedfs.sh",
                 "./tests/config/config.d/jemalloc_enable_global_profiler.yaml",
                 "./tests/config/config.d/jemalloc_flush_profile.yaml",
                 "./tests/config/config.d/listen.xml",
