@@ -6,7 +6,6 @@
 [['019999'], ['019998'], ['019997']] rows_read <= 6000: True
 [['000000'], ['000001'], ['000002']] rows_read <= 2000: True
 [['000000'], ['000001'], ['000002']] rows_read <= 6000: True
--- not for a LIMIT at which the sorting filters rows by its own threshold
 [[1500]] rows_read == 20000: True
 -- results identical with and without the optimization
 OK
@@ -58,6 +57,9 @@ OK
 asc_0	1	1
 asc_1	1	0
 desc_0	1	1
+desc_0_LowCardinality(Nullable(String))	1	1
+desc_0_LowCardinality(String)	1	1
+desc_0_Nullable(String)	1	1
 -- for the query condition cache such a read is a plain read
 t_05339: count without the cache: 19000
 t_05339: count with the cache is the count without it: 1
