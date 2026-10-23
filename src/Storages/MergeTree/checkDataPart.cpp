@@ -238,6 +238,9 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         }
         catch (...)
         {
+            if (isIOErrorException(std::current_exception()))
+                throw;
+
             throw Exception(
                 ErrorCodes::CORRUPTED_DATA,
                 "Failed to load file {} of data part {}, with error {}",
