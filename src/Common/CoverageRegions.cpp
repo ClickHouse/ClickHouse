@@ -115,7 +115,7 @@ ResolvedCoverage resolveCoverage(const std::vector<CovCounter> & name_refs)
     };
     struct LineKeyHash
     {
-        std::size_t operator()(const LineKey & k) const
+        std::size_t NO_SANITIZE_UNSIGNED_OVERFLOW operator()(const LineKey & k) const
         {
             std::size_t h = std::hash<std::string>{}(k.file);
             h ^= std::hash<uint32_t>{}(k.line_start) + 0x9e3779b9u + (h << 6) + (h >> 2);
@@ -249,7 +249,7 @@ CurrentCoverageRegions getCurrentCoverageRegions()
     };
     struct LineKeyHash
     {
-        std::size_t operator()(const LineKey & k) const
+        std::size_t NO_SANITIZE_UNSIGNED_OVERFLOW operator()(const LineKey & k) const
         {
             std::size_t h = std::hash<std::string>{}(k.file);
             h ^= std::hash<uint32_t>{}(k.line_start) + 0x9e3779b9u + (h << 6) + (h >> 2);
