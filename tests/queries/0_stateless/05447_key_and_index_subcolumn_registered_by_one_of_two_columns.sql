@@ -24,10 +24,10 @@ WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentData
 ORDER BY table;
 SELECT count() FROM t_horizontal WHERE has(j.m.keys, 'a');
 SELECT count() FROM t_horizontal WHERE has(j.m.keys, 'a') SETTINGS ignore_data_skipping_indices = 'i';
-SELECT trim(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_horizontal WHERE has(j.m.keys, 'nokey') SETTINGS use_skip_indexes_on_data_read = 0) WHERE explain ILIKE '%Granules: %';
+SELECT replaceRegexpOne(explain, '^[│└├─ ]+', '') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_horizontal WHERE has(j.m.keys, 'nokey') SETTINGS use_skip_indexes_on_data_read = 0) WHERE explain ILIKE '%Granules: %';
 SELECT count() FROM t_vertical WHERE has(j.m.keys, 'a');
 SELECT count() FROM t_vertical WHERE has(j.m.keys, 'a') SETTINGS ignore_data_skipping_indices = 'i';
-SELECT trim(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_vertical WHERE has(j.m.keys, 'nokey') SETTINGS use_skip_indexes_on_data_read = 0) WHERE explain ILIKE '%Granules: %';
+SELECT replaceRegexpOne(explain, '^[│└├─ ]+', '') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_vertical WHERE has(j.m.keys, 'nokey') SETTINGS use_skip_indexes_on_data_read = 0) WHERE explain ILIKE '%Granules: %';
 
 SELECT '-- untyped JSON declared first, insert and merge';
 CREATE TABLE t_json_first (id UInt64, j JSON, `j.m` Map(String, String), INDEX i j.m.keys TYPE bloom_filter GRANULARITY 1)
@@ -69,7 +69,7 @@ INSERT INTO t_mutation SELECT number, '{"m":{"keys":["zzz"]}}', map('a', toStrin
 ALTER TABLE t_mutation UPDATE `j.m` = map('b', toString(id)) WHERE 1 SETTINGS mutations_sync = 2;
 SELECT count() FROM t_mutation WHERE has(j.m.keys, 'b');
 SELECT count() FROM t_mutation WHERE has(j.m.keys, 'b') SETTINGS ignore_data_skipping_indices = 'i';
-SELECT trim(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_mutation WHERE has(j.m.keys, 'nokey') SETTINGS use_skip_indexes_on_data_read = 0) WHERE explain ILIKE '%Granules: %';
+SELECT replaceRegexpOne(explain, '^[│└├─ ]+', '') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_mutation WHERE has(j.m.keys, 'nokey') SETTINGS use_skip_indexes_on_data_read = 0) WHERE explain ILIKE '%Granules: %';
 
 SELECT '-- part written before the column was added';
 CREATE TABLE t_old_part (id UInt64, j JSON, v UInt64) ENGINE = MergeTree ORDER BY id
@@ -79,11 +79,11 @@ ALTER TABLE t_old_part ADD COLUMN `j.m` Map(String, String);
 INSERT INTO t_old_part SELECT number + 100, '{"m":{"keys":["zzz"]}}', number, map('a', toString(number)) FROM numbers(100);
 ALTER TABLE t_old_part ADD INDEX i j.m.keys TYPE bloom_filter GRANULARITY 1;
 ALTER TABLE t_old_part MATERIALIZE INDEX i SETTINGS mutations_sync = 2;
-SELECT trim(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_old_part WHERE has(j.m.keys, 'nokey') SETTINGS use_skip_indexes_on_data_read = 0) WHERE explain ILIKE '%Granules: %';
+SELECT replaceRegexpOne(explain, '^[│└├─ ]+', '') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_old_part WHERE has(j.m.keys, 'nokey') SETTINGS use_skip_indexes_on_data_read = 0) WHERE explain ILIKE '%Granules: %';
 ALTER TABLE t_old_part UPDATE v = v + 1 WHERE 1 SETTINGS mutations_sync = 2;
 SELECT count() FROM t_old_part WHERE has(j.m.keys, 'a');
 SELECT count() FROM t_old_part WHERE has(j.m.keys, 'a') SETTINGS ignore_data_skipping_indices = 'i';
-SELECT trim(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_old_part WHERE has(j.m.keys, 'nokey') SETTINGS use_skip_indexes_on_data_read = 0) WHERE explain ILIKE '%Granules: %';
+SELECT replaceRegexpOne(explain, '^[│└├─ ]+', '') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_old_part WHERE has(j.m.keys, 'nokey') SETTINGS use_skip_indexes_on_data_read = 0) WHERE explain ILIKE '%Granules: %';
 
 SELECT '-- TTL GROUP BY re-sorting by the sorting key';
 CREATE TABLE t_ttl_group_by (`j.m` Map(String, String), j JSON(`m.keys` Array(String)), ts DateTime('UTC'), v UInt32)
