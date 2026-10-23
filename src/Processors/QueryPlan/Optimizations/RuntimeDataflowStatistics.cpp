@@ -174,23 +174,30 @@ static std::pair<size_t, size_t> estimateCompressedColumnSize(const ColumnWithTy
 /// Restores the values that a `StringValueFilter` replaced with empty strings in the first rows of a `String` or
 /// `Nullable(String)` column, at most `max_rows`, and as far as the sample of the replaced values goes. Every empty
 /// string of the filtered column is a replaced value, because a matching value is never empty, so the values of the
-/// sample, which are in the order of reading, go to the empty strings in turn.
+/// sample, which are in the order of reading, go to the empty strings in turn. The matching values are sampled as the
+/// replaced ones are (see `appendSampleOfStringValue`), so that the restored rows take about `max_bytes` at most.
+/// The restored rows only tell how the column compresses, not how large it is.
 static ColumnWithTypeAndName restoreStringValuesSkippedByFilter(
-    const ColumnWithTypeAndName & column, const StringValuesSkippedInBlock & skipped, size_t max_rows)
+    const ColumnWithTypeAndName & column, const StringValuesSkippedInBlock & skipped, size_t max_rows, size_t max_bytes)
 {
     const auto * nullable = typeid_cast<const ColumnNullable *>(column.column.get());
     const auto & filtered = assert_cast<const ColumnString &>(nullable ? nullable->getNestedColumn() : *column.column);
 
     auto restored = ColumnString::create();
+    String value_sample;
     size_t sample_pos = 0;
     size_t sample_offset = 0;
+    size_t restored_bytes = 0;
     size_t rows = 0;
-    for (; rows < std::min(filtered.size(), max_rows); ++rows)
+    for (; rows < std::min(filtered.size(), max_rows) && restored_bytes < max_bytes; ++rows)
     {
         const auto value = filtered.getDataAt(rows);
         if (!value.empty())
         {
-            restored->insertData(value.data(), value.size());
+            value_sample.clear();
+            appendSampleOfStringValue(value_sample, value.data(), value.size(), max_bytes - restored_bytes);
+            restored->insertData(value_sample.data(), value_sample.size());
+            restored_bytes += value_sample.size();
             continue;
         }
 
@@ -199,6 +206,7 @@ static ColumnWithTypeAndName restoreStringValuesSkippedByFilter(
         const size_t size = skipped.sample_sizes[sample_pos++];
         restored->insertData(skipped.sample.data() + sample_offset, size);
         sample_offset += size;
+        restored_bytes += size;
     }
 
     ColumnPtr res = std::move(restored);
@@ -531,18 +539,21 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
                         }
                         else
                         {
-                            /// The values replaced with empty strings are missing from the column, so the sample is
-                            /// taken from the first rows with the values restored. It may cover fewer rows than
-                            /// the other columns, so it is scaled to keep the weight of the column.
-                            const size_t rows_to_sample = numRowsToSample(column.column->size());
-                            const auto restored = restoreStringValuesSkippedByFilter(column, skipped_it->second, rows_to_sample);
-                            const size_t restored_rows = restored.column->size();
-                            if (restored_rows)
+                            /// The values replaced with empty strings are missing from the column, so the compression
+                            /// ratio is taken from the first rows with the values restored. The weight of the column
+                            /// among the others is the size of the rows sampled from them, with the replaced values.
+                            const auto & skipped = skipped_it->second;
+                            const size_t rows = column.column->size();
+                            const size_t rows_to_sample = numRowsToSample(rows);
+                            const auto restored = restoreStringValuesSkippedByFilter(column, skipped, rows_to_sample, 64 * 1024);
+                            const auto [restored_sample, restored_compressed] = estimateCompressedColumnSize(restored, codecs);
+                            if (restored_sample)
                             {
-                                const auto [sample, compressed] = estimateCompressedColumnSize(restored, codecs);
-                                const double scale = static_cast<double>(rows_to_sample) / static_cast<double>(numRowsToSample(restored_rows));
-                                sample_bytes += static_cast<size_t>(static_cast<double>(sample) * scale);
-                                compressed_bytes += static_cast<size_t>(static_cast<double>(compressed) * scale);
+                                const double weight = static_cast<double>(column.column->byteSize() + skipped.bytes)
+                                    * static_cast<double>(rows_to_sample) / static_cast<double>(rows);
+                                sample_bytes += static_cast<size_t>(weight);
+                                compressed_bytes += static_cast<size_t>(
+                                    weight * static_cast<double>(restored_compressed) / static_cast<double>(restored_sample));
                             }
                         }
                     }

@@ -210,9 +210,28 @@ void StringValueFilter::updateStatsOfIndividualChecks(size_t checked_individuall
 void StringValuesSkippedByFilter::addToSampleImpl(const char * data, size_t size)
 {
     const size_t used = sample.size() + (sample_sizes.size() + 1) * sizeof(size_t);
-    const size_t sampled_size = std::min(size, max_sample_bytes - std::min(max_sample_bytes, used));
-    sample.append(data, sampled_size);
-    sample_sizes.push_back(sampled_size);
+    sample_sizes.push_back(appendSampleOfStringValue(sample, data, size, max_sample_bytes - std::min(max_sample_bytes, used)));
+}
+
+size_t appendSampleOfStringValue(String & to, const char * data, size_t size, size_t max_size)
+{
+    if (size <= max_size)
+    {
+        to.append(data, size);
+        return size;
+    }
+
+    /// The pieces are not too short to be compressed as the value is, and the last one ends with the value.
+    constexpr size_t max_pieces = 16;
+    constexpr size_t min_piece_size = 4096;
+    const size_t pieces = std::clamp<size_t>(max_size / min_piece_size, 1, max_pieces);
+    const size_t piece_size = max_size / pieces;
+    for (size_t i = 0; i < pieces; ++i)
+    {
+        const size_t piece_offset = pieces == 1 ? 0 : i * (size - piece_size) / (pieces - 1);
+        to.append(data + piece_offset, piece_size);
+    }
+    return pieces * piece_size;
 }
 
 }

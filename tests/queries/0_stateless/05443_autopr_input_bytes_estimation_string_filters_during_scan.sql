@@ -25,7 +25,10 @@ DROP TABLE IF EXISTS t_compact_unread_compressible;
 DROP TABLE IF EXISTS t_compact_unread_incompressible;
 DROP TABLE IF EXISTS t_compact_compressibility_changes;
 DROP TABLE IF EXISTS t_compact_varying_lengths;
+DROP TABLE IF EXISTS t_compact_empty_granules;
+DROP TABLE IF EXISTS t_compact_long_values;
 DROP TABLE IF EXISTS t_compact_large_values;
+DROP TABLE IF EXISTS t_compact_large_matching_values;
 DROP TABLE IF EXISTS t_compact_skip_index;
 
 -- Statistics are disabled so that reading them is not accounted in `ReadCompressedBytes`.
@@ -78,12 +81,36 @@ INSERT INTO t_compact_varying_lengths SELECT number, concat(if(number % 100 = 0,
 SELECT count() FROM t_compact_varying_lengths WHERE s LIKE '%needle%' SETTINGS max_threads=1, log_comment='same_varying_lengths_1';
 SELECT count() FROM t_compact_varying_lengths WHERE s LIKE '%needle%' SETTINGS max_threads=1, apply_string_filters_during_scan=0, log_comment='same_varying_lengths_0';
 
+-- The sample is taken anew for each block also when only empty values were replaced: here the first five granules
+-- are empty, and the sixth one, which is the next to be sampled, is not.
+CREATE TABLE t_compact_empty_granules(id UInt64, s String) ENGINE=MergeTree ORDER BY id
+SETTINGS auto_statistics_types='', index_granularity=8192, min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18;
+INSERT INTO t_compact_empty_granules SELECT id, if(id < 5 * 8192, '', s) FROM t_wide WHERE id < 6 * 8192;
+SELECT count() FROM t_compact_empty_granules WHERE s LIKE '%needle%' SETTINGS max_threads=1, log_comment='same_empty_granules_1';
+SELECT count() FROM t_compact_empty_granules WHERE s LIKE '%needle%' SETTINGS max_threads=1, apply_string_filters_during_scan=0, log_comment='same_empty_granules_0';
+
+-- A value longer than the sample is sampled along all of it: here a compressible beginning is followed by a long
+-- tail that does not compress at all.
+CREATE TABLE t_compact_long_values(id UInt64, s String) ENGINE=MergeTree ORDER BY id
+SETTINGS auto_statistics_types='', index_granularity=8192, min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18;
+INSERT INTO t_compact_long_values SELECT number, concat(if(number = 0, 'needle', ''), repeat('a', 65536),
+    arrayStringConcat(arrayMap(i -> reinterpretAsString(cityHash64(number, i)), range(16384))))
+FROM numbers(64);
+SELECT count() FROM t_compact_long_values WHERE s LIKE '%needle%' SETTINGS max_threads=1, log_comment='same_long_values_1';
+SELECT count() FROM t_compact_long_values WHERE s LIKE '%needle%' SETTINGS max_threads=1, apply_string_filters_during_scan=0, log_comment='same_long_values_0';
+
 -- Only a bounded sample of the replaced values is kept to estimate how they compress: they can be long, and holding
 -- them in full would take far more memory than the read itself. The values are 1 MiB each, a granule has all of them.
 CREATE TABLE t_compact_large_values(id UInt64, s String) ENGINE=MergeTree ORDER BY id
 SETTINGS auto_statistics_types='', index_granularity=8192, index_granularity_bytes=1073741824, min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18;
 INSERT INTO t_compact_large_values SELECT number, concat(if(number = 0, 'needle', ''), repeat(hex(cityHash64(number)), 65536)) FROM numbers(64);
 SELECT count() FROM t_compact_large_values WHERE s LIKE '%needle%' SETTINGS max_threads=1, max_memory_usage='32Mi', log_comment='large_values';
+
+-- The same holds for the matching values, which are sampled together with the replaced ones.
+CREATE TABLE t_compact_large_matching_values(id UInt64, s String) ENGINE=MergeTree ORDER BY id
+SETTINGS auto_statistics_types='', index_granularity=8192, index_granularity_bytes=1073741824, min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18;
+INSERT INTO t_compact_large_matching_values SELECT number, concat(if(number % 2 = 0, 'needle', ''), repeat(hex(cityHash64(number)), 65536)) FROM numbers(32);
+SELECT count() FROM t_compact_large_matching_values WHERE s LIKE '%needle%' SETTINGS max_threads=1, max_memory_usage='64Mi', log_comment='large_matching_values';
 
 -- The parts without matches are rejected by the skip index while reading, and a rejected read task must not
 -- use up the blocks to sample, or the part with matches, which comes last, has no sample to estimate the input.
@@ -140,5 +167,8 @@ DROP TABLE t_compact_unread_compressible;
 DROP TABLE t_compact_unread_incompressible;
 DROP TABLE t_compact_compressibility_changes;
 DROP TABLE t_compact_varying_lengths;
+DROP TABLE t_compact_empty_granules;
+DROP TABLE t_compact_long_values;
 DROP TABLE t_compact_large_values;
+DROP TABLE t_compact_large_matching_values;
 DROP TABLE t_compact_skip_index;
