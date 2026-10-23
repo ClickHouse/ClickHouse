@@ -1,0 +1,11 @@
+Usage and additional keys need no secrets privilege
+1
+1
+1
+1
+The secrets privilege is scoped to the collection and inherited from roles
+2
+1
+1
+Dictionary sources can add keys
+42
