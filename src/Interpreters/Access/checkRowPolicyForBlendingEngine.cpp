@@ -25,6 +25,8 @@
 #include <Storages/StorageTableFunction.h>
 #include <Storages/StorageView.h>
 
+#include <unordered_set>
+
 namespace DB
 {
 
@@ -160,8 +162,9 @@ std::vector<StoragePtr> getReadTargets(const IStorage & storage, const ContextPt
     return targets;
 }
 
-/// The visited set terminates the walk if the chain of underlying storages loops
-ConstStoragePtr findBlendingEngineImpl(const IStorage & storage, const ContextPtr & context, NameSet & visited)
+/// The visited set terminates the walk if the chain of underlying storages loops. It holds the storage objects, because the
+/// storages which nested table functions create can have the same name
+ConstStoragePtr findBlendingEngineImpl(const IStorage & storage, const ContextPtr & context, std::unordered_set<ConstStoragePtr> & visited)
 {
     /// A table function creates its storage with the privileges of the server and can open any table of it.
     /// A table function which reads data from outside of the server does not read a blending table.
@@ -179,7 +182,7 @@ ConstStoragePtr findBlendingEngineImpl(const IStorage & storage, const ContextPt
     if (const auto * proxy = dynamic_cast<const StorageProxy *>(&storage))
         return findBlendingEngineImpl(*proxy->getNested(), context, visited);
 
-    if (!visited.emplace(storage.getStorageID().getNameForLogs()).second)
+    if (!visited.emplace(storage.shared_from_this()).second)
         return nullptr;
 
     for (const auto & target : getReadTargets(storage, context))
@@ -196,7 +199,7 @@ ConstStoragePtr findBlendingEngineImpl(const IStorage & storage, const ContextPt
 
 ConstStoragePtr findBlendingEngine(const IStorage & storage, const ContextPtr & context)
 {
-    NameSet visited;
+    std::unordered_set<ConstStoragePtr> visited;
     return findBlendingEngineImpl(storage, context, visited);
 }
 
