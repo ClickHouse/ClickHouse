@@ -427,6 +427,30 @@ WHERE hasAnyTokens(t.s, ['hello']) OR b.category = 'nonexistent';
 
 DROP TABLE t_115999_postprocessor;
 
+-- `hasPhrase` matches tokens by position and rejects a tokenizer that cannot number them that way, so
+-- forwarding the index tokenizer here would make the function throw where it answers with its default.
+SELECT 'a tokenizer the function does not accept';
+CREATE TABLE t_115999_unsupported
+(
+    id UInt64,
+    group_id UInt64,
+    s String,
+    INDEX idx_s s TYPE text(tokenizer = sparseGrams(3))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO t_115999_unsupported VALUES (1, 1, 'hello world');
+
+SELECT count() FROM t_115999_unsupported WHERE hasPhrase(s, 'hello world');
+SELECT count() FROM t_115999_unsupported AS t INNER JOIN t_115999_side AS b ON t.group_id = b.group_id
+WHERE hasPhrase(t.s, 'hello world') OR b.category = 'nonexistent';
+-- The same index still forwards its tokenizer to a function that does accept it.
+SELECT count() FROM t_115999_unsupported AS t INNER JOIN t_115999_side AS b ON t.group_id = b.group_id
+WHERE hasAnyTokens(t.s, ['hello']) OR b.category = 'nonexistent';
+
+DROP TABLE t_115999_unsupported;
+
 -- A Distributed table carries no indexes of its own, so the initiator has to reach the shards' local
 -- table by name; otherwise a predicate it evaluates itself disagrees with the shard-local scans.
 SELECT 'a Distributed haystack, predicate on the initiator';

@@ -25,6 +25,7 @@
 
 #include <algorithm>
 #include <map>
+#include <tuple>
 
 namespace DB
 {
@@ -312,7 +313,7 @@ public:
         if (arguments.size() != 2)
             return;
 
-        auto tokenizer = findTextIndexTokenizer(arguments.front());
+        auto tokenizer = findTextIndexTokenizer(arguments.front(), function_node->getFunctionName());
         if (tokenizer.empty())
             return;
 
@@ -321,10 +322,11 @@ public:
     }
 
 private:
-    /// Constructing a tokenizer can load a dictionary, so ask each index at most once.
-    std::map<std::pair<const IStorage *, String>, String> tokenizer_cache;
+    /// Constructing a tokenizer can load a dictionary, so ask each index at most once per function name.
+    /// The function is part of the key because whether a tokenizer may be forwarded depends on it.
+    std::map<std::tuple<const IStorage *, String, String>, String> tokenizer_cache;
 
-    String findTextIndexTokenizer(const QueryTreeNodePtr & expression)
+    String findTextIndexTokenizer(const QueryTreeNodePtr & expression, const String & function_name)
     {
         size_t substitutions = 0;
         auto [resolved, storage] = resolveToTableColumns(expression, getContext(), substitutions);
@@ -336,13 +338,13 @@ private:
         if (indices.empty())
             return {};
 
-        auto key = std::make_pair(storage.get(), indexExpressionName(*resolved));
+        auto key = std::make_tuple(storage.get(), indexExpressionName(*resolved), function_name);
 
         auto [it, inserted] = tokenizer_cache.try_emplace(key);
         if (!inserted)
             return it->second;
 
-        const Names carriers = carrierNames(*resolved, key.second, *metadata);
+        const Names carriers = carrierNames(*resolved, std::get<1>(key), *metadata);
 
         for (const auto & index : indices)
         {
@@ -364,8 +366,9 @@ private:
             if (!describes)
                 continue;
 
-            /// Several text indexes on one expression are ambiguous; take the first defined.
-            it->second = getTextIndexTokenizerDescription(index);
+            /// Several text indexes on one expression are ambiguous; take the first defined whose
+            /// tokenizer the function accepts, which is also the one the row scan would use.
+            it->second = getTextIndexTokenizerDescription(index, function_name);
             if (!it->second.empty())
                 break;
         }
