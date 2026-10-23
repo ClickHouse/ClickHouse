@@ -72,6 +72,7 @@
 #include <IO/AsynchronousReader.h>
 #include <IO/LongConnectionLimit.h>
 #include <IO/S3Settings.h>
+#include <IO/SharedThreadPools.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
@@ -1109,6 +1110,10 @@ struct ContextSharedPart : boost::noncopyable
                 tryLogCurrentException(__PRETTY_FUNCTION__);
             }
         }
+
+        /// A cancelled query does not wait for its AI requests. Their memory is tracked under the user trackers in
+        /// `process_list`, which is destroyed after this destructor body.
+        getAIRequestThreadPool().shutdown();
     }
 
     void setConfig(const ConfigurationPtr & config_value)
@@ -8480,6 +8485,15 @@ StoragePolicyPtr Context::getStoragePolicy(const String & name) const
     auto policy_selector = getStoragePolicySelector(lock);
 
     return policy_selector->get(name);
+}
+
+StoragePolicyPtr Context::tryGetStoragePolicy(const String & name) const
+{
+    std::lock_guard lock(shared->storage_policies_mutex);
+
+    auto policy_selector = getStoragePolicySelector(lock);
+
+    return policy_selector->tryGet(name);
 }
 
 StoragePolicyPtr Context::getStoragePolicyFromDisk(const String & disk_name) const
