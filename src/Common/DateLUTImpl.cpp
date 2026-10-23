@@ -21,6 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 }
 
@@ -46,6 +47,13 @@ namespace
         case cctz::weekday::saturday:   return 6;
         case cctz::weekday::sunday:     return 7;
     }
+}
+
+/// Number of days in the given calendar month.
+int daysInCivilMonth(Int64 year, int month)
+{
+    const cctz::civil_day first{static_cast<int>(year), month, 1};
+    return static_cast<int>(cctz::civil_day{cctz::civil_month{first} + 1} - first);
 }
 
 inline cctz::time_point<cctz::seconds> lookupTz(const cctz::time_zone & cctz_time_zone, const cctz::civil_day & date)
@@ -152,7 +160,7 @@ bool DateLUTImpl::isSupportedTimeZoneName(std::string_view time_zone_name)
     return !::getTimeZone(time_zone_name).empty();
 }
 
-DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - lut and lut_saturated are fully assigned below
+DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - lut is fully assigned below
     : time_zone(time_zone_)
 {
     /// DateLUT should not be initialized in global constructors for the following reasons:
@@ -198,14 +206,17 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
     hour_of_day_offset_addend = 86400 - utc_time_of_day_at_local_midnight;
     minute_of_hour_offset_addend = 3600 - utc_time_of_day_at_local_midnight % 3600;
 
-    cctz::civil_day date = lut_start;
-    cctz::time_point<cctz::seconds> start_of_day_time_point_if_no_transitions = lookupTz(tz, date);
+    /// The calendar is walked with plain counters; `cctz` is consulted only at offset transitions.
+    int year = DATE_LUT_MIN_YEAR;
+    int month = 1;
+    int day_of_month = 1;
+    int days_in_month = daysInCivilMonth(year, month);
 
-    auto next_transition_date = date;
+    Int64 next_transition_index = 0;
 
     /// Fill the lookup table:
-    /// Adjustments only occur at the dates of transitions. We save next_transition_date and add 24h to the
-    /// previous value until we reach the it. Then we do the adjustment and get the new next_transition_date.
+    /// Adjustments only occur at the dates of transitions. We save next_transition_index and add 24h to the
+    /// previous value until we reach it. Then we do the adjustment and get the new next_transition_index.
     UInt32 i = 0;
     do
     {
@@ -214,14 +225,17 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
         values.time_at_offset_change_value = 0;
         values.amount_of_offset_change_value = 0;
 
-        if (date >= next_transition_date)
+        if (i >= next_transition_index)
         {
-            start_of_day_time_point_if_no_transitions = lookupTz(tz, date);
+            const cctz::civil_day date = lut_start + i;
+            const cctz::time_point<cctz::seconds> start_of_day_time_point = lookupTz(tz, date);
+            start_of_day = std::chrono::system_clock::to_time_t(start_of_day_time_point);
 
             /// If UTC offset was changed this day.
             /// Change in time zone without transition is possible, e.g. Moscow 1991 Sun, 31 Mar, 02:00 MSK to EEST
             cctz::time_zone::civil_transition transition{};
-            if (tz.next_transition(start_of_day_time_point_if_no_transitions - std::chrono::seconds(1), &transition)
+            const bool has_next_transition = tz.next_transition(start_of_day_time_point - std::chrono::seconds(1), &transition);
+            if (has_next_transition
                 && (cctz::civil_day(transition.from) == date || cctz::civil_day(transition.to) == date)
                 && transition.from != transition.to)
             {
@@ -240,14 +254,16 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
                     values.time_at_offset_change_value = -values.amount_of_offset_change_value;
             }
 
-            next_transition_date = std::min(cctz::civil_day(transition.to), cctz::civil_day(transition.from));
+            /// After the last transition (all the time for UTC) the offset never changes, so stop looking up every day.
+            next_transition_index = has_next_transition
+                ? std::min(cctz::civil_day(transition.to), cctz::civil_day(transition.from)) - lut_start
+                : std::numeric_limits<Int64>::max();
         }
 
-        start_of_day = std::chrono::system_clock::to_time_t(start_of_day_time_point_if_no_transitions);
-
-        values.year = static_cast<UInt16>(date.year());
-        values.month = static_cast<UInt8>(date.month());
-        values.day_of_month = static_cast<UInt8>(date.day());
+        values.year = static_cast<UInt16>(year);
+        values.month = static_cast<UInt8>(month);
+        values.day_of_month = static_cast<UInt8>(day_of_month);
+        values.days_in_month = static_cast<UInt8>(days_in_month);
         values.date = start_of_day;
 
         chassert(values.year >= DATE_LUT_MIN_YEAR && values.year <= DATE_LUT_MAX_YEAR + 1);
@@ -255,15 +271,7 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
         chassert(values.day_of_month >= 1 && values.day_of_month <= 31);
         /// The day of week is derived arithmetically rather than stored, so check it against cctz for every
         /// day the table can represent.
-        chassert(getDayOfWeek(date) == dayOfWeekFromDayIndex(i));
-
-        if (values.day_of_month == 1)
-        {
-            cctz::civil_month month(date);
-            values.days_in_month = static_cast<UInt8>(cctz::civil_day(month + 1) - cctz::civil_day(month));
-        }
-        else
-            values.days_in_month = i != 0 ? lut[i - 1].days_in_month : 31;
+        chassert(getDayOfWeek(lut_start + i) == dayOfWeekFromDayIndex(i));
 
         if (offset_is_whole_number_of_hours_during_epoch && start_of_day > 0 && start_of_day % 3600)
             offset_is_whole_number_of_hours_during_epoch = false;
@@ -303,8 +311,21 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
             offset_is_fixed = false;
 
         /// Going to next day.
-        start_of_day_time_point_if_no_transitions += std::chrono::hours(24);
-        ++date;
+        start_of_day += 86400;
+        if (day_of_month == days_in_month)
+        {
+            day_of_month = 1;
+            if (month == 12)
+            {
+                month = 1;
+                ++year;
+            }
+            else
+                ++month;
+            days_in_month = daysInCivilMonth(year, month);
+        }
+        else
+            ++day_of_month;
         ++i;
     }
     while (i < DATE_LUT_SIZE && lut[i - 1].year <= DATE_LUT_MAX_YEAR);
@@ -341,19 +362,7 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
         years_months_lut[year_months_lut_index] = first_day_of_last_month;
     }
 
-    /// Fill saturated LUT.
-    {
-        ssize_t day = DATE_LUT_SIZE - 1;
-        for (; day >= 0; --day)
-        {
-            if (lut[day].date >= 0)
-                lut_saturated[day] = lut[day];
-            else
-                break;
-        }
-        for (; day >= 0; --day)
-            lut_saturated[day] = lut_saturated[day + 1];
-    }
+    first_non_negative_date = std::partition_point(lut, lut + DATE_LUT_SIZE, [](const Values & values) { return values.date < 0; })->date;
 }
 
 DateLUTImpl::~DateLUTImpl() = default;
@@ -365,13 +374,6 @@ namespace
 Int64 dayIndexOfCivilDay(cctz::civil_day day)
 {
     return day - cctz::civil_day{DATE_LUT_MIN_YEAR, 1, 1};
-}
-
-/// Number of days in the given calendar month.
-int daysInCivilMonth(Int64 year, int month)
-{
-    const cctz::civil_day first{static_cast<int>(year), month, 1};
-    return static_cast<int>(cctz::civil_day{cctz::civil_month{first} + 1} - first);
 }
 
 }
@@ -575,69 +577,66 @@ ExtendedDayNum DateLUTImpl::makeDayNumOutOfRange(Int64 year, UInt8 month, UInt8 
     return ExtendedDayNum{static_cast<ExtendedDayNum::UnderlyingType>(dayIndexOfCivilDay(date) - daynum_offset_epoch)};
 }
 
+namespace
+{
+[[noreturn]] void throwUnexpectedScaleMultiplier(Int64 scale_multiplier)
+{
+    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unexpected scale multiplier {}", scale_multiplier);
+}
+
+template <Int64 target_multiplier, Int64 scale_multiplier>
+ALWAYS_INLINE unsigned subsecondComponent(Int64 value)
+{
+    Int64 fractional = value % scale_multiplier;
+    if (fractional < 0)
+        fractional += scale_multiplier;
+    if constexpr (scale_multiplier > target_multiplier)
+        return static_cast<unsigned>(fractional / (scale_multiplier / target_multiplier));
+    else
+        return static_cast<unsigned>(fractional * (target_multiplier / scale_multiplier));
+}
+
+template <Int64 target_multiplier>
+unsigned subsecondComponentDispatch(Int64 value, Int64 scale_multiplier)
+{
+    /// The scale of `DateTime64` and `Time64` is 0..9; a compile-time multiplier turns the per-row divisions into multiplications.
+    switch (scale_multiplier)
+    {
+        case 1: return subsecondComponent<target_multiplier, 1>(value);
+        case 10: return subsecondComponent<target_multiplier, 10>(value);
+        case 100: return subsecondComponent<target_multiplier, 100>(value);
+        case 1'000: return subsecondComponent<target_multiplier, 1'000>(value);
+        case 10'000: return subsecondComponent<target_multiplier, 10'000>(value);
+        case 100'000: return subsecondComponent<target_multiplier, 100'000>(value);
+        case 1'000'000: return subsecondComponent<target_multiplier, 1'000'000>(value);
+        case 10'000'000: return subsecondComponent<target_multiplier, 10'000'000>(value);
+        case 100'000'000: return subsecondComponent<target_multiplier, 100'000'000>(value);
+        case 1'000'000'000: return subsecondComponent<target_multiplier, 1'000'000'000>(value);
+        default: throwUnexpectedScaleMultiplier(scale_multiplier);
+    }
+}
+}
+
+/// Called per row. `ALWAYS_INLINE`: ThinLTO would not inline the ten cases into the row loops otherwise. Without
+/// `xray_never_instrument` the ten cases can exceed the XRay instruction threshold, and an entry sled costs up to 20% per row.
+[[clang::xray_never_instrument]] ALWAYS_INLINE
 unsigned int DateLUTImpl::toMillisecond(const DB::DateTime64 & datetime, Int64 scale_multiplier) const
 {
-    constexpr Int64 millisecond_multiplier = 1'000;
-    constexpr Int64 microsecond_multiplier = 1'000 * millisecond_multiplier;
-    constexpr Int64 divider = microsecond_multiplier / millisecond_multiplier;
-
-    auto components = DB::DecimalUtils::splitWithScaleMultiplier(datetime, scale_multiplier);
-
-    if (datetime.value < 0 && components.fractional)
-    {
-        components.fractional = scale_multiplier + (components.whole ? Int64(-1) : Int64(1)) * components.fractional;
-        --components.whole;
-    }
-    Int64 fractional = components.fractional;
-    if (scale_multiplier > microsecond_multiplier)
-        fractional = fractional / (scale_multiplier / microsecond_multiplier);
-    else if (scale_multiplier < microsecond_multiplier)
-        fractional = fractional * (microsecond_multiplier / scale_multiplier);
-
-    UInt16 millisecond = static_cast<UInt16>(fractional / divider);
-    return millisecond;
+    return subsecondComponentDispatch<1'000>(datetime.value, scale_multiplier);
 }
 
 
+[[clang::xray_never_instrument]] ALWAYS_INLINE
 unsigned int DateLUTImpl::toMicrosecond(const DB::DateTime64 & datetime, Int64 scale_multiplier) const
 {
-    constexpr Int64 microsecond_multiplier = 1'000'000;
-
-    auto components = DB::DecimalUtils::splitWithScaleMultiplier(datetime, scale_multiplier);
-
-    if (datetime.value < 0 && components.fractional)
-    {
-        components.fractional = scale_multiplier + (components.whole ? Int64(-1) : Int64(1)) * components.fractional;
-        --components.whole;
-    }
-    Int64 fractional = components.fractional;
-    if (scale_multiplier > microsecond_multiplier)
-        fractional = fractional / (scale_multiplier / microsecond_multiplier);
-    else if (scale_multiplier < microsecond_multiplier)
-        fractional = fractional * (microsecond_multiplier / scale_multiplier);
-
-    return static_cast<unsigned>(fractional);
+    return subsecondComponentDispatch<1'000'000>(datetime.value, scale_multiplier);
 }
 
 
+[[clang::xray_never_instrument]] ALWAYS_INLINE
 unsigned int DateLUTImpl::toNanosecond(const DB::DateTime64 & datetime, Int64 scale_multiplier) const
 {
-    constexpr Int64 nanosecond_multiplier = 1'000'000'000;
-
-    auto components = DB::DecimalUtils::splitWithScaleMultiplier(datetime, scale_multiplier);
-
-    if (datetime.value < 0 && components.fractional)
-    {
-        components.fractional = scale_multiplier + (components.whole ? Int64(-1) : Int64(1)) * components.fractional;
-        --components.whole;
-    }
-    Int64 fractional = components.fractional;
-    if (scale_multiplier > nanosecond_multiplier)
-        fractional = fractional / (scale_multiplier / nanosecond_multiplier);
-    else if (scale_multiplier < nanosecond_multiplier)
-        fractional = fractional * (nanosecond_multiplier / scale_multiplier);
-
-    return static_cast<unsigned>(fractional);
+    return subsecondComponentDispatch<1'000'000'000>(datetime.value, scale_multiplier);
 }
 
 

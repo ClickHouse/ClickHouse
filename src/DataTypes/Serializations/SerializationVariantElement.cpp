@@ -72,11 +72,11 @@ struct SerializationVariantElement::DeserializeBinaryBulkStateVariantElement : p
     ISerialization::DeserializeBinaryBulkStatePtr discriminators_state;
     ISerialization::DeserializeBinaryBulkStatePtr variant_element_state;
 
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    ISerialization::DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext & context) const override
     {
         auto new_state = std::make_shared<SerializationVariantElement::DeserializeBinaryBulkStateVariantElement>();
-        new_state->discriminators_state = discriminators_state ? discriminators_state->clone() : nullptr;
-        new_state->variant_element_state = variant_element_state ? variant_element_state->clone() : nullptr;
+        new_state->discriminators_state = discriminators_state ? discriminators_state->clone(context) : nullptr;
+        new_state->variant_element_state = variant_element_state ? variant_element_state->clone(context) : nullptr;
         return new_state;
     }
 };

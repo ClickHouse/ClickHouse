@@ -1,0 +1,45 @@
+---
+sidebarTitle: 'ThoughtSpot'
+slug: /integrations/thoughtspot
+keywords: ['clickhouse', 'ThoughtSpot', 'connect', 'integrate', 'ui']
+description: 'ThoughtSpot 是一款 AI 驱动的分析平台，可帮助您实时搜索、探索和可视化数据。'
+title: 'ThoughtSpot'
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_visualization'
+---
+
+import ConnectionDetails from '/snippets/zh/_gather_your_details_http.mdx';
+
+import { PartnerBadge } from "/snippets/zh/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+ThoughtSpot 可以通过其原生 ClickHouse 连接器连接到 ClickHouse Cloud 或本地部署的 ClickHouse。
+
+<Steps>
+  <Step title="收集连接信息" id="1-gather-your-connection-details">
+    <ConnectionDetails />
+  </Step>
+
+  <Step title="在 ThoughtSpot 中创建 ClickHouse 连接" id="2-create-a-clickhouse-connection-in-thoughtspot">
+    1. 前往 **Data workspace** &gt; **Connections**。
+
+    2. 点击 **+ Create connection**，选择 **ClickHouse** 卡片，然后点击 **Next**。
+
+    3. 输入连接名称、描述 (可选) ，以及在上一步中收集的 ClickHouse 连接信息，然后点击 **Next**。有关各属性的详细说明，请参阅 ThoughtSpot 文档中的 [ClickHouse connection reference](https://docs.thoughtspot.com/cloud/latest/connections-clickhouse-reference)。
+
+    4.  (可选) 如需配置查询级别的超时时间，请打开 **Advanced Config** 菜单，在 **Key** 中输入 `queryTimeoutSeconds`，在 **Value** 中输入超时时间 (以秒为单位) 。建议不超过 10 分钟。
+
+    5.  (可选) 如需添加其他键值对，请打开 **Advanced Config** 菜单并输入 **Key** 和 **Value**。点击加号 (**+**) 可添加更多键值对。
+
+       <Note>
+         您输入的所有键值对都必须已在 ClickHouse 数据源中定义。键值对区分大小写。
+       </Note>
+
+    6. 选择要使用的表和列，然后点击 **Create connection**。系统会显示一条消息，确认已添加的表和列数量。
+
+    此后，该连接将显示在 **Data workspace** &gt; **Connections** 页面中。您可以在 ThoughtSpot 中搜索 ClickHouse 数据，并对已关联的表执行实时查询。
+  </Step>
+</Steps>

@@ -23,7 +23,12 @@ ReadBufferFromFileView::ReadBufferFromFileView(
     /// file inside an archive on object storage becomes an open-ended range request: it transfers the rest of the
     /// archive instead of the file, and the HTTP connection cannot be returned to the pool.
     if (right_bound > left_bound)
+    {
         impl->setReadUntilPosition(right_bound);
+        ByteRangeSet slice;
+        slice.add({left_bound, right_bound - left_bound});
+        impl->setRequestMap(std::move(slice));
+    }
 
     /// Seek to the begin of file.
     impl->seek(left_bound, SEEK_SET);
@@ -47,14 +52,26 @@ void ReadBufferFromFileView::setReadUntilPosition(size_t position)
             "Cannot read until position: {}. File size is {}", position, getFileSize());
 
     executeWithOriginalBuffer([&]{ impl->setReadUntilPosition(*read_until_position); });
-    resizeWorkingBuffer();
 }
 
 void ReadBufferFromFileView::setReadUntilEnd()
 {
     read_until_position.reset();
     executeWithOriginalBuffer([&]{ impl->setReadUntilPosition(right_bound); });
-    resizeWorkingBuffer();
+}
+
+void ReadBufferFromFileView::setRequestMap(ByteRangeSet ranges)
+{
+    if (right_bound == left_bound)
+        return;
+    executeWithOriginalBuffer([&]{ impl->setRequestMap(toArchiveRanges(ranges)); });
+}
+
+ByteRangeSet ReadBufferFromFileView::toArchiveRanges(const ByteRangeSet & ranges) const
+{
+    auto result = ranges.intersect({0, right_bound - left_bound});
+    result.shift(left_bound);
+    return result;
 }
 
 off_t ReadBufferFromFileView::getPosition()
@@ -71,11 +88,9 @@ bool ReadBufferFromFileView::nextImpl()
     bool result = false;
     executeWithOriginalBuffer([&] { result = impl->next(); });
 
+    /// After `next`, `impl` may leave `pos` past the start of its working buffer.
     if (result)
-    {
-        file_offset_of_buffer_end += available();
-        resizeWorkingBuffer();
-    }
+        nextimpl_working_buffer_offset = offset();
 
     return result;
 }
@@ -102,9 +117,6 @@ off_t ReadBufferFromFileView::seek(off_t off, int whence)
         throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND,
             "Seek position ({}) is out of bound. Available range: [{}, {}]", result, left_bound, right_bound);
 
-    file_offset_of_buffer_end = result + available();
-    resizeWorkingBuffer();
-
     return result - left_bound;
 }
 
@@ -117,9 +129,16 @@ void ReadBufferFromFileView::executeWithOriginalBuffer(Op && op)
     /// Set working buffer and other internal into impl.
     swap(*impl);
     op();
+    /// `impl` is the only source of truth for the end of its buffer: the offset kept here may have
+    /// been clamped by `resizeWorkingBuffer` to a bound that has changed since.
+    const size_t impl_buffer_end = impl->getPosition() + impl->available();
     swap(*impl);
 
     original_working_buffer = working_buffer;
+
+    /// The unclamped buffer of `impl` is exposed again, so clamp it to the right bound.
+    file_offset_of_buffer_end = impl_buffer_end;
+    resizeWorkingBuffer();
 }
 
 size_t ReadBufferFromFileView::getRightBound() const
