@@ -210,6 +210,22 @@ bool readsOtherSource(const IdentifierResolveScope & scope, const StorageSnapsho
         return nodes;
     };
 
+    /// An `IN` operand, also behind aliases, that is not an alias, a CTE or a column is resolved as a table.
+    std::unordered_set<std::string> followed_names;
+    std::function<bool(const Identifier &)> names_table = [&](const Identifier & name)
+    {
+        if (!followed_names.insert(name.getFullName()).second)
+            return false;
+        auto named_nodes = find_named_nodes(name.front());
+        if (named_nodes.empty())
+            return !storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), name.getFullName());
+        return std::ranges::any_of(named_nodes, [&](const QueryTreeNodePtr & named_node)
+        {
+            const auto * identifier = named_node->as<IdentifierNode>();
+            return identifier && names_table(identifier->getIdentifier());
+        });
+    };
+
     std::unordered_set<std::string> visited_names;
     std::function<bool(const QueryTreeNodePtr &)> reads_source = [&](const QueryTreeNodePtr & root)
     {
@@ -240,8 +256,7 @@ bool readsOtherSource(const IdentifierResolveScope & scope, const StorageSnapsho
                 {
                     const auto & arguments = function->getArguments().getNodes();
                     const auto * set = arguments.size() == 2 ? arguments[1]->as<IdentifierNode>() : nullptr;
-                    found = set && find_named_nodes(set->getIdentifier().front()).empty()
-                        && !storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), set->getIdentifier().getFullName());
+                    found = set && names_table(set->getIdentifier());
                 }
             });
         return found;
