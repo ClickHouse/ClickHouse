@@ -19,9 +19,10 @@ ICEBERG_DIR="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}_05339"
 rm -rf "${ICEBERG_DIR}"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_05339"
-# The Iceberg sink writes with the format settings the table was created with.
-${CLICKHOUSE_CLIENT} --output_format_parquet_row_group_size 1000 --query "
-    CREATE TABLE t_05339 (k Int64, s String) ENGINE = IcebergLocal('${ICEBERG_DIR}', 'Parquet')"
+# The Iceberg sink writes with the format settings of the table: those of the server plus its `SETTINGS` clause.
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE t_05339 (k Int64, s String) ENGINE = IcebergLocal('${ICEBERG_DIR}', 'Parquet')
+    SETTINGS output_format_parquet_row_group_size = 1000"
 
 # The first data file holds the largest values, the second one smaller ones; each file keeps its largest
 # values in its first row group. So all row groups but the first one of the first file hold no row of the
