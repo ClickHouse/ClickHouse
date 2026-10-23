@@ -50,6 +50,17 @@ using PartitionCommands = std::vector<PartitionCommand>;
 struct FormatParserSharedResources;
 using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
 
+/// Rows of a read, estimated from the data lake metadata without reading data (see `IDataLakeMetadata::estimateRead`).
+struct DataLakeReadEstimate
+{
+    /// Rows of the live data files left after pruning, deleted rows included; std::nullopt if the metadata is malformed.
+    std::optional<UInt64> rows;
+    /// Pruning by the filter dropped at least one live data file or a whole data manifest.
+    bool pruned_data_files = false;
+    /// The snapshot has live delete files.
+    bool has_delete_files = false;
+};
+
 class IDataLakeMetadata : boost::noncopyable
 {
 public:
@@ -131,6 +142,13 @@ public:
     /// deferred columns pruned from the main read.
     virtual bool supportsLazyMaterialization(StorageMetadataPtr, ContextPtr) const { return false; }
 
+    /// Estimates from the metadata only the rows a read of the pinned data snapshot returns, with the data files
+    /// pruned by `filter` as the read prunes them. std::nullopt if this data lake gives no estimate.
+    virtual std::optional<DataLakeReadEstimate> estimateRead(StorageMetadataPtr, const ActionsDAG * /*filter*/, ContextPtr) const
+    {
+        return std::nullopt;
+    }
+
     /// Some data lakes specify information for reading files from disks.
     /// For example, Iceberg has Parquet schema field ids in its metadata for reading files.
     virtual ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr /**/) const { return nullptr; }
@@ -199,6 +217,11 @@ public:
     }
 
     virtual void drop(ContextPtr) { }
+
+    virtual std::unique_ptr<IDataLakeMetadata> cloneWithNewSettings(StorageObjectStorageConfigurationPtr /*configuration*/, ContextPtr /*context*/) const
+    {
+        throwNotImplemented("cloneWithNewSettings");
+    }
 
     virtual ObjectStorageType getObjectStorageType() const { return ObjectStorageType::None; }
 
