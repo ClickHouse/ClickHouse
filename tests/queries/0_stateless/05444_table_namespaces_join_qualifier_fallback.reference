@@ -1,0 +1,23 @@
+-- 1. left side, alias equals the database name
+7
+7
+-- 2. right side, alias equals the database name
+7
+7
+-- 3. three-part table name
+9
+9
+-- 4. matcher
+7
+7
+-- 5. missing column
+Code: 47
+Code: 47
+-- 6. both sides multipart, alias equals the database name
+7	9
+7	9
+-- 7. setting off
+Code: 47
+-- 8. SEMI JOIN, non-preserved multipart side in a dead branch
+Code: 1022
+Code: 1022
