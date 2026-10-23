@@ -2,6 +2,8 @@
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/SortDescription.h>
@@ -169,14 +171,40 @@ static std::pair<size_t, size_t> estimateCompressedColumnSize(const ColumnWithTy
     return std::make_pair(compressed_buf.count(), null_buf.count());
 }
 
-/// Returns pair of (sample size, compressed size) of `data` as a whole.
-static std::pair<size_t, size_t> estimateCompressedSize(std::string_view data, const CompressionCodecPtr & codec)
+/// Restores the values that a `StringValueFilter` replaced with empty strings in the first rows of a `String` or
+/// `Nullable(String)` column, at most `max_rows`, and as far as the sample of the replaced values goes. Every empty
+/// string of the filtered column is a replaced value, because a matching value is never empty, so the values of the
+/// sample, which are in the order of reading, go to the empty strings in turn.
+static ColumnWithTypeAndName restoreStringValuesSkippedByFilter(
+    const ColumnWithTypeAndName & column, const StringValuesSkippedInBlock & skipped, size_t max_rows)
 {
-    NullWriteBuffer null_buf;
-    CompressedWriteBuffer compressed_buf(null_buf, codec);
-    compressed_buf.write(data.data(), data.size());
-    compressed_buf.finalize();
-    return std::make_pair(compressed_buf.count(), null_buf.count());
+    const auto * nullable = typeid_cast<const ColumnNullable *>(column.column.get());
+    const auto & filtered = assert_cast<const ColumnString &>(nullable ? nullable->getNestedColumn() : *column.column);
+
+    auto restored = ColumnString::create();
+    size_t sample_pos = 0;
+    size_t sample_offset = 0;
+    size_t rows = 0;
+    for (; rows < std::min(filtered.size(), max_rows); ++rows)
+    {
+        const auto value = filtered.getDataAt(rows);
+        if (!value.empty())
+        {
+            restored->insertData(value.data(), value.size());
+            continue;
+        }
+
+        if (sample_pos == skipped.sample_sizes.size())
+            break;
+        const size_t size = skipped.sample_sizes[sample_pos++];
+        restored->insertData(skipped.sample.data() + sample_offset, size);
+        sample_offset += size;
+    }
+
+    ColumnPtr res = std::move(restored);
+    if (nullable)
+        res = ColumnNullable::create(res, nullable->getNullMapColumn().cut(0, rows));
+    return {res, column.type, column.name};
 }
 
 /// The replicas merge their aggregation output with memory-bound merging, which sorts it by the group
@@ -494,23 +522,28 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
                         /// A column with no `CODEC` of its own is written with the part's default codec,
                         /// which is generic, so it applies to any serialization layout.
                         const ColumnCodecs codecs = codec_it == column_codecs.end() ? ColumnCodecs{.generic = default_codec} : codec_it->second;
-                        const auto [sample, compressed] = estimateCompressedColumnSize(column, codecs);
-                        sample_bytes += sample;
-                        compressed_bytes += compressed;
-
-                        /// The values replaced with empty strings are missing from the column, so they are estimated
-                        /// from a sample of them, in the proportion of the rows of the column sampled above.
                         const auto skipped_it = string_values_skipped_by_filters.find(column.name);
-                        if (skipped_it != string_values_skipped_by_filters.end() && !skipped_it->second.sample.empty())
+                        if (skipped_it == string_values_skipped_by_filters.end())
                         {
-                            const auto & skipped = skipped_it->second;
-                            const auto [skipped_sample, skipped_compressed] = estimateCompressedSize(skipped.sample, codecs.generic);
-                            const size_t rows = column.column->size();
-                            const double skipped_bytes
-                                = static_cast<double>(skipped.bytes) * static_cast<double>(numRowsToSample(rows)) / static_cast<double>(rows);
-                            sample_bytes += static_cast<size_t>(skipped_bytes);
-                            compressed_bytes += static_cast<size_t>(
-                                skipped_bytes * static_cast<double>(skipped_compressed) / static_cast<double>(skipped_sample));
+                            const auto [sample, compressed] = estimateCompressedColumnSize(column, codecs);
+                            sample_bytes += sample;
+                            compressed_bytes += compressed;
+                        }
+                        else
+                        {
+                            /// The values replaced with empty strings are missing from the column, so the sample is
+                            /// taken from the first rows with the values restored. It may cover fewer rows than
+                            /// the other columns, so it is scaled to keep the weight of the column.
+                            const size_t rows_to_sample = numRowsToSample(column.column->size());
+                            const auto restored = restoreStringValuesSkippedByFilter(column, skipped_it->second, rows_to_sample);
+                            const size_t restored_rows = restored.column->size();
+                            if (restored_rows)
+                            {
+                                const auto [sample, compressed] = estimateCompressedColumnSize(restored, codecs);
+                                const double scale = static_cast<double>(rows_to_sample) / static_cast<double>(numRowsToSample(restored_rows));
+                                sample_bytes += static_cast<size_t>(static_cast<double>(sample) * scale);
+                                compressed_bytes += static_cast<size_t>(static_cast<double>(compressed) * scale);
+                            }
                         }
                     }
                 }

@@ -103,8 +103,7 @@ public:
 
     /// Returns the total size of the values that the string value filters replaced with empty strings since
     /// the previous call, keyed by the column name in the part, and resets it. The in-memory size of the read
-    /// columns misses these values, although they were read from disk. The returned samples are valid until
-    /// the next read.
+    /// columns misses these values, although they were read from disk.
     StringValuesSkippedInBlockByColumn takeStringValuesSkippedByFilters();
 
     /// Keeps the beginning of the skipped values, see `StringValuesSkippedByFilter::sample`.

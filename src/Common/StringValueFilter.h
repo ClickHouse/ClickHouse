@@ -2,10 +2,8 @@
 
 #include <base/types.h>
 
-#include <algorithm>
 #include <atomic>
 #include <memory>
-#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -155,23 +153,29 @@ struct StringValuesSkippedByFilter
 {
     /// The total size of the values.
     size_t bytes = 0;
-    /// The beginning of the concatenated values, at most `max_sample_bytes` long, to estimate how they compress.
-    /// It is bounded, because a value can be arbitrarily long.
+    /// The first values in the order they were read, concatenated, and their sizes, to estimate how they compress.
+    /// Together they take at most `max_sample_bytes`, so the last value may be cut, because a value can be arbitrarily long.
     String sample;
+    std::vector<size_t> sample_sizes;
     size_t max_sample_bytes = 0;
 
+    /// Must be called for every replaced value, including an empty one.
     void addToSample(const char * data, size_t size)
     {
-        if (sample.size() < max_sample_bytes)
-            sample.append(data, std::min(size, max_sample_bytes - sample.size()));
+        if (sample.size() + sample_sizes.size() * sizeof(size_t) < max_sample_bytes)
+            addToSampleImpl(data, size);
     }
+
+private:
+    void addToSampleImpl(const char * data, size_t size);
 };
 
-/// The values skipped in one read block, and the sample of the values skipped so far, by column name.
+/// The values skipped in one read block, see `StringValuesSkippedByFilter`.
 struct StringValuesSkippedInBlock
 {
     size_t bytes = 0;
-    std::string_view sample;
+    String sample;
+    std::vector<size_t> sample_sizes;
 };
 using StringValuesSkippedInBlockByColumn = std::unordered_map<String, StringValuesSkippedInBlock>;
 

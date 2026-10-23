@@ -180,8 +180,18 @@ StringValuesSkippedInBlockByColumn IMergeTreeReader::takeStringValuesSkippedByFi
     for (auto & [name, filter_for_column] : string_value_filters_by_part_column_name)
     {
         auto & skipped = filter_for_column.skipped;
-        if (skipped.bytes)
-            res.emplace(name, StringValuesSkippedInBlock{.bytes = std::exchange(skipped.bytes, 0), .sample = skipped.sample});
+        if (!skipped.bytes)
+            continue;
+
+        /// The sample is taken anew for each block, so that it follows the values as they change along the part.
+        res.emplace(
+            name,
+            StringValuesSkippedInBlock{
+                .bytes = std::exchange(skipped.bytes, 0),
+                .sample = std::move(skipped.sample),
+                .sample_sizes = std::move(skipped.sample_sizes)});
+        skipped.sample.clear();
+        skipped.sample_sizes.clear();
     }
     return res;
 }

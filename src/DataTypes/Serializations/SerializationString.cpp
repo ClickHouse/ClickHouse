@@ -343,6 +343,8 @@ static NO_INLINE size_t deserializeBinaryFilteredWithKnownSizes(
                 {
                     ++values_replaced;
                     bytes_skipped += value_size;
+                    if (value_size == 0 && skipped)
+                        skipped->addToSample(nullptr, 0);
                 }
 
                 original_pos += value_size;
@@ -452,6 +454,8 @@ try
         {
             ++values_replaced;
             bytes_skipped += size;
+            if (size == 0 && skipped)
+                skipped->addToSample(nullptr, 0);
         }
 
         offsets.push_back(offset);

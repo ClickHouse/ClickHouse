@@ -23,6 +23,8 @@ DROP TABLE IF EXISTS t_wide;
 DROP TABLE IF EXISTS t_compact;
 DROP TABLE IF EXISTS t_compact_unread_compressible;
 DROP TABLE IF EXISTS t_compact_unread_incompressible;
+DROP TABLE IF EXISTS t_compact_compressibility_changes;
+DROP TABLE IF EXISTS t_compact_varying_lengths;
 DROP TABLE IF EXISTS t_compact_large_values;
 DROP TABLE IF EXISTS t_compact_skip_index;
 
@@ -56,6 +58,26 @@ SELECT count(), max(id) FROM t_wide WHERE s LIKE '%needle%' SETTINGS log_comment
 SELECT count() FROM t_compact_unread_compressible WHERE s LIKE '%needle%' SETTINGS log_comment='query_compact_unread_compressible';
 SELECT count() FROM t_compact_unread_incompressible WHERE s LIKE '%needle%' SETTINGS log_comment='query_compact_unread_incompressible';
 
+-- In the next two cases the estimate with the filter is compared with the one without it, which samples the same
+-- blocks in a single thread: how close either is to what is read depends on the blocks that happen to be sampled.
+
+-- The replaced values are sampled in each sampled block: here they compress well in the first block only.
+CREATE TABLE t_compact_compressibility_changes(id UInt64, s String) ENGINE=MergeTree ORDER BY id
+SETTINGS auto_statistics_types='', index_granularity=8192, min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18;
+INSERT INTO t_compact_compressibility_changes SELECT number, concat(if(number % 100 = 0, 'needle', ''), if(number < 8192, repeat('abcdefgh', 8),
+    concat(reinterpretAsString(cityHash64(number)), reinterpretAsString(cityHash64(number, 1)), reinterpretAsString(cityHash64(number, 2)), reinterpretAsString(cityHash64(number, 3)),
+           reinterpretAsString(cityHash64(number, 4)), reinterpretAsString(cityHash64(number, 5)), reinterpretAsString(cityHash64(number, 6)), reinterpretAsString(cityHash64(number, 7)))))
+FROM numbers(100000);
+SELECT count() FROM t_compact_compressibility_changes WHERE s LIKE '%needle%' SETTINGS max_threads=1, log_comment='same_compressibility_changes_1';
+SELECT count() FROM t_compact_compressibility_changes WHERE s LIKE '%needle%' SETTINGS max_threads=1, apply_string_filters_during_scan=0, log_comment='same_compressibility_changes_0';
+
+-- The sizes of the replaced values are read too: here they vary, while the characters compress to nothing.
+CREATE TABLE t_compact_varying_lengths(id UInt64, s String) ENGINE=MergeTree ORDER BY id
+SETTINGS auto_statistics_types='', index_granularity=8192, min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18;
+INSERT INTO t_compact_varying_lengths SELECT number, concat(if(number % 100 = 0, 'needle', ''), repeat('x', 1 + cityHash64(number) % 64)) FROM numbers(100000);
+SELECT count() FROM t_compact_varying_lengths WHERE s LIKE '%needle%' SETTINGS max_threads=1, log_comment='same_varying_lengths_1';
+SELECT count() FROM t_compact_varying_lengths WHERE s LIKE '%needle%' SETTINGS max_threads=1, apply_string_filters_during_scan=0, log_comment='same_varying_lengths_0';
+
 -- Only a bounded sample of the replaced values is kept to estimate how they compress: they can be long, and holding
 -- them in full would take far more memory than the read itself. The values are 1 MiB each, a granule has all of them.
 CREATE TABLE t_compact_large_values(id UInt64, s String) ENGINE=MergeTree ORDER BY id
@@ -87,6 +109,19 @@ SELECT log_comment, ProfileEvents['RuntimeDataflowStatisticsInputBytes'] > 0
 FROM system.query_log
 WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTES') AND (current_database = currentDatabase()) AND (log_comment = 'skip_index') AND (type = 'QueryFinish');
 
+SELECT name, filter_applied, greatest(with_filter, without_filter) / least(with_filter, without_filter) < 1.1
+FROM (
+    SELECT
+        replaceRegexpOne(log_comment, '_[01]$', '') AS name,
+        sumIf(ProfileEvents['RuntimeDataflowStatisticsInputBytes'], endsWith(log_comment, '_0')) AS without_filter,
+        sumIf(ProfileEvents['RuntimeDataflowStatisticsInputBytes'], endsWith(log_comment, '_1')) AS with_filter,
+        sumIf(ProfileEvents['StringValueFilterValuesReplaced'], endsWith(log_comment, '_1')) > 0 AS filter_applied
+    FROM system.query_log
+    WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTES') AND (current_database = currentDatabase()) AND (log_comment LIKE 'same_%') AND (type = 'QueryFinish')
+    GROUP BY name
+)
+ORDER BY name;
+
 SELECT format('{} {} {}', log_comment, compressed_bytes, statistics_input_bytes)
 FROM (
     SELECT
@@ -103,5 +138,7 @@ DROP TABLE t_wide;
 DROP TABLE t_compact;
 DROP TABLE t_compact_unread_compressible;
 DROP TABLE t_compact_unread_incompressible;
+DROP TABLE t_compact_compressibility_changes;
+DROP TABLE t_compact_varying_lengths;
 DROP TABLE t_compact_large_values;
 DROP TABLE t_compact_skip_index;

@@ -4,6 +4,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/StringSearcher.h>
 
+#include <algorithm>
 #include <cstring>
 
 namespace ProfileEvents
@@ -204,6 +205,14 @@ void StringValueFilter::updateStatsOfIndividualChecks(size_t checked_individuall
     if (total_checked_individually >= MIN_VALUES_TO_EVALUATE_SELECTIVITY
         && total_bytes_skipped < total_checked_individually * MIN_AVG_BYTES_SKIPPED_PER_VALUE)
         disabled.store(true, std::memory_order_relaxed);
+}
+
+void StringValuesSkippedByFilter::addToSampleImpl(const char * data, size_t size)
+{
+    const size_t used = sample.size() + (sample_sizes.size() + 1) * sizeof(size_t);
+    const size_t sampled_size = std::min(size, max_sample_bytes - std::min(max_sample_bytes, used));
+    sample.append(data, sampled_size);
+    sample_sizes.push_back(sampled_size);
 }
 
 }
