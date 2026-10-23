@@ -99,7 +99,9 @@ public:
     /// vector because `ResourceQueryState` holds a non-movable `std::atomic`).
     void initResourceStates(size_t count_)
     {
-        per_resource = std::make_unique<ResourceQueryState[]>(count_);
+        /// No array for zero slots: a zero-size `new[]` may return 8-byte aligned storage, which UBSan flags for this type.
+        if (count_ > 0)
+            per_resource = std::make_unique<ResourceQueryState[]>(count_);
         count = count_;
     }
 
