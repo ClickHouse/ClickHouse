@@ -13,15 +13,15 @@ Expression ((Project names + Projection))
             Condition: true
             Parts: 4/4
             Granules: 4/4
-          PrimaryKey
-            Condition: true
-            Parts: 4/4
-            Granules: 4/4
           Statistics
             Keys:
               value
             Parts: 3/4
             Granules: 3/4
+          PrimaryKey
+            Condition: true
+            Parts: 3/3
+            Granules: 3/3
           Ranges: 3
 99
 -- Test 2 after MATERIALIZE: value > 3000
@@ -39,14 +39,14 @@ Expression ((Project names + Projection))
             Condition: true
             Parts: 4/4
             Granules: 4/4
-          PrimaryKey
-            Condition: true
-            Parts: 4/4
-            Granules: 4/4
           Statistics
             Keys:
               value
             Parts: 1/4
             Granules: 1/4
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
           Ranges: 1
 99

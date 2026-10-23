@@ -55,3 +55,17 @@ WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND startsWi
 ORDER BY log_comment;
 
 DROP TABLE statistics_small_reads;
+
+SELECT '-- row limits apply to the parts left after pruning by statistics';
+DROP TABLE IF EXISTS statistics_small_reads_limits;
+CREATE TABLE statistics_small_reads_limits (k UInt64, v UInt64)
+ENGINE = MergeTree ORDER BY k
+SETTINGS index_granularity = 16, index_granularity_bytes = '10Mi', auto_statistics_types = 'basic';
+SYSTEM STOP MERGES statistics_small_reads_limits;
+INSERT INTO statistics_small_reads_limits SELECT number, 0 FROM numbers(10000);
+INSERT INTO statistics_small_reads_limits SELECT number, 1 FROM numbers(10);
+SELECT sum(k) FROM statistics_small_reads_limits WHERE v = 1
+SETTINGS optimize_move_to_prewhere = 0, min_marks_to_use_statistics = 0, max_rows_to_read = 100;
+SELECT sum(k) FROM statistics_small_reads_limits WHERE v = 1
+SETTINGS optimize_move_to_prewhere = 0, min_marks_to_use_statistics = 0, max_rows_to_read_leaf = 100;
+DROP TABLE statistics_small_reads_limits;

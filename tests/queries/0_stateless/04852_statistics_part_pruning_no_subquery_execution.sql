@@ -56,8 +56,8 @@ DROP TABLE t_stats_prune_in;
 
 DROP TABLE IF EXISTS t_stats_prune_in_pk;
 
--- Same query shape, but now the `IN` column IS the primary key. Primary-key analysis builds the subquery
--- set and prunes 3 parts -> 1 by itself, before the statistics, which have nothing left to prune.
+-- Same query shape, but now the `IN` column IS the primary key. Primary-key analysis runs before
+-- pruning and builds the subquery set, so pruning finds it ready and must still prune: 3 parts -> 1.
 CREATE TABLE t_stats_prune_in_pk (a String, c UInt64)
 ENGINE = MergeTree ORDER BY c
 SETTINGS auto_statistics_types = 'basic', index_granularity = 1;

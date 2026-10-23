@@ -237,13 +237,22 @@ bool MergeTreeDataSelectExecutor::hasFewerMarksToReadThan(
         pk_to_minmax_slot = buildPrimaryKeyToMinMaxSlotMapping(metadata_snapshot, parts.front().data_part->storage.getSettings());
     const auto * pk_to_minmax_slot_ptr = pk_to_minmax_slot.empty() ? nullptr : &pk_to_minmax_slot;
 
+    /// Bound the analysis of each part by a small number of steps of the generic exclusion search. The ranges
+    /// left unanalyzed are accepted as a whole, so the number of marks is an upper bound, and an inconclusive
+    /// probe chooses to use statistics, which is what the read did before this check existed.
+    static constexpr UInt64 max_steps_per_part = 256;
+    Settings probe_settings = settings;
+    const UInt64 user_max_steps = settings[Setting::merge_tree_generic_exclusion_search_max_steps];
+    probe_settings[Setting::merge_tree_generic_exclusion_search_max_steps]
+        = user_max_steps ? std::min(user_max_steps, max_steps_per_part) : max_steps_per_part;
+
     /// Stop as soon as the limit is reached, so a large read costs the analysis of a few parts only.
     size_t marks = 0;
     for (const auto & part : parts)
     {
         marks += markRangesFromPKRange(
             part, metadata_snapshot, key_condition->generateForPart(part.data_part), nullptr, nullptr,
-            /*exact_ranges=*/nullptr, pk_to_minmax_slot_ptr, settings, log).getNumberOfMarks();
+            /*exact_ranges=*/nullptr, pk_to_minmax_slot_ptr, probe_settings, log).getNumberOfMarks();
 
         if (marks >= limit)
             return false;
@@ -860,6 +869,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
     const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+    const ConditionTemplate<KeyCondition>::Ptr & key_condition,
+    size_t min_marks_to_use_statistics,
     const ContextPtr & context,
     LoggerPtr log,
     ReadFromMergeTree::IndexStats & index_stats)
@@ -895,6 +906,13 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
 
     if (statistics_pruner.isUseless())
         return parts;
+
+    if (hasFewerMarksToReadThan(parts, metadata_snapshot, key_condition, min_marks_to_use_statistics, settings, log))
+    {
+        LOG_TRACE(log, "Not pruning parts by statistics, because fewer than {} marks are left to read by the primary key",
+            min_marks_to_use_statistics);
+        return parts;
+    }
 
     RangesInDataParts res_parts;
     size_t total_parts_before = parts.size();

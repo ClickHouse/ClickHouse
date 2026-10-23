@@ -283,13 +283,18 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
 
     const auto & queried_columns = source_step_with_filter->requiredSourceColumns();
 
+    /// Statistics are only used to reorder conditions, so skip if there is just one.
+    const auto & filter_root_node = filter_step->getExpression().findInOutputs(filter_step->getFilterColumnName());
+    const bool has_multiple_conditions = filter_root_node.type == ActionsDAG::ActionType::FUNCTION
+        && filter_root_node.function_base && filter_root_node.function_base->getName() == "and";
+
     /// Candidate parallel-replica plans have not applied filters yet. Keep their existing
     /// column-size estimates until pruning filters or analyzed parts are available.
     const bool use_pruned_parts = read_from_merge_tree_step
         && (read_from_merge_tree_step->getIndexes() || read_from_merge_tree_step->getAnalyzedResult());
     ReadFromMergeTree::PartsForPrewhere prewhere_parts;
     if (use_pruned_parts)
-        prewhere_parts = read_from_merge_tree_step->getPartsForPrewhere();
+        prewhere_parts = read_from_merge_tree_step->getPartsForPrewhere(has_multiple_conditions);
     auto column_sizes = use_pruned_parts
         ? read_from_merge_tree_step->getColumnSizesForPrewhere(queried_columns, prewhere_parts.parts)
         : storage.getColumnSizes(queried_columns, settings[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading]);
@@ -308,11 +313,6 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     std::unordered_map<std::string, UInt64> column_compressed_sizes;
     for (const auto & [name, sizes] : column_sizes)
         column_compressed_sizes[name] = sizes.data_compressed;
-
-    /// Statistics are only used to reorder conditions, so skip if there is just one.
-    const auto & filter_root_node = filter_step->getExpression().findInOutputs(filter_step->getFilterColumnName());
-    const bool has_multiple_conditions = filter_root_node.type == ActionsDAG::ActionType::FUNCTION
-        && filter_root_node.function_base && filter_root_node.function_base->getName() == "and";
 
     /// Without statistics for a small read, the conditions are ordered by the sizes of their columns.
     ConditionSelectivityEstimatorPtr selectivity_estimator;

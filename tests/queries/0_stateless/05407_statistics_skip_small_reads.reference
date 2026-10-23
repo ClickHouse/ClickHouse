@@ -12,3 +12,6 @@
 05407_query_large	1
 05407_query_small	0
 05407_query_small_no_threshold	1
+-- row limits apply to the parts left after pruning by statistics
+45
+45

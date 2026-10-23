@@ -559,7 +559,8 @@ public:
     };
 
     /// A temporary part snapshot for PREWHERE costs; does not publish range analysis.
-    PartsForPrewhere getPartsForPrewhere() const;
+    /// `need_selectivity_estimator` tells whether statistics would be used to order the conditions.
+    PartsForPrewhere getPartsForPrewhere(bool need_selectivity_estimator) const;
     IStorage::ColumnSizeByName getColumnSizesForPrewhere(const Names & columns, const RangesInDataParts & parts) const;
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const Names & required_columns, const RangesInDataParts & parts) const;
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const Names & required_columns) const;
