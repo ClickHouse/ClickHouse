@@ -733,6 +733,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     const auto & initial_storage_settings = replicated ? context->getReplicatedMergeTreeSettings() : context->getMergeTreeSettings();
     std::unique_ptr<MergeTreeSettings> storage_settings = std::make_unique<MergeTreeSettings>(initial_storage_settings);
 
+    const bool check_aliases = !isReplayedTableDefinition(args.mode, args.query, args.getLocalContext());
+
     if (is_extended_storage_def)
     {
         ASTPtr partition_by_key;
@@ -1070,6 +1072,16 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         }
         metadata.addImplicitIndicesForVirtualColumns(context);
 
+        /// The expression and the text index transforms of an index have the ALIAS columns they use expanded.
+        if (check_aliases)
+        {
+            for (const auto & index : metadata.secondary_indices)
+            {
+                KeyDescription::checkNoAlias(index.expression_list_ast.get(), "INDEX " + index.name);
+                KeyDescription::checkNoAlias(index.arguments.get(), "INDEX " + index.name);
+            }
+        }
+
         String statistics_types_str = (*storage_settings)[MergeTreeSetting::auto_statistics_types];
 
         if (!statistics_types_str.empty() && args.table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE)
@@ -1132,6 +1144,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// If there is an expression for sampling
         if (arg_cnt - arg_num == 3)
         {
+            if (check_aliases)
+                KeyDescription::checkNoAlias(engine_args[arg_num].get(), "SAMPLE BY");
             metadata.sampling_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, metadata.virtuals, context);
             ++arg_num;
         }
@@ -1145,6 +1159,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (merging_param_key_arg)
             additional_columns.emplace_back(*merging_param_key_arg, metadata.columns.getPhysical(*merging_param_key_arg).type);
 
+        if (check_aliases)
+            KeyDescription::checkNoAlias(engine_args[arg_num].get(), "PRIMARY KEY");
         metadata.sorting_key = KeyDescription::getKeyFromAST(engine_args[arg_num], metadata.columns, metadata.virtuals, context, additional_columns);
 
         if (!local_settings[Setting::allow_suspicious_primary_key] && args.mode <= LoadingStrictnessLevel::CREATE)

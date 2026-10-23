@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/Compaction/MergeSelectors/ManualMergeSelector.h>
 #include <Storages/MergeTree/ConditionTemplate.h>
 #include <Storages/StorageProxy.h>
+#include <Storages/SubcolumnCodecs.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/PartitionCommands.h>
 #include <Common/CurrentThread.h>
@@ -86,6 +87,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/QueryMetadataCache.h>
+#include <Interpreters/RenameColumnVisitor.h>
 #include <Functions/FunctionFactory.h>
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
@@ -94,6 +96,7 @@
 #include <Planner/Utils.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
+#include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -333,6 +336,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
     extern const MergeTreeSettingsSeconds lock_acquire_timeout_for_background_operations;
     extern const MergeTreeSettingsUInt64 max_avg_part_size_for_too_many_parts;
+    extern const MergeTreeSettingsUInt64 max_bytes_to_buffer_for_packed_part;
     extern const MergeTreeSettingsUInt64 max_delay_to_insert;
     extern const MergeTreeSettingsUInt64 max_delay_to_mutate_ms;
     extern const MergeTreeSettingsUInt64 max_file_name_length;
@@ -1295,9 +1299,11 @@ void MergeTreeData::checkProperties(
 
         for (const auto & name : key_columns)
         {
-            const auto column = new_metadata.columns.tryGetColumnDescription(
-                GetColumnsOptions(GetColumnsOptions::AllPhysical), name);
-            if (!column || !column->codec)
+            /// A key may use a subcolumn, whose streams are a part of the streams of its column.
+            const auto written_column = new_metadata.columns.tryGetColumn(
+                GetColumnsOptions(GetColumnsOptions::AllPhysical).withRegularSubcolumns(), name);
+            const auto * column = written_column ? new_metadata.columns.tryGet(written_column->getNameInStorage()) : nullptr;
+            if (!column || (!column->codec && column->subcolumn_codecs.empty()))
                 continue;
 
             /// A codec applies to `Array(Float64)` through its float substream, not through the outer type,
@@ -1307,10 +1313,15 @@ void MergeTreeData::checkProperties(
             {
                 if (is_lossy || !ISerialization::isSpecialCompressionAllowed(substream_path))
                     return;
-                is_lossy = CompressionCodecFactory::instance()
-                               .get(column->codec, substream_path.back().data.type.get())->isLossyCompression();
+                if (auto codec = getSubstreamCodecDescription(substream_path, *column))
+                    is_lossy = CompressionCodecFactory::instance().get(codec, substream_path.back().data.type.get())->isLossyCompression();
             };
-            column->type->getDefaultSerialization()->enumerateStreams(callback, column->type);
+            /// The serialization of a subcolumn enumerates its streams with the full path from the column, as the writer does.
+            const auto & type_in_storage = written_column->getTypeInStorage();
+            auto serialization = written_column->isSubcolumn()
+                ? type_in_storage->getSubcolumnSerialization(written_column->getSubcolumnName(), type_in_storage->getDefaultSerialization())
+                : type_in_storage->getDefaultSerialization();
+            serialization->enumerateStreams(callback, written_column->type);
 
             if (is_lossy)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -6099,6 +6110,92 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         bool is_initial_alter = true;
         if (auto txn = local_context->getZooKeeperMetadataTransaction())
             is_initial_alter = txn->isInitialQuery();
+#if CLICKHOUSE_CLOUD
+        if (local_context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(local_context))
+            is_initial_alter = false;
+#endif
+
+        /// A definition the ALTER changes may not have an alias. One that an older server stored is kept while the
+        /// definition stays as it was, up to a column rename.
+        if (is_initial_alter)
+        {
+            std::vector<RenameColumnData> renames;
+            for (const auto & command : commands)
+                if (command.type == AlterCommand::RENAME_COLUMN && !command.ignore)
+                    renames.push_back({command.column_name, command.rename_to});
+
+            auto check = [&](const ASTPtr & old_ast, const ASTPtr & new_ast, std::string_view clause)
+            {
+                if (!new_ast)
+                    return;
+                if (old_ast)
+                {
+                    ASTPtr renamed = old_ast->clone();
+                    for (auto & rename : renames)
+                        RenameColumnVisitor(rename).visit(renamed);
+                    if (renamed->getTreeHash(/*ignore_aliases=*/ false) == new_ast->getTreeHash(/*ignore_aliases=*/ false))
+                        return;
+                }
+                KeyDescription::checkNoAlias(new_ast.get(), clause);
+            };
+            check(old_metadata.sorting_key.definition_ast, new_metadata.sorting_key.definition_ast, "ORDER BY");
+            check(old_metadata.sampling_key.definition_ast, new_metadata.sampling_key.definition_ast, "SAMPLE BY");
+            check(old_metadata.table_ttl.definition_ast, new_metadata.table_ttl.definition_ast, "TTL");
+
+            /// The column each column was renamed from; a column the ALTER adds has none.
+            std::unordered_map<String, std::optional<String>> old_names;
+            for (const auto & column : old_metadata.columns)
+                old_names.emplace(column.name, column.name);
+            for (const auto & command : commands)
+            {
+                if (command.ignore)
+                    continue;
+                if (command.type == AlterCommand::ADD_COLUMN)
+                    old_names.try_emplace(command.column_name, std::nullopt);
+                else if (command.type == AlterCommand::DROP_COLUMN && !command.clear && !command.partition)
+                    old_names.erase(command.column_name);
+                else if (command.type == AlterCommand::RENAME_COLUMN)
+                {
+                    if (auto node = old_names.extract(command.column_name))
+                    {
+                        node.key() = command.rename_to;
+                        old_names.insert(std::move(node));
+                    }
+                }
+            }
+
+            for (const auto & index : new_metadata.secondary_indices)
+            {
+                /// An implicit index is named after its column.
+                String old_name = index.name;
+                if (index.isImplicitlyCreated() && index.name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX))
+                {
+                    auto it = old_names.find(index.name.substr(strlen(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX)));
+                    old_name = it != old_names.end() && it->second ? IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + *it->second : "";
+                }
+                const auto * old_index = old_metadata.secondary_indices.has(old_name)
+                    ? &old_metadata.secondary_indices.getByName(old_name) : nullptr;
+                check(old_index ? old_index->definition_ast : nullptr, index.definition_ast, "INDEX");
+                check(old_index ? old_index->expression_list_ast : nullptr, index.expression_list_ast, "INDEX " + index.name);
+                check(old_index ? old_index->arguments : nullptr, index.arguments, "INDEX " + index.name);
+            }
+
+            for (const auto & constraint : new_metadata.constraints.getConstraints())
+            {
+                ASTPtr old_constraint;
+                for (const auto & candidate : old_metadata.constraints.getConstraints())
+                    if (candidate->as<ASTConstraintDeclaration &>().name == constraint->as<ASTConstraintDeclaration &>().name)
+                        old_constraint = candidate;
+                check(old_constraint, constraint, "CONSTRAINT");
+            }
+
+            for (const auto & column : new_metadata.columns)
+            {
+                auto it = old_names.find(column.name);
+                const auto * old_column = it != old_names.end() && it->second ? old_metadata.columns.tryGet(*it->second) : nullptr;
+                check(old_column ? old_column->ttl : nullptr, column.ttl, "TTL");
+            }
+        }
 
         bool changes_order_by = false;
         for (const auto & command : commands)
@@ -13557,6 +13654,9 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     params_with_invalidated_columns.invalidated_columns_to_write.insert(
         src_part->invalidated_system_columns.begin(), src_part->invalidated_system_columns.end());
 
+    /// A clone that rewrites the archive of a packed part buffers the whole part, the same as writing a new part.
+    params_with_invalidated_columns.max_bytes_to_buffer_for_packed_part = (*getSettings())[MergeTreeSetting::max_bytes_to_buffer_for_packed_part];
+
     /// `freeze` rejects a non-empty destination, so reclaim the leftover here, once the destination disk
     /// is known (the claim itself was taken above).
     std::shared_ptr<IDataPartStorage> dst_part_storage{};
@@ -13596,6 +13696,9 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
         chassert(!params.keep_metadata_version);
 
         dst_part_storage->beginTransaction();
+        /// A packed part rewrites the whole archive on commit of this transaction.
+        if (params_with_invalidated_columns.max_bytes_to_buffer_for_packed_part)
+            dst_part_storage->setTemporaryDataForTransaction(params.temporary_data, params_with_invalidated_columns.max_bytes_to_buffer_for_packed_part);
         auto out_metadata = dst_part_storage->writeFile(
             IMergeTreeDataPart::METADATA_VERSION_FILE_NAME,
             /*buf_size=*/ 4096,
@@ -13892,7 +13995,9 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
 
                 IDataPartStorage::ClonePartParams params
                 {
-                    .make_source_readonly = true
+                    .make_source_readonly = true,
+                    .temporary_data = local_context->getTempDataOnDisk(),
+                    .max_bytes_to_buffer_for_packed_part = (*getSettings())[MergeTreeSetting::max_bytes_to_buffer_for_packed_part],
                 };
 
                 auto new_storage = data_part_storage->freeze(

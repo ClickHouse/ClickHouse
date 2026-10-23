@@ -598,6 +598,7 @@ public:
     bool supportsFinal() const override;
 
     bool supportsSubcolumns() const override { return true; }
+    bool supportsSubcolumnCodecs() const override { return true; }
 
     bool supportsTTL() const override { return true; }
 
@@ -2060,7 +2061,7 @@ protected:
     void calculateColumnAndSecondaryIndexSizesImpl(DataPartsLock & parts_lock) const;
 
     /// Similar to above but should be called before accessing column and secondary indexes sizes for possible lazy calculation.
-    /// Call it with data_parts mutex under a shared lock, and columns_and_secondary_indices_sizes_mutex mutex under an unique lock.
+    /// Call it with data_parts mutex under a shared lock, and columns_and_secondary_indices_sizes_mutex mutex under a unique lock.
     void calculateColumnAndSecondaryIndexSizesLazily(DataPartsSharedLock & parts_lock, std::unique_lock<std::mutex> & sizes_lock) const;
 
     /// Adds or subtracts the contribution of the part to compressed column and secondary indexes sizes.

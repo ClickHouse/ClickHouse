@@ -78,9 +78,8 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
         cached_marks[MergeTreeDataPartCompact::DATA_FILE_NAME] = std::make_unique<MarksInCompressedFile::PlainArray>();
 }
 
-void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and_type, const ASTPtr & effective_codec_desc)
+void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and_type)
 {
-    const bool column_uses_default_codec = columnUsesDefaultCodec(name_and_type.getNameInStorage());
     ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
     {
         chassert(!substream_path.empty());
@@ -90,7 +89,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
         if (compressed_streams.contains(stream_name))
             return;
 
-        auto compression_codec = getSubstreamCodec(effective_codec_desc, substream_path, column_uses_default_codec);
+        auto compression_codec = getSubstreamCodec(name_and_type, substream_path);
 
         UInt64 codec_id = compression_codec->getHash();
         /// Codecs that need the vector dimension upfront (e.g. SZ3) keep per-stream state in the codec
