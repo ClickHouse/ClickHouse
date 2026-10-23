@@ -447,6 +447,82 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 `24.5`부터는 `plain_rewritable` 메타데이터 타입을 사용해
 모든 객체 스토리지 디스크(`s3`, `azure`, `local`)를 구성할 수 있습니다.
 
+#### 메타데이터 스냅샷 {#plain-rewritable-metadata-snapshot}
+
+`plain_rewritable` 디스크의 메타데이터는 객체 스토리지에 디렉터리마다
+`prefix.path` 객체로 저장됩니다. 이 객체들로부터 메모리 내 상태를 구성하려면
+메타데이터 디렉터리를 목록 조회하고, 모든 `prefix.path`를 읽고,
+모든 디렉터리를 목록 조회해야 하므로, 테이블이 하나뿐인 디스크라도
+수만 건의 요청이 발생합니다.
+
+이 과정을 빠르게 하기 위해, 데이터를 쓰는 디스크는 같은 위치를 가리키는
+읽기 전용 디스크(`readonly`가 `true`로 설정되었거나, `read_only`를 `true`로
+설정하여 연결된 디스크)를 위해 전체 상태의 간결한 스냅샷을
+`__meta/snapshot.bin`(`ZSTD`로 압축된, 버전이 명시된 바이너리 형식)에 함께 기록합니다.
+
+읽기 전용 디스크는 단 한 번의 요청으로 스냅샷에서 전체 상태를 로드하며,
+주기적인 갱신(`MergeTree` 설정 `refresh_parts_interval` 참조) 시에는
+스냅샷을 확인하여 재작성된 경우에만 다시 읽습니다. 메타데이터 디렉터리를
+목록 조회하거나 `prefix.path`를 읽는 일은 전혀 없습니다. 유일한 목록 조회는
+완료되지 않은 연산의 마커를 대상으로 하는 단 한 번의 요청이며, 이를 통해
+writer가 현재 대체하고 있는 파일은 백업(backup)에서 읽습니다. 읽기 전용 디스크는 원래
+`MergeTree` 테이블의 오래된 파트의 수명에 의존하여 지연된 상태로 동작하며,
+스냅샷도 같은 종류의 지연된 상태입니다. 즉, writer의 변경 사항은 writer가
+스냅샷을 재작성하는 시점에 리더에게 반영됩니다.
+여기에는 writer가 대체했거나 제자리에서 재작성한 파일도 포함됩니다. 스냅샷이
+재작성되기 전까지 리더는 이 파일들을 이전 크기와 블롭 기준으로 인식하며, 해당 블롭은
+이미 덮어쓰였거나 삭제되었을 수 있습니다. 이는 객체 스토리지를 목록 조회하는
+리더가 다음 갱신 전까지 파일을 인식하는 방식과 정확히 같습니다. 스냅샷으로 인해 이 시간 범위가
+늘어나는 것은 최대 `metadata_snapshot_write_delay_ms`뿐입니다.
+스냅샷이 없거나(예: writer에서 비활성화되었거나 writer가 이전 버전을 실행 중인 경우)
+읽을 수 없는 경우에만 읽기 전용 디스크가 객체 스토리지를 목록 조회합니다.
+
+writer는 항상 최신의 정확한 상태를 유지해야 하므로 스냅샷을 절대 읽지 않습니다.
+시작 시 평소처럼 객체 스토리지를 목록 조회한 뒤 스냅샷을 기록합니다.
+`metadata_snapshot_enabled`가 `false`로 설정된 writer는 시작 시 이전에 남아 있던
+스냅샷을 삭제하여, 읽기 전용 디스크가 오래된 상태를 계속 사용하지 않도록 합니다.
+스냅샷을 읽을 수 없거나 완료되지 않은 연산의 마커가 잘못된 형식이면, 읽기 전용
+디스크는 객체 스토리지를 목록 조회하며, 해당 스냅샷은 재작성될 때까지 사용하지 않습니다.
+
+스냅샷은 객체를 원자적으로 대체하는 객체 스토리지에서만 사용되므로, 읽기 전용
+디스크가 부분적으로 기록된 스냅샷을 읽는 일은 없습니다. 해당 스토리지는
+`S3`, Azure blob storage, 로컬입니다. `HDFS` 및 Azure Data Lake Storage
+Gen2 엔드포인트(예: OneLake)에서는 스냅샷을 기록하지도 읽지도 않으며,
+디스크는 스냅샷이 없을 때와 마찬가지로 객체 스토리지를 목록 조회합니다. 이러한 스토리지에 이전부터
+남아 있던 스냅샷은 writer가 시작 시 삭제합니다.
+
+| 설정                                 | 설명                                                                                                                                                                                    | 기본값    |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| `metadata_snapshot_enabled`        | 수정 후 스냅샷을 기록하거나(객체 스토리지가 쓰기 가능한 경우), 객체 스토리지를 목록 조회하는 대신 스냅샷에서 상태를 로드합니다(객체 스토리지가 읽기 전용인 경우).                                                                                         | `true` |
+| `metadata_snapshot_write_delay_ms` | 수정 사항이 있는 동안 스냅샷은 백그라운드에서 재작성되며, 재작성 간격은 지정된 밀리초보다 짧아지지 않습니다. `0`이면 매 수정 직후 커밋하는 스레드에서 스냅샷을 재작성하므로, 모든 커밋의 비용이 디스크 전체의 메타데이터를 직렬화하는 비용만큼 커집니다. 스냅샷은 서버 종료 시에도 기록되며, 디스크가 비면 즉시 삭제됩니다. | `1000` |
+
+두 설정 모두 디스크가 생성될 때만 읽힙니다. 변경 사항은 서버를 재시작해야
+적용되며, `SYSTEM RELOAD CONFIG`로는 적용되지 않습니다. 디스크의 역할도
+마찬가지입니다. 스냅샷을 기록할지 읽을지는 디스크 생성 시 `readonly`에 따라
+결정되므로, `readonly`를 변경할 때도 서버를 재시작해야 합니다.
+
+이전 버전은 `__meta/snapshot.bin`을 무시하므로 이 파일을 읽지도, 재작성하거나
+삭제하지도 않습니다. 따라서 읽기 전용 디스크는 계속 새 버전으로 실행하면서
+writer만 스냅샷을 지원하지 않는 버전으로 다운그레이드하는 경우, writer가 남긴 스냅샷을
+폐기해야 합니다. 그렇지 않으면 읽기 전용 디스크가 이 스냅샷을 계속 사용하여 다운그레이드
+이후의 변경 사항을 보지 못합니다. 새 버전의 writer를 중지한 후 이전 버전을
+시작하기 전에 `__meta/snapshot.bin`을 삭제하거나, 읽기 전용 디스크에서
+`metadata_snapshot_enabled`를 `false`로 설정하고 재시작하여 객체 스토리지를
+목록 조회하도록 하십시오.
+
+```xml
+<s3_plain_rewritable>
+    <type>s3_plain_rewritable</type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+    <metadata_snapshot_write_delay_ms>10000</metadata_snapshot_write_delay_ms>
+</s3_plain_rewritable>
+```
+
+[system.events](/ko/reference/system-tables/events)의 `DiskPlainRewritableSnapshotRead`, `DiskPlainRewritableSnapshotWritten`
+및 `DiskPlainRewritableSnapshotWriteFailed` 이벤트를 통해
+스냅샷 사용 현황을 확인할 수 있습니다.
+
 #### plain rewritable 디스크의 하드 링크(Hard Link) {#plain-rewritable-hard-links}
 
 `MergeTree` 테이블의 `ALTER` 작업과 뮤테이션은 변경되지 않은 파일을 복사하지 않고

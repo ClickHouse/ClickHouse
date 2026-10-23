@@ -451,6 +451,86 @@ est égal à
 À partir de `24.5`, il est possible de configurer n’importe quel disque de stockage objet
 (`s3`, `azure`, `local`) avec le type de métadonnées `plain_rewritable`.
 
+#### Snapshot des métadonnées {#plain-rewritable-metadata-snapshot}
+
+Les métadonnées d’un disque `plain_rewritable` sont stockées dans le stockage d’objet sous la forme d’un
+objet `prefix.path` par répertoire. Pour construire l’état en mémoire à partir de ces
+objets, il faut énumérer le répertoire de métadonnées, lire chaque `prefix.path`
+et énumérer chaque répertoire, ce qui représente des dizaines de milliers de requêtes, même pour un
+disque ne contenant qu’une seule table.
+
+Pour accélérer ce processus, le disque qui écrit les données écrit également un snapshot
+compact de l’ensemble de l’état dans `__meta/snapshot.bin` (un format binaire
+versionné compressé avec `ZSTD`) à destination des disques en lecture seule pointant vers le même
+emplacement (`readonly` défini à `true`, ou disque attaché avec `read_only` défini
+à `true`).
+
+Un disque en lecture seule charge l’intégralité de l’état depuis le snapshot en une seule requête,
+et ses rafraîchissements périodiques (voir le paramètre `MergeTree` `refresh_parts_interval`)
+vérifient le snapshot et ne le relisent que s’il a été réécrit. Il n’énumère
+jamais le répertoire de métadonnées et ne lit jamais `prefix.path` : la seule énumération porte sur les
+marqueurs des opérations inachevées, soit une seule requête, de sorte qu’un fichier
+que le rédacteur est en train de remplacer est lu depuis sa sauvegarde. Quoi qu’il en soit, un disque en lecture seule fonctionne sur un
+état différé, en s’appuyant sur la durée de vie des anciennes parts des tables `MergeTree`,
+et le snapshot constitue un état différé de même nature : les modifications du
+rédacteur deviennent visibles pour les lecteurs lorsque le rédacteur réécrit le snapshot.
+Cela vaut aussi pour les fichiers que le rédacteur a remplacés ou réécrits sur place : tant que
+le snapshot n’a pas été réécrit, un lecteur les voit avec leur taille et leur
+blob précédents, qui ont pu entre-temps être écrasés ou supprimés, exactement comme un lecteur qui
+énumère le stockage d’objet les voit jusqu’à son prochain rafraîchissement. Le snapshot ne fait
+qu’allonger cette fenêtre d’au plus `metadata_snapshot_write_delay_ms`.
+Ce n’est qu’en l’absence de snapshot (par exemple, si le rédacteur l’a désactivé ou exécute
+une version plus ancienne) ou si celui-ci est illisible que le disque en lecture seule énumère le stockage
+d’objet.
+
+Le rédacteur doit disposer de l’état le plus récent et le plus précis ; il ne lit donc jamais le
+snapshot : il énumère le stockage d’objet au démarrage comme à l’accoutumée, puis écrit le
+snapshot. Un rédacteur dont `metadata_snapshot_enabled` est défini à `false`
+supprime au démarrage tout snapshot antérieur, afin que les disques en lecture seule ne
+continuent pas à utiliser un état obsolète. Si un snapshot est illisible, ou si un
+marqueur d’opération inachevée est mal formé, le disque en lecture seule énumère le
+stockage d’objet et n’utilise plus ce snapshot tant qu’il n’a pas été réécrit.
+
+Le snapshot n’est utilisé que sur les stockages d’objet qui remplacent un objet
+de manière atomique, afin qu’un disque en lecture seule ne voie jamais un snapshot partiellement écrit :
+`S3`, Azure Blob Storage et le stockage local. Sur `HDFS` et sur les endpoints Azure Data Lake Storage
+Gen2 (comme OneLake), le snapshot n’est ni écrit ni lu, et
+les disques énumèrent le stockage d’objet comme en l’absence de snapshot ; un snapshot antérieur
+qui y subsisterait est supprimé par le rédacteur au démarrage.
+
+| Paramètre                          | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Valeur par défaut |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| `metadata_snapshot_enabled`        | Écrit le snapshot après les modifications (si le stockage d’objet est accessible en écriture), ou charge l’état depuis celui-ci au lieu d’énumérer le stockage d’objet (si le stockage d’objet est en lecture seule).                                                                                                                                                                                                                                                       | `true`            |
+| `metadata_snapshot_write_delay_ms` | Le snapshot est réécrit en arrière-plan, au plus une fois par intervalle du nombre de millisecondes indiqué, tant que des modifications ont eu lieu. `0` le réécrit immédiatement après chaque modification, dans le thread de validation, ce qui rend chaque validation aussi coûteuse que la sérialisation des métadonnées de l’ensemble du disque. Le snapshot est également écrit lors de l’arrêt du serveur, et supprimé immédiatement lorsque le disque devient vide. | `1000`            |
+
+Les deux paramètres ne sont lus qu’à la création du disque : une modification ne prend effet
+qu’après un redémarrage du serveur, `SYSTEM RELOAD CONFIG` ne l’applique pas. Il en va
+de même pour le rôle du disque : le fait qu’il écrive ou lise le snapshot est
+déterminé par `readonly` à la création du disque ; modifier `readonly` nécessite donc
+également un redémarrage du serveur.
+
+Les versions plus anciennes ignorent `__meta/snapshot.bin` : elles ne le lisent pas, ne le réécrivent pas et ne
+le suppriment pas. Par conséquent, si le rédacteur revient à une version antérieure sans snapshots
+alors que les disques en lecture seule continuent d’exécuter une version plus récente, le snapshot laissé par
+le rédacteur doit être retiré ; sinon, les disques en lecture seule continuent de l’utiliser et ne
+voient pas les modifications effectuées après le retour à la version antérieure. Supprimez
+`__meta/snapshot.bin` après l’arrêt du rédacteur récent et avant le démarrage de
+l’ancien, ou définissez `metadata_snapshot_enabled` à `false` sur les disques en lecture seule
+et redémarrez-les, afin qu’ils énumèrent le stockage d’objet.
+
+```xml
+<s3_plain_rewritable>
+    <type>s3_plain_rewritable</type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+    <metadata_snapshot_write_delay_ms>10000</metadata_snapshot_write_delay_ms>
+</s3_plain_rewritable>
+```
+
+Les événements `DiskPlainRewritableSnapshotRead`, `DiskPlainRewritableSnapshotWritten`
+et `DiskPlainRewritableSnapshotWriteFailed` de
+[system.events](/fr/reference/system-tables/events) permettent de suivre l&#39;utilisation du snapshot.
+
 #### Liens physiques sur les disques plain rewritable {#plain-rewritable-hard-links}
 
 Les opérations `ALTER` et les mutations d&#39;une table `MergeTree` partagent, au moyen de liens physiques, les fichiers inchangés
@@ -667,7 +747,7 @@ Exemple de configuration du disque :
 Il est possible de configurer un cache local pour les disques dans la configuration de stockage à partir de la version 22.3.
 Pour les versions 22.3 à 22.7, le cache n’est pris en charge que pour le type de disque `s3`. Pour les versions &gt;= 22.8, le cache est pris en charge pour tous les types de disque : S3, Azure, Local, Encrypted, etc.
 Pour les versions &gt;= 23.5, le cache n’est pris en charge que pour les types de disque distants : S3, Azure, HDFS (non pris en charge).
-Pour l’éviction, le cache s’appuie sur le paramètre `cache_policy` (`SLRU` par défaut), répertorié dans [`system.filesystem_cache_settings`](/operations/system-tables/filesystem_cache_settings). La liste complète des paramètres des disques de cache se trouve dans [`system.filesystem_cache_settings`](/operations/system-tables/filesystem_cache_settings).
+Pour l’éviction, le cache s’appuie sur le paramètre `cache_policy` (`SLRU` par défaut), répertorié dans [`system.filesystem_cache_settings`](/fr/operations/system-tables/filesystem_cache_settings). La liste complète des paramètres des disques de cache se trouve dans [`system.filesystem_cache_settings`](/fr/operations/system-tables/filesystem_cache_settings).
 
 Exemple de configuration pour les versions supérieures ou égales à 22.8 :
 
@@ -729,7 +809,7 @@ Exemple de configuration pour les versions antérieures à 22.8 :
 
 Paramètres de **configuration du disque** pour File Cache (paramètres courants) :
 
-Ces paramètres doivent être définis dans la section de configuration du disque. Ce tableau répertorie les principaux paramètres des disques de cache, et non l’ensemble des clés acceptées dans la configuration. Les valeurs à l’exécution et la liste complète des paramètres sont disponibles dans [`system.filesystem_cache_settings`](/operations/system-tables/filesystem_cache_settings).
+Ces paramètres doivent être définis dans la section de configuration du disque. Ce tableau répertorie les principaux paramètres des disques de cache, et non l’ensemble des clés acceptées dans la configuration. Les valeurs à l’exécution et la liste complète des paramètres sont disponibles dans [`system.filesystem_cache_settings`](/fr/operations/system-tables/filesystem_cache_settings).
 
 | Paramètre                                   | Type    | Default    | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | ------------------------------------------- | ------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

@@ -449,6 +449,85 @@ Configuração:
 A partir da versão `24.5`, é possível configurar qualquer disco de armazenamento de objetos
 (`s3`, `azure`, `local`) com o tipo de metadados `plain_rewritable`.
 
+#### Snapshot de metadados {#plain-rewritable-metadata-snapshot}
+
+Os metadados de um disco `plain_rewritable` são armazenados no armazenamento de objetos como um
+objeto `prefix.path` por diretório. Construir o estado em memória a partir desses
+objetos exige listar o diretório de metadados, ler cada `prefix.path`
+e listar cada diretório, o que resulta em dezenas de milhares de requisições, mesmo para um
+disco com uma única tabela.
+
+Para acelerar esse processo, o disco que grava os dados também grava um snapshot
+compacto de todo o estado em `__meta/snapshot.bin` (um formato binário versionado
+comprimido com `ZSTD`) para os discos read-only que apontam para o mesmo
+local (`readonly` definido como `true`, ou um disco anexado com `read_only` definido
+como `true`).
+
+Um disco read-only carrega todo o estado a partir do snapshot em uma única requisição,
+e suas atualizações periódicas (consulte a configuração `refresh_parts_interval` do `MergeTree`)
+verificam o snapshot e o leem novamente apenas se ele tiver sido reescrito. Ele não lista
+o diretório de metadados nem lê `prefix.path`: a única listagem é a dos
+marcadores de operações não concluídas, que exige uma única requisição, de modo que um arquivo
+que o processo de gravação esteja substituindo naquele momento seja lido a partir de seu backup. De qualquer forma, um disco read-only já trabalha com um
+estado defasado, contando com o tempo de vida das partes antigas das tabelas `MergeTree`,
+e o snapshot é um estado defasado do mesmo tipo: as alterações do
+processo de gravação ficam visíveis para os leitores quando ele reescreve o snapshot.
+Isso inclui os arquivos que o processo de gravação substituiu ou reescreveu no local: até que
+o snapshot seja reescrito, um leitor os vê com o tamanho e o
+blob anteriores, que podem já ter sido sobrescritos ou removidos, exatamente como um leitor que
+lista o armazenamento de objetos os vê até sua próxima atualização. O snapshot apenas
+amplia essa janela em, no máximo, `metadata_snapshot_write_delay_ms`.
+O disco read-only só lista o armazenamento de objetos se não houver snapshot (por exemplo, se o processo de gravação o tiver desabilitado ou executar
+uma versão mais antiga) ou se ele não puder ser lido.
+
+O processo de gravação precisa ter o estado mais recente e preciso, por isso nunca lê o
+snapshot: ele lista o armazenamento de objetos na inicialização, como de costume, e grava o
+snapshot em seguida. Um processo de gravação com `metadata_snapshot_enabled` definido como `false`
+remove, na inicialização, qualquer snapshot remanescente, para que os discos read-only
+não continuem usando um estado desatualizado. Se um snapshot não puder ser lido, ou se houver um
+marcador malformado de uma operação não concluída, o disco read-only lista o
+armazenamento de objetos e não usa esse snapshot até que ele seja reescrito.
+
+O snapshot é usado apenas em sistemas de armazenamento de objetos que substituem um objeto
+de forma atômica, para que um disco read-only nunca veja um snapshot parcialmente gravado:
+`S3`, Azure Blob Storage e local. Em `HDFS` e em endpoints do Azure Data Lake Storage
+Gen2 (como o OneLake), o snapshot não é gravado nem lido, e
+os discos listam o armazenamento de objetos como se não houvesse snapshot; um snapshot remanescente
+nesses locais é removido pelo processo de gravação na inicialização.
+
+| Configuração                       | Descrição                                                                                                                                                                                                                                                                                                                                                                                                                        | Padrão |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| `metadata_snapshot_enabled`        | Grava o snapshot após modificações (se o armazenamento de objetos for gravável) ou carrega o estado a partir dele em vez de listar o armazenamento de objetos (se o armazenamento de objetos for read-only).                                                                                                                                                                                                                     | `true` |
+| `metadata_snapshot_write_delay_ms` | O snapshot é reescrito em segundo plano, no máximo uma vez a cada intervalo especificado em milissegundos, desde que tenha havido modificações. `0` o reescreve logo após cada modificação, na thread que realiza o commit, o que torna cada commit tão custoso quanto a serialização dos metadados de todo o disco. O snapshot também é gravado no desligamento do servidor e removido imediatamente quando o disco fica vazio. | `1000` |
+
+Ambas as configurações são lidas apenas quando o disco é criado: uma alteração só entra em vigor
+após a reinicialização do servidor, e `SYSTEM RELOAD CONFIG` não a aplica. O
+mesmo vale para o papel do disco: se ele grava ou lê o snapshot é
+determinado por `readonly` quando o disco é criado, portanto alterar `readonly` também exige
+a reinicialização do servidor.
+
+Versões mais antigas ignoram `__meta/snapshot.bin`: não o leem, não o reescrevem nem
+o removem. Assim, se for feito o downgrade do processo de gravação para uma versão sem snapshots
+enquanto os discos read-only continuam executando uma versão mais recente, o snapshot deixado pelo
+processo de gravação deve ser descartado; caso contrário, os discos read-only continuarão a usá-lo e
+não verão as alterações feitas após o downgrade. Remova
+`__meta/snapshot.bin` após parar o processo de gravação mais recente e antes de iniciar o
+mais antigo, ou defina `metadata_snapshot_enabled` como `false` nos discos read-only
+e reinicie-os, para que passem a listar o armazenamento de objetos.
+
+```xml
+<s3_plain_rewritable>
+    <type>s3_plain_rewritable</type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+    <metadata_snapshot_write_delay_ms>10000</metadata_snapshot_write_delay_ms>
+</s3_plain_rewritable>
+```
+
+Os eventos `DiskPlainRewritableSnapshotRead`, `DiskPlainRewritableSnapshotWritten`
+e `DiskPlainRewritableSnapshotWriteFailed` em
+[system.events](/pt-BR/reference/system-tables/events) mostram como o snapshot está sendo usado.
+
 #### Hard links em discos plain rewritable {#plain-rewritable-hard-links}
 
 Operações `ALTER` e mutações de uma tabela `MergeTree` compartilham, por meio de hard links, os arquivos inalterados
@@ -665,7 +744,7 @@ Exemplo de configuração de disco:
 É possível configurar cache local em discos na configuração de armazenamento a partir da versão 22.3.
 Nas versões 22.3 - 22.7, o cache é suportado apenas para o tipo de disco `s3`. Nas versões &gt;= 22.8, o cache é suportado para qualquer tipo de disco: S3, Azure, Local, Encrypted etc.
 Nas versões &gt;= 23.5, o cache é suportado apenas para tipos de disco remotos: S3, Azure, HDFS (sem suporte).
-O cache usa a configuração `cache_policy` (padrão `SLRU`) para evicção, listada em [`system.filesystem_cache_settings`](/operations/system-tables/filesystem_cache_settings). A lista completa de configurações de disco de cache está em [`system.filesystem_cache_settings`](/operations/system-tables/filesystem_cache_settings).
+O cache usa a configuração `cache_policy` (padrão `SLRU`) para evicção, listada em [`system.filesystem_cache_settings`](/pt-BR/operations/system-tables/filesystem_cache_settings). A lista completa de configurações de disco de cache está em [`system.filesystem_cache_settings`](/pt-BR/operations/system-tables/filesystem_cache_settings).
 
 Exemplo de configuração para versões iguais ou posteriores à 22.8:
 
@@ -727,7 +806,7 @@ Exemplo de configuração para versões anteriores à 22.8:
 
 Configurações de **disco do cache do sistema de arquivos** (configurações comuns):
 
-Essas configurações devem ser definidas na seção de configuração de disco. Esta tabela lista os parâmetros de disco de cache mais usados, e não todas as chaves aceitas na configuração. Os valores em tempo de execução e a lista completa de configurações estão em [`system.filesystem_cache_settings`](/operations/system-tables/filesystem_cache_settings).
+Essas configurações devem ser definidas na seção de configuração de disco. Esta tabela lista os parâmetros de disco de cache mais usados, e não todas as chaves aceitas na configuração. Os valores em tempo de execução e a lista completa de configurações estão em [`system.filesystem_cache_settings`](/pt-BR/operations/system-tables/filesystem_cache_settings).
 
 | Parâmetro                                   | Tipo     | Padrão     | Descrição                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | ------------------------------------------- | -------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
