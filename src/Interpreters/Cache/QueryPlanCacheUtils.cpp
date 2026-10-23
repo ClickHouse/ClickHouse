@@ -1084,6 +1084,30 @@ std::optional<std::vector<QueryPlanCacheDependency>> collectQueryPlanCacheDepend
     return result;
 }
 
+namespace
+{
+
+/// The metadata expressions of a dependency that are analyzed into a cacheable plan: the body of an
+/// expanded view and the `ALIAS` column expressions. Both are checked with the same predicate when
+/// the plan is stored (`ASTDependencyCollector` and `fillDependency`).
+bool areMetadataExpressionsStillCacheable(const StoragePtr & storage, const StorageInMemoryMetadata & metadata, const ContextPtr & context)
+{
+    if (isViewExpandedInCacheablePlan(storage) && metadata.select.inner_query
+        && astContainsFunctionsUnsafeForQueryPlanCache(metadata.select.inner_query, context))
+        return false;
+
+    for (const auto & column : metadata.getColumns())
+    {
+        if (column.default_desc.kind == ColumnDefaultKind::Alias && column.default_desc.expression
+            && astContainsFunctionsUnsafeForQueryPlanCache(column.default_desc.expression, context))
+            return false;
+    }
+
+    return true;
+}
+
+}
+
 bool validateQueryPlanCacheEntry(
     const QueryPlanCacheEntry & entry,
     const ContextPtr & context,
@@ -1111,6 +1135,15 @@ bool validateQueryPlanCacheEntry(
             return false;
 
         if (getMetadataVersionOrSchemaHash(metadata) != dep.metadata_version)
+            return false;
+
+        /// The schema fingerprint covers the metadata ASTs, not how their function names resolve.
+        /// An executable or WebAssembly UDF loaded after the plan was stored can shadow a builtin
+        /// used by an expanded view body or an `ALIAS` expression: the AST stays the same, but a
+        /// fresh analysis would now call the UDF while the cached plan keeps calling the builtin.
+        /// Re-walk these expressions on every hit, as the user query AST is re-walked in
+        /// `astContainsFunctionsUnsafeForQueryPlanCache` before each lookup.
+        if (!areMetadataExpressionsStillCacheable(storage, *metadata, context))
             return false;
 
         /// A policy that changed to contain a subquery, a non-deterministic function or a call to a UDF
