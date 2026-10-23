@@ -17,6 +17,8 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationQuantizedVector.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 #include <Compression/CompressionCodecQuantized.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
@@ -1680,7 +1682,7 @@ Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const N
     return std::move(*result);
 }
 
-void ColumnsDescription::checkAliasColumnsAreNotCyclic() const
+void ColumnsDescription::checkAliasColumnsAreNotCyclic(ContextPtr context) const
 {
     Strings alias_columns;
     for (const auto & column : columns)
@@ -1704,9 +1706,16 @@ void ColumnsDescription::checkAliasColumnsAreNotCyclic() const
 
     throwOnDependencyCycle(alias_columns, [&](const String & alias_column)
     {
+        ASTPtr expression = get(alias_column).default_desc.expression;
+        if (expression && !UserDefinedSQLFunctionFactory::instance().empty())
+        {
+            expression = expression->clone();
+            UserDefinedSQLFunctionVisitor::visit(expression, context);
+        }
+
         Names lambda_parameters;
         NameSet names;
-        collectNamesReadFromTable(get(alias_column).default_desc.expression, lambda_parameters, names);
+        collectNamesReadFromTable(expression, lambda_parameters, names);
 
         NameSet dependencies;
         for (const auto & name : names)
