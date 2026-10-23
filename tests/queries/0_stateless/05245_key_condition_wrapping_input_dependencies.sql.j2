@@ -33,10 +33,10 @@ INSERT INTO wrapping_inputs SELECT number + 64, 1, 0 FROM numbers(64);
 {{ check('wrapping_inputs', 'x = 1 AND y = 0', settings = 'use_statistics_for_part_pruning = 0', indexes = true) }}
 {{ check('wrapping_inputs', 'x = 1 AND y = 0', settings = 'use_statistics_for_part_pruning = 1', indexes = true) }}
 
--- The aliased derived key improves pruning through `x`. Unrelated input keys remain in the expression, and
+-- The derived key improves pruning through `x`. Unrelated input keys remain in the expression, and
 -- the derived candidate must remain available to both comparisons and sets. Each predicate runs without and
 -- with `analyze_index_with_multiple_key_columns_per_condition`.
-CREATE TABLE wrapping_derived (u UInt16, x UInt16, y UInt16) ENGINE = MergeTree ORDER BY (u, toUInt8(x) AS bucket, x, y)
+CREATE TABLE wrapping_derived (u UInt16, x UInt16, y UInt16) ENGINE = MergeTree ORDER BY (u, toUInt8(x), x, y)
 SETTINGS index_granularity = 1, primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns = 0, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO wrapping_derived SELECT 0, number, 7 FROM numbers(512);
 {{ check('wrapping_derived', 'u = 0 AND x = 257 AND y = 7', settings = 'analyze_index_with_multiple_key_columns_per_condition = 0') }}

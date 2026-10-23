@@ -96,7 +96,7 @@ namespace
             if (first_allowed_path.is_relative())
                 first_allowed_path = data_dir / first_allowed_path;
 
-            path = first_allowed_path / path;
+            path = (first_allowed_path / path).lexically_normal();
         }
 
         /// With overlapping entries, return the deepest one containing the path, so the durability
@@ -144,7 +144,7 @@ namespace
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Backup engine 'File' requires 1 argument (path)");
 
             location.path = args[0].safeGet<String>();
-            location.allowed_path = checkPath(location.path, context->getConfigRef(), context->getPath());
+            location.allowed_path = checkPath(location.path, context->getConfigRef(), fs::absolute(context->getPath()));
         }
         else if (engine_name == "Disk")
         {
