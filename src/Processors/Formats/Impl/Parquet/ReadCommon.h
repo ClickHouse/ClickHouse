@@ -74,6 +74,9 @@ struct ReadOptions
     /// searching for 100 elements would have 63% false positive probability.
     size_t bloom_filter_max_set_size = 100;
 
+    /// The file is read from object storage or a URL.
+    bool is_remote_fs = false;
+
     /// Null if the columns cache is not used.
     std::shared_ptr<const ColumnsCacheOptions> columns_cache;
 };
@@ -91,6 +94,7 @@ struct SharedResourcesExt
     };
 
     static Limits getLimitsPerReader(const FormatParserSharedResources & parser_shared_resources, double fraction);
+    static double getMemoryFractionPerReader(const FormatParserSharedResources & parser_shared_resources, double fraction);
 };
 
 
