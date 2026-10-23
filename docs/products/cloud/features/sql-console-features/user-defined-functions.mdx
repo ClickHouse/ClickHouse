@@ -14,8 +14,9 @@ User-defined functions (UDF) allow users to extend the behavior of ClickHouse be
 In ClickHouse Cloud, there are several ways to create and manage user-defined functions:
 1. Using [SQL](#sql-udfs)
 2. Using the [console and your own code](#ui-udfs)
-3. Using the [Cloud API](#manage-udfs-with-the-cloud-api) (beta)
-4. Using [Terraform](#manage-udfs-with-terraform) (beta)
+3. Using [clickhousectl](#manage-udfs-with-clickhousectl), which can also test a UDF on a local server first (beta)
+4. Using the [Cloud API](#manage-udfs-with-the-cloud-api) (beta)
+5. Using [Terraform](#manage-udfs-with-terraform) (beta)
 
 Executable UDFs are available on AWS, GCP, and Azure. They are enabled for every organization and there is nothing to turn on. They are not billed separately: UDF processes run inside the service's pods and consume the service's own CPU and memory.
 
@@ -354,6 +355,84 @@ Common cases:
 - **Intermittent failures with type `executable` under heavy load**: switch to `executable_pool`.
 - **Build status is error**: `main.py` (Python) or `amd64/main` and `arm64/main` (Native) is missing from the zip root, or the archive contains symlinks.
 - **The function cannot be created**: the name collides with a built-in function.
+
+## Manage UDFs with clickhousectl {#manage-udfs-with-clickhousectl}
+
+<BetaBadge/>
+
+[clickhousectl](/concepts/features/interfaces/cli) wraps the [UDF endpoints of the Cloud API](#manage-udfs-with-the-cloud-api) and adds a local loop: you test a function on a local ClickHouse server, then deploy the same source directory to Cloud. `cloud udf list` and `get` work with OAuth (`clickhousectl cloud auth login`). Creating, attaching, and deleting UDFs needs an API key: run `clickhousectl cloud auth login --interactive`.
+
+<Steps>
+<Step title="Scaffold the function" id="cli-scaffold-udf">
+
+Run this from your project root:
+
+```bash
+clickhousectl local udf init isBusinessHours --type executable_pool
+```
+
+This creates `clickhouse/udfs/isBusinessHours/` with a `main.py` entrypoint and a `udf.json` definition. Replace `main.py` with the script from [Create the Python file](#create-python-file), then set the argument and return type in `udf.json`. The definition uses the Cloud API's field names:
+
+```json
+{
+  "functionName": "isBusinessHours",
+  "type": "executable_pool",
+  "runtime": "python3.11",
+  "arguments": [{"name": "timestamp", "type": "DateTime"}],
+  "returnType": "Bool",
+  "format": "TabSeparated",
+  "deterministic": false
+}
+```
+
+You don't zip the directory yourself: clickhousectl archives everything in it except `udf.json`, hidden files, and `__pycache__`. For a [Native](#native-runtime) UDF, pass `--runtime native`; `init` then creates the `amd64/` and `arm64/` folders for your two `main` binaries.
+</Step>
+<Step title="Test on a local server" id="cli-test-udf-locally">
+
+```bash
+clickhousectl local server start --version stable
+clickhousectl local udf deploy isBusinessHours
+clickhousectl local client --query "SELECT isBusinessHours('2026-03-20 10:00:00'::DateTime), isBusinessHours('2026-03-20 23:00:00'::DateTime)"
+```
+
+`local udf deploy` validates `udf.json` as Cloud does, installs the function on the local server named `default` (`--server` picks another), and reloads functions. It runs `main.py` with `python3.11`, or `python3` when 3.11 isn't on `PATH`. Pass `--python` to use another interpreter, such as a virtualenv with your `requirements.txt` packages installed; `deploy` doesn't install them. Native UDFs run locally only on Linux amd64 and arm64 hosts. Cloud-only fields, such as `memoryLimitMib` and `sandboxType`, are accepted and reported as ignored.
+</Step>
+<Step title="Deploy to Cloud" id="cli-deploy-udf-to-cloud">
+
+```bash
+clickhousectl cloud udf deploy isBusinessHours --service <service-id>
+clickhousectl cloud service query <service-id> --query "SELECT isBusinessHours(now())"
+```
+
+`cloud udf deploy` uploads the directory you tested and creates the UDF, or a new version when the name already exists. It waits for the build, attaches exactly that version to the service, and waits until the attachment is deployed, which can take several minutes. It wakes an idle service; pass `--no-wake` to fail instead. Omitted `udf.json` fields take the create defaults, not the previous version's values. The [first attachment restarts the service](#service-restarts).
+
+After deploying a new version of an `executable_pool` UDF, run `SYSTEM RELOAD FUNCTION ON CLUSTER default isBusinessHours` on the service so the pool picks it up.
+</Step>
+</Steps>
+
+To run each step on its own, use the step-wise commands. `create`, `version create`, and `attach` return while the work runs, so poll the matching `get` command:
+
+```bash
+# Create the UDF from clickhouse/udfs/isBusinessHours/, then poll until status is ready
+clickhousectl cloud udf create isBusinessHours
+clickhousectl cloud udf get isBusinessHours
+
+# Attach the latest ready version, then poll until the attachment is deployed
+clickhousectl cloud udf attach isBusinessHours <service-id> --wake
+clickhousectl cloud udf attachment get isBusinessHours <service-id>
+
+# Create a version after editing udf.json or the code, then attach it (2 is an example)
+clickhousectl cloud udf version create isBusinessHours
+clickhousectl cloud udf version list isBusinessHours
+clickhousectl cloud udf attach isBusinessHours <service-id> --version 2
+
+# Detach, then delete an older version (the latest version can't be deleted) or the whole UDF
+clickhousectl cloud udf detach isBusinessHours <service-id>
+clickhousectl cloud udf version delete isBusinessHours 1
+clickhousectl cloud udf delete isBusinessHours
+```
+
+To upload a ZIP you built, such as `is_business_hours.zip` from the console tutorial, pass `--file udf.json --artifact is_business_hours.zip` to `create` or `version create` instead of reading the directory. `cloud udf delete` deletes every version and detaches the UDF from all services, with no confirmation prompt. See the [clickhousectl UDF guide](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/user-defined-functions.md) for the full workflow.
 
 ## Manage UDFs with the Cloud API {#manage-udfs-with-the-cloud-api}
 
