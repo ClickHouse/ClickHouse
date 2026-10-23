@@ -12,6 +12,8 @@
 1
 1
 1
+16
+16
 10
 query_wide	1
 query_compact	1
@@ -23,3 +25,4 @@ same_compressibility_changes	1	1
 same_empty_granules	1	1
 same_long_values	1	1
 same_varying_lengths	1	1
+1	1
