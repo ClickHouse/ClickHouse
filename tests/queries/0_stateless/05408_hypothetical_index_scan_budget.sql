@@ -1,5 +1,6 @@
 -- past `index_scan_budget_rows` an index estimate reads a sample of index windows.
 -- the twin table with the materialized indexes gives the real granules, and the sampled span must hold them
+-- a full scan is exact, as the twin table shows, so the later tables take it for the real granules
 
 DROP TABLE IF EXISTS t_budget;
 DROP TABLE IF EXISTS t_budget_real;
@@ -70,19 +71,12 @@ WHERE match(explain, '^With idx_[cd]|^ +(marks|empirical_status|empirical_reason
 -- each part has 101 windows, so a step of 10 leaves the last window alone in its run. Only the last window of each part survives
 SELECT '-- the window of a shorter last run stands for fewer windows, so the estimate holds the real granules';
 DROP TABLE IF EXISTS t_tail;
-DROP TABLE IF EXISTS t_tail_real;
 CREATE TABLE t_tail (x UInt64) ENGINE = MergeTree ORDER BY tuple()
     SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
-CREATE TABLE t_tail_real (x UInt64, INDEX idx_x x TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY tuple()
-    SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
 SYSTEM STOP MERGES t_tail;
-SYSTEM STOP MERGES t_tail_real;
 INSERT INTO t_tail SELECT number FROM numbers(10100);
 INSERT INTO t_tail SELECT number FROM numbers(10100);
 INSERT INTO t_tail SELECT number FROM numbers(10100);
-INSERT INTO t_tail_real SELECT number FROM numbers(10100);
-INSERT INTO t_tail_real SELECT number FROM numbers(10100);
-INSERT INTO t_tail_real SELECT number FROM numbers(10100);
 CREATE HYPOTHETICAL INDEX idx_x ON t_tail (x) TYPE minmax GRANULARITY 1;
 SELECT
     extract(report, 'sampled_marks: +(\\d+ / \\d+)') AS sampled_marks,
@@ -95,27 +89,20 @@ FROM
     FROM (EXPLAIN WHATIF index_scan_budget_rows = 3030 SELECT x FROM t_tail WHERE x >= 10000)
 ) AS estimated,
 (
-    SELECT toUInt64(extract(arrayStringConcat(groupArray(explain), '\n'), '(?s).*Granules: (\\d+)/')) AS real
-    FROM (EXPLAIN indexes = 1 SELECT x FROM t_tail_real WHERE x >= 10000 SETTINGS use_skip_indexes_on_data_read = 0)
-) AS materialized;
+    SELECT toUInt64(extract(arrayStringConcat(groupArray(explain), '\n'), 'With idx_x [^\\n]*\\n +status: +applicable\\n +marks: +(\\d+)')) AS real
+    FROM (EXPLAIN WHATIF index_scan_budget_rows = 0 SELECT x FROM t_tail WHERE x >= 10000)
+) AS exact;
 
 DROP TABLE t_tail;
-DROP TABLE t_tail_real;
 
 -- each part has a window of 8 marks and a window of 1 mark, and a step of 2 samples one of them. Only the 8-mark windows survive
 SELECT '-- windows with different marks count with their marks, so the estimate holds the real granules';
 DROP TABLE IF EXISTS t_uneven;
-DROP TABLE IF EXISTS t_uneven_real;
 CREATE TABLE t_uneven (x UInt64) ENGINE = MergeTree ORDER BY tuple()
     SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
-CREATE TABLE t_uneven_real (x UInt64, INDEX idx_x x TYPE minmax GRANULARITY 8) ENGINE = MergeTree ORDER BY tuple()
-    SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
 SYSTEM STOP MERGES t_uneven;
-SYSTEM STOP MERGES t_uneven_real;
 -- 30 parts of 900 rows
 INSERT INTO t_uneven SELECT number % 900 FROM numbers(27000)
-    SETTINGS max_block_size = 900, max_insert_block_size = 900, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;
-INSERT INTO t_uneven_real SELECT number % 900 FROM numbers(27000)
     SETTINGS max_block_size = 900, max_insert_block_size = 900, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;
 CREATE HYPOTHETICAL INDEX idx_x ON t_uneven (x) TYPE minmax GRANULARITY 8;
 SELECT
@@ -130,23 +117,18 @@ FROM
     FROM (EXPLAIN WHATIF index_scan_budget_rows = 13500 SELECT x FROM t_uneven WHERE x < 800)
 ) AS estimated,
 (
-    SELECT toUInt64(extract(arrayStringConcat(groupArray(explain), '\n'), '(?s).*Granules: (\\d+)/')) AS real
-    FROM (EXPLAIN indexes = 1 SELECT x FROM t_uneven_real WHERE x < 800 SETTINGS use_skip_indexes_on_data_read = 0)
-) AS materialized;
+    SELECT toUInt64(extract(arrayStringConcat(groupArray(explain), '\n'), 'With idx_x [^\\n]*\\n +status: +applicable\\n +marks: +(\\d+)')) AS real
+    FROM (EXPLAIN WHATIF index_scan_budget_rows = 0 SELECT x FROM t_uneven WHERE x < 800)
+) AS exact;
 
 DROP TABLE t_uneven;
-DROP TABLE t_uneven_real;
 
 -- the baseline keeps every mark of each hundredth window and two marks of each other window. Only the full windows have v < 1000
 SELECT '-- a window joins the sample with a chance in proportion to its baseline marks, so the span holds the real granules';
 DROP TABLE IF EXISTS t_mass;
-DROP TABLE IF EXISTS t_mass_real;
 CREATE TABLE t_mass (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY (a, b)
     SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
-CREATE TABLE t_mass_real (a UInt64, b UInt64, v UInt64, INDEX idx_v v TYPE minmax GRANULARITY 64) ENGINE = MergeTree ORDER BY (a, b)
-    SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
 INSERT INTO t_mass SELECT intDiv(number, 64) AS w, if(w % 100 = 0, 0, number % 64), if(w % 100 = 0, w, 1000 + w) FROM numbers(19200);
-INSERT INTO t_mass_real SELECT intDiv(number, 64) AS w, if(w % 100 = 0, 0, number % 64), if(w % 100 = 0, w, 1000 + w) FROM numbers(19200);
 CREATE HYPOTHETICAL INDEX idx_v ON t_mass (v) TYPE minmax GRANULARITY 64;
 SELECT
     extract(report, 'sampled_marks: +(\\d+ / \\d+)') AS sampled_marks,
@@ -159,9 +141,9 @@ FROM
     FROM (EXPLAIN WHATIF index_scan_budget_rows = 1920 SELECT a FROM t_mass WHERE b = 0 AND v < 1000)
 ) AS estimated,
 (
-    SELECT toUInt64(extract(arrayStringConcat(groupArray(explain), '\n'), '(?s).*Granules: (\\d+)/')) AS real
-    FROM (EXPLAIN indexes = 1 SELECT a FROM t_mass_real WHERE b = 0 AND v < 1000 SETTINGS use_skip_indexes_on_data_read = 0)
-) AS materialized;
+    SELECT toUInt64(extract(arrayStringConcat(groupArray(explain), '\n'), 'With idx_v [^\\n]*\\n +status: +applicable\\n +marks: +(\\d+)')) AS real
+    FROM (EXPLAIN WHATIF index_scan_budget_rows = 0 SELECT a FROM t_mass WHERE b = 0 AND v < 1000)
+) AS exact;
 
 -- only the full window 200 has v = 200. The sample reads it, so its 64 marks survive for v = 200 and are skipped for v != 200
 SELECT '-- the sampled windows bound the estimate, so the estimate is in the span';
@@ -182,16 +164,15 @@ FROM
 ) AS estimated
 INNER JOIN
 (
-    SELECT 'v = 200' AS predicate, toUInt64(extract(arrayStringConcat(groupArray(explain), '\n'), '(?s).*Granules: (\\d+)/')) AS real
-    FROM (EXPLAIN indexes = 1 SELECT a FROM t_mass_real WHERE b = 0 AND v = 200 SETTINGS use_skip_indexes_on_data_read = 0)
+    SELECT 'v = 200' AS predicate, toUInt64(extract(arrayStringConcat(groupArray(explain), '\n'), 'With idx_v [^\\n]*\\n +status: +applicable\\n +marks: +(\\d+)')) AS real
+    FROM (EXPLAIN WHATIF index_scan_budget_rows = 0 SELECT a FROM t_mass WHERE b = 0 AND v = 200)
     UNION ALL
-    SELECT 'v != 200', toUInt64(extract(arrayStringConcat(groupArray(explain), '\n'), '(?s).*Granules: (\\d+)/'))
-    FROM (EXPLAIN indexes = 1 SELECT a FROM t_mass_real WHERE b = 0 AND v != 200 SETTINGS use_skip_indexes_on_data_read = 0)
-) AS materialized USING (predicate)
+    SELECT 'v != 200', toUInt64(extract(arrayStringConcat(groupArray(explain), '\n'), 'With idx_v [^\\n]*\\n +status: +applicable\\n +marks: +(\\d+)'))
+    FROM (EXPLAIN WHATIF index_scan_budget_rows = 0 SELECT a FROM t_mass WHERE b = 0 AND v != 200)
+) AS exact USING (predicate)
 ORDER BY predicate;
 
 DROP TABLE t_mass;
-DROP TABLE t_mass_real;
 
 -- 30 parts of two windows, one draw in each part. The first part keeps its 128 marks, and only its first window has v = 2.
 -- each other part keeps 4 marks, and one window of the last part has v = 1
@@ -199,21 +180,13 @@ SELECT '-- draws of unequal weights count as fewer draws, so the span holds the 
 -- part statistics on v would remove the parts with no surviving window from the baseline
 SET use_statistics_for_part_pruning = 0;
 DROP TABLE IF EXISTS t_weight;
-DROP TABLE IF EXISTS t_weight_real;
 CREATE TABLE t_weight (a UInt64, b UInt64, v UInt8) ENGINE = MergeTree ORDER BY (a, b)
     SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
-CREATE TABLE t_weight_real (a UInt64, b UInt64, v UInt8, INDEX idx_v v TYPE minmax GRANULARITY 64) ENGINE = MergeTree ORDER BY (a, b)
-    SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
 SYSTEM STOP MERGES t_weight;
-SYSTEM STOP MERGES t_weight_real;
 INSERT INTO t_weight SELECT intDiv(number, 64), 0, if(number < 64, 2, 0) FROM numbers(128);
-INSERT INTO t_weight_real SELECT intDiv(number, 64), 0, if(number < 64, 2, 0) FROM numbers(128);
 INSERT INTO t_weight SELECT intDiv(number % 128, 64), number % 64, 0 FROM numbers(3584)
     SETTINGS max_block_size = 128, max_insert_block_size = 128, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;
-INSERT INTO t_weight_real SELECT intDiv(number % 128, 64), number % 64, 0 FROM numbers(3584)
-    SETTINGS max_block_size = 128, max_insert_block_size = 128, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;
 INSERT INTO t_weight SELECT intDiv(number, 64), number % 64, number = 0 FROM numbers(128);
-INSERT INTO t_weight_real SELECT intDiv(number, 64), number % 64, number = 0 FROM numbers(128);
 CREATE HYPOTHETICAL INDEX idx_v ON t_weight (v) TYPE minmax GRANULARITY 64;
 SELECT
     predicate,
@@ -231,15 +204,14 @@ FROM
 ) AS estimated
 INNER JOIN
 (
-    SELECT 'v = 2' AS predicate, toUInt64(extract(arrayStringConcat(groupArray(explain), '\n'), '(?s).*Granules: (\\d+)/')) AS real
-    FROM (EXPLAIN indexes = 1 SELECT a FROM t_weight_real WHERE b = 0 AND v = 2 SETTINGS use_skip_indexes_on_data_read = 0)
+    SELECT 'v = 2' AS predicate, toUInt64(extract(arrayStringConcat(groupArray(explain), '\n'), 'With idx_v [^\\n]*\\n +status: +applicable\\n +marks: +(\\d+)')) AS real
+    FROM (EXPLAIN WHATIF index_scan_budget_rows = 0 SELECT a FROM t_weight WHERE b = 0 AND v = 2)
     UNION ALL
-    SELECT 'v >= 1', toUInt64(extract(arrayStringConcat(groupArray(explain), '\n'), '(?s).*Granules: (\\d+)/'))
-    FROM (EXPLAIN indexes = 1 SELECT a FROM t_weight_real WHERE b = 0 AND v >= 1 SETTINGS use_skip_indexes_on_data_read = 0)
-) AS materialized USING (predicate)
+    SELECT 'v >= 1', toUInt64(extract(arrayStringConcat(groupArray(explain), '\n'), 'With idx_v [^\\n]*\\n +status: +applicable\\n +marks: +(\\d+)'))
+    FROM (EXPLAIN WHATIF index_scan_budget_rows = 0 SELECT a FROM t_weight WHERE b = 0 AND v >= 1)
+) AS exact USING (predicate)
 ORDER BY predicate;
 
 DROP TABLE t_weight;
-DROP TABLE t_weight_real;
 DROP TABLE t_budget;
 DROP TABLE t_budget_real;
