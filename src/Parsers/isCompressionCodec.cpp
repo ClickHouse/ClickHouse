@@ -16,11 +16,11 @@ namespace
 {
 
 /// Registered codec families, including the ones that depend on the build options, and the alias `Default`.
-constexpr std::array<std::string_view, 21> codec_family_names
+constexpr std::array<std::string_view, 22> codec_family_names
 {
     "Default", "NONE", "Multiple",
     "LZ4", "LZ4HC", "ZSTD", "ZSTD_QAT", "DEFLATE_QPL", "ZXC",
-    "Delta", "DoubleDelta", "Gorilla", "FPC", "T64", "GCD", "ALP", "PCO", "SZ3", "Quantized",
+    "Delta", "DoubleDelta", "Gorilla", "FPC", "T64", "GCD", "ALP", "PCO", "SZ3", "Quantized", "ByteStreamSplit",
     "AES_128_GCM_SIV", "AES_256_GCM_SIV",
 };
 
