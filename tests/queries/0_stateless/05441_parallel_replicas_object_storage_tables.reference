@@ -77,6 +77,13 @@ same result
 50
 50
 1
+-- a subquery or a set that reads no table
+1
+same result
+179699
+1
+same result
+2
 -- hive partitioning
 1
 same result

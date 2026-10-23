@@ -109,6 +109,10 @@ $CLICKHOUSE_CLIENT -q "
     WHERE event_date >= yesterday() AND current_database = currentDatabase() AND query_id = '${CLICKHOUSE_DATABASE}_s3_in_subquery'
         AND type = 'QueryFinish'"
 
+echo "-- a subquery or a set that reads no table"
+check "SELECT sum(a) FROM t WHERE a > (SELECT 1)"
+check "WITH (1, 2) AS s SELECT count() FROM t WHERE a IN s"
+
 echo "-- hive partitioning"
 $CLICKHOUSE_CLIENT -q "
     CREATE TABLE th (a UInt64, p UInt8) ENGINE = S3(s3_conn, filename = '${CLICKHOUSE_DATABASE}_hive/', format = 'Parquet', partition_strategy = 'hive')
