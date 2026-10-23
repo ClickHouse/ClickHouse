@@ -1,5 +1,6 @@
 #include <Interpreters/BloomFilter.h>
 #include <city.h>
+#include <base/arithmeticOverflow.h>
 #include <Columns/ColumnArray.h>
 #include <Common/Exception.h>
 #include <Columns/ColumnNullable.h>
@@ -120,7 +121,7 @@ BloomFilterHashPair BloomFilter::computeHashPair(const char * data, size_t len, 
     return
     {
         CityHash_v1_0_2::CityHash64WithSeed(data, len, seed_),
-        CityHash_v1_0_2::CityHash64WithSeed(data, len, SEED_GEN_A * seed_ + SEED_GEN_B)
+        CityHash_v1_0_2::CityHash64WithSeed(data, len, common::addIgnoreOverflow(common::mulIgnoreOverflow(SEED_GEN_A, seed_), SEED_GEN_B))
     };
 }
 
