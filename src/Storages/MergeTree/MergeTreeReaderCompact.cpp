@@ -29,6 +29,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
     const StorageSnapshotPtr & storage_snapshot_,
     const MergeTreeSettingsPtr & storage_settings_,
     UncompressedCache * uncompressed_cache_,
+    ColumnsCache * columns_cache_,
     MarkCache * mark_cache_,
     DeserializationPrefixesCache * deserialization_prefixes_cache_,
     MarkRanges mark_ranges_,
@@ -43,6 +44,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
         storage_snapshot_,
         storage_settings_,
         uncompressed_cache_,
+        columns_cache_,
         mark_cache_,
         mark_ranges_,
         settings_,
@@ -97,9 +99,12 @@ void MergeTreeReaderCompact::fillColumnPositions()
             /// not change presence decisions for ordinary subcolumns (e.g. of sparse columns).
             const auto * custom = column_to_read.getTypeInStorage()->getCustomSerialization();
             const bool is_quantize = custom && typeid(*custom) == typeid(SerializationQuantizedVector);
-            const auto & type_for_subcolumn = is_quantize ? column_to_read.getTypeInStorage() : storage_column_from_part.type;
-            if (!part_columns.tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns(), column_to_read.name)
-                && !type_for_subcolumn->hasSubcolumn(subcolumn_name))
+            /// For a Quantize column the part's serialization is the re-wrapped one that lost the companion
+            /// subcolumns, so the presence is decided from the storage type and its own custom serialization.
+            const bool has_subcolumn = is_quantize
+                ? column_to_read.getTypeInStorage()->hasSubcolumn(subcolumn_name)
+                : hasSubcolumnInPart(name_in_storage, *storage_column_from_part.type, subcolumn_name);
+            if (!has_subcolumn)
                 position.reset();
         }
 
@@ -201,7 +206,7 @@ void MergeTreeReaderCompact::readData(
     size_t from_mark,
     size_t column_size_before_reading,
     MergeTreeReaderStream & stream,
-    std::unordered_map<String, ColumnPtr> & columns_cache,
+    std::unordered_map<String, ColumnPtr> & output_columns_cache,
     std::unordered_map<String, ColumnPtr> * columns_cache_for_subcolumns,
     ISerialization::SubstreamsCache * substreams_cache)
 {
@@ -267,8 +272,8 @@ void MergeTreeReaderCompact::readData(
             };
         }
 
-        auto it = columns_cache.find(name);
-        if (it != columns_cache.end() && it->second != nullptr)
+        auto it = output_columns_cache.find(name);
+        if (it != output_columns_cache.end() && it->second != nullptr)
         {
             /// The same physical column was already read for another requested column in this granule
             /// (e.g. shared Nested offsets). Copy only the newly-read rows from it instead of re-reading.
@@ -320,6 +325,7 @@ void MergeTreeReaderCompact::readData(
             else
             {
                 const auto & serialization = serializations[column_idx];
+                deserialize_settings.string_value_filter = getStringValueFilter(name_and_type);
                 auto & states = !has_substream_marks && !columns_for_offsets[column_idx]
                     ? deserialize_binary_bulk_state_map_for_subcolumns : deserialize_binary_bulk_state_map;
                 serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, states[name], substreams_cache);
@@ -330,7 +336,7 @@ void MergeTreeReaderCompact::readData(
 
         /// Cache the just-read column so other requested columns mapping to the same physical column in this
         /// granule (e.g. shared Nested offsets) can copy from it. The cache lives only for the current granule.
-        columns_cache[name] = column.getPtr();
+        output_columns_cache[name] = column.getPtr();
 
         size_t read_rows_in_column = column.size() - column_size_before_reading;
         if (read_rows_in_column != rows_to_read)
@@ -411,8 +417,7 @@ void MergeTreeReaderCompact::initSubcolumnsDeserializationOrder()
         auto column_from_part = part_columns.getColumn(GetColumnsOptions::All, column);
         for (size_t index : subcolumns_indexes)
         {
-            if (part_columns.tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns(), columns_to_read[index].name)
-                || column_from_part.type->hasSubcolumn(columns_to_read[index].getSubcolumnName()))
+            if (hasSubcolumnInPart(column, *column_from_part.type, columns_to_read[index].getSubcolumnName()))
             {
                 subcolumns_data.push_back(ISerialization::SubstreamData(serializations[index])
                                           .withType(columns_to_read[index].type)
@@ -533,7 +538,7 @@ void MergeTreeReaderCompact::readPrefix(
     {
         ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
         deserialize_settings.getter = buffer_getter;
-        deserialize_settings.object_and_dynamic_read_statistics = true;
+        deserialize_settings.read_statistics = true;
         deserialize_settings.use_specialized_prefixes_and_suffixes_substreams = true;
         deserialize_settings.data_part_type = MergeTreeDataPartType::Compact;
         deserialize_settings.check_stream_exists_callback = std::move(check_stream_exists_callback);
