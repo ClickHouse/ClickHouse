@@ -45,6 +45,11 @@ namespace Setting
     extern const SettingsBool input_format_parquet_local_time_as_utc;
     extern const SettingsBool input_format_null_as_default;
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
+    extern const SettingsBool input_format_parquet_allow_geoparquet_parser;
+    extern const SettingsBool input_format_parquet_enable_json_parsing;
+    extern const SettingsBool input_format_parquet_detect_variant_by_structure;
+    extern const SettingsBool type_json_use_partial_match_to_skip_paths_by_regexp;
+    extern const SettingsBool precise_float_parsing;
 }
 
 /// The entries for files are written from the row groups the reader pruned, not from evaluating the
@@ -59,6 +64,9 @@ namespace Setting
 /// decides whether a `NULL` read into a non-`Nullable` column becomes the default, or throws: a read that
 /// fills defaults may cache a verdict, and a read that must throw would otherwise skip the file instead.
 /// `date_time_overflow_behavior` decides whether an out-of-range date is saturated or throws, for the same reason.
+/// The rest change the values decoded from a file without changing their types, as in the identity of the
+/// columns cache (see `ParquetV3BlockInputFormat`): e.g. `type_json_use_partial_match_to_skip_paths_by_regexp`
+/// decides which paths of a `JSON` column decoded from a variant are skipped.
 /// `queryConditionCacheSettingsSalt` covers it for the session, but a table may pin another value at `CREATE`.
 UInt64 fileFormatPruningSettingsSalt(const Settings & settings)
 {
@@ -79,6 +87,11 @@ UInt64 fileFormatPruningSettingsSalt(const Settings & settings)
     hash.update(settings[Setting::input_format_parquet_local_time_as_utc].value);
     hash.update(settings[Setting::input_format_null_as_default].value);
     hash.update(static_cast<UInt64>(settings[Setting::date_time_overflow_behavior].value));
+    hash.update(settings[Setting::input_format_parquet_allow_geoparquet_parser].value);
+    hash.update(settings[Setting::input_format_parquet_enable_json_parsing].value);
+    hash.update(settings[Setting::input_format_parquet_detect_variant_by_structure].value);
+    hash.update(settings[Setting::type_json_use_partial_match_to_skip_paths_by_regexp].value);
+    hash.update(settings[Setting::precise_float_parsing].value);
     return hash.get64();
 }
 
@@ -102,6 +115,11 @@ UInt64 fileFormatPruningSettingsSalt(const FormatSettings & format_settings)
     hash.update(format_settings.parquet.local_time_as_utc);
     hash.update(format_settings.null_as_default);
     hash.update(static_cast<UInt64>(format_settings.date_time_overflow_behavior));
+    hash.update(format_settings.parquet.allow_geoparquet_parser);
+    hash.update(format_settings.parquet.enable_json_parsing);
+    hash.update(format_settings.parquet.detect_variant_by_structure);
+    hash.update(format_settings.json.type_json_use_partial_match_to_skip_paths_by_regexp);
+    hash.update(format_settings.precise_float_parsing);
     return hash.get64();
 }
 
