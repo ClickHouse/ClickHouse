@@ -18,12 +18,17 @@
 #include <IO/VarInt.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
+#include <Processors/Formats/AggregateFunctionStatesFromValuesInputFormat.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
 #include <Storages/MergeTree/ColumnsCache.h>
+#include <Storages/MergeTree/KeyCondition.h>
 
 namespace ProfileEvents
 {
     extern const Event ParquetReadMinMaxFromStatistics;
+    extern const Event ParquetFilesSkippedByCachedStatistics;
+    extern const Event ParquetMetadataCacheHits;
+    extern const Event ParquetPrunedRowGroups;
 }
 
 namespace DB
@@ -75,8 +80,9 @@ static std::optional<AccessTypeObjects::Source> getColumnsCacheSource(ObjectStor
 
 /// The columns cache options for reading a file, or nullptr if the read does not use the cache.
 /// The cache is used only for a file whose content is identified by a strong version token:
-/// an ETag of an object in an object storage, or the version token of a local file once it has
-/// settled (see `StorageFile`), the same as for the userspace page cache. The file must also be
+/// an ETag of an object in an object storage, the identity of an immutable file recorded by its
+/// table, or the version token of a local file once it has settled (see `StorageFile`), the same
+/// as for the userspace page cache. The file must also be
 /// identified among all storages, see `RelativePathWithMetadata::path_for_content_cache`.
 static std::shared_ptr<const Parquet::ColumnsCacheOptions> getColumnsCacheOptions(
     const ContextPtr & context, const FormatSettings & format_settings, const std::optional<RelativePathWithMetadata> & object_with_metadata)
@@ -90,7 +96,10 @@ static std::shared_ptr<const Parquet::ColumnsCacheOptions> getColumnsCacheOption
     if (!enable_reads && !enable_writes)
         return nullptr;
 
-    if (!object_with_metadata || !object_with_metadata->metadata || !object_with_metadata->metadata->isEtagUsableAsCacheKey())
+    if (!object_with_metadata || !object_with_metadata->metadata)
+        return nullptr;
+    const auto content_token = object_with_metadata->metadata->getContentCacheToken();
+    if (!content_token)
         return nullptr;
 
     if (!object_with_metadata->path_for_content_cache)
@@ -120,7 +129,7 @@ static std::shared_ptr<const Parquet::ColumnsCacheOptions> getColumnsCacheOption
     const ObjectMetadata & metadata = *object_with_metadata->metadata;
     SipHash hash;
     hash.update(*object_with_metadata->path_for_content_cache);
-    hash.update(metadata.etag);
+    hash.update(*content_token);
     hash.update(metadata.size_bytes);
     /// The format settings that change the values decoded from the file without changing their
     /// types. The types are part of the identity of every column, see `Reader::initColumnsCache`.
@@ -206,12 +215,34 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
                 std::tie(cache_cell, cache_hit) = metadata_cache->getOrSetMetadata(
                     *cache_key, [&] { return readFileFooter(reader->reader.prefetcher); });
                 reader->reader.setFileFooter(cache_cell->footer, cache_cell->column_chunks);
+                if (cache_hit && object_with_metadata->metadata->isEtagUsableAsCacheKey())
+                {
+                    metadata_cache_cell = cache_cell;
+                    metadata_cache_key = *cache_key;
+                }
             }
             else
             {
                 reader->reader.setFileFooter(readFileFooter(reader->reader.prefetcher));
             }
             reader->reader.init(read_options, getPort().getHeader(), format_filter_info);
+            if (metadata_cache_cell && format_filter_info->keep_filter_column_statistics && format_filter_info->key_condition)
+            {
+                /// Ranges are collected only for the columns not kept yet, and only while they can still be kept.
+                Block key_block = getPort().getHeader();
+                for (const auto & column : format_filter_info->additional_columns)
+                    key_block.insert(column);
+                const auto & kept_statistics = *metadata_cache_cell->kept_statistics;
+                for (size_t idx : format_filter_info->key_condition->getUsedColumnsInOrder())
+                {
+                    if (idx >= key_block.columns())
+                        continue;
+                    const auto & column = key_block.getByPosition(idx);
+                    if (!kept_statistics.get(ParquetCachedStatisticsFilter::makeColumnKey(column.name, *column.type, format_settings)))
+                        reader->reader.collect_key_condition_column_ranges.push_back(idx);
+                }
+                reader->reader.max_key_condition_column_ranges_bytes = kept_statistics.remainingBytes();
+            }
             reader->init(parser_shared_resources, buckets_to_read ? std::optional(buckets_to_read->row_group_ids) : std::nullopt);
             /// Not after the miss that inserted the cell: replacing it would move it to SLRU's protected queue.
             if (cache_hit)
@@ -223,7 +254,9 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
 std::optional<ParquetMetadataCacheKey> ParquetV3BlockInputFormat::getMetadataCacheKey() const
 {
     if (metadata_cache && object_with_metadata.has_value() && object_with_metadata->metadata.has_value())
-        return ParquetMetadataCache::createKey(object_with_metadata->getPath(), object_with_metadata->metadata->etag);
+        return ParquetMetadataCache::createKey(
+            object_with_metadata->getPath(),
+            object_with_metadata->metadata->getContentCacheToken().value_or(object_with_metadata->metadata->etag));
     return std::nullopt;
 }
 
@@ -237,6 +270,113 @@ std::shared_ptr<const Parquet::FileFooter> ParquetV3BlockInputFormat::getFileFoo
     if (auto cache_key = getMetadataCacheKey())
         return metadata_cache->getOrSetMetadata(*cache_key, [&] { return readFileFooter(prefetcher); }).first->footer;
     return readFileFooter(prefetcher);
+}
+
+void ParquetV3BlockInputFormat::cacheFilterColumnStatistics()
+{
+    std::lock_guard lock(reader_mutex);
+    if (!reader || !metadata_cache_cell || min_max_from_statistics)
+        return;
+    const auto & parquet_reader = reader->reader;
+    /// With a column mapper (data lakes) the column names do not identify the columns of the file.
+    if (!parquet_reader.key_condition_column_ranges_complete || format_filter_info->column_mapper)
+        return;
+    for (const auto & column_ranges : parquet_reader.key_condition_column_ranges)
+    {
+        if (std::ranges::all_of(column_ranges.ranges, [](const Range & range) { return range.isInfinite(); }))
+            continue;
+        const auto & column = parquet_reader.extended_sample_block.getByPosition(column_ranges.idx);
+        String column_key = ParquetCachedStatisticsFilter::makeColumnKey(column.name, *column.type, format_settings);
+        if (metadata_cache && metadata_cache_key)
+            metadata_cache->keepStatistics(
+                *metadata_cache_key, metadata_cache_cell, column_key, column_ranges.ranges, column_ranges.bytes);
+    }
+}
+
+String ParquetCachedStatisticsFilter::makeColumnKey(
+    const String & column_name, const IDataType & type, const FormatSettings & format_settings)
+{
+    const String type_name = type.getName();
+    const auto & parquet = format_settings.parquet;
+    return fmt::format(
+        "{}:{}{}:{}{}{}{}{}{}{}{}:{}:{}:{}:{}",
+        column_name.size(), column_name, type_name.size(), type_name,
+        format_settings.null_as_default, parquet.case_insensitive_column_matching, parquet.allow_missing_columns,
+        parquet.allow_geoparquet_parser, parquet.local_time_as_utc, parquet.enable_json_parsing, parquet.detect_variant_by_structure,
+        static_cast<int>(format_settings.date_time_overflow_behavior), format_settings.schema_inference_make_columns_nullable,
+        format_settings.schema_inference_make_json_columns_nullable, format_settings.schema_inference_allow_nullable_tuple_type);
+}
+
+std::shared_ptr<const ParquetCachedStatisticsFilter> ParquetCachedStatisticsFilter::create(
+    const FormatFilterInfoPtr & format_filter_info, const Block & header, const FormatSettings & format_settings)
+{
+    /// The reader builds the key condition for its header, which is `header` only if `getHeaderToParse` keeps it.
+    if (!format_filter_info || !format_filter_info->filter_actions_dag || format_filter_info->column_mapper
+        || !format_settings.parquet.filter_push_down
+        || AggregateFunctionStatesFromValuesInputFormat::getHeaderToParse(header, format_settings.aggregate_function_input_format))
+        return nullptr;
+
+    format_filter_info->initKeyConditionOnce(header);
+    const auto & key_condition = format_filter_info->key_condition;
+    if (!key_condition || key_condition->alwaysUnknownOrTrue())
+        return nullptr;
+
+    Block key_block = header;
+    for (const auto & column : format_filter_info->additional_columns)
+        key_block.insert(column);
+
+    auto filter = std::make_shared<ParquetCachedStatisticsFilter>();
+    filter->key_condition = key_condition;
+    for (size_t idx : key_condition->getUsedColumnsInOrder())
+    {
+        if (idx >= key_block.columns())
+            return nullptr;
+        const auto & column = key_block.getByPosition(idx);
+        filter->column_keys.emplace_back(idx, makeColumnKey(column.name, *column.type, format_settings));
+    }
+    if (filter->column_keys.empty())
+        return nullptr;
+    filter->key_types = key_block.getDataTypes();
+    return filter;
+}
+
+std::optional<size_t> ParquetCachedStatisticsFilter::canSkipFile(
+    ParquetMetadataCache & metadata_cache, const String & path, const String & version) const
+{
+    auto cell = metadata_cache.get(ParquetMetadataCache::createKey(path, version));
+    if (!cell)
+        return std::nullopt;
+
+    std::vector<std::pair<size_t, ParquetKeptStatistics::RangesPtr>> columns;
+    columns.reserve(column_keys.size());
+    for (const auto & [idx, key] : column_keys)
+        /// A column without kept ranges is unknown, like a column without statistics.
+        if (auto ranges = cell->kept_statistics->get(key))
+            columns.emplace_back(idx, std::move(ranges));
+    if (columns.empty())
+        return std::nullopt;
+
+    const size_t num_kept_row_groups = columns.front().second->size();
+    for (const auto & column : columns)
+        if (column.second->size() != num_kept_row_groups)
+            return std::nullopt;
+
+    Hyperrectangle hyperrectangle(key_types.size(), Range::createWholeUniverse());
+    for (size_t row_group = 0; row_group < num_kept_row_groups; ++row_group)
+    {
+        for (const auto & [idx, ranges] : columns)
+            hyperrectangle[idx] = (*ranges)[row_group];
+        if (key_condition->checkInHyperrectangle(hyperrectangle, key_types).can_be_true)
+            return std::nullopt;
+    }
+    return cell->footer->metadata.row_groups.size();
+}
+
+void ParquetCachedStatisticsFilter::countSkippedFile(size_t num_row_groups)
+{
+    ProfileEvents::increment(ProfileEvents::ParquetFilesSkippedByCachedStatistics);
+    ProfileEvents::increment(ProfileEvents::ParquetPrunedRowGroups, num_row_groups);
+    ProfileEvents::increment(ProfileEvents::ParquetMetadataCacheHits);
 }
 
 Chunk ParquetV3BlockInputFormat::read()
@@ -356,6 +496,8 @@ void ParquetV3BlockInputFormat::resetParser()
         std::lock_guard lock(reader_mutex);
         reader.reset();
         min_max_from_statistics = false;
+        metadata_cache_cell.reset();
+        metadata_cache_key.reset();
     }
     previous_block_missing_values.clear();
     IInputFormat::resetParser();
