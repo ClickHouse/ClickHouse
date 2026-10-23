@@ -3050,15 +3050,17 @@ void Planner::buildPlanForQueryNode()
     /// database is the initiator's user-default DB, so the filter match is unreliable. Rather than
     /// patch the match (which differs case by case), disable the combination on the analyzer path.
     /// The check is skipped when the filter travels inside a shipped plan: with
-    /// `serialize_query_plan` and either the plan-based path or a local plan. Otherwise only the
-    /// entries a follower would match differently are refused, see `hasSessionRelativeAdditionalFilter`.
+    /// `serialize_query_plan` and either the plan-based path or a local plan, which a leaf timeout the
+    /// local replica cannot honor rules out. Otherwise only the entries a follower would match
+    /// differently are refused, see `hasSessionRelativeAdditionalFilter`.
     const auto & additional_table_filters = settings[Setting::additional_table_filters].value;
 
     if (query_context->canUseParallelReplicasOnInitiator()
         && !additional_table_filters.empty()
         && (!settings[Setting::serialize_query_plan]
             || (!settings[Setting::parallel_replicas_plan_based]
-                && !ClusterProxy::canUseLocalPlanForParallelReplicas(query_context)
+                && (!ClusterProxy::canUseLocalPlanForParallelReplicas(query_context)
+                    || ClusterProxy::leafTimeoutRequiresRemoteOnlyLeafReading(settings))
                 && hasSessionRelativeAdditionalFilter(query_node.getJoinTreeNodeTyped(), additional_table_filters))))
     {
         if (settings[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
@@ -3066,7 +3068,9 @@ void Planner::buildPlanForQueryNode()
                 "additional_table_filters is not supported with parallel replicas unless the query plan "
                 "is shipped to the replicas, which requires serialize_query_plan=1 together with either "
                 "parallel_replicas_plan_based=1, or a local plan (parallel_replicas_local_plan=1 and "
-                "parallel_replicas_prefer_local_replica=1, and not inside a Distributed subquery)");
+                "parallel_replicas_prefer_local_replica=1, not inside a Distributed subquery, and "
+                "max_execution_time_leaf either unset, longer than a non-zero max_execution_time, or equal "
+                "to it with timeout_overflow_mode_leaf equal to timeout_overflow_mode)");
 
         auto & mutable_context = planner_context->getMutableQueryContext();
         mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));

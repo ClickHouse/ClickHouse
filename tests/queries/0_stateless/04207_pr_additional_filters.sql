@@ -135,6 +135,38 @@ SELECT count() FROM atf_p AS a SETTINGS additional_table_filters = {'a': 'x <= 2
     parallel_replicas_plan_based = 1,
     log_comment = '04207_atf_alias_plan_based';
 
+-- A leaf timeout shorter than the query's one cannot be enforced on the local replica, so it disables
+-- the local plan and the query is shipped as text: the alias key is handled as without a local plan.
+SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
+SELECT count() FROM atf_p AS a SETTINGS additional_table_filters = {'a': 'x <= 2'},
+    enable_analyzer = 1,
+    enable_parallel_replicas = 1,
+    automatic_parallel_replicas_mode = 0,
+    max_parallel_replicas = 3,
+    cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
+    parallel_replicas_for_non_replicated_merge_tree = 1,
+    parallel_replicas_local_plan = 1,
+    parallel_replicas_prefer_local_replica = 1,
+    serialize_query_plan = 1,
+    parallel_replicas_plan_based = 0,
+    max_execution_time = 60,
+    max_execution_time_leaf = 30;
+
+SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
+SELECT count() FROM atf_p AS a SETTINGS additional_table_filters = {'a': 'x <= 2'},
+    enable_analyzer = 1,
+    enable_parallel_replicas = 2,
+    automatic_parallel_replicas_mode = 0,
+    max_parallel_replicas = 3,
+    cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
+    parallel_replicas_for_non_replicated_merge_tree = 1,
+    parallel_replicas_local_plan = 1,
+    parallel_replicas_prefer_local_replica = 1,
+    serialize_query_plan = 1,
+    parallel_replicas_plan_based = 0,
+    max_execution_time = 60,
+    max_execution_time_leaf = 30; -- { serverError SUPPORT_IS_DISABLED }
+
 -- A `database.table` key is matched by the storage's full name, which a follower replanning the
 -- rewritten `SELECT` resolves the same way, so the filter still reaches every replica. The alias is
 -- deliberately that same string: a full-name match settles the table whatever else the key names.
