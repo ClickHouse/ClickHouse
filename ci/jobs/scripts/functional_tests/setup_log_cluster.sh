@@ -32,11 +32,20 @@ function __set_connection_args()
 {
     # It's impossible to use a generic $CONNECTION_ARGS string, it's unsafe from word splitting perspective.
     # That's why we must stick to the generated option
+    : "${CLICKHOUSE_CI_LOGS_PASSWORD:?}"
     CONNECTION_ARGS=(
         --receive_timeout=45 --send_timeout=45 --secure
         --user "${CLICKHOUSE_CI_LOGS_USER:?}" --host "${CLICKHOUSE_CI_LOGS_HOST:?}"
-        --password "${CLICKHOUSE_CI_LOGS_PASSWORD:?}"
     )
+}
+
+# The client's --receive_timeout does not bound a query: after it fires the client cancels the
+# query and waits for the server to acknowledge it with no time limit.
+REMOTE_QUERY_TIMEOUT=90
+function remote_client()
+{
+    CLICKHOUSE_PASSWORD="${CLICKHOUSE_CI_LOGS_PASSWORD:?}" \
+        timeout --verbose --kill-after 10 "$REMOTE_QUERY_TIMEOUT" clickhouse-client "${CONNECTION_ARGS[@]:?}" "$@"
 }
 
 function __shadow_credentials()
@@ -72,12 +81,13 @@ function check_logs_credentials()
     # outage or a non-recoverable error (auth, config, DNS) fails fast: this
     # probe is best-effort and must not slow every CI job. Export queries keep
     # the default timeouts.
-    local attempt err
+    local attempt err start
     # BEGIN: logs-cluster connectivity probe loop
     for attempt in 1 2 3; do
+        start=$SECONDS
         # Catch both success and error to not fail on `set -e`. Capture stderr
         # so we can distinguish transient failures from permanent ones.
-        err=$(clickhouse-client "${CONNECTION_ARGS[@]:?}" --connect_timeout 3 -q 'SELECT 1 FORMAT Null' 2>&1) && return 0 || code=$?
+        err=$(remote_client --connect_timeout 3 -q 'SELECT 1 FORMAT Null' 2>&1) && return 0 || code=$?
         # Only transient failures are worth retrying; anything else will not
         # recover on retry, so stop immediately.
         if [[ "$err" != *"Connection reset by peer"* && "$err" != *"MEMORY_LIMIT_EXCEEDED"* ]]; then
@@ -88,6 +98,9 @@ function check_logs_credentials()
     done
     # END: logs-cluster connectivity probe loop
     echo 'Failed to connect to CI Logs cluster'
+    if (( SECONDS - start >= REMOTE_QUERY_TIMEOUT )); then
+        echo "The CI Logs cluster did not answer within ${REMOTE_QUERY_TIMEOUT} seconds"
+    fi
     echo "$err"
     return "$code"
 }
@@ -177,10 +190,17 @@ function setup_logs_replication()
         # Even without comments, the `bucketed` schema of `metric_log` (the default)
         # has a `Map` keyed by an `Enum16` of every metric plus an `ALIAS` column per
         # metric, which is still larger than 256 KiB, so raise the limit as well.
-        echo "$statement" | clickhouse-client --max_query_size=$((16 * 1024 * 1024)) \
+        rc=0
+        start=$SECONDS
+        echo "$statement" | remote_client --max_query_size=$((16 * 1024 * 1024)) \
             --database_replicated_initial_query_timeout_sec=10 \
-            --distributed_ddl_task_timeout=30 --distributed_ddl_output_mode=throw_only_active \
-            "${CONNECTION_ARGS[@]:?}" || continue
+            --distributed_ddl_task_timeout=30 --distributed_ddl_output_mode=throw_only_active || rc=$?
+        # The exit code alone cannot tell a timeout from a client error.
+        if [[ "$rc" != 0 ]] && (( SECONDS - start >= REMOTE_QUERY_TIMEOUT )); then
+            echo "The CI Logs cluster did not answer within ${REMOTE_QUERY_TIMEOUT} seconds, the remaining tables are not exported" >&2
+            break
+        fi
+        [[ "$rc" == 0 ]] || continue
 
         echo "Creating table ${LOG_EXPORT_DATABASE}.${table}_sender" >&2
 

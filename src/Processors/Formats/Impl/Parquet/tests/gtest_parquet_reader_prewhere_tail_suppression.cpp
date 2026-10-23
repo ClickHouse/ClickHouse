@@ -64,6 +64,7 @@ struct Fixture
             primitive.idx_in_output_block = i;
             primitive.decoded_type = type;
             primitive.output_type = type;
+            primitive.levels = {Reader::LevelInfo{.def = 0, .rep = 0, .is_array = true}};
             reader.primitive_columns.push_back(std::move(primitive));
 
             reader.sample_block_to_output_columns_idx.push_back(i);
