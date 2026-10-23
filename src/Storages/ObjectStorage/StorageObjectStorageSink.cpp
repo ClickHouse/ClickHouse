@@ -13,6 +13,12 @@
 #include <base/defines.h>
 #include <Interpreters/Context.h>
 
+#include "config.h"
+
+#if USE_AZURE_BLOB_STORAGE
+#include <Disks/IO/WriteBufferFromAzureDataLakeStorage.h>
+#endif
+
 namespace DB
 {
 namespace Setting
@@ -200,10 +206,18 @@ void StorageObjectStorageSink::releaseBuffers()
 
 void StorageObjectStorageSink::cancelBuffers()
 {
-    /// A cancelled write into HDFS deletes the file, see `WriteBufferFromHDFS::cancelImpl`.
+    /// A cancelled write into HDFS deletes the file, see `WriteBufferFromHDFS::cancelImpl`, and so does a cancelled
+    /// write into an ADLS Gen2 endpoint (e.g. Microsoft Fabric / OneLake), see `WriteBufferFromAzureDataLakeStorage::cancelImpl`.
     /// Blob storages create the object only when it is committed, so the cancellation leaves the previous one.
-    const bool cancellation_removes_object
-        = destination_buf && !path_is_published && object_storage->getType() == ObjectStorageType::HDFS;
+    bool cancellation_removes_object = false;
+    if (destination_buf && !path_is_published)
+    {
+        cancellation_removes_object = object_storage->getType() == ObjectStorageType::HDFS;
+#if USE_AZURE_BLOB_STORAGE
+        cancellation_removes_object = cancellation_removes_object
+            || dynamic_cast<const WriteBufferFromAzureDataLakeStorage *>(destination_buf.get()) != nullptr;
+#endif
+    }
 
     if (writer)
         writer->cancel();
