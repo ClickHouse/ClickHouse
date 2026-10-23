@@ -82,7 +82,7 @@ ALWAYS_INLINE inline void writeEightFixedDigits(char * p, uint32_t z)
 
 /// ----------------------------------------------------------------------------------------------------
 /// 64 bits
-/// The AVX-512 IFMA path also serves `writeFixedDigits`.
+/// Where the CPU has AVX-512 IFMA, it writes the values above 2^32 of up to 16 digits, and serves `writeFixedDigits`.
 /// ----------------------------------------------------------------------------------------------------
 
 namespace
@@ -150,6 +150,16 @@ ITOA_IFMA_TARGET ALWAYS_INLINE inline void storeDigitsOfEight(char * p, UInt32 c
 #else
     _mm512_mask_cvtusepi64_storeu_epi8(destination, static_cast<__mmask8>(0xff00 >> count), digits);
 #endif
+}
+
+/// `value` is at least 2^32, with `length` digits, at most 16: one `vpmadd52` sequence and one masked store, fewer
+/// micro-ops than the AVX2 code of `writeLargeUInt64Text`. Longer values need another division and more stores, and
+/// are slower than the AVX2 code on Zen 4.
+ITOA_IFMA_TARGET char * toChars(UInt64 value, char * p, UInt32 length)
+{
+    _mm_mask_storeu_epi8(
+        shiftedPointer(p, static_cast<Int32>(length) - 16), static_cast<__mmask16>(0xffffu << (16 - length)), digitsOfSixteen(value));
+    return p + length;
 }
 
 ITOA_IFMA_TARGET char * fixedDigits(char * p, UInt64 value, UInt32 width)
@@ -379,6 +389,10 @@ ALWAYS_INLINE inline void writeLastDigits(UInt8x16 text, UInt32 length, const ui
 NO_INLINE char * itoa_impl::writeLargeUInt64Text(UInt64 value, char * p)
 {
     UInt32 length = digitCount(value);
+#if defined(__x86_64__)
+    if (has_avx512_ifma && length <= 16)
+        return avx512ifma::toChars(value, p, length);
+#endif
     DigitGroups groups = digitGroups(value);
     UInt8x32 text = textOfGroups(__builtin_shufflevector(groups.groups, UInt32x4{groups.top, 0, 0, 0}, 0, 1, 2, 3, 4, 5, 6, 7));
 
