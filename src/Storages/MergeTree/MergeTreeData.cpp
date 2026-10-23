@@ -1298,12 +1298,11 @@ void MergeTreeData::checkProperties(
         /// so lossiness is resolved per substream the way the part writer resolves it.
         auto is_lossy_column = [&](const String & name)
         {
-            /// A subcolumn is read from the stream of its column, whose codec is the one that counts.
-            const auto stored = new_metadata.columns.tryGetColumn(
-                GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns(), name);
-            const auto column = new_metadata.columns.tryGetColumnDescription(
-                GetColumnsOptions(GetColumnsOptions::AllPhysical), stored ? stored->getNameInStorage() : name);
-            if (!column || !column->codec)
+            /// A key may use a subcolumn, whose streams are a part of the streams of its column.
+            const auto written_column = new_metadata.columns.tryGetColumn(
+                GetColumnsOptions(GetColumnsOptions::AllPhysical).withRegularSubcolumns(), name);
+            const auto * column = written_column ? new_metadata.columns.tryGet(written_column->getNameInStorage()) : nullptr;
+            if (!column || (!column->codec && column->subcolumn_codecs.empty()))
                 return false;
 
             bool is_lossy = false;
@@ -1314,7 +1313,12 @@ void MergeTreeData::checkProperties(
                 if (auto codec = getSubstreamCodecDescription(substream_path, *column))
                     is_lossy = CompressionCodecFactory::instance().get(codec, substream_path.back().data.type.get())->isLossyCompression();
             };
-            column->type->getDefaultSerialization()->enumerateStreams(callback, column->type);
+            /// The serialization of a subcolumn enumerates its streams with the full path from the column, as the writer does.
+            const auto & type_in_storage = written_column->getTypeInStorage();
+            auto serialization = written_column->isSubcolumn()
+                ? type_in_storage->getSubcolumnSerialization(written_column->getSubcolumnName(), type_in_storage->getDefaultSerialization())
+                : type_in_storage->getDefaultSerialization();
+            serialization->enumerateStreams(callback, written_column->type);
             return is_lossy;
         };
 
