@@ -2590,6 +2590,19 @@ std::optional<String> MutationsInterpreter::findNonDeterministicVirtualColumn(
     std::vector<ASTPtr> scopes;
     for (const auto & command : commands)
     {
+        /// `MATERIALIZE COLUMN` evaluates the default expression of the column (`DEFAULT`, `MATERIALIZED`,
+        /// or `EPHEMERAL`) inside the mutation and writes the result into the new part.
+        if (command.type == MutationCommand::MATERIALIZE_COLUMN)
+        {
+            if (const auto * column = real_columns.tryGet(command.column_name); column && column->default_desc.expression)
+            {
+                ASTPtr expressions = make_intrusive<ASTExpressionList>();
+                expressions->children.push_back(column->default_desc.expression->clone());
+                scopes.push_back(std::move(expressions));
+            }
+            continue;
+        }
+
         if (command.type != MutationCommand::UPDATE && command.type != MutationCommand::DELETE)
             continue;
 

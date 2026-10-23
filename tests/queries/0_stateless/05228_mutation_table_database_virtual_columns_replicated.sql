@@ -149,3 +149,15 @@ INSERT INTO r_05228_types VALUES (1, 0, tuple(5), 'a');
 ALTER TABLE r_05228_types UPDATE value = r_05228_types.x + 1 WHERE 1 SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 0, mutations_sync = 2;
 SELECT key, value FROM r_05228_types ORDER BY key;
 DROP TABLE r_05228_types SYNC;
+
+-- `MATERIALIZE COLUMN` evaluates the default expression of the column inside the mutation, so a default
+-- expression reading a non-deterministic virtual column is refused as well (only `EPHEMERAL` columns may read
+-- virtual columns in their definitions).
+DROP TABLE IF EXISTS m_05228 SYNC;
+CREATE TABLE m_05228 (key UInt64, e String EPHEMERAL _database, d String DEFAULT 'x')
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test_05228/m', 'r1') ORDER BY key;
+INSERT INTO m_05228 (key) VALUES (1);
+ALTER TABLE m_05228 MATERIALIZE COLUMN e; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE m_05228 MATERIALIZE COLUMN d SETTINGS mutations_sync = 2;
+SELECT key, d FROM m_05228 ORDER BY key;
+DROP TABLE m_05228 SYNC;
