@@ -266,16 +266,23 @@ ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
 }
 
 
-ColumnSize MergeTreeDataPartWide::calculateSubcolumnSize(const String & subcolumn_name) const
+std::vector<ColumnSize> MergeTreeDataPartWide::calculateSubcolumnSizes(const NamesAndTypesList & subcolumns) const
 {
-    ColumnSize size;
-    if (checksums.empty() || isEmpty())
-        return size;
+    std::vector<ColumnSize> sizes(subcolumns.size());
+    if (checksums.empty() || isEmpty() || subcolumns.empty())
+        return sizes;
 
-    for (const auto & stream : getListOfStreamsForColumn(getColumn(subcolumn_name)))
-        addStreamWithSizeHintToColumnSize(stream, size);
+    /// One reader for all of them, so a prefix the sub-columns share is read once.
+    auto streams = getListOfStreamsForColumns(subcolumns);
+    size_t i = 0;
+    for (const auto & subcolumn : subcolumns)
+    {
+        for (const auto & stream : streams[subcolumn.name])
+            addStreamWithSizeHintToColumnSize(stream, sizes[i]);
+        ++i;
+    }
 
-    return size;
+    return sizes;
 }
 
 void MergeTreeDataPartWide::addStreamWithSizeHintToColumnSize(const StreamWithSizeHint & stream, ColumnSize & size) const
@@ -879,11 +886,8 @@ void MergeTreeDataPartWide::calculateEachColumnSizes(ColumnSizeByName & each_col
     }
 }
 
-std::vector<StreamWithSizeHint> MergeTreeDataPartWide::getListOfStreamsForColumn(const NameAndTypePair & column) const
+std::unordered_map<String, std::vector<StreamWithSizeHint>> MergeTreeDataPartWide::getListOfStreamsForColumns(const NamesAndTypesList & cols) const
 {
-    NamesAndTypesList cols;
-    cols.emplace_back(column);
-
     const auto metadata_ptr = storage.getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
     StorageSnapshotPtr storage_snapshot_ptr = std::make_shared<StorageSnapshot>(storage, metadata_ptr);
 
@@ -912,7 +916,7 @@ std::vector<StreamWithSizeHint> MergeTreeDataPartWide::getListOfStreamsForColumn
         ReadBufferFromFileBase::ProfileCallback{});
 
     auto & reader_wide = assert_cast<MergeTreeReaderWide &>(*reader);
-    return reader_wide.getAllColumnsSubstreams()[column.name];
+    return reader_wide.getAllColumnsSubstreams();
 }
 
 }

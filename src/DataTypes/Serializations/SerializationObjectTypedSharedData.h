@@ -29,7 +29,7 @@ extern const int NOT_IMPLEMENTED;
 ///   all substreams of the path type, serialized like a column of a Compact part with a fresh state>. A block is cut
 ///   before a substream once the open block holds min_compress_block_size bytes, and after the granule's last path.
 /// - ObjectTypedSharedDataPathsMarks (.paths_marks): per granule: <number of rows>, then per path <start of the
-///   path's data in .paths_data> and, in Wide parts, <end of the block holding its last byte>, as varint deltas.
+///   path's data in .paths_data>, as varint deltas.
 /// Readers of some paths (SerializationObjectTypedSharedDataPath, SerializationSubObjectTypedSharedData) share the work
 /// of a call: the first of them decodes every requested path of the call's granules, seeking to their marks, and
 /// caches the columns; the others take them from the substreams cache. The whole column decodes every granule

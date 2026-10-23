@@ -418,6 +418,7 @@ void StorageSystemPartsColumns::processNextStorage(
             Array subcolumn_data_compressed_bytes;
             Array subcolumn_data_uncompressed_bytes;
             Array subcolumn_marks_bytes;
+            NamesAndTypesList subcolumns;
 
             IDataType::forEachSubcolumn([&](const auto & subpath, const auto & name, const auto & data)
             {
@@ -434,16 +435,18 @@ void StorageSystemPartsColumns::processNextStorage(
                 subcolumn_types.push_back(data.type->getName());
                 subcolumn_serializations.push_back(ISerialization::kindStackToString(data.serialization->getKindStack()));
 
-                /// Through the part, as the readers take it: a subcolumn stored in a shared file has no file of its own to measure.
-                NameAndTypePair subcolumn(column.name, name, column.type, data.type);
-                ColumnSize size = part->getSubcolumnSize(subcolumn.name);
+                subcolumns.emplace_back(column.name, name, column.type, data.type);
+            }, ISerialization::SubstreamData(serialization).withType(column.type));
 
+            /// Through the part, as the readers take it, and for all sub-columns of the column at once: a sub-column stored
+            /// in a shared file has no file of its own to measure, and one reader lists the streams of all of them.
+            for (const auto & size : part->getSubcolumnSizes(subcolumns))
+            {
                 subcolumn_bytes_on_disk.push_back(size.data_compressed + size.marks);
                 subcolumn_data_compressed_bytes.push_back(size.data_compressed);
                 subcolumn_data_uncompressed_bytes.push_back(size.data_uncompressed);
                 subcolumn_marks_bytes.push_back(size.marks);
-
-            }, ISerialization::SubstreamData(serialization).withType(column.type));
+            }
 
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(subcolumn_names);

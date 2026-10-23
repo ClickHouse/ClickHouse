@@ -65,7 +65,7 @@ private:
 
     void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const override;
 
-    ColumnSize calculateSubcolumnSize(const String & subcolumn_name) const override;
+    std::vector<ColumnSize> calculateSubcolumnSizes(const NamesAndTypesList & subcolumns) const override;
 
     void addStreamToColumnSize(const String & stream_name, ColumnSize & size) const;
 
@@ -76,8 +76,8 @@ private:
     /// from the serialization, whose state-less enumeration misses the data-dependent streams of dynamic subcolumns.
     void forEachExistingStreamOfColumn(const String & column_name, const std::function<void(const String & stream_name)> & callback) const;
 
-    /// The streams a read of the column touches, listed by a reader after it has read the prefixes.
-    std::vector<StreamWithSizeHint> getListOfStreamsForColumn(const NameAndTypePair & column) const;
+    /// The streams a read of the columns touches, by requested name, listed by one reader after it has read the prefixes.
+    std::unordered_map<String, std::vector<StreamWithSizeHint>> getListOfStreamsForColumns(const NamesAndTypesList & columns) const;
 };
 
 }

@@ -3767,9 +3767,18 @@ ColumnSize IMergeTreeDataPart::getSubcolumnSize(const String & subcolumn_name) c
         return *size;
 
     /// If not, calculate the size of the subcolumn on disk and put it to cache.
-    auto size = calculateSubcolumnSize(subcolumn_name);
+    auto size = calculateSubcolumnSizes(NamesAndTypesList{getColumn(subcolumn_name)}).front();
     subcolumns_sizes_cache.add(subcolumn_name, size);
     return size;
+}
+
+std::vector<ColumnSize> IMergeTreeDataPart::getSubcolumnSizes(const NamesAndTypesList & subcolumns) const
+{
+    auto sizes = calculateSubcolumnSizes(subcolumns);
+    size_t i = 0;
+    for (const auto & subcolumn : subcolumns)
+        subcolumns_sizes_cache.add(subcolumn.name, sizes[i++]);
+    return sizes;
 }
 
 ColumnSize IMergeTreeDataPart::getTotalColumnsSize() const
