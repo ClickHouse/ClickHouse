@@ -883,6 +883,7 @@ void TCPHandler::runImpl()
                         try
                         {
                             const auto announcement_mode = announcement.mode;
+                            const bool wants_analyzed_ranges = announcement.wants_analyzed_ranges;
                             sendMergeTreeAllRangesAnnouncement(*query_state, std::move(announcement));
                             ProfileEvents::increment(ProfileEvents::MergeTreeAllRangesAnnouncementsSent);
                             ProfileEvents::increment(
@@ -892,10 +893,13 @@ void TCPHandler::runImpl()
                             if (client_parallel_replicas_protocol_version < DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE)
                                 return std::nullopt;
 
-                            /// `Default` mode callers discard the response; the initiator side skips
-                            /// sending it (see `RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement`).
+                            /// In `Default` mode the initiator sends the response only when it was asked for the
+                            /// analyzed ranges (see `RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement`),
+                            /// which an initiator older than this field cannot have been.
                             /// Don't block on a packet that will never arrive.
-                            if (announcement_mode == CoordinationMode::Default)
+                            if (announcement_mode == CoordinationMode::Default
+                                && (!wants_analyzed_ranges
+                                    || client_parallel_replicas_protocol_version < DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANALYZED_RANGES_REQUEST))
                                 return std::nullopt;
 
                             return receiveAllRangesAnnouncementResponse(*query_state);
@@ -2983,8 +2987,10 @@ bool TCPHandler::processData(QueryState & state, bool scalar)
 
     if (scalar)
     {
-        /// Scalar value
-        state.query_context->addScalar(temporary_id.table_name, block);
+        /// Scalar value received from the client over the wire. It must not be trusted as a
+        /// server-computed scalar-subquery result (see Context::addClientScalar): otherwise a client
+        /// could name it with a row policy's scalar-subquery hash and forge the policy's result.
+        state.query_context->addClientScalar(temporary_id.table_name, block);
     }
     else if (!state.need_receive_data_for_insert && !state.need_receive_data_for_input)
     {
@@ -3350,7 +3356,8 @@ void TCPHandler::sendTableColumns(QueryState & state, const ColumnsDescription &
 
     /// Send external table name (empty name is the main table)
     writeStringBinary("", *columns_buf);
-    writeStringBinary(columns.toString(/* include_comments = */ false), *columns_buf);
+    /// The client needs only names, types and defaults.
+    writeStringBinary(columns.toString(/* include_comments = */ false, /* include_codecs = */ false), *columns_buf);
 
     if (columns_buf != out.get())
         columns_buf->next();

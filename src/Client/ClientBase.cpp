@@ -223,6 +223,38 @@ namespace
 
 constexpr UInt64 THREAD_GROUP_ID = 0;
 
+/// The console output of the client. If the reader of the output goes away, as `head` does in
+/// `clickhouse-local -q '...' | head -1`, the write fails with `EPIPE` (`SIGPIPE` is blocked).
+/// The buffer remembers that, so the client can stop quietly, like `cat` and other tools do.
+/// It is done here and not in `WriteBufferFromFileDescriptor`, because only the client's own
+/// stdout is special: a broken pipe anywhere else (e.g. a pipe to a child process) is an error.
+class WriteBufferToStdout : public DB::WriteBufferFromFileDescriptor
+{
+public:
+    WriteBufferToStdout(int fd_, std::atomic<bool> & stdout_is_broken_)
+        : DB::WriteBufferFromFileDescriptor(fd_)
+        , stdout_is_broken(stdout_is_broken_)
+    {
+    }
+
+private:
+    std::atomic<bool> & stdout_is_broken;
+
+    void nextImpl() override
+    {
+        try
+        {
+            DB::WriteBufferFromFileDescriptor::nextImpl();
+        }
+        catch (const DB::ErrnoException & e)
+        {
+            if (e.getErrno() == EPIPE)
+                stdout_is_broken = true;
+            throw;
+        }
+    }
+};
+
 /// Returns true if any `ASTTableExpression` in the query tree carries a `STREAM` modifier.
 bool hasStreamingTableExpression(const DB::IAST & ast)
 {
@@ -505,7 +537,7 @@ ClientBase::ClientBase(
     , cmd_settings(std::make_unique<Settings>())
     , cmd_merge_tree_settings(std::make_unique<MergeTreeSettings>())
     , std_in(std::make_unique<ReadBufferFromFileDescriptor>(in_fd_))
-    , std_out(std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(out_fd_))
+    , std_out(std::make_unique<AutoCanceledWriteBuffer<WriteBufferToStdout>>(out_fd_, stdout_is_broken))
     , progress_indication(output_stream_, in_fd_, err_fd_)
     , progress_table(in_fd_, err_fd_)
     , input_stream(input_stream_)
@@ -1108,7 +1140,7 @@ try
                 {
                     select_into_file_and_stdout = true;
                     out_file_buf = std::make_unique<ForkWriteBuffer>(ForkWriteBuffer::WriteBufferPtrs{std::move(out_file_buf),
-                        std::make_shared<WriteBufferFromFileDescriptor>(stdout_fd)});
+                        std::make_shared<WriteBufferToStdout>(stdout_fd, stdout_is_broken)});
                 }
 
                 // We are writing to file, so default format is the same as in non-interactive mode.
@@ -3926,6 +3958,8 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                     processError(full_query);
 
                 // Stop processing queries if needed.
+                if (have_error && stdout_is_broken)
+                    return false;
                 if (have_error && (buzz_house || !ignore_error))
                     return buzz_house || is_interactive;
 
@@ -5263,6 +5297,13 @@ void ClientBase::runInteractive()
                 lr->setInitialText(next_query_to_prepopulate);
                 next_query_to_prepopulate.clear();
             }
+
+            if (on_waiting_for_query_input)
+                on_waiting_for_query_input(true);
+            SCOPE_EXIT_SAFE({
+                if (on_waiting_for_query_input)
+                    on_waiting_for_query_input(false);
+            });
 
             input = lr->readLine(getPrompt(), ":-] ");
         }
