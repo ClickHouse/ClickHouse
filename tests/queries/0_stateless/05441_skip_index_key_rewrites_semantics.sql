@@ -4,6 +4,10 @@
 -- when it computes the same values as the stored key.
 SET explain_query_plan_default = 'legacy';
 SET least_greatest_legacy_null_behavior = 0;
+-- The injected split of the read ranges into intersecting and non-intersecting ones filters the rows by
+-- the sorting key computed with the query's settings, which differs from the stored key in the cases below
+-- regardless of the index analysis checked here.
+SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
 
 -- 1. The query's settings fold a constant subexpression of the key to a different value than it has in
 -- the stored key: `greatest(NULL, 1)` is 1 for the stored key and NULL with the legacy behavior, so the
@@ -84,7 +88,7 @@ SELECT
     'indexed_partition_key',
     countIf(explain LIKE '%Condition: (if(isNull(x), multiIf(greater(v, 50), 1, 0), 0) in [1, 1])%'),
     countIf(explain LIKE '%Parts: 1/2%')
-FROM (EXPLAIN indexes = 1 SELECT count() FROM test_rewrites_indexed_partition WHERE if(isNull(x), multiIf(v > 50, 1, 0), 0) = 1);
+FROM (EXPLAIN indexes = 1 SELECT count() FROM test_rewrites_indexed_partition WHERE if(isNull(x), multiIf(v > 50, 1, 0), 0) = 1 SETTINGS optimize_use_implicit_projections = 0);
 SELECT 'indexed_partition_key', count() FROM test_rewrites_indexed_partition WHERE if(isNull(x), multiIf(v > 50, 1, 0), 0) = 1;
 SELECT 'indexed_partition_key', count() FROM test_rewrites_indexed_partition WHERE if(isNull(x), multiIf(v > 50, 1, 0), 0) = 1 SETTINGS use_partition_pruning = 0;
 DROP TABLE test_rewrites_indexed_partition;
