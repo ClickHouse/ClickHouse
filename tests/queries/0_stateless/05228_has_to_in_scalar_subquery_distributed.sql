@@ -20,9 +20,13 @@ SET prefer_localhost_replica = 0;
 DROP TABLE IF EXISTS t_05228_local;
 DROP TABLE IF EXISTS t_05228_dist;
 DROP TABLE IF EXISTS t_05228_dist_over_dist;
+DROP TABLE IF EXISTS t_05228_lc_array;
 
 CREATE TABLE t_05228_local (type UInt32, uid LowCardinality(String), uids String) ENGINE = MergeTree ORDER BY type;
 INSERT INTO t_05228_local SELECT 1, toString(number % 5), toString(number % 5) FROM numbers(20);
+
+CREATE TABLE t_05228_lc_array (id UInt64, a Array(LowCardinality(String))) ENGINE = Memory;
+INSERT INTO t_05228_lc_array SELECT number, [toLowCardinality(if(number = 0, 'a', 'b'))] FROM numbers(2);
 
 CREATE TABLE t_05228_dist AS t_05228_local
     ENGINE = Distributed(test_cluster_two_shards_localhost, currentDatabase(), t_05228_local);
@@ -75,6 +79,21 @@ SELECT 'below cutoff keeps has', count() FROM (
     FROM t_05228_local GROUP BY p
     ) WHERE explain ILIKE '%function_name: has%';
 
+-- An Array(LowCardinality(T)) scalar read from a table keeps dictionary entries its value does not use,
+-- and a shard receives it with the dictionary compacted, so the rewrite is declined for it.
+SELECT 'lowcardinality array source', has((SELECT a FROM t_05228_lc_array WHERE id = 1), if(number = 0, 'a', 'b')) AS p, count()
+FROM remote('127.0.0.1,127.0.0.1', numbers(2)) GROUP BY p ORDER BY p;
+
+-- A constant LowCardinality needle reaches the rewrite through `arrayExists`, and the initiator has to fold
+-- its cast, as a shard does.
+SELECT 'constant lowcardinality needle', arrayExists(x -> x = toLowCardinality('3'), (SELECT groupUniqArray(uids) FROM t_05228_local)) AS p, count()
+FROM remote('127.0.0.1,127.0.0.1', numbers(1)) GROUP BY p ORDER BY p
+SETTINGS optimize_rewrite_array_exists_to_has = 1;
+SELECT 'constant lowcardinality needle rewritten', count() FROM (
+    EXPLAIN QUERY TREE run_passes = 1
+    SELECT arrayExists(x -> x = toLowCardinality('3'), (SELECT groupUniqArray(uids) FROM t_05228_local)) FROM numbers(1)
+    ) WHERE explain ILIKE '%function_name: in,%' SETTINGS optimize_rewrite_array_exists_to_has = 1;
+
 -- Controls: a literal array (the same node on both sides) and a plain tuple `IN` (not rewritten at
 -- all) have to keep answering in the same shape.
 SELECT 'literal array control', has(['0', '1', '2'], uid) AS p, count()
@@ -92,3 +111,4 @@ SELECT 'rewrite fires', count() FROM (
 DROP TABLE t_05228_dist_over_dist;
 DROP TABLE t_05228_dist;
 DROP TABLE t_05228_local;
+DROP TABLE t_05228_lc_array;

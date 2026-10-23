@@ -148,7 +148,7 @@ public:
 #endif
             sets.addFromTuple(set_key, std::move(ast), std::move(set), settings);
         }
-        else if (auto scalar_column = tryGetScalarSubqueryColumn(in_second_argument, planner_context.getQueryContext()))
+        else if (auto scalar_column = tryGetScalarConstantColumn(in_second_argument, planner_context.getQueryContext()))
         {
             auto [set, set_element_types] = buildSetElementsForConstantColumn(
                 in_first_argument->getResultType(), scalar_column, in_second_argument->getResultType(),

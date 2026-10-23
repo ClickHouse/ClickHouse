@@ -67,7 +67,8 @@ SELECT 'lowcardinality scalar plan', count() FROM (
     EXPLAIN actions=1,header=1 SELECT count() FROM numbers(20) WHERE has((SELECT groupUniqArray(toString(number)) FROM numbers(5)), toLowCardinality(toString(number)))
     ) WHERE explain LIKE '%FUNCTION in%';
 
--- An Array(LowCardinality(T)) source is rewritten too: the element and needle types are compared with LowCardinality stripped.
+-- An Array(LowCardinality(T)) literal is rewritten too: the element and needle types are compared with LowCardinality stripped.
+-- The same array from a scalar subquery is not: a shard receives the scalar with its dictionary compacted (05228).
 SELECT 'lowcardinality array scalar', count() FROM numbers(20) WHERE has((SELECT [toLowCardinality('1'), toLowCardinality('2')]), toString(number));
 SELECT 'lowcardinality array scalar plan', count() FROM (
     EXPLAIN actions=1,header=1 SELECT count() FROM numbers(20) WHERE has((SELECT [toLowCardinality('1'), toLowCardinality('2')]), toString(number))
@@ -76,6 +77,18 @@ SELECT 'lowcardinality array literal', count() FROM numbers(20) WHERE has([toLow
 SELECT 'lowcardinality array literal plan', count() FROM (
     EXPLAIN actions=1,header=1 SELECT count() FROM numbers(20) WHERE has([toLowCardinality('1'), toLowCardinality('2')], toString(number))
     ) WHERE explain LIKE '%FUNCTION in%';
+
+-- A constant array of 1 MiB or more is still rewritten for an ordinary needle, but not for a LowCardinality one.
+-- With enable_scalar_subquery_optimization off, the scalar subquery is folded into such a constant.
+SELECT 'large constant', count() FROM numbers(20) WHERE has((SELECT range(300000)), number)
+SETTINGS enable_scalar_subquery_optimization = 0;
+SELECT 'large constant shape in', count() FROM (
+    EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM numbers(20) WHERE has((SELECT range(300000)), number)
+    ) WHERE explain LIKE '%function_name: in,%' SETTINGS enable_scalar_subquery_optimization = 0;
+SELECT 'large constant lowcardinality shape in', count() FROM (
+    EXPLAIN QUERY TREE run_passes = 1
+    SELECT count() FROM numbers(20) WHERE has((SELECT arrayMap(x -> toString(x), range(120000))), toLowCardinality(toString(number)))
+    ) WHERE explain LIKE '%function_name: in,%' SETTINGS enable_scalar_subquery_optimization = 0;
 
 -- notHas goes through notIn, and NOT IN is renamed by transform_null_in.
 SELECT 'nothas', count() FROM numbers(20) WHERE notHas((SELECT groupUniqArray(toString(number)) FROM numbers(5)), toString(number));

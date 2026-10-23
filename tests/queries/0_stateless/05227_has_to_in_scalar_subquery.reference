@@ -23,9 +23,12 @@ lowcardinality literal not	17
 lowcardinality scalar	5
 lowcardinality scalar plan	1
 lowcardinality array scalar	2
-lowcardinality array scalar plan	1
+lowcardinality array scalar plan	0
 lowcardinality array literal	2
 lowcardinality array literal plan	1
+large constant	20
+large constant shape in	1
+large constant lowcardinality shape in	0
 nothas	15
 nothas plan	1
 transform_null_in 1	5

@@ -209,7 +209,7 @@ PlannerContext::SetKey PlannerContext::createSetKey(const DataTypePtr & left_ope
 {
     /// An initiator holds an Array-typed scalar subquery as a `__getScalar` reference, every other server its value.
     QueryTreeNodePtr set_source_value_node;
-    if (auto scalar_column = tryGetScalarSubqueryColumn(set_source_node, getQueryContext()))
+    if (auto scalar_column = tryGetScalarConstantColumn(set_source_node, getQueryContext()))
         set_source_value_node = std::make_shared<ConstantNode>(
             ConstantValue::wrapToColumnConst(scalar_column), set_source_node->getResultType());
 

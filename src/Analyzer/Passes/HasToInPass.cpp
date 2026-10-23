@@ -45,17 +45,11 @@ public:
             return;
 
         /// Verify that the first argument is a constant array
-        ColumnPtr first_arg_column;
-        if (const auto * first_arg_constant = has_function_arguments_nodes[0]->as<ConstantNode>())
-            first_arg_column = first_arg_constant->getColumn();
-        else
-            first_arg_column = tryGetScalarSubqueryColumn(has_function_arguments_nodes[0], getContext());
+        const auto * first_arg_constant = has_function_arguments_nodes[0]->as<ConstantNode>();
+        const ColumnPtr first_arg_column = first_arg_constant
+            ? ColumnPtr(first_arg_constant->getColumn())
+            : tryGetScalarConstantColumn(has_function_arguments_nodes[0], getContext());
         if (!first_arg_column)
-            return;
-
-        /// The resolver refuses to fold a column this large into a constant, so a secondary server lowers the
-        /// rewritten `in` back to `has` and the two servers name the predicate differently.
-        if (ConstantValue::wrapToColumnConst(first_arg_column)->byteSize() >= 1_MiB)
             return;
 
         /// Verify that the first argument is actually an array type
@@ -69,6 +63,13 @@ public:
         WhichDataType data_type(element_type);
         if (isNullableOrLowCardinalityNullable(element_type) ||
                 data_type.isMap() || data_type.isArray() || data_type.isTuple() || data_type.isObject() || data_type.isDynamic() || data_type.isNothing())
+            return;
+
+        /// A secondary server lowers the shipped `in` back to `has` when it does not fold the set source into a constant
+        /// (1 MiB or more), and may hold a LowCardinality set source in another dictionary layout, which hashes into
+        /// another set name. A constant array with an ordinary needle is still rewritten, to keep the set on a single server.
+        if ((!first_arg_constant || has_function_arguments_nodes[1]->getResultType()->lowCardinality())
+            && (data_type.isLowCardinality() || ConstantValue::wrapToColumnConst(first_arg_column)->byteSize() >= 1_MiB))
             return;
 
         const Field array_field = (*first_arg_column)[0];
