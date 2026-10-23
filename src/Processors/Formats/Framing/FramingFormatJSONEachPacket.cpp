@@ -57,10 +57,13 @@ void FramingFormatJSONEachPacket::writeProfileEventsPacket(const Block & block)
     writeCString("]}\n", out);
 }
 
-void FramingFormatJSONEachPacket::writeExceptionPacket(const String & message)
+void FramingFormatJSONEachPacket::writeExceptionPacket(const String & message, bool structured)
 {
     writeCString("{\"packet\":\"exception\",\"exception\":", out);
-    writeJSONStringValidUTF8(message, out, format_settings);
+    if (structured)
+        writeString(message, out);
+    else
+        writeJSONStringValidUTF8(message, out, format_settings);
     writeCString("}\n", out);
 }
 
