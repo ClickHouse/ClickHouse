@@ -1,6 +1,5 @@
 #include <Functions/FunctionsConversion.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/isQueryOuterGuardError.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/iota.h>
 
@@ -71,14 +70,6 @@ static MutableColumnPtr cloneEmptyFromFirstConvertedColumn(const VectorWithMemor
         if (column)
             return column->cloneEmpty();
     return nullptr;
-}
-
-/// Copies an error that was remembered without being recorded in `system.errors`, and records the copy.
-static Exception copyDeferredError(const Exception & error)
-{
-    Exception copy(error);
-    copy.recordToSystemErrors();
-    return copy;
 }
 
 /// Under `accurateCastOrNull` the per-variant conversions to the same target type can DISAGREE on
@@ -2230,7 +2221,6 @@ FunctionCast::WrapperType FunctionCast::createVariantToColumnWrapper(const DataT
     const auto & variant_types = from_variant.getVariants();
     ElementWrappers variant_wrappers;
     variant_wrappers.reserve(variant_types.size());
-    std::optional<Exception> first_error;
 
     /// Create conversion wrapper for each variant.
     for (const auto & variant_type : variant_types)
@@ -2241,35 +2231,8 @@ FunctionCast::WrapperType FunctionCast::createVariantToColumnWrapper(const DataT
             /// Create wrapper only if we support conversion from variant to the resulting type.
             wrapper = createWrapperIfCanConvert(variant_type, to_type);
         }
-        else
-        {
-            /// Only an exception tells that two types cannot be converted. A variant that cannot be converted
-            /// gets no wrapper here, and its conversion fails at execution only if it has values.
-            try
-            {
-                Exception::SuppressErrorCodesScope suppress_error_codes;
-                wrapper = prepareUnpackDictionaries(variant_type, to_type);
-                /// Some conversions fail only when executed, even on an empty column.
-                ColumnsWithTypeAndName empty_variant = {{variant_type->createColumn(), variant_type, ""}};
-                wrapper(empty_variant, to_type, nullptr, 0);
-            }
-            catch (Exception & e)
-            {
-                if (isQueryOuterGuardError(e.code()))
-                {
-                    e.recordToSystemErrors();
-                    throw;
-                }
-                wrapper = {};
-                if (!first_error)
-                    first_error.emplace(e);
-            }
-        }
         variant_wrappers.push_back(wrapper);
     }
-
-    if (first_error && std::ranges::none_of(variant_wrappers, [](const auto & wrapper) { return static_cast<bool>(wrapper); }))
-        throw copyDeferredError(*first_error);
 
     bool keep_nullable = settings.cast_keep_nullable;
     return [this, variant_wrappers, variant_types, to_type, keep_nullable]
@@ -2295,7 +2258,8 @@ FunctionCast::WrapperType FunctionCast::createVariantToColumnWrapper(const DataT
             }
             else if (cast_type != CastType::accurateOrNull && !variant_col->empty())
             {
-                /// The conversion failed at analysis, so it is prepared again only to convert values, and throws then.
+                /// The conversion is prepared only for a variant with values, so a variant that cannot be
+                /// converted fails the conversion only if the column contains values of it.
                 cast_variant = prepareUnpackDictionaries(variant_types[i], to_type)(variant, result_type, nullptr, variant_col->size());
             }
             cast_variant_columns.push_back(std::move(cast_variant));

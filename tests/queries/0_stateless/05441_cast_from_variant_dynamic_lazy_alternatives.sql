@@ -21,8 +21,9 @@ SELECT CAST(x AS FixedString(2)) FROM (SELECT 'abcd'::FixedString(4)::Variant(St
 SELECT CAST(x AS Date) FROM (SELECT 1.5::Decimal(9, 2)::Variant(Date, Decimal(9, 2)) AS x); -- { serverError ILLEGAL_COLUMN }
 
 SELECT 'Variant, no alternative can be converted';
-SELECT CAST(x AS UInt8) FROM (SELECT [1]::Array(UInt8)::Variant(Array(UInt8), Map(String, UInt8)) AS x LIMIT 0); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT CAST(x AS Nullable(UInt8)) FROM (SELECT NULL::Variant(Array(UInt8), Map(String, UInt8)) AS x); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT CAST(x AS UInt8) FROM (SELECT materialize([1]::Array(UInt8)::Variant(Array(UInt8), Map(String, UInt8))) AS x LIMIT 0);
+SELECT CAST(x AS Nullable(UInt8)) FROM (SELECT NULL::Variant(Array(UInt8), Map(String, UInt8)) AS x);
+SELECT CAST(x AS UInt8) FROM (SELECT [1]::Array(UInt8)::Variant(Array(UInt8), Map(String, UInt8)) AS x); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SELECT 'Geometry';
 SELECT CAST(g AS MultiPolygon) FROM (SELECT [[[(0., 0.), (1., 0.), (1., 1.), (0., 0.)]]]::MultiPolygon::Geometry AS g);
@@ -59,7 +60,4 @@ CREATE TABLE t_alter (id UInt64, v Variant(UInt64, Array(UInt8))) ENGINE = Merge
 INSERT INTO t_alter SELECT 1, 5::UInt64::Variant(UInt64, Array(UInt8));
 ALTER TABLE t_alter MODIFY COLUMN v UInt8;
 SELECT id, v, toTypeName(v) FROM t_alter;
-DROP TABLE t_alter;
-CREATE TABLE t_alter (id UInt64, v Variant(Array(UInt8), Map(String, UInt8))) ENGINE = MergeTree ORDER BY id;
-ALTER TABLE t_alter MODIFY COLUMN v UInt8; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 DROP TABLE t_alter;

@@ -14,6 +14,7 @@ ab
 2020-01-01
 Variant, values of an alternative that cannot be converted
 Variant, no alternative can be converted
+\N
 Geometry
 [[[(0,0),(1,0),(1,1),(0,0)]]]
 1	[[[(0,0),(1,0),(1,1),(0,0)]]]

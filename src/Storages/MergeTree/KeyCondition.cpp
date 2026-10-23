@@ -33,7 +33,6 @@
 #include <Common/HilbertUtils.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/MortonUtils.h>
-#include <Common/isQueryOuterGuardError.h>
 #include <Common/likePatternToRegexp.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
@@ -82,8 +81,15 @@ namespace Setting
 
 namespace ErrorCodes
 {
+extern const int ABORTED;
 extern const int BAD_ARGUMENTS;
+extern const int CANNOT_ALLOCATE_MEMORY;
 extern const int LOGICAL_ERROR;
+extern const int MEMORY_LIMIT_EXCEEDED;
+extern const int QUERY_WAS_CANCELLED;
+extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
+extern const int TIMEOUT_EXCEEDED;
+extern const int TOO_SLOW;
 }
 
 namespace
@@ -2608,6 +2614,26 @@ static bool finalizeTransformedColumn(ColumnPtr & column, DataTypePtr & type)
         type = removeNullable(type);
     }
     return true;
+}
+
+
+/// A broken invariant, a memory limit, a deadline or a cancellation is not something the index analysis
+/// may decide to ignore: these are the outer guards of the query, and swallowing one would let the query
+/// go on, for example to a full scan, instead of aborting. The analysis runs functions on query constants
+/// and on whole boundary columns (`applyFunction`): a key expression can exceed the memory limit on a
+/// constant, and a conversion with a cancellation budget can hit `max_execution_time`.
+/// The cancellation exception stored by `checkTimeLimit` may carry `QUERY_WAS_CANCELLED_BY_CLIENT`,
+/// and an allocation failure below the memory tracker surfaces as `CANNOT_ALLOCATE_MEMORY`.
+static bool isQueryOuterGuardError(int code)
+{
+    return code == ErrorCodes::LOGICAL_ERROR
+        || code == ErrorCodes::MEMORY_LIMIT_EXCEEDED
+        || code == ErrorCodes::CANNOT_ALLOCATE_MEMORY
+        || code == ErrorCodes::QUERY_WAS_CANCELLED
+        || code == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT
+        || code == ErrorCodes::TIMEOUT_EXCEEDED
+        || code == ErrorCodes::TOO_SLOW
+        || code == ErrorCodes::ABORTED;
 }
 
 

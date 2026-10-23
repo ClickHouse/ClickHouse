@@ -552,7 +552,7 @@ SELECT v::Nullable(Float64) FROM test;
 └──────────────────────────────┘
 ```
 
-An alternative that cannot be converted to the destination type causes an error only if the column contains values of this alternative. If none of the alternatives can be converted, the conversion fails when the query is analyzed.
+An alternative that cannot be converted to the destination type causes an error only if the column contains values of this alternative.
 
 ### Converting a Variant to another Variant {#converting-a-variant-to-another-variant}
 
