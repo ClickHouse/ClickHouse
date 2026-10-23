@@ -65,14 +65,23 @@ WindowTransform::WindowTransform(
     , frame(params)
 {
     workspaces.reserve(functions.size());
-    for (const auto & function : functions)
+    try
     {
-        const auto & workspace = workspaces.emplace_back(createWorkspace(params.input_header, function));
-        if (workspace.window_function_impl && !workspace.window_function_impl->checkWindowFrameType(this))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported window frame type for function '{}'", workspace.aggregate_function->getName());
+        for (const auto & function : functions)
+        {
+            const auto & workspace = workspaces.emplace_back(createWorkspace(params.input_header, function));
+            if (workspace.window_function_impl && !workspace.window_function_impl->checkWindowFrameType(this))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported window frame type for function '{}'", workspace.aggregate_function->getName());
 
-        if (!arena && workspace.aggregate_function->allocatesMemoryInArena())
-            arena = std::make_unique<Arena>();
+            if (!arena && workspace.aggregate_function->allocatesMemoryInArena())
+                arena = std::make_unique<Arena>();
+        }
+    }
+    catch (...)
+    {
+        for (auto & ws : workspaces)
+            ws.aggregate_function->destroy(ws.aggregate_function_state.data());
+        throw;
     }
 }
 
