@@ -76,6 +76,8 @@ ALTER TABLE [db2.]table_clone ATTACH PARTITION ALL FROM [db.]table;
 For both features, you can specify a different engine for the table.
 If the engine is not specified, the same engine will be used as for the original table (`db.table`).
 
+A copy of the schema needs the `SHOW COLUMNS` privilege on `db.table`. If the inherited definition holds credentials, which `SHOW CREATE TABLE` masks, the copy also needs the `SELECT` privilege, because the new table can read the data with those credentials.
+
 ### Create a table with a table function {#from-a-table-function}
 
 ```sql
@@ -395,6 +397,26 @@ ENGINE = <Engine>
 ```
 
 For the available general purpose, specialized and encryption codecs, see [Column compression codecs](/reference/statements/create/table/codec).
+
+### Codecs for subcolumns {#subcolumn-codecs}
+
+This feature is experimental and requires the setting [enable_subcolumn_codecs](/reference/settings/session-settings/enable#enable_subcolumn_codecs).
+
+A `CODEC name (codec, ...)` entry in the column list declares a codec for a subcolumn, such as an element of a `Tuple` or the values of a `Map`:
+
+```sql
+CREATE TABLE subcolumn_codec_example
+(
+    id UInt64,
+    payload Tuple(ts DateTime64(3), value Float64),
+    attrs Map(String, Float64),
+    CODEC payload.ts (DoubleDelta, ZSTD),
+    CODEC attrs.values (Gorilla, ZSTD)
+)
+ENGINE = MergeTree ORDER BY id
+```
+
+Only the engines of the `MergeTree` family support codecs for subcolumns. A column has either its own codec or codecs for its subcolumns. Codecs cannot be specified for nested subcolumns: if a codec is declared for `payload.meta`, none can be declared for `payload.meta.seq`. An element of an unnamed `Tuple` is addressed with quoted names, as in ``CODEC `pair`.`2` (ZSTD)``, because `pair.2` would be read as a number. The subcolumn must exist in the type of the column and cannot be inside a `JSON`, `Dynamic` or `Variant` value. Streams that hold only structure, such as array sizes or null maps, get only the general purpose part of the codec. The declarations are shown in `SHOW CREATE TABLE` and in the `subcolumn_codecs` column of `system.columns`.
 
 ## Create temporary tables {#temporary-tables}
 
