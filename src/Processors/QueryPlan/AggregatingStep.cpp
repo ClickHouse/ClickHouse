@@ -232,6 +232,13 @@ void AggregatingStep::applyOrder(SortDescription sort_description_for_merging_, 
     sort_description_for_merging = std::move(sort_description_for_merging_);
     group_by_sort_description = std::move(group_by_sort_description_);
     explicit_sorting_required_for_aggregation_in_order = false;
+    /// The in-order executors (`FinalizeAggregatedTransform`, `MergingAggregatedBucketTransform`)
+    /// never reach `Aggregator::mergeAndConvertOneBucketToChunk` or
+    /// `Aggregator::convertOneBucketToChunkTopK`, so the top-K threshold merge and the bucket-local
+    /// Top-K conversion set by the first optimization pass would be silent no-ops there. Drop them,
+    /// so that the plan does not claim an optimization the pipeline does not perform.
+    params.threshold_top_k.reset();
+    params.bucket_top_k = 0;
 
     /// AggregatingInOrderTransform assumes every run of the sorted key columns yields at least one group,
     /// which the GROUP BY top-K heap breaks by skipping rows.
