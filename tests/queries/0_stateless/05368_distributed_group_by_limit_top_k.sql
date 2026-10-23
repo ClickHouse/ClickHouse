@@ -52,8 +52,8 @@ WHERE type = 'QueryFinish' AND NOT is_initial_query AND initial_query_id IN (
 GROUP BY log_comment
 ORDER BY log_comment;
 
--- The sort above the merge, and the heap of the local shard.
-SELECT replaceRegexpAll(explain, '^[│└├─ ]+', '')
+-- The sort above the merge, and the heap of the local shards (one or both, depending on the cluster).
+SELECT DISTINCT replaceRegexpAll(explain, '^[│└├─ ]+', '')
 FROM (EXPLAIN actions = 1 SELECT k, count() FROM t_05368_distributed GROUP BY k LIMIT 3
     SETTINGS enable_parallel_replicas = 0, prefer_localhost_replica = 1)
 WHERE explain LIKE '%Top-K%' OR explain LIKE '%Sorting (%';
