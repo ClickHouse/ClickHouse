@@ -272,7 +272,7 @@ ObjectStorageTopKQueryConditionCacheKeyPtr ReadFromObjectStorageStep::makeTopKQu
     /// An incremental `Paimon` read iterates only the delta since the watermark committed in Keeper
     /// (or of `paimon_target_snapshot_id`, bounded by `max_consume_snapshots`), so the same snapshot
     /// yields different sets of files from query to query.
-    if (configuration->getDataLakeSettings()[DataLakeStorageSetting::paimon_incremental_read])
+    if ((*configuration->getDataLakeSettings())[DataLakeStorageSetting::paimon_incremental_read])
         return {};
 
     /// The rows the reader drops besides those of the TopN filter must be dropped by a condition the
