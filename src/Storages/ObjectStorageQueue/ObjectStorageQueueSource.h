@@ -90,9 +90,6 @@ public:
 
         bool useBucketsForProcessing() const { return use_buckets_for_processing; }
 
-        /// `after_processing` as it was when the iterator was created, used for every file it hands out.
-        ObjectStorageQueueAction getAfterProcessing() const { return after_processing; }
-
         /// Finish the iterator, so the next batch lists the files again.
         void invalidate() { iterator_invalidated = true; }
 
@@ -107,7 +104,6 @@ public:
         const NamesAndTypesList hive_partition_columns_to_read_from_file_path;
         const bool file_deletion_on_processed_enabled;
         const ObjectStorageQueueMode mode;
-        const ObjectStorageQueueAction after_processing;
         const bool enable_hash_ring_filtering;
         const StorageID storage_id;
         const bool use_buckets_for_processing;
@@ -201,6 +197,7 @@ public:
         FormatParserSharedResourcesPtr parser_shared_resources_,
         const CommitSettings & commit_settings_,
         const AfterProcessingSettings & after_processing_settings_,
+        ObjectStorageQueueAction after_processing_,
         std::shared_ptr<ObjectStorageQueueMetadata> files_metadata_,
         ContextPtr context_,
         size_t max_block_size_,
@@ -247,7 +244,8 @@ public:
     /// Exclusive mode only: releases the files of a batch whose post-processing found a changed generation.
     void releaseAfterChangedGeneration(const std::string & exception_message);
 
-    ObjectStorageQueueAction getAfterProcessing() const { return file_iterator->getAfterProcessing(); }
+    /// `after_processing` as it was when the batch started, used for every file of the batch.
+    ObjectStorageQueueAction getAfterProcessing() const { return after_processing; }
 
     void invalidateFileIterator() { file_iterator->invalidate(); }
 
@@ -285,6 +283,7 @@ private:
     FormatParserSharedResourcesPtr parser_shared_resources;
     const CommitSettings commit_settings;
     const AfterProcessingSettings after_processing_settings;
+    const ObjectStorageQueueAction after_processing;
     const std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;
     const size_t max_block_size;
     const ObjectStorageQueueMode mode;

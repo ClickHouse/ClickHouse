@@ -157,7 +157,6 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     , hive_partition_columns_to_read_from_file_path(hive_partition_columns_to_read_from_file_path_)
     , file_deletion_on_processed_enabled(file_deletion_on_processed_enabled_)
     , mode(metadata->getTableMetadata().getMode())
-    , after_processing(metadata->getTableMetadata().after_processing.load())
     , enable_hash_ring_filtering(enable_hash_ring_filtering_)
     , storage_id(storage_id_)
     , use_buckets_for_processing(metadata->useBucketsForProcessing())
@@ -686,8 +685,8 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
         }
 
         /// `MOVE` and `DELETE` act on the ingested generation, so the read is pinned to the listed one before it is opened.
-        /// A file without a listed generation is still returned and failed by the source.
-        if (afterProcessingNeedsIngestedGeneration(object_storage->getType(), after_processing))
+        /// A file without a listed generation, or not pinned for its batch's action, is still returned and failed by the source.
+        if (afterProcessingNeedsIngestedGeneration(object_storage->getType(), metadata->getTableMetadata().after_processing.load()))
             useIngestedGenerationOfTheListedObject(object_info->relative_path_with_metadata);
 
         return std::make_shared<ObjectStorageQueueObjectInfo>(*object_info, std::move(file_metadata));
@@ -1104,6 +1103,7 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     FormatParserSharedResourcesPtr parser_shared_resources_,
     const CommitSettings & commit_settings_,
     const AfterProcessingSettings & after_processing_settings_,
+    ObjectStorageQueueAction after_processing_,
     std::shared_ptr<ObjectStorageQueueMetadata> files_metadata_,
     ContextPtr context_,
     size_t max_block_size_,
@@ -1130,6 +1130,7 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     , parser_shared_resources(std::move(parser_shared_resources_))
     , commit_settings(commit_settings_)
     , after_processing_settings(after_processing_settings_)
+    , after_processing(after_processing_)
     , files_metadata(files_metadata_)
     , max_block_size(max_block_size_)
     , mode(files_metadata->getTableMetadata().getMode())
@@ -1340,9 +1341,30 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 processed_files.back().version_id = object_metadata->version_id;
             }
 
+            /// A read the iterator did not pin, because `after_processing` was altered meanwhile, is reset for a later batch.
+            if (afterProcessingNeedsIngestedGeneration(object_storage->getType(), after_processing)
+                && !processed_files.back().etag.empty()
+                && !reader.getObjectInfo()->relative_path_with_metadata.require_read_pinned_to_generation)
+            {
+                const auto message = fmt::format(
+                    "The read of {} was not pinned to its generation, as `after_processing` was altered while the batch was running",
+                    file_metadata->getPath());
+                LOG_DEBUG(log, "{}. Will reset the file", message);
+
+                processed_files.back().state = FileState::ErrorOnRead;
+                processed_files.back().exception_during_read = message;
+                processed_files.back().exception_during_read_code = ErrorCodes::FILE_CHANGED_DURING_READ;
+
+                if (mode == ObjectStorageQueueMode::ORDERED)
+                    return {};
+
+                reader = {};
+                progress->processed_files -= 1;
+                continue;
+            }
+
             /// Fail closed: if `after_processing` needs the ingested generation but the listing carried no `ETag`,
             /// fail the file like a failed read so it is never committed as processed.
-            const auto after_processing = file_iterator->getAfterProcessing();
             if (afterProcessingNeedsIngestedGeneration(object_storage->getType(), after_processing)
                 && processed_files.back().etag.empty())
             {
@@ -1987,8 +2009,6 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
         exception_message,
         error_code);
     preparePartitionProcessedRequests(requests, last_processed_file_per_partition);
-
-    const auto after_processing = file_iterator->getAfterProcessing();
 
     if (mode != ObjectStorageQueueMode::EXCLUSIVE && requests.empty() && successful_objects.empty())
         return;

@@ -780,6 +780,7 @@ void ReadFromObjectStorageQueue::initializePipeline(QueryPipelineBuilder & pipel
     auto parser_shared_resources
         = std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), /*num_streams_=*/processing_threads_num);
     auto progress = std::make_shared<ObjectStorageQueueSource::ProcessingProgress>();
+    const auto after_processing = metadata->getTableMetadata().after_processing.load();
     for (size_t i = 0; i < processing_threads_num; ++i)
         pipes.emplace_back(storage->createSource(
             i /* processor_id */,
@@ -791,7 +792,8 @@ void ReadFromObjectStorageQueue::initializePipeline(QueryPipelineBuilder & pipel
             max_block_size,
             context,
             commit_once_processed,
-            /*is_direct_select=*/true));
+            /*is_direct_select=*/true,
+            after_processing));
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
     if (pipe.empty())
@@ -814,6 +816,7 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
     ContextPtr local_context,
     bool commit_once_processed,
     bool is_direct_select,
+    ObjectStorageQueueAction after_processing,
     size_t max_processed_files_override)
 {
     CommitSettings commit_settings_copy;
@@ -842,6 +845,7 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
         parser_shared_resources,
         commit_settings_copy,
         after_processing_settings_copy,
+        after_processing,
         std::move(metadata),
         local_context,
         max_block_size,
@@ -1088,6 +1092,8 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
             = std::make_shared<FormatParserSharedResources>(queue_context->getSettingsRef(), /*num_streams_=*/threads);
 
         auto processing_progress = std::make_shared<ProcessingProgress>();
+        /// One value for the whole batch, so an `ALTER` applies from the next batch on.
+        const auto after_processing = table_metadata.after_processing.load();
         for (size_t i = 0; i < threads; ++i)
         {
             size_t processor_id = i * (streaming_tasks_index + 1);
@@ -1102,6 +1108,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
                 queue_context,
                 /*commit_once_processed=*/false,
                 /*is_direct_select=*/false,
+                after_processing,
                 effective_max_files);
 
             pipes.emplace_back(source);

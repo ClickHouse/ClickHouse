@@ -219,7 +219,12 @@ namespace
             applySourceTags(request);
 
             auto metadata = object_metadata.value_or(ObjectAttributes{});
-            if (!idempotency_id.empty())
+            /// S3 caps user metadata at 2 KiB, so the id is left out where it would not fit beside the source's own.
+            size_t metadata_size = 0;
+            for (const auto & [key, value] : metadata)
+                metadata_size += key.size() + value.size();
+            if (!idempotency_id.empty()
+                && metadata_size + std::string_view(S3::IDEMPOTENCY_ID_METADATA_KEY).size() + idempotency_id.size() <= 2048)
                 metadata[S3::IDEMPOTENCY_ID_METADATA_KEY] = idempotency_id;
             request.SetMetadata(metadata);
 

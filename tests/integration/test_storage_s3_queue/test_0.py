@@ -1237,7 +1237,7 @@ def test_ordered_reads_a_rewritten_file_before_a_later_key(started_cluster):
 # which adds its idempotency id to the destination metadata.
 @pytest.mark.parametrize(
     "table_prefix, description_size",
-    [("move_big_metadata", 1900), ("move_multipart_metadata", 1840)],
+    [("move_big_metadata", 1900), ("move_multipart_metadata", 1840), ("move_multipart_metadata", 2020)],
 )
 def test_move_keeps_source_metadata_near_the_s3_limit(started_cluster, table_prefix, description_size):
     """A flattening move whose stamp would push the copy past the 2 KiB S3 user metadata limit still
@@ -1286,12 +1286,14 @@ def test_move_keeps_source_metadata_near_the_s3_limit(started_cluster, table_pre
 
 def test_after_processing_change_does_not_reach_a_batch_in_flight(started_cluster):
     """A batch keeps the `after_processing` action its files were read under, so an ALTER while
-    the batch is in flight cannot make it act on a generation it did not pin."""
+    the batch is in flight cannot make it act on a generation it did not pin. The next batch
+    takes the new action."""
     node = started_cluster.instances["instance"]
     token = generate_random_string().lower()
     table_name = f"hot_action_{token}"
     files_path = f"{table_name}_data"
-    put_s3_file_content(started_cluster, f"{files_path}/part.csv", b"1,2,3\n")
+    put_s3_file_content(started_cluster, f"{files_path}/part_0.csv", b"1,2,3\n")
+    put_s3_file_content(started_cluster, f"{files_path}/part_1.csv", b"4,5,6\n")
 
     create_table(
         started_cluster,
@@ -1300,6 +1302,10 @@ def test_after_processing_change_does_not_reach_a_batch_in_flight(started_cluste
         "unordered",
         files_path,
         after_processing="delete",
+        additional_settings={
+            "processing_threads_num": 1,
+            "max_processed_files_before_commit": 1,
+        },
     )
 
     node.query(f"SYSTEM ENABLE FAILPOINT {PAUSE_BEFORE_POST_PROCESS_FAILPOINT}")
@@ -1310,16 +1316,24 @@ def test_after_processing_change_does_not_reach_a_batch_in_flight(started_cluste
     finally:
         node.query(f"SYSTEM DISABLE FAILPOINT {PAUSE_BEFORE_POST_PROCESS_FAILPOINT}")
 
-    # The file was read for `delete`, so its batch still deletes it.
+    # The first file was read for `delete`, so its batch still deletes it; the second batch keeps its file.
+    wait_until(
+        lambda: int(node.query(f"SELECT count() FROM {table_name}_dst")) == 2
+    )
     wait_until(
         lambda: count_minio_objects(
             started_cluster, started_cluster.minio_bucket, files_path
         )
-        == 0
+        == 1
+    )
+    time.sleep(2)
+    assert (
+        count_minio_objects(started_cluster, started_cluster.minio_bucket, files_path)
+        == 1
     )
     assert (
-        node.query(f"SELECT column1, column2, column3 FROM {table_name}_dst")
-        == "1\t2\t3\n"
+        node.query(f"SELECT column1, column2, column3 FROM {table_name}_dst ORDER BY ALL")
+        == "1\t2\t3\n4\t5\t6\n"
     )
 
 
@@ -2224,14 +2238,18 @@ def test_azure_move_source_rewrite_buffered_copy(started_cluster):
             f"SYSTEM DISABLE FAILPOINT {PAUSE_AFTER_MOVE_SOURCE_LOOKUP_FAILPOINT}"
         )
 
-    client = started_cluster.blob_service_client.get_blob_client(
-        started_cluster.azurite_container, source_key
+    # The move of the ingested generation is refused, so the replacement is read and archived instead.
+    wait_until(
+        lambda: node.query(
+            f"SELECT column1, column2, column3 FROM {table_name}_dst ORDER BY ALL"
+        )
+        == "1\t2\t3\n7\t8\t9\n"
     )
-    wait_until(lambda: client.download_blob().readall() == rewritten)
     dest_client = started_cluster.blob_service_client.get_blob_client(
         started_cluster.azurite_container, destination_key
     )
-    assert not dest_client.exists()
+    wait_until(lambda: dest_client.exists())
+    assert dest_client.download_blob().readall() == rewritten
 
 
 def test_move_after_processing_many_objects(started_cluster):
