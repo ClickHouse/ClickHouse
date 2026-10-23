@@ -589,35 +589,10 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         }
     }
 
-    /// A hierarchical name: try the other splits of the name (see the header). Only when the table as written does not
-    /// exist: when it exists but cannot be got (e.g. it failed to load), the name as written still wins, and its
-    /// exception is reported rather than hidden behind another split.
-    ///
-    /// The current database is not applied here: the callers resolve a name relative to the current database first
-    /// (see `Context::resolveStorageID`), and they check the access for the result. A lookup of such a resolved name
-    /// must not reinterpret it as relative again: inside `USE db`, the resolved `db`.`t` must not become the table
-    /// `db.t` of the database `db`, which is another object than the one the access was checked for.
-    if (!table && !(exception && exception->has_value() && database->isTableExist(table_id.table_name, context_)))
-    {
-        for (const auto & candidate : getHierarchicalNameCandidates(table_id, /*current_database=*/ ""))
-        {
-            if (candidate.database_name == table_id.database_name && candidate.table_name == table_id.table_name)
-                continue;
-
-            auto candidate_database = tryGetDatabase(candidate.database_name);
-            if (!candidate_database)
-                continue;
-
-            if (auto candidate_table = candidate_database->tryGetTable(candidate.table_name, context_))
-            {
-                database = std::move(candidate_database);
-                table = std::move(candidate_table);
-                if (exception)
-                    exception->reset();
-                break;
-            }
-        }
-    }
+    /// The lookup is exact: a hierarchical name is not split in another way than written (see the header).
+    /// The callers resolve the name first (see `Context::resolveStorageID` and `resolveHierarchicalName`), and they
+    /// check the access for the result. Trying the other splits here would make the lookup return another object
+    /// than the one the access was checked for: `db.ns`.`t` must not become the table `ns.t` of the database `db`.
 
     if (!database)
     {

@@ -841,10 +841,13 @@ void MySQLHandler::comFieldList(ReadBuffer & payload)
     packet.readPayloadWithUnpacked(payload);
     const auto session_context = session->sessionContext();
     String database = session_context->getCurrentDatabase();
+    /// The current database may be hierarchical (`USE db.ns` for the tables `ns.*` of the database `db`): resolve the
+    /// name first, so that the access is checked for the table that is read below (the lookup is exact).
+    StorageID table_id = DatabaseCatalog::instance().resolveHierarchicalName({database, packet.table}, session_context);
     /// Mirror the access check of the SQL `DESCRIBE`/`SHOW COLUMNS` statements (InterpreterDescribeQuery).
     /// Check before getTable() so this command does not become a table-existence oracle.
-    session_context->checkAccess(AccessType::SHOW_COLUMNS, database, packet.table);
-    StoragePtr table_ptr = DatabaseCatalog::instance().getTable({database, packet.table}, session_context);
+    session_context->checkAccess(AccessType::SHOW_COLUMNS, table_id.database_name, table_id.table_name);
+    StoragePtr table_ptr = DatabaseCatalog::instance().getTable(table_id, session_context);
     auto metadata_snapshot = table_ptr->getInMemoryMetadataPtr(session_context, false);
     for (const NameAndTypePair & column : metadata_snapshot->getColumns().getAll())
     {
