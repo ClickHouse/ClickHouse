@@ -2140,7 +2140,8 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyValueSetNode(
     if (!future_set)
         return false;
 
-    auto prepared_set = future_set->buildOrderedSetInplace(rhs.getContext());
+    auto prepared_set = require_ready_sets ? future_set->getOrderedSetIfAlreadyBuilt(rhs.getContext())
+                                           : future_set->buildOrderedSetInplace(rhs.getContext());
     if (!prepared_set || !prepared_set->hasExplicitSetElements())
         return false;
 
