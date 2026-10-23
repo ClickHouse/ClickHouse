@@ -156,7 +156,7 @@ std::pair<String, StoragePtr> createTableFromAST(
         auto table_function = factory.get(table_function_ast, context);
         ColumnsDescription columns;
         if (ast_create_query.columns_list && ast_create_query.columns_list->columns)
-            columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, mode);
+            columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list, context, mode);
         StoragePtr storage = table_function->execute(table_function_ast, context, ast_create_query.getTable(), std::move(columns));
         storage->renameInMemory(ast_create_query);
 
@@ -199,7 +199,7 @@ std::pair<String, StoragePtr> createTableFromAST(
         }
         else
         {
-            columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, mode);
+            columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list, context, mode);
             constraints = InterpreterCreateQuery::getConstraintsDescription(ast_create_query.columns_list->constraints, columns, context);
         }
     }

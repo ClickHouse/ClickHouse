@@ -42,6 +42,7 @@
 #include <Common/JSONBuilder.h>
 #include <Common/Logger.h>
 #include <Common/SipHash.h>
+#include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypeSet.h>
 
@@ -63,6 +64,7 @@ namespace ErrorCodes
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
+    extern const int TOO_DEEP_RECURSION;
 }
 
 namespace
@@ -1110,7 +1112,10 @@ bool ActionsDAG::removeUnusedActions(const std::unordered_set<const Node *> & us
 
                 /// Constant folding. A lambda that captures nothing has no children, but its folded value is a
                 /// constant like any other, and a FUNCTION node left behind would cross plan steps as a column.
-                if (allow_constant_folding && node->column && (!node->children.empty() || WhichDataType(node->result_type).isFunction()))
+                /// An INPUT is never folded: `ExpressionActions` binds each entry of `inputs` to a required column as an INPUT.
+                if (allow_constant_folding && node->column
+                    && (!node->children.empty()
+                        || (node->type == ActionType::FUNCTION && WhichDataType(node->result_type).isFunction())))
                 {
                     node->type = ActionsDAG::ActionType::COLUMN;
                     node->children.clear();
@@ -4258,20 +4263,26 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
             keep_conjuncts_depending_on_allowed_input(both_streams_push_down_conjunctions, both_streams_allowed_nodes);
     }
 
-    NodeRawConstPtrs left_stream_allowed_conjunctions = std::move(left_stream_push_down_conjunctions.allowed);
-    NodeRawConstPtrs right_stream_allowed_conjunctions = std::move(right_stream_push_down_conjunctions.allowed);
+    /// `extractConjunctionAtoms` yields the atoms right to left, while `and` is evaluated left to right.
+    auto conjunction_atoms = extractConjunctionAtoms(predicate);
+    std::ranges::reverse(conjunction_atoms);
 
-    std::unordered_set<const Node *> left_stream_allowed_conjunctions_set(left_stream_allowed_conjunctions.begin(), left_stream_allowed_conjunctions.end());
-    std::unordered_set<const Node *> right_stream_allowed_conjunctions_set(right_stream_allowed_conjunctions.begin(), right_stream_allowed_conjunctions.end());
-
-    for (const auto * both_streams_push_down_allowed_conjunction_node : both_streams_push_down_conjunctions.allowed)
+    auto collect_side_conjunctions_in_written_order = [&](const NodeRawConstPtrs & side_allowed_conjunctions)
     {
-        if (!left_stream_allowed_conjunctions_set.contains(both_streams_push_down_allowed_conjunction_node))
-            left_stream_allowed_conjunctions.push_back(both_streams_push_down_allowed_conjunction_node);
+        std::unordered_set<const Node *> remaining(side_allowed_conjunctions.begin(), side_allowed_conjunctions.end());
+        remaining.insert(both_streams_push_down_conjunctions.allowed.begin(), both_streams_push_down_conjunctions.allowed.end());
 
-        if (!right_stream_allowed_conjunctions_set.contains(both_streams_push_down_allowed_conjunction_node))
-            right_stream_allowed_conjunctions.push_back(both_streams_push_down_allowed_conjunction_node);
-    }
+        NodeRawConstPtrs ordered;
+        ordered.reserve(remaining.size());
+        for (const auto * atom : conjunction_atoms)
+            if (remaining.erase(atom) != 0)
+                ordered.push_back(atom);
+        chassert(remaining.empty());
+        return ordered;
+    };
+
+    NodeRawConstPtrs left_stream_allowed_conjunctions = collect_side_conjunctions_in_written_order(left_stream_push_down_conjunctions.allowed);
+    NodeRawConstPtrs right_stream_allowed_conjunctions = collect_side_conjunctions_in_written_order(right_stream_push_down_conjunctions.allowed);
 
     std::unordered_set<const Node *> rejected_conjunctions_set;
     rejected_conjunctions_set.insert(left_stream_push_down_conjunctions.rejected.begin(), left_stream_push_down_conjunctions.rejected.end());
@@ -4284,7 +4295,13 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     for (const auto & right_stream_allowed_conjunction : right_stream_allowed_conjunctions)
         rejected_conjunctions_set.erase(right_stream_allowed_conjunction);
 
-    NodeRawConstPtrs rejected_conjunctions(rejected_conjunctions_set.begin(), rejected_conjunctions_set.end());
+    const size_t rejected_count = rejected_conjunctions_set.size();
+    NodeRawConstPtrs rejected_conjunctions;
+    rejected_conjunctions.reserve(rejected_count);
+    for (const auto * atom : conjunction_atoms)
+        if (rejected_conjunctions_set.erase(atom) != 0)
+            rejected_conjunctions.push_back(atom);
+    chassert(rejected_conjunctions.size() == rejected_count);
 
     auto left_stream_filter_to_push_down = createActionsForConjunction(left_stream_allowed_conjunctions, left_stream_header.getColumnsWithTypeAndName());
     auto right_stream_filter_to_push_down = createActionsForConjunction(right_stream_allowed_conjunctions, right_stream_header.getColumnsWithTypeAndName());
@@ -5221,12 +5238,28 @@ static void serializeConstant(
     type.getDefaultSerialization()->serializeBinary(data, 0, out, FormatSettings{});
 }
 
+/// The maximum nesting depth of lambda captures in a deserialized `ActionsDAG`.
+/// The serialized data may come from a client, and the deserialization is recursive.
+static constexpr size_t MAX_ACTIONS_DAG_DESERIALIZATION_DEPTH = 1000;
+
+static void checkActionsDAGDeserializationDepth(size_t nesting_depth)
+{
+    checkStackSize();
+
+    if (nesting_depth > MAX_ACTIONS_DAG_DESERIALIZATION_DEPTH)
+        throw Exception(
+            ErrorCodes::TOO_DEEP_RECURSION,
+            "Too deep nesting of lambda captures in deserialized ActionsDAG (more than {} levels)",
+            MAX_ACTIONS_DAG_DESERIALIZATION_DEPTH);
+}
+
 static ColumnConst::Ptr deserializeConstant(
     const IDataType & type,
     ReadBuffer & in,
     DeserializedSetsRegistry & registry,
     const ContextPtr & context,
-    size_t max_type_complexity)
+    size_t max_type_complexity,
+    size_t nesting_depth)
 {
     if (WhichDataType(type).isSet())
     {
@@ -5250,7 +5283,7 @@ static ColumnConst::Ptr deserializeConstant(
     {
         LambdaCapture capture;
         deserializeCapture(capture, in, max_type_complexity);
-        auto capture_dag = ActionsDAG::deserialize(in, registry, context, max_type_complexity);
+        auto capture_dag = ActionsDAG::deserialize(in, registry, context, max_type_complexity, nesting_depth + 1);
 
         UInt64 num_captured_columns = 0;
         readVarUInt(num_captured_columns, in);
@@ -5259,7 +5292,7 @@ static ColumnConst::Ptr deserializeConstant(
         for (auto & captured_column : captured_columns)
         {
             captured_column.type = decodeDataType(in, max_type_complexity);
-            captured_column.column = deserializeConstant(*captured_column.type, in, registry, context, max_type_complexity);
+            captured_column.column = deserializeConstant(*captured_column.type, in, registry, context, max_type_complexity, nesting_depth + 1);
             /// `deserializeConstant` returns size-0 ColumnConsts to match the DAG node invariant,
             /// but a `ColumnFunction` requires its captured columns to share its `elements_size`
             /// (1 below) — `ColumnFunction::replicate` calls `replicate(offsets)` on each capture,
@@ -5444,11 +5477,18 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry,
         writeVarUInt(node_to_id.at(output), out);
 }
 
-ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & registry, const ContextPtr & context, size_t max_type_complexity)
+ActionsDAG ActionsDAG::deserialize(
+    ReadBuffer & in,
+    DeserializedSetsRegistry & registry,
+    const ContextPtr & context,
+    size_t max_type_complexity,
+    size_t nesting_depth)
 {
     /// max_type_complexity is the type-complexity guard resolved once by the caller: the effective setting for
     /// client-reachable QueryPlan packets, or unlimited (0) for trusted internal metadata (e.g. data-lake
     /// schema transforms deserialized with the global context).
+
+    checkActionsDAGDeserializationDepth(nesting_depth);
 
     size_t nodes_size = 0;
     readVarUInt(nodes_size, in);
@@ -5489,7 +5529,7 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
             if ((column_flags & 2) == 0)
                 node.is_deterministic_constant = false;
 
-            node.column = deserializeConstant(*node.result_type, in, registry, context, max_type_complexity);
+            node.column = deserializeConstant(*node.result_type, in, registry, context, max_type_complexity, nesting_depth);
         }
 
         if (node.type == ActionType::INPUT)
@@ -5531,7 +5571,7 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
             {
                 LambdaCapture capture;
                 deserializeCapture(capture, in, max_type_complexity);
-                auto capture_dag = ActionsDAG::deserialize(in, registry, context, max_type_complexity);
+                auto capture_dag = ActionsDAG::deserialize(in, registry, context, max_type_complexity, nesting_depth + 1);
 
                 node.function_base = std::make_shared<FunctionCapture>(
                     std::make_shared<ExpressionActions>(
