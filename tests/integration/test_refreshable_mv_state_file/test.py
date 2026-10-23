@@ -17,7 +17,7 @@ cluster = ClickHouseCluster(__file__)
 # DROP returns before the background job has removed the dropped table's directory.
 node = cluster.add_instance(
     "node",
-    main_configs=["configs/database_disk.xml"],
+    main_configs=["configs/database_disk.xml", "configs/remote_servers.xml"],
     user_configs=["configs/settings.xml"],
     with_remote_database_disk=False,
     stay_alive=True,
@@ -652,6 +652,12 @@ def test_a_target_that_keeps_data_only_in_memory_is_refilled_after_restart():
     durable_fanout_source = "rmv_durable_fanout_source"
     durable_fanout_target = "rmv_durable_fanout_target"
     durable_fanout_view = "rmv_durable_fanout_view"
+    distributed_target = "rmv_distributed_memory_target"
+    distributed = "rmv_local_distributed"
+    distributed_view = "rmv_distributed_view"
+    remote_distributed_target = "rmv_remote_distributed_target"
+    remote_distributed = "rmv_remote_distributed"
+    remote_distributed_view = "rmv_remote_distributed_view"
     views = [
         memory_view,
         join_view,
@@ -661,9 +667,12 @@ def test_a_target_that_keeps_data_only_in_memory_is_refilled_after_restart():
         destination_buffer_view,
         forwarding_view,
         fanout_view,
+        distributed_view,
     ]
+    durable_views = [durable_fanout_view, remote_distributed_view]
     tables = views + [
         durable_fanout_view,
+        remote_distributed_view,
         join_target,
         append_target,
         alias_target,
@@ -676,6 +685,10 @@ def test_a_target_that_keeps_data_only_in_memory_is_refilled_after_restart():
         fanout_source,
         durable_fanout_target,
         durable_fanout_source,
+        distributed,
+        distributed_target,
+        remote_distributed,
+        remote_distributed_target,
     ]
     for table in tables:
         node.query(f"DROP TABLE IF EXISTS {table} SYNC")
@@ -755,16 +768,41 @@ def test_a_target_that_keeps_data_only_in_memory_is_refilled_after_restart():
             f"CREATE MATERIALIZED VIEW {durable_fanout_view} REFRESH AFTER 1 DAY APPEND "
             f"TO {durable_fanout_source} AS SELECT number b FROM numbers(2)"
         )
+        # A Distributed table writes the rows of a local shard straight into its table, here Memory.
+        node.query(f"CREATE TABLE {distributed_target} (b UInt64) ENGINE = Memory")
+        node.query(
+            f"CREATE TABLE {distributed} (b UInt64) "
+            f"ENGINE = Distributed(local_shard, currentDatabase(), {distributed_target})"
+        )
+        node.query(
+            f"CREATE MATERIALIZED VIEW {distributed_view} REFRESH AFTER 1 DAY APPEND "
+            f"TO {distributed} AS SELECT number b FROM numbers(2)"
+        )
+        # Control: a Distributed table with no local shard keeps its schedule.
+        node.query(
+            f"CREATE TABLE {remote_distributed_target} (b UInt64) ENGINE = MergeTree ORDER BY b"
+        )
+        node.query(
+            f"CREATE TABLE {remote_distributed} (b UInt64) "
+            f"ENGINE = Distributed(remote_shard, currentDatabase(), {remote_distributed_target})"
+        )
+        node.query(
+            f"CREATE MATERIALIZED VIEW {remote_distributed_view} REFRESH AFTER 1 DAY APPEND "
+            f"TO {remote_distributed} AS SELECT number b FROM numbers(2)"
+        )
         before = {
             view: wait_for_refresh_info(
                 view, "last_success_time", lambda x: x not in ("", "\\N")
             )
-            for view in views + [durable_fanout_view]
+            for view in views + durable_views
         }
-        durable_fanout_uuid = node.query(
-            f"SELECT uuid FROM system.tables "
-            f"WHERE database = 'default' AND name = '{durable_fanout_view}'"
-        ).strip()
+        durable_uuids = [
+            node.query(
+                f"SELECT uuid FROM system.tables "
+                f"WHERE database = 'default' AND name = '{view}'"
+            ).strip()
+            for view in durable_views
+        ]
 
         node.restart_clickhouse()
 
@@ -789,13 +827,19 @@ def test_a_target_that_keeps_data_only_in_memory_is_refilled_after_restart():
         assert node.query(f"SELECT count() FROM {buffer_target}").strip() == "2"
         assert node.query(f"SELECT count() FROM {forwarding_target}").strip() == "2"
         assert node.query(f"SELECT count() FROM {fanout_target}").strip() == "2"
-        assert (
-            refresh_info(durable_fanout_view, "last_success_time")
-            == before[durable_fanout_view]
-        )
+        assert node.query(f"SELECT count() FROM {distributed_target}").strip() == "2"
+        for view in durable_views:
+            assert refresh_info(view, "last_success_time") == before[view]
         assert node.query(f"SELECT count() FROM {durable_fanout_target}").strip() == "2"
+        node.query(f"SYSTEM FLUSH DISTRIBUTED {remote_distributed}")
+        assert (
+            node.query(f"SELECT count() FROM {remote_distributed_target}").strip()
+            == "2"
+        )
         state_files = find_refresh_state_files(DB_DISK_PATH)
-        assert len(state_files) == 1 and durable_fanout_uuid in state_files[0]
+        assert len(state_files) == len(durable_uuids)
+        for view_uuid in durable_uuids:
+            assert any(view_uuid in path for path in state_files)
     finally:
         for table in tables:
             node.query(f"DROP TABLE IF EXISTS {table} SYNC")

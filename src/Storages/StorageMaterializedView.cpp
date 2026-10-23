@@ -35,6 +35,7 @@
 
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageBuffer.h>
+#include <Storages/StorageDistributed.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMemory.h>
 #include <Storages/StorageProxy.h>
@@ -1122,6 +1123,19 @@ static bool keepsDataOnlyInMemory(StoragePtr table, bool follow_dependent_views,
         /// For `Set` and `Join` this is `persistent = 0`.
         if (auto set_or_join = castStorage<StorageSetOrJoinBase>(table, DeferredTable::Load))
             return !set_or_join->hasUnreplicatedTableDataOnDisk();
+        /// A `Distributed` table inserts into a local shard's table directly and resolves that table only then.
+        if (auto distributed = castStorage<StorageDistributed>(table, DeferredTable::Load))
+        {
+            try
+            {
+                return distributed->getCluster()->getLocalShardCount() > 0;
+            }
+            catch (...)
+            {
+                /// Ok: a cluster that cannot be resolved counts as having a local shard.
+                return true;
+            }
+        }
         if (auto view = castStorage<StorageMaterializedView>(table, DeferredTable::Load))
         {
             table = view->tryGetTargetTable();
