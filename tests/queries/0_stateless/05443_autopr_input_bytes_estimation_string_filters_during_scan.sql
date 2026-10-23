@@ -81,11 +81,14 @@ INSERT INTO t_compact_varying_lengths SELECT number, concat(if(number % 100 = 0,
 SELECT count() FROM t_compact_varying_lengths WHERE s LIKE '%needle%' SETTINGS max_threads=1, log_comment='same_varying_lengths_1';
 SELECT count() FROM t_compact_varying_lengths WHERE s LIKE '%needle%' SETTINGS max_threads=1, apply_string_filters_during_scan=0, log_comment='same_varying_lengths_0';
 
--- The sample is taken anew for each block also when only empty values were replaced: here the first five granules
--- are empty, and the sixth one, which is the next to be sampled, is not.
+-- The sample is taken anew for each block also when only empty values were replaced: here the values of the first
+-- five granules either match or are empty, and the sixth granule, which is the next to be sampled, has the usual ones.
+-- With the sizes inline, every value is checked by itself, and the filter turns itself off on so many empty values;
+-- and the filter does not apply to the `Sparse` serialization, which so many empty values would get.
 CREATE TABLE t_compact_empty_granules(id UInt64, s String) ENGINE=MergeTree ORDER BY id
-SETTINGS auto_statistics_types='', index_granularity=8192, min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18;
-INSERT INTO t_compact_empty_granules SELECT id, if(id < 5 * 8192, '', s) FROM t_wide WHERE id < 6 * 8192;
+SETTINGS auto_statistics_types='', index_granularity=8192, min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18,
+    serialization_info_version='with_types', string_serialization_version='with_size_stream', ratio_of_defaults_for_sparse_serialization=1;
+INSERT INTO t_compact_empty_granules SELECT id, if(id < 5 * 8192, if(id % 10 < 7, '', concat('needle', s)), s) FROM t_wide WHERE id < 6 * 8192;
 SELECT count() FROM t_compact_empty_granules WHERE s LIKE '%needle%' SETTINGS max_threads=1, log_comment='same_empty_granules_1';
 SELECT count() FROM t_compact_empty_granules WHERE s LIKE '%needle%' SETTINGS max_threads=1, apply_string_filters_during_scan=0, log_comment='same_empty_granules_0';
 
