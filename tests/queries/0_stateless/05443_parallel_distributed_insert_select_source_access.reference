@@ -1,0 +1,5 @@
+parallel_distributed_insert_select=0 ACCESS_DENIED
+parallel_distributed_insert_select=1 ACCESS_DENIED
+parallel_distributed_insert_select=2 ACCESS_DENIED
+0
+1
