@@ -113,42 +113,6 @@ After you've sent your first request, a new button should appear immediately to 
 </Step>
 </Steps>
 
-## Using clickhousectl {#using-clickhousectl}
-
-You can also manage saved queries and Query API endpoints with [clickhousectl](/concepts/features/interfaces/cli). `list` and `get` work with OAuth. Creating, updating, and deleting needs an API key: run `clickhousectl cloud auth login --interactive`.
-
-Save the example query from the steps above as `top_uploaders.sql`, then save it with `2010` as the default `year`:
-
-```bash
-clickhousectl cloud saved-query create <service-id> --name "Top uploaders" \
-  --sql-file top_uploaders.sql --database default --param year=2010
-clickhousectl cloud saved-query list <service-id>
-```
-
-`saved-query update` replaces the whole saved query. Pass `--new-name`, the SQL, `--database`, and every `--param` again; omitted parameters reset to empty.
-
-A Query API endpoint is created from a JSON definition that holds its own SQL, so it doesn't need a saved query. `apiKeyIds` takes management key IDs from `clickhousectl cloud key list`, and `roles` sets the database role, here read-only. Save this shorter version of the example query as `endpoint.json`:
-
-```json
-{
-  "name": "Top uploaders",
-  "sql": "SELECT uploader, count() AS num_uploads FROM youtube WHERE toYear(upload_date) = {year: UInt16} GROUP BY uploader ORDER BY num_uploads DESC LIMIT 10",
-  "database": "default",
-  "apiKeyIds": ["<api-key-id>"],
-  "roles": ["sql_console_read_only"],
-  "parameters": {"year": "2010"},
-  "allowedOrigins": ["https://example.com"]
-}
-```
-
-```bash
-clickhousectl cloud query-api-endpoint create <service-id> --file endpoint.json
-clickhousectl cloud query-api-endpoint list <service-id>
-clickhousectl cloud query-api-endpoint get <service-id> <endpoint-id>
-```
-
-`get` returns the endpoint's `url`. Call it with the bound key's key ID and secret, not its management ID, and pass every query parameter in the request. `query-api-endpoint update --file` replaces the whole definition: omitted `parameters` and `allowedOrigins` reset to empty. See the [clickhousectl Query API reference](https://github.com/ClickHouse/clickhousectl/blob/main/docs/reference/query-api.md#named-sql-endpoints-and-saved-queries) for details.
-
 ## Implementation details {#implementation-details}
 
 This endpoint executes queries on your saved Query API endpoints.

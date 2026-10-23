@@ -163,36 +163,3 @@ You must have at least one user in the organization with administrative permissi
 3. Select the three dots next to the role you would like to delete
 4. Review the users and API keys that will lose access when the role is removed. Adjust assignments as needed.
 5. Select `Delete role` to complete the process
-
-## Manage custom roles with clickhousectl {#manage-custom-roles-with-clickhousectl}
-
-You can also manage custom roles with [clickhousectl](/concepts/features/interfaces/cli). `list` and `get` work with OAuth. Creating, updating, and deleting roles needs an API key: run `clickhousectl cloud auth login --interactive` first. Read an existing role to see the policy format:
-
-```bash
-clickhousectl cloud org role list
-clickhousectl cloud org role get <role-id> --json
-```
-
-Create a role from a JSON file. `actors` lists the users and API keys that hold the role, as `user/<id>` or `apiKey/<id>`. Each policy sets `allowDeny` to `ALLOW` or `DENY`, a list of `permissions`, and the `resources` it applies to, such as `instance/*` for every service. Save this as `role.json`:
-
-```json
-{
-  "name": "service-viewer",
-  "actors": [],
-  "policies": [
-    {
-      "allowDeny": "ALLOW",
-      "permissions": ["control-plane:service:view"],
-      "resources": ["instance/*"]
-    }
-  ]
-}
-```
-
-```bash
-clickhousectl cloud org role create --file role.json
-clickhousectl cloud org role update <role-id> --file role-update.json
-clickhousectl cloud org role delete <role-id>
-```
-
-`org role update` changes only the fields in the file, but `actors` and `policies` replace their whole lists. Don't resubmit `get` output unchanged: it includes response-only fields. Only custom roles can be updated or deleted, and `delete` has no confirmation prompt. Assign a role to users with `cloud member update --role-id`; see [Manage cloud users](/products/cloud/guides/security/cloud-access-management/manage-cloud-users#manage-users-with-clickhousectl).

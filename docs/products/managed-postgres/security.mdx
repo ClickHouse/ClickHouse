@@ -35,26 +35,6 @@ You can specify:
 - **Anywhere** to allow all IP addresses (not recommended for production)
 - **Nowhere** to block all connections
 
-#### Using clickhousectl {#using-clickhousectl}
-
-With [clickhousectl](/concepts/features/interfaces/cli), set the rules when you create the service. Each `--ip-allow` rule takes an IPv4 address or CIDR, a port or port range, and an optional description. Once you pass a rule, only the listed rules apply, so add one for each port you use (5432 for Postgres, 6432 for PgBouncer). `--block-public-access` creates the service with no rules, the equivalent of **Nowhere**:
-
-```bash
-clickhousectl cloud postgres create --name app-db \
-  --region us-east-1 --size m6gd.large \
-  --ip-allow '203.0.113.0/24:5432..6432=office'
-```
-
-To change the rules later, list them with their IDs, then remove and add rules in one `update`. Removals apply before additions:
-
-```bash
-clickhousectl cloud postgres get <postgres-id>
-clickhousectl cloud postgres update <postgres-id> \
-  --remove-ip-allow <rule-id> --add-ip-allow '198.51.100.7:5432=bastion'
-```
-
-`get` shows IPv4 rules only. A rule update can partially succeed, so after a failure run `get` and compare the rules before you retry. These commands need an API key; OAuth login is read-only.
-
 <Warning>
 **Production best practices**
 
@@ -97,8 +77,6 @@ All network connections to ClickHouse Managed Postgres are secured using TLS (Tr
 #### TLS/SSL configuration {#tls-ssl}
 
 By default, connections use TLS encryption without certificate verification. For production workloads, we recommend connecting with verified TLS to ensure you're communicating with the correct server.
-
-To download the instance's CA certificate with clickhousectl, run `clickhousectl cloud postgres certs get <postgres-id> --output ca.pem`.
 
 For more details on TLS configuration and connection options, see the [Connection](/products/managed-postgres/connection#tls) page.
 

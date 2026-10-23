@@ -66,10 +66,10 @@ clickhousectl update
 </Step>
 <Step title="Install ClickHouse" id="cli-install-clickhouse">
 
-Install the latest stable release of ClickHouse and make it your default:
+Install the latest version of ClickHouse and make it your default:
 
 ```bash
-clickhousectl local use stable
+clickhousectl local use latest
 ```
 
 `local use` installs the version if it isn't already present, sets it as your
@@ -77,9 +77,8 @@ default, and creates a `clickhouse` symlink in `~/.local/bin`, so you can run th
 `clickhouse` binary directly. Any later step in these docs that runs a
 `clickhouse` command then works as-is, provided `~/.local/bin` is on your `PATH`.
 
-`stable` is the latest stable release and `lts` is the latest long-term support
-release. `latest` is the rolling master build, not a release. You can also
-select a specific version:
+You can also select the latest long-term support release, or a specific
+version:
 
 ```bash
 clickhousectl local use lts             # Latest LTS release

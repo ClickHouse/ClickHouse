@@ -106,17 +106,6 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 
 Make a note of the `endpointServiceId` and `privateDnsHostname`. You'll use them in the next steps.
 
-### Option 3: clickhousectl {#option-3-clickhousectl}
-
-With [clickhousectl](/concepts/features/interfaces/cli), select the service by name and print its `endpointServiceId` and `privateDnsHostname`. Reading the configuration works with OAuth or an API key. If you belong to more than one organization, add `--org-id <org-id>`.
-
-```bash
-SERVICE_NAME=<Your ClickHouse service name>
-clickhousectl cloud service private-endpoint get-config --name "${SERVICE_NAME:?}"
-```
-
-Make a note of the `endpointServiceId` and `privateDnsHostname`. You'll use them in the next steps.
-
 ## Create service endpoint {#create-service-endpoint}
 
 <Warning>
@@ -280,17 +269,6 @@ Add/remove a Private Endpoint for an organization:
 curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" -X PATCH -H "Content-Type: application/json" "https://api.clickhouse.cloud/v1/organizations/${ORG_ID:?}" -d @pl_config_org.json
 ```
 
-### Option 3: clickhousectl {#option-3-clickhousectl-1}
-
-`cloud service private-endpoint create` registers the endpoint through the API's service-level call, which associates it with the service and your organization. It needs an API key:
-
-```bash
-clickhousectl cloud service private-endpoint create --name "${SERVICE_NAME:?}" \
-  --endpoint-id "${ENDPOINT_ID:?}" --description "GCP Private Service Connect"
-```
-
-Then confirm the endpoint is on each service's allow list, and add it where it's missing, with [clickhousectl](#option-3-clickhousectl-2).
-
 ## Add "Endpoint ID" to ClickHouse service allow list {#add-endpoint-id-to-services-allow-list}
 
 You need to add an Endpoint ID to the allow-list for each instance that should be available using Private Service Connect.
@@ -345,23 +323,6 @@ EOF
 curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" -X PATCH -H "Content-Type: application/json" "https://api.clickhouse.cloud/v1/organizations/${ORG_ID:?}/services/${INSTANCE_ID:?}" -d @pl_config.json | jq
 ```
 
-### Option 3: clickhousectl {#option-3-clickhousectl-2}
-
-Changing the allow list needs an API key; run `clickhousectl cloud auth login --interactive` first. Set `ENDPOINT_ID` to the **Endpoint ID** from the [Adding a Private Service Connection](#adding-a-private-service-connection) step, and repeat for each service that should be available using Private Service Connect:
-
-```bash
-SERVICE_NAME=<Your ClickHouse service name>
-ENDPOINT_ID=<Your PSC connection ID>
-
-# Add an endpoint ID to the service allow list
-clickhousectl cloud service update --name "${SERVICE_NAME:?}" --add-private-endpoint-id "${ENDPOINT_ID:?}"
-
-# Remove an endpoint ID from the service allow list
-clickhousectl cloud service update --name "${SERVICE_NAME:?}" --remove-private-endpoint-id "${ENDPOINT_ID:?}"
-```
-
-Both flags are repeatable. Removing an ID that isn't in the list exits 0 with a warning. To check the current list, run `clickhousectl cloud service get --name "${SERVICE_NAME:?}" --json | jq .privateEndpointIds`.
-
 ## Accessing instance using Private Service Connect {#accessing-instance-using-private-service-connect}
 
 Each service with Private Service Connect enabled has a public and private endpoint. To connect using Private Service Connect, you need to use the private endpoint, which is the `privateDnsHostname` from the [Obtain GCP service attachment for Private Service Connect](#obtain-gcp-service-attachment-and-dns-name-for-private-service-connect) step.
@@ -388,16 +349,6 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 ```
 
 In this example, connection to the `xxxxxxx.yy-xxxxN.p.gcp.clickhouse.cloud` hostname will be routed to Private Service Connect. Meanwhile, `xxxxxxx.yy-xxxxN.gcp.clickhouse.cloud` will be routed over the internet.
-
-#### Option 3: clickhousectl {#option-3-clickhousectl-3}
-
-The command from [Obtain GCP service attachment and DNS name](#option-3-clickhousectl) also prints `privateDnsHostname`:
-
-```bash
-clickhousectl cloud service private-endpoint get-config --name "${SERVICE_NAME:?}"
-```
-
-See the [clickhousectl reference](/concepts/features/interfaces/cli) for authentication and other service commands.
 
 ## Troubleshooting {#troubleshooting}
 

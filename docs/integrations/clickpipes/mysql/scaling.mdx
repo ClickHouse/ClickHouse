@@ -97,17 +97,3 @@ https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/click
   "status": 200
 }
 ```
-
-## Scaling with clickhousectl {#cdc-scaling-clickhousectl}
-
-You can make the same changes with [clickhousectl](/concepts/features/interfaces/cli). `cdc-scaling update` needs an API key (log in with `clickhousectl cloud auth login --interactive`); `get` also works with OAuth. The CLI resolves the organization ID for you; if you belong to more than one organization, add `--org-id <org-id>`.
-
-```bash
-# Current scaling (optional)
-clickhousectl cloud clickpipe cdc-scaling get <service-id>
-
-# Set the desired scaling
-clickhousectl cloud clickpipe cdc-scaling update <service-id> --cpu-millicores 24000 --memory-gb 96
-```
-
-An omitted flag keeps its current value. Run `cdc-scaling get` again after the change propagates (typically 3-5 minutes) to confirm the new values.

@@ -54,34 +54,6 @@ For CDC ClickPipes (Postgres, MySQL, MongoDB), there are additional org-level en
 
 For the full request and response schemas for each endpoint, see the [API reference](/products/cloud/api-reference/clickpipes/list-clickpipes).
 
-## Using clickhousectl {#clickhousectl}
-
-[clickhousectl](/concepts/features/interfaces/cli) wraps these endpoints, so you don't need to build URLs or request bodies. Log in with your API key (`clickhousectl cloud auth login --interactive`). `list`, `get`, and `context get` also work with OAuth; every other ClickPipes command needs an API key. The CLI resolves the organization ID for you; if you belong to more than one organization, add `--org-id <org-id>`.
-
-```bash
-clickhousectl cloud clickpipe list <service-id>
-clickhousectl cloud clickpipe get <service-id> <clickpipe-id>
-clickhousectl cloud clickpipe stop <service-id> <clickpipe-id>
-clickhousectl cloud clickpipe start <service-id> <clickpipe-id>
-clickhousectl cloud clickpipe delete <service-id> <clickpipe-id>
-```
-
-Start and stop return immediately. Run `get` to watch the state change. The other endpoints map to `clickpipe update --file`, `scale`, `settings get`/`update`, `cdc-scaling get`/`update`, and `context get`.
-
-`clickpipe create <source>` takes the request body as flags. This command creates the same ClickPipe as the [Kafka example](#create-kafka) below:
-
-```bash
-clickhousectl cloud clickpipe create kafka <service-id> \
-  --name 'My Kafka ClickPipe' --kafka-type confluent --format JSONEachRow \
-  --brokers broker.example.com:9092 --topics my_topic \
-  --consumer-group clickpipes-consumer-group \
-  --auth PLAIN --username my_user --password "$KAFKA_PASSWORD" \
-  --database default --table my_table \
-  --column 'id:UInt64' --column 'message:String' --column 'timestamp:DateTime'
-```
-
-Run `clickhousectl cloud clickpipe create <source> --help` for each source's flags. See the [ClickPipes guide](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/clickpipes.md) and [ClickPipe configuration reference](https://github.com/ClickHouse/clickhousectl/blob/main/docs/reference/clickpipe-configuration.md) for update and mapping rules.
-
 ## Examples {#examples}
 
 ### List ClickPipes {#list-clickpipes}

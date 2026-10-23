@@ -219,20 +219,6 @@ endpoint, and the [detail flyout](#detail) maps to the
 endpoint, which returns one pattern's aggregate metrics together with its
 recent executions.
 
-With [clickhousectl](/concepts/features/interfaces/cli), list the slowest
-patterns in a time window (RFC 3339), then open one by its query ID. `get`
-also takes the database, user, and operation from the list result:
-
-```bash
-clickhousectl cloud postgres slow-queries list <postgres-id> \
-  --from-date 2026-10-22T00:00:00Z --to-date 2026-10-23T00:00:00Z \
-  --sort-by total_duration --limit 10
-clickhousectl cloud postgres slow-queries get <postgres-id> <query-id> \
-  --db-name postgres --db-user postgres --db-operation SELECT
-```
-
-Both commands only read data, so they work with a browser login (OAuth) or an API key with view permission.
-
 ## How it works {#how-it-works}
 
 ### Normalized in Postgres, before the wire {#how-normalized}

@@ -65,8 +65,8 @@ For local development, `clickhousectl` installs any ClickHouse version and runs 
 # Install the CLI to ~/.local/bin/clickhousectl, with a chctl alias
 curl -fsSL https://clickhouse.com/cli | sh
 
-# Install the latest stable ClickHouse release and symlink it to ~/.local/bin/clickhouse
-clickhousectl local use stable
+# Install the latest ClickHouse, set it as your default, and symlink it to ~/.local/bin/clickhouse
+clickhousectl local use latest
 clickhousectl local server start
 clickhousectl local client
 ```

@@ -83,28 +83,6 @@ This screenshot shows an access list which allows traffic from a range of IP add
 
 To apply the changes you made, you must click **Save**.
 
-### Using clickhousectl {#using-clickhousectl}
-
-You can also manage IP access lists with [clickhousectl](/concepts/features/interfaces/cli). Changing a list needs an API key: run `clickhousectl cloud auth login --interactive` first.
-
-For a service, add and remove entries. Each entry is an IP address or CIDR range, optionally followed by `=` and a description. Both flags are repeatable, and other entries stay as they are:
-
-```bash
-clickhousectl cloud service update <service-id> --add-ip-allow '203.0.113.0/24=NY Office range'
-clickhousectl cloud service update <service-id> --remove-ip-allow 203.0.113.0/24
-clickhousectl cloud service get <service-id> --json | jq .ipAccessList
-```
-
-`cloud service create` takes the same entries with `--ip-allow`. Without it, the new service allows connections from anywhere (`0.0.0.0/0`).
-
-For an API key, `--ip-allow` replaces the key's whole list, so pass every entry you want to keep. `--clear-ip-allow` empties the list, which denies all access:
-
-```bash
-clickhousectl cloud key update <key-id> --ip-allow '203.0.113.0/24=NY Office range' --ip-allow 198.51.100.7
-```
-
-Unlike the console, `cloud key create` without `--ip-allow` creates a key that denies all access. See [Managing API keys](/products/cloud/features/admin-features/api/openapi#manage-api-keys-with-clickhousectl).
-
 ## Verification {#verification}
 
 Once you create your filter confirm connectivity to a service from within the range, and confirm that connections from outside the permitted range are denied.  A simple `curl` command can be used to verify:

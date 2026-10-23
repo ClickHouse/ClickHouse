@@ -41,16 +41,3 @@ To perform a point-in-time recovery:
 3. Click **Restore to point in time**.
 
 The restore operation creates a new ClickHouse Managed Postgres instance with the state of your database as it was at the selected point in time. Your original instance remains unchanged, allowing you to verify the restored data before making any decisions about which instance to keep.
-
-### Using clickhousectl {#using-clickhousectl}
-
-With [clickhousectl](/concepts/features/interfaces/cli), list the completed backups, then restore to a point in time (RFC 3339, in UTC) within the retention window. Once the first backup has completed, `clickhousectl cloud postgres get <postgres-id>` shows the earliest time you can restore to:
-
-```bash
-clickhousectl cloud postgres backup list <postgres-id>
-clickhousectl cloud postgres restore <postgres-id> \
-  --name app-db-restored --restore-target 2026-10-20T12:00:00Z
-clickhousectl cloud postgres get <restored-postgres-id>
-```
-
-`restore` targets a point in time, not a backup from the list. The restored service gets the source's current IPv4 access rules, unless you pass `--ip-allow` rules or `--block-public-access`. The response has no password: once the restored service is `running`, set one with `clickhousectl cloud postgres reset-password <restored-postgres-id> --generate`, rather than assuming the source's current password works. `restore` needs an API key; OAuth login is read-only.

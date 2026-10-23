@@ -103,13 +103,6 @@ To scale your ClickHouse Managed Postgres instance:
 3. Select the target instance type
 4. Review the changes and click "Apply changes"
 
-With [clickhousectl](/concepts/features/interfaces/cli) and an API key, pass the target instance type to `update`, then check the `size` field with `get`:
-
-```bash
-clickhousectl cloud postgres update <postgres-id> --size c6gd.xlarge
-clickhousectl cloud postgres get <postgres-id>
-```
-
 ## Scaling strategies {#scaling-strategies}
 
 ### Vertical scaling {#vertical-scaling}

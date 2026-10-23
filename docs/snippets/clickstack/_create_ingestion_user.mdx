@@ -9,16 +9,4 @@ GRANT SELECT, INSERT, CREATE DATABASE, CREATE TABLE, CREATE VIEW ON otel.* TO hy
 Replace the password in the snippet above with a strong value.
 </Tip>
 
-To run the same statements with [`clickhousectl`](/concepts/features/interfaces/cli) instead, send them one per call, because the Query API runs a single statement per request. The first statement is read from a quoted heredoc so the shell leaves the `!` in the password alone:
-
-```bash
-clickhousectl cloud service query <service-id> <<'SQL'
-CREATE USER hyperdx_ingest IDENTIFIED WITH sha256_password BY 'ClickH0u3eRocks123!'
-SQL
-clickhousectl cloud service query <service-id> --query \
-  "GRANT SELECT, INSERT, CREATE DATABASE, CREATE TABLE, CREATE VIEW ON otel.* TO hyperdx_ingest"
-```
-
-These statements need API key authentication (`clickhousectl cloud auth login --interactive`); a browser login is read-only. On the first call, `clickhousectl` adds your API key to the service's Query API endpoint, creating the endpoint if needed; no new key is created.
-
 The collector creates the schema for logs, traces, and metrics inside the `otel` database on first use. For more guidance on production user setup, see [Going to production](/clickstack/managing/production#create-a-database-ingestion-user-managed).

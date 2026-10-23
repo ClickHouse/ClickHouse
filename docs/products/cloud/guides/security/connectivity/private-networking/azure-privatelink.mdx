@@ -89,17 +89,6 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 
 Make a note of the `endpointServiceId`. You'll use it in the next step.
 
-### Option 3: clickhousectl {#option-3-clickhousectl}
-
-With [clickhousectl](/concepts/features/interfaces/cli), select the service by name and print its `endpointServiceId` and `privateDnsHostname`. Reading the configuration works with OAuth or an API key. If you belong to more than one organization, add `--org-id <org-id>`.
-
-```bash
-SERVICE_NAME=<Your ClickHouse service name>
-clickhousectl cloud service private-endpoint get-config --name "${SERVICE_NAME:?}"
-```
-
-Make a note of the `endpointServiceId`. You'll use it in the next step.
-
 ## Create a private endpoint in Azure {#create-private-endpoint-in-azure}
 
 <Warning>
@@ -365,17 +354,6 @@ After adding or removing a Private Endpoint, run the following command to apply 
 curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" -X PATCH -H "Content-Type: application/json" "https://api.clickhouse.cloud/v1/organizations/${ORG_ID:?}" -d @pl_config_org.json
 ```
 
-### Option 3: clickhousectl {#option-3-clickhousectl-1}
-
-`cloud service private-endpoint create` registers the endpoint through the API's service-level call, which associates it with the service and your organization. It needs an API key:
-
-```bash
-clickhousectl cloud service private-endpoint create --name "${SERVICE_NAME:?}" \
-  --endpoint-id "${ENDPOINT_ID:?}" --description "Azure Private Link"
-```
-
-Then confirm the Private Endpoint is on each service's allow list, and add it where it's missing, with [clickhousectl](#option-3-clickhousectl-2).
-
 ## Add the Private Endpoint Resource ID to your services allow list {#add-private-endpoint-id-to-services-allow-list}
 
 By default, a ClickHouse Cloud service isn't available over a Private Link connection even if the Private Link connection is approved and established. You need to explicitly add the Private Endpoint Resource ID for each service that should be available using Private Link.
@@ -439,23 +417,6 @@ After adding or removing a Private Endpoint to the services allow list, run the 
 curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" -X PATCH -H "Content-Type: application/json" "https://api.clickhouse.cloud/v1/organizations/${ORG_ID:?}/services/${INSTANCE_ID:?}" -d @pl_config.json | jq
 ```
 
-### Option 3: clickhousectl {#option-3-clickhousectl-2}
-
-Changing the allow list needs an API key; run `clickhousectl cloud auth login --interactive` first. Set `ENDPOINT_ID` to the Resource ID from the [Obtaining the Private Endpoint Resource ID](#obtaining-private-endpoint-resourceid) step, and repeat for each service that should be available using Private Link:
-
-```bash
-SERVICE_NAME=<Your ClickHouse service name>
-ENDPOINT_ID=<Private Endpoint Resource ID>
-
-# Add the Private Endpoint to the service allow list
-clickhousectl cloud service update --name "${SERVICE_NAME:?}" --add-private-endpoint-id "${ENDPOINT_ID:?}"
-
-# Remove the Private Endpoint from the service allow list
-clickhousectl cloud service update --name "${SERVICE_NAME:?}" --remove-private-endpoint-id "${ENDPOINT_ID:?}"
-```
-
-Both flags are repeatable. Removing an ID that isn't in the list exits 0 with a warning. To check the current list, run `clickhousectl cloud service get --name "${SERVICE_NAME:?}" --json | jq .privateEndpointIds`.
-
 ## Access your ClickHouse Cloud service using Private Link {#access-your-clickhouse-cloud-service-using-private-link}
 
 Each service with Private Link enabled has a public and private endpoint. In order to connect using Private Link, you need to use a private endpoint which will be `privateDnsHostname`<sup>API</sup> or `DNS name`<sup>console</sup> taken from [Obtain Azure connection alias for Private Link](#obtain-azure-connection-alias-for-private-link).
@@ -497,16 +458,6 @@ You should receive a response similar to the following:
 In this example, connection to the `xxxxxxx.region_code.privatelink.azure.clickhouse.cloud` hostname will be routed to Private Link. Meanwhile, `xxxxxxx.region_code.azure.clickhouse.cloud` will be routed over the internet.
 
 Use the `privateDnsHostname` to connect to your ClickHouse Cloud service using Private Link.
-
-#### Option 3: clickhousectl {#option-3-clickhousectl-3}
-
-The command from [Obtain Azure connection alias for Private Link](#option-3-clickhousectl) also prints `privateDnsHostname`:
-
-```bash
-clickhousectl cloud service private-endpoint get-config --name "${SERVICE_NAME:?}"
-```
-
-See the [clickhousectl reference](/concepts/features/interfaces/cli) for authentication and other service commands.
 
 ## Troubleshooting {#troubleshooting}
 

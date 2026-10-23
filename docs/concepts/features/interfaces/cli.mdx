@@ -58,7 +58,7 @@ Local commands work in the current directory. Each project keeps its server data
 ### Install and select versions {#installing-versions}
 
 ```bash
-clickhousectl local use stable              # Install the latest stable release and make it the default
+clickhousectl local use latest              # Install the latest ClickHouse and make it the default (recommended)
 clickhousectl local install lts             # Install the latest LTS release
 clickhousectl local install 26.8            # Latest 26.8.x.x release
 clickhousectl local list                    # Installed versions
@@ -69,9 +69,9 @@ clickhousectl local remove 26.8.1.1760      # Remove an exact installed version
 
 | Selector | Meaning |
 | --- | --- |
+| `latest` | Latest ClickHouse build, checked remotely on each install, use or start (recommended) |
 | `stable` | Latest stable release |
 | `lts` | Latest long-term support release |
-| `latest` | Rolling master build, checked remotely on each install, use or start |
 | `26.8` | Latest matching release |
 | `26.8.1.1760` | Exact version |
 
@@ -90,7 +90,7 @@ clickhousectl local init
 ### Run local servers {#managing-servers}
 
 ```bash
-clickhousectl local server start dev --version stable   # Background start; waits for readiness
+clickhousectl local server start dev --version latest   # Background start; waits for readiness
 clickhousectl local server start dev --no-wait          # Return after spawning
 clickhousectl local server start dev --foreground       # Run in the foreground
 clickhousectl local server start dev --http-port 8124 --tcp-port 9001
@@ -103,7 +103,7 @@ clickhousectl local server remove dev                   # Permanently delete a s
 
 Each named server has its own data in `.clickhouse/servers/<name>/data/`, and stopping a server keeps it for the next start. Without a name, the first server is `default`; if `default` is already running, a new name is generated. Default ports are HTTP 8123 and TCP 9000, with free ports assigned when those are taken.
 
-`--version` chooses a version for that start without changing the default. A bare start with no version and no default installs `latest` without making it the default; run `local use stable` first to avoid tracking master.
+`--version` chooses a version for that start without changing the default. A bare start with no version and no default installs `latest` without making it the default; run `local use latest` first to make it the default.
 
 ### Run SQL with the local client {#running-queries}
 

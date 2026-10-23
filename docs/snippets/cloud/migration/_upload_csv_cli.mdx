@@ -134,10 +134,10 @@ clickhousectl cloud service query "$CH_ID" --format PrettyCompact \
 
 ## Upload large files {#upload-large-files}
 
-The Query API stops waiting after about 30 seconds. A timed-out `INSERT` may still have run, so check the row count before you retry. For large files, insert over the native protocol with [`clickhouse client`](/concepts/features/interfaces/client) instead, which reads the data from stdin. `clickhousectl local use stable` installs the latest stable release and symlinks it to `~/.local/bin/clickhouse`. Set `CH_PASSWORD` to the `default` user's password (`clickhousectl cloud service reset-password "$CH_ID"` generates a new one if it is lost), look up the `nativesecure` host, and insert:
+The Query API stops waiting after about 30 seconds. A timed-out `INSERT` may still have run, so check the row count before you retry. For large files, insert over the native protocol with [`clickhouse client`](/concepts/features/interfaces/client) instead, which reads the data from stdin. `clickhousectl local use latest` installs the latest version of ClickHouse and symlinks it to `~/.local/bin/clickhouse`. Set `CH_PASSWORD` to the `default` user's password (`clickhousectl cloud service reset-password "$CH_ID"` generates a new one if it is lost), look up the `nativesecure` host, and insert:
 
 ```bash
-clickhousectl local use stable
+clickhousectl local use latest
 CH_HOST=$(clickhousectl cloud service get "$CH_ID" --json \
   | jq -r '.endpoints[] | select(.protocol == "nativesecure") | .host')
 clickhouse client --host "$CH_HOST" --secure --port 9440 \

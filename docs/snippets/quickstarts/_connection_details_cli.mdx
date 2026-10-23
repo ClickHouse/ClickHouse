@@ -139,7 +139,7 @@ curl --user "$CLICKHOUSE_USER:$CLICKHOUSE_PASSWORD" \
 1
 ```
 
-Verify the native protocol (port 9440) with [**clickhouse client**](/concepts/features/interfaces/client). The ClickHouse CLI manages the `clickhouse` binary for you, so if you don't already have it, `clickhousectl local use stable` installs the latest stable release and symlinks it to `~/.local/bin/clickhouse`. Then:
+Verify the native protocol (port 9440) with [**clickhouse client**](/concepts/features/interfaces/client). The ClickHouse CLI manages the `clickhouse` binary for you, so if you don't already have it, `clickhousectl local use latest` installs the latest version of ClickHouse and symlinks it to `~/.local/bin/clickhouse`. Then:
 
 ```bash
 clickhouse client --host "$CLICKHOUSE_HOST" --secure --port 9440 \

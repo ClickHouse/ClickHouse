@@ -93,30 +93,3 @@ Click **Create ClickPipe** to complete the setup. You'll be redirected to the ov
 <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step5.webp" alt="Permissions" size="lg" border/>
 </Step>
 </Steps>
-
-## Create a BigQuery ClickPipe with clickhousectl {#create-with-clickhousectl}
-
-You can also create the ClickPipe from the command line with [clickhousectl](/concepts/features/interfaces/cli). Creating a ClickPipe needs an API key; log in with `clickhousectl cloud auth login --interactive`. The CLI reads the service account key from a file and encodes it for you.
-
-An initial load only (`snapshot`) is the default replication mode:
-
-```bash
-clickhousectl cloud clickpipe create bigquery <service-id> \
-  --name orders-snapshot --service-account-file ./service-account.json \
-  --staging-path gs://my-staging-bucket/staging/ \
-  --destination-database default --table-mapping sales.orders:orders
-```
-
-For **Initial load + CDC**, pass `--replication-mode cdc` (or `cdc_only` for **CDC only**) and a `--replication-method`. Describe each table with `--table-mapping-json`: query based CDC needs a `TIMESTAMP` `queryCdcWatermarkColumn`, and events based CDC needs `eventsFunction` (`appends` or `changes`). This example syncs every hour:
-
-```bash
-clickhousectl cloud clickpipe create bigquery <service-id> \
-  --name orders-cdc --service-account-file ./service-account.json \
-  --staging-path gs://my-staging-bucket/staging/ \
-  --replication-mode cdc --replication-method query_based --sync-cron '@hourly' \
-  --table-mapping-json '{"sourceDatasetName":"sales","sourceTable":"orders","targetTable":"orders","queryCdcWatermarkColumn":"updated_at"}'
-```
-
-`--sync-cron` takes a 5-field cron expression or a descriptor such as `@hourly`, evaluated in UTC unless prefixed with `CRON_TZ=<zone>`, and must not fire more than once a minute. Use it instead of `--sync-interval-seconds`; you can't combine the two. The other [settings](#3-configure-your-clickpipe) map to `--initial-load-parallelism`, `--snapshot-rows-per-partition`, `--snapshot-parallel-tables`, `--query-cdc-pull-sync-parallelism`, `--sync-delay-seconds`, and `--pull-window-size-seconds`.
-
-To authenticate without a key, see [GCP workload identity](/integrations/clickpipes/security/gcp-workload-identity). For the full set of CDC rules, see the [ClickPipe configuration reference](https://github.com/ClickHouse/clickhousectl/blob/main/docs/reference/clickpipe-configuration.md#configure-bigquery-cdc).

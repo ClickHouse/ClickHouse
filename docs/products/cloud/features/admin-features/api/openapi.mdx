@@ -98,35 +98,6 @@ Deleting an API key is a permanent action. Any services using the key will immed
 
 </Steps>
 
-## Manage API keys with clickhousectl {#manage-api-keys-with-clickhousectl}
-
-You can also create and manage API keys with [clickhousectl](/concepts/features/interfaces/cli). Listing keys works with OAuth. Creating, updating, and deleting keys needs an existing API key with permission to manage keys, so create your first key in the console. Then sign in with it using `clickhousectl cloud auth login --interactive`.
-
-Find a role ID, then create a key with an expiry and an IP allow list:
-
-```bash
-clickhousectl cloud org role list
-clickhousectl cloud key create --name ci-key --role-id <role-id> \
-  --expires-at 2027-01-01T00:00:00Z --ip-allow '203.0.113.0/24=CI runners'
-```
-
-<Warning>
-**`key create` denies all traffic by default**
-
-Unlike the console, `clickhousectl cloud key create` without `--ip-allow` creates the key with an empty IP allow list, which denies all network access. Pass `--ip-allow` once for each allowed address or range. Use `--ip-allow 0.0.0.0/0` only for deliberately unrestricted access.
-</Warning>
-
-The output shows the key ID and secret once, so save them. `get`, `update`, and `delete` take the key's management ID from `key list`, or its name with `--name`, not the key ID you authenticate with:
-
-```bash
-clickhousectl cloud key list
-clickhousectl cloud key update <key-id> --state disabled
-clickhousectl cloud key update <key-id> --ip-allow 203.0.113.0/24 --ip-allow 198.51.100.7
-clickhousectl cloud key delete <key-id>
-```
-
-`key update` changes only the flags you pass, but `--ip-allow` and `--role-id` replace the whole list. `key delete` acts immediately, with no confirmation prompt. See the [clickhousectl authentication reference](https://github.com/ClickHouse/clickhousectl/blob/main/docs/reference/authentication.md#create-a-restricted-api-key) for more.
-
 ## Endpoints {#endpoints}
 
 Refer details on endpoints, refer to the [API reference](/products/cloud/api-reference/organization/get-list-of-available-organizations). 

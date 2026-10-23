@@ -33,7 +33,7 @@ The service account is unique to the ClickHouse Cloud service. You control its a
 
 ## Retrieve the ClickPipes service account {#retrieve-service-account}
 
-Use OpenAPI, Terraform, or clickhousectl to retrieve the service context. Do not create the ClickPipe until the context reports that workload identity is supported and ready.
+Use OpenAPI or Terraform to retrieve the service context. Do not create the ClickPipe until the context reports that workload identity is supported and ready.
 
 <Tabs>
 <Tab title="OpenAPI" id="openapi">
@@ -91,17 +91,6 @@ output "clickpipes_gcp_service_account" {
 By default, the data source fails when workload identity is unsupported. It waits up to `ready_timeout` for the identity to become ready and for `principal` to be populated. Set `wait_for_identity = false` only when you need a snapshot of the current capability state without waiting.
 
 </Tab>
-<Tab title="clickhousectl" id="clickhousectl">
-
-Get the service context with [clickhousectl](/concepts/features/interfaces/cli). This command only reads, so it works after `clickhousectl cloud auth login`; creating the ClickPipe later needs an API key (`clickhousectl cloud auth login --interactive`).
-
-```bash
-clickhousectl cloud clickpipe context get <service-id> --json
-```
-
-The output includes `gcpWorkloadIdentity` with the fields described below. If `ready` is `false` or `principal` is missing, run the command again until both are set.
-
-</Tab>
 </Tabs>
 
 The service context fields have these meanings:
@@ -136,17 +125,6 @@ See the programmatic examples for each source:
 - [Google Cloud Pub/Sub with Terraform](/integrations/clickpipes/programmatic-access/terraform#pubsub)
 - [BigQuery with Terraform](/integrations/clickpipes/programmatic-access/terraform#bigquery-workload-identity)
 - [OpenAPI examples](/integrations/clickpipes/programmatic-access/openapi#creating-clickpipes)
-
-With clickhousectl, pass `--auth SERVICE_ACCOUNT_WORKLOAD_IDENTITY` and no credential flags. The CLI supports workload identity for Google Cloud Storage (`create object-storage --storage-type gcs`), Google Managed Kafka (`create kafka --kafka-type gcmk`), Pub/Sub, and BigQuery, which also needs `--project-id`:
-
-```bash
-clickhousectl cloud clickpipe create bigquery <service-id> \
-  --name my-bigquery-pipe --auth SERVICE_ACCOUNT_WORKLOAD_IDENTITY \
-  --project-id my-gcp-project --staging-path gs://my-staging-bucket/staging/ \
-  --table-mapping my_dataset.my_table:my_bigquery_table
-```
-
-The CLI doesn't grant IAM permissions for you. See the [ClickPipe configuration reference](https://github.com/ClickHouse/clickhousectl/blob/main/docs/reference/clickpipe-configuration.md#source-credentials-and-connectivity) for details.
 
 ## Troubleshooting {#troubleshooting}
 

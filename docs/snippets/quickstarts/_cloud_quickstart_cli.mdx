@@ -184,10 +184,10 @@ clickhousectl cloud service query "$CH_ID" --json \
 You can also connect over the native protocol with [**clickhouse client**](/concepts/features/interfaces/client). The ClickHouse CLI manages the `clickhouse` binary for you, so you don't need a separate client install:
 
 ```bash
-clickhousectl local use stable
+clickhousectl local use latest
 ```
 
-This installs the latest stable release and symlinks it to `~/.local/bin/clickhouse`, so you can run the plain `clickhouse` command once `~/.local/bin` is on your `PATH` (the command prints a note if it isn't).
+This installs the latest version of ClickHouse and symlinks it to `~/.local/bin/clickhouse`, so you can run the plain `clickhouse` command once `~/.local/bin` is on your `PATH` (the command prints a note if it isn't).
 
 Then connect using the hostname and password from the create response. With `--query`, the result is printed and the client exits; without it you get the interactive prompt (`:)`), which you leave with `exit`:
 

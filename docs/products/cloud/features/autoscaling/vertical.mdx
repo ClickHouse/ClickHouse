@@ -34,17 +34,3 @@ It's important to note that this will disable any auto scaling on the cluster, a
 <Note>
 For Enterprise tier services, standard `1:4` profiles support vertical autoscaling. Custom profiles don’t support vertical autoscaling or manual vertical scaling. Contact support for vertical resizing.
 </Note>
-
-## Using clickhousectl {#using-clickhousectl}
-
-You can also set the memory range with [clickhousectl](/concepts/features/interfaces/cli). Scaling needs an API key: run `clickhousectl cloud auth login --interactive` first.
-
-```bash
-# Scale between 16 GB and 64 GB per replica
-clickhousectl cloud service scale <service-id> --min-replica-memory-gb 16 --max-replica-memory-gb 64
-
-# Pin each replica to 32 GB
-clickhousectl cloud service scale <service-id> --min-replica-memory-gb 32 --max-replica-memory-gb 32
-```
-
-Both values are multiples of 4. The minimum is at least 8, and the maximum is at most 120 for unpaid services and 356 for paid services. `cloud service scale` also sets the replica count and idling; run `clickhousectl cloud service scale --help` for every option.

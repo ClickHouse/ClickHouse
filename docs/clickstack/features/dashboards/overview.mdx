@@ -183,58 +183,6 @@ The dashboard will be auto-saved. To set the dashboard name, select the title an
 </Step>
 </Steps>
 
-### Creating dashboards with clickhousectl {#creating-dashboards-clickhousectl}
-
-On Managed ClickStack, you can also manage dashboards as JSON files with [clickhousectl](/concepts/features/interfaces/cli). Each command takes the ClickHouse Cloud service ID (from `clickhousectl cloud service list`). List and get commands work after `clickhousectl cloud auth login`; validating, creating, and updating need an [API key](/concepts/features/interfaces/cli#api-key).
-
-Find the ID of the source to chart:
-
-```bash
-clickhousectl cloud clickstack source list <service-id>
-```
-
-Save a dashboard definition as `dashboard.json`, replacing `<source-id>`:
-
-```json
-{
-  "name": "Event volume",
-  "tiles": [
-    {
-      "name": "Event count",
-      "x": 0,
-      "y": 0,
-      "w": 6,
-      "h": 3,
-      "config": {
-        "displayType": "line",
-        "sourceId": "<source-id>",
-        "select": [{"aggFn": "count"}]
-      }
-    }
-  ]
-}
-```
-
-Validate the definition without saving it, then create the dashboard and inspect it:
-
-```bash
-clickhousectl cloud clickstack dashboard validate <service-id> --file dashboard.json
-clickhousectl cloud clickstack dashboard create <service-id> --file dashboard.json
-clickhousectl cloud clickstack dashboard get <service-id> <dashboard-id>
-```
-
-`validate` checks a create body only; it doesn't validate update bodies.
-
-<Warning>
-`clickhousectl cloud clickstack dashboard update` replaces the whole dashboard. Save the current state first with `dashboard get <service-id> <dashboard-id> --json`, then send the complete definition: every tile, filter, container, tag, and saved query you want to keep. Each existing filter must keep its `id`.
-
-```bash
-clickhousectl cloud clickstack dashboard update <service-id> <dashboard-id> --file dashboard-update.json
-```
-</Warning>
-
-See the [ClickStack guide for clickhousectl](https://github.com/ClickHouse/clickhousectl/blob/main/docs/guides/clickstack.md) for more.
-
 ## Dashboards - editing visualizations {#dashboards-editing-visualizations}
 
 To remove, edit, or duplicate a visualization, hover over it and use the corresponding action buttons.

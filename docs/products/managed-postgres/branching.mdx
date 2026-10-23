@@ -39,19 +39,6 @@ Test schema changes, indexing strategies, and query optimizations before deployi
 
 Recover a database to a specific point in time for troubleshooting, auditing, or validating application behavior.
 
-## Create a branch with clickhousectl {#create-a-branch-with-clickhousectl}
-
-A branch is a [point-in-time restore](/products/managed-postgres/backup-and-restore#point-in-time-recovery) into a new service. With [clickhousectl](/concepts/features/interfaces/cli) and an API key, create one, set its password, and delete it when you're done:
-
-```bash
-clickhousectl cloud postgres restore <postgres-id> \
-  --name staging-branch --restore-target 2026-10-20T12:00:00Z
-clickhousectl cloud postgres reset-password <branch-id> --generate
-clickhousectl cloud postgres delete <branch-id>
-```
-
-`restore` returns the branch's service ID but no password, so run `reset-password` once the branch is `running`. The branch gets the source's current IPv4 access rules unless you pass `--ip-allow` rules or `--block-public-access`. To size it differently from the source, run `clickhousectl cloud postgres update <branch-id> --size <size>`. `delete` removes the branch and its data permanently.
-
 ## Branch sizing {#branch-sizing}
 
 Branches are independent PostgreSQL deployments and can be sized separately from the source database.

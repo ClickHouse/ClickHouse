@@ -127,17 +127,6 @@ This command should return something like:
 
 Make a note of the `endpointServiceId` and `privateDnsHostname` [move onto next step](#create-aws-endpoint).
 
-#### Option 3: clickhousectl {#option-3-clickhousectl}
-
-With [clickhousectl](/concepts/features/interfaces/cli), select the service by name and print its `endpointServiceId` and `privateDnsHostname`. Reading the configuration works with OAuth or an API key. If you belong to more than one organization, add `--org-id <org-id>`.
-
-```bash
-SERVICE_NAME=<Your ClickHouse service name>
-clickhousectl cloud service private-endpoint get-config --name "${SERVICE_NAME:?}"
-```
-
-Make a note of the `endpointServiceId` and `privateDnsHostname`, then [move onto the next step](#create-aws-endpoint).
-
 ### Create AWS endpoint {#create-aws-endpoint}
 
 <Warning>
@@ -299,23 +288,6 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" \
 -d @pl_config.json | jq
 ```
 
-#### Option 3: clickhousectl {#option-3-clickhousectl-2}
-
-Changing the allow list needs an API key; run `clickhousectl cloud auth login --interactive` first. Set `ENDPOINT_ID` from the [Create AWS Endpoint](#create-aws-endpoint) step, and repeat for each service that should be available using PrivateLink:
-
-```bash
-SERVICE_NAME=<Your ClickHouse service name>
-ENDPOINT_ID=<Your VPC endpoint ID, for example vpce-0123456789abcdef0>
-
-# Add an endpoint ID to the service allow list
-clickhousectl cloud service update --name "${SERVICE_NAME:?}" --add-private-endpoint-id "${ENDPOINT_ID:?}"
-
-# Remove an endpoint ID from the service allow list
-clickhousectl cloud service update --name "${SERVICE_NAME:?}" --remove-private-endpoint-id "${ENDPOINT_ID:?}"
-```
-
-Both flags are repeatable. The CLI checks that an AWS ID has the `vpce-` format before it sends the request. Removing an ID that isn't in the list exits 0 with a warning. To check the current list, run `clickhousectl cloud service get --name "${SERVICE_NAME:?}" --json | jq .privateEndpointIds`.
-
 ### Accessing an instance using PrivateLink {#accessing-an-instance-using-privatelink}
 
 Each service with Private Link enabled has a public and private endpoint. In order to connect using Private Link, you need to use a private endpoint which will be `privateDnsHostname`<sup>API</sup> or `DNS Name`<sup>console</sup> taken from [Obtain Endpoint "Service name"](#obtain-endpoint-service-info).
@@ -357,16 +329,6 @@ This should output something like:
 ```
 
 In this example connection via value of `privateDnsHostname` host name will be routed to PrivateLink, but connection via `endpointServiceId` hostname will be routed over the Internet.
-
-##### Option 3: clickhousectl {#option-3-clickhousectl-3}
-
-The command from [Obtain endpoint "Service name"](#option-3-clickhousectl) also prints `privateDnsHostname`:
-
-```bash
-clickhousectl cloud service private-endpoint get-config --name "${SERVICE_NAME:?}"
-```
-
-See the [clickhousectl reference](/concepts/features/interfaces/cli) for authentication and other service commands.
 
 ## Troubleshooting {#troubleshooting}
 

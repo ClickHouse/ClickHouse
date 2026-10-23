@@ -36,18 +36,6 @@ The **Table** view lists each replica with its service name, cloud provider and 
 
 To create a new replica, click **Create read replica** in the top-right corner of either view.
 
-### Using clickhousectl {#using-clickhousectl}
-
-With [clickhousectl](/concepts/features/interfaces/cli), create a replica from the primary's ID, list the replicas in your organization, and promote one when you need it to accept writes:
-
-```bash
-clickhousectl cloud postgres read-replica create <primary-id> --name app-db-replica
-clickhousectl cloud postgres list --filter isPrimary=false
-clickhousectl cloud postgres promote <replica-id>
-```
-
-The replica inherits the primary's provider, region, size, and Postgres version. The create response has no password; run `clickhousectl cloud postgres get <replica-id>` for the replica's endpoint, and don't assume the primary's password works on it. `promote` makes the replica an independent primary while the source stays primary. It returns once the request is accepted; poll `clickhousectl cloud postgres get <replica-id> --json` until `isPrimary` is `true`. Creating and promoting replicas needs an API key; OAuth login is read-only.
-
 ## Why use read replicas {#why-use-read-replicas}
 
 ### Scalability {#scalability}

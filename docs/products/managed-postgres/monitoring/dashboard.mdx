@@ -45,24 +45,6 @@ The dashboard groups metrics into the following panels:
 Use the **Time period** selector to switch between the last hour, day,
 week, or a custom range.
 
-## Using clickhousectl {#using-clickhousectl}
-
-To read the same kind of time series from the command line, use
-[clickhousectl](/concepts/features/interfaces/cli). `metrics` returns
-bucketed values for a time window (RFC 3339); omit
-`--bucket-size-seconds` to let the API choose. `logs` lists the server
-logs for a window of up to 30 days:
-
-```bash
-clickhousectl cloud postgres metrics <postgres-id> \
-  --from-date 2026-10-22T00:00:00Z --to-date 2026-10-23T00:00:00Z
-clickhousectl cloud postgres logs <postgres-id> \
-  --from-date 2026-10-22T00:00:00Z --to-date 2026-10-23T00:00:00Z \
-  --severity ERROR --limit 100
-```
-
-Both commands only read data, so they work with a browser login (OAuth) or an API key with view permission.
-
 ## Related pages {#related}
 
 - [Prometheus endpoint](/products/managed-postgres/monitoring/prometheus) — scrape the same metrics into your own observability stack
