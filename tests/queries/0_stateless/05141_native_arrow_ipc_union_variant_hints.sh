@@ -168,6 +168,13 @@ columns = {
 columns["nested"] = pa.StructArray.from_arrays(
     [bool_int8()], fields=[pa.field("v", bool_int8().type)])
 columns["listed"] = pa.ListArray.from_arrays(pa.array([0, 2, 3, 4, 4]), bool_int8())
+# A dictionary of unions under a list and under a struct: the dictionary's values are decoded apart from
+# the record batch, while the composite holding them is declared by its Arrow type.
+def dict_int32_utf8():
+    values = dense([pa.array([7, -3], type=pa.int32()), pa.array(["x", "y"])], ["i", "s"])
+    return pa.DictionaryArray.from_arrays(pa.array([2, 1, 0, 3], type=pa.int32()), values)
+columns["dict_listed"] = pa.ListArray.from_arrays(pa.array([0, 2, 3, 4, 4]), dict_int32_utf8())
+columns["dict_nested"] = pa.StructArray.from_arrays([dict_int32_utf8()], names=["v"])
 
 schema = pa.schema([pa.field(name, column.type) for name, column in columns.items()])
 batch = pa.record_batch(list(columns.values()), schema=schema)
@@ -244,6 +251,11 @@ read_column sparse 'Variant(Bool, UInt8)'
 echo "--- a union under a struct and under a list ---"
 read_column nested 'Tuple(v Variant(Bool, UInt8))'
 read_column listed 'Array(Variant(Bool, UInt8))'
+for FORMAT in Arrow ArrowStream; do
+    echo "--- ${FORMAT}: a dictionary of union<int32, utf8> under a list and under a struct, widened to Int64 ---"
+    read_column dict_listed 'Array(Variant(Int64, String))' "$FORMAT"
+    read_column dict_nested 'Tuple(v Variant(Int64, String))' "$FORMAT"
+done
 
 echo "--- a date32 branch is excluded by design, so this stays rejected ---"
 rejected date32_utf8 'Variant(Int32, String)'

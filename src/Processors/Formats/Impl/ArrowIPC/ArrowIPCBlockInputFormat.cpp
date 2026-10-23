@@ -587,8 +587,10 @@ void ArrowIPCBlockInputFormat::decodeDictionaryBatch(
         /// No field: a dictionary is how a `LowCardinality` is written, and that wraps only numbers, strings,
         /// `Date` and `DateTime`, each of which has an Arrow type of its own. So a dictionary's values are
         /// never an opaque column, and the rewrite has no field metadata to act on here.
+        /// A `Variant` is repaired later, on the materialized column: a dictionary nested in a composite is
+        /// declared by its Arrow type, which a repaired value type would contradict.
         if (use.hint)
-            reinterpretRawByteColumns(values, use.hint, /*field=*/nullptr);
+            reinterpretRawByteColumns(values, use.hint, /*field=*/nullptr, /*repair_variants=*/false);
 
         /// Arrow doesn't require dictionary values to be unique, and repeated values are allowed: `decodeDictionary`
         /// builds a `LowCardinality` by inserting the values into its own unique dictionary and remapping the indexes.
@@ -850,7 +852,7 @@ const ArrowIPC::ArrowField * childField(const ArrowIPC::ArrowField * field, size
 std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
     const ColumnPtr & col, const DataTypePtr & from_type, const DataTypePtr & to_type,
     const NullMap * ancestor_nulls, bool case_insensitive, const ArrowIPC::ArrowField * field,
-    const FormatSettings & format_settings)
+    const FormatSettings & format_settings, bool repair_variants)
 {
     field = skipRunEndEncoded(field);
     const DataTypePtr from_no_null = removeNullable(from_type);
@@ -872,7 +874,8 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
             const NullMap * combined = ArrowIPC::unionNullMaps(col_nullable->getNullMapData(), ancestor_nulls, combined_storage);
             auto [new_nested, new_nested_type]
                 = reinterpretRawBytes(
-                    col_nullable->getNestedColumnPtr(), from_no_null, to_type, combined, case_insensitive, field, format_settings);
+                    col_nullable->getNestedColumnPtr(), from_no_null, to_type, combined, case_insensitive, field, format_settings,
+                    repair_variants);
             /// A leaf the decoder already converted comes back with the same column but a new type, so
             /// change detection must look at both.
             if (new_nested.get() == col_nullable->getNestedColumnPtr().get() && new_nested_type.get() == from_no_null.get())
@@ -892,7 +895,7 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
         const auto & col_arr = assert_cast<const ColumnArray &>(*col);
         auto [new_data, new_data_type] = reinterpretRawBytes(
             col_arr.getDataPtr(), from_arr->getNestedType(), elem_target, /*ancestor_nulls=*/nullptr, case_insensitive,
-            childField(field, 0), format_settings);
+            childField(field, 0), format_settings, repair_variants);
         if (new_data.get() == col_arr.getDataPtr().get() && new_data_type.get() == from_arr->getNestedType().get())
             return {col, from_type};
         /// The immutable factory shares both children; `IColumn::mutate` here would deep-clone the
@@ -919,7 +922,7 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
             {
                 auto [c, t] = reinterpretRawBytes(
                     col_tup.getColumnPtr(i), from_elems[i], elem_target, ancestor_nulls, case_insensitive,
-                    childField(field, i), format_settings);
+                    childField(field, i), format_settings, repair_variants);
                 changed |= c.get() != col_tup.getColumnPtr(i).get() || t.get() != from_elems[i].get();
                 new_cols[i] = std::move(c);
                 new_types[i] = std::move(t);
@@ -950,7 +953,8 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
             std::make_shared<DataTypeTuple>(DataTypes{from_map->getKeyType(), from_map->getValueType()}));
         auto to_nested = std::make_shared<DataTypeArray>(entries_target);
         auto [new_nested, new_nested_type] = reinterpretRawBytes(
-            col_map.getNestedColumnPtr(), from_nested, to_nested, ancestor_nulls, case_insensitive, field, format_settings);
+            col_map.getNestedColumnPtr(), from_nested, to_nested, ancestor_nulls, case_insensitive, field, format_settings,
+            repair_variants);
         if (new_nested.get() == col_map.getNestedColumnPtr().get() && new_nested_type.get() == from_nested.get())
             return {col, from_type};
         const auto & new_tuple = assert_cast<const DataTypeTuple &>(*assert_cast<const DataTypeArray &>(*new_nested_type).getNestedType());
@@ -961,7 +965,7 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
     if (const auto * from_variant = typeid_cast<const DataTypeVariant *>(from_no_null.get()))
     {
         const auto * to_variant = typeid_cast<const DataTypeVariant *>(ArrowIPC::stripHint(to_type).get());
-        if (!to_variant)
+        if (!to_variant || !repair_variants)
             return {col, from_type};
         return repairVariantElements(col, from_type, *from_variant, *to_variant, case_insensitive, format_settings);
     }
@@ -1114,7 +1118,7 @@ std::pair<ColumnPtr, DataTypePtr> repairVariantElements(
             /// nulls. No field: a union is decoded without consulting its children's `clickhouse.opaque` tags.
             std::tie(element, element_type) = reinterpretRawBytes(
                 element, from_element, target, /*ancestor_nulls=*/nullptr, case_insensitive, /*field=*/nullptr,
-                format_settings);
+                format_settings, /*repair_variants=*/true);
             /// By name, not `equals`: `Bool` and `UInt8` compare equal yet the element must end up under
             /// exactly the requested one.
             if (element_type->getName() != target->getName())
@@ -1144,12 +1148,12 @@ std::pair<ColumnPtr, DataTypePtr> repairVariantElements(
 }
 
 void ArrowIPCBlockInputFormat::reinterpretRawByteColumns(
-    ColumnWithTypeAndName & column, const DataTypePtr & to_type, const ArrowIPC::ArrowField * field) const
+    ColumnWithTypeAndName & column, const DataTypePtr & to_type, const ArrowIPC::ArrowField * field, bool repair_variants) const
 {
     const auto * constant = typeid_cast<const ColumnConst *>(column.column.get());
     auto [new_column, new_type] = reinterpretRawBytes(
         constant ? constant->getDataColumnPtr() : column.column, column.type, to_type,
-        /*ancestor_nulls=*/nullptr, format_settings.arrow.case_insensitive_column_matching, field, format_settings);
+        /*ancestor_nulls=*/nullptr, format_settings.arrow.case_insensitive_column_matching, field, format_settings, repair_variants);
     if (constant)
         new_column = ColumnConst::create(new_column, constant->size());
     column.column = std::move(new_column);
@@ -1306,7 +1310,7 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::Decoded
             column.type = getGeoDataType(GeoType::Mixed);
         }
         else
-            reinterpretRawByteColumns(column, header_column.type, src_field);
+            reinterpretRawByteColumns(column, header_column.type, src_field, /*repair_variants=*/true);
 
         /// Match differently-cased struct field names against the requested type when case-insensitive
         /// column matching is enabled, so the named-tuple CAST below does not turn them into defaults.

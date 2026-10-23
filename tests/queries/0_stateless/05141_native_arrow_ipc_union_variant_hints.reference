@@ -119,6 +119,24 @@ true	Variant(Bool, UInt8)
 [false]	Array(Variant(Bool, UInt8))
 [248]	Array(Variant(Bool, UInt8))
 []	Array(Variant(Bool, UInt8))
+--- Arrow: a dictionary of union<int32, utf8> under a list and under a struct, widened to Int64 ---
+[-3,'x']	Array(Variant(Int64, String))
+[7]	Array(Variant(Int64, String))
+['y']	Array(Variant(Int64, String))
+[]	Array(Variant(Int64, String))
+(-3)	Tuple(\n    v Variant(Int64, String))
+('x')	Tuple(\n    v Variant(Int64, String))
+(7)	Tuple(\n    v Variant(Int64, String))
+('y')	Tuple(\n    v Variant(Int64, String))
+--- ArrowStream: a dictionary of union<int32, utf8> under a list and under a struct, widened to Int64 ---
+[-3,'x']	Array(Variant(Int64, String))
+[7]	Array(Variant(Int64, String))
+['y']	Array(Variant(Int64, String))
+[]	Array(Variant(Int64, String))
+(-3)	Tuple(\n    v Variant(Int64, String))
+('x')	Tuple(\n    v Variant(Int64, String))
+(7)	Tuple(\n    v Variant(Int64, String))
+('y')	Tuple(\n    v Variant(Int64, String))
 --- a date32 branch is excluded by design, so this stays rejected ---
 Cannot convert type Variant(Date32, String) to Variant(Int32, String).
 --- and the narrowing DateTime64 -> DateTime is refused, so this stays rejected ---
@@ -163,6 +181,8 @@ utf8_int32	Variant(Int32, String)
 sparse	Variant(Bool, Int8)					
 nested	Nullable(Tuple(v Variant(Bool, Int8)))					
 listed	Array(Variant(Bool, Int8))					
+dict_listed	Array(Variant(Int32, String))					
+dict_nested	Nullable(Tuple(v Variant(Int32, String)))					
 --- and a request that merely extends the decoded Variant leaves every branch as decoded ---
 true	Variant(Bool, Int8, String)
 7	Variant(Bool, Int8, String)
