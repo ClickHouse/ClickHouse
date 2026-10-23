@@ -2,6 +2,7 @@
 
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Core/QueryProcessingStage.h>
+#include <Core/ResultColumnOrigin.h>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/QueryFlags.h>
@@ -39,6 +40,9 @@ struct QueryResultDetails
     /// `framing_output_format`). The HTTP handler uses it to fail closed: once such a response
     /// has started closing, nothing may be appended to it (see `HTTPHandler::trySendExceptionToClient`).
     bool framed = false;
+    /// The table columns the result columns come from, one per result column. Filled only for `SELECT` queries
+    /// executed with `QueryFlags::collect_result_column_origins`, and empty if they are unknown.
+    ResultColumnOrigins result_column_origins = {};
 };
 
 using SetResultDetailsFunc = std::function<void(const QueryResultDetails &)>;
