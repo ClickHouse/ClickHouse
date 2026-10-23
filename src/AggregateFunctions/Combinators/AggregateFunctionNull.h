@@ -181,7 +181,6 @@ public:
     }
 
     bool isAbleToParallelizeMerge() const override { return nested_function->isAbleToParallelizeMerge(); }
-    bool isParallelizeMergePrepareNeeded() const override { return nested_function->isParallelizeMergePrepareNeeded(); }
     bool canOptimizeEqualKeysRanges() const override { return nested_function->canOptimizeEqualKeysRanges(); }
 
     void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const override
@@ -226,23 +225,6 @@ public:
             writeBinary(flag, buf);
         if (flag)
             nested_function->serialize(nestedPlace(place), buf, version);
-    }
-
-    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> version) const override
-    {
-        if (auto nested_bound = nested_function->getSerializedSizeBound(version))
-            return (serialize_flag ? sizeof(bool) : 0) + *nested_bound;
-        return std::nullopt;
-    }
-
-    char * serializeToMemory(ConstAggregateDataPtr __restrict place, char * dst, std::optional<size_t> version) const override
-    {
-        bool flag = getFlag(place);
-        if constexpr (serialize_flag)
-            writeBinary(flag, dst);
-        if (flag)
-            dst = nested_function->serializeToMemory(nestedPlace(place), dst, version);
-        return dst;
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
@@ -357,23 +339,7 @@ public:
         return nested_function->getDefaultVersion();
     }
 
-    DataTypePtr getStateType() const override
-    {
-        return this->getStateTypeWithVersionOf(*nested_function);
-    }
-
     AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
-
-    /// Only the `Subadditive` bound survives the wrapping: a group whose rows are all NULL has an
-    /// untouched nested state, whose value is 0 for the subadditive functions (`count`,
-    /// `uniqExact`) - consistent with the bound - but is a bogus default for an extremum. A
-    /// nullable result is excluded because its NULLs do not take part in the nested comparison.
-    MergedValueBound getMergedValueBound() const override
-    {
-        if (!result_is_nullable && nested_function->getMergedValueBound() == MergedValueBound::Subadditive)
-            return MergedValueBound::Subadditive;
-        return MergedValueBound::Unknown;
-    }
 
 #if USE_EMBEDDED_COMPILER
 
@@ -701,8 +667,7 @@ public:
 
         if (if_argument_pos >= 0)
         {
-            /// Default-init: the loop below fills [row_begin, row_end) and nothing reads the rest.
-            final_flags = std::make_unique_for_overwrite<UInt8[]>(row_end);
+            final_flags = std::make_unique<UInt8[]>(row_end);
             final_flags_ptr = final_flags.get();
 
             size_t included_elements = 0;
@@ -755,18 +720,12 @@ public:
         {
             if (!final_flags)
             {
-                final_flags = std::make_unique_for_overwrite<UInt8[]>(row_end);
+                final_flags = std::make_unique<UInt8[]>(row_end);
                 final_flags_ptr = final_flags.get();
             }
 
-            /// The span holds a merged filter only when the buffer already is one of `nullable_filters`.
-            if (nullable_filters[0] != final_flags_ptr)
-            {
-                for (size_t i = row_begin; i < row_end; i++)
-                    final_flags[i] = nullable_filters[0][i];
-            }
-
-            for (size_t filter = 1; filter < nullable_filters.size(); filter++)
+            const size_t filter_start = nullable_filters[0] == final_flags_ptr ? 1 : 0;
+            for (size_t filter = filter_start; filter < nullable_filters.size(); filter++)
             {
                 for (size_t i = row_begin; i < row_end; i++)
                     final_flags[i] |= nullable_filters[filter][i];

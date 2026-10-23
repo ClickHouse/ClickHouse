@@ -5,7 +5,6 @@
 #include <Backups/BackupIO_Default.h>
 #include <Disks/DiskType.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
-#include <Common/BlobStorageLogWriter.h>
 
 
 namespace DB
@@ -82,8 +81,6 @@ public:
     UInt64 getFileSize(const String & file_name) override;
     std::unique_ptr<WriteBuffer> writeFile(const String & file_name) override;
     std::unique_ptr<WriteBuffer> writeFileIfNotExists(const String & file_name) override;
-    /// `writeFileIfNotExists` writes with `If-None-Match: *`, so it cannot replace an existing blob.
-    bool supportsAtomicCreateIfNotExists() const override { return true; }
 
     void copyDataToFile(
         const String & path_in_backup,
@@ -111,7 +108,6 @@ private:
     String blob_path;
     std::unique_ptr<AzureObjectStorage> object_storage;
     std::shared_ptr<const AzureBlobStorage::RequestSettings> settings;
-    BlobStorageLogWriterPtr blob_storage_log;
 };
 
 }

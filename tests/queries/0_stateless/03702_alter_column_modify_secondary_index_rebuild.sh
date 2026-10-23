@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # Tags: no-parallel-replicas
 # no-parallel-replicas: The EXPLAIN output is completely different
 # add_minmax_index_for_numeric_columns=0: Changes the plan and rows read
@@ -11,7 +11,7 @@ CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default=legacy"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS test_table;"
 
 wait_for_mutations() {
-    while clickhouse_test_time_left ;
+    while : ;
     do
         count=$(${CLICKHOUSE_CLIENT} --query="SELECT count() FROM system.mutations WHERE database = '$CLICKHOUSE_DATABASE' AND table = 'test_table' and is_done = 0")
         [[ $count != 0 ]] || break

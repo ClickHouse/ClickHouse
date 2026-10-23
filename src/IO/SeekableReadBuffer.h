@@ -128,7 +128,7 @@ public:
 
 using SeekableReadBufferPtr = std::shared_ptr<SeekableReadBuffer>;
 
-/// Wraps a reference to a SeekableReadBuffer into a unique pointer to SeekableReadBuffer.
+/// Wraps a reference to a SeekableReadBuffer into an unique pointer to SeekableReadBuffer.
 /// This function is like wrapReadBufferReference() but for SeekableReadBuffer.
 std::unique_ptr<SeekableReadBuffer> wrapSeekableReadBufferReference(SeekableReadBuffer & ref);
 std::unique_ptr<SeekableReadBuffer> wrapSeekableReadBufferPointer(SeekableReadBufferPtr ptr);
@@ -136,8 +136,5 @@ std::unique_ptr<SeekableReadBuffer> wrapSeekableReadBufferPointer(SeekableReadBu
 /// Helper for implementing readBigAt().
 /// Updates *out_bytes_copied after each call to the callback, as well as at the end.
 void copyFromIStreamWithProgressCallback(std::istream & istr, char * to, size_t n, const std::function<bool(size_t)> & progress_callback, size_t * out_bytes_copied, bool * out_cancelled = nullptr);
-
-/// The same for a ReadBuffer source.
-void copyFromReadBufferWithProgressCallback(ReadBuffer & in, char * to, size_t n, const std::function<bool(size_t)> & progress_callback, size_t * out_bytes_copied, bool * out_cancelled = nullptr);
 
 }

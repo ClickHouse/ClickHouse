@@ -1,0 +1,6 @@
+-- remote read of a table
+90
+-- remote read of a view with SETTINGS
+90
+-- remote read of a view with SETTINGS, explicit SET ROLE
+90

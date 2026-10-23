@@ -313,30 +313,6 @@ def test_refreshable_mv_in_read_only_node(started_cluster, cleanup):
     )
 
 
-def test_refresh_requested_on_read_only_node_runs_elsewhere(started_cluster, cleanup):
-    for node in [node1, reading_node]:
-        node.query(
-            f"create database re engine = Replicated('/test/re_{test_idx}', 'shard1', '{{replica}}');"
-        )
-    node1.query(
-        "create materialized view re.a refresh every 1 year (x Int64) engine ReplicatedMergeTree order by x empty as select number*10 as x from numbers(2)"
-    )
-    reading_node.query("system sync database replica re")
-    wait_until_view_registered(reading_node, "a")
-
-    # A read-only replica cannot refresh, so a writable one runs its request after a Keeper session timeout,
-    # and the wait covers that.
-    reading_node.query("system refresh view re.a")
-    reading_node.query("system wait view re.a", timeout=180)
-    assert node1.query("select count() from re.a") == "2\n"
-    assert (
-        reading_node.query(
-            "select last_refresh_replica from system.view_refreshes where view = 'a'"
-        )
-        == "1\n"
-    )
-
-
 def test_refreshable_mv_in_read_only_node_no_ddl(started_cluster, cleanup):
     node1.query(
         f"create database re engine = Replicated('/test/re_{test_idx}', 'shard1', '{{replica}}');"

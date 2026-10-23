@@ -61,7 +61,7 @@ Possible values:
 
 Controls whether skipping indexes are used when executing a query with the FINAL modifier.
 
-Skip indexes may exclude rows (granules) containing the latest data, which could lead to incorrect results from a query with the `FINAL` modifier. When this setting is enabled, skipping indexes are applied even with the `FINAL` modifier, potentially improving performance. Correct results still depend on setting `use_skip_indexes_if_final_exact_mode`, which is enabled by default and scans the additional parts that overlap the ranges returned by the skip index. The risk of missing recent updates applies only if that setting is disabled.
+Skip indexes may exclude rows (granules) containing the latest data, which could lead to incorrect results from a query with the FINAL modifier. When this setting is enabled, skipping indexes are applied even with the FINAL modifier, potentially improving performance but with the risk of missing recent updates. This setting should be enabled in sync with the setting use_skip_indexes_if_final_exact_mode (default is enabled).
 
 Possible values:
 
@@ -87,7 +87,7 @@ Possible values:
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "1"},{"label": "Default enable"}]}, {"id": "row-2","items": [{"label": "25.9"},{"label": "0"},{"label": "New setting"}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "The text index is now GA"}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "0"},{"label": "Default enable"}]}, {"id": "row-3","items": [{"label": "25.9"},{"label": "0"},{"label": "New setting"}]}]}/>
 
 Enable using data skipping indexes during data reading.
 

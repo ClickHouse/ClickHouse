@@ -8,7 +8,6 @@ doc_type: 'reference'
 ---
 
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
-import { PrivatePreviewBadge } from "/snippets/pt-BR/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 <Image img="/images/cloud/reference/architecture.webp" size="lg" alt="Arquitetura da Cloud" />
 
@@ -67,17 +66,9 @@ No GCP e no Azure, os serviços têm isolamento de armazenamento de objetos (tod
 
 [computação-computação separation](/pt-BR/products/cloud/features/infrastructure/warehouses) permite criar vários grupos de nós de computação, cada um com sua própria URL de serviço, que usam o mesmo armazenamento de objetos compartilhado. Isso permite isolar a computação para diferentes casos de uso, como separar leituras de gravações, mantendo os mesmos dados compartilhados. Também resulta em um uso mais eficiente dos recursos, ao permitir o escalonamento independente dos grupos de computação conforme necessário.
 
-## On-Demand Compute {#on-demand-compute}
-
-<PrivatePreviewBadge />
-
-O On-Demand Compute atribui temporariamente **workers** de um pool gerenciado pela ClickHouse a workloads compatíveis por meio do seu ClickHouse Cloud serviço já existente. Seu serviço autentica e coordena a consulta, enquanto os workers atribuídos executam a maior parte do trabalho elegível de scan, join e aggregation fora da computação do serviço. O pool é compartilhado entre os serviços do ClickHouse Cloud, mas cada worker atende a apenas um serviço por vez.
-
-Durante o private preview, o On-Demand Compute é compatível apenas com consultas `SELECT` elegíveis. A disponibilidade é de melhor esforço, o desempenho varia e os SLOs e SLAs do ClickHouse Cloud não se aplicam.
-
-[Termos de serviço do Private Preview](https://clickhouse.com/legal/agreements/private-preview-terms-of-service)
-
-## Limites de concorrência {#concurrency-limits}
+<div id="concurrency-limits">
+  ## Limites de concorrência
+</div>
 
 Não há limite para o número de consultas por segundo (QPS) no seu serviço ClickHouse Cloud. No entanto, há um limite de 1000 consultas simultâneas por réplica. Em última instância, o QPS depende do tempo médio de execução das consultas e do número de réplicas no seu serviço.
 

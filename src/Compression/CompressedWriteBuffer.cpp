@@ -27,8 +27,6 @@ void CompressedWriteBuffer::nextImpl()
     chassert(offset() <= INT_MAX);
     UInt32 decompressed_size = static_cast<UInt32>(offset());
     UInt32 compressed_reserve_size = codec->getCompressedReserveSize(decompressed_size);
-    if (uncompressed_codec)
-        compressed_reserve_size = std::max(compressed_reserve_size, uncompressed_codec->getCompressedReserveSize(decompressed_size));
 
     /** During compression we need buffer with capacity >= compressed_reserve_size + CHECKSUM_SIZE.
       *
@@ -38,33 +36,30 @@ void CompressedWriteBuffer::nextImpl()
       * If output buffer does not have necessary capacity. Compress data into a temporary buffer.
       * Then we can write checksum and copy the temporary buffer into the output buffer.
       */
-    const bool compress_in_place = out.available() >= compressed_reserve_size + sizeof(CityHash_v1_0_2::uint128);
-    char * compressed_ptr = nullptr;
-    if (compress_in_place)
+    if (out.available() >= compressed_reserve_size + sizeof(CityHash_v1_0_2::uint128))
     {
-        compressed_ptr = out.position() + sizeof(CityHash_v1_0_2::uint128);
+        char * out_compressed_ptr = out.position() + sizeof(CityHash_v1_0_2::uint128);
+        UInt32 compressed_size = codec->compress(working_buffer.begin(), decompressed_size, out_compressed_ptr);
+
+        CityHash_v1_0_2::uint128 checksum = CityHash_v1_0_2::CityHash128(out_compressed_ptr, compressed_size);
+
+        writeBinaryLittleEndian(checksum.low64, out);
+        writeBinaryLittleEndian(checksum.high64, out);
+
+        out.position() += compressed_size;
     }
     else
     {
         compressed_buffer.resize(compressed_reserve_size);
-        compressed_ptr = compressed_buffer.data();
-    }
+        UInt32 compressed_size = codec->compress(working_buffer.begin(), decompressed_size, compressed_buffer.data());
 
-    UInt32 compressed_size = codec->compress(working_buffer.begin(), decompressed_size, compressed_ptr);
+        CityHash_v1_0_2::uint128 checksum = CityHash_v1_0_2::CityHash128(compressed_buffer.data(), compressed_size);
 
-    /// The block is stored as is if compression saves less than 1/8 of its size.
-    if (uncompressed_codec && static_cast<UInt64>(compressed_size) * 8 > static_cast<UInt64>(decompressed_size) * 7)
-        compressed_size = uncompressed_codec->compress(working_buffer.begin(), decompressed_size, compressed_ptr);
+        writeBinaryLittleEndian(checksum.low64, out);
+        writeBinaryLittleEndian(checksum.high64, out);
 
-    CityHash_v1_0_2::uint128 checksum = CityHash_v1_0_2::CityHash128(compressed_ptr, compressed_size);
-
-    writeBinaryLittleEndian(checksum.low64, out);
-    writeBinaryLittleEndian(checksum.high64, out);
-
-    if (compress_in_place)
-        out.position() += compressed_size;
-    else
         out.write(compressed_buffer.data(), compressed_size);
+    }
 
     growAdaptiveBufferAfterFlush();
 }
@@ -92,12 +87,6 @@ void CompressedWriteBuffer::cancelImpl() noexcept
 {
     BufferWithOwnMemory<WriteBuffer>::cancelImpl();
     out.cancel();
-}
-
-void CompressedWriteBuffer::storeIncompressibleBlocksUncompressed()
-{
-    chassert(!codec->isEncryption());
-    uncompressed_codec = CompressionCodecFactory::instance().get("NONE", {});
 }
 
 void CompressedWriteBuffer::setCodec(CompressionCodecPtr codec_)

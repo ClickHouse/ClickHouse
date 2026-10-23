@@ -16,7 +16,6 @@
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <IO/ReadBuffer.h>
-#include <IO/WriteBuffer.h>
 
 #include <cstddef>
 #include <memory>
@@ -96,16 +95,6 @@ public:
 
     /// Same as the above but normalize state types so that variants with the same binary representation will use the same type.
     virtual DataTypePtr getNormalizedStateType() const;
-
-    /// State type for a pass-through combinator - one that stores nested states inside its own state
-    /// and forwards `isVersioned` / `getDefaultVersion` to the nested function (`-If`, `-Array`,
-    /// `-ForEach`, `-Map`, `-ArgMin` / `-ArgMax`, `-OrNull` / `-OrDefault`, `-Resample`, `-Distinct`,
-    /// and the implicit adaptor for `Nullable` arguments).
-    /// If the nested function spells its current state version out in its state type, the combinator's
-    /// state type must spell the same version: a fresh state column otherwise falls back to the legacy
-    /// default version on local serialization round trips of the column (`groupArray` over the states,
-    /// sorting, views), losing the information the newer version carries.
-    DataTypePtr getStateTypeWithVersionOf(const IAggregateFunction & nested) const;
 
     /// Identifies the state representation variant used by this function.
     /// The default is Aggregation (normal GROUP BY implementation).
@@ -282,16 +271,6 @@ public:
     /// Devirtualize serialize call.
     virtual void serializeBatch(const PaddedPODArray<AggregateDataPtr> & data, size_t start, size_t size, WriteBuffer & buf, std::optional<size_t> version = std::nullopt) const = 0; /// NOLINT
 
-    /// An upper bound on the bytes `serialize` writes, if one exists. When it does, `serializeBatch`
-    /// fills the destination buffer with states back to back through `serializeToMemory` instead of
-    /// going through the WriteBuffer once per field. Returning a value requires overriding
-    /// `serializeToMemory` too.
-    virtual std::optional<size_t> getSerializedSizeBound(std::optional<size_t> /*version*/) const { return std::nullopt; }
-
-    /// Writes exactly what `serialize` writes into `dst`, which holds at least
-    /// `getSerializedSizeBound` bytes, and returns the position past the last byte written.
-    virtual char * serializeToMemory(ConstAggregateDataPtr __restrict place, char * dst, std::optional<size_t> version) const;
-
     /// Deserializes state. This function is called only for empty (just created) states.
     virtual void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version = std::nullopt, Arena * arena = nullptr) const = 0; /// NOLINT
 
@@ -340,14 +319,6 @@ public:
       */
     virtual bool isState() const { return false; }
 
-    /** How the finalized value of a merged state relates to the finalized values of the states
-      * being merged; see the `MergedValueBound` enum. A function may declare a bound only if the
-      * relation holds exactly for any set of states and any data, and its `insertResultInto` does
-      * not modify the state (the values of partial states are peeked before they are merged).
-      * The safe default is `Unknown`, which excludes the function from the threshold merge.
-      */
-    virtual MergedValueBound getMergedValueBound() const { return MergedValueBound::Unknown; }
-
     /** The inner loop that uses the function pointer is better than using the virtual function.
       * The reason is that in the case of virtual functions GCC 5.1.2 generates code,
       *  which, at each iteration of the loop, reloads the function address (the offset value in the virtual function table) from memory to the register.
@@ -368,21 +339,6 @@ public:
         const IColumn ** columns,
         Arena * arena,
         ssize_t if_argument_pos = -1) const = 0;
-
-    /** A version of `addBatch` for callers that guarantee that every entry in `places` is non-null.
-      * Implementations that don't benefit from this guarantee can use the default implementation.
-      */
-    virtual void addBatchWithNonNullPlaces( /// NOLINT
-        size_t row_begin,
-        size_t row_end,
-        AggregateDataPtr * places,
-        size_t place_offset,
-        const IColumn ** columns,
-        Arena * arena,
-        ssize_t if_argument_pos = -1) const
-    {
-        addBatch(row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
-    }
 
     /// The version of "addBatch", that handle sparse columns as arguments.
     virtual void addBatchSparse(
@@ -419,7 +375,7 @@ public:
         size_t row_end,
         AggregateDataPtr __restrict place,
         const IColumn ** columns,
-        Arena * arena) const;
+        Arena * arena) const = 0;
 
     /** The same for single place when need to aggregate only filtered data.
       * Instead of using an if-column, the condition is combined inside the null_map
@@ -447,17 +403,6 @@ public:
         const UInt64 * offsets,
         Arena * arena) const = 0;
 
-    /** Row `i` of [row_begin, row_end) goes to the state at `place + (i - row_begin) * place_stride`.
-      * Used by -ForEach, whose nested states for one array are consecutive.
-      */
-    virtual void addBatchConsecutivePlaces(
-        size_t row_begin,
-        size_t row_end,
-        AggregateDataPtr __restrict place,
-        size_t place_stride,
-        const IColumn ** columns,
-        Arena * arena) const = 0;
-
     /** The case when the aggregation key is UInt8
       * and pointers to aggregation states are stored in AggregateDataPtr[256] lookup table.
       */
@@ -479,18 +424,6 @@ public:
         size_t row_begin,
         size_t row_end,
         AggregateDataPtr * places,
-        size_t place_offset,
-        IColumn & to,
-        Arena * arena) const = 0;
-
-    /** The same devirtualized loop, but the states stay usable afterwards (`insertResultInto`
-      * guarantees it) - for peeking the values of live states, e.g. by the top-K threshold
-      * merge, which ranks partial states by value before deciding which ones to merge.
-      */
-    virtual void insertResultIntoBatchWithoutDestroying(
-        size_t row_begin,
-        size_t row_end,
-        const AggregateDataPtr * places,
         size_t place_offset,
         IColumn & to,
         Arena * arena) const = 0;
@@ -526,23 +459,21 @@ public:
       */
     virtual AggregateFunctionPtr getNestedFunction() const { return {}; }
 
-    /** Whether the function answers the same for the same input. `groupArraySample` without an explicit
-      * seed draws from a thread-local generator for every state it creates, so it does not - and an
-      * expression that runs it (`arrayReduce('groupArraySample(2)', ...)`) must not be presented to the
-      * optimizer as deterministic. Combinators propagate the wrapped function's answer.
-      */
-    virtual bool isDeterministic() const
-    {
-        if (auto nested = getNestedFunction())
-            return nested->isDeterministic();
-        return true;
-    }
-
     const DataTypePtr & getResultType() const override { return result_type; }
     const DataTypes & getArgumentTypes() const override { return argument_types; }
 
     /// Returns the parameters passed to the constructor as is.
     const Array & getParameters() const override { return parameters; }
+
+    /// Whether DataTypeAggregateFunction::getName() should print parameters with ::Type
+    /// suffixes so the type name round-trips losslessly. Default false.
+    virtual bool shouldPrintParametersWithTypes() const
+    {
+        /// Combinators propagate the wrapped function's answer.
+        if (auto nested = getNestedFunction())
+            return nested->shouldPrintParametersWithTypes();
+        return false;
+    }
 
     // Any aggregate function can be calculated over a window, but there are some
     // window functions such as rank() that require a different interface, e.g.
@@ -554,12 +485,7 @@ public:
     // aggregate functions implement IWindowFunction interface and so on. This
     // would be more logically correct, but more complex. We only have a handful
     // of true window functions, so this hack-ish interface suffices.
-    virtual bool isOnlyWindowFunction() const
-    {
-        if (auto nested = getNestedFunction())
-            return nested->isOnlyWindowFunction();
-        return false;
-    }
+    virtual bool isOnlyWindowFunction() const { return false; }
 
     /// Description of AggregateFunction in form of name(parameters)(argument_types).
     String getDescription() const;
@@ -595,47 +521,6 @@ private:
     static void addFree(const IAggregateFunction * that, AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena)
     {
         static_cast<const Derived &>(*that).add(place, columns, row_num, arena);
-    }
-
-    /// Fills the buffer with states back to back, so the write cursor stays in a register across a
-    /// run instead of being reloaded from the WriteBuffer for every field.
-    void ALWAYS_INLINE serializeBatchToMemory(
-        const Derived * function,
-        const PaddedPODArray<AggregateDataPtr> & data,
-        size_t start,
-        size_t end,
-        WriteBuffer & buf,
-        size_t size_bound,
-        std::optional<size_t> version) const
-    {
-        chassert(size_bound > 0);
-
-        /// Hoisted: a store into the buffer may alias `data`, which would force a reload per state.
-        const AggregateDataPtr * places = data.data();
-
-        size_t i = start;
-        while (i < end)
-        {
-            buf.nextIfAtEnd();
-
-            if (buf.available() < size_bound)
-            {
-                /// The rest of the buffer cannot hold a whole state; let the generic path split it.
-                function->serialize(places[i], buf, version);
-                ++i;
-                continue;
-            }
-
-            char * dst = buf.position();
-            for (size_t run_end = i + std::min(end - i, buf.available() / size_bound); i < run_end; ++i)
-            {
-                char * state_begin = dst;
-                dst = function->serializeToMemory(places[i], dst, version);
-                /// Overrunning the declared bound would corrupt the buffer past working_buffer.end().
-                chassert(static_cast<size_t>(dst - state_begin) <= size_bound);
-            }
-            buf.position() = dst;
-        }
     }
 
 public:
@@ -680,47 +565,10 @@ public:
         }
     }
 
-    void addBatchWithNonNullPlaces( /// NOLINT
-        size_t row_begin,
-        size_t row_end,
-        AggregateDataPtr * places,
-        size_t place_offset,
-        const IColumn ** columns,
-        Arena * arena,
-        ssize_t if_argument_pos = -1) const override
-    {
-        if (if_argument_pos >= 0)
-        {
-            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-            for (size_t i = row_begin; i < row_end; ++i)
-            {
-                if (flags[i])
-                    static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, i, arena);
-            }
-        }
-        else
-        {
-            for (size_t i = row_begin; i < row_end; ++i)
-                static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, i, arena);
-        }
-    }
-
     void serializeBatch(const PaddedPODArray<AggregateDataPtr> & data, size_t start, size_t size, WriteBuffer & buf, std::optional<size_t> version) const final // NOLINT
     {
-        if (start >= size)
-            return;
-
-        const auto * derived = static_cast<const Derived *>(this);
-
-        if (std::optional<size_t> size_bound = derived->getSerializedSizeBound(version))
-        {
-            serializeBatchToMemory(derived, data, start, size, buf, *size_bound, version);
-            return;
-        }
-
-        const AggregateDataPtr * places = data.data();
         for (size_t i = start; i < size; ++i)
-            derived->serialize(places[i], buf, version);
+            static_cast<const Derived *>(this)->serialize(data[i], buf, version);
     }
 
     void createAndDeserializeBatch(
@@ -842,6 +690,27 @@ public:
         }
     }
 
+    void addBatchSparseSinglePlace(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        const auto & column_sparse = assert_cast<const ColumnSparse &>(*columns[0]);
+        const auto * values = &column_sparse.getValuesColumn();
+        const auto & offsets = column_sparse.getOffsetsData();
+
+        auto from = std::lower_bound(offsets.begin(), offsets.end(), row_begin) - offsets.begin() + 1;
+        auto to = std::lower_bound(offsets.begin(), offsets.end(), row_end) - offsets.begin() + 1;
+
+        size_t num_defaults = (row_end - row_begin) - (to - from);
+        if (from < to)
+            static_cast<const Derived *>(this)->addBatchSinglePlace(from, to, place, &values, arena, -1);
+        if (num_defaults > 0)
+            static_cast<const Derived *>(this)->addManyDefaults(place, &values, num_defaults, arena);
+    }
+
     void addBatchSinglePlaceNotNull( /// NOLINT
         size_t row_begin,
         size_t row_end,
@@ -887,18 +756,6 @@ public:
         }
     }
 
-    void addBatchConsecutivePlaces(
-        size_t row_begin,
-        size_t row_end,
-        AggregateDataPtr __restrict place,
-        size_t place_stride,
-        const IColumn ** columns,
-        Arena * arena) const override
-    {
-        for (size_t i = row_begin; i < row_end; ++i, place += place_stride)
-            static_cast<const Derived *>(this)->add(place, columns, i, arena);
-    }
-
     void addBatchLookupTable8(
         size_t row_begin,
         size_t row_end,
@@ -937,18 +794,6 @@ public:
                 init(place);
             static_cast<const Derived *>(this)->add(place + place_offset, columns, i, arena);
         }
-    }
-
-    void insertResultIntoBatchWithoutDestroying(
-        size_t row_begin,
-        size_t row_end,
-        const AggregateDataPtr * places,
-        size_t place_offset,
-        IColumn & to,
-        Arena * arena) const override
-    {
-        for (size_t i = row_begin; i < row_end; ++i)
-            static_cast<const Derived *>(this)->insertResultInto(places[i] + place_offset, to, arena);
     }
 
     void insertResultIntoBatch(

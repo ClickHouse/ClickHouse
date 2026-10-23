@@ -39,35 +39,7 @@ public:
     /// Disable constant folding: the per-query tags collector is not populated at analysis time.
     bool isSuitableForConstantFolding() const override { return false; }
 
-    /// The collector handles dictionary-encoded identifiers itself, resolving only the dictionary
-    /// keys referenced by some row. The default implementation would run the function over the
-    /// whole dictionary, and a shared dictionary can contain identifiers whose rows were all
-    /// filtered out and which are therefore unknown to the collector.
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
-    /// The declarative signature below is documentation-only — the exact accepted shapes
-    /// aren't expressible in the DSL yet: it advertises any `FixedString` (the helper
-    /// `checkArgumentTypeForID` accepts only `FixedString(16)`) and omits the
-    /// helper-accepted `LowCardinality` wrappers (`LowCardinality(UUID)` /
-    /// `LowCardinality(FixedString(16))`). The `ColumnsWithTypeAndName` override below is
-    /// authoritative (it runs the helper). Route the types-only path to it too, so the base
-    /// `IFunction::getReturnTypeImpl(DataTypes)` fallback never applies the approximate
-    /// signature string as a validator.
-    String getSignatureString() const override
-    {
-        return "(UInt64 | UInt128 | UUID | FixedString) -> UInt64";
-    }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        ColumnsWithTypeAndName columns;
-        columns.reserve(arguments.size());
-        for (const auto & type : arguments)
-            columns.emplace_back(nullptr, type, String{});
-        return getReturnTypeImpl(columns);
-    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -123,9 +95,9 @@ SELECT 8374283493092 AS id,
        timeSeriesGroupToTags(group)
         )",
         R"(
-┌────────────id─┬───────same_id─┬─throwIf(notEquals(same_id, id))─┬─group─┬─timeSeriesGroupToTags(group)───────────────────────────────────────┐
-│ 8374283493092 │ 8374283493092 │                               0 │     1 │ [('__name__','http_requests_count'),('env','dev'),('region','eu')] │
-└───────────────┴───────────────┴─────────────────────────────────┴───────┴────────────────────────────────────────────────────────────────────┘
+┌────────────id─┬───────same_id─┬─throwIf(notE⋯me_id, id))─┬─group─┬─timeSeriesGroupToTags(group)───────────────────────────────────────┐
+│ 8374283493092 │ 8374283493092 │                        0 │     1 │ [('__name__','http_requests_count'),('env','dev'),('region','eu')] │
+└───────────────┴───────────────┴──────────────────────────┴───────┴────────────────────────────────────────────────────────────────────┘
         )"
     }
     };

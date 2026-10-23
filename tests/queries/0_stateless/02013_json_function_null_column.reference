@@ -2,7 +2,6 @@
 \N	LowCardinality(Nullable(String))
 	String
 \N	Nullable(String)
-\N	LowCardinality(Nullable(String))
 	Nullable(String)
 \N	Nullable(Nothing)
 \N	Nullable(Nothing)
@@ -17,8 +16,6 @@ c
 1
 1
 a
-[]
-[]
 1
 1
 true

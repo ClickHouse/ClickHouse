@@ -150,7 +150,7 @@ private:
         {
         }
 
-        DeserializeBinaryBulkStatePtr cloneImpl(ISerialization::DeserializeBinaryBulkStateCloneContext &) const override
+        DeserializeBinaryBulkStatePtr clone() const override
         {
             return std::make_shared<DeserializeBinaryBulkStateObjectStructure>(*this);
         }
