@@ -37,6 +37,10 @@ DROP TABLE IF EXISTS t_enum_number_chain;
 CREATE TABLE t_enum_number_chain (x Enum8('z' = 1, 'a' = 2, '1' = 3), e Enum8('z' = 1, 'a' = 2, '1' = 3)) ENGINE = MergeTree ORDER BY x SETTINGS index_granularity = 1, index_granularity_bytes = 0;
 INSERT INTO t_enum_number_chain VALUES ('z', 'a');
 
+DROP TABLE IF EXISTS t_nested_tuple_partition;
+CREATE TABLE t_nested_tuple_partition (v Tuple(Tuple(String))) ENGINE = MergeTree ORDER BY tuple(v) PARTITION BY v SETTINGS index_granularity = 1, index_granularity_bytes = 0;
+INSERT INTO t_nested_tuple_partition VALUES ((('z'))), ((('a'))), ((('3')));
+
 SET optimize_and_compare_chain = 1, optimize_redundant_comparisons = 1;
 
 SELECT 'a' < CAST('z', 'Enum8(''z'' = 1, ''a'' = 2)'), materialize('a') < CAST('z', 'Enum8(''z'' = 1, ''a'' = 2)');
@@ -114,6 +118,10 @@ SELECT arraySort(groupArray(v.1)) FROM t_tuple_partition WHERE v < tuple(CAST(CA
 SELECT arraySort(groupArray(v.1)) FROM t_tuple_partition WHERE v < CAST(tuple(CAST(CAST('3', 'Enum8(''z'' = 1, ''a'' = 2, ''3'' = 3)') AS Dynamic)) AS Dynamic) SETTINGS optimize_use_implicit_projections = 0;
 SELECT arraySort(groupArray(t.1)) FROM t_tuple_key WHERE t < tuple(CAST(CAST('3', 'Enum8(''z'' = 1, ''a'' = 2, ''3'' = 3)') AS Dynamic)) SETTINGS optimize_use_implicit_projections = 0;
 
+-- the key analysis keeps the Enum order of a Dynamic tuple element that holds a tuple
+SELECT arraySort(groupArray(v.1.1)) FROM t_nested_tuple_partition WHERE v < tuple(CAST(tuple(CAST('3', 'Enum8(''z'' = 1, ''a'' = 2, ''3'' = 3)')) AS Dynamic)) SETTINGS optimize_use_implicit_projections = 0;
+SELECT arraySort(groupArray(v.1.1)) FROM t_nested_tuple_partition WHERE v < tuple(CAST(tuple(CAST('3', 'Enum8(''z'' = 1, ''a'' = 2, ''3'' = 3)')) AS Dynamic)) SETTINGS optimize_use_implicit_projections = 0, use_partition_pruning = 0;
+
 -- equality keeps the primary key of a string column
 SELECT s FROM t_string_key WHERE isNotDistinctFrom(s, CAST('a', 'Enum8(''z'' = 1, ''a'' = 2, ''m'' = 3)')) SETTINGS force_primary_key = 1, optimize_use_implicit_projections = 0;
 
@@ -129,3 +137,4 @@ DROP TABLE t_tuple_key;
 DROP TABLE t_tuple_partition;
 DROP TABLE t_enum_number_name;
 DROP TABLE t_enum_number_chain;
+DROP TABLE t_nested_tuple_partition;
