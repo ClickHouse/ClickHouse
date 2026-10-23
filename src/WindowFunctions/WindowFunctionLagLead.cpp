@@ -92,7 +92,7 @@ struct WindowFunctionLagLeadImpl final : public StatelessWindowFunction
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) const override
     {
-        const auto & current_block = transform->blocks.blockAt(transform->current.location.block);
+        const auto & current_block = transform->blocks.blockAt(transform->peers.current().location.block);
         IColumn & to = *current_block.result_columns[function_index];
         const auto & workspace = transform->workspaces[function_index];
 
@@ -101,7 +101,7 @@ struct WindowFunctionLagLeadImpl final : public StatelessWindowFunction
         {
             offset = (*current_block.materialized_columns[
                     workspace.argument_column_indices[1]])[
-                        transform->current.location.row].safeGet<Int64>();
+                        transform->peers.current().location.row].safeGet<Int64>();
 
             /// Either overflow or really negative value, both is not acceptable.
             if (offset < 0)
@@ -114,7 +114,7 @@ struct WindowFunctionLagLeadImpl final : public StatelessWindowFunction
 
         const int64_t distance = is_lead ? offset : -offset;
         const FrameBounds & frame = transform->frame.bounds();
-        const RowPoint & current = transform->current;
+        const RowPoint & current = transform->peers.current();
         const bool inside_frame = frame.start.row_index_in_partition - current.row_index_in_partition <= distance
             && distance < frame.end.row_index_in_partition - current.row_index_in_partition;
         if (!inside_frame)
@@ -125,7 +125,7 @@ struct WindowFunctionLagLeadImpl final : public StatelessWindowFunction
                 // Column with default values is specified.
                 const IColumn & default_column = *current_block.materialized_columns[workspace.argument_column_indices[2]];
 
-                to.insert(default_column[transform->current.location.row]);
+                to.insert(default_column[transform->peers.current().location.row]);
             }
             else
             {
