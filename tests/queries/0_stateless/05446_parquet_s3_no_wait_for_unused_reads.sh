@@ -12,7 +12,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-S3="s3('http://localhost:11111/test/${CLICKHOUSE_TEST_UNIQUE_NAME}.parquet', 'test', 'testtest', 'Parquet')"
+S3="s3('http://localhost:11111/test/${CLICKHOUSE_TEST_UNIQUE_NAME}.parquet', 'test', 'testtest', 'Parquet', 'a UInt64')"
 R=2097152
 SETTINGS="max_threads = 4, max_download_threads = 4, max_block_size = 65536, max_remote_read_network_bandwidth = 8388608,
     remote_filesystem_read_method = 'threadpool', use_page_cache_for_object_storage = 0, enable_filesystem_cache = 0,
@@ -33,6 +33,12 @@ ${CLICKHOUSE_CLIENT} --ignore-error -q "
     SELECT * FROM $S3 SETTINGS max_parsing_threads = 24, $SETTINGS, max_execution_time = 2, timeout_overflow_mode = 'throw', log_comment = '${Q}_t' FORMAT Null;
     SELECT 1 SETTINGS log_comment = '${Q}_t_next' FORMAT Null" 2>/dev/null
 
+# With one parsing thread the query thread itself waits for the read of row group 1, which takes 8 s at 2 MiB/s.
+${CLICKHOUSE_CLIENT} --ignore-error -q "
+    SELECT * FROM $S3 SETTINGS max_parsing_threads = 1, $SETTINGS, max_remote_read_network_bandwidth = 2097152,
+        max_execution_time = 2, timeout_overflow_mode = 'throw', log_comment = '${Q}_t1' FORMAT Null;
+    SELECT 1 SETTINGS log_comment = '${Q}_t1_next' FORMAT Null" 2>/dev/null
+
 ${CLICKHOUSE_CLIENT} -q "
     SYSTEM FLUSH LOGS query_log;
     SELECT
@@ -48,7 +54,14 @@ ${CLICKHOUSE_CLIENT} -q "
         dateDiff('ms', anyIf(query_start_time_microseconds, log_comment = '${Q}_t'),
             anyIf(query_start_time_microseconds, log_comment = '${Q}_t_next')) <= 2000 + 2500
     FROM system.query_log
-    WHERE current_database = currentDatabase() AND log_comment IN ('${Q}_t', '${Q}_t_next') AND type IN ('ExceptionWhileProcessing', 'QueryFinish')"
+    WHERE current_database = currentDatabase() AND log_comment IN ('${Q}_t', '${Q}_t_next') AND type IN ('ExceptionWhileProcessing', 'QueryFinish');
+    SELECT
+        count(),
+        anyIf(exception_code, log_comment = '${Q}_t1'),
+        dateDiff('ms', anyIf(query_start_time_microseconds, log_comment = '${Q}_t1'),
+            anyIf(query_start_time_microseconds, log_comment = '${Q}_t1_next')) <= 2000 + 2500
+    FROM system.query_log
+    WHERE current_database = currentDatabase() AND log_comment IN ('${Q}_t1', '${Q}_t1_next') AND type IN ('ExceptionWhileProcessing', 'QueryFinish')"
 
 # The cancelled read has not reached the end of the file, so it must not have cached a row count.
 ${CLICKHOUSE_CLIENT} -q "SELECT count() = 5 * $R FROM $S3 SETTINGS $SETTINGS"

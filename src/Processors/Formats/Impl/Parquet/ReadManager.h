@@ -119,6 +119,8 @@ private:
     std::exception_ptr exception;
     /// Protected by `delivery_mutex`.
     bool cancelled = false;
+    /// Protected by `delivery_mutex`. Set at the end of `init`: `cancel` doesn't interrupt reading the metadata.
+    bool initialized = false;
     /// Nullopt means that ReadManager reads all row groups
     std::optional<std::unordered_set<UInt64>> row_groups_to_read;
 

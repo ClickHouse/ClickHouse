@@ -113,6 +113,9 @@ void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, 
             finishRowGroupStage(i, ReadStage::NotStarted, diff);
     }
     flushMemoryUsageDiff(std::move(diff));
+
+    std::lock_guard lock(delivery_mutex);
+    initialized = true;
 }
 
 /// The ReadManager whose admitTopKRowGroups is running in this thread, to keep it from recursing.
@@ -189,11 +192,16 @@ ReadManager::~ReadManager()
 
 void ReadManager::cancel() noexcept
 {
+    bool stop_reads;
     {
         std::lock_guard lock(delivery_mutex);
         cancelled = true;
+        stop_reads = initialized;
     }
     delivery_cv.notify_all();
+    /// With the manual executor, `read` itself runs the decode tasks, which may be waiting for a read.
+    if (stop_reads)
+        reader.prefetcher.cancelReads();
 }
 
 void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, MemoryUsageDiff & diff)
@@ -1257,11 +1265,12 @@ ReadManager::ReadResult ReadManager::read()
         {
             bool thread_pool_was_idle = parser_shared_resources->parsing_runner.isIdle();
 
-            if (exception)
-                std::rethrow_exception(copyMutableException(exception));
-
+            /// Before `exception`: the reads stopped by `cancel` fail the tasks that wait for them.
             if (cancelled)
                 return {};
+
+            if (exception)
+                std::rethrow_exception(copyMutableException(exception));
 
             /// If `preserve_order`, only deliver chunks from `first_incomplete_row_group`.
             /// This ensures that row groups are delivered in order. Within a row group, row
