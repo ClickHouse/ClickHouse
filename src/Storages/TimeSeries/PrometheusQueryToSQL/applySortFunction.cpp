@@ -134,6 +134,10 @@ namespace
 
             builder.from_table = vector_grid;
 
+            /// Series without a sample at this step are not in the vector, so they must not take part in sorting.
+            builder.where = makeASTFunction("isNotNull",
+                makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(ColumnNames::Values), make_intrusive<ASTLiteral>(1u)));
+
             /// Gives `sorted_groups` the input order as `sort_rank`.
             if (!input_rank_subquery.empty())
             {
@@ -279,6 +283,20 @@ SQLQueryPiece applySortFunction(
     materializeSortRank(argument, makeSortedGroupsByKey(makeSortByValueKey(), function_name == "sort_desc"), context);
     argument.node = function_node;
     return std::move(argument);
+}
+
+void setLimitAggregationRank(SQLQueryPiece & query_piece, ASTPtr && bucket_key, bool descending, ConverterContext & context)
+{
+    /// The order finalizeSQL() gives a topk() / bottomk() result: by bucket, then by value with NaN last, then by tags.
+    ASTPtr value = makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(ColumnNames::Values), make_intrusive<ASTLiteral>(1u));
+    auto is_nan = makeASTFunction("isNaN", value->clone());
+    auto sort_key = makeASTFunction("tuple");
+    if (bucket_key)
+        sort_key->arguments->children.push_back(std::move(bucket_key));
+    sort_key->arguments->children.push_back(descending ? makeASTFunction("not", is_nan->clone()) : is_nan->clone());
+    sort_key->arguments->children.push_back(makeASTFunction("if", is_nan, make_intrusive<ASTLiteral>(0.0), value));
+    sort_key->arguments->children.push_back(makeTagsExpression());
+    materializeSortRank(query_piece, makeSortedGroupsByKey(std::move(sort_key), descending), context);
 }
 
 ASTPtr makeSortSourceOfMergedRow(ASTPtr group, ASTPtr values)

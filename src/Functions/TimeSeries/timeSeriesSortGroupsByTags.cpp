@@ -457,7 +457,8 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
-        auto tag_names = TimeSeriesTagsFunctionHelpers::extractConstTagNamesFromArgument(name, arguments, 1);
+        /// An empty name is allowed: as in Prometheus, it names a label no series has.
+        auto tag_names = TimeSeriesTagsFunctionHelpers::extractConstStringsFromArgument(name, arguments, 1);
         bool descending = arguments[2].column->getBool(0);
 
         auto groups_column = arguments[0].column->convertToFullColumnIfConst();

@@ -160,6 +160,27 @@ promql_client -q "sort_by_label(sort(lz), 'instance')"
 echo "-- sort_by_label(abs(sort_desc(lz)), 'instance'): the order of Prometheus 3.5"
 promql_client -q "sort_by_label(abs(sort_desc(lz)), 'instance')"
 
+echo "-- sort_by_label(cyc < 44, 'instance'): series filtered out do not take part in sorting, as in Prometheus 3.5"
+promql_client -q "sort_by_label(cyc < 44, 'instance')"
+
+echo "-- sort_by_label_desc(topk(3, lz), 'instance'): the sort starts from the order of topk(), as in Prometheus 3.5"
+promql_client -q "sort_by_label_desc(topk(3, lz), 'instance')"
+
+echo "-- sort_by_label(topk(3, lz), 'instance'): the order of Prometheus 3.5"
+promql_client -q "sort_by_label(topk(3, lz), 'instance')"
+
+echo "-- sort_by_label(bottomk(3, lz), 'instance'): the order of Prometheus 3.5"
+promql_client -q "sort_by_label(bottomk(3, lz), 'instance')"
+
+echo "-- sort_by_label_desc(bottomk(3, lz), 'instance'): the order of Prometheus 3.5"
+promql_client -q "sort_by_label_desc(bottomk(3, lz), 'instance')"
+
+echo "-- sort_by_label(up, ''): an empty label name is accepted and sorts by all labels, as in Prometheus"
+promql_client -q "sort_by_label(up, '')"
+
+echo "-- sort_by_label_desc(up, ''): reverse of the above"
+promql_client -q "sort_by_label_desc(up, '')"
+
 echo "-- abs(sort_by_label(mem, 'host')): abs() keeps the order fixed by sort_by_label()"
 promql_client -q "abs(sort_by_label(mem, 'host'))"
 

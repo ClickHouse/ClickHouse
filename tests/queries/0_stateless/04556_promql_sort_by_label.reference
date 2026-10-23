@@ -98,6 +98,36 @@
 [('instance','host01')]	2023-11-14 22:13:20.000	51
 [('instance','host1')]	2023-11-14 22:13:20.000	52
 [('instance','host001')]	2023-11-14 22:13:20.000	53
+-- sort_by_label(cyc < 44, 'instance'): series filtered out do not take part in sorting, as in Prometheus 3.5
+[('__name__','cyc'),('instance','host99')]	2023-11-14 22:13:20.000	41
+[('__name__','cyc'),('instance','host923')]	2023-11-14 22:13:20.000	42
+[('__name__','cyc'),('instance','host9223372036854775807')]	2023-11-14 22:13:20.000	43
+-- sort_by_label_desc(topk(3, lz), 'instance'): the sort starts from the order of topk(), as in Prometheus 3.5
+[('__name__','lz'),('instance','host001')]	2023-11-14 22:13:20.000	53
+[('__name__','lz'),('instance','host1')]	2023-11-14 22:13:20.000	52
+[('__name__','lz'),('instance','host01')]	2023-11-14 22:13:20.000	51
+-- sort_by_label(topk(3, lz), 'instance'): the order of Prometheus 3.5
+[('__name__','lz'),('instance','host01')]	2023-11-14 22:13:20.000	51
+[('__name__','lz'),('instance','host1')]	2023-11-14 22:13:20.000	52
+[('__name__','lz'),('instance','host001')]	2023-11-14 22:13:20.000	53
+-- sort_by_label(bottomk(3, lz), 'instance'): the order of Prometheus 3.5
+[('__name__','lz'),('instance','host001')]	2023-11-14 22:13:20.000	53
+[('__name__','lz'),('instance','host1')]	2023-11-14 22:13:20.000	52
+[('__name__','lz'),('instance','host01')]	2023-11-14 22:13:20.000	51
+-- sort_by_label_desc(bottomk(3, lz), 'instance'): the order of Prometheus 3.5
+[('__name__','lz'),('instance','host01')]	2023-11-14 22:13:20.000	51
+[('__name__','lz'),('instance','host1')]	2023-11-14 22:13:20.000	52
+[('__name__','lz'),('instance','host001')]	2023-11-14 22:13:20.000	53
+-- sort_by_label(up, ''): an empty label name is accepted and sorts by all labels, as in Prometheus
+[('__name__','up'),('instance','host1')]	2023-11-14 22:13:20.000	1
+[('__name__','up'),('instance','host10')]	2023-11-14 22:13:20.000	10
+[('__name__','up'),('instance','host2')]	2023-11-14 22:13:20.000	2
+[('__name__','up'),('instance','host20')]	2023-11-14 22:13:20.000	20
+-- sort_by_label_desc(up, ''): reverse of the above
+[('__name__','up'),('instance','host20')]	2023-11-14 22:13:20.000	20
+[('__name__','up'),('instance','host2')]	2023-11-14 22:13:20.000	2
+[('__name__','up'),('instance','host10')]	2023-11-14 22:13:20.000	10
+[('__name__','up'),('instance','host1')]	2023-11-14 22:13:20.000	1
 -- abs(sort_by_label(mem, 'host')): abs() keeps the order fixed by sort_by_label()
 [('dc','us'),('host','a')]	2023-11-14 22:13:20.000	12
 [('dc','us'),('host','b')]	2023-11-14 22:13:20.000	11

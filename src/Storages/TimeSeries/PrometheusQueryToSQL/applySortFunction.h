@@ -17,6 +17,10 @@ bool isSortFunction(std::string_view function_name);
 SQLQueryPiece applySortFunction(
     const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context);
 
+/// Gives the result of topk() / bottomk() its order as a rank map, so an outer sort*() call starts from it.
+/// `bucket_key` is the tags of the aggregation group, or nullptr without `by` / `without`.
+void setLimitAggregationRank(SQLQueryPiece & query_piece, ASTPtr && bucket_key, bool descending, ConverterContext & context);
+
 /// Returns `anyIf(group, isNotNull(values[1]))`: the source series of a row merged by GROUP BY.
 /// It's the one with a value at the step, because an ordered result has only one step.
 ASTPtr makeSortSourceOfMergedRow(ASTPtr group, ASTPtr values);
