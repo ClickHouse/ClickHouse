@@ -84,7 +84,7 @@ MergeTreeSink::MergeTreeSink(
 {
     LOG_TEST(storage.log, "Create MergeTreeSink, deduplicate={}", deduplicate);
 
-    defer_fsync = DeferredPartsSync::isEnabled(storage);
+    defer_fsync = DeferredPartsSync::isEnabled(storage, metadata_snapshot);
 
     /// It's only allowed to throw "too many parts" before write,
     /// because interrupting long-running INSERT query in the middle is not convenient for users.

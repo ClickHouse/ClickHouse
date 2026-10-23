@@ -97,18 +97,31 @@ void parallelSyncFiles(const std::vector<const MergeTreeWriterStream *> & stream
     parallelSyncImpl(streams, [](const MergeTreeWriterStream * stream) { stream->sync(); });
 }
 
-void parallelSyncPaths(const std::vector<std::string> & paths)
+void parallelSyncPaths(const std::vector<std::string> & paths, const std::function<void(size_t)> & on_failure)
 {
     /// Group the files into batches, so that the number of tasks does not depend on the number of files.
     static constexpr size_t batch_size = 64;
-    std::vector<std::vector<std::string>> batches;
+    std::vector<std::pair<size_t, size_t>> batches;
     for (size_t i = 0; i < paths.size(); i += batch_size)
-        batches.emplace_back(paths.begin() + i, paths.begin() + std::min(paths.size(), i + batch_size));
+        batches.emplace_back(i, std::min(paths.size(), i + batch_size));
 
-    parallelSyncImpl(batches, [](const std::vector<std::string> & batch)
+    /// The tasks may not capture locals by reference, see `parallelSyncImpl`.
+    const auto * paths_ptr = &paths;
+    const auto * on_failure_ptr = &on_failure;
+    parallelSyncImpl(batches, [paths_ptr, on_failure_ptr](const std::pair<size_t, size_t> & batch)
     {
-        for (const auto & path : batch)
-            syncPath(path);
+        for (size_t i = batch.first; i < batch.second; ++i)
+        {
+            try
+            {
+                syncPath((*paths_ptr)[i]);
+            }
+            catch (...)
+            {
+                (*on_failure_ptr)(i);
+                throw;
+            }
+        }
     });
 }
 

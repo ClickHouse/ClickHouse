@@ -151,7 +151,7 @@ ReplicatedMergeTreeSink::ReplicatedMergeTreeSink(
             ErrorCodes::LOGICAL_ERROR,
             "Should be checked earlier: async inserts with quorum only make sense with enabled insert_quorum_parallel setting");
 
-    defer_fsync = DeferredPartsSync::isEnabled(storage);
+    defer_fsync = DeferredPartsSync::isEnabled(storage, metadata_snapshot);
 
     LOG_TEST(log, "Create ReplicatedMergeTreeSink {} async_insert={}, deduplicate={}, quorum_size={}, max_parts_per_block={}, quorum_parallel={}, is_attach={}",
         storage.getStorageID().getNameForLogs(),
