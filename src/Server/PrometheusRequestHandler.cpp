@@ -514,6 +514,10 @@ public:
                 return;
             }
 
+            /// Check the grant before the lookup, so a missing table gives the same error as an existing one.
+            if (uri_path.ends_with("/federate"))
+                context->checkAccess(AccessType::SELECT, getTimeSeriesTableID());
+
             auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
             PrometheusHTTPProtocolAPI protocol{table, context};
 

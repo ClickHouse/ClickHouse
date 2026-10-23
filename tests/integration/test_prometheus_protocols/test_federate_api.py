@@ -141,3 +141,47 @@ def test_federate_bad_selector():
     response = federate({"match[]": "rate(fed_cpu[5m])"}, expected_status=400)
     assert response.headers["Content-Type"] == "application/json"
     federate({"match[]": "fed_cpu{"}, expected_status=400)
+
+
+@pytest.fixture(scope="module")
+def federate_users():
+    node.query("CREATE USER fed_reader, fed_target_only IDENTIFIED BY 'fed'")
+    inner_tables = node.query(
+        "SELECT name FROM system.tables WHERE database = 'default' AND name LIKE '.inner%'"
+    ).split()
+    for table in inner_tables:
+        node.query(f"GRANT SELECT ON default.`{table}` TO fed_reader, fed_target_only")
+    # The generated query reads the target tables through a table function.
+    node.query("GRANT CREATE TEMPORARY TABLE ON *.* TO fed_reader, fed_target_only")
+    node.query("GRANT SELECT ON default.prometheus TO fed_reader")
+    yield
+    node.query("DROP USER fed_reader, fed_target_only")
+
+
+def federate_as(user, path, params):
+    return requests.get(f"http://{node.ip_address}:9093{path}", params=params, auth=(user, "fed"))
+
+
+# Without SELECT on the TimeSeries table, /federate is refused the same way whether the table exists or not.
+def test_federate_requires_select_on_source_table(federate_users):
+    for match in ([], ["fed_cpu"], ['{__name__=~"fed_.*"}', "fed_mem"]):
+        errors = []
+        for table in ("prometheus", "no_such_table"):
+            response = federate_as("fed_target_only", "/dynamic_table/federate", {"table": table, "match[]": match})
+            assert response.status_code == 400, response.text
+            error = response.json()["error"]
+            assert "Not enough privileges" in error, error
+            errors.append(error.replace(table, "<table>"))
+        assert errors[0] == errors[1]
+        response = federate_as("fed_target_only", "/federate", {"match[]": match})
+        assert response.status_code == 400 and response.json()["error"].replace("prometheus", "<table>") == errors[0]
+
+
+def test_federate_with_select_on_source_table(federate_users):
+    expected = federate({"match[]": "fed_cpu"}).text
+    assert expected
+    for path, params in (("/federate", {}), ("/dynamic_table/federate", {"table": "prometheus"})):
+        response = federate_as("fed_reader", path, {**params, "match[]": "fed_cpu"})
+        assert response.status_code == 200 and response.text == expected, response.text
+        response = federate_as("fed_reader", path, params)
+        assert response.status_code == 200 and response.text == "", response.text
