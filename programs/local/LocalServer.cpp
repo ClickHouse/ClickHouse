@@ -1297,6 +1297,9 @@ void LocalServer::connect()
 
     /// This is needed for table function input(...).
     ReadBuffer * in = nullptr;
+    /// Fallback for `COMPRESSION 'auto'` on the input() path: stdin's detected method, or the
+    /// `--table-file` name when reading a file (default_input_compression_method covers only stdin).
+    CompressionMethod input_compression_method = default_input_compression_method;
     auto table_file = getClientConfiguration().getString("table-file", "-");
     if (table_file == "-" || table_file == "stdin")
     {
@@ -1306,6 +1309,7 @@ void LocalServer::connect()
     {
         input = std::make_unique<ReadBufferFromFile>(table_file);
         in = input.get();
+        input_compression_method = chooseCompressionMethod(table_file, "");
     }
     /// Profile events feed only the progress bar and table, the interactive statistics, `--print-profile-events`
     /// and `--memory-usage`. Producing them is not free (the sample block loads the time zone), so skip them otherwise.
@@ -1317,6 +1321,7 @@ void LocalServer::connect()
 
     connection = LocalConnection::createConnection(
         connection_parameters, client_context, in, need_render_progress, send_profile_events, server_display_name);
+    static_cast<LocalConnection &>(*connection).setDefaultInputCompressionMethod(input_compression_method);
 }
 
 
