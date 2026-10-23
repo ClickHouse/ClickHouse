@@ -661,7 +661,7 @@ std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::initialize()
                         method,
                         getOffset(),
                         toString(response.getStatus()),
-                        response.getReason());
+                        scrubRequestCredentials(response.getReason(), current_uri.toString(), headerCredentialSecrets(http_header_entries)));
 
                 String explanation = fmt::format(
                     "Cannot read with range: [{}, {}] (response status: {}, reason: {}), will retry",
