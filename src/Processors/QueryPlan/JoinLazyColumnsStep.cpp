@@ -18,6 +18,9 @@ JoinLazyColumnsStep::JoinLazyColumnsStep(
     bool preserve_output_order_)
     : lazy_materializing_rows(std::move(lazy_materializing_rows_))
     , preserve_output_order(preserve_output_order_)
+    String index_column_name_)
+    : lazy_materializing_rows(std::move(lazy_materializing_rows_))
+    , index_column_name(std::move(index_column_name_))
 {
     updateInputHeaders({left_header_, right_header_});
 }
@@ -38,6 +41,7 @@ QueryPipelineBuilderPtr JoinLazyColumnsStep::updatePipeline(QueryPipelineBuilder
 
     auto transform = std::make_shared<LazyMaterializingTransform>(
         input_headers.front(), input_headers.back(), lazy_materializing_rows, dataflow_cache_updater, preserve_output_order);
+        input_headers.front(), input_headers.back(), lazy_materializing_rows, dataflow_cache_updater, index_column_name);
     transform->setPassThrough(pass_through);
     return QueryPipelineBuilder::mergePipelines(std::move(pipelines[0]), std::move(pipelines[1]), transform, &processors);
 }
@@ -45,7 +49,7 @@ QueryPipelineBuilderPtr JoinLazyColumnsStep::updatePipeline(QueryPipelineBuilder
 void JoinLazyColumnsStep::updateOutputHeader()
 {
     output_header = std::make_shared<const Block>(LazyMaterializingTransform::transformHeader(
-        *input_headers.front(), *input_headers.back()));
+        *input_headers.front(), *input_headers.back(), index_column_name));
 }
 
 void JoinLazyColumnsStep::setPassThrough(bool value)
