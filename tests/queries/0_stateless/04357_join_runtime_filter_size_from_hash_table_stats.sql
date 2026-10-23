@@ -9,10 +9,12 @@ SET query_plan_optimize_join_order_randomize = 0;
 SET join_algorithm = 'parallel_hash'; -- use a join algorithm that collects statistics.
 
 SET enable_join_runtime_filters = 1;
+SET join_runtime_filter_min_probe_rows = 0; -- the test asserts the filter is built, a higher threshold skips it.
 SET collect_hash_table_stats_during_joins = 1;
 SET join_runtime_bloom_filter_bytes = 256;
 SET join_runtime_filter_from_fixed_hash_table = 0; -- runtime filter from fixed hash table overrides bloom filter.
 SET join_runtime_filter_pass_ratio_threshold_for_disabling = 1; -- avoid disabling because of pass rate.
+SET join_runtime_bloom_filter_max_ratio_of_set_bits = 0.7; -- the saturation threshold the OFF case must cross.
 
 CREATE TABLE rf_build (k UInt64) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE rf_probe (k UInt64) ENGINE = MergeTree ORDER BY tuple();

@@ -20,8 +20,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # test is silently vacuous under compatibility randomization and on the old-analyzer job.
 settings="--enable_analyzer=1 --optimize_on_insert=1"
 
-# Settings that select the lazy branch, shared by every cell that must take it.
-lazy="query_plan_optimize_lazy_final = 1, min_filtered_ratio_for_lazy_final = 0.0"
+# Settings that select the lazy branch, shared by every cell that must take it. CI randomizes
+# `max_bytes_for_lazy_final` down to 1 byte, which truncates the key set and falls back to plain FINAL.
+lazy="query_plan_optimize_lazy_final = 1, min_filtered_ratio_for_lazy_final = 0.0, max_bytes_for_lazy_final = 0"
 
 $CLICKHOUSE_CLIENT $settings -q "
     DROP TABLE IF EXISTS t_null_u64;

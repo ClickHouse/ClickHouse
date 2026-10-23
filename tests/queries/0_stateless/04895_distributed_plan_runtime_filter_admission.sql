@@ -10,6 +10,9 @@ SET make_distributed_plan = 1, distributed_plan_execute_locally = 1, distributed
 SET log_processors_profiles = 1;
 SET max_rows_to_group_by = 0, query_plan_join_swap_table = 0, query_plan_optimize_join_order_randomize = 0;
 SET distributed_plan_join_runtime_filters = 1;
+-- CI randomizes the bloom filter down to 1 KiB, where it saturates and is dropped before it is
+-- sent, so no filter state reaches an exchange.
+SET join_runtime_bloom_filter_bytes = 524288;
 
 -- More estimated build keys than the probe site has rows: shipping the filter costs at least as
 -- much as it could ever save, so transport is refused and the filter stays local.

@@ -14,6 +14,9 @@ SET max_rows_to_group_by = 0, query_plan_join_swap_table = 0, query_plan_optimiz
 -- source, so pin them against test-level randomization.
 SET query_plan_optimize_join_order_algorithm = 'greedy', query_plan_optimize_join_order_limit = 10, use_hash_table_stats_for_join_reordering = 0, use_statistics = 0;
 SET distributed_plan_join_runtime_filters = 1;
+-- CI randomizes the bloom filter down to 1 KiB, where it saturates and is dropped before it is
+-- sent, so no filter state reaches an exchange.
+SET join_runtime_bloom_filter_bytes = 524288;
 
 -- The apply sites for both dimension filters sit in the fact-scan fragment, below both shuffle
 -- exchanges of the nested joins, so both filters must be wired to those scan tasks rather than

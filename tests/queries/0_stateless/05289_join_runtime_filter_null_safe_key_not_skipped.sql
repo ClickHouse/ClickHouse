@@ -1,3 +1,6 @@
+-- Tags: long
+-- long: joins 2M rows, up to 2 minutes on TSan, and parallel flaky-check runs push that past the time limit.
+
 -- https://github.com/ClickHouse/ClickHouse/issues/122167
 -- For `ON left.a = right.a AND left.b <=> right.b`, the runtime filter is built on `a` only,
 -- but the hash table statistics count distinct `(a, b)` pairs, which are many more than the distinct values of `a`.
@@ -15,6 +18,9 @@ SET enable_analyzer = 1, enable_parallel_replicas = 0;
 SET enable_join_runtime_filters = 1, join_algorithm = 'parallel_hash', collect_hash_table_stats_during_joins = 1,
     join_runtime_filter_size_from_hash_table_stats = 1, join_runtime_bloom_filter_max_ratio_of_set_bits = 0.05,
     query_plan_join_swap_table = 0;
+-- Pin (randomized in CI): the first run has no statistics to size the filter by, and a filter of
+-- 1024 bytes, or 10 hash functions per key, is too dense for 50000 keys, so it is dropped and checks no rows.
+SET join_runtime_bloom_filter_bytes = 524288, join_runtime_bloom_filter_hash_functions = 3;
 -- The hash table statistics are keyed by the join order optimization, which assigns no key when it is disabled.
 SET query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_randomize = 0;
 

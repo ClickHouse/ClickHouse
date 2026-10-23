@@ -4,6 +4,10 @@
 -- internal variant columns without updating the corresponding DataTypeVariant, creating
 -- column/type position mismatches in KeyCondition::tryPrepareSetColumnsForIndex.
 -- https://github.com/ClickHouse/ClickHouse/issues/97854
+-- Pin (randomized in CI): a spilled `IN` set keeps no explicit elements, so the index analysis
+-- and key lookups by the set that this test checks do not happen.
+SET max_bytes_before_external_set = 0;
+
 SET enable_analyzer=1;
 DROP TABLE IF EXISTS t_variant_lc;
 CREATE TABLE t_variant_lc (`id` Decimal(76, 70), `value` Int128) ENGINE = MergeTree ORDER BY (id, value);

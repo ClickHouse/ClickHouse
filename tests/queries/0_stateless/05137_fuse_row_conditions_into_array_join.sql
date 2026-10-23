@@ -2,6 +2,8 @@
 
 -- fusion is skipped for serialized plans, pin it so the plan-shape checks hold in the distributed-plan suite
 SET serialize_query_plan = 0;
+-- pin the fusion itself too (randomized in CI): the plan-shape checks below assert it happened
+SET query_plan_fuse_filter_into_array_join = 1;
 
 DROP TABLE IF EXISTS t_aj_row;
 CREATE TABLE t_aj_row (key String, n UInt8, nk Nullable(String), lc LowCardinality(String), arr Array(String), payload String) ENGINE = MergeTree ORDER BY tuple();

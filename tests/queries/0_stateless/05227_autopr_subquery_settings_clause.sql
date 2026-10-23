@@ -37,6 +37,14 @@ SET merge_tree_min_bytes_per_task_for_remote_reading=0;
 -- External aggregation is not supported at the moment, i.e., no statistics will be reported
 SET max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_by=0;
 
+-- These aggregation/merge settings are randomized in CI, and each can change which merge the output-bytes
+-- estimate is sampled from (read-stream count, adaptive vs single-level merge, the bucket / group-by Top-K
+-- pipelines), so pin them to their defaults, as with the block sizing above.
+SET enable_adaptive_aggregator=1, adaptive_aggregator_freeze_threshold=16384, adaptive_aggregator_freeze_threshold_bytes=4194304,
+    enable_parallel_single_level_merge=1, enable_packed_string_keys_in_aggregation=1, merge_tree_min_bytes_per_read_stream=65536,
+    query_plan_aggregation_bucket_top_k=1, enable_group_by_top_k_optimization=1, enable_group_by_top_k_dynamic_filtering=1,
+    group_by_top_k_optimization_observation_rows=65536, optimize_aggregation_in_order_limit=1;
+
 INSERT INTO t_autopr_subquery_settings SELECT number, number % 500 FROM numbers(1e5);
 INSERT INTO t_autopr_subquery_settings_mid SELECT number FROM numbers(300);
 

@@ -18,6 +18,10 @@ set read_in_order_two_level_merge_threshold = 100;
 -- `max_threads` is clamped to fewer threads and e.g. `Resize 16 → 4` becomes
 -- `Resize 16 → 3`. See PR #100383.
 set max_threads_min_free_memory_per_thread = 0;
+-- The volume-based stream cap is a second, unrelated limiter on the stream counts this
+-- test asserts: at 16Mi it caps `MergeTreeSelect x 32` down to the 16-stream floor.
+-- 0 disables it, matching the uncapped shape the reference was recorded with.
+set merge_tree_min_bytes_per_read_stream = 0;
 set max_insert_threads_min_free_memory_per_thread = 0;
 
 -- { echo }

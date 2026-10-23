@@ -83,7 +83,8 @@ SELECT mapUpdate(materialize(map('k1', 1, 'k2', 2)), materialize(map('k3', 33, '
 
 WITH (range(0, number % 10), range(0, number % 10))::Map(UInt64, UInt64) AS m1,
      (range(0, number % 10, 2), arrayMap(x -> x * x, range(0, number % 10, 2)))::Map(UInt64, UInt64) AS m2
-SELECT DISTINCT mapUpdate(m1, m2) FROM numbers (100000);
+SELECT DISTINCT mapUpdate(m1, m2) FROM numbers (100000)
+SETTINGS max_bytes_before_external_distinct = 0, max_bytes_ratio_before_external_distinct = 0; -- external DISTINCT emits rows in key order, not arrival order
 
 SELECT mapApply(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT mapApply((x, y) -> (x), map(1, 0, 2, 0)); -- { serverError BAD_ARGUMENTS }

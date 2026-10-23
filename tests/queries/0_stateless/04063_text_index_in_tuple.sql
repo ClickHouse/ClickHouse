@@ -1,3 +1,7 @@
+-- Pin (randomized in CI): a spilled `IN` set keeps no explicit elements, so the text index
+-- analysis by the set that this test checks does not happen.
+SET max_bytes_before_external_set = 0;
+
 DROP TABLE IF EXISTS tab_in_preprocess;
 
 CREATE TABLE tab_in_preprocess

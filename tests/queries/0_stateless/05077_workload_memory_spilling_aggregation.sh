@@ -17,6 +17,7 @@ trap cleanup EXIT
 
 # The per-operator thresholds are disabled, so the only spill trigger is the workload soft limit.
 # The adaptive aggregation stays enabled: its spill requests are served by draining the staged backlog.
+# The freeze thresholds stay at their defaults: a table that never freezes stages no backlog to drain.
 settings=(
   --workload "$workload"
   --max_rows_to_read 0
@@ -24,6 +25,8 @@ settings=(
   --max_bytes_ratio_before_external_group_by 0
   --max_threads 4
   --min_bytes_to_spill 8Mi
+  --adaptive_aggregator_freeze_threshold 16384
+  --adaptive_aggregator_freeze_threshold_bytes 4194304
 )
 $CLICKHOUSE_CLIENT --enable_adaptive_aggregator 1 -nm "${settings[@]}" --log_comment "$CLICKHOUSE_TEST_UNIQUE_NAME" -q "
 CREATE OR REPLACE RESOURCE memory (MEMORY RESERVATION);

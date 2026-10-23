@@ -33,8 +33,9 @@ SETTINGS="use_iceberg_partition_pruning = 0, use_query_condition_cache = 1, opti
     input_format_parquet_use_native_reader_v3 = 1, input_format_parquet_filter_push_down = 1,
     max_threads = 1, max_parsing_threads = 1"
 
+# Pinned on the TopN read that populates the cache, since CI randomizes `use_query_condition_cache_for_top_k`.
 ${CLICKHOUSE_CLIENT} --log_comment "05320_write" --query "
-    SELECT p, k FROM t_05320 WHERE k < 3000 ORDER BY p DESC, k LIMIT 3 SETTINGS ${SETTINGS}"
+    SELECT p, k FROM t_05320 WHERE k < 3000 ORDER BY p DESC, k LIMIT 3 SETTINGS ${SETTINGS}, use_query_condition_cache_for_top_k = 1"
 ${CLICKHOUSE_CLIENT} --log_comment "05320_plain" --query "
     SELECT count() FROM t_05320 WHERE k < 3000 SETTINGS ${SETTINGS}"
 ${CLICKHOUSE_CLIENT} --log_comment "05320_top_k_off" --query "

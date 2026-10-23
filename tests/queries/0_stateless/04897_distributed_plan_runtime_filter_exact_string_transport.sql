@@ -19,6 +19,9 @@ SET join_runtime_filter_exact_values_limit = 10000;
 SELECT '-- identical results with transported filters off and on';
 SELECT count() FROM big, small WHERE bid = sid SETTINGS distributed_plan_join_runtime_filters = 0;
 SET distributed_plan_join_runtime_filters = 1;
+-- CI randomizes the bloom filter down to 1 KiB, where it saturates and is dropped before it is
+-- sent, so no filter state reaches an exchange.
+SET join_runtime_bloom_filter_bytes = 524288;
 SELECT count() FROM big, small WHERE bid = sid SETTINGS log_comment = '04897_exact_string_transport';
 
 SET make_distributed_plan = 0;

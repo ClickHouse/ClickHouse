@@ -16,6 +16,9 @@ SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=1, parallel_rep
 SET enable_analyzer=1;
 SET max_threads=4;
 SET max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_by=0;
+-- Without the adaptive aggregator, the output-bytes estimate of the single-level merge varies with how
+-- the keys split between threads, and its low end favors parallel replicas.
+SET enable_adaptive_aggregator=1;
 
 -- To not let other heuristics interfere with the logic we test
 SET merge_tree_min_bytes_per_task_for_remote_reading=0;

@@ -10,10 +10,12 @@ SET parallel_replicas_local_plan = 1;
 SET explain_query_plan_default = 'legacy';
 
 -- Statistics pruning reads the column min/max that a `basic` statistic holds, and the test runner
--- randomizes both `auto_statistics_types` and `materialize_statistics_on_insert`. Pin them, otherwise a
--- run without materialized `basic` statistics never reaches the statistics pruner and the
--- `use_primary_key = 0` queries below cover nothing.
+-- randomizes `auto_statistics_types`, `materialize_statistics_on_insert` and
+-- `use_statistics_for_part_pruning`. Pin them, otherwise a run without materialized `basic` statistics or
+-- with the pruner off never reaches the statistics pruner and the `use_primary_key = 0` queries below
+-- cover nothing.
 SET materialize_statistics_on_insert = 1;
+SET use_statistics_for_part_pruning = 1;
 
 DROP TABLE IF EXISTS t_monotonicity_nan_const_dividend;
 CREATE TABLE t_monotonicity_nan_const_dividend (k Float64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'basic';

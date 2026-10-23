@@ -44,6 +44,9 @@ JOIN_SETTINGS="
     SET query_plan_join_swap_table = 0;
     SET query_plan_optimize_join_order_randomize = 0;
     SET join_runtime_filter_min_probe_rows = 0;
+    -- Pin (randomized in CI): seal-gated reading asserts that the filter is ready, which the
+    -- fail point below violates on purpose (a server abort in debug builds).
+    SET enable_join_seal_gated_reading = 0;
 "
 
 # The row counts are asserted, not discarded: an unfinished lookup that rejected rows instead of

@@ -4,6 +4,10 @@
 -- 04611_join_runtime_filters_index_analysis_skip_index to keep each test fast enough
 -- for slow builds.
 
+-- Pin (randomized in CI): seal-gated reading skips the read-time index analysis by the runtime
+-- filter that this test checks.
+SET enable_join_seal_gated_reading = 0;
+
 DROP TABLE IF EXISTS sales1;
 DROP TABLE IF EXISTS sales2;
 
@@ -41,6 +45,9 @@ SET query_plan_join_swap_table = 'false';
 -- otherwise forces it on). `05153_join_runtime_filters_index_analysis_modes` covers parallel replicas.
 SET enable_parallel_replicas = 0;
 SET join_runtime_filter_min_probe_rows = 0;
+-- Pinned (randomized in CI): an exact set of join keys is what index analysis prunes by; a bloom
+-- filter (tiny limit or byte budget) prunes nothing.
+SET join_runtime_filter_exact_values_limit = 10000, join_runtime_bloom_filter_bytes = 524288;
 
 -- PK join
 SELECT s1.id, s1.country, s1.amount

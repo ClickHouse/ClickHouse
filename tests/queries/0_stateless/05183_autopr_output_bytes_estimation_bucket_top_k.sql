@@ -26,6 +26,14 @@ SET max_threads=4;
 SET query_plan_enable_optimizations=1, query_plan_push_down_limit=1, query_plan_aggregation_bucket_top_k=1;
 SET optimize_aggregation_in_order=0, group_by_two_level_threshold=1000;
 
+-- These aggregation/merge settings are randomized in CI, and each can change which merge the output-bytes
+-- estimate is sampled from (read-stream count, adaptive vs single-level merge, the group-by Top-K pipeline),
+-- so pin them to their defaults, as with the thresholds above.
+SET enable_adaptive_aggregator=1, adaptive_aggregator_freeze_threshold=16384, adaptive_aggregator_freeze_threshold_bytes=4194304,
+    enable_parallel_single_level_merge=1, enable_packed_string_keys_in_aggregation=1, merge_tree_min_bytes_per_read_stream=65536,
+    enable_group_by_top_k_optimization=1, enable_group_by_top_k_dynamic_filtering=1, group_by_top_k_optimization_observation_rows=65536,
+    optimize_aggregation_in_order_limit=1;
+
 DROP TABLE IF EXISTS obt_part;
 
 -- The partition key is a function of the group keys, so aggregating each partition independently is

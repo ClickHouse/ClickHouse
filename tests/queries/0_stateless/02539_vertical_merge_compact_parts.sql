@@ -6,6 +6,9 @@ SETTINGS
     index_granularity = 16,
     min_bytes_for_wide_part = 0,
     min_rows_for_wide_part = 100,
+    -- The activation thresholds below only choose between the two algorithms once vertical is
+    -- enabled at all, and `enable_vertical_merge_algorithm` is randomized off in CI.
+    enable_vertical_merge_algorithm = 1,
     vertical_merge_algorithm_min_rows_to_activate = 1,
     vertical_merge_algorithm_min_columns_to_activate = 1,
     allow_vertical_merges_from_compact_to_wide_parts = 1,

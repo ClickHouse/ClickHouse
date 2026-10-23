@@ -1,5 +1,8 @@
 -- Tags: memory-engine
 SET max_block_size = 65409; -- Default value
+-- Pin off: shrinking over-allocated columns on INSERT lowers the bytes the Memory
+-- engine accounts for, changing every total_bytes assertion below.
+SET shrink_over_allocated_columns_min_waste_ratio = 1.0;
 
 SELECT 'TESTING MODIFY SMALLER BYTES';
 DROP TABLE IF EXISTS memory;

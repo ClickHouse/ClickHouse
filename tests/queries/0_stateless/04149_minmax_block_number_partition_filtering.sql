@@ -2,6 +2,9 @@
 -- Tag no-shared-merge-tree: RMT/SMT allocate block numbers starting from 0
 
 SET explain_query_plan_default = 'legacy';
+-- Pinned to the default: with folding on, the `_partition_id` chain in the last query collapses to
+-- a constant and prunes two more parts, so the plan counts below are no longer the ones asserted.
+SET use_constant_folding_in_index_analysis = 0;
 DROP TABLE IF EXISTS t;
 
 CREATE TABLE t (a UInt64, b UInt64, c UInt64) ENGINE = MergeTree

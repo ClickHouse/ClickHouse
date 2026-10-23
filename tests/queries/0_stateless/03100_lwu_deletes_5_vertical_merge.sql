@@ -15,6 +15,9 @@ SETTINGS
     min_bytes_for_full_part_storage = 0,
     enable_block_number_column = 1,
     enable_block_offset_column = 1,
+    -- The activation thresholds below only choose between the two algorithms once vertical is
+    -- enabled at all, and `enable_vertical_merge_algorithm` is randomized off in CI.
+    enable_vertical_merge_algorithm = 1,
     vertical_merge_algorithm_min_rows_to_activate = 1,
     vertical_merge_algorithm_min_columns_to_activate = 1,
     vertical_merge_optimize_lightweight_delete = 1;
