@@ -1,6 +1,8 @@
-undrop by UUID across databases restores into the dropped table database
+undrop by UUID into a different database
+OK
 1
 2
 3
-undrop by UUID with a non-on-disk source database fails with UNKNOWN_TABLE
+undrop by UUID when the original database was re-created as Memory
+OK
 OK

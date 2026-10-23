@@ -1610,6 +1610,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
 void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> throw_if_cancelled)
 {
     auto database = getDatabase(table_id.database_name);
+    auto db_disk = database->getDisk();
 
     /// The table limit is checked below; wait for the database to finish loading first, otherwise
     /// its table list is incomplete and the check would undercount. Do it before taking
@@ -1618,18 +1619,19 @@ void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> thro
 
     String latest_metadata_dropped_path;
     TableMarkedAsDropped dropped_table;
-
-    /// The queue is guarded by `tables_marked_dropped_mutex`, and the thread-safety analysis does
-    /// not see that mutex held inside a lambda that captures `this`, so it is passed in explicitly
-    /// and the lambda is only called with the lock held.
-    const auto find_dropped_table = [&table_id](TablesMarkedAsDropped & dropped_tables) -> TablesMarkedAsDropped::iterator
     {
+        std::lock_guard lock(tables_marked_dropped_mutex);
         auto latest_drop_time = std::numeric_limits<time_t>::min();
-        auto it_dropped_table = dropped_tables.end();
-        for (auto it = dropped_tables.begin(); it != dropped_tables.end(); ++it)
+        auto it_dropped_table = tables_marked_dropped.end();
+        for (auto it = tables_marked_dropped.begin(); it != tables_marked_dropped.end(); ++it)
         {
+            auto storage_ptr = it->table;
             if (it->table_id.uuid == table_id.uuid)
-                return it;
+            {
+                it_dropped_table = it;
+                dropped_table = *it;
+                break;
+            }
             /// If table uuid exists, only find tables with equal uuid.
             if (table_id.uuid != UUIDHelpers::Nil)
                 continue;
@@ -1639,49 +1641,22 @@ void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> thro
             {
                 latest_drop_time = it->drop_time;
                 it_dropped_table = it;
+                dropped_table = *it;
             }
         }
-        return it_dropped_table;
-    };
-
-    {
-        std::lock_guard lock(tables_marked_dropped_mutex);
-        auto it_dropped_table = find_dropped_table(tables_marked_dropped);
-        if (it_dropped_table == tables_marked_dropped.end())
+        if (it_dropped_table == tables_marked_dropped.end() || !dynamic_cast<DatabaseOnDisk *>(database.get()))
             throw Exception(ErrorCodes::UNKNOWN_TABLE,
                 "Table {} is being dropped, has been dropped, or the database engine does not support UNDROP",
                 table_id.getNameForLogs());
-        dropped_table = *it_dropped_table;
-    }
-
-    /// A `UUID` lookup can name a database different from the one the table was
-    /// dropped from; the table is restored into its own database, so every check
-    /// below must act on that database rather than the named one. In particular,
-    /// its engine must store metadata on disk (DatabaseOnDisk) or the metadata
-    /// path lookup would fail with LOGICAL_ERROR.
-    auto dropped_database = getDatabase(dropped_table.table_id.database_name);
-    auto * dropped_database_on_disk = dynamic_cast<DatabaseOnDisk *>(dropped_database.get());
-    if (!dropped_database_on_disk)
-        throw Exception(ErrorCodes::UNKNOWN_TABLE,
-            "Table {} is being dropped, has been dropped, or the database engine does not support UNDROP",
-            table_id.getNameForLogs());
-    /// Same as above: the table list must be complete before the limit check.
-    if (dropped_database.get() != database.get())
-        dropped_database->waitDatabaseStarted();
-
-    {
-        std::lock_guard lock(tables_marked_dropped_mutex);
-        /// The entry may have been removed from the queue between the two critical sections.
-        auto it_dropped_table = find_dropped_table(tables_marked_dropped);
-        if (it_dropped_table == tables_marked_dropped.end())
+        /// A lookup by `UUID` ignores the database name, so the table may have been dropped from another database.
+        if (it_dropped_table->table_id.database_name != table_id.database_name)
             throw Exception(ErrorCodes::UNKNOWN_TABLE,
-                "Table {} is being dropped, has been dropped, or the database engine does not support UNDROP",
-                table_id.getNameForLogs());
-        dropped_table = *it_dropped_table;
-
+                "Table {} was dropped from database {}, UNDROP into a different database is not supported",
+                table_id.getNameForLogs(), backQuoteIfNeed(it_dropped_table->table_id.database_name));
         /// Check the limit before moving the metadata file: a table that cannot be attached must
         /// stay in the dropped-table queue, so that `UNDROP` can be retried after freeing a slot.
-        dropped_database_on_disk->checkTablesLimit();
+        if (auto * database_on_disk = dynamic_cast<DatabaseOnDisk *>(database.get()))
+            database_on_disk->checkTablesLimit();
 
         latest_metadata_dropped_path = it_dropped_table->metadata_path;
         String table_metadata_path = getPathForMetadata(it_dropped_table->table_id);
@@ -1689,7 +1664,7 @@ void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> thro
         /// a table is successfully marked undropped,
         /// if and only if its metadata file was moved to a database.
         /// This maybe throw exception.
-        it_dropped_table->db_disk->moveFile(latest_metadata_dropped_path, table_metadata_path);
+        db_disk->moveFile(latest_metadata_dropped_path, table_metadata_path);
 
         if (first_async_drop_in_queue == it_dropped_table)
             ++first_async_drop_in_queue;
