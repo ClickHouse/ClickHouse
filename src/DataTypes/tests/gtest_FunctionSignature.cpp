@@ -525,6 +525,9 @@ GTEST_TEST(FunctionSignature, OrOperator)
     String captured = "(T : Float | Decimal) -> T";
     EXPECT_EQ(checkSignature(captured, {makeColumn("Float32")}), "Float32");
     EXPECT_EQ(checkSignature(captured, {makeColumn("Decimal(5, 2)")}), "Decimal(5, 2)");
+
+    /// A capture made by a failed alternative (`T = UInt32` before `String` mismatches) is rolled back.
+    EXPECT_EQ(checkSignature("f(Tuple(T, String) | Any, T : Any) -> T", {makeColumn("Tuple(UInt32, UInt8)"), makeColumn("String")}), "String");
 }
 
 GTEST_TEST(FunctionSignature, MaybeNullableUnwrap)
