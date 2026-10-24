@@ -114,8 +114,12 @@ How to write one:
 
 * `<test run_all_queries="1" max_query_seconds="N">`: `max_query_seconds` replaces `--max-query-seconds` and `--prewarm-max-query-seconds` for this test. The budget applies to each statement of a query; a query stops being repeated once its cumulative time per server reaches three budgets.
 * Put `<max_execution_time>0</max_execution_time>` into `<settings>`, otherwise long setup statements are cut by the server profile limit. Prewarm and timed runs still get the budget.
-* Load raw data from S3 with `fill_query` and finish every table with the setup sequence of `tpch_sf100.xml` (insert; `MODIFY SETTING lock_acquire_timeout_for_background_operations`; `OPTIMIZE ... FINAL` with `optimize_throw_if_noop = 1`; `MATERIALIZE STATISTICS` with `mutations_sync = 1`; `SYSTEM STOP MERGES`; row count; one active part), then content checks. Statistics go before `SYSTEM STOP MERGES`, which also blocks mutations.
+* Load raw data with `fill_query` and finish every loaded MergeTree table as `tpch_sf100.xml` does: insert; `MODIFY SETTING lock_acquire_timeout_for_background_operations`; `OPTIMIZE ... FINAL` with `optimize_throw_if_noop = 1`; row and part counts; then content checks. `tpch_sf100.xml` also runs `MATERIALIZE STATISTICS` (`mutations_sync = 1`) before `SYSTEM STOP MERGES`, which blocks mutations too; for a test whose queries only read, the harness stops merges after the setup (`perf.py --stop-merges`).
 * Keep the tables in `default` (no `CREATE DATABASE`, no `USE`) and drop them with `DROP TABLE IF EXISTS <t> SYNC`, so the disk is free for the next test. (`USE` in existing tests is reconnect-safe: `clickhouse_driver` re-sends the database selected by `USE` when it reconnects.)
+* Job-local S3 (`<test requires_s3="1">`): write through the `perf_s3` named collection (each server has its own prefix, emptied after each such test in the nightly; a failed cleanup is an error and ends the batch); read the shared immutable data through `perf_s3_data` (`requires_s3_read_dataset="1"`: `tpch_ice10_s3`; `requires_s3_public_data="1"`: the prefixes in `s3_service.PUBLIC_PREFIXES` under their public keys). `iceberg_delete_data_on_drop` in `<settings>` has no effect: a drop uses the server's default profile.
+* Arrow Flight: the nightly servers listen on `arrowflight_port`; address the server itself as `arrowFlight('127.0.0.1:' || toString(getServerPort('arrowflight_port')), '<table in default>')`, the same text on both servers.
+* Iceberg REST catalog (`requires_s3_catalog="1"`): the job-local SeaweedFS serves it on `localhost:8181`; the harness seeds the immutable table bucket `perf-catalog` (namespace `many`, tables `t1`..`t200`, one row each, `id = n`). Such a test creates one `DataLakeCatalog` database as its only exception to the `default`-only rule and drops it with `DROP DATABASE ... SYNC`; the fixed ports are part of the test text.
+* Every timed statement with side effects (`ALTER`, `INSERT`, `OPTIMIZE`, `DELETE`, table recreation) is a shell query: `perf.py` profiles a query whose timing changed (every query with `profile_all_queries`) right after its runs, each statement cut at 10 s, and a cut mutation keeps running into the next query; shell queries are not profiled. A shell query gets its settings on the client command line (`--mutations_sync 2`, `--allow_insert_into_iceberg 1`, ...); the test's `<settings>` do not apply to it.
 * Reuse `tests/benchmarks/` with `<query file="../benchmarks/<name>/queries/query_NN.sql"/>` and `<settings file="../benchmarks/<name>/settings.json"/>`.
 * There is no skip syntax for known-problem queries: keep a working query in the test (a fixed formulation, or a placeholder such as `SELECT 'Q35 skipped'`) and describe the original query, the reason and the issue link in the benchmark's README (e.g. `tests/benchmarks/tpc-ds/README.md`). A flaky query gets an issue and is removed.
 
@@ -123,12 +127,12 @@ Run one test locally:
 
 ```
 # Against two running servers.
-tests/performance/scripts/perf.py --long --host localhost localhost --port 9001 9002 tests/performance/tpch_sf100.xml
+tests/performance/scripts/perf.py --long --host localhost localhost --port 9001 9002 --binary <old> <new> --http-port 8123 8124 tests/performance/tpch_sf100.xml
 # The whole harness as the nightly job runs it; the tested binary is ./ci/tmp/clickhouse or --ch-path <dir>.
 python3 ci/jobs/performance_tests.py --test-options "arm_release, master_head, nightly, 1/1" --reference-path <older clickhouse> --test tpch_sf100
 ```
 
-With the `nightly` test option the harness sorts the test list, prepends `calibration.xml` to every batch, runs all queries with `perf.py --long`, and skips the performance dashboard and delta gates.
+With the `nightly` test option the harness sorts the test list, slices it round-robin over the `N/M` batches except the tests in `NIGHTLY_PERF_PLACEMENT` (`ci/defs/defs.py`; `"<test>.xml"` maps to `"N/4"`, a batch; to an extra job name matching `[a-z0-9_]+`, a job of its own; or to `"skip"`, run nowhere: the kill switch, effective the next night), prepends `calibration.xml` to every job, runs all queries with `perf.py --long`, and skips the performance dashboard and delta gates.
 
 Red and green. A timeout is `TIMEOUT_EXCEEDED` (for a shell query, its time limit); anything else is an error. The tested side is the new server, the reference side the old one.
 
@@ -152,6 +156,7 @@ To get the text of a reported `query_index` (0-based, after substitutions), chec
 Nightly results are comparable only under the same conditions. Append a dated line whenever any of them changes:
 
 * YYYY-MM-DD (first scheduled night): instance type `r8g.4xlarge`, image `clickhouse/performance-comparison`, pool `arm-medium-storage`.
+* YYYY-MM-DD (first night with the new tests): 26 new `long` tests (Iceberg and data lakes, formats, Arrow Flight, vector index, JSON, engine, projections, skip indexes, analyzer, query shapes, encodings), `NIGHTLY_PERF_PLACEMENT` pins, Arrow Flight port and ticket flags on the nightly servers, S3 public-data and REST-catalog seeding, S3 cleanup after every S3 test.
 
 Each job log also carries the resolved docker image digest (printed by the praktika runner) and the host identity (kernel, OS, CPU, memory, instance).
 
