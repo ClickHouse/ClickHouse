@@ -2391,7 +2391,7 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
     const BuildInfo & info,
     const std::string & func_name,
     const ColumnWithTypeAndName & constant,
-    std::function<bool(const IFunctionBase &, const IDataType &)> allow_key_function) const
+    std::function<bool(const IFunctionBase &, const IDataType &, bool)> allow_key_function) const
 {
     String expr_name = node.getColumnName();
 
@@ -4533,7 +4533,7 @@ std::vector<KeyCondition::KeyWrappingChain> KeyCondition::collectKeyWrappingChai
     const String & expr_name,
     const BuildInfo & info,
     bool first_match_only,
-    std::function<bool(const IFunctionBase &, const IDataType &)> allow_key_function) const
+    std::function<bool(const IFunctionBase &, const IDataType &, bool)> allow_key_function) const
 {
     const auto & sample_block = info.key_expr->getSampleBlock();
 
@@ -4576,7 +4576,8 @@ std::vector<KeyCondition::KeyWrappingChain> KeyCondition::collectKeyWrappingChai
                     /// next_node is the non-constant child of cur_node, so next_node->result_type
                     /// is the child's output type, which is the input type to cur_node's function.
                     if (is_valid_chain)
-                        is_valid_chain = allow_key_function(*cur_node->function_base, *next_node->result_type);
+                        is_valid_chain = allow_key_function(
+                            *cur_node->function_base, *next_node->result_type, next_node == cur_node->children.front());
 
                     cur_node = next_node;
                 }
@@ -5227,7 +5228,11 @@ void KeyCondition::extractAtomsFromFunction(const RPNBuilderTreeNode & node, con
         MonotonicFunctionsChain chain;
         if (!tryMatchKeyColumnThroughMonotonicChain(
                 func.getArgumentAt(0), info, key_column_num, argument_num_of_space_filling_curve, key_expr_type, chain))
+        {
+            if (func_name == "isNull")
+                extractIsNullAtomForIfNullKey(func.getArgumentAt(0), info, group);
             return;
+        }
 
         if (key_column_num == static_cast<size_t>(-1))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "`key_column_num` wasn't initialized. It is a bug.");
@@ -5526,7 +5531,11 @@ void KeyCondition::extractIsNullAtomForNotDistinctFrom(
 
     if (!tryMatchKeyColumnThroughMonotonicChain(
             key_arg, info, key_column_num, argument_num_of_space_filling_curve, key_expr_type, chain))
+    {
+        /// For a key `ifNull(expr, c)`, `expr <=> NULL` is handled like `isNull(expr)`.
+        extractIsNullAtomForIfNullKey(key_arg, info, group);
         return;
+    }
 
     if (key_column_num == static_cast<size_t>(-1))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "`key_column_num` wasn't initialized. It is a bug.");
@@ -5544,6 +5553,42 @@ void KeyCondition::extractIsNullAtomForNotDistinctFrom(
     chassert(built);
 
     group.atoms.emplace_back(std::move(element));
+}
+
+void KeyCondition::extractIsNullAtomForIfNullKey(
+    const RPNBuilderTreeNode & expr, const BuildInfo & info, AtomGroup & group) const
+{
+    const String expr_name = expr.getColumnName();
+    if (!info.key_subexpr_names.contains(expr_name))
+        return;
+
+    const auto chains = collectKeyWrappingChains(
+        expr.getContext(), expr_name, info, /*first_match_only*/ !multiple_key_columns_per_condition,
+        [](const IFunctionBase & key_func, const IDataType &, bool is_first_argument)
+        { return is_first_argument && (key_func.getName() == "ifNull" || key_func.getName() == "coalesce"); });
+
+    for (const auto & chain : chains)
+    {
+        if (chain.functions_chain.size() != 1)
+            continue;
+
+        /// The key value of a row where `expr` is `NULL`.
+        const auto & replace_null = *chain.functions_chain.front();
+        const auto null_type = getArgumentTypeOfMonotonicFunction(replace_null);
+        const auto key_of_null = replace_null.execute(
+            {{null_type->createColumnConstWithDefaultValue(1), null_type, ""}}, replace_null.getResultType(), 1, /*dry_run*/ false);
+        const Field value = (*key_of_null)[0];
+        if (value.isNull() || value.isNaN())
+            continue;
+
+        RPNElement element;
+        element.key_columns.push_back(chain.key_column_num);
+        element.relaxed = true;
+        if (!atom_map.find("equals")->second(element, value))
+            continue;
+
+        group.atoms.emplace_back(std::move(element));
+    }
 }
 
 /// This is the shared core of comparison-atom extraction: the comparison is already in
@@ -5705,7 +5750,8 @@ std::vector<KeyCondition::ComparisonAtomCandidate> KeyCondition::collectComparis
             info,
             func_name,
             constant_for_transform,
-            [this](const IFunctionBase & func_base, const IDataType & type) -> bool
+            [this, is_order_comparison = !reverseComparisonOperator(func_name).empty()](
+                const IFunctionBase & func_base, const IDataType & type, bool is_first_argument) -> bool
             {
                 if (!func_base.hasInformationAboutMonotonicity())
                     return false;
@@ -5761,8 +5807,28 @@ std::vector<KeyCondition::ComparisonAtomCandidate> KeyCondition::collectComparis
                 /// It does not apply to `!=`: `notEquals` is in `no_relaxed_atom_functions`, so if
                 /// analysis would need to push the constant through a monotonic function chain, we do
                 /// not create a relaxed atom for `!=` on this path.
-                if (func_base.getName() == "assumeNotNull")
+                ///
+                /// The same holds for `ifNull(d, c)` and `coalesce(d, c)` with a constant `c`: a non-`NULL`
+                /// `d` keeps its value, and a `NULL` row gets the key value `c`, which can only keep a
+                /// granule as a false positive. Order comparisons need an order-preserving conversion to the
+                /// common type (not, e.g., `Enum` to `String`); a pattern (`LIKE`, `startsWith`, `match`) must
+                /// pass through unchanged, which holds for `String` but not `FixedString`, which pads it.
+                const auto name = func_base.getName();
+                if (name == "assumeNotNull")
                     return true;
+
+                if (name == "ifNull" || name == "coalesce")
+                {
+                    /// `ifNull(c, d)` is `c`, not `d`.
+                    if (!is_first_argument)
+                        return false;
+
+                    const auto arg_type = removeLowCardinalityAndNullable(type.getPtr());
+                    const auto result_type = removeLowCardinalityAndNullable(func_base.getResultType());
+                    if (is_order_comparison)
+                        return arg_type->equals(*result_type) || (isNumber(arg_type) && isNumber(result_type));
+                    return arg_type->equals(*result_type) && isString(arg_type);
+                }
 
                 /// Range is irrelevant in this case.
                 /// Monotonicity on defined values only is enough here: stored key values always
