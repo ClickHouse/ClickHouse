@@ -286,6 +286,7 @@ namespace ServerSetting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_DETECT_FORMAT;
     extern const int CANNOT_LOAD_CONFIG;
     extern const int FILE_ALREADY_EXISTS;
     extern const int INVALID_CONFIG_PARAMETER;
@@ -1452,7 +1453,20 @@ void LocalServer::connectAndInitializeInputTable()
     /// Initialize before query-file settings (such as readonly or dialect) take effect.
     if (!table_name.empty())
     {
-        executeInitialTableQuery(initial_query, defer_implicit_stdin_table_activation);
+        try
+        {
+            executeInitialTableQuery(initial_query, defer_implicit_stdin_table_activation);
+        }
+        catch (const Exception & e)
+        {
+            if (!defer_implicit_stdin_table_activation || e.code() != ErrorCodes::CANNOT_DETECT_FORMAT)
+                throw;
+
+            /// An SQL file may read stdin with an explicit format that cannot be
+            /// autodetected. Let the file run, but remember the absent inferred
+            /// table so implicit command-line reads cannot silently use system.one.
+            return;
+        }
 
         if (defer_implicit_stdin_table_activation)
         {
@@ -1481,6 +1495,17 @@ void LocalServer::beforeExecutingCommandLineQueries()
 
     auto & local_connection = static_cast<LocalConnection &>(*connection);
     auto session_context = local_connection.getSessionContext();
+    if (!private_stdin_table_name)
+    {
+        /// Autodetection failed before the query files. Explicit FROM queries
+        /// may still work; FROM-less queries must not silently read system.one.
+        /// Preserve an intentional implicit-table override from the SQL files.
+        if (!client_context->getSettingsRef().isChanged("implicit_table_at_top_level")
+            && !session_context->getSettingsRef().isChanged("implicit_table_at_top_level"))
+            client_context->setSetting("implicit_table_at_top_level", *implicit_stdin_table_to_activate);
+        return;
+    }
+
     const String & private_name = *private_stdin_table_name;
     auto inferred_table = session_context->findExternalTable(private_name);
     if (!inferred_table)
