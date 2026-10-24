@@ -1,0 +1,71 @@
+Normal downscale dim
+2
+Orthogonal downscale dim
+2
+Sparse downscale dim
+2
+Hadamard downscale dim
+2
+Normal upscale dim
+4
+Orthogonal upscale dim
+4
+Sparse upscale dim
+4
+Hadamard upscale dim
+4
+Determinism Normal
+1
+Determinism Orthogonal
+1
+Determinism Sparse
+1
+Determinism Hadamard
+1
+Different seeds Normal
+1
+Different seeds Orthogonal
+1
+Different seeds Sparse
+1
+Different seeds Hadamard
+1
+Float64 Normal
+2
+Array(Float64)
+Array(Float32)
+Float64 Orthogonal
+Array(Float64)
+Float64 Sparse
+Array(Float64)
+Float64 Hadamard
+Array(Float64)
+Table scan
+1	2
+2	2
+3	2
+Same dim
+4
+Distance preservation Normal
+1
+Distance preservation Orthogonal
+1
+Distance preservation Sparse
+1
+Distance preservation Hadamard
+1
+Batch Orthogonal
+2
+2
+Batch Sparse
+2
+2
+Batch Hadamard
+2
+2
+Large dim Normal
+16
+Large dim Hadamard
+16
+Hadamard non-power-of-2
+3
