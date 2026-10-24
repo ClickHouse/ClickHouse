@@ -3844,7 +3844,6 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryPrepareSetAtom(
     const Columns & set_columns,
     const DataTypes & set_types,
     SetAtomCandidate candidate,
-    bool allow_relaxed_pruning,
     const DataTypePtr & has_element_type)
 {
     chassert(set_types.size() == set_columns.size());
@@ -3868,23 +3867,6 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryPrepareSetAtom(
         if (const auto * key_tuple_type = typeid_cast<const DataTypeTuple *>(key_type.get()))
         {
             const size_t tuple_size = key_tuple_type->getElements().size();
-            const auto * result_tuple_type
-                = typeid_cast<const DataTypeTuple *>(removeNullable(mapping.key_expr_type).get());
-            const bool transform_consumes_whole_tuple
-                = key_is_transformed && !(result_tuple_type && result_tuple_type->getElements().size() == tuple_size);
-
-            /// A transform such as `toString` may claim injectivity while collapsing NaN
-            /// payloads or repeated local hours. When it consumes the whole tuple without keeping
-            /// its shape, the transformed set therefore provides only a relaxed positive membership
-            /// condition. This holds for the unpacked columns of an `IN` set, which are packed
-            /// below for the transform input, and equally for a set that is packed already, such
-            /// as the array elements of `has`.
-            if (transform_consumes_whole_tuple)
-            {
-                if (!allow_relaxed_pruning)
-                    return std::nullopt;
-                candidate.is_relaxed = true;
-            }
 
             /// The prepared set for `IN` can come as "unpacked" columns (one column per tuple element),
             /// but for a packed tuple key we must keep it as a single ColumnTuple so it can be cast to
@@ -3955,12 +3937,12 @@ void KeyCondition::appendSetAtoms(
     /// Component and packed-tuple mappings can coexist even when they constrain the same key column.
     /// Key coverage only limits the additional wrapped-set candidates below.
     if (auto atom = tryPrepareSetAtom(
-            set_columns, set_types, std::move(analysis.componentwise_candidate), allow_relaxed_pruning, has_element_type))
+            set_columns, set_types, std::move(analysis.componentwise_candidate), has_element_type))
         group.atoms.emplace_back(std::move(*atom));
 
     if (analysis.packed_tuple_candidate)
         if (auto atom = tryPrepareSetAtom(
-                set_columns, set_types, std::move(*analysis.packed_tuple_candidate), allow_relaxed_pruning, has_element_type))
+                set_columns, set_types, std::move(*analysis.packed_tuple_candidate), has_element_type))
             group.atoms.emplace_back(std::move(*atom));
 
     /// Atoms for the predicate's components and whole tuple take priority over additional
@@ -4008,7 +3990,7 @@ void KeyCondition::appendSetAtoms(
             set_candidate.is_relaxed = !is_injective;
 
             auto candidate_atom = tryPrepareSetAtom(
-                set_columns, set_types, std::move(set_candidate), allow_relaxed_pruning, has_element_type);
+                set_columns, set_types, std::move(set_candidate), has_element_type);
 
             /// Additional atoms for complement predicates must be exact. `tryPrepareSetAtom` can relax
             /// even an injective transform when its mapping covers only some tuple components.
