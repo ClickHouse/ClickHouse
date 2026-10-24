@@ -25,10 +25,12 @@ from pyiceberg.types import (
     StringType,
     StructType,
     TimestampType,
+    UUIDType,
 )
 
 from helpers.config_cluster import minio_access_key, minio_secret_key
 from helpers.iceberg_utils import (
+    check_validity_and_get_prunned_files_general,
     create_iceberg_table,
     get_creation_expression,
     get_uuid_str,
@@ -1535,3 +1537,121 @@ def test_identity_partition_decimal_widened_manifest_compaction(
     assert sorted(
         (row["id"], row["price"]) for row in table.scan().to_arrow().to_pylist()
     ) == [(1, Decimal("1.50")), (2, Decimal("1.50")), (3, Decimal("1.50")), (4, Decimal("1.50"))]
+
+
+def test_identity_partition_uuid_column(started_cluster_iceberg_no_spark):
+    """Iceberg stores a `uuid` partition value as 16 big-endian bytes, and a manifest list summary
+    orders its pair of such values by unsigned bytes, which is not the order of ClickHouse `UUID`.
+    Byte-wise A < C < B, while ClickHouse sorts them A < B < C, so the summary (A, B) of the third
+    manifest below must not exclude C. Every partitioned result is checked against an unpartitioned
+    copy of the same rows. The `u` column carries no data file bounds, so only the partition values
+    and the summaries take part in pruning."""
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    namespace = f"clickhouse_{uuid.uuid4()}"
+    catalog = load_catalog_impl(started_cluster_iceberg_no_spark)
+
+    schema = Schema(
+        NestedField(field_id=1, name="u", field_type=UUIDType(), required=False),
+        NestedField(field_id=2, name="v", field_type=LongType(), required=False),
+    )
+    spec = PartitionSpec(
+        PartitionField(
+            source_id=1, field_id=1000, transform=IdentityTransform(), name="u"
+        )
+    )
+    no_bounds = {"write.metadata.metrics.column.u": "none"}
+
+    a = "00000000-0000-0000-0000-000000000001"
+    c = "00000000-0000-0000-ffff-ffffffffffff"
+    b = "00000001-0000-0000-0000-000000000002"
+    x = "00000002-0000-0000-0000-000000000003"
+    y = "00000003-0000-0000-0000-000000000004"
+    u1 = "11111111-2222-3333-4444-555555555555"
+    u2 = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+
+    def append(table, rows):
+        # pyarrow cannot group its `uuid` extension type in a partitioned append.
+        table.append(
+            pa.table(
+                {
+                    "u": pa.array(
+                        [uuid.UUID(u).bytes if u else None for u, _ in rows],
+                        type=pa.binary(16),
+                    ),
+                    "v": pa.array([v for _, v in rows], type=pa.int64()),
+                }
+            )
+        )
+
+    def create(name, partition_spec, properties, appends):
+        table = catalog.create_table(
+            identifier=f"{namespace}.{name}",
+            schema=schema,
+            location=f"s3://warehouse-rest/{namespace}/{name}",
+            partition_spec=partition_spec,
+            properties=properties,
+        )
+        for rows in appends:
+            append(table, rows)
+
+    # One manifest per append: point X, point Y, the pair (A, B), and a NULL partition.
+    appends = [[(x, 1), (x, 2)], [(y, 3)], [(a, 4), (c, 5), (b, 6)], [(None, 7)]]
+    create("t_uuid", spec, no_bounds, appends)
+    create("t_uuid_control", PartitionSpec(), no_bounds, appends)
+    create("t_uuid_issue", spec, {}, [[(u1, 1), (u1, 2), (u2, 3)]])
+
+    create_clickhouse_iceberg_database(instance, CATALOG_NAME)
+    table = f"{CATALOG_NAME}.`{namespace}.t_uuid`"
+    control = f"{CATALOG_NAME}.`{namespace}.t_uuid_control`"
+    issue_table = f"{CATALOG_NAME}.`{namespace}.t_uuid_issue`"
+    settings = {
+        "input_format_parquet_filter_push_down": 0,
+        "input_format_parquet_bloom_filter_push_down": 0,
+        "input_format_parquet_page_filter_push_down": 0,
+        "use_iceberg_metadata_files_cache": 0,
+    }
+
+    def query(sql):
+        return instance.query(sql, settings=settings).strip()
+
+    expected_rows = f"1\t{x}\n2\t{x}\n3\t{y}\n4\t{a}\n5\t{c}\n6\t{b}\n7\t\\N"
+    assert query(f"SELECT v, u FROM {control} ORDER BY v") == expected_rows
+    assert query(f"SELECT v, u FROM {table} ORDER BY v") == expected_rows
+
+    for condition, expected in [
+        (f"u = toUUID('{x}')", 2),
+        (f"u = toUUID('{c}')", 1),
+        (f"u != toUUID('{x}')", 4),
+        (f"u IN (toUUID('{a}'), toUUID('{y}'))", 2),
+        (f"u > toUUID('{a}')", 5),
+        (f"u < toUUID('{y}')", 4),
+        ("u IS NULL", 1),
+        ("u IS NOT NULL", 6),
+    ]:
+        for name in [control, table]:
+            assert query(f"SELECT count() FROM {name} WHERE {condition}") == str(
+                expected
+            ), (
+                name,
+                condition,
+            )
+
+    def pruned_manifests(condition):
+        return check_validity_and_get_prunned_files_general(
+            instance,
+            "t_uuid",
+            {"use_iceberg_partition_pruning": 0, **settings},
+            {"use_iceberg_partition_pruning": 1, **settings},
+            "IcebergPartitionPrunedManifestFiles",
+            f"SELECT count() FROM {table} WHERE {condition}",
+        )
+
+    # Only the point Y is skipped: the pair (A, B) does not describe a single value.
+    assert pruned_manifests(f"u = toUUID('{x}')") == 1
+    assert pruned_manifests("u IS NULL") == 2
+
+    assert (
+        query(f"SELECT v, u FROM {issue_table} ORDER BY v")
+        == f"1\t{u1}\n2\t{u1}\n3\t{u2}"
+    )
+    assert query(f"SELECT count() FROM {issue_table} WHERE u != toUUID('{u1}')") == "1"

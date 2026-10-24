@@ -23,6 +23,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergFieldParseHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStateSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
@@ -2086,6 +2087,12 @@ Field normalizePartitionValue(const Field & value, const DataTypePtr & type)
 
     if (value.getType() == Field::Types::String && WhichDataType(value_type).isDecimal())
         return decodePartitionDecimalByType(value.safeGet<String>(), *value_type);
+
+    if (value.getType() == Field::Types::String && WhichDataType(value_type).isUUID())
+    {
+        if (auto uuid = deserializeUUIDFromBinaryRepr(value.safeGet<String>()))
+            return *uuid;
+    }
 
     /// A decimal that a manifest already carried in a decoded form: bring it to the canonical carrier
     /// too, so that it matches the value decoded from the raw `fixed` of another manifest.
