@@ -164,6 +164,8 @@ bool PeekableReadBuffer::nextImpl()
     ///        if some pointers were invalidated.
 
     checkStateCorrect();
+    const bool reading_from_own_memory = !useSubbufferOnly();
+    const Buffer sub_internal_before = sub_buf->internalBuffer();
     bool res = false;
     bool checkpoint_at_end = checkpoint && *checkpoint == working_buffer.end() && currentlyReadFromOwnMemory();
 
@@ -184,11 +186,23 @@ bool PeekableReadBuffer::nextImpl()
         }
         else
         {
-            /// All copied data have been read from own memory, continue reading from sub_buf
-            peeked_size = 0;
+            /// All copied data have been read from own memory, continue reading from sub_buf.
+            /// Keep the owned bytes if the source is at EOF: they may be needed for diagnostics.
             res = sub_buf->hasPendingData() || sub_buf->next();
+            if (res)
+                peeked_size = 0;
         }
     }
+
+    /// An EOF probe must not discard the last window while it is still valid:
+    /// diagnostics may need it for a malformed final row. The sub-buffer can
+    /// replace its storage on EOF, so retain the window only if it still owns
+    /// the same backing memory, or if our own memory holds the last bytes.
+    if (!res && !checkpoint
+        && (reading_from_own_memory
+            || (sub_buf->internalBuffer().begin() == sub_internal_before.begin()
+                && sub_buf->internalBuffer().end() == sub_internal_before.end())))
+        return false;
 
     /// Switch to reading from sub_buf (or just update it if already switched)
     Buffer & sub_working = sub_buf->buffer();

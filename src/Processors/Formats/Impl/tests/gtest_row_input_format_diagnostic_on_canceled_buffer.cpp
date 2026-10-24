@@ -1,10 +1,14 @@
 #include <gtest/gtest.h>
 
 #include <Processors/Formats/Impl/TabSeparatedRowInputFormat.h>
+#include <Processors/Formats/Impl/CSVRowInputFormat.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBuffer.h>
+#include <IO/ReadBufferFromString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeString.h>
 
 using namespace DB;
 
@@ -43,6 +47,23 @@ private:
 
     std::string payload;
     bool served = false;
+};
+
+/// Keep allocated capacity larger than the readable chunk, as for a short final file buffer.
+class ReadBufferWithSpareCapacity : public ReadBuffer
+{
+public:
+    explicit ReadBufferWithSpareCapacity(std::string input) : ReadBuffer(nullptr, 0), storage(std::move(input))
+    {
+        const size_t valid_size = storage.size();
+        storage.resize(valid_size + 64, '#');
+        BufferBase::set(storage.data(), storage.size(), 0);
+        buffer().resize(valid_size);
+    }
+
+private:
+    bool nextImpl() override { return false; }
+    std::string storage;
 };
 
 }
@@ -113,4 +134,73 @@ TEST(RowInputFormatDiagnostics, CanceledBufferDoesNotAbortWithAllowErrors)
 
     /// Must throw a regular exception, not abort the process.
     EXPECT_THROW(format.read(), Exception);
+}
+
+/// The final invalid row must have the same per-column diagnostic with or without
+/// a terminating newline. Test both formats and a preceding valid row.
+TEST(RowInputFormatDiagnostics, InvalidLastRowWithoutTrailingNewline)
+{
+    Block header;
+    header.insert({ColumnUInt8::create(), std::make_shared<DataTypeUInt8>(), "id"});
+    header.insert({ColumnString::create(), std::make_shared<DataTypeString>(), "name"});
+    const auto shared_header = std::make_shared<const Block>(header);
+
+    RowInputFormatParams params;
+    params.max_block_size_rows = 100;
+    FormatSettings format_settings;
+
+    for (bool csv : {false, true})
+    {
+        for (bool preceding_row : {false, true})
+        {
+            for (bool trailing_newline : {false, true})
+            {
+                std::string payload;
+                if (preceding_row)
+                    payload = csv ? "1,Alice\n" : "1\tAlice\n";
+                payload += csv ? "x,Bob" : "x\tBob";
+                if (trailing_newline)
+                    payload += '\n';
+
+                auto check_payload = [&](ReadBuffer & buf)
+                {
+                    auto check_diagnostic = [&](auto & format)
+                    {
+                        try
+                        {
+                            format.read();
+                            ADD_FAILURE() << "Expected a parse error for " << payload;
+                        }
+                        catch (const Exception & e)
+                        {
+                            const auto & message = e.message();
+                            EXPECT_NE(message.find(preceding_row ? "Row 2" : "Row 1"), std::string::npos);
+                            EXPECT_NE(message.find("Column 0"), std::string::npos);
+                            EXPECT_NE(message.find("type: UInt8"), std::string::npos);
+                            EXPECT_EQ(message.find("Could not print diagnostic info"), std::string::npos);
+                        }
+                    };
+
+                    if (csv)
+                    {
+                        CSVRowInputFormat format(shared_header, buf, params, false, false, format_settings);
+                        check_diagnostic(format);
+                    }
+                    else
+                    {
+                        TabSeparatedRowInputFormat format(shared_header, buf, params, false, false, false, format_settings);
+                        check_diagnostic(format);
+                    }
+                };
+
+                ReadBufferFromString buf(payload);
+                check_payload(buf);
+                if (!trailing_newline)
+                {
+                    ReadBufferWithSpareCapacity spare_buf(payload);
+                    check_payload(spare_buf);
+                }
+            }
+        }
+    }
 }
