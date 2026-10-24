@@ -5,6 +5,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTTTLElement.h>
 #include <Parsers/ASTWithAlias.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTJSONHelpers.h>
@@ -309,6 +310,9 @@ void ASTColumnDeclaration::readJSON(const Poco::JSON::Object & json)
     setSettings(r.readChildOfType<ASTSetQuery>("settings"));
     setStatisticsDesc(r.readSpecialFunctionChild("statistics_desc", "STATISTICS"));
     setTTL(r.readExpressionChild("ttl"));
+    /// `ParserColumnDeclaration` reads a column TTL as a plain expression, so it never has a `CLEAR INDEX` action.
+    if (const auto * ttl_element = getTTL() ? getTTL()->as<ASTTTLElement>() : nullptr; ttl_element && ttl_element->mode == TTLMode::CLEAR_INDEX)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "TTL CLEAR INDEX is only valid in a table TTL during AST JSON deserialization");
     setCollation(r.readChildOfType<ASTCollation>("collation"));
 }
 

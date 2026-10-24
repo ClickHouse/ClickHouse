@@ -1,0 +1,26 @@
+ttl_clear_index_copy	Full	0	2
+ttl_clear_index_link	Full	1	2
+ttl_clear_index_no_files	Full	0	2
+ttl_clear_index_packed	Packed	0	2
+ttl_clear_index_replacing	Full	0	3
+ttl_clear_index_uuid	Full	0	2
+ttl_clear_index_copy	1
+ttl_clear_index_link	0
+ttl_clear_index_no_files	0
+ttl_clear_index_packed	1
+ttl_clear_index_replacing	1
+ttl_clear_index_uuid	1
+1	b
+2	c
+ttl_clear_index_copy	1
+ttl_clear_index_link	0
+ttl_clear_index_no_files	0
+ttl_clear_index_packed	1
+ttl_clear_index_replacing	0
+ttl_clear_index_uuid	1
+ttl_clear_index_link	['TTLClearIndexMerge']
+ttl_clear_index_replacing	['RegularMerge','TTLClearIndexMerge']
+materialized	1	1
+no TTLClearIndex merge	1	1
+rewritten	2	0
+skipped	2	0
