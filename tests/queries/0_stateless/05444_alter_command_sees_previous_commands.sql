@@ -76,3 +76,17 @@ INSERT INTO t_alter_previous_commands_nested VALUES ([42], 1);
 ALTER TABLE t_alter_previous_commands_nested ADD COLUMN `n.b` Array(UInt32), DROP COLUMN n, RENAME COLUMN IF EXISTS `n.b` TO `n.a`;
 SELECT id, `n.a` FROM t_alter_previous_commands_nested;
 DROP TABLE t_alter_previous_commands_nested;
+
+-- A column dropped and added again by the same ALTER cannot be renamed in it: the mutation would rename the data of the
+-- dropped column instead of removing it.
+CREATE TABLE t_alter_previous_commands_readd (id UInt64, q UInt32) ENGINE = MergeTree ORDER BY id SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_alter_previous_commands_readd VALUES (1, 42);
+ALTER TABLE t_alter_previous_commands_readd DROP COLUMN q, ADD COLUMN IF NOT EXISTS q UInt32 DEFAULT 7, RENAME COLUMN IF EXISTS q TO r; -- { serverError NOT_IMPLEMENTED }
+SELECT id, q FROM t_alter_previous_commands_readd;
+DROP TABLE t_alter_previous_commands_readd;
+
+CREATE TABLE t_alter_previous_commands_readd (id UInt64, n Nested(a UInt32)) ENGINE = MergeTree ORDER BY id SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_alter_previous_commands_readd VALUES (1, [42]);
+ALTER TABLE t_alter_previous_commands_readd DROP COLUMN n, ADD COLUMN n Nested(a UInt32), RENAME COLUMN `n.a` TO `n.c`; -- { serverError NOT_IMPLEMENTED }
+SELECT id, `n.a` FROM t_alter_previous_commands_readd;
+DROP TABLE t_alter_previous_commands_readd;
