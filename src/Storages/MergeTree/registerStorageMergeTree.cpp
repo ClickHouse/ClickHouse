@@ -2745,7 +2745,7 @@ increasing the efficiency of `SELECT` queries as a consequence.
 All parameters of this table engine, with the exception of the `Sign` parameter,
 have the same meaning as in [`MergeTree`](/reference/engines/table-engines/mergetree-family/mergetree).
 
-- `Sign` — The name given to a column with the type of row where `1` is a "state" row and `-1` is a "cancel" row. Type: [Int8](/reference/data-types/int-uint).
+- `Sign` — The name given to a column with the type of row where `1` is a "state" row and `-1` is a "cancel" row. Type: [Int8](/reference/data-types/int-uint). It can also be a subcolumn of another column, for example an element of a `Tuple` or a typed path of `JSON`: `CollapsingMergeTree(meta.sign)`.
 
 ## Creating a table {#creating-a-table}
 
@@ -3123,7 +3123,7 @@ Uniqueness of rows is determined by the `ORDER BY` table section, not `PRIMARY K
 
 ### `ver` {#ver}
 
-`ver` — column with the version number. Type `UInt*`, `Date`, `DateTime` or `DateTime64`. Optional parameter.
+`ver` — column with the version number. Type `UInt*`, `Date`, `DateTime` or `DateTime64`. Optional parameter. It can also be a subcolumn of another column, for example an element of a `Tuple` or a typed path of `JSON`: `ReplacingMergeTree(meta.ver)`.
 
 When merging, `ReplacingMergeTree` from all the rows with the same sorting key leaves only one:
 
@@ -3177,7 +3177,7 @@ SELECT * FROM mySecondReplacingMT FINAL;
 
 `is_deleted` —  Name of a column used during a merge to determine whether the data in this row represents the state or is to be deleted; `1` is a "deleted" row, `0` is a "state" row.
 
-Column data type — `UInt8`.
+Column data type — `UInt8`. Like `ver`, it can be a subcolumn of another column.
 
 <Note>
 `is_deleted` can only be enabled when `ver` is used.

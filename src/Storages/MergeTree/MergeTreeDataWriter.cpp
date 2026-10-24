@@ -603,6 +603,13 @@ Block MergeTreeDataWriter::mergeBlock(
     IColumn::Permutation *& permutation,
     const MergeTreeData::MergingParams & merging_params)
 {
+    /// The sign, version and is_deleted columns may be subcolumns, which the merging algorithm reads as separate columns.
+    for (const auto * column_name : {&merging_params.sign_column, &merging_params.version_column, &merging_params.is_deleted_column})
+    {
+        if (!column_name->empty() && !block.has(*column_name))
+            block.insert(block.getSubcolumnByName(*column_name));
+    }
+
     SharedHeader header = std::make_shared<const Block>(std::move(block));
     OpenTelemetry::SpanHolder span("MergeTreeDataWriter::mergeBlock");
 
