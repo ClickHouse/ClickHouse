@@ -60,6 +60,7 @@ void SortCursorImpl::reset(const Columns & columns, const Block & block, UInt64 
     pos = 0;
     rows = num_rows;
     permutation = perm;
+    sort_prefix_limit = std::numeric_limits<size_t>::max();
 }
 
 SortQueueVariants::SortQueueVariants(const DataTypes & sort_description_types, const SortDescription & sort_description)

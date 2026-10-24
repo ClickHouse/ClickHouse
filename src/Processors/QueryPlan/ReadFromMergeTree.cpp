@@ -960,24 +960,35 @@ static IMergeTreeDataPart::IndexPtr indexWithVirtualRowBound(const IMergeTreeDat
 }
 
 /// PK values at the first selected mark, or the end mark for a reverse read.
-/// Returns `std::nullopt` if the index cannot provide them.
-static std::optional<Block> getVirtualRowBound(const RangesInDataPart & part_with_ranges, const Block & pk_header, bool read_in_reverse)
+/// The loaded index may keep only a prefix of the primary key (see `optimizeIndexColumns`): then the bound has
+/// only the loaded leading columns of `pk_header`, which is still valid because the merges compare a virtual row
+/// only on its covered prefix. Returns `std::nullopt` if the index has fewer than `min_key_columns` columns
+/// (those the conversion reads) or cannot provide the values.
+static std::optional<Block> getVirtualRowBound(
+    const RangesInDataPart & part_with_ranges, const Block & pk_header, size_t min_key_columns, bool read_in_reverse)
 {
-    const auto index = indexWithVirtualRowBound(*part_with_ranges.data_part, pk_header.columns(), read_in_reverse);
+    const auto index = indexWithVirtualRowBound(*part_with_ranges.data_part, min_key_columns, read_in_reverse);
     if (!index)
         return std::nullopt;
 
+    const size_t num_columns = std::min(index->size(), pk_header.columns());
     const size_t mark_pos = read_in_reverse ? part_with_ranges.ranges.back().end : part_with_ranges.ranges.front().begin;
-    for (size_t j = 0; j < pk_header.columns(); ++j)
+    for (size_t j = 0; j < num_columns; ++j)
         if ((*index)[j]->size() <= mark_pos)
             return std::nullopt;
 
     /// Insert via `Field`: the index may have the type before an `ALTER MODIFY COLUMN`
     /// (e.g. `String` vs `LowCardinality(String)`), because a mutation can keep the source part's index.
-    auto pk_columns = pk_header.cloneEmptyColumns();
-    for (size_t j = 0; j < pk_columns.size(); ++j)
-        pk_columns[j]->insert((*(*index)[j])[mark_pos]);
-    return pk_header.cloneWithColumns(std::move(pk_columns));
+    ColumnsWithTypeAndName pk_columns;
+    pk_columns.reserve(num_columns);
+    for (size_t j = 0; j < num_columns; ++j)
+    {
+        const auto & header_column = pk_header.getByPosition(j);
+        auto column = header_column.type->createColumn();
+        column->insert((*(*index)[j])[mark_pos]);
+        pk_columns.push_back({std::move(column), header_column.type, header_column.name});
+    }
+    return Block(std::move(pk_columns));
 }
 
 /// Whether `lhs` comes before `rhs` in the table's order, reversed for a reverse read.
@@ -1002,7 +1013,7 @@ static std::optional<Block> getFinalMergeVirtualRow(
     std::optional<Block> bound;
     for (const auto & part : parts)
     {
-        auto part_bound = getVirtualRowBound(part, pk_header, read_in_reverse);
+        auto part_bound = getVirtualRowBound(part, pk_header, pk_header.columns(), read_in_reverse);
         if (!part_bound)
             return std::nullopt;
         if (!bound || virtualRowPrecedes(*part_bound, *bound, reverse_flags, read_in_reverse))
@@ -1169,7 +1180,10 @@ Pipe ReadFromMergeTree::readInOrder(
     const UInt64 in_order_limit = query_info.input_order_info ? query_info.input_order_info->limit : 0;
     const bool set_total_rows_approx = !is_parallel_reading_from_replicas || isParallelReplicasLocalPlanForInitiator();
 
-    const Block pk_header = use_virtual_row ? makeVirtualRowHeader() : Block{};
+    /// Take index values for the whole used key prefix: the in-order merges inside this step sort by all of it,
+    /// while the conversion may use only a subset of the columns.
+    const Block pk_header = use_virtual_row ? makeVirtualRowHeader(/*include_used_key_prefix=*/ true) : Block{};
+    const size_t virtual_row_min_key_columns = use_virtual_row ? virtual_row_conversion->getRequiredColumnsWithTypes().size() : 0;
 
     Pipes pipes;
     for (size_t i = 0; i < parts_with_ranges.size(); ++i)
@@ -1252,7 +1266,8 @@ Pipe ReadFromMergeTree::readInOrder(
 
         if (use_virtual_row)
         {
-            if (auto pk_block = getVirtualRowBound(part_with_ranges, pk_header, read_type == ReadType::InReverseOrder))
+            if (auto pk_block = getVirtualRowBound(
+                    part_with_ranges, pk_header, virtual_row_min_key_columns, read_type == ReadType::InReverseOrder))
             {
                 pipe.addSimpleTransform([&](const SharedHeader & header)
                 {
@@ -2588,7 +2603,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
     /// of a `FINAL` read are in order for its merges anyway, but without the request nothing downstream
     /// consumes virtual rows, and vertical `FINAL` may be on.
     const bool use_virtual_row = virtual_row_conversion && reader_settings.read_in_order;
-    const Block virtual_row_header = use_virtual_row ? makeVirtualRowHeader() : Block{};
+    const Block virtual_row_header = use_virtual_row ? makeVirtualRowHeader(/*include_used_key_prefix=*/ false) : Block{};
     const auto reverse_flags = storage_snapshot->metadata->getSortingKeyReverseFlags();
 
     /// A whole range has to be kept in memory to read it in the reverse order, so split ranges into smaller ones.
@@ -4280,26 +4295,34 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     if (prefix_size > storage_snapshot->metadata->getSortingKey().column_names.size())
         return false;
 
-    /// Only a later request that WIDENS an already-established prefix (distinct/aggregation-in-order
-    /// re-entering after ORDER BY) can strand a too-narrow virtual row conversion. The first,
-    /// conversion-building request may legitimately be narrower than prefix_size (fixed middle key,
-    /// e.g. WHERE b = 1 ORDER BY a, c on key (a, b, c)); dropping it there would defeat the
-    /// optimization and, behind a join, re-enable the path the !uses_virtual_row guard blocks.
-    const bool widened_over_previous_request
-        = query_info.input_order_info && query_info.input_order_info->used_prefix_of_sorting_key_size < prefix_size;
+    /// The virtual row conversion was built for a previously requested key prefix. A wider
+    /// re-request (e.g. from distinct-in-order) keeps it valid: the in-order merges inside this
+    /// step take exact index values for the whole prefix (clamped per part to the loaded index
+    /// prefix, see `readInOrder`), and the merges compare the virtual row only on the sort-key
+    /// prefix it covers. A narrower prefix could leave the conversion without some of its
+    /// inputs, and a prefix beyond the primary key would request index values no part can ever
+    /// provide, so the conversion cannot stay.
+    if (virtual_row_conversion
+        && (prefix_size < virtual_row_key_prefix_size
+            || prefix_size > storage_snapshot->metadata->primary_key.column_names.size()))
+    {
+        /// A re-request cannot revoke the virtual row. The decision to use it is taken in
+        /// `optimizeReadInOrder`, which runs before `optimizeDistinctInOrder` and
+        /// `optimizeLimitByInOrder`: by the time they widen the prefix, the parent `SortingStep`
+        /// may already be converted with `apply_virtual_row_conversions` (buffering disabled),
+        /// and the read-in-order-through-`JOIN` path may have been accepted only because the
+        /// read emits virtual rows. Clearing just the reader-side state here would leave those
+        /// decisions standing on a premise that no longer holds, so reject the re-request and
+        /// keep the order the plan is already set up for.
+        if (readsInOrder())
+            return false;
+
+        resetVirtualRowConversions();
+    }
 
     query_info.input_order_info = std::make_shared<InputOrderInfo>(SortDescription{}, prefix_size, direction, read_limit);
     query_task_size_limit = query_limit ? query_limit : read_limit;
     reader_settings.read_in_order = true;
-
-    /// The conversion only produces its own leading sort columns; the extra merge columns of a
-    /// widened re-request are default-filled by setVirtualRow, so the announced boundary is wrong.
-    /// Drop the virtual row here: the merge then falls back to normal cross-part comparison.
-    /// Coverage is the number of primary key columns the conversion reads, not the number of
-    /// columns it outputs: constant ORDER BY columns are outputs backed by no key column.
-    if (widened_over_previous_request && virtual_row_conversion
-        && virtual_row_conversion->getRequiredColumnsWithTypes().size() < prefix_size)
-        resetVirtualRowConversions();
 
     /// In case of read-in-order, don't create too many reading streams.
     /// Almost always we are reading from a single stream at a time because of merge sort.
@@ -4323,7 +4346,7 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     return true;
 }
 
-bool ReadFromMergeTree::setVirtualRowConversions(ActionsDAG virtual_row_conversion_)
+bool ReadFromMergeTree::setVirtualRowConversions(ActionsDAG virtual_row_conversion_, size_t key_prefix_size)
 {
     if (!context->getSettingsRef()[Setting::read_in_order_use_virtual_row])
         return false;
@@ -4331,7 +4354,12 @@ bool ReadFromMergeTree::setVirtualRowConversions(ActionsDAG virtual_row_conversi
     if (isQueryWithFinal() && !canUseVirtualRowWithFinal())
         return false;
 
-    virtual_row_conversion = std::make_shared<ExpressionActions>(std::move(virtual_row_conversion_));
+    /// Project the inputs away: the pk block may carry more index columns than the conversion
+    /// uses (the whole used key prefix), and a raw key column must not shadow a conversion output
+    /// with the same name when the merge looks the sort columns up by name.
+    virtual_row_conversion = std::make_shared<ExpressionActions>(
+        std::move(virtual_row_conversion_), ExpressionActionsSettings{}, /*project_inputs_=*/ true);
+    virtual_row_key_prefix_size = key_prefix_size;
     return true;
 }
 
@@ -4374,11 +4402,15 @@ bool ReadFromMergeTree::everyPartHasVirtualRowBound(bool read_in_reverse) const
     return true;
 }
 
-Block ReadFromMergeTree::makeVirtualRowHeader() const
+Block ReadFromMergeTree::makeVirtualRowHeader(bool include_used_key_prefix) const
 {
     /// The leading primary key columns the conversions read: the merge downstream compares nothing else.
+    /// The in-order merges inside the step (without `FINAL`) sort by the whole used key prefix, though.
     const auto & primary_key = storage_snapshot->metadata->primary_key;
-    const size_t num_columns = virtual_row_conversion->getRequiredColumnsWithTypes().size();
+    size_t num_columns = virtual_row_conversion->getRequiredColumnsWithTypes().size();
+    if (include_used_key_prefix && query_info.input_order_info)
+        num_columns = std::max(
+            num_columns, std::min(query_info.input_order_info->used_prefix_of_sorting_key_size, primary_key.column_names.size()));
 
     ColumnsWithTypeAndName columns;
     columns.reserve(num_columns);

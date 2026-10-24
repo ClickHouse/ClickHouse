@@ -432,8 +432,12 @@ public:
     /// Whether `requestReadingInOrder` accepts a reverse direction. With `FINAL`, only the engines whose merge
     /// does not depend on the direct order of rows can read in reverse order.
     bool canReadInReverseOrder() const;
-    bool setVirtualRowConversions(ActionsDAG virtual_row_conversion_);
-    void resetVirtualRowConversions() { virtual_row_conversion = nullptr; }
+    bool setVirtualRowConversions(ActionsDAG virtual_row_conversion_, size_t key_prefix_size);
+    void resetVirtualRowConversions()
+    {
+        virtual_row_conversion = nullptr;
+        virtual_row_key_prefix_size = 0;
+    }
 
     /// Whether every part surviving pruning has the value of its virtual row in the index.
     /// Loads only those parts' primary indexes; returns false if part filters are unavailable.
@@ -853,8 +857,9 @@ private:
     /// Whether the `FINAL` merges of this read can be followed by a virtual row (see `spreadMarkRangesAmongStreamsFinal`).
     bool canUseVirtualRowWithFinal() const;
 
-    /// The columns of a virtual row: the leading primary key columns the conversions read.
-    Block makeVirtualRowHeader() const;
+    /// The columns of a virtual row: the leading primary key columns the conversions read,
+    /// widened to the whole used key prefix if `include_used_key_prefix`.
+    Block makeVirtualRowHeader(bool include_used_key_prefix) const;
 
     Pipe spreadMarkRanges(
         RangesInDataParts && parts_with_ranges,
@@ -945,6 +950,8 @@ private:
     bool has_lazily_read_columns = false;
 
     ExpressionActionsPtr virtual_row_conversion;
+    /// The sorting key prefix size the virtual row conversion was built for.
+    size_t virtual_row_key_prefix_size = 0;
 
     std::optional<size_t> number_of_current_replica;
 
