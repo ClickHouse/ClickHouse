@@ -233,7 +233,7 @@ ClusterPtr SQLClusterFactory::materializeCluster(
         else
         {
             const String shard_prefix = cluster_prefix + ".shard" + std::to_string(shard_num);
-            applyShardOnlyProperties(*config, shard_prefix, shard_properties);
+            applyShardOnlyProperties(*config, shard_prefix + ".", shard_properties);
 
             size_t replica_num = 0;
             for (const auto & replica_ast : shard.replicas)
