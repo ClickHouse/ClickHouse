@@ -117,6 +117,9 @@ void MultipleFileWriter::finalize()
         completed_file_stats.push_back(std::move(current_file_stats));
     data_file_byte_counts.push_back(file_bytes);
     data_file_row_counts.push_back(current_file_num_rows.value_or(0));
+
+    /// A finished format can still hold resources: a Parquet one keeps its idle encoder threads.
+    release();
 }
 
 void MultipleFileWriter::release()
