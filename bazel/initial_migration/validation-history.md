@@ -1718,3 +1718,38 @@ ARM64: The workload decision was `denied`. ValueError: ValueError: unknown publi
 The 18 SDK objects verify downstream compilation. They do not establish that a DWYU standalone action executed.
 
 The native builds and the ordinary DWYU builds each succeeded, but both parent workflows ended in failure because strict DWYU was withheld. The nine production targets and negative fixture appeared in the ordinary command on each CPU. The workload check reported `unknown public observation in //src/Compression:clickhouse_compression` and did not start either strict command. The previous strict build recorded 486 standalone failures on each CPU. 453 of those headers remain on the same selected owner; 33 no longer have that declaration. No current strict failure count or negative-fixture result is available. The 51 original and 18 new native public-header consumers compiled independently; neither of their declared owners was among these nine DWYU targets.
+
+## e08f9c4dd
+
+[e08f9c4dd](https://github.com/dzbarsky/clickhouse/commit/e08f9c4dd495b472912d2e650008fc09463e7002) built all 61 native Bazel targets on x86-64 and ARM64. Both normalized ClickHouse hashes and sizes matched native CMake.
+
+| Native Bazel build | ELF | SHA-256 | Bytes |
+| --- | --- | --- | --- |
+| [x86-64](https://app.buildbuddy.io/invocation/0f276f0a-f9ae-4ba8-ab62-d49c22209206) | `//bazel/initial_migration:clickhouse.normalized` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
+| [x86-64](https://app.buildbuddy.io/invocation/0f276f0a-f9ae-4ba8-ab62-d49c22209206) | `//:clickhouse` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 |
+| [x86-64](https://app.buildbuddy.io/invocation/0f276f0a-f9ae-4ba8-ab62-d49c22209206) | `//src:unit_tests_dbms` | `2a6934b1d4523406f0c1e45b68b515914ba14a4167ffb6c05c0668a5ffb11260` | 811968280 |
+| [ARM64](https://app.buildbuddy.io/invocation/85466011-9431-403e-b2e5-c7a408e7e933) | `//bazel/initial_migration:clickhouse.normalized` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
+| [ARM64](https://app.buildbuddy.io/invocation/85466011-9431-403e-b2e5-c7a408e7e933) | `//:clickhouse` | `2363f1ffebe756464876c0e91ca336d77c4d17e6a27afe2fb22b8f337ac2d744` | 907067440 |
+| [ARM64](https://app.buildbuddy.io/invocation/85466011-9431-403e-b2e5-c7a408e7e933) | `//src:unit_tests_dbms` | `d489d1b0fd52b57389f107e5650cb58c5f6a33689d9c6090a5198cf0bdef2176` | 795060896 |
+
+The raw ClickHouse and `unit_tests_dbms` executables matched [39d0c249f](https://github.com/dzbarsky/clickhouse/commit/39d0c249fa553c80e28de390893982fe9f152761). On each CPU, 38 GoogleTests, six SQL cases and 16 Decimal boundary checks passed. BuildBuddy reported the object for each of 51 standalone public-header consumers, eight SDK consumers and 18 additional public-header consumers. `src/Interpreters/SetSerialization.h` remains outside these fixtures. The hashes and sizes come from output metadata.
+
+The two embedded CcInfo reports on each CPU matched all 17 ordered fields against their definitions. Compared with [39d0c249f](https://github.com/dzbarsky/clickhouse/commit/39d0c249fa553c80e28de390893982fe9f152761), each exposed one fewer header and one fewer system include directory. The only reported `IThrottler.h` File was `src/Common/IThrottler.h`, owned by `@@//src/Common:IThrottler.h`; neither a virtual File alias nor the previous `_virtual_includes/throttler_interface` directory appeared. The eight-object SDK fixture included its `throttler_public` consumer. These checks do not identify which files the remote compiler read.
+
+| CPU | CcInfo target | Previous headers | Current headers | Previous system includes | Current system includes |
+| --- | --- | --- | --- | --- | --- |
+| x86-64 | `//src:clickhouse_common_io_embedded` | 24316 | 24315 | 199 | 198 |
+| x86-64 | `//src:dbms_embedded` | 29643 | 29642 | 313 | 312 |
+| ARM64 | `//src:clickhouse_common_io_embedded` | 24313 | 24312 | 199 | 198 |
+| ARM64 | `//src:dbms_embedded` | 29640 | 29639 | 313 | 312 |
+
+Ten benchmark archive hashes and sizes matched the previous native build, including `//src:benchmark_runtime_filter_objects`. The 16-field Boost report and the 4,096-byte CRoaring alignment check passed on both CPUs.
+
+| CPU | Ordinary DWYU | Production requested | Strict DWYU | Production graded | Strict outcomes | Negative fixture | Failed standalone headers |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| [x86-64 parent Failed](https://app.buildbuddy.io/invocation/a81aad5a-8e15-4865-94df-0e9e065e73c9) | [exit 0](https://app.buildbuddy.io/invocation/355a679c-7d5e-446f-ac0c-379acc59555e) | 16 | [exit 1](https://app.buildbuddy.io/invocation/12c06a53-5bba-421e-8061-702ef7131d9a) | 16/782 | 4 `clean`, 1 `header_pp_not_verified`, 1 `unentered_owned_files`, 10 `unverified_link_deps` | Expected finding | 0 |
+| [ARM64 parent Failed](https://app.buildbuddy.io/invocation/c2eaf9e8-20a7-4de2-a701-afb8dfa3bb40) | [exit 0](https://app.buildbuddy.io/invocation/2aa8477e-6996-4b16-930d-5bcc116ddcd3) | 16 | [exit 1](https://app.buildbuddy.io/invocation/837ce261-fb93-4662-af6b-e5ae2d6a22f5) | 16/782 | 4 `clean`, 1 `header_pp_not_verified`, 1 `unentered_owned_files`, 10 `unverified_link_deps` | Expected finding | 0 |
+
+x86-64: strict DWYU graded 16 of 782 production targets (4 `clean`, 1 `header_pp_not_verified`, 1 `unentered_owned_files`, 10 `unverified_link_deps`); the negative fixture reported its expected unused dependency. 766 production targets were outside the strict results. ARM64: strict DWYU graded 16 of 782 production targets (4 `clean`, 1 `header_pp_not_verified`, 1 `unentered_owned_files`, 10 `unverified_link_deps`); the negative fixture reported its expected unused dependency. 766 production targets were outside the strict results.
+
+[39d0c249f](https://github.com/dzbarsky/clickhouse/commit/39d0c249fa553c80e28de390893982fe9f152761) had no strict child. The earlier strict run on [a38921cb8](https://github.com/dzbarsky/clickhouse/commit/a38921cb8dd22a3f8c942b0e6249d076ad4e2e04) recorded 486 failed standalone headers per CPU; its failing umbrella targets are outside the current strict roster. The failure totals across these rosters do not measure resolved failures.
