@@ -3,10 +3,9 @@
 -- The plan lines starting from `ReadFromMergeTree` are printed: the columns read from the table are its header.
 
 -- The chained `Dynamic`/JSON-array access `x[1].b` where the subquery exports the `Dynamic` value
--- itself (`SELECT json.a AS x`): the nested subcolumn ``json.a.:`Array(JSON)`.b`` is recovered from
--- the projection expression of the export. And the mixed usage `x.a[1].b, x.a`: the nested field is
--- not pushed next to the already pushed `json.a` it is extracted from (`FunctionToSubcolumnsPass`
--- refuses the same mixed usage of a column read directly from a table).
+-- itself (`SELECT json.a AS x`), and the mixed usage `x.a[1].b, x.a`: only the path `json.a` is
+-- read, the typed nested subcolumn ``json.a.:`Array(JSON)`.b`` is not used because it loses the
+-- values of the other runtime alternatives of the `Dynamic` path.
 
 SET enable_analyzer = 1;
 SET optimize_push_subcolumns_into_subqueries = 1;

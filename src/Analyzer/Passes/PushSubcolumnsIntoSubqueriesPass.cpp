@@ -22,7 +22,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeObject.h>
-#include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -98,10 +97,6 @@ enum class ReplacementKind
     ArrayExistsLike,
     /// `count(x)` -> `sum(not(x.null))`.
     SumNot,
-    /// The chained `Dynamic`/JSON-array access `tupleElement(arrayElement(x.p, i), 'f')`
-    /// -> `arrayElement(x.p.:`Array(JSON)`.f, i)`, mirroring `optimizeJSONArrayElement`
-    /// of `FunctionToSubcolumnsPass`.
-    ArrayElement,
 };
 
 /// A pending addition of the subcolumn projection to one leaf query of the pushdown target.
@@ -136,13 +131,6 @@ struct PushdownGroup
     /// a plain `getSubcolumn`. Such a group must not be rewritten into a direct subcolumn read
     /// of a table with `FINAL`, mirroring the `FINAL` restriction of `FunctionToSubcolumnsPass`.
     bool has_function_carrier = false;
-    /// Subcolumn path (relative to the column) of the value the carrier occurrences take as their
-    /// argument, when it is not the column itself: the chained `Dynamic`/JSON-array access
-    /// `x.a[1].b` reads the `Dynamic` value `x.a`, not `x`. The whole-column guard then reasons
-    /// about that value: a live export or an already pushed subcolumn covering it keeps it alive.
-    /// Empty when the column itself is the argument, or when occurrences disagree (a plain
-    /// `getSubcolumn` of the same subcolumn needs the read regardless of the carrier's argument).
-    String carrier_argument_path;
     ContextPtr context;
     /// False if at least one occurrence cannot be replaced. All occurrences of the same
     /// subcolumn are replaced together or not at all: replacing only some of them could
@@ -151,12 +139,6 @@ struct PushdownGroup
     bool viable = true;
     /// Number of `getSubcolumn` occurrences matched into this group.
     size_t occurrences = 0;
-    /// For each occurrence that is the argument of a chained carrier (the `getSubcolumn(x, 'a')`
-    /// inside `x.a[1].b`), the index of the carrier's group in QueryProcessingState::groups.
-    /// When that group is applied, the whole chain is replaced and the occurrence is not a read
-    /// of this subcolumn anymore; the group stays registered as the fallback for chains that
-    /// cannot be pushed.
-    std::vector<size_t> argument_of_chained_groups;
 
     /// Set when the group is validated: the subcolumn can actually be pushed into the target
     /// (validateGroup succeeded), and the collected per-leaf additions are ready to commit.
@@ -224,298 +206,11 @@ struct CandidateMatch
     /// such functions into subcolumn reads under `FINAL`, and this pass must not allow the
     /// subquery form of the same expression to tunnel around that restriction.
     bool via_function_carrier = false;
-    /// The index argument of `arrayElement` kept by ReplacementKind::ArrayElement.
-    QueryTreeNodePtr array_index_node;
-    /// See PushdownGroup::carrier_argument_path. A carrier whose argument is a deeper subcolumn
-    /// reaches the column through a nested `getSubcolumn` occurrence and does not take the
-    /// column as its own argument.
-    String carrier_argument_path;
-    /// That nested `getSubcolumn` occurrence (the one taking the column as its argument).
-    const IQueryTreeNode * carrier_argument_node = nullptr;
 };
 
 /// The subcolumn of a `Dynamic` value that holds an array of JSON objects, as used by
 /// `FunctionToSubcolumnsPass::optimizeJSONArrayElement`.
 constexpr std::string_view JSON_ARRAY_SUBCOLUMN = ":`Array(JSON)`";
-
-QueryTreeNodePtr unwrapSubcolumnFunctions(
-    QueryTreeNodePtr node,
-    String & subcolumn_path,
-    const std::unordered_set<const IQueryTreeNode *> * synthesized_carrier_reads,
-    bool * via_function_carrier);
-void collectLeafQueries(const IQueryTreeNode * source, std::vector<const QueryNode *> & leaves);
-NamesAndTypes getExportedColumns(const QueryTreeNodePtr & source);
-std::optional<size_t> findUnambiguousColumnIndex(const NamesAndTypes & exported_columns, const String & column_name);
-bool composedSubcolumnPreservesStructure(const DataTypePtr & argument_type, const String & prefix, const String & suffix);
-
-/// Type of the nested JSON-array subcolumn `<subcolumn_path>` (`:`Array(JSON)`.b1...bN`) of the
-/// `Dynamic` value that the column `column_name` exported by `source` reads, or nullptr when the
-/// value is not a path of a JSON column or the subcolumn does not exist.
-///
-/// A `Dynamic` value alone has no such subcolumn: the typed `:`Array(JSON)`` element access is
-/// resolved by the JSON type that owns the path (`json.a.:`Array(JSON)`.b`), so when the subquery
-/// exports the `Dynamic` path itself (`SELECT json.a AS x`) the JSON ancestor and the subcolumn
-/// type are recovered from the projection expression of the export, composing through
-/// `getSubcolumn` chains and bare re-exports of deeper subqueries down to the column read
-/// (mirrors the JSON ancestor check of `FunctionToSubcolumnsPass::optimizeJSONArrayElement`).
-/// Only the leftmost leaf of a union target is inspected here: the projection built for every
-/// leaf is validated against the resulting type when the group is applied.
-DataTypePtr resolveExportedJSONArraySubcolumnType(
-    const QueryTreeNodePtr & source, const String & column_name, const String & subcolumn_path, std::unordered_set<const IQueryTreeNode *> & visited_sources)
-{
-    if (!visited_sources.emplace(source.get()).second)
-        return nullptr;
-
-    std::vector<const QueryNode *> leaves;
-    collectLeafQueries(source.get(), leaves);
-    if (leaves.empty())
-        return nullptr;
-
-    auto column_index = findUnambiguousColumnIndex(getExportedColumns(source), column_name);
-    if (!column_index)
-        return nullptr;
-
-    const auto & projection_nodes = leaves.front()->getProjection().getNodes();
-    if (*column_index >= projection_nodes.size())
-        return nullptr;
-
-    String export_path;
-    auto base_node = unwrapSubcolumnFunctions(projection_nodes[*column_index], export_path, nullptr, nullptr);
-    if (!base_node)
-        return nullptr;
-
-    auto * column = base_node->as<ColumnNode>();
-    if (column && column->hasExpression())
-        column = resolveTrivialAliasChain(column);
-    if (!column)
-        return nullptr;
-
-    auto column_source = column->getColumnSourceOrNull();
-    if (!column_source)
-        return nullptr;
-
-    if (isQueryOrUnionNode(column_source))
-    {
-        /// A bare re-export of a column of a deeper subquery: the answer is the same there.
-        if (export_path.empty())
-            return resolveExportedJSONArraySubcolumnType(column_source, column->getColumnName(), subcolumn_path, visited_sources);
-
-        /// A subcolumn read of a column exported by a deeper subquery: the column type at that
-        /// boundary must be a JSON column or contain one along the path.
-        const auto & column_type = column->getColumnType();
-        bool found_json_ancestor = column_type->getTypeId() == TypeIndex::Object;
-        for (size_t pos = export_path.find('.'); !found_json_ancestor && pos != String::npos; pos = export_path.find('.', pos + 1))
-        {
-            auto prefix_type = column_type->tryGetSubcolumnType(export_path.substr(0, pos));
-            found_json_ancestor = prefix_type && prefix_type->getTypeId() == TypeIndex::Object;
-        }
-
-        if (!found_json_ancestor || !composedSubcolumnPreservesStructure(column_type, export_path, subcolumn_path))
-            return nullptr;
-
-        return column_type->tryGetSubcolumnType(export_path + "." + subcolumn_path);
-    }
-
-    const auto * table_node = column_source->as<TableNode>();
-    const auto * table_function_node = column_source->as<TableFunctionNode>();
-    if (!table_node && !table_function_node)
-        return nullptr;
-
-    const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
-
-    /// The column read from the table is a subcolumn read (`json.a`), possibly composed with
-    /// `getSubcolumn` calls; some prefix of it must be a JSON column.
-    auto value_name = column->getColumnName();
-    if (!export_path.empty())
-        value_name += "." + export_path;
-
-    bool found_json_ancestor = false;
-    auto pairs = Nested::getAllColumnAndSubcolumnPairs(value_name);
-    for (auto it = pairs.rbegin(); it != pairs.rend() && !found_json_ancestor; ++it)
-    {
-        auto prefix_column = storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), String(it->first));
-        found_json_ancestor = prefix_column && prefix_column->type->getTypeId() == TypeIndex::Object;
-    }
-
-    if (!found_json_ancestor)
-        return nullptr;
-
-    /// The flat name of the nested subcolumn can identify another subcolumn of the storage column
-    /// than the structured extraction (see composedSubcolumnPreservesStructure).
-    bool preserves_structure = false;
-    for (const auto & [storage_column_name, value_path] : pairs)
-    {
-        auto storage_column = storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::All), String(storage_column_name));
-        if (!storage_column)
-            continue;
-        preserves_structure = composedSubcolumnPreservesStructure(storage_column->type, String(value_path), subcolumn_path);
-        break;
-    }
-
-    if (!preserves_structure)
-        return nullptr;
-
-    auto subcolumn = storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), value_name + "." + subcolumn_path);
-    return subcolumn ? subcolumn->type : nullptr;
-}
-
-/// Match the chained `Dynamic`/JSON-array access `json.a[i].b`, where `json` is a column
-/// exported by a subquery: a `tupleElement` over an `arrayElement` over a chain of
-/// `getSubcolumn`. For a column read directly from a table the equivalent expression is rewritten
-/// by `FunctionToSubcolumnsPass::optimizeJSONArrayElement` into `arrayElement` over the nested
-/// subcolumn `json.a.:`Array(JSON)`.b`; that pass only handles table sources, so without
-/// this the same rewrite would be lost as soon as the column comes from a subquery.
-std::optional<CandidateMatch> matchChainedJSONArrayElement(FunctionNode & function_node)
-{
-    const auto & arguments = function_node.getArguments().getNodes();
-    if (arguments.size() != 2)
-        return {};
-
-    const auto * field_name_node = arguments[1]->as<ConstantNode>();
-    if (!field_name_node || field_name_node->getValue().getType() != Field::Types::String)
-        return {};
-
-    const auto & field_name = field_name_node->getValue().safeGet<String>();
-
-    /// Only a single field access directly over the `arrayElement` is pushed. A chain of
-    /// `tupleElement` is not always equivalent to one combined JSON path: `tupleElement` also
-    /// applies element-wise to an intermediate array of objects (`x.a[1].c.e` with `c` holding
-    /// `[{"e":10},{"e":20}]` is `[10,20]`), while the combined subcolumn `@c.e` looks for a flat
-    /// path. For a longer chain the innermost access is matched on its own when the children are
-    /// visited, and the remaining `tupleElement` calls stay over its replacement.
-    const auto * array_element_node = arguments[0]->as<FunctionNode>();
-    if (!array_element_node || array_element_node->getFunctionName() != "arrayElement"
-        || array_element_node->getArguments().getNodes().size() != 2)
-        return {};
-
-    const auto & array_element_arguments = array_element_node->getArguments().getNodes();
-
-    /// Only an array stored inside a `Dynamic` value is indexed element-wise by this rewrite.
-    auto array_argument_type = array_element_arguments[0]->getResultType();
-    if (!array_argument_type || array_argument_type->getTypeId() != TypeIndex::Dynamic)
-        return {};
-
-    /// A Nullable or otherwise unusual index would change the result type of `arrayElement`
-    /// over the projected array compared to the original expression.
-    auto index_argument_type = array_element_arguments[1]->getResultType();
-    if (!index_argument_type || !isInteger(index_argument_type))
-        return {};
-
-    /// Descend through the `getSubcolumn` chain to the column exported by the subquery,
-    /// composing the path of the `Dynamic` value inside it.
-    std::vector<String> path_components;
-    QueryTreeNodePtr base_node = array_element_arguments[0];
-    const IQueryTreeNode * carrier_argument_node = nullptr;
-    while (const auto * inner_function_node = base_node->as<FunctionNode>())
-    {
-        if (inner_function_node->getFunctionName() != "getSubcolumn")
-            return {};
-
-        carrier_argument_node = inner_function_node;
-
-        const auto & inner_arguments = inner_function_node->getArguments().getNodes();
-        if (inner_arguments.size() != 2)
-            return {};
-
-        const auto * constant_node = inner_arguments[1]->as<ConstantNode>();
-        if (!constant_node || constant_node->getValue().getType() != Field::Types::String)
-            return {};
-
-        path_components.push_back(constant_node->getValue().safeGet<String>());
-        base_node = inner_arguments[0];
-    }
-
-    std::ranges::reverse(path_components);
-
-    auto * column_node = base_node->as<ColumnNode>();
-    if (!column_node)
-        return {};
-
-    auto column_source = column_node->getColumnSourceOrNull();
-    if (!column_source || !isQueryOrUnionNode(column_source))
-        return {};
-
-    /// `tupleElement` over a JSON value reads the combined subcolumn `@path` holding the literal at
-    /// the path or, if there is none, the sub-object at it, while the plain path would read only
-    /// the literal and lose an object-valued field.
-    String array_subcolumn_path = String(JSON_ARRAY_SUBCOLUMN) + "." + DataTypeObject::getCombinedSubcolumnName(field_name);
-
-    const auto & column_type = column_node->getColumnType();
-    String subcolumn_path;
-    DataTypePtr subcolumn_type;
-
-    if (path_components.empty())
-    {
-        /// The subquery exports the `Dynamic` value itself (`SELECT json.a AS x`), and the
-        /// column node is the direct argument of `arrayElement`. Whether the value is a path of
-        /// a JSON column, and the type of the nested subcolumn, are recovered from the projection
-        /// expression of the export; the subcolumn is then added to that expression when the
-        /// group is applied (`json.a.:`Array(JSON)`.b` over a table).
-        std::unordered_set<const IQueryTreeNode *> visited_sources;
-        subcolumn_type = resolveExportedJSONArraySubcolumnType(column_source, column_node->getColumnName(), array_subcolumn_path, visited_sources);
-        subcolumn_path = std::move(array_subcolumn_path);
-    }
-    else
-    {
-        /// The `Dynamic` value must be a path of a JSON column: only then its array elements are
-        /// stored as `Array(JSON)` and the nested field is a real subcolumn of the parent column
-        /// (mirrors the JSON ancestor check of `optimizeJSONArrayElement`).
-        bool found_json_ancestor = column_type->getTypeId() == TypeIndex::Object;
-        for (const auto & path_component : path_components)
-        {
-            if (!subcolumn_path.empty())
-            {
-                auto prefix_type = column_type->tryGetSubcolumnType(subcolumn_path);
-                found_json_ancestor = found_json_ancestor || (prefix_type && prefix_type->getTypeId() == TypeIndex::Object);
-
-                /// The flat name of the composed path can identify another subcolumn than the
-                /// structured extraction (see composedSubcolumnPreservesStructure).
-                if (!composedSubcolumnPreservesStructure(column_type, subcolumn_path, path_component))
-                    return {};
-            }
-
-            subcolumn_path = subcolumn_path.empty() ? path_component : subcolumn_path + "." + path_component;
-        }
-
-        if (!found_json_ancestor)
-            return {};
-
-        /// In ``Tuple(j JSON, `j.a.:`Array(JSON)`.@`b`` Array(Dynamic))`` the flat name of the nested
-        /// JSON-array subcolumn of the path `j.a` is the sibling element.
-        if (!composedSubcolumnPreservesStructure(column_type, subcolumn_path, array_subcolumn_path))
-            return {};
-
-        subcolumn_path += "." + array_subcolumn_path;
-        subcolumn_type = column_type->tryGetSubcolumnType(subcolumn_path);
-    }
-
-    if (!subcolumn_type || subcolumn_type->getTypeId() != TypeIndex::Array)
-        return {};
-
-    /// The `Dynamic` value the chain reads, relative to the column (see
-    /// PushdownGroup::carrier_argument_path); empty when the column itself is that value.
-    String carrier_argument_path;
-    for (const auto & path_component : path_components)
-        carrier_argument_path += (carrier_argument_path.empty() ? "" : ".") + path_component;
-
-    /// `arrayElement` over the projected array produces the same `Dynamic` value as the original
-    /// chain, up to the `max_types` parameter, which the replacement casts away.
-    const auto & nested_type = assert_cast<const DataTypeArray &>(*subcolumn_type).getNestedType();
-    if (nested_type->getTypeId() != TypeIndex::Dynamic || function_node.getResultType()->getTypeId() != TypeIndex::Dynamic)
-        return {};
-
-    return CandidateMatch{
-        column_node,
-        std::move(column_source),
-        std::move(subcolumn_path),
-        std::move(subcolumn_type),
-        ReplacementKind::ArrayElement,
-        /*requires_tuple_element_guards=*/false,
-        /*via_function_carrier=*/true,
-        array_element_arguments[1],
-        std::move(carrier_argument_path),
-        carrier_argument_node};
-}
 
 /// Match a function that can be expressed as reading a subcolumn where the column comes from a query or union node.
 std::optional<CandidateMatch> matchCandidate(FunctionNode & function_node)
@@ -529,13 +224,7 @@ std::optional<CandidateMatch> matchCandidate(FunctionNode & function_node)
 
     auto * column_node = function_arguments[0]->as<ColumnNode>();
     if (!column_node)
-    {
-        /// The chained `Dynamic`/JSON-array access reaches the column through intermediate
-        /// functions instead of taking it as its direct argument.
-        if (function_node.getFunctionName() == "tupleElement" && function_arguments.size() == 2)
-            return matchChainedJSONArrayElement(function_node);
         return {};
-    }
 
     /// Only query and union sources are rewritten. In particular, a materialized CTE that is
     /// referenced more than once stays a TableNode over its temporary table (single-use ones
@@ -915,10 +604,7 @@ std::optional<CandidateMatch> matchCandidate(FunctionNode & function_node)
         std::move(subcolumn_type),
         replacement_kind,
         requires_tuple_element_guards,
-        /*via_function_carrier=*/function_name != "getSubcolumn",
-        /*array_index_node=*/nullptr,
-        /*carrier_argument_path=*/{},
-        /*carrier_argument_node=*/nullptr};
+        /*via_function_carrier=*/function_name != "getSubcolumn"};
 }
 
 bool tupleElementNameIsAmbiguousWhenFlattened(const DataTypeTuple & tuple, const String & element_name)
@@ -1067,23 +753,11 @@ ContextPtr getTargetContext(const QueryTreeNodePtr & target)
     return target->as<const UnionNode &>().getContext();
 }
 
-/// A chained carrier matched on the way down to `node`: the nested `getSubcolumn` occurrence it
-/// reads its `Dynamic` value through, and the index of its group. The analyzer shares identical
-/// expression nodes (`x.a[1].b` next to `x.a` reuses one `getSubcolumn(x, 'a')` node), so the
-/// occurrence is recognised by the traversal path rather than by node identity: the same node
-/// visited as a standalone expression is a plain read of the subcolumn.
-struct ChainedCarrierContext
-{
-    const IQueryTreeNode * argument_node = nullptr;
-    size_t group_index = 0;
-};
-
 void collectCandidates(
     const QueryTreeNodePtr & node,
     ClauseKind clause_kind,
     bool inside_aggregate_function,
-    QueryProcessingState & state,
-    ChainedCarrierContext chained_carrier = {})
+    QueryProcessingState & state)
 {
     if (!node)
         return;
@@ -1141,11 +815,9 @@ void collectCandidates(
                             .subcolumn_type = match->subcolumn_type,
                             .requires_tuple_element_guards = match->requires_tuple_element_guards,
                             .has_function_carrier = false,
-                            .carrier_argument_path = match->carrier_argument_path,
                             .context = getTargetContext(target_it->second),
                             .viable = true,
                             .occurrences = 0,
-                            .argument_of_chained_groups = {},
                             .applicable = false,
                             .applications = {},
                             .new_column_name = {},
@@ -1155,23 +827,7 @@ void collectCandidates(
 
                     /// The column argument of the matched occurrence is visited below as a child
                     /// and counted in column_references; the occurrence counter compensates it.
-                    /// A chained carrier over a deeper subcolumn does not take the column as its
-                    /// own argument: it reaches it through a nested `getSubcolumn` occurrence,
-                    /// which is matched on its own and already compensates that single reference.
-                    /// Counting it here as well would compensate the reference twice.
-                    if (match->carrier_argument_path.empty())
-                        ++group->occurrences;
-                    else
-                        chained_carrier = {match->carrier_argument_node, static_cast<size_t>(group - state.groups.data())};
-
-                    if (function_node == chained_carrier.argument_node)
-                        group->argument_of_chained_groups.push_back(chained_carrier.group_index);
-
-                    /// Occurrences reading different values of the column (`x.a[1].b` next to an
-                    /// explicit `x.a.:`Array(JSON)`.b`) share the projection; the plain subcolumn
-                    /// read needs it regardless of what the carrier's argument is.
-                    if (group->carrier_argument_path != match->carrier_argument_path)
-                        group->carrier_argument_path.clear();
+                    ++group->occurrences;
 
                     /// A plain `getSubcolumn` synthesized for a carrier group at the previous
                     /// level carries the origin of that group.
@@ -1214,7 +870,7 @@ void collectCandidates(
     }
 
     for (const auto & child : node->getChildren())
-        collectCandidates(child, clause_kind, inside_aggregate_function, state, chained_carrier);
+        collectCandidates(child, clause_kind, inside_aggregate_function, state);
 }
 
 bool isSameSubstream(const ISerialization::Substream & lhs, const ISerialization::Substream & rhs);
@@ -1983,14 +1639,6 @@ QueryTreeNodePtr buildReplacementNode(const CandidateMatch & match, const Pushdo
 
             return make_function("arrayExists", {std::move(lambda), std::move(subcolumn_node)}, false);
         }
-        case ReplacementKind::ArrayElement:
-        {
-            auto element_node = make_function("arrayElement", {std::move(subcolumn_node), match.array_index_node}, false);
-            const auto & result_type = function_node.getResultType();
-            if (!element_node->getResultType()->equals(*result_type))
-                return buildCastFunction(element_node, result_type, group.context);
-            return element_node;
-        }
         case ReplacementKind::SumNot:
         {
             auto negated = make_function("not", {std::move(subcolumn_node)}, true);
@@ -2176,16 +1824,6 @@ void processQuery(
             exports_it->second = collectCanonicalExportsPerLeaf(group.source.get());
         const auto & canonical_exports_per_leaf = exports_it->second;
 
-        /// The value whose liveness the guard reasons about: the column itself, or the deeper
-        /// subcolumn a chained carrier reads (`x.a` for `x.a[1].b`). It is contained in every
-        /// export of the column and of its ancestors, and in every export of the value itself.
-        auto guarded_value_name = [&](const String & canonical_column_name)
-        {
-            if (group.carrier_argument_path.empty())
-                return canonical_column_name;
-            return canonical_column_name + "." + group.carrier_argument_path;
-        };
-
         auto contains_underlying_column = [&](const String & column_name)
         {
             if (column_name == group.column_name)
@@ -2198,52 +1836,11 @@ void processQuery(
                 auto other_it = canonical_exports.find(column_name);
                 if (other_it == canonical_exports.end() || other_it->second.first != group_it->second.first)
                     continue;
-                if (isSameOrAncestorColumn(other_it->second.second, guarded_value_name(group_it->second.second)))
+                if (isSameOrAncestorColumn(other_it->second.second, group_it->second.second))
                     return true;
             }
             return false;
         };
-
-        /// Whether another applicable group pushes a subcolumn that contains the guarded value.
-        /// `SELECT x.a[1].b, x.a FROM (SELECT json AS x FROM t)` pushes `json.a` for the second
-        /// expression, and the chained carrier would add ``json.a.:`Array(JSON)`.b`` next to it:
-        /// the table would read both, while the nested field is cheaper to extract from the
-        /// already read `json.a`. `FunctionToSubcolumnsPass` refuses the same mixed usage of a
-        /// column read directly from a table, and the subquery form must not regress into it.
-        /// Occurrences of a group that stay reads of its subcolumn after the rewrite: an
-        /// occurrence that is the argument of an applied chained carrier disappears with the chain.
-        auto has_plain_occurrences = [&](const PushdownGroup & other_group)
-        {
-            size_t chained = std::ranges::count_if(
-                other_group.argument_of_chained_groups, [&](size_t index) { return state.groups[index].applicable; });
-            return other_group.occurrences > chained;
-        };
-
-        auto pushes_ancestor_of_guarded_value = [&](const PushdownGroup & other_group)
-        {
-            if (other_group.column_name == group.column_name)
-                return isSameOrAncestorColumn(other_group.subcolumn_path, group.carrier_argument_path);
-            for (const auto & canonical_exports : canonical_exports_per_leaf)
-            {
-                auto group_it = canonical_exports.find(group.column_name);
-                if (group_it == canonical_exports.end())
-                    continue;
-                auto other_it = canonical_exports.find(other_group.column_name);
-                if (other_it == canonical_exports.end() || other_it->second.first != group_it->second.first)
-                    continue;
-                if (isSameOrAncestorColumn(other_it->second.second + "." + other_group.subcolumn_path, guarded_value_name(group_it->second.second)))
-                    return true;
-            }
-            return false;
-        };
-
-        if (!group.carrier_argument_path.empty()
-            && std::ranges::any_of(state.groups, [&](const PushdownGroup & other_group)
-            {
-                return &other_group != &group && other_group.applicable && other_group.source == group.source
-                    && has_plain_occurrences(other_group) && pushes_ancestor_of_guarded_value(other_group);
-            }))
-            return false;
 
         /// A use of a column containing the pushed subcolumn inside the target itself, such as
         /// `WHERE cityHash64(tup) > 0` or a live `cityHash64(tup) AS h` export, keeps that column

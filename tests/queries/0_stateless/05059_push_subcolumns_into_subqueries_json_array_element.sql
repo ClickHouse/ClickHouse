@@ -1,10 +1,10 @@
 -- Tags: no-parallel-replicas, no-random-settings
 -- The test checks EXPLAIN output, which differs with parallel replicas and randomized plan-related settings.
 
--- `FunctionToSubcolumnsPass` rewrites the chained `Dynamic`/JSON-array access `json.a[1].b` of a
--- column read from a table into `arrayElement` over the nested subcolumn ``json.a.:`Array(JSON)`.b``.
--- That pass only handles table sources, so the same expression over a column exported by a subquery
--- is rewritten here instead, otherwise the whole `json.a` value would be materialized.
+-- The chained `Dynamic`/JSON-array access `x.a[1].b` over a column exported by a subquery reads
+-- only the path `json.a`. It is not rewritten into `arrayElement` over the typed nested subcolumn
+-- ``json.a.:`Array(JSON)`.b``: that subcolumn holds only the arrays stored as `Array(JSON)` and
+-- loses the values of the other runtime alternatives of the `Dynamic` path.
 
 SET enable_analyzer = 1;
 SET optimize_push_subcolumns_into_subqueries = 1;

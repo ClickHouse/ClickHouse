@@ -33,14 +33,14 @@ FROM (SELECT j AS x FROM t_push_subcolumns_json_intermediate_array);
 SELECT toJSONString(x.a[1].c.e), toJSONString(x.a[1].d.e), toJSONString(x.a[1].f.e), toJSONString(x.a[1].c)
 FROM (SELECT j AS x FROM t_push_subcolumns_json_intermediate_array)
 SETTINGS optimize_push_subcolumns_into_subqueries = 0;
--- The innermost field access is still pushed.
+-- The path `j.a` is still pushed instead of the whole column.
 SELECT count() > 0 FROM
 (
     EXPLAIN actions = 1
     SELECT toJSONString(x.a[1].c.e) FROM (SELECT j AS x FROM t_push_subcolumns_json_intermediate_array)
     SETTINGS enable_parallel_replicas = 0
 )
-WHERE explain LIKE '%Array(JSON)%';
+WHERE explain LIKE '%Output: j.a';
 
 DROP TABLE t_push_subcolumns_array_join_export;
 DROP TABLE t_push_subcolumns_json_intermediate_array;
