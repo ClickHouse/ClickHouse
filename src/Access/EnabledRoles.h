@@ -1,11 +1,13 @@
 #pragma once
 
+#include <Access/EffectiveAccessRightsCache.h>
 #include <Core/UUID.h>
 #include <base/scope_guard.h>
 #include <boost/container/flat_set.hpp>
 #include <list>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <vector>
 
 
@@ -38,7 +40,14 @@ public:
     using OnChangeHandler = std::function<void(const std::shared_ptr<const EnabledRolesInfo> & info)>;
 
     /// Called when either the specified roles or the roles granted to the specified roles are changed.
-    scope_guard subscribeForChanges(const OnChangeHandler & handler) const;
+    struct [[nodiscard]] Subscription
+    {
+        scope_guard unsubscribe;
+        EffectiveAccessRightsCache::Handle access_cache;
+    };
+
+    /// An unrestricted context also registers for sharing effective rights with this user's peers.
+    Subscription subscribeForChanges(const OnChangeHandler & handler, const std::optional<UUID> & cache_user_id) const;
 
 private:
     friend class RoleCache;
@@ -56,6 +65,7 @@ private:
     {
         std::list<OnChangeHandler> list;
         std::mutex mutex;
+        EffectiveAccessRightsCache access_cache{mutex};
     };
 
     /// shared_ptr is here for safety because EnabledRoles can be destroyed before all subscriptions are removed.

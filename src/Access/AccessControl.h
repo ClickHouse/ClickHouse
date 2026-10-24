@@ -3,6 +3,7 @@
 #include <memory>
 
 #include <Access/AccessChangesNotifier.h>
+#include <Access/ImplicitExpansionSettings.h>
 #include <Access/MultipleAccessStorage.h>
 #include <Access/Common/AuthenticationType.h>
 #include <Common/SettingsChanges.h>
@@ -209,6 +210,19 @@ public:
 
     void setTableEnginesRequireGrant(bool enable) { table_engines_require_grant = enable; }
     bool doesTableEnginesRequireGrant() const { return table_engines_require_grant; }
+
+    /// Reads the settings used by `ContextAccess::addImplicitAccessRights` once so
+    /// the calculation and cache key use the same values. Each flag is atomic;
+    /// this does not provide an atomic snapshot of all four flags.
+    ImplicitExpansionSettings getImplicitExpansionSettings() const
+    {
+        ImplicitExpansionSettings settings;
+        settings.select_from_system_db_requires_grant = select_from_system_db_requires_grant;
+        settings.select_from_information_schema_requires_grant = select_from_information_schema_requires_grant;
+        settings.user_query_log_enabled = user_query_log_enabled;
+        settings.table_engines_require_grant = table_engines_require_grant;
+        return settings;
+    }
 
     /// Enable/disable the IMPERSONATE feature (EXECUTE AS target_user).
     void setImpersonateUserAllowed(bool allow) { allow_impersonate_user = allow; }
