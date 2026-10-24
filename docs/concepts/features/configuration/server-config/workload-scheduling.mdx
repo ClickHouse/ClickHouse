@@ -241,6 +241,14 @@ CREATE OR REPLACE WORKLOAD all SETTINGS scheduler = 'fair';
 SELECT ... SETTINGS workload = 'all', weight_lowering_cpu_seconds = 10, weight_lowering_factor = 0.1;
 ```
 
+### Parts of a query {#query_parts}
+
+A query can run as several parts on one server: its subqueries, the subqueries of a `PARALLEL WITH` query, and the tasks of its distributed query plans (`make_distributed_plan = 1`) that run on this server, including the tasks a server runs as a stateless worker. A query with several distributed subqueries has several distributed plans, and the tasks of all of them are parts of the same query. All parts of one query are scheduled as one query: they share the query's `weight`, `workload_priority` and attained service, so splitting a query into more parts does not give it a larger share of a resource. The parts of a query are served in the order of their requests, so no part is starved by the other parts.
+
+A part of a query is always scheduled under the `workload` and the settings from the table above of its query. A part cannot set its own values of them: a query whose subquery or `PARALLEL WITH` subquery sets a different value, for example with its own `SETTINGS` clause, is rejected with a `BAD_ARGUMENTS` error before it runs. Set them for the whole query instead.
+
+On a server that runs tasks of a query but not the query itself, the tasks of the query are scheduled as one query while at least one of them runs there. If all of them finish and more tasks of the query come later, for example from a later stage of its plan, they are scheduled as a new query, with no attained service.
+
 ## Threads vs. CPUs {#threads_vs_cpus}
 
 There are two ways to control CPU consumption of a workload:
@@ -388,6 +396,8 @@ CREATE WORKLOAD all SETTINGS max_concurrent_queries = 100, max_queries_per_secon
 ```
 
 Workload setting `max_concurrent_queries` limits the number of concurrent queries that could run simultaneously for a given workload. This is analog of query [`max_concurrent_queries_for_all_users`](/reference/settings/session-settings/max-concurrent#max_concurrent_queries_for_all_users) and server [max_concurrent_queries](/reference/settings/server-settings/settings/max-concurrent#max_concurrent_queries) settings. Async insert queries and some specific queries like KILL are not counted towards the limit.
+
+The parts of one query that run on one server (see [Parts of a query](#query_parts)) share one query slot: the first part acquires it, and the other parts use it without waiting, so a part of a running query never waits behind other queries for admission. The slot is released when the last part holding it finishes.
 
 Workload settings `max_queries_per_second` and `max_burst_queries` limit the number of queries for the workload using a token bucket throttler. It guarantees that during any time interval `T` no more than `max_queries_per_second * T + max_burst_queries` new queries will start execution.
 

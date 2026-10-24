@@ -1729,6 +1729,7 @@ The server successfully detected this situation and will download merged part fr
     M(ConcurrencyControlUnparks, "Total number of times a thread re-acquired its CPU slot after a non-CPU wait.", ValueType::Number) \
     \
     M(ConcurrentQuerySlotsAcquired, "Total number of query slots acquired", ValueType::Number) \
+    M(ConcurrentQuerySlotsJoined, "Total number of times a part of a query (a `PARALLEL WITH` subquery or a task of a distributed query) used the query slot already acquired by another part of the same query instead of acquiring its own", ValueType::Number) \
     M(ConcurrentQueryWaitMicroseconds, "Total time a query was waiting for a query slots", ValueType::Microseconds) \
     \
     M(MemoryReservationAdmitMicroseconds, "Total time a query was waiting for initial memory reservation to be admitted", ValueType::Microseconds) \

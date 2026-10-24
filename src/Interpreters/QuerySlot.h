@@ -47,6 +47,6 @@ private:
     std::optional<CurrentMetrics::Increment> acquired_slot_increment;
 };
 
-using QuerySlotPtr = std::unique_ptr<QuerySlot>;
+using QuerySlotPtr = std::shared_ptr<QuerySlot>;
 
 }

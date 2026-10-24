@@ -315,6 +315,10 @@ void applyQueryLevelSettings(
             query_parameters_map.insert_or_assign(parameter_name, parameter_value);
         updated_context->addQueryParameters(query_parameters_map);
     }
+
+    /// All parts of a query are scheduled under the query's settings, so a part can neither change
+    /// them nor reset them to their defaults.
+    updated_context->checkSchedulingSettingsOfQueryPart(set_query.changes, set_query.default_settings);
 }
 
 QueryTreeNodePtr QueryTreeBuilder::buildSelectWithUnionExpression(

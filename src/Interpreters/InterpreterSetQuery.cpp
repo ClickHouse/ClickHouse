@@ -116,6 +116,8 @@ void InterpreterSetQuery::executeForCurrentContext(bool ignore_setting_constrain
     }
     getContext()->applySettingsChanges(changes);
     getContext()->resetSettingsToDefaultValue(ast.default_settings);
+    /// All parts of a query are scheduled under the query's settings, e.g. a `PARALLEL WITH` subquery.
+    getContext()->checkSchedulingSettingsOfQueryPart(changes, ast.default_settings);
 }
 
 static void applySettingsFromSelectWithUnion(const ASTSelectWithUnionQuery & select_with_union, ContextMutablePtr context)
@@ -286,6 +288,8 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
 
                 const Settings & context_settings = context_->getSettingsRef();
                 ASTSetQuery * engine_settings = create_query->storage->settings;
+                SettingsChanges hoisted_changes;
+                std::vector<String> hoisted_resets;
                 for (auto it = engine_settings->changes.begin(); it != engine_settings->changes.end();)
                 {
                     String & name = it->name;
@@ -297,6 +301,7 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
                         context_settings.checkShorthandChange(*it);
                         context_->checkSettingsConstraints(*it, SettingSource::QUERY);
                         context_->applySettingChange(*it);
+                        hoisted_changes.push_back(*it);
                         it = engine_settings->changes.erase(it);
                     }
                     else
@@ -315,6 +320,7 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
                         std::vector<String> names{name};
                         context_->checkSettingsConstraintsForSettingsReset(names, SettingSource::QUERY);
                         context_->resetSettingsToDefaultValue(names);
+                        hoisted_resets.push_back(name);
                         it = engine_settings->default_settings.erase(it);
                     }
                     else
@@ -322,6 +328,9 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
                         it++;
                     }
                 }
+
+                /// All parts of a query are scheduled under the query's settings, e.g. a `PARALLEL WITH` subquery.
+                context_->checkSchedulingSettingsOfQueryPart(hoisted_changes, hoisted_resets);
 
                 /// Prune the clause only when nothing at all is left for the engine, so that a
                 /// remaining `= DEFAULT` or `param_x = ...` entry is still reported by the engine.

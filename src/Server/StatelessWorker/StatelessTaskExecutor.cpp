@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/QuerySchedulingGroup.h>
 #include <Interpreters/ClientInfo.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageFactory.h>
@@ -122,6 +123,31 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
     query_context->applySettingsChanges(task_description.settings_changes);
     query_context->setSetting("make_distributed_plan", false);
     query_context->setSetting("enable_cascades_optimizer", false);
+
+    /// The tasks of one query that run on this server, from all of its distributed plans, are
+    /// scheduled as one query, together with the initiator if it runs here too (see
+    /// `QuerySchedulingGroup`). The first task of the query here creates the group under the
+    /// workload and scheduling settings of the query, not of the task. A task from an initiator that
+    /// does not send the group id is scheduled on its own.
+    if (!task_description.sched_id.empty())
+    {
+        DistributedQuerySchedulingGroups::instance().join(
+            task_description.sched_id,
+            [&](const QuerySchedulingGroupPtr & registered)
+            {
+                auto group = registered;
+                if (!group)
+                {
+                    ClassifierSettings settings = task_description.sched_settings;
+                    settings.throw_on_unknown_workload = query_context->getThrowOnUnknownWorkload();
+                    group = std::make_shared<QuerySchedulingGroup>(
+                        task_description.sched_workload, settings,
+                        query_context->getResourceManager()->acquire(task_description.sched_workload, settings));
+                }
+                query_context->setParentSchedulingGroup(group);
+                return group;
+            });
+    }
 
     auto [object_storage, object_storage_path] = getObjectStorageForTemporaryFiles(unique_temp_file_path, query_context);
 
