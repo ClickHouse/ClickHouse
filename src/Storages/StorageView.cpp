@@ -522,7 +522,7 @@ StorageView::StorageView(
 /// Build and resolve the view's inner query tree
 /// Then find the leftmost underlying MT storage eligible for parallel replicas.
 /// Returns nullptr if the view is too complex or resolution fails.
-StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const ContextPtr & context) const
+StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const ContextPtr & context, std::vector<StoragePtr> * tables) const
 {
     if (isParameterizedView())
         return nullptr;
@@ -646,12 +646,14 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
                         if (!current_context->getSettingsRef()[Setting::parallel_replicas_allow_view_over_mergetree])
                             return nullptr;
 
-                        return nested_view->getUnderlyingMergeTreeStorageForParallelReplicas(current_context);
+                        return nested_view->getUnderlyingMergeTreeStorageForParallelReplicas(current_context, tables);
                     }
 
                     if (!isTableNodeEligibleForParallelReplicas(table_node, storage, current_context))
                         return nullptr;
 
+                    if (tables)
+                        tables->push_back(storage);
                     return table_node.getStorage();
                 }
                 default:

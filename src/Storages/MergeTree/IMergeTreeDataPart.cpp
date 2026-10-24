@@ -1583,6 +1583,74 @@ void IMergeTreeDataPart::removeStatisticsFromCache(StatisticsCache * cache) cons
         cache->remove(StatisticsCache::hash(part_path, column.name));
 }
 
+namespace
+{
+
+/// A layout stored as constant granularity hashes the same as the identical layout stored as adaptive one.
+void hashMarkLayout(const MergeTreeIndexGranularity & granularity, SipHash & hash)
+{
+    const size_t marks = granularity.getMarksCountWithoutFinal();
+    hash.update(marks);
+    if (marks == 0)
+        return;
+
+    const size_t first_mark_rows = granularity.getMarkRows(0);
+    hash.update(first_mark_rows);
+    hash.update(granularity.getMarkRows(marks - 1));
+    if (granularity.getConstantGranularity())
+        return;
+
+    for (size_t mark = 1; mark + 1 < marks; ++mark)
+    {
+        if (const size_t rows = granularity.getMarkRows(mark); rows != first_mark_rows)
+        {
+            hash.update(mark);
+            hash.update(rows);
+        }
+    }
+}
+
+void hashString(const String & s, SipHash & hash)
+{
+    hash.update(s.size());
+    hash.update(s);
+}
+
+/// The uncompressed checksum of a compact `data.bin` combines one hash per codec stream, so it tells
+/// neither which column fills a stream nor their order. The compressed bytes and the columns do.
+void hashCompactColumnBinding(const IMergeTreeDataPart & part, SipHash & hash)
+{
+    for (const auto & column : part.getColumns())
+    {
+        hashString(column.name, hash);
+        hashString(column.type->getName(), hash);
+    }
+    const auto & files = part.checksums.files;
+    if (auto it = files.find(MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION); it != files.end())
+    {
+        hash.update(it->second.file_size);
+        hash.update(it->second.file_hash);
+    }
+}
+
+}
+
+UInt128 IMergeTreeDataPart::getContentFingerprint() const
+{
+    std::lock_guard lock(content_fingerprint_mutex);
+    if (content_fingerprint == 0 && !checksums.empty())
+    {
+        SipHash hash;
+        checksums.computeTotalChecksumDataOnly(hash);
+        hashMarkLayout(*index_granularity, hash);
+        /// A replicated engine guarantees the content of same-named parts by itself.
+        if (getType() == MergeTreeDataPartType::Compact && !storage.supportsReplication())
+            hashCompactColumnBinding(*this, hash);
+        content_fingerprint = hash.get128();
+    }
+    return content_fingerprint;
+}
+
 String IMergeTreeDataPart::getPathForCacheKey() const
 {
     return getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart();

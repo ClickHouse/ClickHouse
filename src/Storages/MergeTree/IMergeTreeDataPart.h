@@ -267,6 +267,12 @@ public:
     Estimates getEstimates(const NameSet & required_columns = {}) const;
     void setEstimates(const Estimates & new_estimates);
 
+    /// Hash of the uncompressed data and of the number of rows in each mark: same-named parts can be read
+    /// interchangeably by mark ranges only if it is equal. Like `ReplicatedMergeTree`'s comparison of
+    /// same-named parts, it ignores codecs and writer versions, except for a compact part of a
+    /// non-replicated table, which must be byte-identical. `0` when checksums are not loaded.
+    UInt128 getContentFingerprint() const;
+
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load various metadata into memory: checksums from checksums.txt, index if required, etc.
     void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency, bool load_metadata_version = true);
@@ -977,6 +983,9 @@ private:
     mutable NameSet estimates_loaded_columns TSA_GUARDED_BY(estimates_mutex);
     /// The estimates of all columns are known.
     mutable bool estimates_complete TSA_GUARDED_BY(estimates_mutex) = false;
+
+    mutable std::mutex content_fingerprint_mutex;
+    mutable UInt128 content_fingerprint TSA_GUARDED_BY(content_fingerprint_mutex) = 0;
 
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();
