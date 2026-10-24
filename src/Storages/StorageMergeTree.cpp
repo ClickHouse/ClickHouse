@@ -58,6 +58,7 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/buildQueryTreeForShard.h>
+#include <Storages/MergeTree/PartitionIds.h>
 #include <base/sleep.h>
 #include <fmt/core.h>
 #include <Common/CurrentMetrics.h>
@@ -1226,7 +1227,13 @@ StorageMergeTree::PreparedMutationEntry StorageMergeTree::prepareMutationEntry(
         additional_info = fmt::format(" (TID: {}; TIDH: {})", current_tid, current_tid.getHash());
     }
 
-    MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get(), current_tid, getContext()->getWriteSettings());
+    /// The entry keeps its own copy of the commands, and the resolved partition scope is
+    /// pinned into the command text itself, so resolve it on that copy.
+    MutationCommands commands_for_entry = commands;
+    auto partitions = rewritePartitionScopeToIds(commands_for_entry, query_context);
+    MergeTreeMutationEntry entry(
+        std::move(commands_for_entry), disk, relative_data_path, insert_increment.get(),
+        std::move(partitions), current_tid, getContext()->getWriteSettings());
     auto block_holder = allocateBlockNumber(CommittingBlock::Op::Mutation);
 
     Int64 version = block_holder->block.number;
@@ -1341,6 +1348,9 @@ void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr re
         for (auto it = mutations_begin_it; it != mutations_end_it; ++it)
         {
             MergeTreeMutationEntry & entry = it->second;
+            if (!entry.affectsPartition(failed_part->info.getPartitionId()))
+                continue;
+
             if (is_successful)
             {
                 if (!entry.latest_failed_part.empty() && result_part->part_info.contains(entry.latest_failed_part_info))
@@ -1580,15 +1590,49 @@ QueryPipeline StorageMergeTree::updateLightweight(const MutationCommands & comma
 namespace
 {
 
-struct PartVersionWithName
+struct PartVersionWithPartitionIdAndName
 {
     Int64 version;
+    String partition_id;
     String name;
 };
 
-bool comparator(const PartVersionWithName & f, const PartVersionWithName & s)
+bool lessVersion(const PartVersionWithPartitionIdAndName & f, const PartVersionWithPartitionIdAndName & s)
 {
     return f.version < s.version;
+}
+
+/// Data versions of the parts with the partition they belong to, sorted by version.
+/// A patch part is attributed to the partition of the data it patches.
+std::vector<PartVersionWithPartitionIdAndName> getSortedPartVersions(const MergeTreeData::DataPartsVector & parts)
+{
+    std::vector<PartVersionWithPartitionIdAndName> part_versions;
+    part_versions.reserve(parts.size());
+    for (const auto & part : parts)
+        part_versions.emplace_back(PartVersionWithPartitionIdAndName{part->info.getDataVersion(), part->info.getOriginalPartitionId(), part->name});
+    std::sort(part_versions.begin(), part_versions.end(), lessVersion);
+    return part_versions;
+}
+
+/// Does the mutation still have a part to process, i.e. a part in a partition it affects whose
+/// data version is below the mutation version? A partition-scoped (`IN PARTITION`) mutation
+/// ignores the parts of the partitions it does not affect, so the global minimum data version
+/// says nothing about its completion.
+bool hasPartsToMutate(
+    const MergeTreeMutationEntry & entry,
+    Int64 mutation_version,
+    const std::vector<PartVersionWithPartitionIdAndName> & part_versions)
+{
+    const PartVersionWithPartitionIdAndName needle{mutation_version, "", ""};
+    auto versions_end_it = std::lower_bound(part_versions.begin(), part_versions.end(), needle, lessVersion);
+
+    for (auto versions_it = part_versions.begin(); versions_it != versions_end_it; ++versions_it)
+    {
+        if (entry.affectsPartition(versions_it->partition_id))
+            return true;
+    }
+
+    return false;
 }
 
 }
@@ -1623,38 +1667,87 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
     /// 1. mutation_1 (txn 1)  is submitted
     /// 2. mutation_2 (no txn) is submitted - will wait for mutation_1 (txn 1) to commit or rollback
     /// 3. mutation_3 (txn 1)  is submitted - will wait for mutation_2 to finish: Deadlock!
+    ///
+    /// With partition-scoped (`IN PARTITION`) mutations all waits are partition-local:
+    /// `selectPartsToMutate` skips non-affecting entries, and a part never changes its
+    /// partition. Moreover, a mutation waits for another one only while there is a part
+    /// that the other mutation still has to process, i.e. a currently visible part whose
+    /// data version is below the other mutation's version. So the cycle above exists only
+    /// when both of its wait edges really exist. Each edge is validated separately: the
+    /// `current -> intermediate` edge needs a part in a partition affected by both the
+    /// current and the intermediate mutation, and the `intermediate -> earlier` edge needs
+    /// a part in a partition affected by both the intermediate and the earlier mutation.
+    /// A single check on the partition common to all three mutations would be wrong in
+    /// both directions: it reports a false positive when no part is waiting at all (for
+    /// example when the partition is empty), and it masks a genuine multi-partition
+    /// deadlock, because the two edges may go through different partitions. Note that the
+    /// earlier mutation does not have to be the most recent mutation of the transaction,
+    /// so all pairs are checked.
+    auto data_parts = getVisibleDataPartsVector(txn);
+
+    /// Whether the `waiter` mutation is actually waiting for the `blocker` mutation (of
+    /// version `blocker_version`): there must be a part visible to the waiter, in a partition
+    /// affected by both of them, that the blocker still has to mutate.
+    auto is_waiting_for = [](
+        const DataPartsVector & parts_visible_to_waiter,
+        const MergeTreeMutationEntry & waiter,
+        const MergeTreeMutationEntry & blocker,
+        Int64 blocker_version)
+    {
+        for (const auto & data_part : parts_visible_to_waiter)
+        {
+            const auto & partition_id = data_part->info.getPartitionId();
+            if (data_part->info.getDataVersion() < blocker_version
+                && waiter.affectsPartition(partition_id)
+                && blocker.affectsPartition(partition_id))
+                return true;
+        }
+        return false;
+    };
+
     if (txn && !from_another_mutation)
     {
-        /// Scan backwards to find the most recent mutation from the same transaction
-        for (auto it = current_mutation_it; it != current_mutations_by_version.begin();)
-        {
-            --it;
+        /// The intermediate mutation is not a mutation of this transaction, so it sees the
+        /// committed state of the table: the parts that the transaction has already mutated
+        /// are still visible to it with their original data versions.
+        auto committed_data_parts = getVisibleDataPartsVector(Tx::MaxCommittedCSN, Tx::EmptyTID);
 
-            const auto & earlier_mutation = it->second;
-            if (earlier_mutation.tid == mutation_entry.tid)
+        for (auto intermediate_it = current_mutations_by_version.begin(); intermediate_it != current_mutation_it; ++intermediate_it)
+        {
+            const auto & intermediate_mutation = intermediate_it->second;
+
+            /// Mutations of the same transaction do not wait for it to commit.
+            if (intermediate_mutation.tid == mutation_entry.tid)
+                continue;
+
+            if (!is_waiting_for(data_parts, mutation_entry, intermediate_mutation, intermediate_it->first))
+                continue;
+
+            /// Is there an earlier mutation of the same transaction that blocks the
+            /// intermediate mutation, which in turn blocks the current mutation?
+            for (auto earlier_it = current_mutations_by_version.begin(); earlier_it != intermediate_it; ++earlier_it)
             {
-                if (++it != current_mutation_it)
+                const auto & earlier_mutation = earlier_it->second;
+                if (earlier_mutation.tid == mutation_entry.tid
+                    && is_waiting_for(committed_data_parts, intermediate_mutation, earlier_mutation, earlier_it->first))
                 {
                     result.latest_failed_part = "";
                     result.latest_fail_reason = fmt::format(
                         "Deadlock detected: mutation {} in transaction {} depends on earlier mutation {} "
-                        "from the same transaction with intermediate mutations in between. ",
-                        mutation_entry.file_name, mutation_entry.tid, earlier_mutation.file_name);
+                        "from the same transaction with intermediate mutation {} in between. ",
+                        mutation_entry.file_name, mutation_entry.tid, earlier_mutation.file_name, intermediate_mutation.file_name);
                     result.latest_fail_error_code_name = ErrorCodes::getName(ErrorCodes::LOGICAL_ERROR);
                     result.latest_fail_time = time(nullptr);
                     return result;
                 }
-
-                break;
             }
         }
     }
 
-    auto data_parts = getVisibleDataPartsVector(txn);
     for (const auto & data_part : data_parts)
     {
         Int64 data_version = data_part->info.getDataVersion();
-        if (data_version < mutation_version)
+        if (data_version < mutation_version && mutation_entry.affectsPartition(data_part->info.getPartitionId()))
         {
             if (!mutation_entry.latest_fail_reason.empty())
             {
@@ -1668,11 +1761,15 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
                 if (mutation_ids)
                 {
                     auto mutations_begin_it = current_mutations_by_version.upper_bound(data_version);
-
                     for (auto it = mutations_begin_it; it != current_mutations_by_version.end(); ++it)
-                        /// All mutations with the same failure
+                    {
+                        if (!it->second.affectsPartition(data_part->info.getPartitionId()))
+                            continue;
+
+                        /// All applicable mutations with the same failure
                         if (it->second.latest_fail_reason == result.latest_fail_reason)
                             mutation_ids->insert(it->second.file_name);
+                    }
                 }
             }
             else if (txn && !from_another_mutation)
@@ -1713,25 +1810,72 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
 std::map<std::string, MutationCommands> StorageMergeTree::getUnfinishedMutationCommands() const
 {
     std::lock_guard lock(currently_processing_in_background_mutex);
-    std::vector<PartVersionWithName> part_versions_with_names;
-    auto data_parts = getDataPartsVectorForInternalUsage();
-    part_versions_with_names.reserve(data_parts.size());
-    for (const auto & part : data_parts)
-        part_versions_with_names.emplace_back(PartVersionWithName{part->info.getDataVersion(), part->name});
-    std::sort(part_versions_with_names.begin(), part_versions_with_names.end(), comparator);
+    return getUnfinishedMutationCommandsUnlocked(lock);
+}
+
+std::map<std::string, MutationCommands> StorageMergeTree::getUnfinishedMutationCommandsUnlocked(std::lock_guard<std::mutex> & /*lock*/) const
+{
+    const auto part_versions = getSortedPartVersions(getDataPartsVectorForInternalUsage());
 
     std::map<std::string, MutationCommands> result;
 
     for (const auto & [mutation_version, entry] : current_mutations_by_version)
     {
-        const PartVersionWithName needle{static_cast<Int64>(mutation_version), ""};
-        auto versions_it = std::lower_bound(
-            part_versions_with_names.begin(), part_versions_with_names.end(), needle, comparator);
-
-        size_t parts_to_do = versions_it - part_versions_with_names.begin();
-        if (parts_to_do > 0)
+        if (hasPartsToMutate(entry, static_cast<Int64>(mutation_version), part_versions))
             result.emplace(entry.file_name, *entry.commands);
     }
+
+    return result;
+}
+
+bool StorageMergeTree::areAllPartsMutatedTo(Int64 version) const
+{
+    const auto regular_parts = getDataPartsVectorForInternalUsage();
+    if (std::ranges::any_of(regular_parts, [version](const auto & part) { return part->info.getDataVersion() < version; }))
+        return false;
+
+    std::unordered_map<std::string_view, Int64> min_data_version_by_partition;
+    for (const auto & part : regular_parts)
+    {
+        Int64 data_version = part->info.getDataVersion();
+        auto [it, inserted] = min_data_version_by_partition.emplace(part->info.getPartitionId(), data_version);
+        if (!inserted)
+            it->second = std::min(it->second, data_version);
+    }
+
+    /// A patch part matters only while a regular part of its original partition may still read it,
+    /// because only then the mutation is applied on the fly to the patch. A patch already
+    /// materialized into all regular parts of its partition is obsolete (the same criterion as in
+    /// `clearUnusedPatchParts`) and is kept only with `remove_unused_patch_parts = 0`; its data
+    /// version says nothing about the mutation.
+    const auto patch_parts = getPatchPartsVectorForInternalUsage();
+    return std::ranges::none_of(patch_parts, [&](const auto & patch)
+    {
+        if (patch->info.getDataVersion() >= version)
+            return false;
+
+        auto it = min_data_version_by_partition.find(patch->info.getOriginalPartitionId());
+        return it != min_data_version_by_partition.end() && static_cast<Int64>(patch->getPatchPartIndex().getMaxDataVersion()) > it->second;
+    });
+}
+
+Strings StorageMergeTree::getMutationsWithLegacyPartitionScope() const
+{
+    std::lock_guard lock(currently_processing_in_background_mutex);
+
+    /// A legacy file that could not be upgraded at load (see `loadMutations`) is read back by every
+    /// later load of the table, finished or not, and decoding its literals through a changed
+    /// partition key would fail the load of the whole table.
+    Strings result;
+    for (const auto & [mutation_version, entry] : current_mutations_by_version)
+    {
+        if (entry.needs_file_upgrade)
+            result.push_back(entry.file_name);
+    }
+
+    /// A removed entry still pins its file until the file is actually deleted.
+    result.insert(result.end(), legacy_mutation_files_pending_removal.begin(), legacy_mutation_files_pending_removal.end());
+
     return result;
 }
 
@@ -1739,35 +1883,44 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
 {
     std::lock_guard lock(currently_processing_in_background_mutex);
 
-    std::vector<PartVersionWithName> part_versions_with_names;
+    std::vector<PartVersionWithPartitionIdAndName> part_versions;
     auto data_parts = getDataPartsVectorForInternalUsage();
-    part_versions_with_names.reserve(data_parts.size());
+    part_versions.reserve(data_parts.size());
     for (const auto & part : data_parts)
-        part_versions_with_names.emplace_back(PartVersionWithName{part->info.getDataVersion(), part->name});
-    std::sort(part_versions_with_names.begin(), part_versions_with_names.end(), comparator);
+        part_versions.emplace_back(PartVersionWithPartitionIdAndName{part->info.getDataVersion(), part->info.getPartitionId(), part->name});
+    std::sort(part_versions.begin(), part_versions.end(), lessVersion);
 
     std::vector<MergeTreeMutationStatus> result;
     for (const auto & kv : current_mutations_by_version)
     {
         Int64 mutation_version = kv.first;
         const MergeTreeMutationEntry & entry = kv.second;
-        const PartVersionWithName needle{mutation_version, ""};
+        const PartVersionWithPartitionIdAndName needle{mutation_version, "", ""};
         auto versions_it = std::lower_bound(
-            part_versions_with_names.begin(), part_versions_with_names.end(), needle, comparator);
+            part_versions.begin(), part_versions.end(), needle, lessVersion);
 
-        size_t parts_to_do = versions_it - part_versions_with_names.begin();
+        size_t parts_to_do = versions_it - part_versions.begin();
         Names parts_to_do_names;
         parts_to_do_names.reserve(parts_to_do);
         for (size_t i = 0; i < parts_to_do; ++i)
-            parts_to_do_names.push_back(part_versions_with_names[i].name);
+        {
+            if (entry.affectsPartition(part_versions[i].partition_id))
+            {
+                parts_to_do_names.push_back(part_versions[i].name);
+            }
+        }
 
         std::map<String, Int64> block_numbers_map({{"", entry.block_number}});
 
         Names parts_in_progress_names;
         for (const auto &[part, future_version] : currently_mutating_part_future_versions)
         {
-            if (part->info.getDataVersion() < mutation_version && future_version >= mutation_version)
+            if (part->info.getDataVersion() < mutation_version
+                && future_version >= mutation_version
+                && entry.affectsPartition(part->info.getPartitionId()))
+            {
                 parts_in_progress_names.push_back(part->name);
+            }
         }
 
         std::map<String, String> parts_postpone_reasons_map;
@@ -1783,8 +1936,11 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
                 else
                 {
                     auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
-                    if (part_info.getDataVersion() < mutation_version)
+                    if (part_info.getDataVersion() < mutation_version
+                        && entry.affectsPartition(part_info.getPartitionId()))
+                    {
                         parts_postpone_reasons_map[part_name] = postpone_reason;
+                    }
                 }
             }
         }
@@ -1836,6 +1992,9 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
 
             to_kill.emplace(std::move(it->second));
             current_mutations_by_version.erase(it);
+
+            if (to_kill->needs_file_upgrade)
+                legacy_mutation_files_pending_removal.insert(to_kill->file_name);
         }
     }
 
@@ -1850,8 +2009,18 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
         TransactionManager::instance().rollbackTransaction(txn);
     }
 
-    getContext()->getMergeList().cancelPartMutations(getStorageID(), {}, to_kill->block_number);
-    to_kill->removeFile();
+    /// Cancel already running part mutations for this mutation. A partition-scoped (`IN PARTITION`)
+    /// mutation only applies to its affected partitions, so cancel per partition (mirroring
+    /// `StorageReplicatedMergeTree::killMutation`). An empty `partition_ids` means a global mutation,
+    /// in which case the empty partition id cancels crossing mutations in all partitions. Passing
+    /// the empty partition id for a partition-scoped mutation would erroneously cancel unrelated
+    /// in-flight mutations in other partitions whose version range happens to span `block_number`.
+    if (to_kill->partition_ids.empty())
+        getContext()->getMergeList().cancelPartMutations(getStorageID(), {}, to_kill->block_number);
+    else
+        for (const auto & partition_id : to_kill->partition_ids)
+            getContext()->getMergeList().cancelPartMutations(getStorageID(), partition_id, to_kill->block_number);
+    removeMutationFile(*to_kill);
     LOG_TRACE(log, "Cancelled part mutations and removed mutation file {}", mutation_id);
     {
         std::lock_guard lock(mutation_wait_mutex);
@@ -1885,7 +2054,7 @@ MergeTreeMutationEntry StorageMergeTree::loadMutationEntry(const DiskPtr & disk,
 {
     try
     {
-        return MergeTreeMutationEntry(disk, relative_data_path, file_name);
+        return MergeTreeMutationEntry(disk, relative_data_path, file_name, this, getContext());
     }
     catch (const Exception & e)
     {
@@ -1979,12 +2148,80 @@ void StorageMergeTree::loadMutations()
         }
     }
 
+    /// Upgrade legacy partition-scoped mutation files after the directory scan (creating
+    /// files while iterating the directory could confuse the iterator). Once upgraded, the
+    /// file carries the resolved partition scope, so later loads (and the mutation executor)
+    /// never have to decode the `IN PARTITION` literal through the table metadata again --
+    /// decoding it again can throw after a safe partition key type change (e.g.
+    /// `Enum8 -> Int8`), making the table unloadable.
+    for (auto & [block_number, entry] : current_mutations_by_version)
+    {
+        if (!entry.needs_file_upgrade)
+            continue;
+
+        if (entry.disk->isReadOnly() || entry.disk->isWriteOnce())
+        {
+            LOG_WARNING(log, "Cannot upgrade legacy mutation file {} to the current format: disk {} is not writable",
+                entry.file_name, entry.disk->getName());
+            continue;
+        }
+
+        /// The upgrade only persists the scope that is already resolved in memory, and an entry that
+        /// is not upgraded stays in the same state as one on a non-writable disk: it is executable,
+        /// and the partition key type changes it is not safe with are refused (see
+        /// `getMutationsWithLegacyPartitionScope`). So a failed write must not fail the load of the table.
+        LOG_INFO(log, "Upgrading legacy mutation file {} to persist the resolved partition scope", entry.file_name);
+        try
+        {
+            entry.upgradeFileWithResolvedPartitionScope(getContext()->getWriteSettings());
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format("Cannot upgrade legacy mutation file {} to the current format", entry.file_name));
+        }
+    }
+
     if (!current_mutations_by_version.empty())
         increment.value = std::max(increment.value.load(), current_mutations_by_version.rbegin()->first);
 
     /// Mutations that were completed before the table was loaded are marked as done,
     /// but their actual completion time is unknown, so `finish_time` is left zero.
     markFinishedMutations();
+}
+
+bool StorageMergeTree::mutationVersionsEquivalent(const MergeTreePartInfo & left, const MergeTreePartInfo & right, std::unique_lock<std::mutex> &) const
+{
+    /// Serialized by currently_processing_in_background_mutex
+
+    auto left_data_version = left.getDataVersion();
+    auto right_data_version = right.getDataVersion();
+
+    auto left_it = current_mutations_by_version.upper_bound(left_data_version);
+    auto right_it = current_mutations_by_version.upper_bound(right_data_version);
+
+    if (left_it != right_it)
+    {
+        chassert(left.getPartitionId() == right.getPartitionId());
+
+        /// A patch part lives in a synthetic partition, while the mutation entries store the ids
+        /// of the partitions of the regular parts, so the original partition id is checked.
+        auto partition_id = left.getOriginalPartitionId();
+        auto [mutations_it, mutations_end_it] = left_data_version < right_data_version
+            ? std::make_tuple(left_it, right_it)
+            : std::make_tuple(right_it, left_it);
+
+        for (; mutations_it != mutations_end_it; ++mutations_it)
+        {
+            if (mutations_it->second.affectsPartition(partition_id))
+            {
+                // Hot path, lets keep this trace commented
+                // LOG_TRACE(log, "In partition {} parts with versions {} and {} cannot be merged because of mutation {}",
+                //     partition_id, leftDataVersion, rightDataVersion, mutations_it->first);
+                return false;
+            }
+        }
+    }
+    return true;
 }
 
 std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree::selectPartsToMerge(
@@ -2464,6 +2701,11 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             continue;
 
         auto mutations_begin_it = current_mutations_by_version.upper_bound(part->info.getDataVersion());
+        for (; mutations_begin_it != current_mutations_by_version.end(); ++mutations_begin_it)
+        {
+            if (mutations_begin_it->second.affectsPartition(part->info.getPartitionId()))
+                break;
+        }
         if (mutations_begin_it == current_mutations_by_version.end())
             continue;
 
@@ -2578,22 +2820,39 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
         auto last_mutation_to_apply = mutations_end_it;
         for (auto it = mutations_begin_it; it != mutations_end_it; ++it)
         {
+            if (!it->second.affectsPartition(part->info.getPartitionId()))
+                continue;
             /// Do not squash mutations from different transactions to be able to commit/rollback them independently.
             if (first_mutation_tid != it->second.tid)
                 break;
 
-            /// Stop before a mutation that is separated from the previous one by a patch part - see the
+            /// Stop before a mutation that is separated from the previously selected one by a patch part - see the
             /// comment about `patch_versions_by_partition` above. The same is done for a replicated table
-            /// in `ReplicatedMergeTreeZooKeeperMergePredicate::getExpectedMutationVersion`.
-            if (patch_versions && it != mutations_begin_it
-                && patch_versions->lower_bound(std::prev(it)->first) != patch_versions->upper_bound(it->first))
+            /// in `ReplicatedMergeTreeZooKeeperMergePredicate::getExpectedMutationVersion`. Mutations of other
+            /// partitions skipped above do not count, so the range starts at the last selected mutation.
+            if (patch_versions && last_mutation_to_apply != mutations_end_it
+                && patch_versions->lower_bound(last_mutation_to_apply->first) != patch_versions->upper_bound(it->first))
             {
                 break;
             }
 
+            /// A mixed-scope entry (e.g. `UPDATE ... IN PARTITION 1, UPDATE ... IN PARTITION 2`) can carry
+            /// commands of other partitions, which `MutateTask` drops for this part anyway. Do not let them
+            /// count towards the size limit or the barrier check of this part.
+            MutationCommands single_mutation_commands;
+            for (const auto & command : *it->second.commands)
+            {
+                if (!command.resolved_partition_ids || command.resolved_partition_ids->contains(part->info.getPartitionId()))
+                    single_mutation_commands.push_back(command);
+            }
+            /// The entry affects the partition, so normally some command remains. Otherwise keep all of
+            /// them, so that the part still advances past the entry (`MutateTask` skips them all).
+            if (single_mutation_commands.empty())
+                single_mutation_commands = *it->second.commands;
+
             size_t commands_size = 0;
             MutationCommands commands_for_size_validation;
-            for (const auto & command : *it->second.commands)
+            for (const auto & command : single_mutation_commands)
             {
                 if (command.type != MutationCommand::Type::DROP_COLUMN
                     && command.type != MutationCommand::Type::DROP_INDEX
@@ -2634,13 +2893,11 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             if (current_ast_elements + commands_size >= max_ast_elements)
                 break;
 
-            const auto & single_mutation_commands = it->second.commands;
-
-            if (single_mutation_commands->containBarrierCommand())
+            if (single_mutation_commands.containBarrierCommand())
             {
                 if (commands->empty())
                 {
-                    commands->insert(commands->end(), single_mutation_commands->begin(), single_mutation_commands->end());
+                    commands->insert(commands->end(), single_mutation_commands.begin(), single_mutation_commands.end());
                     mutation_ids.push_back(it->second.file_name);
                     last_mutation_to_apply = it;
                 }
@@ -2648,7 +2905,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             }
 
             current_ast_elements += commands_size;
-            commands->insert(commands->end(), single_mutation_commands->begin(), single_mutation_commands->end());
+            commands->insert(commands->end(), single_mutation_commands.begin(), single_mutation_commands.end());
             mutation_ids.push_back(it->second.file_name);
             last_mutation_to_apply = it;
         }
@@ -2876,13 +3133,18 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     return false;
 }
 
-UInt64 StorageMergeTree::getCurrentMutationVersion(UInt64 data_version, std::unique_lock<std::mutex> & /*currently_processing_in_background_mutex_lock*/) const
+UInt64 StorageMergeTree::getNextMutationVersion(const String & partition_id, UInt64 data_version, std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const
 {
-    auto it = current_mutations_by_version.upper_bound(data_version);
-    if (it == current_mutations_by_version.begin())
-        return 0;
-    --it;
-    return it->first;
+    /// Skip mutations that do not affect this partition (e.g. finished `IN PARTITION`
+    /// mutations still retained in `current_mutations_by_version`). Returning a version of
+    /// an unrelated mutation here would, for example, make `getPatchesToApplyOnMerge` fold
+    /// fewer patches than it should. This mirrors the partition-aware replicated path.
+    for (auto it = current_mutations_by_version.upper_bound(data_version); it != current_mutations_by_version.end(); ++it)
+    {
+        if (it->second.affectsPartition(partition_id))
+            return it->first;
+    }
+    return 0;
 }
 
 /// True if nothing is left for a mutation to do with the entry on a merged part of `partition_id`:
@@ -3047,29 +3309,54 @@ std::optional<Int64> StorageMergeTree::getMutationVersionForMergedPart(
     return version;
 }
 
-UInt64 StorageMergeTree::getNextMutationVersion(UInt64 data_version, std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const
-{
-    auto it = current_mutations_by_version.upper_bound(data_version);
-    if (it == current_mutations_by_version.end())
-        return 0;
-    return it->first;
-}
-
 size_t StorageMergeTree::markFinishedMutations(UInt64 first_just_completed_version)
 {
-    auto end_it = current_mutations_by_version.end();
-    if (std::optional<Int64> min_version = getMinPartDataVersion())
-        end_it = current_mutations_by_version.upper_bound(*min_version);
+    /// A partition-scoped (`IN PARTITION`) mutation is finished as soon as every part of the
+    /// partitions it affects is mutated, so the minimum data version over all parts cannot be
+    /// used to bound the range of finished mutations: a part of a partition the mutation does
+    /// not affect keeps that minimum low forever. Each mutation is checked against the parts of
+    /// the partitions it affects instead.
+    ///
+    /// For the same reason the finished mutations are not a prefix of `current_mutations_by_version`:
+    /// a mutation of one partition can finish while an earlier mutation of another partition is still
+    /// pending, so an unfinished mutation does not stop the scan.
+    ///
+    /// Patch parts are counted too: the mutation is applied on the fly to a patch part of an affected
+    /// partition with a lower data version (see `MutationsSnapshot::getOnFlyMutationCommandsForPart`),
+    /// so its entry must stay until such patch parts are gone.
+    const auto part_versions = getSortedPartVersions(
+        getDataPartsVectorForInternalUsage({DataPartState::Active}, {DataPartKind::Regular, DataPartKind::Patch}));
 
     const time_t now = time(nullptr);
 
-    size_t done_count = 0;
-    for (auto it = current_mutations_by_version.begin(); it != end_it; ++it)
-    {
-        auto & entry = it->second;
+    /// A transactional mutation is never marked as finished here, and the mutations after it that
+    /// may touch the same parts are not either. A transactional mutation scoped to some partitions
+    /// only holds back the later mutations of these partitions, so a later mutation of another
+    /// partition still finishes and gets cleaned up while the transaction is running.
+    PartitionIds partitions_of_transactional_mutations;
 
+    size_t done_count = 0;
+    for (auto & [version, entry] : current_mutations_by_version)
+    {
         if (!entry.tid.isNonTransactional())
-            break;
+        {
+            if (entry.partition_ids.empty())
+                break;
+
+            partitions_of_transactional_mutations.insert(entry.partition_ids.begin(), entry.partition_ids.end());
+            continue;
+        }
+
+        if (!partitions_of_transactional_mutations.empty()
+            && (entry.partition_ids.empty()
+                || std::ranges::any_of(entry.partition_ids, [&](const auto & partition_id)
+                    {
+                        return partitions_of_transactional_mutations.contains(partition_id);
+                    })))
+            continue;
+
+        if (hasPartsToMutate(entry, static_cast<Int64>(version), part_versions))
+            continue;
 
         if (!entry.is_done)
         {
@@ -3083,7 +3370,7 @@ size_t StorageMergeTree::markFinishedMutations(UInt64 first_just_completed_versi
         /// was not observed. A mutation in the attributed range can be `is_done` already if a
         /// concurrent unattributed pass flipped it right after the event, so check `finish_time`
         /// itself rather than stamping under the `is_done` flip above.
-        if (!entry.finish_time && it->first >= first_just_completed_version)
+        if (!entry.finish_time && version >= first_just_completed_version)
             entry.finish_time = now;
 
         ++done_count;
@@ -3104,7 +3391,6 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
     std::vector<MergeTreeMutationEntry> mutations_to_delete;
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
-
         size_t done_count = markFinishedMutations();
 
         if (done_count <= finished_mutations_to_keep)
@@ -3112,13 +3398,24 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
 
         size_t to_delete_count = done_count - finished_mutations_to_keep;
 
+        /// The finished mutations are not necessarily a prefix of `current_mutations_by_version`
+        /// (see `markFinishedMutations`): delete the oldest finished ones and skip the pending ones.
         auto it = current_mutations_by_version.begin();
-        for (size_t i = 0; i < to_delete_count; ++i)
+        while (it != current_mutations_by_version.end() && mutations_to_delete.size() < to_delete_count)
         {
+            if (!it->second.is_done)
+            {
+                ++it;
+                continue;
+            }
+
             const auto & tid = it->second.tid;
             if (!tid.isNonTransactional() && !TransactionManager::getCSN(tid))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot remove mutation {}, because transaction {} is not committed. It's a bug",
                                 it->first, tid);
+
+            if (it->second.needs_file_upgrade)
+                legacy_mutation_files_pending_removal.insert(it->second.file_name);
 
             mutations_to_delete.push_back(std::move(it->second));
             it = current_mutations_by_version.erase(it);
@@ -3128,10 +3425,23 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
     for (auto & mutation : mutations_to_delete)
     {
         LOG_TRACE(log, "Removing mutation: {}", mutation.file_name);
-        mutation.removeFile();
+        removeMutationFile(mutation);
     }
 
     return mutations_to_delete.size();
+}
+
+void StorageMergeTree::removeMutationFile(MergeTreeMutationEntry & entry)
+{
+    String file_name = entry.file_name;
+    entry.removeFile();
+
+    /// Only after a successful deletion: if it throws, the legacy file is still on disk.
+    if (entry.needs_file_upgrade)
+    {
+        std::lock_guard lock(currently_processing_in_background_mutex);
+        legacy_mutation_files_pending_removal.erase(file_name);
+    }
 }
 
 size_t StorageMergeTree::clearOldPartsFromFilesystem(bool force, bool with_pause_fail_point)
@@ -4680,7 +4990,11 @@ void StorageMergeTree::attachRestoredParts(MutableDataPartsVector && parts, cons
     }
 }
 
-StorageMergeTree::MutationsSnapshot::MutationsSnapshot(Params params_, MutationCounters counters_, MutationsByVersion mutations_snapshot, DataPartsVector patches_)
+StorageMergeTree::MutationsSnapshot::MutationsSnapshot(
+    Params params_,
+    MutationCounters counters_,
+    MutationsByVersion mutations_snapshot,
+    DataPartsVector patches_)
     : MutationsSnapshotBase(std::move(params_), std::move(counters_), std::move(patches_))
     , mutations_by_version(std::move(mutations_snapshot))
 {
@@ -4690,13 +5004,18 @@ MutationCommands StorageMergeTree::MutationsSnapshot::getOnFlyMutationCommandsFo
 {
     MutationCommands result;
     UInt64 part_data_version = part->info.getDataVersion();
+    /// Patch parts live in synthetic `patch-*` partitions, but mutations are scoped by the partition of the data they patch.
+    const auto partition_id = part->info.getOriginalPartitionId();
 
-    for (const auto & [mutation_version, commands] : mutations_by_version | std::views::reverse)
+    for (const auto & [mutation_version, entry] : mutations_by_version | std::views::reverse)
     {
         if (mutation_version <= part_data_version)
             break;
 
-        addSupportedCommands(*commands, mutation_version, result);
+        if (!containsInPartitionIdsOrEmpty(entry.partition_ids, partition_id))
+            continue;
+
+        addSupportedCommands(*entry.commands, mutation_version, partition_id, result);
     }
 
     std::reverse(result.begin(), result.end());
@@ -4709,8 +5028,8 @@ NameSet StorageMergeTree::MutationsSnapshot::getColumnsChangedOnFly() const
     if (!hasDataMutations() && !hasAlterMutations())
         return res;
 
-    for (const auto & [version, commands] : mutations_by_version)
-        addColumnsChangedOnFly(*commands, res);
+    for (const auto & [version, entry] : mutations_by_version)
+        addColumnsChangedOnFly(*entry.commands, res);
 
     return res;
 }
@@ -4726,7 +5045,11 @@ MergeTreeData::MutationsSnapshotPtr StorageMergeTree::getMutationsSnapshot(const
 
     std::lock_guard lock(currently_processing_in_background_mutex);
     if (!params.need_data_mutations && !params.need_alter_mutations && mutation_counters.num_metadata <= 0)
-        return std::make_shared<MutationsSnapshot>(params, std::move(mutations_snapshot_counters), std::move(mutations_snapshot), std::move(patch_parts));
+        return std::make_shared<MutationsSnapshot>(
+            params,
+            std::move(mutations_snapshot_counters),
+            std::move(mutations_snapshot),
+            std::move(patch_parts));
 
     UInt64 max_mutation_version = std::numeric_limits<UInt64>::max();
     if (params.max_mutation_versions && !params.max_mutation_versions->empty())
@@ -4738,12 +5061,16 @@ MergeTreeData::MutationsSnapshotPtr StorageMergeTree::getMutationsSnapshot(const
         /// Required commands will be copied later only for specific parts.
         if (version <= max_mutation_version && MergeTreeData::IMutationsSnapshot::needIncludeMutationToSnapshot(params, *entry.commands))
         {
-            mutations_snapshot.emplace(version, entry.commands);
+            mutations_snapshot.emplace(version, MutationsSnapshot::MutationSnapshotEntry{entry.commands, entry.partition_ids});
             incrementMutationsCounters(mutations_snapshot_counters, *entry.commands);
         }
     }
 
-    return std::make_shared<MutationsSnapshot>(params, std::move(mutations_snapshot_counters), std::move(mutations_snapshot), std::move(patch_parts));
+    return std::make_shared<MutationsSnapshot>(
+        params,
+        std::move(mutations_snapshot_counters),
+        std::move(mutations_snapshot),
+        std::move(patch_parts));
 }
 
 MutationCounters StorageMergeTree::getMutationCounters() const

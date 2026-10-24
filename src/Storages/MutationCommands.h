@@ -4,6 +4,7 @@
 #include <vector>
 #include <memory>
 #include <unordered_map>
+#include <Storages/MergeTree/PartitionIds.h>
 
 #include <Core/Defines.h>
 #include <Core/Names.h>
@@ -117,6 +118,15 @@ struct MutationCommand
     /// True if column is read by mutation command to apply patch.
     /// Required to distinguish read command used for MODIFY COLUMN.
     bool read_for_patch = false;
+
+    /// The partitions this command is scoped to (`IN PARTITION p` or `IN PARTITION p1, p2, ...`),
+    /// resolved when the mutation was created and persisted together with the mutation entry.
+    /// When it is set, executors must use it instead of resolving the partition literals of the
+    /// AST again: after a key-safe partition key type change (e.g. `Enum8 -> Int8`) the original
+    /// literals no longer parse against the current partition key. It is not set for commands
+    /// that are not partition-scoped, and for mutations whose entry does not carry the resolved
+    /// scope. Never empty when set.
+    std::optional<PartitionIds> resolved_partition_ids = {};
 
     /// If `parse_alter_commands` is true, more alter commands are accepted as
     /// mutation commands. `max_parser_depth` / `max_parser_backtracks` are

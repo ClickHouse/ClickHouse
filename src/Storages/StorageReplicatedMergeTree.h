@@ -352,6 +352,7 @@ public:
     String getTableSharedID() const override;
 
     std::map<std::string, MutationCommands> getUnfinishedMutationCommands() const override;
+    Strings getMutationsWithLegacyPartitionScope() const override;
 
     /// Check if there are new broken disks and enqueue part recovery tasks.
     void checkBrokenDisks();

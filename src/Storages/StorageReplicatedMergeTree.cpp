@@ -55,6 +55,7 @@
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
+#include <Storages/MergeTree/PartitionIds.h>
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -289,6 +290,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_UNEXPECTED_DATA_PARTS;
     extern const int ABORTED;
+    extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
     extern const int REPLICA_IS_NOT_IN_QUORUM;
     extern const int TABLE_IS_READ_ONLY;
     extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
@@ -7252,6 +7254,16 @@ void StorageReplicatedMergeTree::alter(
 
     const auto zookeeper = getZooKeeperAndAssertNotReadonly();
 
+    /// Does the `ALTER` change the type of a column or a subcolumn used in the partition key? `checkAlterEligibility`
+    /// refuses it while a mutation entry with an undecodable `IN PARTITION <value>` literal exists, but that
+    /// check is only a snapshot: a replica of an older server version may create such an entry concurrently.
+    /// So the check is repeated below and the version of `/mutations` it saw is fenced in the commit.
+    const bool changes_partition_key_column_type = std::ranges::any_of(commands, [&](const AlterCommand & command)
+    {
+        return command.type == AlterCommand::MODIFY_COLUMN
+            && MergeTreeData::changesTypeOfPartitionKeyColumns(*metadata_snapshot, future_metadata, command.column_name);
+    });
+
     std::optional<ReplicatedMergeTreeLogEntryData> alter_entry;
     std::optional<String> mutation_znode;
 
@@ -7263,6 +7275,23 @@ void StorageReplicatedMergeTree::alter(
         bool pulled_queue = false;
         std::optional<int32_t> maybe_mutations_version_after_logs_pull;
         std::map<std::string, MutationCommands> unfinished_mutations;
+
+        /// The version of `/mutations` before the legacy partition scope check, see `changes_partition_key_column_type`.
+        std::optional<int32_t> mutations_version_before_legacy_scope_check;
+        if (changes_partition_key_column_type)
+        {
+            Coordination::Stat mutations_stat;
+            zookeeper->get(fs::path(zookeeper_path) / "mutations", &mutations_stat);
+            mutations_version_before_legacy_scope_check = mutations_stat.version;
+
+            if (auto legacy_mutations = getMutationsWithLegacyPartitionScope(); !legacy_mutations.empty())
+                throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                                "ALTER of a partition key column is forbidden while the mutation(s) {} created by "
+                                "an older server version still scope their commands with an `IN PARTITION <value>` "
+                                "literal that would become undecodable after the change; "
+                                "wait for them to finish or kill them (KILL MUTATION) and retry",
+                                fmt::join(legacy_mutations, ", "));
+        }
         for (const auto & command : commands)
         {
             if (command.isDropOrRename())
@@ -7410,8 +7439,18 @@ void StorageReplicatedMergeTree::alter(
             mutation_entry.source_replica = replica_name;
             mutation_entry.commands = std::move(maybe_mutation_commands);
 
+            /// `ALTER_METADATA` mutations are persisted through the same ZooKeeper path as
+            /// direct mutations. Pin the scope here as well, otherwise a pending `CLEAR COLUMN
+            /// ... IN PARTITION` entry would retain its original partition literal and could
+            /// become unparsable after a safe partition-key type change.
+            rewritePartitionScopeToIds(mutation_entry.commands, query_context);
+
             int32_t mutations_version = 0;
-            if (maybe_mutations_version_after_logs_pull.has_value())
+            if (mutations_version_before_legacy_scope_check.has_value())
+            {
+                mutations_version = *mutations_version_before_legacy_scope_check;
+            }
+            else if (maybe_mutations_version_after_logs_pull.has_value())
             {
                 mutations_version = *maybe_mutations_version_after_logs_pull;
             }
@@ -7433,6 +7472,12 @@ void StorageReplicatedMergeTree::alter(
             mutation_path_idx = ops.size();
             ops.emplace_back(
                 zkutil::makeCreateRequest(fs::path(mutations_path) / "", mutation_entry.toString(), zkutil::CreateMode::PersistentSequential));
+        }
+        else if (mutations_version_before_legacy_scope_check.has_value())
+        {
+            /// No mutation entry is created, so nothing else fences `/mutations`: a concurrently created legacy
+            /// entry must fail the commit (and the check above is repeated on the retry).
+            ops.emplace_back(zkutil::makeCheckRequest(fs::path(zookeeper_path) / "mutations", *mutations_version_before_legacy_scope_check));
         }
 
         if (auto txn = query_context->getZooKeeperMetadataTransaction())
@@ -8891,6 +8936,14 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, Conte
     mutation_entry.source_replica = replica_name;
     mutation_entry.commands = commands;
 
+    /// The entry is persisted in ZooKeeper only as the serialized text of the commands, and every
+    /// replica re-resolves the `IN PARTITION` clause from that text at execution time. Pin the
+    /// partition scope to the `IN PARTITION ID` form now, so that a later key-safe partition key
+    /// type change (e.g. `Enum8 -> Int8`) cannot make the persisted partition value unparseable
+    /// while the mutation is still pending. The `ID` form is decoded without the partition key
+    /// and is understood by all replicas, including older versions.
+    rewritePartitionScopeToIds(mutation_entry.commands, query_context);
+
     const String mutations_path = fs::path(zookeeper_path) / "mutations";
     const auto zookeeper = getZooKeeper();
 
@@ -9553,7 +9606,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     const auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
     const MergeTreeData & src_data = checkStructureAndGetMergeTreeData(source_table, source_metadata_snapshot, metadata_snapshot);
 
-    std::unordered_set<String> partitions;
+    PartitionIds partitions;
     if (partition->as<ASTPartition>()->all)
     {
         if (replace)
@@ -9561,11 +9614,10 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
 
         /// Patch parts cannot be copied to another table. Partitions with unapplied patches are rejected by `replacePartitionFromImpl`.
         partitions = src_data.getAllPartitionIds();
-        std::erase_if(partitions, isPatchPartitionId);
+        boost::container::erase_if(partitions, isPatchPartitionId);
     }
     else
     {
-        partitions = std::unordered_set<String>();
         partitions.emplace(getPartitionIDFromQuery(partition, query_context));
     }
     LOG_INFO(log, "Will try to attach {} partitions", partitions.size());
@@ -10901,6 +10953,39 @@ String StorageReplicatedMergeTree::getTableSharedID() const
 std::map<std::string, MutationCommands> StorageReplicatedMergeTree::getUnfinishedMutationCommands() const
 {
     return queue.getUnfinishedMutations();
+}
+
+Strings StorageReplicatedMergeTree::getMutationsWithLegacyPartitionScope() const
+{
+    /// The local set of mutations is refreshed asynchronously, so a legacy entry already in
+    /// `/mutations` may not be loaded yet. `alter` does not pull it for a `MODIFY COLUMN` either, and
+    /// the partition key type change allowed on a stale view would make that entry undecodable once it
+    /// is loaded. Load the new entries from ZooKeeper first.
+    auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::getMutationsWithLegacyPartitionScope");
+    auto zookeeper = getZooKeeper();
+    const_cast<ReplicatedMergeTreeQueue &>(queue).updateMutations(zookeeper);
+
+    /// A mutation done on this replica may still be pending on a lagging one, which loads the entry
+    /// after the partition key type change. Like `ReplicatedMergeTreeCleanupThread::clearOldMutations`,
+    /// consider an entry done everywhere only if it is not greater than the `mutation_pointer` of every replica.
+    String min_replicas_mutation_pointer;
+    std::optional<UInt64> min_pointer;
+    for (const String & replica : zookeeper->getChildren(fs::path(zookeeper_path) / "replicas"))
+    {
+        String pointer;
+        zookeeper->tryGet(fs::path(zookeeper_path) / "replicas" / replica / "mutation_pointer", pointer);
+        if (pointer.empty())
+        {
+            min_pointer.reset();
+            break;
+        }
+        UInt64 value = parse<UInt64>(pointer);
+        min_pointer = min_pointer ? std::min(*min_pointer, value) : value;
+    }
+    if (min_pointer)
+        min_replicas_mutation_pointer = padIndex(*min_pointer);
+
+    return queue.getMutationsWithLegacyPartitionScope(min_replicas_mutation_pointer);
 }
 
 void StorageReplicatedMergeTree::createTableSharedID(const ZooKeeperRetriesInfo & zookeeper_retries_info)
