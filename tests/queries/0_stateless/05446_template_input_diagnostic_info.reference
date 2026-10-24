@@ -1,0 +1,28 @@
+2	Bob
+--- bad field
+CANNOT_PARSE_INPUT_ASSERTION_FAILED
+ERROR: text "x,Bob<LINE FEED>END" is not like UInt64
+Maybe it's not possible to deserialize field 0 as CSV
+Suffix does not match
+Trying to parse next row
+Using format string (from format_schema_rows)
+--- missing row delimiter
+CANNOT_PARSE_INPUT_ASSERTION_FAILED
+Suffix does not match
+There is no delimiter between rows: expected "<LINE FEED>"
+There is some data after suffix
+Trying to parse next row
+Using format string (from format_schema_rows)
+--- bad field delimiter
+CANNOT_PARSE_INPUT_ASSERTION_FAILED
+Suffix does not match
+There is no delimiter before field 1: expected ","
+There is some data after suffix
+Trying to parse next row
+Using format string (from format_schema_rows)
+--- bad skipped column
+INCORRECT_DATA
+name: <SKIPPED COLUMN>
+Suffix does not match
+Trying to parse next row
+Using format string (from format_schema_rows)
