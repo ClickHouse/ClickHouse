@@ -114,6 +114,38 @@ def test(started_cluster):
             )
 
 
+def test_create_table_as_source_on_other_shards(started_cluster):
+    # node1 hosts shards 0 and 2, so it does not have the shard_1 database. It ships the query to
+    # shard_1_hosts, which holds only node2 and node3, the nodes that host shard_1. The legacy ON
+    # CLUSTER formats carry the query as written, so the initiator must not read the source
+    # definition it does not have.
+    for node in (node2, node3):
+        node.query(
+            "CREATE TABLE shard_1.as_source(date Date, id UInt32, shard_id UInt32) "
+            "ENGINE = MergeTree PARTITION BY toYYYYMM(date) ORDER BY id"
+        )
+
+    assert node1.query("EXISTS DATABASE shard_1") == "0\n"
+
+    for version in (1, 2):
+        table = "as_copy_v{}".format(version)
+        node1.query(
+            "CREATE TABLE shard_1.{} ON CLUSTER shard_1_hosts AS shard_1.as_source".format(table),
+            settings={
+                "distributed_ddl_entry_format_version": version,
+                "distributed_ddl_output_mode": "throw",
+            },
+        )
+        for node in (node2, node3):
+            assert node.query("EXISTS TABLE shard_1.{}".format(table)) == "1\n"
+            assert (
+                node.query(
+                    "SELECT engine FROM system.tables WHERE database = 'shard_1' AND name = '{}'".format(table)
+                )
+                == "MergeTree\n"
+            )
+
+
 if __name__ == "__main__":
     with contextmanager(started_cluster)() as cluster:
         for name, instance in list(cluster.instances.items()):

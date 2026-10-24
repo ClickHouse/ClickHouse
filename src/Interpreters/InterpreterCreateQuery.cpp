@@ -4087,22 +4087,53 @@ BlockIO InterpreterCreateQuery::execute()
                 /// the UUIDs above do
                 create.as_database = getContext()->resolveDatabase(create.as_database);
 
-                /// OLDEST_VERSION sends no settings, so a worker replaces nothing with Null. check
-                /// what the worker builds, not what our settings give
-                auto preflight_context = Context::createCopy(getContext());
-                if (on_cluster_version == DDLLogEntry::OLDEST_VERSION)
+                /// Check `SHOW COLUMNS` before looking the source up, else the error tells a user who cannot
+                /// see the source whether it exists.
+                const bool inherits_engine = !create.storage || !create.storage->engine;
+                if (inherits_engine)
+                    getContext()->checkAccess(AccessType::SHOW_COLUMNS, create.as_database, create.as_table);
+
+                /// The initiator can read the source definition only when it holds the source. A
+                /// cross-replication cluster keeps each shard in a database the initiator may not have. A
+                /// query with its own `ENGINE` inherits no definition, so it skips the lookup, which can reach
+                /// the server behind a `Remote` database before any grant is checked.
+                if (!inherits_engine || DatabaseCatalog::instance().isTableExist({create.as_database, create.as_table}, getContext()))
                 {
-                    preflight_context->setSetting("restore_replace_external_engines_to_null", false);
-                    preflight_context->setSetting("restore_replace_external_table_functions_to_null", false);
+                    /// OLDEST_VERSION sends no settings, so a worker replaces nothing with Null. check
+                    /// what the worker builds, not what our settings give
+                    auto preflight_context = Context::createCopy(getContext());
+                    if (on_cluster_version == DDLLogEntry::OLDEST_VERSION)
+                    {
+                        preflight_context->setSetting("restore_replace_external_engines_to_null", false);
+                        preflight_context->setSetting("restore_replace_external_table_functions_to_null", false);
+                    }
+
+                    ASTPtr inherited_query = query_ptr->clone();
+                    auto & inherited = inherited_query->as<ASTCreateQuery &>();
+                    InterpreterCreateQuery(inherited_query, preflight_context).setEngine(inherited);
+
+                    /// getRequiredAccess sees no engine, because this query holds none of its own
+                    if (inherited.storage && inherited.storage->engine)
+                        getContext()->checkAccess(AccessType::TABLE_ENGINE, inherited.storage->engine->name);
                 }
-
-                ASTPtr inherited_query = query_ptr->clone();
-                auto & inherited = inherited_query->as<ASTCreateQuery &>();
-                InterpreterCreateQuery(inherited_query, preflight_context).setEngine(inherited);
-
-                /// getRequiredAccess sees no engine, because this query holds none of its own
-                if (inherited.storage && inherited.storage->engine)
-                    getContext()->checkAccess(AccessType::TABLE_ENGINE, inherited.storage->engine->name);
+                else if (inherits_engine)
+                {
+                    /// The initiator cannot see the engine and the settings the worker inherits, so require
+                    /// `SELECT` on the source and `TABLE ENGINE` on every engine, which covers any source. A
+                    /// query with its own `ENGINE` inherits neither.
+                    const auto access = getContext()->getAccess();
+                    if (!access->isGranted(AccessType::SELECT, create.as_database, create.as_table)
+                        || !access->isGranted(AccessType::TABLE_ENGINE))
+                    {
+                        const String qualified_name = backQuoteIfNeed(create.as_database) + "." + backQuoteIfNeed(create.as_table);
+                        throw Exception(
+                            ErrorCodes::ACCESS_DENIED,
+                            "Not enough privileges. {} is not on this server, so the definition that the new table "
+                            "inherits from it cannot be checked here. To execute this query, it's necessary to have "
+                            "the grants SELECT ON {} and TABLE ENGINE ON *, or to specify ENGINE explicitly",
+                            qualified_name, qualified_name);
+                    }
+                }
             }
 
             /// This branch ships the query text as written, and `OLDEST_VERSION` also ships no settings,
