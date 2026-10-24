@@ -269,6 +269,13 @@ struct JoinAlgorithmParams
     std::optional<UInt64> rhs_size_estimation;
     std::optional<UInt64> result_rows_estimation;
 
+    /// Whether both join inputs can be efficiently read in the order of the join keys, so that the pre-join
+    /// sorts of a merge join become cheap (`FinishSorting`) or disappear. Computed on the query plan
+    /// physicalization path from the join input subplans (see `joinInputCanBeReadInJoinKeyOrder`); stays
+    /// `false` when the inputs are not available for inspection (e.g. the old analyzer path). Gates the
+    /// `sorted_merge` and `parallel_sorted_merge` algorithms.
+    bool inputs_can_be_read_in_join_key_order = false;
+
     explicit JoinAlgorithmParams(const Context & context);
 
     JoinAlgorithmParams(

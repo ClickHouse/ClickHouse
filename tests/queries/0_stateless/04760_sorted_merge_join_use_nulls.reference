@@ -1,0 +1,14 @@
+using_inner_merge_selected	1
+using_left_merge_selected	1
+using_full_merge_selected	1
+using_full_reads_in_order	1
+using_inner_result	1
+using_left_result	1
+using_full_result	1
+parallel_left_nulls_sharded	1
+parallel_right_nulls_sharded	1
+parallel_full_nulls_sharded	1
+parallel_using_full_nulls_sharded	1
+parallel_left_nulls_result	1
+parallel_right_nulls_result	1
+parallel_using_full_nulls_result	1

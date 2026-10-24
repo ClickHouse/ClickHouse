@@ -1,0 +1,22 @@
+--- INNER ANY with a one-sided unary `ON` predicate: `partial_merge`, no runtime filter ---
+        Algorithm: PartialMergeJoin
+--- INNER ALL with the same predicate: `partial_merge`, no runtime filter ---
+        Algorithm: PartialMergeJoin
+--- LEFT ALL with the same predicate: `partial_merge`, no runtime filter ---
+        Algorithm: PartialMergeJoin
+--- A one-sided binary predicate behaves the same way ---
+        Algorithm: PartialMergeJoin
+--- A cross-side non-equality condition is not `partial_merge`-selectable: `hash` with the filter ---
+      Algorithm: HashJoin
+          BuildRuntimeFilter (Build runtime join filter on __table2.id)
+--- A disjunctive `ON` section is not `partial_merge`-selectable either ---
+        Algorithm: HashJoin
+--- Results are the same as with plain `hash` ---
+666
+666
+666
+666
+100000
+100000
+994
+994

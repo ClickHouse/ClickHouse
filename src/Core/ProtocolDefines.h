@@ -133,6 +133,8 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// result blocks can be shipped. A peer below it does not know the name and rejects the whole plan.
 /// Version 20 also adds `allow_block_nested_loop_join` to the join step settings. A peer below it does not
 /// know the name and has no block nested loop join: it rejects a join without equality keys by itself.
+/// Version 20 also adds the `sorted_merge` and `parallel_sorted_merge` values of `join_algorithm`. They are removed
+/// from the list towards a peer below it, which does not know them.
 /// Version 20 also registers the `ReadFromSystemOne` and `ReadFromSystemNumbers` steps, so a plan that
 /// reads `system.one` or `numbers(...)` can be shipped. These are new step names rather than a change
 /// of a step's own bytes, so the per-step version added in 19 does not cover them: an older peer does
@@ -176,6 +178,12 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SYSTEM_SOUR
 /// and a join that needs the block nested loop join is rejected there with `INVALID_JOIN_ON_EXPRESSION` rather
 /// than executed differently.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOCK_NESTED_LOOP_JOIN = 20;
+/// First query-plan serialization version that knows the `sorted_merge` and `parallel_sorted_merge` values of
+/// `join_algorithm`. Below it, they are removed from the list: an older peer would reject them with `UNKNOWN_JOIN`,
+/// and an algorithm the peer does not have is unavailable there, so the join falls through to the next algorithm in
+/// the list, as it does when the inputs cannot be read in the order of the join keys. A list of only these values
+/// is refused.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SORTED_MERGE_JOIN = 20;
 /// First query-plan serialization version that knows `use_aggregation_memory_tracker`. Below it, the name is not
 /// written, because a strict named schema makes an older peer throw on an unknown name; that peer then runs the
 /// aggregation with its own two-level decision.

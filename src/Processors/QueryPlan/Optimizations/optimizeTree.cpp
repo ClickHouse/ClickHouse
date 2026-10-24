@@ -6,6 +6,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Optimizer.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -377,7 +378,8 @@ void optimizeTreeSecondPass(
     setAggregationHashTableCacheKeys(optimization_settings, root);
 
     /// Join runtime filters are registered and found in the lookup of the thread's query context, so they need a query.
-    const bool add_join_runtime_filters = optimization_settings.enable_join_runtime_filters && CurrentThread::tryGetQueryContext();
+    const bool has_query_context = CurrentThread::tryGetQueryContext() != nullptr;
+    const bool add_join_runtime_filters = optimization_settings.enable_join_runtime_filters && has_query_context;
     bool join_runtime_filters_were_added = false;
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)
@@ -388,10 +390,18 @@ void optimizeTreeSecondPass(
         },
         [&](auto & frame_node)
         {
+            /// The local plan of a plan-based parallel replicas fragment is optimized without this pass,
+            /// because the filters were planted on the outer plan before the fragment was cloned. A join
+            /// the pass skipped there for an eligible sorted-merge algorithm has no filter, though, and
+            /// may have lost the eligibility in the fragment (its coordinated input is no longer read in
+            /// order): the selection then falls through to a hash-family algorithm, which must get its
+            /// filter back. The flag is set only by the pass itself, so the filters were enabled.
             /// The joins stay logical until after `applyParallelReplicas` below: it needs the final
             /// (reordered, runtime-filtered) join shape and clones a fragment, which only `JoinStepLogical`
             /// supports, and lazy materialization for joins reads the join expressions from it.
-            if (add_join_runtime_filters)
+            const auto * join_logical = typeid_cast<const JoinStepLogical *>(frame_node.step.get());
+            if (add_join_runtime_filters
+                || (has_query_context && join_logical && join_logical->isRuntimeFilterSuppressedForSortedMerge()))
                 join_runtime_filters_were_added |= tryAddJoinRuntimeFilter(frame_node, nodes, optimization_settings);
         });
 
@@ -548,7 +558,27 @@ void optimizeTreeSecondPass(
     /// when nothing was distributed).
     traverseQueryPlan(stack, root,
         [&](auto &) {},
-        [&](auto & frame_node) { convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings); });
+        [&](auto & frame_node)
+        {
+            /// `applyParallelReplicas` may have replaced a join input with a distributed read; the
+            /// join-key-order eligibility memoized before it (by `tryAddJoinRuntimeFilter`) is stale
+            /// then, so recompute it on the final plan - a sorted-merge algorithm must fall through
+            /// to the next one of `join_algorithm` when its input is no longer readable in order.
+            if (auto * join_logical = typeid_cast<JoinStepLogical *>(frame_node.step.get()))
+            {
+                join_logical->resetInputsCanBeReadInJoinKeyOrder();
+                /// If the filter pass skipped this join because an eligible sorted-merge algorithm
+                /// won the selection, re-run it on the final plan: when the rewrite broke the
+                /// eligibility, the selection falls through to a hash-family algorithm, which must
+                /// get its runtime filter back. The re-added filter stays adjacent to the join (the
+                /// push-down passes have already run), which costs only the deeper placement and the
+                /// index analysis, not correctness.
+                if (optimization_settings.enable_join_runtime_filters
+                    && join_logical->isRuntimeFilterSuppressedForSortedMerge())
+                    tryAddJoinRuntimeFilter(frame_node, nodes, optimization_settings);
+            }
+            convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings);
+        });
 
     /// The runtime filters were pushed down while the joins were logical, so merge what the conversion
     /// added around the joins, as that push-down did when the joins were converted before it. With the
@@ -974,8 +1004,11 @@ void optimizeTreeSecondPass(
     /// Propagate stream disjointness so that DISTINCT / LIMIT BY / GROUP BY can skip merging streams.
     applyStreamDisjointness(optimization_settings, root);
 
-    if (optimization_settings.query_plan_join_shard_by_pk_ranges)
-        optimizeJoinByShards(root);
+    /// Without `query_plan_join_shard_by_pk_ranges` the pass still runs, but restricted to joins whose
+    /// selected algorithm is `parallel_sorted_merge`: for them the primary-key-range sharding is not an
+    /// opt-in extra but the way the algorithm parallelizes (it keeps the in-order reads intact, unlike the
+    /// hash scatter below, which must not touch pre-sorted sides).
+    optimizeJoinByShards(root, /*only_parallel_sorted_merge=*/!optimization_settings.query_plan_join_shard_by_pk_ranges);
 
     /// Runs after the filters were pushed down into the reading steps: the mark is detected
     /// from the `__applyFilter` conjunct of the reading step's own filter.

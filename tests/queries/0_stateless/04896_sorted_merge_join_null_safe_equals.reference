@@ -1,0 +1,7 @@
+null_safe_falls_through_to_hash	1
+null_safe_parallel_falls_through_to_hash	1
+null_safe_not_sharded	1
+non_nullable_null_safe_merge_selected	1
+null_safe_result	1
+null_safe_parallel_result	1
+non_nullable_null_safe_result	1
