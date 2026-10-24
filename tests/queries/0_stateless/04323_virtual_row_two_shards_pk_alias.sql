@@ -45,7 +45,7 @@ SELECT timestamp, id
 FROM A
 ORDER BY timestamp DESC
 LIMIT 10
-SETTINGS distributed_product_mode = 'allow', optimize_read_in_order = 1, read_in_order_use_virtual_row = 1, read_in_order_use_virtual_row_per_block = 1;
+SETTINGS distributed_product_mode = 'allow', optimize_read_in_order = 1, read_in_order_use_virtual_row = 1, read_in_order_use_virtual_row_per_block = 1, read_in_order_virtual_row_block_interval = 1;
 
 DROP TABLE dist_t_two_shards;
 DROP TABLE local_t;

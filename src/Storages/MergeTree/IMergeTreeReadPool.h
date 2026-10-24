@@ -24,6 +24,11 @@ public:
     /// task_idx is an implementation defined identifier that helps
     /// to get required task. E.g. it may be number of thread in case of Default reading type or an index of a part in case of InOrder/InReverseOrder reading type.
     virtual MergeTreeReadTaskPtr getTask(size_t task_idx, MergeTreeReadTask * previous_task) = 0;
+
+    /// Whether getTask may return a task later although it returned nothing now. Pools that cut tasks on
+    /// demand (MergeTreeReadPoolInOrderSliced) do until they are finished; a source then waits for the
+    /// next task instead of ending its stream.
+    virtual bool mayHaveMoreTasks() const { return false; }
     virtual void profileFeedback(ReadBufferFromFileBase::ProfileInfo info) = 0;
 };
 

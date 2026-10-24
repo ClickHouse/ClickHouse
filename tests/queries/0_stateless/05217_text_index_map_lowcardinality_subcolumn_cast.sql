@@ -160,7 +160,7 @@ SELECT 'scan', id FROM tab_ns WHERE hasToken(CAST(s, 'LowCardinality(Nullable(St
 SELECT '-- Nullable column: dropping Nullable is looked through, the cast does not throw if the granule with NULL is skipped';
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT id FROM tab_ns WHERE hasToken(CAST(s, 'String'), 'network')) WHERE explain LIKE '%Name:%' OR explain LIKE '%Granules:%';
 SELECT 'idx', id FROM tab_ns WHERE hasToken(CAST(s, 'String'), 'disk') ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
-SELECT 'scan', id FROM tab_ns WHERE hasToken(CAST(s, 'String'), 'disk') ORDER BY id SETTINGS use_skip_indexes = 0; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
+SELECT 'scan', count() FROM tab_ns WHERE hasToken(CAST(s, 'String'), 'disk') SETTINGS use_skip_indexes = 0; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
 
 DROP TABLE tab_ns;
 
