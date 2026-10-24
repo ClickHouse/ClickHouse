@@ -14,6 +14,7 @@
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesSlidingSum.h>
 
 #include <optional>
+#include <span>
 
 namespace DB
 {
@@ -111,10 +112,10 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
         {
         }
 
-        void add(const Samples & samples, GridScaleTimestampType bucket_end_timestamp)
+        void add(std::span<const typename Samples::Sample> samples, GridScaleTimestampType bucket_end_timestamp)
         {
             Summary summary;
-            samples.forEachSample([&summary](TimestampType timestamp, ValueType value)
+            for (const auto & [timestamp, value] : samples)
             {
                 if (summary.count == 0)
                 {
@@ -129,7 +130,7 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
                 summary.last_timestamp = timestamp;
                 summary.last_value = value;
                 ++summary.count;
-            });
+            }
             add(std::move(summary), bucket_end_timestamp);
         }
 
@@ -221,10 +222,11 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
         }
     };
 
-    /// The bucket stores raw samples; the aggregator's `add(const Samples &)` preaggregates them into a `Summary`.
+    /// The state keeps all samples in one sorted buffer, and the aggregator preaggregates each bucket's run of it into a `Summary`.
+    static constexpr bool flat_samples = true;
     using Bucket = Samples;
 
-    static constexpr UInt16 FORMAT_VERSION = 5;
+    static constexpr UInt16 FORMAT_VERSION = 6;
 };
 
 
