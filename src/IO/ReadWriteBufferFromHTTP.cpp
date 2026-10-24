@@ -1062,6 +1062,9 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::parseFileInfo(con
     if (response.has("ETag"))
         res.etag = response.get("ETag");
 
+    if (response.has("Date"))
+        res.response_date = tryParseHTTPDate(response.get("Date"));
+
     return res;
 }
 

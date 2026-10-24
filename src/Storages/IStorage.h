@@ -124,6 +124,13 @@ public:
     /// Returns true if the storage receives data from a remote server or servers.
     virtual bool isRemote() const { return false; }
 
+    /// A storage that reads this table over the replicas of `cluster_for_parallel_replicas` for the query of `context`,
+    /// or nullptr to read the table itself.
+    virtual StoragePtr getStorageForParallelReplicasRead(const StorageSnapshotPtr & /*storage_snapshot*/, const ContextPtr & /*context*/) const
+    {
+        return nullptr;
+    }
+
     /// Returns true if `read` is known to require an analyzed query (an AST or a query tree) in
     /// `SelectQueryInfo`, which not every caller of `read` has: a remote read always does, and so does a
     /// read that rewrites the query per underlying table. Wrappers answer for the table they forward to.

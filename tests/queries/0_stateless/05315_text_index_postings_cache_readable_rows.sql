@@ -2,7 +2,6 @@
 -- The shared postings cache used to keep a posting list clipped to the readable rows of an earlier query.
 -- https://github.com/ClickHouse/ClickHouse/issues/120951
 
-SET enable_analyzer = 1;
 SET enable_full_text_index = 1;
 SET use_skip_indexes = 1;
 SET use_skip_indexes_on_data_read = 1;
