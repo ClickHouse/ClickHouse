@@ -186,11 +186,13 @@ def test_insert_select(cluster, storage_policy, min_bytes_for_wide_part):
         other_node,
         "SYSTEM ENABLE FAILPOINT plain_rewritable_object_storage_azure_not_found_on_init",
     )
+    # A second writer on the location of node: it must not write the snapshot of that location.
     azure_query(
         other_node,
         """CREATE TABLE table (id Int64, data String) ENGINE=MergeTree() ORDER BY id SETTINGS disk=disk(
         type = object_storage,
         metadata_type = plain_rewritable,
+        metadata_snapshot_enabled = 0,
         object_storage_type = azure_blob_storage,
         endpoint = 'http://azurite1:{port}/devstoreaccount1/cont',
         endpoint_subpath = '{node}',
