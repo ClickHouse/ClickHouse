@@ -991,11 +991,20 @@ void TCPHandler::runImpl()
                 query_state->need_receive_data_for_insert = true;
                 processInsertQuery(*query_state);
                 query_state->io.onFinish();
+
+                /// `onFinish` increments some profile events yet (e.g. `QueryTimeMicroseconds`), so send what is
+                /// left of them, for the initiator of a distributed query to charge them to its quotas over profile events.
+                std::lock_guard lock(*callback_mutex);
+                sendInsertProfileEvents(*query_state, /* final_report = */ true);
             }
             else if (query_state->io.pipeline.pulling())
             {
                 processOrdinaryQuery(*query_state);
                 query_state->io.onFinish();
+
+                /// See the comment above.
+                std::lock_guard lock(*callback_mutex);
+                sendSelectProfileEvents(*query_state);
             }
             else if (query_state->io.pipeline.completed())
             {
