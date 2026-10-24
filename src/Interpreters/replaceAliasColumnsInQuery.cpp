@@ -11,9 +11,11 @@ bool replaceAliasColumnsInQuery(
         const ColumnsDescription & columns,
         const NameToNameMap & array_join_result_to_source,
         ContextPtr context,
-        const std::unordered_set<IAST *> & excluded_nodes)
+        const std::unordered_set<IAST *> & excluded_nodes,
+        bool rename_lambda_parameters)
 {
     ColumnAliasesVisitor::Data aliases_column_data(columns, array_join_result_to_source, context, excluded_nodes);
+    aliases_column_data.rename_lambda_parameters = rename_lambda_parameters;
     ColumnAliasesVisitor aliases_column_visitor(aliases_column_data);
     aliases_column_visitor.visit(ast);
     return aliases_column_data.changed;
