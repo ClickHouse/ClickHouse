@@ -200,23 +200,48 @@ AI function activity is tracked through ClickHouse [ProfileEvents](/reference/sy
 | ProfileEvent | Description |
 |-------|-------------|
 | `AIAPICalls` | Number of HTTP requests made to the AI provider. |
-| `AIInputTokens` | Total input tokens consumed. |
+| `AIInputTokens` | Total input tokens consumed, including cache reads and writes. |
 | `AIOutputTokens` | Total output tokens consumed. |
+| `AICacheReadTokens` | Input tokens read from the provider's prompt cache. |
+| `AICacheWriteTokens` | Input tokens written to the provider's prompt cache. |
+| `AIRequestMicroseconds` | Total time spent in AI provider calls (request serialization, HTTP round trip, response parsing), including failed attempts, excluding retry backoff. |
+| `AIRetryBackoffMicroseconds` | Total time spent waiting before retries of failed AI provider calls. |
 | `AIRowsProcessed` | Number of rows that received a result. |
 | `AIRowsSkipped` | Number of rows skipped (quota exceeded, or error with `ai_function_throw_on_error = 0`). |
+
+Times are summed across executions and threads, so they can exceed query wall-clock time.
+Divide `AIRequestMicroseconds` by `AIAPICalls` to get mean request latency, including failed attempts.
+These counters are per-query, they do not provide per-request latency information.
+If a query calls multiple AI functions, their counts are added together.
+
+Cache counters are subsets of `AIInputTokens`, not additional tokens. They report provider-emitted cache reads/writes, not any internal ClickHouse caching. A provider that omits cache usage contributes
+zero cache tokens.
 
 Query these events:
 
 ```sql
+SYSTEM FLUSH LOGS;
+
 SELECT
+    query_duration_ms,
     ProfileEvents['AIAPICalls'] AS api_calls,
+    ProfileEvents['AIRequestMicroseconds'] / 1000 AS request_ms,
+    request_ms / nullIf(api_calls, 0) AS mean_request_ms,
+    ProfileEvents['AIRetryBackoffMicroseconds'] / 1000 AS retry_backoff_ms,
+    ProfileEvents['AIRowsProcessed'] AS rows_processed,
+    ProfileEvents['AIRowsSkipped'] AS rows_skipped,
     ProfileEvents['AIInputTokens'] AS input_tokens,
-    ProfileEvents['AIOutputTokens'] AS output_tokens
+    ProfileEvents['AIOutputTokens'] AS output_tokens,
+    ProfileEvents['AICacheReadTokens'] AS cache_read_tokens,
+    ProfileEvents['AICacheWriteTokens'] AS cache_write_tokens
 FROM system.query_log
 WHERE query_id = 'query_id'
-AND type = 'QueryFinish'
+AND type IN ('QueryFinish', 'ExceptionWhileProcessing')
 ORDER BY event_time DESC;
 ```
+
+`log_queries` and `log_profile_events` are enabled by default to record these events in `system.query_log`.
+Server-wide totals are also available in `system.events`.
 
 {/*
 The inner content of the tags below are replaced at doc framework build time with
