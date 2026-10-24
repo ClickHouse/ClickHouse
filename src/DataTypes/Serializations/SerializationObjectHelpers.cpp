@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnObject.h>
+#include <Columns/ColumnVariant.h>
 #include <Common/SipHash.h>
 #include <IO/ReadHelpers.h>
 
@@ -17,7 +18,7 @@ namespace ErrorCodes
 
 std::vector<std::pair<std::string_view, ColumnPtr>> flattenSharedDataPathsForBucket(
     const IColumn & shared_data_column, size_t start, size_t end,
-    const DataTypePtr & dynamic_type, size_t target_bucket, size_t num_buckets)
+    const DataTypePtr & path_type, size_t target_bucket, size_t num_buckets)
 {
     /// First, iterate over shared data and collect values of
     /// all paths that are stored there into separate columns.
@@ -26,6 +27,8 @@ std::vector<std::pair<std::string_view, ColumnPtr>> flattenSharedDataPathsForBuc
     /// a real value (and once at the end), which removes the per-row scan over every accumulated path
     /// column. The number of defaults materialized is unchanged; only the scan is removed.
     /// Use string_view keys referencing data in shared_data_paths column to avoid copying path strings.
+    /// With `DEFAULT PATH TYPE T` shared data stores values of type `T`, not binary `Dynamic` values.
+    const bool is_dynamic_path_type = isDynamic(path_type);
     std::unordered_map<std::string_view, MutableColumnPtr> flattened_shared_data_paths;
     const auto [shared_data_paths, shared_data_values, shared_data_offsets] = ColumnObject::getSharedDataPathsValuesAndOffsets(shared_data_column);
     for (size_t i = start; i != end; ++i)
@@ -43,13 +46,18 @@ std::vector<std::pair<std::string_view, ColumnPtr>> flattenSharedDataPathsForBuc
             auto it = flattened_shared_data_paths.find(path);
             /// If we see this path for the first time, add it to the list and create a column for it.
             if (it == flattened_shared_data_paths.end())
-                it = flattened_shared_data_paths.emplace(path, dynamic_type->createColumn()).first;
+                it = flattened_shared_data_paths.emplace(path, path_type->createColumn()).first;
 
             /// Backfill defaults for the rows where this path was absent, up to the current row.
             if (it->second->size() < row)
                 it->second->insertManyDefaults(row - it->second->size());
 
-            ColumnObject::deserializeValueFromSharedData(shared_data_values, j, *it->second);
+            if (is_dynamic_path_type)
+                ColumnObject::deserializeValueFromSharedData(shared_data_values, j, *it->second);
+            else if (auto * variant_column = typeid_cast<ColumnVariant *>(it->second.get()))
+                variant_column->insertIntoVariantFrom(0, *shared_data_values, j);
+            else
+                it->second->insertFrom(*shared_data_values, j);
         }
     }
 
@@ -99,7 +107,9 @@ std::vector<std::string_view> scanPathNamesForBucket(
 
 std::vector<std::pair<std::string_view, ColumnPtr>> flattenPaths(const ColumnObject & object_column)
 {
-    auto all_paths = flattenSharedDataPathsForBucket(*object_column.getSharedDataPtr(), 0, object_column.size(), object_column.getDynamicType(), 0, 1);
+    const auto & default_path_type = object_column.getDefaultPathType();
+    auto path_type = default_path_type ? DataTypeObject::getTypeOfRuntimePaths(default_path_type) : object_column.getDynamicType();
+    auto all_paths = flattenSharedDataPathsForBucket(*object_column.getSharedDataPtr(), 0, object_column.size(), path_type, 0, 1);
     for (const auto & [path, column] : object_column.getDynamicPaths())
         all_paths.emplace_back(path, column);
     std::sort(all_paths.begin(), all_paths.end());
@@ -122,15 +132,10 @@ void unflattenAndInsertPaths(const PathsContainer & flattened_paths, MutableColu
 
     auto [shared_data_paths, shared_data_values] = object_column.getSharedDataPathsAndValues();
     auto & shared_data_offsets = object_column.getSharedDataOffsets();
-    std::unordered_map<std::string_view, const ColumnDynamic *> dynamic_columns_ptrs;
-    dynamic_columns_ptrs.reserve(flattened_paths.size());
-    for (const auto & [path, column] : paths_for_shared_data)
-        dynamic_columns_ptrs[path] = assert_cast<const ColumnDynamic *>(column.get());
-
     for (size_t i = 0; i != num_rows; ++i)
     {
         for (const auto & [path, column] : paths_for_shared_data)
-            ColumnObject::serializePathAndValueIntoSharedData(shared_data_paths, shared_data_values, path, *dynamic_columns_ptrs[path], i);
+            ColumnObject::serializePathAndValueIntoSharedData(shared_data_paths, shared_data_values, path, *column, i);
         shared_data_offsets.push_back(shared_data_paths->size());
     }
 }
@@ -161,7 +166,8 @@ SharedDataBucketsSplitter::SharedDataBucketsSplitter(const IColumn & shared_data
 {
     const auto [shared_data_paths, shared_data_values, shared_data_offsets] = ColumnObject::getSharedDataPathsValuesAndOffsets(shared_data_column);
     const auto & paths_offsets = shared_data_paths->getOffsets();
-    const auto & values_offsets = shared_data_values->getOffsets();
+    /// With `DEFAULT PATH TYPE T` the values column has type `T`, which is not necessarily `String`.
+    const auto * values_string = typeid_cast<const ColumnString *>(shared_data_values);
 
     /// Compute the bucket for every path once and accumulate per-bucket sizes, so `extractBucket` can
     /// pre-allocate each bucket exactly and does not recompute the path hashes.
@@ -178,7 +184,8 @@ SharedDataBucketsSplitter::SharedDataBucketsSplitter(const IColumn & shared_data
             /// The number of chars occupied by value `j` (exactly what `insertFrom` appends) is the
             /// difference of consecutive string offsets.
             bucket_paths_chars_size[bucket] += paths_offsets[ssize_t(j)] - paths_offsets[ssize_t(j) - 1];
-            bucket_values_chars_size[bucket] += values_offsets[ssize_t(j)] - values_offsets[ssize_t(j) - 1];
+            if (values_string)
+                bucket_values_chars_size[bucket] += values_string->getOffsets()[ssize_t(j)] - values_string->getOffsets()[ssize_t(j) - 1];
         }
     }
 }
@@ -193,8 +200,15 @@ ColumnPtr SharedDataBucketsSplitter::extractBucket(size_t bucket) const
     /// Pre-allocate exactly to avoid power-of-two over-allocation.
     bucket_paths->getChars().reserve_exact(bucket_paths_chars_size[bucket]);
     bucket_paths->getOffsets().reserve_exact(bucket_num_paths[bucket]);
-    bucket_values->getChars().reserve_exact(bucket_values_chars_size[bucket]);
-    bucket_values->getOffsets().reserve_exact(bucket_num_paths[bucket]);
+    if (auto * bucket_values_string = typeid_cast<ColumnString *>(bucket_values))
+    {
+        bucket_values_string->getChars().reserve_exact(bucket_values_chars_size[bucket]);
+        bucket_values_string->getOffsets().reserve_exact(bucket_num_paths[bucket]);
+    }
+    else
+    {
+        bucket_values->reserve(bucket_num_paths[bucket]);
+    }
     bucket_offsets->reserve_exact(end - start);
 
     size_t path_index = 0;
@@ -275,7 +289,7 @@ void collectSharedDataFromBuckets(const Columns & shared_data_buckets, IColumn &
 {
     const auto [shared_data_paths, shared_data_values, shared_data_offsets] = ColumnObject::getSharedDataPathsValuesAndOffsets(shared_data_column);
     std::vector<const ColumnString *> shared_data_paths_buckets(shared_data_buckets.size());
-    std::vector<const ColumnString *> shared_data_values_buckets(shared_data_buckets.size());
+    std::vector<const IColumn *> shared_data_values_buckets(shared_data_buckets.size());
     std::vector<const ColumnArray::Offsets *> shared_data_offsets_buckets(shared_data_buckets.size());
     for (size_t i = 0; i != shared_data_buckets.size(); ++i)
         std::tie(shared_data_paths_buckets[i], shared_data_values_buckets[i], shared_data_offsets_buckets[i]) = ColumnObject::getSharedDataPathsValuesAndOffsets(*shared_data_buckets[i]);

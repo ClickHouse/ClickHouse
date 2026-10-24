@@ -5,6 +5,8 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/Serializations/SerializationJSON.h>
 #include <DataTypes/Serializations/SerializationObjectTypedPath.h>
 #include <DataTypes/Serializations/SerializationObjectDynamicPath.h>
@@ -65,20 +67,38 @@ String DataTypeObject::getCombinedSubcolumnName(const String & key)
     return String(1, COMBINED_SUBCOLUMN_PREFIX) + backQuote(key);
 }
 
+/// `DEFAULT PATH TYPE` must be usable as the single variant of `Variant(T)` (the runtime path storage format).
+static void checkDefaultPathType(const DataTypePtr & default_path_type, DataTypeObject::SchemaFormat schema_format)
+{
+    if (!default_path_type)
+        return;
+
+    auto type_id = default_path_type->getTypeId();
+    if (isNullableOrLowCardinalityNullable(default_path_type) || type_id == TypeIndex::Nothing || type_id == TypeIndex::Variant
+        || type_id == TypeIndex::Dynamic || type_id == TypeIndex::Object)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "DEFAULT PATH TYPE {} is not allowed in {} type: Nullable, Nothing, Dynamic, Variant and Object types are not supported",
+            default_path_type->getName(), magic_enum::enum_name(schema_format));
+}
+
 DataTypeObject::DataTypeObject(
     const SchemaFormat & schema_format_,
     std::unordered_map<String, DataTypePtr> typed_paths_,
     std::unordered_set<String> paths_to_skip_,
     std::vector<String> path_regexps_to_skip_,
     size_t max_dynamic_paths_,
-    size_t max_dynamic_types_)
+    size_t max_dynamic_types_,
+    DataTypePtr default_path_type_)
     : schema_format(schema_format_)
     , typed_paths(std::move(typed_paths_))
     , paths_to_skip(std::move(paths_to_skip_))
     , path_regexps_to_skip(std::move(path_regexps_to_skip_))
     , max_dynamic_paths(max_dynamic_paths_)
     , max_dynamic_types(max_dynamic_types_)
+    , default_path_type(std::move(default_path_type_))
 {
+    checkDefaultPathType(default_path_type, schema_format);
+
     /// Check if regular expressions are valid.
     std::vector<std::unique_ptr<re2::RE2>> compiled_regexps_to_skip;
     compiled_regexps_to_skip.reserve(path_regexps_to_skip.size());
@@ -114,11 +134,13 @@ DataTypeObject::DataTypeObject(
     std::sort(sorted_typed_paths.begin(), sorted_typed_paths.end(), [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
 }
 
-DataTypeObject::DataTypeObject(const DB::DataTypeObject::SchemaFormat & schema_format_, size_t max_dynamic_paths_, size_t max_dynamic_types_)
+DataTypeObject::DataTypeObject(const DB::DataTypeObject::SchemaFormat & schema_format_, size_t max_dynamic_paths_, size_t max_dynamic_types_, DataTypePtr default_path_type_)
     : schema_format(schema_format_)
     , max_dynamic_paths(max_dynamic_paths_)
     , max_dynamic_types(max_dynamic_types_)
+    , default_path_type(std::move(default_path_type_))
 {
+    checkDefaultPathType(default_path_type, schema_format);
 }
 
 void DataTypeObject::insertDefaultInto(IColumn & column) const
@@ -174,7 +196,8 @@ bool DataTypeObject::equals(const IDataType & rhs) const
         }
 
         return schema_format == object->schema_format && paths_to_skip == object->paths_to_skip && path_regexps_to_skip == object->path_regexps_to_skip
-            && max_dynamic_types == object->max_dynamic_types && max_dynamic_paths == object->max_dynamic_paths;
+            && max_dynamic_types == object->max_dynamic_types && max_dynamic_paths == object->max_dynamic_paths
+            && (default_path_type ? (object->default_path_type && default_path_type->equals(*object->default_path_type)) : !object->default_path_type);
     }
 
     return false;
@@ -206,6 +229,7 @@ SerializationPtr DataTypeObject::doGetSerialization(const SerializationInfoSetti
                     path_regexps_to_skip,
                     getDynamicType(),
                     dynamic_serialization,
+                    default_path_type,
                     buildJSONExtractTree<SimdJSONParser>(getPtr(), "JSON serialization"));
 #endif
 
@@ -217,6 +241,7 @@ SerializationPtr DataTypeObject::doGetSerialization(const SerializationInfoSetti
                 path_regexps_to_skip,
                 getDynamicType(),
                 dynamic_serialization,
+                default_path_type,
                 buildJSONExtractTree<RapidJSONParser>(getPtr(), "JSON serialization"));
 #else
             return SerializationJSON<DummyJSONParser>::create(
@@ -226,6 +251,7 @@ SerializationPtr DataTypeObject::doGetSerialization(const SerializationInfoSetti
                 path_regexps_to_skip,
                 getDynamicType(),
                 dynamic_serialization,
+                default_path_type,
                 buildJSONExtractTree<DummyJSONParser>(getPtr(), "JSON serialization"));
 #endif
     }
@@ -264,6 +290,12 @@ String DataTypeObject::doGetName() const
     {
         write_separator();
         out << "max_dynamic_paths=" << max_dynamic_paths;
+    }
+
+    if (default_path_type)
+    {
+        write_separator();
+        out << "DEFAULT PATH TYPE " << default_path_type->getName();
     }
 
     for (const auto & [path, type] : sorted_typed_paths)
@@ -306,18 +338,23 @@ MutableColumnPtr DataTypeObject::createColumn() const
     for (const auto & [path, type] : typed_paths)
         typed_path_columns[path] = type->createColumn();
 
-    return ColumnObject::create(std::move(typed_path_columns), max_dynamic_paths, max_dynamic_types);
+    return ColumnObject::create(std::move(typed_path_columns), max_dynamic_paths, max_dynamic_types, default_path_type);
 }
 
 DataTypePtr DataTypeObject::doCloneWithChildren(const DataTypes & new_children) const
 {
+    /// Children are the typed paths followed by the default path type (see `getNumberOfChildren`).
     std::unordered_map<String, DataTypePtr> new_typed_paths;
     new_typed_paths.reserve(sorted_typed_paths.size());
     for (size_t i = 0; i < sorted_typed_paths.size(); ++i)
         new_typed_paths.emplace(sorted_typed_paths[i].first, new_children[i]);
 
+    DataTypePtr new_default_path_type;
+    if (default_path_type)
+        new_default_path_type = new_children[sorted_typed_paths.size()];
+
     return std::make_shared<DataTypeObject>(
-        schema_format, std::move(new_typed_paths), paths_to_skip, path_regexps_to_skip, max_dynamic_paths, max_dynamic_types);
+        schema_format, std::move(new_typed_paths), paths_to_skip, path_regexps_to_skip, max_dynamic_paths, max_dynamic_types, std::move(new_default_path_type));
 }
 
 namespace
@@ -467,12 +504,49 @@ std::optional<String> tryGetPrefixedSubcolumn(std::string_view subcolumn_name, c
     return path + String(buf.position(), buf.available());
 }
 
+/// Extracts the literal column for a non-typed path of JSON(DEFAULT PATH TYPE T) as a sparse `Variant(T)`
+/// column (the runtime path representation), where NULL means that the path is missing in the row.
+ColumnPtr extractSparseLiteralColumn(const ColumnObject & object_column, const String & path, const DataTypePtr & default_path_type)
+{
+    if (auto dynamic_it = object_column.getDynamicPaths().find(path); dynamic_it != object_column.getDynamicPaths().end())
+        return dynamic_it->second;
+
+    auto result_column = DataTypeObject::getTypeOfRuntimePaths(default_path_type)->createColumn();
+    auto & result_variant = assert_cast<ColumnVariant &>(*result_column);
+    result_variant.reserve(object_column.size());
+    const auto & shared_data_offsets = object_column.getSharedDataOffsets();
+    const auto [shared_data_paths, shared_data_values] = object_column.getSharedDataPathsAndValues();
+    for (size_t i = 0; i != object_column.size(); ++i)
+    {
+        size_t start = shared_data_offsets[ssize_t(i) - 1];
+        size_t end = shared_data_offsets[ssize_t(i)];
+        size_t index = ColumnObject::findPathLowerBoundInSharedData(path, *shared_data_paths, start, end);
+        if (index != end && shared_data_paths->getDataAt(index) == path)
+            result_variant.insertIntoVariantFrom(0, *shared_data_values, index);
+        else
+            result_variant.insertDefault();
+    }
+    return result_column;
+}
+
 /// Extracts the literal (Dynamic) column for the given path from a ColumnObject.
 /// Checks typed paths first, then dynamic paths, then falls back to shared data.
-ColumnPtr extractLiteralColumn(const ColumnObject & object_column, const String & path, size_t max_dynamic_types)
+/// With DEFAULT PATH TYPE T the literal of a non-typed path is a dense T column where a missing path reads as default(T).
+ColumnPtr extractLiteralColumn(const ColumnObject & object_column, const String & path, size_t max_dynamic_types, const DataTypePtr & default_path_type = nullptr)
 {
     if (auto typed_it = object_column.getTypedPaths().find(path); typed_it != object_column.getTypedPaths().end())
         return typed_it->second;
+
+    if (default_path_type)
+    {
+        auto result_column = default_path_type->createColumn();
+        result_column->reserve(object_column.size());
+        if (auto dynamic_it = object_column.getDynamicPaths().find(path); dynamic_it != object_column.getDynamicPaths().end())
+            ColumnObject::densifyVariantInto(*result_column, assert_cast<const ColumnVariant &>(*dynamic_it->second));
+        else
+            ColumnObject::fillPathColumnFromSharedData(*result_column, path, object_column.getSharedDataPtr(), 0, object_column.size());
+        return result_column;
+    }
 
     if (auto dynamic_it = object_column.getDynamicPaths().find(path); dynamic_it != object_column.getDynamicPaths().end())
         return dynamic_it->second;
@@ -539,6 +613,8 @@ ColumnPtr extractSubObjectColumn(const ColumnObject & object_column, const Strin
 /// so a sub-object whose only typed descendants are all NULL is treated as empty.
 /// When literal_type is set (typed path), the typed literal is cast to Dynamic before the merge
 /// so the result type is always Dynamic, including the empty-sub-object early return.
+/// With DEFAULT PATH TYPE T a non-typed literal is the sparse `Variant(T)` column cast to Dynamic,
+/// so present values keep type T and missing paths are NULL.
 ColumnPtr extractCombinedColumn(
     const ColumnObject & object_column,
     const String & path,
@@ -546,10 +622,15 @@ ColumnPtr extractCombinedColumn(
     const DataTypePtr & sub_object_type,
     const DataTypePtr & dynamic_result_type,
     size_t max_dynamic_types,
+    const DataTypePtr & default_path_type,
     bool skip_null_typed_paths = false,
     DataTypePtr literal_type = {})
 {
-    auto literal_column = extractLiteralColumn(object_column, path, max_dynamic_types);
+    ColumnPtr literal_column;
+    if (default_path_type && !literal_type)
+        literal_column = castColumn({extractSparseLiteralColumn(object_column, path, default_path_type), DataTypeObject::getTypeOfRuntimePaths(default_path_type), ""}, dynamic_result_type);
+    else
+        literal_column = extractLiteralColumn(object_column, path, max_dynamic_types);
     if (literal_type)
         literal_column = castColumn({literal_column, literal_type, ""}, dynamic_result_type);
 
@@ -591,7 +672,8 @@ std::pair<DataTypePtr, SerializationPtr> buildSubObjectTypeAndSerialization(
     size_t max_dynamic_paths,
     size_t max_dynamic_types,
     const DataTypePtr & dynamic_type,
-    const SerializationPtr & dynamic_serialization)
+    const SerializationPtr & dynamic_serialization,
+    const DataTypePtr & default_path_type)
 {
     std::unordered_map<String, DataTypePtr> typed_sub_paths;
     std::unordered_map<String, SerializationPtr> typed_sub_paths_serializations;
@@ -604,8 +686,8 @@ std::pair<DataTypePtr, SerializationPtr> buildSubObjectTypeAndSerialization(
         }
     }
 
-    auto sub_object_type = std::make_shared<DataTypeObject>(schema_format, typed_sub_paths, paths_to_skip, path_regexps_to_skip, max_dynamic_paths, max_dynamic_types);
-    auto sub_object_serialization = SerializationSubObject::create(prefix, typed_sub_paths_serializations, dynamic_type, dynamic_serialization);
+    auto sub_object_type = std::make_shared<DataTypeObject>(schema_format, typed_sub_paths, paths_to_skip, path_regexps_to_skip, max_dynamic_paths, max_dynamic_types, default_path_type);
+    auto sub_object_serialization = SerializationSubObject::create(prefix, typed_sub_paths_serializations, dynamic_type, dynamic_serialization, default_path_type);
     return {std::move(sub_object_type), std::move(sub_object_serialization)};
 }
 
@@ -663,7 +745,7 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeObject::getDynamicSubcolumnInf
         const String prefix = *sub_object_subcolumn + ".";
         auto [sub_object_type, sub_object_serialization] = buildSubObjectTypeAndSerialization(
             prefix, typed_paths, typed_paths_serializations, schema_format, paths_to_skip, path_regexps_to_skip,
-            max_dynamic_paths, max_dynamic_types, getDynamicType(), dynamic_path_serialization);
+            max_dynamic_paths, max_dynamic_types, getDynamicType(), dynamic_path_serialization, default_path_type);
 
         auto res = std::make_unique<SubcolumnInfo>();
         res->data = SubstreamData(sub_object_serialization);
@@ -711,19 +793,19 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeObject::getDynamicSubcolumnInf
         auto dynamic_result_type = getDynamicType();
         auto [sub_object_type, sub_object_serialization] = buildSubObjectTypeAndSerialization(
             prefix, typed_paths, typed_paths_serializations, schema_format, paths_to_skip, path_regexps_to_skip,
-            max_dynamic_paths, max_dynamic_types, dynamic_result_type, dynamic_path_serialization);
+            max_dynamic_paths, max_dynamic_types, dynamic_result_type, dynamic_path_serialization, default_path_type);
 
-        auto literal_serialization = SerializationObjectDynamicPath::create(dynamic_path_serialization, combined_path, /*path_subcolumn=*/"", dynamic_result_type, dynamic_path_serialization, dynamic_result_type);
+        auto literal_serialization = SerializationObjectDynamicPath::create(dynamic_path_serialization, combined_path, /*path_subcolumn=*/"", dynamic_result_type, dynamic_path_serialization, dynamic_result_type, default_path_type);
 
         auto res = std::make_unique<SubcolumnInfo>();
         res->data = SubstreamData(SerializationObjectCombinedPath::create(
-            literal_serialization, sub_object_serialization, dynamic_result_type, sub_object_type));
+            literal_serialization, sub_object_serialization, dynamic_result_type, sub_object_type, default_path_type));
         res->data.type = dynamic_result_type;
 
         if (data.column)
         {
             const auto & object_column = assert_cast<const ColumnObject &>(*data.column);
-            res->data.column = extractCombinedColumn(object_column, combined_path, prefix, sub_object_type, dynamic_result_type, max_dynamic_types);
+            res->data.column = extractCombinedColumn(object_column, combined_path, prefix, sub_object_type, dynamic_result_type, max_dynamic_types, default_path_type);
         }
 
         res->substreams_path.emplace_back(ISerialization::Substream::ObjectCombinedPath);
@@ -769,14 +851,33 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeObject::getDynamicSubcolumnInf
     {
         path_subcolumn = split.fullSubcolumn();
         res = std::make_unique<SubcolumnInfo>();
-        res->data = SubstreamData(dynamic_path_serialization);
-        res->data.type = std::make_shared<DataTypeDynamic>(max_dynamic_types);
+        /// With DEFAULT PATH TYPE T a non-typed path is read as a dense T column (missing path reads as default(T)).
+        if (default_path_type)
+        {
+            /// A matching T or Nullable(T) hint is redundant, but retain the boundary
+            /// between the JSON path and a subcolumn of T (e.g. Array.size0).
+            if (!split.type_hint.empty())
+            {
+                auto normalized_hint = removeJSONTypeParameters(split.type_hint);
+                if (normalized_hint == removeJSONTypeParameters(default_path_type->getName())
+                    || (default_path_type->canBeInsideNullable()
+                        && normalized_hint == removeJSONTypeParameters(makeNullable(default_path_type)->getName())))
+                    path_subcolumn = split.remaining;
+            }
+            res->data = SubstreamData(default_path_type->getDefaultSerialization());
+            res->data.type = default_path_type;
+        }
+        else
+        {
+            res->data = SubstreamData(dynamic_path_serialization);
+            res->data.type = std::make_shared<DataTypeDynamic>(max_dynamic_types);
+        }
     }
 
     if (data.column)
     {
         const auto & object_column = assert_cast<const ColumnObject &>(*data.column);
-        res->data.column = extractLiteralColumn(object_column, path, max_dynamic_types);
+        res->data.column = extractLiteralColumn(object_column, path, max_dynamic_types, default_path_type);
     }
 
     /// The same element the static enumeration emits for a typed path, so that both resolutions of
@@ -804,7 +905,7 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeObject::getDynamicSubcolumnInf
     if (typed_paths.contains(path))
         res->data.serialization = SerializationObjectTypedPath::create(res->data.serialization, path);
     else
-        res->data.serialization = SerializationObjectDynamicPath::create(res->data.serialization, path, path_subcolumn, getDynamicType(), dynamic_path_serialization, res->data.type);
+        res->data.serialization = SerializationObjectDynamicPath::create(res->data.serialization, path, path_subcolumn, getDynamicType(), dynamic_path_serialization, res->data.type, default_path_type);
 
     return res;
 }
@@ -820,6 +921,7 @@ static DataTypePtr createObject(const ASTPtr & arguments, const DataTypeObject::
 
     size_t max_dynamic_types = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES;
     size_t max_dynamic_paths = DataTypeObject::DEFAULT_MAX_DYNAMIC_PATHS;
+    DataTypePtr default_path_type;
 
     for (const auto & argument : arguments->children)
     {
@@ -887,10 +989,17 @@ static DataTypePtr createObject(const ASTPtr & arguments, const DataTypeObject::
 
             path_regexps_to_skip.push_back(literal->value.safeGet<String>());
         }
+        else if (object_type_argument->default_path_type)
+        {
+            if (default_path_type)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Found duplicated DEFAULT PATH TYPE argument in {} type", magic_enum::enum_name(schema_format));
+
+            default_path_type = DataTypeFactory::instance().get(object_type_argument->default_path_type);
+        }
     }
 
     std::sort(path_regexps_to_skip.begin(), path_regexps_to_skip.end());
-    return std::make_shared<DataTypeObject>(schema_format, std::move(typed_paths), std::move(paths_to_skip), std::move(path_regexps_to_skip), max_dynamic_paths, max_dynamic_types);
+    return std::make_shared<DataTypeObject>(schema_format, std::move(typed_paths), std::move(paths_to_skip), std::move(path_regexps_to_skip), max_dynamic_paths, max_dynamic_types, std::move(default_path_type));
 }
 
 const DataTypePtr & DataTypeObject::getTypeOfSharedData()
@@ -898,6 +1007,15 @@ const DataTypePtr & DataTypeObject::getTypeOfSharedData()
     /// Array(Tuple(String, String))
     thread_local static DataTypePtr type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()}, Names{"paths", "values"}));
     return type;
+}
+
+DataTypePtr DataTypeObject::getTypeOfSharedData(const DataTypePtr & default_path_type)
+{
+    if (!default_path_type)
+        return getTypeOfSharedData();
+
+    /// Array(Tuple(String, T))
+    return std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeString>(), default_path_type}, Names{"paths", "values"}));
 }
 
 void DataTypeObject::updateHashImpl(SipHash & hash) const
@@ -928,6 +1046,9 @@ void DataTypeObject::updateHashImpl(SipHash & hash) const
     hash.update(path_regexps_to_skip.size());
     for (const auto & regexp : path_regexps_to_skip)
         hash.update(regexp);
+
+    if (default_path_type)
+        default_path_type->updateHash(hash);
 }
 
 DataTypePtr DataTypeObject::getTypeOfNestedObjects() const
@@ -938,6 +1059,14 @@ DataTypePtr DataTypeObject::getTypeOfNestedObjects() const
 DataTypePtr DataTypeObject::getDynamicType() const
 {
     return std::make_shared<DataTypeDynamic>(max_dynamic_types);
+}
+
+DataTypePtr DataTypeObject::getTypeOfRuntimePaths(const DataTypePtr & default_path_type)
+{
+    if (!default_path_type)
+        return std::make_shared<DataTypeDynamic>();
+
+    return std::make_shared<DataTypeVariant>(DataTypes{default_path_type});
 }
 
 ColumnPtr DataTypeObject::extractCombinedSubcolumn(const String & path, const ColumnPtr & column, bool skip_null_typed_paths) const
@@ -956,7 +1085,7 @@ ColumnPtr DataTypeObject::extractCombinedSubcolumn(const String & path, const Co
     /// Skip rules are only relevant while parsing input. This synthetic type represents descendants
     /// that are already stored, and the original rules refer to paths relative to the root object.
     auto sub_object_type = std::make_shared<DataTypeObject>(
-        schema_format, typed_sub_paths, std::unordered_set<String>{}, std::vector<String>{}, max_dynamic_paths, max_dynamic_types);
+        schema_format, typed_sub_paths, std::unordered_set<String>{}, std::vector<String>{}, max_dynamic_paths, max_dynamic_types, default_path_type);
     auto dynamic_result_type = getDynamicType();
 
     DataTypePtr literal_type;
@@ -965,7 +1094,7 @@ ColumnPtr DataTypeObject::extractCombinedSubcolumn(const String & path, const Co
 
     return extractCombinedColumn(
         object_column, path, prefix, sub_object_type,
-        dynamic_result_type, max_dynamic_types,
+        dynamic_result_type, max_dynamic_types, default_path_type,
         skip_null_typed_paths, literal_type);
 }
 
@@ -1006,6 +1135,7 @@ To declare a column of `JSON` type, you can use the following syntax:
 (
     max_dynamic_paths=N,
     max_dynamic_types=M,
+    DEFAULT PATH TYPE DefaultTypeName,
     some.path TypeName,
     SKIP path.to.skip,
     SKIP REGEXP 'paths_regexp'
@@ -1018,8 +1148,11 @@ Where the parameters in the syntax above are defined as:
 | `max_dynamic_paths`         | An optional parameter indicating how many paths can be stored separately as sub-columns across single block of data that is stored separately (for example across single data part for MergeTree table). <br/><br/>If this limit is exceeded, all other paths will be stored together in a single structure called [shared data](#shared-data-structure).<br/><br/>There are also [ways](#controlling-the-number-of-dynamic-paths) how to change the limit on dynamic paths without changing this parameter. | `1024`        |
 | `max_dynamic_types`         | An optional parameter between `1` and `255` indicating how many different data types can be stored separately inside a single path column with type `Dynamic` across single block of data that is stored separately (for example across single data part for MergeTree table). <br/><br/>If this limit is exceeded, all new types will be stored together in a single structure called `shared variant`.                                                                                    | `32`          |
 | `some.path TypeName`        | An optional type hint for particular path in the JSON. Such paths will be always stored as sub-columns with specified type.                                                                                                                                                                                                                                                                                                                                                                                  |               |
+| `DEFAULT PATH TYPE DefaultTypeName` | An optional type that is applied to every non-typed path (a path without an explicit `some.path TypeName` hint). During insert, each value of a non-typed path is coerced/validated against this type (a value that doesn't conform fails the insert, unless `type_json_skip_invalid_typed_paths` is enabled), and is stored with this type instead of its natural JSON type. `Nullable`, `Nothing`, `Dynamic`, `Variant` and `Object` types are not allowed as `DEFAULT PATH TYPE`. |               |
 | `SKIP path.to.skip`         | An optional hint for particular path that should be skipped during JSON parsing. Such paths will never be stored in the JSON column. If specified path is a nested JSON object, the whole nested object will be skipped.                                                                                                                                                                                                                                                                                     |               |
 | `SKIP REGEXP 'path_regexp'` | An optional hint with a regular expression that is used to skip paths during JSON parsing. All paths that match this regular expression will never be stored in the JSON column.                                                                                                                                                                                                                                                                                                                             |               |
+
+With `DEFAULT PATH TYPE T`, reading a non-typed path subcolumn `json.path` returns type `T`, and a path missing in a row reads as `default(T)` (for example, `0` for `Int64`). JSON `null` input is treated as a missing path. A missing path does not appear in JSON text output or path enumeration, while an explicit `default(T)` value does. `max_dynamic_types` has no effect with `DEFAULT PATH TYPE`.
 
 <WhenToUseJson />
 
@@ -1879,6 +2012,9 @@ This serialization is quite inefficient for writing data (so it's not recommende
 
 Note: because of storing some additional information inside the data structure, the disk storage size is higher with this serialization compared to
 `map` and `map_with_buckets` serializations.
+
+With `DEFAULT PATH TYPE T`, values of paths in this serialization are stored as dense `T` columns, so an explicit `default(T)`
+value cannot be distinguished from a missing path when a path subcolumn is read from shared data.
 
 For more detailed overview of the new shared data serializations and implementation details read the [blog post](https://clickhouse.com/blog/json-data-type-gets-even-better).
 

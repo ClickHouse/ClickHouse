@@ -1705,7 +1705,18 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
                 object[path] = getFieldFromColumnForASTLiteralImpl(path_column, row, typed_paths_types.at(path), true, datetime64_as_numbers, date_time_as_numbers);
 
             for (const auto & [path, path_column] : object_column.getDynamicPaths())
+            {
+                /// With DEFAULT PATH TYPE T runtime paths are sparse `Variant(T)` (NULL = missing path)
+                /// and values have the declared type T, like typed paths.
+                if (const auto & default_path_type = object_column.getDefaultPathType())
+                {
+                    const auto & variant = assert_cast<const ColumnVariant &>(*path_column);
+                    if (!variant.isNullAt(row))
+                        object[path] = getFieldFromColumnForASTLiteralImpl(variant.getVariantPtrByGlobalDiscriminator(0), variant.offsetAt(row), default_path_type, true, datetime64_as_numbers, date_time_as_numbers);
+                    continue;
+                }
                 object[path] = getFieldFromColumnForASTLiteralImpl(path_column, row, std::make_shared<DataTypeDynamic>(), true, false, false);
+            }
 
             const auto & shared_data_offsets = object_column.getSharedDataOffsets();
             const auto [shared_paths, shared_values] = object_column.getSharedDataPathsAndValues();
@@ -1718,6 +1729,12 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
             for (size_t i = start; i != end; ++i)
             {
                 String path{shared_paths->getDataAt(i)};
+                /// With DEFAULT PATH TYPE T shared data stores bare T values.
+                if (const auto & default_path_type = object_column.getDefaultPathType())
+                {
+                    object[path] = getFieldFromColumnForASTLiteralImpl(shared_values->getPtr(), i, default_path_type, true, datetime64_as_numbers, date_time_as_numbers);
+                    continue;
+                }
                 auto value_data = shared_values->getDataAt(i);
                 ReadBufferFromMemory buf(value_data);
                 auto tmp_column = dynamic_type->createColumn();

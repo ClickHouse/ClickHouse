@@ -6,6 +6,7 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnVariant.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
@@ -309,6 +310,17 @@ struct AggregateFunctionMergedJSONPatchData
 
         size_t current_size = result_column.size();
         auto [shared_data_paths, shared_data_values] = result_column.getSharedDataPathsAndValues();
+        /// With `DEFAULT PATH TYPE T` values of non-typed paths are serialized as bare `T`
+        /// (see `ColumnObject::SortedPathsIterator::serializeCurrentValueBinary`).
+        const auto & default_path_type = result_column.getDefaultPathType();
+        const auto default_path_serialization = default_path_type ? default_path_type->getDefaultSerialization() : nullptr;
+        auto deserialize_into_dynamic_path = [&](IColumn & dynamic_path_column, ReadBuffer & val_buf)
+        {
+            if (default_path_serialization)
+                assert_cast<ColumnVariant &>(dynamic_path_column).deserializeBinaryIntoVariant(0, default_path_serialization, val_buf, {});
+            else
+                DataTypeDynamic().getDefaultSerialization()->deserializeBinary(dynamic_path_column, val_buf, {});
+        };
         for (const auto & entry : entries)
         {
             std::string_view path = entry.pathView();
@@ -326,11 +338,16 @@ struct AggregateFunctionMergedJSONPatchData
                 if (auto dynamic_it = result_column.getDynamicPathsPtrs().find(path);
                     dynamic_it != result_column.getDynamicPathsPtrs().end())
                 {
-                    DataTypeDynamic().getDefaultSerialization()->deserializeBinary(*dynamic_it->second, val_buf, {});
+                    deserialize_into_dynamic_path(*dynamic_it->second, val_buf);
                 }
                 else if (auto * dynamic_path_column = result_column.tryToAddNewDynamicPath(path))
                 {
-                    DataTypeDynamic().getDefaultSerialization()->deserializeBinary(*dynamic_path_column, val_buf, {});
+                    deserialize_into_dynamic_path(*dynamic_path_column, val_buf);
+                }
+                else if (default_path_serialization)
+                {
+                    default_path_serialization->deserializeBinary(*shared_data_values, val_buf, {});
+                    shared_data_paths->insertData(path.data(), path.size());
                 }
                 else
                 {
@@ -338,9 +355,10 @@ struct AggregateFunctionMergedJSONPatchData
                     if (!isNothing(type))
                     {
                         shared_data_paths->insertData(path.data(), path.size());
-                        auto & chars = shared_data_values->getChars();
+                        auto & shared_data_values_string = assert_cast<ColumnString &>(*shared_data_values);
+                        auto & chars = shared_data_values_string.getChars();
                         chars.insert(chars.end(), entry.value_blob.begin(), entry.value_blob.end());
-                        shared_data_values->getOffsets().push_back(chars.size());
+                        shared_data_values_string.getOffsets().push_back(chars.size());
                     }
                 }
             }
