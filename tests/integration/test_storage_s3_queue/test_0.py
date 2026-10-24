@@ -1975,6 +1975,127 @@ def test_delete_takes_the_version_a_cached_read_saw(started_cluster, read_settin
     assert client.head_object(Bucket=bucket, Key=source_key)["VersionId"] == reuploaded
 
 
+def test_delete_takes_the_version_a_parquet_cache_read_saw(started_cluster):
+    """The Parquet metadata and columns caches can serve a whole file without a GET, so such a read cannot learn the S3
+    version. A queue read pinned to its generation skips those caches, so the delete removes only the version read."""
+    node = started_cluster.instances["instance_no_keeper_fault_injection"]
+    token = generate_random_string().lower()
+    bucket = f"versioned-{token}"
+    table_name = f"delete_parquet_cache_{token}"
+    files_path = f"{table_name}_data"
+    source_key = f"{files_path}/part.parquet"
+    minio = started_cluster.minio_client
+    minio.make_bucket(bucket)
+    minio.set_bucket_versioning(bucket, VersioningConfig(ENABLED))
+    client = boto3.client(
+        "s3",
+        endpoint_url=f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+        aws_access_key_id=started_cluster.minio_access_key,
+        aws_secret_access_key=started_cluster.minio_secret_key,
+    )
+    url = f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{source_key}"
+    structure = "column1 UInt32, column2 UInt32, column3 UInt32"
+    credentials = f"'{started_cluster.minio_access_key}', '{started_cluster.minio_secret_key}'"
+    node.query(f"INSERT INTO FUNCTION s3('{url}', {credentials}, 'Parquet', '{structure}') SELECT 1, 2, 3")
+    data = client.get_object(Bucket=bucket, Key=source_key)["Body"].read()
+    cache_settings = "use_parquet_metadata_cache = 1, use_columns_cache = 1, remote_filesystem_read_prefetch = 0"
+
+    def source_versions():
+        return {
+            version["VersionId"]
+            for version in client.list_object_versions(
+                Bucket=bucket, Prefix=source_key
+            ).get("Versions", [])
+        }
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        after_processing="delete",
+        bucket=bucket,
+        file_format="Parquet",
+        additional_settings={"commit_on_select": 0},
+    )
+    # A read that does not commit warms both caches for the read that does.
+    assert node.query(f"SELECT * FROM {table_name} SETTINGS {cache_settings}") == "1\t2\t3\n"
+    node.query(f"ALTER TABLE {table_name} MODIFY SETTING commit_on_select = 1")
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {PAUSE_BEFORE_POST_PROCESS_FAILPOINT}")
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    try:
+        select = pool.submit(
+            node.query,
+            f"SELECT * FROM {table_name} SETTINGS {cache_settings}",
+        )
+        wait_failpoint_paused(node, PAUSE_BEFORE_POST_PROCESS_FAILPOINT)
+        # The same bytes are uploaded again before the delete.
+        reuploaded = client.put_object(Bucket=bucket, Key=source_key, Body=data)[
+            "VersionId"
+        ]
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {PAUSE_BEFORE_POST_PROCESS_FAILPOINT}")
+    assert select.result(timeout=60) == "1\t2\t3\n"
+    pool.shutdown()
+
+    # Only the version that was read is deleted; no delete marker hides the newer one.
+    wait_until(lambda: source_versions() == {reuploaded})
+    assert client.head_object(Bucket=bucket, Key=source_key)["VersionId"] == reuploaded
+
+
+def test_move_tokens_of_different_queues_do_not_alias(started_cluster):
+    """The move token hashes the queue identity and the source path. Queue `.../a` reading `bc/part.csv` and queue
+    `.../ab` reading `c/part.csv` concatenate to the same string, so the second queue must still see a collision."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string().lower()
+    bucket = f"alias-{token}"
+    keeper_prefix = f"/clickhouse/test_alias_{token}/"
+    started_cluster.minio_client.make_bucket(bucket)
+    data = b"1,2,3\n"
+    client = boto3.client(
+        "s3",
+        endpoint_url=f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+        aws_access_key_id=started_cluster.minio_access_key,
+        aws_secret_access_key=started_cluster.minio_secret_key,
+    )
+    # The token also hashes the ETag and the second-precision Last-Modified, so both must match.
+    for _ in range(10):
+        client.put_object(Bucket=bucket, Key="bc/part.csv", Body=data)
+        client.put_object(Bucket=bucket, Key="c/part.csv", Body=data)
+        if client.head_object(Bucket=bucket, Key="bc/part.csv")["LastModified"] == client.head_object(Bucket=bucket, Key="c/part.csv")["LastModified"]:
+            break
+    else:
+        pytest.skip("could not upload both objects within one second")
+
+    def collisions():
+        return int(node.query("SELECT sum(value) FROM system.events WHERE event = 'ObjectStorageQueueMoveCollisions'") or 0)
+
+    for queue, files_path in (("a", "bc"), ("ab", "c")):
+        create_table(
+            started_cluster,
+            node,
+            f"alias_{queue}_{token}",
+            "unordered",
+            files_path,
+            after_processing="move",
+            move_to_prefix="done",
+            bucket=bucket,
+            additional_settings={"keeper_path": keeper_prefix + queue},
+        )
+        collisions_before = collisions()
+        create_mv(node, f"alias_{queue}_{token}", f"alias_{queue}_{token}_dst")
+        wait_until(lambda: node.query(f"SELECT count() FROM alias_{queue}_{token}_dst") == "1\n", timeout=60)
+        if queue == "a":
+            wait_until(lambda: count_minio_objects(started_cluster, bucket, "bc/") == 0, timeout=60)
+
+    # The first queue archived its file; the second one reports the collision and keeps its source.
+    wait_until(lambda: collisions() > collisions_before, timeout=60)
+    assert count_minio_objects(started_cluster, bucket, "c/") == 1
+    assert count_minio_objects(started_cluster, bucket, "done/") == 1
+
+
 def test_null_version_in_the_url_reads_the_listed_generation(started_cluster):
     """`versionId=null` names whatever was last uploaded while versioning was off, so it pins no generation.
     The queue reads and deletes the generation it listed, not the older `null` version."""
