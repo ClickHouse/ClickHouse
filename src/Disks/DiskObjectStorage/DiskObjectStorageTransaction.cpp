@@ -102,6 +102,11 @@ MultipleDisksObjectStorageTransaction::MultipleDisksObjectStorageTransaction(
 {
 }
 
+DiskObjectStorageTransaction::~DiskObjectStorageTransaction()
+{
+    DiskObjectStorageTransaction::undo();
+}
+
 void DiskObjectStorageTransaction::addOperation(std::function<void(MetadataTransactionPtr tx)> op)
 {
     if (metadata_storage->appliesOperationsEagerly())
