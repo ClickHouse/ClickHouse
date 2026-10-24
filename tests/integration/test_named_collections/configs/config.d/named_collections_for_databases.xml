@@ -1,0 +1,15 @@
+<clickhouse>
+  <named_collections>
+    <db_collection_s3>
+      <url>http://localhost:11111/test/</url>
+      <access_key_id>key</access_key_id>
+      <secret_access_key>secret</secret_access_key>
+    </db_collection_s3>
+    <db_collection_remote>
+      <host>127.0.0.1</host>
+      <port>9440</port>
+      <database>default</database>
+      <user>default</user>
+    </db_collection_remote>
+  </named_collections>
+</clickhouse>
