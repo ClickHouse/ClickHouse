@@ -1130,6 +1130,29 @@ def test_native_create_show_create_table(started_cluster):
     assert "`name` Nullable(String)" in create_query, create_query
 
 
+def test_native_create_empty_order_by_is_unsorted(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_native_create_empty_order_by_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    node.query(
+        f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (id Int64) ORDER BY tuple()",
+        settings={
+            "allow_experimental_database_glue_catalog": 1,
+            "allow_database_glue_catalog": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
+    )
+
+    # Iceberg reserves sort order id 0 for the unsorted order; an empty order with a nonzero id is rejected by Java Iceberg.
+    metadata = load_catalog_impl(started_cluster).load_table(f"{root_namespace}.{table_name}").metadata
+    assert metadata.default_sort_order_id == 0, metadata.sort_orders
+    assert [(o.order_id, o.fields) for o in metadata.sort_orders] == [(0, [])], metadata.sort_orders
+
+
 def test_native_create_non_primitive_key_rejected(started_cluster):
     node = started_cluster.instances["node1"]
 

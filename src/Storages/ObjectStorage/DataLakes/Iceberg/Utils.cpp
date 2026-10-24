@@ -1468,12 +1468,7 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     new_metadata_file_content->set(Iceberg::f_snapshot_log, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
     new_metadata_file_content->set(Iceberg::f_metadata_log, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
 
-    /// The spec reserves sort order id 0 for the unsorted order.
-    const Int64 sort_order_id = order_by ? 1 : 0;
-    new_metadata_file_content->set(Iceberg::f_default_sort_order_id, sort_order_id);
-    Poco::JSON::Object::Ptr sort_order = new Poco::JSON::Object;
-    sort_order->set(Iceberg::f_order_id, sort_order_id);
-
+    Poco::JSON::Array::Ptr sorting_fields = new Poco::JSON::Array;
     if (order_by)
     {
         auto sort_columns_key_description = KeyDescription::getKeyFromAST(order_by, columns, {}, context);
@@ -1489,7 +1484,6 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
                 "Invalid iceberg sort order: expected {} elements, but got {}",
                 sort_columns.size(), transform_and_column_pairs.size());
 
-        Poco::JSON::Array::Ptr sorting_fields = new Poco::JSON::Array;
         for (size_t i = 0; i < transform_and_column_pairs.size(); ++i)
         {
             const auto & [transform_name, column_name] = transform_and_column_pairs[i];
@@ -1503,12 +1497,14 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
             sorting_field->set("null-order", "nulls-first");
             sorting_fields->add(sorting_field);
         }
-        sort_order->set(Iceberg::f_fields, sorting_fields);
     }
-    else
-    {
-        sort_order->set(Iceberg::f_fields, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
-    }
+
+    /// The spec reserves sort order id 0 for the unsorted order, i.e. an order without fields.
+    const Int64 sort_order_id = sorting_fields->size() ? 1 : 0;
+    new_metadata_file_content->set(Iceberg::f_default_sort_order_id, sort_order_id);
+    Poco::JSON::Object::Ptr sort_order = new Poco::JSON::Object;
+    sort_order->set(Iceberg::f_order_id, sort_order_id);
+    sort_order->set(Iceberg::f_fields, sorting_fields);
 
     Poco::JSON::Array::Ptr sort_orders = new Poco::JSON::Array;
     sort_orders->add(sort_order);
