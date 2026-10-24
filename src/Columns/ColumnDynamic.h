@@ -63,6 +63,8 @@ public:
         /// Mapping (variant name) -> (global discriminator).
         /// It's used during variant extension.
         UnorderedMapWithMemoryTracking<String, UInt8> variant_name_to_discriminator;
+        /// Global discriminator of the shared variant to not look it up by name every time.
+        ColumnVariant::Discriminator shared_variant_discriminator = ColumnVariant::NULL_DISCRIMINATOR;
     };
 
 private:
@@ -455,7 +457,7 @@ public:
 
     ColumnVariant::Discriminator getSharedVariantDiscriminator() const
     {
-        return variant_info.variant_name_to_discriminator.at(getSharedVariantTypeName());
+        return variant_info.shared_variant_discriminator;
     }
 
     ColumnString & getSharedVariant()
