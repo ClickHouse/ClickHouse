@@ -1,0 +1,68 @@
+<test>
+    <!--
+        `GROUP BY` over a single string key on the methods that store keys in `StringHashTable`:
+        `key_string` (`enable_packed_string_keys_in_aggregation = 0`) and `nullable_key_string`.
+        Per key, `StringHashTable::dispatchOnKeyClass` picks a submap by length (1..8, 9..16, 17..24
+        and longer) and loads the key into machine words.
+        Each column draws from up to 10 thousand distinct keys, so the hash table stays in cache and the
+        per-key dispatch is a large part of the work. The length of a key is a function of the key,
+        so rows see a random sequence of lengths: within one class for `u*`, across all classes for
+        `r1_32`. The keys are base64 text, so none of them ends with a zero byte.
+        The table is `Memory`: over `MergeTree`, reading the column (decompression, page cache copies,
+        checksums) takes more than half of the query time and dilutes the difference in the aggregation.
+    -->
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>key</name>
+            <values>
+                <value>u1_8</value>
+                <value>u9_16</value>
+                <value>u17_24</value>
+                <value>u25_40</value>
+                <value>r1_32</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE string_hash_table_dispatch
+        (
+            u1_8 String,
+            u9_16 String,
+            u17_24 String,
+            u25_40 String,
+            r1_32 String
+        )
+        ENGINE = Memory
+    </create_query>
+
+    <fill_query>
+        INSERT INTO string_hash_table_dispatch
+        SELECT
+            substring(t, 1, 1 + h % 8),
+            substring(t, 1, 9 + h % 8),
+            substring(t, 1, 17 + h % 8),
+            substring(t, 1, 25 + h % 16),
+            substring(t, 1, 1 + h % 32)
+        FROM
+        (
+            SELECT
+                cityHash64(id, 7) AS h,
+                base64Encode(concat(
+                    reinterpretAsString(cityHash64(id, 1)), reinterpretAsString(cityHash64(id, 2)),
+                    reinterpretAsString(cityHash64(id, 3)), reinterpretAsString(cityHash64(id, 4)))) AS t
+            FROM (SELECT cityHash64(number) % 10000 AS id FROM numbers_mt(10000000))
+        )
+    </fill_query>
+
+    <query>SELECT {key}, count() FROM string_hash_table_dispatch GROUP BY {key} SETTINGS enable_packed_string_keys_in_aggregation = 0 FORMAT Null</query>
+    <!-- `enable_packed_string_keys_in_aggregation` only switches `key_packed_string` back to `key_string`,
+         and a `Nullable(String)` key always gets `nullable_key_string`, so this query needs no setting. -->
+    <query>SELECT toNullable({key}) AS k, count() FROM string_hash_table_dispatch GROUP BY k FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS string_hash_table_dispatch</drop_query>
+</test>
