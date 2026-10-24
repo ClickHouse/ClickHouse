@@ -24,8 +24,10 @@
 #include <Columns/getLeastSuperColumn.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/Utils.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -108,6 +110,7 @@ namespace Setting
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsFloat max_streams_multiplier_for_merge_tables;
+    extern const SettingsMergeTableKeepEnumNames merge_table_keep_enum_names;
     extern const SettingsUInt64 merge_table_max_tables_to_look_for_schema_inference;
     extern const SettingsBool parallel_replicas_allow_merge_tables;
     extern const SettingsBool parallel_replicas_plan_based;
@@ -207,6 +210,112 @@ bool isSubcolumnOfAliasColumn(const ColumnsDescription & storage_columns, const 
     }
 
     return false;
+}
+
+template <typename EnumType>
+DataTypePtr makeEnum(const std::unordered_map<std::string_view, Int16> & value_by_name)
+{
+    typename EnumType::Values values;
+    for (const auto & [name, value] : value_by_name)
+        values.emplace_back(String(name), static_cast<typename EnumType::FieldType>(value));
+    return std::make_shared<EnumType>(values);
+}
+
+/// The type that reads the enums among `types` by name: `LowCardinality(String)` if some name has different numbers in them
+/// or some number has different names, otherwise an enum with all their names. Returns nullptr if there are no enums.
+DataTypePtr unifyEnums(const DataTypes & types)
+{
+    std::unordered_map<std::string_view, Int16> value_by_name;
+    std::unordered_map<Int16, std::string_view> name_by_value;
+    auto conflicts = [&](const auto & values)
+    {
+        for (const auto & [name, value] : values)
+            if (value_by_name.emplace(name, value).first->second != value || name_by_value.emplace(value, name).first->second != name)
+                return true;
+        return false;
+    };
+
+    bool has_enum16 = false;
+    for (const auto & type : types)
+    {
+        const auto * enum8 = typeid_cast<const DataTypeEnum8 *>(type.get());
+        const auto * enum16 = typeid_cast<const DataTypeEnum16 *>(type.get());
+        has_enum16 |= enum16 != nullptr;
+        if ((enum8 && conflicts(enum8->getValues())) || (enum16 && conflicts(enum16->getValues())))
+            return std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+    }
+
+    if (value_by_name.empty())
+        return nullptr;
+    return has_enum16 ? makeEnum<DataTypeEnum16>(value_by_name) : makeEnum<DataTypeEnum8>(value_by_name);
+}
+
+/// Replaces the enums at the same position of `types` with `unifyEnums`, but consistent ones only if `combine_consistent_enums`.
+/// Looks through `Nullable`, `Array`, `Map` and `Tuple`, and returns whether any type changed.
+bool keepEnumNames(DataTypes & types, bool combine_consistent_enums)
+{
+    /// As in `getLeastSupertype`, a `NULL` fits any type, so it is not compared.
+    std::vector<size_t> compared;
+    DataTypes nested;
+    for (size_t i = 0; i < types.size(); ++i)
+    {
+        if (auto type = removeNullable(types[i]); !isNothing(type))
+        {
+            compared.push_back(i);
+            nested.push_back(type);
+        }
+    }
+
+    if (auto unified = unifyEnums(nested); unified && (combine_consistent_enums || !isEnum(unified)))
+    {
+        bool replaced = false;
+        for (auto & type : nested)
+        {
+            if (isEnum(type) && !type->equals(*unified))
+            {
+                type = unified;
+                replaced = true;
+            }
+        }
+        if (!replaced)
+            return false;
+    }
+    else
+    {
+        /// As in `getLeastSupertype`, elements are compared only if all types are the same kind of container.
+        if (nested.empty())
+            return false;
+        const auto & first = *nested.front();
+        if (!(isArray(first) || isMap(first) || isTuple(first)) || !std::ranges::all_of(nested, [&](const DataTypePtr & type)
+            { return type->getTypeId() == first.getTypeId() && type->getNumberOfChildren() == first.getNumberOfChildren(); }))
+            return false;
+
+        std::vector<DataTypes> children_by_position(first.getNumberOfChildren());
+        for (const auto & type : nested)
+            for (size_t position = 0; position < children_by_position.size(); ++position)
+                children_by_position[position].push_back(type->getChild(position));
+
+        bool replaced = false;
+        for (auto & children : children_by_position)
+            replaced |= keepEnumNames(children, combine_consistent_enums);
+        if (!replaced)
+            return false;
+
+        for (size_t i = 0; i < nested.size(); ++i)
+        {
+            DataTypes children;
+            for (const auto & children_at_position : children_by_position)
+                children.push_back(children_at_position[i]);
+            nested[i] = nested[i]->cloneWithChildren(children);
+        }
+    }
+
+    for (size_t i = 0; i < compared.size(); ++i)
+    {
+        auto & type = types[compared[i]];
+        type = type->isNullable() ? makeNullableOrLowCardinalityNullable(nested[i]) : nested[i];
+    }
+    return true;
 }
 
 }
@@ -313,8 +422,10 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTablesImpl(
     auto access = query_context->getAccess();
     size_t table_num = 0;
     ColumnsDescription res;
+    /// The types of each column in the order of tables, without consecutive repeats.
+    std::unordered_map<String, DataTypes> column_types;
 
-    traverseTablesUntilImpl(query_context, ignore_self, database_name_or_regexp, [&table_num, &access, &res, max_tables_to_look, &query_context, source_metadata](auto && t)
+    traverseTablesUntilImpl(query_context, ignore_self, database_name_or_regexp, [&table_num, &access, &res, &column_types, max_tables_to_look, &query_context, source_metadata](auto && t)
     {
         if (!t)
             return false;
@@ -344,6 +455,10 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTablesImpl(
         String prev_column_name;
         for (const ColumnDescription & column : structure)
         {
+            auto & types = column_types[column.name];
+            if (types.empty() || !types.back()->equals(*column.type))
+                types.push_back(column.type);
+
             if (!res.has(column.name))
             {
                 res.add(column, prev_column_name);
@@ -363,6 +478,28 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTablesImpl(
         ++table_num;
         return table_num >= max_tables_to_look;
     });
+
+    const auto keep_enum_names = query_context->getSettingsRef()[Setting::merge_table_keep_enum_names];
+    if (keep_enum_names == MergeTableKeepEnumNames::NEVER)
+        return res;
+
+    /// Enums that differ between tables are read by name. Without a common type the column keeps the type
+    /// inferred above, because an enum cannot be cast to a `Variant` that does not contain it.
+    for (auto & [name, types] : column_types)
+    {
+        if (types.size() < 2 || !keepEnumNames(types, keep_enum_names == MergeTableKeepEnumNames::ALWAYS))
+            continue;
+
+        if (auto type = tryGetLeastSupertype(types))
+        {
+            res.modify(name, [&type](ColumnDescription & what)
+            {
+                what.type = type;
+                /// A codec of an enum, such as `T64`, may not support `String`.
+                what.codec = {};
+            });
+        }
+    }
 
     return res;
 }

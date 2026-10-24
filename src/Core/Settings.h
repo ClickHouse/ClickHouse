@@ -134,7 +134,8 @@ class WriteBuffer;
     M(CLASS_NAME, DeduplicateInsertMode) \
     M(CLASS_NAME, FileLikeEngineDefaultPartitionStrategy) \
     M(CLASS_NAME, UniqueKeyProbeImplementation) \
-    M(CLASS_NAME, SkipUnavailableShardsMode)
+    M(CLASS_NAME, SkipUnavailableShardsMode) \
+    M(CLASS_NAME, MergeTableKeepEnumNames)
 
 
 COMMON_SETTINGS_SUPPORTED_TYPES(Settings, DECLARE_SETTING_TRAIT)

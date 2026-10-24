@@ -689,4 +689,16 @@ enum class FileLikeEngineDefaultPartitionStrategy : uint8_t
 };
 DECLARE_SETTING_ENUM(FileLikeEngineDefaultPartitionStrategy)
 
+/// The type that `Merge` schema inference gives to a column that is an enum with different definitions in different tables.
+enum class MergeTableKeepEnumNames : uint8_t
+{
+    /// The underlying integer type.
+    NEVER,
+    /// `LowCardinality(String)` if the numbering of the enums conflicts, otherwise the underlying integer type.
+    WHEN_AMBIGUOUS,
+    /// `LowCardinality(String)` if the numbering of the enums conflicts, otherwise an enum with all their names.
+    ALWAYS,
+};
+DECLARE_SETTING_ENUM(MergeTableKeepEnumNames)
+
 }
