@@ -178,7 +178,7 @@ MergeSelectorChoices chooseMergesFrom(
     const PartitionsStatistics & partitions_stats,
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeSettingsPtr & data_settings,
-    const MergeTreeData & data,
+    const MergeTreeData * data,
     const PartitionIdToTTLs & next_delete_times,
     const PartitionIdToTTLs & next_recompress_times,
     bool can_use_ttl_merges,

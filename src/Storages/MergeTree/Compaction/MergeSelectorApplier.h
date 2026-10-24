@@ -52,7 +52,9 @@ public:
         const IMergePredicate & predicate,
         const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeSettingsPtr & merge_tree_settings,
-        const MergeTreeData & data,
+        /// `nullptr` for the storages that are not `MergeTreeData` (the compaction of Iceberg tables): the
+        /// memory-derived cap of the merge width, which predicts the merge of `MergeTreeData` parts, does not apply then.
+        const MergeTreeData * data,
         const PartitionIdToTTLs & next_delete_times,
         const PartitionIdToTTLs & next_recompress_times,
         bool can_use_ttl_merges,

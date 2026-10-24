@@ -71,7 +71,8 @@ struct ChooseContext
     const MergeConstraints & merge_constraints;
     const StorageInMemoryMetadata & metadata_snapshot;
     const MergeTreeSettings & merge_tree_settings;
-    const MergeTreeData & data;
+    /// `nullptr` when the storage is not `MergeTreeData`, see `MergeSelectorApplier::chooseMergesFrom`.
+    const MergeTreeData * data;
     const MergeTreeData::MergingParams & merging_params;
     const PartitionIdToTTLs & next_delete_times;
     const PartitionIdToTTLs & next_recompress_times;
@@ -106,7 +107,7 @@ size_t getAffordablePartsToMergeAtOnce(const ChooseContext & ctx, size_t columns
     const size_t bytes_per_source_column = ctx.merge_tree_settings[MergeTreeSetting::merge_memory_estimate_per_source_part_column];
 
     const Int64 memory_limit = total_memory_tracker.getHardLimit();
-    if (bytes_per_source_column == 0 || memory_limit <= 0)
+    if (bytes_per_source_column == 0 || memory_limit <= 0 || !ctx.data)
         return 0;
 
     /// The fixed cost of one merge may take at most this share of the memory limit. Merges are background
@@ -184,7 +185,7 @@ NameSet getColumnsMergedOnHorizontalStageOfVerticalMergeSet(const ChooseContext 
     {
         auto exclude_indexes_string = ctx.merge_tree_settings[MergeTreeSetting::exclude_materialize_skip_indexes_on_merge].toString();
         if (!exclude_indexes_string.empty())
-            exclude_index_names = parseIdentifiersOrStringLiteralsToSet(exclude_indexes_string, ctx.data.getContext()->getSettingsRef());
+            exclude_index_names = parseIdentifiersOrStringLiteralsToSet(exclude_indexes_string, ctx.data->getContext()->getSettingsRef());
     }
 
     for (const auto & index : metadata.getSecondaryIndices())
@@ -409,7 +410,7 @@ bool predictVerticalMerge(const ChooseContext & ctx, PartsRangeView range, bool 
 
     /// The same choice as `FutureMergedMutatedPart::assign` makes for the result of the merge, including that
     /// the result is never of a more compact type than a source part.
-    const auto part_format = ctx.data.choosePartFormat(sum_bytes, sum_rows, max_level + 1, /*projection=*/nullptr);
+    const auto part_format = ctx.data->choosePartFormat(sum_bytes, sum_rows, max_level + 1, /*projection=*/nullptr);
     part_type = std::min(part_type, part_format.part_type);
     if (part_type != MergeTreeDataPartType::Wide || part_format.storage_type != MergeTreeDataPartStorageType::Full)
         return false;
@@ -599,7 +600,7 @@ size_t getAffordablePartsToMergeProjection(const ChooseContext & ctx, const Proj
         part_type = std::min(part_type, it->second.part_type);
     }
 
-    const auto part_format = ctx.data.choosePartFormat(sum_bytes, sum_rows, max_level + 1, &projection);
+    const auto part_format = ctx.data->choosePartFormat(sum_bytes, sum_rows, max_level + 1, &projection);
     part_type = std::min(part_type, part_format.part_type);
     if (part_type != MergeTreeDataPartType::Wide || part_format.storage_type != MergeTreeDataPartStorageType::Full)
         return affordable_horizontal;
@@ -912,12 +913,15 @@ MergeSelectorChoices MergeSelectorApplier::chooseMergesFrom(
     const IMergePredicate & predicate,
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeSettingsPtr & merge_tree_settings,
-    const MergeTreeData & data,
+    const MergeTreeData * data,
     const PartitionIdToTTLs & next_delete_times,
     const PartitionIdToTTLs & next_recompress_times,
     bool can_use_ttl_merges,
     time_t current_time) const
 {
+    /// The merging mode of a storage that is not `MergeTreeData`: its merges keep every row.
+    static const MergeTreeData::MergingParams no_merging_params{};
+
     ChooseContext ctx{
         .ranges = ranges,
         .partitions_stats = partitions_stats,
@@ -928,7 +932,7 @@ MergeSelectorChoices MergeSelectorApplier::chooseMergesFrom(
         .metadata_snapshot = *metadata_snapshot,
         .merge_tree_settings = *merge_tree_settings,
         .data = data,
-        .merging_params = data.merging_params,
+        .merging_params = data ? data->merging_params : no_merging_params,
         .next_delete_times = next_delete_times,
         .next_recompress_times = next_recompress_times,
         .current_time = current_time,

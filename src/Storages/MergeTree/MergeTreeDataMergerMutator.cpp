@@ -300,7 +300,7 @@ PartitionIdsHint MergeTreeDataMergerMutator::getPartitionsThatMayBeMerged(
 
         auto merge_choices = chooseMergesFrom(
             selector, *merge_predicate,
-            ranges_in_partition, partitions_stats, metadata_snapshot, settings, data,
+            ranges_in_partition, partitions_stats, metadata_snapshot, settings, &data,
             next_delete_ttl_merge_times_by_partition, next_recompress_ttl_merge_times_by_partition,
             can_use_ttl_merges, current_time, log);
 
@@ -360,7 +360,7 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
     const auto & partitions_stats = collected.partitions_stats;
     auto merge_choices = chooseMergesFrom(
         selector, *merge_predicate,
-        ranges, partitions_stats, metadata_snapshot, settings, data,
+        ranges, partitions_stats, metadata_snapshot, settings, &data,
         next_delete_ttl_merge_times_by_partition, next_recompress_ttl_merge_times_by_partition,
         can_use_ttl_merges, current_time, log);
 
@@ -781,7 +781,7 @@ MergeSelectorChoices chooseMergesFrom(
     const PartitionsStatistics & partitions_stats,
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeSettingsPtr & data_settings,
-    const MergeTreeData & data,
+    const MergeTreeData * data,
     const PartitionIdToTTLs & next_delete_times,
     const PartitionIdToTTLs & next_recompress_times,
     bool can_use_ttl_merges,
