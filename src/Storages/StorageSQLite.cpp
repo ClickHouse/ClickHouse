@@ -31,7 +31,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <QueryPipeline/Pipe.h>
 #include <Common/filesystemHelpers.h>
-#include <Common/CurrentThread.h>
+#include <Common/waitCancellable.h>
 
 #include <mutex>
 #include <unordered_map>
@@ -570,9 +570,7 @@ public:
         /// busy database can safely be waited for; `COMMIT` may still have to wait for readers to release their
         /// locks, and a busy `COMMIT` keeps the transaction open, so it is retried as well. The writers of this
         /// server are queued on `writer_mutex` first (see `getSQLiteWriterMutex`); the wait stays cancellable.
-        while (!writer_mutex->try_lock_for(std::chrono::milliseconds(100)))
-            CurrentThread::checkIfNotCancelled();
-        std::unique_lock writer_lock(*writer_mutex, std::adopt_lock);
+        CancellableLockGuard writer_lock(*writer_mutex);
 
         SQLiteFormatImpl::executeSQLiteRetryOnBusy(sqlite_db.get(), "BEGIN IMMEDIATE");
         try

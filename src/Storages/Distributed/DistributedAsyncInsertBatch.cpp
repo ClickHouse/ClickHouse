@@ -8,6 +8,7 @@
 #include <Storages/StorageDistributed.h>
 #include <QueryPipeline/RemoteInserter.h>
 #include <Common/Exception.h>
+#include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/formatReadable.h>
@@ -220,6 +221,8 @@ bool DistributedAsyncInsertBatch::recoverBatch()
     /// A missing file inside the surviving suffix cannot be recovered safely.
     for (const auto & file : files)
     {
+        CurrentThread::checkIfNotCancelled();
+
         if (!fs::exists(file))
         {
             LOG_WARNING(parent.log, "File {} does not exist, likely due abnormal shutdown", file);

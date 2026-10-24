@@ -12,7 +12,7 @@
 #include <Common/noexcept_scope.h>
 #include <Common/logger_useful.h>
 #include <Common/LockGuardWithStopWatch.h>
-#include <Common/CurrentThread.h>
+#include <Common/waitCancellable.h>
 #include <Common/ThreadStatus.h>
 #include <Common/FailPoint.h>
 
@@ -270,16 +270,14 @@ size_t MergeTreeBackgroundExecutor<Queue>::reserveTaskSlots(size_t desired) TSA_
     /// This is called by foreground `OPTIMIZE FINAL`, so do not wait indefinitely without
     /// observing query cancellation. `wait_for` also handles a notification caused by a
     /// configuration change or executor shutdown without delaying it by the polling interval.
-    while (!shutdown && saturated())
+    waitCancellable([&](auto timeout)
     {
-        task_slots_available.wait_for(lock, std::chrono::milliseconds(100));
-        CurrentThread::checkIfNotCancelled();
-    }
+        return task_slots_available.wait_for(lock, timeout, [&] TSA_REQUIRES(mutex) { return shutdown || !saturated(); });
+    });
 
     if (shutdown)
         return 0;
 
-    CurrentThread::checkIfNotCancelled();
     const size_t granted = std::min(
         {desired,
          static_cast<size_t>(get_fg_limit() - reserved_task_slots.load()),
