@@ -1,0 +1,14 @@
+baseline_prefetching_used
+1
+monotonic_expression_in_order
+1
+no_prefetching_monotonic_expression
+0
+monotonic_expression_parallel
+1
+monotonic_expression_correctness
+1	1	1
+merge_baseline_prefetching_used
+1
+merge_no_prefetching_monotonic_expression
+0
