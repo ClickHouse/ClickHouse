@@ -9,6 +9,7 @@
 #include <Disks/IDisk.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/DiskEncrypted.h>
+#include <Disks/DiskSelector.h>
 #include <IO/FileEncryptionCommon.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -54,6 +55,26 @@ protected:
         settings->disk_path = path;
         encrypted_disk = std::make_shared<DiskEncrypted>("encrypted_disk", std::move(settings));
         return encrypted_disk;
+    }
+
+    static void configureEncryptedDisk(
+        Poco::Util::XMLConfiguration & config,
+        const String & prefix,
+        const String & wrapped_disk,
+        const std::optional<String> & path)
+    {
+        config.setString(prefix + ".key", "1234567890123456");
+        config.setString(prefix + ".disk", wrapped_disk);
+        if (path)
+            config.setString(prefix + ".path", *path);
+    }
+
+    static std::shared_ptr<DiskEncrypted> makeConfiguredEncryptedDisk(
+        const String & name,
+        const Poco::Util::XMLConfiguration & config,
+        const DisksMap & disks)
+    {
+        return std::make_shared<DiskEncrypted>(name, config, name, disks);
     }
 
     String getFileNames()
@@ -481,4 +502,170 @@ TEST_F(DiskEncryptedTest, DoubleEncrypted)
     auto double_encrypted_disk = makeEncryptedDisk(FileEncryption::Algorithm::AES_128_CTR, "1234567890123456", single_encrypted_disk);
 
     testSeekAndReadUntilPosition(encrypted_disk, "a.txt", {});
+}
+
+TEST_F(DiskEncryptedTest, ConfigurationRejectsAbsolutePath)
+{
+    /// An absolute `path` would escape the wrapped disk: `DiskLocal` joins paths with `fs::path(root) / path`,
+    /// and `fs::path::operator/` discards the root when the right-hand side is absolute. Such a path must be rejected
+    /// before storage-policy namespace validation because it violates the delegate boundary.
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    configureEncryptedDisk(*config, "encrypted1", "local_disk", "/data/");
+
+    DisksMap disks{{"local_disk", local_disk}};
+    EXPECT_THROW(makeConfiguredEncryptedDisk("encrypted1", *config, disks), DB::Exception);
+}
+
+TEST_F(DiskEncryptedTest, ConfigurationRejectsPathEscapingDelegateRoot)
+{
+    /// A relative `path` that escapes the delegate's root via `..` lands outside the wrapped disk, just like an
+    /// absolute path and breaks isolation. It must be rejected.
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    configureEncryptedDisk(*config, "encrypted1", "local_disk", "../escape/");
+
+    DisksMap disks{{"local_disk", local_disk}};
+    EXPECT_THROW(makeConfiguredEncryptedDisk("encrypted1", *config, disks), DB::Exception);
+}
+
+TEST_F(DiskEncryptedTest, ConfigurationRejectsSymlinkEscapingDelegateRoot)
+{
+    const fs::path delegate_root = fs::path(getDirectory()) / "delegate";
+    const fs::path outside_root = fs::path(getDirectory()) / "outside";
+    fs::create_directories(delegate_root);
+    fs::create_directories(outside_root);
+    fs::create_directory_symlink(outside_root, delegate_root / "link");
+
+    auto delegate_disk = std::make_shared<DiskLocal>("delegate_disk", delegate_root);
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    configureEncryptedDisk(*config, "encrypted1", "delegate_disk", "link/encrypted/");
+
+    DisksMap disks{{"delegate_disk", delegate_disk}};
+    EXPECT_THROW(makeConfiguredEncryptedDisk("encrypted1", *config, disks), DB::Exception);
+}
+
+TEST_F(DiskEncryptedTest, ConfigurationRejectsSymlinkEscapingObjectStorageDelegateRoot)
+{
+    /// The path of an object storage disk with local metadata is the local metadata directory.
+    const fs::path metadata_root = fs::path(getDirectory()) / "metadata";
+    const fs::path outside_root = fs::path(getDirectory()) / "outside";
+    fs::create_directories(metadata_root);
+    fs::create_directories(outside_root);
+    fs::create_directory_symlink(outside_root, metadata_root / "link");
+
+    ObjectStoragePtr object_storage = std::make_shared<LocalObjectStorage>(LocalObjectStorageSettings("test", fs::path{getDirectory()} / "local_blobs", false));
+    DiskPtr metadata_disk = std::make_shared<DiskLocal>("metadata_disk", metadata_root);
+    MetadataStoragePtr metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk, "/", object_storage->createKeyGenerator(), /*persist_removal_queue_=*/true, /*removal_log_compaction_threshold_=*/1000);
+
+    std::unordered_map<Location, LocationInfo> cluster_registry = {{"main", {true, true, ""}}};
+    std::unordered_map<Location, ObjectStoragePtr> object_storage_registry = {{"main", object_storage}};
+
+    ClusterConfigurationPtr cluster = std::make_shared<ClusterConfiguration>("local_blobs", std::move(cluster_registry));
+    ObjectStorageRouterPtr object_storages = std::make_shared<ObjectStorageRouter>(std::move(object_storage_registry));
+
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    auto delegate_disk = std::make_shared<DiskObjectStorage>("delegate_disk", std::move(cluster), std::move(metadata_storage), std::move(object_storages), nullptr, *config, "");
+    ASSERT_TRUE(delegate_disk->getDataSourceDescription().isPathLocal());
+
+    configureEncryptedDisk(*config, "encrypted1", "delegate_disk", "link/encrypted/");
+
+    DisksMap disks{{"delegate_disk", delegate_disk}};
+    EXPECT_THROW(makeConfiguredEncryptedDisk("encrypted1", *config, disks), DB::Exception);
+}
+
+TEST_F(DiskEncryptedTest, SameDelegateAndExplicitPathShareStorageNamespace)
+{
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    configureEncryptedDisk(*config, "encrypted1", "local_disk", "data/");
+    configureEncryptedDisk(*config, "encrypted2", "local_disk", "data/");
+
+    DisksMap disks{{"local_disk", local_disk}};
+    auto encrypted1 = makeConfiguredEncryptedDisk("encrypted1", *config, disks);
+    disks.emplace("encrypted1", encrypted1);
+    auto encrypted2 = makeConfiguredEncryptedDisk("encrypted2", *config, disks);
+
+    EXPECT_TRUE(haveSameStorageNamespace(encrypted1, encrypted2));
+}
+
+TEST_F(DiskEncryptedTest, SameNamespaceOverDifferentDelegatesIsDetected)
+{
+    auto nested_local_disk = std::make_shared<DiskLocal>("nested_local_disk", getDirectory() + "data/");
+
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    configureEncryptedDisk(*config, "encrypted1", "nested_local_disk", "encrypted/");
+    configureEncryptedDisk(*config, "encrypted2", "local_disk", "data/encrypted/");
+
+    DisksMap disks{{"local_disk", local_disk}, {"nested_local_disk", nested_local_disk}};
+    auto encrypted1 = makeConfiguredEncryptedDisk("encrypted1", *config, disks);
+    disks.emplace("encrypted1", encrypted1);
+    auto encrypted2 = makeConfiguredEncryptedDisk("encrypted2", *config, disks);
+
+    EXPECT_TRUE(haveSameStorageNamespace(encrypted1, encrypted2));
+}
+
+TEST_F(DiskEncryptedTest, TraversalAliasOfSamePathIsDetected)
+{
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    configureEncryptedDisk(*config, "encrypted1", "local_disk", "a/../b/");
+    configureEncryptedDisk(*config, "encrypted2", "local_disk", "b/");
+
+    DisksMap disks{{"local_disk", local_disk}};
+    auto encrypted1 = makeConfiguredEncryptedDisk("encrypted1", *config, disks);
+    disks.emplace("encrypted1", encrypted1);
+    auto encrypted2 = makeConfiguredEncryptedDisk("encrypted2", *config, disks);
+
+    EXPECT_TRUE(haveSameStorageNamespace(encrypted1, encrypted2));
+}
+
+TEST_F(DiskEncryptedTest, DifferentPathsOrDelegatesHaveDistinctStorageNamespaces)
+{
+    auto other_local_disk = std::make_shared<DiskLocal>("other_local_disk", getDirectory() + "other/");
+
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    configureEncryptedDisk(*config, "encrypted1", "local_disk", "data/");
+    configureEncryptedDisk(*config, "encrypted2", "local_disk", "other_data/");
+    configureEncryptedDisk(*config, "encrypted3", "other_local_disk", "data/");
+
+    DisksMap disks{{"local_disk", local_disk}, {"other_local_disk", other_local_disk}};
+    auto encrypted1 = makeConfiguredEncryptedDisk("encrypted1", *config, disks);
+    disks.emplace("encrypted1", encrypted1);
+    auto encrypted2 = makeConfiguredEncryptedDisk("encrypted2", *config, disks);
+    disks.emplace("encrypted2", encrypted2);
+    auto encrypted3 = makeConfiguredEncryptedDisk("encrypted3", *config, disks);
+
+    EXPECT_FALSE(haveSameStorageNamespace(encrypted1, encrypted2));
+    EXPECT_FALSE(haveSameStorageNamespace(encrypted1, encrypted3));
+    EXPECT_FALSE(haveSameStorageNamespace(encrypted2, encrypted3));
+}
+
+TEST_F(DiskEncryptedTest, EncryptedWithoutPathSharesNamespaceWithItsDelegate)
+{
+    /// Without an explicit `path` the encrypted disk writes into the root of the wrapped disk, so both disks
+    /// read and write the same files.
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    configureEncryptedDisk(*config, "encrypted1", "local_disk", std::nullopt);
+
+    DisksMap disks{{"local_disk", local_disk}};
+    auto encrypted1 = makeConfiguredEncryptedDisk("encrypted1", *config, disks);
+
+    EXPECT_TRUE(haveSameStorageNamespace(encrypted1, local_disk));
+}
+
+TEST_F(DiskEncryptedTest, LocalDiskAliasesShareStorageNamespace)
+{
+    auto local_disk_alias = std::make_shared<DiskLocal>("local_disk_alias", getDirectory());
+
+    EXPECT_TRUE(haveSameStorageNamespace(local_disk, local_disk_alias));
+}
+
+TEST_F(DiskEncryptedTest, LocalDiskSymlinkAliasesShareStorageNamespace)
+{
+    const fs::path real_path = fs::path(getDirectory()) / "real";
+    const fs::path alias_path = fs::path(getDirectory()) / "alias";
+    fs::create_directories(real_path);
+    fs::create_directory_symlink(real_path, alias_path);
+
+    auto real_disk = std::make_shared<DiskLocal>("real_disk", real_path);
+    auto alias_disk = std::make_shared<DiskLocal>("alias_disk", alias_path);
+
+    EXPECT_TRUE(haveSameStorageNamespace(real_disk, alias_disk));
 }

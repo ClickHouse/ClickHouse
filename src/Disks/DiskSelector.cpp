@@ -9,6 +9,9 @@
 #include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
 
+#include <filesystem>
+#include <optional>
+
 
 namespace DB
 {
@@ -39,6 +42,58 @@ MetadataStoragePtr unwrapEncryptedAndCacheLayers(DiskPtr disk)
     return metadata_storage;
 }
 
+/// Identity of the storage that a disk reads and writes.
+struct StorageNamespace
+{
+    DataSourceType type;
+    ObjectStorageType object_storage_type;
+    String description;
+    String objects_namespace;
+    String zookeeper_name;
+    String path;
+
+    auto operator<=>(const StorageNamespace &) const = default;
+};
+
+/// Returns the storage namespace of a disk, or nothing when the disk has no persistent one.
+std::optional<StorageNamespace> getStorageNamespace(const DiskPtr & disk)
+{
+    const auto data_source = disk->getDataSourceDescription();
+
+    /// Separate in-memory disks do not share a persistent namespace even though their paths are empty.
+    if (data_source.type == DataSourceType::RAM)
+        return {};
+
+    /// Resolve symlinks of a local directory so that two aliases of one directory match.
+    auto path = std::filesystem::path(disk->getPath()).lexically_normal();
+    if (data_source.isPathLocal())
+        path = std::filesystem::weakly_canonical(path);
+
+    /// `DiskBackup` reports `ObjectStorage` with `ObjectStorageType::None` and has no object storage behind it,
+    /// so its identity is its description and its path.
+    String objects_namespace;
+    if (data_source.type == DataSourceType::ObjectStorage && data_source.object_storage_type != ObjectStorageType::None)
+        objects_namespace = disk->getObjectStorage()->getObjectsNamespace();
+
+    return StorageNamespace{
+        .type = data_source.type,
+        .object_storage_type = data_source.object_storage_type,
+        .description = data_source.type == DataSourceType::ObjectStorage ? data_source.description : String{},
+        .objects_namespace = std::move(objects_namespace),
+        .zookeeper_name = data_source.type == DataSourceType::ObjectStorage ? data_source.zookeeper_name : String{},
+        .path = path.string(),
+    };
+}
+
+}
+
+bool haveSameStorageNamespace(const DiskPtr & lhs, const DiskPtr & rhs)
+{
+    const auto lhs_namespace = getStorageNamespace(lhs);
+    if (!lhs_namespace)
+        return false;
+
+    return lhs_namespace == getStorageNamespace(rhs);
 }
 
 void DiskSelector::assertInitialized() const
@@ -82,6 +137,22 @@ void DiskSelector::recordDisk(const std::string & disk_name, DiskPtr disk)
                         disk_name, saved_disk_name);
             }
         }
+    }
+
+    /// Two disks that resolve to the same storage namespace read and write the same files. A storage policy built
+    /// from both of them makes `MergeTree` enumerate every part twice, which it reports as duplicate parts.
+    for (const auto & [saved_disk_name, saved_disk] : disks)
+    {
+        if (saved_disk_name == disk_name)
+            continue;
+
+        if (haveSameStorageNamespace(disk, saved_disk))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Disks {} and {} resolve to the same storage namespace ({})",
+                backQuote(saved_disk_name),
+                backQuote(disk_name),
+                quoteString(disk->getPath()));
     }
 
     const auto [_, inserted] = disks.emplace(disk_name, std::move(disk));
