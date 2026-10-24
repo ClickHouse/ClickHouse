@@ -18,6 +18,7 @@ the reference can be updated deliberately.
 """
 
 import logging
+import re
 import textwrap
 import uuid
 from typing import Optional
@@ -796,6 +797,33 @@ def test_read_in_order_across_surviving_exchange(started_cluster):
     for _ in range(5):
         distributed = INITIATOR.query(
             f"{query} SETTINGS {DISTRIBUTED_SETTINGS}, {mismatched_buckets}"
+        )
+        assert distributed == baseline
+
+
+def test_read_in_order_with_exchanges_not_optimized(started_cluster):
+    """Without `distributed_plan_optimize_exchanges` a scatter/gather pair with equal bucket counts is not
+    collapsed, so it stays between the read and the sorting and delivers the rows in arrival order. The
+    read must not read in order there: when it did, the sorting skipped sorting and the query returned rows
+    from the wrong part of the table, intermittently, hence the repeats."""
+    query = "SELECT id FROM big ORDER BY id ASC LIMIT 20 OFFSET 24990"
+    baseline = INITIATOR.query(f"{query} SETTINGS make_distributed_plan = 0")
+
+    # Last value wins over the 1 in DISTRIBUTED_SETTINGS. `optimize_read_in_order` is pinned, so the read is
+    # asked to read in order whatever its default.
+    exchanges_not_optimized = "distributed_plan_optimize_exchanges = 0, optimize_read_in_order = 1, " + READ_IN_ORDER
+    plan = INITIATOR.query(
+        f"EXPLAIN PLAN actions = 1 {query} SETTINGS {DISTRIBUTED_SETTINGS}, {exchanges_not_optimized}"
+    )
+    assert "ScatterExchange" in plan, plan
+    # The result alone depends on the arrival order, so check the plan: the read is not in order and the
+    # sorting sorts fully instead of finishing the sort of an ordered input.
+    assert not re.search(r"Read ?[Tt]ype: InOrder", plan), plan
+    assert "Prefix sort description" not in plan, plan
+
+    for _ in range(5):
+        distributed = INITIATOR.query(
+            f"{query} SETTINGS {DISTRIBUTED_SETTINGS}, {exchanges_not_optimized}"
         )
         assert distributed == baseline
 
