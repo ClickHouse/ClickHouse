@@ -1,0 +1,16 @@
+Default
+LowCardinality
+block nested loop
+25175	b_9	b_9
+9300	b_9	b_9
+9300	b_9	b_9
+full_sorting_merge
+600	b_9	b_9
+9300	599	599
+partial_merge
+600	b_9	b_9
+9300	599	599
+hash
+600	b_9	b_9
+grace_hash
+600	b_9	b_9

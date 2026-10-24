@@ -13,6 +13,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CORRUPTED_DATA;
+    extern const int LOGICAL_ERROR;
     extern const int THERE_IS_NO_COLUMN;
     extern const int NOT_IMPLEMENTED;
 }
@@ -169,6 +170,26 @@ void SerializationInfoTuple::deserializeFromKindsBinary(ReadBuffer & in, ISerial
     auto elements_allowed_kinds = allowed_kinds.without(ISerialization::Kind::DETACHED);
     for (const auto & elem : elems)
         elem->deserializeFromKindsBinary(in, elements_allowed_kinds);
+}
+
+void SerializationInfoTuple::checkKindStackForType(const IDataType & type) const
+{
+    SerializationInfo::checkKindStackForType(type);
+
+    const auto * type_tuple = typeid_cast<const DataTypeTuple *>(&type);
+    if (!type_tuple || type_tuple->getElements().size() != elems.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Serialization info of a tuple with {} elements does not match type {}", elems.size(), type.getName());
+
+    for (size_t i = 0; i < elems.size(); ++i)
+        elems[i]->checkKindStackForType(*type_tuple->getElements()[i]);
+}
+
+void SerializationInfoTuple::checkKindStacks() const
+{
+    SerializationInfo::checkKindStacks();
+    for (const auto & elem : elems)
+        elem->checkKindStacks();
 }
 
 void SerializationInfoTuple::writeJSONFields(WriteBuffer & out, const String * name) const

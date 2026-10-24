@@ -363,6 +363,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 parts_to_throw_insert;
     extern const MergeTreeSettingsBool compute_exact_num_defaults_for_sparse_columns;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
+    extern const MergeTreeSettingsUInt64 max_uniq_number_for_low_cardinality;
     extern const MergeTreeSettingsBool remove_empty_parts;
     extern const MergeTreeSettingsBool remove_rolled_back_parts_immediately;
     extern const MergeTreeSettingsBool replace_long_file_name_to_hash;
@@ -15128,12 +15129,31 @@ void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
 
     const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
     const auto & storage_columns = metadata_snapshot->getColumns();
+    const auto physical_columns = storage_columns.getAllPhysical();
+    serialization_hints = SerializationInfoByName(physical_columns, settings);
 
-    serialization_hints = SerializationInfoByName(storage_columns.getAllPhysical(), settings);
     auto range = getDataPartsStateRange(DataPartState::Active);
+
+    /// `SerializationInfoByName` creates entries only for columns eligible for sparse serialization.
+    /// Add missing entries only for columns that are already automatically encoded in an active part,
+    /// so a table without the feature enabled does not acquire serialization metadata on rewrite.
+    for (const auto & part : range)
+    {
+        for (const auto & [name, info] : part->getSerializationInfos())
+        {
+            if (!serialization_hints.contains(name)
+                && ISerialization::hasKind(info->getKindStack(), ISerialization::Kind::LOW_CARDINALITY))
+            {
+                if (const auto column = physical_columns.tryGetByName(name))
+                    serialization_hints.emplace(name, column->type->createSerializationInfo(settings));
+            }
+        }
+    }
 
     for (const auto & part : range)
         updateSerializationHintsForPart(part, storage_columns, serialization_hints, false);
+
+    updateHasAutomaticLowCardinality();
 }
 
 template <typename AddedParts, typename RemovedParts>
@@ -15145,18 +15165,127 @@ void MergeTreeData::updateSerializationHints(const AddedParts & added_parts, con
 
     const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
     const auto & storage_columns = metadata_snapshot->getColumns();
+    const auto physical_columns = storage_columns.getAllPhysical();
+
+    SerializationInfo::Settings settings
+    {
+        static_cast<double>((*getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
+        true,
+        (*getSettings())[MergeTreeSetting::compute_exact_num_defaults_for_sparse_columns],
+        (*getSettings())[MergeTreeSetting::serialization_info_version],
+        (*getSettings())[MergeTreeSetting::string_serialization_version],
+        (*getSettings())[MergeTreeSetting::nullable_serialization_version],
+        (*getSettings())[MergeTreeSetting::map_serialization_version],
+        (*getSettings())[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
+    };
+
+    /// `SerializationInfoByName` creates entries only for columns eligible for sparse serialization.
+    /// Add missing entries for newly added automatically encoded parts, just as `resetSerializationHints`
+    /// does for the full active-part set. Otherwise the first INSERT leaves no table-level hint, and
+    /// query analysis can rewrite a read to an unsupported subcolumn before a table reload rebuilds it.
+    for (const auto & part : added_parts)
+    {
+        for (const auto & [name, info] : part->getSerializationInfos())
+        {
+            if (!serialization_hints.contains(name)
+                && ISerialization::hasKind(info->getKindStack(), ISerialization::Kind::LOW_CARDINALITY))
+            {
+                if (const auto column = physical_columns.tryGetByName(name))
+                    serialization_hints.emplace(name, column->type->createSerializationInfo(settings));
+            }
+        }
+    }
 
     for (const auto & part : added_parts)
         updateSerializationHintsForPart(part, storage_columns, serialization_hints, false);
 
     for (const auto & part : removed_parts)
         updateSerializationHintsForPart(part, storage_columns, serialization_hints, true);
+
+    updateHasAutomaticLowCardinality();
+}
+
+void MergeTreeData::updateHasAutomaticLowCardinality()
+{
+    bool has_low_cardinality = false;
+    for (const auto & [_, info] : serialization_hints)
+    {
+        if (info && ISerialization::hasKind(info->getKindStack(), ISerialization::Kind::LOW_CARDINALITY))
+        {
+            has_low_cardinality = true;
+            break;
+        }
+    }
+
+    has_automatic_low_cardinality.store(has_low_cardinality, std::memory_order_relaxed);
 }
 
 SerializationInfoByName MergeTreeData::getSerializationHints() const
 {
     auto lock = readLockParts();
     return serialization_hints.clone();
+}
+
+bool MergeTreeData::hasAutomaticLowCardinalitySerialization(const String & column_name, const StorageSnapshotPtr & storage_snapshot) const
+{
+    /// Only the snapshot of this table taken for the query holds the parts its read will use. A wrapper
+    /// (`MaterializedView`, `Buffer`, `Alias`, a table proxy, ...) passes its own snapshot and reads this
+    /// table later with a fresh one, so a part that encodes the column can be attached or fetched in
+    /// between, even after the threshold went back to zero or the column lost its statistic, and neither
+    /// the current parts nor the table-level hints can rule that out. Fail closed: the caller asks only
+    /// about `String` and `FixedString` columns, so this disables only their subcolumn rewrites through
+    /// a wrapper, as for a `Merge` table.
+    if (!storage_snapshot || &storage_snapshot->storage != this)
+        return true;
+
+    /// Not just "is the column encoded in an active part right now": a part that encodes it can be
+    /// committed while a query is being analyzed and still belong to the parts that query reads, so
+    /// an optimization keyed on the current parts alone would depend on insert and merge timing.
+    /// While the threshold is nonzero, a `String`/`FixedString` column with a cardinality statistic
+    /// (declared explicitly or added by `auto_statistics_types`) can be encoded by any write, so the
+    /// answer is `true` regardless of the current parts. A column without such a statistic is never
+    /// chosen (see `chooseColumnsForAutomaticLowCardinality`), so only the parts that are already
+    /// encoded matter for it, as for every column once the threshold is back to zero.
+    if ((*getSettings())[MergeTreeSetting::max_uniq_number_for_low_cardinality] != 0)
+    {
+        const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+        const auto * column = metadata_snapshot->getColumns().tryGet(column_name);
+        if (column && isStringOrFixedString(column->type)
+            && (column->statistics.types_to_desc.contains(StatisticsType::Uniq)
+                || column->statistics.types_to_desc.contains(StatisticsType::UniqV2)))
+            return true;
+    }
+
+    /// The snapshot holds the parts the read will use. Checking them does not depend on when the
+    /// table-level hints catch up with a part that was attached or fetched concurrently: if such a part
+    /// is read by this query, it is found here. A snapshot without parts reads nothing from them.
+    const auto * snapshot_data = dynamic_cast<const SnapshotData *>(storage_snapshot->data.get());
+    if (!snapshot_data || !snapshot_data->parts)
+        return true;
+
+    for (const auto & part : *snapshot_data->parts)
+    {
+        /// A part with a pending `RENAME COLUMN` keeps its serialization infos under the old name, and
+        /// the reader translates the query name back to it, so look up the info by the name in the part.
+        String name_in_part = column_name;
+        if (snapshot_data->mutations_snapshot)
+        {
+            const auto commands = snapshot_data->mutations_snapshot->getOnFlyMutationCommandsForPart(part.data_part);
+            for (const auto & command : commands | std::views::reverse)
+            {
+                if (command.type == MutationCommand::RENAME_COLUMN && command.rename_to == name_in_part)
+                    name_in_part = command.column_name;
+            }
+        }
+
+        const auto & infos = part.data_part->getSerializationInfos();
+        auto it = infos.find(name_in_part);
+        if (it != infos.end() && it->second
+            && ISerialization::hasKind(it->second->getKindStack(), ISerialization::Kind::LOW_CARDINALITY))
+            return true;
+    }
+
+    return false;
 }
 
 bool MergeTreeData::supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const

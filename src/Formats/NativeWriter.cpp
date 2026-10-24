@@ -110,6 +110,13 @@ std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> NativeWriter::getS
                 result_column = recursiveRemoveSparse(result_column);
         }
 
+        /// The peer knows custom serializations, but not the `LOW_CARDINALITY` kind, so every non-native
+        /// LowCardinality column is materialized before the serialization info is computed. It has to be
+        /// done on the column rather than by checking the outer kind stack: the kind can also appear only
+        /// in the infos of nested elements (e.g. a `Tuple(String)` with an encoded element).
+        if (client_revision < DBMS_MIN_REVISION_WITH_AUTOMATIC_LOW_CARDINALITY_SERIALIZATION)
+            result_column = recursiveRemoveNonNativeLowCardinality(result_column);
+
         /// The size-stream String layout follows the peer revision and needs no per-column wire marker.
         auto info = column.type->getSerializationInfo(
             *result_column,
@@ -118,6 +125,9 @@ std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> NativeWriter::getS
         return {column.type->getSerialization(*info), info, result_column};
     }
 
+    /// The client is too old to be told about custom serializations, so every special in-memory
+    /// representation - including a non-native LowCardinality one (automatic LowCardinality
+    /// serialization) - has to be materialized before writing it with the default serialization.
     return {column.type->getDefaultSerialization(), nullptr, removeSpecialRepresentations(column.column)};
 }
 

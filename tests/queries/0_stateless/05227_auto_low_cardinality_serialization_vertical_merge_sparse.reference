@@ -1,0 +1,18 @@
+encoded then sparse: kinds of the source parts
+all_1_1_0	LowCardinality
+all_2_2_0	Sparse
+encoded then sparse: kind of the merged part, correctness
+Sparse
+22000	11	20000	6000
+sparse then encoded: kinds of the source parts
+all_1_1_0	Sparse
+all_2_2_0	LowCardinality
+sparse then encoded: kind of the merged part, correctness
+Sparse
+22000	11	20000	6000
+sparse then encoded, encoding wins: kinds of the source parts
+all_1_1_0	Sparse
+all_2_2_0	LowCardinality
+sparse then encoded, encoding wins: kind of the merged part, correctness
+LowCardinality
+22000	11	2000	60000

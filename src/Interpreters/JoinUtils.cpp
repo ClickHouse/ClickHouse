@@ -193,6 +193,10 @@ Block materializeColumnsFromRightBlock(Block block, const Block & sample_block)
 
             /// Sparse columns are not supported on the right side.
             actual_column = recursiveRemoveSparse(actual_column);
+            /// Neither are non-native LowCardinality columns (automatic LowCardinality serialization):
+            /// stored right blocks from different parts are merged by `insertFrom`, which requires
+            /// the same in-memory representation.
+            actual_column = recursiveRemoveNonNativeLowCardinality(actual_column);
 
             if (actual_column->lowCardinality() && !sample_column.column->lowCardinality())
             {

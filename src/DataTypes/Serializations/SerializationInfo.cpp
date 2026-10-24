@@ -148,23 +148,60 @@ void SerializationInfo::add(const IColumn & column)
 void SerializationInfo::add(const SerializationInfo & other)
 {
     data.add(other.data);
+    /// LowCardinality cannot be derived from Data (it needs the cardinality estimate), so it is
+    /// preserved across aggregation (e.g. for per-table serialization hints) by counting the
+    /// contributing infos. The result is LowCardinality while at least one contributor is, and it
+    /// takes precedence over Sparse in the aggregated hint.
+    if (ISerialization::hasKind(other.kind_stack, ISerialization::Kind::LOW_CARDINALITY))
+        ++data.num_low_cardinality_parts;
     if (settings.choose_kind)
-        kind_stack = chooseKindStack(data, settings);
+        kind_stack = data.num_low_cardinality_parts > 0
+            ? ISerialization::KindStack{ISerialization::Kind::DEFAULT, ISerialization::Kind::LOW_CARDINALITY}
+            : chooseKindStack(data, settings);
 }
 
 void SerializationInfo::remove(const SerializationInfo & other)
 {
     data.remove(other.data);
+    /// Stop reporting LowCardinality once the last contributing info is removed (see `add`), instead of
+    /// keeping the kind sticky until a full reset.
+    if (ISerialization::hasKind(other.kind_stack, ISerialization::Kind::LOW_CARDINALITY) && data.num_low_cardinality_parts > 0)
+        --data.num_low_cardinality_parts;
     if (settings.choose_kind)
-        kind_stack = chooseKindStack(data, settings);
+        kind_stack = data.num_low_cardinality_parts > 0
+            ? ISerialization::KindStack{ISerialization::Kind::DEFAULT, ISerialization::Kind::LOW_CARDINALITY}
+            : chooseKindStack(data, settings);
 }
 
+
+void SerializationInfo::resetLowCardinality()
+{
+    data.num_low_cardinality_parts = 0;
+
+    if (settings.choose_kind)
+    {
+        kind_stack = chooseKindStack(data, settings);
+        return;
+    }
+
+    ISerialization::KindStack new_kind_stack;
+    for (auto kind : kind_stack)
+    {
+        if (kind != ISerialization::Kind::LOW_CARDINALITY)
+            new_kind_stack.push_back(kind);
+    }
+    kind_stack = std::move(new_kind_stack);
+}
 
 void SerializationInfo::addDefaults(size_t length)
 {
     data.addDefaults(length);
+    /// Adding default rows (for a part that is missing this column) does not change the set of
+    /// LowCardinality contributors, so the count is left untouched.
     if (settings.choose_kind)
-        kind_stack = chooseKindStack(data, settings);
+        kind_stack = data.num_low_cardinality_parts > 0
+            ? ISerialization::KindStack{ISerialization::Kind::DEFAULT, ISerialization::Kind::LOW_CARDINALITY}
+            : chooseKindStack(data, settings);
 }
 
 void SerializationInfo::replaceData(const SerializationInfo & other)
@@ -206,6 +243,12 @@ std::shared_ptr<SerializationInfo> SerializationInfo::createWithType(
     {
         if (kind == ISerialization::Kind::SPARSE
             && (!new_settings.canUseSparseSerialization(new_type) || !preserveDefaultsAfterConversion(old_type, new_type)))
+            continue;
+        /// Automatic LowCardinality serialization is chosen only for String/FixedString columns (from their
+        /// `uniq` statistic). Drop the kind when the new type is no longer eligible, so the encoding is not
+        /// blindly carried over to a type whose statistic was never checked - and which may not even be able
+        /// to be inside a LowCardinality column.
+        if (kind == ISerialization::Kind::LOW_CARDINALITY && !isStringOrFixedString(new_type))
             continue;
         new_kind_stack.push_back(kind);
     }
@@ -263,12 +306,14 @@ void SerializationInfo::serialializeKindStackBinary(WriteBuffer & out) const
     }
 }
 
-/// The order in which the kinds wrap each other, innermost first: `ColumnSparse` can sit inside
-/// `ColumnReplicated` but not the other way round (see `removeSpecialRepresentations`), and nothing
-/// wraps a `ColumnBLOB`. Not the order of the enum, whose values are part of the Native format.
+/// The order in which the kinds wrap each other, innermost first: a non-native `ColumnLowCardinality`
+/// always wraps the full column directly, `ColumnSparse` can sit inside `ColumnReplicated` but not the
+/// other way round (see `removeSpecialRepresentations`), and nothing wraps a `ColumnBLOB`. Not the
+/// order of the enum, whose values are part of the Native format.
 static constexpr std::array canonical_kind_order
 {
     ISerialization::Kind::DEFAULT,
+    ISerialization::Kind::LOW_CARDINALITY,
     ISerialization::Kind::SPARSE,
     ISerialization::Kind::REPLICATED,
     ISerialization::Kind::DETACHED,
@@ -300,6 +345,29 @@ void SerializationInfo::checkKindStack(ISerialization::KindSet allowed_kinds) co
 
         ++expected;
     }
+
+    /// Both kinds encode the same full column in their own way, so no writer stacks one over the other.
+    if (ISerialization::hasKind(kind_stack, ISerialization::Kind::LOW_CARDINALITY)
+        && ISerialization::hasKind(kind_stack, ISerialization::Kind::SPARSE))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Serialization kinds LowCardinality and Sparse cannot be combined in a kind stack");
+}
+
+void SerializationInfo::checkKindStackForType(const IDataType & type) const
+{
+    /// Automatic LowCardinality serialization is chosen only for String/FixedString columns, so no writer emits
+    /// the kind for any other type, and reading such a column as dictionary-encoded would misinterpret its data.
+    if (ISerialization::hasKind(kind_stack, ISerialization::Kind::LOW_CARDINALITY) && !isStringOrFixedString(type))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Serialization kind LowCardinality is not allowed for a column of type {}",
+            type.getName());
+}
+
+void SerializationInfo::checkKindStacks() const
+{
+    checkKindStack(ISerialization::KindSet::all());
 }
 
 void SerializationInfo::deserializeFromKindsBinary(ReadBuffer & in, ISerialization::KindSet allowed_kinds)
@@ -765,6 +833,8 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
 
             auto info = it->second->createSerializationInfo(infos.settings);
             info->fromJSON(*elem_object);
+            info->checkKindStacks();
+            info->checkKindStackForType(*it->second);
             infos.emplace(name, std::move(info));
         }
     }

@@ -625,13 +625,28 @@ IMergeTreeReader::ColumnAndSerializationInPart IMergeTreeReader::getColumnAndSer
         return {*column_in_part, serialization};
     }
 
+    const auto info_it = infos.find(column_in_part->getNameInStorage());
+
+    /// A column stored with automatic `LowCardinality` serialization is dictionary-encoded, so the
+    /// substreams of its declared data type (e.g. the `String` `.size` stream) do not exist in the
+    /// part. Report that instead of letting the substream lookup fail with a confusing message.
+    if (info_it != infos.end() && column_in_part->isSubcolumn()
+        && ISerialization::hasKind(info_it->second->getKindStack(), ISerialization::Kind::LOW_CARDINALITY))
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Reading subcolumn '{}' of column '{}' is not supported, because the column is stored with "
+            "automatic LowCardinality serialization in part '{}'",
+            column_in_part->getSubcolumnName(),
+            column_in_part->getNameInStorage(),
+            data_part_info_for_read->getPartName());
+
     /// The part holds the serialization of every column it stores, built with the same call as below, so take it
     /// instead of building an equal one for every reader.
     if (auto serialization = tryGetSerializationFromPart(*column_in_part))
         return {*column_in_part, serialization};
 
-    if (auto it = infos.find(column_in_part->getNameInStorage()); it != infos.end())
-        return {*column_in_part, IDataType::getSerialization(*column_in_part, *it->second)};
+    if (info_it != infos.end())
+        return {*column_in_part, IDataType::getSerialization(*column_in_part, *info_it->second)};
 
     return {*column_in_part, IDataType::getSerialization(*column_in_part, infos.getSettings())};
 }

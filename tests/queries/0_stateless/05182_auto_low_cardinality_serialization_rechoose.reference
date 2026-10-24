@@ -1,0 +1,20 @@
+merge: kind with the high threshold
+LowCardinality
+merge: kind after the threshold is lowered, correctness
+Default
+4000	18
+sparse: kind of the dense part
+LowCardinality
+sparse: kind of the merged part, correctness
+Sparse
+22000	11	20000
+mutation: kind before the rewrite
+LowCardinality
+mutation: kind after the rewrite, correctness
+Default
+2000	10
+mutation to defaults: kind after the rewrite
+LowCardinality
+mutation to defaults: kind after the following merge, correctness
+Sparse
+2000	1	2000

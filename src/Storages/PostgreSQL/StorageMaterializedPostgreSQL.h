@@ -106,6 +106,8 @@ public:
     bool supportedPrewhereColumnsIncludeSubcolumns() const override;
     bool supportsSubcolumns() const override;
     bool supportsOptimizationToSubcolumns() const override;
+    std::optional<SerializationInfoByName> tryGetSerializationHints() const override;
+    bool hasAutomaticLowCardinalitySerialization(const String & column_name, const StorageSnapshotPtr & storage_snapshot) const override;
 
     ColumnSizeByName getColumnSizes() const override;
     ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override;
