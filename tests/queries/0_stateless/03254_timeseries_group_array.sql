@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: tests timeseries groupArray, output row order depends on key direction
+SET force_primary_key_reverse_order = 0;
+
 CREATE TABLE ts_raw_data(timestamp DateTime64(3,'UTC'), value Float64) ENGINE = MergeTree() ORDER BY timestamp;
 
 INSERT INTO ts_raw_data SELECT arrayJoin(*).1::DateTime64(3, 'UTC') AS timestamp, arrayJoin(*).2 AS value

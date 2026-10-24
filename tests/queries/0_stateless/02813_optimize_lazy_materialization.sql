@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Tests projection behavior sensitive to sort order
+SET force_primary_key_reverse_order = 0;
+
 SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_max_limit_for_lazy_materialization = 10;
 SET allow_experimental_variant_type = 1;

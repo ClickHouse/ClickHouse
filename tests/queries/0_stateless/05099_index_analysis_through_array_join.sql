@@ -1,4 +1,8 @@
 -- Tags: no-parallel-replicas
+
+-- Disable force_primary_key_reverse_order: Test checks granule counts of a skip index, which depend on the physical row layout of an ascending key
+SET force_primary_key_reverse_order = 0;
+
 -- A condition on an ARRAY JOIN element is used for skip indexes like `has(col, x)` is.
 
 DROP TABLE IF EXISTS t_aj_index;

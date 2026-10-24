@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: checks that aggregation in order fires, which needs an ascending key
+SET force_primary_key_reverse_order = 0;
+
 -- Regression test for issue #116849: with `optimize_aggregation_in_order_limit`
 -- enabled, a query whose `ORDER BY` is a strict prefix of the `GROUP BY` key
 -- returned incomplete aggregate values when groups tie on that prefix and a

@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: checks the exact granule counts of index analysis
+SET force_primary_key_reverse_order = 0;
+
 -- { echo }
 
 SET parallel_replicas_local_plan = 1;

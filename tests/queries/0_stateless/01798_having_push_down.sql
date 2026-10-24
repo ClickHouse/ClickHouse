@@ -1,3 +1,5 @@
+-- Disable force_primary_key_reverse_order: reversed key changes aggregation-in-order behavior affecting query results
+SET force_primary_key_reverse_order = 0;
 DROP TABLE IF EXISTS t_having;
 
 CREATE TABLE t_having (c0 Int32, c1 UInt64) ENGINE = MergeTree ORDER BY c0;

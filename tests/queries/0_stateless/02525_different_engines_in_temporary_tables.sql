@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: tests temporary tables with MergeTree, output depends on key direction
+SET force_primary_key_reverse_order = 0;
+
 DROP TEMPORARY TABLE IF EXISTS table_merge_tree_02525;
 CREATE TEMPORARY TABLE table_merge_tree_02525
 (

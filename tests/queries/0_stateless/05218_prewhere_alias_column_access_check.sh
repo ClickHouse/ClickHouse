@@ -27,6 +27,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# Disable force_primary_key_reverse_order: `indexHint` results depend on the granule boundaries, which depend on the key direction
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 USER_PUB="user_pub_${CLICKHOUSE_DATABASE}"
 USER_ALIAS="user_alias_${CLICKHOUSE_DATABASE}"
 USER_SOURCE="user_source_${CLICKHOUSE_DATABASE}"

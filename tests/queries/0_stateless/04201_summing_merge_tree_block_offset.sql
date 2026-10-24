@@ -3,6 +3,8 @@
 --   `if (column.name == BlockNumberColumn::name || column.name == BlockOffsetColumn::name)`
 -- Without the BlockOffsetColumn::name exclusion, _block_offset (UInt64, summable) would be
 -- aggregated as a sum across rows with the same sort key during merge → incorrect values.
+-- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
+SET force_primary_key_reverse_order = 0;
 
 DROP TABLE IF EXISTS t_smt_block_offset;
 

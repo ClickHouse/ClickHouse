@@ -1,6 +1,9 @@
 -- The text index is analyzed through a `CAST` that drops `Nullable`, and the preprocessor is applied to the
 -- haystack of the row-level function. The `CAST` stays under the preprocessor, so NULL still throws.
 
+-- Disable force_primary_key_reverse_order: the reference pins which granules are skipped, which depends on the sorting key direction
+SET force_primary_key_reverse_order = 0;
+
 SET use_skip_indexes = 1;
 SET use_query_condition_cache = 0;
 

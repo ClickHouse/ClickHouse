@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Tests data skipping index behavior sensitive to sort order
+SET force_primary_key_reverse_order = 0;
+
 -- Test that the text index works correctly when the number of rows in a part is smaller than the index_granularity.
 
 SET use_skip_indexes_on_data_read=1;

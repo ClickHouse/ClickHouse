@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Test checks granule counts of primary key analysis, which depend on the physical layout of an ascending key
+SET force_primary_key_reverse_order = 0;
+
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/119173 on plain MergeTree.
 --
 -- A `DateTime`/`DateTime64` whose type name carries no time zone binds one when the type object is

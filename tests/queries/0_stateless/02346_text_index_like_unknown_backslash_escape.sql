@@ -1,4 +1,6 @@
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/115578
+-- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
+SET force_primary_key_reverse_order = 0;
 
 -- Each query is paired with the same query with `use_skip_indexes = 0`: a skip index must never change the result.
 

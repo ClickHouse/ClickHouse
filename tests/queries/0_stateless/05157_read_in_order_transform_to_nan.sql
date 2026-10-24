@@ -2,6 +2,9 @@
 -- forward read of the key does not produce the requested order: the read-in-order optimization must
 -- not treat such a transform as monotonic. No `NaN` is in the data or in the query.
 
+-- Disable force_primary_key_reverse_order: the reference pins the read-in-order plan, which depends on the sorting key direction
+SET force_primary_key_reverse_order = 0;
+
 SET optimize_read_in_order = 1;
 
 DROP TABLE IF EXISTS t_read_in_order_nan;

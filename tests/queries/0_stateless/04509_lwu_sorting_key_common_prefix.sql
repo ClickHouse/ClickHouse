@@ -1,6 +1,8 @@
 -- Lightweight updates combined with ALTER MODIFY ORDER BY. v2 patch parts persist the
 -- sort-key children they were written with; reads and merges apply the patch over the
 -- longest common prefix of the persisted and the current sorting key.
+-- Disable force_primary_key_reverse_order: `ALTER TABLE ... MODIFY ORDER BY` cannot express `DESC`, so it would change the direction of a forced descending key
+SET force_primary_key_reverse_order = 0;
 
 SET enable_lightweight_update = 1;
 SET apply_patch_parts = 1;

@@ -7354,6 +7354,24 @@ Possible values:
 - N - Delay in milliseconds
 )", 0, \
         {"25.6", 0, 0, "A new setting to debug storage snapshot consistency in query"}) \
+    DECLARE(Bool, force_primary_key_reverse_order, false, R"(
+Automatically force all ORDER BY columns in CREATE TABLE to DESC for testing purposes.
+When enabled, every column in ORDER BY will be set to DESC regardless of original direction.
+This is useful for stress-testing the reverse key functionality across all functional tests.
+The rewrite is skipped for `CREATE TABLE ... CLONE AS ...` and for restoring from a backup, because
+those attach existing data parts that are physically sorted in the original order.
+Tables created with the deprecated `MergeTree` syntax, where the sorting key is an engine argument
+(e.g. `MergeTree(date, key, 8192)`), are not affected, because that syntax does not support `DESC` keys.
+With `distributed_ddl_entry_format_version` below 3, `CREATE TABLE ... ON CLUSTER` queries that do not specify
+the engine explicitly (`AS` another table, or relying on the default table engine) are not affected either,
+because the engine is resolved only on the hosts executing the query, which do not apply the rewrite.
+For the same reason, the inner tables of `TimeSeries` tables created by such queries keep the original key when
+their engines are not specified explicitly.
+The inner tables of the hidden `TimeSeries` table behind a materialized view with `ENGINE = TimeSeries` always keep
+the original key, because their definitions are not persisted in the definition of the view and are regenerated
+on restore from a backup.
+)", 0, \
+        {"26.11", false, false, "New testing setting that forces all ORDER BY columns to DESC for stress-testing reverse key functionality"}) \
     DECLARE(Bool, optimize_rewrite_sum_if_to_count_if, true, R"(
 Rewrite sumIf() and sum(if()) function countIf() function when logically equivalent
 )", 0, \

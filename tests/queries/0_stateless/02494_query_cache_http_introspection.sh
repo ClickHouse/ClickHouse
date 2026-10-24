@@ -4,6 +4,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+
+# Disable force_primary_key_reverse_order: tests query cache HTTP introspection, creates MergeTree tables internally
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 TAG="$RANDOM$RANDOM$RANDOM"
 
 # Tests that results sent via HTTP contain Age and Expires headers (which are populated from the query cache)

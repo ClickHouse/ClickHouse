@@ -2,6 +2,9 @@
 -- `timezoneOffset` and `toTimeWithFixedDate` over a key range that spans a UTC offset change must not be treated as monotonic.
 -- Each line with two counts prints the count with the key condition and the count computed without it; both must match.
 
+-- Disable force_primary_key_reverse_order: `max_rows_to_read` pins the number of granules selected by the key analysis, which depends on the sorting key direction
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS t_daily;
 DROP TABLE IF EXISTS t_daily64;
 DROP TABLE IF EXISTS t_hourly;

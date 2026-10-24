@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Tests projection behavior sensitive to sort order
+SET force_primary_key_reverse_order = 0;
+
 -- { echo ON }
 
 drop table if exists test;

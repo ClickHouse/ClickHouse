@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Tests projection behavior sensitive to sort order
+SET force_primary_key_reverse_order = 0;
+
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0.0;
 SET optimize_trivial_count_query = 1;
 SET optimize_use_projections = 1;

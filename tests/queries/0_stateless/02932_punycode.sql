@@ -1,5 +1,7 @@
 -- Tags: no-fasttest
 -- no-fasttest: requires idna library
+-- Disable force_primary_key_reverse_order: reversed key changes physical row order in tables, affecting SELECT output without explicit ORDER BY
+SET force_primary_key_reverse_order = 0;
 
 -- See also 02932_idna.sql
 

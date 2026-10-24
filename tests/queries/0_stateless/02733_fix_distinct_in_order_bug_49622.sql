@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Tests distinct-in-order optimization sensitive to sort direction
+SET force_primary_key_reverse_order = 0;
+
 set optimize_distinct_in_order=1;
 
 DROP TABLE IF EXISTS test_string;

@@ -1,6 +1,8 @@
 -- v2 patch parts persist the sort-key children they were written with; on read the patch is
 -- applied over the longest common prefix of the persisted and the current sorting key.
 -- Therefore ALTER MODIFY ORDER BY is allowed with active patch parts and must not lose updates.
+-- Disable force_primary_key_reverse_order: `ALTER TABLE ... MODIFY ORDER BY` cannot express `DESC`, so it would change the direction of a forced descending key
+SET force_primary_key_reverse_order = 0;
 
 DROP TABLE IF EXISTS t_lwu_modify_order_by SYNC;
 

@@ -4,6 +4,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+
+# Disable force_primary_key_reverse_order: tests insert delay with MergeTree, output row order depends on key direction
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS test_02521_insert_delay"
 # Create MergeTree with settings which allow to insert maximum 5 parts, on 6th it'll throw TOO_MANY_PARTS
 $CLICKHOUSE_CLIENT -q "CREATE TABLE test_02521_insert_delay (key UInt32, value String) Engine=MergeTree() ORDER BY tuple() SETTINGS parts_to_delay_insert=1, parts_to_throw_insert=5, max_delay_to_insert=1, min_delay_to_insert_ms=300"

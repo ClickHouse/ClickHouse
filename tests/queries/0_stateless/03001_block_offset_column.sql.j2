@@ -1,4 +1,6 @@
 {% for enable_vertical_merge_algorithm in [0, 1] -%}
+-- Disable force_primary_key_reverse_order: tests block offset column, values depend on physical row position from key direction
+SET force_primary_key_reverse_order = 0;
 
 DROP TABLE IF EXISTS t_block_offset;
 

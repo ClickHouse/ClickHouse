@@ -1,5 +1,7 @@
 -- The monotonicity of a conversion does not depend on the `Nullable` wrapper of its argument, so a
 -- `toDate`/`toDateTime` predicate over a `Nullable` key must still be usable for index analysis.
+-- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
+SET force_primary_key_reverse_order = 0;
 
 SET session_timezone = 'UTC';
 

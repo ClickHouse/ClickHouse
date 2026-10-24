@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: EXPLAIN output shows the sort direction of the key
+SET force_primary_key_reverse_order = 0;
+
 SET explain_query_plan_default = 'legacy';
 SET optimize_aggregators_of_group_by_keys = 1;
 SET optimize_read_in_order = 1;

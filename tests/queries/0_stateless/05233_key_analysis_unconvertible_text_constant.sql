@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: checks the exact granule counts of index analysis
+SET force_primary_key_reverse_order = 0;
+
 -- A text constant that index analysis cannot convert into a DateTime key type must not prune rows.
 
 DROP TABLE IF EXISTS t_unconvertible_monotonic;

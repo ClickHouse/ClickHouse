@@ -1,3 +1,5 @@
+-- Disable force_primary_key_reverse_order: tests ALTER MODIFY ORDER BY with TTL column validation
+SET force_primary_key_reverse_order = 0;
 -- Test for issue #84442: ALTER MODIFY ORDER BY does not check if the new column has TTL
 -- This test verifies that ALTER TABLE properly validates TTL columns in ORDER BY clauses
 

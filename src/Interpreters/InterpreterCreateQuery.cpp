@@ -9,6 +9,7 @@
 
 #include <Core/Settings.h>
 #include <Interpreters/InterpreterAlterQuery.h>
+#include <Parsers/ASTOrderByElement.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
@@ -153,6 +154,7 @@ namespace Setting
     extern const SettingsString default_view_definer;
     extern const SettingsUInt64 distributed_ddl_entry_format_version;
     extern const SettingsBool flatten_nested;
+    extern const SettingsBool force_primary_key_reverse_order;
     extern const SettingsBool fsync_metadata;
     extern const SettingsBool insert_allow_materialized_columns;
     extern const SettingsSeconds lock_acquire_timeout;
@@ -962,6 +964,83 @@ ConstraintsDescription InterpreterCreateQuery::getConstraintsDescription(
     return ConstraintsDescription{constraints_data};
 }
 
+namespace
+{
+
+void forceReverse(ASTPtr & node)
+{
+    if (auto * elem = node->as<ASTStorageOrderByElement>())
+    {
+        elem->direction = -1;
+        return;
+    }
+
+    auto new_elem = make_intrusive<ASTStorageOrderByElement>();
+    new_elem->direction = -1;
+    new_elem->children.push_back(node);
+    node = new_elem;
+}
+
+void applyForceReverseOrder(ASTStorage * storage)
+{
+    /// Only the `MergeTree` family supports reverse sorting keys. Other engines with an `ORDER BY` clause
+    /// (e.g. `MaterializedPostgreSQL` or `IcebergLocal`) are left as is.
+    if (!storage || !storage->engine || !storage->engine->name.ends_with("MergeTree"))
+        return;
+
+    /// `MergeTree` treats `PRIMARY KEY` without `ORDER BY` as the sorting key. Materialize it as `ORDER BY`,
+    /// so that such tables get a reversed sorting key too. `PRIMARY KEY` stays as is, because it inherits
+    /// the directions from the sorting key.
+    if (!storage->order_by && storage->primary_key)
+        storage->set(storage->order_by, storage->primary_key->clone());
+
+    /// The deprecated `MergeTree` syntax keeps the sorting key in the engine arguments, e.g. `MergeTree(date, key, 8192)`.
+    /// It is left as is: that syntax has no way to express `DESC`, and a rewritten engine argument could not be parsed back.
+    if (!storage->order_by)
+        return;
+
+    if (auto * func = storage->order_by->as<ASTFunction>(); func && func->name == "tuple" && func->arguments)
+    {
+        for (auto & child : func->arguments->children)
+            forceReverse(child);
+
+        /// `ORDER BY (a, b)` is parsed as a tuple operator, while a list with `DESC` elements is parsed as a
+        /// `tuple` function. Make the rewritten key look like the parsed one, otherwise it is formatted
+        /// differently, and comparisons of key definitions (e.g. in `CLONE AS`) fail.
+        func->setIsOperator(false);
+    }
+    else
+    {
+        if (auto * elem = storage->order_by->as<ASTStorageOrderByElement>())
+        {
+            elem->direction = -1;
+        }
+        else
+        {
+            auto new_elem = make_intrusive<ASTStorageOrderByElement>();
+            new_elem->direction = -1;
+            new_elem->children.push_back(storage->order_by->clone());
+            storage->set(storage->order_by, new_elem);
+        }
+    }
+}
+
+/// Applies `force_primary_key_reverse_order` to the table engine and to the engines of hidden inner tables.
+void applyForceReverseOrder(ASTCreateQuery & create)
+{
+    applyForceReverseOrder(create.storage);
+
+    /// The engines of hidden inner tables, e.g. `CREATE MATERIALIZED VIEW ... ENGINE = ...`, are kept in
+    /// `create.targets` rather than in `create.storage`. The inner tables are created by internal queries,
+    /// which skip the rewrite, so it is applied here to the definitions they are created from.
+    if (create.targets)
+    {
+        for (auto * inner_engine : create.targets->getInnerEngines())
+            applyForceReverseOrder(inner_engine);
+    }
+}
+
+}
 
 namespace
 {
@@ -1401,6 +1480,22 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     std::swap(create.as_table, as_table_saved);
     if (!as_table_saved.empty())
         create.is_create_empty = false;
+
+    /// `CLONE AS` and restoring from a backup attach existing data parts, which are physically laid out
+    /// in the original order. Flipping the stored `ORDER BY` to `DESC` for them would make the metadata
+    /// disagree with the data on disk, so the rewrite is skipped for these.
+    /// Internal queries are skipped too, because they create hidden inner tables from definitions which
+    /// the outer query has already rewritten. This includes an internal `TimeSeries` table, e.g. the one
+    /// behind `CREATE MATERIALIZED VIEW ... ENGINE = TimeSeries`: the default engines of its own inner tables
+    /// are added only above by `normalizeTimeSeriesDefinition` and are not persisted in the definition of the
+    /// view, so a restore from a backup would regenerate them with the original keys and attach parts sorted
+    /// by the reversed keys. Such inner tables keep the original keys.
+    if (!internal && !create.is_clone_as && !is_restore_from_backup
+        && mode <= LoadingStrictnessLevel::CREATE
+        && getContext()->getSettingsRef()[Setting::force_primary_key_reverse_order])
+    {
+        applyForceReverseOrder(create);
+    }
 
     return properties;
 }
@@ -4129,6 +4224,26 @@ BlockIO InterpreterCreateQuery::execute()
                 }
 
                 normalizeLegacyToTimeInCreateQuery(query_ptr, getContext());
+            }
+
+            /// This branch ships the query text as written, and the DDL worker skips the rewrite of
+            /// `force_primary_key_reverse_order` for secondary queries, so apply it on the initiator here.
+            /// The same exclusions as in `getTablePropertiesAndNormalizeCreateQuery` apply.
+            /// The engine is not known here when it comes from `AS` another table or from the default table
+            /// engine: it is resolved only on the worker hosts (the source table may not even exist on the
+            /// initiator), so such queries are left as is. This is a testing setting, so the gap is accepted
+            /// rather than rejecting these queries, which would break randomized tests on this legacy path.
+            /// The same applies to the default engines of the inner tables of `TimeSeries`: they are added by
+            /// `normalizeTimeSeriesDefinition` only on the worker hosts, so only explicitly specified ones are rewritten.
+            /// SQL UDFs are expanded first, as `createTable` does before the rewrite on the normal path: a UDF
+            /// returning a tuple would otherwise be wrapped as a single `DESC` element, and after the expansion on
+            /// the worker hosts the sorting key would have one element instead of the elements of the tuple.
+            if (!is_create_database && !internal && !create.attach && !create.is_clone_as && !is_restore_from_backup
+                && getContext()->getSettingsRef()[Setting::force_primary_key_reverse_order])
+            {
+                if (!UserDefinedSQLFunctionFactory::instance().empty())
+                    substituteUserDefinedFunctionsOutsideEngines(query_ptr, getContext());
+                applyForceReverseOrder(create);
             }
 
             return executeQueryOnCluster(create);

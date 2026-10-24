@@ -5,6 +5,9 @@
 -- Such a count used to be handed to the vector similarity index unchanged, which then reserved memory
 -- proportional to it (32 GiB for the count below) instead of to the number of rows in the index.
 
+-- Disable force_primary_key_reverse_order: the reference pins the granule ranges, which depend on the sorting key direction
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS t_vector_index_analysis_limit;
 
 CREATE TABLE t_vector_index_analysis_limit

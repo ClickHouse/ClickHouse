@@ -1,4 +1,6 @@
 -- Tags: zookeeper
+-- Disable force_primary_key_reverse_order: tests mutations with REPLACE PARTITION, output depends on key direction
+SET force_primary_key_reverse_order = 0;
 
 SET insert_keeper_fault_injection_probability=0; -- disable fault injection; part ids are non-deterministic in case of insert retries
 

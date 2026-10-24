@@ -4,6 +4,9 @@
 -- rows before the LIMIT. The results are compared with the optimization disabled, or checked where they are random, and
 -- every query is followed by the number of lazy reads in its plan.
 
+-- Disable force_primary_key_reverse_order: stateful functions count the rows in their physical order, which depends on the sorting key direction
+SET force_primary_key_reverse_order = 0;
+
 SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_max_limit_for_lazy_materialization = 100;
 -- Pinned so that the joins keep the order they are written in.

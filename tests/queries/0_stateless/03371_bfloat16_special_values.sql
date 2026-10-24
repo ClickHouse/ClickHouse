@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Tests FINAL with *MergeTree engine sensitive to sort order
+SET force_primary_key_reverse_order = 0;
+
 -- Check that Float32 and BFloat16 return the same values for calculations with special values
 SELECT toFloat32(0.0) == toFloat32(-0.0),   toBFloat16(0.0) == toBFloat16(-0.0);
 SELECT toFloat32(0.0) != toFloat32(-0.0),   toBFloat16(0.0) != toBFloat16(-0.0);

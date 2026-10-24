@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Test checks granule counts of primary key analysis, which depend on the physical layout of an ascending key
+SET force_primary_key_reverse_order = 0;
+
 -- Three kinds of assertion: a keyed MergeTree against an ENGINE = Memory oracle (1 means key
 -- analysis agrees with execution), granule counts from EXPLAIN indexes = 1, and two expected errors.
 

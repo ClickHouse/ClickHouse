@@ -77,7 +77,7 @@ struct TableFixture
         auto partition_key = metadata.partition_key.expression_list_ast->clone();
         metadata.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
             columns, partition_key, metadata.getColumnsRequiredForPartitionKey(),
-            metadata.primary_key, &metadata.partition_key, context));
+            metadata.primary_key, metadata.sorting_key, &metadata.partition_key, context));
 
         /// Per instance, not shared: `addPart` writes real files under this path.
         const auto unique_id

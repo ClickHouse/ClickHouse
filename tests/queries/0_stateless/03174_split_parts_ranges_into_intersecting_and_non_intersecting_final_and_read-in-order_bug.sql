@@ -1,5 +1,7 @@
 -- Tags: long, no-tsan, no-asan, no-msan, no-fasttest
 -- Test is slow
+-- ReplacingMergeTree FINAL with read-in-order depends on key direction for correct deduplication
+SET force_primary_key_reverse_order = 0;
 -- Random settings limits: index_granularity=(8192, None); index_granularity_bytes=(229376, None); merge_max_block_size=(8192, None)
 -- A small granule size multiplies the mark count of this 1e7-row FINAL merge by orders of magnitude,
 -- which can push it past the client's receive timeout. merge_max_block_size is bounded as a precaution.

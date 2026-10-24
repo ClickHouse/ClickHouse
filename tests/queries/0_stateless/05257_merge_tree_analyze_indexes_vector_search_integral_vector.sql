@@ -1,4 +1,6 @@
 -- Tags: no-fasttest
+-- Disable force_primary_key_reverse_order: checks the selected mark ranges, which depend on the key direction
+SET force_primary_key_reverse_order = 0;
 -- An integral search vector with a negative component, as distributed index analysis sends it,
 -- must select the same granules as its floating-point spelling.
 
