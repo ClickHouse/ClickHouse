@@ -14,6 +14,7 @@
 #include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <Compression/CompressionInfo.h>
+#include <Compression/LZ4StatisticsHint.h>
 #include <IO/WithFileName.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -284,6 +285,7 @@ static void readHeaderAndGetCodec(const char * compressed_buffer, size_t size_de
 void CompressedReadBufferBase::decompressTo(char * to, size_t size_decompressed, size_t size_compressed_without_checksum)
 {
     readHeaderAndGetCodec(compressed_buffer, size_decompressed, codec, allow_different_codecs, external_data);
+    LZ4::StatisticsHintScope hint_scope(statistics_hint);
     codec->decompress(compressed_buffer, static_cast<UInt32>(size_compressed_without_checksum), to);
 }
 
@@ -311,7 +313,10 @@ void CompressedReadBufferBase::decompress(BufferBase::Buffer & to, size_t size_d
         to = BufferBase::Buffer(compressed_buffer + header_size, compressed_buffer + size_compressed_without_checksum);
     }
     else
+    {
+        LZ4::StatisticsHintScope hint_scope(statistics_hint);
         codec->decompress(compressed_buffer, static_cast<UInt32>(size_compressed_without_checksum), to.begin());
+    }
 }
 
 void CompressedReadBufferBase::addDiagnostics(Exception & e) const

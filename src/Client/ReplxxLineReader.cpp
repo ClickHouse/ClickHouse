@@ -329,11 +329,10 @@ void convertHistoryFile(const std::string & path, replxx::Replxx & rx)
 namespace DB
 {
 
-/// The highlighter sets it and the Enter key handler reads it, both from the thread running
-/// `Replxx::input`. It is thread-local, because the server runs several embedded clients
-/// (`ClientEmbedded`, for SSH and the Web Terminal) concurrently, each in its own thread.
+/// Thread-local, because several embedded clients (e.g. concurrent web terminal sessions) can run
+/// in the same process. The flag is written by the highlighter and read by the Enter key handler,
+/// and replxx invokes both on the thread that runs the input loop of the session.
 static thread_local bool replxx_last_is_delimiter = false;
-
 void ReplxxLineReader::setLastIsDelimiter(bool flag)
 {
     replxx_last_is_delimiter = flag;

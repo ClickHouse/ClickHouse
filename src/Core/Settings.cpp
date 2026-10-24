@@ -994,7 +994,7 @@ The cache currently applies to wide parts only: data in compact parts is not rea
 
 An entry holds a contiguous range of granules of one stripe: a granule enters the cache only after it has been read from its first row to its last, a read is served from the cache granule by granule, and ranges written by different reads are merged, so reads that cut a part into different mark ranges share the entries.
 
-The cache also applies to `Parquet` files read from the local filesystem (the `file` table function and the `File` table engine), from object storages (`s3`, `azureBlobStorage` and their table engines), and by data lake tables. There an entry holds a whole column of one row group, keyed by the path of the file, its version (the ETag of an object, or the modification time, inode and size of a local file), the column of the file and the type it is read as. A column of a row group is written to the cache only when all rows of the row group are read, before any filter is applied to them: with `PREWHERE`, that is the case for the columns of the filter, while the other columns are read only for the rows that pass it. A local file is cached only once it has not been modified for a few seconds, so that its version identifies its content.
+The cache also applies to `Parquet` files read from the local filesystem (the `file` table function and the `File` table engine), from object storages (`s3`, `azureBlobStorage` and their table engines), and by data lake tables. There an entry holds a chunk of 65536 rows of a column of one row group (the last chunk of a row group can be shorter), keyed by the path of the file, its version (the ETag of an object, or the modification time, inode and size of a local file), the column of the file and the type it is read as. A row group that uses the cache is read in these chunks, whatever the block size settings. A chunk is written to the cache as it is decoded, without a copy, if all its rows were read before any filter was applied to them: with `PREWHERE`, that is the case for the columns of the filter, while the other columns are read only for the rows that pass it. A column of a row group is served from the cache when all its chunks are there, so the chunks of a column that cannot all be written are taken back out of the cache. A local file is cached only once it has not been modified for a few seconds, so that its version identifies its content.
 )", EXPERIMENTAL, \
         {"26.10", false, false, "New experimental setting to enable columns cache for MergeTree tables, disabled by default."}) \
     DECLARE(Bool, enable_reads_from_columns_cache, true, R"(
@@ -1154,7 +1154,9 @@ Possible values:
 Enables or disables automatic [PREWHERE](/reference/statements/select/prewhere) optimization in [SELECT](/reference/statements/select/index) queries with [FINAL](/reference/statements/select/from#final-modifier) modifier.
 
 Only conditions that depend on the sorting key alone and are deterministic within the query are moved,
-so the result of `FINAL` is not affected.
+so the result of `FINAL` is not affected. For [GraphiteMergeTree](/reference/engines/table-engines/mergetree-family/graphitemergetree),
+`FINAL` merges adjacent rows of one path into one row. Thus the optimization moves only conditions on the path column,
+and only if the path is the first column of the sorting key.
 
 Works only for [*MergeTree](/reference/engines/table-engines/mergetree-family/index) tables.
 
@@ -2348,6 +2350,17 @@ Possible values:
 - 1 — Enabled.
 )", 0, \
         {"26.5", true, false, "Disable `use_top_k_dynamic_filtering` for variable-length sort columns (e.g. `String`) by default; the previous behavior had the optimization apply unconditionally and is preserved under `compatibility`."}) \
+    DECLARE(Bool, use_top_k_dynamic_filtering_for_single_string_sort_column, true, R"(
+Apply `use_top_k_dynamic_filtering` to a `MergeTree` table when `ORDER BY` has a single `String` column (also inside `Nullable`), even if `use_top_k_dynamic_filtering_for_variable_length_types` is `0`.
+
+For such a column, the filter also drops the rows equal to the threshold once most rows of a block are equal to it (for example, a column of mostly empty strings). Each threshold value is checked on one block: the first one in which most rows pass the filter. Other sources, such as Parquet files, are not affected.
+
+Possible values:
+
+- 0 - Disabled.
+- 1 - Enabled.
+)", 0, \
+        {"26.11", false, true, "New setting: TopN dynamic filtering for a single `String` `ORDER BY` column of a `MergeTree` table."}) \
     DECLARE(Bool, enable_group_by_top_k_dynamic_filtering, true, R"(
 For [enable_group_by_top_k_optimization](#enable_group_by_top_k_optimization): when the first ranked `GROUP BY` key is a column read from a `MergeTree` table, the aggregation publishes the boundary of its top-K heap to the reading step as soon as the heap holds `LIMIT` keys. The reading step then drops rows whose key lies beyond the boundary before the other columns are read (`PREWHERE`), and skips whole granules that lie beyond it using the primary key or a `minmax` skip index on that column.
 
@@ -5507,8 +5520,10 @@ Allow using `from_zk` substitutions in the dynamic disk configuration (i.e. in t
 Disabled by default.
 )", 0, \
         {"26.5", false, false, "New setting to allow `from_zk` substitutions in dynamic disk configuration (the `disk()` function). Disabled by default."}) \
-    DECLARE(Bool, s3_allow_server_credentials_in_user_queries, false, R"(
-Allow S3 access that originates from user SQL to use server-managed credentials.
+    DECLARE_WITH_ALIAS(Bool, s3_allow_server_credentials_in_user_queries, false, R"(
+Allow S3 and Azure Blob Storage access that originates from user SQL to use server-managed credentials.
+
+Also available under the alias `allow_server_credentials_in_user_queries`, as it applies to Azure as well.
 
 When disabled (the default), the `s3`/`s3Cluster` table functions, the `S3`/`S3Queue` engines, S3 named collections, dynamic `disk(type=s3, ...)` definitions, `BACKUP`/`RESTORE TO S3`, DataLake table-data reads, and `DataLakeCatalog` databases (Glue, BigLake) may not resolve credentials from the environment, instance metadata (IMDS), IRSA, ECS, instance profile, SSO, AWS config/credentials files, or the GCP OAuth metadata service. A request that asks for one of those server-managed sources (for example `use_environment_credentials = 1` or `http_client = gcp_oauth`) without supplying usable explicit credentials is rejected with `ACCESS_DENIED`. A request that asks for none of them is sent unsigned (anonymous), the same as if `NOSIGN` had been given.
 
@@ -5527,6 +5542,10 @@ A trusted administrative client may need server-managed credentials for legitima
 For `BACKUP`/`RESTORE ... ON CLUSTER` the initiator's value of this setting is propagated to the other hosts and used there as-is. Those hosts run the per-host continuation of the operation through the distributed DDL queue, by default without the initiator's user, so they would otherwise evaluate the restriction against their own default profile; the initiator's value is preserved instead, because it has already opened the same backup destination under its own, constrained, settings. A `readonly` constraint on the initiator still applies (an untrusted initiator cannot enable the setting for its own on-cluster backup), so this does not weaken the restriction.
 
 Durability for persistent `S3` and `S3Queue` tables: enabling this only per session or profile is not durable across a restart. When the server reloads such a table from its stored definition (startup or `RESTORE`) it rebuilds the S3 client and re-applies the restriction with the startup context, so a table that relied on server-managed credentials and was created only under a session/profile `s3_allow_server_credentials_in_user_queries = 1` is created successfully but becomes inaccessible after a restart (the table is left in place; queries against it fail until its credentials resolve to a permitted source again). The server itself still starts. Give such tables explicit credentials for durable access; alternatively, enabling the setting server-wide keeps them loading across restarts, at the cost of relaxing the restriction for all reloads.
+
+Azure Blob Storage is covered by this setting as well. When it is disabled, the `azureBlobStorage`/`azureBlobStorageCluster` table functions, the `AzureBlobStorage`/`AzureQueue` engines, Azure named collections, dynamic `disk(type = azure_blob_storage, ...)` definitions, `BACKUP`/`RESTORE TO AzureBlobStorage`, and DataLake table-data reads over Azure may not authenticate with the identity the server itself runs under: the AKS workload identity (a projected service-account token from `AZURE_FEDERATED_TOKEN_FILE`) or the Azure managed identity of the machine. Such a request is rejected with `ACCESS_DENIED`. Credentials supplied explicitly are unaffected: an `account_name`/`account_key` pair, a connection string, a SAS token, and static credentials in a named collection or in the server `<storage_configuration>` all keep working. Azure binds a storage bearer token to the account it was minted for and not to the host it is sent to, so a request to a URL taken from the query would both hand a usable token to whoever controls that URL and read containers the user has no rights to.
+
+For Azure, a named collection that relies on workload or managed identity is restricted too, including one defined in the server configuration, and so is `extra_credentials(client_id = '...', tenant_id = '...')`, which exchanges the server's own federated token for the named client. Disks defined in the server configuration keep using workload or managed identity. A dynamic Azure disk is restricted like a table, except for a table in the `system` database with the server setting `s3_allow_server_credentials_for_system_table_disks`; a dynamic Azure disk created while this setting is enabled records that in its stored definition, so after a restart it keeps using the server's identity. The record is written only by the server and is ignored in a `CREATE` or `ATTACH` query. The destination of `after_processing = 'move'` in `AzureQueue` must carry its own credentials, a connection string or a SAS token, even with this setting enabled, the same way an `S3Queue` move destination needs its own keys. A persistent `AzureBlobStorage` or `AzureQueue` table, or a table on a dynamic Azure disk, that relied on the server's identity is loaded at startup with a client that has no credentials, per `s3_load_table_anonymously_if_credentials_restricted`; `RESTORE` creates Azure tables like `CREATE`, so such a table is refused there instead.
 
 To keep it disabled for untrusted users, pin it in their profile by both setting the value explicitly to `0` and marking it `readonly`:
 
@@ -5549,7 +5568,8 @@ To keep it disabled for untrusted users, pin it in their profile by both setting
 This setting has no effect in `clickhouse-local`, where the user is the operator.
 
 `DataLakeCatalog` databases (Glue, BigLake) are also covered, with one difference. A catalog object is created once and shared by every user of the database, so the value cannot be read per query; it is captured from the session that runs `CREATE DATABASE` (or a user `ATTACH DATABASE`). A database created while this setting is enabled (for example in a trusted session or profile) may use the server's ambient credentials for its catalog, and every user able to query that database then shares them; created under the default, the catalog is restricted for everyone regardless of who queries it. When the server loads an already-created database from its own metadata (startup, `RESTORE`) the restriction is re-applied with the startup context, the same as for persistent `S3`/`S3Queue` tables: a catalog that resolves server-managed credentials is left unavailable and the database becomes inaccessible after a restart (the server still starts; the database loads with an unavailable catalog per `s3_load_table_anonymously_if_credentials_restricted`, and queries report the restriction). A catalog given explicit credentials (Glue: `aws_access_key_id` and `aws_secret_access_key`; BigLake: a complete Google ADC triple) works regardless and is durable across restart.
-)", 0, \
+)", 0, allow_server_credentials_in_user_queries, \
+        {"26.11", false, false, "Also blocks Azure Blob Storage access from user SQL from authenticating with the server's own identity (the AKS workload identity or the machine's managed identity). Added the alias `allow_server_credentials_in_user_queries`."}, \
         {"26.7", true, false, "New setting to block S3 access from user SQL from resolving the server's own ambient credentials (environment/IMDS/IRSA/instance-profile/AWS-config-file/GCP-OAuth-metadata). Explicit role_arn-based STS assume-role is still allowed. The previous behavior (allowed) is restored with compatibility settings."}) \
     DECLARE(UInt64, max_parts_to_move, 1000, "Limit the number of parts that can be moved in one query. Zero means unlimited.", 0, \
         {"24.10", 0, 1000, "New setting"}) \
@@ -6320,10 +6340,10 @@ Possible values:
 - 0 — No locking timeout.
 )", 0) \
     DECLARE(Milliseconds, get_zookeeper_lock_acquire_timeout_ms, DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC * 1000, R"(
-Defines how many milliseconds a Keeper client waits to acquire the corresponding `Context` mutex before failing.
+Defines how many milliseconds a query waits for a Keeper client: for the `Context` mutex of the client, and for a connection attempt that another thread is making for it. When the time is exceeded, the query fails with `TIMEOUT_EXCEEDED`. The query also stops waiting when it is cancelled.
 
-The value is taken from the `Context` that performs the acquisition. A per-query override applies only when the operation uses the query context, such as reads from `system.zookeeper`, `zookeeperSessionUptime`, `SYSTEM RECONNECT ZOOKEEPER`, and query-context auxiliary Keeper access.
-Operations that use a global or background context, including `BACKUP` and `RESTORE` coordination and `Replicated` database activity, use that context's value instead, and get the timeout as a Keeper error (`ZOPERATIONTIMEOUT`) that they handle like other Keeper errors.
+The value is taken from the query context, so it applies to operations that use it, such as reads from `system.zookeeper`, `zookeeperSessionUptime`, `SYSTEM RECONNECT ZOOKEEPER`, and query-context auxiliary Keeper access.
+Operations that use a global or background context, including `BACKUP` and `RESTORE` coordination and `Replicated` database activity, wait until the connection attempt ends and get its client or its Keeper error.
 `SYSTEM RELOAD CONFIG` and `SYSTEM RELOAD ASYNCHRONOUS METRICS` are not covered because they use independently serialized reload paths.
 
 Possible values:
@@ -7069,6 +7089,8 @@ Must be greater than zero.
         {"26.9", 100, 100, "New setting for the previously hardcoded capacity of the queue between the Iceberg data manifest decode tasks and the query."}) \
     DECLARE(Bool, use_parquet_metadata_cache, true, R"(
 If turned on, parquet format may utilize the parquet metadata cache.
+
+For the `File` table engine and the `file` table function, a read with a filter also keeps the min/max statistics of the filter columns in the cache, and a later query skips a file without opening it if these statistics show that no row group of the file can match its filter. Errors that only opening such a file would raise (for example, a selected column missing from the file with `input_format_parquet_allow_missing_columns` disabled) then depend on whether the cache holds its statistics. Disabling this setting also disables keeping the statistics and skipping files.
 
 Possible values:
 
@@ -9074,6 +9096,10 @@ Only has an effect in ClickHouse Cloud. Discard connection if some data is unrea
 Only has an effect in ClickHouse Cloud. On a seek away from the current position of an open distributed cache stream, if the estimated number of in-flight bytes that would have to be discarded to keep reusing the connection (via the read range id mechanism) exceeds this value, drop the connection and open a new one instead. This avoids draining a large amount of unused data when seeks are frequent. 0 disables this and always reuses the connection.
 )", 0, \
         {"26.8", 0, 4 * 1024 * 1024, "New setting to drop and reopen a distributed cache connection on a seek when too many in-flight bytes would otherwise be discarded. Defaults to 4 MiB; 0 restores the previous behavior (always reuse the connection via the read range id)."}) \
+    DECLARE(UInt64, distributed_cache_min_inflight_bytes_to_discard_connection, 4 * 1024 * 1024, R"(
+Only has an effect in ClickHouse Cloud. When a distributed cache read request is cancelled while data may still arrive, discard the connection if the estimated number of in-flight bytes exceeds this value; otherwise return it to the pool, and the next request on the connection drains them. 0 always discards the connection. On a seek, `distributed_cache_min_inflight_bytes_to_discard_connection_on_seek` first decides whether to re-request on the same connection; if the request is cancelled instead, this setting also applies. Unlike that setting, 0 here means "always discard". It has no effect if `distributed_cache_discard_connection_if_unread_data` is disabled, because the connection is then always kept.
+)", 0, \
+        {"26.11", 0, 4 * 1024 * 1024, "New setting to keep a distributed cache connection with a small amount of in-flight data when a read request is cancelled. Defaults to 4 MiB; 0 restores the previous behavior (discard the connection whenever data may still arrive)."}) \
     DECLARE(UInt64, distributed_cache_min_bytes_for_seek, 0, R"(
 Only has an effect in ClickHouse Cloud. Minimum number of bytes to do seek in distributed cache.
 )", 0, \
@@ -9680,6 +9706,10 @@ Use Iceberg partition pruning for Iceberg tables
 Skip whole Iceberg manifest files whose partition summaries in the manifest list cannot match the query filter, without reading them. Requires [use_iceberg_partition_pruning](#use_iceberg_partition_pruning) to be enabled and only helps when a manifest file holds few distinct partition values, which is what `rewriteManifests` clustered by the partition columns produces.
 )", 0, \
         {"26.9", false, true, "New setting to skip Iceberg manifest files whose manifest-list partition summaries cannot match the query filter, without reading them."}) \
+    DECLARE(Bool, use_iceberg_manifest_statistics, false, R"(
+Estimate the rows of an Iceberg read for join reordering from the `record_count` of the data files in its manifest files, after partition and min-max pruning by the query filter, without reading data. The estimate is exact without a filter and without delete files. As for MergeTree tables without column statistics, a filter that prunes no file gives no estimate. Pruning by the filter requires [use_iceberg_partition_pruning](#use_iceberg_partition_pruning) to be enabled.
+)", 0, \
+        {"26.11", false, false, "New setting to estimate the rows of Iceberg reads for join reordering from manifest files."}) \
     DECLARE(Bool, iceberg_tolerate_conflicting_manifest_schemas, true, R"(
 If enabled and the schema-id of an Iceberg manifest file is already registered from metadata.json, the metadata.json schema is used and the copy in the `schema` key of the manifest file header is ignored without being compared. If disabled, the manifest header copy is compared with the metadata.json schema, and a conflict fails the query with an ICEBERG_SPECIFICATION_VIOLATION error.
 
@@ -9884,6 +9914,12 @@ The setting affects only queries with `JOIN`, where the non-leftmost side is rea
 Replace table function engines with their -Cluster alternatives
 )", 0, \
         {"25.3", false, true, "New setting."}) \
+    DECLARE(Bool, parallel_replicas_for_object_storage_tables, true, R"(
+Read a table with an object storage engine that has a `-Cluster` table function (`S3`, `AzureBlobStorage`, `HDFS`, `Iceberg`, `IcebergS3`, `IcebergAzure`, `IcebergHDFS`, `IcebergLocal`, `DeltaLake`, `DeltaLakeS3`, `DeltaLakeAzure`, `Hudi`, `Paimon`, `PaimonS3`, `PaimonAzure`, `PaimonHDFS`) over the replicas of `cluster_for_parallel_replicas`, the same way `parallel_replicas_for_cluster_engines` does for the table functions. Has no effect when `parallel_replicas_for_cluster_engines` is disabled.
+
+A replica takes part in the read only if it has the table, and the table must have the same definition on every replica.
+)", 0, \
+        {"26.11", false, true, "New setting to read tables with an object storage engine with parallel replicas."}) \
     DECLARE(Bool, parallel_replicas_allow_materialized_views, true, R"(
 Allow usage of materialized views with parallel replicas
 )", 0, \
@@ -10505,6 +10541,13 @@ Use `allow_nullable_tuple_in_extracted_subcolumns` to control whether extracted 
         {"26.9", false, true, "`Nullable(Tuple)` is now GA. This also applies to the alias `allow_experimental_nullable_tuple_type`."}, \
         {"26.6", false, false, "Nullable Tuple is now Beta. Added as an alias for 'allow_experimental_nullable_tuple_type'."}, \
         {"26.1", false, false, "New experimental setting. At the time the setting was named `allow_experimental_nullable_tuple_type`, which is now an alias of it."}) \
+    DECLARE(Bool, enable_subcolumn_codecs, false, R"(
+Allows declaring compression codecs for subcolumns of a column, such as elements of a `Tuple` or the keys and values of a `Map`,
+with `CODEC name (...)` entries in `CREATE TABLE` and with `ALTER TABLE ... MODIFY COLUMN name CODEC(...)`.
+Tables that already have such declarations work regardless of this setting, and the declarations can always be removed.
+A table with subcolumn codecs cannot be attached by a server of an older version.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New setting to enable codec declarations for subcolumns."}) \
     DECLARE(UInt64, archive_adaptive_buffer_max_size_bytes, 8 * DBMS_DEFAULT_BUFFER_SIZE, R"(
 Limits the maximum size of the adaptive buffer used when writing to archive files (for example, tar archives)", 0, \
         {"26.1", 8 * 1024 * 1024, 8 * 1024 * 1024, "New setting"}) \
@@ -10575,13 +10618,14 @@ Minimum estimated ratio of join output rows to build-side rows to enable transfo
 Timeout in seconds for individual HTTP requests made by AI functions (AI chat completions and embedding API calls). If a request does not complete within this time, it is considered failed and may be retried according to `ai_function_max_retries`.
 )", BETA, \
         {"26.4", 60, 60, "New setting"}) \
-    DECLARE(UInt64, ai_function_max_retries, 1, R"(
-Maximum number of retry attempts for transient errors per individual API request. Each retry uses exponential backoff starting from `ai_function_retry_initial_delay_ms`.
+    DECLARE(UInt64, ai_function_max_retries, 3, R"(
+Maximum number of retry attempts for transient errors per individual API request. Each retry uses exponential backoff starting from `ai_function_retry_initial_delay_ms`. At most 5.
 )", BETA, \
+        {"26.11", 1, 3, "Retry a transient API error up to three times by default, to reduce load on an overloaded rate-limited provider under concurrent requests."}, \
         {"26.9", 0, 1, "Retry a transient API error once by default, so a single 429 or 5xx from the provider does not fail the query."}, \
         {"26.4", 0, 0, "New setting"}) \
     DECLARE(UInt64, ai_function_retry_initial_delay_ms, 1000, R"(
-Initial delay in milliseconds before the first retry of a failed AI function API request. The delay doubles on each subsequent attempt (exponential backoff). For example, with default settings: 1000ms, 2000ms, 4000ms.
+Initial delay in milliseconds before the first retry of a failed AI function API request. The delay doubles on each subsequent attempt (exponential backoff). For example, with default settings: 1000ms, 2000ms, 4000ms. At most 10000.
 )", BETA, \
         {"26.4", 1000, 1000, "New setting"}) \
     DECLARE(Bool, ai_function_throw_on_error, true, R"(
@@ -10616,6 +10660,19 @@ If true (default), exceeding an AI function quota limit (`ai_function_max_input_
 Maximum number of texts to include in a single HTTP request made by the embedding functions (`aiEmbed`, `aiSimilarity`). Texts are grouped into batches of this size to reduce API call overhead. For example, 500 unique texts with a batch size of 100 result in 5 HTTP requests.
 )", BETA, \
         {"26.6", 100, 100, "New setting"}) \
+    DECLARE(NonZeroUInt64, ai_function_max_concurrent_requests_per_thread, 8, R"(
+Maximum number of provider requests one query thread has in flight at the same time. `1` issues requests one at a time.
+
+A query running on several threads (at most `max_threads`) can have up to this many requests in flight per thread. Use a [settings profile constraint](/concepts/features/configuration/settings/constraints-on-settings) (`<constraints><ai_function_max_concurrent_requests_per_thread><max>...</max></...>`) to put a ceiling on it that a query cannot raise. The ceiling is still per thread.
+
+A value above `1` loosens two guarantees:
+
+- A request's token usage is only known once its response arrives, so the token quotas (`ai_function_max_input_tokens_per_query`, `ai_function_max_output_tokens_per_query`) may overshoot by one request's worth per request in flight - that is, by up to this many requests' worth rather than by one.
+- A whole wave of requests is dispatched before any of their errors is seen, so a query that fails on its first row may still have issued, and been billed for, up to this many requests.
+
+`ai_function_max_api_calls_per_query` is unaffected and stays an exact cap, because a slot is reserved before each request is dispatched.
+)", BETA, \
+        {"26.11", 1, 8, "New setting"}) \
     DECLARE(String, ai_function_text_default_credentials, "", R"(
 Name of the named collection used by the text AI functions (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`) when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. A chat-completions endpoint differs from an embeddings one, so this is separate from `ai_function_embedding_default_credentials`.
 )", BETA, \
@@ -10713,8 +10770,17 @@ Enables the `ZXC` compression codec.
 Throw exception if unsupported query is used inside transaction
 )", EXPERIMENTAL) \
     DECLARE(TransactionsWaitCSNMode, wait_changes_become_visible_after_commit_mode, TransactionsWaitCSNMode::WAIT_UNKNOWN, R"(
-Wait for committed changes to become actually visible in the latest snapshot
+What `COMMIT` waits for:
+- `wait_commit`: the commit request. If its outcome is unknown (the Keeper connection was lost), `COMMIT` throws `UNKNOWN_STATUS_OF_TRANSACTION`.
+- `wait_unknown`: also the outcome of a commit whose status is unknown.
+- `wait_visible`: also until a new transaction on this replica sees the changes, at most `wait_changes_become_visible_timeout_ms`; then `COMMIT` throws `TIMEOUT_EXCEEDED`, although the transaction is committed.
 )", EXPERIMENTAL) \
+    DECLARE(UInt64, wait_changes_become_visible_timeout_ms, 10000, R"(
+How long `SYSTEM SYNC TRANSACTION LOG`, `BACKUP` of a table with transactions, and `COMMIT` with
+`wait_changes_become_visible_after_commit_mode = 'wait_visible'` wait until the commits are visible to a new
+transaction on this replica. On expiry they throw `TIMEOUT_EXCEEDED`.
+)", EXPERIMENTAL, \
+        {"26.11", 10000, 10000, "New setting bounding how long `SYSTEM SYNC TRANSACTION LOG`, `BACKUP` and `COMMIT` wait for commits to become visible on this replica."}) \
     DECLARE(Bool, implicit_transaction, false, R"(
 If enabled and not already inside a transaction, wraps the query inside a full transaction (begin + commit or rollback)
 )", EXPERIMENTAL) \
@@ -11078,10 +11144,6 @@ Used by the rule-based distributed planner. The cost-based optimizer chooses the
 Removes unnecessary exchanges in distributed query plan. Disable it for debugging.
 )", 0, \
         {"25.5", true, true, "New experimental setting."}) \
-    DECLARE(String, distributed_plan_worker_cluster, "", R"(
-Name of the stateless-worker cluster to execute this query's distributed plan on. The empty default selects the pre-configured default cluster; other clusters are configured under `stateless_worker_client.clusters`.
-)", PRIVATE_PREVIEW, \
-        {"26.11", "", "", "New setting to select the stateless worker cluster for distributed plan execution."}) \
     DECLARE(UInt64, distributed_plan_workers_num, 0, R"(
 How many stateless workers will be used to execute this query. Zero disables stateless-worker leasing for distributed plans.
 )", PRIVATE_PREVIEW, \
@@ -11138,6 +11200,10 @@ order. Only shapes where no exchange survives between the read and the sort are 
 Serialize the distributed query plan for execution at replicas.
 )", PRIVATE_PREVIEW, \
         {"26.4", false, false, "New setting to serialize distributed plan for replicas"}) \
+    DECLARE(String, distributed_plan_worker_cluster, "", R"(
+Name of the stateless-worker cluster to execute this query's distributed plan on. The empty default selects the pre-configured default cluster; other clusters are configured under `stateless_worker_client.clusters`.
+)", PRIVATE_PREVIEW, \
+        {"26.11", "", "", "New setting to select the stateless worker cluster for distributed plan execution."}) \
     DECLARE(Bool, distributed_plan_join_runtime_filters, false, R"(
 With `make_distributed_plan`, send join runtime filters built in one stage to the stages that read the probe side, so those stages filter rows before sending them. If a filter does not arrive, rows pass unfiltered. Requires `enable_join_runtime_filters`.
 )", EXPERIMENTAL, \
@@ -11301,23 +11367,24 @@ Use Paimon partition pruning for Paimon table functions
 Allow to use hive partitioning with S3Queue/AzureQueue engines
 )", EXPERIMENTAL, \
         {"26.1", false, false, "New setting."}) \
-DECLARE(JoinOrderAlgorithm, query_plan_optimize_join_order_algorithm, "greedy", R"(
+DECLARE(JoinOrderAlgorithm, query_plan_optimize_join_order_algorithm, "dpsub,greedy", R"(
 Specifies which JOIN order algorithms to attempt during query plan optimization. The following algorithms are available:
  - 'greedy' - basic greedy algorithm - works fast but might not produce the best join order
  - 'dpsize' - implements DPsize algorithm currently only for Inner joins - considers all possible join orders and finds the most optimal one but might be slow for queries with many tables and join predicates.
- - 'dpsub' - implements DPsub algorithm which supports both inner and non-inner joins - considers all possible join orders and finds the most optimal one but might be slow for queries with many tables and join predicates.
+ - 'dpsub' - implements DPsub algorithm which supports both inner and non-inner joins - considers all possible join orders and finds the most optimal one. It only applies to queries with at most 12 relations; above that it gives way to the next algorithm in the list.
  - 'dphyp' - implements DPhyp (Dynamic Programming via Hypergraph Partitioning) algorithm currently only for inner joins - explores the same search space as `dpsize` but enumerates only connected subgraph pairs, which generates fewer intermediate joins on sparse join graphs, at the cost of not considering cross products
-Multiple algorithms can be specified as a comma-separated list, e.g. `dphyp,greedy`. They are tried in order; if an algorithm cannot handle the query (e.g. due to outer joins or disconnected components), the next one is used as a fallback.
-)", EXPERIMENTAL, \
+Multiple algorithms can be specified as a comma-separated list, e.g. `dphyp,greedy`. They are tried in order; if an algorithm cannot handle the query (e.g. due to too many relations or disconnected components), the next one is used as a fallback.
+)", BETA, \
+        {"26.11", "greedy", "dpsub,greedy", "`dpsub` is now the default join order algorithm; queries with more than 12 relations fall back to `greedy`."}, \
         {"25.12", "greedy", "greedy", "New experimental setting."}) \
-    DECLARE(JoinOrderConflictDetector, query_plan_optimize_join_order_conflict_detector, JoinOrderConflictDetector::NONE, R"(
+    DECLARE(JoinOrderConflictDetector, query_plan_optimize_join_order_conflict_detector, JoinOrderConflictDetector::CD_C, R"(
 Only affects the `dpsub` join order algorithm. Selects the conflict detector that DPsub uses to
 decide which join reorderings are valid. The following values are available:
- - `''` (default) - no conflict detector, DPsub uses the per-relation `ON` clause restriction
+ - `''` - no conflict detector, DPsub uses the per-relation `ON` clause restriction
  - `'a'` - the CD-A conflict detector, which is correct but incomplete
- - `'c'` - the CD-C conflict detector, which is correct and complete
-)", EXPERIMENTAL, \
-        {"26.10", "", "", "New setting selecting the conflict detector that decides join reordering validity in the DPsub join order algorithm: `a` for the (correct but incomplete) CD-A, `c` for the (correct and complete) CD-C, empty for none."}, \
+ - `'c'` (default) - the CD-C conflict detector, which is correct and complete
+)", BETA, \
+        {"26.11", "", "c", "New setting selecting the conflict detector that decides join reordering validity in the DPsub join order algorithm: `a` for the (correct but incomplete) CD-A, `c` for the (correct and complete) CD-C, empty for none. It defaults to CD-C, together with the `dpsub` default of `query_plan_optimize_join_order_algorithm`, which also lets semi and anti joins take part in reordering."}, \
         {"26.9", "", "", "New setting selecting the conflict detector that decides join reordering validity in the DPsub join order algorithm: `a` for the (correct but incomplete) CD-A, `c` for the (correct and complete) CD-C, empty for none."}) \
     DECLARE(Bool, allow_experimental_database_paimon_rest_catalog, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_rest'
