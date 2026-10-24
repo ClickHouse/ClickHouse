@@ -464,6 +464,11 @@ public:
 
     virtual FunctionBasePtr build(const ColumnsWithTypeAndName & arguments) const;
 
+    /// Checks the privileges required to use the function. `build` calls it before anything else.
+    /// Do not check privileges in the creator of a function: `FunctionFactory::get` creates functions
+    /// also only to read their properties (for example, `isDeterministic`), and this must not throw.
+    virtual void checkAccessOnBuild() const {}
+
     void getLambdaArgumentTypes(DataTypes & arguments) const;
 
     void checkNumberOfArguments(size_t number_of_arguments) const;
@@ -651,6 +656,9 @@ public:
     virtual ~IFunction() = default;
 
     virtual String getName() const = 0;
+
+    /// See the comment for the same method in `IFunctionOverloadResolver`.
+    virtual void checkAccessOnBuild() const {}
 
     /// See the comment for the same method in `IFunctionBase`: the adaptor that wraps this interface
     /// into one forwards to this.

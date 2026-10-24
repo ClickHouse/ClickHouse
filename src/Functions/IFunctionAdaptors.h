@@ -152,6 +152,7 @@ public:
     bool isExpensive() const override { return function->isExpensive(); }
 
     String getName() const override { return function->getName(); }
+    void checkAccessOnBuild() const override { function->checkAccessOnBuild(); }
     bool isStateful() const override { return function->isStateful(); }
     bool isVariadic() const override { return function->isVariadic(); }
     bool isServerConstant() const override { return function->isServerConstant(); }

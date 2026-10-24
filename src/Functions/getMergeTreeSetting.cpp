@@ -32,12 +32,16 @@ public:
     /// grant that query needs, down to the columns it reads.
     static FunctionPtr create(ContextPtr context_)
     {
-        context_->checkAccess(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "merge_tree_settings", Strings{"name", "value"});
         return std::make_shared<FunctionGetMergeTreeSetting>(context_);
     }
     explicit FunctionGetMergeTreeSetting(ContextPtr context_) : WithContext(context_) {}
 
     String getName() const override { return name; }
+
+    void checkAccessOnBuild() const override
+    {
+        getContext()->checkAccess(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "merge_tree_settings", Strings{"name", "value"});
+    }
 
     bool isDeterministic() const override { return false; }
 

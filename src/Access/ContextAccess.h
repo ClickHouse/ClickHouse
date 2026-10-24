@@ -32,6 +32,7 @@ class SettingsChanges;
 class AccessControl;
 struct IAccessEntity;
 class Context;
+struct QueryPrivilegesInfo;
 using ContextPtr = std::shared_ptr<const Context>;
 
 class ContextAccess : public std::enable_shared_from_this<ContextAccess>
@@ -81,6 +82,17 @@ public:
     void checkAccess(const ContextPtr & context, const AccessFlags & flags, std::string_view database, std::string_view table, const Strings & columns) const;
     void checkAccess(const ContextPtr & context, const AccessRightsElement & element) const;
     void checkAccess(const ContextPtr & context, const AccessRightsElements & elements) const;
+
+    /// Same as above, but records the checked privileges in `privileges_info` instead of the query context,
+    /// for the checks which are done when the context is not available, e.g. when a function is built.
+    void checkAccess(QueryPrivilegesInfo & privileges_info, const AccessFlags & flags) const;
+    void checkAccess(QueryPrivilegesInfo & privileges_info, const AccessFlags & flags, std::string_view database) const;
+    void checkAccess(QueryPrivilegesInfo & privileges_info, const AccessFlags & flags, std::string_view database, std::string_view table) const;
+    void checkAccess(QueryPrivilegesInfo & privileges_info, const AccessFlags & flags, std::string_view database, std::string_view table, std::string_view column) const;
+    void checkAccess(QueryPrivilegesInfo & privileges_info, const AccessFlags & flags, std::string_view database, std::string_view table, const std::vector<std::string_view> & columns) const;
+    void checkAccess(QueryPrivilegesInfo & privileges_info, const AccessFlags & flags, std::string_view database, std::string_view table, const Strings & columns) const;
+    void checkAccess(QueryPrivilegesInfo & privileges_info, const AccessRightsElement & element) const;
+    void checkAccess(QueryPrivilegesInfo & privileges_info, const AccessRightsElements & elements) const;
 
     void checkGrantOption(const ContextPtr & context, const AccessFlags & flags) const;
     void checkGrantOption(const ContextPtr & context, const AccessFlags & flags, std::string_view database) const;
@@ -166,22 +178,22 @@ private:
     void calculateAccessRights() const TSA_REQUIRES(mutex);
 
     template <bool throw_if_denied, bool grant_option, bool wildcard>
-    bool checkAccessImpl(const ContextPtr & context, const AccessFlags & flags) const;
+    bool checkAccessImpl(QueryPrivilegesInfo & privileges_info, const AccessFlags & flags) const;
 
     template <bool throw_if_denied, bool grant_option, bool wildcard, typename... Args>
-    bool checkAccessImpl(const ContextPtr & context, const AccessFlags & flags, std::string_view database, const Args &... args) const;
+    bool checkAccessImpl(QueryPrivilegesInfo & privileges_info, const AccessFlags & flags, std::string_view database, const Args &... args) const;
 
     template <bool throw_if_denied, bool grant_option, bool wildcard>
-    bool checkAccessImpl(const ContextPtr & context, const AccessRightsElement & element) const;
+    bool checkAccessImpl(QueryPrivilegesInfo & privileges_info, const AccessRightsElement & element) const;
 
     template <bool throw_if_denied, bool grant_option, bool wildcard>
-    bool checkAccessImpl(const ContextPtr & context, const AccessRightsElements & elements) const;
+    bool checkAccessImpl(QueryPrivilegesInfo & privileges_info, const AccessRightsElements & elements) const;
 
     template <bool throw_if_denied, bool grant_option, bool wildcard, typename... Args>
-    bool checkAccessImplHelper(const ContextPtr & context, AccessFlags flags, const Args &... args) const;
+    bool checkAccessImplHelper(QueryPrivilegesInfo & privileges_info, AccessFlags flags, const Args &... args) const;
 
     template <bool throw_if_denied, bool grant_option, bool wildcard>
-    bool checkAccessImplHelper(const ContextPtr & context, const AccessRightsElement & element) const;
+    bool checkAccessImplHelper(QueryPrivilegesInfo & privileges_info, const AccessRightsElement & element) const;
 
     template <bool throw_if_denied>
     bool checkAdminOptionImpl(const ContextPtr & context, const UUID & role_id) const;
