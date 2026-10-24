@@ -1747,6 +1747,43 @@ static const ActionsDAG::Node * getTopKReusePredicateOnlyNode(const ActionsDAG::
     return node;
 }
 
+static bool isTopKPrewherePending(const SelectQueryInfo & select_query_info, const std::optional<TopKFilterInfo> & top_k_filter_info)
+{
+    return top_k_filter_info && top_k_filter_info->dynamic_filter_pending && !select_query_info.input_order_info;
+}
+
+bool MergeTreeDataSelectExecutor::canFilterPartsByQueryConditionCache(
+    const SelectQueryInfo & select_query_info,
+    const std::optional<VectorSearchParameters> & vector_search_parameters,
+    const std::optional<TopKFilterInfo> & top_k_filter_info,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+    const ContextPtr & context)
+{
+    const auto & settings = context->getSettingsRef();
+    if (!settings[Setting::use_query_condition_cache]
+            /// `apply_deleted_mask = 0` must return deleted rows, so it cannot reuse entries written
+            /// by normal reads: those may exclude a granule whose only matching rows are deleted.
+            || !settings[Setting::apply_deleted_mask]
+            || (!select_query_info.prewhere_info && !isTopKPrewherePending(select_query_info, top_k_filter_info)
+                && !select_query_info.filter_actions_dag)
+            || (vector_search_parameters.has_value()) /// vector search has filter in the ORDER BY
+            || select_query_info.isFinal()
+            || (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
+        return false;
+
+    /// The query condition cache for `ORDER BY ... LIMIT n` (TopK) reads is gated behind the
+    /// `use_query_condition_cache_for_top_k` setting (enabled by default). When it is off, skip the
+    /// consult entirely for any read stamped as TopK — including shapes where no `__topKFilter` node
+    /// is folded into the filter DAG (skip-index-only TopK, or a query with a PREWHERE), whose plain
+    /// condition hash would otherwise still hit entries primed by an ordinary `SELECT ... WHERE`.
+    /// The write sides are gated symmetrically (see updateQueryConditionCache, setTopKColumn and
+    /// selectRangesToRead), so with the gate off a TopK read neither reads nor writes the cache.
+    if (top_k_filter_info && !settings[Setting::use_query_condition_cache_for_top_k])
+        return false;
+
+    return true;
+}
+
 void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     RangesInDataParts & parts_with_ranges,
     const SelectQueryInfo & select_query_info,
@@ -1754,11 +1791,15 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     const std::optional<TopKFilterInfo> & top_k_filter_info,
     bool allow_top_k_prewhere_query_condition_cache,
     bool use_sampling,
+    bool consult_where,
     const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
     const ReadFromMergeTree::Indexes & indexes,
     const ContextPtr & context,
     LoggerPtr log)
 {
+    if (!canFilterPartsByQueryConditionCache(select_query_info, vector_search_parameters, top_k_filter_info, mutations_snapshot, context))
+        return;
+
     /// A TopK-salted entry records granules that hold no row of the top N of the whole table, but
     /// `SAMPLE` computes the threshold from a subset of the rows, whose top N can lie in exactly those
     /// granules. So a sampled read consults only plain entries, which stay sound: a granule without a
@@ -1769,32 +1810,13 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     /// does that) does not have `__topKFilter` in its PREWHERE yet, but the executed read writes its
     /// entries under the PREWHERE with it. Consult under that one, or a warm query never hits them.
     PrewhereInfoPtr prewhere_info_for_cache = select_query_info.prewhere_info;
-    if (consult_top_k_entries && top_k_filter_info->dynamic_filter_pending && !select_query_info.input_order_info)
+    if (consult_top_k_entries && isTopKPrewherePending(select_query_info, top_k_filter_info))
     {
         if (auto with_top_k_filter = QueryPlanOptimizations::buildTopKDynamicFilterPrewhere(prewhere_info_for_cache, *top_k_filter_info))
             prewhere_info_for_cache = std::move(with_top_k_filter);
     }
 
     const auto & settings = context->getSettingsRef();
-    if (!settings[Setting::use_query_condition_cache]
-            /// `apply_deleted_mask = 0` must return deleted rows, so it cannot reuse entries written
-            /// by normal reads: those may exclude a granule whose only matching rows are deleted.
-            || !settings[Setting::apply_deleted_mask]
-            || (!prewhere_info_for_cache && !select_query_info.filter_actions_dag)
-            || (vector_search_parameters.has_value()) /// vector search has filter in the ORDER BY
-            || select_query_info.isFinal()
-            || (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
-        return;
-
-    /// The query condition cache for `ORDER BY ... LIMIT n` (TopK) reads is gated behind the
-    /// `use_query_condition_cache_for_top_k` setting (enabled by default). When it is off, skip the
-    /// consult entirely for any read stamped as TopK — including shapes where no `__topKFilter` node
-    /// is folded into the filter DAG (skip-index-only TopK, or a query with a PREWHERE), whose plain
-    /// condition hash would otherwise still hit entries primed by an ordinary `SELECT ... WHERE`.
-    /// The write sides are gated symmetrically (see updateQueryConditionCache, setTopKColumn and
-    /// selectRangesToRead), so with the gate off a TopK read neither reads nor writes the cache.
-    if (top_k_filter_info && !settings[Setting::use_query_condition_cache_for_top_k])
-        return;
 
     QueryConditionCachePtr query_condition_cache = context->getQueryConditionCache();
 
@@ -2086,7 +2108,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
 
     /// A row policy needs no extra guard here: `optimizePrimaryKeyConditionAndLimit` ANDs it into
     /// `filter_actions_dag`, so a restricted read keys on a different condition than an unrestricted one.
-    if (const auto & filter_actions_dag = select_query_info.filter_actions_dag)
+    if (const auto & filter_actions_dag = select_query_info.filter_actions_dag; filter_actions_dag && consult_where)
     {
         const auto * output = filter_actions_dag->getOutputs().front();
         /// Reaching this point with a TopK read implies `use_query_condition_cache_for_top_k` is on
