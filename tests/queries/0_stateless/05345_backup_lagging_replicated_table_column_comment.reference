@@ -1,0 +1,35 @@
+MODIFY COLUMN c COMMENT 'new', ADD COLUMN d UInt64
+source	k	
+source	c	new
+source	y	y
+source	z	local
+source	d	
+restored	k	
+restored	c	new
+restored	y	y
+restored	z	local
+restored	d	
+MODIFY COLUMN c REMOVE COMMENT
+source	k	
+source	c	
+source	y	y
+source	z	local
+restored	k	
+restored	c	
+restored	y	y
+restored	z	local
+DROP COLUMN c, RENAME COLUMN y TO c
+source	k	
+source	c	y
+source	z	local
+restored	k	
+restored	c	y
+restored	z	local
+restart before the queued ALTER_METADATA is applied
+before backup	old	1
+source	k	
+source	c	
+source	x	
+restored	k	
+restored	c	
+restored	x	

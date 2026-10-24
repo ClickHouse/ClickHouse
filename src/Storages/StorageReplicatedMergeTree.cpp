@@ -12189,20 +12189,27 @@ void StorageReplicatedMergeTree::applyMetadataChangesToCreateQueryForBackup(cons
     {
         /// Try to adjust the create query using values from ZooKeeper.
         auto zookeeper = getZooKeeper();
-        auto columns_from_entry = ColumnsDescription::parse(zookeeper->get(fs::path(zookeeper_path) / "columns"));
+        const bool alter_metadata_queued = queue.getStatus().metadata_alters_in_queue != 0;
         auto current_metadata = getInMemoryMetadataPtr(getContext(), false);
+        auto columns_from_entry = ColumnsDescription::parse(zookeeper->get(fs::path(zookeeper_path) / "columns"));
+        Coordination::Stat metadata_stat;
+        String metadata_from_zk = zookeeper->get(fs::path(zookeeper_path) / "metadata", &metadata_stat);
 
-        /// Comment ALTERs are not replicated through ZooKeeper, so the backup keeps the comments this replica has
-        /// applied, except for columns it does not have yet or has with another type than the snapshot.
-        for (const auto & column : current_metadata->columns)
+        /// Comment ALTERs are not replicated through ZooKeeper, so the backup keeps the comments this replica has applied.
+        /// Not before it applies the last replicated ALTER: that replaces all its columns with the columns node.
+        /// After a restart the metadata version is set from ZooKeeper before a queued ALTER_METADATA is applied locally.
+        if (!alter_metadata_queued && current_metadata->getMetadataVersion() >= metadata_stat.version)
         {
-            const auto * entry_column = columns_from_entry.tryGet(column.name);
-            if (entry_column && entry_column->comment != column.comment && entry_column->type->equals(*column.type))
-                columns_from_entry.modify(column.name, [&](ColumnDescription & c) { c.comment = column.comment; });
+            for (const auto & column : current_metadata->columns)
+            {
+                const auto * entry_column = columns_from_entry.tryGet(column.name);
+                if (entry_column && entry_column->comment != column.comment && entry_column->type->equals(*column.type))
+                    columns_from_entry.modify(column.name, [&](ColumnDescription & c) { c.comment = column.comment; });
+            }
         }
 
         auto metadata_from_entry = ReplicatedMergeTreeTableMetadata::parseAndNormalize(
-            zookeeper->get(fs::path(zookeeper_path) / "metadata"), columns_from_entry,
+            metadata_from_zk, columns_from_entry,
             current_metadata->add_minmax_index_for_numeric_columns,
             current_metadata->add_minmax_index_for_string_columns,
             getContext());
