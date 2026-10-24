@@ -2,7 +2,6 @@
 -- no-object-storage since the output of the pipeline depends on the read method
 
 SET use_statistics_for_sum_avg_aggregation = 0;
-SET enable_analyzer = 1;
 SET max_threads=4;
 SET optimize_trivial_count_query = 1;
 SET optimize_use_projections = 1;
