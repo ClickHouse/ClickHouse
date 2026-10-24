@@ -76,13 +76,17 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     /// `gcp_oauth`, a complete explicit ADC triple); anything else would fall back to the server's
     /// environment / IMDS / instance-profile / AWS-config-file / GCP-metadata credentials.
     /// See Context::shouldRestrictUserQueryS3Credentials.
-    bool is_s3_disk = false;
+    /// The backend of a disk is picked the way `ObjectStorageFactory::create` picks it: `local` is a disk
+    /// of its own, and for every other `type` the backend is `object_storage_type` when it is given and the
+    /// `type` itself otherwise (the compatibility aliases). So a literal `object_storage_type` is what
+    /// decides whether the disk is an S3 one, even when `type` is a compatibility alias like `s3`.
+    bool has_type = false;
+    bool type_is_s3 = false;
+    bool type_is_local = false;
     bool type_is_indirect = false;
-    /// A literal, concrete non-S3 `type` (e.g. `encrypted`, `cache`, `local`) -- but NOT `object_storage`,
-    /// which is only a wrapper whose backend is chosen by `object_storage_type`.
-    bool has_concrete_non_s3_type = false;
-    bool type_is_object_storage = false;
-    bool has_explicit_non_s3_object_storage_type = false;
+    bool has_object_storage_type = false;
+    bool object_storage_type_is_s3 = false;
+    bool object_storage_type_is_indirect = false;
     bool has_include = false;
     bool has_substituted_value = false;
     bool has_indirect_auth_field = false;
@@ -124,8 +128,10 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             throwBadConfiguration("expected a list of key=value arguments");
 
         auto function_args = function_args_expr->children;
-        if (function_args.size() < 2)
-            throwBadConfiguration("expected key=value arguments");
+        /// The parser always gives `equals` two children, but the AST may come from somewhere else,
+        /// e.g. a query fuzzer, and the key and the value are indexed below.
+        if (function_args.size() != 2)
+            throwBadConfiguration("expected a key and a value in every key=value argument");
 
         auto * key_identifier = function_args[0]->as<ASTIdentifier>();
         if (!key_identifier)
@@ -150,19 +156,21 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             has_include = true;
         else if (key == "type" || key == "object_storage_type")
         {
+            /// A key given more than once is resolved conservatively: any S3 or indirect occurrence counts.
             const bool is_s3_value = (value_str == "s3" || value_str.starts_with("s3_"));
-            is_s3_disk |= is_s3_value;
-            type_is_indirect |= indirect;
-
             if (key == "type")
             {
-                if (!indirect && value_str == "object_storage")
-                    type_is_object_storage = true;
-                else if (!indirect && !is_s3_value)
-                    has_concrete_non_s3_type = true;
+                has_type = true;
+                type_is_s3 |= is_s3_value;
+                type_is_local |= (!indirect && value_str == "local");
+                type_is_indirect |= indirect;
             }
-            else if (!indirect && !is_s3_value) /// object_storage_type
-                has_explicit_non_s3_object_storage_type = true;
+            else
+            {
+                has_object_storage_type = true;
+                object_storage_type_is_s3 |= is_s3_value;
+                object_storage_type_is_indirect |= indirect;
+            }
         }
         else if (key == "access_key_id")
             has_access_key_id = !value_str.empty() && !indirect;
@@ -221,12 +229,20 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     }
 
     /// A user-created S3 disk must not resolve the server's own credentials. Indirection (`from_env`/`from_zk`
-    /// on the type or auth fields, or an `include`) is treated as potentially-S3 unless the backend is an
-    /// explicit literal non-S3 type. `type = object_storage` is a wrapper: non-S3 only with a literal non-S3
-    /// `object_storage_type`.
-    const bool type_explicitly_non_s3
-        = has_concrete_non_s3_type || (type_is_object_storage && has_explicit_non_s3_object_storage_type);
-    const bool maybe_s3_disk = is_s3_disk || type_is_indirect || (has_include && !type_explicitly_non_s3);
+    /// on the type or auth fields, or an `include`) is treated as potentially-S3 unless the backend is known
+    /// to be a literal non-S3 one. `type = local` is a disk of its own; otherwise a literal `object_storage_type`
+    /// is authoritative -- both for the `object_storage` wrapper and for a compatibility alias such as
+    /// `type = s3`, which `DiskFromAST` and `ObjectStorageFactory::create` also let it override. An indirect
+    /// `type` next to a literal non-S3 `object_storage_type` is still non-S3: whichever of the two the backend
+    /// ends up being taken from (`local` if the substitution resolves to it), it is not S3.
+    const bool backend_from_object_storage_type = has_object_storage_type && !type_is_local;
+    const bool backend_is_s3 = backend_from_object_storage_type ? object_storage_type_is_s3 : type_is_s3;
+    const bool backend_is_indirect
+        = backend_from_object_storage_type ? object_storage_type_is_indirect : type_is_indirect;
+    const bool backend_is_known = backend_from_object_storage_type || (has_type && !type_is_indirect);
+
+    const bool type_explicitly_non_s3 = backend_is_known && !backend_is_s3 && !backend_is_indirect;
+    const bool maybe_s3_disk = backend_is_s3 || backend_is_indirect || (has_include && !type_explicitly_non_s3);
 
     const bool has_explicit_credentials = has_access_key_id && has_secret_access_key;
     const bool has_explicit_gcp_adc
@@ -240,7 +256,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
 
     /// Whether the disk relies on server-managed credentials (it would be refused under the restriction).
     const bool relies_on_server_credentials
-        = maybe_s3_disk && (type_is_indirect || has_include || has_indirect_auth_field || !ast_has_explicit_credentials);
+        = maybe_s3_disk && (backend_is_indirect || has_include || has_indirect_auth_field || !ast_has_explicit_credentials);
 
     /// A disk of a table in the `system` database is server-internal infrastructure (attached by the operator
     /// to ship system tables to S3 with the server's identity), exempt from the user-query restriction when the
@@ -303,22 +319,6 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     return xml_document;
 }
 
-void forceAnonymousS3DiskConfig(Poco::Util::AbstractConfiguration & config)
-{
-    /// Force the disk root and every `locations.<name>` child anonymous: an `include` can resolve a
-    /// `locations.<name>` S3 child with its own server-managed auth, and this pre-resolution fallback runs
-    /// instead of the post-resolution per-prefix check, so a root-only rewrite would leave such a child with
-    /// the server identity (built with `for_disk_s3 = true`, bypassing the restriction).
-    forceAnonymousS3DiskConfigAtPrefix(config, "");
-    if (config.has("locations"))
-    {
-        Poco::Util::AbstractConfiguration::Keys locations;
-        config.keys("locations", locations);
-        for (const auto & location : locations)
-            forceAnonymousS3DiskConfigAtPrefix(config, "locations." + location + ".");
-    }
-}
-
 void forceAnonymousS3DiskConfigAtPrefix(Poco::Util::AbstractConfiguration & config, const String & prefix)
 {
     /// Force the S3 client unsigned: clear `http_client` (which would mint a GCP token regardless of the
@@ -364,9 +364,12 @@ bool resolvedS3BackendIsRestricted(
     const Poco::Util::AbstractConfiguration & config, const String & prefix, bool is_root, const DynamicS3DiskCredentialInfo & info)
 {
     auto key = [&](const String & k) { return prefix + k; };
-    auto is_s3_type = [](const String & t) { return t == "s3" || t.starts_with("s3_"); };
-    const bool resolved_backend_is_s3
-        = is_s3_type(config.getString(key("type"), "")) || is_s3_type(config.getString(key("object_storage_type"), ""));
+    /// Pick the backend the same way `ObjectStorageFactory::create` does: a root `type = local` is a disk of
+    /// its own, and otherwise `object_storage_type` is authoritative when it is given, so a compatibility
+    /// alias `type = s3` next to `object_storage_type = local` is a local backend.
+    const String type = config.getString(key("type"), "");
+    const String backend = (is_root && type == "local") ? type : config.getString(key("object_storage_type"), type);
+    const bool resolved_backend_is_s3 = backend == "s3" || backend.starts_with("s3_");
     if (!resolved_backend_is_s3)
         return false;
 
@@ -412,6 +415,28 @@ bool resolvedS3BackendIsRestricted(
     return !safe;
 }
 
+}
+
+void forceAnonymousS3DiskConfig(Poco::Util::AbstractConfiguration & config, const DynamicS3DiskCredentialInfo & info)
+{
+    /// The pre-resolution check found that the disk root relies on server-managed credentials, so the root is
+    /// forced anonymous. An `include` can also resolve `locations.<name>` children, and a multi-location
+    /// `DiskObjectStorage` builds one object storage per child, each with its own `object_storage_type` and
+    /// auth. So every child is checked on its own the way the post-resolution check does it, and only an S3
+    /// child whose resolved auth is not proved safe is forced anonymous: a non-S3 or an already anonymous
+    /// child keeps its configuration instead of being degraded together with the root.
+    forceAnonymousS3DiskConfigAtPrefix(config, "");
+    if (config.has("locations"))
+    {
+        Poco::Util::AbstractConfiguration::Keys locations;
+        config.keys("locations", locations);
+        for (const auto & location : locations)
+        {
+            const String prefix = "locations." + location + ".";
+            if (resolvedS3BackendIsRestricted(config, prefix, /* is_root */ false, info))
+                forceAnonymousS3DiskConfigAtPrefix(config, prefix);
+        }
+    }
 }
 
 void validateResolvedS3DiskCredentials(
@@ -609,7 +634,7 @@ DiskConfigurationPtr getDiskConfigurationFromAST(const ASTs & disk_args, Context
     /// This path does not resolve `include`, so there is no post-resolution check; only honor the
     /// pre-resolution decision.
     if (info.load_anonymously)
-        forceAnonymousS3DiskConfig(*conf);
+        forceAnonymousS3DiskConfig(*conf, info);
     return conf;
 }
 

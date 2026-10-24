@@ -83,6 +83,11 @@ public:
     /// because we cannot determine which column from table correspond to this virtual column.
     virtual NameSet getVirtualsToCheckBeforeUsingStructureHint() const { return {}; }
 
+    /// The virtual columns of the storage this table function returns, if they are known without executing
+    /// it. `DESCRIBE ... SETTINGS describe_include_virtual_columns = 1` uses them instead of calling
+    /// `execute` for a table function whose execution has side effects (e.g. `mergeTreeParts` creates a disk).
+    virtual std::optional<ColumnsDescription> getVirtualsWithoutExecution() const { return std::nullopt; }
+
     virtual bool supportsReadingSubsetOfColumns(const ContextPtr &) { return true; }
 
     virtual bool canBeUsedToCreateTable() const { return true; }

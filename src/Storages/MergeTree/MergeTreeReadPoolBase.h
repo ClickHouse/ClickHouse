@@ -69,7 +69,7 @@ public:
     /// `parts_ranges.getDescriptions()` but with per-part `min_marks_per_task` filled in from
     /// `per_part_infos`. The caller (ReadFromMergeTree) sends the announcement via the
     /// `ParallelReadingExtension` it constructed before passing into the pool.
-    RangesInDataPartsDescription buildAnnouncementDescriptions() const;
+    virtual RangesInDataPartsDescription buildAnnouncementDescriptions() const;
 
     const RangesInDataParts & getPartsRanges() const { return parts_ranges; }
 

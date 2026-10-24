@@ -222,6 +222,14 @@ void InterpreterDescribeQuery::fillColumnsFromTableFunction(const ASTTableExpres
 
     if (settings[Setting::describe_include_virtual_columns])
     {
+        if (auto virtuals = table_function_ptr->getVirtualsWithoutExecution())
+        {
+            for (const auto & column : *virtuals)
+                if (!column_descriptions.has(column.name))
+                    virtual_columns.push_back(column);
+            return;
+        }
+
         auto table = table_function_ptr->execute(table_expression.table_function, getContext(), table_function_ptr->getName());
         if (table)
         {
