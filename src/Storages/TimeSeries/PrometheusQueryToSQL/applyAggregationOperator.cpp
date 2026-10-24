@@ -10,6 +10,7 @@
 namespace DB::ErrorCodes
 {
     extern const int CANNOT_EXECUTE_PROMQL_QUERY;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -32,6 +33,9 @@ SQLQueryPiece applyAggregationOperator(
 
     if (isLimitAggregationOperator(operator_name))
         return applyLimitAggregationOperator(operator_node, std::move(arguments), context);
+
+    if (operator_name == "limit_ratio")
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Aggregation operator '{}' is not implemented", operator_name);
 
     throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
                     "Aggregation operator '{}' is not implemented", operator_name);
