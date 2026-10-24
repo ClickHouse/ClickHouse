@@ -1462,3 +1462,36 @@ The auditor reported actionable dependency findings for `//programs/keeper-clien
 Production outcomes: 14 `clean`, 4 `failed`, 17 `findings`, 6 `header_pp_not_verified`, 1 `link_extra_lib_only`, 12 `no_cpp`, 2 `unentered_owned_files`, 65 `unverified_link_deps`. Control fixture outcomes: 1 `findings`.
 The recorded outcomes for the three changed header owners were `//src:clickhouse_common_io__compile_0` `findings`, `//src:dbms__compile_0` `findings`, `//src:headers` `failed`.
 The auditor reported actionable dependency findings for `//programs/keeper-client:clickhouse-keeper-client-lib`, `//programs/keeper-converter:clickhouse-keeper-converter-lib`, `//programs/packed-io:clickhouse-packed-io-lib`, `//src/Common/mysqlxx:mysqlxx`, `//src/Functions/GatherUtils:clickhouse_functions_gatherutils`, `//src/Functions/array:clickhouse_functions_array__compile_0`, `//src/Functions:clickhouse_functions_obj__compile_1`, `//src/Storages/System:clickhouse_storages_system__compile_1`, `//src/Storages/System:clickhouse_storages_system_information_schema`, `//src/Storages/System:headers`, `//src/TableFunctions:clickhouse_table_functions`, `//src:benchmark_runtime_filter_objects`, `//src:clickhouse_common_io__compile_0`, `//src:dbms__compile_0`, `//src:dbms__compile_3`, `//src:dbms_embedded`, `//src:unit_tests_dbms`.
+
+## 698fea052
+
+Source: [698fea052](https://github.com/dzbarsky/clickhouse/commit/698fea052686835908931fce25669b703b220b84). DBMS and Common I/O now publish their own 21 and 6 headers, respectively. The LZMA buffer headers use Common I/O’s existing public `@clickhouse_xz//:_liblzma` dependency. `LocalTime.h` and `Logger_fwd.h` now belong to `//src/Common:parser_support_api`. Azure, DBMS and the unit tests drop duplicate libxml2, HDFS3 and LZ4 dependencies. 11 first-party targets now declare the dependencies used by their public headers or implementations. Boost classifies 25 FunctionTypes and MultiIndex fragments as textual headers and drops 2 Wave templates. The Rust `cc_import` audit reads `unentered_owned_files` as a filename-to-visibility map and accepts a missing `unverified_link_deps` field as an empty list. The commit changes only BUILD files and migration scripts or templates.
+
+| Native Bazel build | ELF | SHA-256 | Bytes |
+| --- | --- | --- | --- |
+| [x86-64](https://app.buildbuddy.io/invocation/a9e28792-5995-4653-8a89-5b83662a61da) | ClickHouse | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929,619,680 |
+|  | ClickHouse, normalized | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710,693,736 |
+|  | `unit_tests_dbms` | `bc523ef4436f034fe89df4a85f84b6056aa61b54825fe405bc51f7a9f5683398` | 811,968,280 |
+| [ARM64](https://app.buildbuddy.io/invocation/f72461ad-2f14-4662-8c8a-b1451e6fd30b) | ClickHouse | `2363f1ffebe756464876c0e91ca336d77c4d17e6a27afe2fb22b8f337ac2d744` | 907,067,440 |
+|  | ClickHouse, normalized | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637,316,696 |
+|  | `unit_tests_dbms` | `24603ddfc53c3eae1efbcea14eaab78ead22de00f2195aa345c9ec1b9df2f4a8` | 795,060,896 |
+
+All 58 native Bazel targets passed on each CPU. The normalized ClickHouse ELF matched native CMake; the raw ClickHouse and unit-test ELFs matched [ea022a835](https://github.com/dzbarsky/clickhouse/commit/ea022a835034c61e89eb4c0170570bd6a9e23990). Each CPU passed the same 26 selected, seven MergeTree and five header-ownership GoogleTests, plus the same six SQL cases. The two dependency lists compared for DBMS and Common I/O produced equal values for all 17 ordered CcInfo fields. The configured Boost provider report matched all 12 expected fields on both CPUs.
+
+| Hosted run | Hosted status | Ordinary DWYU build | Strict DWYU build |
+| --- | --- | --- | --- |
+| [x86-64](https://app.buildbuddy.io/invocation/5482e71d-a45e-45c3-a329-1590e84ce16a) | `Failed` | [ordinary DWYU](https://app.buildbuddy.io/invocation/8746a52b-cfb6-4417-9775-7bbe752b0b60) (exit 0) | [strict DWYU](https://app.buildbuddy.io/invocation/6a833bd4-047b-4bfa-880d-0a8cae0322a7) (exit 1) |
+| [ARM64](https://app.buildbuddy.io/invocation/531aa66e-0aaa-410f-b5f9-3b96aafd2b17) | `Failed` | [ordinary DWYU](https://app.buildbuddy.io/invocation/fbca6e12-a89d-4168-8438-735163fbdf39) (exit 0) | [strict DWYU](https://app.buildbuddy.io/invocation/af1abe63-88d9-4b6b-9c7e-be8fa30e8718) (exit 1) |
+
+| Production DWYU | Selected | Compiled clean | Findings | Failed | Other outcomes | Selected without verified records | Omitted |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| x86-64 | 42 | 4 | 9 | 4 | 25 | 0 | 742 |
+| ARM64 | 40 | 4 | 7 | 4 | 25 | 0 | 744 |
+
+x86-64 other outcomes: 1 `header_pp_not_verified`, 1 `link_extra_lib_only`, 1 `unentered_owned_files`, 22 `unverified_link_deps`. Poco JSON passed; the intentionally negative fixture reported its unused implementation dependency. The 11 first-party targets selected for changes to header owners or dependency visibility reported 1 `findings`, 10 `unverified_link_deps`.
+
+ARM64 other outcomes: 1 `header_pp_not_verified`, 1 `link_extra_lib_only`, 1 `unentered_owned_files`, 22 `unverified_link_deps`. Poco JSON passed; the intentionally negative fixture reported its unused implementation dependency. The 11 first-party targets selected for changes to header owners or dependency visibility reported 1 `findings`, 10 `unverified_link_deps`.
+
+Rust import reports for C++ targets: x86-64 0 of 5 reports verified (`observed`; 5 `held`); ARM64 0 of 5 reports verified (`observed`; 5 `held`). x86-64 produced 5 reports with no import findings whose C++ owners failed strict DWYU; ARM64 produced 5 reports with no import findings whose C++ owners failed strict DWYU. These reports do not qualify any Rust target or confer a compiled DWYU pass.
+
+An omitted target has no DWYU result for this source. Only the compiled clean column counts a successful compile and strict dependency report.
