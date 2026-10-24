@@ -20,8 +20,4 @@ ch_cc_library(
     features = ["-system_include_paths"],
     local_defines = CXX_RUNTIME_DEFINES,
     strip_include_prefix = "include",
-    deps = [
-        "//base/glibc-compatibility",
-        "@clickhouse_llvm_project//:unwind",
-    ],
 )

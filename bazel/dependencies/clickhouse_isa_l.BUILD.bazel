@@ -88,6 +88,7 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [],
     }),
     language = "C",
+    libcxx_headers = False,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
     local_includes = select({
         "@platforms//cpu:x86_64": [

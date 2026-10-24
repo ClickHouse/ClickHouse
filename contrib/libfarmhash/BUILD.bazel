@@ -16,8 +16,4 @@ ch_cc_library(
     ],
     includes = ["."],
     local_defines = CXX_RUNTIME_DEFINES,
-    deps = [
-        "//base/glibc-compatibility",
-        "@clickhouse_llvm_project//:unwind",
-    ],
 )

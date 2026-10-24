@@ -16,7 +16,4 @@ ch_cc_library(
     includes = ["."],
     link_runtime = True,
     local_defines = CXX_RUNTIME_DEFINES,
-    deps = [
-        "//base/glibc-compatibility",
-    ],
 )

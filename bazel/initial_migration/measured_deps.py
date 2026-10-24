@@ -10,6 +10,8 @@ from initial_migration.library_runtime import HEADERS as LLVM_RUNTIME_HEADERS
 from initial_migration.prune_inherited_headers import inherited_source_headers
 from initial_migration.web_resources import constant_defs, constant_dict_field, eval_node
 
+GLIBC_COMPATIBILITY = '//base/glibc-compatibility'
+UNWIND = '@clickhouse_llvm_project//:unwind'
 TZDATA = '@clickhouse_cctz//:tzdata'
 SPARSEHASH = '@clickhouse_sparsehash_c11//:sparsehash_c11'
 FUNCTION_REGISTRATION = '//src/Functions:clickhouse_functions_obj__compile_0'
@@ -24,6 +26,13 @@ DEPENDENCIES = {
     ('@clickhouse_azure', '_azure_sdk'): (['@clickhouse//contrib/libxml2-cmake:libxml2_config_headers'], [], []),
     ('@clickhouse_flatbuffers', 'flatc'): (list(LLVM_RUNTIME_HEADERS), [], []),
     ('@clickhouse_isa_l', '_isal__compile_0'): (list(LLVM_RUNTIME_HEADERS), [], []),
+    ('base/readpassphrase', 'readpassphrase'): ([UNWIND], [], []),
+    ('contrib/bech32', '_bech32'): ([GLIBC_COMPATIBILITY], [], []),
+    ('contrib/cityhash102', '_cityhash'): ([GLIBC_COMPATIBILITY], [], []),
+    ('contrib/consistent-hashing', '_consistent_hashing'): ([GLIBC_COMPATIBILITY], [], []),
+    ('contrib/libfarmhash', '_farmhash'): ([GLIBC_COMPATIBILITY, UNWIND], [], []),
+    ('contrib/libmetrohash', '_metrohash'): ([GLIBC_COMPATIBILITY, UNWIND], [], []),
+    ('contrib/murmurhash', '_murmurhash'): ([GLIBC_COMPATIBILITY, UNWIND], [], []),
     ('programs', 'clickhouse__compile_0'): (['//base:harmful'], [], []),
     ('src/Dictionaries', 'headers'): ([SPARSEHASH], [], []),
     ('src/Access/Common', 'clickhouse_common_access'): ([TZDATA], [], []),
@@ -262,6 +271,10 @@ def apply(root):
                 continue
             found.add(name)
             unused, private, public = spec
+            if (package, name) == ('@clickhouse_isa_l', '_isal__compile_0') and 'libcxx_headers' not in attrs:
+                # ISA-L's C sources do not include either generated libc++ configuration header.
+                end = source.span(rule)[1] - 1
+                edits.append((end, end, '\n    libcxx_headers = False,\n'))
             llvm_headers = attrs.get('llvm_headers')
             if (call_name(rule) == 'ch_cc_library' and isinstance(llvm_headers, ast.Constant)
                     and llvm_headers.value is True and set(LLVM_RUNTIME_HEADERS).issubset(unused)):
