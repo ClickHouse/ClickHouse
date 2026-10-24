@@ -62,9 +62,10 @@ struct AggregationEntry
 
     size_t sum_of_sizes = 0; // used to determine if it's better to convert aggregation to two-level from the beginning
     size_t median_size = 0; // roughly the size we're going to preallocate on each thread
-    /// Whether the adaptive aggregator measured the query's staged stream as repeat-dominated and
-    /// thawed: freezing cannot pay for such a query, so later runs do not engage it at all. Runs
-    /// without an adaptive measurement carry the stored verdict over (see `updateStatistics`).
+    /// Whether the staged streams of most of the threads of a run of the query kept repeating the missed keys (see
+    /// `Aggregator::adaptiveStagingVerdict`): freezing cannot pay for such a query, so later runs do not engage the
+    /// adaptive aggregation at all. Runs without a verdict of their own carry the stored one over (see
+    /// `updateStatistics`).
     bool adaptive_staging_repeat_dominated = false;
 };
 
