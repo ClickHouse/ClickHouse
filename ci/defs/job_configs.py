@@ -164,7 +164,10 @@ fast_test_digest_config = Job.CacheDigestConfig(
 # must schedule the job (the shared digest above does not cover it).
 darwin_fast_test_digest_config = Job.CacheDigestConfig(
     include_paths=fast_test_digest_config.include_paths
-    + ["./ci/jobs/scripts/fast_test_darwin.sh"],
+    + [
+        "./ci/jobs/scripts/fast_test_darwin.sh",
+        "./ci/jobs/scripts/job_hooks/debug_orphans_hook.py",
+    ],
 )
 
 # The limited clang-tidy check is configured exactly like the full tidy build, so
@@ -386,14 +389,18 @@ class JobConfigs:
             # cannot fail the job, and a timed-out job already fails).
             'for i in $(seq 2 16); do sudo ifconfig lo0 -alias 127.0.0.$i 2>/dev/null || true; done',
             "python3 ./ci/jobs/scripts/job_hooks/clickhouse_test_cleanup_hook.py",
+            "python3 ./ci/jobs/scripts/job_hooks/debug_orphans_hook.py",
             "sudo rm -rf /Users/ec2-user/actions-runner/_work/ClickHouse/ClickHouse/ci/tmp/run* /System/Volumes/Data/System/Library/Caches/com.apple.coresymbolicationd/data /System/Volumes/Data/private/var/db/diagnostics/*",
         ],
     ).parametrize(
-        Job.ParamSet(
-            parameter=BuildTypes.ARM_DARWIN,
-            runs_on=RunnerLabels.MACOS_ARM_SMALL,
-            requires=[ArtifactNames.CH_ARM_DARWIN_BIN],
-        ),
+        *[
+            Job.ParamSet(
+                parameter=f"{BuildTypes.ARM_DARWIN}, copy {i}",
+                runs_on=RunnerLabels.MACOS_ARM_SMALL,
+                requires=[ArtifactNames.CH_ARM_DARWIN_BIN],
+            )
+            for i in range(1, 21)
+        ]
     )
     # The clang-tidy build does not link anything, so its object files are split
     # across independent shards, see `write_tidy_shard_targets` in `build_clickhouse.py`.
