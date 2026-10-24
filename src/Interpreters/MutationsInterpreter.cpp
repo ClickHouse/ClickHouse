@@ -47,6 +47,7 @@
 #include <Interpreters/PreparedSets.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Processors/Sources/ThrowingExceptionSource.h>
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/Identifier.h>
 #include <Analyzer/QueryTreeBuilder.h>
@@ -83,6 +84,8 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_nondeterministic_mutations;
+    extern const SettingsBool analyzer_compatibility_prefer_alias_over_subcolumn;
+    extern const SettingsBool prefer_column_name_to_alias;
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsNonZeroUInt64 max_block_size;
@@ -2531,6 +2534,167 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
     return pipeline;
 }
 
+namespace
+{
+
+/// Collects the names of the columns read from `table_node` in the resolved `node`, including the ones read
+/// by the definitions of `ALIAS` columns, which are computed on read. Subqueries are not entered: they are
+/// refused separately.
+void collectColumnsReadFromTable(const QueryTreeNodePtr & node, const QueryTreeNodePtr & table_node, NameSet & column_names)
+{
+    if (!node || node->getNodeType() == QueryTreeNodeType::QUERY || node->getNodeType() == QueryTreeNodeType::UNION)
+        return;
+
+    if (const auto * column_node = node->as<ColumnNode>(); column_node && column_node->getColumnSourceOrNull() == table_node)
+        column_names.insert(column_node->getColumnName());
+
+    for (const auto & child : node->getChildren())
+        collectColumnsReadFromTable(child, table_node, column_names);
+}
+
+}
+
+/// Virtual columns declared with `deterministic = false` (`_table`, `_database`, `_disk_name`, ...)
+/// are constants on one server, but replicas of the same table may have different local names or
+/// disks, so a mutation that reads them would produce different parts on different replicas.
+/// The expressions of the mutation are resolved by the analyzer the same way they are when the mutation
+/// is executed, so a virtual column is found however it is reached: qualified with the table name, through
+/// an `ALIAS` column or its subcolumn, or through a `Nested` prefix assembled from `ALIAS` columns.
+std::optional<String> MutationsInterpreter::findNonDeterministicVirtualColumn(
+    const StoragePtr & storage,
+    const MutationCommands & commands,
+    ContextPtr context)
+{
+    /// A real column with the same name shadows the virtual one and is deterministic.
+    /// `_sample_factor` is non-deterministic only because of the `SAMPLE` clause of a `SELECT`; no `SAMPLE`
+    /// reaches a mutation, so there it is always 1 on every replica. `_part_index` and `_part_starting_offset`
+    /// depend on the set of parts read by a query, but a mutation reads every part on its own, so they are
+    /// always 0.
+    static const NameSet deterministic_in_mutations = {"_sample_factor", "_part_index", "_part_starting_offset"};
+
+    auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
+    const auto & real_columns = metadata_snapshot->getColumns();
+    NameSet nondeterministic_virtual_columns;
+    for (const auto & virtual_column : metadata_snapshot->virtuals)
+    {
+        if (!virtual_column.deterministic && !deterministic_in_mutations.contains(virtual_column.name) && !real_columns.has(virtual_column.name))
+            nondeterministic_virtual_columns.insert(virtual_column.name);
+    }
+
+    if (nondeterministic_virtual_columns.empty())
+        return {};
+
+    /// Each command is resolved in its own scope, the same way the commands are analyzed in separate stages
+    /// when the mutation is executed, so an alias defined in one command cannot hide a virtual column read
+    /// in another one.
+    std::vector<ASTPtr> scopes;
+    for (const auto & command : commands)
+    {
+        /// `MATERIALIZE COLUMN` evaluates the default expression of the column (`DEFAULT`, `MATERIALIZED`,
+        /// or `EPHEMERAL`) inside the mutation and writes the result into the new part.
+        if (command.type == MutationCommand::MATERIALIZE_COLUMN)
+        {
+            if (const auto * column = real_columns.tryGet(command.column_name); column && column->default_desc.expression)
+            {
+                ASTPtr expressions = make_intrusive<ASTExpressionList>();
+                expressions->children.push_back(column->default_desc.expression->clone());
+                scopes.push_back(std::move(expressions));
+            }
+            continue;
+        }
+
+        if (command.type != MutationCommand::UPDATE && command.type != MutationCommand::DELETE)
+            continue;
+
+        ASTPtr expressions = make_intrusive<ASTExpressionList>();
+        auto alter = command.ast();
+        if (alter->predicate)
+            expressions->children.push_back(alter->predicate->clone());
+        if (command.type == MutationCommand::UPDATE && alter->update_assignments)
+            for (const auto & assignment : alter->update_assignments->children)
+                expressions->children.push_back(assignment->as<ASTAssignment &>().expression()->clone());
+
+        if (!expressions->children.empty())
+            scopes.push_back(std::move(expressions));
+    }
+
+    auto storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
+
+    /// How an identifier is resolved depends on the settings of name resolution: a compound identifier such as
+    /// `t._table` on `analyzer_compatibility_prefer_alias_over_subcolumn`, and a bare identifier that is both
+    /// an alias and a column (`UPDATE value = ('safe' AS _table) WHERE _table != ''`) on
+    /// `prefer_column_name_to_alias`. The mutation is validated with the settings of the query, but executed
+    /// with the settings of the background context, which may be different, so the interpretations of both
+    /// are checked. An interpretation which is not used by either of them is not required to be well-typed.
+    struct NameResolutionSettings
+    {
+        bool prefer_alias_over_subcolumn;
+        bool prefer_column_name_to_alias;
+
+        auto operator<=>(const NameResolutionSettings &) const = default;
+    };
+
+    auto get_name_resolution_settings = [](const ContextPtr & settings_context)
+    {
+        const auto & context_settings = settings_context->getSettingsRef();
+        return NameResolutionSettings{
+            .prefer_alias_over_subcolumn = context_settings[Setting::analyzer_compatibility_prefer_alias_over_subcolumn],
+            .prefer_column_name_to_alias = context_settings[Setting::prefer_column_name_to_alias]};
+    };
+
+    std::set<NameResolutionSettings> name_resolution_settings_variants = {
+        get_name_resolution_settings(context),
+        get_name_resolution_settings(context->getBackgroundContext())};
+
+    /// `EPHEMERAL` columns are not expanded by the analyzer, but their definitions may read virtual columns
+    /// as well (`e String EPHEMERAL _database`), so they are resolved in turn, each one in its own scope.
+    /// Column definitions cannot reference each other cyclically, and each one is resolved once.
+    NameSet followed_ephemeral_columns;
+    while (!scopes.empty())
+    {
+        NameSet read_columns;
+
+        for (const auto & expressions : scopes)
+        {
+            for (const auto & name_resolution_settings : name_resolution_settings_variants)
+            {
+                auto analysis_context = Context::createCopy(context);
+                analysis_context->setSetting("analyzer_compatibility_prefer_alias_over_subcolumn", name_resolution_settings.prefer_alias_over_subcolumn);
+                analysis_context->setSetting("prefer_column_name_to_alias", name_resolution_settings.prefer_column_name_to_alias);
+
+                auto expression = buildQueryTree(expressions->clone(), analysis_context);
+                /// The expressions are only analyzed, nothing is read, so the table is not locked.
+                auto table_node = std::make_shared<TableNode>(storage, TableLockHolder{}, storage_snapshot);
+
+                QueryAnalyzer query_analyzer(/*only_analyze=*/ true);
+                query_analyzer.resolve(expression, table_node, analysis_context);
+
+                collectColumnsReadFromTable(expression, table_node, read_columns);
+            }
+        }
+
+        scopes.clear();
+        for (const auto & name : read_columns)
+        {
+            if (nondeterministic_virtual_columns.contains(name))
+                return name;
+
+            auto column = real_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::Ephemeral, name);
+            if (!column)
+                continue;
+            const auto * description = real_columns.tryGet(column->getNameInStorage());
+            if (description && description->default_desc.expression && followed_ephemeral_columns.insert(description->name).second)
+            {
+                ASTPtr expressions = make_intrusive<ASTExpressionList>();
+                expressions->children.push_back(description->default_desc.expression->clone());
+                scopes.push_back(std::move(expressions));
+            }
+        }
+    }
+
+    return {};
+}
+
 void MutationsInterpreter::validateNonDeterministicMutationsForStorage(
     const StoragePtr & storage,
     const MutationCommands & commands,
@@ -2553,6 +2717,12 @@ void MutationsInterpreter::validateNonDeterministicMutationsForStorage(
                 "The source storage is replicated so ALTER UPDATE/ALTER DELETE statements must use only deterministic functions. "
                 "Function '{}' is non-deterministic", *nondeterministic_func_data.nondeterministic_function_name);
     }
+
+    if (auto virtual_column_name = findNonDeterministicVirtualColumn(storage, commands, context))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The source storage is replicated so ALTER UPDATE/ALTER DELETE statements must use only deterministic expressions. "
+            "Virtual column '{}' is non-deterministic: its value may differ between replicas, "
+            "see allow_nondeterministic_mutations setting", *virtual_column_name);
 }
 
 void MutationsInterpreter::validate()

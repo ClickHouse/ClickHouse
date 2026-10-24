@@ -123,11 +123,18 @@ public:
 
     void validate();
 
-    /// Throws if the mutation contains non-deterministic functions or subqueries on a Replicated*
-    /// storage and `allow_nondeterministic_mutations` is disabled.  Static so it can be called
-    /// without constructing a full `MutationsInterpreter`, which requires the predicate to be
-    /// analyzable.
+    /// Throws if the mutation contains non-deterministic functions, subqueries or virtual columns on a
+    /// Replicated* storage and `allow_nondeterministic_mutations` is disabled.  Static so it can be called
+    /// without constructing a full `MutationsInterpreter`. Functions and subqueries are checked first,
+    /// so they are reported even when the predicate is not analyzable.
     static void validateNonDeterministicMutationsForStorage(
+        const StoragePtr & storage,
+        const MutationCommands & commands,
+        ContextPtr context);
+
+    /// Returns the name of a virtual column whose value may differ between replicas (`_table`, `_database`,
+    /// `_disk_name`, ...), if the `UPDATE` or `DELETE` commands read it, directly or through `ALIAS` columns.
+    static std::optional<String> findNonDeterministicVirtualColumn(
         const StoragePtr & storage,
         const MutationCommands & commands,
         ContextPtr context);
