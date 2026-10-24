@@ -11,6 +11,8 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/PartitionCommands.h>
 #include <Common/CurrentThread.h>
+#include <Common/OptimizedRegularExpression.h>
+#include <Common/likePatternToRegexp.h>
 #include <Common/threadPoolCallbackRunner.h>
 
 #include <Access/AccessControl.h>
@@ -10134,7 +10136,7 @@ Pipe MergeTreeData::alterPartition(
             break;
 
             case PartitionCommand::DROP_DETACHED_PARTITION:
-                dropDetached(command.partition, command.part, query_context);
+                dropDetached(command.partition, command.part, command.part_like, query_context);
                 break;
 
             case PartitionCommand::FORGET_PARTITION:
@@ -11990,11 +11992,28 @@ void MergeTreeData::validateDetachedPartName(const String & name)
                             "most likely it is used by another DROP or ATTACH query.", name);
 }
 
-void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, ContextPtr local_context)
+void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, bool part_like, ContextPtr local_context)
 {
     PartsTemporaryRename renamed_parts(*this, DETACHED_DIR_NAME);
 
-    if (part)
+    if (part_like)
+    {
+        const auto pattern = getPartNameFromAST(partition);
+        const OptimizedRegularExpression regexp(
+            likePatternToRegexp(pattern), OptimizedRegularExpression::RE_NO_CAPTURE | OptimizedRegularExpression::RE_DOT_NL);
+        for (const auto & part_info : getDetachedParts())
+        {
+            /// Do not interfere with concurrent ATTACH or DROP operations, even for LIKE '%'.
+            if (startsWith(part_info.dir_name, "attaching_") || startsWith(part_info.dir_name, "deleting_"))
+                continue;
+            if (regexp.match(part_info.dir_name))
+            {
+                validateDetachedPartName(part_info.dir_name);
+                renamed_parts.addPart(part_info.dir_name, part_info.dir_name, "deleting_" + part_info.dir_name, part_info.disk);
+            }
+        }
+    }
+    else if (part)
     {
         String part_name = getPartNameFromAST(partition);
         validateDetachedPartName(part_name);

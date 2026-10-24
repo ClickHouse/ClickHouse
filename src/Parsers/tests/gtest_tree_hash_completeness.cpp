@@ -727,3 +727,44 @@ TEST(TreeHashCompleteness, ExplicitUuidIsSignificant)
     EXPECT_NE(hashOf(one), hashOf(two));
     EXPECT_NE(hashOf(one), hashOf(none));
 }
+
+TEST(TreeHashCompleteness, DropDetachedPartLikePreservesPatternSemantics)
+{
+    const String exact = "ALTER TABLE t DROP DETACHED PART 'ignored_%'";
+    const String like = "ALTER TABLE t DROP DETACHED PART LIKE 'ignored_%'";
+    EXPECT_NE(hashOf(exact), hashOf(like));
+
+    const std::vector<String> queries = {
+        exact,
+        like,
+        "ALTER TABLE t DROP DETACHED PART LIKE ''",
+        "ALTER TABLE t DROP DETACHED PART LIKE 'ignored\\\\_%' SETTINGS allow_drop_detached = 1",
+        "ALTER TABLE t DROP DETACHED PART LIKE {pattern:String}",
+        "ALTER TABLE t ON CLUSTER c DROP DETACHED PART LIKE 'ignored_%', DROP DETACHED PART 'all_1_1_0'",
+    };
+    for (const auto & query : queries)
+    {
+        auto ast = parse(query);
+        const auto hash = ast->getTreeHash(/*ignore_aliases=*/ false);
+        auto clone = ast->clone();
+        auto restored = IAST::createFromJSON(serializeASTToJSON(*ast), /*max_depth=*/ 1000, /*max_elements=*/ 100000);
+        EXPECT_EQ(clone->getTreeHash(/*ignore_aliases=*/ false), hash) << query;
+        EXPECT_EQ(restored->getTreeHash(/*ignore_aliases=*/ false), hash) << query;
+        EXPECT_EQ(clone->formatWithSecretsOneLine(), ast->formatWithSecretsOneLine()) << query;
+        EXPECT_EQ(restored->formatWithSecretsOneLine(), ast->formatWithSecretsOneLine()) << query;
+        EXPECT_EQ(hashOf(ast->formatWithSecretsOneLine()), hash) << query;
+    }
+}
+
+TEST(TreeHashCompleteness, DropDetachedPartLikeRejectsInvalidJSONFlags)
+{
+    for (const auto * query : {"ALTER TABLE t DROP PART 'all_1_1_0'", "ALTER TABLE t DROP DETACHED PARTITION ALL"})
+    {
+        String json = serializeASTToJSON(*parse(query));
+        const String key = "\"part_like\":false";
+        const auto pos = json.find(key);
+        ASSERT_NE(pos, String::npos);
+        json.replace(pos, key.size(), "\"part_like\":true");
+        expectJSONRejected(json);
+    }
+}

@@ -900,7 +900,7 @@ public:
 
     static void validateDetachedPartName(const String & name);
 
-    void dropDetached(const ASTPtr & partition, bool part, ContextPtr context);
+    void dropDetached(const ASTPtr & partition, bool part, bool part_like, ContextPtr context);
 
     /// Execute a merge of the specified parts to a temporary directory without committing.
     /// Used by OPTIMIZE ... DRY RUN PARTS.

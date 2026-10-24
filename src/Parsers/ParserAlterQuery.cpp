@@ -89,6 +89,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_move_part(Keyword::MOVE_PART);
     ParserKeyword s_drop_detached_partition(Keyword::DROP_DETACHED_PARTITION);
     ParserKeyword s_drop_detached_part(Keyword::DROP_DETACHED_PART);
+    ParserKeyword s_like(Keyword::LIKE);
     ParserKeyword s_fetch_partition(Keyword::FETCH_PARTITION);
     ParserKeyword s_fetch_part(Keyword::FETCH_PART);
     ParserKeyword s_replace_partition(Keyword::REPLACE_PARTITION);
@@ -295,6 +296,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             }
             else if (s_drop_detached_part.ignore(pos, expected))
             {
+                command->part_like = s_like.ignore(pos, expected);
                 if (!parser_string_and_substituion.parse(pos, command_partition, expected))
                     return false;
 
@@ -1921,6 +1923,29 @@ ALTER TABLE table_name [ON CLUSTER cluster] DROP DETACHED PARTITION|PART ALL|par
 ```
 
 Removes the specified part or all parts of the specified partition from `detached`.
+
+To remove detached parts whose full directory names match a case-sensitive SQL `LIKE` pattern, use:
+
+```sql
+ALTER TABLE table_name [ON CLUSTER cluster] DROP DETACHED PART LIKE 'pattern'
+    SETTINGS allow_drop_detached = 1;
+```
+
+For example, remove parts with the `ignored_` prefix:
+
+```sql
+ALTER TABLE mt DROP DETACHED PART LIKE 'ignored\\_%'
+    SETTINGS allow_drop_detached = 1;
+```
+
+`%` matches any sequence of characters and `_` matches one character. Use backslash to escape
+literal `%`, `_`, or backslash characters; backslashes must also be escaped in SQL string literals.
+The pattern matches the name including any detachment reason prefix and retry suffix. No matches
+is a no-op. Entries starting with `attaching_` or `deleting_` are skipped because another operation
+may be using them. Other matching detached entries, including malformed part names, can be removed.
+This operation is local to the executing server unless `ON CLUSTER` is specified, and requires
+`allow_drop_detached = 1`, like the exact-name form.
+
 Read more about setting the partition expression in a section [How to set the partition expression](#how-to-set-partition-expression).
 
 ## FORGET PARTITION {#forget-partition}
@@ -2236,6 +2261,7 @@ The examples of `ALTER ... PARTITION` queries are demonstrated in the tests [`00
 ALTER TABLE table_name [ON CLUSTER cluster] DETACH PARTITION|PART partition_expr
 ALTER TABLE table_name [ON CLUSTER cluster] DROP PARTITION|PART partition_expr
 ALTER TABLE table_name [ON CLUSTER cluster] DROP DETACHED PARTITION|PART ALL|partition_expr
+ALTER TABLE table_name [ON CLUSTER cluster] DROP DETACHED PART LIKE 'pattern'
 ALTER TABLE table_name [ON CLUSTER cluster] FORGET PARTITION partition_expr
 ALTER TABLE table_name [ON CLUSTER cluster] ATTACH PARTITION|PART partition_expr
 ALTER TABLE table2 [ON CLUSTER cluster] ATTACH PARTITION partition_expr FROM table1
