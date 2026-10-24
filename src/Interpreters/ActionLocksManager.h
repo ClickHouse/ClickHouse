@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Storages/IStorage_fwd.h>
@@ -27,6 +28,9 @@ public:
     /// Removes a lock for a table if it exists
     void remove(const StorageID & table_id, StorageActionBlockType action_type);
     void remove(const StoragePtr & table, StorageActionBlockType action_type);
+
+    /// Read the existing registry without resolving targets or changing any controls.
+    Names getStoppedActions(const StoragePtr & table) const;
 
     /// Removes all locks of non-existing tables
     void cleanExpired();

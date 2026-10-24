@@ -1,29 +1,40 @@
 #include <Interpreters/ActionLocksManager.h>
+#include <Interpreters/ActionLockTypes.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
+#include <Common/Exception.h>
+
+#include <algorithm>
 
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace ActionLocks
 {
-    extern const StorageActionBlockType PartsMerge = 1;
-    extern const StorageActionBlockType PartsFetch = 2;
-    extern const StorageActionBlockType PartsSend = 3;
-    extern const StorageActionBlockType ReplicationQueue = 4;
-    extern const StorageActionBlockType DistributedSend = 5;
-    extern const StorageActionBlockType PartsTTLMerge = 6;
-    extern const StorageActionBlockType PartsMove = 7;
-    extern const StorageActionBlockType PullReplicationLog = 8;
-    extern const StorageActionBlockType Cleanup = 9;
-    extern const StorageActionBlockType ViewRefresh = 10;
-    extern const StorageActionBlockType VirtualPartsUpdate = 11;
-    extern const StorageActionBlockType ReduceBlockingParts = 12;
-    extern const StorageActionBlockType ViewRefreshPause = 13;
-    extern const StorageActionBlockType StreamConsume = 14;
+    ACTION_LOCK_TYPES(ACTION_LOCK_DEFINE)
+}
+
+
+namespace
+{
+const char * getActionName(StorageActionBlockType action_type)
+{
+    switch (action_type)
+    {
+#define ACTION_NAME_CASE(ID, VALUE, NAME) case ActionLocks::ID: return NAME;
+        ACTION_LOCK_TYPES(ACTION_NAME_CASE)
+#undef ACTION_NAME_CASE
+        default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown action type: {}", action_type);
+    }
+}
 }
 
 
@@ -60,6 +71,25 @@ void ActionLocksManager::remove(const StoragePtr & table, StorageActionBlockType
 
     if (storage_locks.contains(table.get()))
         storage_locks[table.get()].erase(action_type);
+}
+
+Names ActionLocksManager::getStoppedActions(const StoragePtr & table) const
+{
+    Names actions;
+    {
+        std::lock_guard lock(mutex);
+        const auto it = storage_locks.find(table.get());
+        if (it == storage_locks.end())
+            return actions;
+
+        /// Use the same key as registration. A forwarded lock is not reattributed to its target,
+        /// and expired locks are only observed here, not removed ahead of `cleanExpired`.
+        for (const auto & [action_type, action_lock] : it->second)
+            if (!action_lock.expired())
+                actions.emplace_back(getActionName(action_type));
+    }
+    std::ranges::sort(actions);
+    return actions;
 }
 
 void ActionLocksManager::cleanExpired()
