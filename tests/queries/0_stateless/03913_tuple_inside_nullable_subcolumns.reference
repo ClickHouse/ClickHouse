@@ -3,7 +3,6 @@
 
 -- { echo }
 
-SET enable_analyzer = 1;
 SET enable_nullable_tuple_type = 0;
 SELECT toTypeName(v.`Tuple(UInt64, String)`), v.`Tuple(UInt64, String)` FROM (SELECT 42::Variant(Tuple(UInt64, String), UInt64) AS v);
 Nullable(Tuple(UInt64, String))	\N
