@@ -37,6 +37,10 @@
         v2 += v1; v1 = std::rotl(v1, 17); v1 ^= v2; v2 = std::rotl(v2, 32); \
     } while(0)
 
+/// The whole algorithm is built on wrapping addition of 64-bit words, so the check for unsigned
+/// integer overflow has to be switched off for everything below.
+#pragma clang attribute push (__attribute__((__no_sanitize__("unsigned-integer-overflow"))), apply_to = function)
+
 class SipHash
 {
 private:
@@ -337,3 +341,5 @@ inline UInt64 sipHash64(const std::string & s)
 {
     return sipHash64(s.data(), s.size());
 }
+
+#pragma clang attribute pop

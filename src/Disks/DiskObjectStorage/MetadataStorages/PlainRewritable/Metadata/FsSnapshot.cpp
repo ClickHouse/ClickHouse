@@ -203,7 +203,7 @@ void FsSnapshot::recordDirectoryPath(const std::string & path, DirectoryRemoteIn
 
     root = updateInfo(root, normalized_path, info);
     remote_layout_directories_delta += 1;
-    remote_layout_files_delta += info.files.size();
+    remote_layout_files_delta += static_cast<int64_t>(info.files.size());
     record(FsEdits::RecordDirectory{normalized_path.string(), std::move(info)});
 }
 
@@ -233,6 +233,7 @@ void FsSnapshot::moveDirectory(const std::string & from, const std::string & to)
     record(FsEdits::MoveDirectory{normalized_from.string(), normalized_to.string()});
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void FsSnapshot::removeDirectory(const std::string & path)
 {
     UniqueLock lock(mutex);
@@ -252,7 +253,7 @@ void FsSnapshot::removeDirectory(const std::string & path)
         if (isVirtual(subtree_node))
             return;
 
-        remote_layout_files_delta -= subtree_node->info->files.size();
+        remote_layout_files_delta -= static_cast<int64_t>(subtree_node->info->files.size());
         remote_layout_directories_delta -= 1;
     });
     record(FsEdits::RemoveDirectory{normalized_path.string()});

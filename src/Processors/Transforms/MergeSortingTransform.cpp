@@ -119,7 +119,9 @@ void MergeSortingTransform::consume(Chunk chunk)
       */
     if ((chunks.size() > 1
         && limit
-        && limit * 2 < sum_rows_in_blocks   /// 2 is just a guess.
+        /// Equivalent to `limit * 2 < sum_rows_in_blocks`, which wraps for the huge limits that
+        /// mean "no limit" and then spuriously asks for a remerge. 2 is just a guess.
+        && limit < (sum_rows_in_blocks + 1) / 2
         && remerge_is_useful
         && max_bytes_before_remerge
         && sum_bytes_in_blocks > max_bytes_before_remerge) || (threshold_tracker && (static_cast<double>(sum_rows_in_blocks) > static_cast<double>(limit) * 1.5)))
@@ -194,7 +196,7 @@ std::shared_ptr<BufferingToFileSink> MergeSortingTransform::prepareSpill()
         formatReadableSizeWithBinarySuffix(max_bytes_in_query_before_external_sort));
 
     /// If there's less free disk space than reserve_size, an exception will be thrown
-    size_t reserve_size = sum_bytes_in_blocks + min_free_disk_space;
+    size_t reserve_size = getTemporaryFileReserveSize(sum_bytes_in_blocks, min_free_disk_space);
     SharedHeader shared_header_without_constants = std::make_shared<const Block>(header_without_constants);
     TemporaryBlockStreamHolder tmp_stream(shared_header_without_constants, tmp_data, reserve_size);
     merge_sorter = std::make_unique<MergeSorter>(

@@ -5,6 +5,7 @@
 #include <Common/Exception.h>
 #include <Common/NaNUtils.h>
 #include <DataTypes/NumberTraits.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -215,6 +216,7 @@ struct ModuloImpl
     static constexpr auto signature_documentation = "(Any, Any) -> Any";
 
     template <typename Result = ResultType>
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     static Result apply(A a, B b)
     {
         if constexpr (is_floating_point<ResultType>)
@@ -394,6 +396,7 @@ struct PositiveModuloImpl : ModuloImpl<A, B>
     using ResultType = typename NumberTraits::ResultOfPositiveModulo<A, B>::Type;
 
     template <typename Result = ResultType>
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     static Result apply(A a, B b)
     {
         auto res = ModuloImpl<A, B>::template apply<OriginResultType>(a, b);

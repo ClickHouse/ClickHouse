@@ -102,8 +102,9 @@ public:
     {
         // One unit for each thread, including segmentator and reader, plus a
         // couple more units so that the segmentation thread doesn't spuriously
-        // bump into reader thread on wraparound.
-        processing_units.resize(params.max_threads + 2);
+        // bump into reader thread on wraparound. Capped like in `ParallelFormattingOutputFormat`
+        // (the units only buffer chunks), before adding, because `max_threads` comes from a setting.
+        processing_units.resize(std::min(params.max_threads, size_t{1022}) + 2);
     }
 
     ~ParallelParsingInputFormat() override

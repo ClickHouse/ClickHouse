@@ -787,9 +787,12 @@ Pipe ReadFromMergeTree::readFromPool(
     if (block_size.max_block_size_rows && !data.canUseAdaptiveGranularity())
     {
         size_t fixed_index_granularity = (*data_settings)[MergeTreeSetting::index_granularity];
+        /// Computed in `UInt128` so that a huge `min_marks_for_concurrent_read` does not wrap into a tiny task size.
+        const UInt128 block_rows = block_size.max_block_size_rows;
+        const UInt128 min_rows = static_cast<UInt128>(pool_settings.min_marks_for_concurrent_read) * fixed_index_granularity;
+        const UInt128 rounded_marks = (min_rows + block_rows - 1) / block_rows * block_rows / fixed_index_granularity;
         pool_settings.min_marks_for_concurrent_read
-            = (pool_settings.min_marks_for_concurrent_read * fixed_index_granularity + block_size.max_block_size_rows - 1)
-            / block_size.max_block_size_rows * block_size.max_block_size_rows / fixed_index_granularity;
+            = static_cast<size_t>(std::min<UInt128>(rounded_marks, std::numeric_limits<size_t>::max()));
     }
 
     bool all_parts_are_remote = true;
@@ -2084,7 +2087,7 @@ static ActionsDAG createProjection(const Block & header)
 static MarkRanges splitRangesToAvoidLargeReads(const MarkRanges & ranges, int direction, size_t rows_granularity, size_t max_block_size)
 {
     MarkRanges new_ranges;
-    const size_t max_marks_in_range = (max_block_size + rows_granularity - 1) / rows_granularity;
+    const size_t max_marks_in_range = max_block_size / rows_granularity + (max_block_size % rows_granularity != 0);
     size_t marks_in_range = 1;
 
     if (direction == 1)
@@ -2264,7 +2267,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                 {
                     ranges_to_get_from_part = part.ranges;
 
-                    need_marks -= marks_in_part;
+                    need_marks -= std::min(need_marks, marks_in_part);
                     info.sum_marks_in_parts.pop_back();
                 }
                 else

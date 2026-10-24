@@ -1557,7 +1557,7 @@ static DictionarySparseIndex serializeTokensAndPostings(
     MergeTreeIndexWriterStream * positions_stream)
 {
     size_t num_tokens = sorted_tokens.size();
-    size_t num_blocks = (num_tokens + params.dictionary_block_size - 1) / params.dictionary_block_size;
+    size_t num_blocks = num_tokens / params.dictionary_block_size + (num_tokens % params.dictionary_block_size != 0);
 
     auto sparse_index_tokens = ColumnString::create();
     auto & sparse_index_str = assert_cast<ColumnString &>(*sparse_index_tokens);
@@ -1920,7 +1920,7 @@ void MergeTreeIndexTextGranuleBuilder::addDocumentsFromLowCardinality(
     const auto * column_array = typeid_cast<const ColumnArray *>(column.get());
     const auto & column_low_cardinality = assert_cast<const ColumnLowCardinality &>(column_array ? column_array->getData() : *column);
     const IColumnUnique & dictionary = column_low_cardinality.getDictionary();
-    auto elements_begin = [&](size_t row) { return column_array ? column_array->getOffsets()[row - 1] : row; };
+    auto elements_begin = [&](size_t row) { return column_array ? column_array->getOffsets()[static_cast<ssize_t>(row) - 1] : row; };
 
     /// Values must repeat for the cache to pay off.
     static constexpr size_t min_documents_per_value = 8;
@@ -2143,7 +2143,7 @@ void MergeTreeIndexAggregatorText::addDocumentsFromArray(ColumnPtr column, size_
         /// Dense position counter: dropped (empty/null) tokens leave no gap, so positions
         /// reflect the surviving token sequence only.
         UInt32 token_position = 0;
-        for (size_t element_idx = column_offsets[i - 1]; element_idx < column_offsets[i]; ++element_idx)
+        for (size_t element_idx = column_offsets[static_cast<ssize_t>(i) - 1]; element_idx < column_offsets[i]; ++element_idx)
         {
             if (data_is_nullable && column_data.isNullAt(element_idx))
                 continue;
@@ -2182,7 +2182,7 @@ void MergeTreeIndexAggregatorText::addDocumentsFromMap(ColumnPtr column, size_t 
 
         /// One position per map entry, in stored order, as the Array path does.
         UInt32 token_position = 0;
-        for (size_t element_idx = column_offsets[i - 1]; element_idx < column_offsets[i]; ++element_idx)
+        for (size_t element_idx = column_offsets[static_cast<ssize_t>(i) - 1]; element_idx < column_offsets[i]; ++element_idx)
         {
             const std::string_view key = keys.getDataAt(element_idx);
             const bool is_duplicate = !keys_in_row.insert(key).second;

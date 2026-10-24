@@ -158,7 +158,9 @@ static std::optional<Int64> findMatchingTimeStep(std::string_view password, cons
     std::optional<Int64> result;
     for (int delta : {0, -1, 1})
     {
-        auto candidate_pass = getOneTimePassword(secret.key, secret.params, current_time + delta * secret.params.period);
+        /// The previous step is before the current time, so the time of the step is computed in signed arithmetic.
+        const auto step_time = static_cast<UInt64>(static_cast<Int64>(current_time) + delta * secret.params.period);
+        auto candidate_pass = getOneTimePassword(secret.key, secret.params, step_time);
         bool matched = constantTimeEquals(password, candidate_pass);
         /// No early return to avoid leaking which window matched
         if (matched && !result.has_value())

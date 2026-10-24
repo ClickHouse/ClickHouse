@@ -254,7 +254,8 @@ inline UInt64 rotateByAtLeast1(UInt64 val, UInt8 shift)
     return (val >> shift) | (val << (64 - shift));
 }
 
-inline size_t hashLessThan8(const char * data, size_t size)
+/// Parts taken from CityHash wrap around on purpose.
+inline size_t NO_SANITIZE_UNSIGNED_OVERFLOW hashLessThan8(const char * data, size_t size)
 {
     static constexpr UInt64 k2 = 0x9ae16a3b2f90404fULL;
     static constexpr UInt64 k3 = 0xc949d7c7509e6557ULL;
@@ -278,7 +279,7 @@ inline size_t hashLessThan8(const char * data, size_t size)
     return k2;
 }
 
-inline size_t hashLessThan16(const char * data, size_t size)
+inline size_t NO_SANITIZE_UNSIGNED_OVERFLOW hashLessThan16(const char * data, size_t size)
 {
     if (size > 8)
     {
@@ -308,7 +309,7 @@ struct CRC32Hash
         }
 
         const char * end = pos + size;
-        size_t res = static_cast<size_t>(-1U);
+        size_t res = ~0U;
 
         do
         {

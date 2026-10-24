@@ -214,7 +214,9 @@ public:
         UInt64 unit_multiplier, UInt32 unit_scale, const char * unit_name, size_t unit_name_size, Float64 & whole_part,
         String & fractional_str, WriteBuffer & buf_to, bool & has_output,  Unit min_unit, bool is_minimum_unit)
     {
-        if (unlikely(whole_part + 1.0 == whole_part))
+        /// The number of sub-second units is accumulated in `UInt64`, so it must stay below 2^64 together with the fractional part.
+        if (unlikely(whole_part + 1.0 == whole_part
+            || (unit_scale && (whole_part + 1.0) * static_cast<Float64>(DecimalUtils::scaleMultiplier<Int64>(unit_scale)) >= 0x1p64)))
         {
             /// The case when value is too large so exact representation for subsequent smaller units is not possible.
             writeText(

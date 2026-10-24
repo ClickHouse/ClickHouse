@@ -20,6 +20,7 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/KeyHolderHelpers.h>
+#include <base/arithmeticOverflow.h>
 
 
 namespace DB
@@ -599,7 +600,8 @@ AggregateFunctionPtr createAggregateFunctionTopK(const std::string & name, const
 
         if (!is_approx_top_k || params.size() == 1)
         {
-            reserved = threshold * load_factor;
+            /// Bounded right below; the product only wraps once an operand is already out of range.
+            reserved = common::mulIgnoreOverflow(threshold, load_factor);
         }
 
         if (reserved > DB::TOP_K_MAX_SIZE || load_factor > DB::TOP_K_MAX_SIZE || threshold > DB::TOP_K_MAX_SIZE)

@@ -88,7 +88,7 @@ struct DecomposedFloat
 
     int16_t normalizedExponent() const
     {
-        return int16_t(exponent()) - ((1ull << (Traits::exponent_bits - 1)) - 1);
+        return int16_t(int32_t(exponent()) - int32_t((1u << (Traits::exponent_bits - 1)) - 1));
     }
 
     uint64_t mantissa() const

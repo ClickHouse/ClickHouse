@@ -1,6 +1,7 @@
 #include <type_traits>
 
 #include <base/range.h>
+#include <base/sanitizer_defs.h>
 
 #include <Formats/JSONExtractTree.h>
 #include <Formats/FormatFactory.h>
@@ -162,7 +163,7 @@ public:
             {
                 if (!col_json_const)
                 {
-                    std::string_view json{reinterpret_cast<const char *>(&chars[offsets[i - 1]]), offsets[i] - offsets[i - 1]};
+                    std::string_view json{reinterpret_cast<const char *>(&chars[offsets[static_cast<ssize_t>(i) - 1]]), offsets[i] - offsets[static_cast<ssize_t>(i) - 1]};
                     document_ok = parser.parse(json, document);
                 }
 
@@ -463,6 +464,7 @@ private:
     }
 
     template <typename JSONParser>
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     static bool moveToElementByIndex(typename JSONParser::Element & element, Int64 index, std::string_view & out_key)
     {
         if (element.isArray())
@@ -525,7 +527,7 @@ private:
         size_t max_size = 0;
         for (size_t i = 0; i < offsets.size(); ++i)
         {
-            size_t size = offsets[i] - offsets[i - 1];
+            size_t size = offsets[i] - offsets[static_cast<ssize_t>(i) - 1];
             max_size = std::max(max_size, size);
         }
         if (max_size)

@@ -8079,21 +8079,26 @@ BoolMask KeyCondition::checkInHyperrectangle(
                         mask = BoolMask::combine(mask, current_intersection);
                     };
 
-                    switch (curve_type(key_column))
+                    /// After `shrinkToIncludedIfPossible`, an empty range, such as `(5, 6)`, has `left > right`.
+                    /// It contains no values, so the condition cannot be true in it, which is the initial value of `mask`.
+                    if (left <= right)
                     {
-                        case SpaceFillingCurveType::Hilbert:
+                        switch (curve_type(key_column))
                         {
-                            hilbertIntervalToHyperrectangles2D(left, right, hyperrectangle_intersection_callback);
-                            break;
-                        }
-                        case SpaceFillingCurveType::Morton:
-                        {
-                            mortonIntervalToHyperrectangles<2>(left, right, hyperrectangle_intersection_callback);
-                            break;
-                        }
-                        case SpaceFillingCurveType::Unknown:
-                        {
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "curve_type is `Unknown`. It is a bug.");
+                            case SpaceFillingCurveType::Hilbert:
+                            {
+                                hilbertIntervalToHyperrectangles2D(left, right, hyperrectangle_intersection_callback);
+                                break;
+                            }
+                            case SpaceFillingCurveType::Morton:
+                            {
+                                mortonIntervalToHyperrectangles<2>(left, right, hyperrectangle_intersection_callback);
+                                break;
+                            }
+                            case SpaceFillingCurveType::Unknown:
+                            {
+                                throw Exception(ErrorCodes::LOGICAL_ERROR, "curve_type is `Unknown`. It is a bug.");
+                            }
                         }
                     }
 
@@ -8559,21 +8564,26 @@ BoolMask KeyCondition::checkInHyperrectangle(
                             mask = BoolMask::combine(mask, current_intersection);
                         };
 
-                        switch (curve_type(key_column))
+                        /// After `shrinkToIncludedIfPossible`, an empty range, such as `(5, 6)`, has `left > right`.
+                        /// It contains no values, so the condition cannot be true in it, which is the initial value of `mask`.
+                        if (left <= right)
                         {
-                            case SpaceFillingCurveType::Hilbert:
+                            switch (curve_type(key_column))
                             {
-                                hilbertIntervalToHyperrectangles2D(left, right, hyperrectangle_intersection_callback);
-                                break;
-                            }
-                            case SpaceFillingCurveType::Morton:
-                            {
-                                mortonIntervalToHyperrectangles<2>(left, right, hyperrectangle_intersection_callback);
-                                break;
-                            }
-                            case SpaceFillingCurveType::Unknown:
-                            {
-                                throw Exception(ErrorCodes::LOGICAL_ERROR, "curve_type is `Unknown`. It is a bug.");
+                                case SpaceFillingCurveType::Hilbert:
+                                {
+                                    hilbertIntervalToHyperrectangles2D(left, right, hyperrectangle_intersection_callback);
+                                    break;
+                                }
+                                case SpaceFillingCurveType::Morton:
+                                {
+                                    mortonIntervalToHyperrectangles<2>(left, right, hyperrectangle_intersection_callback);
+                                    break;
+                                }
+                                case SpaceFillingCurveType::Unknown:
+                                {
+                                    throw Exception(ErrorCodes::LOGICAL_ERROR, "curve_type is `Unknown`. It is a bug.");
+                                }
                             }
                         }
 

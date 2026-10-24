@@ -9,6 +9,7 @@
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
 #include <base/coverage.h>
+#include <base/sanitizer_defs.h>
 
 #include <fcntl.h>
 #include <unistd.h>
@@ -50,7 +51,7 @@ struct CoverageKey
 
 struct CoverageKeyHash
 {
-    std::size_t operator()(const CoverageKey & k) const
+    std::size_t NO_SANITIZE_UNSIGNED_OVERFLOW operator()(const CoverageKey & k) const
     {
         std::size_t h = k.name_hash ^ (k.func_hash * 0x9e3779b97f4a7c15ULL);
         h ^= static_cast<std::size_t>(k.counter_id) * 0x517cc1b727220a95ULL;
@@ -114,7 +115,7 @@ ResolvedCoverage resolveCoverage(const std::vector<CovCounter> & name_refs)
     };
     struct LineKeyHash
     {
-        std::size_t operator()(const LineKey & k) const
+        std::size_t NO_SANITIZE_UNSIGNED_OVERFLOW operator()(const LineKey & k) const
         {
             std::size_t h = std::hash<std::string>{}(k.file);
             h ^= std::hash<uint32_t>{}(k.line_start) + 0x9e3779b9u + (h << 6) + (h >> 2);
@@ -248,7 +249,7 @@ CurrentCoverageRegions getCurrentCoverageRegions()
     };
     struct LineKeyHash
     {
-        std::size_t operator()(const LineKey & k) const
+        std::size_t NO_SANITIZE_UNSIGNED_OVERFLOW operator()(const LineKey & k) const
         {
             std::size_t h = std::hash<std::string>{}(k.file);
             h ^= std::hash<uint32_t>{}(k.line_start) + 0x9e3779b9u + (h << 6) + (h >> 2);

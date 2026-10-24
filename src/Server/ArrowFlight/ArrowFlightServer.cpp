@@ -284,8 +284,7 @@ namespace
             && any_msg.ParseFromArray(cmd.data(), static_cast<int>(cmd.size()))
             && ArrowFlight::isArrowFlightSql(any_msg))
         {
-            const auto & type_url = any_msg.type_url();
-            const auto type_name = type_url.substr(type_url.find_last_of('/') + 1);
+            const auto type_name = ArrowFlight::getTypeName(any_msg);
             if (const auto * message = google::protobuf::DescriptorPool::generated_pool()->FindMessageTypeByName(type_name))
                 return String(message->full_name());
         }

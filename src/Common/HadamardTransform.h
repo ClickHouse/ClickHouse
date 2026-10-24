@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <base/sanitizer_defs.h>
 #include <Common/PODArray.h>
 
 #include <array>
@@ -35,7 +36,7 @@
 namespace DB::HadamardTransform
 {
 
-inline UInt64 splitmix64Next(UInt64 & state)
+inline UInt64 NO_SANITIZE_UNSIGNED_OVERFLOW splitmix64Next(UInt64 & state)
 {
     state += 0x9E3779B97F4A7C15ULL;
     UInt64 z = state;

@@ -1,4 +1,5 @@
 #pragma once
+#include <base/arithmeticOverflow.h>
 #include <type_traits>
 #include <Core/AccurateComparison.h>
 #include <Core/DecimalFunctions.h>
@@ -22,6 +23,7 @@
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/parseDateTimeBestEffort.h>
+#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -42,7 +44,7 @@ namespace ErrorCodes
 /// multiplier no longer fits in Int64 (253402214400 * 10^8 already exceeds Int64::max). WITH FILL passes
 /// deltas from the whole Int64 range, so this must be well-defined: compute in the UInt64 domain, which
 /// wraps by construction, and cast back. Bit-identical to the signed form for any in-range result.
-inline Int64 rescaleWholeToTicks(Int64 whole, Int64 multiplier, Int64 rem)
+inline Int64 NO_SANITIZE_UNSIGNED_OVERFLOW rescaleWholeToTicks(Int64 whole, Int64 multiplier, Int64 rem)
 {
     return static_cast<Int64>(static_cast<UInt64>(whole) * static_cast<UInt64>(multiplier) + static_cast<UInt64>(rem));
 }
@@ -215,11 +217,11 @@ struct AddSecondsImpl
     /// signed overflow, which is UB even under NO_SANITIZE_UNDEFINED. FillingRow::doLongJump passes
     /// deltas from the whole Int64 range and relies on the wraparound. Bit-identical to the previous
     /// two's complement behavior for all inputs.
-    static UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    static NO_SANITIZE_UNSIGNED_OVERFLOW UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         return static_cast<UInt32>(static_cast<UInt64>(t) + static_cast<UInt64>(delta));
     }
-    static DateTime64 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
+    static NO_SANITIZE_UNSIGNED_OVERFLOW DateTime64 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
     {
         // use default datetime64 scale
         static_assert(DataTypeDateTime64::default_scale == 3);
@@ -227,15 +229,15 @@ struct AddSecondsImpl
         return static_cast<Int64>((static_cast<UInt64>(time_zone.fromDayNum(ExtendedDayNum(d))) + static_cast<UInt64>(delta)) * 1000ULL);
     }
     /// UInt64 domain: wraps by construction (see execute(UInt32) above). Time / Time64 carriers.
-    static Int64 execute(Int64 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    static NO_SANITIZE_UNSIGNED_OVERFLOW Int64 execute(Int64 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         return static_cast<Int64>(static_cast<UInt64>(d) + static_cast<UInt64>(delta));
     }
-    static Int64 executeForTime(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    static NO_SANITIZE_UNSIGNED_OVERFLOW Int64 executeForTime(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         return static_cast<Int64>(static_cast<UInt64>(d) + static_cast<UInt64>(delta));
     }
-    static UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
+    static NO_SANITIZE_UNSIGNED_OVERFLOW UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
     {
         return static_cast<UInt32>(static_cast<UInt64>(time_zone.fromDayNum(DayNum(d))) + static_cast<UInt64>(delta));
     }
@@ -254,21 +256,21 @@ struct AddMinutesImpl
 
     /// UInt64 domain: wraps by construction; FillingRow::doLongJump relies on the wraparound and a
     /// signed multiply would be UB (see AddSecondsImpl).
-    static DateTime64 execute(DateTime64 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16 scale)
+    static NO_SANITIZE_UNSIGNED_OVERFLOW DateTime64 execute(DateTime64 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16 scale)
     {
         return DateTime64(static_cast<Int64>(
             static_cast<UInt64>(t.value) + 60 * static_cast<UInt64>(delta) * static_cast<UInt64>(DecimalUtils::scaleMultiplier<DateTime64>(scale))));
     }
-    static Time64 execute(Time64 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16 scale)
+    static NO_SANITIZE_UNSIGNED_OVERFLOW Time64 execute(Time64 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16 scale)
     {
         return Time64(static_cast<Int64>(
             static_cast<UInt64>(t.value) + 60 * static_cast<UInt64>(delta) * static_cast<UInt64>(DecimalUtils::scaleMultiplier<Time64>(scale))));
     }
-    static UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    static NO_SANITIZE_UNSIGNED_OVERFLOW UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         return static_cast<UInt32>(static_cast<UInt64>(t) + static_cast<UInt64>(delta) * 60);
     }
-    static DateTime64 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
+    static NO_SANITIZE_UNSIGNED_OVERFLOW DateTime64 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
     {
         // use default datetime64 scale
         static_assert(DataTypeDateTime64::default_scale == 3);
@@ -276,15 +278,15 @@ struct AddMinutesImpl
         return static_cast<Int64>((static_cast<UInt64>(time_zone.fromDayNum(ExtendedDayNum(d))) + static_cast<UInt64>(delta) * 60) * 1000ULL);
     }
     /// UInt64 domain: wraps by construction (see AddSecondsImpl). Time / Time64 carriers.
-    static Int64 execute(Int64 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    static NO_SANITIZE_UNSIGNED_OVERFLOW Int64 execute(Int64 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         return static_cast<Int64>(static_cast<UInt64>(d) + static_cast<UInt64>(delta) * 60);
     }
-    static Int64 executeForTime(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    static NO_SANITIZE_UNSIGNED_OVERFLOW Int64 executeForTime(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         return static_cast<Int64>(static_cast<UInt64>(d) + static_cast<UInt64>(delta) * 60);
     }
-    static UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
+    static NO_SANITIZE_UNSIGNED_OVERFLOW UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
     {
         return static_cast<UInt32>(static_cast<UInt64>(time_zone.fromDayNum(DayNum(d))) + static_cast<UInt64>(delta) * 60);
     }
@@ -303,21 +305,21 @@ struct AddHoursImpl
 
     /// UInt64 domain: wraps by construction; FillingRow::doLongJump relies on the wraparound and a
     /// signed multiply would be UB (see AddSecondsImpl).
-    static DateTime64 execute(DateTime64 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16 scale)
+    static NO_SANITIZE_UNSIGNED_OVERFLOW DateTime64 execute(DateTime64 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16 scale)
     {
         return DateTime64(static_cast<Int64>(
             static_cast<UInt64>(t.value) + 3600 * static_cast<UInt64>(delta) * static_cast<UInt64>(DecimalUtils::scaleMultiplier<DateTime64>(scale))));
     }
-    static Time64 execute(Time64 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16 scale)
+    static NO_SANITIZE_UNSIGNED_OVERFLOW Time64 execute(Time64 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16 scale)
     {
         return Time64(static_cast<Int64>(
             static_cast<UInt64>(t.value) + 3600 * static_cast<UInt64>(delta) * static_cast<UInt64>(DecimalUtils::scaleMultiplier<Time64>(scale))));
     }
-    static UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    static NO_SANITIZE_UNSIGNED_OVERFLOW UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         return static_cast<UInt32>(static_cast<UInt64>(t) + static_cast<UInt64>(delta) * 3600);
     }
-    static DateTime64 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
+    static NO_SANITIZE_UNSIGNED_OVERFLOW DateTime64 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
     {
         // use default datetime64 scale
         static_assert(DataTypeDateTime64::default_scale == 3);
@@ -325,15 +327,15 @@ struct AddHoursImpl
         return static_cast<Int64>((static_cast<UInt64>(time_zone.fromDayNum(ExtendedDayNum(d))) + static_cast<UInt64>(delta) * 3600) * 1000ULL);
     }
     /// UInt64 domain: wraps by construction (see AddSecondsImpl). Time / Time64 carriers.
-    static Int64 execute(Int64 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    static NO_SANITIZE_UNSIGNED_OVERFLOW Int64 execute(Int64 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         return static_cast<Int64>(static_cast<UInt64>(d) + static_cast<UInt64>(delta) * 3600);
     }
-    static Int64 executeForTime(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    static NO_SANITIZE_UNSIGNED_OVERFLOW Int64 executeForTime(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         return static_cast<Int64>(static_cast<UInt64>(d) + static_cast<UInt64>(delta) * 3600);
     }
-    static UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
+    static NO_SANITIZE_UNSIGNED_OVERFLOW UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
     {
         return static_cast<UInt32>(static_cast<UInt64>(time_zone.fromDayNum(DayNum(d))) + static_cast<UInt64>(delta) * 3600);
     }
@@ -419,11 +421,11 @@ struct AddDaysImpl
     }
     /// UInt64 domain: wraps by construction; FillingRow::doLongJump relies on the wraparound and
     /// signed overflow would be UB (see AddSecondsImpl).
-    static UInt16 execute(UInt16 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    static NO_SANITIZE_UNSIGNED_OVERFLOW UInt16 execute(UInt16 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         return static_cast<UInt16>(static_cast<UInt64>(d) + static_cast<UInt64>(delta));
     }
-    static Int32 execute(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    static NO_SANITIZE_UNSIGNED_OVERFLOW Int32 execute(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         return static_cast<Int32>(static_cast<UInt64>(d) + static_cast<UInt64>(delta));
     }
@@ -528,11 +530,11 @@ struct AddWeeksImpl
     }
     /// UInt64 domain: wraps by construction; FillingRow::doLongJump relies on the wraparound and
     /// signed overflow would be UB (see AddSecondsImpl).
-    static UInt16 execute(UInt16 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    static NO_SANITIZE_UNSIGNED_OVERFLOW UInt16 execute(UInt16 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         return static_cast<UInt16>(static_cast<UInt64>(d) + static_cast<UInt64>(delta) * 7);
     }
-    static Int32 execute(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    static NO_SANITIZE_UNSIGNED_OVERFLOW Int32 execute(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         return static_cast<Int32>(static_cast<UInt64>(d) + static_cast<UInt64>(delta) * 7);
     }
@@ -614,15 +616,15 @@ struct AddQuartersImpl
         auto d = std::div(t, multiplier);
         return rescaleWholeToTicks(time_zone.addQuarters(d.quot, delta), multiplier, d.rem);
     }
-    static UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
+    static NO_SANITIZE_UNSIGNED_OVERFLOW UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
     {
         return static_cast<UInt32>(time_zone.addQuarters(t, delta));
     }
-    static UInt16 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
+    static NO_SANITIZE_UNSIGNED_OVERFLOW UInt16 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
     {
         return time_zone.addQuarters(DayNum(d), delta);
     }
-    static Int32 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
+    static NO_SANITIZE_UNSIGNED_OVERFLOW Int32 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
     {
         return time_zone.addQuarters(ExtendedDayNum(d), delta);
     }
@@ -746,7 +748,7 @@ struct SubtractIntervalImpl : public Transform
     {
         /// Negate in the UInt64 domain: plain -delta is signed-overflow UB for delta == INT64_MIN.
         /// The two's-complement result is identical for every other value.
-        return Transform::executeForTime(t, static_cast<Int64>(-static_cast<UInt64>(delta)), time_zone, utc_time_zone, scale);
+        return Transform::executeForTime(t, static_cast<Int64>(common::negateIgnoreOverflow(static_cast<UInt64>(delta))), time_zone, utc_time_zone, scale);
     }
 };
 
@@ -937,7 +939,7 @@ private:
 template <typename FromDataType, typename ToDataType, typename Transform>
 struct DateTimeAddIntervalImpl
 {
-    static ColumnPtr execute(Transform transform, const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, UInt16 scale, size_t input_rows_count)
+    static NO_SANITIZE_UNSIGNED_OVERFLOW ColumnPtr execute(Transform transform, const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, UInt16 scale, size_t input_rows_count)
     {
         const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(arguments, 2, 0);
 

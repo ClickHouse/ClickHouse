@@ -83,7 +83,7 @@ namespace detail
       * greater or equal than DBMS_HIERARCHICAL_DICTIONARY_MAX_DEPTH.
       * IsKeyValidFunc used for each input hierarchy key, if it returns false result hierarchy for that key will have size 0.
       * Hierarchy result is ElementsAndOffsets structure, for each element there is hierarchy array,
-      * with size offset[element_index] - (element_index > 0 ? offset[element_index - 1] : 0).
+      * with size offset[element_index] - (element_index > 0 ? offset[static_cast<ssize_t>(element_index) - 1] : 0).
       *
       * Example:
       * id  parent_id
@@ -150,7 +150,7 @@ namespace detail
 
                     size_t array_element_offset = index.array_element_offset;
 
-                    size_t previous_offset_size = offsets[offset - 1];
+                    size_t previous_offset_size = offsets[static_cast<ssize_t>(offset) - 1];
                     size_t start_index = previous_offset_size + array_element_offset;
                     size_t end_index = offsets[offset];
 
@@ -210,7 +210,7 @@ namespace detail
 
         for (size_t i = 0; i < offsets.size(); ++i)
         {
-            size_t i_elements_start = i > 0 ? offsets[i - 1] : 0;
+            size_t i_elements_start = i > 0 ? offsets[static_cast<ssize_t>(i) - 1] : 0;
             size_t i_elements_end = offsets[i];
 
             const auto & key_to_find = in_keys[i];
@@ -234,7 +234,7 @@ namespace detail
       * GetAllDescendantsStrategy get all descendants for key
       * GetDescendantsAtSpecificLevelStrategy get descendants only for specific hierarchy level.
       * Hierarchy result is ElementsAndOffsets structure, for each element there is descendants array,
-      * with size offset[element_index] - (element_index > 0 ? offset[element_index - 1] : 0).
+      * with size offset[element_index] - (element_index > 0 ? offset[static_cast<ssize_t>(element_index) - 1] : 0).
       *
       * @param valid_keys - number of keys that are valid in parent_to_child map
       *

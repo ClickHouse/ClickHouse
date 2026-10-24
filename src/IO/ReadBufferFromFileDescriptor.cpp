@@ -17,6 +17,7 @@
 #include <poll.h>
 #include <sys/stat.h>
 #include <Interpreters/Context.h>
+#include <base/arithmeticOverflow.h>
 
 
 #pragma clang diagnostic ignored "-Wreserved-identifier"
@@ -250,12 +251,17 @@ off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
     size_t new_pos = 0;
     if (whence == SEEK_SET)
     {
-        chassert(offset >= 0);
-        new_pos = offset;
+        if (offset < 0)
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Seek position is out of bound: {}", offset);
+        new_pos = static_cast<size_t>(offset);
     }
     else if (whence == SEEK_CUR)
     {
-        new_pos = file_offset_of_buffer_end - (working_buffer.end() - pos) + offset;
+        /// Keep the target signed until it is checked, so that a backward seek past the start cannot wrap around.
+        off_t target = 0;
+        if (common::addOverflow(static_cast<off_t>(file_offset_of_buffer_end) - (working_buffer.end() - pos), offset, target) || target < 0)
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Seek position is out of bound: {} {:+}", file_offset_of_buffer_end - (working_buffer.end() - pos), offset);
+        new_pos = static_cast<size_t>(target);
     }
     else
     {

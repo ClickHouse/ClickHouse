@@ -67,6 +67,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/thread_local_rng.h>
+#include <base/arithmeticOverflow.h>
 
 
 namespace DB
@@ -1095,7 +1096,7 @@ LoadTaskPtr DatabaseReplicated::startupDatabaseAsync(AsyncLoader & async_loader,
             {
                 std::lock_guard lock{mutex};
                 for (const auto & table : tables)
-                    digest += getMetadataHash(table.first);
+                    digest = common::addIgnoreOverflow(digest, getMetadataHash(table.first));
                 LOG_DEBUG(log, "Calculated metadata digest of {} tables: {}", tables.size(), digest);
             }
 
@@ -1182,7 +1183,7 @@ void DatabaseReplicated::restoreDatabaseNodesInKeeper(const ZooKeeperPtr & zooke
             const String table_metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
             add_ops({zkutil::makeCreateRequest(table_metadata_zk_path, statement, zkutil::CreateMode::Persistent)});
 
-            digest += DB::getMetadataHash(table_name, statement);
+            digest = common::addIgnoreOverflow(digest, DB::getMetadataHash(table_name, statement));
         }
 
         tables_metadata_digest = digest;
@@ -1454,7 +1455,7 @@ bool DatabaseReplicated::checkDigestValid(const ContextPtr & local_context) cons
     {
         std::lock_guard lock{mutex};
         for (const auto & table : tables)
-            local_digest += getMetadataHash(table.first);
+            local_digest = common::addIgnoreOverflow(local_digest, getMetadataHash(table.first));
     }
 
     if (local_digest != tables_metadata_digest)
@@ -1816,7 +1817,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
 
             std::lock_guard lock{metadata_mutex};
             UInt64 new_digest = tables_metadata_digest;
-            new_digest -= getMetadataHash(broken_table_name);
+            new_digest = common::subIgnoreOverflow(new_digest, getMetadataHash(broken_table_name));
             DatabaseAtomic::renameTable(make_query_context(), broken_table_name, *to_db_ptr, to_name, /* exchange */ false, /* dictionary */ false);
             tables_metadata_digest = new_digest;
             assertDigest(getContext());
@@ -1843,7 +1844,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
 
             std::lock_guard lock{metadata_mutex};
             UInt64 new_digest = tables_metadata_digest;
-            new_digest -= getMetadataHash(table_name);
+            new_digest = common::subIgnoreOverflow(new_digest, getMetadataHash(table_name));
 
             DatabaseAtomic::dropTableImpl(make_query_context(), table_name, /* sync */ true);
 
@@ -1878,8 +1879,8 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         std::lock_guard lock{metadata_mutex};
         UInt64 new_digest = tables_metadata_digest;
         String statement = readMetadataFile(from);
-        new_digest -= DB::getMetadataHash(from, statement);
-        new_digest += DB::getMetadataHash(to, statement);
+        new_digest = common::subIgnoreOverflow(new_digest, DB::getMetadataHash(from, statement));
+        new_digest = common::addIgnoreOverflow(new_digest, DB::getMetadataHash(to, statement));
 
         DatabaseAtomic::renameTable(make_query_context(), from, *this, to, false, false);
 
@@ -2646,7 +2647,7 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
 
     std::lock_guard lock{metadata_mutex};
     UInt64 new_digest = tables_metadata_digest;
-    new_digest -= getMetadataHash(table_name);
+    new_digest = common::subIgnoreOverflow(new_digest, getMetadataHash(table_name));
     if (txn && !txn->isCreateOrReplaceQuery() && !is_recovering)
         txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
 
@@ -2716,12 +2717,12 @@ void DatabaseReplicated::renameTable(ContextPtr local_context, const String & ta
     }
 
     UInt64 new_digest = tables_metadata_digest;
-    new_digest -= DB::getMetadataHash(table_name, statement);
-    new_digest += DB::getMetadataHash(to_table_name, statement);
+    new_digest = common::subIgnoreOverflow(new_digest, DB::getMetadataHash(table_name, statement));
+    new_digest = common::addIgnoreOverflow(new_digest, DB::getMetadataHash(to_table_name, statement));
     if (exchange)
     {
-        new_digest -= DB::getMetadataHash(to_table_name, statement_to);
-        new_digest += DB::getMetadataHash(table_name, statement_to);
+        new_digest = common::subIgnoreOverflow(new_digest, DB::getMetadataHash(to_table_name, statement_to));
+        new_digest = common::addIgnoreOverflow(new_digest, DB::getMetadataHash(table_name, statement_to));
     }
     if (txn && !is_recovering)
         txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
@@ -2758,7 +2759,7 @@ void DatabaseReplicated::commitCreateTable(const ASTCreateQuery & query, const S
 
     std::lock_guard lock{metadata_mutex};
     UInt64 new_digest = tables_metadata_digest;
-    new_digest += DB::getMetadataHash(query.getTable(), statement);
+    new_digest = common::addIgnoreOverflow(new_digest, DB::getMetadataHash(query.getTable(), statement));
     if (txn && !txn->isCreateOrReplaceQuery() && !is_recovering)
         txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
 
@@ -2783,8 +2784,8 @@ void DatabaseReplicated::commitAlterTable(const StorageID & table_id,
 
     std::lock_guard lock{metadata_mutex};
     UInt64 new_digest = tables_metadata_digest;
-    new_digest -= getMetadataHash(table_id.table_name);
-    new_digest += DB::getMetadataHash(table_id.table_name, statement);
+    new_digest = common::subIgnoreOverflow(new_digest, getMetadataHash(table_id.table_name));
+    new_digest = common::addIgnoreOverflow(new_digest, DB::getMetadataHash(table_id.table_name, statement));
     if (txn && !is_recovering)
         txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
 
@@ -2825,7 +2826,7 @@ void DatabaseReplicated::detachTablePermanently(ContextPtr local_context, const 
 
     std::lock_guard lock{metadata_mutex};
     UInt64 new_digest = tables_metadata_digest;
-    new_digest -= getMetadataHash(table_name);
+    new_digest = common::subIgnoreOverflow(new_digest, getMetadataHash(table_name));
     if (txn && !is_recovering)
         txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
 
@@ -2851,7 +2852,7 @@ void DatabaseReplicated::removeDetachedPermanentlyFlag(ContextPtr local_context,
     UInt64 new_digest = tables_metadata_digest;
     if (attach)
     {
-        new_digest += getMetadataHash(table_name);
+        new_digest = common::addIgnoreOverflow(new_digest, getMetadataHash(table_name));
         if (txn && !is_recovering)
             txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
     }
@@ -2869,7 +2870,7 @@ void DatabaseReplicated::removeDetachedPermanentlyFlag(ContextPtr local_context,
 void DatabaseReplicated::adjustDigestOnTableLostFromRestart(const String & table_name)
 {
     std::lock_guard lock{metadata_mutex};
-    tables_metadata_digest -= getMetadataHash(table_name);
+    tables_metadata_digest = common::subIgnoreOverflow(tables_metadata_digest, getMetadataHash(table_name));
     LOG_WARNING(log, "Table {} was lost from in-memory tables map due to failed SYSTEM RESTART REPLICA. "
                      "Adjusted in-memory digest to {}. The table will be restored on server restart or recovery.",
                 table_name, tables_metadata_digest);
