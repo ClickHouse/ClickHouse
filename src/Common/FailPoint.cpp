@@ -450,6 +450,8 @@ static struct InitFiu
     REGULAR(keeper_never_pause_appending_entries) \
     PAUSEABLE(keeper_changelog_readahead_park_armed) \
     PAUSEABLE(keeper_changelog_readahead_pre_drain) \
+    PAUSEABLE(pulsar_streaming_pause_before_insert) \
+    PAUSEABLE(pulsar_streaming_pause_after_insert_resolution) \
     PAUSEABLE(object_storage_source_pause_before_virtual_columns) \
     REGULAR(keeper_changelog_readahead_fill_exception) \
     ONCE(keeper_changelog_preallocate_no_space) \
