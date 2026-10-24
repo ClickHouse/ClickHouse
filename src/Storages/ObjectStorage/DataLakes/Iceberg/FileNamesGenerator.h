@@ -56,6 +56,8 @@ public:
     Iceberg::IcebergPathFromMetadata generatePositionDeleteFile();
 
     void setVersion(Int32 initial_version_) { initial_version = initial_version_; }
+    /// The next metadata file gets version `current_version + 1`, named in the scheme of `current_metadata_path`.
+    void continueMetadataChain(const String & current_metadata_path, Int32 current_version);
     void setCompressionMethod(CompressionMethod compression_method_) { compression_method = compression_method_; }
 
     void setDataLocation(String data_location_)
@@ -74,6 +76,14 @@ private:
     String format_name;
 
     Int32 initial_version = 0;
+
+    enum class MetadataNaming : uint8_t
+    {
+        Version,
+        VersionWithUuid,
+        NumberWithUuid,
+    };
+    MetadataNaming metadata_naming = MetadataNaming::Version;
 };
 
 #endif

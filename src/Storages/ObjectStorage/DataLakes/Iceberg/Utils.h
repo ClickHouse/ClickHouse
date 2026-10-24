@@ -92,6 +92,9 @@ String normalizeIcebergTransformFunctionName(const String & function_name);
 
 CompressionMethod getCompressionMethodFromMetadataFile(const String & path);
 
+/// True for `v<N>[.<codec>].metadata.json`, false for the `<N>-<uuid>` and `v<N>-<uuid>` schemes.
+bool isVersionNumberedCommitScheme(const String & file_name);
+
 Poco::JSON::Object::Ptr getMetadataJSONObject(
     const String & metadata_file_path,
     ObjectStoragePtr object_storage,

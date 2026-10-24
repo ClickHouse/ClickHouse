@@ -668,7 +668,7 @@ bool AlterDropPartitionExecutor::tryCommit(SnapshotState & state, const DropPlan
     /// setting), and the replacement metadata must follow the same convention.
     const auto compression_method = DB::Iceberg::getCompressionMethodFromMetadataFile(state.table_state.metadata_file_path);
     FileNamesGenerator filename_generator(components.path_resolver.getTableLocation(), false, compression_method, write_format);
-    filename_generator.setVersion(state.table_state.metadata_version + 1);
+    filename_generator.continueMetadataChain(state.table_state.metadata_file_path, state.table_state.metadata_version);
     filename_generator.setCompressionMethod(compression_method);
 
     std::vector<std::string> files_for_cleanup;
