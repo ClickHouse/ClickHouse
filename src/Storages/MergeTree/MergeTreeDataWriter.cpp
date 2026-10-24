@@ -1047,7 +1047,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     /// The part directory name can be non-unique because of leftovers of previous runs.
     temp_part->temporary_directory_lock = data.claimTemporaryPartDirectory(data_part_volume->getDisk(), part_dir, may_have_leftover);
 
-    auto part_format = data.choosePartFormat(expected_size, block.rows(), new_part_level, /*projection =*/nullptr);
+    auto part_format = data.choosePartFormat(
+        expected_size, block.rows(), new_part_level, /*projection =*/nullptr, new_part_info.getPartitionId());
     auto new_data_part = data.getDataPartBuilder(part_name, data_part_volume, part_dir, getReadSettings(), PartDirIntent::CreateFresh)
         .withPartFormat(part_format)
         .withPartInfo(new_part_info)

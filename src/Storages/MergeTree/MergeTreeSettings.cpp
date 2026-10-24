@@ -261,6 +261,13 @@ bytes) with some gap to avoid filesystem errors.
     DECLARE(UInt64, min_rows_for_full_part_storage, 0, R"(
     Minimal number of rows to use full type of storage for data part instead of packed
     )", 0) \
+    DECLARE(UInt64, max_number_of_parts_in_partition_for_full_part_storage_on_insert, 0, R"(
+A newly inserted part uses `Packed` storage when its partition already contains this many active parts or more.
+`0` disables this limit. The setting applies to parts created by every insert source and at any level,
+including level 1 parts produced by `optimize_on_insert`.
+Projection parts use the same storage type as their parent part.
+    )", 0, \
+        {"26.11", 0, 0, "New setting"}) \
     DECLARE(UInt64, max_bytes_to_buffer_for_packed_part, 0, R"(
     Maximum amount of memory taken by the buffered data of a packed data part while it is written
     by an insert, a merge or a mutation. A packed part keeps the data of all its files in memory until
