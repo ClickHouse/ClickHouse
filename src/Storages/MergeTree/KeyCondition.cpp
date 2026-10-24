@@ -7265,10 +7265,18 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
                     key_range.right_included = true;
             }
 
+            const bool range_may_hold_null = key_range.right.isPositiveInfinity() && isNullableOrLowCardinalityNullable(current_type);
             current_type = result_type;
 
             if (!monotonicity.is_positive)
-                key_range.invert();
+            {
+                /// NULL (`+inf`) stays NULL while the values flip, so a range holding both has no one-interval image:
+                /// take the whole universe. A range of only NULL is kept as is.
+                if (!range_may_hold_null)
+                    key_range.invert();
+                else if (!key_range.left.isPositiveInfinity())
+                    key_range = Range::createWholeUniverse();
+            }
         }
     }
     catch (const Exception & e)
@@ -7304,6 +7312,10 @@ bool KeyCondition::matchesExactContinuousRange() const
                 return {false, false};
 
             const auto monotonicity = func->getMonotonicityForRange(*arg_type, field, field);
+            /// A decreasing step maps a range holding NULL to more than one interval.
+            if (!monotonicity.is_positive && isNullableOrLowCardinalityNullable(arg_type))
+                return {false, false};
+
             all_always_monotonic &= monotonicity.is_always_monotonic;
             all_strict &= monotonicity.is_strict;
 
@@ -7333,8 +7345,16 @@ bool KeyCondition::matchesExactContinuousRange() const
 
         if (element.function == RPNElement::Function::FUNCTION_IN_SET && element.set_index && element.set_index->size() == 1)
         {
-            for (const auto & mapping : element.set_index->getIndexesMapping())
+            const auto & indexes_mapping = element.set_index->getIndexesMapping();
+            const auto & ordered_set = element.set_index->getOrderedSet();
+            for (size_t i = 0; i < indexes_mapping.size(); ++i)
             {
+                /// The NULL granules a NULL element matches may still be reported as not wholly matching (`mayReadNullKeyValue`).
+                if (ordered_set[i]->isNullAt(0))
+                    return false;
+
+                const auto & mapping = indexes_mapping[i];
+
                 auto [is_chain_always_monotonic, is_chain_strict] = check_monotonicity_of_chain(mapping.functions);
                 if (!is_chain_always_monotonic)
                     return false;
