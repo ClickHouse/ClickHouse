@@ -2707,6 +2707,15 @@ StorageObjectStorageSource::ReadTaskIterator::ReadTaskIterator(
     }
 }
 
+/// Whether the metadata of an archive must be fetched before opening it: it is absent, or it is the placeholder that
+/// `KeysIterator` returns with `skip_object_metadata` (e.g. for `s3Cluster` with `{a,b}`), whose size of 0 is not the
+/// real size of the archive.
+static bool needsArchiveMetadata(const ObjectInfoPtr & object_info)
+{
+    const auto & metadata = object_info->getObjectMetadata();
+    return !metadata || !metadata->is_fetched;
+}
+
 static size_t getKnownArchiveSize(const ObjectInfoPtr & object_info)
 {
     const auto object_metadata = object_info->getObjectMetadata();
@@ -2902,7 +2911,7 @@ ObjectInfoPtr StorageObjectStorageSource::ArchiveIterator::next(size_t processor
                     return {};
                 }
 
-                if (!archive_object->getObjectMetadata())
+                if (needsArchiveMetadata(archive_object))
                     archive_object->setObjectMetadata(getObjectMetadataForRead(*object_storage, archive_object->relative_path_with_metadata, /*with_tags=*/ false));
 
                 archive_reader = createArchiveReader(archive_object);
@@ -2930,7 +2939,7 @@ ObjectInfoPtr StorageObjectStorageSource::ArchiveIterator::next(size_t processor
             if (!archive_object)
                 return {};
 
-            if (!archive_object->getObjectMetadata())
+            if (needsArchiveMetadata(archive_object))
                 archive_object->setObjectMetadata(getObjectMetadataForRead(*object_storage, archive_object->relative_path_with_metadata, /*with_tags=*/ false));
 
             archive_reader = createArchiveReader(archive_object);

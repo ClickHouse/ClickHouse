@@ -1,0 +1,21 @@
+zip, glob inside the archives
+1	Str1	25	example1.csv	test/03036_archive1.zip::example1.csv
+2	Str2	25	example1.csv	test/03036_archive1.zip::example1.csv
+3	Str3	25	example2.csv	test/03036_archive1.zip::example2.csv
+3	Str3	25	example2.csv	test/03036_archive2.zip::example2.csv
+4	Str4	25	example2.csv	test/03036_archive1.zip::example2.csv
+4	Str4	25	example2.csv	test/03036_archive2.zip::example2.csv
+5	Str5	25	example3.csv	test/03036_archive2.zip::example3.csv
+6	Str6	25	example3.csv	test/03036_archive2.zip::example3.csv
+zip, one file inside the archives
+3	Str3	example2.csv	test/03036_archive1.zip::example2.csv
+3	Str3	example2.csv	test/03036_archive2.zip::example2.csv
+4	Str4	example2.csv	test/03036_archive1.zip::example2.csv
+4	Str4	example2.csv	test/03036_archive2.zip::example2.csv
+7z, glob inside the archives
+1	Str1	example1.csv	test/04040_archive1.7z::example1.csv
+2	Str2	example1.csv	test/04040_archive1.7z::example1.csv
+3	Str3	example2.csv	test/04040_archive1.7z::example2.csv
+3	Str3	example2.csv	test/04040_archive2.7z::example2.csv
+4	Str4	example2.csv	test/04040_archive1.7z::example2.csv
+4	Str4	example2.csv	test/04040_archive2.7z::example2.csv
