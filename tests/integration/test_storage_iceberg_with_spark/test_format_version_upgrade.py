@@ -109,7 +109,7 @@ def _strip_format_version_avro_metadata(instance, table_name, tmp_dir):
 
 @pytest.mark.parametrize("storage_type", ["local"])
 def test_format_version_upgrade_v1_to_v2(started_cluster_iceberg_with_spark, storage_type):
-    """Create a v1 table, insert data, upgrade metadata to v2, then read."""
+    """Create a v1 table, insert data, upgrade metadata to v2, then read the table and its history."""
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     table_name = f"test_fmt_upgrade_v1_to_v2_{get_uuid_str()}"
 
@@ -126,6 +126,12 @@ def test_format_version_upgrade_v1_to_v2(started_cluster_iceberg_with_spark, sto
     # Verify initial read works
     result = instance.query(f"SELECT sum(x) FROM {table_name}")
     assert result.strip() == "6"
+    history_query = (
+        "SELECT snapshot_id, parent_id, is_current_ancestor FROM system.iceberg_history "
+        f"WHERE database = currentDatabase() AND table = '{table_name}' ORDER BY snapshot_id"
+    )
+    history_before = instance.query(history_query)
+    assert history_before.strip() != ""
 
     # Simulate external tool upgrading format version from 1 to 2
     meta, prev_path = _read_iceberg_metadata(instance, table_name)
@@ -136,6 +142,7 @@ def test_format_version_upgrade_v1_to_v2(started_cluster_iceberg_with_spark, sto
     # Reading after format version upgrade should work without exception
     result = instance.query(f"SELECT sum(x) FROM {table_name}")
     assert result.strip() == "6"
+    assert instance.query(history_query) == history_before
 
     instance.query(f"DROP TABLE {table_name}")
 
@@ -178,7 +185,11 @@ def test_remove_orphan_files_after_external_upgrade(started_cluster_iceberg_with
     now_ts = time.strftime("%Y-%m-%d %H:%M:%S")
     instance.query(
         f"ALTER TABLE {table_name} EXECUTE remove_orphan_files(older_than = '{now_ts}', dry_run = 1);",
-        settings={**ICEBERG_SETTINGS, "allow_iceberg_remove_orphan_files": 1},
+        settings={
+            **ICEBERG_SETTINGS,
+            "allow_iceberg_remove_orphan_files": 1,
+            "iceberg_orphan_files_min_retention_seconds": 0,
+        },
     )
 
     instance.query(f"DROP TABLE {table_name}")

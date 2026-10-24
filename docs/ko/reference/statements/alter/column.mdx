@@ -19,6 +19,14 @@ ALTER [TEMPORARY] TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COM
 쿼리에서 쉼표로 구분된 하나 이상의 작업 목록을 지정합니다.
 각 작업은 컬럼에 수행하는 연산입니다.
 
+예를 들어, 다음과 같이 하나의 SQL 문으로 한 컬럼을 삭제하고 다른 컬럼을 추가할 수 있습니다:
+
+```sql
+ALTER TABLE visits DROP COLUMN browser, ADD COLUMN referrer String;
+```
+
+이러한 쿼리가 기존 데이터에 대한 작업이 끝나기 전에 반환되는지는 [`alter_sync`](/ko/reference/settings/session-settings/alter#alter_sync)에 따라 결정되며, 이 설정은 `DROP COLUMN` 또는 `MODIFY COLUMN` 유형 변경으로 생성되는 뮤테이션에도 적용됩니다. 뮤테이션 경로에서 실행되는 [MATERIALIZE COLUMN](#materialize-column)에는 [`mutations_sync`](/ko/reference/settings/session-settings/mutations#mutations_sync)가 적용됩니다. 두 설정 모두 [ALTER 쿼리의 동기성](/ko/reference/statements/alter/index#synchronicity-of-alter-queries)에서 설명합니다.
+
 다음 작업을 지원합니다.
 
 * [ADD COLUMN](#add-column) — 테이블에 새 컬럼을 추가합니다.
@@ -34,9 +42,7 @@ ALTER [TEMPORARY] TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COM
 * [MATERIALIZE COLUMN](#materialize-column) — 컬럼이 없는 파트에서 컬럼을 구체화합니다.
   이러한 작업은 아래에서 자세히 설명합니다.
 
-<div id="add-column">
-  ## ADD COLUMN
-</div>
+## ADD COLUMN {#add-column}
 
 ```sql
 ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [COMMENT 'comment for column'] [codec] [STATISTICS] [TTL] [settings] [AFTER name_after | FIRST]
@@ -72,9 +78,7 @@ ToDrop  UInt32
 Added3  UInt32
 ```
 
-<div id="drop-column">
-  ## DROP COLUMN
-</div>
+## DROP COLUMN {#drop-column}
 
 ```sql
 DROP COLUMN [IF EXISTS] name
@@ -94,9 +98,7 @@ DROP COLUMN [IF EXISTS] name
 ALTER TABLE visits DROP COLUMN browser
 ```
 
-<div id="rename-column">
-  ## COLUMN 이름 변경
-</div>
+## COLUMN 이름 변경 {#rename-column}
 
 ```sql
 RENAME COLUMN [IF EXISTS] name to new_name
@@ -112,9 +114,7 @@ RENAME COLUMN [IF EXISTS] name to new_name
 ALTER TABLE visits RENAME COLUMN webBrowser TO browser
 ```
 
-<div id="clear-column">
-  ## CLEAR COLUMN
-</div>
+## CLEAR COLUMN {#clear-column}
 
 ```sql
 CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
@@ -130,9 +130,7 @@ CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
 ALTER TABLE visits CLEAR COLUMN browser IN PARTITION tuple()
 ```
 
-<div id="comment-column">
-  ## COMMENT COLUMN
-</div>
+## COMMENT COLUMN {#comment-column}
 
 ```sql
 COMMENT COLUMN [IF EXISTS] name 'Text comment'
@@ -150,9 +148,7 @@ COMMENT COLUMN [IF EXISTS] name 'Text comment'
 ALTER TABLE visits COMMENT COLUMN browser 'This column shows the browser used for accessing the site.'
 ```
 
-<div id="modify-column">
-  ## MODIFY COLUMN
-</div>
+## MODIFY COLUMN {#modify-column}
 
 ```sql
 MODIFY COLUMN [IF EXISTS] name
@@ -177,7 +173,7 @@ ALTER COLUMN [IF EXISTS] name
 
 * 컬럼 수준 설정
 
-* Enum/Enum8/Enum16 타입의 Enum 값
+* Enum/Enum8/Enum16 유형의 Enum 값
 
 컬럼 압축 코덱 변경 예시는 [컬럼 압축 코덱](/ko/reference/statements/create/table/codec)을 참조하십시오.
 
@@ -187,7 +183,7 @@ ALTER COLUMN [IF EXISTS] name
 
 `IF EXISTS` 절이 지정되면 해당 컬럼이 존재하지 않아도 쿼리는 오류를 반환하지 않습니다.
 
-유형을 변경할 때는 값에 [toType](/ko/reference/functions/regular-functions/type-conversion-functions) 함수가 적용된 것처럼 변환됩니다. 기본 표현식만 변경하는 경우 쿼리는 복잡한 작업을 수행하지 않으며 거의 즉시 완료됩니다.
+유형을 변경할 때는 값에 [toType](/ko/reference/functions/regular-functions/type-conversion-functions) 함수가 적용된 것처럼 변환됩니다. 기본 표현식만 변경하는 경우 쿼리는 메타데이터만 변경합니다.
 
 예시:
 
@@ -195,7 +191,9 @@ ALTER COLUMN [IF EXISTS] name
 ALTER TABLE visits MODIFY COLUMN browser Array(String)
 ```
 
-컬럼 유형 변경은 유일하게 복잡한 작업으로, 데이터가 들어 있는 파일의 내용까지 변경합니다. 큰 테이블에서는 시간이 오래 걸릴 수 있습니다.
+일부 유형 변경은 디스크상의 표현이 바뀌지 않으므로 메타데이터만 변경하는 작업입니다. enum 확장, `Date`와 `UInt16` 간 변환, `DateTime`과 `UInt32` 간 변환이 이에 해당하며, 이 규칙은 `Array` 및 `Nullable` 유형 내부에도 재귀적으로 적용됩니다. 일부 JSON 유형 힌트 변경과 이름 있는 튜플(named tuple) 요소 추가 역시 관련 설정이 활성화되어 있으면 즉시 재작성하지 않아도 됩니다.
+
+그 외의 유형 변경은 기존 파트에서 해당 컬럼을 재작성하는 `READ_COLUMN` 뮤테이션을 생성합니다. 대기 동작은 [`alter_sync`](/ko/reference/settings/session-settings/alter#alter_sync) 설정을 따르며, 기본값은 ClickHouse에서 `1`, ClickHouse Cloud에서 `0`입니다. 진행 상황은 [`system.mutations`](/ko/reference/system-tables/mutations)에서 모니터링하십시오.
 
 이 쿼리는 `FIRST | AFTER` 절을 사용해 컬럼 순서도 변경할 수 있습니다. 자세한 내용은 [ADD COLUMN](#add-column) 설명을 참조하십시오. 다만 이 경우에는 컬럼 유형을 반드시 지정해야 합니다.
 
@@ -228,7 +226,7 @@ DESCRIBE users;
 ┌─name─┬─type───┬
 │ c1   │ Int16  │
 │ c2   │ String │
-└──────┴────────┴
+└──────┴────────┘
 ```
 
 `ALTER` 쿼리는 원자적으로 처리됩니다. MergeTree 테이블에서는 잠금 없이 수행됩니다.
@@ -236,12 +234,10 @@ DESCRIBE users;
 컬럼을 변경하는 `ALTER` 쿼리는 복제됩니다. 변경 지시 사항은 ZooKeeper에 저장된 다음, 각 레플리카가 이를 적용합니다. 모든 `ALTER` 쿼리는 동일한 순서로 실행됩니다. 이 쿼리는 다른 레플리카에서 해당 작업이 완료될 때까지 대기합니다. 그러나 복제된 테이블의 컬럼을 변경하는 쿼리는 중간에 중단될 수 있으며, 모든 작업은 비동기적으로 수행됩니다.
 
 <Note>
-  널 허용(Nullable) 컬럼을 Non-Nullable로 변경할 때는 특히 주의하십시오. 해당 컬럼에 NULL 값이 없는지 반드시 확인해야 합니다. 그렇지 않으면 해당 컬럼을 읽을 때 문제가 발생합니다. 이런 경우에는 뮤테이션을 중지하고 컬럼을 다시 Nullable 타입으로 되돌리는 방식으로 대응할 수 있습니다.
+  널 허용(Nullable) 컬럼을 Non-Nullable로 변경할 때는 특히 주의하십시오. 해당 컬럼에 NULL 값이 없는지 반드시 확인해야 합니다. 그렇지 않으면 해당 컬럼을 읽을 때 문제가 발생합니다. 이런 경우에는 뮤테이션을 중지하고 컬럼을 다시 Nullable 유형으로 되돌리는 방식으로 대응할 수 있습니다.
 </Note>
 
-<div id="modify-column-remove">
-  ## MODIFY COLUMN REMOVE
-</div>
+## MODIFY COLUMN REMOVE {#modify-column-remove}
 
 컬럼 속성 하나를 제거합니다: `DEFAULT`, `ALIAS`, `MATERIALIZED`, `CODEC`, `COMMENT`, `TTL`, `SETTINGS`.
 
@@ -263,9 +259,7 @@ ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
 
 * [REMOVE TTL](/ko/reference/statements/alter/ttl).
 
-<div id="modify-column-modify-setting">
-  ## MODIFY COLUMN MODIFY SETTING
-</div>
+## MODIFY COLUMN MODIFY SETTING {#modify-column-modify-setting}
 
 컬럼 설정을 변경합니다.
 
@@ -283,9 +277,7 @@ ALTER TABLE table_name MODIFY COLUMN column_name MODIFY SETTING name=value,...;
 ALTER TABLE table_name MODIFY COLUMN column_name MODIFY SETTING max_compress_block_size = 1048576;
 ```
 
-<div id="modify-column-reset-setting">
-  ## MODIFY COLUMN RESET SETTING
-</div>
+## MODIFY COLUMN RESET SETTING {#modify-column-reset-setting}
 
 컬럼 설정을 재설정하고, 테이블의 CREATE 쿼리 내 컬럼 표현식에서 해당 설정 선언도 제거합니다.
 
@@ -303,9 +295,7 @@ ALTER TABLE table_name MODIFY COLUMN column_name RESET SETTING name,...;
 ALTER TABLE table_name MODIFY COLUMN column_name RESET SETTING max_compress_block_size;
 ```
 
-<div id="modify-column-add-enum-values">
-  ## MODIFY COLUMN ADD ENUM VALUES
-</div>
+## MODIFY COLUMN ADD ENUM VALUES {#modify-column-add-enum-values}
 
 `Enum`, `Enum8`, `Enum16`, `Nullable(Enum)`, `Nullable(Enum8)` 또는 `Nullable(Enum16)` 타입의 컬럼에 새 값을 추가합니다.
 
@@ -323,9 +313,7 @@ ALTER TABLE table_name MODIFY COLUMN enum_column_name ADD ENUM VALUES ('EnumName
 ALTER TABLE table_name MODIFY COLUMN enum_column_name ADD ENUM VALUES ('Hundred' = 100, 'HundredOne');
 ```
 
-<div id="materialize-column">
-  ## MATERIALIZE COLUMN
-</div>
+## MATERIALIZE COLUMN {#materialize-column}
 
 `DEFAULT` 또는 `MATERIALIZED` 값 표현식이 있는 컬럼을 구체화합니다. `ALTER TABLE table_name ADD COLUMN column_name MATERIALIZED`를 사용해 구체화된 컬럼을 추가할 때, 구체화된 값이 없는 기존 행은 자동으로 채워지지 않습니다. `MATERIALIZE COLUMN` SQL 문은 `DEFAULT` 또는 `MATERIALIZED` 표현식을 추가하거나 업데이트한 뒤 기존 컬럼 데이터를 재작성하는 데 사용할 수 있습니다(이 작업은 메타데이터만 업데이트하며 기존 데이터는 변경하지 않음). 정렬 키에 포함된 컬럼을 구체화하는 작업은 정렬 순서를 깨뜨릴 수 있으므로 유효하지 않습니다.
 [뮤테이션](/ko/reference/statements/alter/index#mutations)으로 구현됩니다.
@@ -396,9 +384,7 @@ SELECT groupArray(x), groupArray(s) FROM tmp;
 * [MATERIALIZED](/ko/reference/statements/create/view#materialized-view).
 * [MATERIALIZE INDEX](/ko/reference/statements/alter/skipping-index#materialize-index).
 
-<div id="limitations">
-  ## 제한 사항
-</div>
+## 제한 사항 {#limitations}
 
 `ALTER` 쿼리를 사용하면 중첩 데이터 구조의 개별 요소(컬럼)는 생성 및 삭제할 수 있지만, 중첩 데이터 구조 전체는 생성하거나 삭제할 수 없습니다. 중첩 데이터 구조를 추가하려면 `name.nested_name`과 같은 이름과 `Array(T)` 유형을 가진 컬럼을 추가하면 됩니다. 중첩 데이터 구조는 점 앞의 접두사가 같은 이름을 가진 여러 배열 컬럼과 동일합니다.
 

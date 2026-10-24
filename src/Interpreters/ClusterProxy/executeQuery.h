@@ -100,6 +100,9 @@ void stripInitiatorOnlySettingsFromQuery(const ASTPtr & query);
 /// The temporary tables of `context` whose names occur as identifiers in `query` or in an `additional_table_filters` value.
 Tables getExternalTablesUsedInQuery(const ASTPtr & query, const ContextPtr & context);
 
+/// Like `stripInitiatorOnlySettingsFromQuery`, for the text of a distributed DDL query.
+void stripInitiatorOnlySettingsFromDDLQuery(const ASTPtr & query);
+
 /// Update settings for Distributed query.
 ///
 /// - Removes different restrictions (like max_concurrent_queries_for_user, max_memory_usage_for_user, etc.)
