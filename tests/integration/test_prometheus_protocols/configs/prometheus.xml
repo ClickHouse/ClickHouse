@@ -94,6 +94,12 @@
                     <table>default.prometheus_multi</table>
                 </handler>
             </my_rule_15>
+            <my_rule_18>
+                <url>/api/v1/status/buildinfo</url>
+                <handler>
+                    <type>query</type>
+                </handler>
+            </my_rule_18>
             <!-- A table of an earlier version: its Metrics target names the column with the name of a metric family differently. -->
             <my_rule_17>
                 <url>/v5/api/v1/metadata</url>
