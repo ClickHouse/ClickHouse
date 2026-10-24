@@ -28,3 +28,6 @@ prometheus_query: replay rc=0
 overlay_mv: dump rc=0
 SET data_type_default_nullable = 0;
 overlay_mv: replay rc=0
+implicit_inner_source: dump rc=0
+SET data_type_default_nullable = 0;
+implicit_inner_source: replay rc=0

@@ -2,7 +2,7 @@
 # Tags: long, no-fasttest
 
 # --dump-schema cases from review: limits, dialect, stored settings, table functions reading a local table, cast types,
-# codec settings, a non-Atomic `default`, SQL UDFs in a probed view and an `Overlay` over a materialized view.
+# codec settings, a non-Atomic `default`, SQL UDFs in a probed view, an `Overlay` over a materialized view and omitted inner storage.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -79,17 +79,26 @@ $CLICKHOUSE_LOCAL --path "$work/src" -n -q "
 $CLICKHOUSE_LOCAL --path "$work/src" --limit 1 --dump-schema d > "$work/limit_setting.sql" 2>/dev/null
 echo "limit_setting: rc=$? tables=$(grep -c '^CREATE TABLE' "$work/limit_setting.sql")"
 
-# The probe must not expand a SQL UDF, whose scalar subquery would run on the source (here for 10 seconds).
-rm -rf "$work/src"
-$CLICKHOUSE_LOCAL --path "$work/src" -n -q "
-    CREATE DATABASE d;
-    CREATE TABLE d.src (x UInt64) ENGINE = MergeTree ORDER BY x;
-    SET allow_materialized_view_with_bad_select = 1;
-    CREATE MATERIALIZED VIEW d.mv (y UInt64) ENGINE = MergeTree ORDER BY y AS SELECT later_udf_${CLICKHOUSE_TEST_UNIQUE_NAME}(x) AS y FROM d.src;
-    CREATE FUNCTION later_udf_${CLICKHOUSE_TEST_UNIQUE_NAME} AS x -> (SELECT sum(sleepEachRow(1)) FROM numbers(10) SETTINGS max_block_size = 1) + x;"
-start=$(date +%s)
-$CLICKHOUSE_LOCAL --path "$work/src" --dump-schema d > "$work/udf.sql" 2>/dev/null
-echo "udf_probe: rc=$? $([ $(( $(date +%s) - start )) -ge 10 ] && echo 'ran the function body' || echo 'did not run the function body')"
+# The probes must not expand a SQL UDF, whose scalar subquery would run on the source (here for 10 seconds).
+# The dump with a cheap body is the baseline, so a slow build does not look like the body ran.
+udf_dump() {
+    rm -rf "$work/src"
+    $CLICKHOUSE_LOCAL --path "$work/src" -n -q "
+        CREATE DATABASE d;
+        CREATE TABLE d.src (x UInt64) ENGINE = MergeTree ORDER BY x;
+        SET allow_materialized_view_with_bad_select = 1;
+        CREATE MATERIALIZED VIEW d.mv (y UInt64) ENGINE = MergeTree ORDER BY y AS SELECT later_udf_${CLICKHOUSE_TEST_UNIQUE_NAME}(x) AS y FROM d.src GROUP BY y;
+        CREATE FUNCTION later_udf_${CLICKHOUSE_TEST_UNIQUE_NAME} AS x -> $1 + x;"
+    local start
+    start=$(date +%s)
+    $CLICKHOUSE_LOCAL --path "$work/src" --dump-schema d > "$work/udf.sql" 2>/dev/null
+    udf_rc=$?
+    udf_seconds=$(( $(date +%s) - start ))
+}
+udf_dump 0
+baseline=$udf_seconds
+udf_dump "(SELECT sum(sleepEachRow(1)) FROM numbers(10) SETTINGS max_block_size = 1)"
+echo "udf_probe: rc=$udf_rc $([ $(( udf_seconds - baseline )) -ge 8 ] && echo 'ran the function body' || echo 'did not run the function body')"
 
 # The table sorts before the TimeSeries table its PromQL table function reads at CREATE.
 rm -rf "$work/src" "$work/dst"
@@ -109,3 +118,11 @@ round_trip overlay_mv "
     CREATE TABLE s.src (id UInt64) ENGINE = MergeTree ORDER BY id;
     CREATE MATERIALIZED VIEW s.mv ENGINE = MergeTree ORDER BY id AS SELECT id FROM s.src;
     CREATE DATABASE o ENGINE = Overlay('s');" s,o
+
+# The view sorts before the table its omitted inner storage reads at CREATE.
+round_trip implicit_inner_source "
+    CREATE DATABASE d;
+    CREATE TABLE d.b_src (x UInt64) ENGINE = Memory;
+    CREATE TABLE d.zzz_base (x UInt64) ENGINE = Memory;
+    CREATE MATERIALIZED VIEW d.zzz_src ENGINE = Memory AS SELECT x FROM d.zzz_base;
+    CREATE MATERIALIZED VIEW d.a_mv ENGINE = Remote('127.0.0.1', merge('d', '^zzz_src\$')) AS SELECT x FROM d.b_src;" d

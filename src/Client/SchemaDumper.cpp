@@ -2131,6 +2131,13 @@ std::vector<TableInfo> resolveTables(
                 if (auto it = inner_owner.find(dependency); it != inner_owner.end() && it->second.uuid_named)
                     uuid_aliases[{row.database, row.name}] = it->second.owner;
 
+    /// An omitted helper is created by its owner, so the owner needs what the helper reads at CREATE.
+    for (const auto & row : rows)
+        if (auto it = inner_owner.find({row.database, row.name}); it != inner_owner.end() && implicit_inner.contains(it->first))
+            if (auto owner = rows_by_name.find(it->second.owner); owner != rows_by_name.end() && owner->second != &row)
+                for (const auto & dependency : row.loading_dependencies)
+                    owner->second->loading_dependencies.push_back(dependency);
+
     std::vector<TableInfo> tables;
     for (auto & row : rows)
     {
@@ -4345,6 +4352,9 @@ void dumpDatabaseSchema(
 
     /// `EXPLAIN QUERY TREE` runs the analyzer only, so it creates nothing on the source; callers do not ask about a query whose
     /// analysis runs a subquery. The settings go in the query text, because `LocalConnection` drops the settings argument.
+    const std::vector<String> user_defined_function_names = fetchStringColumn(connection, timeouts, client_info,
+        "SELECT name FROM system.functions WHERE origin != 'System'", context->getSettingsRef());
+    const std::set<String> user_defined_functions(user_defined_function_names.begin(), user_defined_function_names.end());
     const AnalyzesOnSource analyzes_on_source = [&](const String & select_query, const SettingsChanges & changes)
     {
         String query;
@@ -4353,6 +4363,15 @@ void dumpDatabaseSchema(
         {
             ParserSelectWithUnionQuery parser;
             ASTPtr ast = parseQuery(parser, select_query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+            /// The analyzer expands a user-defined function body, which may run a scalar subquery, so such a query is not asked.
+            bool calls_user_defined_function = false;
+            forEachNode(*ast, [&](const IAST & node)
+            {
+                if (const auto * function = node.as<ASTFunction>(); function && user_defined_functions.contains(function->name))
+                    calls_user_defined_function = true;
+            });
+            if (calls_user_defined_function)
+                return false;
             ASTSelectQuery * last = nullptr;
             if (const auto * with_union = ast->as<ASTSelectWithUnionQuery>(); with_union && with_union->list_of_selects
                 && !with_union->list_of_selects->children.empty())
@@ -4371,9 +4390,11 @@ void dumpDatabaseSchema(
                 query = "EXPLAIN QUERY TREE " + ast->formatWithSecretsOneLine();
             }
         }
-        catch (const Exception &) // NOLINT(bugprone-empty-catch)
+        catch (const Exception &)
         {
-            /// The server parses the query below and decides.
+            /// The server parses the query below and decides, unless it may call a user-defined function.
+            if (!user_defined_functions.empty())
+                return false;
         }
         if (query.empty())
         {
@@ -4417,10 +4438,7 @@ void dumpDatabaseSchema(
         reportDependenciesOutsideDumpSet(tables, database_named_collections, target_databases, unlisted_databases, err);
         reportMaskedSecrets(tables, create_database_query_by_db, err);
         order = orderTablesByDependencies(tables);
-        const std::vector<String> user_defined_functions = fetchStringColumn(connection, timeouts, client_info,
-            "SELECT name FROM system.functions WHERE origin != 'System'", context->getSettingsRef());
-        markMaterializedViewsNeedingBadSelectGate(
-            tables, context, std::set<String>(user_defined_functions.begin(), user_defined_functions.end()), analyzes_on_source, err);
+        markMaterializedViewsNeedingBadSelectGate(tables, context, user_defined_functions, analyzes_on_source, err);
     }
 
     if (output_dir.empty())
