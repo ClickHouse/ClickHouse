@@ -1,0 +1,25 @@
+<!-- Dictionary-encoded fixed-size Parquet columns whose values alternate between short RLE and bit-packed runs, as in `hits.parquet`. `s` is a String control. -->
+<test>
+    <fill_query><![CDATA[
+        INSERT INTO FUNCTION file('test_parquet_dictionary_decode.parquet', Parquet)
+        SELECT
+            toUInt8(h % 256) AS u8,
+            toInt16(h) AS i16,
+            toUInt32(h * 4000037) AS u32,
+            toInt64(h * 1000000007) AS i64,
+            toDecimal128(h, 2) AS d128,
+            concat('s', toString(h)) AS s
+        FROM
+        (
+            SELECT if(cityHash64(intDiv(number, 48)) % 3 = 0, cityHash64(number), cityHash64(intDiv(number, 48))) % 1000 AS h
+            FROM numbers(50000000)
+        )
+        SETTINGS engine_file_truncate_on_insert = 1
+    ]]></fill_query>
+
+    <query>SELECT sum(u8), sum(i16) FROM file('test_parquet_dictionary_decode.parquet', Parquet) SETTINGS max_threads = 1 FORMAT Null</query>
+    <query>SELECT sum(u32) FROM file('test_parquet_dictionary_decode.parquet', Parquet) SETTINGS max_threads = 1 FORMAT Null</query>
+    <query>SELECT sum(i64) FROM file('test_parquet_dictionary_decode.parquet', Parquet) SETTINGS max_threads = 1 FORMAT Null</query>
+    <query>SELECT sum(d128) FROM file('test_parquet_dictionary_decode.parquet', Parquet) SETTINGS max_threads = 1 FORMAT Null</query>
+    <query>SELECT max(s) FROM file('test_parquet_dictionary_decode.parquet', Parquet) SETTINGS max_threads = 1 FORMAT Null</query>
+</test>
