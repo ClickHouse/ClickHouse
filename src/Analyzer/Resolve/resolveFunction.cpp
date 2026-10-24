@@ -70,6 +70,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int INVALID_IDENTIFIER;
     extern const int SYNTAX_ERROR;
+    extern const int ILLEGAL_DIVISION;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
@@ -1579,6 +1580,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     bool is_special_function_exists = false;
     bool is_special_function_if = false;
     bool is_special_function_multi_if = false;
+    bool is_special_function_case_with_expression = false;
 
     if (!lambda_expression_untyped)
     {
@@ -1589,6 +1591,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         is_special_function_exists = function_name == "exists";
         is_special_function_if = function_name == "if";
         is_special_function_multi_if = function_name == "multiIf";
+        is_special_function_case_with_expression = function_name == "caseWithExpression" || function_name == "caseWithExpr";
 
         /** Special handling for count and countState functions (including with combinators like countIf, countIfState, etc.).
           *
@@ -1897,6 +1900,135 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 }
                 /// All dead branches resolved cleanly: fall through to the generic path so that
                 /// `FunctionMultiIf::build` can perform common-supertype unification.
+            }
+        }
+    }
+
+    /** Handle a constant simple CASE analogously to constant `if` and `multiIf`.
+      * Resolve the selector and every WHEN value first, because they are ordinary evaluated
+      * arguments. If all comparisons are constant, a result branch is statically selected.
+      * Only replace the CASE when resolving an unselected result throws; otherwise the generic
+      * path must still infer the common result type from every branch.
+      */
+    if (is_special_function_case_with_expression && !function_node_ptr->getArguments().getNodes().empty())
+    {
+        auto & case_args = function_node_ptr->getArguments().getNodes();
+        const size_t arg_count = case_args.size();
+
+        /// caseWithExpression(expr, when1, then1, ..., else) has an even arity of at least four.
+        if (arg_count >= 4 && (arg_count % 2) == 0)
+        {
+            checkFunctionNodeHasEmptyNullsAction(*function_node_ptr);
+
+            QueryTreeNodePtr expression = case_args[0];
+            resolveExpressionNode(expression,
+                scope,
+                false /*allow_lambda_expression*/,
+                false /*allow_table_expression*/,
+                allow_niladic_functions);
+
+            const size_t else_index = arg_count - 1;
+            size_t winner_index = else_index;
+            bool all_comparisons_constant = true;
+
+            for (size_t when_index = 1; when_index < else_index; when_index += 2)
+            {
+                QueryTreeNodePtr when_value = case_args[when_index];
+                resolveExpressionNode(when_value,
+                    scope,
+                    false /*allow_lambda_expression*/,
+                    false /*allow_table_expression*/,
+                    allow_niladic_functions);
+
+                const auto expression_type = removeNullable(removeLowCardinality(expression->getResultType()));
+                const auto when_type = removeNullable(removeLowCardinality(when_value->getResultType()));
+                if (isVariant(expression_type) || isVariant(when_type))
+                {
+                    /// `caseWithExpression` supports comparisons between a `Variant` and one of
+                    /// its alternatives, while `isNotDistinctFrom` does not. Leave those cases
+                    /// on the generic path instead of changing their type compatibility.
+                    all_comparisons_constant = false;
+                    break;
+                }
+
+                /// Simple CASE treats two NULL values as equal. `isNotDistinctFrom` has the same
+                /// behavior while preserving the ordinary equality rules for non-NULL values.
+                auto comparison_function = std::make_shared<FunctionNode>("isNotDistinctFrom");
+                comparison_function->getArguments().getNodes() = {expression->clone(), when_value->clone()};
+                QueryTreeNodePtr comparison = std::move(comparison_function);
+                resolveExpressionNode(comparison,
+                    scope,
+                    false /*allow_lambda_expression*/,
+                    false /*allow_table_expression*/,
+                    allow_niladic_functions);
+
+                auto constant_comparison = tryExtractConstantFromConditionNode(comparison);
+                if (!constant_comparison.has_value())
+                {
+                    all_comparisons_constant = false;
+                    break;
+                }
+
+                if (*constant_comparison && winner_index == else_index)
+                    winner_index = when_index + 1;
+            }
+
+            if (all_comparisons_constant)
+            {
+                QueryTreeNodePtr live_branch = case_args[winner_index];
+                bool apply_constant_case_optimization = false;
+
+                for (size_t result_index = 2; result_index < arg_count; result_index += 2)
+                {
+                    if (result_index == winner_index)
+                        continue;
+
+                    QueryTreeNodePtr dead_branch = case_args[result_index];
+                    try
+                    {
+                        resolveExpressionNode(dead_branch,
+                            scope,
+                            false /*allow_lambda_expression*/,
+                            false /*allow_table_expression*/,
+                            allow_niladic_functions);
+                    }
+                    catch (const Exception & e)
+                    {
+                        if (e.code() != ErrorCodes::ILLEGAL_DIVISION)
+                            throw;
+                        apply_constant_case_optimization = true;
+                    }
+                }
+
+                if (winner_index != else_index)
+                {
+                    QueryTreeNodePtr dead_else = case_args[else_index];
+                    try
+                    {
+                        resolveExpressionNode(dead_else,
+                            scope,
+                            false /*allow_lambda_expression*/,
+                            false /*allow_table_expression*/,
+                            allow_niladic_functions);
+                    }
+                    catch (const Exception & e)
+                    {
+                        if (e.code() != ErrorCodes::ILLEGAL_DIVISION)
+                            throw;
+                        apply_constant_case_optimization = true;
+                    }
+                }
+
+                if (apply_constant_case_optimization)
+                {
+                    auto result_projection_names = resolveExpressionNode(live_branch,
+                        scope,
+                        false /*allow_lambda_expression*/,
+                        false /*allow_table_expression*/,
+                        allow_niladic_functions);
+                    node = std::move(live_branch);
+                    return result_projection_names;
+                }
             }
         }
     }

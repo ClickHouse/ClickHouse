@@ -73,6 +73,12 @@ ColumnPtr executeDivision(const ColumnsWithTypeAndName & arguments, size_t rows)
     const auto & left = assert_cast<const ColumnVector<A> &>(left_const ? left_const->getDataColumn() : *arguments[0].column).getData();
     const auto & right = assert_cast<const ColumnVector<B> &>(right_const ? right_const->getDataColumn() : *arguments[1].column).getData();
     auto result = ColumnVector<Result>::create(rows);
+    if (rows == 0)
+        return result;
+
+    if (left_const && right_const)
+        return DataTypeNumber<Result>().createColumnConst(rows, divideIntegers(left[0], right[0]));
+
     auto & data = result->getData();
     for (size_t i = 0; i < rows; ++i)
         data[i] = divideIntegers(left[left_const ? 0 : i], right[right_const ? 0 : i]);
@@ -99,7 +105,9 @@ public:
     }
     bool useDefaultImplementationForConstants() const override
     {
-        return true;
+        /// The default wrapper executes a constant function once even for an empty block. Exact
+        /// division handles constants directly so a masked-out division is not evaluated.
+        return false;
     }
     /// Skip unused dictionary entries and rows masked by either input's null map before dividing.
     bool canBeExecutedOnDefaultArguments() const override
