@@ -8,6 +8,7 @@
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Passes/InverseDictionaryLookupPass.h>
+#include <Analyzer/Passes/OptimizeKeyExpressionsUtils.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/TableFunctionNode.h>
@@ -45,6 +46,7 @@ extern const SettingsUInt64 max_rows_in_set;
 extern const SettingsOverflowMode set_overflow_mode;
 extern const SettingsBool make_distributed_plan;
 extern const SettingsBool enable_cascades_optimizer;
+extern const SettingsBool group_by_use_nulls;
 extern const SettingsBool optimize_inverse_dictionary_lookup;
 extern const SettingsBool rewrite_in_to_join;
 }
@@ -478,20 +480,80 @@ bool canReplaceWithDictGetKeys(
     return supertype && supertype->equals(*stripped_attr_type);
 }
 
+/// Comparisons of `query_node`, outside of its subqueries, kept as written because the planner reads a `GROUP BY` key from the
+/// aggregation result by its expression: those comparing a `dictGet` key, and those that are a key or its `group_by_use_nulls` copy.
+std::unordered_set<QueryTreeNodePtr> collectKeptComparisons(const QueryNode & query_node, bool group_by_use_nulls)
+{
+    const QueryTreeNodes group_by_keys = getGroupByKeys(query_node);
+    const bool nullable_key_copies = group_by_use_nulls
+        && (query_node.isGroupByWithRollup() || query_node.isGroupByWithCube() || query_node.isGroupByWithGroupingSets());
+
+    std::unordered_set<QueryTreeNodePtr> result;
+    if (group_by_keys.empty())
+        return result;
+
+    QueryTreeNodes nodes;
+    for (const auto & clause : {query_node.getProjectionNode(), query_node.getGroupByNode(), query_node.getHaving(),
+             query_node.getWindowNode(), query_node.getQualify(), query_node.getOrderByNode(), query_node.getInterpolate(),
+             query_node.getLimitByNode(), query_node.getLimitAfter(), query_node.getLimitUntil()})
+        if (clause)
+            nodes.push_back(clause);
+
+    while (!nodes.empty())
+    {
+        auto node = std::move(nodes.back());
+        nodes.pop_back();
+        if (node->getNodeType() == QueryTreeNodeType::QUERY || node->getNodeType() == QueryTreeNodeType::UNION)
+            continue;
+        const auto * function_node = node->as<FunctionNode>();
+        /// Its arguments are computed before aggregation.
+        if (function_node && function_node->isAggregateFunction())
+            continue;
+        if (function_node
+            && ((nullable_key_copies && isGroupByKeyAfterAggregation(node, group_by_keys))
+                || std::ranges::any_of(
+                    function_node->getArguments().getNodes(),
+                    [&](const auto & argument)
+                    { return tryParseDictFunctionCall(argument) && isGroupByKeyAfterAggregation(argument, group_by_keys); })))
+            result.insert(node);
+        for (const auto & child : node->getChildren())
+            if (child)
+                nodes.push_back(child);
+    }
+    return result;
+}
+
 class InverseDictionaryLookupVisitor : public InDepthQueryTreeVisitorWithContext<InverseDictionaryLookupVisitor>
 {
 public:
     using Base = InDepthQueryTreeVisitorWithContext<InverseDictionaryLookupVisitor>;
-    using Base::Base;
+
+    explicit InverseDictionaryLookupVisitor(ContextPtr context)
+        : Base(std::move(context))
+    {
+        kept_comparisons_stack.emplace_back();
+    }
 
     void enterImpl(QueryTreeNodePtr & node)
     {
+        if (const auto * query_node = node->as<QueryNode>())
+        {
+            kept_comparisons_stack.push_back(
+                getSettings()[Setting::optimize_inverse_dictionary_lookup]
+                    ? collectKeptComparisons(*query_node, getSettings()[Setting::group_by_use_nulls])
+                    : std::unordered_set<QueryTreeNodePtr>{});
+            return;
+        }
+
         if (!getSettings()[Setting::optimize_inverse_dictionary_lookup])
             return;
 
         auto * node_function = node->as<FunctionNode>();
 
         if (!node_function)
+            return;
+
+        if (kept_comparisons_stack.back().contains(node))
             return;
 
         static std::unordered_set<String> allowed_comparison_functions = {
@@ -861,6 +923,12 @@ public:
         node = std::move(replacement_node);
     }
 
+    void leaveImpl(QueryTreeNodePtr & node)
+    {
+        if (node->getNodeType() == QueryTreeNodeType::QUERY)
+            kept_comparisons_stack.pop_back();
+    }
+
 private:
     bool isCreateTemporaryTableGranted()
     {
@@ -870,6 +938,9 @@ private:
     }
 
     std::optional<bool> create_temporary_table_granted;
+
+    /// `collectKeptComparisons` of each query being visited, innermost last.
+    std::vector<std::unordered_set<QueryTreeNodePtr>> kept_comparisons_stack;
 };
 
 }
