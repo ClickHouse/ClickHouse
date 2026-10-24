@@ -2350,6 +2350,17 @@ Possible values:
 - 1 — Enabled.
 )", 0, \
         {"26.5", true, false, "Disable `use_top_k_dynamic_filtering` for variable-length sort columns (e.g. `String`) by default; the previous behavior had the optimization apply unconditionally and is preserved under `compatibility`."}) \
+    DECLARE(Bool, use_top_k_dynamic_filtering_for_single_string_sort_column, true, R"(
+Apply `use_top_k_dynamic_filtering` to a `MergeTree` table when `ORDER BY` has a single `String` column (also inside `Nullable`), even if `use_top_k_dynamic_filtering_for_variable_length_types` is `0`.
+
+For such a column, the filter also drops the rows equal to the threshold once most rows of a block are equal to it (for example, a column of mostly empty strings). Each threshold value is checked on one block: the first one in which most rows pass the filter. Other sources, such as Parquet files, are not affected.
+
+Possible values:
+
+- 0 - Disabled.
+- 1 - Enabled.
+)", 0, \
+        {"26.11", false, true, "New setting: TopN dynamic filtering for a single `String` `ORDER BY` column of a `MergeTree` table."}) \
     DECLARE(Bool, enable_group_by_top_k_dynamic_filtering, true, R"(
 For [enable_group_by_top_k_optimization](#enable_group_by_top_k_optimization): when the first ranked `GROUP BY` key is a column read from a `MergeTree` table, the aggregation publishes the boundary of its top-K heap to the reading step as soon as the heap holds `LIMIT` keys. The reading step then drops rows whose key lies beyond the boundary before the other columns are read (`PREWHERE`), and skips whole granules that lie beyond it using the primary key or a `minmax` skip index on that column.
 
