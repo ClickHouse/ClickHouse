@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <ranges>
+#include <vector>
 
 #include <fmt/ranges.h>
 
@@ -9,6 +10,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -113,6 +115,46 @@ void clearColumnValueRanges(std::unordered_map<String, ColumnStats> & column_sta
     }
 }
 
+enum class UnaryStepStatsKind : UInt8
+{
+    Unsupported,
+    Limit,
+    Expression,
+    Filter,
+    Aggregating,
+    Sorting,
+    LogicalExchange,
+    PreservingTransform,
+};
+
+UnaryStepStatsKind classifyUnaryStepStats(const IQueryPlanStep & step)
+{
+    if (typeid_cast<const LimitStep *>(&step))
+        return UnaryStepStatsKind::Limit;
+
+    if (const auto * expression_step = typeid_cast<const ExpressionStep *>(&step))
+    {
+        /// ARRAY JOIN changes the number of rows. Keep this explicit instead of relying on the
+        /// generic transforming-step traits so the supported set cannot silently widen.
+        return expression_step->getExpression().hasArrayJoin() ? UnaryStepStatsKind::Unsupported : UnaryStepStatsKind::Expression;
+    }
+
+    if (typeid_cast<const ArrayJoinStep *>(&step))
+        return UnaryStepStatsKind::Unsupported;
+    if (typeid_cast<const FilterStep *>(&step))
+        return UnaryStepStatsKind::Filter;
+    if (typeid_cast<const AggregatingStep *>(&step))
+        return UnaryStepStatsKind::Aggregating;
+    if (typeid_cast<const SortingStep *>(&step))
+        return UnaryStepStatsKind::Sorting;
+    if (dynamic_cast<const LogicalExchangeStep *>(&step))
+        return UnaryStepStatsKind::LogicalExchange;
+    if (const auto * transform = dynamic_cast<const ITransformingStep *>(&step);
+        transform && transform->getTransformTraits().preserves_number_of_rows)
+        return UnaryStepStatsKind::PreservingTransform;
+    return UnaryStepStatsKind::Unsupported;
+}
+
 /// A runtime filter prunes nothing at plan time, so it must not count as a filter when estimating.
 /// True for a `__applyFilter` call or an always-true `x = x`, an `and` of such predicates, or an `or`
 /// with at least one such operand. Aliases are looked through.
@@ -145,9 +187,8 @@ bool prunesNothingAtPlanTime(const ActionsDAG::Node * node)
     return false;
 }
 
-}
-
-RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter, bool for_runtime_filter_transport)
+std::optional<RelationStats>
+estimateLeafRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * filter, bool for_runtime_filter_transport)
 {
     if (prunesNothingAtPlanTime(filter))
         filter = nullptr;
@@ -326,14 +367,10 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         return RelationStats{.estimated_rows = 1, .table_name = "system.one"};
     }
 
-    if (const auto * reading = typeid_cast<const CommonSubplanReferenceStep *>(step))
-    {
-        return estimateReadRowsCount(*reading->getSubplanReferenceRoot(), filter, for_runtime_filter_transport);
-    }
-
     /// A join that has already been optimized enters its parent's join graph as a single relation,
-    /// and the row count it settled on is the only estimate that relation has. Read it before the
-    /// single-child check below, which a join, having two children, would never pass.
+    /// and the row count it settled on is the only estimate that relation has. It is a leaf of the
+    /// traversal: the single-child check in `estimateReadRowsCount`, which a join, having two children,
+    /// would never pass, comes after this.
     if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step); join_step && join_step->isOptimized())
     {
         /// The origin of a sub-join's estimate is not tracked (`NoSource`), so the parent graph does not
@@ -350,68 +387,137 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
             .composite = true};
     }
 
-    if (node.children.size() != 1)
-        return {};
+    return std::nullopt;
+}
 
-    if (const auto * limit_step = typeid_cast<const LimitStep *>(step))
-    {
-        auto estimated = estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport);
-        auto limit = limit_step->getLimit();
-        if (!estimated.estimated_rows || estimated.estimated_rows > limit)
-            estimated.estimated_rows = limit;
-        clearColumnValueRanges(estimated.column_stats);
-        return estimated;
-    }
+}
 
-    if (const auto * expression_step = typeid_cast<const ExpressionStep *>(step);
-        expression_step && !expression_step->getExpression().hasArrayJoin())
+std::optional<RelationStats> estimateUnaryStepStats(const IQueryPlanStep & step, RelationStats input_stats)
+{
+    switch (classifyUnaryStepStats(step))
     {
-        auto stats = estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport);
-        remapColumnStats(stats.column_stats, expression_step->getExpression());
-        return stats;
-    }
-
-    if (const auto * filter_step = typeid_cast<const FilterStep *>(step))
-    {
-        const auto & dag = filter_step->getExpression();
-        const auto * predicate = static_cast<const ActionsDAG::Node *>(dag.tryFindInOutputs(filter_step->getFilterColumnName()));
-        auto stats = estimateReadRowsCount(*node.children.front(), predicate, for_runtime_filter_transport);
-        remapColumnStats(stats.column_stats, filter_step->getExpression());
-        return stats;
-    }
-
-    if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(step))
-    {
-        auto stats = estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport);
-        auto aggregation_stats = estimateAggregatingStepStats(*aggregating_step, stats);
-        return aggregation_stats;
-    }
-
-    if (const auto * sorting_step = typeid_cast<const SortingStep *>(step))
-    {
-        auto stats = estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport);
-        if (sorting_step->getLimit())
-        {
-            if (!stats.estimated_rows || stats.estimated_rows > sorting_step->getLimit())
-                stats.estimated_rows = sorting_step->getLimit();
-            clearColumnValueRanges(stats.column_stats);
+        case UnaryStepStatsKind::Limit: {
+            const auto & limit_step = static_cast<const LimitStep &>(step);
+            const auto limit = limit_step.getLimit();
+            if (!input_stats.estimated_rows || input_stats.estimated_rows > limit)
+                input_stats.estimated_rows = limit;
+            clearColumnValueRanges(input_stats.column_stats);
+            return input_stats;
         }
-        return stats;
+        case UnaryStepStatsKind::Expression: {
+            const auto & expression_step = static_cast<const ExpressionStep &>(step);
+            remapColumnStats(input_stats.column_stats, expression_step.getExpression());
+            return input_stats;
+        }
+        case UnaryStepStatsKind::Filter: {
+            const auto & filter_step = static_cast<const FilterStep &>(step);
+            remapColumnStats(input_stats.column_stats, filter_step.getExpression());
+            return input_stats;
+        }
+        case UnaryStepStatsKind::Aggregating: return estimateAggregatingStepStats(static_cast<const AggregatingStep &>(step), input_stats);
+        case UnaryStepStatsKind::Sorting: {
+            const auto & sorting_step = static_cast<const SortingStep &>(step);
+            if (sorting_step.getLimit())
+            {
+                if (!input_stats.estimated_rows || input_stats.estimated_rows > sorting_step.getLimit())
+                    input_stats.estimated_rows = sorting_step.getLimit();
+                clearColumnValueRanges(input_stats.column_stats);
+            }
+            return input_stats;
+        }
+        case UnaryStepStatsKind::LogicalExchange:
+            /// Estimates must see through exchanges: they do not change row counts, and an
+            /// already-distributed subtree would otherwise report unknown cardinality, degrading
+            /// broadcast-vs-shuffle and join order decisions. Runtime-filter transport sizes the
+            /// exact phase from this estimate, and the build filter sits below the join shuffle, so
+            /// the walk has to cross exchanges on every build.
+            return input_stats;
+        case UnaryStepStatsKind::PreservingTransform: return input_stats;
+        case UnaryStepStatsKind::Unsupported: return std::nullopt;
+    }
+    return std::nullopt;
+}
+
+RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter, bool for_runtime_filter_transport)
+{
+    enum class FrameKind : UInt8
+    {
+        Unvisited,
+        Unary,
+        CommonSubplanReference,
+    };
+
+    struct Frame
+    {
+        QueryPlan::Node * node;
+        const ActionsDAG::Node * filter;
+        QueryPlan::Node * child = nullptr;
+        const ActionsDAG::Node * child_filter = nullptr;
+        FrameKind kind = FrameKind::Unvisited;
+    };
+
+    std::vector<Frame> stack;
+    stack.push_back({.node = &node, .filter = filter});
+    RelationStats result;
+
+    while (!stack.empty())
+    {
+        auto & frame = stack.back();
+        if (frame.kind == FrameKind::Unvisited)
+        {
+            if (auto leaf_stats = estimateLeafRelationStats(*frame.node, frame.filter, for_runtime_filter_transport))
+            {
+                result = std::move(*leaf_stats);
+                stack.pop_back();
+                continue;
+            }
+
+            if (const auto * reference = typeid_cast<const CommonSubplanReferenceStep *>(frame.node->step.get()))
+            {
+                frame.child = reference->getSubplanReferenceRoot();
+                frame.child_filter = frame.filter;
+                frame.kind = FrameKind::CommonSubplanReference;
+            }
+            else
+            {
+                if (frame.node->children.size() != 1)
+                {
+                    result = {};
+                    stack.pop_back();
+                    continue;
+                }
+
+                /// Unsupported steps stop before their children are visited, preserving the old
+                /// fail-closed boundary while avoiding recursion through an irrelevant subtree.
+                if (classifyUnaryStepStats(*frame.node->step) == UnaryStepStatsKind::Unsupported)
+                {
+                    result = {};
+                    stack.pop_back();
+                    continue;
+                }
+
+                frame.child = frame.node->children.front();
+                frame.child_filter = frame.filter;
+                if (const auto * filter_step = typeid_cast<const FilterStep *>(frame.node->step.get()))
+                {
+                    const auto & dag = filter_step->getExpression();
+                    frame.child_filter = static_cast<const ActionsDAG::Node *>(dag.tryFindInOutputs(filter_step->getFilterColumnName()));
+                }
+                frame.kind = FrameKind::Unary;
+            }
+
+            auto * child = frame.child;
+            const auto * child_filter = frame.child_filter;
+            stack.push_back({.node = child, .filter = child_filter});
+            continue;
+        }
+
+        if (frame.kind == FrameKind::Unary)
+            result = estimateUnaryStepStats(*frame.node->step, std::move(result)).value_or(RelationStats{});
+        stack.pop_back();
     }
 
-    /// Estimates must see through exchanges: they do not change row counts, and an
-    /// already-distributed subtree would otherwise report unknown cardinality, degrading
-    /// broadcast-vs-shuffle and join order decisions. Runtime-filter transport sizes the
-    /// exact phase from this estimate, and the build filter sits below the join shuffle, so
-    /// the walk has to cross exchanges on every build.
-    if (dynamic_cast<LogicalExchangeStep *>(step))
-        return estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport);
-
-    if (const auto * transform = dynamic_cast<const ITransformingStep *>(step);
-        transform && transform->getTransformTraits().preserves_number_of_rows)
-        return estimateReadRowsCount(*node.children.front(), filter, for_runtime_filter_transport);
-
-    return {};
+    return result;
 }
 
 }
