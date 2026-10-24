@@ -27,7 +27,8 @@ public:
         WrittenOffsetSubstreams * written_offset_substreams,
         bool try_adaptive_codec,
         class PackedFilesWriter * external_packed_skip_indices_writer,
-        StreamBaseManifestPtr stream_base_manifest);
+        StreamBaseManifestPtr stream_base_manifest,
+        bool build_skip_indexes_in_separate_thread = false);
 
     void write(const Block & block) override;
     void finalizeIndexGranularity();
