@@ -427,9 +427,9 @@ RowReader::RowReader(Reader & reader_, const RowReaderOptions & options_)
 
 RowReader::~RowReader() = default;
 
-std::unique_ptr<ColumnVectorBatch> RowReader::createRowBatch(size_t capacity) const
+std::unique_ptr<ColumnVectorBatch> RowReader::createRowBatch() const
 {
-    return ORC::createRowBatch(*selected_type, capacity, options.enable_lazy_decoding);
+    return ORC::createRowBatch(*selected_type, options.enable_lazy_decoding);
 }
 
 const DateLUTImpl & RowReader::getWriterTimezone(const Proto::StripeFooter & stripe_footer) const
@@ -671,7 +671,7 @@ void RowReader::startNextStripe()
     }
 }
 
-bool RowReader::next(ColumnVectorBatch & batch)
+bool RowReader::next(ColumnVectorBatch & batch, size_t max_rows)
 {
     if (current_stripe >= last_stripe)
     {
@@ -688,7 +688,7 @@ bool RowReader::next(ColumnVectorBatch & batch)
         return false;
     }
 
-    UInt64 rows_to_read = std::min<UInt64>(batch.capacity, rows_in_current_stripe - current_row_in_stripe);
+    UInt64 rows_to_read = std::min<UInt64>(max_rows, rows_in_current_stripe - current_row_in_stripe);
     if (options.search_argument && rows_to_read > 0)
         rows_to_read = computeBatchSize(rows_to_read, current_row_in_stripe);
 

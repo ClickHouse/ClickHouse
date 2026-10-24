@@ -117,6 +117,8 @@ void ByteRleDecoder::readHeader()
 
 void ByteRleDecoder::next(char * data, size_t num_values, const char * not_null)
 {
+    if (not_null)
+        memset(data, 0, num_values);
     size_t position = 0;
     while (position < num_values)
     {
@@ -266,8 +268,16 @@ class IntRleDecoderV1 final : public IntRleDecoder
 public:
     IntRleDecoderV1(std::unique_ptr<InputByteStream> stream_, bool is_signed_) : stream(std::move(stream_)), is_signed(is_signed_) {}
 
-    void next(Int64 * data, size_t num_values, const char * not_null) override
+    void next(Int64 * data, size_t num_values, const char * not_null) override { nextImpl(data, num_values, not_null); }
+    void next(UInt64 * data, size_t num_values, const char * not_null) override { nextImpl(data, num_values, not_null); }
+    void next(Int32 * data, size_t num_values, const char * not_null) override { nextImpl(data, num_values, not_null); }
+    void next(Int16 * data, size_t num_values, const char * not_null) override { nextImpl(data, num_values, not_null); }
+
+    template <typename T>
+    void nextImpl(T * data, size_t num_values, const char * not_null)
     {
+        if (not_null)
+            memset(static_cast<void *>(data), 0, num_values * sizeof(T));
         size_t position = 0;
         while (position < num_values)
         {
@@ -290,11 +300,11 @@ public:
                     continue;
                 if (repeating)
                 {
-                    data[position + i] = value;
+                    data[position + i] = static_cast<T>(value);
                     value = static_cast<Int64>(static_cast<UInt64>(value) + static_cast<UInt64>(delta));
                 }
                 else
-                    data[position + i] = readValue();
+                    data[position + i] = static_cast<T>(readValue());
                 ++consumed;
             }
             remaining_values -= consumed;
@@ -363,8 +373,16 @@ class IntRleDecoderV2 final : public IntRleDecoder
 public:
     IntRleDecoderV2(std::unique_ptr<InputByteStream> stream_, bool is_signed_) : stream(std::move(stream_)), is_signed(is_signed_) {}
 
-    void next(Int64 * data, size_t num_values, const char * not_null) override
+    void next(Int64 * data, size_t num_values, const char * not_null) override { nextImpl(data, num_values, not_null); }
+    void next(UInt64 * data, size_t num_values, const char * not_null) override { nextImpl(data, num_values, not_null); }
+    void next(Int32 * data, size_t num_values, const char * not_null) override { nextImpl(data, num_values, not_null); }
+    void next(Int16 * data, size_t num_values, const char * not_null) override { nextImpl(data, num_values, not_null); }
+
+    template <typename T>
+    void nextImpl(T * data, size_t num_values, const char * not_null)
     {
+        if (not_null)
+            memset(static_cast<void *>(data), 0, num_values * sizeof(T));
         size_t position = 0;
         while (position < num_values)
         {
@@ -384,11 +402,17 @@ public:
             {
                 for (size_t i = position; i < position + count; ++i)
                     if (not_null[i])
-                        data[i] = literals[run_read++];
+                        data[i] = static_cast<T>(literals[run_read++]);
+            }
+            else if constexpr (sizeof(T) == sizeof(Int64))
+            {
+                memcpy(static_cast<void *>(data + position), literals.data() + run_read, count * sizeof(Int64));
+                run_read += count;
             }
             else
             {
-                memcpy(data + position, literals.data() + run_read, count * sizeof(Int64));
+                for (size_t i = 0; i < count; ++i)
+                    data[position + i] = static_cast<T>(literals[run_read + i]);
                 run_read += count;
             }
             position += count;

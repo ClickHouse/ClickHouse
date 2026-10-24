@@ -1,7 +1,23 @@
 #include <Processors/Formats/Impl/ORC/Writer.h>
 #include <Processors/Formats/Impl/ORC/RLE.h>
 
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <Common/DateLUT.h>
+#include <Common/intExp.h>
+#include <Common/assert_cast.h>
+#include <base/unaligned.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
@@ -82,19 +98,27 @@ public:
             recordPositions();
     }
 
-    virtual void add(const ColumnVectorBatch & batch, size_t offset, size_t num_values, const char * incoming_mask)
+    /// Adds the values `[offset, offset + num_values)` of `column`, which is not `Nullable`.
+    /// `null_map` (1 for a null) and `parent_null_map` (1 for a null in the parent struct, for which
+    /// no value is written at all) are for these values only, so they start at the first value.
+    virtual void add(const IColumn & /*column*/, const UInt8 * null_map, size_t /*offset*/, size_t num_values, const UInt8 * parent_null_map)
     {
-        const char * not_null = batch.hasNulls ? batch.notNull.data() + offset : nullptr;
+        addPresent(null_map, num_values, parent_null_map);
+    }
+
+    /// Writes the PRESENT stream for the values.
+    void addPresent(const UInt8 * null_map, size_t num_values, const UInt8 * parent_null_map)
+    {
         for (size_t i = 0; i < num_values; ++i)
         {
-            if (incoming_mask && !incoming_mask[i])
+            if (parent_null_map && parent_null_map[i])
                 continue;
-            present_encoder.write(!not_null || not_null[i] != 0);
+            present_encoder.write(!null_map || !null_map[i]);
         }
-        if (not_null)
+        if (null_map)
         {
             for (size_t i = 0; i < num_values && !has_null_value; ++i)
-                if (!not_null[i])
+                if (null_map[i])
                     has_null_value = true;
         }
     }
@@ -187,15 +211,14 @@ protected:
     virtual void resetStreams() = 0;
 
     /// The number of the non-null values, also updates the statistics with the count.
-    size_t countValues(const ColumnVectorBatch & batch, size_t offset, size_t num_values)
+    size_t countValues(const UInt8 * null_map, size_t num_values)
     {
         size_t count = num_values;
-        if (batch.hasNulls)
+        if (null_map)
         {
-            const char * not_null = batch.notNull.data() + offset;
             count = 0;
             for (size_t i = 0; i < num_values; ++i)
-                count += not_null[i] != 0;
+                count += !null_map[i];
         }
         index_statistics.increase(count);
         if (count < num_values)
@@ -234,7 +257,53 @@ private:
 namespace
 {
 
-std::unique_ptr<ColumnWriter> buildColumnWriter(const Type & type, WriterContext & context);
+std::unique_ptr<ColumnWriter> buildColumnWriter(const Type & type, const DataTypePtr & data_type, WriterContext & context);
+
+/// Adds the values of a column that can be `Nullable`. The values that are null in the parent
+/// (`outer_null_map`, for the fields of a struct) are null as well.
+void addColumn(
+    ColumnWriter & writer, const IColumn & column, const UInt8 * outer_null_map, size_t offset, size_t num_values, const UInt8 * parent_null_map)
+{
+    if (const auto * nullable = typeid_cast<const ColumnNullable *>(&column))
+    {
+        const UInt8 * null_map = nullable->getNullMapData().data() + offset;
+        if (!outer_null_map)
+        {
+            writer.add(nullable->getNestedColumn(), null_map, offset, num_values, parent_null_map);
+            return;
+        }
+        PaddedPODArray<UInt8> merged(num_values);
+        for (size_t i = 0; i < num_values; ++i)
+            merged[i] = null_map[i] | outer_null_map[i];
+        writer.add(nullable->getNestedColumn(), merged.data(), offset, num_values, parent_null_map);
+        return;
+    }
+    writer.add(column, outer_null_map, offset, num_values, parent_null_map);
+}
+
+/// The raw values of a column with fixed-size values.
+template <typename T>
+const T * getRawValues(const IColumn & column)
+{
+    auto raw = column.getRawData();
+    if (column.sizeOfValueIfFixed() != sizeof(T))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column {} with values of size {} for ORC (expected {})",
+            column.getName(), column.sizeOfValueIfFixed(), sizeof(T));
+    return reinterpret_cast<const T *>(raw.data());
+}
+
+/// The value of the integer column (of any width up to 8 bytes) as a signed number of the same width,
+/// as ORC does not have unsigned types.
+Int64 readSignedValue(const char * data, size_t width, size_t row)
+{
+    switch (width)
+    {
+        case 1: return unalignedLoad<Int8>(data + row);
+        case 2: return unalignedLoad<Int16>(data + row * 2);
+        case 4: return unalignedLoad<Int32>(data + row * 4);
+        default: return unalignedLoad<Int64>(data + row * 8);
+    }
+}
 
 /// The writers that have children call the same methods for them.
 class CompoundColumnWriter : public ColumnWriter
@@ -334,22 +403,36 @@ protected:
 class StructColumnWriter final : public CompoundColumnWriter
 {
 public:
-    StructColumnWriter(const Type & type, WriterContext & context_)
+    StructColumnWriter(const Type & type, const DataTypes & field_types, WriterContext & context_)
         : CompoundColumnWriter(type, context_)
     {
+        if (field_types.size() != type.getSubtypeCount())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ORC struct {} has {} fields, the ClickHouse type has {}",
+                type.toString(), type.getSubtypeCount(), field_types.size());
         for (UInt64 i = 0; i < type.getSubtypeCount(); ++i)
-            children.push_back(buildColumnWriter(*type.getSubtype(i), context));
+            children.push_back(buildColumnWriter(*type.getSubtype(i), field_types[i], context));
         init();
     }
 
-    void add(const ColumnVectorBatch & batch, size_t offset, size_t num_values, const char * incoming_mask) override
+    void add(const IColumn & column, const UInt8 * null_map, size_t offset, size_t num_values, const UInt8 * parent_null_map) override
     {
-        const auto & struct_batch = typeid_cast<const StructVectorBatch &>(batch);
-        ColumnWriter::add(batch, offset, num_values, incoming_mask);
-        const char * not_null = struct_batch.hasNulls ? struct_batch.notNull.data() + offset : nullptr;
+        const auto & tuple = assert_cast<const ColumnTuple &>(column);
+        ColumnWriter::add(column, null_map, offset, num_values, parent_null_map);
+        /// The fields of the null values are null, and they are not written.
         for (size_t i = 0; i < children.size(); ++i)
-            children[i]->add(*struct_batch.fields[i], offset, num_values, not_null);
-        countValues(batch, offset, num_values);
+            addColumn(*children[i], tuple.getColumn(i), null_map, offset, num_values, null_map);
+        countValues(null_map, num_values);
+    }
+
+    /// Adds the rows of the root struct, which are the columns of the file.
+    void addRoot(const Columns & columns, size_t offset, size_t num_values)
+    {
+        if (columns.size() != children.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected {} columns for ORC, got {}", children.size(), columns.size());
+        addPresent(nullptr, num_values, nullptr);
+        for (size_t i = 0; i < children.size(); ++i)
+            addColumn(*children[i], *columns[i], nullptr, offset, num_values, nullptr);
+        countValues(nullptr, num_values);
     }
 
 protected:
@@ -361,51 +444,47 @@ template <bool is_map>
 class CollectionColumnWriter final : public CompoundColumnWriter
 {
 public:
-    CollectionColumnWriter(const Type & type, WriterContext & context_)
+    CollectionColumnWriter(const Type & type, const DataTypes & child_types, WriterContext & context_)
         : CompoundColumnWriter(type, context_)
         , length_stream(context.compressor, context.block_size)
         , length_encoder(length_stream, false)
     {
+        if (child_types.size() != type.getSubtypeCount())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ORC type {} does not match the ClickHouse type", type.toString());
         for (UInt64 i = 0; i < type.getSubtypeCount(); ++i)
-            children.push_back(buildColumnWriter(*type.getSubtype(i), context));
+            children.push_back(buildColumnWriter(*type.getSubtype(i), child_types[i], context));
         init();
     }
 
-    void add(const ColumnVectorBatch & batch, size_t offset, size_t num_values, const char * incoming_mask) override
+    void add(const IColumn & column, const UInt8 * null_map, size_t offset, size_t num_values, const UInt8 * parent_null_map) override
     {
-        const Int64 * offsets = nullptr;
-        if constexpr (is_map)
-            offsets = typeid_cast<const MapVectorBatch &>(batch).offsets.data() + offset;
-        else
-            offsets = typeid_cast<const ListVectorBatch &>(batch).offsets.data() + offset;
+        const ColumnArray & array = is_map ? assert_cast<const ColumnMap &>(column).getNestedColumn() : assert_cast<const ColumnArray &>(column);
+        /// The offsets of `ColumnArray` are the end offsets, and the one before the first is zero.
+        const auto & offsets = array.getOffsets();
 
-        ColumnWriter::add(batch, offset, num_values, incoming_mask);
-        const char * not_null = batch.hasNulls ? batch.notNull.data() + offset : nullptr;
+        ColumnWriter::add(column, null_map, offset, num_values, parent_null_map);
 
-        UInt64 element_offset = static_cast<UInt64>(offsets[0]);
-        UInt64 total_elements = static_cast<UInt64>(offsets[num_values] - offsets[0]);
+        UInt64 element_offset = offsets[static_cast<ssize_t>(offset) - 1];
+        UInt64 total_elements = offsets[offset + num_values - 1] - element_offset;
 
         if constexpr (is_map)
         {
-            const auto & map_batch = typeid_cast<const MapVectorBatch &>(batch);
-            if (map_batch.keys)
-                children[0]->add(*map_batch.keys, element_offset, total_elements, nullptr);
-            if (map_batch.elements)
-                children[1]->add(*map_batch.elements, element_offset, total_elements, nullptr);
+            const auto & key_value = assert_cast<const ColumnTuple &>(array.getData());
+            addColumn(*children[0], key_value.getColumn(0), nullptr, element_offset, total_elements, nullptr);
+            addColumn(*children[1], key_value.getColumn(1), nullptr, element_offset, total_elements, nullptr);
         }
         else
         {
-            const auto & list_batch = typeid_cast<const ListVectorBatch &>(batch);
-            if (list_batch.elements)
-                children[0]->add(*list_batch.elements, element_offset, total_elements, nullptr);
+            addColumn(*children[0], array.getData(), nullptr, element_offset, total_elements, nullptr);
         }
 
         size_t count = 0;
         for (size_t i = 0; i < num_values; ++i)
         {
-            if (not_null && !not_null[i])
+            if (null_map && null_map[i])
                 continue;
-            UInt64 length = static_cast<UInt64>(offsets[i + 1] - offsets[i]);
+            size_t row = offset + i;
+            UInt64 length = offsets[row] - offsets[static_cast<ssize_t>(row) - 1];
             length_encoder.write(static_cast<Int64>(length));
             index_statistics.updateCollection(length);
             ++count;
@@ -448,44 +527,58 @@ private:
 class UnionColumnWriter final : public CompoundColumnWriter
 {
 public:
-    UnionColumnWriter(const Type & type, WriterContext & context_)
+    /// The branches of the union are in the same order as the variants of the `Variant` type,
+    /// so the global discriminator of a value is its tag.
+    UnionColumnWriter(const Type & type, const DataTypes & variant_types, WriterContext & context_)
         : CompoundColumnWriter(type, context_)
         , tag_stream(context.compressor, context.block_size)
         , tag_encoder(tag_stream)
     {
+        if (variant_types.size() != type.getSubtypeCount())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ORC union {} does not match the ClickHouse type", type.toString());
         for (UInt64 i = 0; i < type.getSubtypeCount(); ++i)
-            children.push_back(buildColumnWriter(*type.getSubtype(i), context));
+            children.push_back(buildColumnWriter(*type.getSubtype(i), variant_types[i], context));
         init();
     }
 
-    void add(const ColumnVectorBatch & batch, size_t offset, size_t num_values, const char * incoming_mask) override
+    void add(const IColumn & column, const UInt8 * null_map, size_t offset, size_t num_values, const UInt8 * parent_null_map) override
     {
-        const auto & union_batch = typeid_cast<const UnionVectorBatch &>(batch);
-        ColumnWriter::add(batch, offset, num_values, incoming_mask);
-        const char * not_null = union_batch.hasNulls ? union_batch.notNull.data() + offset : nullptr;
-        const UInt8 * tags = union_batch.tags.data() + offset;
-        const UInt64 * offsets = union_batch.offsets.data() + offset;
+        const auto & variant = assert_cast<const ColumnVariant &>(column);
+
+        /// A `NULL` of `Variant` is a null value of the union.
+        PaddedPODArray<UInt8> union_null_map(num_values);
+        bool has_nulls = false;
+        for (size_t i = 0; i < num_values; ++i)
+        {
+            union_null_map[i] = (null_map && null_map[i]) || variant.globalDiscriminatorAt(offset + i) == ColumnVariant::NULL_DISCRIMINATOR;
+            has_nulls |= union_null_map[i];
+        }
+        const UInt8 * union_nulls = has_nulls ? union_null_map.data() : nullptr;
+
+        ColumnWriter::add(column, union_nulls, offset, num_values, parent_null_map);
 
         std::vector<Int64> child_offset(children.size(), -1);
         std::vector<UInt64> child_length(children.size(), 0);
         size_t count = 0;
         for (size_t i = 0; i < num_values; ++i)
         {
-            if (not_null && !not_null[i])
+            if (union_nulls && union_nulls[i])
                 continue;
-            UInt8 tag = tags[i];
+            size_t row = offset + i;
+            auto tag = variant.globalDiscriminatorAt(row);
             if (tag >= children.size())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid union tag {} for union with {} children", static_cast<UInt32>(tag), children.size());
             if (child_offset[tag] == -1)
-                child_offset[tag] = static_cast<Int64>(offsets[i]);
+                child_offset[tag] = static_cast<Int64>(variant.offsetAt(row));
             ++child_length[tag];
             tag_encoder.write(static_cast<char>(tag));
             ++count;
         }
 
+        /// The values of each branch are consecutive in its column.
         for (size_t i = 0; i < children.size(); ++i)
             if (child_length[i])
-                children[i]->add(*union_batch.children[i], static_cast<size_t>(child_offset[i]), child_length[i], nullptr);
+                addColumn(*children[i], variant.getVariantByGlobalDiscriminator(i), nullptr, static_cast<size_t>(child_offset[i]), child_length[i], nullptr);
 
         index_statistics.increase(count);
         if (count < num_values)
@@ -545,20 +638,18 @@ public:
         init();
     }
 
-    void add(const ColumnVectorBatch & batch, size_t offset, size_t num_values, const char * incoming_mask) override
+    void add(const IColumn & column, const UInt8 * null_map, size_t offset, size_t num_values, const UInt8 * parent_null_map) override
     {
-        ColumnWriter::add(batch, offset, num_values, incoming_mask);
-        const auto & long_batch = typeid_cast<const LongVectorBatch &>(batch);
-        const char * not_null = batch.hasNulls ? batch.notNull.data() + offset : nullptr;
-        const Int64 * data = long_batch.data.data() + offset;
+        ColumnWriter::add(column, null_map, offset, num_values, parent_null_map);
+        const UInt8 * data = getRawValues<UInt8>(column) + offset;
         for (size_t i = 0; i < num_values; ++i)
         {
-            if (not_null && !not_null[i])
+            if (null_map && null_map[i])
                 continue;
             encoder.write(data[i] != 0);
             index_statistics.updateBoolean(data[i] != 0);
         }
-        countValues(batch, offset, num_values);
+        countValues(null_map, num_values);
     }
 
     void flush(std::vector<StreamData> & streams) override
@@ -591,21 +682,19 @@ public:
         init();
     }
 
-    void add(const ColumnVectorBatch & batch, size_t offset, size_t num_values, const char * incoming_mask) override
+    void add(const IColumn & column, const UInt8 * null_map, size_t offset, size_t num_values, const UInt8 * parent_null_map) override
     {
-        ColumnWriter::add(batch, offset, num_values, incoming_mask);
-        const auto & long_batch = typeid_cast<const LongVectorBatch &>(batch);
-        const char * not_null = batch.hasNulls ? batch.notNull.data() + offset : nullptr;
-        const Int64 * data = long_batch.data.data() + offset;
+        ColumnWriter::add(column, null_map, offset, num_values, parent_null_map);
+        /// The unsigned values are written as signed ones of the same width.
+        const Int8 * data = getRawValues<Int8>(column) + offset;
         for (size_t i = 0; i < num_values; ++i)
         {
-            if (not_null && !not_null[i])
+            if (null_map && null_map[i])
                 continue;
-            Int8 value = static_cast<Int8>(data[i]);
-            encoder.write(static_cast<char>(value));
-            index_statistics.updateInteger(value);
+            encoder.write(static_cast<char>(data[i]));
+            index_statistics.updateInteger(data[i]);
         }
-        countValues(batch, offset, num_values);
+        countValues(null_map, num_values);
     }
 
     void flush(std::vector<StreamData> & streams) override
@@ -641,23 +730,26 @@ public:
         init();
     }
 
-    void add(const ColumnVectorBatch & batch, size_t offset, size_t num_values, const char * incoming_mask) override
+    void add(const IColumn & column, const UInt8 * null_map, size_t offset, size_t num_values, const UInt8 * parent_null_map) override
     {
-        ColumnWriter::add(batch, offset, num_values, incoming_mask);
-        const auto & long_batch = typeid_cast<const LongVectorBatch &>(batch);
-        const char * not_null = batch.hasNulls ? batch.notNull.data() + offset : nullptr;
-        const Int64 * data = long_batch.data.data() + offset;
+        ColumnWriter::add(column, null_map, offset, num_values, parent_null_map);
+        /// The unsigned values (and `Date`) are written as signed ones of the same width.
+        const size_t width = column.sizeOfValueIfFixed();
+        if (width != 2 && width != 4 && width != 8)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column {} for ORC integer", column.getName());
+        const char * data = column.getRawData().data();
         for (size_t i = 0; i < num_values; ++i)
         {
-            if (not_null && !not_null[i])
+            if (null_map && null_map[i])
                 continue;
-            encoder.write(data[i]);
+            Int64 value = readSignedValue(data, width, offset + i);
+            encoder.write(value);
             if (is_date)
-                index_statistics.updateDate(static_cast<Int32>(data[i]));
+                index_statistics.updateDate(static_cast<Int32>(value));
             else
-                index_statistics.updateInteger(data[i]);
+                index_statistics.updateInteger(value);
         }
-        countValues(batch, offset, num_values);
+        countValues(null_map, num_values);
     }
 
     void flush(std::vector<StreamData> & streams) override
@@ -691,23 +783,30 @@ public:
         init();
     }
 
-    void add(const ColumnVectorBatch & batch, size_t offset, size_t num_values, const char * incoming_mask) override
+    void add(const IColumn & column, const UInt8 * null_map, size_t offset, size_t num_values, const UInt8 * parent_null_map) override
     {
-        ColumnWriter::add(batch, offset, num_values, incoming_mask);
-        const auto & double_batch = typeid_cast<const DoubleVectorBatch &>(batch);
-        const char * not_null = batch.hasNulls ? batch.notNull.data() + offset : nullptr;
-        const double * data = double_batch.data.data() + offset;
-        for (size_t i = 0; i < num_values; ++i)
+        ColumnWriter::add(column, null_map, offset, num_values, parent_null_map);
+        const ItemType * data = getRawValues<ItemType>(column) + offset;
+        if (!null_map && std::endian::native == std::endian::little)
         {
-            if (not_null && !not_null[i])
-                continue;
-            ItemType value = static_cast<ItemType>(data[i]);
-            if constexpr (std::endian::native == std::endian::big)
-                value = std::bit_cast<ItemType>(std::byteswap(std::bit_cast<std::conditional_t<sizeof(ItemType) == 8, UInt64, UInt32>>(value)));
-            data_stream.write(reinterpret_cast<const char *>(&value), sizeof(value));
-            index_statistics.updateDouble(data[i]);
+            data_stream.write(reinterpret_cast<const char *>(data), num_values * sizeof(ItemType));
+            for (size_t i = 0; i < num_values; ++i)
+                index_statistics.updateDouble(static_cast<double>(data[i]));
         }
-        countValues(batch, offset, num_values);
+        else
+        {
+            for (size_t i = 0; i < num_values; ++i)
+            {
+                if (null_map && null_map[i])
+                    continue;
+                ItemType value = data[i];
+                if constexpr (std::endian::native == std::endian::big)
+                    value = std::bit_cast<ItemType>(std::byteswap(std::bit_cast<std::conditional_t<sizeof(ItemType) == 8, UInt64, UInt32>>(value)));
+                data_stream.write(reinterpret_cast<const char *>(&value), sizeof(value));
+                index_statistics.updateDouble(static_cast<double>(data[i]));
+            }
+        }
+        countValues(null_map, num_values);
     }
 
     void flush(std::vector<StreamData> & streams) override
@@ -748,26 +847,42 @@ public:
         init();
     }
 
-    void add(const ColumnVectorBatch & batch, size_t offset, size_t num_values, const char * incoming_mask) override
+    void add(const IColumn & column, const UInt8 * null_map, size_t offset, size_t num_values, const UInt8 * parent_null_map) override
     {
-        ColumnWriter::add(batch, offset, num_values, incoming_mask);
-        const auto & string_batch = dynamic_cast<const StringVectorBatch &>(batch);
-        const char * not_null = batch.hasNulls ? batch.notNull.data() + offset : nullptr;
-        char * const * data = string_batch.data.data() + offset;
-        const Int64 * lengths = string_batch.length.data() + offset;
-        for (size_t i = 0; i < num_values; ++i)
+        ColumnWriter::add(column, null_map, offset, num_values, parent_null_map);
+        /// `String`, or the raw bytes of the values of fixed size (`FixedString`, `IPv6`, big integers).
+        auto add_value = [&](std::string_view value)
         {
-            if (not_null && !not_null[i])
-                continue;
-            size_t length = static_cast<size_t>(lengths[i]);
-            blob.append(data[i], length);
+            blob.append(value);
             value_ends.push_back(blob.size());
             if (is_binary)
-                index_statistics.updateBinary(length);
+                index_statistics.updateBinary(value.size());
             else
-                index_statistics.updateString(std::string_view(data[i], length));
+                index_statistics.updateString(value);
+        };
+
+        if (const auto * strings = typeid_cast<const ColumnString *>(&column))
+        {
+            const auto & offsets = strings->getOffsets();
+            const auto * chars = reinterpret_cast<const char *>(strings->getChars().data());
+            for (size_t i = 0; i < num_values; ++i)
+            {
+                if (null_map && null_map[i])
+                    continue;
+                size_t row = offset + i;
+                add_value(std::string_view(chars + offsets[row - 1], offsets[row] - offsets[row - 1]));
+            }
         }
-        countValues(batch, offset, num_values);
+        else
+        {
+            for (size_t i = 0; i < num_values; ++i)
+            {
+                if (null_map && null_map[i])
+                    continue;
+                add_value(column.getDataAt(offset + i));
+            }
+        }
+        countValues(null_map, num_values);
     }
 
     void createRowIndexEntry() override
@@ -931,8 +1046,10 @@ private:
 class TimestampColumnWriter final : public PrimitiveColumnWriter
 {
 public:
-    TimestampColumnWriter(const Type & type, WriterContext & context_)
+    /// `scale` is of `DateTime64`, or nullopt for `DateTime` (`UInt32` seconds).
+    TimestampColumnWriter(const Type & type, std::optional<UInt32> scale_, WriterContext & context_)
         : PrimitiveColumnWriter(type, context_)
+        , scale(scale_)
         , seconds_stream(context.compressor, context.block_size)
         , nanos_stream(context.compressor, context.block_size)
         , seconds_encoder(seconds_stream, true)
@@ -944,19 +1061,30 @@ public:
         init();
     }
 
-    void add(const ColumnVectorBatch & batch, size_t offset, size_t num_values, const char * incoming_mask) override
+    void add(const IColumn & column, const UInt8 * null_map, size_t offset, size_t num_values, const UInt8 * parent_null_map) override
     {
-        ColumnWriter::add(batch, offset, num_values, incoming_mask);
-        const auto & timestamp_batch = typeid_cast<const TimestampVectorBatch &>(batch);
-        const char * not_null = batch.hasNulls ? batch.notNull.data() + offset : nullptr;
-        const Int64 * seconds = timestamp_batch.data.data() + offset;
-        const Int64 * nanos = timestamp_batch.nanoseconds.data() + offset;
+        ColumnWriter::add(column, null_map, offset, num_values, parent_null_map);
+        const char * data = column.getRawData().data();
+        const Int64 multiplier = scale ? common::exp10_i64(static_cast<int>(*scale)) : 1;
+        const Int64 nanos_multiplier = scale ? common::exp10_i64(9 - static_cast<int>(*scale)) : 0;
         for (size_t i = 0; i < num_values; ++i)
         {
-            if (not_null && !not_null[i])
+            if (null_map && null_map[i])
                 continue;
-            Int64 secs = seconds[i];
-            Int64 nano = nanos[i];
+            Int64 secs;
+            Int64 nano;
+            if (scale)
+            {
+                /// For the values before the epoch, the nanoseconds are negative (as in the Arrow ORC adapter).
+                Int64 value = unalignedLoad<Int64>(data + (offset + i) * sizeof(Int64));
+                secs = value / multiplier;
+                nano = (value % multiplier) * nanos_multiplier;
+            }
+            else
+            {
+                secs = unalignedLoad<UInt32>(data + (offset + i) * sizeof(UInt32));
+                nano = 0;
+            }
 
             Int64 utc_seconds = is_utc ? secs : secs + context.timezone->timezoneOffset(secs);
             index_statistics.updateTimestamp(utc_seconds * 1000 + nano / 1000000, static_cast<Int32>(nano % 1000000));
@@ -966,7 +1094,7 @@ public:
             seconds_encoder.write(secs - epoch_offset);
             nanos_encoder.write(formatNanos(nano));
         }
-        countValues(batch, offset, num_values);
+        countValues(null_map, num_values);
     }
 
     void flush(std::vector<StreamData> & streams) override
@@ -1016,6 +1144,7 @@ private:
         return (nanos << 3) | trailing_zeros;
     }
 
+    const std::optional<UInt32> scale;
     OutputByteStream seconds_stream;
     OutputByteStream nanos_stream;
     IntRleEncoderV2 seconds_encoder;
@@ -1024,7 +1153,6 @@ private:
     const Int64 epoch_offset;
 };
 
-template <bool is_128>
 class DecimalColumnWriter final : public PrimitiveColumnWriter
 {
 public:
@@ -1039,19 +1167,26 @@ public:
         init();
     }
 
-    void add(const ColumnVectorBatch & batch, size_t offset, size_t num_values, const char * incoming_mask) override
+    void add(const IColumn & column, const UInt8 * null_map, size_t offset, size_t num_values, const UInt8 * parent_null_map) override
     {
-        ColumnWriter::add(batch, offset, num_values, incoming_mask);
-        const char * not_null = batch.hasNulls ? batch.notNull.data() + offset : nullptr;
+        ColumnWriter::add(column, null_map, offset, num_values, parent_null_map);
+        /// `Decimal32`, `Decimal64` or `Decimal128`.
+        const size_t width = column.sizeOfValueIfFixed();
+        const char * data = column.getRawData().data();
         for (size_t i = 0; i < num_values; ++i)
         {
-            if (not_null && !not_null[i])
+            if (null_map && null_map[i])
                 continue;
+            size_t row = offset + i;
             Int128 value;
-            if constexpr (is_128)
-                value = typeid_cast<const Decimal128VectorBatch &>(batch).values[offset + i];
+            if (width == 16)
+                value = unalignedLoad<Int128>(data + row * 16);
+            else if (width == 8)
+                value = unalignedLoad<Int64>(data + row * 8);
+            else if (width == 4)
+                value = unalignedLoad<Int32>(data + row * 4);
             else
-                value = typeid_cast<const Decimal64VectorBatch &>(batch).values[offset + i];
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column {} for ORC decimal", column.getName());
 
             /// Zigzag-encoded base 128 varint.
             UInt128 encoded = (static_cast<UInt128>(value) << 1) ^ static_cast<UInt128>(value >> 127);
@@ -1067,7 +1202,7 @@ public:
             scale_encoder.write(scale);
             index_statistics.updateDecimal(value, scale);
         }
-        countValues(batch, offset, num_values);
+        countValues(null_map, num_values);
     }
 
     void flush(std::vector<StreamData> & streams) override
@@ -1105,9 +1240,12 @@ private:
     IntRleEncoderV2 scale_encoder;
 };
 
-std::unique_ptr<ColumnWriter> buildColumnWriter(const Type & type, WriterContext & context)
+std::unique_ptr<ColumnWriter> buildColumnWriter(const Type & type, const DataTypePtr & data_type_with_nulls, WriterContext & context)
 {
     checkStackSize();
+
+    /// The nulls are handled by `addColumn`.
+    DataTypePtr data_type = removeNullable(data_type_with_nulls);
 
     switch (type.getKind())
     {
@@ -1131,19 +1269,26 @@ std::unique_ptr<ColumnWriter> buildColumnWriter(const Type & type, WriterContext
             return std::make_unique<StringColumnWriter>(type, context);
         case TIMESTAMP:
         case TIMESTAMP_INSTANT:
-            return std::make_unique<TimestampColumnWriter>(type, context);
+        {
+            std::optional<UInt32> scale;
+            if (const auto * datetime64 = typeid_cast<const DataTypeDateTime64 *>(data_type.get()))
+                scale = datetime64->getScale();
+            return std::make_unique<TimestampColumnWriter>(type, scale, context);
+        }
         case DECIMAL:
-            if (type.getPrecision() == 0 || type.getPrecision() > 18)
-                return std::make_unique<DecimalColumnWriter<true>>(type, context);
-            return std::make_unique<DecimalColumnWriter<false>>(type, context);
+            return std::make_unique<DecimalColumnWriter>(type, context);
         case STRUCT:
-            return std::make_unique<StructColumnWriter>(type, context);
+            return std::make_unique<StructColumnWriter>(type, assert_cast<const DataTypeTuple &>(*data_type).getElements(), context);
         case LIST:
-            return std::make_unique<CollectionColumnWriter<false>>(type, context);
+            return std::make_unique<CollectionColumnWriter<false>>(
+                type, DataTypes{assert_cast<const DataTypeArray &>(*data_type).getNestedType()}, context);
         case MAP:
-            return std::make_unique<CollectionColumnWriter<true>>(type, context);
+        {
+            const auto & map_type = assert_cast<const DataTypeMap &>(*data_type);
+            return std::make_unique<CollectionColumnWriter<true>>(type, DataTypes{map_type.getKeyType(), map_type.getValueType()}, context);
+        }
         case UNION:
-            return std::make_unique<UnionColumnWriter>(type, context);
+            return std::make_unique<UnionColumnWriter>(type, assert_cast<const DataTypeVariant &>(*data_type).getVariants(), context);
         case GEOMETRY:
         case GEOGRAPHY:
             break;
@@ -1154,7 +1299,7 @@ std::unique_ptr<ColumnWriter> buildColumnWriter(const Type & type, WriterContext
 }
 
 
-Writer::Writer(const Type & schema_, OutputStream & out_, const WriterOptions & options_)
+Writer::Writer(const Type & schema_, const DataTypes & column_types, OutputStream & out_, const WriterOptions & options_)
     : out(out_), options(options_)
 {
     if (options.compression_block_size == 0 || options.compression_block_size >= (1ULL << 23))
@@ -1176,7 +1321,9 @@ Writer::Writer(const Type & schema_, OutputStream & out_, const WriterOptions & 
     static constexpr Int64 UTC_2015_01_01 = 1420070400;
     context->epoch_offset = UTC_2015_01_01 - context->timezone->timezoneOffset(UTC_2015_01_01);
 
-    column_writer = buildColumnWriter(*schema, *context);
+    if (schema->getKind() != STRUCT)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The root type of ORC file must be a struct");
+    column_writer = std::make_unique<StructColumnWriter>(*schema, column_types, *context);
 
     write("ORC");
     footer.header_length = current_offset;
@@ -1189,26 +1336,23 @@ Writer::Writer(const Type & schema_, OutputStream & out_, const WriterOptions & 
 
 Writer::~Writer() = default;
 
-std::unique_ptr<ColumnVectorBatch> Writer::createRowBatch(size_t capacity) const
-{
-    return ORC::createRowBatch(*schema, capacity);
-}
-
 void Writer::write(const std::string & data)
 {
     out.write(data.data(), data.size());
     current_offset += data.size();
 }
 
-void Writer::add(ColumnVectorBatch & batch)
+void Writer::add(const Columns & columns, size_t num_rows)
 {
+    auto & root = typeid_cast<StructColumnWriter &>(*column_writer);
+
     if (context->enable_index)
     {
         size_t position = 0;
-        while (position < batch.numElements)
+        while (position < num_rows)
         {
-            size_t chunk = std::min<size_t>(batch.numElements - position, options.row_index_stride - index_rows);
-            column_writer->add(batch, position, chunk, nullptr);
+            size_t chunk = std::min<size_t>(num_rows - position, options.row_index_stride - index_rows);
+            root.addRoot(columns, position, chunk);
             position += chunk;
             index_rows += chunk;
             stripe_rows += chunk;
@@ -1221,8 +1365,8 @@ void Writer::add(ColumnVectorBatch & batch)
     }
     else
     {
-        stripe_rows += batch.numElements;
-        column_writer->add(batch, 0, batch.numElements, nullptr);
+        stripe_rows += num_rows;
+        root.addRoot(columns, 0, num_rows);
     }
 
     if (column_writer->estimateSize() >= options.stripe_size)

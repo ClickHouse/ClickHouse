@@ -1419,13 +1419,12 @@ Chunk NativeORCBlockInputFormat::read()
     if (is_stopped)
         return {};
 
-    /// TODO: figure out why reuse batch would cause asan fatals in https://s3.amazonaws.com/clickhouse-test-reports/55330/be39d23af2d7e27f5ec7f168947cf75aeaabf674/stateless_tests__asan__[4_4].html
-    /// Not sure if it is a false positive case. Notice that reusing batch will speed up reading ORC by 1.15x.
+    /// The values are decoded directly into the columns of the batch, which are then handed over to the chunk.
     Stopwatch time;
-    auto batch = stripe_reader->createRowBatch(format_settings.orc.row_batch_size);
+    auto batch = stripe_reader->createRowBatch();
     while (true)
     {
-        if (stripe_reader->next(*batch))
+        if (stripe_reader->next(*batch, static_cast<size_t>(format_settings.orc.row_batch_size)))
             break;
 
         /// No more rows to read in current stripe, continue to prepare reading next stripe
@@ -1612,59 +1611,28 @@ static const ORC::ColumnVectorBatch * getNestedORCColumn(const ORC::ListVectorBa
     return orc_column->elements.get();
 }
 
+/// The reader decodes the lengths directly into the end offsets, as in `ColumnArray`.
 template <typename BatchType>
 static ColumnPtr readOffsetsFromORCListColumn(const BatchType * orc_column)
 {
-    auto offsets_column = ColumnUInt64::create();
-    ColumnArray::Offsets & offsets_data = assert_cast<ColumnVector<UInt64> &>(*offsets_column).getData();
-    offsets_data.reserve(orc_column->numElements);
-
-    for (size_t i = 0; i < orc_column->numElements; ++i)
-        offsets_data.push_back(orc_column->offsets[i + 1]);
-
-    return offsets_column;
+    return orc_column->offsets;
 }
 
+/// The values of the primitive types are decoded directly into the columns (with zeros for the nulls).
 static ColumnWithTypeAndName
 readColumnWithBooleanData(const ORC::ColumnVectorBatch * orc_column, const String & column_name)
 {
-    const auto * orc_bool_column = dynamic_cast<const ORC::LongVectorBatch *>(orc_column);
-    auto internal_type = DataTypeFactory::instance().get("Bool");
-    auto internal_column = internal_type->createColumn();
-    auto & column_data = assert_cast<ColumnVector<UInt8> &>(*internal_column).getData();
-
-    column_data.reserve(orc_bool_column->numElements);
-    for (size_t i = 0; i < orc_bool_column->numElements; ++i)
-    {
-        if (!orc_bool_column->hasNulls || orc_bool_column->notNull[i])
-            column_data.push_back(static_cast<UInt8>(orc_bool_column->data[i]));
-        else
-            column_data.push_back(static_cast<UInt8>(0));
-    }
-
-    return {std::move(internal_column), internal_type, column_name};
+    const auto & orc_bool_column = typeid_cast<const ORC::BoolVectorBatch &>(*orc_column);
+    return {orc_bool_column.column, DataTypeFactory::instance().get("Bool"), column_name};
 }
 
 
-template <typename NumericType, typename BatchType>
+template <typename NumericType>
 static ColumnWithTypeAndName
 readColumnWithNumericData(const ORC::ColumnVectorBatch * orc_column, const String & column_name)
 {
-    auto internal_type = std::make_shared<DataTypeNumber<NumericType>>();
-    auto internal_column = internal_type->createColumn();
-    auto & column_data = static_cast<ColumnVector<NumericType> &>(*internal_column).getData();
-    const auto * orc_int_column = dynamic_cast<const BatchType *>(orc_column);
-
-    column_data.reserve(orc_int_column->numElements);
-    for (size_t i = 0; i < orc_int_column->numElements; ++i)
-    {
-        if (!orc_int_column->hasNulls || orc_int_column->notNull[i])
-            column_data.push_back(NumericType(orc_int_column->data[i]));
-        else
-            column_data.push_back(NumericType{});
-    }
-
-    return {std::move(internal_column), internal_type, column_name};
+    const auto & orc_numeric_column = typeid_cast<const ORC::NumericVectorBatch<NumericType> &>(*orc_column);
+    return {orc_numeric_column.column, std::make_shared<DataTypeNumber<NumericType>>(), column_name};
 }
 
 
@@ -1685,58 +1653,34 @@ static ColumnWithTypeAndName readColumnWithEncodedStringOrFixedStringData(
 
     const auto & orc_str_column = dynamic_cast<const ORC::EncodedStringVectorBatch &>(*orc_column);
     size_t rows = orc_str_column.numElements;
-    const auto & orc_dict = *orc_str_column.dictionary;
-    if (orc_dict.dictionaryOffset.size() <= 1)
+    const auto & orc_dict = assert_cast<const ColumnString &>(*orc_str_column.dictionary->column);
+    size_t dict_size = orc_dict.size();
+    if (dict_size == 0)
     {
         auto result_column = internal_type->createColumn();
         result_column->insertManyDefaults(rows);
         return {std::move(result_column), internal_type, column_name};
     }
 
-    size_t dict_size = orc_dict.dictionaryOffset.size() - 1;
-    auto holder_column = holder_type->createColumn();
+    /// The dictionary of ORC is already a `ColumnString`, which is the holder for `String`.
+    ColumnPtr holder_column = orc_str_column.dictionary->column;
     if constexpr (fixed_string)
     {
         const size_t n = orc_type->getMaximumLength();
-        auto & concrete_holder_column = assert_cast<ColumnFixedString &>(*holder_column);
-        PaddedPODArray<UInt8> & column_chars = concrete_holder_column.getChars();
-        size_t reserve_size = dict_size * n;
-        column_chars.resize_exact(reserve_size);
-        size_t curr_offset = 0;
+        auto fixed_holder_column = ColumnFixedString::create(n);
+        PaddedPODArray<UInt8> & column_chars = fixed_holder_column->getChars();
+        column_chars.resize_fill(dict_size * n);
         for (size_t i = 0; i < dict_size; ++i)
         {
-            const auto * buf = orc_dict.dictionaryBlob.data() + orc_dict.dictionaryOffset[i];
-            size_t buf_size = orc_dict.dictionaryOffset[i + 1] - orc_dict.dictionaryOffset[i];
-            if (buf_size > n)
+            auto value = orc_dict.getDataAt(i);
+            if (value.size() > n)
                 throw Exception(
                     ErrorCodes::INCORRECT_DATA,
                     "ORC dictionary entry {} has size {} that exceeds the declared FixedString length {}",
-                    i, buf_size, n);
-            memcpy(&column_chars[curr_offset], buf, buf_size);
-            /// resize_exact does not zero-initialize, so pad shorter entries to keep FixedString values
-            /// deterministic and to avoid leaking uninitialized heap memory.
-            if (buf_size < n)
-                memset(&column_chars[curr_offset + buf_size], 0, n - buf_size);
-            curr_offset += n;
+                    i, value.size(), n);
+            memcpy(&column_chars[i * n], value.data(), value.size());
         }
-    }
-    else
-    {
-        auto & concrete_holder_column = assert_cast<ColumnString &>(*holder_column);
-        PaddedPODArray<UInt8> & column_chars = concrete_holder_column.getChars();
-        PaddedPODArray<UInt64> & column_offsets = concrete_holder_column.getOffsets();
-
-        column_chars.resize_exact(orc_dict.dictionaryBlob.size());
-        column_offsets.resize_exact(dict_size);
-        size_t curr_offset = 0;
-        for (size_t i = 0; i < dict_size; ++i)
-        {
-            const auto * buf = orc_dict.dictionaryBlob.data() + orc_dict.dictionaryOffset[i];
-            size_t buf_size = orc_dict.dictionaryOffset[i + 1] - orc_dict.dictionaryOffset[i];
-            memcpy(&column_chars[curr_offset], buf, buf_size);
-            curr_offset += buf_size;
-            column_offsets[i] = curr_offset;
-        }
+        holder_column = std::move(fixed_holder_column);
     }
 
     /// Insert CH dictionary_column from holder_column
@@ -1800,53 +1744,18 @@ static ColumnWithTypeAndName readColumnWithEncodedStringOrFixedStringData(
     return {std::move(internal_column), internal_type, column_name};
 }
 
+static const ColumnString & getStringColumnFromBatch(const ORC::ColumnVectorBatch * orc_column, ColumnPtr & holder)
+{
+    holder = ORC::getStringColumn(dynamic_cast<const ORC::StringVectorBatch &>(*orc_column));
+    return assert_cast<const ColumnString &>(*holder);
+}
+
 static ColumnWithTypeAndName
 readColumnWithStringData(const ORC::ColumnVectorBatch * orc_column, const String & column_name)
 {
-    auto internal_type = std::make_shared<DataTypeString>();
-    auto internal_column = internal_type->createColumn();
-    PaddedPODArray<UInt8> & column_chars = assert_cast<ColumnString &>(*internal_column).getChars();
-    PaddedPODArray<UInt64> & column_offsets = assert_cast<ColumnString &>(*internal_column).getOffsets();
-
-    const auto * orc_str_column = dynamic_cast<const ORC::StringVectorBatch *>(orc_column);
-    size_t reserve_size = 0;
-    for (size_t i = 0; i < orc_str_column->numElements; ++i)
-    {
-        if (!orc_str_column->hasNulls || orc_str_column->notNull[i])
-            reserve_size += orc_str_column->length[i];
-    }
-
-    column_chars.resize_exact(reserve_size);
-    column_offsets.resize_exact(orc_str_column->numElements);
-
-    size_t curr_offset = 0;
-    if (!orc_str_column->hasNulls)
-    {
-        for (size_t i = 0; i < orc_str_column->numElements; ++i)
-        {
-            const auto * buf = orc_str_column->data[i];
-            size_t buf_size = orc_str_column->length[i];
-            memcpy(&column_chars[curr_offset], buf, buf_size);
-            curr_offset += buf_size;
-            column_offsets[i] = curr_offset;
-        }
-    }
-    else
-    {
-        for (size_t i = 0; i < orc_str_column->numElements; ++i)
-        {
-            if (orc_str_column->notNull[i])
-            {
-                const auto * buf = orc_str_column->data[i];
-                size_t buf_size = orc_str_column->length[i];
-                memcpy(&column_chars[curr_offset], buf, buf_size);
-                curr_offset += buf_size;
-            }
-
-            column_offsets[i] = curr_offset;
-        }
-    }
-    return {std::move(internal_column), internal_type, column_name};
+    ColumnPtr column;
+    getStringColumnFromBatch(orc_column, column);
+    return {std::move(column), std::make_shared<DataTypeString>(), column_name};
 }
 
 static ColumnWithTypeAndName
@@ -1858,25 +1767,22 @@ readColumnWithFixedStringData(const ORC::ColumnVectorBatch * orc_column, const O
     PaddedPODArray<UInt8> & column_chars = assert_cast<ColumnFixedString &>(*internal_column).getChars();
     column_chars.reserve(orc_column->numElements * fixed_len);
 
-    const auto * orc_str_column = dynamic_cast<const ORC::StringVectorBatch *>(orc_column);
-    for (size_t i = 0; i < orc_str_column->numElements; ++i)
+    ColumnPtr holder;
+    const auto & strings = getStringColumnFromBatch(orc_column, holder);
+    for (size_t i = 0; i < orc_column->numElements; ++i)
     {
-        if (!orc_str_column->hasNulls || orc_str_column->notNull[i])
-        {
-            const Int64 length = orc_str_column->length[i];
-            if (length < 0 || static_cast<size_t>(length) > fixed_len)
-                throw Exception(
-                    ErrorCodes::INCORRECT_DATA,
-                    "ORC string value at row {} has size {} that doesn't fit into FixedString({})",
-                    i, length, fixed_len);
+        /// The null values are empty strings.
+        auto value = strings.getDataAt(i);
+        if (value.size() > fixed_len)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "ORC string value at row {} has size {} that doesn't fit into FixedString({})",
+                i, value.size(), fixed_len);
 
-            column_chars.insert_assume_reserved(orc_str_column->data[i], orc_str_column->data[i] + length);
-            /// Zero-pad shorter values to the fixed width to keep the FixedString layout consistent.
-            if (static_cast<size_t>(length) < fixed_len)
-                column_chars.resize_fill(column_chars.size() + (fixed_len - static_cast<size_t>(length)));
-        }
-        else
-            column_chars.resize_fill(column_chars.size() + fixed_len);
+        column_chars.insert_assume_reserved(value.data(), value.data() + value.size());
+        /// Zero-pad shorter values to the fixed width to keep the FixedString layout consistent.
+        if (value.size() < fixed_len)
+            column_chars.resize_fill(column_chars.size() + (fixed_len - value.size()));
     }
 
     return {std::move(internal_column), internal_type, column_name};
@@ -1919,24 +1825,28 @@ static ColumnWithTypeAndName readColumnWithDecimalDataCast(
 static ColumnWithTypeAndName
 readIPv6ColumnFromBinaryData(const ORC::ColumnVectorBatch * orc_column, const String & column_name)
 {
-    const auto * orc_str_column = dynamic_cast<const ORC::StringVectorBatch *>(orc_column);
+    ColumnPtr holder;
+    const auto & strings = getStringColumnFromBatch(orc_column, holder);
 
-    for (size_t i = 0; i < orc_str_column->numElements; ++i)
+    for (size_t i = 0; i < orc_column->numElements; ++i)
     {
         /// If at least one value size is not 16 bytes, fallback to reading String column and further cast to IPv6.
-        if ((!orc_str_column->hasNulls || orc_str_column->notNull[i]) && orc_str_column->length[i] != sizeof(IPv6))
-            return readColumnWithStringData(orc_column, column_name);
+        if ((!orc_column->hasNulls || orc_column->notNull[i]) && strings.getDataAt(i).size() != sizeof(IPv6))
+            return {std::move(holder), std::make_shared<DataTypeString>(), column_name};
     }
 
     auto internal_type = std::make_shared<DataTypeIPv6>();
     auto internal_column = internal_type->createColumn();
     auto & ipv6_column = assert_cast<ColumnIPv6 &>(*internal_column);
-    ipv6_column.reserve(orc_str_column->numElements);
+    ipv6_column.reserve(orc_column->numElements);
 
-    for (size_t i = 0; i < orc_str_column->numElements; ++i)
+    for (size_t i = 0; i < orc_column->numElements; ++i)
     {
-        if (!orc_str_column->hasNulls || orc_str_column->notNull[i])
-            ipv6_column.insertData(orc_str_column->data[i], orc_str_column->length[i]);
+        if (!orc_column->hasNulls || orc_column->notNull[i])
+        {
+            auto value = strings.getDataAt(i);
+            ipv6_column.insertData(value.data(), value.size());
+        }
         else
             ipv6_column.insertDefault();
     }
@@ -1947,20 +1857,15 @@ readIPv6ColumnFromBinaryData(const ORC::ColumnVectorBatch * orc_column, const St
 static ColumnWithTypeAndName
 readIPv4ColumnWithInt32Data(const ORC::ColumnVectorBatch * orc_column, const String & column_name)
 {
-    const auto * orc_int_column = dynamic_cast<const ORC::LongVectorBatch *>(orc_column);
+    const auto & data = typeid_cast<const ORC::IntVectorBatch &>(*orc_column).getData();
 
     auto internal_type = std::make_shared<DataTypeIPv4>();
     auto internal_column = internal_type->createColumn();
     auto & column_data = assert_cast<ColumnIPv4 &>(*internal_column).getData();
-    column_data.reserve(orc_int_column->numElements);
-
-    for (size_t i = 0; i < orc_int_column->numElements; ++i)
-    {
-        if (!orc_int_column->hasNulls || orc_int_column->notNull[i])
-            column_data.push_back(static_cast<UInt32>(orc_int_column->data[i]));
-        else
-            column_data.push_back(0);
-    }
+    column_data.resize(data.size());
+    /// The null values are zeros.
+    for (size_t i = 0; i < data.size(); ++i)
+        column_data[i] = static_cast<UInt32>(data[i]);
 
     return {std::move(internal_column), internal_type, column_name};
 }
@@ -1969,25 +1874,27 @@ template <typename ColumnType>
 static ColumnWithTypeAndName readColumnWithBigNumberFromBinaryData(
     const ORC::ColumnVectorBatch * orc_column, const String & column_name, const DataTypePtr & column_type)
 {
-    const auto * orc_str_column = dynamic_cast<const ORC::StringVectorBatch *>(orc_column);
+    ColumnPtr holder;
+    const auto & strings = getStringColumnFromBatch(orc_column, holder);
 
     auto internal_column = column_type->createColumn();
     auto & integer_column = assert_cast<ColumnType &>(*internal_column);
-    integer_column.reserve(orc_str_column->numElements);
+    integer_column.reserve(orc_column->numElements);
 
-    for (size_t i = 0; i < orc_str_column->numElements; ++i)
+    for (size_t i = 0; i < orc_column->numElements; ++i)
     {
-        if (!orc_str_column->hasNulls || orc_str_column->notNull[i])
+        if (!orc_column->hasNulls || orc_column->notNull[i])
         {
-            if (sizeof(typename ColumnType::ValueType) != orc_str_column->length[i])
+            auto value = strings.getDataAt(i);
+            if (sizeof(typename ColumnType::ValueType) != value.size())
                 throw Exception(
                     ErrorCodes::INCORRECT_DATA,
                     "ValueType size {} of column {} is not equal to size of binary data {}",
                     sizeof(typename ColumnType::ValueType),
                     integer_column.getName(),
-                    orc_str_column->length[i]);
+                    value.size());
 
-            integer_column.insertData(orc_str_column->data[i], orc_str_column->length[i]);
+            integer_column.insertData(value.data(), value.size());
         }
         else
         {
@@ -2060,6 +1967,7 @@ static ColumnWithTypeAndName readColumnWithDateData(
     }
 
     const auto * orc_int_column = dynamic_cast<const ORC::LongVectorBatch *>(orc_column);
+    const auto & orc_int_data = orc_int_column->getData();
     auto internal_column = internal_type->createColumn();
     PaddedPODArray<Int32> & column_data = assert_cast<ColumnVector<Int32> &>(*internal_column).getData();
     column_data.reserve(orc_int_column->numElements);
@@ -2070,7 +1978,7 @@ static ColumnWithTypeAndName readColumnWithDateData(
         {
             /// Range-check the original Int64 day count before narrowing to Int32,
             /// otherwise a malformed value could wrap into an apparently valid date.
-            Int64 days_num = orc_int_column->data[i];
+            Int64 days_num = orc_int_data[i];
             if (check_date32_range && (days_num > DATE_LUT_MAX_EXTEND_DAY_NUM || days_num < DATE_LUT_MIN_EXTEND_DAY_NUM))
             {
                 if (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
@@ -2807,23 +2715,23 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
         case ORC::BOOLEAN:
             return readColumnWithBooleanData(orc_column, column_name);
         case ORC::BYTE:
-            return readColumnWithNumericData<Int8, ORC::LongVectorBatch>(orc_column, column_name);
+            return readColumnWithNumericData<Int8>(orc_column, column_name);
         case ORC::SHORT:
-            return readColumnWithNumericData<Int16, ORC::LongVectorBatch>(orc_column, column_name);
+            return readColumnWithNumericData<Int16>(orc_column, column_name);
         case ORC::INT:
         {
             /// ORC format doesn't have unsigned integers and we output IPv4 as Int32.
             /// We should allow to read it back from Int32.
             if (type_hint && isIPv4(type_hint))
                 return readIPv4ColumnWithInt32Data(orc_column, column_name);
-            return readColumnWithNumericData<Int32, ORC::LongVectorBatch>(orc_column, column_name);
+            return readColumnWithNumericData<Int32>(orc_column, column_name);
         }
         case ORC::LONG:
-            return readColumnWithNumericData<Int64, ORC::LongVectorBatch>(orc_column, column_name);
+            return readColumnWithNumericData<Int64>(orc_column, column_name);
         case ORC::FLOAT:
-            return readColumnWithNumericData<Float32, ORC::DoubleVectorBatch>(orc_column, column_name);
+            return readColumnWithNumericData<Float32>(orc_column, column_name);
         case ORC::DOUBLE:
-            return readColumnWithNumericData<Float64, ORC::DoubleVectorBatch>(orc_column, column_name);
+            return readColumnWithNumericData<Float64>(orc_column, column_name);
         case ORC::DATE:
             return readColumnWithDateData(orc_column, column_name, type_hint, date_time_overflow_behavior);
         case ORC::TIMESTAMP: [[fallthrough]];

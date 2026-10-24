@@ -1,37 +1,37 @@
 #pragma once
 
 #include <Processors/Formats/Impl/ORC/Type.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 #include <Common/PODArray.h>
+#include <Common/assert_cast.h>
 
 #include <memory>
 #include <vector>
 
-/// Batches of column values, which the reader fills and the writer consumes. The layout follows the
-/// reference implementation, so the conversion to and from ClickHouse columns maps one to one.
+/// Batches of column values filled by the reader. The values of the primitive types are decoded
+/// directly into ClickHouse columns, which the conversion to the requested types takes without
+/// copying. The structure follows the reference implementation: a batch has the null mask of its
+/// values, and the batches of the compound types have the batches of their children.
 
 namespace DB::ORC
 {
 
 struct ColumnVectorBatch
 {
-    /// All values are non-null initially, as in the reference implementation.
-    explicit ColumnVectorBatch(size_t capacity_) : capacity(capacity_) { notNull.resize_fill(capacity, 1); }
+    ColumnVectorBatch() = default;
     virtual ~ColumnVectorBatch() = default;
 
     ColumnVectorBatch(const ColumnVectorBatch &) = delete;
     ColumnVectorBatch & operator=(const ColumnVectorBatch &) = delete;
 
-    /// Grows the capacity (never shrinks).
-    virtual void resize(size_t new_capacity)
+    /// Prepares the batch for `num_values` values.
+    void reset(size_t num_values)
     {
-        if (capacity < new_capacity)
-        {
-            capacity = new_capacity;
-            notNull.resize_fill(new_capacity, 1);
-        }
+        numElements = num_values;
+        notNull.resize(num_values);
     }
 
-    size_t capacity;
     size_t numElements = 0;
     /// Non-zero for the non-null values, valid only if `hasNulls`.
     PaddedPODArray<char> notNull;
@@ -40,89 +40,64 @@ struct ColumnVectorBatch
     bool isEncoded = false;
 };
 
+/// The values of a primitive type in a ClickHouse column (`ColumnVector` of `T`). The null values are zeros.
 template <typename T>
 struct NumericVectorBatch : public ColumnVectorBatch
 {
-    explicit NumericVectorBatch(size_t capacity_) : ColumnVectorBatch(capacity_) { data.resize(capacity_); }
+    using Container = PaddedPODArray<T>;
 
-    void resize(size_t new_capacity) override
+    /// Creates a new column for the next values: the previous column can be still referenced.
+    Container & prepareColumn(size_t num_values)
     {
-        if (capacity < new_capacity)
-        {
-            ColumnVectorBatch::resize(new_capacity);
-            data.resize(new_capacity);
-        }
+        auto new_column = ColumnVector<T>::create(num_values);
+        auto & data = new_column->getData();
+        column = std::move(new_column);
+        return data;
     }
 
-    PaddedPODArray<T> data;
+    const Container & getData() const { return assert_cast<const ColumnVector<T> &>(*column).getData(); }
+
+    ColumnPtr column;
 };
 
-/// For BOOLEAN, BYTE, SHORT, INT, LONG and DATE (days since the epoch).
+/// BOOLEAN: 0 or 1.
+using BoolVectorBatch = NumericVectorBatch<UInt8>;
+using ByteVectorBatch = NumericVectorBatch<Int8>;
+using ShortVectorBatch = NumericVectorBatch<Int16>;
+using IntVectorBatch = NumericVectorBatch<Int32>;
+/// LONG and DATE (days since the epoch, not narrowed, so that the range can be checked).
 using LongVectorBatch = NumericVectorBatch<Int64>;
-/// For FLOAT and DOUBLE.
-using DoubleVectorBatch = NumericVectorBatch<double>;
+using FloatVectorBatch = NumericVectorBatch<Float32>;
+using DoubleVectorBatch = NumericVectorBatch<Float64>;
 
+/// The values in a `ColumnString`. The null values are empty strings.
 struct StringVectorBatch : public ColumnVectorBatch
 {
-    explicit StringVectorBatch(size_t capacity_) : ColumnVectorBatch(capacity_)
-    {
-        data.resize(capacity_);
-        length.resize(capacity_);
-    }
-
-    void resize(size_t new_capacity) override
-    {
-        if (capacity < new_capacity)
-        {
-            ColumnVectorBatch::resize(new_capacity);
-            data.resize(new_capacity);
-            length.resize(new_capacity);
-        }
-    }
-
-    /// Pointers to the values, which point into `blob` (or into the dictionary) for the batches
-    /// filled by the reader, and into the source columns for the batches given to the writer.
-    PaddedPODArray<char *> data;
-    PaddedPODArray<Int64> length;
-    PaddedPODArray<char> blob;
+    ColumnPtr column;
 };
 
 struct StringDictionary
 {
-    PaddedPODArray<char> dictionaryBlob;
-    /// `dictionaryOffset[i]` is the start of the i-th entry; the last element is the total size.
-    PaddedPODArray<Int64> dictionaryOffset;
+    /// The entries of the dictionary.
+    ColumnPtr column;
 };
 
-/// A string batch with the dictionary indices, without decoding the values.
+/// A string batch with the dictionary indices, without decoding the values. `column` is not set.
 struct EncodedStringVectorBatch : public StringVectorBatch
 {
-    explicit EncodedStringVectorBatch(size_t capacity_) : StringVectorBatch(capacity_) { index.resize(capacity_); }
-
-    void resize(size_t new_capacity) override
-    {
-        if (capacity < new_capacity)
-        {
-            StringVectorBatch::resize(new_capacity);
-            index.resize(new_capacity);
-        }
-    }
-
     std::shared_ptr<StringDictionary> dictionary;
     PaddedPODArray<Int64> index;
 };
 
+/// Builds a `ColumnString` from the dictionary entries by the indices (the null values are empty strings).
+/// Throws `INCORRECT_DATA` if an index is out of range.
+ColumnPtr decodeDictionary(const ColumnString & dictionary, const Int64 * index, const char * not_null, size_t num_values);
+
+/// Returns the values of a string batch as a `ColumnString`, decoding the dictionary for an encoded batch.
+ColumnPtr getStringColumn(const StringVectorBatch & batch);
+
 struct StructVectorBatch : public ColumnVectorBatch
 {
-    explicit StructVectorBatch(size_t capacity_) : ColumnVectorBatch(capacity_) {}
-
-    void resize(size_t new_capacity) override
-    {
-        ColumnVectorBatch::resize(new_capacity);
-        for (auto * field : fields)
-            field->resize(new_capacity);
-    }
-
     void addField(std::unique_ptr<ColumnVectorBatch> field)
     {
         fields.push_back(field.get());
@@ -135,60 +110,24 @@ private:
     std::vector<std::unique_ptr<ColumnVectorBatch>> owned_fields;
 };
 
+/// LIST and MAP: the end offsets of the values in the children, as in `ColumnArray`.
 struct ListVectorBatch : public ColumnVectorBatch
 {
-    explicit ListVectorBatch(size_t capacity_) : ColumnVectorBatch(capacity_) { offsets.resize(capacity_ + 1); }
-
-    void resize(size_t new_capacity) override
-    {
-        if (capacity < new_capacity)
-        {
-            ColumnVectorBatch::resize(new_capacity);
-            offsets.resize(new_capacity + 1);
-        }
-    }
-
-    /// The elements of the i-th list are `[offsets[i], offsets[i + 1])`.
-    PaddedPODArray<Int64> offsets;
+    /// `ColumnArray::ColumnOffsets`.
+    ColumnPtr offsets;
     std::unique_ptr<ColumnVectorBatch> elements;
 };
 
 struct MapVectorBatch : public ColumnVectorBatch
 {
-    explicit MapVectorBatch(size_t capacity_) : ColumnVectorBatch(capacity_) { offsets.resize(capacity_ + 1); }
-
-    void resize(size_t new_capacity) override
-    {
-        if (capacity < new_capacity)
-        {
-            ColumnVectorBatch::resize(new_capacity);
-            offsets.resize(new_capacity + 1);
-        }
-    }
-
-    PaddedPODArray<Int64> offsets;
+    /// `ColumnArray::ColumnOffsets`.
+    ColumnPtr offsets;
     std::unique_ptr<ColumnVectorBatch> keys;
     std::unique_ptr<ColumnVectorBatch> elements;
 };
 
 struct UnionVectorBatch : public ColumnVectorBatch
 {
-    explicit UnionVectorBatch(size_t capacity_) : ColumnVectorBatch(capacity_)
-    {
-        tags.resize(capacity_);
-        offsets.resize(capacity_);
-    }
-
-    void resize(size_t new_capacity) override
-    {
-        if (capacity < new_capacity)
-        {
-            ColumnVectorBatch::resize(new_capacity);
-            tags.resize(new_capacity);
-            offsets.resize(new_capacity);
-        }
-    }
-
     void addChild(std::unique_ptr<ColumnVectorBatch> child)
     {
         children.push_back(child.get());
@@ -208,17 +147,6 @@ private:
 /// For DECIMAL with the precision at most 18.
 struct Decimal64VectorBatch : public ColumnVectorBatch
 {
-    explicit Decimal64VectorBatch(size_t capacity_) : ColumnVectorBatch(capacity_) { values.resize(capacity_); }
-
-    void resize(size_t new_capacity) override
-    {
-        if (capacity < new_capacity)
-        {
-            ColumnVectorBatch::resize(new_capacity);
-            values.resize(new_capacity);
-        }
-    }
-
     Int32 precision = 0;
     Int32 scale = 0;
     PaddedPODArray<Int64> values;
@@ -227,17 +155,6 @@ struct Decimal64VectorBatch : public ColumnVectorBatch
 /// For DECIMAL with the precision above 18 or unspecified (zero).
 struct Decimal128VectorBatch : public ColumnVectorBatch
 {
-    explicit Decimal128VectorBatch(size_t capacity_) : ColumnVectorBatch(capacity_) { values.resize(capacity_); }
-
-    void resize(size_t new_capacity) override
-    {
-        if (capacity < new_capacity)
-        {
-            ColumnVectorBatch::resize(new_capacity);
-            values.resize(new_capacity);
-        }
-    }
-
     Int32 precision = 0;
     Int32 scale = 0;
     PaddedPODArray<Int128> values;
@@ -245,22 +162,6 @@ struct Decimal128VectorBatch : public ColumnVectorBatch
 
 struct TimestampVectorBatch : public ColumnVectorBatch
 {
-    explicit TimestampVectorBatch(size_t capacity_) : ColumnVectorBatch(capacity_)
-    {
-        data.resize(capacity_);
-        nanoseconds.resize(capacity_);
-    }
-
-    void resize(size_t new_capacity) override
-    {
-        if (capacity < new_capacity)
-        {
-            ColumnVectorBatch::resize(new_capacity);
-            data.resize(new_capacity);
-            nanoseconds.resize(new_capacity);
-        }
-    }
-
     /// Seconds since the epoch in UTC.
     PaddedPODArray<Int64> data;
     PaddedPODArray<Int64> nanoseconds;
@@ -268,6 +169,6 @@ struct TimestampVectorBatch : public ColumnVectorBatch
 
 /// Creates a batch tree matching the type. With `encoded`, the string columns get
 /// `EncodedStringVectorBatch`, which the reader fills without decoding the dictionaries.
-std::unique_ptr<ColumnVectorBatch> createRowBatch(const Type & type, size_t capacity, bool encoded = false);
+std::unique_ptr<ColumnVectorBatch> createRowBatch(const Type & type, bool encoded = false);
 
 }

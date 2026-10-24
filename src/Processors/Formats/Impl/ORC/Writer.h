@@ -2,7 +2,9 @@
 
 #include <Processors/Formats/Impl/ORC/Statistics.h>
 #include <Processors/Formats/Impl/ORC/Stream.h>
-#include <Processors/Formats/Impl/ORC/Vector.h>
+#include <Processors/Formats/Impl/ORC/Type.h>
+#include <Columns/IColumn.h>
+#include <DataTypes/IDataType.h>
 
 #include <memory>
 #include <string>
@@ -40,12 +42,16 @@ struct WriterContext;
 class Writer
 {
 public:
-    Writer(const Type & schema_, OutputStream & out_, const WriterOptions & options_);
+    /// `column_types` are the ClickHouse types (without `LowCardinality`) of the columns of the file,
+    /// which are the fields of `schema` (a struct). The values are converted as follows:
+    /// the unsigned integers (and `Date`) are written as the signed ones of the same width;
+    /// `DateTime` and `DateTime64` as TIMESTAMP; `FixedString`, `IPv6` and the big integers
+    /// as their raw bytes; `Variant` as UNION with the branches in the order of its variants.
+    Writer(const Type & schema_, const DataTypes & column_types, OutputStream & out_, const WriterOptions & options_);
     ~Writer();
 
-    std::unique_ptr<ColumnVectorBatch> createRowBatch(size_t capacity) const;
-
-    void add(ColumnVectorBatch & batch);
+    /// Adds the rows of the columns (in the order of the fields of the schema).
+    void add(const Columns & columns, size_t num_rows);
 
     /// Writes the remaining data and the file footer.
     void close();

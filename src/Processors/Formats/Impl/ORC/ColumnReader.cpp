@@ -47,21 +47,14 @@ std::unique_ptr<InputByteStream> getRequiredStream(StripeStreams & stripe, UInt6
 }
 
 /// Converts the bytes read into the beginning of a buffer of integers into the integers, in place.
-template <typename T>
-void expandBytesToIntegers(T * buffer, size_t num_values)
-{
-    const Int8 * bytes = reinterpret_cast<const Int8 *>(buffer);
-    for (size_t i = num_values; i > 0; --i)
-        buffer[i - 1] = bytes[i - 1];
-}
-
-
-class BooleanColumnReader final : public ColumnReader
+/// BOOLEAN and BYTE: the values are decoded into the bytes of the column.
+template <typename BatchType, typename Decoder>
+class ByteColumnReaderImpl final : public ColumnReader
 {
 public:
-    BooleanColumnReader(const Type & type, StripeStreams & stripe)
+    ByteColumnReaderImpl(const Type & type, StripeStreams & stripe)
         : ColumnReader(type, stripe)
-        , rle(getRequiredStream(stripe, column_id, Proto::StreamKind::DATA, "DATA", "boolean"))
+        , rle(getRequiredStream(stripe, column_id, Proto::StreamKind::DATA, "DATA", type.toString().c_str()))
     {
     }
 
@@ -75,11 +68,8 @@ public:
     void next(ColumnVectorBatch & batch, size_t num_values, const char * incoming_mask) override
     {
         ColumnReader::next(batch, num_values, incoming_mask);
-        auto * data = typeid_cast<LongVectorBatch &>(batch).data.data();
-        char * bytes = reinterpret_cast<char *>(data);
-        memset(bytes, 0, num_values);
-        rle.next(bytes, num_values, batch.hasNulls ? batch.notNull.data() : nullptr);
-        expandBytesToIntegers(data, num_values);
+        auto & data = typeid_cast<BatchType &>(batch).prepareColumn(num_values);
+        rle.next(reinterpret_cast<char *>(data.data()), num_values, batch.hasNulls ? batch.notNull.data() : nullptr);
     }
 
     void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions) override
@@ -89,45 +79,14 @@ public:
     }
 
 private:
-    BooleanRleDecoder rle;
+    Decoder rle;
 };
 
-class ByteColumnReader final : public ColumnReader
-{
-public:
-    ByteColumnReader(const Type & type, StripeStreams & stripe)
-        : ColumnReader(type, stripe)
-        , rle(getRequiredStream(stripe, column_id, Proto::StreamKind::DATA, "DATA", "byte"))
-    {
-    }
+using BooleanColumnReader = ByteColumnReaderImpl<BoolVectorBatch, BooleanRleDecoder>;
+using ByteColumnReader = ByteColumnReaderImpl<ByteVectorBatch, ByteRleDecoder>;
 
-    size_t skip(size_t num_values) override
-    {
-        num_values = ColumnReader::skip(num_values);
-        rle.skip(num_values);
-        return num_values;
-    }
-
-    void next(ColumnVectorBatch & batch, size_t num_values, const char * incoming_mask) override
-    {
-        ColumnReader::next(batch, num_values, incoming_mask);
-        auto * data = typeid_cast<LongVectorBatch &>(batch).data.data();
-        char * bytes = reinterpret_cast<char *>(data);
-        memset(bytes, 0, num_values);
-        rle.next(bytes, num_values, batch.hasNulls ? batch.notNull.data() : nullptr);
-        expandBytesToIntegers(data, num_values);
-    }
-
-    void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions) override
-    {
-        ColumnReader::seekToRowGroup(positions);
-        rle.seek(positions.at(column_id));
-    }
-
-private:
-    ByteRleDecoder rle;
-};
-
+/// SHORT, INT, LONG and DATE: the values are decoded into a column of the matching width.
+template <typename BatchType>
 class IntegerColumnReader final : public ColumnReader
 {
 public:
@@ -149,7 +108,8 @@ public:
     void next(ColumnVectorBatch & batch, size_t num_values, const char * incoming_mask) override
     {
         ColumnReader::next(batch, num_values, incoming_mask);
-        rle->next(typeid_cast<LongVectorBatch &>(batch).data.data(), num_values, batch.hasNulls ? batch.notNull.data() : nullptr);
+        auto & data = typeid_cast<BatchType &>(batch).prepareColumn(num_values);
+        rle->next(data.data(), num_values, batch.hasNulls ? batch.notNull.data() : nullptr);
     }
 
     void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions) override
@@ -162,6 +122,7 @@ private:
     std::unique_ptr<IntRleDecoder> rle;
 };
 
+/// FLOAT and DOUBLE: the values are stored as is (little endian), so they are copied into the column.
 template <typename ItemType>
 class FloatingColumnReader final : public ColumnReader
 {
@@ -183,40 +144,20 @@ public:
     {
         ColumnReader::next(batch, num_values, incoming_mask);
         const char * not_null = batch.hasNulls ? batch.notNull.data() : nullptr;
-        double * out = typeid_cast<DoubleVectorBatch &>(batch).data.data();
+        auto & data = typeid_cast<NumericVectorBatch<ItemType> &>(batch).prepareColumn(num_values);
+        ItemType * out = data.data();
 
-        size_t i = 0;
         if (!not_null)
         {
-            while (i < num_values)
-            {
-                if (stream->pos == stream->end && !stream->nextChunk())
-                    stream->throwUnexpectedEnd();
-                size_t available = (stream->end - stream->pos) / sizeof(ItemType);
-                if (available == 0)
-                {
-                    out[i++] = read();
-                    continue;
-                }
-                size_t count = std::min(available, num_values - i);
-                for (size_t j = 0; j < count; ++j)
-                {
-                    ItemType value;
-                    memcpy(&value, stream->pos + j * sizeof(ItemType), sizeof(ItemType));
-                    if constexpr (std::endian::native == std::endian::big)
-                        value = std::bit_cast<ItemType>(std::byteswap(std::bit_cast<std::conditional_t<sizeof(ItemType) == 8, UInt64, UInt32>>(value)));
-                    out[i + j] = static_cast<double>(value);
-                }
-                stream->pos += count * sizeof(ItemType);
-                i += count;
-            }
+            stream->readBytes(reinterpret_cast<char *>(out), num_values * sizeof(ItemType));
+            if constexpr (std::endian::native == std::endian::big)
+                for (size_t i = 0; i < num_values; ++i)
+                    out[i] = std::bit_cast<ItemType>(std::byteswap(std::bit_cast<Bits>(out[i])));
+            return;
         }
-        else
-        {
-            for (; i < num_values; ++i)
-                if (not_null[i])
-                    out[i] = read();
-        }
+
+        for (size_t i = 0; i < num_values; ++i)
+            out[i] = not_null[i] ? read() : 0;
     }
 
     void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions) override
@@ -226,23 +167,54 @@ public:
     }
 
 private:
-    double read()
+    using Bits = std::conditional_t<sizeof(ItemType) == 8, UInt64, UInt32>;
+
+    ItemType read()
     {
-        using Bits = std::conditional_t<sizeof(ItemType) == 8, UInt64, UInt32>;
         Bits bits = 0;
         for (size_t b = 0; b < sizeof(ItemType); ++b)
             bits |= static_cast<Bits>(stream->readByte()) << (b * 8);
-        return static_cast<double>(std::bit_cast<ItemType>(bits));
+        return std::bit_cast<ItemType>(bits);
     }
 
     std::unique_ptr<InputByteStream> stream;
 };
 
+/// Converts the lengths in `offsets` into the end offsets (as in `ColumnString` and `ColumnArray`)
+/// and returns the total length. The lengths of the null values are zeros.
+UInt64 lengthsToEndOffsets(UInt64 * offsets, size_t num_values, UInt64 column_id)
+{
+    UInt64 total = 0;
+    for (size_t i = 0; i < num_values; ++i)
+    {
+        /// The lengths are non-negative, a negative one is huge as unsigned.
+        if (offsets[i] > static_cast<UInt64>(std::numeric_limits<Int64>::max()) || __builtin_add_overflow(total, offsets[i], &total)
+            || total > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid length {} in ORC column {}", static_cast<Int64>(offsets[i]), column_id);
+        offsets[i] = total;
+    }
+    return total;
+}
+
+/// Reads the strings with their lengths in a separate stream into a `ColumnString`.
+ColumnString::MutablePtr readStrings(
+    IntRleDecoder & length_rle, InputByteStream & blob_stream, size_t num_values, const char * not_null, UInt64 column_id)
+{
+    auto column = ColumnString::create();
+    auto & offsets = column->getOffsets();
+    offsets.resize(num_values);
+    length_rle.next(offsets.data(), num_values, not_null);
+    UInt64 total = lengthsToEndOffsets(offsets.data(), num_values, column_id);
+    auto & chars = column->getChars();
+    chars.resize(total);
+    blob_stream.readBytes(reinterpret_cast<char *>(chars.data()), total);
+    return column;
+}
+
 std::shared_ptr<StringDictionary> loadStringDictionary(UInt64 column_id, StripeStreams & stripe)
 {
     const auto & encoding = stripe.getEncoding(column_id);
     UInt32 dictionary_size = encoding.dictionary_size;
-    auto dictionary = std::make_shared<StringDictionary>();
 
     /// A dictionary cannot have more entries than the stripe has values.
     if (dictionary_size > stripe.getNumberOfRows())
@@ -250,30 +222,22 @@ std::shared_ptr<StringDictionary> loadStringDictionary(UInt64 column_id, StripeS
             "The dictionary of ORC column {} has {} entries, more than the {} rows of the stripe",
             column_id, dictionary_size, stripe.getNumberOfRows());
 
-    dictionary->dictionaryOffset.resize(dictionary_size + 1);
-    Int64 * offsets = dictionary->dictionaryOffset.data();
-    offsets[0] = 0;
-    if (dictionary_size > 0)
+    auto dictionary = std::make_shared<StringDictionary>();
+    if (dictionary_size == 0)
     {
-        auto length_stream = getRequiredStream(stripe, column_id, Proto::StreamKind::LENGTH, "LENGTH", "string dictionary");
-        auto length_decoder = createIntRleDecoder(std::move(length_stream), false, getRleVersion(encoding));
-        length_decoder->next(offsets + 1, dictionary_size, nullptr);
-    }
-    for (size_t i = 1; i <= dictionary_size; ++i)
-    {
-        if (offsets[i] < 0)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Negative dictionary entry length in ORC column {}", column_id);
-        if (__builtin_add_overflow(offsets[i], offsets[i - 1], &offsets[i]))
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Dictionary size overflow in ORC column {}", column_id);
+        dictionary->column = ColumnString::create();
+        return dictionary;
     }
 
-    Int64 blob_size = offsets[dictionary_size];
-    if (blob_size > 0)
+    auto length_rle = createIntRleDecoder(
+        getRequiredStream(stripe, column_id, Proto::StreamKind::LENGTH, "LENGTH", "string dictionary"), false, getRleVersion(encoding));
+    auto blob_stream = stripe.getStream(column_id, Proto::StreamKind::DICTIONARY_DATA);
+    if (!blob_stream)
     {
-        auto blob_stream = getRequiredStream(stripe, column_id, Proto::StreamKind::DICTIONARY_DATA, "DICTIONARY_DATA", "string dictionary");
-        dictionary->dictionaryBlob.resize(blob_size);
-        blob_stream->readBytes(dictionary->dictionaryBlob.data(), blob_size);
+        /// All entries can be empty strings, then the stream is not needed.
+        blob_stream = std::make_unique<InputByteStream>(std::string_view{}, CompressionKind::NONE, 0, "empty dictionary");
     }
+    dictionary->column = readStrings(*length_rle, *blob_stream, dictionary_size, nullptr, column_id);
     return dictionary;
 }
 
@@ -301,33 +265,15 @@ public:
         ColumnReader::next(batch, num_values, incoming_mask);
         const char * not_null = batch.hasNulls ? batch.notNull.data() : nullptr;
         auto & string_batch = dynamic_cast<StringVectorBatch &>(batch);
-        char * blob = dictionary->dictionaryBlob.data();
-        const Int64 * offsets = dictionary->dictionaryOffset.data();
-        char ** starts = string_batch.data.data();
-        Int64 * lengths = string_batch.length.data();
-        rle->next(lengths, num_values, not_null);
-
-        UInt64 dictionary_count = dictionary->dictionaryOffset.size() - 1;
-        for (size_t i = 0; i < num_values; ++i)
-        {
-            if (not_null && !not_null[i])
-                continue;
-            Int64 entry = lengths[i];
-            if (entry < 0 || static_cast<UInt64>(entry) >= dictionary_count)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Dictionary index {} is out of range [0, {}) in ORC column {}", entry, dictionary_count, column_id);
-            starts[i] = blob + offsets[entry];
-            lengths[i] = offsets[entry + 1] - offsets[entry];
-        }
+        index.resize(num_values);
+        rle->next(index.data(), num_values, not_null);
+        string_batch.isEncoded = false;
+        string_batch.column = decodeDictionary(assert_cast<const ColumnString &>(*dictionary->column), index.data(), not_null, num_values);
     }
 
     void nextEncoded(ColumnVectorBatch & batch, size_t num_values, const char * incoming_mask) override
     {
-        ColumnReader::next(batch, num_values, incoming_mask);
-        const char * not_null = batch.hasNulls ? batch.notNull.data() : nullptr;
-        batch.isEncoded = true;
-        auto & encoded_batch = dynamic_cast<EncodedStringVectorBatch &>(batch);
-        encoded_batch.dictionary = dictionary;
-        rle->next(encoded_batch.index.data(), num_values, not_null);
+        readIndex(dynamic_cast<EncodedStringVectorBatch &>(batch), num_values, incoming_mask);
     }
 
     void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions) override
@@ -337,8 +283,19 @@ public:
     }
 
 private:
+    void readIndex(EncodedStringVectorBatch & batch, size_t num_values, const char * incoming_mask)
+    {
+        ColumnReader::next(batch, num_values, incoming_mask);
+        batch.isEncoded = true;
+        batch.dictionary = dictionary;
+        batch.column = nullptr;
+        batch.index.resize(num_values);
+        rle->next(batch.index.data(), num_values, batch.hasNulls ? batch.notNull.data() : nullptr);
+    }
+
     std::shared_ptr<StringDictionary> dictionary;
     std::unique_ptr<IntRleDecoder> rle;
+    PaddedPODArray<Int64> index;
 };
 
 class StringDirectColumnReader final : public ColumnReader
@@ -357,14 +314,14 @@ public:
     {
         num_values = ColumnReader::skip(num_values);
         static constexpr size_t BUFFER_SIZE = 1024;
-        Int64 buffer[BUFFER_SIZE];
+        UInt64 buffer[BUFFER_SIZE];
         size_t done = 0;
         size_t total_bytes = 0;
         while (done < num_values)
         {
             size_t step = std::min(BUFFER_SIZE, num_values - done);
             length_rle->next(buffer, step, nullptr);
-            total_bytes += computeSize(buffer, nullptr, step);
+            total_bytes += lengthsToEndOffsets(buffer, step, column_id);
             done += step;
         }
         blob_stream->skipBytes(total_bytes);
@@ -374,24 +331,9 @@ public:
     void next(ColumnVectorBatch & batch, size_t num_values, const char * incoming_mask) override
     {
         ColumnReader::next(batch, num_values, incoming_mask);
-        const char * not_null = batch.hasNulls ? batch.notNull.data() : nullptr;
         auto & string_batch = dynamic_cast<StringVectorBatch &>(batch);
-        Int64 * lengths = string_batch.length.data();
-        length_rle->next(lengths, num_values, not_null);
-
-        size_t total_length = computeSize(lengths, not_null, num_values);
-        string_batch.blob.resize(total_length);
-        blob_stream->readBytes(string_batch.blob.data(), total_length);
-
-        char ** starts = string_batch.data.data();
-        char * ptr = string_batch.blob.data();
-        for (size_t i = 0; i < num_values; ++i)
-        {
-            if (not_null && !not_null[i])
-                continue;
-            starts[i] = ptr;
-            ptr += lengths[i];
-        }
+        string_batch.isEncoded = false;
+        string_batch.column = readStrings(*length_rle, *blob_stream, num_values, batch.hasNulls ? batch.notNull.data() : nullptr, column_id);
     }
 
     void seekToRowGroup(std::unordered_map<UInt64, PositionProvider> & positions) override
@@ -403,21 +345,6 @@ public:
     }
 
 private:
-    size_t computeSize(const Int64 * lengths, const char * not_null, size_t num_values) const
-    {
-        size_t total = 0;
-        for (size_t i = 0; i < num_values; ++i)
-        {
-            if (not_null && !not_null[i])
-                continue;
-            if (lengths[i] < 0)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Negative string length in ORC column {}", column_id);
-            if (__builtin_add_overflow(total, static_cast<size_t>(lengths[i]), &total))
-                throw Exception(ErrorCodes::INCORRECT_DATA, "String length overflow in ORC column {}", column_id);
-        }
-        return total;
-    }
-
     std::unique_ptr<IntRleDecoder> length_rle;
     std::unique_ptr<InputByteStream> blob_stream;
 };
@@ -453,6 +380,8 @@ public:
         ColumnReader::next(batch, num_values, incoming_mask);
         const char * not_null = batch.hasNulls ? batch.notNull.data() : nullptr;
         auto & timestamp_batch = typeid_cast<TimestampVectorBatch &>(batch);
+        timestamp_batch.data.resize(num_values);
+        timestamp_batch.nanoseconds.resize(num_values);
         Int64 * seconds = timestamp_batch.data.data();
         Int64 * nanos = timestamp_batch.nanoseconds.data();
         seconds_rle->next(seconds, num_values, not_null);
@@ -623,6 +552,7 @@ public:
         scale_decoder->next(scales.data(), num_values, not_null);
         decimal_batch.precision = precision;
         decimal_batch.scale = scale;
+        decimal_batch.values.resize(num_values);
         Int64 * values = decimal_batch.values.data();
         for (size_t i = 0; i < num_values; ++i)
         {
@@ -661,6 +591,7 @@ public:
         scale_decoder->next(scales.data(), num_values, not_null);
         decimal_batch.precision = precision;
         decimal_batch.scale = scale;
+        decimal_batch.values.resize(num_values);
         Int128 * values = decimal_batch.values.data();
         for (size_t i = 0; i < num_values; ++i)
         {
@@ -692,6 +623,7 @@ public:
         scale_decoder->next(scales.data(), num_values, not_null);
         decimal_batch.precision = precision;
         decimal_batch.scale = scale;
+        decimal_batch.values.resize(num_values);
         Int128 * values = decimal_batch.values.data();
 
         static const Int128 max_value = Int128(10000000000000000000ULL) * Int128(10000000000000000000ULL) - 1;
@@ -789,25 +721,14 @@ private:
     std::vector<std::unique_ptr<ColumnReader>> children;
 };
 
-/// Converts the lengths into the offsets, returns the total number of the children.
-UInt64 lengthsToOffsets(Int64 * offsets, size_t num_values, const char * not_null, UInt64 column_id)
+/// Reads the lengths of the lists or maps as the end offsets, returns the total number of the children.
+UInt64 readListOffsets(IntRleDecoder & rle, ColumnPtr & result, size_t num_values, const char * not_null, UInt64 column_id)
 {
-    UInt64 total = 0;
-    for (size_t i = 0; i < num_values; ++i)
-    {
-        if (not_null && !not_null[i])
-        {
-            offsets[i] = static_cast<Int64>(total);
-            continue;
-        }
-        Int64 length = offsets[i];
-        if (length < 0)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Negative length {} in ORC column {}", length, column_id);
-        offsets[i] = static_cast<Int64>(total);
-        if (__builtin_add_overflow(total, static_cast<UInt64>(length), &total) || total > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Length overflow in ORC column {}", column_id);
-    }
-    offsets[num_values] = static_cast<Int64>(total);
+    auto column = ColumnUInt64::create(num_values);
+    auto & offsets = column->getData();
+    rle.next(offsets.data(), num_values, not_null);
+    UInt64 total = lengthsToEndOffsets(offsets.data(), num_values, column_id);
+    result = std::move(column);
     return total;
 }
 
@@ -881,9 +802,7 @@ private:
         ColumnReader::next(batch, num_values, incoming_mask);
         auto & list_batch = typeid_cast<ListVectorBatch &>(batch);
         const char * not_null = list_batch.hasNulls ? list_batch.notNull.data() : nullptr;
-        Int64 * offsets = list_batch.offsets.data();
-        rle->next(offsets, num_values, not_null);
-        UInt64 total = lengthsToOffsets(offsets, num_values, not_null, column_id);
+        UInt64 total = readListOffsets(*rle, list_batch.offsets, num_values, not_null, column_id);
         if (child)
         {
             if constexpr (encoded)
@@ -958,9 +877,7 @@ private:
         ColumnReader::next(batch, num_values, incoming_mask);
         auto & map_batch = typeid_cast<MapVectorBatch &>(batch);
         const char * not_null = map_batch.hasNulls ? map_batch.notNull.data() : nullptr;
-        Int64 * offsets = map_batch.offsets.data();
-        rle->next(offsets, num_values, not_null);
-        UInt64 total = lengthsToOffsets(offsets, num_values, not_null, column_id);
+        UInt64 total = readListOffsets(*rle, map_batch.offsets, num_values, not_null, column_id);
         if (key_reader)
         {
             if constexpr (encoded)
@@ -1055,6 +972,8 @@ private:
         ColumnReader::next(batch, num_values, incoming_mask);
         auto & union_batch = typeid_cast<UnionVectorBatch &>(batch);
         const char * not_null = union_batch.hasNulls ? union_batch.notNull.data() : nullptr;
+        union_batch.tags.resize(num_values);
+        union_batch.offsets.resize(num_values);
         UInt8 * tags = union_batch.tags.data();
         UInt64 * offsets = union_batch.offsets.data();
         memset(tags, 0, num_values);
@@ -1095,9 +1014,7 @@ ColumnReader::ColumnReader(const Type & type, StripeStreams & stripe)
 
 void ColumnReader::next(ColumnVectorBatch & batch, size_t num_values, const char * incoming_mask)
 {
-    if (num_values > batch.capacity)
-        batch.resize(num_values);
-    batch.numElements = num_values;
+    batch.reset(num_values);
 
     if (not_null_decoder)
     {
@@ -1157,10 +1074,12 @@ std::unique_ptr<ColumnReader> buildColumnReader(const Type & type, StripeStreams
         case BYTE:
             return std::make_unique<ByteColumnReader>(type, stripe);
         case SHORT:
+            return std::make_unique<IntegerColumnReader<ShortVectorBatch>>(type, stripe);
         case INT:
+            return std::make_unique<IntegerColumnReader<IntVectorBatch>>(type, stripe);
         case LONG:
         case DATE:
-            return std::make_unique<IntegerColumnReader>(type, stripe);
+            return std::make_unique<IntegerColumnReader<LongVectorBatch>>(type, stripe);
         case FLOAT:
             return std::make_unique<FloatingColumnReader<float>>(type, stripe);
         case DOUBLE:

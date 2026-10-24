@@ -7,8 +7,8 @@
 
 /// Run-length encodings of ORC: https://orc.apache.org/specification/ORCv1/#run-length-encoding
 ///
-/// All decoders fill only the positions where `not_null` is non-zero (or all positions if it is
-/// nullptr), consuming one value from the stream for each of them; the other positions are left as is.
+/// All decoders fill the positions where `not_null` is non-zero (or all positions if it is
+/// nullptr), consuming one value from the stream for each of them; the other positions are set to zero.
 
 namespace DB::ORC
 {
@@ -54,7 +54,11 @@ class IntRleDecoder
 {
 public:
     virtual ~IntRleDecoder() = default;
+    /// The values are converted to the type of the output, which can be narrower than the encoded values.
     virtual void next(Int64 * data, size_t num_values, const char * not_null) = 0;
+    virtual void next(UInt64 * data, size_t num_values, const char * not_null) = 0;
+    virtual void next(Int32 * data, size_t num_values, const char * not_null) = 0;
+    virtual void next(Int16 * data, size_t num_values, const char * not_null) = 0;
     virtual void skip(size_t num_values) = 0;
     virtual void seek(PositionProvider & positions) = 0;
 };

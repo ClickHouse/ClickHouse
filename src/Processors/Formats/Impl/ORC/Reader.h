@@ -137,10 +137,10 @@ public:
     RowReader(Reader & reader_, const RowReaderOptions & options_);
     ~RowReader();
 
-    std::unique_ptr<ColumnVectorBatch> createRowBatch(size_t capacity) const;
+    std::unique_ptr<ColumnVectorBatch> createRowBatch() const;
 
-    /// Fills the batch with the next rows. Returns false at the end.
-    bool next(ColumnVectorBatch & batch);
+    /// Fills the batch with the next rows, at most `max_rows`. Returns false at the end.
+    bool next(ColumnVectorBatch & batch, size_t max_rows);
 
     /// The type of the file with only the selected columns. The batches have this structure.
     const Type & getSelectedType() const { return *selected_type; }
