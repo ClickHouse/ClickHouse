@@ -7,9 +7,6 @@ keywords: ['managed postgres', 'cloudflare', 'cloudflare workers', 'hyperdrive',
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
-
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.guides-cloudflare-workers-beta" />
 
 [Cloudflare Workers](https://developers.cloudflare.com/workers/) run your code on Cloudflare's network, and [Hyperdrive](https://developers.cloudflare.com/hyperdrive/) keeps a pool of connections from that network to your database, so each request doesn't pay for a new TCP and TLS handshake. In this guide, you create a Hyperdrive configuration that verifies your instance's certificate, build a TypeScript Worker that creates and reads rows with [`node-postgres`](https://node-postgres.com/) (`pg`), run it locally with `wrangler dev`, and deploy it to `workers.dev`.
 

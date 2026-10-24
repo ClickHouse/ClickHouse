@@ -6,10 +6,6 @@ keywords: ['managed postgres', 'postgresql', 'cloud database', 'postgres service
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
-
-<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.overview-beta" />
-
 ClickHouse Managed Postgres is an enterprise-grade managed Postgres service built for performance and scale. Backed by NVMe storage that is physically collocated with compute, it delivers up to 10x faster performance for workloads that are disk-bound compared to alternatives using network-attached storage like EBS.
 
 Built in partnership with [Ubicloud](https://www.ubicloud.com/), whose founding team has a track record of delivering world-class Postgres at Citus Data, Heroku, and Microsoft, ClickHouse Managed Postgres solves the performance challenges that fast-growing applications commonly face: slower ingestion and updates, slow vacuums, increased tail latency, and WAL spikes caused by limited disk IOPS.
@@ -59,11 +55,11 @@ ClickHouse Managed Postgres is available on the following cloud providers:
 
 | Cloud provider | Availability |
 |----------------|--------------|
-| AWS | Public Beta |
-| GCP | Private Preview |
+| AWS | General Availability |
+| GCP | Public Preview |
 
 <Note>
-ClickHouse Managed Postgres on GCP is in Private Preview. You can sign up for the GCP Private Preview waitlist [here](https://clickhouse.com/cloud/postgres#gcp-waitlist). Read the [announcement](https://clickhouse.com/blog/postgres-managed-by-clickhouse-gcp-private-preview) to learn more.
+ClickHouse Managed Postgres on GCP is in Public Preview.
 </Note>
 
 ## Native ClickHouse integration {#clickhouse-integration}
@@ -91,6 +87,8 @@ Configure up to two standby replicas across different availability zones using q
 ### Backups and recovery {#backups}
 
 Every instance includes automatic backups that support forks and point-in-time recovery. Backups run on [WAL-G](https://github.com/wal-g/wal-g), a well-known open-source tool that handles full backups and continuous WAL archiving to object storage.
+
+Backup storage equal to the provisioned disk capacity is included. Additional backup storage is billed at the ClickHouse Cloud storage price for your region, for example, \$25.30 per TB-month in AWS `us-east-1`. See [Managed Postgres pricing](/products/managed-postgres/pricing).
 
 ### Security and compliance {#security-compliance}
 
