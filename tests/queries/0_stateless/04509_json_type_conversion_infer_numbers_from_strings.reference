@@ -1,0 +1,19 @@
+Test 1: try_infer_numbers_from_strings with JSON insert
+123	Int64	not_a_number	String	45.67	Float64
+Test 2: try_infer_numbers_from_strings with typed path removal
+{"a":"123"}
+123	Int64
+Test 3: without try_infer_numbers_from_strings (default)
+123	String	not_a_number	String
+Test 4: try_infer_numbers_from_strings with max_dynamic_paths change
+123	Int64	hello	String	45.67	Float64
+Test 5: inline CAST JSON(a String) -> JSON
+{"a":42}
+42	Int64
+Test 6: changed typed path String -> UInt32
+123
+Test 7: Array(String) typed path removal
+{"a":[123,456]}
+{"a":["123","hello","45.67"]}
+Test 8: Array(String) changed to Array(UInt32)
+[123,456]
