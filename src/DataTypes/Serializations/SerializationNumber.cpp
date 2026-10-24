@@ -75,7 +75,12 @@ bool tryDeserializeNumberCSV(T & x, ReadBuffer & istr, const FormatSettings & se
 
     const char maybe_quote = *istr.position();
     if (maybe_quote == '\'' || maybe_quote == '\"')
+    {
         ++istr.position();
+        /// An empty quoted field has no digits, but the integer reader would read it as zero.
+        if (!istr.eof() && *istr.position() == maybe_quote)
+            return false;
+    }
 
     if (!tryDeserializeNumberText(x, istr, settings))
         return false;
@@ -191,6 +196,12 @@ ReturnType deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const Fo
     {
         has_quote = true;
         ++istr.position();
+        /// An empty string has no digits, but the integer reader would read it as zero.
+        if constexpr (!throw_exception)
+        {
+            if (!istr.eof() && *istr.position() == '"')
+                return ReturnType(false);
+        }
     }
 
     T x{};
@@ -299,12 +310,7 @@ template <typename T>
 bool SerializationNumber<T>::tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     FieldType x;
-    if constexpr (is_floating_point<T>)
-    {
-        if (!tryDeserializeNumberCSV(x, istr, settings))
-            return false;
-    }
-    else if (!tryReadCSV(x, istr))
+    if (!tryDeserializeNumberCSV(x, istr, settings))
         return false;
     assert_cast<ColumnVector<T> &>(column).getData().push_back(x);
     return true;

@@ -1,0 +1,27 @@
+CSV	String	
+CSV	String	x
+CSV	Int64	5
+CSV	Int64	5
+CSV reversed order	String	
+CSV UInt8	String	
+CSV UInt256	String	
+CSV single quotes	String	
+JSONEachRow	String	
+JSONEachRow	String	x
+JSONEachRow	Int64	5
+JSONEachRow	Int64	5
+JSONEachRow UInt8	String	
+JSONEachRow Array	['',1]	String
+CSV Tuple	String	
+CSV Float64 imprecise	String	
+JSONEachRow Float64 imprecise	String	
+CustomSeparated CSV rule	String	
+TSV	String	
+TSV	String	x
+TSV	Int64	5
+from CSV	1	String	
+from CSV	2	String	x
+from CSV	3	Int64	5
+from JSONEachRow	1	String	
+from JSONEachRow	2	String	x
+from JSONEachRow	3	Int64	5
