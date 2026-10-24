@@ -167,5 +167,4 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
         "__USE_LARGEFILE64",
     ],
-    deps = [],
 )

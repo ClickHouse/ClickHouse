@@ -25,13 +25,14 @@ ch_cc_library(
         "//src:headers",
         "//src/Common:string_utils",
         "//src/Parsers:parser_api",
+        "//src/Functions:headers",
+        "//src/Parsers:headers",
     ],
     link_runtime = True,
     local_defines = CLICKHOUSE_PROGRAM_COMPRESSION_DEFINES,
     local_includes = [
         ".",
     ],
-    source_headers = True,
     deps = [
         "//src/AggregateFunctions:clickhouse_aggregate_functions",
     ],

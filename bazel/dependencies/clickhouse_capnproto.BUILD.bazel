@@ -1,17 +1,10 @@
-load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "LICENSE",
 ])
-
-_GENERATED_LOCAL_DEFINES_0 = [
-    "STD_EXCEPTION_HAS_STACK_TRACE=1",
-    "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-    "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-    "_LIBUNWIND_IS_NATIVE_ONLY",
-]
 
 _CAPNPROTO_COPTS = [
     "-w",
@@ -49,7 +42,7 @@ ch_cc_library(
         ],
     ),
     copts = _CAPNPROTO_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [":_kj"],
 )
 
@@ -85,7 +78,7 @@ ch_cc_library(
     ),
     hdrs = _CAPNPC_PUBLIC_HEADERS,
     copts = _CAPNPROTO_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":_capnp",
         ":_kj",
@@ -129,10 +122,9 @@ ch_cc_library(
         ],
     ),
     copts = _CAPNPROTO_COPTS,
-    implementation_deps = [],
     includes = [
         "c++/src",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     textual_hdrs = ["c++/src/kj/async-inl.h"],
 )

@@ -25,7 +25,7 @@ from initial_migration.repository_inputs import CC_HEADER_SUFFIXES, REPOSITORIES
 from initial_migration.simplify_globs import GlobFiles, simplify_globs
 
 CPUS = ('x86_64', 'aarch64')
-COMPILERS = {'ch_cc_library', 'cc_library', 'cc_test', 'cc_binary'}
+COMPILERS = {'ch_cc_library', 'ch_cc_test', 'cc_library', 'cc_test', 'cc_binary'}
 TUS = ('.c', '.cc', '.cpp', '.cxx', '.c++', '.C', '.s', '.S', '.asm', '.ASM')
 TEXTUAL = ('.inc', '.inl', '.ipp', '.tpp', '.icc', '.def', '.defs', '.th', '.td',
            '.tbl', '.tbi', '.ixx', '.cuh', '.msh', '.txx')
@@ -93,7 +93,7 @@ def canonical_dependency(value, package, repo):
 PARSER_INTERFACE_HEADERS = (
     "CommonParsers.h", "IAST.h", "IASTFormatState.h", "IASTHash.h", "IAST_fwd.h",
     "IParser.h", "IParserBase.h", "IdentifierQuotingStyle.h", "InlineVector.h",
-    "Lexer.h", "LiteralEscapingStyle.h", "TokenIterator.h", "parseQuery.h",
+    "Lexer.h", "LiteralEscapingStyle.h", "SyncReplicaMode.h", "TokenIterator.h", "parseQuery.h",
 )
 
 
@@ -141,6 +141,125 @@ def declare_parser_interface(rows):
         'deps=["//base/base:headers", "//contrib/cityhash102:headers", "//src:headers", '
         '"//src/Common:headers", "@clickhouse_boost//:boost_headers_no_openssl"])' % json.dumps(PARSER_INTERFACE_HEADERS)
     ))
+
+
+def declare_compiled_headers(rows, files, compiler, headers, field="hdrs"):
+    """Assign headers to their compiling target. Use srcs for implementation and test headers."""
+    globs = GlobFiles(files)
+
+    def files_in(node):
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            return files_in(node.left) + files_in(node.right)
+        if call_name(node) == "glob":
+            excluded = attributes(node).get("exclude")
+            return list(globs.result(files_in(node.args[0]), files_in(excluded) if excluded else []))
+        return ast.literal_eval(node)
+
+    selected = set(files_in(headers))
+
+    class RemoveHeaders(ast.NodeTransformer):
+        def visit_List(self, node):
+            node.elts = [self.visit(item) for item in node.elts
+                         if not isinstance(item, ast.Constant) or not isinstance(item.value, str) or item.value.removeprefix(":") not in selected]
+            return node
+
+        def visit_BinOp(self, node):
+            self.generic_visit(node)
+            if isinstance(node.op, ast.Add):
+                for empty, other in ((node.left, node.right), (node.right, node.left)):
+                    if isinstance(empty, ast.List) and not empty.elts:
+                        return other
+            return node
+
+        def visit_Call(self, node):
+            if call_name(node) != "glob":
+                return self.generic_visit(node)
+            excluded = attributes(node).get("exclude")
+            included = set(files_in(node))
+            removed = included & selected
+            if removed:
+                if removed == included:
+                    return list_expr([])
+                if excluded is None:
+                    node.keywords.append(ast.keyword(arg="exclude", value=list_expr(sorted(removed))))
+                else:
+                    values = [*files_in(excluded), *sorted(removed)]
+                    next(kw for kw in node.keywords if kw.arg == "exclude").value = list_expr(values)
+            return node
+
+    compilers = {ast.literal_eval(attributes(row.value)["name"]): row.value for row in rows
+                 if isinstance(row, ast.Expr) and call_name(row.value) in COMPILERS}
+    for rule in compilers.values():
+        for kw in rule.keywords:
+            if kw.arg in {"hdrs", "textual_hdrs", field}:
+                kw.value = RemoveHeaders().visit(kw.value)
+    owner = compilers[compiler]
+    attribute = next((kw for kw in owner.keywords if kw.arg == field), None)
+    if attribute is None:
+        owner.keywords.append(ast.keyword(arg=field, value=headers))
+    elif isinstance(attribute.value, ast.List) and isinstance(headers, ast.List):
+        attribute.value.elts.extend(headers.elts)
+    else:
+        attribute.value = ast.BinOp(left=attribute.value, op=ast.Add(), right=headers)
+
+
+def declare_dbms_private_headers(rows, files):
+    hash_join = expr(
+        'glob(["Interpreters/HashJoin/*.h"], exclude=['
+        '"Interpreters/HashJoin/HashJoin.h", "Interpreters/HashJoin/ScatteredBlock.h"])'
+    )
+    dbms_headers = ast.BinOp(left=hash_join, op=ast.Add(), right=list_expr([
+        "Access/resolveSetting.h",
+        "Analyzer/InDepthQueryTreeVisitor.h",
+        "Analyzer/Resolve/IdentifierLookup.h",
+        "Interpreters/AddDefaultDatabaseVisitor.h",
+        "Interpreters/joinDispatch.h",
+        "Processors/Merges/Algorithms/IMergingAlgorithmWithDelayedChunk.h",
+        "Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h",
+        "Processors/QueryPlan/Optimizations/joinOrder.h",
+        "Storages/NATS/NATS_fwd.h",
+        "Storages/StorageTableFunction.h",
+        "Storages/StorageTableProxy.h",
+    ]))
+    declare_compiled_headers(rows, files, "dbms__compile_0", dbms_headers, field="srcs")
+    declare_compiled_headers(rows, files, "unit_tests_dbms", expr('glob(["**/tests/*.h"])'), field="srcs")
+
+
+def group_runtime_filter_benchmark_sources(root):
+    """Compile the six shared Functions sources with the benchmark's CMake flags."""
+    files = [
+        "ComparisonParams.cpp", "equals.cpp", "isDistinctFrom.cpp", "isNotDistinctFrom.cpp",
+        "notEquals.cpp", "registerFunctions.cpp",
+    ]
+    name = "runtime_filter_benchmark_sources"
+    label = "//src/Functions:" + name
+    old_labels = ["//src/Functions:" + file for file in files]
+    own_source = "Processors/benchmarks/benchmark_runtime_filter.cpp"
+    package = root / "src/Functions/BUILD.bazel"
+    src_build = root / "src/BUILD.bazel"
+    functions, benchmark = Source(package.read_text()), Source(src_build.read_text())
+    targets = {ast.literal_eval(attributes(rule)["name"]): rule for _, rule in functions.rules()
+               if "name" in attributes(rule)}
+    srcs = next(attributes(rule)["srcs"] for _, rule in benchmark.rules()
+                if attributes(rule).get("name") and attributes(rule)["name"].value == "benchmark_runtime_filter_objects")
+    expected = files + ["registerFunctions.h"]
+    if name in targets:
+        group = attributes(targets[name])
+        if (call_name(targets[name]) != "filegroup" or ast.literal_eval(group["srcs"]) != expected
+                or ast.literal_eval(group["visibility"]) != ["//src:__pkg__"]
+                or ast.literal_eval(srcs) != [own_source, label]):
+            raise ValueError("runtime_filter_benchmark_sources differs from the CMake benchmark sources")
+        return old_labels
+    if ast.literal_eval(srcs) != [own_source, *old_labels]:
+        raise ValueError("benchmark_runtime_filter_objects changed its CMake sources or their order")
+    exports = next(stmt for stmt in functions.module.body
+                   if isinstance(stmt, ast.Expr) and call_name(stmt.value) == "exports_files")
+    end = functions.span(exports)[1]
+    declaration = ('\n\nfilegroup(name=' + json.dumps(name) + ', srcs=' + json.dumps(expected) +
+                   ', visibility=["//src:__pkg__"])')
+    package.write_text(functions.rewrite([(end, end, declaration)]))
+    src_build.write_text(benchmark.rewrite([(*benchmark.span(srcs), json.dumps([own_source, label]))]))
+    return old_labels
 
 
 def git_inventory(root):
@@ -461,7 +580,6 @@ class Migration:
         # These declarations were hidden in declare_inputs() at the root.
         # Their files already have natural owners; Rust consumes DefaultInfo.
         self.aliases.update({
-            'linux_aarch64_hwcap': '@clickhouse_sysroot//:linux_aarch64_hwcap',
             'krb5_gen_map': '@clickhouse_krb5//:gen_map',
             'krb5_gen': '@clickhouse_krb5//:gen',
             'cmake_cargo_config': '//contrib/corrosion-cmake:config.toml.in',
@@ -667,6 +785,15 @@ class Migration:
             self.loads[package]['headers'] = expr_stmt('load("@rules_cc//cc:cc_library.bzl", "cc_library")')
         if self.from_generator and 'src/Parsers' in self.rows:
             declare_parser_interface(self.rows['src/Parsers'])
+            for package, compiler, header in (
+                ('src', 'dbms__compile_0', 'Client/ClientApplicationBase.h'),
+                ('src', 'dbms__compile_0', 'Coordination/KeeperMemNodesStorage.h'),
+                ('src', 'dbms__compile_0', 'Coordination/ZooKeeperDataReader.h'),
+                ('src/Functions', 'clickhouse_functions_obj__compile_0', 'registerFunctions.h'),
+                ('src/Storages/System', 'clickhouse_storages_system__compile_1', 'attachSystemTables.h'),
+            ):
+                declare_compiled_headers(self.rows[package], self.package_inventory(package), compiler, list_expr([header]))
+            declare_dbms_private_headers(self.rows["src"], self.package_inventory("src"))
         data = self.rewrite_consumers()
         builds = self.render_builds()
         data.update(builds)

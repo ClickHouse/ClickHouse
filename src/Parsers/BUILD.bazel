@@ -1,4 +1,5 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//src:common_io_flags.bzl", "CLICKHOUSE_COMMON_IO_CONSUMER_DEFINES")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -142,6 +143,7 @@ _PARSER_INTERFACE_HEADERS = [
     "InlineVector.h",
     "Lexer.h",
     "LiteralEscapingStyle.h",
+    "SyncReplicaMode.h",
     "TokenIterator.h",
     "parseQuery.h",
 ]
@@ -214,6 +216,7 @@ _PARSERS_API_HEADERS = [
     "parseDatabaseAndTableName.h",
     "parseFieldFromCastedLiteral.h",
     "parseIdentifierOrStringLiteral.h",
+    "registerParsers.h",
     "stripQuerySettings.h",
     "toOneLineQuery.h",
 ]
@@ -249,69 +252,7 @@ ch_cc_library(
         "//src:io_string_buffers",
     ],
     link_runtime = True,
-    local_defines = select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [
-            "ARM_ACLE",
-            "ARM_ASM_HWCAP",
-            "ARM_AUXV_HAS_CRC32",
-            "ARM_AUXV_HAS_NEON",
-            "ARM_FEATURES",
-            "ARM_NEON",
-            "ARM_NEON_HASLD4",
-        ],
-    }) + [
-        "BOOST_ASIO_HAS_STD_INVOKE_RESULT=1",
-        "BOOST_ASIO_STANDALONE=1",
-        "BOOST_TIMER_ENABLE_DEPRECATED=1",
-        "ENABLE_DISTRIBUTED_CACHE=0",
-        "ENABLE_MULTITARGET_CODE=1",
-        "FIU_ENABLE",
-    ] + select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [
-            "HAVE_ARM_ACLE_H",
-        ],
-    }) + [
-        "HAVE_ATTRIBUTE_ALIGNED",
-        "HAVE_BUILTIN_CTZ",
-        "HAVE_BUILTIN_CTZLL",
-        "HAVE_CONFIG_H",
-        "HAVE_POSIX_MEMALIGN",
-    ] + select({
-        "@platforms//cpu:x86_64": [],
-        "@platforms//cpu:aarch64": [
-            "HAVE_SYS_AUXV_H",
-        ],
-    }) + [
-        "HAVE_VISIBILITY_HIDDEN",
-        "HAVE_VISIBILITY_INTERNAL",
-        "JEMALLOC_NO_RENAME",
-        "PICOJSON_USE_LOCALE=0",
-        "POCO_ENABLE_CPP11",
-        "POCO_OS_FAMILY_UNIX",
-        "STD_EXCEPTION_HAS_STACK_TRACE=1",
-        "UNALIGNED_OK",
-        "WITH_COVERAGE=0",
-        "WITH_COVERAGE_DEPTH=0",
-        "WITH_GZFILEOP",
-        "X86_64",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-            "X86_AVX2",
-            "X86_FEATURES",
-            "X86_PCLMULQDQ_CRC",
-            "X86_SSE2",
-            "X86_SSE42",
-            "X86_SSSE3",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }) + [
-        "ZLIB_COMPAT",
-        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-        "_LIBUNWIND_IS_NATIVE_ONLY",
-    ],
+    local_defines = CLICKHOUSE_COMMON_IO_CONSUMER_DEFINES,
     deps = [
         "//src:core_types",
         ":headers",

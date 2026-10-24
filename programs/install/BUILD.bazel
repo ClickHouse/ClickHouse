@@ -29,11 +29,11 @@ ch_cc_library(
         "//src/Common:string_utils",
         "//src:io_string_buffers",
         "//src:headers",
+        "//src/Access/Common:headers",
     ],
     link_runtime = True,
     local_defines = CLICKHOUSE_PROGRAM_DEFINES,
     local_includes = [
         ".",
     ],
-    source_headers = True,
 )

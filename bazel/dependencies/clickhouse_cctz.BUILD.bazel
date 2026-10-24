@@ -1,4 +1,4 @@
-load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -19,13 +19,6 @@ genrule(
         "@clickhouse//bazel/rules:generate_timezones",
     ],
 )
-
-_GENERATED_LOCAL_DEFINES_0 = [
-    "STD_EXCEPTION_HAS_STACK_TRACE=1",
-    "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-    "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-    "_LIBUNWIND_IS_NATIVE_ONLY",
-]
 
 ch_cc_library(
     name = "_cctz",
@@ -57,7 +50,7 @@ ch_cc_library(
     includes = [
         "include",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
 )
 
 ch_cc_library(
@@ -68,5 +61,5 @@ ch_cc_library(
             "-w",
             "-std=c++23",
         ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
 )

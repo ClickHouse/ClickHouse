@@ -1,5 +1,5 @@
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
-load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
 load("@clickhouse//bazel/rules:ch_grpc_cc_library.bzl", "ch_grpc_cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -335,13 +335,6 @@ ch_grpc_cc_library(
     proto = "@clickhouse//bazel:google_cloud_orgpolicy_v1_orgpolicy_proto",
 )
 
-_GENERATED_LOCAL_DEFINES_1 = [
-    "STD_EXCEPTION_HAS_STACK_TRACE=1",
-    "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-    "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-    "_LIBUNWIND_IS_NATIVE_ONLY",
-]
-
 _GENERATED_COPTS_1 = [
     "-w",
     "-std=c++23",
@@ -498,7 +491,7 @@ ch_cc_library(
         "@clickhouse_re2//:_re2",
         "@clickhouse_abseil_cpp//:absl_str_format_internal",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_1,
+    local_defines = CXX_RUNTIME_DEFINES,
     local_includes = [
         ".",
     ],
@@ -911,7 +904,7 @@ ch_cc_library(
         "@clickhouse_abseil_cpp//:absl_str_format_internal",
         "@clickhouse_openssl//:crypto",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_1,
+    local_defines = CXX_RUNTIME_DEFINES,
     local_includes = [
         ".",
     ],

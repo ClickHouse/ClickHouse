@@ -130,5 +130,4 @@ ch_cc_library(
         "src/common",
     ],
     textual_hdrs = glob(["src/liblzma/api/lzma/*.h"]),
-    implementation_deps = [],
 )

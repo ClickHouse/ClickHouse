@@ -1,5 +1,5 @@
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
-load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
 load("@clickhouse//bazel/rules:repository_paths.bzl", "cmake_cxx_compiler_version")
 
 package(default_visibility = ["//visibility:public"])
@@ -168,13 +168,6 @@ expand_template(
     template = "@clickhouse//:cmake/generate_export_header.h.in",
 )
 
-_GENERATED_LOCAL_DEFINES_0 = [
-    "STD_EXCEPTION_HAS_STACK_TRACE=1",
-    "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-    "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-    "_LIBUNWIND_IS_NATIVE_ONLY",
-]
-
 _BSONCXX_SHARED_HEADERS = [
     "src/bsoncxx/lib/bsoncxx/private/bson.hh",
     "src/bsoncxx/lib/bsoncxx/private/immortal.hh",
@@ -253,7 +246,7 @@ ch_cc_library(
         "config/contrib/mongo-cxx-driver/src/bsoncxx/lib",
         "config/contrib/mongo-cxx-driver/src/bsoncxx/lib/bsoncxx/v_noabi",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     textual_hdrs = _BSONCXX_TEXTUAL_HEADERS,
     deps = ["@clickhouse_mongo_c_driver//:_libbson"],
 )
@@ -295,7 +288,7 @@ ch_cc_library(
         "config/contrib/mongo-cxx-driver/src/mongocxx/lib",
         "config/contrib/mongo-cxx-driver/src/mongocxx/lib/mongocxx/v_noabi",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     textual_hdrs = _MONGOCXX_TEXTUAL_HEADERS,
     deps = [":_bsoncxx"],
 )

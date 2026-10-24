@@ -532,7 +532,6 @@ ch_cc_library(
         "third_party/utf8_range",
         "third_party/xxhash",
     ],
-    deps = [],
 )
 
 _GENERATED_COPTS_1 = [
@@ -2875,7 +2874,6 @@ ch_cc_library(
         "third_party/utf8_range",
         "third_party/xxhash",
     ],
-    deps = [],
 )
 
 ch_cc_library(
@@ -3072,5 +3070,4 @@ ch_cc_library(
         "third_party/utf8_range",
         "third_party/xxhash",
     ],
-    deps = [],
 )

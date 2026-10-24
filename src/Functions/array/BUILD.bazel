@@ -125,9 +125,9 @@ ch_cc_library(
         "//src/Common:memory_tracking_api",
         "//src:headers",
         "//src:column_types",
+        "//src/Functions:headers",
     ],
     local_defines = _CLICKHOUSE_FUNCTIONS_ARRAY_LOCAL_DEFINES,
-    source_headers = True,
     alwayslink = True,
 )
 
@@ -226,6 +226,8 @@ ch_cc_library(
         "//src/Common:memory_tracking_api",
         "//src:io_string_buffers",
         "//src:with_context",
+        "//src/Functions:headers",
+        "//src/Functions/GatherUtils:headers",
     ],
     local_defines = _CLICKHOUSE_FUNCTIONS_ARRAY_LOCAL_DEFINES,
     source_headers = True,
@@ -266,11 +268,10 @@ ch_cc_library(
         "//src/Common",
         "//src/Functions:headers",
         "//src/Common:memory_tracking_api",
+        "//src:column_types",
     ],
     local_defines = _CLICKHOUSE_FUNCTIONS_ARRAY_LOCAL_DEFINES,
     source_headers = True,
-    deps = [
-    ],
     alwayslink = True,
 )
 
@@ -298,8 +299,6 @@ ch_cc_library(
     ],
     local_defines = _CLICKHOUSE_FUNCTIONS_ARRAY_LOCAL_DEFINES,
     source_headers = True,
-    deps = [
-    ],
     alwayslink = True,
 )
 
@@ -321,8 +320,6 @@ ch_cc_library(
     ],
     local_defines = _CLICKHOUSE_FUNCTIONS_ARRAY_LOCAL_DEFINES,
     source_headers = True,
-    deps = [
-    ],
     alwayslink = True,
 )
 

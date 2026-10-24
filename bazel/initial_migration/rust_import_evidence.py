@@ -82,10 +82,12 @@ def inspect(data, consumer, imported):
         raise ValueError("import lacks one original DwyuArchiveSymbols scan")
     archive = archives[0]
     with Path(archive).open("rb") as stream:
-        if stream.read(8) != b"!<arch>\n":
+        magic = stream.read(8)
+        if magic != b"!<arch>\n":
             raise ValueError("Rust archive is absent, thin or unsupported")
     nm = data["archives"][archive]
-    if set(nm) != {"symbols", "status"} or Path(nm["status"]).read_bytes() != b"0\n":
+    if (set(nm) != {"symbols", "status", "magic"} or Path(nm["status"]).read_bytes() != b"0\n"
+            or Path(nm["magic"]).read_bytes() != magic):
         raise ValueError("original DwyuArchiveSymbols did not succeed")
     definitions = defaultdict(set)
     ambiguous = set()
@@ -115,7 +117,7 @@ def inspect(data, consumer, imported):
                 break
     limited = len(matches) > MAX_OBJECTS
     return {
-        "archive": archive, "owned_objects": len(objects),
+        "archive": archive, "archive_scan": nm, "owned_objects": len(objects),
         "object_matches": dict(list(matches.items())[:MAX_OBJECTS]),
         "limited": limited,
         "symbol_scope": "CPP strong undefined / selected archive single strong member definition; no final-link extraction claim",

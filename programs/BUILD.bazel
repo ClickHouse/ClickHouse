@@ -108,12 +108,6 @@ ch_cc_library(
         "//src/Functions/URL:clickhouse_functions_url",
         "//src/Common:clickhouse_malloc",
         "//src/Common:clickhouse_new_delete",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-            "//base:harmful",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }) + [
         "//bazel/rust:prql_cc",
         "//bazel/rust:polyglot_cc",
         "//bazel/rust:chdig_cc",

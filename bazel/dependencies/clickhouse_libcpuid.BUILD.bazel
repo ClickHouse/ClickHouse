@@ -40,7 +40,6 @@ ch_cc_library(
         ],
         "@platforms//cpu:aarch64": [],
     }),
-    implementation_deps = [],
     language = "C",
     libcxx_headers = False,
     local_defines = select({

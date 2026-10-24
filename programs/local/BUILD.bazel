@@ -40,11 +40,12 @@ ch_cc_library(
         "//src/Common:parser_support_api",
         "//src:headers",
         "//src:core_defines",
+        "//src/Functions:headers",
+        "//src/Parsers:headers",
     ],
     link_runtime = True,
     local_defines = CLICKHOUSE_PROGRAM_COMPRESSION_DEFINES,
     local_includes = [
         ".",
     ],
-    source_headers = True,
 )

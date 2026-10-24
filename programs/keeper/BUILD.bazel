@@ -44,7 +44,6 @@ ch_cc_library(
     local_includes = [
         ".",
     ],
-    source_headers = True,
     deps = [
         "//src/Dictionaries:clickhouse_dictionaries",
     ],

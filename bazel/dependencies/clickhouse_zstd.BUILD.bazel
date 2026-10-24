@@ -1,4 +1,4 @@
-load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -22,13 +22,6 @@ _ZSTD_PRIVATE_HEADERS = [
     "lib/decompress/zstd_ddict.h",
     "lib/dictBuilder/cover.h",
     "lib/dictBuilder/divsufsort.h",
-]
-
-_ZSTD_LOCAL_DEFINES = [
-    "STD_EXCEPTION_HAS_STACK_TRACE=1",
-    "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-    "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-    "_LIBUNWIND_IS_NATIVE_ONLY",
 ]
 
 ch_cc_library(
@@ -63,7 +56,7 @@ ch_cc_library(
     ],
     language = "C",
     libcxx_headers = False,
-    local_defines = _ZSTD_LOCAL_DEFINES,
+    local_defines = CXX_RUNTIME_DEFINES,
     local_includes = [
         "lib/legacy",
         "lib/common",
@@ -84,7 +77,7 @@ ch_cc_library(
     ],
     language = "ASM",
     libcxx_headers = False,
-    local_defines = _ZSTD_LOCAL_DEFINES,
+    local_defines = CXX_RUNTIME_DEFINES,
     local_includes = [
         "lib",
         "lib/legacy",

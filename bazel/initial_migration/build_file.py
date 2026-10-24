@@ -17,6 +17,15 @@ from initial_migration.repository_inputs import (
 from initial_migration.simplify_globs import GlobFiles, simplify_globs, simplify_source_globs
 
 ARCHES = ('x86_64', 'aarch64')
+
+# These CMake targets get their ClickHouse headers from their declared dependencies.
+TARGETS_WITH_DIRECT_SOURCE_HEADERS = {
+    'array_distance_transposed', 'benchmark_runtime_filter_objects',
+    'clickhouse-benchmark-lib', 'clickhouse-client-lib', 'clickhouse-format-lib',
+    'clickhouse-install-lib', 'clickhouse-keeper-lib', 'clickhouse-keeper-utils-lib',
+    'clickhouse-local-lib', 'clickhouse-server-lib', 'clickhouse_common_zookeeper',
+    'clickhouse_functions_time_series', 'clickhouse_functions_uniqtheta', 'dbms_embedded',
+}
 LABEL_ATTRIBUTES = {'srcs', 'hdrs', 'textual_hdrs', 'additional_compiler_inputs', 'deps'}
 
 # These are textual includes with extensions that rules_cc does not classify
@@ -842,7 +851,7 @@ class BuildFile:
                 and all(group['language'] in GLOBAL_COMPILE_OPTIONS for group in copts.groups.values())):
             kind = 'ch_cc_library'
             self.loads.setdefault('@clickhouse//bazel/rules:ch_cc_library.bzl', set()).add(kind)
-            if attrs.get('clickhouse_code', False):
+            if attrs.get('clickhouse_code', False) and name not in TARGETS_WITH_DIRECT_SOURCE_HEADERS:
                 attrs.setdefault('source_headers', True)
             languages = {group['language'] for group in copts.groups.values()}
             if len(languages) != 1:
@@ -1372,11 +1381,6 @@ def dependency_inputs(builds, owners):
         })
     build('contrib/chdig').rule('filegroup', 'cargo_manifest', {'srcs': ['Cargo.toml']})
     build('contrib/openssl').rule('filegroup', 'headers', {'srcs': Glob(['include/**'])})
-    build('contrib/sysroot').rule('cc_library', 'linux_aarch64_hwcap', {
-        'hdrs': ['linux-aarch64/aarch64-linux-gnu/libc/usr/include/asm/hwcap.h'],
-        'strip_include_prefix': 'linux-aarch64/aarch64-linux-gnu/libc/usr/include',
-        'target_compatible_with': ['@platforms//cpu:aarch64'],
-    })
     for arch in ARCHES:
         directory = 'linux-' + arch
         build('contrib/sysroot').rule('filegroup', 'linux_' + arch + '_link_files', {

@@ -1,4 +1,4 @@
-load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -6,13 +6,6 @@ package(default_visibility = ["//visibility:public"])
 exports_files([
     "LICENSE_1_0.txt",
 ])
-
-_GENERATED_LOCAL_DEFINES_0 = [
-    "STD_EXCEPTION_HAS_STACK_TRACE=1",
-    "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-    "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-    "_LIBUNWIND_IS_NATIVE_ONLY",
-]
 
 _BOOST_COPTS = [
     "-w",
@@ -31,7 +24,7 @@ ch_cc_library(
         ":boost_config",
         ":boost_headers_no_openssl",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
 )
 
 ch_cc_library(
@@ -42,7 +35,7 @@ ch_cc_library(
     }),
     language = "ASM",
     libcxx_headers = False,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
 )
 
 cc_library(
@@ -66,7 +59,7 @@ ch_cc_library(
         ":boost_headers_no_openssl",
         ":_boost_context",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
 )
 
 ch_cc_library(
@@ -98,7 +91,7 @@ ch_cc_library(
     ],
     copts = _BOOST_COPTS,
     implementation_deps = [":boost_headers_no_openssl"],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
 )
 
 ch_cc_library(
@@ -172,7 +165,7 @@ ch_cc_library(
         ":boost_config",
         ":boost_headers_no_openssl",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
 )
 
 ch_cc_library(
@@ -183,7 +176,7 @@ ch_cc_library(
     ],
     copts = _BOOST_COPTS,
     implementation_deps = [":boost_headers_no_openssl"],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
 )
 
 _ASIO_COMPILER_OPTIONS = [
@@ -241,14 +234,21 @@ cc_library(
     includes = ["."],
 )
 
-# BOOST_PP_ITERATE and BOOST_PP_ASSIGN_SLOT repeatedly include these files
-# with BOOST_PP_FILENAME_n, BOOST_PP_VALUE or BOOST_PP_LOCAL_MACRO defined.
-_BOOST_PP_TEXTUAL = glob([
+# function2.hpp, function3.hpp and function4.hpp set args for function_n.hpp.
+# The Fusion fold wrappers choose detail/fold.hpp or their preprocessed expansion.
+# result_of.hpp includes the variadic implementation or repeats result_of_iterate.hpp with BOOST_PP_ITERATE.
+# BOOST_PP_ITERATE and BOOST_PP_ASSIGN_SLOT repeatedly include their detail headers.
+_BOOST_MACRO_FRAGMENTS = glob([
+    "boost/fusion/algorithm/iteration/detail/preprocessed/*fold.hpp",
     "boost/preprocessor/iteration/detail/**/*.hpp",
     "boost/preprocessor/slot/detail/slot*.hpp",
 ]) + [
+    "boost/accumulators/numeric/detail/function_n.hpp",
+    "boost/fusion/algorithm/iteration/detail/fold.hpp",
     "boost/preprocessor/slot/detail/counter.hpp",
     "boost/preprocessor/slot/detail/shared.hpp",
+    "boost/utility/detail/result_of_iterate.hpp",
+    "boost/utility/detail/result_of_variadic.hpp",
 ]
 
 # Boost includes these implementation headers in exactly one translation unit
@@ -307,6 +307,25 @@ _WINAPI_HEADERS = glob(
     ],
 )
 
+# The public Boost.Process wrappers select their Windows implementation after
+# including the platform configuration. Keep the v1 helpers that preprocess
+# without the Windows SDK, including async_handler.hpp's fallback includes.
+_WINDOWS_PROCESS_HEADERS = glob(
+    [
+        "boost/process/**/windows/*.hpp",
+        "boost/process/v1/windows.hpp",
+    ],
+    exclude = [
+        "boost/process/v1/detail/windows/asio_fwd.hpp",
+        "boost/process/v1/detail/windows/async_handler.hpp",
+        "boost/process/v1/detail/windows/basic_cmd.hpp",
+        "boost/process/v1/detail/windows/cmd.hpp",
+        "boost/process/v1/detail/windows/handler.hpp",
+        "boost/process/v1/detail/windows/on_exit.hpp",
+        "boost/process/v1/detail/windows/start_dir.hpp",
+    ],
+)
+
 cc_library(
     name = "boost_headers_no_openssl",
     srcs = _ASIO_IMPLEMENTATIONS,
@@ -316,7 +335,7 @@ cc_library(
             "boost/**/*.hpp",
             "boost/**/*.ipp",
         ],
-        exclude = _ASIO_COMPILER_OPTIONS + _BOOST_CONFIG_HEADERS + _BOOST_CONFIG_PRIVATE_HEADERS + _BOOST_CONFIG_ABI + _BOOST_PP_TEXTUAL + _ASIO_IMPLEMENTATIONS + _ASIO_SEPARATE_COMPILATION + _OPENSSL_HEADERS + _OPENSSL_IMPLEMENTATIONS + _OPENSSL_SEPARATE_COMPILATION + _WINAPI_HEADERS + [
+        exclude = _ASIO_COMPILER_OPTIONS + _BOOST_CONFIG_HEADERS + _BOOST_CONFIG_PRIVATE_HEADERS + _BOOST_CONFIG_ABI + _BOOST_MACRO_FRAGMENTS + _ASIO_IMPLEMENTATIONS + _ASIO_SEPARATE_COMPILATION + _OPENSSL_HEADERS + _OPENSSL_IMPLEMENTATIONS + _OPENSSL_SEPARATE_COMPILATION + _WINAPI_HEADERS + _WINDOWS_PROCESS_HEADERS + [
             "boost/compute.hpp",
             "boost/compute/**",
             # ClickHouse enables no Boost.Python, MPI, GIL image codecs, or OdeInt external backends.
@@ -341,16 +360,21 @@ cc_library(
             "boost/numeric/odeint/external/**",
             "boost/numeric/ublas/opencl.hpp",
             "boost/numeric/ublas/opencl/**",
+            # Boost.Parser includes this Win32 implementation only under _MSC_VER.
+            "boost/parser/detail/vs_output_stream.hpp",
+            # Boost.URL rejects this discontinued single-translation-unit entry point.
+            "boost/url/src.hpp",
             "boost/program_options/detail/config_file.hpp",
             "boost/pfr.hpp",
             "boost/pfr/**",
         ],
     ) + select({
         "@platforms//os:linux": [],
+        "@platforms//os:windows": _WINAPI_HEADERS + _WINDOWS_PROCESS_HEADERS + ["boost/parser/detail/vs_output_stream.hpp"],
         "//conditions:default": _WINAPI_HEADERS,
     }),
     features = ["external_include_paths"],
-    textual_hdrs = glob(["boost/**/*.inc"]) + _BOOST_PP_TEXTUAL + _ASIO_SEPARATE_COMPILATION,
+    textual_hdrs = glob(["boost/**/*.inc"]) + _BOOST_MACRO_FRAGMENTS + _ASIO_SEPARATE_COMPILATION,
     deps = [
         ":boost_asio_options",
         ":boost_config",

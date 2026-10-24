@@ -5,10 +5,11 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 
 from audit_full_dwyu import (
     FIELDS, NATIVE_CC, RuntimeActionGraph, _RUNTIME_PP_SHELL,
-    bep_file_matches, canonical, identity, query_labels, read_cquery, sha_file,
+    bep_file_matches, canonical, identity, query_labels, read_cquery, select_completions, sha_file,
 )
 from audit_proto_dwyu import (
     ProtoBep, environment, expanded_args, graph_source, option, output_path, preprocess_options,
@@ -31,7 +32,7 @@ CONSUMERS = {
 }
 SOURCE_PATTERN = "^(programs/main|src/(Client/ReplxxLineReader|Compression/CompressionCodecPco|Parsers/PRQL/ParserPRQLQuery|Parsers/Polyglot/ParserPolyglotQuery|Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils))[.]cpp$"
 CPP_ACTIONS = (
-    "DwyuRustImportEvidence", "DwyuCompilerPreprocess", "DwyuProcessConsumerContext",
+    "DwyuRustImportEvidence", "DwyuProcessConsumerContext",
     "DwyuAnalyzeImportHeaders", "DwyuOwnedSymbols", "DwyuArchiveSymbols",
 )
 COMPACT_BYTES = 32 * 1024 * 1024
@@ -365,6 +366,14 @@ def only_output(graph, actions, output, owner, mnemonic):
     return action
 
 
+def dwyu_arguments(action):
+    # DWYU passes main-repository labels literally. Only its declared response
+    # files, spelled @file or --param_file=file, may supply more arguments.
+    arguments = [("@" + arg[len("--param_file="):] if arg.startswith("--param_file=")
+                  else canonical(arg)) for arg in action.get("arguments", [])]
+    return expanded_args(dict(action, arguments=arguments))
+
+
 def native_cpp_preprocessing(cpp, original, pp, graph, source, obj, output, trace, owned_manifest):
     """Compare original native CPP to CPP DWYU, allowing preprocessing outputs only."""
     argv = expanded_args(pp)
@@ -389,9 +398,25 @@ def native_cpp_preprocessing(cpp, original, pp, graph, source, obj, output, trac
         raise ValueError("CPP FFI preprocessing drops original compiler inputs or ownership")
 
 
-def bind_cpp_observation(owner, imported, row, cpp, original, graph, ev, value, rows):
+def check_archive_scan(graph, owners, archive, scan, ev_inputs):
+    if not isinstance(scan, dict) or set(scan) != {"symbols", "status", "magic"}:
+        raise ValueError("CPP FFI lacks the archive symbol, status and signature outputs")
+    argv = [archive] + [output_path(scan[field]) for field in ("symbols", "status", "magic")]
+    outputs = set(argv[1:])
+    if len(outputs) != 3 or not set(argv) <= ev_inputs:
+        raise ValueError("CPP FFI lacks the original archive or all three distinct scan outputs")
+    # A shared scan belongs to the selected cc_import. An uncovered archive's
+    # scan belongs to the original caller. Match the archive and each output to argv.
+    scans = [a for key in owners for a in graph.owners.get(key, ())
+             if a.get("mnemonic") == "DwyuArchiveSymbols" and archive in graph.inputs(a)
+             and set(graph.files(a, "outputIds")) == outputs and expanded_args(a)[-4:] == argv]
+    if len(scans) != 1:
+        raise ValueError("CPP FFI lacks one original llvm-nm action for the configured archive")
+
+
+def bind_cpp_observation(owner, imported, row, cpp, original, graph, preprocess, ev, value, rows):
     source, obj = graph_source(original, cpp)
-    cmd = expanded_args(ev)
+    cmd = dwyu_arguments(ev)
     name = option(cmd, "--output")
     if (set(graph.files(ev, "outputIds")) != {name} or source != CONSUMERS[imported][1] or
             canonical(option(cmd, "--consumer")) != row["label"] or canonical(option(cmd, "--import")) != imported
@@ -406,12 +431,12 @@ def bind_cpp_observation(owner, imported, row, cpp, original, graph, ev, value, 
     output, trace = option(cmd, "--preprocessed"), option(cmd, "--compiler-headers")
     if value.get("preprocessed") != output or value.get("compiler_headers") != trace:
         raise ValueError("CPP FFI evidence reports different compiler artifacts")
-    pp = only_output(graph, graph.owners, output, owner, "DwyuCompilerPreprocess")
-    if only_output(graph, graph.owners, trace, owner, "DwyuCompilerPreprocess") is not pp:
+    pp = only_output(preprocess, preprocess.owners, output, owner, "DwyuCompilerPreprocess")
+    if only_output(preprocess, preprocess.owners, trace, owner, "DwyuCompilerPreprocess") is not pp:
         raise ValueError("CPP FFI preprocessor and skipped-header trace differ")
     header_report = option(cmd, "--header-report")
     header_action = only_output(graph, graph.owners, header_report, owner, "DwyuAnalyzeImportHeaders")
-    hdr_cmd = expanded_args(header_action)
+    hdr_cmd = dwyu_arguments(header_action)
     import_headers = option(cmd, "--import-headers")
     if (canonical(option(hdr_cmd, "--target_under_inspection")) != imported or
             option(hdr_cmd, "--owned_headers") != import_headers or option(hdr_cmd, "--output") != header_report):
@@ -421,13 +446,13 @@ def bind_cpp_observation(owner, imported, row, cpp, original, graph, ev, value, 
     if (only_output(graph, graph.owners, private, owner, "DwyuProcessConsumerContext") is not processor or
             set(graph.files(processor, "outputIds")) != {pub, private}):
         raise ValueError("import header analysis has mismatched CPP include records")
-    process = expanded_args(processor)
+    process = dwyu_arguments(processor)
     if (option(process, "--files") != output or option(process, "--compiler_headers") != trace or
             option(process, "--source") != source or option(process, "--owned_headers") != import_headers or
             option(process, "--mode") != "compiler" or process.count("--consumer_root") != 1):
         raise ValueError("import header reader did not use this real consumer and owner")
     strict = row["strict"]
-    native_cpp_preprocessing(cpp, original, pp, graph, source, obj, output, trace,
+    native_cpp_preprocessing(cpp, original, pp, preprocess, source, obj, output, trace,
                              strict["configured_headers"]["artifact"])
     ev_inputs = graph.inputs(ev)
     if not {output, trace, header_report, import_headers, option(cmd, "--symbols")} <= ev_inputs:
@@ -436,17 +461,15 @@ def bind_cpp_observation(owner, imported, row, cpp, original, graph, ev, value, 
     nm_objects = [a for a in graph.owners.get(owner, ())
                   if a.get("mnemonic") == "DwyuOwnedSymbols" and obj in graph.inputs(a)
                   and set(graph.files(a, "outputIds")) <= ev_inputs]
-    nm_archives = [a for a in graph.owners.get(owner, ())
-                   if a.get("mnemonic") == "DwyuArchiveSymbols" and archive in graph.inputs(a)
-                   and set(graph.files(a, "outputIds")) <= ev_inputs]
-    if len(nm_objects) != 1 or len(nm_archives) != 1 or archive not in ev_inputs:
-        raise ValueError("CPP FFI lacks actual original object/archive DWYU nm inputs")
     deps = {identity(dep["label"], dep["configurationChecksum"])
             for dep in row["configured_inputs"] if dep.get("configurationChecksum")}
     imports = [key for key in deps if key in rows and rows[key]["label"] == imported and
                rows[key]["rule_class"] == "cc_import" and not rows[key]["is_tool"]]
     if len(imports) != 1:
         raise ValueError("CPP FFI lacks one original configured direct cc_import")
+    if len(nm_objects) != 1:
+        raise ValueError("CPP FFI lacks the original configured object llvm-nm action")
+    check_archive_scan(graph, (imports[0], owner), archive, value.get("archive_scan"), ev_inputs)
     match = value["object_matches"].get(obj)
     if match is not None and (set(match) != {"symbol", "member"} or
             any(not isinstance(match[k], str) or not match[k] for k in ("symbol", "member"))):
@@ -466,11 +489,46 @@ def collect_consumer_evidence(audit, roots, rows, eligible, strict_bep, execroot
                  row.get("strict", {}).get("report"))}
     if not selected:
         return
+    bep = ProtoBep(strict_bep, roots, rows, "dwyu")
+    successful = {}
+    for key, row in selected.items():
+        strict = row["strict"]
+        strict["rust_imports"] = {
+            imported: {"status": "not_proved", "strict_bep": bep.path, "invocation_uuid": bep.invocation_uuid}
+            for imported, (consumer, _) in CONSUMERS.items() if consumer == row["label"]
+        }
+        reason = None
+        if strict.get("invocation_uuid") != bep.invocation_uuid:
+            reason = "FFI caller report is from a different strict invocation"
+        elif key not in bep.successful_roots:
+            reason = "FFI caller was not a successful original CPP root"
+        elif compact is not None:
+            try:
+                completions = select_completions(strict["completions"], True, command=[aspect], row=row)
+                if len(completions) != 1 or completions[0].get("completed", {}).get("success") is not True:
+                    raise ValueError("FFI caller lacks its successful configured DWYU aspect completion")
+                strict_path = Path(strict["report"]["file"]).relative_to(execroot).as_posix()
+                _, cpp_bep = bep.read_report(execroot, key, strict_path)
+                if cpp_bep["report"] != strict["report"]:
+                    raise ValueError("FFI caller report differs from original strict result")
+                for record in strict["rust_imports"].values():
+                    record["cpp_bep"] = cpp_bep
+            except (KeyError, ValueError, TypeError, OSError) as exc:
+                reason = str(exc)
+        if reason:
+            for record in strict["rust_imports"].values():
+                record["reason"] = reason
+        else:
+            successful[key] = row
+    selected = successful
+    if not selected:
+        return
+    wanted = {row["label"] for row in selected.values()}
     rows = dict(rows)
+    imported = [key for key, (owner, _) in CONSUMERS.items() if owner in wanted]
     if compact is not None:
         # The compact query contains only requested native roots. Read only
-        # their identified six direct imports, not the complete closure.
-        imported = [key for key, (owner, _) in CONSUMERS.items() if owner in wanted]
+        # direct imports for callers whose original strict action succeeded.
         query = audit.query("rust-ffi-configured-imports", "cquery",
                             "config(" + query_labels(imported) + ", target)")
         imports, omitted = read_cquery(query)
@@ -480,45 +538,63 @@ def collect_consumer_evidence(audit, roots, rows, eligible, strict_bep, execroot
         rows.update(imports)
     options = ("--include_aspects", "--include_artifacts", "--include_commandline", "--include_param_files")
     scope = query_labels(sorted(wanted))
+    sources = sorted({CONSUMERS[label][1] for label in imported})
+    source_pattern = "^(" + "|".join(re.escape(source) for source in sources) + ")$"
     query = audit.query("rust-ffi-original-compile", "aquery",
-                        "inputs('" + SOURCE_PATTERN + "', mnemonic('^CppCompile$', " + scope + "))", options)
+                        "inputs('" + source_pattern + "', mnemonic('^CppCompile$', " + scope + "))", options)
     original = RuntimeActionGraph(query, "CppCompile", rows, NATIVE_CC)
     original_sha = sha_file(query)
+    scan_scope = query_labels(sorted(wanted | set(imported)))
     query = audit.query("rust-ffi-original-dwyu", "aquery",
-                        "mnemonic('^(" + "|".join(CPP_ACTIONS) + ")$', " + scope + ")",
+                        "mnemonic('^(" + "|".join(CPP_ACTIONS) + ")$', " + scan_scope + ")",
                         options + (aspect, "--output_groups=dwyu"))
-    graph = RuntimeActionGraph(query, CPP_ACTIONS, rows, NATIVE_CC)
+    graph = RuntimeActionGraph(query, CPP_ACTIONS, rows, NATIVE_CC | {"cc_import"})
     queries = {"cpp": original_sha, "dwyu": sha_file(query)}
-    bep = ProtoBep(strict_bep, roots, rows, "dwyu")
+    observations = {}
+    outputs = set()
     for owner, row in selected.items():
-        by_import = {}
-        row["strict"]["rust_imports"] = by_import
-        for imported, (consumer, source) in CONSUMERS.items():
-            if row["label"] != consumer:
-                continue
-            record = {"status": "not_proved", "queries": queries}
-            by_import[imported] = record
+        for imported, record in row["strict"]["rust_imports"].items():
+            record["queries"] = queries
+            source = CONSUMERS[imported][1]
             try:
-                if owner not in bep.successful_roots:
-                    raise ValueError("FFI caller was not a successful original CPP root")
                 compilers = [a for a in original.owners.get(owner, ()) if graph_source(original, a)[0] == source]
                 reports = [a for a in graph.owners.get(owner, ()) if a["mnemonic"] == "DwyuRustImportEvidence"
-                           and canonical(option(expanded_args(a), "--import")) == imported]
+                           and canonical(option(dwyu_arguments(a), "--import")) == imported]
                 if len(compilers) != 1 or len(reports) != 1:
                     raise ValueError("FFI consumer CPP action or Rust observation missing or ambiguous")
                 ev = reports[0]
-                name = option(expanded_args(ev), "--output")
+                cmd = dwyu_arguments(ev)
+                name = option(cmd, "--output")
                 only_output(graph, graph.owners, name, owner, "DwyuRustImportEvidence")
-                if compact is not None:
-                    # Fetch exactly the observed JSON from this CPP BEP. No
-                    # archive or object is materialized by this callback.
-                    compact(owner, execroot / name)
-                value, evidence = bep.read_report(execroot, owner, name)
-                record.update(bind_cpp_observation(owner, imported, row, compilers[0], original, graph, ev, value, rows))
-                record["bep"] = evidence
-                if compact is not None:
-                    strict_path = Path(row["strict"]["report"]["file"]).relative_to(execroot).as_posix()
-                    _, record["cpp_bep"] = bep.read_report(execroot, owner, strict_path)
+                output = output_path(option(cmd, "--preprocessed"))
+                trace = output_path(option(cmd, "--compiler-headers"))
+                if (canonical(option(cmd, "--consumer")) != row["label"] or option(cmd, "--source") != source
+                        or output == trace or not {output, trace} <= graph.inputs(ev)
+                        or not re.fullmatch(r"[A-Za-z0-9_./@+=,~-]+", output)):
+                    raise ValueError("Rust observation does not name this consumer's preprocessed source")
+                outputs.add(output)
+                observations[owner, imported] = compilers[0], ev, name
             except (KeyError, ValueError, TypeError, OSError) as exc:
-                record["status"] = "not_proved"
                 record["reason"] = str(exc)
+    if not outputs:
+        return
+    # DBMS has thousands of other preprocessing actions. Only the explicitly
+    # referenced outputs can supply a DwyuRustImportEvidence action above.
+    pattern = "^(" + "|".join(re.escape(path) for path in sorted(outputs)) + ")$"
+    query = audit.query("rust-ffi-preprocessing", "aquery",
+                        "outputs('" + pattern + "', mnemonic('^DwyuCompilerPreprocess$', " + scope + "))",
+                        options + (aspect, "--output_groups=dwyu"))
+    preprocess = RuntimeActionGraph(query, "DwyuCompilerPreprocess", rows, NATIVE_CC)
+    queries["preprocessing"] = sha_file(query)
+    for (owner, imported), (cpp, ev, name) in observations.items():
+        row = selected[owner]
+        record = row["strict"]["rust_imports"][imported]
+        try:
+            if compact is not None:
+                compact(owner, execroot / name)
+            value, evidence = bep.read_report(execroot, owner, name)
+            record.update(bind_cpp_observation(owner, imported, row, cpp, original, graph, preprocess, ev, value, rows))
+            record["bep"] = evidence
+        except (KeyError, ValueError, TypeError, OSError) as exc:
+            record["status"] = "not_proved"
+            record["reason"] = str(exc)

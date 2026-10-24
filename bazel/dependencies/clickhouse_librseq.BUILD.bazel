@@ -54,5 +54,4 @@ ch_cc_library(
             "include/rseq/arch/generic/thread-pointer.h",
         ] + glob(["include/rseq/arch/aarch64/**/*.h"]),
     }),
-    implementation_deps = [],
 )

@@ -39,7 +39,10 @@ _PRIVATE_STORAGES_SYSTEM_1_HEADERS = glob(
 
 _PUBLIC_STORAGES_SYSTEM_HEADERS = glob(
     ["*.h"],
-    exclude = _PRIVATE_STORAGES_SYSTEM_1_HEADERS + ["attachInformationSchemaTables.h"],
+    exclude = _PRIVATE_STORAGES_SYSTEM_1_HEADERS + [
+        "attachInformationSchemaTables.h",
+        "attachSystemTables.h",
+    ],
 )
 
 _CLICKHOUSE_STORAGES_SYSTEM_LOCAL_DEFINES = [
@@ -155,7 +158,6 @@ _STORAGES_SYSTEM_LLVM_DEPS = [
 _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES = dict(
     clickhouse_code = True,
     implementation_deps = [
-        "//bazel:clickhouse_config_headers",
         "//base:common",
         "//src:headers",
         "//src/Common",
@@ -312,6 +314,7 @@ ch_cc_library(
         "extractTablesFilter.cpp",
         "getQueriedColumnsMaskAndHeader.cpp",
     ] + _PRIVATE_STORAGES_SYSTEM_1_HEADERS,
+    hdrs = ["attachSystemTables.h"],
     clickhouse_code = _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["clickhouse_code"],
     implementation_deps = _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["implementation_deps"] + [
         ":clickhouse_storages_system_information_schema",
@@ -323,7 +326,6 @@ ch_cc_library(
         "//src/Common:memory_tracking_api",
         "//src/Common:string_utils",
         "//src:io_string_buffers",
-        "//src:with_context",
         "//src/Parsers:parser_api",
         "//src:column_types",
         "//src/AggregateFunctions:aggregate_api",
@@ -331,7 +333,11 @@ ch_cc_library(
     ],
     local_defines = _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["local_defines"],
     source_headers = True,
-    deps = _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["deps"] + [":headers"],
+    deps = _STORAGES_SYSTEM_1_COMPILE_ATTRIBUTES["deps"] + [
+        ":headers",
+        "//bazel:clickhouse_config_headers",
+        "//src:with_context",
+    ],
 )
 
 ch_cc_library(

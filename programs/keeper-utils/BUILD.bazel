@@ -19,11 +19,11 @@ ch_cc_library(
         "//src:dbms__compile_0",
         "//src/Common:parser_support_api",
         "//src:column_types",
+        "//src:headers",
     ],
     link_runtime = True,
     local_defines = CLICKHOUSE_PROGRAM_COMPRESSION_DEFINES,
     local_includes = [
         ".",
     ],
-    source_headers = True,
 )

@@ -56,5 +56,4 @@ ch_cc_library(
             "@platforms//:incompatible",
         ],
     }),
-    deps = [],
 )

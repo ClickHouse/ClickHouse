@@ -1,5 +1,5 @@
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
-load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -233,13 +233,6 @@ ch_cc_library(
     ],
 )
 
-_GENERATED_LOCAL_DEFINES_0 = [
-    "STD_EXCEPTION_HAS_STACK_TRACE=1",
-    "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-    "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-    "_LIBUNWIND_IS_NATIVE_ONLY",
-]
-
 ch_cc_library(
     name = "_curl_hostcheck",
     srcs = [
@@ -252,8 +245,7 @@ ch_cc_library(
             "-std=c++17",
         ],
     includes = ["src/third_party/curl"],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [],
+    local_defines = CXX_RUNTIME_DEFINES,
     alwayslink = True,
 )
 
@@ -269,8 +261,7 @@ ch_cc_library(
             "-std=c++17",
         ],
     includes = ["src/third_party/hdr_histogram"],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [],
+    local_defines = CXX_RUNTIME_DEFINES,
     alwayslink = True,
 )
 
@@ -287,7 +278,6 @@ ch_cc_library(
     includes = ["src/third_party/http-parser"],
     language = "C",
     libcxx_headers = False,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [],
+    local_defines = CXX_RUNTIME_DEFINES,
     alwayslink = True,
 )

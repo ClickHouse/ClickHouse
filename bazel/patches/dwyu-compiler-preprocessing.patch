@@ -63,7 +63,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
      if is_target_under_inspection:
          args.add("--is_target_under_inspection")
      if _is_verbose(ctx):
-@@ -363,7 +382,11 @@
+@@ -363,7 +383,11 @@
      """
      We cannot rely on DWYU being executed on the dependencies as analysis of the dependency might have been skipped.
      """
@@ -76,7 +76,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
  
  def _gather_transitive_reports(ctx):
      """
-@@ -373,9 +396,29 @@
+@@ -373,9 +397,29 @@
      """
      reports = []
      if ctx.attr._recursive:
@@ -109,7 +109,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
      return reports
  
  def _return_on_skip(ctx):
-@@ -386,12 +429,435 @@
+@@ -386,12 +430,435 @@
          return []
      return [OutputGroupInfo(dwyu = depset(transitive = _gather_transitive_reports(ctx)))]
  
@@ -547,7 +547,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
  
      # Work around the bug described in https://github.com/bazelbuild/bazel/issues/19663
      # Implementation_deps are not added to CcInfo.compilation_context
-@@ -440,9 +902,161 @@
+@@ -440,9 +907,172 @@
  
          preprocessor_results.append(pp_output)
  
@@ -598,7 +598,30 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
 +        route.append(interned[key])
 +    return dict(target = str(dep.label), records = route)
 +
-+def _owned_symbols(ctx, target, deps, implementation_deps, producer = None):
++def dwyu_scan_archive(ctx, archive, prefix):
++    """Read the symbols and archive signature from the same configured File."""
++    symbols = ctx.actions.declare_file(prefix + ".nm.txt")
++    status = ctx.actions.declare_file(prefix + ".status")
++    magic = ctx.actions.declare_file(prefix + ".magic")
++    ctx.actions.run_shell(
++        inputs = [archive],
++        tools = [ctx.attr._tool_nm[DefaultInfo].files_to_run],
++        outputs = [symbols, status, magic],
++        arguments = [ctx.executable._tool_nm.path, archive.path, symbols.path, status.path, magic.path],
++        command = """
++"$1" --format=posix --print-file-name --extern-only --no-demangle "$2" > "$3" &&
++    head -c 8 < "$2" > "$5" && printf '0\\n' > "$4" || {
++    rc=$?
++    rm -f -- "$3" "$4" "$5" || :
++    exit "$rc"
++}
++""",
++        mnemonic = "DwyuArchiveSymbols",
++        progress_message = "Read configured archive symbols of {}".format(ctx.label),
++    )
++    return struct(archive = archive, symbols = symbols, status = status, magic = magic, tool = ctx.attr._tool_nm)
++
++def _owned_symbols(ctx, target, deps, implementation_deps, producer = None, archive_scans = None):
 +    inventory = []
 +    interned = {}
 +    objects = {}
@@ -646,30 +669,18 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
 +        )
 +    else:
 +        ctx.actions.write(nm, "")
++    shared = {}
++    for scan in archive_scans.to_list() if archive_scans != None else []:
++        if scan.tool == ctx.attr._tool_nm:
++            # Different cc_import owners can expose the same File. Keep the
++            # caller-owned scan in that case so Rust evidence has one owner.
++            shared[scan.archive] = None if scan.archive in shared else scan
 +    archive_outputs = []
 +    archive_manifest = {}
 +    for index, file in enumerate(archives.values()):
-+        output = ctx.actions.declare_file("{}.dwyu_archive_{}.nm.txt".format(ctx.label.name, index))
-+        status = ctx.actions.declare_file("{}.dwyu_archive_{}.status".format(ctx.label.name, index))
-+        ctx.actions.run_shell(
-+            inputs = [file],
-+            tools = [tool],
-+            outputs = [output, status],
-+            arguments = [ctx.executable._tool_nm.path, file.path, output.path, status.path],
-+            command = """
-+if "$1" --format=posix --print-file-name --extern-only --no-demangle "$2" > "$3"; then
-+    printf '0\\n' > "$4"
-+else
-+    nm_status=$?
-+    rm -f -- "$3" "$4" || exit "$nm_status"
-+    exit "$nm_status"
-+fi
-+""",
-+            mnemonic = "DwyuArchiveSymbols",
-+            progress_message = "Read configured archive symbols of {}".format(target.label),
-+        )
-+        archive_manifest[file.path] = dict(symbols = output.path, status = status.path)
-+        archive_outputs.extend([output, status, file])
++        scan = shared.get(file) or dwyu_scan_archive(ctx, file, "{}.dwyu_archive_{}".format(ctx.label.name, index))
++        archive_manifest[file.path] = dict(symbols = scan.symbols.path, status = scan.status.path, magic = scan.magic.path)
++        archive_outputs.extend([scan.symbols, scan.status, scan.magic])
 +    symbols = ctx.actions.declare_file("{}.dwyu_owned_symbols.json".format(target.label.name))
 +    ctx.actions.write(symbols, json.encode(dict(
 +        owner = owner,
@@ -708,11 +719,11 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
 +    }
 +    return [DwyuImportMetadata(own = own, direct = direct)]
 +
-+def dwyu_cc_aspect_impl(target, ctx, producer = None, import_metadata = False, import_sources = {}):
++def dwyu_cc_aspect_impl(target, ctx, producer = None, import_metadata = False, import_sources = {}, archive_scans = None):
      """
      Implementation for the "Depend on What You Use" (DWYU) aspect.
  
-@@ -458,9 +1072,47 @@
+@@ -458,9 +1088,47 @@
      # Check whether DWYU should run on this target
      #
  
@@ -761,7 +772,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
  
      # Skip targets which the user explicitly excluded from the analysis.
      # In contrast to the other skipping mechanisms we still propagate the reports of the dependencies.
-@@ -510,17 +1162,37 @@
+@@ -510,17 +1178,37 @@
      #
  
      config = _make_dwyu_config(ctx)
@@ -805,7 +816,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
  
      # TODO Investigate if we can prevent running this multiple times for the same dep if multiple
      #      target_under_inspection have the same dependency
-@@ -529,26 +1201,43 @@
+@@ -529,26 +1217,43 @@
  
      report_file = ctx.actions.declare_file("{}_dwyu_report.json".format(target.label.name))
  
@@ -848,12 +859,12 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
 +    if header_manifest != None:
 +        args.add("--owned_headers", header_manifest)
 +        if getattr(ctx.attr, "_tool_nm", None):
-+            symbols = _owned_symbols(ctx, target, target_deps, target_impl_deps, producer = producer)
++            symbols = _owned_symbols(ctx, target, target_deps, target_impl_deps, producer = producer, archive_scans = archive_scans)
 +            args.add("--owned_symbols", symbols[0])
      args.add("--output", report_file)
      args.add("--target_under_inspection", str(target.label))
      args.add_all("--preprocessed_public_files", preprocessed_public_files, omit_if_empty = False)
-@@ -560,18 +1249,30 @@
+@@ -560,18 +1265,30 @@
          args.add("--ignored_includes_config", ctx.files._ignored_includes[0])
      args.add_all("--extra_ignored_includes", config.extra_ignored_includes, omit_if_empty = True)
      args.add_all("--ignored_unused_deps", config.ignored_unused_deps, omit_if_empty = True)
@@ -873,7 +884,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
  
 +    # DwyuProcessSourceFile has read compiler inputs and emits include JSON.
 +    # DwyuAnalyzeTarget reads that JSON, header/symbol manifests, nm outputs
-+    # and actual archives. Keep the original inputs for fast and full modes.
++    # and archive signatures. Keep the original inputs for fast and full modes.
 +    compile_inputs = []
 +    if config.preprocessing_mode != "compiler":
 +        compile_inputs = [depset(
@@ -888,7 +899,7 @@ diff --git a/dwyu/cc/aspect/dwyu.bzl b/dwyu/cc/aspect/dwyu.bzl
      )
      ctx.actions.run(
          executable = ctx.executable._tool_analyze_includes,
-@@ -582,5 +1283,313 @@
+@@ -582,5 +1299,313 @@
          arguments = [args],
      )
  
@@ -1225,7 +1236,7 @@ diff --git a/dwyu/cc/aspect/factory.bzl b/dwyu/cc/aspect/factory.bzl
          recursion_stops_on_skip = False,
          skip_external_targets = False,
          skip_features = [],
-@@ -44,7 +46,14 @@
+@@ -44,7 +46,15 @@
          skip_toolchain_features = [],
          skipped_tags = [],
          target_mapping = None,
@@ -1237,14 +1248,16 @@ diff --git a/dwyu/cc/aspect/factory.bzl b/dwyu/cc/aspect/factory.bzl
 +        tool_import_evidence = None,
 +        verbose = False,
 +        additional_providers = [],
++        required_aspects = [],
 +        implementation = None):
      """
      Create and configure a "**D**epend on **W**hat **Y**ou **U**se" (DWYU) aspect.
  
-@@ -68,6 +77,11 @@
+@@ -68,6 +78,12 @@
      | `dwyu:preprocessing_mode=<mode>`                       | Control the preprocessing mode. |
  
      Args:
++        required_aspects: Project aspects supplying archive scans on configured imports.
 +        additional_providers: Alternative providers accepted by a custom implementation
 +                              when configured closure traversal is disabled.
 +        implementation: Optional project aspect implementation. It can pass compiler
@@ -1253,7 +1266,7 @@ diff --git a/dwyu/cc/aspect/factory.bzl b/dwyu/cc/aspect/factory.bzl
          analysis_ignores_private_headers_from_deps: Setting this to `False` will allow headers listed in the `srcs` attributes of a dependency to fulfill the DWYU checks on top of those from the `hdrs` attribute.
                                                      By default, DWYU uses only headers from the `hdrs` attribute.</br>
                                                      Strictly speaking, using headers from the `srcs` attribute of a dependency is wrong, as they are an implementation detail of the dependency.
-@@ -131,6 +145,8 @@
+@@ -131,6 +147,8 @@
                     You can change this to recursively analyzing dependencies following the `deps` and `implementation_deps` attributes by setting this to True.<br>
                     This feature is demonstrated in the [recursion example](/examples/recursion).
  
@@ -1262,7 +1275,7 @@ diff --git a/dwyu/cc/aspect/factory.bzl b/dwyu/cc/aspect/factory.bzl
          recursion_stops_on_skip: If `True`, skipping a target will also stop the recursive analysis of its dependencies.
                                   This does not just influence the behavior of the `skip_*` options, but also skipping to inbuilt logic (e.g. skipping incompatible rule types).
  
-@@ -187,15 +203,27 @@
+@@ -187,15 +205,27 @@
                          For the full details see the `dwyu_make_cc_info_mapping` documentation.<br>
                          This feature is demonstrated in the [target_mapping example](/examples/target_mapping).
  
@@ -1291,7 +1304,7 @@ diff --git a/dwyu/cc/aspect/factory.bzl b/dwyu/cc/aspect/factory.bzl
      aspect_ignored_includes = [ignored_includes] if ignored_includes else []
  
      if skip_tags != _DEFAULT_SKIPPED_TAGS and skipped_tags:
-@@ -215,12 +243,16 @@
+@@ -215,12 +245,16 @@
      _validate_skip_targets(skip_targets)
  
      return aspect(
@@ -1305,13 +1318,13 @@ diff --git a/dwyu/cc/aspect/factory.bzl b/dwyu/cc/aspect/factory.bzl
 +        toolchains = use_cc_toolchain(mandatory = not follow_configured_closure),
 +        toolchains_aspects = ["*"] if follow_configured_closure else [],
 +        apply_to_generating_rules = follow_configured_closure,
-+        requires = [_dwyu_import_metadata] if tool_import_evidence != None else [],
++        requires = required_aspects + ([_dwyu_import_metadata] if tool_import_evidence != None else []),
          attrs = {
 +            "_follow_configured_closure": attr.bool(default = follow_configured_closure),
              "dwyu_analysis_ignores_private_headers_from_deps": attr.bool(
                  default = analysis_ignores_private_headers_from_deps,
              ),
-@@ -272,23 +304,99 @@
+@@ -272,23 +306,99 @@
                  default = aspect_target_mapping,
              ),
              "_tool_analyze_includes": attr.label(
@@ -1654,7 +1667,6 @@ index b0697ed43d4bf1e536194bb8f32bdb3e38d8fa4e..8e619c9c3517f81ccf5d1ebe8a7cd593
  } // namespace dwyu
  
 diff --git a/dwyu/cc/aspect/private/analyze_includes/main.cpp b/dwyu/cc/aspect/private/analyze_includes/main.cpp
-index d062c5bb38f1664599b0f902e5ca0c5ee0908e71..fb05f567425318b216db209e1781b3002dc18c65 100644
 --- a/dwyu/cc/aspect/private/analyze_includes/main.cpp
 +++ b/dwyu/cc/aspect/private/analyze_includes/main.cpp
 @@ -6,11 +6,16 @@
@@ -1674,7 +1686,7 @@ index d062c5bb38f1664599b0f902e5ca0c5ee0908e71..fb05f567425318b216db209e1781b300
  #include <vector>
  
  namespace dwyu {
-@@ -20,6 +25,9 @@ struct ProgramOptions {
+@@ -20,6 +25,9 @@
      std::string output{};
      std::string target_under_inspection{};
      std::string target_under_inspection_info{};
@@ -1684,7 +1696,7 @@ index d062c5bb38f1664599b0f902e5ca0c5ee0908e71..fb05f567425318b216db209e1781b300
      std::vector<std::string> preprocessed_public_files{};
      std::vector<std::string> preprocessed_private_files{};
      std::vector<std::string> deps{};
-@@ -43,6 +51,9 @@ ProgramOptions parseProgramOptions(int argc, ProgramOptionsParser::ConstCharArra
+@@ -43,6 +51,9 @@
      parser.addOptionValue("--target_under_inspection", options.target_under_inspection);
      // Information about target under inspection
      parser.addOptionValue("--target_under_inspection_info", options.target_under_inspection_info);
@@ -1694,7 +1706,7 @@ index d062c5bb38f1664599b0f902e5ca0c5ee0908e71..fb05f567425318b216db209e1781b300
      // Preprocessor results for all public source files of the target under inspection
      parser.addOptionList("--preprocessed_public_files", options.preprocessed_public_files);
      // Preprocessor results for all private source files of the target under inspection
-@@ -71,6 +82,356 @@ ProgramOptions parseProgramOptions(int argc, ProgramOptionsParser::ConstCharArra
+@@ -71,6 +82,358 @@
      return options;
  }
  
@@ -1760,12 +1772,14 @@ index d062c5bb38f1664599b0f902e5ca0c5ee0908e71..fb05f567425318b216db209e1781b300
 +    // These names prevent unique-symbol proofs. They never prove ownership
 +    // of an archive, its members, or a dependency forwarding an archive.
 +    ArchiveSymbols result;
-+    std::ifstream archive{path, std::ios::binary};
++    std::ifstream archive{metadata.at("magic").get<std::string>(), std::ios::binary};
++    if (!archive) abortWithError("Cannot read DWYU archive signature for ", path);
 +    char magic[8] = {};
 +    if (!archive.read(magic, sizeof(magic))) {
 +        result.reason = "unreadable_archive";
 +        return result;
 +    }
++    if (archive.peek() != std::char_traits<char>::eof()) abortWithError("Invalid DWYU archive signature for ", path);
 +    const std::string signature(magic, sizeof(magic));
 +    if (signature == "!<thin>\n") {
 +        result.reason = "thin_archive";
@@ -2051,13 +2065,15 @@ index d062c5bb38f1664599b0f902e5ca0c5ee0908e71..fb05f567425318b216db209e1781b300
  int main_impl(const ProgramOptions& options) {
      if (options.verbose) {
          std::cout << "\n";
-@@ -91,21 +452,89 @@ int main_impl(const ProgramOptions& options) {
+@@ -91,21 +454,89 @@
  
      const auto ignored_includes = getIgnoredIncludes(options.ignored_includes_config, options.extra_ignored_includes);
      auto system_under_inspection =
 -        getSystemUnderInspection(options.target_under_inspection_info, options.deps, options.implementation_deps);
 -    auto public_includes = getIncludeStatements(options.preprocessed_public_files, ignored_includes);
 -    auto private_includes = getIncludeStatements(options.preprocessed_private_files, ignored_includes);
+-
+-    const auto result =
 +        getSystemUnderInspection(options.target_under_inspection_info, options.deps, options.implementation_deps,
 +                                 !options.owned_symbols.empty());
 +    std::vector<std::string> unchecked_link_inputs;
@@ -2087,8 +2103,7 @@ index d062c5bb38f1664599b0f902e5ca0c5ee0908e71..fb05f567425318b216db209e1781b300
 +            system_under_inspection.target_under_inspection.header_files.insert(alias);
 +        promoteReachedPrivateIncludes(public_includes, private_includes, private_files);
 +    }
- 
--    const auto result =
++
 +    LinkEvidence link_evidence;
 +    if (!options.owned_symbols.empty())
 +        link_evidence = useOwnedSymbols(options.owned_symbols, system_under_inspection, unchecked_link_inputs);
@@ -2901,7 +2916,7 @@ index 0bd71e67e1a0494ee529fd83bb96fbb973b95f0c..c67b02e8efc1c14f712640121c680353
 diff --git a/dwyu/cc/defs.bzl b/dwyu/cc/defs.bzl
 --- a/dwyu/cc/defs.bzl
 +++ b/dwyu/cc/defs.bzl
-@@ -2,7 +2,13 @@
+@@ -2,7 +2,14 @@
  Public symbols available to DWYU users.
  """
  
@@ -2909,6 +2924,7 @@ diff --git a/dwyu/cc/defs.bzl b/dwyu/cc/defs.bzl
 +load(
 +    "//dwyu/cc/aspect:dwyu.bzl",
 +    _dwyu_cc_aspect_impl = "dwyu_cc_aspect_impl",
++    _dwyu_scan_archive = "dwyu_scan_archive",
 +    _dwyu_configured_header_aliases = "dwyu_configured_header_aliases",
 +    _dwyu_process_compiler_command = "dwyu_process_compiler_command",
 +)
@@ -2916,11 +2932,12 @@ diff --git a/dwyu/cc/defs.bzl b/dwyu/cc/defs.bzl
  load(
      "//dwyu/cc/cc_info_mapping:cc_info_mapping.bzl",
      _MAP_DIRECT_DEPS = "MAP_DIRECT_DEPS",
-@@ -11,7 +17,13 @@
+@@ -11,7 +18,14 @@
  )
  
  dwyu_cc_aspect_factory = _dwyu_cc_aspect_factory
 +dwyu_cc_aspect_impl = _dwyu_cc_aspect_impl
++dwyu_scan_archive = _dwyu_scan_archive
  
  dwyu_make_cc_info_mapping = _dwyu_make_cc_info_mapping
  MAP_DIRECT_DEPS = _MAP_DIRECT_DEPS

@@ -1,17 +1,10 @@
-load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(
     default_visibility = ["//visibility:public"],
     features = ["external_include_paths"],
 )
-
-_GENERATED_LOCAL_DEFINES_0 = [
-    "STD_EXCEPTION_HAS_STACK_TRACE=1",
-    "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-    "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-    "_LIBUNWIND_IS_NATIVE_ONLY",
-]
 
 _ABSL_COPTS = [
     "-w",
@@ -45,7 +38,7 @@ ch_cc_library(
     ],
     copts = _ABSL_COPTS,
     includes = ["."],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_raw_logging_internal",
         ":absl_spinlock_wait",
@@ -63,7 +56,7 @@ ch_cc_library(
         "absl/base/internal/cpu_detect.h",
     ],
     copts = _ABSL_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_base_config",
     ],
@@ -82,7 +75,7 @@ ch_cc_library(
         ":absl_bits",
         ":absl_base",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_base_config",
     ],
@@ -98,7 +91,7 @@ ch_cc_library(
         "absl/time/internal/cctz/include/cctz/civil_time_detail.h",
     ],
     copts = _ABSL_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_base_config",
     ],
@@ -122,7 +115,7 @@ ch_cc_library(
         ":absl_raw_logging_internal",
         ":absl_strings_internal",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_cordz_info",
         ":absl_base",
@@ -162,7 +155,7 @@ ch_cc_library(
         "absl/strings/internal/cord_rep_flat.h",
     ],
     copts = _ABSL_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_container_memory",
         ":absl_crc_cord_state",
@@ -189,7 +182,7 @@ ch_cc_library(
         ":absl_exponential_biased",
         ":absl_raw_logging_internal",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_base_config",
     ],
@@ -207,7 +200,7 @@ ch_cc_library(
     implementation_deps = [
         ":absl_synchronization",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_raw_logging_internal",
         ":absl_base_config",
@@ -231,7 +224,7 @@ ch_cc_library(
         ":absl_inlined_vector_internal",
         ":absl_time",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_cord_internal",
         ":absl_cordz_functions",
@@ -252,7 +245,7 @@ ch_cc_library(
         "absl/strings/internal/cordz_sample_token.h",
     ],
     copts = _ABSL_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_cordz_info",
         ":absl_base_config",
@@ -283,7 +276,7 @@ ch_cc_library(
     implementation_deps = [
         ":absl_base_cpu_detect",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_crc_internal",
         ":absl_str_format_internal",
@@ -305,7 +298,7 @@ ch_cc_library(
     implementation_deps = [
         ":absl_bits",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_crc32c",
         ":absl_base_config",
@@ -331,7 +324,7 @@ ch_cc_library(
         ":absl_base",
         ":absl_raw_logging_internal",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_base_config",
     ],
@@ -360,7 +353,7 @@ ch_cc_library(
         ":absl_bits",
         ":absl_raw_logging_internal",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_base_config",
     ],
@@ -380,7 +373,7 @@ ch_cc_library(
     implementation_deps = [
         ":absl_debugging_internal",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_base_config",
     ],
@@ -401,7 +394,7 @@ ch_cc_library(
     implementation_deps = [
         ":absl_strings",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_log_internal_conditions",
         ":absl_log_internal_message",
@@ -424,7 +417,7 @@ ch_cc_library(
         ":absl_symbolize",
         ":absl_raw_logging_internal",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_base_config",
     ],
@@ -439,7 +432,7 @@ ch_cc_library(
         "absl/profiling/internal/exponential_biased.h",
     ],
     copts = _ABSL_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_base_config",
     ],
@@ -460,7 +453,7 @@ ch_cc_library(
         ":absl_stacktrace",
         ":absl_raw_logging_internal",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_base_config",
     ],
@@ -475,7 +468,7 @@ ch_cc_library(
         "absl/flags/commandlineflag.h",
     ],
     copts = _ABSL_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_flags_commandlineflag_internal",
         ":absl_optional",
@@ -493,7 +486,7 @@ ch_cc_library(
         "absl/flags/internal/commandlineflag.h",
     ],
     copts = _ABSL_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_base_config",
     ],
@@ -513,7 +506,7 @@ ch_cc_library(
         ":absl_flags_program_name",
         ":absl_synchronization",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_strings",
         ":absl_base_config",
@@ -535,7 +528,7 @@ ch_cc_library(
     implementation_deps = [
         ":absl_memory",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_flags_config",
         ":absl_flags_marshalling",
@@ -564,7 +557,7 @@ ch_cc_library(
         ":absl_str_format_internal",
         ":absl_log_severity",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_optional",
         ":absl_strings",
@@ -594,7 +587,7 @@ ch_cc_library(
         ":absl_flags_reflection",
         ":absl_synchronization",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_flags_internal",
         ":absl_flags_usage_internal",
@@ -612,7 +605,7 @@ ch_cc_library(
         "absl/flags/internal/private_handle_accessor.h",
     ],
     copts = _ABSL_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_flags_commandlineflag",
         ":absl_base_config",
@@ -634,7 +627,7 @@ ch_cc_library(
     implementation_deps = [
         ":absl_synchronization",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_strings",
         ":absl_base_config",
@@ -656,7 +649,7 @@ ch_cc_library(
         ":absl_flags_private_handle_accessor",
         ":absl_synchronization",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_flags_commandlineflag",
         ":absl_raw_hash_set",
@@ -680,7 +673,7 @@ ch_cc_library(
         ":absl_synchronization",
         ":absl_raw_logging_internal",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_strings",
         ":absl_base_config",
@@ -704,7 +697,7 @@ ch_cc_library(
         ":absl_flags_reflection",
         ":absl_synchronization",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_flags_commandlineflag",
         ":absl_base_config",
@@ -728,7 +721,7 @@ ch_cc_library(
         ":absl_raw_logging_internal",
         ":absl_spinlock_wait",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_base_config",
     ],
@@ -743,7 +736,7 @@ ch_cc_library(
         "absl/base/internal/hardening.h",
     ],
     copts = _ABSL_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_base_config",
     ],
@@ -759,7 +752,7 @@ ch_cc_library(
         "absl/hash/internal/hash.h",
     ],
     copts = _ABSL_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_city",
         ":absl_function_ref",
@@ -795,7 +788,7 @@ ch_cc_library(
         ":absl_raw_logging_internal",
     ],
     includes = ["."],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_synchronization",
         ":absl_base_config",
@@ -817,7 +810,7 @@ ch_cc_library(
     implementation_deps = [
         ":absl_bits",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     textual_hdrs = [
         "absl/numeric/int128_have_intrinsic.inc",
     ],
@@ -836,7 +829,7 @@ ch_cc_library(
         "absl/synchronization/internal/kernel_timeout.h",
     ],
     copts = _ABSL_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_time",
         ":absl_base_config",
@@ -853,7 +846,7 @@ ch_cc_library(
         "absl/debugging/leak_check.h",
     ],
     copts = _ABSL_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_base_config",
     ],
@@ -879,7 +872,7 @@ ch_cc_library(
         ":absl_strings",
         ":absl_vlog_config_internal",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
 )
 
 ch_cc_library(
@@ -895,7 +888,7 @@ ch_cc_library(
         ":absl_hash",
         ":absl_raw_logging_internal",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_vlog_config_internal",
         ":absl_base_config",
@@ -917,7 +910,7 @@ ch_cc_library(
         ":absl_log_internal_globals",
         ":absl_time",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_base_config",
     ],
@@ -935,7 +928,7 @@ ch_cc_library(
     implementation_deps = [
         ":absl_leak_check",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_has_ostream_operator",
         ":absl_log_internal_message",
@@ -959,7 +952,7 @@ ch_cc_library(
     implementation_deps = [
         ":absl_base",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_base_config",
     ],
@@ -974,7 +967,7 @@ ch_cc_library(
         "absl/log/internal/fnmatch.h",
     ],
     copts = _ABSL_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_strings",
         ":absl_base_config",
@@ -995,7 +988,7 @@ ch_cc_library(
         ":absl_log_internal_globals",
         ":absl_str_format_internal",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_log_internal_config",
         ":absl_span",
@@ -1019,7 +1012,7 @@ ch_cc_library(
     implementation_deps = [
         ":absl_raw_logging_internal",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_time",
         ":absl_base_config",
@@ -1049,7 +1042,7 @@ ch_cc_library(
         ":absl_raw_logging_internal",
         ":absl_strings",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_log_sink",
         ":absl_base_config",
@@ -1081,7 +1074,7 @@ ch_cc_library(
         ":absl_raw_logging_internal",
         ":absl_strings_internal",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_log_internal_nullguard",
         ":absl_log_internal_structured_proto",
@@ -1104,7 +1097,7 @@ ch_cc_library(
         "absl/log/internal/nullguard.h",
     ],
     copts = _ABSL_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_base_config",
     ],
@@ -1119,7 +1112,7 @@ ch_cc_library(
         "absl/log/internal/proto.h",
     ],
     copts = _ABSL_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_span",
         ":absl_strings",
@@ -1137,7 +1130,7 @@ ch_cc_library(
         "absl/log/internal/structured_proto.h",
     ],
     copts = _ABSL_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_log_internal_proto",
         ":absl_variant",
@@ -1155,7 +1148,7 @@ ch_cc_library(
         "absl/base/log_severity.h",
     ],
     copts = _ABSL_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_base_config",
     ],
@@ -1171,7 +1164,7 @@ ch_cc_library(
         "absl/log/log_sink.h",
     ],
     copts = _ABSL_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_log_internal_config",
         ":absl_span",
@@ -1197,7 +1190,7 @@ ch_cc_library(
         ":absl_raw_logging_internal",
         ":absl_spinlock_wait",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_base_config",
     ],
@@ -1212,7 +1205,7 @@ ch_cc_library(
         "absl/profiling/internal/periodic_sampler.h",
     ],
     copts = _ABSL_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_exponential_biased",
         ":absl_base_config",
@@ -1245,7 +1238,7 @@ ch_cc_library(
         "absl/random/zipf_distribution.h",
     ],
     copts = _ABSL_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_random_mocking_access",
         ":absl_utility",
@@ -1271,7 +1264,7 @@ ch_cc_library(
         ":absl_str_format_internal",
         ":absl_raw_logging_internal",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_span",
         ":absl_strings",
@@ -1297,7 +1290,7 @@ ch_cc_library(
         ":absl_random_internal_platform",
         ":absl_span",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_random_internal_seed_material",
         ":absl_base_config",
@@ -1316,7 +1309,7 @@ ch_cc_library(
         "absl/random/internal/randen_traits.h",
     ],
     copts = _ABSL_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_base_config",
     ],
@@ -1335,7 +1328,7 @@ ch_cc_library(
         ":absl_random_internal_randen_hwaes",
         ":absl_base_config",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_random_internal_platform",
         ":absl_random_internal_randen_hwaes_impl",
@@ -1355,7 +1348,7 @@ ch_cc_library(
     implementation_deps = [
         ":absl_random_internal_platform",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_base_config",
     ],
@@ -1374,7 +1367,7 @@ ch_cc_library(
         ":absl_int128",
         ":absl_random_internal_platform",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_base_config",
     ],
@@ -1394,7 +1387,7 @@ ch_cc_library(
         ":absl_int128",
         ":absl_random_internal_platform",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_base_config",
     ],
@@ -1414,7 +1407,7 @@ ch_cc_library(
         ":absl_strings",
         ":absl_raw_logging_internal",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_inlined_vector_internal",
         ":absl_optional",
@@ -1437,7 +1430,7 @@ ch_cc_library(
     implementation_deps = [
         ":absl_raw_logging_internal",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_base_config",
     ],
@@ -1455,7 +1448,7 @@ ch_cc_library(
     implementation_deps = [
         ":absl_random_internal_entropy_pool",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_random_internal_seed_material",
         ":absl_random_seed_gen_exception",
@@ -1492,7 +1485,7 @@ ch_cc_library(
         "absl/container/node_hash_map.h",
     ],
     copts = _ABSL_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_cord",
         ":absl_demangle_internal",
@@ -1530,7 +1523,7 @@ ch_cc_library(
         "absl/base/internal/raw_logging.h",
     ],
     copts = _ABSL_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_log_severity",
         ":absl_base_config",
@@ -1549,7 +1542,7 @@ ch_cc_library(
     implementation_deps = [
         ":absl_raw_logging_internal",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_base_config",
     ],
@@ -1567,7 +1560,7 @@ ch_cc_library(
         "absl/base/internal/spinlock_wait.h",
     ],
     copts = _ABSL_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_base_config",
     ],
@@ -1593,7 +1586,7 @@ ch_cc_library(
     implementation_deps = [
         ":absl_debugging_internal",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_base_config",
     ],
@@ -1621,7 +1614,7 @@ ch_cc_library(
         ":absl_raw_logging_internal",
         ":absl_str_format_internal",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_cord",
         ":absl_internal_optional_ref",
@@ -1648,7 +1641,7 @@ ch_cc_library(
     implementation_deps = [
         ":absl_raw_logging_internal",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_has_ostream_operator",
         ":absl_status",
@@ -1683,7 +1676,7 @@ ch_cc_library(
         ":absl_bits",
         ":absl_strings_internal",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_inlined_vector_internal",
         ":absl_strings",
@@ -1704,7 +1697,7 @@ ch_cc_library(
         "absl/base/internal/strerror.h",
     ],
     copts = _ABSL_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_base_config",
     ],
@@ -1754,7 +1747,7 @@ ch_cc_library(
         "absl/strings/substitute.h",
     ],
     copts = _ABSL_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_bits",
         ":absl_int128",
@@ -1789,7 +1782,7 @@ ch_cc_library(
         ":absl_base",
         ":absl_raw_logging_internal",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_hardening",
         ":absl_throw_delegate",
@@ -1815,7 +1808,7 @@ ch_cc_library(
         ":absl_base",
         ":absl_raw_logging_internal",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_strings",
         ":absl_base_config",
@@ -1861,7 +1854,7 @@ ch_cc_library(
         ":absl_raw_logging_internal",
         ":absl_spinlock_wait",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_kernel_timeout_internal",
         ":absl_base",
@@ -1883,7 +1876,7 @@ ch_cc_library(
     implementation_deps = [
         ":absl_raw_logging_internal",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_base_config",
     ],
@@ -1910,7 +1903,7 @@ ch_cc_library(
         ":absl_int128",
         ":absl_raw_logging_internal",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_strings",
         ":absl_time_zone",
@@ -1944,7 +1937,7 @@ ch_cc_library(
         "absl/time/internal/cctz/include/cctz/zone_info_source.h",
     ],
     copts = _ABSL_COPTS,
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_civil_time",
         ":absl_base_config",
@@ -1967,7 +1960,7 @@ ch_cc_library(
         ":absl_base",
         ":absl_spinlock_wait",
     ],
-    local_defines = _GENERATED_LOCAL_DEFINES_0,
+    local_defines = CXX_RUNTIME_DEFINES,
     deps = [
         ":absl_strings",
         ":absl_base_config",

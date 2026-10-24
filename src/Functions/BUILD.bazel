@@ -6,7 +6,6 @@ package(default_visibility = ["//visibility:public"])
 exports_files([
     "CastOverloadResolver.cpp",
     "ComparisonOrderDomain.cpp",
-    "ComparisonParams.cpp",
     "FunctionDynamicAdaptor.cpp",
     "FunctionFactory.cpp",
     "FunctionGenerateRandomStructure.cpp",
@@ -70,17 +69,12 @@ exports_files([
     "UserDefined/UserDefinedWebAssemblyTypeHelpers.cpp",
     "UserDefined/createUserDefinedSQLObjectsStorage.cpp",
     "checkHyperscanRegexp.cpp",
-    "equals.cpp",
     "extractKeyValuePairs.cpp",
     "extractTimeZoneFromFunctionArguments.cpp",
     "generateSnowflakeID.cpp",
     "if.cpp",
-    "isDistinctFrom.cpp",
-    "isNotDistinctFrom.cpp",
     "multiIf.cpp",
-    "notEquals.cpp",
     "productQuantization.cpp",
-    "registerFunctions.cpp",
     "tests/gtest_connection_id_expired_context.cpp",
     "tests/gtest_conversion_monotonic.cpp",
     "tests/gtest_functions_stress.cpp",
@@ -99,6 +93,20 @@ exports_files([
     "tests/gtest_string_similarity.cpp",
     "vectorQuantization.cpp",
 ])
+
+filegroup(
+    name = "runtime_filter_benchmark_sources",
+    srcs = [
+        "ComparisonParams.cpp",
+        "equals.cpp",
+        "isDistinctFrom.cpp",
+        "isNotDistinctFrom.cpp",
+        "notEquals.cpp",
+        "registerFunctions.cpp",
+        "registerFunctions.h",
+    ],
+    visibility = ["//src:__pkg__"],
+)
 
 _PRIVATE_FUNCTIONS_OBJ_0_HEADERS = glob(
     [
@@ -858,6 +866,7 @@ ch_cc_library(
         "yesterday.cpp",
         "ztest.cpp",
     ]) + glob(["AI/*.cpp"]) + glob(["Kusto/*.cpp"]) + _PRIVATE_FUNCTIONS_OBJ_0_HEADERS,
+    hdrs = ["registerFunctions.h"],
     clickhouse_code = True,
     copts = ["-g1"],
     implementation_deps = [
@@ -1012,8 +1021,6 @@ ch_cc_library(
     ],
     local_defines = _CLICKHOUSE_FUNCTIONS_OBJ_LOCAL_DEFINES,
     source_headers = True,
-    deps = [
-    ],
     alwayslink = True,
 )
 
@@ -1366,6 +1373,7 @@ cc_library(
         ],
         exclude = _PRIVATE_FUNCTIONS_OBJ_0_HEADERS + [
             "CastOverloadResolver.h",
+            "registerFunctions.h",
         ],
     ),
     deps = [

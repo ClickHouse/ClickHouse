@@ -1,17 +1,4 @@
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
-
 package(default_visibility = ["//visibility:public"])
-
-cc_library(
-    name = "linux_aarch64_hwcap",
-    hdrs = [
-        "linux-aarch64/aarch64-linux-gnu/libc/usr/include/asm/hwcap.h",
-    ],
-    strip_include_prefix = "linux-aarch64/aarch64-linux-gnu/libc/usr/include",
-    target_compatible_with = [
-        "@platforms//cpu:aarch64",
-    ],
-)
 
 filegroup(
     name = "linux_x86_64_link_files",

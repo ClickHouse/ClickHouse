@@ -94,7 +94,6 @@ ch_cc_library(
         "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
-    source_headers = True,
     deps = select({
         "@platforms//cpu:x86_64": [],
         "@platforms//cpu:aarch64": ["@clickhouse_llvm_project//:LLVMAArch64CodeGen"],
@@ -217,6 +216,7 @@ ch_cc_library(
         "//src/Common:string_utils",
         "//src:with_context",
         "//src/Parsers:parser_api",
+        "//src/Parsers:headers",
     ],
     link_runtime = True,
     local_defines = _GENERATED_LOCAL_DEFINES_0,
@@ -357,5 +357,6 @@ ch_cc_library(
         "//src/Common:load_balancing_priority",
         "//src/Parsers:parser_api",
         "//src/Common:string_utils",
+        "//src:column_types",
     ],
 )

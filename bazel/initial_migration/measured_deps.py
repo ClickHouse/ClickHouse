@@ -1,27 +1,43 @@
-"""Assign the first-party dependencies verified by the compiler and linker reports."""
+"""Assign the dependencies verified by the compiler and linker reports."""
 
 import ast
 from collections import Counter
 import json
 
 from initial_migration.first_party_packages import Build, CPUS, canonical_dependency
+from initial_migration.library_runtime import HEADERS as LLVM_RUNTIME_HEADERS
 from initial_migration.prune_inherited_headers import inherited_source_headers
 from initial_migration.web_resources import constant_defs, eval_node
 
 TZDATA = '@clickhouse_cctz//:tzdata'
-# Key: (package, rule). Values: (unused dependencies, private dependencies, public dependencies).
+FUNCTION_REGISTRATION = '//src/Functions:clickhouse_functions_obj__compile_0'
+UNIT_TEST_FUNCTION_DEPS = [
+    FUNCTION_REGISTRATION, '//src/Access/Common:headers', '//src/Common/ZooKeeper:headers',
+    '//src/Functions:headers', '//src/Parsers:headers',
+]
+
+# Key: (package or root repository, rule). Values: (unused dependencies, private dependencies, public dependencies).
 DEPENDENCIES = {
+    ('@clickhouse_flatbuffers', 'flatc'): (list(LLVM_RUNTIME_HEADERS), [], []),
+    ('programs', 'clickhouse__compile_0'): (['//base:harmful'], [], []),
     ('src/Access/Common', 'clickhouse_common_access'): ([TZDATA], [], []),
     ('src/Common/mysqlxx', 'mysqlxx'): ([TZDATA], [], []),
     ('src/Common/benchmarks', 'benchmark_stack_trace_objects'): ([TZDATA], [], []),
     ('src/Common/benchmarks', 'integer_hash_tables_and_hashes_objects'): (['@clickhouse_libbcrypt//:_bcrypt'], [], []),
-    ('src/Columns/benchmarks', 'benchmark_compute_hash_into_objects'): (['@clickhouse_icu//:_icudata'], [], []),
+    ('src/Columns/benchmarks', 'benchmark_compute_hash_into_objects'): (['@clickhouse_icu//:_icudata'], ['//src:headers'], []),
+    ('src/Columns/benchmarks', 'column_insert_many_from_objects'): (['@clickhouse_icu//:_icudata'], ['//src:headers'], []),
     ('src/Common/ZooKeeper', 'clickhouse_common_zookeeper_base'): (['@clickhouse_replxx//:_replxx'], [], []),
-    ('src/Common/benchmarks', 'orc_string_dictionary_objects'): ([TZDATA], [], []),
+    ('src/Common/benchmarks', 'orc_string_dictionary_objects'): ([TZDATA, '@clickhouse_jemalloc//:_jemalloc'], [], []),
     ('src/Common/benchmarks', 'profile_events_objects'): ([TZDATA], [], []),
-    ('src/Common/benchmarks', 'wrap_in_nullable_objects'): (['@clickhouse_icu//:_icudata'], [], []),
+    ('src/Common/benchmarks', 'benchmark_radix_sort_objects'): (
+        ['@clickhouse_icu//:_icudata'], ['//src:headers', '//src/Functions:headers'], []),
+    ('src/Common/benchmarks', 'wrap_in_nullable_objects'): (
+        ['@clickhouse_icu//:_icudata'], ['//src:headers', '//src/Functions:headers'], []),
+    ('src/Functions/GatherUtils', 'clickhouse_functions_gatherutils'): (['@clickhouse_icu//:_icudata'], [], []),
+    ('src/Loggers', 'loggers'): (['@clickhouse_icu//:_icudata'], ['//src/Common'], []),
+    ('src/Functions/JSONPath', 'clickhouse_functions_jsonpath'): ([], ['//src/Parsers:headers'], ['//src/Parsers:parser_api']),
     ('src/Functions/TimeSeries', 'clickhouse_functions_time_series'): (['@clickhouse_icu//:_icudata'], [], []),
-    ('src/Storages/benchmarks', 'benchmark_statistics_objects'): (['@clickhouse_icu//:_icudata'], [], []),
+    ('src/Storages/benchmarks', 'benchmark_statistics_objects'): (['@clickhouse_icu//:_icudata'], ['//src:headers'], []),
     ('src/TableFunctions', 'clickhouse_table_functions'): (['@clickhouse_icu//:_icudata'], [], []),
     ('src', 'clickhouse_common_io__compile_0'): ([], [
         TZDATA, '//base:pcg_random', '//src/Common:current_metrics', '//src/Common:string_utils',
@@ -43,7 +59,7 @@ DEPENDENCIES = {
     ('src/Storages/System', 'clickhouse_storages_system__compile_1'): (
         [], ['//bazel:clickhouse_config_headers', '//base:common', '//src:headers', '//src/Common', TZDATA], []),
     ('programs/format', 'clickhouse-format-lib'): ([], [TZDATA], []),
-    ('src', 'unit_tests_dbms'): ([], [], [TZDATA]),
+    ('src', 'unit_tests_dbms'): (['@clickhouse_icu//:_icudata', '@clickhouse_libcpuid//:_cpuid'], [], [TZDATA]),
 }
 
 # Drop direct dependencies unused in both native DWYU reports or already supplied
@@ -178,13 +194,16 @@ def editable_dependency_lists(build, node, drop, canonical):
 def apply(root):
     """Set the declared visibility of each dependency without changing select conditions."""
     for package in sorted({package for package, _ in DEPENDENCIES}):
-        path = root / package / 'BUILD.bazel'
+        repository = package if package.startswith('@') else '@clickhouse'
+        local_package = '' if package.startswith('@') else package
+        path = (root / 'bazel/dependencies' / (repository[1:] + '.BUILD.bazel')
+                if package.startswith('@') else root / package / 'BUILD.bazel')
         build = Build(root, path, (), ())
         source = build.source
         edits = []
         found = set()
         embedded = set()
-        canonical = lambda label: canonical_dependency(label, package, '@clickhouse')
+        canonical = lambda label: canonical_dependency(label, local_package, repository)
         for _, rule in source.rules():
             attrs = {k.arg: k.value for k in rule.keywords}
             name = getattr(attrs.get('name'), 'value', None)
@@ -225,9 +244,31 @@ def apply(root):
                 values = [{canonical(v) for v in build.values(node, cpu)} for cpu in CPUS]
                 omit = {canonical(v) for v in discard}
                 missing = [v for v in add if not all(canonical(v) in existing for existing in values)]
+                if (package, name, field) == ('src', 'unit_tests_dbms', 'deps'):
+                    # These owners are already reachable through clickhouse_functions_obj.
+                    # Keep their LinkerInputs in the same order when declaring them directly.
+                    branches = {}
+                    for cpu in CPUS:
+                        before = build.values(node, cpu)
+                        drop = omit | {canonical(v) for v in missing + UNIT_TEST_FUNCTION_DEPS}
+                        if cpu == 'x86_64':
+                            drop.add(canonical('@clickhouse_fastops//:_fastops'))
+                        ordered = missing + [v for v in before if canonical(v) not in drop]
+                        i = ordered.index('//src/Functions:clickhouse_functions_obj')
+                        ordered[i:i] = UNIT_TEST_FUNCTION_DEPS
+                        branches['@platforms//cpu:' + cpu] = ordered
+                    if any(branches['@platforms//cpu:' + cpu] != build.values(node, cpu) for cpu in CPUS):
+                        edits.append((*source.span(original), 'select(' + json.dumps(branches) + ')'))
+                    continue
                 if not missing and not any(omit & existing for existing in values):
                     continue
                 drop = omit | {canonical(v) for v in missing}
+                if (package, name, field) == ('programs', 'clickhouse__compile_0', 'deps'):
+                    # The final CMake link rule owns the x86-only harmful archive.
+                    remaining = [[v for v in build.values(node, cpu) if canonical(v) not in drop] for cpu in CPUS]
+                    if remaining[0] == remaining[1]:
+                        edits.append((*source.span(original), json.dumps(missing + remaining[0])))
+                        continue
                 if original is not None:
                     direct = editable_dependency_lists(build, original, drop, canonical)
                     if direct is not None:

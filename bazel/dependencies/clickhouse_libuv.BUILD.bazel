@@ -66,5 +66,4 @@ ch_cc_library(
         "include/uv/threadpool.h",
         "include/uv/unix.h",
     ],
-    implementation_deps = [],
 )

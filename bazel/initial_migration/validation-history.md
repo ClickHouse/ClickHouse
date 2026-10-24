@@ -1401,3 +1401,20 @@ The BuildBuddy workflows for [x86-64](https://app.buildbuddy.io/invocation/408c3
 Both native Bazel invocations built all 55 requested targets. Their default output groups contain the six embedded object files, the Boost.MySQL static archive, and two CcInfo reports for `//src:dbms_embedded` and `//src:clickhouse_common_io_embedded`. The selected 26 GoogleTests and six SQL cases passed on each CPU. These builds did not run DWYU.
 
 The direct dependencies on `//src:dbms_embedded` decreased from 135 to 114, and those on `//src:clickhouse_common_io_embedded` from 44 to 39. On both CPUs, the two CcInfo comparisons found identical ordered compilation and linking fields before and after those removals.
+
+## 4e214b47a
+
+Bazel source `4e214b47a` built all 57 requested targets on each CPU. The normalized ClickHouse ELF matched the SHA-256 and size from native CMake:
+
+| Native Bazel build | Normalized SHA-256 | Bytes |
+| --- | --- | ---: |
+| [x86-64](https://app.buildbuddy.io/invocation/50d792e9-3a3b-4916-8844-1a1d563162ce) | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710,693,736 |
+| [ARM64](https://app.buildbuddy.io/invocation/88071a32-86d0-406b-b5d4-6dcb6ed6702e) | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637,316,696 |
+
+Both the raw ClickHouse ELF and `//src:unit_tests_dbms` also matched the [previous published build](https://github.com/dzbarsky/clickhouse/commit/a67536970816be10181b3054b25178ac3d0f026c). Each CPU passed 38 GoogleTests and six SQL cases. The comparison used BuildBuddy output metadata without downloading the executables.
+
+The [x86-64 parent](https://app.buildbuddy.io/invocation/f9488607-2e75-4e91-81d6-c63ecafc03cc) and [ARM64 parent](https://app.buildbuddy.io/invocation/829eaf8e-97c2-49a6-8773-bee434d177a7) both failed after their native Bazel children passed. Python 3.8 rejected `zip(..., strict=True)` in the worker's `emit_local_originals` function. The linked child invocations provide the original configured targets and output SHA-256 values. The native child durations were 420.9 s on x86-64 and 491.8 s on ARM64.
+
+Restoring the JSONPath include order fixed the earlier unit-test ELF mismatch. All seven JSONPath objects on each CPU now match their inputs to the previous published unit-test link. The configured output groups also verified six embedded C++ objects and the Boost.MySQL archive per CPU. The current CcInfo JSON files matched their FileWrite digests. All 17 ordered compilation and linking fields matched when comparing 134 versus 113 direct dependencies for `//src:dbms_embedded` and 44 versus 39 for `//src:clickhouse_common_io_embedded`. The actual source change removed one DBMS dependency (114 to 113); the 134-entry reference separately checks 21 prior removals.
+
+The five original status artifacts per CPU verified 26 prior GoogleTests, seven MergeTree tests, five header-ownership tests, and six SQL cases. The DWYU command never started: zero of 784 declared production owners ran on either CPU, and neither DWYU control ran. Prior standalone-header failures, direct dependency findings, and unverified textual, generated, and Rust dependencies remain outstanding. The generator reproduced the changed owners in two passes and Buildifier accepted all 300 BUILD files; the full dependency replay retains one inherited difference in the unchanged `src/Storages/System/BUILD.bazel`.

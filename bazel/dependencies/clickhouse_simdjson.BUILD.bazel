@@ -105,5 +105,4 @@ ch_cc_library(
             "src/fallback.cpp",
         ],
     }),
-    deps = [],
 )

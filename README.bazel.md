@@ -47,18 +47,14 @@ of `//:clickhouse`. The output is a Linux ELF even when the client is macOS.
 
 ## Binary comparison
 
-Bazel source `d67a4cc67` built all 55 requested targets on Linux x86-64 and ARM64. Each build linked `//:clickhouse` and `//src:unit_tests_dbms`. The selected 26 GoogleTests and six SQL cases passed on each CPU; the full unit test suite was not run.
+Bazel source `4e214b47a` built all 57 requested targets on each CPU. The normalized ClickHouse ELF matched the SHA-256 and size from native CMake:
 
-The normalized ELF matched the recorded native CMake SHA-256 and byte count on both CPUs. These comparisons used build metadata without downloading either executable.
-
-| Native Bazel build | Normalized SHA-256 (matches CMake) | Bytes |
+| Native Bazel build | Normalized SHA-256 | Bytes |
 | --- | --- | ---: |
-| [x86-64](https://app.buildbuddy.io/invocation/995630b4-f956-477e-84cb-fe0b65fa4d8a) | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
-| [ARM64](https://app.buildbuddy.io/invocation/41a64355-fe01-437b-b673-5408b139a0d7) | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
+| [x86-64](https://app.buildbuddy.io/invocation/50d792e9-3a3b-4916-8844-1a1d563162ce) | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710,693,736 |
+| [ARM64](https://app.buildbuddy.io/invocation/88071a32-86d0-406b-b5d4-6dcb6ed6702e) | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637,316,696 |
 
-The BuildBuddy workflows for [x86-64](https://app.buildbuddy.io/invocation/408c3f79-50e3-43ed-8b4b-4a8c908aa3e4) and [ARM64](https://app.buildbuddy.io/invocation/d733c8c0-7aa0-4711-b55b-c046eaa26eb2) reported failure after Bazel exited successfully. The result reader expected `boost_mysql_compiled` to use the executable’s configuration; Bazel retained its test configuration because the target declares `testonly = True`. The build events and test reports from the two Bazel invocations above confirm the results independently of that reader.
-
-The [previous comparison for `234b7aab0`](bazel/initial_migration/validation-history.md#234b7aab0) also passed the same 26 GoogleTests and six SQL cases on each CPU.
+Both the raw ClickHouse ELF and `//src:unit_tests_dbms` also matched the [previous published build](https://github.com/dzbarsky/clickhouse/commit/a67536970816be10181b3054b25178ac3d0f026c). Each CPU passed 38 GoogleTests and six SQL cases. The comparison used BuildBuddy output metadata without downloading the executables.
 
 To check a change against these references without downloading either ELF, run:
 
@@ -177,4 +173,4 @@ python3 bazel/initial_migration/audit_full_dwyu.py --config cmake_match --out /t
 python3 bazel/initial_migration/audit_full_dwyu.py --config cmake_match_aarch64 --out /tmp/clickhouse-dwyu-arm
 ```
 
-The two `d67a4cc67` builds did not run DWYU. The normalized binary comparisons do not establish that the dependency declarations are clean. See the [validation history](bazel/initial_migration/validation-history.md) for earlier audit results.
+The `4e214b47a` builds did not run DWYU. The two native Bazel builds passed, then their parent workflows failed while reading their output. All 784 declared production targets on each CPU remain unchecked at this revision. See the [validation history](bazel/initial_migration/validation-history.md#4e214b47a) for the parent invocations and earlier findings.

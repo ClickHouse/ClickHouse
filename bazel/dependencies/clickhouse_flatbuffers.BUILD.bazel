@@ -45,7 +45,6 @@ ch_cc_library(
         "include",
     ],
     local_defines = _GENERATED_LOCAL_DEFINES_0,
-    deps = [],
 )
 
 ch_cc_binary(
@@ -221,8 +220,5 @@ ch_cc_binary(
         "@clickhouse_llvm_project//:cxxabi",
         "@clickhouse//base/glibc-compatibility",
         "@clickhouse_llvm_project//:unwind",
-        "@llvm-project//compiler-rt:headers",
-        "@llvm-project//libc:libc_headers",
-        "@llvm-project//libunwind:headers",
     ],
 )

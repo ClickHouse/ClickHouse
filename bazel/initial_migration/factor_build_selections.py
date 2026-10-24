@@ -26,7 +26,7 @@ from initial_migration.normalize_cpp_builds import Configured, call_name, remova
 CPUS = ("@platforms//cpu:x86_64", "@platforms//cpu:aarch64")
 DEFAULT = "//conditions:default"
 FIELDS = {"deps", "implementation_deps", "local_defines", "hdrs", "textual_hdrs", "local_includes"}
-CPP_RULES = CPP_LIBRARIES | {"cc_binary", "cc_test", "llvm_runtime_objects", "nasm_objects"}
+CPP_RULES = CPP_LIBRARIES | {"cc_binary", "cc_test", "ch_cc_test", "llvm_runtime_objects", "nasm_objects"}
 
 
 def digest(content):

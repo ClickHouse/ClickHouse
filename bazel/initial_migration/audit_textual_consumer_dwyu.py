@@ -6,14 +6,16 @@ other owners by filename. The caller must retain the original report.
 """
 
 import base64
+import gzip
 import hashlib
+import io
 import json
 import re
 from pathlib import Path
 
 from audit_full_dwyu import (
     FIELDS, NATIVE_CC, RuntimeActionGraph, analyzer_arguments, analyzer_option,
-    bep_file_matches, canonical, census_canonical, identity, query_labels, read_cquery, sha_file,
+    bep_file_matches, canonical, census_canonical, identity, parse_cquery, query_labels, sha_file,
     validate_compiler_coverage, validate_link_evidence,
 )
 from audit_proto_dwyu import ProtoBep, expanded_args, graph_source, output_path
@@ -203,17 +205,21 @@ def case_rows(case, name, expected_key, original_row, rows):
     require(owner["rule_class"] in NATIVE_CC and consumer["rule_class"] in NATIVE_CC
             and audit["rule_class"] == "dwyu_cc_consumer_audit",
             "consumer audit changed rule kinds")
-    require(owner["checksum"] == original_row["checksum"] and
-            audit["checksum"] == consumer["checksum"] == owner["checksum"],
-            "owner and consumer audit have different target configurations")
-    direct = {identity(item["label"], item["configurationChecksum"])
-              for item in audit["configured_inputs"] if item.get("configurationChecksum")}
-    require({expected_key, consumer_key} <= direct,
+    require(owner["checksum"] == original_row["checksum"] and all(
+        re.fullmatch(r"[0-9a-f]{64}", rows[k]["checksum"]) for k in (expected_key, audit_key, consumer_key)),
+        "invalid target configuration or changed original owner")
+    # Bazel retains TestConfiguration for testonly fixtures and trims it for
+    # production C++ libraries. Bind the wrapper and consumer to the exact owner.
+    def edges(target, labels):
+        return {identity(i["label"], i.get("configurationChecksum", ""))
+                for i in target["configured_inputs"] if canonical(i["label"]) in labels}
+    require(edges(audit, {owner["label"], consumer["label"]}) == {expected_key, consumer_key},
             "audit does not declare this configured owner and consumer")
+    require(edges(consumer, {owner["label"]}) == {expected_key},
+            "consumer does not depend directly on the original configured owner")
     if name in BOOST_HEADERS:
-        fixture_deps = {identity(i["label"], i["configurationChecksum"])
-                        for i in consumer["configured_inputs"] if i.get("configurationChecksum")}
-        require({identity(CASES[n]["owner"], owner["checksum"]) for n in BOOST_HEADERS} <= fixture_deps,
+        owners = {CASES[n]["owner"] for n in BOOST_HEADERS}
+        require(edges(consumer, owners) == {identity(label, owner["checksum"]) for label in owners},
                 "Boost fixture lacks its two direct configured owners")
         require(all([k for k, r in rows.items() if r["label"] == CASES[n]["owner"] and not r["is_tool"]]
                     == [identity(CASES[n]["owner"], owner["checksum"])] for n in BOOST_HEADERS),
@@ -385,15 +391,20 @@ def boost_output_digest(path, item):
 
 
 def verify_boost_native_batch(ordinary_bep_file, manifest, checksum, receipts):
-    """Join the two verified textual receipts to the ordinary batch's requested archive."""
-    key = identity(BOOST_FIXTURE, checksum)
+    """Join both production header owners to their testonly archive in the ordinary BEP."""
+    require(set(receipts) == set(BOOST_HEADERS), "missing configured Boost textual owner")
+    consumers = {receipt["consumer"] for receipt in receipts.values()}
+    require(len(consumers) == 1, "Boost receipts refer to different configured consumers")
+    key = next(iter(consumers))
+    require(re.fullmatch(re.escape(BOOST_FIXTURE) + r" \([0-9a-f]{64}\)", key),
+            "wrong configured Boost consumer")
     native = ProtoBep(ordinary_bep_file, [BOOST_FIXTURE], {key: {}}, "default")
-    require(native.successful_roots == {key} and set(receipts) == set(BOOST_HEADERS),
-            "incomplete ordinary Boost build or missing textual owner")
+    require(native.successful_roots == {key}, "incomplete ordinary Boost build")
     signatures = []
     for case, receipt in receipts.items():
         require(receipt["owner_status"] == "not_qualified" and receipt["cpp_qualified"] is False
-                and receipt["audit"] == identity(PACKAGE + case, checksum) and receipt["consumer"] == key
+                and receipt["owner"] == identity(CASES[case]["owner"], checksum) and receipt["consumer"] == key
+                and re.fullmatch(re.escape(canonical(PACKAGE + case)) + r" \([0-9a-f]{64}\)", receipt["audit"])
                 and receipt["boost_manifest"] == {k: manifest[k] for k in ("snapshot", "arch", "config")}
                 and set(receipt["resolved_textual_files"]) == {BOOST_REPO + h for h in BOOST_HEADERS[case]},
                 "wrong Boost snapshot, CPU, configured owner or header set")
@@ -488,16 +499,48 @@ def check_report(original, observed, original_headers, new_headers, name=None, c
     }
 
 
-def bind_graphs(name, key, row, source, headers, rows, action_graph, header_graph, pp_graph, original_graph,
-                bep, execroot, materialize=None, native_bep=None):
-    case = CASES[name]
-    audit_key, consumer_key = case_rows(case, name, key, row, rows)
-    require(audit_key in bep.successful_roots, "consumer result has no successful current BEP root")
+def consumer_provenance(name, row, rows, keys, action_graph):
+    audit_key, consumer_key = keys
     analyzers = [action for action in action_graph.owners.get(audit_key, ())
                  if action.get("mnemonic") == "DwyuAnalyzeOwnerWithConsumers"]
     require(len(analyzers) == 1, "missing or ambiguous consumer analyzer")
     analyzer = analyzers[0]
     argv = analyzer_arguments(analyzer)
+    require(canonical(analyzer_option(argv, "--target_under_inspection")) == row["label"],
+            "consumer analyzer uses the wrong owner label")
+    provenance = analyzer_option(argv, "--consumer_evidence")
+    require(provenance in action_graph.inputs(analyzer),
+            "consumer analyzer lacks evidence input")
+    metadata = json.loads(filewrite(action_graph, provenance, audit_key))
+    require(canonical(metadata["audit_target"]) == canonical(PACKAGE + name)
+            and canonical(metadata["owner"]) == row["label"],
+            "configured owner proof differs from the original")
+    consumers = metadata["consumers"]
+    require(isinstance(consumers, list) and len(consumers) == 1
+            and canonical(consumers[0]["consumer"]) == rows[consumer_key]["label"],
+            "consumer provenance has the wrong configured owner")
+    sources = consumers[0]["sources"]
+    require(isinstance(sources, list) and len(sources) == len(CASES[name]["sources"])
+            and {short_source(item["source"]) for item in sources} == set(CASES[name]["sources"]),
+            "requested real compiled sources differ from consumer evidence")
+    outputs = [output_path(item["preprocessed"]) for item in sources]
+    require(len(outputs) == len(set(outputs)) and all(path.endswith(".i") for path in outputs),
+            "duplicate or invalid consumer preprocessing output")
+    return analyzer, argv, metadata
+
+
+def exact_outputs(paths, query):
+    paths = sorted(set(output_path(path) for path in paths))
+    require(paths and all(re.fullmatch(r"[a-zA-Z0-9_./+@,~=-]+", path) for path in paths),
+            "unexpected character in declared consumer output")
+    return "outputs('^(" + "|".join(re.escape(path) for path in paths) + ")$', " + query + ")"
+
+
+def bind_graphs(name, key, row, source, headers, rows, keys, provenance, action_graph, header_graph, pp_graph, original_graph,
+                bep, execroot, materialize=None, native_bep=None):
+    audit_key, consumer_key = keys
+    require(audit_key in bep.successful_roots, "consumer result has no successful current BEP root")
+    analyzer, argv, metadata = provenance
     report_path = analyzer_option(argv, "--output")
     require(unique_output(action_graph, report_path, audit_key, "DwyuAnalyzeOwnerWithConsumers") is analyzer,
             "consumer report path differs")
@@ -509,30 +552,16 @@ def bind_graphs(name, key, row, source, headers, rows, action_graph, header_grap
             and len(analyzer_private) == len(set(analyzer_private))
             and not set(analyzer_public).intersection(analyzer_private),
             "duplicate or overlapping analyzer public/private records")
-    require(canonical(analyzer_option(argv, "--target_under_inspection")) == row["label"],
-            "consumer analyzer uses the wrong owner label")
     owner_headers = analyzer_option(argv, "--owned_headers")
     require(owner_headers in action_graph.inputs(analyzer),
             "consumer analyzer lacks owned header input")
     new_headers = json.loads(filewrite(header_graph, owner_headers, key))
     require(new_headers == headers, "consumer CcInfo differs from original owner CcInfo")
-    provenance = analyzer_option(argv, "--consumer_evidence")
-    require(provenance in action_graph.inputs(analyzer),
-            "consumer analyzer lacks evidence input")
-    metadata = json.loads(filewrite(action_graph, provenance, audit_key))
-    require(canonical(metadata["audit_target"]) == canonical(PACKAGE + name)
-            and canonical(metadata["owner"]) == row["label"]
-            and canonical(filewrite(header_graph, metadata["configured_owner"], key)) == row["label"],
-            "configured owner proof differs from the original")
-    consumers = metadata["consumers"]
-    require(isinstance(consumers, list) and len(consumers) == 1
-            and canonical(consumers[0]["consumer"]) == rows[consumer_key]["label"]
-            and canonical(filewrite(header_graph, consumers[0]["configured_identity"], consumer_key)) ==
-            rows[consumer_key]["label"], "consumer provenance has the wrong configured owner")
-    sources = consumers[0]["sources"]
-    require(isinstance(sources, list) and len(sources) == len(case["sources"])
-            and {short_source(item["source"]) for item in sources} == set(case["sources"]),
-            "requested real compiled sources differ from consumer evidence")
+    consumer = metadata["consumers"][0]
+    require(canonical(filewrite(header_graph, metadata["configured_owner"], key)) == row["label"]
+            and canonical(filewrite(header_graph, consumer["configured_identity"], consumer_key)) ==
+            rows[consumer_key]["label"], "configured owner or consumer identity differs from cquery")
+    sources = consumer["sources"]
     checked = []
     contexts = []
     seen_pp = set()
@@ -611,7 +640,7 @@ def bind_graphs(name, key, row, source, headers, rows, action_graph, header_grap
     result = check_report(source, observed, headers, new_headers, name, contexts)
     result.update({"audit": audit_key, "owner": key, "consumer": consumer_key,
                    "original_compilations": checked, "consumer_report": report_evidence,
-                   "case": name, "schema": 2, "owner_manifest": manifest_record(new_headers),
+                   "case": name, "schema": 3, "owner_manifest": manifest_record(new_headers),
                    "provenance": metadata})
     if name in BOOST_HEADERS:
         result["native_fixture"] = boost_archive(original_graph, native_bep, consumer_key, checked, execroot)
@@ -644,16 +673,39 @@ def collect(audit, selected, original_headers, execroot, *, group=None, manifest
             candidates[key] = name
     if not candidates:
         return
-    audit_labels = sorted({PACKAGE + name for name in candidates.values()})
-    consumer_labels = sorted({CASES[name]["consumer"] for name in candidates.values()})
-    fixture = [BOOST_FIXTURE] if set(candidates.values()) & BOOST_HEADERS.keys() else []
-    labels = audit_labels + consumer_labels + [selected[key]["label"] for key in candidates]
-    if fixture:
+    labels = [PACKAGE + name for name in candidates.values()]
+    labels += [CASES[name]["consumer"] for name in candidates.values()]
+    labels += [selected[key]["label"] for key in candidates]
+    if set(candidates.values()) & BOOST_HEADERS.keys():
         labels += [CASES[name]["owner"] for name in BOOST_HEADERS]
     configuration_file = audit.query(
-        "textual-consumer-configurations", "cquery", "config(" + query_labels(labels) + ", target)")
-    rows, omitted = read_cquery(configuration_file)
+        "textual-consumer-configurations", "cquery", "config(" + query_labels(sorted(set(labels))) + ", target)",
+        ("--proto:output_rule_attrs=owner,consumers",))
+    require(0 < configuration_file.stat().st_size <= LIMIT, "consumer cquery exceeds size limit")
+    raw = configuration_file.read_bytes()
+    rows, omitted = parse_cquery(raw)
     require(not omitted, "unconfigured files in consumer query")
+    evidence = {"configurations": sha_file(configuration_file), "manifest": manifest}
+    if compact:
+        group["textual_consumer_cquery_gz"] = base64.b64encode(gzip.compress(raw, mtime=0)).decode("ascii")
+
+    def checked(check):
+        result = {}
+        for key, name in list(candidates.items()):
+            try:
+                result[key] = check(key, name)
+            except (KeyError, TypeError, ValueError, RuntimeError, OSError) as exc:
+                selected[key]["strict"]["textual_consumer_evidence"] = {
+                    "case": name, "status": "not_proved", "reason": str(exc), "cpp_qualified": False,
+                    "queries": dict(evidence),
+                }
+                del candidates[key]
+        return result
+
+    keys = checked(lambda k, n: case_rows(CASES[n], n, k, selected[k], rows))
+    if not candidates:
+        return
+    audit_labels = sorted({PACKAGE + name for name in candidates.values()})
     options = ("--include_artifacts", "--include_aspects", "--include_commandline", "--include_param_files")
     audit_scope = query_labels(audit_labels)
     graph_file = audit.query("textual-consumer-analyzers", "aquery",
@@ -661,17 +713,35 @@ def collect(audit, selected, original_headers, execroot, *, group=None, manifest
         options + ("--include_file_write_contents", "--output_groups=dwyu_consumer"))
     graph = RuntimeActionGraph(graph_file,
         ("DwyuAnalyzeOwnerWithConsumers", "DwyuProcessConsumerContext", "FileWrite"), None, None)
-    head_file = audit.query("textual-consumer-header-identities", "aquery",
-        "outputs('.*([.]dwyu_configured_owner|[.]dwyu_owned_headers[.]json)$', deps(" + audit_scope + "))",
-        options + ("--include_file_write_contents", "--output_groups=dwyu_consumer"))
-    head = RuntimeActionGraph(head_file, "FileWrite", None, None)
-    # These are complete relative short paths, never just a basename.
-    source_regex = "(^|bazel-out/[^/]+/bin/)(" + "|".join(re.escape(s)
-        for s in sorted({s for name in candidates.values() for s in CASES[name]["sources"]})) + ")$"
+    evidence["analyzers"] = sha_file(graph_file)
+    provenance = checked(lambda k, n: consumer_provenance(n, selected[k], rows, keys[k], graph))
+    if not candidates:
+        return
+    audit_labels = sorted({PACKAGE + name for name in candidates.values()})
+    audit_scope = query_labels(audit_labels)
+    consumer_labels = sorted({CASES[name]["consumer"] for name in candidates.values()})
+    fixture = [BOOST_FIXTURE] if set(candidates.values()) & BOOST_HEADERS.keys() else []
+    dependencies = "deps(" + audit_scope + ")"
+    header_outputs, pp_outputs = set(), set()
+    for _, argv, metadata in provenance.values():
+        consumer = metadata["consumers"][0]
+        header_outputs.update((analyzer_option(argv, "--owned_headers"), metadata["configured_owner"],
+                               consumer["configured_identity"]))
+        pp_outputs.update(item["preprocessed"] for item in consumer["sources"])
     pp_file = audit.query("textual-consumer-preprocessing", "aquery",
-        "inputs('" + source_regex + "', mnemonic('^DwyuCompilerPreprocess$', deps(" + audit_scope + ")))",
+        exact_outputs(pp_outputs, "mnemonic('^DwyuCompilerPreprocess$', " + dependencies + ")"),
         options + ("--output_groups=dwyu_consumer",))
     pp = RuntimeActionGraph(pp_file, "DwyuCompilerPreprocess", None, None)
+    # native_cpp_preprocessing also checks each consumer's own CcInfo manifest.
+    for actions in pp.owners.values():
+        for action in actions:
+            header_outputs.update(path for path in pp.inputs(action) if path.endswith(".dwyu_owned_headers.json"))
+    head_file = audit.query("textual-consumer-header-identities", "aquery",
+        exact_outputs(header_outputs, "mnemonic('^FileWrite$', " + dependencies + ")"),
+        options + ("--include_file_write_contents", "--output_groups=dwyu_consumer"))
+    head = RuntimeActionGraph(head_file, "FileWrite", None, None)
+    source_regex = "(^|bazel-out/[^/]+/bin/)(" + "|".join(re.escape(s)
+        for s in sorted({s for name in candidates.values() for s in CASES[name]["sources"]})) + ")$"
     cpp_query = "inputs('" + source_regex + "', mnemonic('^CppCompile$', " + query_labels(consumer_labels) + "))"
     if fixture:
         cpp_query += " union mnemonic('^CppArchive$', " + query_labels(fixture) + ")"
@@ -684,12 +754,10 @@ def collect(audit, selected, original_headers, execroot, *, group=None, manifest
         "--build_event_publish_all_actions", "--build_event_json_file=" + str(bep_path)] + audit_labels + fixture)
     native_bep = ProtoBep(bep_path, fixture, rows) if fixture else None
     bep = ProtoBep(bep_path, audit_labels, rows, "dwyu_consumer")
-    evidence = {"configurations": sha_file(configuration_file),
-                "analyzers": sha_file(graph_file), "headers": sha_file(head_file),
-                "preprocessing": sha_file(pp_file), "cpp": sha_file(cpp_file),
-                "run": run, "bep": bep.path, "invocation_uuid": bep.invocation_uuid,
-                "manifest": manifest,
-                "selected": {key: candidates[key] for key in sorted(candidates)}}
+    evidence.update({"headers": sha_file(head_file), "preprocessing": sha_file(pp_file),
+                     "cpp": sha_file(cpp_file), "run": run, "bep": bep.path,
+                     "invocation_uuid": bep.invocation_uuid,
+                     "selected": {key: candidates[key] for key in sorted(candidates)}})
     if fixture:
         evidence["boost_headers"] = boost_header_query(audit)
         verify_boost_headers(evidence["boost_headers"])
@@ -704,7 +772,8 @@ def collect(audit, selected, original_headers, execroot, *, group=None, manifest
                 require(raw == base64.b64decode(group["reports"][key], validate=True),
                         "compact original report differs from owned source")
             record = bind_graphs(name, key, row, json.loads(raw),
-                                 original_headers[key][0]["contents"], rows, graph, head, pp, cpp, bep, execroot,
+                                 original_headers[key][0]["contents"], rows, keys[key], provenance[key],
+                                 graph, head, pp, cpp, bep, execroot,
                                  materialize, native_bep)
         except (KeyError, TypeError, ValueError, RuntimeError, OSError) as exc:
             record = {"status": "not_proved", "reason": str(exc), "cpp_qualified": False}
@@ -721,18 +790,25 @@ def verify_compact(group, key, row, parsed, manifest):
             and parsed["cpp_qualified"] is False and parsed["identity"] == key,
             "textual receipt cannot qualify an original owner")
     record = row["strict"]["textual_consumer_evidence"]
-    require(record.get("schema") == 2 and record.get("case") == name and record.get("owner") == key
+    require(record.get("schema") == 3 and record.get("case") == name and record.get("owner") == key
             and record.get("cpp_qualified") is False and record.get("owner_status") == "not_qualified",
             "missing configured textual collector evidence")
     queries = record["queries"]
     require(queries.get("manifest") == manifest and manifest.get("phase") == "candidate"
             and manifest.get("arch") in ("arm", "x86") and queries["selected"].get(key) == name,
             "consumer receipt is from a different source/configuration/CPU group")
-    checksum = row["checksum"]
-    audit_key = identity(PACKAGE + name, checksum)
-    consumer_key = identity(CASES[name]["consumer"], checksum)
+    packed = group["textual_consumer_cquery_gz"]
+    require(isinstance(packed, str) and len(packed) <= 2 * LIMIT, "invalid compressed consumer cquery")
+    with gzip.GzipFile(fileobj=io.BytesIO(base64.b64decode(packed, validate=True))) as stream:
+        raw = stream.read(LIMIT + 1)
+    require(0 < len(raw) <= LIMIT and bytes_record(raw) ==
+            {f: queries["configurations"][f] for f in ("sha256", "bytes")},
+            "consumer cquery bytes differ from the original query")
+    rows, omitted = parse_cquery(raw)
+    require(not omitted, "unconfigured files in consumer query")
+    audit_key, consumer_key = case_rows(CASES[name], name, key, row, rows)
     require(record["audit"] == audit_key and record["consumer"] == consumer_key,
-            "consumer or audit was not in the owner's original target configuration")
+            "consumer or audit differs from the original configured dependency edges")
     original_ref = row["strict"]["report"]
     raw = base64.b64decode(group["reports"][key], validate=True)
     require(len(raw) <= LIMIT and parsed["original"] == original_ref
@@ -749,14 +825,15 @@ def verify_compact(group, key, row, parsed, manifest):
     ):
         runs = [r for r in group["runs"] if r["name"] == "textual-consumer-" + suffix]
         require(len(runs) == 1 and runs[0]["exit_code"] == 0 and runs[0]["command"].count(command) == 1
-                and runs[0]["stdout"] == queries[field]
+                and runs[0]["stdout"] == queries[field] and "--config=" + manifest["config"] in runs[0]["command"]
                 and "--consistent_labels" in runs[0]["command"],
                 "changed or failed original consumer metadata query: " + suffix)
     builds = [r for r in group["runs"] if r["name"] == "textual-consumer"]
     downloads = [arg for arg in builds[0]["command"] if arg.startswith("--remote_download_outputs=")] if len(builds) == 1 else []
     require(len(builds) == 1 and builds[0] == queries["run"]
             and builds[0]["command"].count("build") == 1
-            and "--keep_going" in builds[0]["command"]
+            and "--keep_going" in builds[0]["command"] and builds[0]["command"].count(PACKAGE + name) == 1
+            and "--config=" + manifest["config"] in builds[0]["command"]
             and (BOOST_GROUPS if set(queries["selected"].values()) & BOOST_HEADERS.keys()
                  else "--output_groups=dwyu_consumer") in builds[0]["command"]
             and "--build_event_publish_all_actions" in builds[0]["command"]
@@ -820,7 +897,7 @@ def verify_compact(group, key, row, parsed, manifest):
         "original_holds": result["original_holds"], "consumer_holds": result["consumer_holds"],
         "independent_owner_checks": result["independent_owner_checks"],
         "owner_status": "not_qualified", "cpp_qualified": False,
-        "audit": audit_key, "consumer": consumer_key, "report": rpt["stamp"],
+        "owner": key, "audit": audit_key, "consumer": consumer_key, "report": rpt["stamp"],
         "original": original_ref, "bep": bep, "invocation_uuid": invocation,
         **({"native_fixture": record["native_fixture"],
             "boost_manifest": {f: manifest[f] for f in ("snapshot", "arch", "config")}}

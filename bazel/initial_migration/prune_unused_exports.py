@@ -123,7 +123,7 @@ def prune_unused_exports(root=ROOT, write=False):
     return stats
 
 
-def prune_native_exports(root=ROOT, write=False):
+def prune_native_exports(root=ROOT, write=False, *, only=None):
     """Prune native exports only when no foreign BUILD, macro, or metadata uses them."""
     from initial_migration.first_party_packages import Build, CPUS, call_name, git_inventory, native_directory
 
@@ -236,7 +236,8 @@ def prune_native_exports(root=ROOT, write=False):
             kept = []
             for exported in labels:
                 owner, name = exported[2:].split(':', 1)
-                if (exported in required or any(name.startswith(stem) for stem in target_stems[owner])
+                if ((only is not None and exported not in only) or
+                        exported in required or any(name.startswith(stem) for stem in target_stems[owner])
                         or any(owner.startswith(stem) for stem in package_stems)):
                     kept.append(exported)
             stats['retained_exports'] += len(kept)

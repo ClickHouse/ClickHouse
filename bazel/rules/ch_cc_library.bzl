@@ -5,6 +5,14 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load(":repository_paths.bzl", "CLICKHOUSE_WARNINGS", "cmake_prefix_maps", "repository_path")
 
+# Public compile definitions of the ClickHouse libc++, libc++abi, and libunwind.
+CXX_RUNTIME_DEFINES = [
+    "STD_EXCEPTION_HAS_STACK_TRACE=1",
+    "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
+    "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
+    "_LIBUNWIND_IS_NATIVE_ONLY",
+]
+
 # Place these before library copts: several libraries require an older ISA.
 CLICKHOUSE_TARGET_FLAGS = {
     "x86_64": ["-march=x86-64-v3", "-mpclmul", "-mbranches-within-32B-boundaries"],

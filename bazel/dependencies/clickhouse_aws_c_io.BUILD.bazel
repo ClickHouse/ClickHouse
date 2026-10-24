@@ -1,3 +1,4 @@
+load("@clickhouse//bazel/dependencies:aws_crt_defines.bzl", "AWS_CRT_DEFINES")
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -53,23 +54,7 @@ ch_cc_library(
     includes = ["include"],
     language = "C",
     libcxx_headers = False,
-    local_defines = [
-        "AWS_AFFINITY_METHOD=AWS_AFFINITY_METHOD_NONE",
-        "AWS_ENABLE_EPOLL",
-        "AWS_PTHREAD_SETNAME_TAKES_2ARGS",
-        "ENABLE_OPENSSL_ENCRYPTION",
-        "INTEL_NO_ITTNOTIFY_API",
-        "STD_EXCEPTION_HAS_STACK_TRACE=1",
-    ] + select({
-        "@platforms//cpu:x86_64": [
-            "USE_SIMD_ENCODING",
-        ],
-        "@platforms//cpu:aarch64": [],
-    }) + [
-        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-        "_LIBUNWIND_IS_NATIVE_ONLY",
-    ],
+    local_defines = AWS_CRT_DEFINES,
     deps = ["@clickhouse_aws_c_common//:aws_c_common"],
 )
 

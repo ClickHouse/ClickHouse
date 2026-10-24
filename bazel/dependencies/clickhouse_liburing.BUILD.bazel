@@ -72,5 +72,4 @@ ch_cc_library(
         "_LIBUNWIND_IS_NATIVE_ONLY",
     ],
     textual_hdrs = ["src/include/liburing/io_uring.h"],
-    deps = [],
 )

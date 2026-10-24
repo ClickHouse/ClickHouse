@@ -1,4 +1,4 @@
-load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")
+load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
 
 package(
     default_visibility = ["//visibility:public"],
@@ -28,13 +28,7 @@ ch_cc_library(
         "@platforms//cpu:aarch64": [":_fastops_sve"],
         "//conditions:default": [],
     }),
-    local_defines = [
-        "STD_EXCEPTION_HAS_STACK_TRACE=1",
-        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-        "_LIBUNWIND_IS_NATIVE_ONLY",
-    ],
-    deps = [],
+    local_defines = CXX_RUNTIME_DEFINES,
 )
 
 ch_cc_library(
@@ -51,12 +45,7 @@ ch_cc_library(
         "-std=c++23",
         "-march=armv8-a+sve",
     ],
-    local_defines = [
-        "STD_EXCEPTION_HAS_STACK_TRACE=1",
-        "_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS",
-        "_LIBCPP_REMOVE_TRANSITIVE_INCLUDES=1",
-        "_LIBUNWIND_IS_NATIVE_ONLY",
-    ],
+    local_defines = CXX_RUNTIME_DEFINES,
     target_compatible_with = select({
         "@platforms//cpu:aarch64": [],
         "//conditions:default": ["@platforms//:incompatible"],
