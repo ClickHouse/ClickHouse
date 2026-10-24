@@ -24,6 +24,7 @@ ConverterContext::ConverterContext(std::shared_ptr<const PrometheusQueryTree> pr
     , result_timestamp_scale(settings_.time_scale)
     , result_type(getResultType(*promql_tree_, settings_))
     , node_range_getter(promql_tree_, settings_)
+    , aggregate_range_vectors_in_order(settings_.start_time != settings_.end_time)
 {
     /// The result scale is the scale of the table but not less than 3, see getPromQLResultTimestampScale().
     const UInt32 min_result_timestamp_scale = getPromQLResultTimestampScale(settings_.table_timestamp_type);

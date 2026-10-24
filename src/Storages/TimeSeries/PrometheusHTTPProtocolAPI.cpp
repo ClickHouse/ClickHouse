@@ -59,7 +59,10 @@ namespace ErrorCodes
 
 namespace Setting
 {
+    extern const SettingsUInt64 aggregation_in_order_max_block_bytes;
+    extern const SettingsBool aggregation_in_order_split_by_primary_key_ranges;
     extern const SettingsBool enable_materialized_cte;
+    extern const SettingsBool optimize_aggregation_in_order;
     extern const SettingsBool promql_push_down_label_matchers;
 }
 
@@ -256,6 +259,17 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
         query_context->setSetting("enable_materialized_cte", true);
 
     query_context->setSetting("empty_result_for_aggregation_by_empty_set", false);
+
+    /// The functions over range vectors aggregate the samples `GROUP BY id` in the order of the samples table,
+    /// so the first level of the aggregation keeps the state of one series at a time (see aggregateRangeVector()).
+    /// The states of the time series aggregate functions hold the samples of the whole window, so they are big and few
+    /// of them fit in a block: a smaller block limit makes the aggregation flush them more often.
+    if (!getContext()->getSettingsRef()[Setting::optimize_aggregation_in_order].changed)
+        query_context->setSetting("optimize_aggregation_in_order", true);
+    if (!getContext()->getSettingsRef()[Setting::aggregation_in_order_max_block_bytes].changed)
+        query_context->setSetting("aggregation_in_order_max_block_bytes", 10000000);
+    if (!getContext()->getSettingsRef()[Setting::aggregation_in_order_split_by_primary_key_ranges].changed)
+        query_context->setSetting("aggregation_in_order_split_by_primary_key_ranges", true);
 
     auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), query_context, serverGeneratedQueryFlags(), QueryProcessingStage::Complete);
 

@@ -9,6 +9,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/NodeEvaluationRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/aggregateRangeVector.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/getToGridAggregateFunctionArguments.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fixedAtModifier.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
@@ -271,25 +272,32 @@ SQLQueryPiece applyFunctionOverRange(
     /// tags, because the aggregate function returns NULL for a window without enough samples and only VECTOR_GRID can hold NULL.
     const bool from_scalar = (argument.store_method != StoreMethod::VECTOR_GRID) && (argument.store_method != StoreMethod::RAW_DATA);
 
-    SelectQueryBuilder builder;
-
-    if (from_scalar)
-    {
-        builder.select_list.push_back(timeSeriesNoTagsGroupToAST());
-        builder.select_list.back()->setAlias(ColumnNames::Group);
-    }
-    else
-    {
-        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
-    }
-
     /// <aggregate_function>(<timestamps>, <values>) AS values
-    ASTPtr aggregate_values = addParametersToAggregateFunction(
+    auto aggregate_function = addParametersToAggregateFunction(
         makeASTFunction(impl_info->ch_function_name, std::move(aggregate_function_arguments)),
         timeSeriesTimestampToAST(aggregation_range.start_time, context.result_timestamp_type),
         timeSeriesTimestampToAST(aggregation_range.end_time, context.result_timestamp_type),
         timeSeriesDurationToAST(aggregation_range.step, context.result_timestamp_type),
         timeSeriesDurationToAST(window, context.result_timestamp_type));
+
+    SelectQueryBuilder builder;
+    ASTPtr aggregate_values;
+
+    if (from_scalar)
+    {
+        builder.select_list.push_back(timeSeriesNoTagsGroupToAST());
+        builder.select_list.back()->setAlias(ColumnNames::Group);
+        aggregate_values = std::move(aggregate_function);
+    }
+    else
+    {
+        auto aggregation = aggregateRangeVector(argument, std::move(aggregate_function), context);
+        builder.select_list.push_back(std::move(aggregation.group_expression));
+        builder.select_list.back()->setAlias(ColumnNames::Group);
+        if (aggregation.group_by_key)
+            builder.group_by.push_back(std::move(aggregation.group_by_key));
+        aggregate_values = std::move(aggregation.aggregate_function);
+    }
 
     if (impl_info->needs_cast_to_float64)
     {
@@ -305,9 +313,6 @@ SQLQueryPiece applyFunctionOverRange(
 
     builder.select_list.push_back(std::move(aggregate_values));
     builder.select_list.back()->setAlias(ColumnNames::Values);
-
-    if (!from_scalar)
-        builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
 
     if (argument.select_query)
     {

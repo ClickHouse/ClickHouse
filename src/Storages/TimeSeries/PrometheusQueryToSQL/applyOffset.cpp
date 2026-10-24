@@ -53,11 +53,11 @@ namespace
 
             case StoreMethod::RAW_DATA:
             {
-                /// SELECT group, CAST(CAST(timestamp, 'result_timestamp_type') + INTERVAL <x> <unit>, 'result_timestamp_type') AS timestamp, value
+                /// SELECT id, CAST(CAST(timestamp, 'result_timestamp_type') + INTERVAL <x> <unit>, 'result_timestamp_type') AS timestamp, value
                 /// FROM <raw_data>
                 SelectQueryBuilder builder;
 
-                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::ID));
 
                 /// The interval functions don't accept Decimal arguments, so we choose the unit (milliseconds, microseconds
                 /// or nanoseconds) which is not longer than the tick of `result_timestamp_scale`, and pass an integer number of the units.

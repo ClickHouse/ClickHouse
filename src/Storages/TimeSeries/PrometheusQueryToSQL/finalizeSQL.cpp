@@ -10,6 +10,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/checkSharedSubqueriesAreMaterialized.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/aggregateRangeVector.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/transformGroupASTForAggregationOperator.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
@@ -422,14 +423,20 @@ namespace
 
             case StoreMethod::RAW_DATA:
             {
-                /// SELECT timeSeriesGroupToTags(group) AS tags,
+                /// SELECT timeSeriesGroupToTags(<group>) AS tags,
                 ///        CAST(timeSeriesGroupArray(timestamp, value), 'Array(Tuple(result_timestamp_type, Float64))') AS samples
                 /// FROM <raw_data>
-                /// GROUP BY group
+                /// GROUP BY <group>
                 /// HAVING notEmpty(samples)
+                /// The samples of a series are aggregated as in the functions over range vectors, see aggregateRangeVector().
+                /// When the aggregation gives no key, <raw_data> is already aggregated per series and `WHERE notEmpty(samples)` is used.
+                auto aggregation = aggregateRangeVector(
+                    result,
+                    makeASTFunction("timeSeriesGroupArray", make_intrusive<ASTIdentifier>(ColumnNames::Timestamp), make_intrusive<ASTIdentifier>(ColumnNames::Value)),
+                    context);
 
-                /// timeSeriesGroupToTags(group) AS tags
-                tags = makeASTFunction("timeSeriesGroupToTags", make_intrusive<ASTIdentifier>(ColumnNames::Group));
+                /// timeSeriesGroupToTags(<group>) AS tags
+                tags = makeASTFunction("timeSeriesGroupToTags", std::move(aggregation.group_expression));
                 tags->setAlias(ColumnNames::Tags);
 
                 /// CAST(timeSeriesGroupArray(timestamp, value), 'Array(Tuple(result_timestamp_type, Float64))') AS samples
@@ -437,12 +444,19 @@ namespace
                 /// so we cast the aggregated arrays, which is cheaper than casting the raw data before aggregation.
                 time_series = makeASTFunction(
                     "CAST",
-                    makeASTFunction("timeSeriesGroupArray", make_intrusive<ASTIdentifier>(ColumnNames::Timestamp), make_intrusive<ASTIdentifier>(ColumnNames::Value)),
+                    std::move(aggregation.aggregate_function),
                     make_intrusive<ASTLiteral>(fmt::format("Array(Tuple({}, Float64))", context.result_timestamp_type->getName())));
                 time_series->setAlias(samples_outer_column_name);
 
-                group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
-                having = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(samples_outer_column_name));
+                if (aggregation.group_by_key)
+                {
+                    group_by.push_back(std::move(aggregation.group_by_key));
+                    having = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(samples_outer_column_name));
+                }
+                else
+                {
+                    where = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(samples_outer_column_name));
+                }
 
                 break;
             }
