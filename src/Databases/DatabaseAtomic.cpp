@@ -7,7 +7,13 @@
 #include <Databases/DatabaseMetadataDiskSettings.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseReplicated.h>
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+#include <Disks/IDiskTransaction.h>
 #include <Disks/IStoragePolicy.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
@@ -33,6 +39,7 @@ namespace Setting
 {
     extern const SettingsBool check_referential_table_dependencies;
     extern const SettingsBool check_table_dependencies;
+    extern const SettingsBool fsync_metadata;
 }
 
 namespace FailPoints
@@ -53,12 +60,122 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int LOGICAL_ERROR;
     extern const int UNFINISHED;
+    extern const int CORRUPTED_DATA;
 }
 
 
 namespace DatabaseMetadataDiskSetting
 {
 extern const DatabaseMetadataDiskSettingsString disk;
+}
+
+namespace
+{
+
+constexpr auto exchange_tmp_suffix = ".tmp_exchange";
+constexpr auto exchange_record_suffix = ".exchange";
+constexpr auto exchange_record_header = "exchange v1";
+
+/// The two metadata files of an exchange and their contents after it.
+struct ExchangeRecord
+{
+    String old_path;
+    String new_path;
+    String old_path_content;
+    String new_path_content;
+};
+
+/// `dir/a.sql` -> `dir/.a.sql.exchange`: listings of metadata directories skip names starting with a dot.
+String exchangeRecordPath(const String & metadata_file_path)
+{
+    fs::path path(metadata_file_path);
+    return (path.parent_path() / ("." + path.filename().string() + exchange_record_suffix)).string();
+}
+
+String serializeExchangeRecord(const ExchangeRecord & record)
+{
+    WriteBufferFromOwnString out;
+    writeString(exchange_record_header, out);
+    writeChar('\n', out);
+    for (const auto * field : {&record.old_path, &record.new_path, &record.old_path_content, &record.new_path_content})
+    {
+        writeEscapedString(*field, out);
+        writeChar('\n', out);
+    }
+    return out.str();
+}
+
+std::optional<ExchangeRecord> parseExchangeRecord(const String & content)
+{
+    ReadBufferFromString in(content);
+    ExchangeRecord record;
+    try
+    {
+        if (!checkString(exchange_record_header, in) || !checkChar('\n', in))
+            return {};
+        for (auto * field : {&record.old_path, &record.new_path, &record.old_path_content, &record.new_path_content})
+        {
+            readEscapedString(*field, in);
+            if (!checkChar('\n', in))
+                return {};
+        }
+    }
+    catch (const Exception &)
+    {
+        return {};
+    }
+    if (!in.eof() || record.old_path.empty() || record.new_path.empty())
+        return {};
+    return record;
+}
+
+/// Best effort: a leftover record is skipped by every listing and acted on only together with its temporary file.
+void tryRemoveExchangeRecord(const DiskPtr & disk, const String & path, const LoggerPtr & log, const String * only_if_content = nullptr)
+{
+    try
+    {
+        if (only_if_content && (!disk->existsFile(path) || readMetadataFile(disk, path) != *only_if_content))
+            return;
+        disk->removeFileIfExists(path);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, fmt::format("Cannot remove {}", path));
+    }
+}
+
+bool mayExist(const DiskPtr & disk, const String & path) noexcept
+{
+    try
+    {
+        return disk->existsFile(path);
+    }
+    catch (...)
+    {
+        /// Ok: an unknown answer counts as "may exist".
+        return true;
+    }
+}
+
+Strings writeExchangeRecords(const DiskPtr & disk, const String & old_path, const String & new_path, ContextPtr local_context)
+{
+    const bool fsync = local_context->getSettingsRef()[Setting::fsync_metadata];
+    const String old_content = readMetadataFile(disk, old_path);
+    const String new_content = readMetadataFile(disk, new_path);
+    const String record = serializeExchangeRecord(
+        {.old_path = old_path, .new_path = new_path, .old_path_content = new_content, .new_path_content = old_content});
+
+    /// A copy in the other database's directory, in case that database is loaded first.
+    Strings record_paths{exchangeRecordPath(old_path)};
+    if (fs::path(old_path).parent_path() != fs::path(new_path).parent_path())
+        record_paths.push_back(exchangeRecordPath(new_path));
+    for (const auto & path : record_paths)
+        writeMetadataFile(disk, path + ".tmp", record, fsync);
+    for (const auto & path : record_paths)
+        disk->replaceFile(path + ".tmp", path);
+    return record_paths;
+}
+
 }
 
 class AtomicDatabaseTablesSnapshotIterator final : public DatabaseTablesSnapshotIterator
@@ -182,6 +299,7 @@ StoragePtr DatabaseAtomic::detachTable(ContextPtr /* context */, const String & 
     StoragePtr detached_table;
     {
         std::lock_guard lock(mutex);
+        assertNoUnfinishedExchangeUnlocked();
         detached_table = DatabaseOrdinary::detachTableUnlocked(name);
         table_name_to_path.erase(name);
         detached_tables.emplace(detached_table->getStorageID().uuid, detached_table);
@@ -220,6 +338,7 @@ void DatabaseAtomic::dropTableImpl(ContextPtr local_context, const String & tabl
     auto db_disk = getDisk();
     {
         std::lock_guard lock(mutex);
+        assertNoUnfinishedExchangeUnlocked();
         table = getTableUnlocked(table_name);
         table_metadata_path_drop = DatabaseCatalog::instance().getPathForDroppedMetadata(table->getStorageID());
 
@@ -351,6 +470,10 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
         db_lock = std::unique_lock{mutex};
     }
 
+    assertNoUnfinishedExchangeUnlocked();
+    if (!inside_database)
+        other_db.assertNoUnfinishedExchangeUnlocked();
+
     if (!exchange)
         other_db.checkMetadataFilenameAvailabilityUnlocked(to_table_name);
 
@@ -381,16 +504,23 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
     if (!inside_database && !exchange)
         other_db.checkTablesLimitUnlocked();
 
+    auto db_disk = getDisk();
+    const bool exchange_with_records = exchange && dynamic_cast<const DiskObjectStorage *>(db_disk.get());
+    Strings exchange_records;
+    /// Before the commit point, so that nothing is added between it and the moves.
+    if (exchange_with_records)
+        exchange_records = writeExchangeRecords(db_disk, old_metadata_path, new_metadata_path, local_context);
+
     /// Table renaming actually begins here
     auto txn = local_context->getZooKeeperMetadataTransaction();
     if (txn && !local_context->isInternalSubquery())
         txn->commit();     /// Commit point (a sort of) for Replicated database
 
-    auto db_disk = getDisk();
-
     /// NOTE: replica will be lost if server crashes before the following rename
     /// TODO better detection and recovery
-    if (exchange)
+    if (exchange_with_records)
+        exchangeMetadataFiles(other_db, db_disk, old_metadata_path, new_metadata_path, exchange_records);
+    else if (exchange)
         db_disk->renameExchange(old_metadata_path, new_metadata_path);
     else
         db_disk->moveFile(old_metadata_path, new_metadata_path);
@@ -416,6 +546,32 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
         attach(*this, table_name, other_table_data_path, other_table);
 }
 
+void DatabaseAtomic::exchangeMetadataFiles(
+    DatabaseAtomic & other_db, const DiskPtr & disk, const String & old_path, const String & new_path, const Strings & record_paths)
+{
+    const String tmp_path = old_path + exchange_tmp_suffix;
+    try
+    {
+        auto transaction = disk->createTransaction();
+        transaction->moveFile(old_path, tmp_path);
+        transaction->moveFile(new_path, old_path);
+        transaction->moveFile(tmp_path, new_path);
+        transaction->commit();
+    }
+    catch (...)
+    {
+        if (mayExist(disk, tmp_path))
+        {
+            unfinished_exchange = fmt::format("{} and {}", old_path, new_path);
+            other_db.unfinished_exchange = unfinished_exchange;
+        }
+        throw;
+    }
+
+    for (const auto & path : record_paths)
+        tryRemoveExchangeRecord(disk, path, log);
+}
+
 void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
                                        const String & table_metadata_tmp_path, const String & table_metadata_path,
                                        ContextPtr query_context)
@@ -431,6 +587,7 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
         if (query.getDatabase() != database_name)
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database was renamed to `{}`, cannot create table in `{}`",
                             database_name, query.getDatabase());
+        assertNoUnfinishedExchangeUnlocked();
         /// Do some checks before renaming file from .tmp to .sql
         not_in_use = cleanupDetachedTables();
         assertDetachedTableNotInUse(query.uuid);
@@ -469,6 +626,7 @@ void DatabaseAtomic::commitAlterTable(const StorageID & table_id, const String &
     });
 
     std::lock_guard lock{mutex};
+    assertNoUnfinishedExchangeUnlocked();
     auto actual_table_id = getTableUnlocked(table_id.table_name)->getStorageID();
 
     if (table_id.uuid != actual_table_id.uuid)
@@ -497,6 +655,13 @@ void DatabaseAtomic::assertDetachedTableNotInUse(const UUID & uuid)
     if (detached_tables.contains(uuid))
         throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Cannot attach table with UUID {}, "
                         "because it was detached but still used by some query. Retry later.", uuid);
+}
+
+void DatabaseAtomic::assertNoUnfinishedExchangeUnlocked() const
+{
+    if (!unfinished_exchange.empty())
+        throw Exception(ErrorCodes::UNFINISHED, "An exchange of {} in database {} failed and was not rolled back; restart the server to finish it",
+                        unfinished_exchange, backQuote(database_name));
 }
 
 void DatabaseAtomic::setDetachedTableNotInUseForce(const UUID & uuid)
@@ -585,6 +750,88 @@ void DatabaseAtomic::beforeLoadingMetadata(ContextMutablePtr /*context*/, Loadin
         }
 
         db_disk->removeFileIfExists(table_path);
+    }
+}
+
+void DatabaseAtomic::loadTablesMetadata(ContextPtr local_context, ParsedTablesMetadata & metadata, bool is_startup)
+{
+    auto component_guard = Coordination::setCurrentComponent("DatabaseAtomic::loadTablesMetadata");
+    finishInterruptedExchanges();
+    DatabaseOrdinary::loadTablesMetadata(local_context, metadata, is_startup);
+}
+
+void DatabaseAtomic::finishInterruptedExchanges() const
+{
+    auto db_disk = getDisk();
+    const String metadata_dir = getMetadataPath();
+    if (db_disk->isReadOnly() || !db_disk->existsDirectory(metadata_dir))
+        return;
+
+    const String record_file_suffix = String(".sql") + exchange_record_suffix;
+    Strings record_files;
+    Strings record_tmp_files;
+    for (const auto it = db_disk->iterateDirectory(metadata_dir); it->isValid(); it->next())
+    {
+        const String file_name = it->name();
+        if (!file_name.starts_with('.'))
+            continue;
+        if (file_name.ends_with(record_file_suffix))
+            record_files.push_back((fs::path(metadata_dir) / file_name).string());
+        else if (file_name.ends_with(record_file_suffix + ".tmp"))
+            record_tmp_files.push_back((fs::path(metadata_dir) / file_name).string());
+    }
+
+    /// A record is complete before its exchange begins, so a leftover temporary one belongs to an exchange that did not begin.
+    for (const auto & record_tmp_file : record_tmp_files)
+        tryRemoveExchangeRecord(db_disk, record_tmp_file, log);
+
+    const bool fsync = getContext()->getSettingsRef()[Setting::fsync_metadata];
+    for (const auto & record_file : record_files)
+    {
+        const String content = readMetadataFile(db_disk, record_file);
+        const auto record = parseExchangeRecord(content);
+        if (!record || (record_file != exchangeRecordPath(record->old_path) && record_file != exchangeRecordPath(record->new_path)))
+        {
+            LOG_WARNING(log, "{} is not an exchange record, leaving it as is", record_file);
+            continue;
+        }
+
+        /// A copy is acted on only while the record at the first file's path is the same.
+        const String primary_file = exchangeRecordPath(record->old_path);
+        if (record_file != primary_file && (!db_disk->existsFile(primary_file) || readMetadataFile(db_disk, primary_file) != content))
+        {
+            tryRemoveExchangeRecord(db_disk, record_file, log);
+            continue;
+        }
+
+        /// The temporary file exists only between the first and the last move.
+        const String tmp_path = record->old_path + exchange_tmp_suffix;
+        if (db_disk->existsFile(tmp_path))
+        {
+            for (const auto & path : {record->old_path, record->new_path})
+            {
+                if (db_disk->existsFile(path))
+                {
+                    const String current = readMetadataFile(db_disk, path);
+                    if (current != record->old_path_content && current != record->new_path_content)
+                        throw Exception(ErrorCodes::CORRUPTED_DATA,
+                            "Cannot finish the interrupted exchange of {} and {} recorded in {}: {} has neither of the recorded contents, "
+                            "temporary file {} is left as is", record->old_path, record->new_path, record_file, path, tmp_path);
+                }
+            }
+
+            writeMetadataFile(db_disk, record->old_path + ".tmp", record->old_path_content, fsync);
+            db_disk->replaceFile(record->old_path + ".tmp", record->old_path);
+            writeMetadataFile(db_disk, record->new_path + ".tmp", record->new_path_content, fsync);
+            db_disk->replaceFile(record->new_path + ".tmp", record->new_path);
+            db_disk->removeFile(tmp_path);
+            LOG_WARNING(log, "Finished the interrupted exchange of {} and {}", record->old_path, record->new_path);
+        }
+
+        tryRemoveExchangeRecord(db_disk, primary_file, log);
+        const String copy_file = exchangeRecordPath(record->new_path);
+        if (copy_file != primary_file)
+            tryRemoveExchangeRecord(db_disk, copy_file, log, &content);
     }
 }
 
