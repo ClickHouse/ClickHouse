@@ -2,7 +2,7 @@
 -- Tag no-parallel: drops the columns cache.
 -- Tag no-fasttest: Depends on Parquet
 
--- The columns cache serves the columns of data parts in Parquet format: the whole columns of row groups are cached.
+-- The columns cache serves the columns of data parts in Parquet format: the columns of row groups are cached (in chunks of up to 65536 rows).
 
 SET max_threads = 1;
 -- `enable_parallel_replicas = 0`: with parallel replicas another replica may do some of the reads,
