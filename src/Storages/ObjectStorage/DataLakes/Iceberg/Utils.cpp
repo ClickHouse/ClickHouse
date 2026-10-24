@@ -1277,13 +1277,37 @@ static std::vector<std::pair<String, String>> parseTransformAndColumnPairs(ASTPt
     return result;
 }
 
+/// Source types accepted by an Iceberg transform: https://iceberg.apache.org/spec/#partition-transforms
+static bool isTransformApplicableToType(const String & transform, const String & source_type)
+{
+    if (transform == "identity")
+        return source_type != Iceberg::f_geometry;
+
+    /// Strip the parameters of `decimal(P, S)` and `fixed[L]`.
+    const String type = source_type.substr(0, source_type.find_first_of("(["));
+    static const std::unordered_map<String, std::unordered_set<String>> transform_source_types
+    {
+        {"bucket", {"int", "long", "decimal", "date", "time", "timestamp", "timestamptz", "timestamp_ns", "timestamptz_ns", "string", "uuid", "fixed", "binary"}},
+        {"truncate", {"int", "long", "decimal", "string", "binary"}},
+        {"year", {"date", "timestamp", "timestamptz", "timestamp_ns", "timestamptz_ns"}},
+        {"month", {"date", "timestamp", "timestamptz", "timestamp_ns", "timestamptz_ns"}},
+        {"day", {"date", "timestamp", "timestamptz", "timestamp_ns", "timestamptz_ns"}},
+        {"hour", {"timestamp", "timestamptz", "timestamp_ns", "timestamptz_ns"}},
+    };
+    const auto it = transform_source_types.find(transform);
+    return it != transform_source_types.end() && it->second.contains(type);
+}
+
 /// SQL expressions are validated separately; this only checks whether an Iceberg transform can encode the key.
-/// Iceberg keys can only be sourced from columns of primitive types.
-static bool isRepresentableKey(ASTPtr key, const std::unordered_set<String> & primitive_columns, bool is_top_level = true)
+/// Iceberg keys can only be sourced from columns of primitive types, and each transform accepts only some of them.
+static bool isRepresentableKey(ASTPtr key, const std::unordered_map<String, String> & primitive_column_types, bool is_top_level = true)
 {
     key = unwrapOrderByElement(key);
     if (const auto * identifier = key->as<ASTIdentifier>())
-        return primitive_columns.contains(identifier->name());
+    {
+        const auto it = primitive_column_types.find(identifier->name());
+        return it != primitive_column_types.end() && isTransformApplicableToType("identity", it->second);
+    }
 
     const auto * function = key->as<ASTFunction>();
     const auto * expressions = key->as<ASTExpressionList>();
@@ -1296,11 +1320,14 @@ static bool isRepresentableKey(ASTPtr key, const std::unordered_set<String> & pr
             return false;
         bool representable = true;
         for (const auto & child : expressions->children)
-            representable = isRepresentableKey(child, primitive_columns, /*is_top_level=*/ false) && representable;
+            representable = isRepresentableKey(child, primitive_column_types, /*is_top_level=*/ false) && representable;
         return representable;
     }
 
-    if (!function || !clickhouse_name_to_iceberg.contains(function->name))
+    if (!function)
+        return false;
+    const auto transform = clickhouse_name_to_iceberg.find(function->name);
+    if (transform == clickhouse_name_to_iceberg.end())
         return false;
 
     const auto & arguments = function->arguments->children;
@@ -1316,7 +1343,10 @@ static bool isRepresentableKey(ASTPtr key, const std::unordered_set<String> & pr
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg transform {} requires a positive parameter", function->name);
     }
     const auto * column = arguments.back()->as<ASTIdentifier>();
-    return column && primitive_columns.contains(column->name());
+    if (!column)
+        return false;
+    const auto it = primitive_column_types.find(column->name());
+    return it != primitive_column_types.end() && isTransformApplicableToType(transform->second, it->second);
 }
 
 /// Partition fields are named after their source columns, so a partition key that uses a column twice cannot be represented.
@@ -1348,7 +1378,7 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     bool is_catalog_table)
 {
     std::unordered_map<String, Int32> column_name_to_source_id;
-    std::unordered_set<String> primitive_columns;
+    std::unordered_map<String, String> primitive_column_types;
     static Poco::UUIDGenerator uuid_generator;
 
     Poco::JSON::Object::Ptr new_metadata_file_content = new Poco::JSON::Object;
@@ -1388,7 +1418,7 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
         column_name_to_source_id[column.name] = iter_for_initial_columns;
         /// Nested Iceberg types are JSON objects, primitive ones are strings.
         if (type.first.isString())
-            primitive_columns.insert(column.name);
+            primitive_column_types.emplace(column.name, type.first.extract<String>());
         schema_fields->add(field);
     }
     new_metadata_file_content->set(Iceberg::f_last_column_id, iter);
@@ -1406,7 +1436,7 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
                 return;
             /// Validate even when omissions are allowed: invalid SQL must not silently disappear.
             KeyDescription::getKeyFromAST(key, columns, {}, context);
-            if (!isRepresentableKey(key, primitive_columns) || (is_partition_key && partitionKeyUsesColumnMoreThanOnce(key)))
+            if (!isRepresentableKey(key, primitive_column_types) || (is_partition_key && partitionKeyUsesColumnMoreThanOnce(key)))
             {
                 if (!ignore_unsupported_properties)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
