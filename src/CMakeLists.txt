@@ -1049,6 +1049,9 @@ if (ENABLE_TESTS)
     # gtest framework has substandard code
     target_compile_options(unit_tests_dbms PRIVATE
         -Wno-sign-compare
+        # gtest prints pointers in its assertion messages, so the ban on printing of pointers (see the root CMakeLists.txt) is lifted for tests.
+        -UFMT_DISALLOW_POINTERS
+        -U_LIBCPP_DISALLOW_PRINTING_POINTERS
     )
 
     target_compile_definitions(unit_tests_dbms PRIVATE

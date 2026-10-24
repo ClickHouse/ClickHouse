@@ -60,7 +60,7 @@
 #ifdef SCHEDULER_DEBUG
 #include <iostream>
 #include <base/getThreadId.h>
-#define DBG_PRINT(...) std::cout << fmt::format("\033[01;3{}m[{}] {} {} {}\033[00m {}:{}\n", 1 + getThreadId() % 8, getThreadId(), reinterpret_cast<void*>(this), fmt::format(__VA_ARGS__), __PRETTY_FUNCTION__, __FILE__, __LINE__)
+#define DBG_PRINT(...) std::cout << fmt::format("\033[01;3{}m[{}] {:#x} {} {}\033[00m {}:{}\n", 1 + getThreadId() % 8, getThreadId(), reinterpret_cast<uintptr_t>(this), fmt::format(__VA_ARGS__), __PRETTY_FUNCTION__, __FILE__, __LINE__)
 #else
 #include <base/defines.h>
 #define DBG_PRINT(...) UNUSED(__VA_ARGS__)

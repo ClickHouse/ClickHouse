@@ -862,6 +862,12 @@ include_directories(${CONFIG_INCLUDE_PATH})
 
 # Add as many warnings as possible for our own code.
 include (cmake/warnings.cmake)
+
+# Forbid printing of pointers in our own code with `fmt`, `std::format` and iostreams (see the patches in the `fmtlib` and `llvm-project` submodules).
+# Memory addresses are internal state and must not leak into exception messages, logs or query results.
+# If an address is really needed (e.g. in a stack trace), convert it to an integer explicitly.
+add_compile_definitions (FMT_DISALLOW_POINTERS=1 _LIBCPP_DISALLOW_PRINTING_POINTERS=1)
+
 include (cmake/print_flags.cmake)
 
 if (ENABLE_RUST)
