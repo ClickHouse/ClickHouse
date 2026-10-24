@@ -16,10 +16,10 @@ void setReadOnlyIfHTTPMethodIdempotent(ContextMutablePtr context, const String &
 {
     /// HTTP POST is always allowed to run modifying queries. Every other method - most importantly the safe
     /// methods GET and HEAD - implies a readonly query by default.
-    /// PUT and DELETE are treated as mutating only when `allow_mutating_idempotent_methods` is set, which happens
-    /// exclusively for SQL-defined handlers (see `CREATE HANDLER`) that explicitly accept them. Config-defined
-    /// `dynamic_query_handler`/`predefined_query_handler` rules and the built-in `/` endpoint keep the original
-    /// POST-only behavior, so a PUT/DELETE request they match still forces readonly.
+    /// PUT and DELETE are treated as mutating only when `allow_mutating_idempotent_methods` is set. This is used
+    /// for SQL-defined handlers (see `CREATE HANDLER`) that explicitly accept them and for the validated HTTP path
+    /// table upload shape. Config-defined `dynamic_query_handler`/`predefined_query_handler` rules and the built-in
+    /// `/` endpoint keep the original POST-only behavior, so a PUT/DELETE request they match still forces readonly.
     const bool is_mutating_method =
         http_method == HTTPServerRequest::HTTP_POST
         || (allow_mutating_idempotent_methods

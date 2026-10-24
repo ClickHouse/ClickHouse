@@ -5,6 +5,7 @@
 #include <Common/quoteString.h>
 #include <Formats/FormatFactory.h>
 #include <IO/CompressionMethod.h>
+#include <Poco/Exception.h>
 #include <Poco/String.h>
 #include <Poco/URI.h>
 
@@ -48,7 +49,14 @@ Strings splitPathComponents(const String & path)
         if (!current.empty())
         {
             String decoded;
-            Poco::URI::decode(current, decoded);
+            try
+            {
+                Poco::URI::decode(current, decoded);
+            }
+            catch (const Poco::Exception &)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Malformed percent-encoded component in HTTP URL path");
+            }
             result.push_back(decoded);
             current.clear();
         }
@@ -126,7 +134,12 @@ String unquoteBackQuotedComponent(const String & component)
 }
 
 
-HTTPPathInfo parseHTTPPath(const String & path, bool allow_database, bool allow_table, bool allow_filters)
+HTTPPathInfo parseHTTPPath(
+    const String & path,
+    bool allow_database,
+    bool allow_table,
+    bool allow_filters,
+    bool allow_table_after_database)
 {
     HTTPPathInfo result;
     if (path.empty() || path == "/")
@@ -166,6 +179,10 @@ HTTPPathInfo parseHTTPPath(const String & path, bool allow_database, bool allow_
     /// Determine table component
     int table_index = -1;
     if (allow_table && last_non_filter_index >= 0)
+    {
+        table_index = last_non_filter_index;
+    }
+    else if (allow_table_after_database && allow_database && non_filter_indices.size() >= 2)
     {
         table_index = last_non_filter_index;
     }
@@ -296,6 +313,36 @@ HTTPPathInfo parseHTTPPath(const String & path, bool allow_database, bool allow_
             result.path_filters.push_back(per_component_filter[i]);
 
     return result;
+}
+
+
+bool hasHTTPPathFormatSuffix(const String & path)
+{
+    String path_only = path;
+    if (const auto query_start = path_only.find('?'); query_start != String::npos)
+        path_only.resize(query_start);
+
+    const auto last_slash = path_only.rfind('/');
+    const size_t component_start = last_slash == String::npos ? 0 : last_slash + 1;
+    if (component_start >= path_only.size())
+        return false;
+
+    String component;
+    try
+    {
+        Poco::URI::decode(path_only.substr(component_start), component);
+    }
+    catch (const Poco::Exception &)
+    {
+        return false;
+    }
+
+    /// Quoted identifiers are not part of the PUT upload path syntax.
+    if (component.contains('`'))
+        return false;
+
+    const auto dot = component.rfind('.');
+    return dot != String::npos && dot + 1 < component.size();
 }
 
 
