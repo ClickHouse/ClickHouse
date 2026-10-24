@@ -85,9 +85,7 @@
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/RollupStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
-#include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
 #include <Processors/QueryPlan/ObjectFilterStep.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -195,7 +193,6 @@ namespace Setting
     extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
     extern const SettingsUInt64 parallel_replicas_min_number_of_rows_per_replica;
     extern const SettingsUInt64 parallel_replica_offset;
-    extern const SettingsBool query_plan_enable_multithreading_after_window_functions;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
     extern const SettingsFloat totals_auto_threshold;
     extern const SettingsTotalsMode totals_mode;
@@ -1273,8 +1270,6 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
 
     query_info.query = query_ptr;
 
-    /// NOTE: this is required for getQueryProcessingStage(), so should be initialized before ExpressionAnalysisResult.
-    query_info.has_window = query_analyzer->hasWindow();
     /// NOTE: this is required only for IStorage::read(), and to be precise MergeTreeData::read(), in case of projections.
     query_info.has_order_by = select_query.orderBy() != nullptr;
     query_info.need_aggregate = query_analyzer->hasAggregation();
@@ -1343,18 +1338,6 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
             // SELECT columns given by the `selected_column`. This is why we have
             // to use proper keys given by the result columns of the
             // `before_order_by` expression actions.
-            // Another complication is window functions -- if we have them, they
-            // are calculated on initiator, before ORDER BY columns. In this case,
-            // the shard has to return columns required for window function
-            // calculation and further steps, given by the `before_window`
-            // expression actions.
-            // As of 21.6 this is broken: the actions in `before_window` might
-            // not contain everything required for the ORDER BY step, but this
-            // is a responsibility of ExpressionAnalyzer and is not a problem
-            // with this code. See
-            // https://github.com/ClickHouse/ClickHouse/issues/19857 for details.
-            if (analysis_result.before_window)
-                return analysis_result.before_window->dag.getResultColumns();
 
             // NOTE: should not handle before_limit_by specially since
             // WithMergeableState does not process LIMIT BY
@@ -1397,11 +1380,6 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
 
     if (options.to_stage >= QueryProcessingStage::Enum::WithMergeableStateAfterAggregation)
     {
-        // It's different from selected_columns, see the comment above for
-        // WithMergeableState stage.
-        if (analysis_result.before_window)
-            return analysis_result.before_window->dag.getResultColumns();
-
         // In case of query on remote shards executed up to
         // WithMergeableStateAfterAggregation*, they can process LIMIT BY,
         // since the initiator will not apply LIMIT BY again.
@@ -1847,8 +1825,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
               */
             if (!expressions.second_stage
                 && !expressions.need_aggregate
-                && !expressions.hasHaving()
-                && !expressions.has_window)
+                && !expressions.hasHaving())
             {
                 if (expressions.has_order_by)
                     executeOrder(query_plan);
@@ -2082,40 +2059,13 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
             if (expressions.need_aggregate)
                 executeAggregation(query_plan, expressions.before_aggregation, aggregate_overflow_row, aggregate_final);
 
-            // Now we must execute:
-            // 1) expressions before window functions,
-            // 2) window functions,
-            // 3) expressions after window functions,
-            // 4) preliminary distinct.
-            // This code decides which part we execute on shard (first_stage)
-            // and which part on initiator (second_stage). See also the counterpart
-            // code for "second_stage" that has to execute the rest.
-            if (expressions.need_aggregate)
+            // Without aggregation, the expressions before ORDER BY and the preliminary
+            // DISTINCT run now, on the shards (first_stage). With aggregation they run
+            // on the initiator (second_stage), see the counterpart code there.
+            if (!expressions.need_aggregate)
             {
-                // We have aggregation, so we can't execute any later-stage
-                // expressions on shards, neither "before window functions" nor
-                // "before ORDER BY".
-            }
-            else
-            {
-                // We don't have aggregation.
-                // Window functions must be executed on initiator (second_stage).
-                // ORDER BY and DISTINCT might depend on them, so if we have
-                // window functions, we can't execute ORDER BY and DISTINCT
-                // now, on shard (first_stage).
-                if (query_analyzer->hasWindow())
-                {
-                    executeExpression(query_plan, expressions.before_window, "Before window functions");
-                }
-                else
-                {
-                    // We don't have window functions, so we can execute the
-                    // expressions before ORDER BY and the preliminary DISTINCT
-                    // now, on shards (first_stage).
-                    chassert(!expressions.before_window);
-                    executeExpression(query_plan, expressions.before_order_by, "Before ORDER BY");
-                    executeDistinct(query_plan, true, expressions.selected_columns, true);
-                }
+                executeExpression(query_plan, expressions.before_order_by, "Before ORDER BY");
+                executeDistinct(query_plan, true, expressions.selected_columns, true);
             }
 
             preliminary_sort();
@@ -2172,39 +2122,13 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
             else if (query.group_by_with_totals || query.group_by_with_rollup || query.group_by_with_cube || query.group_by_with_grouping_sets)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WITH TOTALS, ROLLUP, CUBE or GROUPING SETS are not supported without aggregation");
 
-            // Now we must execute:
-            // 1) expressions before window functions,
-            // 2) window functions,
-            // 3) expressions after window functions,
-            // 4) preliminary distinct.
-            // Some of these were already executed at the shards (first_stage),
-            // see the counterpart code and comments there.
-            if (from_aggregation_stage)
+            // With aggregation, the expressions before ORDER BY and the preliminary
+            // DISTINCT run here, on the initiator. Without it they already ran on
+            // the shards (first_stage), see the counterpart code there.
+            if (!from_aggregation_stage && expressions.need_aggregate)
             {
-                if (query_analyzer->hasWindow())
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Window functions does not support processing from WithMergeableStateAfterAggregation");
-            }
-            else if (expressions.need_aggregate)
-            {
-                executeExpression(query_plan, expressions.before_window,
-                    "Before window functions");
-                executeWindow(query_plan);
                 executeExpression(query_plan, expressions.before_order_by, "Before ORDER BY");
                 executeDistinct(query_plan, true, expressions.selected_columns, true);
-            }
-            else
-            {
-                if (query_analyzer->hasWindow())
-                {
-                    executeWindow(query_plan);
-                    executeExpression(query_plan, expressions.before_order_by, "Before ORDER BY");
-                    executeDistinct(query_plan, true, expressions.selected_columns, true);
-                }
-                else
-                {
-                    // Neither aggregation nor windows, all expressions before
-                    // ORDER BY executed on shards.
-                }
             }
 
             if (expressions.has_order_by)
@@ -2222,7 +2146,6 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                     executeMergeSorted(query_plan, "after aggregation stage for ORDER BY");
                 else if (!expressions.first_stage
                     && !expressions.need_aggregate
-                    && !expressions.has_window
                     && !(query.group_by_with_totals && !aggregate_final))
                     executeMergeSorted(query_plan, "for ORDER BY, without aggregation");
                 else    /// Otherwise, just sort.
@@ -2724,7 +2647,6 @@ UInt64 InterpreterSelectQuery::maxBlockSizeByLimit() const
        && !query.limitBy()
        && !query.join()
        && !query_analyzer->hasAggregation()
-       && !query_analyzer->hasWindow()
        && lim_info.fractional_limit == 0
        && lim_info.fractional_offset == 0
        && query.limitLength()
@@ -3153,127 +3075,6 @@ void InterpreterSelectQuery::executeRollupOrCube(QueryPlan & query_plan, Modific
 
     query_plan.addStep(std::move(step));
 }
-
-static bool windowDescriptionComparator(const WindowDescription * _left, const WindowDescription * _right)
-{
-    const auto & left = _left->full_sort_description;
-    const auto & right = _right->full_sort_description;
-
-    for (size_t i = 0; i < std::min(left.size(), right.size()); ++i)
-    {
-        if (left[i].column_name < right[i].column_name)
-            return true;
-        if (left[i].column_name > right[i].column_name)
-            return false;
-        if (left[i].direction < right[i].direction)
-            return true;
-        if (left[i].direction > right[i].direction)
-            return false;
-        if (left[i].nulls_direction < right[i].nulls_direction)
-            return true;
-        if (left[i].nulls_direction > right[i].nulls_direction)
-            return false;
-
-        chassert(left[i] == right[i]);
-    }
-
-    // Note that we check the length last, because we want to put together the
-    // sort orders that have common prefix but different length.
-    return left.size() > right.size();
-}
-
-static bool sortIsPrefix(const WindowDescription & _prefix,
-    const WindowDescription & _full)
-{
-    const auto & prefix = _prefix.full_sort_description;
-    const auto & full = _full.full_sort_description;
-
-    if (prefix.size() > full.size())
-        return false;
-
-    for (size_t i = 0; i < prefix.size(); ++i)
-    {
-        if (full[i] != prefix[i])
-            return false;
-    }
-
-    return true;
-}
-
-void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
-{
-    // Try to sort windows in such an order that the window with the longest
-    // sort description goes first, and all window that use its prefixes follow.
-    std::vector<const WindowDescription *> windows_sorted;
-    for (const auto & [_, window] : query_analyzer->windowDescriptions())
-        windows_sorted.push_back(&window);
-
-    ::sort(windows_sorted.begin(), windows_sorted.end(), windowDescriptionComparator);
-
-    const Settings & settings = context->getSettingsRef();
-    for (size_t i = 0; i < windows_sorted.size(); ++i)
-    {
-        const auto & window = *windows_sorted[i];
-
-        // We don't need to sort again if the input from previous window already
-        // has suitable sorting. Also don't create sort steps when there are no
-        // columns to sort by, because the sort nodes are confused by this. It
-        // happens in case of `over ()`.
-        // Even if full_sort_description of both windows match, in case of different
-        // partitioning we need to add a SortingStep to reshuffle data in the streams.
-        bool need_sort = !window.full_sort_description.empty();
-        if (need_sort && i != 0)
-        {
-            const size_t effective_max_threads = getEffectiveMaxThreads(settings);
-            need_sort = !sortIsPrefix(window, *windows_sorted[i - 1])
-                || (effective_max_threads != 1 && window.partition_by.size() != windows_sorted[i - 1]->partition_by.size());
-        }
-        SortingStep::Settings sort_settings(context->getSettingsRef());
-
-        /// Window functions require fully sorted input. Applying sort_overflow_mode = 'break'
-        /// would produce incomplete data and cause the pipeline to get stuck.
-        sort_settings.size_limits.overflow_mode = OverflowMode::THROW;
-
-        if (need_sort)
-        {
-            /// The sort scatters rows across threads by the hash of the partition columns it is given,
-            /// but `WindowTransform` finds partition boundaries with `compareAt`. For key types where
-            /// the two disagree the scatter would split one logical partition across threads, so such
-            /// windows sort in a single merged stream instead.
-            SortDescription scatter_partition_by = window.partition_by;
-            const auto & sort_input_header = query_plan.getCurrentHeader();
-            for (const auto & partition_column : window.partition_by)
-            {
-                if (QueryPlanOptimizations::keyTypeBreaksHashSharding(
-                        *sort_input_header->getByName(partition_column.column_name).type))
-                {
-                    scatter_partition_by.clear();
-                    break;
-                }
-            }
-
-            auto sorting_step = std::make_unique<SortingStep>(
-                query_plan.getCurrentHeader(),
-                window.full_sort_description,
-                scatter_partition_by,
-                0 /* LIMIT */,
-                sort_settings);
-            sorting_step->setStepDescription(fmt::format("Sorting for window '{}'", window.window_name), options.max_step_description_length);
-            query_plan.addStep(std::move(sorting_step));
-        }
-
-        // Fan out streams only for the last window to preserve the ordering between windows,
-        // and WindowTransform works on single stream anyway.
-        const bool streams_fan_out
-            = settings[Setting::query_plan_enable_multithreading_after_window_functions] && ((i + 1) == windows_sorted.size());
-
-        auto window_step = std::make_unique<WindowStep>(query_plan.getCurrentHeader(), window, window.window_functions, streams_fan_out, sort_settings);
-        window_step->setStepDescription(fmt::format("Window step for window '{}'", window.window_name), options.max_step_description_length);
-
-        query_plan.addStep(std::move(window_step));
-    }
-}
-
 
 void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan)
 {
