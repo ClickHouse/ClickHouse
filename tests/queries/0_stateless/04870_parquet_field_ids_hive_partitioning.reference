@@ -1,0 +1,6 @@
+output_format_parquet_column_field_ids references unknown column 'p'
+1	10
+2	20
+3	30
+does not cover every output column
+4	40

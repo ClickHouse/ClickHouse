@@ -30,6 +30,7 @@
 #include <Storages/RabbitMQ/StorageRabbitMQ.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/validateParquetFieldIdSettingsInDefinition.h>
 #include <Storages/StreamingStorageRegistry.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
@@ -1615,6 +1616,9 @@ void registerStorageRabbitMQ(StorageFactory & factory)
 
         if (args.storage_def->settings)
             rabbitmq_settings->loadFromQuery(*args.storage_def);
+
+        /// `StorageRabbitMQ::write` does not apply the format settings of the definition.
+        rejectParquetFieldIdSettingsInDefinition(args, "RabbitMQ", rabbitmq_settings->getFormatSettings());
 
         if (!(*rabbitmq_settings)[RabbitMQSetting::rabbitmq_host_port].changed
            && !(*rabbitmq_settings)[RabbitMQSetting::rabbitmq_address].changed)

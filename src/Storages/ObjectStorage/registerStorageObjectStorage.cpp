@@ -1,5 +1,6 @@
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
+#include <algorithm>
 #include <Databases/DataLake/DataLakeConstants.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Databases/LoadingStrictnessLevel.h>
@@ -19,7 +20,9 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/ObjectStorage/StorageObjectStorageDefinitions.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Storages/IPartitionStrategy.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/validateParquetFieldIdSettingsInDefinition.h>
 #include <Poco/Logger.h>
 #include <Disks/DiskType.h>
 
@@ -81,24 +84,93 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     configuration->is_replayed_definition = isReplayedTableDefinition(args.mode, args.query, context);
     StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, context, false, &args.table_id);
 
-    // Format settings come from the server's settings, as for `File` and `URL`, plus the SETTINGS clause. Not from the
-    // session: the definition does not keep them, so the table would read differently once it is attached again, e.g.
-    // on server startup.
-    const auto global_context = args.getContext();
-    std::optional<FormatSettings> format_settings;
-    if (args.storage_def->settings)
+    /// An Iceberg table's metadata is the authoritative source of Parquet `field_id`s: every write
+    /// receives the table's own column-id mapping, and `ParquetBlockOutputFormat` rejects the user
+    /// `field_id` settings at write time in that case. The format settings are frozen here at table
+    /// definition time, so accepting these settings would produce a table whose every `INSERT` fails.
+    ///
+    /// The frozen format settings also carry the ambient server/profile/session values, not only what
+    /// the definition says, so `getFormatSettingsForTableDefinition` drops the ambient `field_id`
+    /// values — early enough that they are not even parsed. Whether the definition itself named them
+    /// is what the checks below act on.
+    const auto is_set_in_definition = [&](std::string_view name)
     {
-        Settings settings = global_context->getSettingsCopy();
+        return args.storage_def->settings
+            && std::ranges::any_of(
+                   args.storage_def->settings->changes, [&](const auto & change) { return change.name == name; });
+    };
+    const bool column_field_ids_in_definition = is_set_in_definition("output_format_parquet_column_field_ids");
+    const bool auto_assign_field_ids_in_definition = is_set_in_definition("output_format_parquet_auto_assign_field_ids");
 
-        // Applying the changes validates the values, not the names.
-        settings.applyChanges(args.storage_def->settings->changes);
+    // Format settings come from the server's settings, as for `File` and `URL`, plus the SETTINGS clause, minus the
+    // ambient Parquet `field_id` values. Not from the session: the definition does not keep them, so the table would
+    // read differently once it is attached again, e.g. on server startup.
+    std::optional<FormatSettings> format_settings = getFormatSettingsForTableDefinition(
+        args.getContext(), args.storage_def->settings ? &args.storage_def->settings->changes : nullptr);
 
-        format_settings = getFormatSettings(global_context, settings);
-    }
-    else
-    {
-        format_settings = getFormatSettings(global_context);
-    }
+    /// Reject the definition up front when the settings are freshly supplied by the user: a `CREATE`
+    /// query, or a full-definition `ATTACH TABLE t (...) ENGINE = ...` query, which introduces a new
+    /// definition just like `CREATE` does. Replaying a definition that was already accepted once —
+    /// server startup (`FORCE_ATTACH` / `FORCE_RESTORE`), the other replicas of a `Replicated` database
+    /// replaying the query its initiator has accepted and `RESTORE` from backup (`SECONDARY_CREATE`), a
+    /// short `ATTACH TABLE t`, the tables attached by `ATTACH DATABASE` (`attach_short_syntax`) — is
+    /// exempt, so existing tables always load; the write-time guard in `ParquetBlockOutputFormat` still
+    /// protects such legacy tables. A plain `CREATE ... ON CLUSTER` is not a replay: every host runs it
+    /// from the distributed DDL queue as a `CREATE`, so it is rejected on each of them.
+    const bool fresh_definition_supplies_field_ids
+        = ((column_field_ids_in_definition && !format_settings->parquet.column_field_ids.empty())
+           || (auto_assign_field_ids_in_definition && format_settings->parquet.auto_assign_field_ids))
+        && (args.mode == LoadingStrictnessLevel::CREATE
+            || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax));
+    if (configuration->isIcebergConfiguration() && fresh_definition_supplies_field_ids)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Settings output_format_parquet_column_field_ids and output_format_parquet_auto_assign_field_ids "
+            "cannot be used in the definition of an Iceberg table: the table metadata provides its own "
+            "column-id mapping, so every write to such a table would fail");
+
+    /// The other datalake engines (e.g. `DeltaLake`) derive the header handed to the Parquet writer
+    /// from their own metadata rather than from the definition: an existing partitioned Delta table
+    /// takes its partition columns from the Delta log and keeps them out of the data files
+    /// (`DeltaLakePartitionedSink`), so neither the declared columns nor `PARTITION BY` describe the
+    /// writer header. The settings cannot be validated against that header here, so reject them
+    /// rather than accept a definition whose every `INSERT` might fail.
+    if (configuration->isDataLakeConfiguration() && fresh_definition_supplies_field_ids)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Settings output_format_parquet_column_field_ids and output_format_parquet_auto_assign_field_ids "
+            "cannot be used in the definition of a {} table: the columns written to its data files are "
+            "derived from the table metadata, so the settings cannot be validated against them",
+            configuration->getEngineName());
+
+    /// A plain (non-Iceberg) table freezes these settings the same way, so an invalid
+    /// definition-supplied `field_id` map would be accepted here and then fail every `INSERT` —
+    /// validate a fresh definition up front instead. When the definition relies on schema or
+    /// format inference, the header-dependent checks rerun after the storage has resolved them.
+    /// A `PARTITION BY` clause defers them the same way: the partition strategy may reshape the
+    /// written file — the `hive` strategy keeps the partition columns out of the data file unless
+    /// `partition_columns_in_data_file` is enabled — so the declared column list is not the header
+    /// the Parquet writer will receive.
+    const bool has_partition_by = args.storage_def->partition_by != nullptr;
+    validateParquetFieldIdSettingsInDefinition(
+        args, configuration->format, *format_settings, /* definition_columns_match_writer_header */ !has_partition_by);
+    const bool validate_field_ids_with_resolved_header
+        = args.columns.empty() || configuration->format == "auto" || has_partition_by;
+
+    /// A node-local source (`DeltaLakeLocal`, `IcebergLocal`) resolves its schema from the files on
+    /// this very host, so a `Replicated` database follower replaying the query as `SECONDARY_CREATE`
+    /// can resolve a different header than the initiator has validated. Such a replay is not a safe
+    /// one: the follower must validate the definition against its own resolved header.
+    const bool validate_secondary_create = configuration->getType() == ObjectStorageType::Local;
+
+    /// A write-capable object storage client is not side-effect free: on Azure it provisions the
+    /// container (`AzureBlobStorage::getContainerClient`). While the header-dependent `field_id`
+    /// checks are still pending, the `CREATE` may yet be rejected below, so resolve the schema and
+    /// run those checks through a read-only client and switch to the write-capable one only once
+    /// the definition is known-good — a rejected `CREATE` must not leave external state behind.
+    const bool defer_write_capable_object_storage = validate_field_ids_with_resolved_header
+        && args.mode == LoadingStrictnessLevel::CREATE
+        && freshDefinitionSuppliesParquetFieldIdSettings(args, *format_settings);
 
     ASTPtr partition_by;
     if (args.storage_def->partition_by)
@@ -138,8 +210,12 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     auto storage = std::make_shared<StorageObjectStorage>(
         configuration,
         // We only want to perform write actions (e.g. create a container in Azure) when the table is being created,
-        // and we want to avoid it when we load the table after a server restart.
-        configuration->createObjectStorage(context, /* is_readonly */ args.mode != LoadingStrictnessLevel::CREATE, std::nullopt),
+        // and we want to avoid it when we load the table after a server restart, or while the
+        // definition still has to pass the deferred Parquet `field_id` checks.
+        configuration->createObjectStorage(
+            context,
+            /* is_readonly */ args.mode != LoadingStrictnessLevel::CREATE || defer_write_capable_object_storage,
+            std::nullopt),
         context_copy, /// Use global context.
         args.table_id,
         args.columns,
@@ -153,6 +229,27 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         /* distributed_processing */ false,
         partition_by,
         order_by);
+
+    if (validate_field_ids_with_resolved_header)
+    {
+        /// Validate against the very header the sink hands to the Parquet writer: the partition
+        /// strategy's format header for a partitioned table (see `StorageObjectStorageSink`), the
+        /// resolved physical columns otherwise.
+        NamesAndTypesList writer_header_columns;
+        if (configuration->partition_strategy)
+            writer_header_columns = configuration->partition_strategy->getFormatHeader().getNamesAndTypesList();
+        else
+        {
+            const auto metadata = storage->getInMemoryMetadataPtr(args.getLocalContext(), false);
+            writer_header_columns = metadata->getColumns().getAllPhysical();
+        }
+        validateParquetFieldIdSettingsWithResolvedHeader(
+            args, storage->getFormatName(), writer_header_columns, *format_settings, validate_secondary_create);
+    }
+
+    /// The definition passed every check, so the table may now provision what it needs to write.
+    if (defer_write_capable_object_storage)
+        storage->switchToWriteCapableObjectStorage(context);
 
     if (configuration->isDataLakeConfiguration() && args.storage_def->settings)
     {
