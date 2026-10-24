@@ -14,13 +14,4 @@
 SELECT * FROM (SELECT 1 AS id, '' AS test) AS a
 LEFT JOIN (SELECT test, 1 AS id, NULL AS test UNION ALL SELECT test, 2 AS id, NULL AS test) AS b ON b.id = a.id
 SETTINGS join_algorithm = 'auto', max_rows_in_join = 1,
-    max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0,
-    enable_analyzer = 0
-;
-
-SELECT * FROM (SELECT 1 AS id, '' AS test) AS a
-LEFT JOIN (SELECT test, 1 AS id, NULL AS test UNION ALL SELECT test, 2 AS id, NULL AS test) AS b ON b.id = a.id
-SETTINGS join_algorithm = 'auto', max_rows_in_join = 1,
-    max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0,
-    enable_analyzer = 1
-;
+    max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;

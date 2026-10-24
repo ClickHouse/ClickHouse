@@ -18,8 +18,7 @@ DROP TABLE IF EXISTS jimc_ec_right;
 -- the row non-matching) and reference both sides (so it cannot be pushed to the right-table scan). The
 -- cross-side `r.pad != toString(l.lv)` satisfies both and is always true here, so the result equals the
 -- uncompressed one. Without decompression in `buildAdditionalFilter` this raised
--- `ColumnCompressed must be decompressed before use`. `enable_analyzer = 1` is pinned because residual
--- `JOIN ON` conditions are only supported by the analyzer.
+-- `ColumnCompressed must be decompressed before use`.
 
 CREATE TABLE jimc_ec_left (k UInt64, lv UInt64) ENGINE = Memory;
 CREATE TABLE jimc_ec_right (k UInt64, rv UInt64, pad String) ENGINE = Memory;
@@ -32,8 +31,7 @@ SELECT (SELECT sum(cityHash64(l.k, l.lv, r.rv, r.pad)) FROM jimc_ec_left AS l LE
             SETTINGS join_algorithm = 'hash', enable_join_in_memory_compression = 0, max_bytes_in_join = 0, query_plan_join_swap_table = 'false')
      = (SELECT sum(cityHash64(l.k, l.lv, r.rv, r.pad)) FROM jimc_ec_left AS l LEFT JOIN jimc_ec_right AS r
             ON l.k = r.k AND r.pad != toString(l.lv)
-            SETTINGS join_algorithm = 'hash', enable_join_in_memory_compression = 1, max_bytes_in_join = 24000000, query_plan_join_swap_table = 'false')
-SETTINGS enable_analyzer = 1;
+            SETTINGS join_algorithm = 'hash', enable_join_in_memory_compression = 1, max_bytes_in_join = 24000000, query_plan_join_swap_table = 'false');
 
 DROP TABLE jimc_ec_left;
 DROP TABLE jimc_ec_right;

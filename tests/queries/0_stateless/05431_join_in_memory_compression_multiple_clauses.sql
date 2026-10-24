@@ -12,7 +12,6 @@ INSERT INTO t_left_or VALUES (1, 10, 'L1'), (2, 20, 'L2'), (3, 30, 'L3'), (4, 40
 CREATE TABLE t_right_or (a UInt64, b UInt64, val String) ENGINE = MergeTree() ORDER BY a;
 INSERT INTO t_right_or VALUES (1, 99, 'Ra1'), (99, 20, 'Rb2'), (3, 30, 'Rab3'), (99, 99, 'Rnone');
 
-SET enable_analyzer = 1;
 SET enable_join_in_memory_compression = 1, join_in_memory_compression_min_bytes = 0;
 
 SELECT l.a, l.b, l.val FROM t_left_or l LEFT SEMI JOIN t_right_or r ON l.a = r.a OR l.b = r.b ORDER BY l.a

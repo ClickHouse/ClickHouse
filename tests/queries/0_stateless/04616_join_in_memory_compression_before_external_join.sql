@@ -25,7 +25,7 @@ INSERT INTO jimc_e_right SELECT number, number, repeat('x', 1000) FROM numbers(4
 SELECT sum(cityHash64(l.k, l.lv, r.rv, r.pad)) > 0 FROM jimc_e_left AS l INNER JOIN jimc_e_right AS r ON l.k = r.k
 SETTINGS join_algorithm = 'hash', enable_join_in_memory_compression = 0, max_bytes_in_join = 0,
          max_bytes_before_external_join = 24000000, query_plan_join_swap_table = 'false',
-         log_comment = '04616_hash_off', enable_analyzer = 1;
+         log_comment = '04616_hash_off';
 SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['JoinSpillingHashJoinSwitchedToGraceJoin'] FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment = '04616_hash_off' AND type = 'QueryFinish'
@@ -37,7 +37,7 @@ SELECT (SELECT sum(cityHash64(l.k, l.lv, r.rv, r.pad)) FROM jimc_e_left AS l INN
             SETTINGS join_algorithm = 'hash', enable_join_in_memory_compression = 0, max_bytes_before_external_join = 0, query_plan_join_swap_table = 'false')
      = (SELECT sum(cityHash64(l.k, l.lv, r.rv, r.pad)) FROM jimc_e_left AS l INNER JOIN jimc_e_right AS r ON l.k = r.k
             SETTINGS join_algorithm = 'hash', enable_join_in_memory_compression = 1, max_bytes_in_join = 0, max_bytes_before_external_join = 24000000, query_plan_join_swap_table = 'false')
-SETTINGS log_comment = '04616_hash_on', enable_analyzer = 1;
+SETTINGS log_comment = '04616_hash_on';
 SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['JoinSpillingHashJoinSwitchedToGraceJoin'], ProfileEvents['JoinInMemoryCompressedColumns'] > 0
 FROM system.query_log
@@ -49,7 +49,7 @@ SELECT (SELECT sum(cityHash64(l.k, l.lv, r.rv, r.pad)) FROM jimc_e_left AS l INN
             SETTINGS join_algorithm = 'parallel_hash', max_threads = 4, enable_join_in_memory_compression = 0, max_bytes_before_external_join = 0, query_plan_join_swap_table = 'false')
      = (SELECT sum(cityHash64(l.k, l.lv, r.rv, r.pad)) FROM jimc_e_left AS l INNER JOIN jimc_e_right AS r ON l.k = r.k
             SETTINGS join_algorithm = 'parallel_hash', max_threads = 4, enable_join_in_memory_compression = 1, max_bytes_in_join = 0, max_bytes_before_external_join = 24000000, query_plan_join_swap_table = 'false')
-SETTINGS log_comment = '04616_parallel_hash_on', enable_analyzer = 1;
+SETTINGS log_comment = '04616_parallel_hash_on';
 SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['JoinSpillingHashJoinSwitchedToGraceJoin'], ProfileEvents['JoinInMemoryCompressedColumns'] > 0
 FROM system.query_log

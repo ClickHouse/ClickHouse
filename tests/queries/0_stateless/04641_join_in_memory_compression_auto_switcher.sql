@@ -32,7 +32,7 @@ SELECT (SELECT sum(cityHash64(l.k, l.lv, r.rv, r.pad)) FROM jimc_a_left AS l INN
      = (SELECT sum(cityHash64(l.k, l.lv, r.rv, r.pad)) FROM jimc_a_left AS l INNER JOIN jimc_a_right AS r ON l.k = r.k
             SETTINGS join_algorithm = 'auto', enable_join_in_memory_compression = 1, max_bytes_in_join = 24000000,
                      max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0, query_plan_join_swap_table = 'false')
-SETTINGS log_comment = '04641_auto_on', enable_analyzer = 1;
+SETTINGS log_comment = '04641_auto_on';
 SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['JoinInMemoryCompressedColumns'] > 0 FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment = '04641_auto_on' AND type = 'QueryFinish'
@@ -45,7 +45,7 @@ SELECT (SELECT sum(cityHash64(l.k, l.lv, r.rv, r.pad)) FROM jimc_a_left AS l INN
      = (SELECT sum(cityHash64(l.k, l.lv, r.rv, r.pad)) FROM jimc_a_left AS l INNER JOIN jimc_a_right AS r ON l.k = r.k
             SETTINGS join_algorithm = 'auto', enable_join_in_memory_compression = 0, max_bytes_in_join = 24000000,
                      max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0, query_plan_join_swap_table = 'false')
-SETTINGS log_comment = '04641_auto_off', enable_analyzer = 1;
+SETTINGS log_comment = '04641_auto_off';
 SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['JoinInMemoryCompressedColumns'] FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment = '04641_auto_off' AND type = 'QueryFinish'
@@ -62,7 +62,7 @@ SELECT (SELECT sum(cityHash64(l.number, r.k, r.pad)) FROM numbers(20000) AS l
             SETTINGS join_algorithm = 'auto', enable_join_in_memory_compression = 1, max_bytes_in_join = 12000000,
                      max_block_size = 2048, max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0,
                      query_plan_join_swap_table = 'false')
-SETTINGS log_comment = '04641_auto_many_blocks', enable_analyzer = 1;
+SETTINGS log_comment = '04641_auto_many_blocks';
 SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['JoinInMemoryCompressedColumns'] > 0, ProfileEvents['ExternalProcessingFilesTotal'] FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment = '04641_auto_many_blocks' AND type = 'QueryFinish'
