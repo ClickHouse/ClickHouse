@@ -11491,7 +11491,8 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
             /*input_columns=*/ {},
             planner_context,
             empty_correlated_columns_set,
-            /*use_column_identifier_as_action_node_name=*/ false);
+            /*use_column_identifier_as_action_node_name=*/ false,
+            makeIsStorageColumnName(table_expression));
         correlated_subtrees.assertEmpty("in a mutation predicate");
 
         /// Plan the subqueries, so that `KeyCondition` can build the sets for `IN (SELECT ...)`.

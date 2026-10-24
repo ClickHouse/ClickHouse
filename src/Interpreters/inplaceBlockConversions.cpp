@@ -266,7 +266,13 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
 
     collectSetsAndSourceColumns(expression, planner_context, true /*keep_alias_columns*/);
 
-    auto actions = buildActionsDAGFromExpressionNode(expression, header.getColumnsWithTypeAndName(), planner_context, {}).first;
+    auto actions = buildActionsDAGFromExpressionNode(
+        expression,
+        header.getColumnsWithTypeAndName(),
+        planner_context,
+        {},
+        /*use_column_identifier_as_action_node_name=*/true,
+        [&header](const String & name) { return header.has(name); }).first;
     chassert(expression->getChildren().size() == actions.getOutputs().size());
 
     NamesWithAliases result_columns;

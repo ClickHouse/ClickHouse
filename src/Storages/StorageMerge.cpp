@@ -1832,7 +1832,11 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
                 collectSets(column_node, *modified_query_info.planner_context);
 
                 ColumnNodePtrWithHashSet empty_correlated_columns_set;
-                PlannerActionsVisitor actions_visitor(modified_query_info.planner_context, empty_correlated_columns_set, false /*use_column_identifier_as_action_node_name*/);
+                PlannerActionsVisitor actions_visitor(
+                    modified_query_info.planner_context,
+                    empty_correlated_columns_set,
+                    false /*use_column_identifier_as_action_node_name*/,
+                    makeIsStorageColumnName(storage_snapshot_));
                 actions_visitor.visit(*filter_actions_dag, column_node);
             }
             column_names_as_aliases = filter_actions_dag->getRequiredColumnsNames();
@@ -2358,6 +2362,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
     auto before_block_header = child.plan.getCurrentHeader();
 
     auto pipe_columns = before_block_header->getNamesAndTypesList();
+    const NameSet column_names_read_set(column_names_read.begin(), column_names_read.end());
 
     {
         for (const auto & alias : aliases)
@@ -2374,7 +2379,11 @@ void ReadFromMerge::convertAndFilterSourceStream(
             collectSets(query_tree, *modified_query_info.planner_context);
 
             ColumnNodePtrWithHashSet empty_correlated_columns_set;
-            PlannerActionsVisitor actions_visitor(modified_query_info.planner_context, empty_correlated_columns_set, false /*use_column_identifier_as_action_node_name*/);
+            PlannerActionsVisitor actions_visitor(
+                modified_query_info.planner_context,
+                empty_correlated_columns_set,
+                false /*use_column_identifier_as_action_node_name*/,
+                [&column_names_read_set](const String & column_name) { return column_names_read_set.contains(column_name); });
             const auto & [nodes, _] = actions_visitor.visit(actions_dag, query_tree);
 
             if (nodes.size() != 1)
@@ -2510,7 +2519,6 @@ void ReadFromMerge::convertAndFilterSourceStream(
     String smallest_column_name = ExpressionActions::getSmallestColumn(snapshot->metadata->getColumns().getAllPhysical()).name;
 
     /// A column the child reads only for itself (its row policy or ALIAS columns) makes this a by-name read.
-    const NameSet column_names_read_set(column_names_read.begin(), column_names_read.end());
     const bool has_columns_read_only_for_child = std::ranges::any_of(current_step_columns, [&](const auto & column)
         { return !header.has(column.name) && column_names_read_set.contains(column.name); });
 
