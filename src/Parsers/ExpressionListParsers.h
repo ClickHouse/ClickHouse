@@ -262,6 +262,13 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+class ParserProjectionExpressionList : public IParserBase
+{
+protected:
+    const char * getName() const override { return "projection list of expressions"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
 class ParserStorageOrderByExpressionList : public IParserBase
 {
 public:

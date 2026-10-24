@@ -66,6 +66,24 @@ protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
 };
 
+class ASTColumnsElement : public IAST
+{
+public:
+    String prefix;
+    IAST * elem{};
+
+    String getID(char c) const override { return "ASTColumnsElement for " + elem->getID(c); }
+
+    ASTPtr clone() const override;
+
+    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override
+    {
+        f(&elem, nullptr);
+    }
+
+protected:
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
+};
 
 class ASTExpressionList;
 

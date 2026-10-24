@@ -1,4 +1,5 @@
 #include <memory>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTProjectionSelectQuery.h>
 #include <Parsers/CommonParsers.h>
@@ -13,6 +14,8 @@ namespace DB
 bool ParserProjectionSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     auto select_query = make_intrusive<ASTProjectionSelectQuery>();
+    auto expressions = make_intrusive<ASTExpressionList>();
+    auto skip_indices = make_intrusive<ASTExpressionList>();
     node = select_query;
 
     ParserKeyword s_with(Keyword::WITH);
@@ -22,7 +25,7 @@ bool ParserProjectionSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     ParserKeyword s_order_by(Keyword::ORDER_BY);
 
     ParserNotEmptyExpressionList exp_list_for_with_clause(false);
-    ParserNotEmptyExpressionList exp_list_for_select_clause(true); /// Allows aliases without AS keyword.
+    ParserProjectionExpressionList exp_list_for_select_clause; /// Allows aliases without AS keyword.
     ParserStorageOrderByExpressionList order_list_p(/*allow_order_*/ false);
     ParserExpressionWithOptionalAlias exp_elem(false);
 
@@ -86,8 +89,20 @@ bool ParserProjectionSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
         }
     }
 
+    for (const auto & element : select_expression_list->children)
+    {
+        if (element->as<ASTIndexDeclaration>())
+            skip_indices->children.push_back(element);
+        else
+            expressions->children.push_back(element);
+    }
+
+    if (expressions->children.empty())
+        return false;
+
     select_query->setExpression(ASTProjectionSelectQuery::Expression::WITH, std::move(with_expression_list));
-    select_query->setExpression(ASTProjectionSelectQuery::Expression::SELECT, std::move(select_expression_list));
+    select_query->setExpression(ASTProjectionSelectQuery::Expression::SELECT, std::move(expressions));
+    select_query->setExpression(ASTProjectionSelectQuery::Expression::SKIP_INDICES, !skip_indices->children.empty() ? std::move(skip_indices): nullptr);
     select_query->setExpression(ASTProjectionSelectQuery::Expression::WHERE, std::move(where_expression));
     select_query->setExpression(ASTProjectionSelectQuery::Expression::GROUP_BY, std::move(group_expression_list));
     select_query->setExpression(ASTProjectionSelectQuery::Expression::ORDER_BY, std::move(order_expression));

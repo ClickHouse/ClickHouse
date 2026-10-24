@@ -1,3 +1,6 @@
+#include <Parsers/IAST_fwd.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/IndicesDescription.h>
 #include <Storages/ProjectionsDescription.h>
 #include <DataTypes/DataTypeString.h>
 
@@ -51,6 +54,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Common/ErrorCodes.h>
 
 namespace DB
 {
@@ -64,6 +68,7 @@ namespace ErrorCodes
     extern const int NO_SUCH_PROJECTION_IN_TABLE;
     extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int ILLEGAL_INDEX;
 }
 
 namespace Setting
@@ -568,6 +573,8 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     const MergeTreeSettings & projection_settings)
 {
     auto projection_order_by = query.orderBy();
+    ASTPtr indices = query.skipIndices();
+
     result.query_ast = query.cloneToASTSelect();
 
     /// Store the WHERE clause AST if present (Issue #74234).
@@ -764,6 +771,70 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
 
     metadata.setColumns(std::move(metadata_columns));
     metadata.setVirtuals(MergeTreeData::createVirtuals(partition_key));
+
+    if (indices)
+    {
+        IndicesDescription skip_indices;
+
+        for (auto & index : indices->children)
+        {
+            IndexDescription index_desc = IndexDescription::getIndexFromAST(
+                        index->clone(), metadata.columns, false, metadata.escape_index_filenames, query_context->getGlobalContext());
+
+            /// Text indexes are not supported in projections yet. `MergeTask` does not pass `text` indexes to the
+            /// part writer; it builds them only in `MergeTask::MergeTextIndexStage`, which does nothing for the
+            /// nested merges of projection parts (where `parent_part` is set). A text index in a projection would
+            /// be written on INSERT but dropped by the first merge, and queries would silently stop using it.
+            /// Remove this check once projection merges build text indexes.
+            if (index_desc.type == TEXT_INDEX_NAME)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_INDEX,
+                    "Index {} in projection {} has type `text`, which is not supported in projections. "
+                    "Declare the text index on the table instead",
+                    index_desc.name, result.name);
+
+            /// In an aggregate projection, only GROUP BY keys can be indexed
+            if (is_aggregate)
+            {
+                for (const auto & name : index_desc.expression->getRequiredColumns())
+                {
+                    if (metadata.columns.hasSubcolumn(GetColumnsOptions::All, name))
+                    {
+                        /// An index on a subcolumn of a key (e.g. `customer.id` for the key `customer`) can never be used.
+                        /// It only matches filters that read that subcolumn, and an aggregate projection is never selected
+                        /// for such queries: the matching in `optimizeUseAggregateProjection` cannot compute a subcolumn from
+                        /// a key, so `SELECT sum(size) FROM t WHERE customer.id = 0` and `... GROUP BY customer.id` read the
+                        /// table. That limitation does not depend on projection indices.
+                        /// An index on `tupleElement(customer, 'id')` is accepted, because it depends on the key itself: it
+                        /// prunes for filters on the whole tuple, like `customer = (0, 'name')`, and for `tupleElement` filters
+                        /// when `optimize_functions_to_subcolumns` is disabled.
+                        /// The restriction can be lifted once the projection matching supports subcolumns.
+                        auto subcolumn = metadata.columns.getColumnOrSubcolumn(GetColumnsOptions::All, name);
+                        throw Exception(
+                            ErrorCodes::ILLEGAL_INDEX,
+                            "Index {} in aggregate projection {} uses subcolumn {} of GROUP BY key {}. "
+                            "Indices on subcolumns are not supported in aggregate projections, because such projections "
+                            "are not used for queries that read subcolumns. Use an expression over {} instead, "
+                            "for example `tupleElement` for an element of a tuple",
+                            index_desc.name, result.name, name, subcolumn.getNameInStorage(), subcolumn.getNameInStorage());
+                    }
+
+                    if (!result.sample_block_for_keys.has(name))
+                    {
+                        throw Exception(
+                            ErrorCodes::ILLEGAL_INDEX, "Index {}: in aggregate projection {} uses column {}, but only GROUP BY keys can be indexed", index_desc.name, result.name, name);
+                    }
+                }
+            }
+
+            if (skip_indices.has(index_desc.name))
+            {
+                throw Exception(ErrorCodes::ILLEGAL_INDEX, "Duplicated index name {} is not allowed. Please use a different index name", index_desc.name);
+            }
+            skip_indices.push_back(std::move(index_desc));
+        }
+        metadata.setSecondaryIndices(skip_indices);
+    }
 
     /// Initialize implicit-minmax skip indices from the effective projection-level MergeTree settings
     /// (defaults from the projection index plus any user-supplied WITH SETTINGS overrides).
