@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <bit>
 #include <cstddef>
 #include <cstring>
 #include <limits>
@@ -70,6 +71,164 @@ struct TimeSeriesBucketsHashTableGrower : public HashTableGrower<4>
 template <typename Bucket>
 using TimeSeriesBucketsMap = HashMap<UInt64, Bucket, TrivialHash, TimeSeriesBucketsHashTableGrower>;
 
+/// The buckets of one `timeSeries*ToGrid` state. They are kept in a plain array over the indices they span while they
+/// fill at least half of it and it takes no more memory than a `TimeSeriesBucketsMap`, and in such a map otherwise.
+template <typename Bucket>
+class TimeSeriesBuckets
+{
+public:
+    size_t size() const { return map ? map->size() : count; }
+
+    /// Returns the bucket with this index (less than `limit`), adding an empty one if it is missing.
+    Bucket & get(size_t index, size_t limit)
+    {
+        const bool below_array = !map && index < first;
+        if (!map && !(index >= first && index - first < slots.size()))
+            growArray(index, limit);
+
+        if (map)
+        {
+            const size_t old_size = map->size();
+            Bucket & bucket = (*map)[index];
+            /// Checked at powers of two and right after an index below the array, so moving stays cheap.
+            if (map->size() == old_size || !(below_array || std::has_single_bit(map->size())) || !moveToArrayIfDense())
+                return bucket;
+        }
+
+        const size_t slot = index - first;
+        if (!present[slot])
+        {
+            present[slot] = 1;
+            ++count;
+        }
+        return slots[slot];
+    }
+
+    const Bucket * find(size_t index) const
+    {
+        if (map)
+        {
+            const auto * cell = map->find(index);
+            return cell ? &cell->getMapped() : nullptr;
+        }
+        if (index < first || index - first >= slots.size() || !present[index - first])
+            return nullptr;
+        return &slots[index - first];
+    }
+
+    /// Whether looking up a missing index is cheap: always in the array, and in the map only with a cell per index.
+    bool hasCellPerIndex(size_t limit) const { return !map || map->getBufferSizeInBytes() / sizeof(typename Map::cell_type) >= limit; }
+
+    /// Calls `f(index, bucket)` for each bucket, in index order when they are in the array.
+    template <typename F>
+    void forEach(F && f) const
+    {
+        if (map)
+        {
+            for (const auto & cell : *map)
+                f(cell.getKey(), cell.getMapped());
+            return;
+        }
+        for (size_t slot = 0; slot < slots.size(); ++slot)
+            if (present[slot])
+                f(first + slot, slots[slot]);
+    }
+
+private:
+    using Map = TimeSeriesBucketsMap<Bucket>;
+
+    /// Extends the array up to `index`, or moves the buckets to the map if `index` is below the array,
+    /// or the array would be less than half full or take more memory than the map.
+    void growArray(size_t index, size_t limit)
+    {
+        if (slots.empty())
+            first = index;
+        if (index < first || index - first >= 2 * (count + 1))
+        {
+            /// An index below the array means descending samples, which would move the buckets back and forth.
+            moves_below += index < first;
+            moveToMap();
+            return;
+        }
+        const size_t new_size = index - first + 1;
+        if (new_size > slots.capacity())
+        {
+            /// Doubles the capacity, but never past the last possible index or the memory of the map.
+            const size_t new_capacity = std::min({std::max(new_size, 2 * slots.capacity()), limit - first, maxSlotsInMapMemory(count + 1)});
+            if (new_capacity < new_size)
+            {
+                moveToMap();
+                return;
+            }
+            present.reserve(new_capacity);
+            slots.reserve(new_capacity);
+        }
+        present.resize(new_size);
+        slots.resize(new_size);
+    }
+
+    /// The number of array slots that take no more memory than the map with this many buckets.
+    static size_t maxSlotsInMapMemory(size_t num_buckets)
+    {
+        TimeSeriesBucketsHashTableGrower grower;
+        grower.set(num_buckets);
+        return grower.bufSize() * sizeof(typename Map::cell_type) / (sizeof(Bucket) + sizeof(UInt8));
+    }
+
+    void moveToMap()
+    {
+        /// Reserved, so that moving the buckets does not allocate.
+        auto new_map = std::make_unique<Map>(count);
+        for (size_t slot = 0; slot < slots.size(); ++slot)
+            if (present[slot])
+                (*new_map)[first + slot] = std::move(slots[slot]);
+        map = std::move(new_map);
+        VectorWithMemoryTracking<Bucket>().swap(slots);
+        VectorWithMemoryTracking<UInt8>().swap(present);
+        count = 0;
+    }
+
+    /// Moves the buckets to an array over the indices they span if they fill at least half of it
+    /// and it takes no more memory than the map.
+    bool moveToArrayIfDense()
+    {
+        if (moves_below >= 2)
+            return false;
+
+        size_t min_index = std::numeric_limits<size_t>::max();
+        size_t max_index = 0;
+        for (const auto & cell : *map)
+        {
+            min_index = std::min<size_t>(min_index, cell.getKey());
+            max_index = std::max<size_t>(max_index, cell.getKey());
+        }
+        if (max_index - min_index >= 2 * map->size()
+            || (max_index - min_index + 1) * (sizeof(Bucket) + sizeof(UInt8)) > map->getBufferSizeInBytes())
+            return false;
+
+        VectorWithMemoryTracking<UInt8> new_present(max_index - min_index + 1);
+        VectorWithMemoryTracking<Bucket> new_slots(max_index - min_index + 1);
+        for (auto & cell : *map)
+        {
+            new_present[cell.getKey() - min_index] = 1;
+            new_slots[cell.getKey() - min_index] = std::move(cell.getMapped());
+        }
+        present.swap(new_present);
+        slots.swap(new_slots);
+        first = min_index;
+        count = map->size();
+        map.reset();
+        return true;
+    }
+
+    std::unique_ptr<Map> map;                 /// Holds the buckets while they are sparse.
+    VectorWithMemoryTracking<Bucket> slots;   /// Otherwise slot `i` holds the bucket with index `first + i`.
+    VectorWithMemoryTracking<UInt8> present;  /// Whether slot `i` was added, as the map keeps added empty buckets.
+    size_t first = 0;
+    size_t count = 0;                         /// The number of added slots.
+    UInt8 moves_below = 0;                    /// How many times an index below the array moved the buckets to the map.
+};
+
 /// Base class for time series aggregate functions that map values to a grid specified by start timestamp, end timestamp, step and window.
 /// It implements the common logic for handling input data as either scalar timestamps and values or vectors of timestamps and values of
 /// equal sizes and adding the data to the grid buckets. The actual aggregation logic within buckets is implemented in derived classes.
@@ -103,7 +262,7 @@ public:
     struct State
     {
         /// Maps bucket index to the set of all timestamps and values
-        TimeSeriesBucketsMap<Bucket> buckets;
+        TimeSeriesBuckets<Bucket> buckets;
     };
 
     /// Types of timestamps and intervals with the scale of the grid: grid points, bucket bounds, windows, cut-offs
@@ -322,13 +481,10 @@ public:
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         auto & buckets = data(place)->buckets;
-        const auto & rhs_buckets = data(rhs)->buckets;
-        buckets.reserve(rhs_buckets.size());
-        for (const auto & rhs_bucket : rhs_buckets)
+        data(rhs)->buckets.forEach([&](size_t index, const Bucket & rhs_bucket)
         {
-            auto & bucket = buckets[rhs_bucket.getKey()];
-            bucket.merge(rhs_bucket.getMapped());
-        }
+            buckets.get(index, bucket_count).merge(rhs_bucket);
+        });
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
@@ -338,11 +494,11 @@ public:
 
         writeBinaryLittleEndian(data(place)->buckets.size(), buf);
 
-        for (const auto & entry : data(place)->buckets)
+        data(place)->buckets.forEach([&](size_t index, const Bucket & bucket)
         {
-            writeBinaryLittleEndian(entry.getKey(), buf);
-            entry.getMapped().serialize(buf);
-        }
+            writeBinaryLittleEndian(index, buf);
+            bucket.serialize(buf);
+        });
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
@@ -365,11 +521,6 @@ public:
         if (buckets_size > bucket_count)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot deserialize data with more buckets than expected");
 
-        /// `bucket_count` is derived from the function parameters and a huge window makes it enormous, so the
-        /// number of buckets is only reserved up to a bound and the map grows while the buckets are read. That way
-        /// a corrupted count fails with an end-of-buffer error instead of allocating memory for the claimed number.
-        data(place)->buckets.reserve(std::min(buckets_size, MAX_BUCKETS_TO_RESERVE));
-
         for (size_t i = 0; i < buckets_size; ++i)
         {
             size_t bucket_index = 0;
@@ -378,7 +529,7 @@ public:
             if (bucket_index >= bucket_count)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot deserialize data with index {} greater than bucket count {}", bucket_index, bucket_count);
 
-            auto & bucket = data(place)->buckets[bucket_index];
+            auto & bucket = data(place)->buckets.get(bucket_index, bucket_count);
             bucket.deserialize(buf);
 
             /// Validate that each deserialized sample falls into this bucket's timestamp range.
@@ -445,8 +596,7 @@ protected:
         /// grid point's window reaches it. When most bucket slots are populated (`use_range_scan`) looking each
         /// index up in the hash map is cheaper than sorting; otherwise collect the populated buckets and sort them once.
         /// A map with fewer cells than `bucket_count` wraps the keys into clusters, and looking up an absent key walks one.
-        const size_t num_cells = buckets.getBufferSizeInBytes() / sizeof(typename std::remove_cvref_t<decltype(buckets)>::cell_type);
-        const bool use_range_scan = (buckets.size() != 0) && num_cells >= bucket_count
+        const bool use_range_scan = (buckets.size() != 0) && buckets.hasCellPerIndex(bucket_count)
             && (static_cast<double>(buckets.size()) >= static_cast<double>(bucket_count) * BUCKET_DENSITY_TO_ENABLE_RANGE_SCAN);
         if (use_range_scan)
         {
@@ -456,9 +606,8 @@ protected:
                 const size_t window_end = bucketRangeInWindow(grid_index).second;
                 for (; next_bucket < window_end; ++next_bucket)
                 {
-                    const auto * it = buckets.find(next_bucket);
-                    if (it)
-                        aggregator.add(it->getMapped(), bucketEnd(next_bucket));
+                    if (const auto * bucket = buckets.find(next_bucket))
+                        aggregator.add(*bucket, bucketEnd(next_bucket));
                 }
                 removeOutOfWindow(aggregator, grid_index);
                 writer.store(grid_index, derived().getGridPointResult(aggregator, place, grid_index));
@@ -468,8 +617,7 @@ protected:
         {
             VectorWithMemoryTracking<std::pair<size_t, const Bucket *>> ordered_buckets;
             ordered_buckets.reserve(buckets.size());
-            for (const auto & entry : buckets)
-                ordered_buckets.emplace_back(entry.getKey(), &entry.getMapped());
+            buckets.forEach([&](size_t index, const Bucket & bucket) { ordered_buckets.emplace_back(index, &bucket); });
             ::sort(ordered_buckets.begin(), ordered_buckets.end(),
                 [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
 
@@ -634,9 +782,6 @@ private:
     /// The serialized state is the set of buckets, so the format version is defined by the traits
     /// (which define the bucket type).
     static constexpr UInt16 FORMAT_VERSION = Traits::FORMAT_VERSION;
-
-    /// How many buckets `deserialize` reserves before reading the data. Bigger states grow while they are read.
-    static constexpr size_t MAX_BUCKETS_TO_RESERVE = 4096;
 
     /// Validates and normalizes the grid step. For a single-point grid (`start == end`) the step is irrelevant, so it
     /// is normalized to 0 (making each window a single bucket); otherwise it must be positive.
@@ -1121,7 +1266,7 @@ private:
         if (bucket_index == NO_BUCKET)
             return;  /// The sample can't contribute to any bucket.
 
-        auto & bucket = data(place)->buckets[bucket_index];
+        auto & bucket = data(place)->buckets.get(bucket_index, bucket_count);
         bucket.add(timestamp, value);
     }
 
@@ -1231,7 +1376,7 @@ private:
             /// against an infinite loop.
             const size_t count = std::max<size_t>(run, static_cast<size_t>(1));
             if (sample_class.bucket_index != NO_BUCKET)
-                state->buckets[sample_class.bucket_index].addMany(timestamps + i, values + i, count);
+                state->buckets.get(sample_class.bucket_index, bucket_count).addMany(timestamps + i, values + i, count);
             i += count;
         }
     })
