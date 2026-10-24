@@ -65,6 +65,8 @@
 #include <Storages/System/StorageSystemSettings.h>
 #include <Storages/System/StorageSystemSettingsChanges.h>
 #include <Storages/System/StorageSystemMergeTreeSettings.h>
+#include <Storages/System/StorageSystemEngineSettings.h>
+#include <Storages/System/StorageSystemTableSettings.h>
 #include <Storages/System/StorageSystemDatabaseEngines.h>
 #include <Storages/System/StorageSystemStatements.h>
 #include <Storages/System/StorageSystemTableEngines.h>
@@ -1182,6 +1184,147 @@ tier:        Production
     attach<SystemMergeTreeSettings<true>>(context, system_database, "replicated_merge_tree_settings", R"DOCS_MD(
 .description
 Contains a list of all ReplicatedMergeTree engine specific settings, their current and default values along with descriptions. You may change any of them in SETTINGS section in CREATE query.
+)DOCS_MD");
+    attach<StorageSystemEngineSettings>(context, system_database, "engine_settings", R"DOCS_MD(
+.description
+Contains the engine-specific settings of table engines, one row per engine and setting, with their values, default values and descriptions. `File`, `URL`, `Join` and the `Log` family (`Log`, `StripeLog`, `TinyLog`) also accept a `SETTINGS` clause, but have no settings class of their own, so they are not listed yet.
+
+`value` is the engine's own value: what a new table of the engine starts from on this server, before its definition (the `SETTINGS` clause, a named collection) is applied, whoever reads this table, unless `inherited` is 1:
+- For most engines, the compiled-in default.
+- For the `MergeTree` family, the same rows as [`system.merge_tree_settings`](/reference/system-tables/merge_tree_settings), and for the replicated family, the same rows as [`system.replicated_merge_tree_settings`](/reference/system-tables/replicated_merge_tree_settings): the `merge_tree` and `replicated_merge_tree` sections of the server configuration and the `compatibility` setting of the default profile are applied.
+- For `Distributed`, `Remote` and `RemoteSecure`, the `distributed` section of the server configuration is applied, and the `background_insert_*` settings are filled from the `distributed_background_insert_*` settings of the server, as a new table fills them.
+
+`changed` is 1 for a setting that the server configuration sets, that the engine itself sets (see below), or, for the `MergeTree` family, that the `compatibility` setting changes.
+
+A setting that a table takes from elsewhere unless its definition states it has `inherited` = 1, and its `value` is the engine's own value, which such a table does not use:
+- The format settings, which every engine accepting them takes from the query or server settings.
+- The connection pool settings of `PostgreSQL` and `mysql_datatypes_support_level` of `MySQL`, which a new table takes from the session creating it.
+- `max_command_execution_time` of `ExecutablePool`, which the `max_execution_time` of the session creating the table caps.
+- The credentials of `NATS` and `RabbitMQ`, and `rabbitmq_vhost` of `RabbitMQ`, taken from the server configuration.
+- The block size, poll and flush settings of `Kafka`, `FileLog`, `NATS` and `RabbitMQ`, which follow the server's `max_insert_block_size`, `max_block_size`, `stream_poll_timeout_ms` and `stream_flush_interval_ms`.
+- The security and compression settings of `Kafka`, taken from the `kafka` section of the server configuration.
+- `keeper_path` of `S3Queue` and `AzureQueue`, built from the server's `s3queue_default_zookeeper_path` and the table.
+- `min_insert_block_size_rows_for_materialized_views` and `min_insert_block_size_bytes_for_materialized_views` of `S3Queue` and `AzureQueue`, which follow the query settings of the same names.
+- The compaction settings of the `Iceberg` engines, such as `allow_experimental_iceberg_compaction` and `iceberg_compaction_commit_batch_size`, which follow the query settings of the same names.
+
+`WHERE NOT inherited` leaves only the settings whose `value` a new table uses.
+
+Some settings the engine sets itself, so they have `inherited` = 0 and `changed` = 1 even when they are format settings, and even where `value` equals `default`: when a table does not state them, `Kafka`, `NATS` and `RabbitMQ` use `input_format_skip_unknown_fields` = 1, `input_format_allow_errors_ratio` = 0 and `input_format_allow_errors_num` = `kafka_skip_broken_messages`, `nats_skip_broken_messages` or `rabbitmq_skip_broken_messages` (0 for `NATS` and `RabbitMQ` with a `nats_handle_error_mode` or `rabbitmq_handle_error_mode` other than `default`); and `Kafka`, `FileLog`, `NATS` and `RabbitMQ` always disable the header detection of the `CSV`, `TSV` and `CustomSeparated` formats, whatever a table states, so `input_format_csv_detect_header`, `input_format_tsv_detect_header` and `input_format_custom_detect_header` show `0` with `readonly` = 1.
+
+A setting whose empty or default value makes the engine generate or detect one when the table starts, such as the client id and the AWS region of `Kafka`, the queue group of `NATS`, `processing_threads_num` of `S3Queue` and `AzureQueue`, or the replication slot of `MaterializedPostgreSQL`, is listed with that stored value.
+
+A setting that has no effect on a new table of the engine is not listed: one the table rejects, such as `materialized_postgresql_use_extended_date_and_time_types`, `materialized_postgresql_schema_list` and `materialized_postgresql_tables_list` of `MaterializedPostgreSQL`, which only the database engine of the same name takes, the deprecated `storage_catalog_type`, `storage_catalog_url` and `storage_aws_access_key_id` of the data lake engines, and `lookup_throttler_max_requests_per_second` and `lookup_max_rows_per_query` of `YTsaurus`, which only the YTsaurus dictionary sources take; and the format settings of `Set` and `Hive`, and those of `FileLog` other than the header detection, which they accept but never read.
+
+A setting that only another engine sharing the settings class uses is still listed, since a table can state it, unless it is left out for one of the reasons above: as the `MergeTree` rows, like [`system.merge_tree_settings`](/reference/system-tables/merge_tree_settings), include the settings only the replicated engines use. So `Executable` lists `pool_size` and `max_command_execution_time`, which only `ExecutablePool` uses, and `ExecutablePool` lists `check_exit_code`, which only `Executable` uses; the data lake engines list the settings of every table format, such as the `paimon_*` settings, which only the `Paimon` engines use, and settings that none of them reads, such as `object_storage_endpoint` and the `storage_*` catalog settings that are not deprecated.
+
+A setting that a new table must state is listed with its compiled-in default, which a new table cannot rely on: `mode` of `S3Queue` and `AzureQueue`, required since ClickHouse 24.6, whose default `ordered` applies only to `S3Queue` tables created by earlier releases; `kafka_broker_list`, `kafka_topic_list`, `kafka_group_name` and `kafka_format` of `Kafka`, unless the engine arguments or a named collection give them; `nats_url` or `nats_server_list`, `nats_format` and `nats_subjects` of `NATS`; and `rabbitmq_host_port` or `rabbitmq_address`, and `rabbitmq_format` of `RabbitMQ`.
+
+Two values are not what a new table uses in every configuration: `ExecutablePool` lowers `max_command_execution_time` to the server's `max_execution_time` when that is set and smaller, and `RabbitMQ` uses the `vhost` of the `rabbitmq` section of the server configuration, when set, instead of `rabbitmq_vhost`.
+
+.columns_notes
+`min`, `max`, `disallowed_values` and `readonly` come from the [constraints](/concepts/features/configuration/settings/constraints-on-settings) of the current user, as in `system.merge_tree_settings`. Only the settings of the `MergeTree` family can be constrained, and some of them are always read-only, so for the other engines these columns are `NULL`, empty or `0`, except `readonly` of the header detection settings that the streaming engines always disable, which is 1.
+
+`inherited` is 0 for every `MergeTree` row, so the `MergeTree` rows still match `system.merge_tree_settings` in every column the two share.
+
+For the `MergeTree` family and for `Distributed`, `Remote` and `RemoteSecure`, the rows show the configuration of the server, so grant `SELECT` on this table as you would on `system.merge_tree_settings`.
+
+.examples
+The settings of the `Memory` engine:
+
+```sql
+SELECT name, value, default, changed, type
+FROM system.engine_settings
+WHERE engine_name = 'Memory'
+ORDER BY name
+```
+
+```text
+┌─name──────────────┬─value─┬─default─┬─changed─┬─type───┐
+│ compress          │ 0     │ 0       │       0 │ Bool   │
+│ max_bytes_to_keep │ 0     │ 0       │       0 │ UInt64 │
+│ max_rows_to_keep  │ 0     │ 0       │       0 │ UInt64 │
+│ min_bytes_to_keep │ 0     │ 0       │       0 │ UInt64 │
+│ min_rows_to_keep  │ 0     │ 0       │       0 │ UInt64 │
+└───────────────────┴───────┴─────────┴─────────┴────────┘
+```
+
+A new `Distributed` table takes the `background_insert_*` settings that its definition does not specify from the server, so their values can differ from `default`:
+
+```sql
+SELECT name, value, default, changed
+FROM system.engine_settings
+WHERE engine_name = 'Distributed' AND name LIKE 'background_insert_%'
+ORDER BY name
+```
+
+```text
+┌─name─────────────────────────────────────┬─value─┬─default─┬─changed─┐
+│ background_insert_batch                  │ 0     │ 0       │       0 │
+│ background_insert_max_sleep_time_ms      │ 30000 │ 0       │       0 │
+│ background_insert_sleep_time_ms          │ 100   │ 0       │       0 │
+│ background_insert_split_batch_on_failure │ 0     │ 0       │       0 │
+└──────────────────────────────────────────┴───────┴─────────┴─────────┘
+```
+
+.see_also
+- [system.merge_tree_settings](/reference/system-tables/merge_tree_settings)
+- [system.replicated_merge_tree_settings](/reference/system-tables/replicated_merge_tree_settings)
+- [system.table_engines](/reference/system-tables/table_engines)
+- [Table engines](/reference/engines/table-engines/index)
+)DOCS_MD");
+    attach<StorageSystemTableSettings>(context, system_database, "table_settings", R"DOCS_MD(
+.description
+Contains the engine-specific settings of tables, one row per table and setting, with their values, default values and descriptions.
+
+A row is the engine's row in [`system.engine_settings`](/reference/system-tables/engine_settings) with the table's own `SETTINGS` clause applied, as it is stored in the table's definition, plus a row for each setting that the definition, or its named collection, states and `system.engine_settings` leaves out (see below). [`ALTER TABLE ... MODIFY SETTING`](/reference/statements/alter/setting) changes the stored definition, so altered values are shown too. Settings that the engine arguments give, such as the positional arguments of `Kafka`, are applied before the `SETTINGS` clause, as when the table is created. `changed` is 1 for a setting that the table's definition or the server configuration sets, even to its default value.
+
+A setting that a table takes from elsewhere unless its definition states it, which [`system.engine_settings`](/reference/system-tables/engine_settings) also lists with `inherited` = 1 (the format settings, the connection pool settings of `PostgreSQL`, the block size and poll settings of the streaming engines, and others), has `inherited` = 1 and the engine's own value, which the table does not use, while the definition does not state it. Once the definition, its engine arguments or its named collection state it, `inherited` is 0 and `value` is the stated value. `WHERE NOT inherited` leaves the settings whose `value` the table uses.
+
+A setting whose value is an expression, such as `disk = disk(...)`, is shown as the expression is written.
+
+.columns_notes
+Reading the table needs the `SELECT` grant on it, and a table is shown only to a user who may see it through `SHOW TABLES`. A secret, such as `kafka_sasl_password`, is shown as `[HIDDEN]`, as in `SHOW CREATE TABLE`; a value only a part of which is secret, such as a connection string with an account key, is hidden as a whole.
+
+A value that a named collection supplies is shown as in [`system.named_collections`](/reference/system-tables/named_collections): only to a user who may see that collection's secrets there, and otherwise as `[HIDDEN]`, which still tells that the collection supplies the setting. An override of the collection in the engine arguments is shown if it is a literal.
+
+`min`, `max`, `disallowed_values` and `readonly` come from the [constraints](/concepts/features/configuration/settings/constraints-on-settings) of the current user, as in `system.engine_settings`. They do not say whether the engine allows changing the setting with `ALTER`.
+
+Not shown:
+- Tables of engines without a settings class of their own, such as `File`, `URL`, `Join` and the `Log` family, and tables without an engine definition of their own: views, dictionaries and tables created from a table function.
+- Tables in data lake catalogs. Tables in `MySQL` and `PostgreSQL` databases are left out when [`show_remote_databases_in_system_tables`](/reference/settings/session-settings/show#show_remote_databases_in_system_tables) is off, as in `system.tables`.
+- Settings an engine accepts but never reads, which `system.engine_settings` does not list: the format settings of `Set` and `Hive`, and those of `FileLog` other than the header detection. A table that states one shows it.
+- Settings a table of the engine cannot use, which [`system.engine_settings`](/reference/system-tables/engine_settings) does not list either, even when the definition states them: `materialized_postgresql_use_extended_date_and_time_types`, `materialized_postgresql_schema_list` and `materialized_postgresql_tables_list` of `MaterializedPostgreSQL`, which only the database engine of the same name takes, and the deprecated `storage_catalog_type`, `storage_catalog_url` and `storage_aws_access_key_id` of the data lake engines.
+- Settings that the deprecated `MergeTree` syntax gives as engine arguments, such as `index_granularity` in `MergeTree(date, key, 8192)`: their rows show the value the table would have without them.
+- Values that are not in the table's definition: values `S3Queue` and `AzureQueue` keep in Keeper (see [`system.s3_queue_settings`](/reference/system-tables/s3_queue_settings)). Macros are shown as written.
+
+.examples
+The settings a `MergeTree` table changed through its definition and `ALTER`:
+
+```sql
+CREATE TABLE events (id UInt64) ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 4096, min_bytes_for_wide_part = '10M';
+
+ALTER TABLE events MODIFY SETTING parts_to_throw_insert = 500;
+
+SELECT name, value, default, changed
+FROM system.table_settings
+WHERE database = currentDatabase() AND table = 'events' AND changed
+ORDER BY name;
+```
+
+```text
+┌─name────────────────────┬─value────┬─default──┬─changed─┐
+│ index_granularity       │ 4096     │ 8192     │       1 │
+│ min_bytes_for_wide_part │ 10000000 │ 10485760 │       1 │
+│ parts_to_throw_insert   │ 500      │ 3000     │       1 │
+└─────────────────────────┴──────────┴──────────┴─────────┘
+```
+
+.see_also
+- [system.engine_settings](/reference/system-tables/engine_settings)
+- [system.merge_tree_settings](/reference/system-tables/merge_tree_settings)
+- [system.tables](/reference/system-tables/tables)
+- [ALTER TABLE ... MODIFY SETTING](/reference/statements/alter/setting)
 )DOCS_MD");
     attach<StorageSystemBuildOptions>(context, system_database, "build_options", R"DOCS_MD(
 .description

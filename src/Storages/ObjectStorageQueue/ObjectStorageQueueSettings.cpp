@@ -8,6 +8,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 
@@ -244,5 +245,20 @@ bool ObjectStorageQueueSettings::hasBuiltin(std::string_view name)
     if (auto maybe_new_name = adjustSettingName(name); maybe_new_name.has_value())
         name = *maybe_new_name;
     return ObjectStorageQueueSettingsImpl::hasBuiltin(name);
+}
+
+/// Not `IMPLEMENT_SETTINGS_ENUMERATION`: a definition may state a setting as `s3queue_mode` and the like, which
+/// `loadFromQuery` renames and the settings object does not know.
+SettingDescriptions ObjectStorageQueueSettings::enumerateSettings(const SettingsChanges & changes) const
+{
+    auto settings = *impl;
+    for (auto change : changes)
+    {
+        if (auto maybe_new_name = adjustSettingName(change.name); maybe_new_name.has_value())
+            change.name = std::string{*maybe_new_name};
+        if (ObjectStorageQueueSettingsImpl::hasBuiltin(change.name))
+            settings.applyChange(change);
+    }
+    return enumerateSettingsFromImpl(settings);
 }
 }

@@ -410,7 +410,13 @@ IMPLEMENT_SETTING_ENUM(
 IMPLEMENT_SETTING_ENUM(
     DatabaseDataLakeCatalogType,
     ErrorCodes::BAD_ARGUMENTS,
-    {{"rest", DatabaseDataLakeCatalogType::ICEBERG_REST},
+    /// `none` is the default of `catalog_type` / `storage_catalog_type`. It needs a name of its own:
+    /// without one, rendering a setting that still holds the default throws
+    /// `Unexpected value of DatabaseDataLakeCatalogType:0`. `system.engine_settings` and `system.table_settings`
+    /// render every setting of the data lake engines, even the deprecated `storage_catalog_type` that they then
+    /// leave out.
+    {{"none", DatabaseDataLakeCatalogType::NONE},
+     {"rest", DatabaseDataLakeCatalogType::ICEBERG_REST},
      {"unity", DatabaseDataLakeCatalogType::UNITY},
      {"glue", DatabaseDataLakeCatalogType::GLUE},
      {"hive", DatabaseDataLakeCatalogType::ICEBERG_HIVE},

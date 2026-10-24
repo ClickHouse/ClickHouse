@@ -1,16 +1,27 @@
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
+#include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/Distributed/DistributedSettings.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Common/Exception.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool distributed_background_insert_batch;
+    extern const SettingsMilliseconds distributed_background_insert_max_sleep_time_ms;
+    extern const SettingsMilliseconds distributed_background_insert_sleep_time_ms;
+    extern const SettingsBool distributed_background_insert_split_batch_on_failure;
+}
 
 namespace ErrorCodes
 {
@@ -102,9 +113,42 @@ void DistributedSettings::applyChanges(const SettingsChanges & changes)
     impl->applyChanges(changes);
 }
 
+void DistributedSettings::applyBackgroundInsertDefaults(const Settings & query_settings)
+{
+    if (!(*this)[DistributedSetting::background_insert_batch].changed)
+        (*this)[DistributedSetting::background_insert_batch] = query_settings[Setting::distributed_background_insert_batch];
+    if (!(*this)[DistributedSetting::background_insert_split_batch_on_failure].changed)
+        (*this)[DistributedSetting::background_insert_split_batch_on_failure]
+            = query_settings[Setting::distributed_background_insert_split_batch_on_failure];
+    if (!(*this)[DistributedSetting::background_insert_sleep_time_ms].changed)
+        (*this)[DistributedSetting::background_insert_sleep_time_ms] = query_settings[Setting::distributed_background_insert_sleep_time_ms];
+    if (!(*this)[DistributedSetting::background_insert_max_sleep_time_ms].changed)
+        (*this)[DistributedSetting::background_insert_max_sleep_time_ms]
+            = query_settings[Setting::distributed_background_insert_max_sleep_time_ms];
+}
+
 bool DistributedSettings::hasBuiltin(std::string_view name)
 {
     return DistributedSettingsImpl::hasBuiltin(name);
 }
+
+SettingDescriptions DistributedSettings::enumerateEngineSettings(ContextPtr context, const SettingsChanges & changes)
+{
+    /// `changed` tells whether the server configuration or the table's definition sets a setting. The fill-in gives only
+    /// the values: how it assigns them says nothing about that. It sets only what is still unset and `changes` override
+    /// it, so a stated value wins, as when a table is created.
+    const auto & configured = context->getDistributedSettings();
+    auto result = configured.enumerateSettings(changes);
+
+    auto filled = configured;
+    filled.applyBackgroundInsertDefaults(context->getGlobalContext()->getSettingsRef());
+    const auto filled_settings = filled.enumerateSettings(changes);
+    chassert(filled_settings.size() == result.size());
+    for (size_t i = 0; i < result.size(); ++i)
+        result[i].value = filled_settings[i].value;
+    return result;
+}
+
+IMPLEMENT_SETTINGS_ENUMERATION(DistributedSettings)
 }
 

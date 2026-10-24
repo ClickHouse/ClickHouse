@@ -3,6 +3,7 @@
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
+#include <Storages/SettingDescription.h>
 
 namespace Poco::Util
 {
@@ -14,6 +15,7 @@ namespace DB
 class ASTStorage;
 class SettingsChanges;
 struct DistributedSettingsImpl;
+struct Settings;
 
 /// List of available types supported in DistributedSettings object
 #define DISTRIBUTED_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
@@ -38,8 +40,16 @@ struct DistributedSettings
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
     void loadFromQuery(ASTStorage & storage_def);
     void applyChanges(const SettingsChanges & changes);
+    /// Fills the `background_insert_*` settings the table does not state from the `distributed_background_insert_*`
+    /// query settings, as a new table does.
+    void applyBackgroundInsertDefaults(const Settings & query_settings);
 
     static bool hasBuiltin(std::string_view name);
+    SettingDescriptions enumerateSettings(const SettingsChanges & changes) const;
+    /// For `system.engine_settings`: the server-level instance a new table starts from, with the `background_insert_*`
+    /// values filled from the global context, which the engine's creator reads them from. `changed` is that of the
+    /// server-level instance with `changes` applied.
+    static SettingDescriptions enumerateEngineSettings(ContextPtr context, const SettingsChanges & changes);
 
 private:
     std::unique_ptr<DistributedSettingsImpl> impl;

@@ -10,6 +10,7 @@
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Storages/TimeSeries/checkTimeSeriesVersion.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 
 #include <unordered_set>
 
@@ -148,6 +149,8 @@ bool TimeSeriesSettings::hasMinTimeAndMaxTimeInTagsSortingKey() const
 {
     return hasMinTimeAndMaxTimeInTagsTable() && !(*this)[TimeSeriesSetting::aggregate_min_time_and_max_time];
 }
+
+IMPLEMENT_SETTINGS_ENUMERATION(TimeSeriesSettings)
 
 void checkTimeSeriesSettings(const TimeSeriesSettings & settings)
 {

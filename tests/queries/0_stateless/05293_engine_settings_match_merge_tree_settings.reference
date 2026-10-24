@@ -1,0 +1,5 @@
+-- both families are compared, each engine with rows
+0	1	1
+1	1	1
+-- rows only in system.engine_settings
+-- rows only in system.merge_tree_settings or system.replicated_merge_tree_settings
