@@ -630,7 +630,9 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
         /// outer glob happens to match the full entry string). Archives keep `GlobIterator`, and the
         /// entry-level predicate is applied after `ArchiveIterator` has created entry object infos.
         std::optional<Strings> paths;
-        if (!match_web_paths_only && !is_archive && filter_actions_dag && local_context->getSettingsRef()[Setting::s3_path_filter_limit])
+        /// Not when a data column named `_path` shadows the virtual one.
+        if (!match_web_paths_only && !is_archive && filter_actions_dag && virtual_columns.contains("_path")
+            && local_context->getSettingsRef()[Setting::s3_path_filter_limit])
             paths = VirtualColumnUtils::extractPathValuesFromFilter(
                 filter_actions_dag, local_context, local_context->getSettingsRef()[Setting::s3_path_filter_limit]);
 
