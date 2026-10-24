@@ -1,4 +1,5 @@
--- Tags: no-ordinary-database
+-- Tags: no-ordinary-database, no-fasttest
+-- no-fasttest: `UNIQUE KEY` needs RocksDB.
 -- A `UNIQUE KEY` table reads the parts visible at its internal snapshot, and the commit of an insert
 -- changes that visibility without changing the active parts. Its modification hash is not computed, so
 -- the consistent query cache does not store a result read from it.
