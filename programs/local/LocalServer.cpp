@@ -80,6 +80,7 @@
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/registerStorages.h>
 #include <Dictionaries/registerDictionaries.h>
+#include <Interpreters/SecretArgumentsRegistry.h>
 #include <Disks/registerDisks.h>
 #include <Formats/registerFormats.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
@@ -153,6 +154,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 columns_cache_size;
     extern const ServerSettingsDouble columns_cache_size_ratio;
     extern const ServerSettingsDouble columns_cache_size_to_ram_ratio;
+    extern const ServerSettingsBool enable_gpu;
     extern const ServerSettingsBool jemalloc_collect_global_profile_samples_in_trace_log;
     extern const ServerSettingsBool jemalloc_enable_background_threads;
     extern const ServerSettingsBool jemalloc_enable_global_profiler;
@@ -171,6 +173,8 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 index_uncompressed_cache_size;
     extern const ServerSettingsDouble index_uncompressed_cache_size_ratio;
     extern const ServerSettingsUInt64 point_in_polygon_cache_size;
+    extern const ServerSettingsUInt64 query_cache_max_entry_size_in_bytes;
+    extern const ServerSettingsUInt64 query_cache_max_entry_size_in_rows;
     extern const ServerSettingsString vector_similarity_index_cache_policy;
     extern const ServerSettingsUInt64 vector_similarity_index_cache_size;
     extern const ServerSettingsUInt64 vector_similarity_index_cache_max_entries;
@@ -230,6 +234,9 @@ namespace ServerSetting
     extern const ServerSettingsString primary_index_cache_policy;
     extern const ServerSettingsUInt64 primary_index_cache_size;
     extern const ServerSettingsDouble primary_index_cache_size_ratio;
+    extern const ServerSettingsString statistics_cache_policy;
+    extern const ServerSettingsUInt64 statistics_cache_size;
+    extern const ServerSettingsDouble statistics_cache_size_ratio;
     extern const ServerSettingsUInt64 max_prefixes_deserialization_thread_pool_size;
     extern const ServerSettingsUInt64 max_prefixes_deserialization_thread_pool_free_size;
     extern const ServerSettingsUInt64 prefixes_deserialization_thread_pool_thread_pool_queue_size;
@@ -239,6 +246,9 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_iceberg_manifest_decode_thread_pool_size;
     extern const ServerSettingsUInt64 max_iceberg_manifest_decode_thread_pool_free_size;
     extern const ServerSettingsUInt64 iceberg_manifest_decode_thread_pool_queue_size;
+    extern const ServerSettingsNonZeroUInt64 ai_function_max_thread_pool_size;
+    extern const ServerSettingsUInt64 ai_function_max_thread_pool_free_size;
+    extern const ServerSettingsUInt64 ai_function_thread_pool_queue_size;
     extern const ServerSettingsUInt64 page_cache_history_window_ms;
     extern const ServerSettingsString page_cache_policy;
     extern const ServerSettingsDouble page_cache_size_ratio;
@@ -275,6 +285,7 @@ namespace ErrorCodes
     extern const int FILE_ALREADY_EXISTS;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int NETWORK_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
     extern const int UNSUPPORTED_METHOD;
 }
 
@@ -332,6 +343,10 @@ Poco::Util::LayeredConfiguration & LocalServer::getClientConfiguration()
 
 void LocalServer::processError(std::string_view query) const
 {
+    /// The reader of the output went away, e.g. `clickhouse-local -q '...' | head -1`: stop quietly.
+    if (stdout_is_broken)
+        return;
+
     /// `--ignore-error` asks to carry on with the next statement, not to hide what went wrong, so
     /// the exception is reported here rather than rethrown - rethrowing it would end the run.
     if (is_interactive || ignore_error)
@@ -519,6 +534,11 @@ void LocalServer::initialize(Poco::Util::Application & self)
         server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_size],
         server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_free_size],
         server_settings[ServerSetting::iceberg_manifest_decode_thread_pool_queue_size]);
+
+    getAIRequestThreadPool().initialize(
+        server_settings[ServerSetting::ai_function_max_thread_pool_size],
+        server_settings[ServerSetting::ai_function_max_thread_pool_free_size],
+        server_settings[ServerSetting::ai_function_thread_pool_queue_size]);
 }
 
 
@@ -838,7 +858,7 @@ void LocalServer::startServers(const ServerType & server_type)
             std::lock_guard lock(servers_lock);
             result.reserve(servers.size());
             for (const auto & server : servers)
-                result.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentConnections(), 0});
+                result.emplace_back(ProtocolServerMetrics{server.getPortName(), server.getProtocolType(), server.currentConnections(), 0});
             return result;
         };
         /// Note: we intentionally don't call `start` on it, to avoid an extra background thread
@@ -916,6 +936,7 @@ void LocalServer::startServers(const ServerType & server_type)
                     return ProtocolServerAdapter(
                         listen_host,
                         port_name,
+                        ServerType::Type::TCP,
                         "native protocol (tcp): " + address.toString(),
                         std::make_unique<TCPServer>(
                             new TCPHandlerFactory(*this, /* secure= */ false, /* parse_proxy_protocol_= */ false,
@@ -946,6 +967,7 @@ void LocalServer::startServers(const ServerType & server_type)
                         return ProtocolServerAdapter(
                             listen_host,
                             port_name,
+                            ServerType::Type::HTTP,
                             "http://" + address.toString(),
                             std::make_unique<HTTPServer>(
                                 std::make_shared<HTTPContext>(global_context),
@@ -1223,6 +1245,7 @@ void LocalServer::setupUsers()
     access_control.setEnableReadWriteGrants(config.getBool("access_control_improvements.enable_read_write_grants", true));
     access_control.setEnableUserNameAccessType(config.getBool("access_control_improvements.enable_user_name_access_type", true));
     access_control.setThrowOnInvalidReplicatedAccessEntities(config.getBool("access_control_improvements.throw_on_invalid_replicated_access_entities", true));
+    access_control.setForbidSQLAccessEntitiesTargetingUsersConfig(config.getBool("access_control_improvements.forbid_sql_access_entities_targeting_users_config", false));
 
     /// Keep in sync with `AccessControl::setupFromMainConfig` and `attachSystemTables`: `system.user_query_log`
     /// is attached (and thus safe to grant SELECT on implicitly) only when this is enabled.
@@ -1292,8 +1315,16 @@ void LocalServer::connect()
         input = std::make_unique<ReadBufferFromFile>(table_file);
         in = input.get();
     }
+    /// Profile events feed only the progress bar and table, the interactive statistics, `--print-profile-events`
+    /// and `--memory-usage`. Producing them is not free (the sample block loads the time zone), so skip them otherwise.
+    const auto & print_memory_mode = getClientConfiguration().getString("print-memory-to-stderr", "");
+    const bool send_profile_events = need_render_profile_events
+        && (is_interactive || delayed_interactive || need_render_progress || need_render_progress_table || profile_events.print
+            || getClientConfiguration().getBool("print-profile-events", false) || print_memory_mode == "default"
+            || print_memory_mode == "readable");
+
     connection = LocalConnection::createConnection(
-        connection_parameters, client_context, in, need_render_progress, need_render_profile_events, server_display_name);
+        connection_parameters, client_context, in, need_render_progress, send_profile_events, server_display_name);
 }
 
 
@@ -1342,6 +1373,7 @@ try
     registerDatabases();
     registerStorages();
     registerDictionaries();
+    setSecretArgumentsFinder(&SecretArgumentsRegistry::instance());
     registerDisks(/* global_skip_access_check= */ true);
     registerFormats();
     QueryPlanStepRegistry::registerPlanSteps();
@@ -1440,6 +1472,9 @@ try
 }
 catch (DB::Exception & e)
 {
+    if (stdout_is_broken)
+        return Application::EXIT_OK;
+
     bool need_print_stack_trace = getClientConfiguration().getBool("stacktrace", false);
     std::cerr << getExceptionMessageForLogging(e, need_print_stack_trace, true) << std::endl;
     auto code = DB::getCurrentExceptionCode();
@@ -1447,6 +1482,9 @@ catch (DB::Exception & e)
 }
 catch (...)
 {
+    if (stdout_is_broken)
+        return Application::EXIT_OK;
+
     std::cerr << DB::getCurrentExceptionMessage(true) << '\n';
     auto code = DB::getCurrentExceptionCode();
     return static_cast<UInt8>(code) ? code : 1;
@@ -1650,6 +1688,15 @@ void LocalServer::processConfig()
     }
     global_context->setUncompressedCache(uncompressed_cache_policy, uncompressed_cache_size, uncompressed_cache_size_ratio);
 
+    if (server_settings[ServerSetting::enable_gpu])
+    {
+#if USE_GPU
+        global_context->setGPU(server_settings);
+#else
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server setting `enable_gpu` is set, but the server is built without GPU support");
+#endif
+    }
+
     String mark_cache_policy = server_settings[ServerSetting::mark_cache_policy];
     size_t mark_cache_size = server_settings[ServerSetting::mark_cache_size];
     double mark_cache_size_ratio = server_settings[ServerSetting::mark_cache_size_ratio];
@@ -1726,6 +1773,16 @@ void LocalServer::processConfig()
         LOG_INFO(log, "Lowered primary index cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(primary_index_cache_size));
     }
     global_context->setPrimaryIndexCache(primary_index_cache_policy, primary_index_cache_size, primary_index_cache_size_ratio);
+
+    String statistics_cache_policy = server_settings[ServerSetting::statistics_cache_policy];
+    size_t statistics_cache_size = server_settings[ServerSetting::statistics_cache_size];
+    double statistics_cache_size_ratio = server_settings[ServerSetting::statistics_cache_size_ratio];
+    if (statistics_cache_size > max_cache_size)
+    {
+        statistics_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered statistics cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(statistics_cache_size));
+    }
+    global_context->setStatisticsCache(statistics_cache_policy, statistics_cache_size, statistics_cache_size_ratio);
 
     String vector_similarity_index_cache_policy = server_settings[ServerSetting::vector_similarity_index_cache_policy];
     size_t vector_similarity_index_cache_size = server_settings[ServerSetting::vector_similarity_index_cache_size];
@@ -1826,8 +1883,10 @@ void LocalServer::processConfig()
     /// system.server_settings can report its size).
     global_context->setEncryptionHeaderCache(DEFAULT_ENCRYPTION_HEADER_CACHE_POLICY, 0, 0);
 
-    /// Initialize a dummy query result cache.
-    global_context->setQueryResultCache(0, 0, 0, 0);
+    /// Initialize a query result cache which stores nothing in memory. The maximum entry sizes are configured as in the server: they
+    /// apply to the query result cache on disk as well, which is usable in `clickhouse-local`.
+    global_context->setQueryResultCache(
+        0, 0, server_settings[ServerSetting::query_cache_max_entry_size_in_bytes], server_settings[ServerSetting::query_cache_max_entry_size_in_rows]);
 
     /// Initialize allowed tiers
     global_context->getAccessControl().setAllowTierSettings(server_settings[ServerSetting::allow_feature_tier]);
@@ -2017,39 +2076,22 @@ void LocalServer::processConfig()
     /// cross-origin request is rejected by the browser - including the web UI opened from a `file://`
     /// URL, whose origin is `null`. A configuration file with its own `http_options_response` section
     /// replaces these defaults entirely.
-    Poco::Util::AbstractConfiguration::Keys http_options_response_keys;
-    getClientConfiguration().keys("http_options_response", http_options_response_keys);
     if (!getClientConfiguration().has("http_options_response"))
     {
-        if (http_options_response_keys.empty())
+        static constexpr std::pair<const char *, const char *> default_http_options_response[]
         {
-            static constexpr std::pair<const char *, const char *> default_http_options_response[]
-            {
-                {"Access-Control-Allow-Origin", "*"},
-                {"Access-Control-Allow-Headers", "origin, x-requested-with, x-clickhouse-format, x-clickhouse-user, x-clickhouse-key, Authorization"},
-                {"Access-Control-Allow-Methods", "POST, GET, OPTIONS"},
-                {"Access-Control-Max-Age", "86400"},
-            };
+            {"Access-Control-Allow-Origin", "*"},
+            {"Access-Control-Allow-Headers", "origin, x-requested-with, x-clickhouse-format, x-clickhouse-user, x-clickhouse-key, Authorization"},
+            {"Access-Control-Allow-Methods", "POST, GET, OPTIONS"},
+            {"Access-Control-Max-Age", "86400"},
+        };
 
-            /// The configuration layer that receives these keys is a flat key-value map with no notion of a
-            /// parent node, so the section itself has to be set explicitly - otherwise `config.has` does not
-            /// see it and the headers are never applied.
-            getClientConfiguration().setString("http_options_response", "");
-
-            for (size_t index = 0; index < std::size(default_http_options_response); ++index)
-            {
-                const auto & [name, value] = default_http_options_response[index];
-                const String key = fmt::format("http_options_response.header[{}]", index);
-                getClientConfiguration().setString(key + ".name", name);
-                getClientConfiguration().setString(key + ".value", value);
-            }
-        }
-        else
+        for (size_t index = 0; index < std::size(default_http_options_response); ++index)
         {
-            /// `argsToConfig` stores post-`--` arguments as flat keys, so a supplied header has children
-            /// but not its parent. Materialize the parent for the HTTP handler without overwriting the
-            /// supplied headers.
-            getClientConfiguration().setString("http_options_response", "");
+            const auto & [name, value] = default_http_options_response[index];
+            const String key = fmt::format("http_options_response.header[{}]", index);
+            getClientConfiguration().setString(key + ".name", name);
+            getClientConfiguration().setString(key + ".value", value);
         }
     }
 

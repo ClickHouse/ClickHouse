@@ -1,12 +1,23 @@
+#include <DataTypes/DataTypeTuple.h>
+#include <Functions/FunctionTopKFilter.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/TopKThresholdTracker.h>
+#include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/VirtualColumnUtils.h>
+#include <Common/SipHash.h>
 #include <Common/logger_useful.h>
+
+#include <optional>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -53,6 +64,265 @@ static AggregatingStep * validateAggregatingStep(QueryPlan::Node * node)
     return aggregating_step;
 }
 
+
+/// The input column an output of the DAG is a plain copy of, through aliases only (the analyzer renames
+/// `a` to `__table1.a` this way); nothing if the output is computed.
+static std::optional<String> findPassedThroughInput(const ActionsDAG & dag, const String & output_name)
+{
+    const auto * node = dag.tryFindInOutputs(output_name);
+    if (!node)
+        return std::nullopt;
+
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.front();
+
+    if (node->type != ActionsDAG::ActionType::INPUT)
+        return std::nullopt;
+
+    return node->result_name;
+}
+
+/// Links the top-K heap of the aggregation to the `ReadFromMergeTree` step below it.
+///
+/// The heap admits only keys not worse than its boundary once it holds `LIMIT` of them, so a row whose
+/// first ranked key column is beyond the boundary can never reach the result. When that column is a
+/// table column that travels to the aggregation untouched, the reading step can act on the boundary
+/// too, as `ORDER BY column LIMIT n` does with `__topKFilter` (see `tryOptimizeTopK`): a PREWHERE with
+/// the running boundary drops such rows before the other columns are read, and the boundary skips
+/// whole granules through the primary key or a `minmax` skip index on the column. Returns the tracker
+/// the heap must publish into, or null when the plan shape does not allow it.
+///
+/// Runs at the end of plan optimization, after PREWHERE was moved and index analysis ran, so unlike
+/// `tryOptimizeTopK` it conjoins its filter with the existing PREWHERE and re-salts the query condition
+/// cache key of the WHERE filter, which `updateQueryConditionCache` set before the read became a top-K read.
+static TopKThresholdTrackerPtr tryAttachDynamicFilter(
+    QueryPlan::Node * aggregating_node,
+    const AggregatingStep & aggregating_step,
+    size_t limit,
+    size_t num_key_columns,
+    const std::vector<int> & directions,
+    const std::vector<int> & nulls_directions,
+    const Optimization::ExtraSettings & settings,
+    QueryPlan::Nodes & nodes)
+{
+    if (!settings.enable_group_by_top_k_dynamic_filtering)
+        return nullptr;
+
+    const int direction = directions.front();
+    const int nulls_direction = nulls_directions.front();
+
+    if (aggregating_node->children.size() != 1)
+        return nullptr;
+
+    /// The name of the key column at the current step; it changes on the way down, as the steps
+    /// may alias the column (`__table1.a` at the aggregation is `a` at the read).
+    String key_name = aggregating_step.getParams().keys.front();
+    auto log = getLogger("optimizeGroupByTopK");
+
+    /// Descend through the steps that pass the key column through without computing anything
+    /// over it, down to the reading step.
+    QueryPlan::Node * node = aggregating_node->children.front();
+    FilterStep * closest_filter_step = nullptr;
+    ReadFromMergeTree * read_step = nullptr;
+    /// A filter that is deterministic only within one query (a join runtime filter `__applyFilter` pushed below
+    /// the aggregation, `now`) changes which rows reach the heap, and so the boundary, but its contents are not
+    /// part of the query condition cache key.
+    bool has_non_deterministic_filter = false;
+    /// The expressions between the read and the aggregation, for the query condition cache salt below.
+    std::vector<const ActionsDAG *> path_expressions;
+
+    while (!read_step)
+    {
+        if (auto * expression_step = typeid_cast<ExpressionStep *>(node->step.get()))
+        {
+            /// The filter shrinks the blocks this step sees, so an expression that depends on its block
+            /// (`rowNumberInBlock`, `runningDifference`, `rand`) could change the result.
+            if (dependsOnItsBlock(expression_step->getExpression()))
+            {
+                LOG_TRACE(log, "No dynamic filter: the expression step depends on its block");
+                return nullptr;
+            }
+
+            auto input_name = findPassedThroughInput(expression_step->getExpression(), key_name);
+            if (!input_name)
+            {
+                LOG_TRACE(log, "No dynamic filter: the expression step does not pass the key {} through", key_name);
+                return nullptr;
+            }
+            key_name = std::move(*input_name);
+            path_expressions.push_back(&expression_step->getExpression());
+        }
+        else if (auto * filter_step = typeid_cast<FilterStep *>(node->step.get()))
+        {
+            /// The filter shrinks the blocks this step sees, so an expression that depends on its block
+            /// (`rowNumberInBlock`, `runningDifference`, `rand`) could change the result.
+            if (dependsOnItsBlock(filter_step->getExpression()))
+            {
+                LOG_TRACE(log, "No dynamic filter: the filter step depends on its block");
+                return nullptr;
+            }
+
+            auto input_name = findPassedThroughInput(filter_step->getExpression(), key_name);
+            if (!input_name)
+            {
+                LOG_TRACE(log, "No dynamic filter: the filter step does not pass the key {} through", key_name);
+                return nullptr;
+            }
+            key_name = std::move(*input_name);
+            closest_filter_step = filter_step;
+            path_expressions.push_back(&filter_step->getExpression());
+
+            const auto * filter_node = filter_step->getExpression().tryFindInOutputs(filter_step->getFilterColumnName());
+            if (!filter_node || !VirtualColumnUtils::isDeterministicAllowingTopKFilter(filter_node))
+                has_non_deterministic_filter = true;
+        }
+        else if (auto * read = typeid_cast<ReadFromMergeTree *>(node->step.get()))
+        {
+            read_step = read;
+            break;
+        }
+        else
+        {
+            LOG_TRACE(log, "No dynamic filter: step {} between the aggregation and the reading step", node->step->getName());
+            return nullptr;
+        }
+
+        if (node->children.size() != 1)
+            return nullptr;
+        node = node->children.front();
+    }
+
+    /// FINAL deduplicates rows by the sorting key while reading; dropping a row before that can change which
+    /// version of another row survives. Parallel replicas run the query text remotely, where nothing knows the tracker.
+    if (read_step->isQueryWithFinal() || read_step->isParallelReadingFromReplicas())
+    {
+        LOG_TRACE(log, "No dynamic filter: the read is FINAL or from parallel replicas");
+        return nullptr;
+    }
+
+    const auto & read_columns = read_step->getAllColumnNames();
+    const auto & header = *read_step->getOutputHeader();
+
+    /// A physical column of the table, not a virtual one: `__topKFilter` runs as a PREWHERE over the stored column.
+    if (std::find(read_columns.begin(), read_columns.end(), key_name) == read_columns.end() || !header.has(key_name)
+        || !read_step->getStorageMetadata()->getColumns().hasPhysical(key_name))
+    {
+        LOG_TRACE(log, "No dynamic filter: the key {} is not a physical column read from the table", key_name);
+        return nullptr;
+    }
+
+    const auto & key_column = header.getByName(key_name);
+
+    /// The same type restrictions as `tryOptimizeTopK`: `__topKFilter` cannot compare `Dynamic`, `Variant`
+    /// and empty tuples, and comparing variable-length values row by row may cost more than it saves.
+    const auto * key_tuple_type = typeid_cast<const DataTypeTuple *>(key_column.type.get());
+    if (isDynamic(key_column.type) || isVariant(key_column.type) || (key_tuple_type && key_tuple_type->getElements().empty())
+        || (!key_column.type->haveMaximumSizeOfValue() && !settings.use_top_k_dynamic_filtering_for_variable_length_types))
+    {
+        LOG_TRACE(log, "No dynamic filter: the key {} has type {}", key_name, key_column.type->getName());
+        return nullptr;
+    }
+
+    SortColumnDescription key_sort_description(key_name, direction, nulls_direction);
+    auto threshold_tracker = createTopKThresholdTracker(key_sort_description, *key_column.type);
+
+    /// `where_clause = true` keeps `MergeTreeDataSelectExecutor` from narrowing the read up front to the granules
+    /// that hold the `LIMIT` smallest rows (`getTopKMarks`): a group needs all of its rows, and `LIMIT` rows may
+    /// hold fewer than `LIMIT` distinct keys. Only the boundary-driven filtering and granule skipping apply here.
+    TopKFilterInfo info{key_name, key_column.type, num_key_columns, limit, direction, /*where_clause=*/ true, threshold_tracker, /*condition_hash=*/ 0};
+
+    /// Built the way `installTopKDynamicFilter` builds it: the existing PREWHERE must not depend on its block, and
+    /// `__topKFilter` must bind to the column the read produces, not to a computed node of the PREWHERE under its name.
+    auto initial_header = read_step->getOutputHeader();
+    auto new_prewhere_info = buildTopKDynamicFilterPrewhere(read_step->getPrewhereInfo(), info);
+    if (!new_prewhere_info || initial_header->has(new_prewhere_info->prewhere_column_name))
+    {
+        LOG_TRACE(log, "No dynamic filter: the filter over {} cannot be combined with the PREWHERE of the read", key_name);
+        return nullptr;
+    }
+
+    read_step->updatePrewhereInfo(new_prewhere_info);
+    auto updated_header = read_step->getOutputHeader();
+
+    if (!blocksHaveEqualStructure(*initial_header, *updated_header))
+    {
+        auto dag = ActionsDAG::makeConvertingActions(
+            updated_header->getColumnsWithTypeAndName(),
+            initial_header->getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Name,
+            read_step->getContext());
+
+        auto converting_step = std::make_unique<ExpressionStep>(updated_header, std::move(dag));
+        auto & converting_node = nodes.emplace_back();
+        converting_node.step = std::move(converting_step);
+
+        /// The reading node takes the converting step and moves its own step into the new child node,
+        /// so the parent does not have to be touched.
+        node->children.push_back(&converting_node);
+        std::swap(node->step, converting_node.step);
+    }
+
+    /// Salts the query condition cache key the way `tryOptimizeTopK` does, with an extra mark so that a
+    /// `GROUP BY key LIMIT n` read never shares entries with an `ORDER BY key LIMIT n` read over the same table.
+    /// Unlike `ORDER BY`, the boundary on the first key column depends on every grouping key: the heap ranks
+    /// groups, and the number of groups per value of the first key depends on the other keys (`GROUP BY a, b`
+    /// and `GROUP BY a, c` reach different boundaries on `a` over the same rows). So the salt includes all the
+    /// grouping keys with their types and the order of every ranked key, not only the first one. Only the first
+    /// key has to be passed through unchanged, the others may be computed between the read and the aggregation
+    /// (`GROUP BY a, g` over `SELECT a, b % 100 AS g`), and the name of a computed key does not always identify its
+    /// expression (a column of a subquery), so the salt also includes every expression between the read and the aggregation.
+    SipHash hash;
+    hash.update(std::string_view("group_by_top_k"));
+    hash.update(info.column_name);
+    const String type_name = info.data_type->getName();
+    hash.update(type_name);
+    hash.update(info.num_sort_columns);
+    hash.update(info.limit_n);
+
+    const auto & aggregation_keys = aggregating_step.getParams().keys;
+    const auto & aggregation_input_header = *aggregating_step.getInputHeaders().front();
+    hash.update(aggregation_keys.size());
+    for (const auto & aggregation_key : aggregation_keys)
+    {
+        hash.update(aggregation_key);
+        hash.update(aggregation_input_header.getByName(aggregation_key).type->getName());
+    }
+
+    hash.update(path_expressions.size());
+    for (const auto * expression : path_expressions)
+        expression->updateHash(hash);
+
+    hash.update(directions.size());
+    for (size_t i = 0; i < directions.size(); ++i)
+    {
+        hash.update(directions[i]);
+        hash.update(nulls_directions[i]);
+    }
+    info.condition_hash = hash.get64();
+
+    read_step->setTopKColumn(info);
+
+    /// This pass runs after `disableTopKQueryConditionCacheUnderNonDeterministicFilters`, so it applies the same
+    /// protection itself: under such a filter the boundary-dependent PREWHERE entries must be neither reused nor written.
+    if (has_non_deterministic_filter)
+        read_step->disableTopKPrewhereQueryConditionCache();
+
+    /// `updateQueryConditionCache` tagged the WHERE filter with the hash of the plain predicate. Under the running
+    /// filter the granules it sees are only those the boundary let through, so the entry must be salted with the
+    /// top-K parameters (the same way `updateQueryConditionCache` salts a read stamped by `tryOptimizeTopK`), or
+    /// dropped when the cache is not to be used for top-K reads at all or a filter above the read is not deterministic.
+    if (closest_filter_step && closest_filter_step->hasConditionForQueryConditionCache())
+    {
+        if (settings.use_query_condition_cache_for_top_k && !has_non_deterministic_filter)
+            closest_filter_step->saltConditionForQueryConditionCache(read_step->getTopKFilterInfo()->condition_hash);
+        else
+            closest_filter_step->resetConditionForQueryConditionCache();
+    }
+
+    LOG_TRACE(log, "Filtering and skipping granules of {} by the top-K boundary of the aggregation", key_name);
+    return threshold_tracker;
+}
+
 size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
     if (!settings.enable_group_by_top_k_optimization)
@@ -64,6 +334,29 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
     /// followers (which then aggregate without the heap - the safe direction).
     if (settings.make_distributed_plan)
         return 0;
+
+    /// The planner puts the heap on the partial aggregation of a distributed query itself
+    /// (`applyTopKPushdownToPartialAggregation`); such a plan has no `LimitStep` above the aggregation,
+    /// so only the link to the reading step is added here.
+    if (auto * aggregating_step = typeid_cast<AggregatingStep *>(parent_node->step.get()))
+    {
+        const auto & params = aggregating_step->getParams();
+        if (params.top_k && !params.top_k->threshold_tracker)
+        {
+            auto threshold_tracker = tryAttachDynamicFilter(
+                parent_node,
+                *aggregating_step,
+                params.top_k->k,
+                params.top_k->key_columns,
+                params.top_k->directions,
+                params.top_k->nulls_directions,
+                settings,
+                nodes);
+            if (threshold_tracker)
+                aggregating_step->setTopKThresholdTracker(std::move(threshold_tracker));
+        }
+        return 0;
+    }
 
     auto * limit_step = typeid_cast<LimitStep *>(parent_node->step.get());
     if (!limit_step)
@@ -201,14 +494,27 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
 
     const bool synthetic_sort = sorting_step == nullptr;
 
-    aggregating_step->applyTopKOptimization(
-        Aggregator::Params::TopKParams{
-            .k = limit,
-            .directions = std::move(directions),
-            .nulls_directions = std::move(nulls_directions),
-            .key_columns = num_key_columns,
-            .observation_rows = synthetic_sort ? 0 : settings.top_k_optimization_observation_rows,
-        });
+    Aggregator::Params::TopKParams top_k_params{
+        .k = limit,
+        .directions = std::move(directions),
+        .nulls_directions = std::move(nulls_directions),
+        .key_columns = num_key_columns,
+        .observation_rows = synthetic_sort ? 0 : settings.top_k_optimization_observation_rows,
+        .shared_boundary = settings.top_k_optimization_shared_boundary,
+        .threshold_tracker = nullptr,
+    };
+
+    top_k_params.threshold_tracker = tryAttachDynamicFilter(
+        aggregating_node,
+        *aggregating_step,
+        limit,
+        num_key_columns,
+        top_k_params.directions,
+        top_k_params.nulls_directions,
+        settings,
+        nodes);
+
+    aggregating_step->applyTopKOptimization(std::move(top_k_params));
 
     return 0;
 }

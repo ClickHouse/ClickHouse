@@ -466,7 +466,7 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
         /// such as `length(vec)` needs the physical vector column even though `vec` is not an
         /// output node of the DAG.
         auto pruned_projection_expression = expression.clone();
-        pruned_projection_expression.removeUnusedResult(sort_column);
+        pruned_projection_expression.removeFromOutputs(sort_column);
         pruned_projection_expression.removeUnusedActions();
 
         for (const auto * input : pruned_projection_expression.getInputs())
@@ -595,15 +595,22 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
             const size_t sort_column_pos = std::find(outputs.begin(), outputs.end(), sort_column_node) - outputs.begin();
 
             /// Now replace the "cosineDistance(vec, [1.0, 2.0...])" node in the DAG by the "_distance" node
-            expression.removeUnusedResult(sort_column); /// Removes the OUTPUT cosineDistance(...) FUNCTION Node
+            expression.removeFromOutputs(sort_column); /// Removes the OUTPUT cosineDistance(...) FUNCTION Node
             expression.removeUnusedActions(); /// Removes the vector column INPUT node (it is no longer needed)
             const auto * distance_node = &expression.addInput("_distance",std::make_shared<DataTypeFloat32>());
 
-            const bool need_sqrt = vector_search_parameters->distance_function == "L2Distance";
-            if (need_sqrt) /// usearch returns L2 squared distance to save repeated sqrt computations.
+            const String & distance_function = vector_search_parameters->distance_function;
+            if (distance_function == "L2Distance") /// usearch returns L2 squared distance to save repeated sqrt computations.
             {
                 auto sqrt_function = FunctionFactory::instance().get("sqrt", read_from_mergetree_step->getContext());
                 distance_node = &expression.addFunction(sqrt_function, {distance_node}, {});
+            }
+            else if (distance_function == "dotProduct") /// usearch returns `1 - dotProduct`.
+            {
+                auto float64_type = std::make_shared<DataTypeFloat64>();
+                const auto & one_node = expression.addColumn(float64_type->createColumnConst(1, Field(1.0)), float64_type, "1.");
+                auto minus_function = FunctionFactory::instance().get("minus", read_from_mergetree_step->getContext());
+                distance_node = &expression.addFunction(minus_function, {&one_node, distance_node}, {});
             }
 
             if (!distance_node->result_type->equals(*result_type))

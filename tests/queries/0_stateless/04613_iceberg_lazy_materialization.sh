@@ -17,7 +17,7 @@ TABLE_PATH="${USER_FILES_PATH}/${TABLE}/"
 trap 'rm -rf "${TABLE_PATH}" 2>/dev/null' EXIT
 
 ${CLICKHOUSE_CLIENT} --query "
-    CREATE TABLE ${TABLE} (k UInt64, f UInt64, s String)
+    CREATE TABLE ${TABLE} (k Int64, f Int64, s String)
     ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet')
 "
 
@@ -36,14 +36,11 @@ ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --mutations_sync=2 --query "
     ALTER TABLE ${TABLE} DELETE WHERE k % 100 = 0
 "
 
-# `enable_analyzer` is pinned because lazy materialization requires the analyzer
-# (see `QueryPlanOptimizationSettings`), and some CI configurations run with the old analyzer.
 run_with_both_settings()
 {
     local query=$1
     for enabled in 1 0; do
         ${CLICKHOUSE_CLIENT} \
-            --enable_analyzer=1 \
             --query_plan_optimize_lazy_materialization=1 \
             --query_plan_max_limit_for_lazy_materialization=0 \
             --query_plan_optimize_lazy_materialization_for_object_storage="$enabled" \
@@ -65,13 +62,11 @@ run_with_both_settings "SELECT k, s FROM ${TABLE} WHERE k BETWEEN 4998 AND 5002 
 
 echo '-- the lazy read step is in the plan only when the optimization is enabled'
 ${CLICKHOUSE_CLIENT} \
-    --enable_analyzer=1 \
     --query_plan_optimize_lazy_materialization=1 \
     --query_plan_max_limit_for_lazy_materialization=0 \
     --query_plan_optimize_lazy_materialization_for_object_storage=1 \
     --query "EXPLAIN SELECT s FROM ${TABLE} ORDER BY k LIMIT 3" | grep -c 'LazilyReadFromObjectStorage'
 ${CLICKHOUSE_CLIENT} \
-    --enable_analyzer=1 \
     --query_plan_optimize_lazy_materialization=1 \
     --query_plan_max_limit_for_lazy_materialization=0 \
     --query_plan_optimize_lazy_materialization_for_object_storage=0 \
@@ -80,13 +75,12 @@ ${CLICKHOUSE_CLIENT} \
 # Schema evolution forces reading all physical columns of the older files, so such
 # snapshots must not take the lazy path even when the optimization is enabled.
 echo '-- schema evolution keeps the lazy path off'
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "ALTER TABLE ${TABLE} ADD COLUMN extra Nullable(UInt64)"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "ALTER TABLE ${TABLE} ADD COLUMN extra Nullable(Int64)"
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "
     INSERT INTO ${TABLE}
     SELECT number AS k, number % 7 AS f, concat('val_', toString(number)) AS s, number * 2 AS extra FROM numbers(10000, 100)
 "
 ${CLICKHOUSE_CLIENT} \
-    --enable_analyzer=1 \
     --query_plan_optimize_lazy_materialization=1 \
     --query_plan_max_limit_for_lazy_materialization=0 \
     --query_plan_optimize_lazy_materialization_for_object_storage=1 \

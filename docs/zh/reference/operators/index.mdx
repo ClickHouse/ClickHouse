@@ -106,6 +106,41 @@ ClickHouse 会在解析查询时，根据运算符的优先级、先后顺序和
 
 `a !~* b` – `notMatchCaseInsensitive(a, b)` 函数 (检查 `a` 是否不匹配正则表达式 `b`，且不区分大小写) 。
 
+### similarTo 函数 {#similarto-function}
+
+`a SIMILAR TO b` – 对应 `similarTo(a, b)` 函数。
+
+### notSimilarTo 函数 {#notsimilarto-function}
+
+`a NOT SIMILAR TO b` – 即 `notSimilarTo(a, b)` 函数。
+
+`SIMILAR TO` 是 SQL 标准定义的模式匹配谓词。其模式结合了 `LIKE` 通配符 `%` (任意数量的任意字符) 和 `_` (单个任意字符) ，以及正则表达式元字符 `|`、`*`、`+`、`?`、`{`、`}`、`(`、`)`、`[` 和 `]`。元字符 `^`、`$` 和 `.` **不**属于 `SIMILAR TO` 语法，在方括号表达式之外仅表示其对应的字面字符。在方括号表达式内部，位于开头的 `^` 仍保留其通常含义，表示对字符类取反，例如 `[^aeiou]` 匹配单个非元音字符。模式必须匹配整个左操作数，而不能只匹配其中的某个子串。`\` 可用于转义任意元字符及其自身。
+
+```sql title="Query"
+SELECT
+    'ClickHouse' SIMILAR TO 'Cl_ck[hH]ouse'    AS matches,
+    'ClickHouse' NOT SIMILAR TO 'Cl%ck[0-9]ouse' AS does_not_match;
+```
+
+```text title="Response"
+┌─matches─┬─does_not_match─┐
+│       1 │              1 │
+└─────────┴────────────────┘
+```
+
+### ESCAPE 子句 {#escape-clause}
+
+`LIKE`、`ILIKE`、`NOT LIKE`、`NOT ILIKE`、`SIMILAR TO` 和 `NOT SIMILAR TO` 均支持一个可选的尾随 `ESCAPE 'c'` 子句，其中 `c` 为单个 ASCII 字符。该字符将取代默认的反斜杠作为转义字符，此时反斜杠不再具有特殊含义 (仅表示字面意义上的反斜杠) ：
+
+```sql
+SELECT 'a%b' SIMILAR TO 'a#%b' ESCAPE '#';  -- 1: `#%` is a literal `%`
+SELECT 'axb' SIMILAR TO 'a#%b' ESCAPE '#';  -- 0
+```
+
+*自定义*转义字符后面必须紧跟该谓词的特殊字符或转义字符本身；其他任何字符 (包括 `^`、`$`、`.` 以及反斜杠，它们在方括号表达式之外均为 `SIMILAR TO` 的普通字符) 都会导致错误，因为在普通字符前转义不起任何作用。这种严格性仅针对自定义转义字符：*默认*的反斜杠沿用旧版 `LIKE` 的行为，位于普通字符之前时表示字面量反斜杠，因此 `'\\mabc' SIMILAR TO '%\\mabc%'` 返回 `1`，而 `'mabc' SIMILAR TO '%#mabc%' ESCAPE '#'` 会被拒绝。在 `[...]` 等方括号表达式内部，转义字符没有特殊含义，仅表示其自身，这与 POSIX 和 PostgreSQL 的行为一致。
+
+`ESCAPE` 子句还可以与[下文](#some-all-on-arrays)介绍的 `SOME` / `ALL` 数组量词结合使用，例如 `'a%b' SIMILAR TO SOME(['a#%b', 'z%']) ESCAPE '#'`。
+
 ### BETWEEN 函数 {#between-function}
 
 `a BETWEEN b AND c` – 等同于 `a >= b AND a <= c`。
@@ -157,7 +192,7 @@ SELECT
 
 ## 用于处理数据集的运算符 {#operators-for-working-with-data-sets}
 
-请参阅 [IN 运算符](/zh/reference/statements/in) 和 [EXISTS](/zh/reference/operators/exists) 运算符。
+请参阅 [IN 运算符](/zh/reference/statements/in) 和 [`EXISTS`](/zh/reference/statements/exists)。
 
 ### in 函数 {#in-function}
 
@@ -229,7 +264,7 @@ SELECT number AS a FROM numbers(10) WHERE a > ANY (SELECT number FROM numbers(3,
 
 除了上文描述的子查询形式外，`SOME` / `ALL` 的右侧也可以是数组表达式 (数组字面量、数组类型的列，或任何返回数组的表达式) 。这是 PostgreSQL 风格的数组量词语法。它会在解析时被识别并重写为数组函数，因此无需手动重写：
 
-| Syntax                                             | Rewritten to                       |
+| 语法                                             | Rewritten to                       |
 | -------------------------------------------------- | ---------------------------------- |
 | `expr = SOME(arr)`                                 | `has(arr, expr)`                   |
 | `expr <> ALL(arr)`                                 | `NOT has(arr, expr)`               |
@@ -238,9 +273,11 @@ SELECT number AS a FROM numbers(10) WHERE a > ANY (SELECT number FROM numbers(3,
 
 `SOME` 是存在量词 (即 SQL 中 `ANY` 的同义词) 。`=` 和 `<>` 会被特殊处理为 `has` / `NOT has`，因为它们有经过优化的实现；一般形式则会退回到高阶 `arrayExists` / `arrayAll` 函数。
 
-数组形式可识别以下内容：比较运算符 `=`, `==`, `!=`, `<>`, `<=>`, `<`, `<=`, `>`, `>=`，关键字比较谓词 `IS DISTINCT FROM` 和 `IS NOT DISTINCT FROM`，以及字符串搜索谓词 `LIKE`、`ILIKE`、`NOT LIKE`、`NOT ILIKE` 和 `REGEXP`。关键字比较谓词和字符串搜索谓词仅对数组形式生效，不适用于子查询形式 (后者会被降级为 `IN`/`NOT IN`) 。没有数组量词语义的运算符——例如 `IN` 本身——**不会** 被重写，而是保留其原本含义。
+数组形式可识别以下内容：比较运算符 `=`, `==`, `!=`, `<>`, `<=>`, `<`, `<=`, `>`, `>=`，关键字比较谓词 `IS DISTINCT FROM` 和 `IS NOT DISTINCT FROM`，以及字符串搜索谓词 `LIKE`、`ILIKE`、`NOT LIKE`、`NOT ILIKE`、`REGEXP`、`SIMILAR TO` 和 `NOT SIMILAR TO`。关键字比较谓词和字符串搜索谓词仅对数组形式生效，不适用于子查询形式 (后者会被降级为 `IN`/`NOT IN`) 。没有数组量词语义的运算符——例如 `IN` 本身——**不会** 被重写，而是保留其原本含义。
 
-字符串搜索谓词之所以可用，是因为 `MatchImpl` (`LIKE` / `ILIKE` / `REGEXP` 背后的实现) 支持常量 haystack 与非常量 needle。例如，`'abc' LIKE SOME(['a%', 'b%'])` 会被重写为 `arrayExists(x -> 'abc' LIKE x, ['a%', 'b%'])`，而 `'abc' NOT LIKE ALL(['x%', 'y%'])` 会被重写为 `arrayAll(x -> 'abc' NOT LIKE x, ['x%', 'y%'])`。这会将一个字符串与多个 pattern 进行匹配；如果要通过一次组合扫描完成匹配，仍然可以使用多 pattern 搜索函数，例如 `multiMatchAny` (正则表达式) 或 `multiSearchAny` (子字符串)。
+字符串搜索谓词之所以可用，是因为 `MatchImpl` (`LIKE` / `ILIKE` / `REGEXP` / `SIMILAR TO` 背后的实现) 支持常量 haystack 与非常量 needle。例如，`'abc' LIKE SOME(['a%', 'b%'])` 会被重写为 `arrayExists(x -> 'abc' LIKE x, ['a%', 'b%'])`，而 `'abc' NOT LIKE ALL(['x%', 'y%'])` 会被重写为 `arrayAll(x -> 'abc' NOT LIKE x, ['x%', 'y%'])`。这会将一个字符串与多个 模式 进行匹配；如果要通过一次组合扫描完成匹配，仍然可以使用多 模式 搜索函数，例如 `multiMatchAny` (正则表达式) 或 `multiSearchAny` (子字符串)。
+
+支持 [`ESCAPE` 子句](#escape-clause) 的谓词在数组形式中同样保留该子句：位于量词之后的尾随 `ESCAPE 'c'` 会作用于数组中的每个 模式。例如，`'a%b' SIMILAR TO SOME(['a#%b', 'z%']) ESCAPE '#'` 会被重写为 `arrayExists(x -> similarTo('a%b', x, '#'), ['a#%b', 'z%'])`。
 
 <Info>
   **数组形式不支持 `ANY`**
