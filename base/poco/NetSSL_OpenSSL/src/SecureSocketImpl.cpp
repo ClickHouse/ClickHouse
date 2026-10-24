@@ -202,6 +202,20 @@ void SecureSocketImpl::setMutex(std::unique_ptr<RecursiveMutex> mutex)
 }
 
 
+void SecureSocketImpl::setIndependentReadWrite(bool flag)
+{
+	ScopedLock lock(*_mutex);
+	_independentReadWrite = flag;
+}
+
+
+void SecureSocketImpl::setPeerIsLocalHost(bool flag)
+{
+	ScopedLock lock(*_mutex);
+	_peerIsLocalHost = flag;
+}
+
+
 void SecureSocketImpl::markFatalError()
 {
 	ScopedLock lock(*_mutex);
@@ -429,7 +443,7 @@ void SecureSocketImpl::close()
 
 int SecureSocketImpl::sendBytes(const void* buffer, int length, int flags)
 {
-	ScopedLock lock(*_mutex);
+	std::unique_lock<RecursiveMutex> lock(*_mutex);
 	poco_assert (_pSocket->initialized());
 	poco_check_ptr (_pSSL);
 
@@ -446,7 +460,8 @@ int SecureSocketImpl::sendBytes(const void* buffer, int length, int flags)
 	}
 
 	SSLOperationResult result;
-	Poco::Timespan remaining_time = getMaxTimeoutOrLimit();
+	const bool unbounded = _independentReadWrite && _pSocket->getSendTimeout() == 0;
+	Poco::Timespan remaining_time = _independentReadWrite ? getTimeoutOrLimit(_pSocket->getSendTimeout()) : getMaxTimeoutOrLimit();
 	do
 	{
 		RemainingTimeCounter counter(remaining_time);
@@ -456,7 +471,7 @@ int SecureSocketImpl::sendBytes(const void* buffer, int length, int flags)
 		});
 		_pendingWrite = result.sslError == SSL_ERROR_WANT_WRITE;
 	}
-	while (mustRetry(result.rc, result.sslError, result.socketError, remaining_time));
+	while (mustRetry(result.rc, result.sslError, result.socketError, remaining_time, _independentReadWrite ? &lock : nullptr, unbounded));
 	rc = result.rc;
 	if (rc <= 0)
 	{
@@ -474,7 +489,7 @@ int SecureSocketImpl::sendBytes(const void* buffer, int length, int flags)
 
 int SecureSocketImpl::receiveBytes(void* buffer, int length, int flags)
 {
-	ScopedLock lock(*_mutex);
+	std::unique_lock<RecursiveMutex> lock(*_mutex);
 	poco_assert (_pSocket->initialized());
 	poco_check_ptr (_pSSL);
 
@@ -493,7 +508,8 @@ int SecureSocketImpl::receiveBytes(void* buffer, int length, int flags)
 	}
 
 	SSLOperationResult result;
-	Poco::Timespan remaining_time = getMaxTimeoutOrLimit();
+	const bool unbounded = _independentReadWrite && _pSocket->getReceiveTimeout() == 0;
+	Poco::Timespan remaining_time = _independentReadWrite ? getTimeoutOrLimit(_pSocket->getReceiveTimeout()) : getMaxTimeoutOrLimit();
 	do
 	{
 		/// SSL record may consist of several TCP packets,
@@ -505,7 +521,7 @@ int SecureSocketImpl::receiveBytes(void* buffer, int length, int flags)
 			return SSL_read(_pSSL, buffer, length);
 		});
 	}
-	while (mustRetry(result.rc, result.sslError, result.socketError, remaining_time));
+	while (mustRetry(result.rc, result.sslError, result.socketError, remaining_time, _independentReadWrite ? &lock : nullptr, unbounded));
 	rc = result.rc;
 	if (rc <= 0)
 	{
@@ -653,7 +669,7 @@ long SecureSocketImpl::verifyPeerCertificateImpl(const std::string& hostName)
 	ScopedLock lock(*_mutex);
 	Context::VerificationMode mode = _pContext->verificationMode();
 	if (mode == Context::VERIFY_NONE || !_pContext->extendedCertificateVerificationEnabled() ||
-	    (mode != Context::VERIFY_STRICT && isLocalHost(hostName)))
+	    (mode != Context::VERIFY_STRICT && (_peerIsLocalHost ? *_peerIsLocalHost : isLocalHost(hostName))))
 		return X509_V_OK;
 
 	// SSL_get1_peer_certificate returns a certificate whose reference count has
@@ -712,48 +728,43 @@ Poco::Timespan SecureSocketImpl::getMaxTimeoutOrLimit()
 	Poco::Timespan send_timeout = _pSocket->getSendTimeout();
 	if (remaining_time < send_timeout)
 		remaining_time = send_timeout;
+	return getTimeoutOrLimit(remaining_time);
+}
+
+Poco::Timespan SecureSocketImpl::getTimeoutOrLimit(Poco::Timespan remaining_time)
+{
 	/// zero SO_SNDTIMEO/SO_RCVTIMEO works as no timeout, let's replicate this
 	///
 	/// NOTE: we cannot use INT64_MAX (std::numeric_limits<Poco::Timespan::TimeDiff>::max()),
 	/// since it will be later passed to poll() which accept int timeout, and
 	/// even though poll() accepts milliseconds and Timespan() accepts
 	/// microseconds, let's use smaller maximum value just to avoid some possible
-	/// issues, this should be enough anyway (it is ~24 days).
+	/// issues. Note that it is only ~35 minutes, so a caller that needs a truly unbounded
+	/// wait has to pass `unbounded` to `mustRetry`.
 	if (remaining_time == 0)
 		remaining_time = Poco::Timespan(std::numeric_limits<int>::max());
 	return remaining_time;
 }
 
-bool SecureSocketImpl::mustRetry(int rc, int sslError, int socketError, Poco::Timespan& remaining_time)
+bool SecureSocketImpl::mustRetry(
+	int rc, int sslError, int socketError, Poco::Timespan& remaining_time, std::unique_lock<RecursiveMutex>* unlockWhileWaiting, bool unbounded)
 {
+	/// An unbounded operation never runs out of time: refill the budget before every wait.
+	if (unbounded)
+		remaining_time = getTimeoutOrLimit(0);
 	if (remaining_time == 0)
 		return false;
-	ScopedLock lock(*_mutex);
+	std::unique_lock<RecursiveMutex> lock(*_mutex);
 	if (rc <= 0)
 	{
+		int mode = 0;
 		switch (sslError)
 		{
 		case SSL_ERROR_WANT_READ:
-			if (waitHere())
-			{
-				/// Charge the wait too, or a peer sending a byte before every timeout never
-				/// depletes the budget.
-				RemainingTimeCounter counter(remaining_time);
-				if (_pSocket->pollImpl(remaining_time, Poco::Net::Socket::SELECT_READ))
-					return true;
-				else
-					throw Poco::TimeoutException();
-			}
+			mode = Poco::Net::Socket::SELECT_READ;
 			break;
 		case SSL_ERROR_WANT_WRITE:
-			if (waitHere())
-			{
-				RemainingTimeCounter counter(remaining_time);
-				if (_pSocket->pollImpl(remaining_time, Poco::Net::Socket::SELECT_WRITE))
-					return true;
-				else
-					throw Poco::TimeoutException();
-			}
+			mode = Poco::Net::Socket::SELECT_WRITE;
 			break;
 		/// NOTE: POCO_EINTR is the same as SSL_ERROR_WANT_READ (at least in
 		/// OpenSSL), so this likely dead code, but let's leave it for
@@ -765,6 +776,26 @@ bool SecureSocketImpl::mustRetry(int rc, int sslError, int socketError, Poco::Ti
 			/// be retried because of a leftover `EINTR`, especially `SSL_ERROR_SSL`.
 			return false;
 		}
+		if (!waitHere())
+			return false;
+
+		/// The SSL state is not touched while waiting, so the wait does not need the lock, and
+		/// holding it would block an operation in the opposite direction (see `setIndependentReadWrite`).
+		lock.unlock();
+		if (unlockWhileWaiting)
+			unlockWhileWaiting->unlock();
+		bool ready = false;
+		{
+			/// Charge the wait too, or a peer sending a byte before every timeout never
+			/// depletes the budget.
+			RemainingTimeCounter counter(remaining_time);
+			ready = _pSocket->pollImpl(remaining_time, mode);
+		}
+		if (unlockWhileWaiting)
+			unlockWhileWaiting->lock();
+		if (ready || unbounded)
+			return true;
+		throw Poco::TimeoutException();
 	}
 	return false;
 }
