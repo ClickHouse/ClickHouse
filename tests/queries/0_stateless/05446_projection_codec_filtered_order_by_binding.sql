@@ -1,3 +1,6 @@
+-- Tags: no-replicated-database, no-shared-merge-tree, no-random-merge-tree-settings
+-- Tag no-replicated-database: DDL there is published to Keeper, which projection column codecs gate behind a setting.
+
 -- A filtered normal projection stores its `ORDER BY` as the columns that expression reads, appended after the
 -- `SELECT` outputs. A codec declaration must still bind to the `SELECT` outputs only: a column read only by
 -- the `ORDER BY` is not declarable, and a selected column that the `ORDER BY` also reads is not ambiguous.
