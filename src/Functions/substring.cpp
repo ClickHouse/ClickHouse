@@ -7,6 +7,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/GatherUtils/Algorithms.h>
+#include <Functions/GatherUtils/CheckedSliceArgument.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <Functions/GatherUtils/Sinks.h>
 #include <Functions/GatherUtils/Slices.h>
@@ -41,6 +42,8 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    /// Reject invalid UInt64 arguments without evaluating values masked by NULL.
+    bool canBeExecutedOnDefaultArguments() const override { return false; }
 
     String getSignatureString() const override
     {
@@ -75,7 +78,7 @@ public:
                     throw Exception(ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX, "Indices in strings are 1-based");
             }
             else
-                sliceDynamicOffsetUnbounded(source, StringSink(*col_res, input_rows_count), *column_offset);
+                sliceDynamicOffsetUnbounded<SliceArgumentPolicy::RejectOutOfRangeUInt64>(source, StringSink(*col_res, input_rows_count), *column_offset);
         }
         else
         {
@@ -89,7 +92,7 @@ public:
                     throw Exception(ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX, "Indices in strings are 1-based");
             }
             else
-                sliceDynamicOffsetBounded(source, StringSink(*col_res, input_rows_count), *column_offset, *column_length);
+                sliceDynamicOffsetBounded<SliceArgumentPolicy::RejectOutOfRangeUInt64>(source, StringSink(*col_res, input_rows_count), *column_offset, *column_length);
         }
 
         return col_res;
@@ -114,9 +117,9 @@ public:
         Int64 length = 0;
 
         if (column_offset_const)
-            offset = column_offset_const->getInt(0);
+            offset = CheckedSliceArgument(*column_offset_const, "offset").get(0);
         if (column_length_const)
-            length = column_length_const->getInt(0);
+            length = CheckedSliceArgument(*column_length_const, "length").get(0);
 
         if (column_offset_const && offset == 1 && !column_length && isString(arguments[0].type))
             return column_string;
@@ -207,8 +210,8 @@ See also the [`digits`](/reference/functions/regular-functions/other-functions#d
     FunctionDocumentation::Syntax syntax = "substring(s, offset[, length])";
     FunctionDocumentation::Arguments arguments = {
         {"s", "The string to calculate a substring from.", {"String", "FixedString", "Enum"}},
-        {"offset", "The starting position of the substring in `s`.", {"(U)Int*"}},
-        {"length", "Optional. The maximum length of the substring.", {"(U)Int*"}}
+        {"offset", "The starting position of the substring in `s`. UInt64 values above Int64::max() are rejected.", {"(U)Int*"}},
+        {"length", "Optional. The maximum length of the substring. UInt64 values above Int64::max() are rejected.", {"(U)Int*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a substring of `s` with `length` many bytes, starting at index `offset`.", {"String"}};
     FunctionDocumentation::Examples examples = {
@@ -242,8 +245,8 @@ If this assumption is violated, no exception is thrown and the result is undefin
     FunctionDocumentation::Syntax syntax_utf8 = "substringUTF8(s, offset[, length])";
     FunctionDocumentation::Arguments arguments_utf8 = {
         {"s", "The string to calculate a substring from.", {"String", "FixedString", "Enum"}},
-        {"offset", "The starting position of the substring in `s`.", {"Int", "UInt"}},
-        {"length", "The maximum length of the substring. Optional.", {"Int", "UInt"}}
+        {"offset", "The starting position of the substring in `s`. UInt64 values above Int64::max() are rejected.", {"Int", "UInt"}},
+        {"length", "The maximum length of the substring. Optional. UInt64 values above Int64::max() are rejected.", {"Int", "UInt"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_utf8 = {"Returns a substring of `s` with `length` many code points, starting at code point index `offset`.", {"String"}};
     FunctionDocumentation::Examples examples_utf8 = {

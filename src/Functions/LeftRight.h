@@ -11,6 +11,7 @@
 #include <Functions/GatherUtils/Sinks.h>
 #include <Functions/GatherUtils/Slices.h>
 #include <Functions/GatherUtils/Algorithms.h>
+#include <Functions/GatherUtils/CheckedSliceArgument.h>
 #include <Interpreters/Context_fwd.h>
 #include <base/arithmeticOverflow.h>
 
@@ -55,6 +56,8 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    /// Reject invalid UInt64 arguments without evaluating values masked by NULL.
+    bool canBeExecutedOnDefaultArguments() const override { return false; }
 
     String getSignatureString() const override
     {
@@ -82,7 +85,7 @@ public:
             if (column_length_const)
                 sliceFromLeftConstantOffsetBounded(source, StringSink(*col_res, input_rows_count), 0, length_value);
             else
-                sliceFromLeftDynamicLength(source, StringSink(*col_res, input_rows_count), *column_length);
+                sliceFromLeftDynamicLength<SliceArgumentPolicy::RejectOutOfRangeUInt64>(source, StringSink(*col_res, input_rows_count), *column_length);
         }
         else
         {
@@ -112,11 +115,12 @@ public:
                 /// (used for `elemSize`) skips lone continuation bytes while
                 /// `skipCodePointsForward/Backward` treats them as 1-byte code points, so
                 /// the result silently lost trailing bytes.
+                const CheckedSliceArgument length_reader(*column_length, "length");
                 StringSink sink(*col_res, input_rows_count);
                 while (!source.isEnd())
                 {
                     const size_t row = source.rowNum();
-                    const Int64 length = column_length->getInt(row);
+                    const Int64 length = length_reader.get(row);
                     typename std::decay_t<decltype(source)>::Slice slice;
                     if (length > 0)
                         slice = source.getSliceFromRight(static_cast<UInt64>(length), static_cast<UInt64>(length));
@@ -149,7 +153,7 @@ public:
         Int64 length_value = 0;
 
         if (column_length_const)
-            length_value = column_length_const->getInt(0);
+            length_value = CheckedSliceArgument(*column_length_const, "length").get(0);
 
         if constexpr (is_utf8)
         {
