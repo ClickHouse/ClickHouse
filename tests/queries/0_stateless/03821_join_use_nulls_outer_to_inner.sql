@@ -16,7 +16,6 @@ INSERT INTO t1 VALUES (4000, 'b'), (5000, 'a');
 INSERT INTO t2 VALUES (5000, 1), (5000, 2), (6000, 3);
 INSERT INTO t3 VALUES (5000, 1), (5000, 2), (5000, 3), (7000, 10);
 
-SET enable_analyzer = 1;
 SET query_plan_join_swap_table = 0;
 SET query_plan_optimize_join_order_limit = 0;
 SET join_use_nulls = 1;

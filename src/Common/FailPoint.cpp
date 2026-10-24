@@ -189,6 +189,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(query_metric_log_pause_before_finish) \
     PAUSEABLE_ONCE(replicated_table_remove_zk_before_get_children) \
     PAUSEABLE_ONCE(replicated_table_remove_zk_before_final_multi) \
+    PAUSEABLE_ONCE(rmt_restore_replica_pause_before_metadata_version_raise) \
     PAUSEABLE_ONCE(rmt_mutation_prune_pause_before_analysis) \
     PAUSEABLE_ONCE(rmt_mutation_prune_pause_before_block_allocation) \
     PAUSEABLE_ONCE(smt_mutation_prune_pause_before_block_allocation) \
@@ -369,6 +370,7 @@ static struct InitFiu
     REGULAR(merge_tree_load_statistics_throw) \
     REGULAR(merge_tree_load_outdated_parts_retryable_error) \
     PAUSEABLE(merge_tree_load_outdated_parts_pause) \
+    ONCE(merge_tree_load_part_io_error) \
     REGULAR(restore_part_inject_no_space_error) \
     PAUSEABLE(smt_mutate_task_pause_in_prepare) \
     PAUSEABLE(smt_merge_selecting_task_pause_when_scheduled) \

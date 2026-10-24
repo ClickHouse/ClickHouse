@@ -342,6 +342,11 @@ SmallObjectDataWithMetadata AzureObjectStorage::readSmallObjectAndGetObjectMetad
 }
 
 
+bool AzureObjectStorage::supportsAtomicWrite() const
+{
+    return !isAdlsGen2Endpoint(connection_params.get()->endpoint);
+}
+
 std::unique_ptr<Azure::Storage::Files::DataLake::DataLakeFileClient>
 AzureObjectStorage::buildDataLakeFileClient(const String & blob_path) const
 {

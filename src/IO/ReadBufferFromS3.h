@@ -120,6 +120,7 @@ public:
     std::optional<RemoteFileMetadata> getRemoteFileMetadata() const override;
 
     std::optional<Field> getMetadata(const String & name) const override;
+    void setIOSchedulingSettings(const IOSchedulingSettings & io_scheduling) override;
 
 private:
     std::unique_ptr<S3::ReadBufferFromGetObjectResult> initialize(size_t attempt);
