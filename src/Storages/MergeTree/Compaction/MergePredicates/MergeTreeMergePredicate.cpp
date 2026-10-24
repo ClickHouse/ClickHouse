@@ -101,29 +101,28 @@ MergeTreeMergePredicate::MergeTreeMergePredicate(
     patches_by_partition = getPatchPartsByPartition(getPatchPartInfos(storage, tx_), min_update_block.value_or(std::numeric_limits<Int64>::max()));
 }
 
-std::expected<void, PreformattedMessage>
-MergeTreeMergePredicate::canMergeParts(const PartProperties & left, const PartProperties & right) const
+std::expected<void, LazyPreformattedMessage> MergeTreeMergePredicate::canMergeParts(const PartProperties & left, const PartProperties & right) const
 {
     if (left.info.getPartitionId() != right.info.getPartitionId())
-        return std::unexpected(PreformattedMessage::create("Parts {} and {} belong to different partitions", left.name, right.name));
+        return std::unexpected(createLazyMessage("Parts {} and {} belong to different partitions", refArg(left.name), refArg(right.name)));
 
     if (left.info.isPatch() != right.info.isPatch())
         return std::unexpected(
-            PreformattedMessage::create("One of parts ({}, {}) is patch part and another is regular part", left.name, right.name));
+            createLazyMessage("One of parts ({}, {}) is patch part and another is regular part", refArg(left.name), refArg(right.name)));
 
     if (left.is_in_volume_where_merges_avoid || right.is_in_volume_where_merges_avoid)
         return std::unexpected(
-            PreformattedMessage::create("One of parts ({}, {}) lies on volume where merges should be avoided", left.name, right.name));
+            createLazyMessage("One of parts ({}, {}) lies on volume where merges should be avoided", refArg(left.name), refArg(right.name)));
 
     if (left.projection_names != right.projection_names)
     {
         return std::unexpected(
-            PreformattedMessage::create(
+            createLazyMessage(
                 "Parts have different projection sets: {} in '{}' and {} in '{}'",
-                left.projection_names,
-                left.name,
-                right.projection_names,
-                right.name));
+                refArg(left.projection_names),
+                refArg(left.name),
+                refArg(right.projection_names),
+                refArg(right.name)));
     }
 
     {
@@ -131,7 +130,7 @@ MergeTreeMergePredicate::canMergeParts(const PartProperties & left, const PartPr
         uint64_t right_mutation_version = storage.getCurrentMutationVersion(right.info.getDataVersion(), merge_mutate_lock);
 
         if (left_mutation_version != right_mutation_version)
-            return std::unexpected(PreformattedMessage::create("Parts {} and {} have different mutation version", left.name, right.name));
+            return std::unexpected(createLazyMessage("Parts {} and {} have different mutation version", refArg(left.name), refArg(right.name)));
     }
 
     if (left.info.isPatch())
@@ -147,12 +146,12 @@ MergeTreeMergePredicate::canMergeParts(const PartProperties & left, const PartPr
 
         if (spanned_version.has_value())
             return std::unexpected(
-                PreformattedMessage::create(
+                createLazyMessage(
                     "Merge of patch parts {} and {} would span data version {} of a part in partition {}",
-                    left.name,
-                    right.name,
-                    *spanned_version,
-                    original_partition_id));
+                    refArg(left.name),
+                    refArg(right.name),
+                    copyArg(*spanned_version),
+                    copyArg(original_partition_id)));
     }
 
     {
@@ -160,41 +159,41 @@ MergeTreeMergePredicate::canMergeParts(const PartProperties & left, const PartPr
 
         if (max_possible_level > std::max(left.info.level, right.info.level))
             return std::unexpected(
-                PreformattedMessage::create(
+                createLazyMessage(
                     "There is an outdated part in a gap between two active parts ({}, {}) with merge level {} higher than these active "
                     "parts have",
-                    left.name,
-                    right.name,
-                    max_possible_level));
+                    refArg(left.name),
+                    refArg(right.name),
+                    copyArg(max_possible_level)));
 
         if (max_possible_mutation > std::max(left.info.mutation, right.info.mutation))
             return std::unexpected(
-                PreformattedMessage::create(
+                createLazyMessage(
                     "There is an outdated part in a gap between two active parts ({}, {}) with mutation version {} higher than these "
                     "active parts have",
-                    left.name,
-                    right.name,
-                    max_possible_mutation));
+                    refArg(left.name),
+                    refArg(right.name),
+                    copyArg(max_possible_mutation)));
     }
 
     return {};
 }
 
-std::expected<void, PreformattedMessage> MergeTreeMergePredicate::canUsePartInMerges(const MergeTreeDataPartPtr & part) const
+std::expected<void, LazyPreformattedMessage> MergeTreeMergePredicate::canUsePartInMerges(const MergeTreeDataPartPtr & part) const
 {
     chassert(merge_mutate_lock.owns_lock()); /// guards currently_merging_mutating_parts
 
     if (storage.currently_merging_mutating_parts.contains(part->info))
-        return std::unexpected(PreformattedMessage::create("Part {} currently in a merging or mutating process", part->name));
+        return std::unexpected(createLazyMessage("Part {} currently in a merging or mutating process", refArg(part->name)));
 
     if (min_update_block && part->info.getDataVersion() >= *min_update_block)
     {
         return std::unexpected(
-            PreformattedMessage::create(
+            createLazyMessage(
                 "Part {} has data version {}, but patch part with lower version {} is still being processed",
-                part->name,
-                part->info.getDataVersion(),
-                *min_update_block));
+                refArg(part->name),
+                copyArg(part->info.getDataVersion()),
+                copyArg(*min_update_block)));
     }
 
     return {};
