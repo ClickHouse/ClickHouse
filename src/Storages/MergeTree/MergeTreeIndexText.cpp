@@ -2501,7 +2501,7 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
     return std::make_shared<MergeTreeIndexText>(std::move(metadata_snapshot), index, index_params, std::move(tokenizer), std::move(posting_list_codec));
 }
 
-void textIndexValidator(const IndexDescription & index, bool /*attach*/, const MergeTreeSettings & settings)
+void textIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings)
 {
     auto options = convertArgumentsToOptionsMap(index.arguments);
 
@@ -2588,6 +2588,20 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
                 ErrorCodes::BAD_ARGUMENTS,
                 "Text index must be created on columns of type with base type of String or FixedString, got: {}",
                 index_data_type->getName());
+    }
+
+    /// The runtime cannot tokenize multidimensional arrays correctly. Reject them for new indexes, but
+    /// keep metadata accepted by an older server loadable until the user drops the index.
+    if (!attach)
+    {
+        if (const auto * array_type = typeid_cast<const DataTypeArray *>(index_data_type.get());
+            array_type && array_type->getNumberOfDimensions() >= 2)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Text index does not support multidimensional array columns, got: {}",
+                index_data_type->getName());
+        }
     }
 
     /// Create the preprocessor for validation.

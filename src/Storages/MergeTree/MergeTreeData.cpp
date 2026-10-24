@@ -1265,6 +1265,26 @@ static bool indexExpressionMayBeProbed(const IndexDescription & index)
     return true;
 }
 
+/// The validator of an index also looks at the columns the index covers, so a definition the server
+/// accepted when it was declared can still be refused later when an `ALTER` changes those columns.
+/// This helper only reports the failure; the caller decides whether it is inherited from the old metadata.
+static std::exception_ptr tryValidateIndex(
+    const IndexDescription & index,
+    bool attach,
+    const MergeTreeSettings & settings)
+{
+    try
+    {
+        MergeTreeIndexFactory::instance().validate(index, attach, settings);
+    }
+    catch (...)
+    {
+        return std::current_exception();
+    }
+
+    return {};
+}
+
 static std::exception_ptr tryEvaluateIndexExpression(const IndexDescription & index)
 {
     if (!indexExpressionMayBeProbed(index))
@@ -1286,6 +1306,40 @@ static std::exception_ptr tryEvaluateIndexExpression(const IndexDescription & in
     }
 
     return {};
+}
+
+/// A name match is not enough to treat an index as inherited. `DROP INDEX idx, ADD INDEX idx`
+/// reuses the name for a new declaration, and `MODIFY COLUMN` keeps the name while changing the
+/// input type. `RENAME COLUMN` rewrites the expression to the new name without redeclaring it.
+static bool isUnchangedInheritedIndex(
+    const IndexDescription & index,
+    const IndexDescription & old_index,
+    const ColumnsDescription & new_columns,
+    const ColumnsDescription & old_columns)
+{
+    if (index.type != old_index.type
+        || index.data_types.size() != old_index.data_types.size()
+        || index.column_names.size() != old_index.column_names.size())
+        return false;
+
+    for (size_t i = 0; i < index.data_types.size(); ++i)
+    {
+        if (!index.data_types[i]->equals(*old_index.data_types[i]))
+            return false;
+    }
+
+    for (size_t i = 0; i < index.column_names.size(); ++i)
+    {
+        const auto & new_name = index.column_names[i];
+        const auto & old_name = old_index.column_names[i];
+        if (new_name == old_name)
+            continue;
+
+        if (old_columns.has(new_name) || new_columns.has(old_name))
+            return false;
+    }
+
+    return true;
 }
 
 void MergeTreeData::checkProperties(
@@ -1460,9 +1514,32 @@ void MergeTreeData::checkProperties(
                         checkSuspiciousIndices(index_expression_ptr);
                 }
 
+                const IndexDescription * old_index = nullptr;
+                /// The create path and the projection recursion pass the same metadata object as both
+                /// arguments, so an index found there is the one being declared and nothing can be inherited.
+                if (&old_metadata != &new_metadata)
+                    for (const auto & candidate : old_metadata.secondary_indices)
+                        if (candidate.name == index.name
+                            && isUnchangedInheritedIndex(index, candidate, new_metadata.columns, old_metadata.columns))
+                            old_index = &candidate;
+
                 if (!attach && !allow_minmax_index_for_json)
                     checkMinMaxIndexForJSON(index);
-                MergeTreeIndexFactory::instance().validate(index, attach, *getSettings());
+
+                /// An index already in the old metadata was validated when it was declared, so a failure
+                /// that the inherited definition shares predates this statement and must not refuse it:
+                /// an unrelated `ALTER` has to keep a table with a legacy index usable, so that the index
+                /// can be dropped. The new definition is still validated first, because validation also
+                /// depends on the current columns: a `MODIFY COLUMN` that turns the indexed column into a
+                /// constant is refused even though the index itself is unchanged. A replacement that only
+                /// reuses the name, or a type change of the indexed column, is not inherited.
+                if (auto failure = tryValidateIndex(index, attach, *getSettings()))
+                {
+                    const bool inherited = old_index && tryValidateIndex(*old_index, attach, *getSettings());
+
+                    if (!inherited)
+                        std::rethrow_exception(failure);
+                }
 
                 if (!attach)
                 {
@@ -1484,15 +1561,6 @@ void MergeTreeData::checkProperties(
                 {
                     if (auto failure = tryEvaluateIndexExpression(index))
                     {
-                        const IndexDescription * old_index = nullptr;
-                        /// The create path and the projection recursion pass the same metadata object as both
-                        /// arguments, so an index found there is the one being declared and nothing can be inherited.
-                        /// Definitions are not compared: `RENAME COLUMN` rewrites an index's AST without redeclaring it.
-                        if (&old_metadata != &new_metadata)
-                            for (const auto & candidate : old_metadata.secondary_indices)
-                                if (candidate.name == index.name)
-                                    old_index = &candidate;
-
                         const bool inherited = old_index && tryEvaluateIndexExpression(*old_index);
 
                         if (!inherited)
@@ -7009,6 +7077,20 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                         backQuoteIfNeed(command.column_name), backQuoteIfNeed(command.rename_to));
             }
         }
+    }
+
+    /// A newly declared index is not inherited, even when it reuses a dropped name.
+    /// `checkProperties` would otherwise treat `DROP INDEX idx, ADD INDEX idx ...` as the old index
+    /// if the replacement happens to have the same type and input types.
+    for (const auto & command : commands)
+    {
+        if (command.type != AlterCommand::ADD_INDEX)
+            continue;
+        if (command.if_not_exists && old_metadata.secondary_indices.has(command.index_name))
+            continue;
+
+        const auto & added_index = new_metadata.getSecondaryIndices().getByName(command.index_name);
+        MergeTreeIndexFactory::instance().validate(added_index, /*attach=*/false, *alter_effective_settings);
     }
 
     checkProperties(new_metadata, old_metadata, false, false, allow_nullable_key, local_context, alter_effective_settings.get());
