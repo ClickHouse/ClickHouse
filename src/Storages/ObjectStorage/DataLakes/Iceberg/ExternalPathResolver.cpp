@@ -794,23 +794,12 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
     }
     #endif
 
-    if (base_scheme_normalized == target_scheme_normalized && table_location_decomposed.authority == target_decomposed.authority)
-    {
-        const bool is_prefix_scoped = isPrefixScopedScheme(target_scheme_normalized);
-
-        /// Paths inside `location` are re-rooted at the queried table directory.
-        if (keyIsInsidePrefix(table_location_decomposed.key, target_decomposed.key, /*is_filesystem_path*/ is_prefix_scoped))
-            return std::nullopt;
-
-        /// Prefix-scoped backends cannot serve a path outside the table directory; it gets its own storage below.
-        if (!is_prefix_scoped)
-        {
-            check_access();
-            if (access_check != nullptr)
-                return std::nullopt;
-            return std::make_pair(base_storage, target_decomposed.key);
-        }
-    }
+    /// Paths inside `location` are re-rooted at the queried table directory. A path outside it gets the storage of its own
+    /// backend below: the base storage may be another backend than `location` names, e.g. for a copied table.
+    if (base_scheme_normalized == target_scheme_normalized && table_location_decomposed.authority == target_decomposed.authority
+        && keyIsInsidePrefix(
+            table_location_decomposed.key, target_decomposed.key, /*is_filesystem_path*/ isPrefixScopedScheme(target_scheme_normalized)))
+        return std::nullopt;
 
     const std::string type_for_factory = factoryTypeForScheme(target_scheme_normalized);
     if (type_for_factory.empty())

@@ -18,6 +18,7 @@ from .external_paths_utils import (
     _rewrite_manifests_and_reupload,
     external_bucket,
     find_files,
+    get_absolute_path,
     get_query_args,
     get_uploader,
     modify_avro_file,
@@ -417,3 +418,43 @@ def test_azure_endpoint_of_other_cloud_with_same_account_is_rejected(started_clu
     error = instance.query_and_get_error(
         f"SELECT * FROM icebergAzure({args}) ORDER BY id", settings={"use_iceberg_metadata_files_cache": 0})
     assert "differs from the table's base endpoint" in error, error
+
+
+def test_copied_azure_table_reads_external_path_from_its_container(started_cluster_iceberg_with_spark):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+
+    TABLE_NAME = f"test_copied_azure_table_{get_uuid_str()}"
+    copy_container = f"copy-{get_uuid_str().replace('_', '-')}"
+    external_prefix = f"external_{TABLE_NAME}"
+
+    create_and_upload_table(started_cluster_iceberg_with_spark, TABLE_NAME)
+    temp_dir, host_path, base_path = _download_table_for_relocation(started_cluster_iceberg_with_spark, TABLE_NAME)
+    metadata_dir = os.path.join(host_path, "metadata")
+
+    # The copy in another container keeps the source `location`; the data files are outside it, in the source container.
+    source_location = get_absolute_path("azure", started_cluster_iceberg_with_spark, base_path)
+    external_location = get_absolute_path("azure", started_cluster_iceberg_with_spark, external_prefix)
+    for avro_file in find_files(metadata_dir, ".avro"):
+        if os.path.basename(avro_file).startswith("snap-"):
+            modify_avro_file(avro_file, ["manifest_path"], lambda p: f"{source_location}/metadata/{os.path.basename(p)}")
+        else:
+            modify_avro_file(avro_file, ["data_file", "file_path"], lambda p: f"{external_location}/{os.path.basename(p)}")
+    for metadata_json in find_files(metadata_dir, ".metadata.json"):
+        with open(metadata_json) as f:
+            metadata = json.load(f)
+        metadata["location"] = source_location
+        for snapshot in metadata.get("snapshots", []):
+            snapshot["manifest-list"] = f"{source_location}/metadata/{os.path.basename(snapshot['manifest-list'])}"
+        with open(metadata_json, "w") as f:
+            json.dump(metadata, f)
+
+    started_cluster_iceberg_with_spark.blob_service_client.create_container(copy_container)
+    copy_uploader = get_uploader(f"azure:{copy_container}", started_cluster_iceberg_with_spark)
+    for metadata_file in find_files(metadata_dir, ""):
+        copy_uploader.upload_file(metadata_file, f"{base_path}/{os.path.relpath(metadata_file, host_path)}")
+    for data_file in find_files(os.path.join(host_path, "data"), ".parquet"):
+        started_cluster_iceberg_with_spark.default_azure_uploader.upload_file(data_file, f"{external_prefix}/{os.path.basename(data_file)}")
+    shutil.rmtree(temp_dir)
+
+    args = get_query_args(f"azure:{copy_container}", started_cluster_iceberg_with_spark, base_path)
+    assert instance.query(f"SELECT * FROM icebergAzure({args}) ORDER BY id") == ALL_ROWS
