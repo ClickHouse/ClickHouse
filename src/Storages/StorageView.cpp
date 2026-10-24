@@ -53,6 +53,7 @@
 #include <Parsers/QueryParameterVisitor.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
 
+#include <Analyzer/AggregationUtils.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/QueryNode.h>
@@ -588,7 +589,8 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
                         || query_node.hasLimitBy()
                         || query_node.hasLimit() || query_node.hasOffset()
                         || query_node.hasLimitAfter() || query_node.hasLimitUntil()
-                        || hasWindowFunctionNodes(query_node.getProjectionNode()))
+                        || hasWindowFunctionNodes(query_node.getProjectionNode())
+                        || hasAggregateFunctionNodes(query_node.getProjectionNode()))
                         return nullptr;
 
                     current_context = query_node.getContext();

@@ -17,6 +17,7 @@ DROP VIEW IF EXISTS v_window;
 DROP VIEW IF EXISTS v_window_named;
 DROP VIEW IF EXISTS v_window_partition;
 DROP VIEW IF EXISTS v_union_distinct;
+DROP VIEW IF EXISTS v_aggregate;
 
 CREATE TABLE t_base (key UInt64, value UInt64) ENGINE = MergeTree() ORDER BY key SETTINGS index_granularity=1;
 CREATE TABLE t_base2 (key UInt64, value UInt64) ENGINE = MergeTree() ORDER BY key SETTINGS index_granularity=1;
@@ -34,6 +35,7 @@ CREATE VIEW v_window AS SELECT key, value, row_number() OVER (ORDER BY key) AS r
 CREATE VIEW v_window_named AS SELECT key, value, row_number() OVER w AS rn FROM t_base WINDOW w AS (ORDER BY key);
 CREATE VIEW v_window_partition AS SELECT key, value, sum(value) OVER (PARTITION BY key % 10) AS s FROM t_base;
 CREATE VIEW v_union_distinct AS SELECT key, value FROM t_base UNION DISTINCT SELECT key, value FROM t_base2;
+CREATE VIEW v_aggregate AS SELECT max(value) - min(value) AS d FROM t_base;
 
 SET automatic_parallel_replicas_mode = 0;
 SET enable_parallel_replicas = 1, max_parallel_replicas = 2, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree = 1;
@@ -135,11 +137,21 @@ FROM viewExplain('EXPLAIN', '', (
 ))
 WHERE explain LIKE '%ReadFromRemoteParallelReplicas%';
 
+SELECT '-- view with an aggregation and no GROUP BY: inner query sent over t_base';
+SELECT if(explain LIKE '%v_aggregate%', 'v_aggregate', if(explain LIKE '%t_base%', 't_base', 'other'))
+FROM viewExplain('EXPLAIN', '', (
+    SELECT d FROM v_aggregate
+    SETTINGS parallel_replicas_local_plan = 1, parallel_replicas_allow_view_over_mergetree = 1
+))
+WHERE explain LIKE '%ReadFromRemoteParallelReplicas%';
+
 -- Verify results are correct (match non-parallel execution)
 SELECT '-- correctness check';
 SELECT sum(value) AS r1 FROM v_simple
     SETTINGS parallel_replicas_allow_view_over_mergetree = 0;
 SELECT sum(value) AS r1 FROM v_simple
+    SETTINGS parallel_replicas_allow_view_over_mergetree = 1;
+SELECT d FROM v_aggregate
     SETTINGS parallel_replicas_allow_view_over_mergetree = 1;
 
 DROP VIEW v_simple;
@@ -153,5 +165,6 @@ DROP VIEW v_window;
 DROP VIEW v_window_named;
 DROP VIEW v_window_partition;
 DROP VIEW v_union_distinct;
+DROP VIEW v_aggregate;
 DROP TABLE t_base2;
 DROP TABLE t_base;
