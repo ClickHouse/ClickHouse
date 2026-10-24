@@ -27,6 +27,12 @@ H: column TTL
 I: DELETE WHERE, vertical merge, both columns merged
 200	100
 100	0
+J: DELETE WHERE, subcolumn also a skip index input
+200	100
+100	0
+K: rows TTL on the subcolumn, subcolumn also in the sorting key
+200	100
+100	0
 merge algorithms
 t_a	Horizontal
 t_b	Vertical

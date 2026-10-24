@@ -39,7 +39,16 @@ ColumnPtr ITTLAlgorithm::executeExpressionAndGetColumn(
     if (!expression)
         return nullptr;
 
-    if (block.has(result_column))
+    auto listed_subcolumn = [&](const String & name) -> std::optional<NameAndTypePair>
+    {
+        auto input = inputs.tryGetByName(name);
+        if (input && input->isSubcolumn())
+            return input;
+        return {};
+    };
+
+    auto result_input = listed_subcolumn(result_column);
+    if (block.has(result_column) && !(result_input && block.has(result_input->getNameInStorage())))
     {
         /// When the TTL expression is a bare source column (e.g. `TTL ts`), the block holds
         /// it in the original type, which may differ from the type the analyzed expression
@@ -62,10 +71,11 @@ ColumnPtr ITTLAlgorithm::executeExpressionAndGetColumn(
     for (const auto & required : expression->getRequiredColumnsWithTypes())
     {
         ColumnWithTypeAndName block_col;
-        if (const auto * column = block.findByName(required.name))
-            block_col = *column;
-        else if (auto input = inputs.tryGetByName(required.name); input && input->isSubcolumn())
+        auto input = listed_subcolumn(required.name);
+        if (input && (block.has(input->getNameInStorage()) || !block.has(required.name)))
             block_col = ColumnWithTypeAndName(getColumnFromBlock(block, *input), input->type, required.name);
+        else if (const auto * column = block.findByName(required.name))
+            block_col = *column;
         else
             block_col = block.getColumnOrSubcolumnByName(required.name);
 
