@@ -1158,91 +1158,125 @@ static bool scanCollectionOfLiteralsAsText(IParser::Pos & pos, LiteralAsText & l
 {
     using enum TokenType;
 
-    /// A round bracket holding a single number or string is a parenthesized expression rather than a
-    /// one-element tuple: `(1)` is the value `1`, and only a tuple type reads `(1)` as text. Whatever
-    /// else a round bracket can hold - a comma, nothing at all, a nested collection - is a tuple, so
-    /// its text is read as one.
-    const bool outer_is_round = pos->type == OpeningRoundBracket;
-    bool holds_own_comma = false;
-    bool holds_own_scalar = false;
+    /// Track each bracket level separately so redundant grouping parentheses can be removed
+    /// while preserving tuples and arrays.
+    struct BracketState
+    {
+        TokenType type;
+        bool has_comma = false;
+        bool has_element = false;
+        size_t text_begin = 0;
+    };
 
     TokenType last_token = OpeningSquareBracket;
     const char * last_token_end = pos->begin;
-    std::vector<TokenType> stack;
+    std::vector<BracketState> stack;
+
     while (pos.isValid())
     {
-        /// Whether this token sits directly inside the outermost bracket.
-        const bool own = stack.size() == 1;
-
         if (last_token == Comma && pos->begin != last_token_end)
             literal.text += ' ';
 
         if (isOneOf<OpeningSquareBracket, OpeningRoundBracket>(pos->type))
         {
-            stack.push_back(pos->type);
             if (!isOneOf<OpeningSquareBracket, OpeningRoundBracket, Comma>(last_token))
                 return false;
+
+            stack.push_back({
+                .type = pos->type,
+                .text_begin = literal.text.size(),
+            });
+
             literal.text += tokenText(pos);
         }
         else if (pos->type == ClosingSquareBracket)
         {
             if (isOneOf<Comma, OpeningRoundBracket, Minus>(last_token))
                 return false;
-            if (stack.empty() || stack.back() != OpeningSquareBracket)
+            if (stack.empty() || stack.back().type != OpeningSquareBracket)
                 return false;
+
             stack.pop_back();
             literal.text += tokenText(pos);
+
+            if (!stack.empty())
+                stack.back().has_element = true;
         }
         else if (pos->type == ClosingRoundBracket)
         {
             if (isOneOf<Comma, OpeningSquareBracket, Minus>(last_token))
                 return false;
-            if (stack.empty() || stack.back() != OpeningRoundBracket)
+            if (stack.empty() || stack.back().type != OpeningRoundBracket)
                 return false;
+
+            const auto current = stack.back();
             stack.pop_back();
-            literal.text += tokenText(pos);
+
+            if (current.has_comma || !current.has_element)
+            {
+                /// A round bracket containing a comma, or an empty round bracket,
+                /// represents a tuple and should be preserved.
+                literal.text += tokenText(pos);
+            }
+            else
+            {
+                /// A round bracket containing a single element is only grouping,
+                /// so remove the opening bracket and don't add the closing one.
+                literal.text.erase(current.text_begin, 1);
+            }
+
+            if (!stack.empty())
+                stack.back().has_element = true;
         }
         else if (pos->type == Comma)
         {
             if (isOneOf<OpeningSquareBracket, OpeningRoundBracket, Comma, Minus>(last_token))
                 return false;
-            holds_own_comma |= own;
+
+            stack.back().has_comma = true;
             literal.text += ',';
         }
         else if (pos->type == Number)
         {
             if (!isOneOf<OpeningSquareBracket, OpeningRoundBracket, Comma, Minus>(last_token))
                 return false;
+
             const std::string_view text = tokenText(pos);
             if (!isPlainDecimalNumeral(text))
                 return false;
+
             literal.all_integers &= isIntegerNumeral(text);
-            holds_own_scalar |= own;
+            stack.back().has_element = true;
+
             if (last_token == Minus && !isIntegerZeroNumeral(text))
             {
                 literal.all_non_negative = false;
                 literal.text += '-';
             }
+
             literal.text += text;
         }
         else if (isOneOf<StringLiteral, Minus>(pos->type))
         {
             if (!isOneOf<OpeningSquareBracket, OpeningRoundBracket, Comma>(last_token))
                 return false;
+
             if (pos->type == StringLiteral)
             {
                 literal.all_numbers = false;
-                holds_own_scalar |= own;
+                stack.back().has_element = true;
                 literal.text += tokenText(pos);
             }
+
             /// A minus is written together with the number that follows it.
         }
         else if (pos->type == BareWord && isNullKeyword(tokenText(pos)))
         {
             if (!isOneOf<OpeningSquareBracket, OpeningRoundBracket, Comma>(last_token))
                 return false;
+
             literal.has_null = true;
-            holds_own_scalar |= own;
+            stack.back().has_element = true;
             literal.text += "NULL";
         }
         else
@@ -1259,9 +1293,6 @@ static bool scanCollectionOfLiteralsAsText(IParser::Pos & pos, LiteralAsText & l
     }
 
     if (!stack.empty())
-        return false;
-
-    if (outer_is_round && !holds_own_comma && holds_own_scalar)
         return false;
 
     return true;
