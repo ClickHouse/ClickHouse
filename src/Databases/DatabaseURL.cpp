@@ -307,10 +307,21 @@ bool DatabaseURL::checkFileURLExists(const String & url, ContextPtr context_, bo
 
     const String path = to_absolute_path(local_path);
 
+    /// The result of this probe is reported to the user (`EXISTS TABLE` returns it, and the
+    /// resolution of a table reports `FILE_DOESNT_EXIST` instead of `ACCESS_DENIED`), so it must
+    /// not be performed without the read source grant: `EXISTS TABLE` requires only `SHOW TABLES`,
+    /// which would otherwise turn a `URL` database into an oracle for the contents of `user_files`.
+    /// Claim the table, as above: a resolution of it fails with the access error, and `EXISTS`
+    /// answers what it answers for a remote URL, which is not probed either.
+    if (!isFileReadGranted(context_))
+        return true;
+
     /// With a `file://` base URL, the tables of the database are the files beneath the directory of
     /// the base URL, so that a name that is a `file://` URL of its own does not reach another directory
     /// of `user_files` (a relative name does not go above the root of the base path when it is resolved
     /// against the base URL). The check is lexical, like that resolution. `clickhouse-local` accepts any path.
+    /// Like the probe below, it runs only with the read source grant, so that its error does not
+    /// reveal the path policy to a user who would get the access error anyway.
     if (!is_local && !base_url.empty() && classifyURLScheme(base_url) == URLSchemeTarget::File)
     {
         String base_directory = getLocalPathFromFileURL(base_url);
@@ -323,15 +334,6 @@ bool DatabaseURL::checkFileURLExists(const String & url, ContextPtr context_, bo
 
     /// A path with globs matches a dynamic set of files, possibly empty, so it always "exists".
     if (containsGlobs(path))
-        return true;
-
-    /// The result of this probe is reported to the user (`EXISTS TABLE` returns it, and the
-    /// resolution of a table reports `FILE_DOESNT_EXIST` instead of `ACCESS_DENIED`), so it must
-    /// not be performed without the read source grant: `EXISTS TABLE` requires only `SHOW TABLES`,
-    /// which would otherwise turn a `URL` database into an oracle for the contents of `user_files`.
-    /// Claim the table, as above: a resolution of it fails with the access error, and `EXISTS`
-    /// answers what it answers for a remote URL, which is not probed either.
-    if (!isFileReadGranted(context_))
         return true;
 
     /// When `user_files_policy` is configured, `fs::exists` only checks the local filesystem
