@@ -271,3 +271,59 @@ DROP TABLE t_bf_map_str;
 DROP TABLE t_bf_map_set_source;
 DROP TABLE t_bf_map_absent_values;
 DROP TABLE t_bf_map_absent_keys;
+
+SELECT 'map default against an Enum constant';
+-- `equals` of the missing key's default with the constant must be asked as for a column, the way the
+-- map expression compares at runtime, not as of two constants.
+DROP TABLE IF EXISTS t_bf_map_enum_const;
+CREATE TABLE t_bf_map_enum_const
+(
+    m Map(String, FixedString(3)),
+    INDEX bf_keys mapKeys(m) TYPE bloom_filter GRANULARITY 1,
+    INDEX bf_values mapValues(m) TYPE bloom_filter GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
+INSERT INTO t_bf_map_enum_const VALUES (map('k', 'abc')), (map('other', 'xyz')), (map());
+
+SELECT count() FROM t_bf_map_enum_const WHERE m['absent'] = CAST('' AS Enum8('a' = 1, '' = 2));
+SELECT count() FROM t_bf_map_enum_const WHERE m['absent'] = CAST('' AS Enum8('a' = 1, '' = 2)) SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_bf_map_enum_const WHERE m['absent'] = CAST('' AS Enum8('a' = 1, '' = 2)) SETTINGS optimize_functions_to_subcolumns = 0;
+
+DROP TABLE t_bf_map_enum_const;
+
+DROP TABLE IF EXISTS t_bf_map_str_enum_const;
+CREATE TABLE t_bf_map_str_enum_const
+(
+    m Map(String, String),
+    INDEX bf_keys mapKeys(m) TYPE bloom_filter GRANULARITY 1,
+    INDEX bf_values mapValues(m) TYPE bloom_filter GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
+INSERT INTO t_bf_map_str_enum_const VALUES (map('k', 'b')), (map('k', 'a'));
+
+SELECT count() FROM t_bf_map_str_enum_const WHERE m['k'] = CAST('b' AS Enum8('a' = 1, 'b' = 2)) SETTINGS validate_enum_literals_in_operators = 1;
+SELECT count() FROM t_bf_map_str_enum_const WHERE m['k'] = CAST('b' AS Enum8('a' = 1, 'b' = 2)) SETTINGS validate_enum_literals_in_operators = 1, use_skip_indexes = 0;
+
+DROP TABLE t_bf_map_str_enum_const;
+
+SELECT 'FixedString(16) against an IPv6 constant';
+-- `equals` compares `FixedString(16)` with `IPv6` in binary form, so the constant is hashed in that form.
+DROP TABLE IF EXISTS t_bf_ipv6;
+CREATE TABLE t_bf_ipv6
+(
+    s FixedString(16),
+    m Map(String, FixedString(16)),
+    INDEX bf_s s TYPE bloom_filter GRANULARITY 1,
+    INDEX bf_values mapValues(m) TYPE bloom_filter GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
+INSERT INTO t_bf_ipv6 SELECT IPv6StringToNum('2001:db8::1'), map('k', IPv6StringToNum('2001:db8::1'));
+INSERT INTO t_bf_ipv6 SELECT IPv6StringToNum('2001:db8::2'), map('k', IPv6StringToNum('2001:db8::2'));
+
+SELECT count() FROM t_bf_ipv6 WHERE s = toIPv6('2001:db8::1');
+SELECT count() FROM t_bf_ipv6 WHERE s = toIPv6('2001:db8::1') SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_bf_ipv6 WHERE m['k'] = toIPv6('2001:db8::1');
+SELECT count() FROM t_bf_ipv6 WHERE m['k'] = toIPv6('2001:db8::1') SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT count() FROM t_bf_ipv6 WHERE m['k'] = toIPv6('2001:db8::1') SETTINGS use_skip_indexes = 0;
+
+DROP TABLE t_bf_ipv6;

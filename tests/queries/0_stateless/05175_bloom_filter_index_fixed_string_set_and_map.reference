@@ -98,3 +98,15 @@ map key over Tuple values with a set of another Tuple type
 1
 1
 1
+map default against an Enum constant
+3
+3
+3
+1
+1
+FixedString(16) against an IPv6 constant
+1
+1
+1
+1
+1

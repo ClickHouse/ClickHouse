@@ -6,10 +6,12 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Common/formatIPv6.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeMapHelpers.h>
@@ -19,6 +21,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/BloomFilterHash.h>
 #include <Interpreters/Context.h>
@@ -668,6 +671,18 @@ static Field coerceConstantForBloomFilterHash(
             return {};
     }
 
+    /// `equals` compares a `FixedString(16)` with an `IPv6` as its binary representation, while
+    /// `convertFieldToType` would give the text form, which no granule holds.
+    if (value_field.getType() == Field::Types::IPv6 && isFixedString(actual_type))
+    {
+        if (assert_cast<const DataTypeFixedString &>(*actual_type).getN() != IPV6_BINARY_LENGTH)
+            return {};
+
+        WriteBufferFromOwnString buf;
+        DataTypeIPv6().getDefaultSerialization()->serializeBinary(value_field, buf, {});
+        return buf.str();
+    }
+
     return convertFieldToType(value_field, *actual_type, value_type.get());
 }
 
@@ -719,7 +734,10 @@ static bool missingMapKeyMayCompareEqual(
 
     ColumnsWithTypeAndName arguments
     {
-        {createMissingMapValueColumn(map_value_type), map_value_type, "default"},
+        /// Materialized, so that the comparison is of a column with a constant, as for the map expression at
+        /// runtime: `equals` of two constants parses a `String` default as a literal of the other side's
+        /// type (e.g. `''` as an `Enum` name), unlike a `String` column.
+        {createMissingMapValueColumn(map_value_type)->convertToFullColumnIfConst(), map_value_type, "default"},
         {value_type->createColumnConst(1, value_field), value_type, "constant"},
     };
 
