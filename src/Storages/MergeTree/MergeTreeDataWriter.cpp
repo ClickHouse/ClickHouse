@@ -609,6 +609,11 @@ Block MergeTreeDataWriter::mergeBlock(
     span.addAttribute("clickhouse.rows", block_size);
     span.addAttribute("clickhouse.columns", header->columns());
 
+    /// The block can lose all its rows before this point, e.g. when insert deduplication removes
+    /// duplicate rows of a materialized view block. Merging algorithms do not expect an empty input.
+    if (block_size == 0)
+        return *header;
+
     auto get_merging_algorithm = [&]() -> std::shared_ptr<IMergingAlgorithm>
     {
         switch (merging_params.mode)
