@@ -10,7 +10,6 @@
 -- `optimize_read_in_order = 0`; `parallel_sorted_merge` requires the tables' native order. `ASOF` is
 -- never sharded, its trailing key is an inequality, so it gets its own case asserting the group is absent.
 
-SET enable_analyzer = 1;
 -- `sorted_merge` variants are selectable only when the planner can use the tables' primary-key order.
 -- Pin the settings randomized by the flaky-check job so their coverage does not depend on its seed.
 SET optimize_read_in_order = 1, query_plan_read_in_order = 1,
