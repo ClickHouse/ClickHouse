@@ -9,8 +9,6 @@ ORDER BY (a, b);
 
 INSERT INTO test SELECT number, number FROM numbers_mt(1e6);
 
-set enable_analyzer = 1;
-
 SELECT trimBoth(replaceRegexpAll(explain, '__table1.', ''))
 FROM
 (
