@@ -633,6 +633,7 @@ private:
     void generateNextShowStatement(RandomGenerator & rg, ShowStatement * st);
 
     void generateLikeExpr(RandomGenerator & rg, Expr * expr);
+    static String generateLikeEscape(RandomGenerator & rg);
     Expr * generatePartialSearchExpr(RandomGenerator & rg, Expr * expr) const;
     void addFieldAccess(RandomGenerator & rg, Expr * expr, uint32_t nested_prob);
     void addColNestedAccess(RandomGenerator & rg, ExprColumn * expr, uint32_t nested_prob);
