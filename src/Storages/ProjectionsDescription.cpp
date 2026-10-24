@@ -100,6 +100,22 @@ bool ProjectionDescription::isPrimaryKeyColumnPossiblyWrappedInFunctions(const A
     return false;
 }
 
+bool ProjectionDescription::canProvideParentColumn(const String & column_name) const
+{
+    if (sample_block.findColumnOrSubcolumnByName(column_name))
+        return true;
+
+    /// A projection part stores the parent's `_part_offset` as `_parent_part_offset`.
+    if (column_name == "_part_offset")
+        return with_parent_part_offset;
+
+    /// A projection part keeps its rows in another order, so it would give its own positions for these.
+    if (column_name == "_part_granule_offset" || column_name == BlockNumberColumn::name || column_name == BlockOffsetColumn::name)
+        return false;
+
+    return metadata->virtuals.has(column_name);
+}
+
 
 ProjectionDescription ProjectionDescription::clone() const
 {
