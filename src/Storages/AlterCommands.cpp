@@ -2296,6 +2296,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         defaults_evaluated_at_insert_time = mv->hasInnerTable();
     NameSet modified_columns;
     NameSet renamed_columns;
+    /// The columns dropped by the previous commands of this ALTER, the members for a Nested group.
+    NameSet dropped_columns;
     const CodecValidationSettings codec_validation_settings(context->getSettingsRef());
     for (size_t i = 0; i < size(); ++i)
     {
@@ -2538,6 +2540,11 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                         }
                     }
                 }
+                if (!command.clear)
+                {
+                    for (const auto & dropped_column : all_columns.getNested(command.column_name))
+                        dropped_columns.insert(dropped_column.name);
+                }
                 all_columns.remove(command.column_name);
             }
             else if (!command.if_exists)
@@ -2604,6 +2611,14 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 }
                 continue;
             }
+
+            /// The column exists here only because it was added again after the drop. The mutation of the ALTER would
+            /// rename the data of the dropped column instead of removing it, because it finds the column in the parts
+            /// by its name.
+            if (dropped_columns.contains(command.column_name))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot rename column {} which is dropped and added again by the same ALTER query, use a separate ALTER query",
+                    backQuote(command.column_name));
 
             if (all_columns.has(command.rename_to))
                 throw Exception(ErrorCodes::DUPLICATE_COLUMN,
