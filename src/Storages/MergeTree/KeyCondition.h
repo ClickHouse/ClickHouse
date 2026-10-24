@@ -46,6 +46,12 @@ struct ActionsDAGWithInversionPushDown
     explicit ActionsDAGWithInversionPushDown(const ActionsDAG::Node * predicate_, const ContextPtr & context, bool boolean_context);
 };
 
+/// Clone the DAG of the given output nodes with the same canonicalization `cloneDAGWithInversionPushDown`
+/// applies to filter expressions before index analysis (no inversions, no truthiness rewrites): in
+/// particular, constants are renamed from the analyzer's typed names (`1_UInt8`) to their literal names,
+/// so the cloned nodes' names match the names index analysis computes for the query filter expressions.
+ActionsDAG cloneDAGForIndexAnalysisNames(const ActionsDAG::NodeRawConstPtrs & outputs, const ContextPtr & context);
+
 
 struct DeterministicKeyTransformDag
 {
@@ -54,6 +60,20 @@ struct DeterministicKeyTransformDag
     DataTypePtr input_type;
     String input_name;
 };
+
+/// An alternative form of a key: the same key expressions under different names, e.g. the names
+/// the expressions get after the query analyzer's rewrite passes (see MergeTreeIndexAnalyzerNames.h).
+/// `column_names` is parallel to the key column names and holds the alternative index-analysis
+/// names of the key columns. `expression` computes the same key columns as the original key
+/// expression, with all (sub)expressions in the alternative form, so the paths that match key
+/// subexpressions against filter expressions by name can search it in addition to the original.
+struct AlternativeKeyExpression
+{
+    Names column_names;
+    ExpressionActionsPtr expression;
+};
+
+using AlternativeKeyExpressionPtr = std::shared_ptr<const AlternativeKeyExpression>;
 
 /** Condition on the index.
   *
@@ -73,6 +93,9 @@ public:
     /// This overload takes the key column names and expression without any direction information,
     /// so the condition treats the key as ascending in every column. Use it only for keys that
     /// cannot be reverse-sorted (e.g. skip index expressions, virtual row-offset columns).
+    /// `alternative_key` optionally carries the same key expressions under the names they get
+    /// after the query analyzer's rewrite passes (see MergeTreeIndexAnalyzerNames.h); the key
+    /// columns and their subexpressions are additionally matched by those names.
     KeyCondition(
         const ActionsDAGWithInversionPushDown & filter_dag,
         ContextPtr context,
@@ -80,7 +103,8 @@ public:
         const ExpressionActionsPtr & key_expr,
         bool single_point_ = false,
         bool skip_analysis_ = false, /// Toggled by `use_primary_key`, `use_partition_key` setting. Useful for testing.
-        bool require_ready_sets_ = false); /// Analyse only already-built `IN` sets; never execute a subquery.
+        bool require_ready_sets_ = false, /// Analyse only already-built `IN` sets; never execute a subquery.
+        const AlternativeKeyExpressionPtr & alternative_key = nullptr);
 
     /// Same as above, but takes the key's KeyDescription. The condition honors the key's per-column
     /// sort directions (reverse flags; an empty vector means all-ascending, e.g. a partition key).
@@ -93,7 +117,8 @@ public:
         ContextPtr context,
         const KeyDescription & key_description,
         bool single_point_ = false,
-        bool skip_analysis_ = false);
+        bool skip_analysis_ = false,
+        const AlternativeKeyExpressionPtr & alternative_key = nullptr);
 
     struct BloomFilterData
     {
@@ -577,7 +602,11 @@ private:
     {
         /// Expression which is used for key condition.
         const ExpressionActionsPtr key_expr;
-        /// All intermediate columns are used to calculate key_expr.
+        /// The same key expressions under the alternative names (the names the query analyzer's
+        /// rewrite passes give them), or nullptr. The paths that match key subexpressions against
+        /// filter expressions by name search it in addition to `key_expr`.
+        const ExpressionActionsPtr alternative_key_expr;
+        /// All intermediate columns are used to calculate key_expr (and alternative_key_expr).
         const NameSet key_subexpr_names;
         /// If true, an `IN` atom whose set is not built yet is declined instead of building it.
         /// Analysis passes that are not allowed to execute a user subquery set this.
@@ -756,6 +785,16 @@ private:
         bool first_match_only,
         std::function<bool(const IFunctionBase &, const IDataType &)> allow_key_function) const;
 
+    /// The same as `collectKeyWrappingChains`, but over the given key expression (the original
+    /// or the alternative one).
+    std::vector<KeyWrappingChain> collectKeyWrappingChainsFromKeyExpr(
+        ContextPtr context,
+        const ExpressionActions & key_expr,
+        bool is_alternative_key_expr,
+        const String & expr_name,
+        bool first_match_only,
+        const std::function<bool(const IFunctionBase &, const IDataType &)> & allow_key_function) const;
+
     /// For every key column that is computed from the predicate expression `node` by a
     /// chain of `allow_key_function`-approved monotonic functions, this function
     /// applies that chain to the constant once and returns the transformed constant.
@@ -806,6 +845,14 @@ private:
     std::vector<DeterministicKeyDag> collectKeyWrappingDags(
         const String & expr_name,
         const BuildInfo & info,
+        bool first_match_only) const;
+
+    /// The same as `collectKeyWrappingDags`, but over the given key expression (the original
+    /// or the alternative one).
+    std::vector<DeterministicKeyDag> collectKeyWrappingDagsFromKeyExpr(
+        const ExpressionActions & key_expr,
+        bool is_alternative_key_expr,
+        const String & expr_name,
         bool first_match_only) const;
 
     /// Finds the first key column computable from `node` through deterministic functions. The set
@@ -983,6 +1030,20 @@ private:
     /// `key_columns` may contain all columns of the key tuple or only the columns used in the
     /// KeyCondition. Either way, num_key_columns is the length of the whole key tuple.
     size_t num_key_columns = 0;
+
+    /// For key columns registered in `key_columns` under an alternative name (the name the key
+    /// expression gets after the query analyzer's rewrite passes), maps that name to the original
+    /// key column name, under which the column is present in the key expression sample block.
+    std::unordered_map<String, String> alternative_to_original_key_column_name;
+
+    /// The name a name found in `key_columns` has in the original key expression's sample block:
+    /// an alternative name maps to the original key column name, any other name is returned unchanged.
+    const String & originalKeyColumnName(const String & name) const;
+
+    /// The position of the key column the node of the given key expression (the original one or the
+    /// alternative one) computes, or nullptr if the node does not compute a key column.
+    const size_t * findKeyColumnComputedByNode(
+        const ExpressionActions & key_expr, bool is_alternative_key_expr, const ActionsDAG::Node & node) const;
 
     /// Space-filling curves in the key
     enum class SpaceFillingCurveType
