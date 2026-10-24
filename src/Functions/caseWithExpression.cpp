@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/TypeTree.h>
 #include <Columns/ColumnConst.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -217,7 +218,11 @@ public:
             auto mixes_fixed_string = [](const DataTypes & types)
             {
                 auto unwrap = [](const DataTypePtr & type) { return removeNullable(removeLowCardinality(type)); };
-                bool has_fixed_string = std::ranges::any_of(types, [&](const DataTypePtr & type) { return isFixedString(unwrap(type)); });
+                /// Also inside composite types, such as `Tuple(FixedString(2))` against `Tuple(String)`.
+                bool has_fixed_string = std::ranges::any_of(types, [](const DataTypePtr & type)
+                {
+                    return anyInTypeTree(*type, [](const IDataType & t) { return isFixedString(t); });
+                });
                 bool all_same = std::ranges::all_of(types, [&](const DataTypePtr & type) { return unwrap(type)->equals(*unwrap(types.front())); });
                 return has_fixed_string && !all_same;
             };
