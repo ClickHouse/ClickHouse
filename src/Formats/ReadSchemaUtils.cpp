@@ -506,6 +506,14 @@ try
 
         if (names_and_types.empty())
         {
+            /// A schema reader returns an empty schema without an error, for example when a
+            /// `*_skip_columns_with_unsupported_types_in_schema_inference` setting skipped every column.
+            if (!exception_messages.empty())
+                exception_messages += "\n";
+            exception_messages += "The schema has no columns. If the data has columns, the format may not support any of "
+                                  "their types, and a `*_skip_columns_with_unsupported_types_in_schema_inference` setting "
+                                  "may have skipped all of them";
+
             if (iterations <= 1)
             {
                 throw Exception(
