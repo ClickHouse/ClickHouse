@@ -256,3 +256,76 @@ TEST(SchedulerCPULeaseAllocation, UnparkAfterShutdown)
     worker2_slot.reset();
     scheduler.stop();
 }
+
+/// The query wants two slots and the only slot goes to another query, so its worker is preempted and times out
+/// while the master is parked. The worker leaves its request pending. When that request is granted, no thread of
+/// the query can use the slot, so the grant must be given back, or a third query waits for a slot nobody uses.
+TEST(SchedulerCPULeaseAllocation, GrantAfterPreemptionTimeoutWhileOtherIsParkedIsGivenBack)
+{
+    TimeSharedScheduler scheduler;
+    auto semaphore = std::make_shared<SemaphoreConstraint>(scheduler.event_queue, SchedulerNodeInfo{}, /*max_requests=*/ 1);
+    auto queue = std::make_shared<RequestQueue>(scheduler.event_queue, SchedulerNodeInfo{});
+    queue->basename = "queue";
+    semaphore->attachChild(queue);
+    scheduler.attachChild(semaphore);
+    scheduler.start(ThreadName::TEST_SCHEDULER);
+
+    constexpr ResourceCost quantum_ns = 10'000'000;
+    CPULeaseSettings settings;
+    settings.quantum_ns = quantum_ns;
+    settings.report_ns = quantum_ns / 10;
+    settings.preemption_timeout = std::chrono::milliseconds(50);
+    settings.parking_enabled = true;
+    ResourceLink link;
+    link.queue = queue.get();
+    auto allocation = std::make_shared<CPULeaseAllocation>(/*max_threads=*/ 2, link, link, settings);
+
+    // The first request takes the only slot, the second one waits in the queue
+    ASSERT_TRUE(waitUntil([&] { return semaphore->getInflights().first == 1 && queue->getQueueLengthAndCost().first == 1; }));
+    auto master_slot = allocation->acquire();
+    auto worker_slot = allocation->acquire();
+    auto * master = dynamic_cast<ISlotLease *>(master_slot.get());
+    auto * worker = dynamic_cast<ISlotLease *>(worker_slot.get());
+    ASSERT_EQ(worker->slot_id, 1u);
+
+    // The master parks while the worker runs, so the queued request is cancelled
+    ASSERT_TRUE(master->park());
+    ASSERT_TRUE(waitUntil([&] { return queue->getQueueLengthAndCost().first == 0; }));
+
+    // Another query waits for the slot
+    auto other = std::make_shared<CPULeaseAllocation>(/*max_threads=*/ 1, link, link, settings);
+    ASSERT_TRUE(waitUntil([&] { return queue->getQueueLengthAndCost().first == 1; }));
+
+    // The worker's consumption gives the slot to the other query, then the worker is preempted and times out
+    auto worker_thread = std::async(std::launch::async, [&]
+    {
+        worker->startConsumption();
+        while (true)
+        {
+            burnCPU(settings.report_ns);
+            if (!worker->renew())
+                return false;
+        }
+    });
+    bool stopped = worker_thread.wait_for(std::chrono::seconds(30)) == std::future_status::ready;
+    if (!stopped)
+        allocation->free(); // Stops the worker thread, so the test fails instead of hanging
+    ASSERT_TRUE(stopped) << "the worker thread was not preempted";
+    ASSERT_FALSE(worker_thread.get());
+
+    // A third query waits behind the pending request of the first one
+    auto third = std::make_shared<CPULeaseAllocation>(/*max_threads=*/ 1, link, link, settings);
+    ASSERT_TRUE(waitUntil([&] { return queue->getQueueLengthAndCost().first == 2; }));
+
+    // The pending request is granted while the only thread of the query is parked
+    other->free();
+    EXPECT_TRUE(waitUntil([&] { return queue->getQueueLengthAndCost().first == 0 && semaphore->getInflights().first == 1; }))
+        << "a grant that arrives while every thread is parked is not given back";
+
+    master->unpark();
+    master_slot.reset();
+    worker_slot.reset();
+    third->free();
+    allocation->free();
+    scheduler.stop();
+}
