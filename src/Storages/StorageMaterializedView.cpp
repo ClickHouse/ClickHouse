@@ -540,8 +540,9 @@ void StorageMaterializedView::readImpl(
     /// datalake_table_state, causing a LOGICAL_ERROR in iterate().
     /// Normally updateExternalDynamicMetadataIfExists is called by the analyzer/interpreter
     /// on the outermost storage (the view, which forwards it to the target), but some paths
-    /// reach `read` without it.
-    storage->updateExternalDynamicMetadataIfExists(context);
+    /// reach `read` without it. The view does not materialize a lazy-load target in that hook (see
+    /// `updateExternalDynamicMetadataIfExists` below), but reading it does in any case, so resolve it here.
+    resolveStorageProxyLoading(storage)->updateExternalDynamicMetadataIfExists(context);
 
     auto target_metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
     auto target_storage_snapshot = storage->getStorageSnapshot(target_metadata_snapshot, context);
@@ -1073,14 +1074,16 @@ void StorageMaterializedView::updateExternalDynamicMetadataIfExists(ContextPtr l
     /// The analyzer and the interpreters refresh the external metadata of the outermost storage, which is the
     /// view itself, so forward the refresh to the target (e.g. `IcebergLocal`). In particular, `ALTER ... UPDATE/DELETE`
     /// has to validate the mutation against the same state of the target that `mutate` executes it against.
-    /// A lazy-load stand-in forwards the refresh only to a table that is already materialized, so resolve it.
+    /// A lazy-load target is not materialized here: the refresh is also asked for by `DESCRIBE`, which must not
+    /// load it, and the stand-in forwards the refresh only to a table that is already materialized. The paths that
+    /// need the target (`read`, `InterpreterAlterQuery` before a mutation) materialize it themselves.
     /// The target is accessed on behalf of the view, so use the same `SQL SECURITY` context as `read` does:
     /// e.g. the definer may be allowed to use server credentials for an `IcebergS3` target while the invoker is not.
     if (auto target = tryGetTargetTable())
     {
         auto view_metadata = getInMemoryMetadataPtr(local_context, false);
         auto context = view_metadata->getSQLSecurityOverriddenContext(local_context);
-        resolveStorageProxyLoading(target)->updateExternalDynamicMetadataIfExists(context);
+        target->updateExternalDynamicMetadataIfExists(context);
     }
 }
 
