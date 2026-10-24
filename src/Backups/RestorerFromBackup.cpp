@@ -26,12 +26,15 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageProxy.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/FailPoint.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include <Common/typeid_cast.h>
 
 #include <boost/algorithm/string/join.hpp>
 #include <boost/range/adaptor/map.hpp>
@@ -410,6 +413,11 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
             {
                 flags |= AccessType::INSERT;
             }
+
+            /// Restoring into an existing replicated table can raise its metadata version on all its replicas
+            /// (see `StorageReplicatedMergeTree::restoreMetadataVersionFromBackup`), which is a write to the table.
+            if (!flags && backup->fileExists(BackupUtils::getMetadataVersionPathInBackup(table_info.metadata_path_in_backup)))
+                flags = AccessType::INSERT;
 
             if (!flags)
             {
@@ -969,6 +977,24 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
     }
 }
 
+static std::optional<Int32> readMetadataVersionFromBackup(const IBackup & backup, const String & metadata_path_in_backup)
+{
+    String path_in_backup = BackupUtils::getMetadataVersionPathInBackup(metadata_path_in_backup);
+    if (!backup.fileExists(path_in_backup))
+        return std::nullopt;
+    auto buf = backup.readFile(path_in_backup);
+    String version_str;
+    readStringUntilEOF(version_str, *buf);
+    Int32 metadata_version = parse<Int32>(version_str);
+    if (metadata_version < 0)
+        throw Exception(
+            ErrorCodes::CANNOT_RESTORE_TABLE,
+            "Invalid metadata version {} stored in {} in the backup",
+            metadata_version,
+            path_in_backup);
+    return metadata_version;
+}
+
 void RestorerFromBackup::checkTable(const QualifiedTableName & table_name)
 {
     try
@@ -1022,6 +1048,23 @@ void RestorerFromBackup::checkTable(const QualifiedTableName & table_name)
                     table_def_from_backup->formatForErrorMessage());
             }
         }
+
+        /// When the table's data is restored, the metadata version is applied right after it (see
+        /// `insertDataToTableImpl`). Otherwise nothing else would apply it, so do it here. Note that
+        /// `structure_only` is not the same condition: `restore_table_data` overrides it both ways.
+        if (!restore_settings.shouldRestoreTableData())
+        {
+            if (auto replicated_storage = castStorage<StorageReplicatedMergeTree>(resolveStorageProxyLoading(storage), DeferredTable::Skip))
+            {
+                String metadata_path;
+                {
+                    std::lock_guard lock{mutex};
+                    metadata_path = table_infos.at(table_name).metadata_path_in_backup;
+                }
+                if (auto version = readMetadataVersionFromBackup(*backup, metadata_path))
+                    replicated_storage->restoreMetadataVersionFromBackup(*version, process_list_element);
+            }
+        }
     }
     catch (Exception & e)
     {
@@ -1070,6 +1113,7 @@ void RestorerFromBackup::insertDataToTable(const QualifiedTableName & table_name
 
     StoragePtr storage;
     String data_path_in_backup;
+    String metadata_path_in_backup;
     std::optional<ASTs> partitions;
     ASTPtr create_table_query_from_backup;
     {
@@ -1077,6 +1121,7 @@ void RestorerFromBackup::insertDataToTable(const QualifiedTableName & table_name
         auto & table_info = table_infos.at(table_name);
         storage = table_info.storage;
         data_path_in_backup = table_info.data_path_in_backup;
+        metadata_path_in_backup = table_info.metadata_path_in_backup;
         partitions = table_info.partitions;
         create_table_query_from_backup = table_info.create_table_query;
     }
@@ -1088,7 +1133,8 @@ void RestorerFromBackup::insertDataToTable(const QualifiedTableName & table_name
     }
 
     schedule(
-        [this, table_name, storage, data_path_in_backup, partitions]() { insertDataToTableImpl(table_name, storage, data_path_in_backup, partitions); },
+        [this, table_name, storage, data_path_in_backup, metadata_path_in_backup, partitions]()
+        { insertDataToTableImpl(table_name, storage, data_path_in_backup, metadata_path_in_backup, partitions); },
         ThreadName::RESTORE_TABLE_DATA);
 }
 
@@ -1132,7 +1178,12 @@ void RestorerFromBackup::skipTableDataOnBackupMetadataOnlyStoragePolicy(
         tableNameWithTypeToString(table_name.database, table_name.table, false));
 }
 
-void RestorerFromBackup::insertDataToTableImpl(const QualifiedTableName & table_name, StoragePtr storage, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
+void RestorerFromBackup::insertDataToTableImpl(
+    const QualifiedTableName & table_name,
+    StoragePtr storage,
+    const String & data_path_in_backup,
+    const String & metadata_path_in_backup,
+    const std::optional<ASTs> & partitions)
 {
     try
     {
@@ -1144,6 +1195,12 @@ void RestorerFromBackup::insertDataToTableImpl(const QualifiedTableName & table_
                 storage->getName());
         }
         storage->restoreDataFromBackup(*this, data_path_in_backup, partitions);
+
+        if (auto replicated_storage = castStorage<StorageReplicatedMergeTree>(resolveStorageProxyLoading(storage), DeferredTable::Skip))
+        {
+            if (auto version = readMetadataVersionFromBackup(*backup, metadata_path_in_backup))
+                replicated_storage->restoreMetadataVersionFromBackup(*version, process_list_element);
+        }
     }
     catch (Exception & e)
     {

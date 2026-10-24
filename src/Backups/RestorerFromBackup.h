@@ -105,7 +105,7 @@ private:
 
     void insertDataToTables();
     void insertDataToTable(const QualifiedTableName & table_name);
-    void insertDataToTableImpl(const QualifiedTableName & table_name, StoragePtr storage, const String & data_path_in_backup, const std::optional<ASTs> & partitions);
+    void insertDataToTableImpl(const QualifiedTableName & table_name, StoragePtr storage, const String & data_path_in_backup, const String & metadata_path_in_backup, const std::optional<ASTs> & partitions);
 
     /// The data of a table on a storage policy marked `backup_metadata_only` is not restored, see `BackupUtils`.
     void skipTableDataOnBackupMetadataOnlyStoragePolicy(

@@ -1,0 +1,5 @@
+--- without INSERT: denied, and the metadata version is unchanged ---
+1
+0
+--- with INSERT: allowed ---
+1

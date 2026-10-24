@@ -6896,6 +6896,16 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
         auto table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
         auto alter_lock_holder = lockForAlter((*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
 
+        /// RESTORE could have raised the metadata version while we were waiting for the locks
+        /// (see `restoreMetadataVersionFromBackup`).
+        current_metadata = getInMemoryMetadataPtr(getContext(), false);
+        if (entry.alter_version < current_metadata->getMetadataVersion())
+        {
+            LOG_INFO(log, "Skipping metadata alter version {} from log entry {}, because the metadata version is already {}",
+                     entry.alter_version, entry.znode_name, current_metadata->getMetadataVersion());
+            return true;
+        }
+
         /// Refresh table_id: a rename could have slipped in while we were waiting for the guard.
         auto table_id = getStorageID();
         auto alter_context = getContext();
@@ -7732,6 +7742,146 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
         LOG_INFO(log, "Attached all partitions, starting table");
         startupImpl(/* from_attach_thread */ false, zookeeper_retries_info);
     }
+}
+
+/// Comment ALTERs are not replicated through ZooKeeper, so copies the comments a replica has applied to the columns
+/// from ZooKeeper, except for columns it does not have yet or has with another type.
+static void copyLocalColumnComments(ColumnsDescription & columns_from_zk, const ColumnsDescription & local_columns)
+{
+    for (const auto & column : local_columns)
+    {
+        const auto * zk_column = columns_from_zk.tryGet(column.name);
+        if (zk_column && zk_column->comment != column.comment && zk_column->type->equals(*column.type))
+            columns_from_zk.modify(column.name, [&](ColumnDescription & c) { c.comment = column.comment; });
+    }
+}
+
+void StorageReplicatedMergeTree::restoreMetadataVersionFromBackup(Int32 metadata_version, const QueryStatusPtr & process_list_element)
+{
+    auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::restoreMetadataVersionFromBackup");
+    auto zookeeper = getZooKeeper();
+    const String table_metadata_path = fs::path(zookeeper_path) / "metadata";
+    const String table_columns_path = fs::path(zookeeper_path) / "columns";
+    const String replica_metadata_version_path = fs::path(replica_path) / "metadata_version";
+
+    /// The table's metadata version is the version of the /metadata znode.
+    /// Bump it by re-setting the same content. CAS protects against concurrent ALTERs
+    /// and other replicas restoring the same table.
+    /// Every committed bump is done in the same transaction as the creation of an ALTER_METADATA log entry
+    /// for the version it reaches, so an interrupted restore never leaves /metadata ahead of the log, and
+    /// exactly one entry is produced per bump even with concurrent RESTORE ON CLUSTER.
+    /// A transaction makes up to `MULTI_BATCH_SIZE` consecutive bumps to limit the number of log entries.
+    /// Each bump repeats the whole /metadata value, so the bumps of a transaction are also limited to
+    /// `max_bumps_bytes` in total, well below the default request size limit of ZooKeeper (1 MiB).
+    constexpr size_t max_bumps_bytes = 256 * 1024;
+    Coordination::Stat metadata_stat;
+    String metadata_str = zookeeper->get(table_metadata_path, &metadata_stat);
+
+    while (metadata_stat.version < metadata_version)
+    {
+        /// The number of bumps comes from the backup, so make it interruptible.
+        if (process_list_element)
+            process_list_element->checkTimeLimit();
+
+        const size_t max_bumps = std::clamp<size_t>(max_bumps_bytes / std::max<size_t>(metadata_str.size(), 1), 1, zkutil::MULTI_BATCH_SIZE);
+        const Int32 target_version = static_cast<Int32>(
+            std::min<Int64>(metadata_version, static_cast<Int64>(metadata_stat.version) + static_cast<Int64>(max_bumps)));
+
+        /// The entry replaces the columns of every replica which applies it, so keep the comments of this one.
+        auto columns = ColumnsDescription::parse(zookeeper->get(table_columns_path));
+        auto local_metadata = getInMemoryMetadataPtr(getContext(), false);
+        copyLocalColumnComments(columns, local_metadata->columns);
+
+        ReplicatedMergeTreeLogEntryData alter_entry;
+        alter_entry.type = LogEntry::ALTER_METADATA;
+        alter_entry.source_replica = replica_name;
+        alter_entry.metadata_str = metadata_str;
+        alter_entry.columns_str = columns.toString(true);
+        alter_entry.alter_version = target_version;
+        alter_entry.create_time = time(nullptr);
+
+        Coordination::Requests ops;
+        for (Int32 version = metadata_stat.version; version < target_version; ++version)
+            ops.emplace_back(zkutil::makeSetRequest(table_metadata_path, metadata_str, version));
+        ops.emplace_back(zkutil::makeCreateRequest(
+            fs::path(zookeeper_path) / "log/log-", alter_entry.toString(), zkutil::CreateMode::PersistentSequential));
+
+        Coordination::Responses responses;
+        auto code = zookeeper->tryMulti(ops, responses);
+        if (code != Coordination::Error::ZOK && code != Coordination::Error::ZBADVERSION)
+            throw zkutil::KeeperException(code);
+        if (code == Coordination::Error::ZOK)
+        {
+            const String & path_created = dynamic_cast<const Coordination::CreateResponse &>(*responses.back()).path_created;
+            LOG_INFO(log, "Created ALTER_METADATA log entry {} to propagate metadata version {} to all replicas",
+                     path_created, target_version);
+        }
+
+        metadata_str = zookeeper->get(table_metadata_path, &metadata_stat);
+    }
+
+    /// The in-memory metadata is read-modify-written here, and `setInMemoryMetadata` is only an atomic
+    /// pointer swap. Concurrent ALTERs install their new metadata snapshot under the alter lock (see
+    /// `executeMetadataAlter` and `InterpreterAlterQuery`), so without holding it here one of the two
+    /// updates would be silently lost - reverting the table to the pre-ALTER structure.
+    auto alter_lock_holder = lockForAlter((*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
+    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    if (metadata_snapshot->getMetadataVersion() >= metadata_version)
+        return;
+
+    /// This replica can be marked with the current version of the table in ZooKeeper, which is at least
+    /// `metadata_version`, only if it has the structure the table has at that version, otherwise the parts
+    /// restored next would get a metadata version their columns do not match. The current version is used
+    /// rather than `metadata_version`, because the versions saved by different hosts of one backup can differ
+    /// while the structure is the same, and another host may have already raised the table to a higher one.
+    /// /columns changes only together with /metadata, so if /metadata has the same version before and after
+    /// reading /columns, both are of that version. Column comments are not compared, as they are not replicated.
+    ColumnsDescription columns_from_zk;
+    Int32 version_before_columns = 0;
+    do
+    {
+        zookeeper->get(table_metadata_path, &metadata_stat);
+        version_before_columns = metadata_stat.version;
+        columns_from_zk = ColumnsDescription::parse(zookeeper->get(table_columns_path));
+        metadata_str = zookeeper->get(table_metadata_path, &metadata_stat);
+    } while (metadata_stat.version != version_before_columns);
+
+    const Int32 new_metadata_version = metadata_stat.version;
+    chassert(new_metadata_version >= metadata_version);
+    bool same_structure = columns_from_zk == metadata_snapshot->getColumns();
+    if (same_structure)
+    {
+        auto metadata_from_zk = ReplicatedMergeTreeTableMetadata::parseAndNormalize(
+            metadata_str, metadata_snapshot->getColumns(),
+            metadata_snapshot->add_minmax_index_for_numeric_columns,
+            metadata_snapshot->add_minmax_index_for_string_columns,
+            getContext());
+        same_structure = ReplicatedMergeTreeTableMetadata(*this, metadata_snapshot).checkEquals(
+            metadata_from_zk, metadata_snapshot->columns, metadata_snapshot->virtuals, getStorageID().getNameForLogs(), getContext(),
+            /* check_index_granularity= */ true, /* strict_check= */ false);
+    }
+    if (!same_structure)
+        throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS,
+            "Cannot apply metadata version {} from the backup to this replica of table {}: its structure (at metadata version {}) "
+            "differs from the structure of the table at metadata version {} in ZooKeeper. The replica may be lagging behind on an ALTER "
+            "or the table may have been altered concurrently. Wait for the replica to apply the ALTERs (SYSTEM SYNC REPLICA) and retry",
+            metadata_version, getStorageID().getNameForLogs(), metadata_snapshot->getMetadataVersion(), new_metadata_version);
+
+    String replica_metadata_version_str;
+    Coordination::Stat replica_metadata_version_stat;
+    while (zookeeper->tryGet(replica_metadata_version_path, replica_metadata_version_str, &replica_metadata_version_stat)
+        && parse<Int32>(replica_metadata_version_str) < new_metadata_version)
+    {
+        auto code = zookeeper->trySet(replica_metadata_version_path, toString(new_metadata_version), replica_metadata_version_stat.version);
+        if (code == Coordination::Error::ZOK)
+            break;
+        if (code != Coordination::Error::ZBADVERSION)
+            throw zkutil::KeeperException::fromPath(code, replica_metadata_version_path);
+    }
+
+    setInMemoryMetadata(metadata_snapshot->withMetadataVersion(new_metadata_version));
+
+    LOG_INFO(log, "Restored metadata version {} from backup (version in the backup is {})", new_metadata_version, metadata_version);
 }
 
 void StorageReplicatedMergeTree::dropPartNoWaitNoThrow(const String & part_name)
@@ -12192,14 +12342,8 @@ void StorageReplicatedMergeTree::applyMetadataChangesToCreateQueryForBackup(cons
         auto columns_from_entry = ColumnsDescription::parse(zookeeper->get(fs::path(zookeeper_path) / "columns"));
         auto current_metadata = getInMemoryMetadataPtr(getContext(), false);
 
-        /// Comment ALTERs are not replicated through ZooKeeper, so the backup keeps the comments this replica has
-        /// applied, except for columns it does not have yet or has with another type than the snapshot.
-        for (const auto & column : current_metadata->columns)
-        {
-            const auto * entry_column = columns_from_entry.tryGet(column.name);
-            if (entry_column && entry_column->comment != column.comment && entry_column->type->equals(*column.type))
-                columns_from_entry.modify(column.name, [&](ColumnDescription & c) { c.comment = column.comment; });
-        }
+        /// The backup keeps the comments this replica has applied.
+        copyLocalColumnComments(columns_from_entry, current_metadata->columns);
 
         auto metadata_from_entry = ReplicatedMergeTreeTableMetadata::parseAndNormalize(
             zookeeper->get(fs::path(zookeeper_path) / "metadata"), columns_from_entry,
