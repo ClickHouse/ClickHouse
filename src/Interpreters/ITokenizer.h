@@ -828,4 +828,8 @@ void forEachTokenToBloomFilter(const ITokenizer & tokenizer, const char * data, 
 /// Tokenizes `rows`-many rows of `input`, starting at offset `from`. Returns a ColumnArray(String) with one array per row, containing the tokens.
 ColumnPtr tokenizeToArray(const ITokenizer & tokenizer, const IColumn & input, size_t from, size_t rows);
 
+/// Whether `function_name` can tokenize with `type`. `hasPhrase` matches tokens by position and rejects
+/// the tokenizers that cannot number them that way; the other text-search functions accept any.
+bool doesTextSearchFunctionSupportTokenizer(std::string_view function_name, ITokenizer::Type type);
+
 }

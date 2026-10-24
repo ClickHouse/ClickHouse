@@ -94,6 +94,11 @@ public:
     RPNBuilderTreeNode getArgumentAt(size_t index) const;
 };
 
+/// Whether converting a value of type `from` to type `to` never changes a non-NULL value.
+/// Dropping `Nullable` throws on NULL. Such a query may not throw if the index skips the granules
+/// with NULL, which is accepted.
+bool isLosslessConversion(const DataTypePtr & from, const DataTypePtr & to, bool allow_drop_nullable = true);
+
 /// Whether the node is `CAST`, `_CAST`, `toNullable` or `toLowCardinality` whose conversion never changes
 /// a non-NULL value: `LowCardinality` or `Nullable` added or dropped, at any depth of `Array`.
 /// Dropping `Nullable` throws on NULL, but an index may skip such granules and the query will not throw.

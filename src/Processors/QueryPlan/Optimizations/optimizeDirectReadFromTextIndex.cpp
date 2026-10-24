@@ -567,12 +567,6 @@ private:
     /// Read tasks of the virtual columns added to the DAG, by index name. `replace` keeps only the columns still used after the rewrite.
     IndexReadTasks index_read_tasks;
 
-    /// has/hasAll/hasAny operate on array elements directly, bypassing the tokenizer, preprocessor, and postprocessor.
-    static bool needApplyTokenizer(const String & function_name)
-    {
-        return function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "hasPhrase";
-    }
-
     /// Returns true for functions that require applying the preprocessor to the haystack.
     /// has/hasAll/hasAny bypass both transforms.
     static bool needApplyPreprocessor(const String & function_name)
@@ -664,7 +658,7 @@ private:
             return &function_node;
 
         auto function_name = function_node.function_base->getName();
-        bool need_transform_function = needApplyTokenizer(function_name) || needApplyPreprocessor(function_name);
+        bool need_transform_function = doesTextSearchFunctionAcceptTokenizer(function_name) || needApplyPreprocessor(function_name);
 
         /// Early exit if there is nothing to process.
         if (!need_transform_function && !direct_read_from_text_index)
@@ -717,7 +711,7 @@ private:
 
         /// All three transforms follow the index definition, so they apply to every occurrence of the function.
         const bool apply_preprocessor = needApplyPreprocessor(function_name) && preprocessor && preprocessor->hasActions();
-        const bool apply_tokenizer = needApplyTokenizer(function_name) && tokenizer;
+        const bool apply_tokenizer = doesTextSearchFunctionAcceptTokenizer(function_name) && tokenizer;
         const bool apply_postprocessor = needApplyPostprocessor(function_name) && has_postprocessor;
 
         if (!apply_preprocessor && !apply_tokenizer && !apply_postprocessor)
