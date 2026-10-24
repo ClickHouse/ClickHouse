@@ -3,7 +3,6 @@
 -- that can carry a float must not take the single-element `equals` shortcut. Both agree that 0.0 equals -0.0,
 -- so the ANTI joins below find a match and return no rows, with or without the runtime filter.
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET join_algorithm = 'hash';
 SET enable_join_runtime_filters = 1;

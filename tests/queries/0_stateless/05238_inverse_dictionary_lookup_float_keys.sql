@@ -4,7 +4,6 @@
 -- while equality compares them numerically: `NaN` equals nothing. The results must be the same with the
 -- optimization on and off.
 
-SET enable_analyzer = 1;
 SET optimize_rewrite_like_perfect_affix = 0;
 
 DROP DICTIONARY IF EXISTS dict_float;
