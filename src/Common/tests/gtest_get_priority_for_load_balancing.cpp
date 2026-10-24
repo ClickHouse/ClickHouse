@@ -216,3 +216,50 @@ TEST(GetPriorityForLoadBalancing, CopyAndMovePropagateCounter)
         observedHead(src3.getPriorityFunc(LoadBalancing::ROUND_ROBIN, 0, pool_size), pool_size),
         observedHead(dst3.getPriorityFunc(LoadBalancing::ROUND_ROBIN, 0, pool_size), pool_size));
 }
+
+/// `least_request` with `choice_count >= pool_size` degrades to a full scan:
+/// the pool with the fewest in-flight requests must be preferred deterministically.
+TEST(GetPriorityForLoadBalancing, LeastRequestPrefersLeastLoaded)
+{
+    const std::vector<size_t> active_counts = {3, 0, 5, 1};
+    const size_t pool_size = active_counts.size();
+    const size_t least_loaded = 1;
+
+    GetPriorityForLoadBalancing lb(LoadBalancing::LEAST_REQUEST);
+    lb.get_active_count = [&active_counts](size_t i) { return active_counts[i]; };
+
+    /// The sample is random, so repeat: with a full scan the result must not depend on it.
+    for (size_t attempt = 0; attempt < 100; ++attempt)
+    {
+        auto func = lb.getPriorityFunc(LoadBalancing::LEAST_REQUEST, 0, pool_size, /* least_request_choice_count */ pool_size);
+        ASSERT_TRUE(func);
+        for (size_t i = 0; i < pool_size; ++i)
+            ASSERT_EQ(func(i).value, i == least_loaded ? 0 : 1);
+    }
+}
+
+/// A zero bias disregards the in-flight request counts, but exactly one sampled pool still wins.
+TEST(GetPriorityForLoadBalancing, LeastRequestZeroBias)
+{
+    const std::vector<size_t> active_counts = {3, 0, 5, 1};
+    const size_t pool_size = active_counts.size();
+
+    GetPriorityForLoadBalancing lb(LoadBalancing::LEAST_REQUEST);
+    lb.get_active_count = [&active_counts](size_t i) { return active_counts[i]; };
+
+    auto func = lb.getPriorityFunc(
+        LoadBalancing::LEAST_REQUEST, 0, pool_size, /* least_request_choice_count */ pool_size, /* least_request_active_request_bias */ 0.0);
+    ASSERT_TRUE(func);
+    size_t winners = 0;
+    for (size_t i = 0; i < pool_size; ++i)
+        winners += func(i).value == 0;
+    ASSERT_EQ(winners, 1u);
+}
+
+/// Without a source of in-flight request counts (e.g. for ZooKeeper connections)
+/// `least_request` degenerates to `random`, i.e. no priority function is produced.
+TEST(GetPriorityForLoadBalancing, LeastRequestWithoutActiveCounts)
+{
+    GetPriorityForLoadBalancing lb(LoadBalancing::LEAST_REQUEST);
+    ASSERT_FALSE(lb.getPriorityFunc(LoadBalancing::LEAST_REQUEST, 0, 4));
+}
