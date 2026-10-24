@@ -41,7 +41,8 @@ private:
 
     ISpaceSharedNode * increase_child = nullptr; /// Child that requested the current `increase`
     ISpaceSharedNode * decrease_child = nullptr; /// Child that requested the current `decrease`
-    std::unordered_map<String, SpaceSharedNodePtr> children; // basename -> child
+    /// Keyed by node, not by name: a workload may have the same name as an internal node next to it (e.g. `p1_fair`)
+    std::unordered_map<ISchedulerNode *, SpaceSharedNodePtr> children;
 };
 
 }

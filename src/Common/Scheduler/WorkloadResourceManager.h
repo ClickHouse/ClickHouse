@@ -201,13 +201,22 @@ private:
             return it == node_for_workload.end() ? nullptr : it->second;
         }
 
+        /// Runs `task` in the scheduler thread and waits for it. Exceptions are rethrown in the caller,
+        /// except for a task that modifies the hierarchy: it would leave the hierarchy half-modified,
+        /// so the exception escapes into the scheduler thread, which terminates the server.
         template <class Task>
-        void executeInSchedulerThread(Task && task)
+        void executeInSchedulerThread(Task && task, bool modifies_hierarchy = false)
         {
             std::promise<void> promise;
             auto future = promise.get_future();
             scheduler->event_queue.enqueue([&]
             {
+                if (modifies_hierarchy)
+                {
+                    task();
+                    promise.set_value();
+                    return;
+                }
                 try
                 {
                     task();
@@ -262,7 +271,7 @@ private:
             {
                 scheduler->attachChild(implicit_scheduler_node);
                 updateCurrentVersion();
-            });
+            }, /* modifies_hierarchy = */ true);
         }
 
         // Type-erasure for time-shared vs. space-shared resources
