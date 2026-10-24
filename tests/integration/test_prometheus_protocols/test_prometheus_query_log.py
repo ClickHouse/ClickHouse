@@ -317,6 +317,54 @@ def test_remote_write_skips_time_series_without_metric_name_with_bad_labels():
     assert int(node.query(skipped_series_sql)) == skipped_before + 2
 
 
+def test_remote_write_skips_named_time_series_with_bad_labels():
+    """
+    As in Prometheus, a named timeseries with an empty label name or one label
+    name given two values is skipped, and the rest of the batch is written.
+    """
+    metric_name = "skip_named_bad_labels_test"
+    skipped_series_sql = (
+        "SELECT sum(value) FROM system.events "
+        "WHERE event = 'PrometheusRemoteWriteSkippedSeries'"
+    )
+    skipped_before = int(node.query(skipped_series_sql))
+
+    write_request = remote_pb2.WriteRequest()
+    for labels in [
+        [("__name__", metric_name), ("", "x")],
+        [("__name__", metric_name), ("job", "a"), ("job", "b")],
+        [("__name__", metric_name), ("__name__", "skip_named_other_name")],
+        [("__name__", metric_name), ("job", metric_name)],
+    ]:
+        timeseries = types_pb2.TimeSeries()
+        for name, value in labels:
+            timeseries.labels.append(types_pb2.Label(name=name, value=value))
+        timeseries.samples.append(
+            types_pb2.Sample(timestamp=1753176723 * 1000, value=1)
+        )
+        write_request.timeseries.append(timeseries)
+
+    response = get_response_to_remote_write(
+        node.ip_address, 9093, "/write", write_request
+    )
+    assert response.status_code == requests.codes.no_content
+
+    # Only the valid series is stored.
+    assert_eq_with_retry(
+        node,
+        timeseries_data_has_metric_sql("prometheus", metric_name),
+        "1\n",
+    )
+    assert (
+        node.query(
+            f"SELECT groupArray(tags['job']) FROM timeSeriesTags(prometheus) "
+            f"WHERE metric_name IN ('{metric_name}', 'skip_named_other_name')"
+        )
+        == f"['{metric_name}']\n"
+    )
+    assert int(node.query(skipped_series_sql)) == skipped_before + 3
+
+
 def test_remote_write_accepts_empty_then_nonempty_metric_name():
     """
     An empty __name__ label before a non-empty one must still be accepted: the

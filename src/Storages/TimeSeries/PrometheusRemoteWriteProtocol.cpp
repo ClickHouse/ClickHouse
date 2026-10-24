@@ -97,6 +97,25 @@ String formatLabels(const google::protobuf::RepeatedPtrField<prometheus::Label> 
     return res + "}";
 }
 
+/// Returns false for labels `TimeSeriesSink` would reject: an empty name, or one name with two values.
+bool hasValidLabels(
+    const google::protobuf::RepeatedPtrField<prometheus::Label> & labels,
+    std::vector<std::pair<std::string_view, std::string_view>> & sorted_labels)
+{
+    sorted_labels.clear();
+    for (const auto & label : labels)
+    {
+        if (label.name().empty())
+            return false;
+        if (!label.value().empty())
+            sorted_labels.emplace_back(label.name(), label.value());
+    }
+    std::sort(sorted_labels.begin(), sorted_labels.end());
+    sorted_labels.erase(std::unique(sorted_labels.begin(), sorted_labels.end()), sorted_labels.end());
+    return std::adjacent_find(sorted_labels.begin(), sorted_labels.end(), [](const auto & left, const auto & right)
+        { return left.first == right.first; }) == sorted_labels.end();
+}
+
 Block makeTimeSeriesBlock(
     const google::protobuf::RepeatedPtrField<prometheus::TimeSeries> & time_series,
     size_t num_metadata_rows,
@@ -129,6 +148,7 @@ Block makeTimeSeriesBlock(
     auto time_series_offsets = ColumnArray::ColumnOffsets::create();
     time_series_offsets->reserve(num_rows);
     const UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_type).value_or(0);
+    std::vector<std::pair<std::string_view, std::string_view>> sorted_labels;
 
     for (const auto & element : time_series)
     {
@@ -136,8 +156,9 @@ Block makeTimeSeriesBlock(
         const auto metric_name_it = std::find_if(labels.begin(), labels.end(), [](const auto & label)
             { return label.name() == TimeSeriesTagNames::MetricName && !label.value().empty(); });
 
-        /// A series without a metric name gets an empty row, which `TimeSeriesSink` ignores.
-        if (metric_name_it == labels.end())
+        /// Like Prometheus, a series without a metric name or with invalid labels is skipped.
+        /// It gets an empty row, which `TimeSeriesSink` ignores.
+        if (metric_name_it == labels.end() || !hasValidLabels(labels, sorted_labels))
         {
             if (!num_skipped_series)
                 first_skipped_labels = formatLabels(labels);
@@ -366,7 +387,7 @@ void PrometheusRemoteWriteProtocol::write(
         ProfileEvents::increment(ProfileEvents::PrometheusRemoteWriteSkippedSeries, num_skipped_series);
         LOG_WARNING(
             log,
-            "{}: Skipped {} time series without a `{}` label, the first one has labels {}",
+            "{}: Skipped {} time series without a `{}` label or with invalid labels, the first one has labels {}",
             storage_id.getNameForLogs(),
             num_skipped_series,
             TimeSeriesTagNames::MetricName,
