@@ -18,11 +18,11 @@ USE {CLICKHOUSE_DATABASE_1:Identifier};
 CREATE TEMPORARY TABLE src (id UInt64) ENGINE = Memory;
 CREATE VIEW v AS SELECT * FROM src;
 DROP TEMPORARY TABLE src;
-USE {CLICKHOUSE_DATABASE:Identifier};
 
 -- Guard the precondition: the source of the view is stored unqualified.
 SELECT 'source is stored unqualified', position(create_table_query, '.src') = 0
-FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 'v';
+FROM system.tables WHERE database = currentDatabase() AND name = 'v';
+USE {CLICKHOUSE_DATABASE:Identifier};
 
 DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
