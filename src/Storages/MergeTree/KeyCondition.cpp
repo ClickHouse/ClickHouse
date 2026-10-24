@@ -7107,10 +7107,41 @@ BoolMask KeyCondition::checkInRange(
         });
 }
 
-/// Check if a type conversion function preserves the Field value when it's monotonic on the given range.
-/// For example, CAST between UInt8/16/32/64 types all store as UInt64 in Field, so when the CAST is
-/// monotonic (value fits in the target type), the Field value doesn't change.
-/// Similarly for Int8/16/32/64 (all stored as Int64).
+/// True when a narrowing integer cast leaves `value` unchanged, i.e. `value` already fits the target type.
+static bool narrowingIntegerCastKeepsValue(size_t size_of_to, bool to_is_unsigned, const FieldRef & value)
+{
+    /// A real application advances the cached column of a block-referencing bound alongside the threaded
+    /// type; a skip advances only the type, so such a bound must go through the application.
+    if (!value.isExplicit())
+        return false;
+
+    /// An infinite bound is a null `Field`, which neither path converts.
+    if (value.isNull())
+        return true;
+
+    /// Only reached for a narrowing cast, so `size_of_to` is 1, 2 or 4 and the shifts stay in range.
+    const size_t bits_of_to = size_of_to * 8;
+
+    /// `safeGet` permits Int64 <-> UInt64 and reinterprets the bits, so the representation must match
+    /// exactly: any other `Field` type (including `Bool`) declines and takes the application path.
+    if (to_is_unsigned)
+    {
+        if (value.getType() != Field::Types::UInt64)
+            return false;
+        return (value.safeGet<UInt64>() >> bits_of_to) == 0;
+    }
+
+    if (value.getType() != Field::Types::Int64)
+        return false;
+    const Int64 bound = Int64(1) << (bits_of_to - 1);
+    const Int64 signed_value = value.safeGet<Int64>();
+    return signed_value >= -bound && signed_value < bound;
+}
+
+/// True when the conversion is the identity on `key_range`, so its application can be skipped. Monotonicity is not
+/// enough: a narrowing cast is monotonic within one 2^bits block, yet shifts every value in a block above 0.
+/// For example, CAST between UInt8/16/32/64 types all store as UInt64 in Field, so when the value fits
+/// in the target type, the Field value doesn't change. Similarly for Int8/16/32/64 (all stored as Int64).
 /// `DateTime` is a number of seconds stored as UInt32 (UInt64 in Field), so `toUnixTimestamp(DateTime)`
 /// and casts between `DateTime` and unsigned integers don't change the Field value either.
 /// In such cases we can skip the expensive function application (which creates columns and executes
@@ -7119,7 +7150,7 @@ BoolMask KeyCondition::checkInRange(
 /// IMPORTANT: This must only return true for pure type conversion functions (see `is_cast`),
 /// NOT for arithmetic or other functions that happen to have compatible integer types on input/output.
 static bool functionIsCastPreservingFieldRepresentation(
-    const FunctionBasePtr & func, const DataTypePtr & from_type, const DataTypePtr & to_type)
+    const FunctionBasePtr & func, const DataTypePtr & from_type, const DataTypePtr & to_type, const Range & key_range)
 {
     /// Only type conversion functions preserve Field values across integer type boundaries.
     /// Arithmetic functions like plus/minus change the value even with same-family types.
@@ -7151,10 +7182,17 @@ static bool functionIsCastPreservingFieldRepresentation(
     if (!same_family)
         return false;
 
-    /// We can only skip the function application when the target type is at least as wide
-    /// as the source type (widening or same-size cast). For narrowing casts (e.g. UInt32 -> UInt16),
-    /// truncation changes the actual value even though both use UInt64 in the Field representation.
-    return to_type->getSizeOfValueInMemory() >= from_type->getSizeOfValueInMemory();
+    /// `Bool` is a `UInt8` with a custom name, so it passes the width test, yet a cast into it maps every nonzero value to 1.
+    if (to_type->hasCustomName() && isBool(to_type) && !isBool(from_type))
+        return false;
+
+    const size_t size_of_to = to_type->getSizeOfValueInMemory();
+    if (size_of_to >= from_type->getSizeOfValueInMemory())
+        return true;
+
+    const bool to_is_unsigned = is_uint_or_datetime(to);
+    return narrowingIntegerCastKeepsValue(size_of_to, to_is_unsigned, key_range.left)
+        && narrowingIntegerCastKeepsValue(size_of_to, to_is_unsigned, key_range.right);
 }
 
 namespace
@@ -7214,15 +7252,10 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
 
             auto result_type = func->getResultType();
 
-            /// For functions like CAST between integer types that share the same Field representation
-            /// (e.g., UInt16 and UInt64 both use UInt64 in Field), when the function is monotonic
-            /// on the given range, the Field values are guaranteed to be unchanged.
-            /// We can skip the expensive function application that creates columns and executes the function.
-            /// The monotonicity check already verified that the values fit in the target type.
             /// A bound referencing a column in the index block is advanced by the application itself:
             /// skipping would leave it on the previous column while `current_type` moves on.
             bool skip_apply = key_range.left.isExplicit() && key_range.right.isExplicit()
-                && functionIsCastPreservingFieldRepresentation(func, current_type, result_type);
+                && functionIsCastPreservingFieldRepresentation(func, current_type, result_type, key_range);
 
             if (!skip_apply)
             {
