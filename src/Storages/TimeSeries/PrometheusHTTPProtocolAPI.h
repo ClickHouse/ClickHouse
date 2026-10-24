@@ -98,16 +98,23 @@ private:
     /// with their tags registered for timeSeriesIdToTags.
     ASTPtr makeSeriesIDsQuery(const Strings & match_params, const String & start_param, const String & end_param);
 
+    /// Parses the `match[]` instant selectors (`{__name__!=""}` if none are given) and the optional `start` and `end` bounds
+    /// of the label endpoints and makes a UNION ALL query with one `SELECT <aggregate_function_name>(<per_row_expression>) AS labels`
+    /// over the rows of the tags table matched by each selector. The query reads only the columns `per_row_expression` and the selectors use.
+    ASTPtr makeLabelsSourceQuery(
+        const String & aggregate_function_name,
+        ASTPtr per_row_expression,
+        const Strings & match_params,
+        const String & start_param,
+        const String & end_param);
+
     /// Shared implementation of getLabels and getLabelValues: executes a query aggregating `array_expression`
-    /// (a sorted array of unique strings) over the series matched by the `match[]` selectors
-    /// (or over all series if no selectors are given) and writes the result as a JSON array, capped by `limit`
-    /// (0 means no limit).
+    /// (a sorted array of unique strings) over the `labels` arrays returned by `source_query` (see makeLabelsSourceQuery)
+    /// and writes the result as a JSON array, capped by `limit` (0 means no limit).
     void getLabelsOrLabelValues(
         WriteBuffer & response,
         ASTPtr array_expression,
-        const Strings & match_params,
-        const String & start_param,
-        const String & end_param,
+        ASTPtr source_query,
         UInt64 limit,
         QueryFinishCallback query_finish_callback);
 

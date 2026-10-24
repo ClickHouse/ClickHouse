@@ -4,6 +4,9 @@
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
 
+#include <optional>
+#include <unordered_map>
+
 
 namespace DB
 {
@@ -42,6 +45,28 @@ public:
     std::string getName() const override { return "TimeSeriesSelector"; }
 
     static VirtualColumnsDescription createVirtuals();
+
+    /// Makes a mapping from a tag name to the dedicated column of the tags table (the `tags_to_columns` setting).
+    /// `__name__` is not included: it's always stored in the `metric_name` column.
+    static std::unordered_map<String, String> makeColumnNameByTagNameMap(const TimeSeriesSettings & time_series_settings);
+
+    /// Makes `SELECT <select_list> FROM <tags_table> WHERE <matchers and time bounds>` reading the tags table directly.
+    /// The time bounds have the scale `time_scale` and are applied like in makeSelectIDsQuery: to the stored time ranges
+    /// of the series if the table stores them, read over the id ranges of the selected metrics.
+    /// If no timestamp of the table is in the time range, the WHERE clause is `false`.
+    /// The query must be executed with the settings set by applySettingsForSelectIDsQuery.
+    static ASTPtr makeSelectFromTagsTable(
+        ASTs select_list,
+        const StorageTimeSeries & time_series_storage,
+        const StorageID & tags_table_id,
+        const TimeSeriesSettings & time_series_settings,
+        const DataTypePtr & table_timestamp_type,
+        const DataTypePtr & table_id_type,
+        const PrometheusQueryTree::MatcherList & matchers,
+        const std::optional<DateTime64> & min_time,
+        const std::optional<DateTime64> & max_time,
+        UInt32 time_scale,
+        const ContextPtr & context);
 
     /// Makes a SELECT query for the ids (`series_id`) of the series matching the matchers and optional time bounds,
     /// registering their tags for timeSeriesIdToTags(). The time bounds have the scale `time_scale`; they are converted

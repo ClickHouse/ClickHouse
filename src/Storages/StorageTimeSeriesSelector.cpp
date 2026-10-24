@@ -838,21 +838,6 @@ namespace
         return select_with_union_query;
     }
 
-    /// Makes a mapping from a tag name to a column name.
-    std::unordered_map<String, String> makeColumnNameByTagNameMap(const TimeSeriesSettings & storage_settings)
-    {
-        std::unordered_map<String, String> res;
-        const Map & tags_to_columns = storage_settings[TimeSeriesSetting::tags_to_columns];
-        for (const auto & tag_name_and_column_name : tags_to_columns)
-        {
-            const auto & tuple = tag_name_and_column_name.safeGet<Tuple>();
-            const auto & tag_name = tuple.at(0).safeGet<String>();
-            const auto & column_name = tuple.at(1).safeGet<String>();
-            res[tag_name] = column_name;
-        }
-        return res;
-    }
-
     /// Checks whether the selector can carry a primary-key range on the samples table's `id` column covering the whole metric,
     /// and makes the range condition if it can:
     /// `indexHint(tuple(hash(metric_name), min_S) <= id AND id <= tuple(hash(metric_name), max_S))`.
@@ -997,6 +982,69 @@ namespace
         ASTPtr qualified_id = make_intrusive<ASTIdentifier>(std::vector<String>{samples_table_id.database_name, samples_table_id.table_name, TimeSeriesColumnNames::ID});
         return makeASTFunction("indexHint", makeIDInRangeCondition(qualified_id, metric_id_range));
     }
+}
+
+
+std::unordered_map<String, String> StorageTimeSeriesSelector::makeColumnNameByTagNameMap(const TimeSeriesSettings & time_series_settings)
+{
+    std::unordered_map<String, String> res;
+    const Map & tags_to_columns = time_series_settings[TimeSeriesSetting::tags_to_columns];
+    for (const auto & tag_name_and_column_name : tags_to_columns)
+    {
+        const auto & tuple = tag_name_and_column_name.safeGet<Tuple>();
+        const auto & tag_name = tuple.at(0).safeGet<String>();
+        const auto & column_name = tuple.at(1).safeGet<String>();
+        res[tag_name] = column_name;
+    }
+    return res;
+}
+
+
+ASTPtr StorageTimeSeriesSelector::makeSelectFromTagsTable(
+    ASTs select_list,
+    const StorageTimeSeries & time_series_storage,
+    const StorageID & tags_table_id,
+    const TimeSeriesSettings & time_series_settings,
+    const DataTypePtr & table_timestamp_type,
+    const DataTypePtr & table_id_type,
+    const PrometheusQueryTree::MatcherList & matchers,
+    const std::optional<DateTime64> & min_time,
+    const std::optional<DateTime64> & max_time,
+    UInt32 time_scale,
+    const ContextPtr & context)
+{
+    auto select_query = make_intrusive<ASTSelectQuery>();
+
+    auto select_list_exp = make_intrusive<ASTExpressionList>();
+    select_list_exp->children = std::move(select_list);
+    select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list_exp));
+    select_query->setExpression(ASTSelectQuery::Expression::TABLES, makeTablesInSelectQuery(make_intrusive<ASTTableIdentifier>(tags_table_id)));
+
+    /// If the time range contains no timestamp of the table, no series can have samples in it: the tags table isn't read.
+    const auto table_time_range = makeTableTimeRange(table_timestamp_type, min_time, max_time, time_scale);
+    if (table_time_range.containsNoTimestamps())
+    {
+        select_query->setExpression(ASTSelectQuery::Expression::WHERE, make_intrusive<ASTLiteral>(false));
+        return select_query;
+    }
+
+    const StorageID time_ranges_table_id = time_series_storage.hasTarget(ViewTarget::TimeRanges)
+        ? time_series_storage.getTargetTableID(ViewTarget::TimeRanges, context)
+        : StorageID::createEmpty();
+    const auto time_range_to_filter_ids = getTimeRangeToFilterIDs(table_time_range, time_ranges_table_id, time_series_settings);
+    const auto column_name_by_tag_name = makeColumnNameByTagNameMap(time_series_settings);
+
+    select_query->setExpression(
+        ASTSelectQuery::Expression::WHERE,
+        makeWhereFilterForTagsTable(matchers, column_name_by_tag_name, time_ranges_table_id, time_range_to_filter_ids, table_timestamp_type));
+
+    /// If there is a time ranges table: LEFT JOIN it and keep the time series with a matching time range (see addTimeRangesTableJoin).
+    auto tags_table_metadata = time_series_storage.getTargetTable(ViewTarget::Tags, context)->getInMemoryMetadataPtr(context, false);
+    const auto metric_id_ranges = tryGetTimeSeriesIDRanges(
+        matchers, getIDGenerator(time_series_settings, tags_table_metadata->getColumns(), table_id_type), table_id_type);
+    applyTimeRangeFilterToSelectIDsQuery(*select_query, time_ranges_table_id, time_range_to_filter_ids, metric_id_ranges, table_timestamp_type);
+
+    return select_query;
 }
 
 

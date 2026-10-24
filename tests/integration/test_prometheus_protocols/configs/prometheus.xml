@@ -146,6 +146,24 @@
                     <table>default.prometheus_datetime</table>
                 </handler>
             </my_rule_17>
+
+            <!-- Table storing a tag in a column named like the alias used by the label endpoints. -->
+            <my_rule_18>
+                <url_prefix>/alias</url_prefix>
+                <handler>
+                    <type>query</type>
+                    <table>default.prometheus_alias</table>
+                </handler>
+            </my_rule_18>
+
+            <!-- Table with rows written directly to its tags table. -->
+            <my_rule_19>
+                <url_prefix>/direct</url_prefix>
+                <handler>
+                    <type>query</type>
+                    <table>default.prometheus_direct</table>
+                </handler>
+            </my_rule_19>
         </handlers>
     </prometheus>
 </clickhouse>
