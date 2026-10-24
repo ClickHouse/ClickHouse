@@ -12103,7 +12103,8 @@ void MergeTreeData::optimizeDryRun(
 
     auto future_part = std::move(*constructed_part);
 
-    UInt64 disk_space = CompactionStatistics::estimateNeededDiskSpace(future_part->parts);
+    UInt64 disk_space = CompactionStatistics::estimateNeededDiskSpace(
+        future_part->parts, false, /*current_time=*/0, !future_part->patch_parts.empty());
     ReservationSharedPtr reservation = getStoragePolicy()->reserveAndCheck(disk_space);
     future_part->updatePath(*this, reservation.get());
 
