@@ -10,6 +10,7 @@
 namespace DB
 {
 class ReadBuffer;
+class ReadBufferFromFileDescriptor;
 class SeekableReadBuffer;
 }
 
@@ -208,6 +209,8 @@ private:
     std::mutex read_mutex;
     ReadMode read_mode{};
     SeekableReadBuffer * reader = nullptr;
+    /// `reader` if it reads a local file with `pread`.
+    const ReadBufferFromFileDescriptor * fd_reader = nullptr;
     PaddedPODArray<char> entire_file;
 
     size_t file_size{};
