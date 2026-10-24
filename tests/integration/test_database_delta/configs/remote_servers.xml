@@ -1,0 +1,14 @@
+<clickhouse>
+    <remote_servers>
+        <!-- One replica, pointing at the only instance of this module: enough to route a read
+             through the parallel-replica path, which is what the test asserts on. -->
+        <one_node_cluster>
+            <shard>
+                <replica>
+                    <host>node1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </one_node_cluster>
+    </remote_servers>
+</clickhouse>
