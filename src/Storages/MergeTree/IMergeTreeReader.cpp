@@ -115,10 +115,10 @@ IMergeTreeReader::IMergeTreeReader(
     /// The columns read from the part may be written to the columns cache and then served to other
     /// queries, which must not see the substituted empty strings. Read the values in full then.
     /// Only the reader of a wide part writes to the cache, and only for the parts the cache can hold
-    /// (see `MergeTreeReaderWide`).
+    /// (see `MergeTreeReaderWide` and `IMergeTreeDataPart::mayStoreColumnsInColumnsCache`).
     const bool may_write_to_columns_cache = columns_cache && settings.enable_columns_cache_writes
         && data_part_info_for_read->isWidePart()
-        && canUseColumnsCacheForPart(data_part_info_for_read->getTableUUID(), data_part_info_for_read->isProjectionPart());
+        && canUseColumnsCacheForPart(data_part_info_for_read->getTableUUID());
 
     if (settings.string_value_filters && !settings.string_value_filters->empty() && !has_mutations_on_fly && !may_write_to_columns_cache)
     {
