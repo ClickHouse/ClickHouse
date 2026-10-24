@@ -1186,7 +1186,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         // These limits are checked per part so that we can fail very quickly
         // if we hit row limits on large datasets. Row counts use an atomic
         // counter as part processing typically uses multiple threads (max_threads)
-        auto [limits, leaf_limits] = filter_context.check_row_limits ? getRowLimits(settings, query_info) : RowLimits{};
+        auto [limits, leaf_limits] = filter_context.check_row_limits ? getRowLimits(*context, query_info) : RowLimits{};
         std::atomic<size_t> total_rows{0};
 
         /// Precompute the part-independent PK-position -> partition-minmax-slot mapping once for all parts.
@@ -1584,9 +1584,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 }
 
 MergeTreeDataSelectExecutor::RowLimits MergeTreeDataSelectExecutor::getRowLimits(
-    const Settings & settings,
+    const Context & context,
     const SelectQueryInfo & query_info)
 {
+    const auto & settings = context.getSettingsRef();
     RowLimits row_limits;
 
     /// Do not check number of read rows if we are
@@ -1600,7 +1601,8 @@ MergeTreeDataSelectExecutor::RowLimits MergeTreeDataSelectExecutor::getRowLimits
         && !query_info.input_order_info)
         row_limits.limits = SizeLimits(settings[Setting::max_rows_to_read], 0, settings[Setting::read_overflow_mode]);
 
-    if (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW
+    if (context.getClientInfo().distributed_depth > 0
+        && settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW
         && settings[Setting::max_rows_to_read_leaf]
         && !query_info.input_order_info)
         row_limits.leaf_limits = SizeLimits(settings[Setting::max_rows_to_read_leaf], 0, settings[Setting::read_overflow_mode_leaf]);
