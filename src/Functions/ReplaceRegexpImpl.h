@@ -1,10 +1,12 @@
 #pragma once
 
 #include <Columns/ColumnString.h>
+#include <Common/HashTable/HashMap.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/re2.h>
 #include <Functions/Regexps.h>
+#include <Functions/ReplaceRegexpModeController.h>
 #include <Functions/ReplaceStringImpl.h>
 #include <Interpreters/JIT/CompileRegexp.h>
 #include <base/types.h>
@@ -61,6 +63,8 @@ enum class ReplaceRegexpTraits : uint8_t
 template <typename Name, ReplaceRegexpTraits replace>
 struct ReplaceRegexpImpl
 {
+    using ModeHint = ReplaceRegexpModeController::Hint;
+
     static constexpr auto name = Name::name;
 
     struct Instruction
@@ -159,7 +163,49 @@ struct ReplaceRegexpImpl
         return result.is_trivial && result.required_substring_is_prefix && result.required_substring == needle;
     }
 
-    static void processString(
+    /// The literal every match must start the haystack with, e.g. `http` for '^https?://', or empty.
+    static String getRequiredPrefix(const re2::RE2 & searcher)
+    {
+        String prefix;
+        bool foldcase = false;
+        re2::Regexp * suffix = nullptr;
+        if (!searcher.Regexp()->RequiredPrefix(&prefix, &foldcase, &suffix))
+            prefix.clear();
+        if (suffix)
+            suffix->Decref();
+        if (foldcase)
+            prefix.clear();
+        return prefix;
+    }
+
+    /// Mirrors RE2's `IsAnchorStart`. For an anchored pattern with captures RE2 skips its DFA, so a
+    /// capture-free existence check rejects faster; otherwise RE2 runs the DFA first anyway.
+    static bool isAnchoredAtStart(const re2::RE2 & searcher)
+    {
+        re2::Regexp * re = searcher.Regexp();
+        for (size_t depth = 0; re && depth < 4; ++depth)
+        {
+            switch (re->op())
+            {
+                case re2::kRegexpBeginText:
+                    return true;
+                case re2::kRegexpConcat:
+                    if (re->nsub() == 0)
+                        return false;
+                    re = re->sub()[0];
+                    break;
+                case re2::kRegexpCapture:
+                    re = re->sub()[0];
+                    break;
+                default:
+                    return false;
+            }
+        }
+        return false;
+    }
+
+    /// Returns whether at least one match was found.
+    static bool processString(
         const char * haystack_data,
         size_t haystack_length,
         ColumnString::Chars & res_data,
@@ -172,6 +218,7 @@ struct ReplaceRegexpImpl
         std::string_view haystack(haystack_data, haystack_length);
         std::string_view matches[max_captures];
 
+        bool found_match = false;
         size_t copy_pos = 0;
         size_t match_pos = 0;
 
@@ -183,6 +230,8 @@ struct ReplaceRegexpImpl
 
             if (searcher.Match(haystack, match_pos, haystack_length, re2::RE2::Anchor::UNANCHORED, matches, num_captures))
             {
+                found_match = true;
+
                 const auto & match = matches[0]; /// Complete match
                 size_t bytes_to_copy = (match.data() - haystack.data()) - copy_pos;
 
@@ -257,6 +306,8 @@ struct ReplaceRegexpImpl
                 break;
             }
         }
+
+        return found_match;
     }
 
     /// `processString` for a JIT-compiled matcher (see `CompileRegexp.h`). Mirrors the loop above,
@@ -360,6 +411,145 @@ struct ReplaceRegexpImpl
         }
     }
 
+    /// Like calling `processString` for every row, but may run the regexp once per distinct haystack and copy
+    /// the cached result for repeats; `ReplaceRegexpModeController` decides when that pays.
+    /// Rows without the required prefix cannot match and are copied through directly.
+    template <typename GetHaystack>
+    static void processStringsDeduplicated(
+        GetHaystack && get_haystack,
+        size_t input_rows_count,
+        ColumnString::Chars & res_data,
+        ColumnString::Offsets & res_offsets,
+        ColumnString::Offset & res_offset,
+        const re2::RE2 & searcher,
+        int num_captures,
+        const Instructions & instructions,
+        ReplaceRegexpModeController::Hint * mode_hint,
+        CancellationBudget & budget)
+    {
+        struct CachedResult
+        {
+            UInt64 start;
+            UInt64 length;
+            bool matched;
+        };
+
+        HashMapWithSavedHash<std::string_view, CachedResult> results_cache;
+        const String required_prefix = getRequiredPrefix(searcher);
+        ReplaceRegexpModeController controller(mode_hint, isAnchoredAtStart(searcher) && num_captures > 1);
+        /// Copied out of the controller so that the row loop keeps them in registers.
+        ReplaceRegexpModeController::Window window = controller.carriedWindow();
+        bool use_cache = controller.useCache();
+        bool use_precheck = controller.usePrecheck();
+
+        std::string_view prev_haystack;
+        bool has_prev_haystack = false;
+        CachedResult prev_result{0, 0, false};
+
+        /// Charges the haystack the compare or lookup read as well as the copy.
+        auto copy_cached = [&](const CachedResult & cached, size_t haystack_bytes_read)
+        {
+            res_data.resize(res_data.size() + cached.length);
+            /// Not `memcpySmallAllowReadWriteOverflow15`: the source may end less than 15 bytes before the destination.
+            if (cached.length)
+                memcpy(&res_data[res_offset], &res_data[cached.start], cached.length);
+            res_offset += cached.length;
+            budget.chargeUnits((haystack_bytes_read + cached.length) / CancellationBudget::bytes_per_unit);
+        };
+
+        auto copy_unchanged = [&](std::string_view haystack)
+        {
+            res_data.resize(res_data.size() + haystack.size());
+            memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], haystack.data(), haystack.size());
+            res_offset += haystack.size();
+        };
+
+        /// Returns whether the row matched.
+        auto process_row = [&](std::string_view haystack)
+        {
+            if (use_precheck)
+            {
+                budget.charge(haystack.size());
+                if (!searcher.Match(haystack, 0, haystack.size(), re2::RE2::Anchor::UNANCHORED, nullptr, 0))
+                {
+                    copy_unchanged(haystack);
+                    budget.charge();
+                    return false;
+                }
+            }
+            return processString(haystack.data(), haystack.size(), res_data, res_offset, searcher, num_captures, instructions, budget);
+        };
+
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            budget.charge();
+
+            const std::string_view haystack = get_haystack(i);
+            const size_t row_units = haystack.size() + ReplaceRegexpModeController::row_cost_in_bytes;
+
+            if (!haystack.starts_with(required_prefix))
+            {
+                window.units += row_units;
+                copy_unchanged(haystack);
+                budget.charge(haystack.size());
+                res_offsets[i] = res_offset;
+                continue;
+            }
+
+            if (window.rows == ReplaceRegexpModeController::window_rows_count)
+            {
+                controller.finishWindow(window);
+                window = {};
+                use_cache = controller.useCache();
+                use_precheck = controller.usePrecheck();
+            }
+            window.units += row_units;
+            ++window.rows;
+
+            if (use_cache)
+            {
+                /// Cheaper than hashing for runs of equal values. Not in the plain mode: there it costs more
+                /// than a regexp that decides after a few bytes. The previous value may be older than the
+                /// previous row, which is fine, as equal haystacks have equal results.
+                if (has_prev_haystack && haystack == prev_haystack)
+                {
+                    copy_cached(prev_result, haystack.size());
+                    window.matched += prev_result.matched;
+                    res_offsets[i] = res_offset;
+                    continue;
+                }
+
+                const UInt64 result_start = res_offset;
+                bool row_matched = false;
+                typename HashMapWithSavedHash<std::string_view, CachedResult>::LookupResult it;
+                bool inserted = false;
+                results_cache.emplace(haystack, it, inserted);
+                if (!inserted)
+                {
+                    copy_cached(it->getMapped(), haystack.size());
+                    row_matched = it->getMapped().matched;
+                }
+                else
+                {
+                    budget.chargeUnits(haystack.size() / CancellationBudget::bytes_per_unit);
+                    row_matched = process_row(haystack);
+                    it->getMapped() = {result_start, res_offset - result_start, row_matched};
+                }
+
+                window.matched += row_matched;
+                prev_haystack = haystack;
+                has_prev_haystack = true;
+                prev_result = {result_start, res_offset - result_start, row_matched};
+            }
+            else
+                window.matched += process_row(haystack);
+
+            res_offsets[i] = res_offset;
+        }
+
+        controller.finish(window);
+    }
+
     static void vectorConstantConstant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
@@ -369,6 +559,7 @@ struct ReplaceRegexpImpl
         ColumnString::Offsets & res_offsets,
         size_t input_rows_count,
         size_t regexp_jit_min_count = std::numeric_limits<size_t>::max(),
+        ReplaceRegexpModeController::Hint * mode_hint = nullptr,
         const std::function<void()> & check_cancellation = {})
     {
         CancellationBudget budget(check_cancellation);
@@ -425,21 +616,32 @@ struct ReplaceRegexpImpl
             capture_ends.resize(n);
         }
 
-        for (size_t i = 0; i < input_rows_count; ++i)
+        if (matcher)
         {
-            budget.charge();
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                budget.charge();
 
-            size_t from = haystack_offsets[i - 1];
+                size_t from = haystack_offsets[i - 1];
 
-            const char * hs_data = reinterpret_cast<const char *>(haystack_data.data() + from);
-            const size_t hs_length = static_cast<size_t>(haystack_offsets[i] - from);
+                const char * hs_data = reinterpret_cast<const char *>(haystack_data.data() + from);
+                const size_t hs_length = static_cast<size_t>(haystack_offsets[i] - from);
 
-            if (matcher)
                 processStringJIT(hs_data, hs_length, res_data, res_offset, matcher, capture_starts.data(), capture_ends.data(), instructions, budget);
-            else
-                processString(hs_data, hs_length, res_data, res_offset, searcher, num_captures, instructions, budget);
-            res_offsets[i] = res_offset;
+                res_offsets[i] = res_offset;
+            }
+            return;
         }
+
+        processStringsDeduplicated(
+            [&](size_t i)
+            {
+                const size_t from = haystack_offsets[i - 1];
+                return std::string_view(
+                    reinterpret_cast<const char *>(haystack_data.data() + from),
+                    static_cast<size_t>(haystack_offsets[i] - from));
+            },
+            input_rows_count, res_data, res_offsets, res_offset, searcher, num_captures, instructions, mode_hint, budget);
     }
 
     static void vectorVectorConstant(
@@ -630,6 +832,7 @@ struct ReplaceRegexpImpl
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets,
         size_t input_rows_count,
+        ReplaceRegexpModeController::Hint * mode_hint = nullptr,
         const std::function<void()> & check_cancellation = {})
     {
         CancellationBudget budget(check_cancellation);
@@ -661,17 +864,9 @@ struct ReplaceRegexpImpl
         int num_captures = std::min(searcher.NumberOfCapturingGroups() + 1, max_captures);
         Instructions instructions = createInstructions(replacement, num_captures, budget);
 
-        for (size_t i = 0; i < input_rows_count; ++i)
-        {
-            budget.charge();
-
-            size_t from = i * n;
-            const char * hs_data = reinterpret_cast<const char *>(haystack_data.data() + from);
-            const size_t hs_length = n;
-
-            processString(hs_data, hs_length, res_data, res_offset, searcher, num_captures, instructions, budget);
-            res_offsets[i] = res_offset;
-        }
+        processStringsDeduplicated(
+            [&](size_t i) { return std::string_view(reinterpret_cast<const char *>(haystack_data.data() + i * n), n); },
+            input_rows_count, res_data, res_offsets, res_offset, searcher, num_captures, instructions, mode_hint, budget);
     }
 };
 
