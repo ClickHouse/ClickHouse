@@ -37,7 +37,8 @@ MergeSortingTransform::MergeSortingTransform(
     size_t min_free_disk_space_,
     TopKThresholdTrackerPtr threshold_tracker_,
     MergeSorter::Mode merge_mode_,
-    ProfileEvents::Event external_merge_event_)
+    ProfileEvents::Event external_merge_event_,
+    SortingQueryResultPreviewsPtr query_result_previews_)
     : SortingTransform(header, description_, max_merged_block_size_, limit_, increase_sort_description_compile_attempts)
     , max_bytes_before_remerge(max_bytes_before_remerge_)
     , remerge_lowered_memory_bytes_ratio(remerge_lowered_memory_bytes_ratio_)
@@ -47,10 +48,21 @@ MergeSortingTransform::MergeSortingTransform(
     , min_free_disk_space(min_free_disk_space_)
     , max_block_bytes(max_block_bytes_)
     , threshold_tracker(threshold_tracker_)
+    , query_result_previews(std::move(query_result_previews_))
     , merge_mode(merge_mode_)
     , external_merge_event(external_merge_event_)
 {
     chassert(merge_mode == MergeSorter::Mode::PreserveRows || limit_ == 0);
+    if (query_result_previews)
+    {
+        preview_participant_index = query_result_previews->participants.size();
+        query_result_previews->participants.push_back(this);
+    }
+}
+
+QueryResultPreviewsControl * MergeSortingTransform::getQueryResultPreviewsControl()
+{
+    return query_result_previews ? &query_result_previews->control : nullptr;
 }
 
 IProcessor::PipelineUpdate MergeSortingTransform::updatePipeline()
@@ -100,6 +112,17 @@ void MergeSortingTransform::consume(Chunk chunk)
       * - at the end, merge all sorted streams from temporary files and also from rest of blocks in memory.
       */
 
+    /// A query result preview is a self-contained chunk (see `QueryResultPreview.h`), already
+    /// sorted and cut to the limit by `PartialSortingTransform`. Pass it along without mixing it
+    /// into the accumulated state. If the single output slot is occupied, drop the preview:
+    /// previews are best effort and a newer one will follow.
+    if (isQueryResultPreview(chunk))
+    {
+        if (!generated_chunk)
+            generated_chunk = std::move(chunk);
+        return;
+    }
+
     /// If there were only const columns in sort description, then there is no need to sort.
     /// Return the chunk as is.
     if (description.empty())
@@ -107,6 +130,14 @@ void MergeSortingTransform::consume(Chunk chunk)
         generated_chunk = std::move(chunk);
         return;
     }
+
+    const UInt64 num_rows = chunk.getNumRows();
+    const UInt64 num_bytes = chunk.bytes();
+
+    /// Pairs with the snapshot walk in tryEmitQueryResultPreview.
+    std::unique_lock<std::mutex> preview_lock;
+    if (query_result_previews)
+        preview_lock = std::unique_lock(query_result_previews->control.participantMutex(preview_participant_index));
 
     removeConstColumns(chunk);
     compactReplicatedColumns(chunk);
@@ -143,6 +174,84 @@ void MergeSortingTransform::consume(Chunk chunk)
             stage = Stage::Serialize;
         }
     }
+
+    if (preview_lock.owns_lock())
+    {
+        /// Released before emitting: the emitter takes the participant locks itself, one by one.
+        preview_lock.unlock();
+        if (stage == Stage::Consume)
+            tryEmitQueryResultPreview(num_rows, num_bytes);
+    }
+}
+
+void MergeSortingTransform::tryEmitQueryResultPreview(UInt64 num_rows, UInt64 num_bytes)
+{
+    auto & control = query_result_previews->control;
+    if (!control.accountAndCheckThresholds(num_rows, num_bytes))
+        return;
+
+    /// The preview would go into the single output slot; do not clobber a pending chunk.
+    if (generated_chunk)
+        return;
+
+    /// Another transform is emitting a preview right now; do not wait for it.
+    std::unique_lock emit_lock(control.emit_mutex, std::try_to_lock);
+    if (!emit_lock.owns_lock())
+        return;
+
+    if (control.isDisabled())
+        return;
+
+    Chunks merge_input;
+    UInt64 total_bytes = 0;
+    for (auto * participant : query_result_previews->participants)
+    {
+        std::lock_guard participant_lock(control.participantMutex(participant->preview_participant_index));
+
+        /// Once a participant spilled to disk or handed its chunks to the final merge, a consistent
+        /// snapshot of the sorting state is not possible anymore.
+        if (participant->temporary_files_num > 0 || participant->preview_state_moved)
+        {
+            control.disable();
+            return;
+        }
+
+        total_bytes += participant->sum_bytes_in_blocks;
+        if (control.settings.max_result_bytes && total_bytes > control.settings.max_result_bytes)
+        {
+            control.disable();
+            return;
+        }
+
+        for (const auto & participant_chunk : participant->chunks)
+            merge_input.push_back(participant_chunk.clone());
+    }
+
+    control.startNextRound();
+
+    if (merge_input.empty())
+        return;
+
+    /// Merge the accumulated top-N candidates of all the streams and take the first `limit` rows
+    /// as one chunk (previews are gated on a small `limit`, see `SortingStep::mergeSorting`).
+    MergeSorter preview_sorter(
+        std::make_shared<const Block>(header_without_constants), std::move(merge_input), description, limit, limit);
+    Chunk preview = preview_sorter.read();
+    if (!preview || !preview.hasRows())
+        return;
+
+    /// `MergeSorter::read` returns a single chunk verbatim, without cutting it to the limit.
+    if (limit && preview.getNumRows() > limit)
+    {
+        auto columns = preview.detachColumns();
+        for (auto & column : columns)
+            column = column->cut(0, limit);
+        preview.setColumns(std::move(columns), limit);
+    }
+
+    enrichChunkWithConstants(preview);
+    markAsQueryResultPreview(preview, std::shared_ptr<QueryResultPreviewsControl>(query_result_previews, &query_result_previews->control));
+    generated_chunk = std::move(preview);
 }
 
 ProcessorMemoryStats MergeSortingTransform::getMemoryStats() const
@@ -165,7 +274,22 @@ size_t MergeSortingTransform::spill(size_t /*at_least_bytes*/)
     if (!bytes)
         return 0;
 
-    auto sink = prepareSpill();
+    std::shared_ptr<BufferingToFileSink> sink;
+    {
+        /// A spill requested by the scheduler runs outside of `consume`, while another transform of
+        /// this sorting may be snapshotting the accumulated chunks for a query result preview (see
+        /// tryEmitQueryResultPreview). Moving the chunks out and counting the temporary file happen
+        /// under the participant lock, so the snapshot either sees the chunks or the spill.
+        std::unique_lock<std::mutex> preview_lock;
+        if (query_result_previews)
+        {
+            preview_lock = std::unique_lock(query_result_previews->control.participantMutex(preview_participant_index));
+            query_result_previews->control.disable();
+        }
+
+        sink = prepareSpill();
+    }
+
     while (auto chunk = merge_sorter->read())
     {
         if (isCancelled())
@@ -264,6 +388,15 @@ void MergeSortingTransform::generate()
 {
     if (!generated_prefix)
     {
+        /// Pairs with the snapshot walk in tryEmitQueryResultPreview: another transform of this
+        /// sorting may still be consuming and snapshotting the accumulated chunks.
+        std::unique_lock<std::mutex> preview_lock;
+        if (query_result_previews)
+        {
+            preview_lock = std::unique_lock(query_result_previews->control.participantMutex(preview_participant_index));
+            preview_state_moved = true;
+        }
+
         if (temporary_files_num == 0)
         {
             merge_sorter = std::make_unique<MergeSorter>(

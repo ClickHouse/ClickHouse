@@ -5,6 +5,7 @@
 #include <Processors/Formats/Framing/IFramingFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Port.h>
+#include <Processors/QueryResultPreview.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <base/sleep.h>
@@ -17,6 +18,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int FAULT_INJECTED;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace FailPoints
@@ -117,9 +119,61 @@ void IOutputFormat::writeFramingPayloadBoundary(FramedPacketKind kind)
     reattachBuffers();
 }
 
+void IOutputFormat::consumeQueryResultPreview(Chunk chunk)
+{
+    /// A preview can be rendered only under a framing format, and only while the main output has
+    /// not started yet: after the main prefix is written, a preview packet would interleave with the
+    /// main document, and such a preview is stale anyway (previews precede the result).
+    if (!framing || !query_result_preview_format_creator || finalized || !need_write_prefix)
+        return;
+
+    const auto preview = chunk.getChunkInfos().get<QueryResultPreviewInfo>();
+    if (!preview)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A query result preview chunk has no QueryResultPreviewInfo");
+
+    framing->beginPayload(FramedPacketKind::Preview);
+
+    /// The preview is rendered by a fresh formatter, which is finalized so that the payload is a
+    /// complete document of the format; this formatter and its state are not touched.
+    /// The format may reject the intermediate values of a preview while it accepts the result of
+    /// the query (for example, `Npy` rejects an empty array that only a preview has). Such an error
+    /// must not fail the query: the partial document is discarded and the preview is dropped.
+    try
+    {
+        auto preview_format = query_result_preview_format_creator(out);
+        preview_format->write(getPort(PortKind::Main).getHeader().cloneWithColumns(chunk.detachColumns()));
+        preview_format->finalize();
+    }
+    catch (const Exception & e)
+    {
+        framing->discardPayload();
+        reattachBuffers();
+        onQueryResultPreviewEvaluationError(e, *preview, isCancelled());
+        return;
+    }
+
+    writeFramingPayloadBoundary(FramedPacketKind::Preview);
+}
+
 void IOutputFormat::work()
 {
     std::lock_guard lock(writing_mutex);
+
+    if (has_input && current_block_kind == Main && isQueryResultPreview(current_chunk))
+    {
+        /// Previews may overtake each other on the way through different branches of the pipeline
+        /// (see `QueryResultPreview.h`); a preview older than the last delivered one is stale.
+        UInt64 sequence_number = getQueryResultPreviewSequenceNumber(current_chunk);
+        if (sequence_number > last_query_result_preview_sequence_number)
+        {
+            last_query_result_preview_sequence_number = sequence_number;
+            consumeQueryResultPreview(std::move(current_chunk));
+        }
+        else
+            current_chunk.clear();
+        has_input = false;
+        return;
+    }
 
     writeProgressIfNeededUnlocked();
 

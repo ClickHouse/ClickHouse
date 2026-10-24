@@ -51,6 +51,12 @@ public:
 
     String getName() const override { return "WindowTransform"; }
 
+    /// Preview chunks are computed standalone by a fresh one-shot transform, out of band
+    /// (see `QueryResultPreview.h`): the window functions apply to the preview alone, so e.g.
+    /// `max(x) OVER ()` is the maximum of the intermediate result and converges to the final value.
+    /// A preview on which a window function throws is dropped.
+    bool supportsQueryResultPreviews() const override { return true; }
+
     static Block transformHeader(Block header, const ExpressionActionsPtr & expression);
 
     Status prepare() override;
@@ -68,6 +74,23 @@ public:
 
     std::optional<Chunk> pending_input;
     bool input_is_finished = false;
+
+    /// For the standalone evaluation of query result previews (see `QueryResultPreview.h`):
+    /// a copy of the constructor argument to build the fresh one-shot transform, the diverted
+    /// input chunk, and the computed preview waiting for the output port.
+    std::vector<WindowFunctionDescription> window_functions_for_preview;
+    Chunk query_result_preview_input;
+    Chunk pending_query_result_preview;
+
+    /// Set on the one-shot transform computing a query result preview: the cancellation flag of the
+    /// transform in the pipeline, which the one-shot one is not a part of, so the executor never cancels it.
+    const std::atomic<bool> * outer_cancellation_flag = nullptr;
+
+    void computeQueryResultPreview();
+    bool isCancelledOrOuterCancelled() const
+    {
+        return isCancelled() || (outer_cancellation_flag && outer_cancellation_flag->load(std::memory_order_acquire));
+    }
 
     /// One per window function.
     std::vector<WindowFunctionWorkspace> workspaces;

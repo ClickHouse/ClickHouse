@@ -624,6 +624,22 @@ public:
     /// to leave the result as is.
     static size_t singleLevelChunkRowsForFanOut(size_t rows, size_t output_streams);
 
+    /// Non-destructively merges the live aggregation state of one participant of a parallel
+    /// aggregation into `snapshot`, for query result previews (the `query_result_previews`
+    /// setting). The participant's states are copied and merged into states freshly created in the
+    /// snapshot's own arena, so the live state continues to aggregate unaffected, and the snapshot
+    /// does not share any storage with it. Only single-level variants and `without_key` are
+    /// supported; the caller must ensure exclusive access to `participant` for the duration of the
+    /// call and keep the state small (the merge is linear in its size).
+    ///
+    /// The snapshot's keys can reference the participants' arenas (a hash-table merge stores the
+    /// key as it is), so the snapshot keeps those arenas alive for as long as it lives.
+    void mergeIntoQueryResultPreviewSnapshot(AggregatedDataVariants & participant, AggregatedDataVariants & snapshot) const;
+
+    /// Converts a snapshot accumulated by `mergeIntoQueryResultPreviewSnapshot` into one finalized
+    /// chunk, destroying the snapshot's states in the process.
+    Chunk convertQueryResultPreviewSnapshotToChunk(AggregatedDataVariants & snapshot) const;
+
     /// `adaptive_session` (or nullptr when the adaptive aggregation is off) feeds the
     /// thaw verdict into the hash-table statistics next to the observed sizes.
     /// Records the thaw verdict in the hash-table statistics when the session measured one.
@@ -688,6 +704,15 @@ public:
     void consumeToTemporaryFile(AggregatedDataVariants & data_variants) const;
 
     bool hasTemporaryData() const;
+
+    /// The memory currently held by the aggregation state of every thread of this aggregator: not
+    /// only the arenas and the hash tables, but also everything the aggregate function states
+    /// allocate on their own (the hash tables of `uniq`, `uniqExact`, `topK`, the arrays of
+    /// `groupArray`, and so on), which the arenas do not see. This is the same measure the
+    /// aggregation itself uses to decide when to spill: the dedicated tracker the execute path
+    /// creates under the query, and the query-wide delta since the aggregation started when there
+    /// is none (the merge path, which starts from states it did not allocate).
+    Int64 getStateMemoryUsage() const;
 
     /// Peak memory of the aggregation state across all threads. Unavailable when the states
     /// arrive pre-allocated (merge-only aggregation) and cannot be tracked.
@@ -1372,6 +1397,32 @@ private:
     template <typename Method, typename Table>
     Chunks
     convertToBlockImplNotFinal(Method & method, Table & data, Arenas & aggregates_pools, size_t rows, bool return_single_block, size_t max_rows_per_block) const;
+
+    /// See `mergeIntoQueryResultPreviewSnapshot`.
+    struct QueryResultPreviewStateCopy
+    {
+        Arena * arena;
+        /// Room for one temporary set of aggregate states, in `arena`.
+        AggregateDataPtr scratch;
+        String serialized;
+    };
+
+    /// Merges the states of `src` into `dst` through a copy that does not share any storage with `src`.
+    void mergeStatesIntoQueryResultPreviewSnapshot(AggregateDataPtr dst, ConstAggregateDataPtr src, QueryResultPreviewStateCopy & copy) const;
+
+    template <typename Method, typename Table>
+    requires MapAggregationMethod<Method>
+    void mergeIntoQueryResultPreviewSnapshotImpl(Table & table_src, Table & table_dst, QueryResultPreviewStateCopy & copy) const;
+
+    template <typename Method, typename Table>
+    requires SetAggregationMethod<Method>
+    void mergeIntoQueryResultPreviewSnapshotImpl(Table & table_src, Table & table_dst, QueryResultPreviewStateCopy & copy) const;
+
+    template <typename Method, typename Table>
+    void mergeNullKeyIntoQueryResultPreviewSnapshot(Table & table_src, Table & table_dst, QueryResultPreviewStateCopy & copy) const;
+
+    void mergeWithoutKeyIntoQueryResultPreviewSnapshot(
+        AggregatedDataVariants & participant, AggregatedDataVariants & snapshot, QueryResultPreviewStateCopy & copy) const;
 
     /// `untruncated_keys`, when non-null and the bucket goes through a conversion that materializes
     /// only some of its groups (the Top-K one or the HAVING pre-filter), receives the byte size all

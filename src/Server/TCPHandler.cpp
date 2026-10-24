@@ -973,6 +973,10 @@ void TCPHandler::runImpl()
             if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION)
                 query_state->query_context->setSetting("enable_producing_buckets_out_of_order_in_aggregation", false);
 
+            /// An older client does not know the `PreviewData` packet type.
+            if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_QUERY_RESULT_PREVIEWS)
+                query_state->query_context->setSetting("query_result_previews", false);
+
             /// If `collect_connection_metrics` was `false` after authentication, register the connection now.
             registerConnectionIfNeeded();
             /// Set the connection to idle in `system.connections` at each exit from this scope. This includes exceptions.
@@ -1696,7 +1700,11 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
     state.send_result_while_receiving_data_for_input = state.need_receive_data_for_input && !state.received_all_data_for_input;
 
     {
-        PullingAsyncPipelineExecutor executor(pipeline);
+        /// An older client does not know the `PreviewData` packet type. Previews stay dormant
+        /// unless the output format can deliver them, so this holds even if the query re-enables
+        /// `query_result_previews` in its own `SETTINGS` clause.
+        PullingAsyncPipelineExecutor executor(
+            pipeline, /*with_query_result_previews=*/ client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_QUERY_RESULT_PREVIEWS);
         pipeline.setConcurrencyControl(state.query_context->getSettingsRef()[Setting::use_concurrency_control]);
         CurrentMetrics::Increment query_thread_metric_increment{CurrentMetrics::QueryThread};
 
@@ -1741,7 +1749,12 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
 
                     // Block might be empty in case of timeout, i.e. there is no data to process
                     if (!block.empty() && !state.io.null_format && !discard_query_data)
-                        sendData(state, block);
+                    {
+                        if (block.info.is_preview)
+                            sendPreviewData(state, block);
+                        else
+                            sendData(state, block);
+                    }
 
                     out->sync();
                 }
@@ -1984,6 +1997,25 @@ void TCPHandler::sendExtremes(QueryState & state, const Block & extremes)
     if (state.maybe_compressed_out != out)
         state.maybe_compressed_out->next();
     out->finishChunk();
+}
+
+
+void TCPHandler::sendPreviewData(QueryState & state, const Block & block)
+{
+    /// The pipeline never produces preview blocks for clients that do not know the packet type:
+    /// `processOrdinaryQuery` does not enable query result previews in the executor for them.
+    chassert(client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_QUERY_RESULT_PREVIEWS);
+
+    initBlockOutput(state, block);
+
+    writeVarUInt(Protocol::Server::PreviewData, *out);
+    writeStringBinary("", *out);
+
+    state.block_out->write(block);
+    if (state.maybe_compressed_out != out)
+        state.maybe_compressed_out->next();
+    out->finishChunk();
+    /// The caller synchronizes `out` after the packet, the same way as for `Data` packets.
 }
 
 

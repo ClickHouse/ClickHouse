@@ -5,6 +5,7 @@
 #include <Common/MapWithMemoryTracking.h>
 #include <Common/QueueWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
@@ -13,6 +14,7 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/IProcessor.h>
 #include <Processors/ISource.h>
+#include <Processors/QueryResultPreview.h>
 #include <Processors/LimitTransform.h>
 #include <Processors/LimitRangeTransform.h>
 #include <Processors/NegativeLimitTransform.h>
@@ -679,6 +681,98 @@ void QueryPipeline::complete(std::shared_ptr<IOutputFormat> format)
         }
     }
     output_format = format_ptr;
+
+    activateQueryResultPreviews();
+}
+
+/// Preview emitters (see `QueryResultPreview.h`) are constructed dormant. A preview-emitting stage
+/// (all participants sharing one `QueryResultPreviewsControl`) is activated only for pipelines
+/// completed with an output format that can deliver previews to the client, and only when:
+/// - every processor between its participants and the format supports preview chunks (fail-close:
+///   any unknown stateful processor on the way keeps the stage dormant, so preview chunks can never
+///   be mixed into an accumulated state or a result);
+/// - every input of every processor on the way is fed by the same stage. A preview is a snapshot of
+///   the whole stage, so it fully replaces the previous one only if nothing else flows into the
+///   result: for example, two independent aggregations joined by `UNION ALL` would otherwise
+///   overwrite each other's previews, and a branch without previews would be missing from them.
+void QueryPipeline::activateQueryResultPreviews()
+{
+    if (!output_format || !output_format->canWriteQueryResultPreviews())
+        return;
+
+    MapWithMemoryTracking<QueryResultPreviewsControl *, VectorWithMemoryTracking<const IProcessor *>> stages;
+    for (const auto & processor : *processors)
+    {
+        auto * emitter = dynamic_cast<IQueryResultPreviewEmitter *>(processor.get());
+        if (!emitter)
+            continue;
+
+        if (auto * control = emitter->getQueryResultPreviewsControl())
+            stages[control].push_back(processor.get());
+    }
+
+    for (auto & [control, participants] : stages)
+    {
+        /// All processors downstream of the participants (inclusive), except the format.
+        UnorderedSetWithMemoryTracking<const IProcessor *> reachable(participants.begin(), participants.end());
+        VectorWithMemoryTracking<const IProcessor *> to_visit = participants;
+        bool downstream_path_is_safe = true;
+
+        while (downstream_path_is_safe && !to_visit.empty())
+        {
+            const auto * current = to_visit.back();
+            to_visit.pop_back();
+
+            for (const auto & port : current->getOutputs())
+            {
+                if (!port.isConnected())
+                {
+                    downstream_path_is_safe = false;
+                    break;
+                }
+
+                const auto * next = &port.getInputPort().getProcessor();
+
+                /// The format is the endpoint: its base class treats preview chunks out-of-band.
+                if (dynamic_cast<const IOutputFormat *>(next))
+                    continue;
+
+                if (!next->supportsQueryResultPreviews())
+                {
+                    downstream_path_is_safe = false;
+                    break;
+                }
+
+                if (reachable.insert(next).second)
+                    to_visit.push_back(next);
+            }
+        }
+
+        if (!downstream_path_is_safe)
+            continue;
+
+        /// Every input of a processor on the way must come from the same stage.
+        for (const auto * current : reachable)
+        {
+            if (std::find(participants.begin(), participants.end(), current) != participants.end())
+                continue;
+
+            for (const auto & port : current->getInputs())
+            {
+                if (!port.isConnected() || !reachable.contains(&port.getOutputPort().getProcessor()))
+                {
+                    downstream_path_is_safe = false;
+                    break;
+                }
+            }
+
+            if (!downstream_path_is_safe)
+                break;
+        }
+
+        if (downstream_path_is_safe)
+            control->activate();
+    }
 }
 
 Block QueryPipeline::getHeader() const

@@ -1,0 +1,11 @@
+--- an expression throws on the second preview
+previews: 1
+{"packet":"data","data":"[0]\n"}
+--- HAVING throws on the second preview
+previews: 1
+{"packet":"data","data":"[0, 131072]\n[1, 131072]\n"}
+--- a window function throws on the first preview
+previews: 0
+{"packet":"data","data":"[0, 1]\n[1, 1]\n"}
+--- an error on the result still fails the query
+fails
