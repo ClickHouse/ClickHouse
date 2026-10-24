@@ -508,6 +508,45 @@ def test_remote_write_refuses_another_time_series_type_swapped_after_the_check()
     )
 
 
+def test_remote_write_refuses_a_distributed_table_swapped_after_the_check():
+    """A same-schema Distributed table swapped in under a shard-local name is refused by the shard,
+    rather than passing the requirement on to the TimeSeries table behind it.
+    """
+    node.query("CREATE TABLE shard_1.ts_nested ENGINE=TimeSeries")
+    node.query(
+        "CREATE TABLE shard_0.dist_nested AS shard_0.ts_local "
+        "ENGINE = Distributed(two_shards_dist, shard_1, ts_nested, cityHash64(tags['host']))"
+    )
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    swapped = False
+    try:
+        node.query(f"SYSTEM ENABLE FAILPOINT {BEFORE_INSERT}")
+        # `h3` hashes to shard_0: the whole batch goes to the shard whose target is swapped meanwhile.
+        pending = pool.submit(write, "/dist/write", "nested_swapped_metric", ("h3",))
+        node.query(f"SYSTEM WAIT FAILPOINT {BEFORE_INSERT} PAUSE", timeout=60)
+        node.query("EXCHANGE TABLES shard_0.ts_local AND shard_0.dist_nested")
+        swapped = True
+        node.query(f"SYSTEM NOTIFY FAILPOINT {BEFORE_INSERT}")
+        response = pending.result(timeout=60)
+        assert response.status_code >= 500, response.text
+        assert "UNEXPECTED_TABLE_ENGINE" in response.text
+        assert "engine Distributed" in response.text
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {BEFORE_INSERT}")
+        pool.shutdown(wait=True)
+        if swapped:
+            node.query("EXCHANGE TABLES shard_0.ts_local AND shard_0.dist_nested")
+
+    # Nothing went through the decoy, and the retry lands once the name is right again.
+    nested = "SELECT count() FROM timeSeriesTags(shard_1.ts_nested) WHERE metric_name = 'nested_swapped_metric'"
+    assert int(node.query(nested)) == 0
+    assert count_on_the_shards("prom_dist", "nested_swapped_metric") == 0
+    assert write("/dist/write", "nested_swapped_metric", ("h3",)).status_code == 204
+    assert count_on_the_shards("prom_dist", "nested_swapped_metric") == 1
+    node.query("DROP TABLE shard_0.dist_nested SYNC")
+    node.query("DROP TABLE shard_1.ts_nested SYNC")
+
+
 def test_the_cluster_user_needs_no_temporary_table_grant():
     """The read ships `timeSeriesSelector(...)` to every shard, where it runs as the cluster's user:
     a selector that is not readonly would ask that user for CREATE TEMPORARY TABLE on every read.
