@@ -763,7 +763,7 @@ public:
     bool insertResultToColumn(
         IColumn & column,
         const typename JSONParser::Element & element,
-        const JSONExtractInsertSettings &,
+        const JSONExtractInsertSettings & insert_settings,
         const FormatSettings & format_settings,
         String & error) const override
     {
@@ -782,7 +782,8 @@ public:
         auto data = element.getString();
         ReadBufferFromMemory buf(data);
         DateType date;
-        if (!tryReadDateText(date, buf, DateLUT::instance(), nullptr, !format_settings.throwOnDateTimeOverflow()) || !buf.eof())
+        const bool saturate = insert_settings.saturate_on_overflow && !format_settings.throwOnDateTimeOverflow();
+        if (!tryReadDateText(date, buf, DateLUT::instance(), nullptr, saturate) || !buf.eof())
         {
             error = fmt::format("cannot parse Date value here: {}", data);
             return false;
@@ -815,12 +816,15 @@ public:
             return true;
         }
 
+        const bool saturate = insert_settings.saturate_on_overflow && !format_settings.throwOnDateTimeOverflow();
         time_t value = 0;
         if (element.isString())
         {
-            if (!tryParse(value, element.getString(), format_settings.date_time_input_format, !format_settings.throwOnDateTimeOverflow()))
+            auto data = element.getString();
+            if (!tryParse(value, data, format_settings.date_time_input_format, saturate)
+                || (!insert_settings.truncate_fractional_seconds && !isWholeSeconds(data, format_settings.date_time_input_format)))
             {
-                error = fmt::format("cannot parse DateTime value here: {}", element.getString());
+                error = fmt::format("cannot parse DateTime value here: {}", data);
                 return false;
             }
         }
@@ -837,7 +841,7 @@ public:
                     return false;
                 }
                 value = element.getInt64();
-                if (format_settings.throwOnDateTimeOverflow() && (value < 0 || value > 0xFFFFFFFF))
+                if (!saturate && (value < 0 || value > 0xFFFFFFFF))
                 {
                     error = fmt::format("value {} is out of bounds of type DateTime", value);
                     return false;
@@ -848,7 +852,7 @@ public:
                 /// Clamp in the unsigned domain before narrowing to time_t,
                 /// because values above INT64_MAX would wrap to negative on cast.
                 UInt64 raw = element.getUInt64();
-                if (format_settings.throwOnDateTimeOverflow() && raw > 0xFFFFFFFF)
+                if (!saturate && raw > 0xFFFFFFFF)
                 {
                     error = fmt::format("value {} is out of bounds of type DateTime", raw);
                     return false;
@@ -865,7 +869,7 @@ public:
             /// exactly can cross the second boundary (`1703363853.9999999` arrives here as `1703363854.0`).
             String str_value = jsonElementToString<JSONParser>(element, format_settings);
             ReadBufferFromMemory buf(str_value);
-            if (!tryReadDateTimeAsNumber(value, buf, !format_settings.throwOnDateTimeOverflow()) || !buf.eof())
+            if (!tryReadDateTimeAsNumber(value, buf, saturate) || !buf.eof())
             {
                 error = fmt::format("cannot read DateTime value from JSON element: {}", str_value);
                 return false;
@@ -902,6 +906,30 @@ public:
         }
 
         return false;
+    }
+
+    /// The DateTime parsers drop fractional seconds, so the text is read again with the maximum precision.
+    bool isWholeSeconds(std::string_view data, FormatSettings::DateTimeInputFormat date_time_input_format) const
+    {
+        constexpr UInt32 max_scale = 9;
+        constexpr Int64 max_scale_multiplier = 1'000'000'000;
+        DateTime64 value;
+        ReadBufferFromMemory buf(data);
+        bool parsed = false;
+        switch (date_time_input_format)
+        {
+            case FormatSettings::DateTimeInputFormat::Basic:
+                parsed = tryReadDateTime64Text(value, max_scale, buf, time_zone);
+                break;
+            case FormatSettings::DateTimeInputFormat::BestEffort:
+                parsed = tryParseDateTime64BestEffort(value, max_scale, buf, time_zone, utc_time_zone);
+                break;
+            case FormatSettings::DateTimeInputFormat::BestEffortUS:
+                parsed = tryParseDateTime64BestEffortUS(value, max_scale, buf, time_zone, utc_time_zone);
+                break;
+        }
+
+        return parsed && buf.eof() && value.value % max_scale_multiplier == 0;
     }
 
     /// Needed for the `best_effort` date/time input formats. Not in `TimezoneMixin`, so that merely naming a
@@ -1899,6 +1927,10 @@ public:
             auto shared_variant_discr = column_dynamic.getSharedVariantDiscriminator();
             auto insert_settings_with_no_type_conversion = insert_settings;
             insert_settings_with_no_type_conversion.allow_type_conversion = false;
+            /// A value that does not fit a variant as is gets its own type instead of being changed to fit.
+            insert_settings_with_no_type_conversion.insert_default_on_invalid_elements_in_complex_types = false;
+            insert_settings_with_no_type_conversion.saturate_on_overflow = false;
+            insert_settings_with_no_type_conversion.truncate_fractional_seconds = false;
 
             /// Check if we already have variants order for this Variant type in cache.
             auto variants_order_it = variants_order_cache.find(variant_info.variant_name);
