@@ -3415,7 +3415,9 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
         /// When castColumnAccurateOrNull targets a LowCardinality type and the source value
         /// is out-of-range (e.g. Int64 → LowCardinality(UInt32)), accurateOrNull produces nulls
         /// that get inserted into the non-nullable ColumnUnique dictionary, crashing the server.
-        auto key_column_type = recursiveRemoveLowCardinality(mapping.key_expr_type);
+        /// Also strip explicit tuple element names so the cast of set columns to key column types
+        /// converts the elements of tuples positionally, consistently with `Set::execute`.
+        auto key_column_type = recursiveRemoveTupleElementNames(recursiveRemoveLowCardinality(mapping.key_expr_type));
         size_t set_element_index = mapping.index_mapping.tuple_index;
         auto set_element_type = set_types[set_element_index];
         ColumnPtr set_column = set_columns[set_element_index];

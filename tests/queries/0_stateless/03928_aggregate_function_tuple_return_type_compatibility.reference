@@ -259,13 +259,15 @@ SELECT toTypeName(argAndMax(a, b))
 FROM values('a Nullable(Int32), b Nullable(Int32)', (1, 2), (NULL, 1), (3, 0));
 Nullable(Tuple(Int32, Int32))
 -- argMin(tuple, val): legacy type was Tuple(Nullable(Int32), Nullable(Int32)).
-SELECT toTypeName(argMin(tuple(a, b), c))
+-- Use the explicit tuple(name, ...)(value, ...) syntax so the named result type is the same in
+-- both analyzers (the automatic naming of `tuple(a, b)` from column names is analyzer-only).
+SELECT toTypeName(argMin(tuple('a', 'b')(a, b), c))
 FROM values('a Nullable(Int32), b Nullable(Int32), c Nullable(Int32)', (1, 2, 3), (NULL, 1, 0), (3, 4, 5));
-Nullable(Tuple(Nullable(Int32), Nullable(Int32)))
+Nullable(Tuple(a Nullable(Int32), b Nullable(Int32)))
 -- argMax(tuple, val): legacy type was Tuple(Nullable(Int32), Nullable(Int32)).
-SELECT toTypeName(argMax(tuple(a, b), c))
+SELECT toTypeName(argMax(tuple('a', 'b')(a, b), c))
 FROM values('a Nullable(Int32), b Nullable(Int32), c Nullable(Int32)', (1, 2, 3), (NULL, 1, 0), (3, 4, 5));
-Nullable(Tuple(Nullable(Int32), Nullable(Int32)))
+Nullable(Tuple(a Nullable(Int32), b Nullable(Int32)))
 -- sumMap(nullable tuple): legacy type was Tuple(Array(UInt8), Array(UInt64)).
 SELECT toTypeName(finalizeAggregation(CAST(unhex('0101050700000000000000'), 'AggregateFunction(sumMap, Nullable(Tuple(Array(UInt8), Array(UInt64))))')));
 Nullable(Tuple(Array(UInt8), Array(UInt64)))

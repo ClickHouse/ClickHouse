@@ -7,24 +7,29 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context_fwd.h>
-#include <Parsers/isUnquotedIdentifier.h>
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
 /** tuple(x, y, ...) is a function that allows you to group several columns.
+  * tuple(name1, name2, ...)(x, y, ...) creates a named tuple with the given names.
   * tupleElement(tuple, n) is a function that allows you to retrieve a column from tuple.
   */
 class FunctionTuple final : public IFunction
 {
-    bool enable_named_columns;
-
 public:
     static constexpr auto name = "tuple";
 
-    static FunctionPtr create(ContextPtr context);
+    static FunctionPtr create(ContextPtr /* context */) { return std::make_shared<FunctionTuple>(); }
 
-    explicit FunctionTuple(bool enable_named_columns_ = false) : enable_named_columns(enable_named_columns_) { }
+    explicit FunctionTuple(const Array & parameters_ = {}) : parameters(parameters_) {}
 
     String getName() const override { return name; }
 
@@ -44,10 +49,9 @@ public:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     /// Documentation-only — collects N argument types into a `Tuple` (or an
-    /// empty `Tuple()` for zero args). With `enable_named_columns_in_function_tuple`
-    /// and all-unique unquoted-identifier argument names, the result is a
-    /// named tuple — that's not expressible in the DSL, so the legacy
-    /// `getReturnTypeImpl` stays authoritative.
+    /// empty `Tuple()` for zero args). With parameters, `tuple('a', 'b')(x, y)`,
+    /// the result is a named tuple — that's not expressible in the DSL, so the
+    /// legacy `getReturnTypeImpl` stays authoritative.
     String getSignatureString() const override
     {
         return "(A1 : Any, ...) -> Tuple(A1, ...)";
@@ -56,34 +60,69 @@ public:
     /// The signature is documentation-only: in particular, it cannot express
     /// the zero-argument case or tuple element names. Keep both return-type
     /// entry points on the authoritative implementation below.
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        ColumnsWithTypeAndName columns;
-        columns.reserve(arguments.size());
-        for (const auto & type : arguments)
-            columns.emplace_back(nullptr, type, String{});
-        return getReturnTypeImpl(columns);
-    }
-
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.empty())
-            return std::make_shared<DataTypeTuple>(DataTypes{});
-
         DataTypes types;
-        Names names;
-        NameSet name_set;
+        types.reserve(arguments.size());
         for (const auto & argument : arguments)
+            types.push_back(argument.type);
+        return getReturnTypeImpl(types);
+    }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (parameters.empty())
+            return std::make_shared<DataTypeTuple>(arguments);
+
+        /// Named tuple: tuple(name1, name2, ...)(value1, value2, ...)
+        /// Validate that we have the correct number of names
+        if (parameters.size() != arguments.size())
         {
-            types.emplace_back(argument.type);
-            names.emplace_back(argument.name);
-            name_set.emplace(argument.name);
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of names ({}) does not match number of values ({}) in tuple function",
+                parameters.size(),
+                arguments.size());
         }
 
-        if (enable_named_columns && name_set.size() == names.size()
-            && std::all_of(names.cbegin(), names.cend(), [](const auto & n) { return isUnquotedIdentifier(n); }))
-            return std::make_shared<DataTypeTuple>(types, names);
-        return std::make_shared<DataTypeTuple>(types);
+        /// Extract names from parameters and validate them
+        Names param_names;
+        param_names.reserve(parameters.size());
+
+        for (size_t i = 0; i < parameters.size(); ++i)
+        {
+            const auto & param = parameters[i];
+
+            /// Check that parameter is a String
+            if (param.getType() != Field::Types::String)
+            {
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Tuple element name must be string literals, got type {} for argument {}",
+                    param.getTypeName(),
+                    i);
+            }
+
+            String param_name = param.safeGet<String>();
+
+            /// Validate that the name is a valid identifier
+            if (param_name.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tuple element name cannot be empty at position {}", i);
+
+            /// Check for duplicate param_names
+            for (size_t j = 0; j < i; ++j)
+            {
+                if (param_names[j] == param_name)
+                {
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS, "Duplicate tuple element name '{}' at positions {} and {}", param_name, j, i);
+                }
+            }
+
+            param_names.push_back(param_name);
+        }
+
+        return std::make_shared<DataTypeTuple>(arguments, param_names);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -103,6 +142,9 @@ public:
         }
         return ColumnTuple::create(tuple_columns);
     }
+
+private:
+    Array parameters;
 };
 
 }
