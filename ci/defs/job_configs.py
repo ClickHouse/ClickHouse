@@ -17,6 +17,7 @@ from ci.defs.defs import (
     ArtifactNames,
     BuildTypes,
     JobNames,
+    REFERENCE_SNAPSHOT_PUBLISH_SECRETS,
     RunnerLabels,
 )
 LIMITED_MEM = Utils.physical_memory() - 2 * 1024**3
@@ -2061,6 +2062,39 @@ class JobConfigs:
             ],
         ),
         run_in_docker="clickhouse/docs-builder",
+    )
+    reference_snapshot_job = Job.Config(
+        name=JobNames.REFERENCE_SNAPSHOT,
+        runs_on=RunnerLabels.FUNC_TESTER_ARM,
+        command="python3 ./ci/jobs/reference_snapshot.py",
+        requires=[ArtifactNames.CH_ARM_BINARY],
+        timeout=30 * 60,
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./src",
+                "./ci/jobs/reference_snapshot.py",
+                "./ci/jobs/scripts/docs/reference_snapshot",
+                "./utils/generate-system-tables-docs-config.xml",
+            ],
+        ),
+        provides=[ArtifactNames.REFERENCE_SNAPSHOT],
+    )
+    publish_reference_snapshot_job = Job.Config(
+        name=JobNames.PUBLISH_REFERENCE_SNAPSHOT,
+        runs_on=RunnerLabels.FUNC_TESTER_ARM,
+        command="python3 ./ci/jobs/publish_reference_snapshot.py",
+        requires=[ArtifactNames.REFERENCE_SNAPSHOT],
+        timeout=15 * 60,
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/publish_reference_snapshot.py",
+                "./ci/jobs/scripts/docs/reference_snapshot/publish_reference_snapshot.py",
+            ],
+        ),
+        # The Vercel Blob writer is intentionally available only to the final,
+        # trusted transport step. The binary build and snapshot export must not
+        # be able to resolve it.
+        secrets=REFERENCE_SNAPSHOT_PUBLISH_SECRETS,
     )
     docker_server = Job.Config(
         name=JobNames.DOCKER_SERVER,

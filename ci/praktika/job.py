@@ -86,6 +86,12 @@ class Job:
         # is still shown as failed in the CI report.
         allow_failure: bool = False
 
+        # GitHub Actions only: tolerate a failed job at the workflow level.
+        # The job is still shown as a warning in Actions. Use this for an
+        # optional job whose setup can fail before Praktika starts, such as an
+        # unavailable input artifact.
+        continue_on_error: bool = False
+
         # If True, the job failure is hidden entirely: the CI report shows
         # green status and the job does not block PR merge. Use for
         # experimental jobs that are not yet stable enough to be enforced.
@@ -288,6 +294,11 @@ class Job:
 
         def set_allow_merge_on_failure(self, value=True):
             return self.set_allow_failure(value)
+
+        def set_continue_on_error(self, value=True):
+            res = copy.deepcopy(self)
+            res.continue_on_error = value
+            return res
 
         def set_post_hooks(self, post_hooks):
             res = copy.deepcopy(self)
