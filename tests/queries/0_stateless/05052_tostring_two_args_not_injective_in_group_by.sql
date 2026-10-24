@@ -4,15 +4,7 @@
 -- treat toString as injective regardless of arity and rewrite
 -- `GROUP BY toString(number, NULL)` into `GROUP BY number`, producing one group per
 -- row instead of one.
---
--- The setting under test is Analyzer-only by design, so force `enable_analyzer = 1`
--- regardless of the CI job's default. Under the old query analyzer, `isInjective`
--- is reached through legacy passes that pass empty sample columns
--- (RemoveInjectiveFunctionsVisitor / TreeOptimizer), which the arity-based
--- condition here does not cover; the type-aware condition needed for that path
--- is tracked at #116931 / #116935 / #116828.
 
-SET enable_analyzer = 1;
 SET optimize_injective_functions_in_group_by = 1;
 
 -- The grouping key is NULL for every row -> exactly one group.
