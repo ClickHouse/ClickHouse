@@ -254,8 +254,13 @@ schema=$(handover_body schema | grep -qxF "    ++autoLoadGeneration;" \
 jemalloc=$(handover_body jemalloc | grep -qxF "    connectionAbortController.abort();" \
     && handover_body jemalloc | grep -qxF "    loadStats(true);" \
     && echo invalidated || echo kept)
+# `/processors-profile` also aborts the requests in flight and starts the new listing at once, rather than
+# after the previous one, which may wait indefinitely for a stalled previous server.
 processors_profile=$(handover_body processors-profile | grep -qxF "            ++connectionGeneration;" \
     && handover_body processors-profile | grep -qxF "            ++profileGeneration;" \
+    && handover_body processors-profile | grep -qxF "            connectionAbortController.abort();" \
+    && handover_body processors-profile | grep -qxF "            loadQueries();" \
+    && fetch_page processors-profile | grep -qxF "                signal: connectionAbortController.signal," \
     && echo invalidated || echo kept)
 echo "handover dashboard=${dashboard} schema=${schema} jemalloc=${jemalloc} processors_profile=${processors_profile}"
 

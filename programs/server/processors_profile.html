@@ -12,13 +12,19 @@
         /// a root-absolute `/js/...` would bypass, and it does not depend on a suffix of the route
         /// (`/processors-profile/`). A page opened straight from disk has no server, so the name is
         /// resolved against the document instead, which finds the copy sitting next to this page in
-        /// the source tree.
+        /// the source tree. The routing parameters of the page, with which a reverse proxy can select a
+        /// backend, are kept as well: everything in the query string except the credentials and `query`
+        /// (see `PAGE_URL_PARAMETERS` below).
         const viz_src = (() =>
         {
             if (location.protocol === 'file:') return new URL('js/viz-standalone.js', document.baseURI).href;
             const path = location.pathname;
             const route = path.lastIndexOf('/processors-profile');
-            return new URL('js/viz-standalone.js', location.origin + (route != -1 ? path.slice(0, route + 1) : path)).href;
+            const url = new URL('js/viz-standalone.js', location.origin + (route != -1 ? path.slice(0, route + 1) : path));
+            const params = new URLSearchParams(location.search);
+            for (const name of ['query', 'user', 'password']) params.delete(name);
+            url.search = params.toString();
+            return url.href;
         })();
         document.write('<script src="' + viz_src + '"><\/script>');
     </script>
@@ -506,6 +512,7 @@
                 method: 'POST',
                 headers: { 'Authorization': 'never', 'Content-Type': 'text/plain; charset=UTF-8' },
                 body: query,
+                signal: connectionAbortController.signal,
             });
             const text = await response.text();
             if (!response.ok) {
@@ -640,6 +647,12 @@
         /// it found there on the new server - which would send that query's text to it.
         let connectionGeneration = 0;
 
+        /// Aborted by every connection a host page hands over, together with the requests of the previous
+        /// connection that are still in flight (`runQuery` binds each request to its signal). Otherwise a
+        /// stalled request to the previous server would keep the work started on it pending until that
+        /// server answers - it has no timeout - and the generation checks only run once it does.
+        let connectionAbortController = new AbortController();
+
         async function loadQueries() {
             const myConnection = connectionGeneration;
             clearError();
@@ -685,7 +698,8 @@
                 showError('Failed to load queries: ' + e.message);
                 picker.innerHTML = '<option value="">— failed to load —</option>';
             } finally {
-                picker.disabled = false;
+                /// A listing of the previous connection must not enable the picker of the one loading now.
+                if (myConnection === connectionGeneration) picker.disabled = false;
             }
         }
 
@@ -1043,14 +1057,13 @@
             }
         }
 
-        /// Initial state. Listings run one after another, starting with this one: a connection
-        /// handed over by the host page (below) usually arrives while the first listing is still
-        /// fetching with the previous credentials, and its failure would otherwise land after the
-        /// reloaded listing and replace it with `— failed to load —`. `loadQueries` reports its
-        /// failures inline and never rejects, so the chain survives a failed listing.
+        /// Initial state. A connection handed over by the host page (below) usually arrives while this
+        /// first listing is still fetching with the previous credentials. The handover aborts it and
+        /// starts the listing of the new connection right away; the aborted listing sees that its
+        /// connection is no longer current and leaves the page to the new one.
         document.getElementById('where-filter').value = DEFAULT_WHERE;
         applyClusterButtonState();
-        let pending_load = loadQueries();
+        loadQueries();
 
         /// The connection over `postMessage`.
         ///
@@ -1128,11 +1141,15 @@
         /// The work in flight is invalidated before the fields change: the listing by
         /// `connectionGeneration`, the profiling by `profileGeneration`. Both check their generation
         /// after every `await`, before the next request, so nothing started on the previous connection
-        /// sends a request to the new one. The profile of the previous server is cleared as well, so it
-        /// is not shown under the new connection when the new listing finds no queries.
+        /// sends a request to the new one. Its requests in flight are aborted, so that the listing of the
+        /// new connection starts at once instead of waiting for a stalled previous server. The profile
+        /// of the previous server is cleared as well, so it is not shown under the new connection when
+        /// the new listing finds no queries.
         function applyConnectionFromHost(data) {
             ++connectionGeneration;
             ++profileGeneration;
+            connectionAbortController.abort();
+            connectionAbortController = new AbortController();
             document.getElementById('selected-query-id').textContent = '';
             document.getElementById('selected-query-text').innerHTML = '';
             document.getElementById('graph').innerHTML =
@@ -1141,7 +1158,7 @@
             document.getElementById('user').value = data.user || '';
             document.getElementById('password').value = data.password || '';
             host_handed_server = document.getElementById('url').value;
-            pending_load = pending_load.then(() => loadQueries());
+            loadQueries();
         }
 
         {
