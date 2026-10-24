@@ -49,6 +49,25 @@ namespace
         {
         }
 
+        ~HoldingWriteBuffer() override
+        {
+            /// The segment is `Ephemeral`, so it stays `PARTIALLY_DOWNLOADED` while `entries` holds it,
+            /// and its writer, with an open file descriptor, would live as long as the object. Nothing
+            /// writes to the segment after this buffer is gone, so close the file. This is not done in
+            /// `finalizeImpl`, because `sync` may still be called after `finalize`.
+            if (!isFinalized())
+                return;
+
+            try
+            {
+                holder->front().releaseLocalCacheWriter();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
+
     protected:
         void finalizeImpl() override
         {
