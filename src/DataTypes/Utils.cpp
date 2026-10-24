@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/TypeTree.h>
 
 namespace DB
 {
@@ -36,6 +37,11 @@ std::pair<Int256, Int256> decimalNativeRange(TypeIndex type)
 
 }
 
+bool typeTreeContainsBool(const IDataType & type)
+{
+    return anyInTypeTree(type, [](const IDataType & node) { return WhichDataType(node).isUInt8() && node.getName() == "Bool"; });
+}
+
 bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
 {
     auto from_which_type = WhichDataType(from_type->getTypeId());
@@ -46,7 +52,8 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
     if (from_which_type.isUInt8() && !isBool(from_type) && isBool(to_type_unwrapped))
         return false;
 
-    if (from_type->equals(*to_type_unwrapped))
+    if (from_type->equals(*to_type_unwrapped)
+        && (from_type->getName() == to_type_unwrapped->getName() || !typeTreeContainsBool(*to_type_unwrapped)))
         return true;
 
     auto to_which_type = WhichDataType(to_type_unwrapped->getTypeId());

@@ -22,7 +22,7 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeQBit.h>
-#include <DataTypes/TypeTree.h>
+#include <DataTypes/Utils.h>
 #include <DataTypes/Serializations/SerializationQBit.h>
 
 #include <Core/AccurateComparison.h>
@@ -590,9 +590,7 @@ bool canReturnUnchanged(const IDataType * from_type_hint, const IDataType & to_t
         return false;
     if (!strict)
         return true;
-    const bool contains_bool = anyInTypeTree(
-        to_type, [](const IDataType & node) { return WhichDataType(node).isUInt8() && node.getName() == "Bool"; });
-    return !contains_bool || from_type_hint->getName() == to_type.getName();
+    return !typeTreeContainsBool(to_type) || from_type_hint->getName() == to_type.getName();
 }
 
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)
