@@ -143,6 +143,16 @@ String InterpreterShowAccessEntitiesQuery::getRewrittenQuery() const
     if (origin.empty())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: type is not supported by SHOW query", toString(query.type));
 
+    if (!query.like.empty())
+    {
+        String like_column = (query.current_roles || query.enabled_roles) ? "role_name" : "name";
+        String like_filter = like_column + " "
+            + (query.not_like ? "NOT " : "")
+            + (query.case_insensitive_like ? "ILIKE " : "LIKE ")
+            + quoteString(query.like);
+        filter += (filter.empty() ? "" : " AND ") + like_filter;
+    }
+
     if (order.empty() && expr != "*")
         order = expr;
 
