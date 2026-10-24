@@ -1,0 +1,42 @@
+asc
+499	335867
+499	612215
+499	335867
+499	612215
+desc
+24500	685775
+24500	989156
+24500	685775
+24500	989156
+large_groups
+0	197196
+0	197262
+0	197196
+0	197262
+exact_rows_before_limit
+{
+	"meta":
+	[
+		{
+			"name": "a",
+			"type": "UInt64"
+		},
+		{
+			"name": "b",
+			"type": "UInt64"
+		}
+	],
+
+	"data":
+	[
+		[499, 335867],
+		[499, 612215]
+	],
+
+	"rows": 2,
+
+	"rows_before_limit_at_least": 100000
+}
+asc	1
+desc	1
+large_groups	1
