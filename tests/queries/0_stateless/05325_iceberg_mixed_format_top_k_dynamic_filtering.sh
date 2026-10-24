@@ -23,7 +23,7 @@ ${CLICKHOUSE_CLIENT} --query "
 "
 
 SETTINGS="query_plan_max_limit_for_top_k_optimization = 1000, use_query_condition_cache = 1,
-    input_format_parquet_use_native_reader_v3 = 1, input_format_parquet_filter_push_down = 1, enable_analyzer = 1"
+    input_format_parquet_use_native_reader_v3 = 1, input_format_parquet_filter_push_down = 1"
 
 for top_k in 1 0; do
     ${CLICKHOUSE_CLIENT} --query "

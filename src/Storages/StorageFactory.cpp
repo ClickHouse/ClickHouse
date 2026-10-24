@@ -1,5 +1,10 @@
 #include <Storages/StorageFactory.h>
+#include <Storages/ConstraintsDescription.h>
+#include <Storages/IStorage.h>
+#include <Storages/KeyDescription.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Databases/IDatabase.h>
 #include <Interpreters/DDLTask.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -21,6 +26,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool database_replicated_allow_only_replicated_engine;
     extern const SettingsBool log_queries;
 }
 
@@ -29,6 +35,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_STORAGE;
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
+    extern const int NOT_IMPLEMENTED;
     extern const int ENGINE_REQUIRED;
     extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
     extern const int BAD_ARGUMENTS;
@@ -232,6 +239,22 @@ StoragePtr StorageFactory::get(
                     "UNIQUE KEY clause",
                     [](StorageFeatures features) { return features.supports_unique_key; });
 
+            if (!isReplayedTableDefinition(mode, query, local_context))
+            {
+                KeyDescription::checkNoAlias(storage_def->partition_by, "PARTITION BY");
+                KeyDescription::checkNoAlias(storage_def->primary_key, "PRIMARY KEY");
+                KeyDescription::checkNoAlias(storage_def->order_by, "ORDER BY");
+                KeyDescription::checkNoAlias(storage_def->unique_key, "UNIQUE KEY");
+                KeyDescription::checkNoAlias(storage_def->sample_by, "SAMPLE BY");
+                KeyDescription::checkNoAlias(storage_def->ttl_table, "TTL");
+                for (const auto & [_, ttl] : columns.getColumnTTLs())
+                    KeyDescription::checkNoAlias(ttl.get(), "TTL");
+                for (const auto & constraint : constraints.getConstraints())
+                    KeyDescription::checkNoAlias(constraint.get(), "CONSTRAINT");
+                if (query.columns_list)
+                    KeyDescription::checkNoAlias(query.columns_list->indices, "INDEX");
+            }
+
             if (storage_def->ttl_table)
                 check_feature(
                     "TTL clause",
@@ -289,6 +312,13 @@ StoragePtr StorageFactory::get(
         ScopedJemallocThreadArena table_metadata_arena_scope(JemallocMergeTreeArena::getArenaIndex());
         res = storages.at(name).creator_fn(arguments);
     }
+
+    /// A replayed definition was checked when the table was created.
+    if (!isReplayedTableDefinition(mode, query, local_context))
+        for (const auto & column : columns)
+            if (!column.subcolumn_codecs.empty() && !res->supportsSubcolumnCodecs())
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Engine {} doesn't support codecs for subcolumns", res->getName());
+
     if (!empty_engine_args.empty())
     {
         /// Storage creator modified empty arguments list, so we should modify the query
@@ -328,6 +358,20 @@ const StorageFactory::StorageFeatures & StorageFactory::getStorageFeatures(const
     if (it == storages.end())
         throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Unknown table engine {}", storage_name);
     return it->second.features;
+}
+
+void throwIfUnreplicatedTableDataNotAllowed(const StorageFactory::Arguments & args)
+{
+    /// The condition matches the one in the interpreter (`!create.attach`), so it also covers `SECONDARY_CREATE`,
+    /// which is used when other replicas of a `Replicated` database replay the query.
+    if (args.query.attach || !args.getLocalContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine])
+        return;
+
+    auto database = DatabaseCatalog::instance().tryGetDatabase(args.table_id.database_name);
+    if (database && database->getEngineName() == "Replicated")
+        throw Exception(ErrorCodes::UNKNOWN_STORAGE,
+                        "Only tables with a replicated engine or tables which do not store their own data on disk "
+                        "are allowed in a Replicated database");
 }
 
 }
