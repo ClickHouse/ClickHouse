@@ -1,0 +1,4 @@
+[1,'ClickHouse',['Another','Array']]	Array(Variant(Array(String), String, UInt8))
+[1,'ClickHouse',['Another','Array']]	[1,NULL,NULL]	[NULL,'ClickHouse',NULL]	[[],[],['Another','Array']]
+[1,'ClickHouse']	Array(Variant(String, UInt8))
+[1,'ClickHouse']	Array(Variant(String, UInt8))

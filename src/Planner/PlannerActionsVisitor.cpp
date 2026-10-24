@@ -72,12 +72,8 @@ namespace
 String calculateActionNodeNameWithCastIfNeeded(const ConstantNode & constant_node, Int64 optimize_const_name_size)
 {
     const auto & name = constant_node.getValueName({.optimize_const_name_size = optimize_const_name_size});
-    bool requires_cast_call = constant_node.hasSourceExpression();
-    if (!requires_cast_call)
-    {
-        auto field_type = applyVisitor(FieldToDataType(), constant_node.getValue());
-        requires_cast_call = ConstantNode::requiresCastCall(field_type, constant_node.getResultType());
-    }
+    /// The same decision as in `ConstantNode::toASTImpl`, so that the name matches the AST sent to remote servers.
+    bool requires_cast_call = constant_node.hasSourceExpression() || constant_node.valueRequiresCastCall();
 
     WriteBufferFromOwnString buffer;
     if (requires_cast_call)
