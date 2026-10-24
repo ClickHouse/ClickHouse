@@ -22,7 +22,7 @@ ${CLICKHOUSE_CLIENT} --query "
     FROM numbers(20000)
     SETTINGS engine_file_truncate_on_insert = 1, output_format_orc_row_index_stride = 2000"
 
-# rows_read is the pruning oracle: liborc skips row index strides whose statistics exclude the
+# rows_read is the pruning oracle: the ORC reader skips row index strides whose statistics exclude the
 # predicate, so a pruned read reports fewer rows than the file holds.
 run_and_report() {
     local label="$1"

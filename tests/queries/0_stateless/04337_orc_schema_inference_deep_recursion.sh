@@ -7,10 +7,9 @@
 #    grind (and could overflow the native stack), uncancellable. It must now be rejected as
 #    TOO_DEEP_RECURSION once the nesting exceeds max_parser_depth.
 #
-# 2. The Apache ORC C++ library (convertType) builds its own orc::Type tree by recursing over the
-#    file footer before any ClickHouse code runs. A pathologically deep file used to overflow the
-#    native stack there (crashing the process / triggering the OOM killer). The library now bounds
-#    the nesting depth and rejects such a file instead of crashing.
+# 2. The ORC reader builds its type tree by recursing over the file footer before the schema
+#    inference runs. A pathologically deep file must not overflow the native stack there: the
+#    reader bounds the nesting depth and rejects such a file.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -55,14 +54,14 @@ orc.write_table(pa.table({'x': pa.array([], type=t)}), '$2')
 "
 }
 
-# (1) A moderate file (200 levels) that the ORC library builds fine, with max_parser_depth lowered
+# (1) A moderate file (200 levels) that the ORC reader builds fine, with max_parser_depth lowered
 # below the nesting so parseORCType rejects it deterministically and build-independently.
 gen_orc 200 "${TMP_DIR}/moderate.orc"
 $CLICKHOUSE_LOCAL --query "DESC TABLE file('${TMP_DIR}/moderate.orc', ORC) SETTINGS max_parser_depth = 100" 2>&1 \
     | expect_contains parser_depth_limit TOO_DEEP_RECURSION
 
-# (2) A file nested past the ORC library's own limit. Even with max_parser_depth raised so high that
-# parseORCType would accept it, the library must reject it (without crashing). The library throws
+# (2) A file nested past the ORC reader's own limit. Even with max_parser_depth raised so high that
+# parseORCType would accept it, the reader must reject it (without crashing). The reader throws
 # before recursing past its limit, so this is safe to run.
 gen_orc 3000 "${TMP_DIR}/deep.orc"
 $CLICKHOUSE_LOCAL --query "DESC TABLE file('${TMP_DIR}/deep.orc', ORC) SETTINGS max_parser_depth = 100000" 2>&1 \
