@@ -10,7 +10,6 @@ DROP TABLE IF EXISTS t_grouping_sets_force;
 CREATE TABLE t_grouping_sets_force (a Int32, b Int32) ENGINE = MergeTree ORDER BY a;
 INSERT INTO t_grouping_sets_force VALUES (1, 2), (3, 4), (1, 5);
 
-SET enable_analyzer = 1;
 SET force_aggregation_in_order = 1;
 SET enable_memory_bound_merging_of_aggregation_results = 1;
 -- Only the forced path may introduce the in-order transform, so keep the optimizer out of it
@@ -70,7 +69,7 @@ INSERT INTO t_grouping_sets_force_mut VALUES (1, 2), (3, 5);
 ALTER TABLE t_grouping_sets_force_mut
 UPDATE c1 = (SELECT sum(number) FROM numbers(5) GROUP BY GROUPING SETS ((number), ()) ORDER BY 1 DESC LIMIT 1)
 WHERE TRUE
-SETTINGS enable_analyzer = 1, mutations_execute_subqueries_on_initiator = 1, mutations_sync = 2;
+SETTINGS mutations_execute_subqueries_on_initiator = 1, mutations_sync = 2;
 
 SELECT 'mutation subquery, analyzer', c0, c1 FROM t_grouping_sets_force_mut ORDER BY c0;
 
