@@ -3107,6 +3107,34 @@ def test_incremental_refreshable_mv_rest_catalog(started_cluster):
     node.query(f"DROP TABLE {src}")
 
 
+def test_drop_mv_with_unreachable_target(started_cluster):
+    # DROP of a view must not depend on its `TO` table in a catalog that cannot be reached.
+    node = started_cluster.instances["node1"]
+
+    uid = uuid.uuid4().hex[:12]
+    namespace = f"mv_unreachable_ns_{uid}"
+    tgt_table = f"mv_unreachable_tgt_{uid}"
+    mv = f"mv_unreachable_mv_{uid}"
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node, namespace, tgt_table, "(k Int64)")
+    node.query(
+        f"""
+        CREATE MATERIALIZED VIEW {mv}
+            REFRESH EVERY 10 YEAR APPEND
+            TO {CATALOG_NAME}.`{namespace}.{tgt_table}` EMPTY
+            AS SELECT toInt64(1) AS k
+        """
+    )
+
+    node.query("SYSTEM ENABLE FAILPOINT datalake_try_get_table_throw")
+    try:
+        # SYNC waits for the background part of the drop, which calls `drop` of the view.
+        node.query(f"DROP TABLE {mv} SYNC")
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT datalake_try_get_table_throw")
+
+
 def test_catalog_commit_conflict_reaches_caller_at_once(started_cluster):
     node = started_cluster.instances["node1"]
 

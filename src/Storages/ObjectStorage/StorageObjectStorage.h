@@ -89,6 +89,11 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
+    /// Requires `updateExternalDynamicMetadataIfExists` to have run for `context` before `storage_snapshot` was taken.
+    StoragePtr getStorageForParallelReplicasRead(const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context) const override;
+
+    void setHasClusterVariant() { has_cluster_variant = true; }
+
     SinkToStoragePtr write(
         const ASTPtr & query,
         const StorageMetadataPtr & metadata_snapshot,
@@ -259,6 +264,10 @@ protected:
     /// `ALTER TABLE ... MODIFY SETTING` and `RESET SETTING` of a data lake table.
     void alterSettings(const StorageInMemoryMetadata & new_metadata, ContextPtr context);
 
+    /// Whether this table is the whole FROM of a query that a replica runs for the initiator's cluster read,
+    /// so the replica reads only the files the initiator gives it. Only `IStorageCluster` sends such a query.
+    bool isReadOnReplicaForInitiator(const ContextPtr & context, const SelectQueryInfo & query_info) const;
+
     /// Get path sample for hive partitioning implementation.
     String getPathSample(ContextPtr context);
 
@@ -290,6 +299,7 @@ protected:
     bool supports_prewhere = false;
     bool supports_tuple_elements = false;
     bool is_table_function = false;
+    bool has_cluster_variant = false;
 
     struct HivePartitioningColumns
     {
