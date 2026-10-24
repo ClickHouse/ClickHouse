@@ -1474,7 +1474,13 @@ void LocalServer::connectAndInitializeInputTable()
             auto session_context = static_cast<LocalConnection &>(*connection).getSessionContext();
             auto inferred_table = session_context->removeExternalTable(table_name);
             if (!inferred_table)
+            {
+                /// The synthetic CREATE can fail without throwing under --ignore-error.
+                /// Query files may still read stdin with an explicitly specified format.
+                if (ignore_error)
+                    return;
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to defer the inferred stdin table {}", backQuote(table_name));
+            }
 
             /// Keep the holder in the session so early errors clean it up before
             /// the temporary database is destroyed.

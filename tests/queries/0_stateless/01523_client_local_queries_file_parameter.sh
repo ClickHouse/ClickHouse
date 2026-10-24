@@ -300,6 +300,19 @@ $CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" -q 'SELECT 42 FROM system
 $CLICKHOUSE_LOCAL --storage_file_read_method=read --queries-file="$TEMP_SQL_FILE_NAME" \
     -q 'SELECT 42 FROM system.one' < "$STDIN_DATA_FILE_NAME"
 
+# --ignore-error reports failed inference without throwing. Even when inference
+# fails, explicitly formatted stdin SQL and the trailing query must both execute.
+if output=$($CLICKHOUSE_LOCAL --ignore-error --queries-file="$TEMP_SQL_FILE_NAME" \
+    -q 'SELECT 42 FROM system.one' < "$STDIN_DATA_FILE_NAME" 2>/dev/null); then
+    if [[ "$output" == $'3\n42' ]]; then
+        printf '%s\n' "$output"
+    else
+        echo 'ignore-error explicit stdin produced unexpected results'
+    fi
+else
+    echo 'ignore-error explicit stdin failed'
+fi
+
 # If no inferred table exists, an implicit SELECT must not silently use system.one.
 if $CLICKHOUSE_LOCAL --queries-file="$TEMP_SQL_FILE_NAME" -q 'SELECT count()' \
     < "$STDIN_DATA_FILE_NAME" > /dev/null 2>&1; then
