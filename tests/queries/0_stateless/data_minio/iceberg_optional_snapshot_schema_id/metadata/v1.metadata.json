@@ -1,0 +1,36 @@
+{
+  "format-version" : 1,
+  "table-uuid" : "eb98021f-8ad2-44b3-ae10-728b7b3ea12e",
+  "location" : "/tmp/clickhouse-iceberg-optional-snapshot-schema-id/default/iceberg_optional_snapshot_schema_id",
+  "last-updated-ms" : 1790216421880,
+  "last-column-id" : 1,
+  "schema" : {
+    "type" : "struct",
+    "fields" : [ {
+      "id" : 1,
+      "name" : "c",
+      "required" : false,
+      "type" : "int"
+    } ]
+  },
+  "partition-spec" : [ ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "format-version" : "1",
+    "write.parquet.compression-codec" : "uncompressed",
+    "owner" : "clickhouse"
+  },
+  "current-snapshot-id" : -1,
+  "snapshots" : [ ],
+  "snapshot-log" : [ ],
+  "metadata-log" : [ ]
+}
