@@ -936,11 +936,15 @@ String DatabaseDataLake::getNewTableLocation(
             table_metadata.withForceAddBucket();
         table_metadata.setLocation(location);
 
-        String path = Poco::URI(getStorageEndpointForTable(table_metadata)).getPath();
+        const Poco::URI reopened_uri(getStorageEndpointForTable(table_metadata));
+        String path = reopened_uri.getPath();
         while (path.starts_with('/'))
             path.erase(0, 1);
         while (path.ends_with('/'))
             path.pop_back();
+        /// An HTTP endpoint names the bucket in the first path component, an `s3://` one in the authority.
+        if (reopened_uri.getScheme() != "http" && reopened_uri.getScheme() != "https")
+            path = reopened_uri.getAuthority() + "/" + path;
         return "s3://" + path;
     };
 

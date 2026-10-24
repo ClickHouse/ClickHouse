@@ -2479,6 +2479,46 @@ def test_create_table_as_mv_external_target_requires_grant(started_cluster):
         node.query(f"DROP TABLE IF EXISTS {source}_target")
 
 
+def test_create_table_json_ast_with_columns_and_as_requires_source_grant(started_cluster):
+    # Unlike SQL, the `clickhouse_json` dialect can combine explicit columns with `AS source`.
+    node = started_cluster.instances["node1"]
+    namespace = f"ctas_json_grant_{uuid.uuid4().hex}"
+    source = f"src_{namespace}"
+    user = f"user_{uuid.uuid4().hex}"
+    settings = {"allow_database_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+    json_settings = {**settings, "enable_json_ast_dialect": 1, "dialect": "clickhouse_json"}
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    node.query(
+        f"CREATE TABLE default.{source} (x Int64, d Date) "
+        "ENGINE = MergeTree ORDER BY x TTL d + INTERVAL 1 DAY"
+    )
+    node.query(f"CREATE USER {user}")
+    try:
+        node.query(f"GRANT CREATE TABLE ON {CATALOG_NAME}.* TO {user}")
+        node.query(f"GRANT READ, WRITE ON S3 TO {user}")
+
+        create_ast = json.loads(node.query(
+            f"SELECT parseQueryToJSON('CREATE TABLE {CATALOG_NAME}.`{namespace}.copy` (x Int64) ENGINE = Iceberg')"
+        ))
+        create_ast["as_database"] = "default"
+        create_ast["as_table"] = source
+        create_query = json.dumps(create_ast)
+
+        error = node.query_and_get_error(create_query, user=user, settings=json_settings)
+        assert "ACCESS_DENIED" in error, error
+        assert "TTL" not in error, error
+        assert node.query(f"SHOW TABLES FROM {CATALOG_NAME} LIKE '{namespace}.%'") == ""
+
+        # With the privilege the source definition is inspected and its TTL is rejected.
+        node.query(f"GRANT SHOW COLUMNS ON default.{source} TO {user}")
+        error = node.query_and_get_error(create_query, user=user, settings=json_settings)
+        assert "ACCESS_DENIED" not in error, error
+        assert "has TTL" in error, error
+    finally:
+        node.query(f"DROP USER IF EXISTS {user}")
+        node.query(f"DROP TABLE IF EXISTS default.{source}")
+
+
 @pytest.mark.parametrize("column_definition,explicit_engine", [
     ("name String CODEC(ZSTD)", False),
     ("dt Date TTL dt + INTERVAL 1 DAY", True),

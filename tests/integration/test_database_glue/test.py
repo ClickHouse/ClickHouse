@@ -370,6 +370,7 @@ def started_cluster():
                 "configs/disks.xml",
                 "configs/query_log.xml",
                 "configs/text_log.xml",
+                "configs/url_scheme_mappers.xml",
             ],
             user_configs=[],
             stay_alive=True,
@@ -1201,6 +1202,128 @@ def test_native_create_transform_unsupported_for_type_rejected(started_cluster):
         "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
     )
     assert root_namespace not in [db["Name"] for db in glue_client.get_databases()["DatabaseList"]]
+
+
+def test_native_create_decimal_precision_limit(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_native_create_decimal_precision_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    settings = {
+        "allow_experimental_database_glue_catalog": 1,
+        "allow_database_glue_catalog": 1,
+        "write_full_path_in_iceberg_metadata": 1,
+    }
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    for column_type in ["Decimal(39, 2)", "Decimal256(2)", "Array(Nullable(Decimal(39, 2)))", "Tuple(a Decimal(39, 2))"]:
+        error = node.query_and_get_error(
+            f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (amount {column_type})",
+            settings=settings,
+        )
+        assert "the maximum precision of an Iceberg decimal is 38" in error, error
+
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+    assert root_namespace not in [db["Name"] for db in glue_client.get_databases()["DatabaseList"]]
+    assert not list(
+        started_cluster.minio_client.list_objects("warehouse-glue", prefix=f"{root_namespace}/", recursive=True)
+    )
+
+    node.query(
+        f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (amount Decimal(38, 2))",
+        settings=settings,
+    )
+    table = load_catalog_impl(started_cluster).load_table(f"{root_namespace}.{table_name}")
+    assert str(table.schema().find_field("amount").field_type) == "decimal(38, 2)", table.schema()
+
+
+def test_native_create_transform_parameter_out_of_range_rejected(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_native_create_transform_parameter_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    settings = {
+        "allow_experimental_database_glue_catalog": 1,
+        "allow_database_glue_catalog": 1,
+        "write_full_path_in_iceberg_metadata": 1,
+    }
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    for clause in [
+        "PARTITION BY icebergBucket(2147483648, id)",
+        "PARTITION BY icebergTruncate(2147483648, name)",
+        "ORDER BY icebergBucket(2147483648, id)",
+        "ORDER BY icebergTruncate(2147483648, name)",
+    ]:
+        error = node.query_and_get_error(
+            f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (id Int64, name String) {clause}",
+            settings=settings,
+        )
+        assert "requires a positive 32-bit parameter" in error, error
+
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+    assert root_namespace not in [db["Name"] for db in glue_client.get_databases()["DatabaseList"]]
+    assert not list(
+        started_cluster.minio_client.list_objects("warehouse-glue", prefix=f"{root_namespace}/", recursive=True)
+    )
+
+    node.query(
+        f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (id Int64, name String) "
+        "PARTITION BY icebergBucket(2147483647, id) ORDER BY icebergTruncate(2147483647, name)",
+        settings=settings,
+    )
+    table = load_catalog_impl(started_cluster).load_table(f"{root_namespace}.{table_name}")
+    assert [str(field.transform) for field in table.spec().fields] == ["bucket[2147483647]"], table.spec()
+    assert [str(field.transform) for field in table.sort_order().fields] == ["truncate[2147483647]"], table.sort_order()
+
+
+def test_native_create_s3_scheme_storage_endpoint(started_cluster):
+    # `configs/url_scheme_mappers.xml` maps `s3://` to MinIO.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_native_create_s3_scheme_endpoint_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    additional_settings = {"storage_endpoint": "s3://warehouse-glue"}
+
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+    glue_client.create_database(
+        DatabaseInput={
+            "Name": root_namespace,
+            "LocationUri": f"s3://warehouse-glue/{root_namespace}",
+        }
+    )
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME, additional_settings)
+    node.query(
+        f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String)",
+        settings={
+            "allow_experimental_database_glue_catalog": 1,
+            "allow_database_glue_catalog": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
+    )
+
+    table_info = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+    metadata_location = table_info["Parameters"]["metadata_location"]
+    expected_key = f"{root_namespace}/{table_name}/metadata/v1.metadata.json"
+    assert metadata_location == f"s3://warehouse-glue/{expected_key}", metadata_location
+    started_cluster.minio_client.stat_object("warehouse-glue", expected_key)
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME, additional_settings)
+    node.query(
+        f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES ('AAPL')",
+        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
 
 
 def test_native_create_force_add_bucket_rejected(started_cluster):

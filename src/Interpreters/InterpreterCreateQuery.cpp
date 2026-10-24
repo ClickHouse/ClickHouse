@@ -2515,6 +2515,11 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                 "DataLakeCatalog supports only plain CREATE TABLE; "
                 "views, dictionaries, ATTACH, CLONE AS, REPLACE TABLE, and AS table function are not allowed");
 
+        /// The source definition is read below and in `doCreateTable` even when the query lists its own columns,
+        /// in which case `getTablePropertiesAndNormalizeCreateQuery` did not check access to the source.
+        if (!as_table_saved.empty())
+            getContext()->checkAccess(AccessType::SHOW_COLUMNS, getContext()->resolveDatabase(as_database_saved), as_table_saved);
+
         if (engine_user_specified)
             database->validateCreateTableEngine(*create.storage);
 
@@ -3022,6 +3027,11 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         else
         {
             StoragePtr as_storage = DatabaseCatalog::instance().getTable({as_database_name, as_table_saved}, getContext());
+            /// An `Alias` reports its target's keys.
+            if (const auto * alias = as_storage->as<StorageAlias>();
+                alias && !alias->isTargetTableGranted(getContext(), AccessType::SHOW_COLUMNS, {}))
+                throw Exception(ErrorCodes::ACCESS_DENIED, "Not enough privileges to describe metadata exposed by {}",
+                                StorageID{as_database_name, as_table_saved}.getNameForLogs());
             /// A materialized view keeps its keys in its target table.
             if (const auto * materialized_view = as_storage->as<StorageMaterializedView>())
             {

@@ -1053,8 +1053,8 @@ static Poco::JSON::Object::Ptr getPartitionField(
     {
         if (!param.has_value())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "TRUNCATE function for iceberg partitioning requires one integer parameter");
-        if (*param <= 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "TRUNCATE function for iceberg partitioning requires a positive width, got {}", *param);
+        if (*param <= 0 || *param > std::numeric_limits<Int32>::max())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "TRUNCATE function for iceberg partitioning requires a positive 32-bit width, got {}", *param);
         result->set(Iceberg::f_transform, fmt::format("truncate[{}]", *param));
         return result;
     }
@@ -1062,8 +1062,8 @@ static Poco::JSON::Object::Ptr getPartitionField(
     {
         if (!param.has_value())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "BUCKET function for iceberg partitioning requires one integer parameter");
-        if (*param <= 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "BUCKET function for iceberg partitioning requires a positive number of buckets, got {}", *param);
+        if (*param <= 0 || *param > std::numeric_limits<Int32>::max())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "BUCKET function for iceberg partitioning requires a positive 32-bit number of buckets, got {}", *param);
         result->set(Iceberg::f_transform, fmt::format("bucket[{}]", *param));
         return result;
     }
@@ -1186,6 +1186,12 @@ static std::pair<String, String> parseFunction(const ASTPtr & func_object)
                 ErrorCodes::BAD_ARGUMENTS,
                 "Invalid iceberg sort order function {}: expected a non-negative integer literal as first argument",
                 clickhouse_name);
+
+        if (*arg > static_cast<size_t>(std::numeric_limits<Int32>::max()))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Invalid iceberg sort order function {}: the integer literal {} does not fit in a signed 32-bit integer",
+                clickhouse_name, *arg);
     }
     else
     {
@@ -1339,14 +1345,43 @@ static bool isRepresentableKey(ASTPtr key, const std::unordered_map<String, Stri
         const auto * parameter = arguments.front()->as<ASTLiteral>();
         if (!parameter)
             return false;
-        if (parameter->value.safeGet<Int64>() <= 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg transform {} requires a positive parameter", function->name);
+        /// Iceberg readers parse transform parameters as signed 32-bit integers.
+        const Int64 value = parameter->value.safeGet<Int64>();
+        if (value <= 0 || value > std::numeric_limits<Int32>::max())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg transform {} requires a positive 32-bit parameter, got {}", function->name, value);
     }
     const auto * column = arguments.back()->as<ASTIdentifier>();
     if (!column)
         return false;
     const auto it = primitive_column_types.find(column->name());
     return it != primitive_column_types.end() && isTransformApplicableToType(transform->second, it->second);
+}
+
+/// Iceberg limits the precision of a decimal to 38: https://iceberg.apache.org/spec/#primitive-types
+static void checkIcebergDecimalPrecision(const DataTypePtr & type)
+{
+    if (isDecimal(type))
+    {
+        if (getDecimalPrecision(*type) > 38)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Type {} cannot be stored in Iceberg: the maximum precision of an Iceberg decimal is 38",
+                type->getName());
+    }
+    else if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+        checkIcebergDecimalPrecision(nullable->getNestedType());
+    else if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
+        checkIcebergDecimalPrecision(array->getNestedType());
+    else if (const auto * map = typeid_cast<const DataTypeMap *>(type.get()))
+    {
+        checkIcebergDecimalPrecision(map->getKeyType());
+        checkIcebergDecimalPrecision(map->getValueType());
+    }
+    else if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        for (const auto & element : tuple->getElements())
+            checkIcebergDecimalPrecision(element);
+    }
 }
 
 /// Partition fields are named after their source columns, so a partition key that uses a column twice cannot be represented.
@@ -1429,6 +1464,9 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
 
     if (is_catalog_table)
     {
+        for (const auto & column : columns)
+            checkIcebergDecimalPrecision(column.type);
+
         const bool ignore_unsupported_properties = context->getSettingsRef()[Setting::datalake_ignore_unsupported_table_properties];
         auto validate_key = [&](ASTPtr & key, const char * clause, bool is_partition_key)
         {
