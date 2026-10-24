@@ -254,7 +254,13 @@ bool URI::checkRemoteHostFilter(const RemoteHostFilter & filter, bool throw_on_e
 void URI::addRegionToURI(const std::string &region)
 {
     if (auto pos = endpoint.find(".amazonaws.com"); pos != std::string::npos)
-        endpoint = endpoint.substr(0, pos) + "." + region + endpoint.substr(pos);
+    {
+        endpoint.insert(pos, "." + region);
+
+        auto authority = uri.getAuthority();
+        authority.insert(authority.find(".amazonaws.com"), "." + region);
+        uri.setAuthority(authority);
+    }
 }
 
 void URI::validateBucket(const String & bucket, const Poco::URI & uri)
