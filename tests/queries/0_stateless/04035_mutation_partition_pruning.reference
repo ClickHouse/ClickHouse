@@ -60,3 +60,19 @@ test 9: multi-partition update
 test 10: multi-partition ID delete
 3	c	2024-01-02
 4	d	2024-01-02
+test 11: rows the identical SELECT matches
+11
+test 11: survivors
+1
+9
+19
+21
+29
+test 11: affected partitions
+['202406']
+test 12: affected partitions (should be all)
+['202401','202406','202411']
+test 13: affected partitions (should be all)
+['202401','202406','202411']
+test 13b: affected partitions
+['202406']
