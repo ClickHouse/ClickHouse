@@ -4,7 +4,7 @@
 # Automatic `LowCardinality` serialization must be invisible on the wire: a column declared as
 # `String` (or `FixedString`) is dictionary-encoded on disk, but every reader - of any protocol revision - has to see
 # exactly the bytes of a plain, unencoded `String` column. In particular a peer older than
-# `DBMS_MIN_REVISION_WITH_AUTOMATIC_LOW_CARDINALITY_SERIALIZATION` (54495) does not understand the
+# `DBMS_MIN_REVISION_WITH_AUTOMATIC_LOW_CARDINALITY_SERIALIZATION` (54496) does not understand the
 # `LOW_CARDINALITY` entry of the serialization kind stack, so it must never be emitted to it.
 #
 # The complementary unit test `gtest_native_automatic_low_cardinality` covers the writer fallback
@@ -61,8 +61,8 @@ compare()
 }
 
 compare 0
-compare 54494
 compare 54495
+compare 54496
 
 # A revision-0 dump is exactly what a `Native` reader without custom serialization support expects,
 # so it can be read back to prove the materialized fallback is not only identical, but also correct.

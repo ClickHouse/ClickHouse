@@ -1332,6 +1332,7 @@ The table below shows the supported data types and how they correspond to ClickH
 | `FIXED_SIZE_BINARY`, `BINARY`           | [Int128/UInt128/Int256/UInt256](/reference/data-types/int-uint)                             | `FIXED_SIZE_BINARY`        |
 | `DURATION`                              | [Interval](/reference/data-types/special-data-types/interval) (Nanosecond/Microsecond/Millisecond/Second) | `DURATION`    |
 | `INT64`                                 | [Interval](/reference/data-types/special-data-types/interval) (Minute/Hour/Day/Week/Month/Quarter/Year) | `INT64`         |
+| `INTERVAL`                              | [Interval](/reference/data-types/special-data-types/interval) (Month), or a [Tuple](/reference/data-types/tuple) of intervals for `DAY_TIME` and `MONTH_DAY_NANO` | `INT64`, `STRUCT` |
 
 Arrays can be nested and can have a value of the `Nullable` type as an argument. `Tuple` and `Map` types can also be nested.
 

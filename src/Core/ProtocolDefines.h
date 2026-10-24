@@ -353,9 +353,14 @@ static constexpr auto DBMS_MIN_REVISION_WITH_UNIQ_STATE_VERSION_1 = 54493;
 /// A `-Merge` aggregate function state takes the state version of the function it merges, instead of always 0.
 static constexpr auto DBMS_MIN_REVISION_WITH_MERGE_COMBINATOR_STATE_VERSION = 54494;
 
+/// The client accepts the result of `INSERT ... RETURNING` (`Data`, `Totals`, `Extremes`, `ProfileInfo`, `Progress` packets)
+/// while it sends the data of the INSERT, and before `EndOfStream`.
+static constexpr auto DBMS_MIN_REVISION_WITH_INSERT_RETURNING = 54495;
+
 /// Automatic `LowCardinality` serialization adds the `LOW_CARDINALITY` kind to
 /// custom serialization metadata. Older peers do not recognize that kind.
-static constexpr auto DBMS_MIN_REVISION_WITH_AUTOMATIC_LOW_CARDINALITY_SERIALIZATION = 54495;
+static constexpr auto DBMS_MIN_REVISION_WITH_AUTOMATIC_LOW_CARDINALITY_SERIALIZATION = 54496;
+
 
 /// Version of ClickHouse TCP protocol.
 ///
@@ -364,5 +369,5 @@ static constexpr auto DBMS_MIN_REVISION_WITH_AUTOMATIC_LOW_CARDINALITY_SERIALIZA
 /// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
 /// later is just a number for server version (one number instead of commit SHA)
 /// for simplicity (sometimes it may be more convenient in some use cases).
-static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54495;
+static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54496;
 }
