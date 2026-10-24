@@ -5,6 +5,7 @@
 -- leave the columns themselves alone: a `COMMENT COLUMN` keeps every cached entry usable.
 
 SET use_columns_cache = 1;
+SET use_statistics_for_sum_avg_aggregation = 0;
 -- `enable_parallel_replicas = 0`: with parallel replicas another replica may do the reads,
 -- and their `ProfileEvents` never reach the `query_log` rows checked below.
 SET enable_parallel_replicas = 0;

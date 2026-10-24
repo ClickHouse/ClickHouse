@@ -4,6 +4,7 @@
 SET max_threads = 1;
 SET use_columns_cache = 1;
 SET log_queries = 1;
+SET use_statistics_for_sum_avg_aggregation = 0;
 SYSTEM DROP COLUMNS CACHE;
 
 -- ============================================================================
