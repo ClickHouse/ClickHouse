@@ -6,11 +6,12 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+extern const int LOGICAL_ERROR;
 }
 
-PeekableReadBuffer::PeekableReadBuffer(ReadBuffer & sub_buf_, size_t start_size_ /*= 0*/) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - `stack_memory` is scratch space, written before read
-        : BufferWithOwnMemory(start_size_), sub_buf(&sub_buf_)
+PeekableReadBuffer::PeekableReadBuffer(ReadBuffer & sub_buf_, size_t start_size_ /*= 0*/)
+    : BufferWithOwnMemory(start_size_)
+    , sub_buf(&sub_buf_)
 {
     padded &= sub_buf->isPadded();
     /// Read from sub-buffer
@@ -60,11 +61,10 @@ bool PeekableReadBuffer::peekNext()
     /// Save unread data from sub-buffer to own memory
     memcpy(memory_data + peeked_size, sub_buf->position(), bytes_to_copy);
 
-    /// If useSubbufferOnly() is false, then checkpoint is in own memory and it was updated in resizeOwnMemoryIfNecessary
-    /// Otherwise, checkpoint now at the beginning of own memory
-    if (checkpoint && useSubbufferOnly())
+    /// If checkpoint is in sub-buffer and its byte is copied to own memory, move checkpoint to own memory
+    if (checkpoint && !checkpoint_in_own_memory && *checkpoint < sub_buf->position() + bytes_to_copy)
     {
-        checkpoint.emplace(memory_data);
+        checkpoint.emplace(memory_data + peeked_size + (*checkpoint - sub_buf->position()));
         checkpoint_in_own_memory = true;
     }
 
@@ -76,7 +76,7 @@ bool PeekableReadBuffer::peekNext()
     else
     {
         /// Switch to reading from own memory
-        size_t pos_offset = peeked_size + this->offset();
+        size_t pos_offset = peeked_size + (pos - sub_buf->position());
         if (useSubbufferOnly())
         {
             if (checkpoint)
@@ -110,6 +110,8 @@ void PeekableReadBuffer::rollbackToCheckpoint(bool drop)
         {
             /// Both checkpoint and position are in the same buffer.
             pos = *checkpoint;
+            if (!currentlyReadFromOwnMemory() && pos > working_buffer.end())
+                pos = working_buffer.end();
         }
         else
         {
@@ -128,6 +130,8 @@ void PeekableReadBuffer::rollbackToCheckpoint(bool drop)
         {
             /// Both checkpoint and position are in the same buffer.
             pos = *checkpoint + offset_from_checkpoint;
+            if (!currentlyReadFromOwnMemory() && pos > working_buffer.end())
+                pos = working_buffer.end();
         }
         else
         {
@@ -139,7 +143,8 @@ void PeekableReadBuffer::rollbackToCheckpoint(bool drop)
             {
                 /// Recursive checkpoint is in sub buffer with current position.
                 /// Just move position to the recursive checkpoint
-                pos = buffer().begin() + (offset_from_checkpoint - offset_from_checkpoint_in_own_memory);
+                pos = sub_buf->position() + (offset_from_checkpoint - offset_from_checkpoint_in_own_memory);
+                pos = std::min(pos, working_buffer.end());
             }
             else
             {
@@ -308,7 +313,7 @@ void PeekableReadBuffer::makeContinuousMemoryFromCheckpointToPos()
     checkStateCorrect();
 
     if (!checkpointInOwnMemory() || currentlyReadFromOwnMemory())
-        return;     /// it's already continuous
+        return; /// it's already continuous
 
     size_t bytes_to_append = pos - sub_buf->position();
     resizeOwnMemoryIfNecessary(bytes_to_append);
@@ -347,7 +352,22 @@ size_t PeekableReadBuffer::offsetFromCheckpoint() const
     }
 
     /// Checkpoint is in own memory, position is in sub buffer.
-    return offset() + offsetFromCheckpointInOwnMemory();
+    return (pos - sub_buf->position()) + offsetFromCheckpointInOwnMemory();
+}
+
+bool PeekableReadBuffer::poll(size_t timeout_microseconds)
+{
+    if (hasPendingData())
+    {
+        return true;
+    }
+
+    if (!currentlyReadFromOwnMemory() && !checkpoint)
+    {
+        sub_buf->position() = pos;
+    }
+
+    return sub_buf->poll(timeout_microseconds);
 }
 
 }

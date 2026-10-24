@@ -400,6 +400,9 @@ public:
     void registerPrewhereSupportChecker(const String & name, PrewhereSupportChecker prewhere_support_checker);
     bool checkIfFormatSupportsPrewhere(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt) const;
 
+    bool shouldDetectUTFBOM(const String & format_name, const FormatSettings & format_settings) const;
+    bool shouldDetectUTFBOM(const String & format_name) const;
+
     bool checkIfFormatHasSchemaReader(const String & name) const;
     bool checkIfFormatHasExternalSchemaReader(const String & name) const;
     bool checkIfFormatHasAnySchemaReader(const String & name) const;

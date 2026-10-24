@@ -2013,7 +2013,14 @@ Supported modes:
 )", 0, \
         {"26.5", "match_case", "auto", "Match input column names case-sensitively first and fall back to case-insensitive matching, instead of requiring an exact case match."}, \
         {"26.4", "match_case", "match_case", "New setting."}) \
-
+    DECLARE(Bool, input_format_detect_utf_bom, true, R"(
+Detect UTF-16 and UTF-32 Byte Order Marks (BOM) in text input formats (such as CSV, TSV, and JSONEachRow) and convert the input to UTF-8 on the fly.
+)", 0, \
+        {"26.10", false, true, "New setting to detect UTF-16/32 BOM in text input formats."}) \
+    DECLARE(Bool, input_format_utf_replace_invalid_sequences, true, R"(
+When converting UTF-16 or UTF-32 input to UTF-8, replace invalid byte sequences with Unicode replacement character (U+FFFD). If false, an exception is thrown upon encountering invalid sequences.
+)", 0, \
+        {"26.10", false, true, "New setting to control whether invalid UTF sequences are replaced with U+FFFD or throw an exception."}) \
 
 // End of FORMAT_FACTORY_SETTINGS
 
