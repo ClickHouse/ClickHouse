@@ -41,7 +41,11 @@ if [ -z "$host" ] || [ -z "$password" ]; then
     usage
 fi
 
+# Only the files and the remote table are used, so pass `--tmp` to keep
+# `clickhouse-local` off its persistent default directory, if the binary has it.
+LOCAL_TMP=$(clickhouse-local --help 2>/dev/null | grep -qw -e '--tmp' && echo --tmp)
+
 clickhouse-client --host "$host" --user "$user" --password "$password" --secure --query "CREATE TABLE IF NOT EXISTS default.files (time DEFAULT now(), path String, content String CODEC(ZSTD(6))) ENGINE = MergeTree ORDER BY (path, time)" &&
-find "$path" -type f | clickhouse-local --input-format LineAsString \
+find "$path" -type f | clickhouse-local $LOCAL_TMP --input-format LineAsString \
     --max-block-size 1 --min-insert-block-size-rows 0 --min-insert-block-size-bytes '100M' --max-insert-threads 1 \
     --query "INSERT INTO FUNCTION remoteSecure('$host', default.files, '$user', '$password') (path, content) SELECT line, file(line) FROM table" --progress

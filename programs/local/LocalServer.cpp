@@ -664,9 +664,12 @@ void LocalServer::tryInitPath()
 {
     std::string path;
 
-    if (getClientConfiguration().has("path"))
+    if (getClientConfiguration().has("path") && (path_from_command_line || !getClientConfiguration().has("tmp")))
     {
-        /// User-supplied path.
+        /// User-supplied path. A path from the command line takes precedence over --tmp, so that wrappers
+        /// can pass --tmp as a baseline and still redirect particular invocations to an explicit location.
+        /// A path from a config file does not, so --tmp always gives a unique temporary directory
+        /// and never loads or locks the directory configured in the home or the current directory.
         path = getClientConfiguration().getString("path");
         Poco::trimInPlace(path);
 
@@ -678,7 +681,7 @@ void LocalServer::tryInitPath()
                 " correct the --path.");
         }
     }
-    else
+    else if (getClientConfiguration().has("tmp"))
     {
         /// The user requested to use a temporary path - use a unique path in the system temporary directory
         /// (or in the current dir if a temporary doesn't exist)
@@ -714,12 +717,79 @@ void LocalServer::tryInitPath()
 
         /// The directory can be created lazily during the runtime.
         temporary_directory_to_delete = default_path;
+        use_temporary_path = true;
 
         path = default_path.string();
         LOG_DEBUG(log, "Working directory will be created as needed: {}", path);
     }
+    else
+    {
+        /// By default, work with a designated directory for application data in the user's home,
+        /// like a usual desktop application does, so the data survives between runs:
+        /// - Linux and other systems: `$XDG_DATA_HOME/clickhouse-local` or `~/.local/share/clickhouse-local`;
+        /// - macOS: `~/Library/Application Support/clickhouse-local`.
+        std::filesystem::path data_home;
+
+#if defined(OS_DARWIN)
+        if (!home_path.empty())
+            data_home = home_path / "Library" / "Application Support";
+#else
+        /// The XDG Base Directory Specification tells to treat a relative $XDG_DATA_HOME as unset.
+        const char * xdg_data_home = getenv("XDG_DATA_HOME"); // NOLINT(concurrency-mt-unsafe)
+        if (xdg_data_home && *xdg_data_home && fs::path(xdg_data_home).is_absolute())
+            data_home = xdg_data_home;
+        else if (!home_path.empty())
+            data_home = home_path / ".local" / "share";
+#endif
+
+        if (data_home.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cannot determine the default directory for data: the HOME environment variable is not set."
+                " Specify the location explicitly with the --path option,"
+                " or use the --tmp option to work with a temporary directory.");
+
+        path = (data_home / "clickhouse-local").string();
+
+        /// The directory may hold user data, so restrict it on creation, similarly to the data
+        /// directory of a server. The permissions of an already existing directory are left as is.
+        if (!fs::exists(path))
+        {
+            fs::create_directories(path);
+            fs::permissions(path, fs::perms::owner_all);
+        }
+
+        /// Let the rest of the code (loading of the metadata, the persistent storage for access
+        /// entities, the status file) treat the default directory exactly like an explicit --path.
+        getClientConfiguration().setString("path", path);
+        LOG_DEBUG(&logger(), "Using the default working directory: {}", path);
+    }
 
     fs::create_directories(path);
+
+    /// Lock a durable directory before anything touches its contents: the initialization of the temporary
+    /// storage below removes the leftover `tmp*` files, and the persistent storage for access entities
+    /// (`setupUsers`) may rebuild its lists and remove its temporary files. A second instance started
+    /// in the same directory must fail here without damaging the files of the running one.
+    if (!use_temporary_path)
+    {
+        try
+        {
+            status.emplace(fs::path(path) / "status", StatusFile::write_full_info);
+        }
+        catch (Exception & e)
+        {
+            /// Typically the directory is locked by a concurrent instance ("Another server instance
+            /// in same directory is already running"), so suggest the ways out: the options that
+            /// give this instance its own directory, or turning the instance that holds the
+            /// directory into a server and connecting to it.
+            e.addMessage("Use the --tmp option to work with a unique temporary directory that is removed on exit,"
+                " or the --path option to specify a different location for the data."
+                " Alternatively, the already running instance can serve concurrent clients:"
+                " execute SYSTEM START LISTEN TCP in it and connect with clickhouse-client,"
+                " or execute SYSTEM START LISTEN HTTP and open http://localhost:8123/play in a web browser");
+            throw;
+        }
+    }
 
     global_context->setPath(fs::path(path) / "");
 
@@ -1117,6 +1187,9 @@ void LocalServer::cleanup()
 
         if (global_context)
         {
+            /// Wait for the running jobs of the asynchronous table load and cancel the pending ones,
+            /// so that they do not race with the shutdown of the databases, as in the server.
+            global_context->getAsyncLoader().shutdown();
             global_context->shutdown();
             global_context.reset();
         }
@@ -1282,15 +1355,16 @@ void LocalServer::setupUsers()
 
     /// Add a writeable storage for SQL-based access management.
     /// This allows creating users, roles, row policies, etc. via SQL queries.
-    if (getClientConfiguration().has("path"))
+    if (!use_temporary_path)
     {
-        /// Use disk storage for persistence when --path is specified.
+        /// Use disk storage for persistence when working with a durable directory
+        /// (--path or the default designated directory in the home).
         String access_path = fs::path(global_context->getPath()) / "access" / "";
         access_control.addDiskStorage(DiskAccessStorage::STORAGE_TYPE, access_path, /* readonly= */ false, /* allow_backup= */ false);
     }
     else
     {
-        /// Use in-memory storage for temporary/ephemeral mode.
+        /// Use in-memory storage for the temporary/ephemeral mode (--tmp).
         access_control.addMemoryStorage(MemoryAccessStorage::STORAGE_TYPE, /* allow_backup= */ false);
     }
 }
@@ -1378,8 +1452,6 @@ try
     registerFormats();
     QueryPlanStepRegistry::registerPlanSteps();
 
-    processConfig();
-
     /// `workerFunction()` returns only on `terminateThread()`, so it must not hold a slot of a
     /// bounded pool. SCOPE_EXIT is LIFO, so registering this guard before the `cleanup()` one keeps
     /// the checker running while `cleanup()` waits for listener connections to drain.
@@ -1393,7 +1465,14 @@ try
         }
     });
 
+    /// Registered before `processConfig`, because it can throw after scheduling the asynchronous load
+    /// of the persisted tables (e.g. `--database` names a nonexistent database). Without the guard,
+    /// the members would be destroyed with the load jobs still running: `status` would release the
+    /// lock of the directory while the jobs still access it, and they would race with the shutdown
+    /// of the context. `cleanup` copes with a partially initialized state.
     SCOPE_EXIT({ cleanup(); });
+
+    processConfig();
 
     cancellation_thread = std::thread([] { CancellationChecker::getInstance().workerFunction(); });
 
@@ -1947,12 +2026,20 @@ void LocalServer::processConfig()
         global_context->setCurrentDatabase(server_default_database);
     }
 
-    if (getClientConfiguration().has("path"))
+    /// The `--no-system-tables` option is honored in both modes below. The default working directory
+    /// sets `path` as well, so without this the option would be silently ignored unless the user also
+    /// passes `--tmp`, while it used to work in the default mode when that mode had no `path` at all.
+    const bool attach_system_tables = !getClientConfiguration().has("no-system-tables");
+
+    if (!use_temporary_path)
     {
-        createMemoryDatabaseWithDeferredTables(global_context, DatabaseCatalog::INFORMATION_SCHEMA,
-            [context = global_context](IDatabase & database) { attachInformationSchema(context, database); });
-        createMemoryDatabaseWithDeferredTables(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE,
-            [context = global_context](IDatabase & database) { attachInformationSchema(context, database); });
+        if (attach_system_tables)
+        {
+            createMemoryDatabaseWithDeferredTables(global_context, DatabaseCatalog::INFORMATION_SCHEMA,
+                [context = global_context](IDatabase & database) { attachInformationSchema(context, database); });
+            createMemoryDatabaseWithDeferredTables(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE,
+                [context = global_context](IDatabase & database) { attachInformationSchema(context, database); });
+        }
 
         /// Attaching "automatic" tables in the system database is done after attaching the system database.
         /// Consequently, it depends on whether we load it from the path.
@@ -1961,9 +2048,8 @@ void LocalServer::processConfig()
 
         String path = global_context->getPath();
 
-        /// Lock path directory before read
-        fs::create_directories(fs::path(path));
-        status.emplace(fs::path(path) / "status", StatusFile::write_full_info);
+        /// The directory is already locked by `tryInitPath`.
+
         bool started_background_tasks = false;
 
         /// With `--only-system-tables` the directory is only inspected, so the default database is not recorded in it.
@@ -1974,7 +2060,7 @@ void LocalServer::processConfig()
         {
             LOG_DEBUG(log, "Loading metadata from {}", path);
 
-            if (fs::exists(std::filesystem::path(path) / "metadata" / "system.sql"))
+            if (attach_system_tables && fs::exists(std::filesystem::path(path) / "metadata" / "system.sql"))
             {
                 LoadTaskPtrs load_system_metadata_tasks = loadMetadataSystem(global_context);
                 waitLoad(TablesLoaderForegroundPoolId, load_system_metadata_tasks);
@@ -1986,7 +2072,15 @@ void LocalServer::processConfig()
             if (!getClientConfiguration().has("only-system-tables"))
             {
                 DatabaseCatalog::instance().createBackgroundTasks();
-                waitLoad(loadMetadata(global_context));
+
+                /// Load the persisted tables asynchronously, like the server does with `async_load_databases`:
+                /// a query waits only for the tables it uses, so a short invocation does not pay for loading
+                /// every table kept in the default directory, and a table that cannot be loaded any more
+                /// (a `File` table whose file is gone, a table of an engine this build does not have) fails
+                /// only the queries that use it. The databases keep the load tasks of their tables, so the
+                /// returned ones are not needed; the pending jobs are canceled in `cleanup`.
+                std::ignore = loadMetadata(global_context, /* default_database_name */ {}, /* async_load_databases */ true);
+
                 DatabaseCatalog::instance().startupBackgroundTasks();
                 started_background_tasks = true;
             }
@@ -1994,20 +2088,21 @@ void LocalServer::processConfig()
             LOG_DEBUG(log, "Loaded metadata.");
         }
 
-        /// `DROP ... SYNC` waits for the drop task, so it has to run also when no metadata was loaded.
+        /// `DROP ... SYNC` waits for the drop task, so it has to run also when no metadata was loaded,
+        /// which is the usual case on the first run in the default directory.
         if (!started_background_tasks)
         {
             DatabaseCatalog::instance().createBackgroundTasks();
             DatabaseCatalog::instance().startupBackgroundTasks();
         }
 
-        if (!attached_system_database)
+        if (attach_system_tables && !attached_system_database)
             deferSystemDatabaseTables(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
 
         if (fs::exists(fs::path(path) / "user_defined"))
             global_context->getUserDefinedSQLObjectsStorage().loadObjects();
     }
-    else if (!getClientConfiguration().has("no-system-tables"))
+    else if (attach_system_tables)
     {
         deferSystemDatabaseTables(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
         createMemoryDatabaseWithDeferredTables(global_context, DatabaseCatalog::INFORMATION_SCHEMA,
@@ -2016,14 +2111,14 @@ void LocalServer::processConfig()
             [context = global_context](IDatabase & database) { attachInformationSchema(context, database); });
 
         /// Create background tasks necessary for DDL operations like DROP VIEW SYNC,
-        /// even in temporary mode (--path not set) without persistent storage
+        /// even in temporary mode (--tmp) without persistent storage
         DatabaseCatalog::instance().createBackgroundTasks();
         DatabaseCatalog::instance().startupBackgroundTasks();
     }
     else
     {
         /// Similarly, for other cases, create background tasks for DDL operations like
-        /// DROP VIEW SYNC in temporaty mode (--path not set) without persistent storage
+        /// DROP VIEW SYNC in temporary mode (--tmp) without persistent storage
         DatabaseCatalog::instance().createBackgroundTasks();
         DatabaseCatalog::instance().startupBackgroundTasks();
     }
@@ -2168,7 +2263,11 @@ void LocalServer::addExtraOptions(OptionsDescription & options_description)
         ("logger.level", po::value<std::string>(), "Log level")
 
         ("no-system-tables", "Do not attach system tables (better startup time)")
-        ("path", po::value<std::string>(), "Storage path. If it was not specified, we will use a temporary directory, that is cleaned up on exit.")
+        ("path", po::value<std::string>(), "Storage path. By default, a designated directory for application data in the home directory is used"
+            " ($XDG_DATA_HOME/clickhouse-local or ~/.local/share/clickhouse-local on Linux, ~/Library/Application Support/clickhouse-local on macOS),"
+            " and the data survives between runs. See also: --tmp.")
+        ("tmp", "Use a unique temporary directory for the data, that is removed on exit (this was the default behavior in older versions)."
+            " Has no effect if --path is specified.")
         ("only-system-tables", "Attach only system tables from specified path")
         ("top_level_domains_path", po::value<std::string>(), "Path to lists with custom TLDs")
 
@@ -2271,7 +2370,12 @@ void LocalServer::applyCmdOptions(ContextMutablePtr context)
 void LocalServer::processOptions(const OptionsDescription &, const CommandLineOptions & options, const std::vector<Arguments> &, const std::vector<Arguments> &)
 {
     if (options.contains("path"))
+    {
         getClientConfiguration().setString("path", options["path"].as<std::string>());
+        path_from_command_line = true;
+    }
+    if (options.contains("tmp"))
+        getClientConfiguration().setBool("tmp", true);
     if (options.contains("table"))
         getClientConfiguration().setString("table-name", options["table"].as<std::string>());
     if (options.contains("file"))

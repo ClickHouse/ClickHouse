@@ -365,6 +365,15 @@ SERVER_DATA_MANIPULATION_EXCLUSIONS = {
     "03599_empty_checksums_txt_not_fatal.sh",
     # False positive: writes only an mktemp scratch file under CLICKHOUSE_TMP.
     "04326_disks_app_read_checksums.sh",
+    # False positive: no server is involved. The test runs `clickhouse-local` with `HOME` pointed
+    # at a per-test directory under CLICKHOUSE_TMP, so the path it reads from `system.tables` is
+    # inside that directory, and the files it corrupts are the ones `clickhouse-local` itself
+    # wrote there a few lines earlier.
+    "05227_broken_persisted_table_does_not_block_clickhouse_local.sh",
+    # False positive: no server is involved. The test runs `clickhouse-local` with `--path` set to a
+    # per-test directory under CLICKHOUSE_TMP, so the path it reads from `system.tables` is inside
+    # that directory, and the files it corrupts are the ones `clickhouse-local` itself wrote there.
+    "05407_clickhouse_local_buffer_flush_with_broken_table_load.sh",
 }
 
 

@@ -75,7 +75,7 @@ EOF
 mkdir -p "$WORK_DIR/user_defined" "$WORK_DIR/user_scripts" "$WORK_DIR/dyn" "$WORK_DIR/data"
 
 run() {
-    "$CLICKHOUSE_LOCAL" --config-file="$WORK_DIR/config.xml" --query "$1" 2>&1
+    $CLICKHOUSE_LOCAL --config-file="$WORK_DIR/config.xml" --query "$1" 2>&1
 }
 
 echo "-- driver runtime commands"
@@ -245,7 +245,7 @@ cat > "$WORK_DIR/config_query_log.xml" <<EOF
 </clickhouse>
 EOF
 mkdir -p "$WORK_DIR/qlog_user_defined" "$WORK_DIR/qlog_user_scripts" "$WORK_DIR/qlog_dyn" "$WORK_DIR/qlog_data"
-"$CLICKHOUSE_LOCAL" --config-file="$WORK_DIR/config_query_log.xml" --query "
+$CLICKHOUSE_LOCAL --config-file="$WORK_DIR/config_query_log.xml" --query "
 CREATE FUNCTION test_udf_drv_qlog ARGUMENTS (x UInt8, y UInt8) RETURNS Int64
     ENGINE = DockerC() AS 'return (int64_t) x + (int64_t) y;';
 SET log_queries = 1;
