@@ -1,5 +1,6 @@
 #include <Storages/StoragePrometheusQuery.h>
 
+#include <Access/Common/AccessFlags.h>
 #include <Common/logger_useful.h>
 #include <Columns/IColumn.h>
 #include <Core/Settings.h>
@@ -14,12 +15,14 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
+#include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/checkTimeSeriesVersion.h>
 #include <Storages/TimeSeries/getPromQLResultTimestampType.h>
+#include <Storages/TimeSeries/resolvePrometheusQueryTarget.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 
 
@@ -29,7 +32,9 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int INCOMPATIBLE_COLUMNS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int UNEXPECTED_TABLE_ENGINE;
 }
 
 namespace Setting
@@ -107,16 +112,35 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
 
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
 
-    auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
-    checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
-    UInt64 time_series_version = time_series_storage->getVersion();
+    /// Grant before existence: a caller without SELECT must not tell a hidden table from a
+    /// missing one, and the evaluation reads it through queries not attributed to this name.
+    context->checkAccess(AccessType::SELECT, time_series_storage_id);
+    auto time_series_storage = DatabaseCatalog::instance().getTable(time_series_storage_id, context);
+    auto distributed_target = resolvePrometheusQueryTarget(*time_series_storage);
+    /// The shard-local tables' versions are checked by the selector on each shard.
+    if (!distributed_target)
+        checkTimeSeriesVersionSupportedByPromQL(*storagePtrToTimeSeries(time_series_storage));
+
+    /// A Distributed table created `AS <TimeSeries table>` declares the same outer samples column,
+    /// so the data types are taken from the target's own metadata in both cases.
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(context, false);
+    UInt64 time_series_version = outerSamplesVersion(*time_series_storage, *time_series_metadata);
     auto table_timestamp_type = splitTimeSeriesType(
         time_series_metadata->columns.get(TimeSeriesColumnNames::getOuterSamples(time_series_version)).type).first;
 
     UInt32 time_scale = getPromQLResultTimestampScale(table_timestamp_type);
 
     PrometheusQueryTree promql_query{getStringConstArgument(args[argument_index++], context, "promql_query"), time_scale};
+
+    /// Applied only when the query actually reads the table: '1 + 2' has no selector, so
+    /// wrapper-only settings must not refuse it.
+    if (distributed_target && prometheusQueryReadsTimeSeries(promql_query))
+    {
+        /// Grant before existence: this table function's own CREATE TEMPORARY TABLE is enforced when it
+        /// executes, which is after the check below would have reported on the shard-local targets.
+        context->checkAccess(AccessType::CREATE_TEMPORARY_TABLE);
+        checkPrometheusQueryDistributedRead(*time_series_storage, *distributed_target, context);
+    }
 
     PrometheusQueryEvaluationMode mode = {};
     DateTime64 start_time;
@@ -153,6 +177,7 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
     config.promql_query = std::make_shared<PrometheusQueryTree>(std::move(promql_query));
     auto & evaluation_settings = config.evaluation_settings;
     evaluation_settings.time_series_storage_id = std::move(time_series_storage_id);
+    evaluation_settings.distributed = std::move(distributed_target);
     evaluation_settings.time_series_version = time_series_version;
     evaluation_settings.time_zone = getPromQLResultTimeZone(table_timestamp_type, time_parameter_types);
     evaluation_settings.table_timestamp_type = std::move(table_timestamp_type);
@@ -196,11 +221,40 @@ void StoragePrometheusQuery::readImpl(
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
-    auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.evaluation_settings.time_series_storage_id, context));
-    checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
+    const auto & time_series_storage_id = config.evaluation_settings.time_series_storage_id;
+    auto evaluation_settings = config.evaluation_settings;
+    /// The shard-local tables' versions are checked by the selector on each shard.
+    if (!config.evaluation_settings.distributed)
+        checkTimeSeriesVersionSupportedByPromQL(
+            *storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context)));
+    /// Also checked here: a table created AS this function is configured once, not on the reader's context.
+    else if (prometheusQueryReadsTimeSeries(*config.promql_query))
+    {
+        context->checkAccess(AccessType::SELECT, time_series_storage_id);
+        const auto time_series_storage = DatabaseCatalog::instance().getTable(time_series_storage_id, context);
+        const auto distributed_target = resolvePrometheusQueryTarget(*time_series_storage);
+        if (!distributed_target)
+            throw Exception(
+                ErrorCodes::UNEXPECTED_TABLE_ENGINE, "Table {} is no longer a Distributed table", time_series_storage_id.getNameForLogs());
+
+        /// This table's columns and the parsed query follow the samples column the table had when this one was created.
+        const auto metadata = time_series_storage->getInMemoryMetadataPtr(context, false);
+        const auto version = outerSamplesVersion(*time_series_storage, *metadata);
+        const auto * samples_column = TimeSeriesColumnNames::getOuterSamples(version);
+        const auto * samples = metadata->columns.tryGet(samples_column);
+        if (version != config.evaluation_settings.time_series_version || !samples
+            || !splitTimeSeriesType(samples->type).first->equals(*config.evaluation_settings.table_timestamp_type))
+            throw Exception(
+                ErrorCodes::INCOMPATIBLE_COLUMNS,
+                "Table {} no longer declares the samples column table {} was created with: recreate {}",
+                time_series_storage_id.getNameForLogs(), getStorageID().getNameForLogs(), getStorageID().getNameForLogs());
+
+        checkPrometheusQueryDistributedRead(*time_series_storage, *distributed_target, context);
+        /// Read the target just checked: the table may point elsewhere since this one was created.
+        evaluation_settings.distributed = distributed_target;
+    }
 
     LOG_INFO(log, "Building SQL to evaluate promql: {}", *config.promql_query);
-    auto evaluation_settings = config.evaluation_settings;
     evaluation_settings.push_down_label_matchers = context->getSettingsRef()[Setting::promql_push_down_label_matchers];
     PrometheusQueryToSQL::Converter converter{config.promql_query, evaluation_settings};
     ASTPtr select_query = converter.getSQL();
@@ -213,6 +267,9 @@ void StoragePrometheusQuery::readImpl(
     if (!context->getSettingsRef()[Setting::enable_materialized_cte].changed)
         query_context->setSetting("enable_materialized_cte", true);
     query_context->setSetting("empty_result_for_aggregation_by_empty_set", false);
+
+    if (config.evaluation_settings.distributed)
+        pinDistributedReadSettings(query_context);
 
     InterpreterSelectQueryAnalyzer interpreter(select_query, query_context, options, column_names);
     interpreter.addStorageLimits(*query_info.storage_limits);

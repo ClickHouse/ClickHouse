@@ -1,5 +1,6 @@
 #include <Storages/StorageTimeSeriesSelector.h>
 
+#include <Access/Common/AccessFlags.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -37,6 +38,7 @@
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Storages/TimeSeries/tryGetLiteralAlternatives.h>
 #include <Storages/TimeSeries/checkTimeSeriesVersion.h>
+#include <Storages/TimeSeries/resolvePrometheusQueryTarget.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
@@ -264,6 +266,10 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
 
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
 
+    /// Grant before existence and before the cast's engine error.
+    context->checkAccess(AccessType::SELECT, time_series_storage_id);
+    /// A plain SELECT from the table applies its row policy and filters; the read of its inner tables cannot.
+    checkNoBypassedReadRestriction(time_series_storage_id, context, "A PromQL selector", "it reads the inner tables directly");
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
     checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(context, false);
@@ -1062,6 +1068,9 @@ void StorageTimeSeriesSelector::readImpl(
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
+    /// Also checked here: a table created AS this function is configured once, not on the reader's context.
+    context->checkAccess(AccessType::SELECT, config.time_series_storage_id);
+    checkNoBypassedReadRestriction(config.time_series_storage_id, context, "A PromQL selector", "it reads the inner tables directly");
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.time_series_storage_id, context));
     checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
     auto time_series_settings = time_series_storage->getStorageSettings();
