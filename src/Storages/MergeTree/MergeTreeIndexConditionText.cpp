@@ -1233,10 +1233,28 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     else if (tryMatchNodeToJSONIndex(index_column_node, header, "JSONAllValues", json_argument_types))
     {
+        bool is_special_text_index_function = function_name == "hasAnyTokens" || function_name == "hasAllTokens" || function_name == "hasPhrase";
+
+        /// The index cannot prune when:
+        /// - the path is array-valued: `JSONAllValues` stores an array value as a single serialized string, while these functions
+        ///   search inside its elements;
+        /// - array needles meet a preprocessor: the index stores preprocessed tokens and takes array needles verbatim, while direct
+        ///   read does not apply the preprocessor to a JSON path.
+        /// Still return a query: direct read uses it to inject the index tokenizer and postprocessor.
+        const bool is_array_valued_path
+            = !WhichDataType(removeLowCardinalityAndNullable(argument_node.getDAGNode()->result_type)).isStringOrFixedString();
+        const bool has_verbatim_needles = has_preprocessor && value_field.getType() == Field::Types::Array;
+        if (is_special_text_index_function && (is_array_valued_path || has_verbatim_needles))
+        {
+            out.function = RPNElement::FUNCTION_UNKNOWN;
+            out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+                function_name, TextSearchMode::All, TextIndexDirectReadMode::None, VectorWithMemoryTracking<String>{}));
+            return true;
+        }
+
         has_index_column = true;
         direct_read_mode = getHintOrNoneMode();
         candidate_for_exact_mode = false;
-        bool is_special_text_index_function = function_name == "hasAnyTokens" || function_name == "hasAllTokens";
 
         /// Convert non-string values to their text representation to match the format produced by `JSONAllValues`.
         /// Keep array values as-is for special text index functions.
