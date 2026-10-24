@@ -97,7 +97,21 @@ def test_rules_ignores_filter_parameters():
 
 
 @pytest.mark.parametrize(
-    "query", ["rate(up[5m])", "sum by (job) (rate(up[5m]))", "up[5m]", "1 + 1"]
+    "query",
+    [
+        "rate(up[5m])",
+        "sum by (job) (rate(up[5m]))",
+        "up[5m]",
+        # Valid in Prometheus, but not supported by /api/v1/query yet.
+        "sort(up)",
+        "sort_desc(up)",
+        "histogram_count(up)",
+        "histogram_sum(up)",
+        "histogram_fraction(0, 1, up)",
+        "sort(up) + up",
+        "sum(sort(rate(up[5m])))",
+        "histogram_fraction(0, scalar(sort(up)), up)",
+    ],
 )
 def test_query_exemplars_valid_query(query):
     response = requests.get(
@@ -105,6 +119,17 @@ def test_query_exemplars_valid_query(query):
         params={"query": query},
     )
     check_response(response, "query_exemplars")
+
+
+@pytest.mark.parametrize("query", ["1 + 1", "vector(1)", "sort(vector(1))", '"abc"'])
+def test_query_exemplars_without_selector(query):
+    # Prometheus answers 204 No Content when the expression has no series selector.
+    response = requests.get(
+        f"http://{node.ip_address}:{PROMETHEUS_PORT}/api/v1/query_exemplars",
+        params={"query": query},
+    )
+    assert response.status_code == 204, response.text
+    assert response.content == b""
 
 
 def test_query_exemplars_post():
@@ -131,7 +156,16 @@ def test_query_exemplars_post():
         ("query_exemplars", {"query": "rate(up)"}),
         ("query_exemplars", {"query": "abs()"}),
         ("query_exemplars", {"query": "sort()"}),
+        ("query_exemplars", {"query": "sort(up, up)"}),
+        ("query_exemplars", {"query": "sort(1)"}),
+        ("query_exemplars", {"query": "sort(up[5m])"}),
+        ("query_exemplars", {"query": "sort(rate(up))"}),
         ("query_exemplars", {"query": "sort(up) + rate(up)"}),
+        ("query_exemplars", {"query": "histogram_count(1)"}),
+        ("query_exemplars", {"query": "histogram_fraction(0, up)"}),
+        ("query_exemplars", {"query": "histogram_fraction(up, 1, up)"}),
+        ("query_exemplars", {"query": "histogram_fraction(0, scalar(rate(up)), up)"}),
+        ("query_exemplars", {"query": "1 + abs()"}),
         ("query_exemplars", {"query": "up", "start": "abc"}),
         ("query_exemplars", {"query": "up", "start": "1700000600", "end": "1700000000"}),
     ],
@@ -142,3 +176,5 @@ def test_malformed_request(endpoint, params):
     )
     assert response.status_code == 400, response.text
     assert response.json()["errorType"] == "bad_data"
+    # The request is rejected because it is invalid, not because ClickHouse can't evaluate it.
+    assert "not implemented" not in response.json()["error"]

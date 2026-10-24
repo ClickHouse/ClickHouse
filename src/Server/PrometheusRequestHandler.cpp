@@ -527,7 +527,13 @@ public:
 
             if (empty_result)
             {
-                validateEmptyResultRequest(uri_path);
+                /// Like Prometheus, query_exemplars answers 204 No Content to an expression without a selector.
+                if (!validateEmptyResultRequest(uri_path))
+                {
+                    response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NO_CONTENT, Poco::Net::HTTPResponse::HTTP_REASON_NO_CONTENT);
+                    response.setChunkedTransferEncoding(false);
+                    return;
+                }
                 writeString(*empty_result, getOutputStream(response));
                 return;
             }
@@ -679,8 +685,71 @@ private:
 
     std::optional<std::string_view> empty_result;
 
+    /// Checks a query_exemplars expression like the Prometheus parser does. Returns false if it has no selector.
+    static bool validateExemplarsQuery(const String & query_text)
+    {
+        using ResultType = PrometheusQueryResultType;
+        /// Prometheus functions that can't be converted to SQL yet, with their argument types.
+        static const std::unordered_map<std::string_view, std::vector<ResultType>> unsupported_functions = {
+            {"sort", {ResultType::INSTANT_VECTOR}},
+            {"sort_desc", {ResultType::INSTANT_VECTOR}},
+            {"histogram_count", {ResultType::INSTANT_VECTOR}},
+            {"histogram_sum", {ResultType::INSTANT_VECTOR}},
+            {"histogram_fraction", {ResultType::SCALAR, ResultType::SCALAR, ResultType::INSTANT_VECTOR}},
+        };
+
+        PrometheusQueryTree query{query_text};
+        std::vector<std::unique_ptr<PrometheusQueryTree::Node>> nodes;
+        const auto * root = query.getRoot()->clone(nodes);
+        bool has_selector = false;
+        for (auto & node : nodes)
+        {
+            has_selector |= (node->node_type == PrometheusQueryTree::NodeType::InstantSelector);
+            if (node->node_type != PrometheusQueryTree::NodeType::Function)
+                continue;
+            auto & function = typeid_cast<PrometheusQueryTree::Function &>(*node);
+            auto it = unsupported_functions.find(function.function_name);
+            if (it == unsupported_functions.end())
+                continue;
+
+            const auto & argument_types = it->second;
+            if (function.children.size() != argument_types.size())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' expects {} arguments, but was called with {} arguments",
+                                function.function_name, argument_types.size(), function.children.size());
+            for (size_t i = 0; i != argument_types.size(); ++i)
+            {
+                const auto * argument = function.children[i];
+                if (argument->result_type != argument_types[i])
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' expects an argument of type {}, but expression {} has type {}",
+                                    function.function_name, argument_types[i], argument->toString(query), argument->result_type);
+            }
+
+            /// Call a convertible function with the same argument types, so the conversion still checks the arguments.
+            if (function.function_name == "histogram_fraction")
+            {
+                function.function_name = "clamp";
+                function.children = {function.children[2], function.children[0], function.children[1]};
+            }
+            else
+            {
+                function.function_name = "abs";
+            }
+        }
+
+        /// The parser doesn't check the argument types and counts of functions, the conversion to SQL does.
+        /// The SQL is never run, so it may name a table that doesn't exist.
+        PrometheusQueryEvaluationSettings evaluation_settings;
+        evaluation_settings.time_series_storage_id = StorageID{"default", "query_exemplars"};
+        evaluation_settings.table_timestamp_type = std::make_shared<DataTypeDateTime64>(3);
+        evaluation_settings.use_current_time = true;
+        auto checked_query = std::make_shared<PrometheusQueryTree>(std::move(nodes), root, query.getTimeScale());
+        PrometheusQueryToSQL::Converter{checked_query, evaluation_settings}.getSQL();
+        return has_selector;
+    }
+
     /// Rejects the malformed requests that Prometheus also rejects on the endpoints with an empty result.
-    void validateEmptyResultRequest(std::string_view uri_path) const
+    /// Returns false for a query_exemplars expression without a selector, which has no result at all.
+    bool validateEmptyResultRequest(std::string_view uri_path) const
     {
         if (uri_path.ends_with("/query_exemplars"))
         {
@@ -691,13 +760,7 @@ private:
             if (end_time < start_time)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'end' timestamp must not be before the 'start' timestamp");
 
-            /// The parser doesn't check the argument types and counts of functions, the conversion to SQL does.
-            /// The SQL is never run, so it may name a table that doesn't exist.
-            PrometheusQueryEvaluationSettings evaluation_settings;
-            evaluation_settings.time_series_storage_id = StorageID{"default", "query_exemplars"};
-            evaluation_settings.table_timestamp_type = std::make_shared<DataTypeDateTime64>(3);
-            evaluation_settings.use_current_time = true;
-            PrometheusQueryToSQL::Converter{std::make_shared<PrometheusQueryTree>(params->get("query", "")), evaluation_settings}.getSQL();
+            return validateExemplarsQuery(params->get("query", ""));
         }
         else if (uri_path.ends_with("/rules"))
         {
@@ -730,6 +793,7 @@ private:
             if (!group_next_token.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid value of the 'group_next_token' parameter: '{}'", group_next_token);
         }
+        return true;
     }
 
     /// Handles the format_query endpoint: parses the PromQL expression given in the 'query' parameter
