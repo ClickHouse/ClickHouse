@@ -16,6 +16,12 @@ USER=ec2-user
 export HOME="/Users/$USER"
 cd "$HOME"
 
+# macOS does not grow the APFS container when the EBS root volume is larger than the AMI snapshot.
+APFS_CONTAINER=$(diskutil list physical external | awk '/Apple_APFS/ {print $NF; exit}')
+yes | diskutil repairDisk "$(diskutil list physical external | awk 'NR==1 {print $1}')" || echo "repairDisk failed"
+# Not fatal: a failure here would reboot the host in a loop via the EXIT trap.
+diskutil apfs resizeContainer "$APFS_CONTAINER" 0 || echo "resizeContainer $APFS_CONTAINER failed"
+
 # Install Homebrew if not already installed
 if ! sudo -u "$USER" -i command -v brew &> /dev/null; then
   echo "Installing Homebrew..."
@@ -47,4 +53,4 @@ sudo -u "$USER" -i bash -c '$(brew --prefix python@3)/bin/python3 -m venv --upgr
 INIT_ENVIRONMENT=${INIT_ENVIRONMENT:-macos}
 aws s3 cp --region us-east-1 "s3://github-runners-data/cloud-init/${INIT_ENVIRONMENT}.py" /tmp/runner-init.py
 rm -rf "$HOME/actions-runner/_work"
-sudo -u "$USER" -i bash -c "$HOME/venv/bin/python /tmp/runner-init.py --environment \"$INIT_ENVIRONMENT\""
+sudo -u "$USER" -i bash -c "PYTHONUNBUFFERED=1 $HOME/venv/bin/python /tmp/runner-init.py --environment \"$INIT_ENVIRONMENT\""
