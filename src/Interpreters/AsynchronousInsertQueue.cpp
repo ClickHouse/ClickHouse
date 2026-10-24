@@ -48,6 +48,7 @@
 #include <Common/DateLUT.h>
 #include <Common/FailPoint.h>
 #include <Common/FieldVisitorHash.h>
+#include <Common/Scheduler/CurrentCPULease.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
@@ -861,7 +862,10 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(
     /// Pool admission can wait for a running flush to finish. Keep that backpressure on this
     /// producer, but allow other inserts to append to their buffers in the same queue shard.
     if (data_to_process)
+    {
+        CPULeaseParkGuard park;
         scheduleDataProcessingJob(key, std::move(data_to_process), getContext(), shard_num);
+    }
 
     return PushResult
     {

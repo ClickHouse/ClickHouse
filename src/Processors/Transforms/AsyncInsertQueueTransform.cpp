@@ -16,6 +16,7 @@
 #include <Processors/Sources/WaitForAsyncInsertSource.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Common/Exception.h>
+#include <Common/Scheduler/CurrentCPULease.h>
 #include <Common/logger_useful.h>
 
 #include <base/arithmeticOverflow.h>
@@ -320,29 +321,33 @@ AsyncInsertQueueTransform::GenerateResult AsyncInsertQueueTransform::getRemainin
             }
         };
 
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(wait_timeout_ms);
-        while (true)
         {
-            const auto now = std::chrono::steady_clock::now();
-            if (now >= deadline)
-                break;
+            CPULeaseParkGuard park;
 
-            /// Clamped, so a timeout shorter than the interval is not rounded up to a multiple of it.
-            const auto remaining_wait = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now);
-            if (result.future.wait_for(std::min(flush_wait_cancellation_check_interval, remaining_wait)) == std::future_status::ready)
-                break;
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(wait_timeout_ms);
+            while (true)
+            {
+                const auto now = std::chrono::steady_clock::now();
+                if (now >= deadline)
+                    break;
 
+                /// Clamped, so a timeout shorter than the interval is not rounded up to a multiple of it.
+                const auto remaining_wait = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now);
+                if (result.future.wait_for(std::min(flush_wait_cancellation_check_interval, remaining_wait)) == std::future_status::ready)
+                    break;
+
+                throw_if_killed_or_timed_out();
+
+                if (isCancelled())
+                    return {};
+            }
+
+            /// Readiness must not outrank a kill or an expired `max_execution_time` observed in the same poll window.
             throw_if_killed_or_timed_out();
 
-            if (isCancelled())
-                return {};
+            if (result.future.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Wait for async insert timeout ({} ms) exceeded", wait_timeout_ms);
         }
-
-        /// Readiness must not outrank a kill or an expired `max_execution_time` observed in the same poll window.
-        throw_if_killed_or_timed_out();
-
-        if (result.future.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Wait for async insert timeout ({} ms) exceeded", wait_timeout_ms);
 
         /// The future is already ready, so the timeout argument below is unused; `report_read_progress`
         /// is false because the `SELECT` side already reported its own reads.

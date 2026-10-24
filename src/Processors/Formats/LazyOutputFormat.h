@@ -64,10 +64,7 @@ public:
     bool supportsSpecialSerializationKinds() const override { return true; }
 
 protected:
-    void consume(Chunk chunk) override
-    {
-        (void)(queue.emplace(std::move(chunk)));
-    }
+    void consume(Chunk chunk) override;
 
     void consumeTotals(Chunk chunk) override { totals = std::move(chunk); }
     void consumeExtremes(Chunk chunk) override { extremes = std::move(chunk); }
