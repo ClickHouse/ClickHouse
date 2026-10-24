@@ -1,0 +1,64 @@
+row-count-changing key
+5
+5
+6
+6
+equality reversed
+5
+5
+6
+6
+unstable key on the left side
+5
+5
+6
+6
+left join
+5
+5
+6
+6
+runtime filters on
+5
+5
+6
+6
+runtime filters off
+5
+5
+6
+6
+control: predicate on the unstable key itself
+5
+5
+5
+5
+6
+6
+6
+6
+control: both keys unstable
+5
+5
+5
+5
+6
+6
+6
+6
+control: plain column key
+5
+6
+the key is not pushed below the join
+0
+0
+one array join action in the plan
+1
+a stable key still reaches both indexes
+1
+1
+a deterministic expression key keeps the substitution
+1
+a key observable beyond its value is not substituted
+0
+1
