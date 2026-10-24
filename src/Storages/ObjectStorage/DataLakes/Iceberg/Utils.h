@@ -79,6 +79,30 @@ bool writeMetadataFileAndVersionHint(
     DB::ContextPtr context,
     bool try_write_version_hint);
 
+/// Whether the exception being handled reports a commit whose metadata file may still be published.
+/// The caller must not clean up the files that metadata references then, or a reader that still sees it
+/// would find a corrupted snapshot.
+bool isUnknownCommitStatus();
+
+/// A freshly created `version-hint.text` is only useful if later commits can advance it under a
+/// compare-and-swap on its `ETag`, and that header is optional. Reads the tag back through the same
+/// read path later commits use and acts only when the object storage reports none while the hint
+/// still holds `version`, the one this operation wrote. Otherwise the table would become
+/// uncommittable on its first later write, which refuses to advance a hint without a tag.
+/// With `no_concurrent_writer` (`CREATE TABLE`, whose files nobody can have built on yet), removes the
+/// hint and then, once it is known to be gone, `files_to_take_back`, and throws `UNSUPPORTED_METHOD`;
+/// a failed read takes the files back the same way before the error propagates.
+/// Without it (a commit whose metadata file is already visible to listing-based readers, which may
+/// have built on it), removes only the hint and returns normally, so the commit is kept without a
+/// hint; `files_to_take_back` is not used. A failed read leaves everything in place.
+void takeBackVersionHintWithoutETag(
+    const DB::ObjectStoragePtr & object_storage,
+    const std::string & storage_version_hint_path,
+    Int32 version,
+    const std::vector<std::string> & files_to_take_back,
+    const DB::ContextPtr & context,
+    bool no_concurrent_writer);
+
 struct TransformAndArgument
 {
     String transform_name;

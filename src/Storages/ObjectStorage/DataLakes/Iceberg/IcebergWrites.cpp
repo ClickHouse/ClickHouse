@@ -1719,7 +1719,9 @@ bool IcebergStorageSink::initializeMetadata()
     }
     catch (...)
     {
-        cleanup(false);
+        /// The metadata file may still be published: keep the files it references.
+        if (!isUnknownCommitStatus())
+            cleanup(false);
         throw;
     }
     return true;

@@ -1192,6 +1192,9 @@ void IcebergMetadata::createInitial(
         {
             auto filename_version_hint = configuration_ptr->getRawPath().path + "metadata/version-hint.text";
             writeMessageToFile("1", filename_version_hint, object_storage, local_context, "*", "");
+            /// Nobody can have built on the files created by this `CREATE` yet.
+            Iceberg::takeBackVersionHintWithoutETag(
+                object_storage, filename_version_hint, /*version=*/ 1, {filename}, local_context, /*no_concurrent_writer=*/ true);
         }
     }
 
