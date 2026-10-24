@@ -1,9 +1,6 @@
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
 
 #include <algorithm>
-#include <ranges>
-
-#include <fmt/ranges.h>
 
 #include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
@@ -21,6 +18,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Storages/MergeTree/RPNBuilder.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
@@ -39,18 +37,6 @@ namespace QueryPlanOptimizations
 
 namespace
 {
-
-String dumpStatsForLogs(const RelationStats & stats)
-{
-    return fmt::format(
-        "{}: {} rows, columns: [{}]",
-        stats.table_name.empty() ? "<unknown>" : stats.table_name,
-        stats.estimated_rows ? toString(stats.estimated_rows.value()) : "unknown",
-        fmt::join(
-            stats.column_stats
-                | std::views::transform([](const auto & p) { return fmt::format("{}: {}", p.first, p.second.num_distinct_values); }),
-            ", "));
-}
 
 RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_step, const RelationStats & input_stats)
 {
@@ -143,6 +129,23 @@ bool prunesNothingAtPlanTime(const ActionsDAG::Node * node)
         return std::ranges::any_of(node->children, prunesNothingAtPlanTime);
 
     return false;
+}
+
+/// The conditions on the rows of a read: the filter above it and the `PREWHERE`, as MergeTree estimates them, and the row policy.
+std::vector<RPNBuilderTreeNode> getConditionsToEstimate(const SourceStepWithFilter & reading, const ActionsDAG::Node * filter)
+{
+    std::vector<RPNBuilderTreeNode> conditions;
+    auto add_condition = [&](const ActionsDAG::Node * condition)
+    {
+        if (condition && !prunesNothingAtPlanTime(condition))
+            conditions.emplace_back(condition, reading.getContext());
+    };
+    add_condition(filter);
+    if (const auto & prewhere_info = reading.getPrewhereInfo())
+        add_condition(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name));
+    if (const auto & row_level_filter = reading.getRowLevelFilter())
+        add_condition(row_level_filter->actions.tryFindInOutputs(row_level_filter->column_name));
+    return conditions;
 }
 
 }
@@ -247,7 +250,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                     .column_stats = relation_profile.column_stats,
                     .table_name = table_display_name,
                     .source = RowEstimateSource::Statistics};
-                LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpStatsForLogs(stats));
+                LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpRelationStatsForLogs(stats));
                 return stats;
             }
         }
@@ -279,35 +282,51 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
     if (const auto * reading = typeid_cast<const ReadFromObjectStorageStep *>(step))
     {
-        if (!reading->getContext()->getSettingsRef()[Setting::use_iceberg_manifest_statistics])
+        const auto & settings = reading->getContext()->getSettingsRef();
+        if (!settings[Setting::use_iceberg_manifest_statistics] || !settings[Setting::use_statistics])
             return RelationStats{};
 
-        auto estimate = reading->estimateReadFromDataLakeMetadata();
+        const auto estimate = reading->estimateReadFromDataLakeMetadata();
         if (!estimate)
             return RelationStats{};
 
-        String table_display_name = reading->getStorageID().getTableName();
-        RelationStats unknown{
+        /// No rows, as `RelationStats{}`, so the join order is the same; but the metadata was read, so it names the table
+        /// and its source: `EXPLAIN` shows `t[no_stats~?]` and the data lake hint line lists it.
+        RelationStats stats{
             .estimated_rows = {},
-            .table_name = table_display_name,
+            .table_name = reading->getStorageID().getTableName(),
             .imprecise_estimate = true,
             .source = RowEstimateSource::DataLakeMetadata};
         if (!estimate->rows)
-            return unknown;
+            return stats;
+        const UInt64 rows = *estimate->rows;
 
-        /// The step's filter also holds the `PREWHERE` and the row policy, so a read without it returns every row.
-        const bool has_filter = filter || reading->getFilterActionsDAG() || reading->getPrewhereInfo() || reading->getRowLevelFilter();
+        const auto conditions = getConditionsToEstimate(*reading, filter);
+        if (conditions.empty() || rows == 0)
+        {
+            stats.estimated_rows = rows;
+            if (estimate->estimator)
+                stats.column_stats = estimate->estimator->estimateRelationProfile().column_stats;
+            /// Without conditions, the rows of the remaining files, imprecise with delete files.
+            stats.imprecise_estimate = rows != 0 && estimate->has_delete_files;
+            return stats;
+        }
 
-        /// As for MergeTree without column statistics, a filter that pruned nothing gives no estimate.
-        if (has_filter && !estimate->pruned_data_files && *estimate->rows != 0)
-            return unknown;
+        if (estimate->estimator)
+        {
+            auto filtered = estimate->estimator->estimateRelationProfile(reading->getStorageMetadata(), conditions);
+            stats.estimated_rows = filtered.rows;
+            stats.column_stats = std::move(filtered.column_stats);
+            return stats;
+        }
 
-        const bool exact = *estimate->rows == 0 || (!has_filter && !estimate->has_delete_files);
-        return RelationStats{
-            .estimated_rows = estimate->rows,
-            .table_name = table_display_name,
-            .imprecise_estimate = !exact,
-            .source = RowEstimateSource::DataLakeMetadata};
+        /// As for MergeTree without column statistics, conditions that pruned nothing give no estimate.
+        if (!estimate->pruned_data_files)
+            return stats;
+
+        /// The remaining files bound the rows, as the selected parts bound a MergeTree read.
+        stats.estimated_rows = rows;
+        return stats;
     }
 
     if (const auto * reading = typeid_cast<const ReadFromMemoryStorageStep *>(step))

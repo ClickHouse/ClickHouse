@@ -29,7 +29,10 @@ ResultRows: 10
 Join: m[1000] ⋈ b[15]
 ResultRows: 15
 --- T5: aggregation over an Iceberg read
-Join: ice_agg[no_stats~100000] ⋈ m[1000]
-ResultRows: ~~100000
-data lake hint lines naming ice_agg: 1
-column statistics hint lines naming ice_agg: 0
+Join: m[1000] ⋈ ice_agg[1000]
+ResultRows: 1000
+--- T5: aggregation over an Iceberg read with a filter that prunes nothing
+Join: m[1000] ⋈ ice_filtered[no_stats~1000]
+ResultRows: ~~1000
+data lake hint lines naming ice_filtered: 0
+column statistics hint lines naming ice_filtered: 0

@@ -21,16 +21,16 @@ ResultRows: ~~10
 --- T2: rows of the join
 10
 --- T3: partition pruning per data file, WHERE b.k = 500
-Join: m[1000] ⋈ b[no_stats~229]
-ResultRows: ~~229
+Join: m[1000] ⋈ b[no_stats~2]
+ResultRows: ~~2
 --- T3: rows of the join
 1
 --- T4: every file pruned, WHERE p.k >= 1000000
 Join: m[1000] ⋈ p[0]
 ResultRows: 1
 --- T5: a filter that prunes nothing, WHERE t.x = 5
-Join: m[1000] ⋈ t[no_stats~?]
-ResultRows: unknown
+Join: m[1000] ⋈ t[no_stats~10]
+ResultRows: ~~10
 --- T6: position deletes, 100 rows, 20 deleted
 Join: m[1000] ⋈ d[no_stats~100]
 ResultRows: ~~100
@@ -39,5 +39,5 @@ ResultRows: ~~100
 --- T7: files pruned by min/max when T2 runs
 3
 --- T8: GLOBAL IN with throwIf, EXPLAIN only
-Join: m[1000] ⋈ t[no_stats~?]
-ResultRows: unknown
+Join: t[no_stats~3300] ⋈ m[1000]
+ResultRows: ~~1000

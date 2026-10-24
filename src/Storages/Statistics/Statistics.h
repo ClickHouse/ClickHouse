@@ -152,6 +152,9 @@ public:
 
     void serialize(WriteBuffer & buf) const;
     static std::shared_ptr<ColumnStatistics> deserialize(ReadBuffer & buf, const DataTypePtr & data_type);
+    /// `Basic` statistics built from the rows, bounds and NULL count of data that was not read.
+    static std::shared_ptr<ColumnStatistics> createBasicFromSummary(
+        const DataTypePtr & data_type, UInt64 rows, const Field & min_value, const Field & max_value, UInt64 null_count);
 
     void build(const ColumnPtr & column);
     void merge(const ColumnStatisticsPtr & other);
@@ -167,11 +170,14 @@ public:
     /// True iff loaded statistics include a source of numeric min/max values
     /// (`MinMax`, or `Basic` on a numeric/temporal column).
     bool hasMinMax() const;
-    /// True iff `estimateCardinality` is backed by a uniq sketch. When it is not, that method returns a
-    /// fixed fraction of the row count, which callers dividing by the cardinality must not mistake for
-    /// a measurement.
-    bool hasCardinality() const;
+    /// True iff `estimateCardinality` is measured from the values: by a uniq sketch, or set by `setCardinality` as measured.
+    /// Otherwise it is a guess, such as a fixed fraction of the row count, which callers dividing by the cardinality must
+    /// not mistake for a measurement.
+    bool hasMeasuredCardinality() const;
     UInt64 estimateCardinality() const;
+    /// Sets the number of distinct values `estimateCardinality` returns, known outside the statistics objects (from data
+    /// lake metadata); `measured` if it comes from the values, as a uniq sketch's does.
+    void setCardinality(UInt64 value, bool measured) { external_cardinality = ExternalCardinality{value, measured}; }
     UInt64 estimateDefaults() const;
 
     /// `null_count / rows` when `Basic` statistics are present; otherwise a default factor.
@@ -199,6 +205,13 @@ private:
     ColumnStatisticsDescription stats_desc;
     StatsMap stats;
     UInt64 rows = 0; /// the number of rows in the column
+    /// A number of distinct values set by `setCardinality`.
+    struct ExternalCardinality
+    {
+        UInt64 value;
+        bool measured;
+    };
+    std::optional<ExternalCardinality> external_cardinality;
 };
 
 class ColumnsStatistics : public std::map<String, ColumnStatisticsPtr>

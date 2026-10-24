@@ -401,14 +401,14 @@ std::optional<Float64> ColumnStatistics::estimateEqual(const Field & val) const
         return stats.at(StatisticsType::CountMinSketch)->estimateEqual(val);
     }
 #endif
-    if (uniq_stats != nullptr)
+    if (hasMeasuredCardinality())
     {
-        UInt64 cardinality = uniq_stats->estimateCardinality();
-        if (cardinality == 0 || rows == 0)
+        UInt64 distinct_values = estimateCardinality();
+        if (distinct_values == 0 || rows == 0)
             return 0;
         /// Uniq ignores NULLs, so divide non-NULL row count by distinct values.
         /// `getNonNullRowCount` returns `rows` when null-count tracking is absent.
-        return static_cast<Float64>(getNonNullRowCount()) / static_cast<Float64>(cardinality);
+        return static_cast<Float64>(getNonNullRowCount()) / static_cast<Float64>(distinct_values);
     }
 
     return std::nullopt;
@@ -438,13 +438,15 @@ std::optional<Float64> ColumnStatistics::estimateRange(const Range & range) cons
     return *right_count - *left_count;
 }
 
-bool ColumnStatistics::hasCardinality() const
+bool ColumnStatistics::hasMeasuredCardinality() const
 {
-    return findUniqStats(stats) != nullptr;
+    return (external_cardinality && external_cardinality->measured) || findUniqStats(stats) != nullptr;
 }
 
 UInt64 ColumnStatistics::estimateCardinality() const
 {
+    if (external_cardinality)
+        return external_cardinality->value;
     if (const IStatistics * uniq_stats = findUniqStats(stats))
     {
         return uniq_stats->estimateCardinality();
@@ -609,6 +611,23 @@ void ColumnStatistics::serialize(WriteBuffer & buf) const
         writeIntBinary(static_cast<UInt64>(temp_data.size()), buf);
         buf.write(temp_data.data(), temp_data.size());
     }
+}
+
+std::shared_ptr<ColumnStatistics> ColumnStatistics::createBasicFromSummary(
+    const DataTypePtr & data_type, UInt64 rows, const Field & min_value, const Field & max_value, UInt64 null_count)
+{
+    SingleStatisticsDescription basic_desc(StatisticsType::Basic, nullptr, /*is_implicit_=*/ true);
+    ColumnStatisticsDescription stats_desc;
+    stats_desc.data_type = data_type;
+    stats_desc.types_to_desc.emplace(StatisticsType::Basic, basic_desc);
+
+    auto basic = std::make_shared<StatisticsBasic>(basic_desc, data_type);
+    basic->build(rows, min_value, max_value, null_count);
+
+    auto column_stats = std::make_shared<ColumnStatistics>(stats_desc);
+    column_stats->stats.emplace(StatisticsType::Basic, std::move(basic));
+    column_stats->rows = rows;
+    return column_stats;
 }
 
 std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf, const DataTypePtr & data_type)
