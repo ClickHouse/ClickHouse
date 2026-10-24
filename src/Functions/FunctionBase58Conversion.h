@@ -34,14 +34,14 @@ struct Base58EncodeTraits
         return static_cast<size_t>(ceil(oversize * src_length + 1));
     }
 
-    static size_t perform(std::string_view src, UInt8 * dst, const std::function<void()> & check_cancellation = {})
+    static size_t perform(std::string_view src, UInt8 * dst, const std::function<void()> & check_cancellation, size_t & work_since_check)
     {
         if (src.size() == 32)
             return encodeBase58_32(reinterpret_cast<const UInt8 *>(src.data()), dst);
         else if (src.size() == 64)
             return encodeBase58_64(reinterpret_cast<const UInt8 *>(src.data()), dst);
         else
-            return encodeBase58(reinterpret_cast<const UInt8 *>(src.data()), src.size(), dst, check_cancellation);
+            return encodeBase58(reinterpret_cast<const UInt8 *>(src.data()), src.size(), dst, check_cancellation, &work_since_check);
     }
 };
 
@@ -63,14 +63,14 @@ struct Base58DecodeTraits
         return src_column.getChars().size();
     }
 
-    static std::optional<size_t> perform(std::string_view src, UInt8 * dst, const std::function<void()> & check_cancellation = {})
+    static std::optional<size_t> perform(std::string_view src, UInt8 * dst, const std::function<void()> & check_cancellation, size_t & work_since_check)
     {
-        return decodeBase58(reinterpret_cast<const UInt8 *>(src.data()), src.size(), dst, check_cancellation);
+        return decodeBase58(reinterpret_cast<const UInt8 *>(src.data()), src.size(), dst, check_cancellation, &work_since_check);
     }
 
     /// The size argument is a requirement on the decoded size at every value, not only at the two the
     /// removed fixed-size decoders served. Zero means no requirement and never reaches this function.
-    static std::optional<size_t> performWithSizeHint(std::string_view src, UInt8 * dst, size_t expected_size, const std::function<void()> & check_cancellation = {})
+    static std::optional<size_t> performWithSizeHint(std::string_view src, UInt8 * dst, size_t expected_size, const std::function<void()> & check_cancellation, size_t & work_since_check)
     {
         /// An `n`-byte value encodes to between `n` and `maxBase58EncodedLength(n)` characters, so an input
         /// outside that window cannot decode to `expected_size` and is rejected without paying the quadratic
@@ -80,7 +80,7 @@ struct Base58DecodeTraits
             return {};
 
         const std::optional<size_t> decoded_size
-            = decodeBase58(reinterpret_cast<const UInt8 *>(src.data()), src.size(), dst, check_cancellation);
+            = decodeBase58(reinterpret_cast<const UInt8 *>(src.data()), src.size(), dst, check_cancellation, &work_since_check);
         if (decoded_size && *decoded_size != expected_size)
             return {};
         return decoded_size;
