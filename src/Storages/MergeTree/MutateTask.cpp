@@ -612,6 +612,13 @@ static void splitAndModifyMutationCommands(
         NameSet extra_columns_for_indices_and_projections;
         auto storage_columns = metadata_snapshot->getColumns().getAllPhysical().getNameSet();
 
+        auto get_index_column_in_storage = [&](const String & column) -> std::optional<String>
+        {
+            if (auto subcolumn = table_columns.tryGetSubcolumn(column, GetColumnsOptions::AllPhysical))
+                return subcolumn->getNameInStorage();
+            return Nested::tryGetColumnNameInStorage(column, storage_columns);
+        };
+
         for (const auto & command : commands)
         {
             if (command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
@@ -680,7 +687,7 @@ static void splitAndModifyMutationCommands(
                             auto required_columns = index.expression->getRequiredColumns();
                             for (const auto & column : required_columns)
                             {
-                                auto column_in_storage = Nested::tryGetColumnNameInStorage(column, storage_columns);
+                                auto column_in_storage = get_index_column_in_storage(column);
                                 if (column_in_storage && !part_columns.has(*column_in_storage))
                                     extra_columns_for_indices_and_projections.emplace(*column_in_storage);
                             }
@@ -823,7 +830,7 @@ static void splitAndModifyMutationCommands(
 
             for (const auto & column : index.expression->getRequiredColumns())
             {
-                auto column_in_storage = Nested::tryGetColumnNameInStorage(column, storage_columns);
+                auto column_in_storage = get_index_column_in_storage(column);
                 if (column_in_storage && !part_columns.has(*column_in_storage))
                     extra_columns_for_indices_and_projections.emplace(*column_in_storage);
             }
@@ -2811,7 +2818,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         ctx->out->write(cur_block);
 
         if (ctx->minmax_idx)
-            ctx->minmax_idx->update(cur_block, ctx->minmax_idx_columns);
+            ctx->minmax_idx->update(cur_block, ctx->minmax_idx_columns, &ctx->metadata_snapshot->getColumns());
 
         if (!ctx->statistics_to_build.empty())
             ctx->statistics_to_build.buildIfExists(cur_block);
@@ -3504,7 +3511,8 @@ private:
         if (ctx->metadata_snapshot->hasPrimaryKey() || ctx->metadata_snapshot->hasSecondaryIndices())
         {
             auto indices_expression_dag = ctx->data->getPrimaryKeyAndSkipIndicesExpression(ctx->metadata_snapshot, skip_indices)->getActionsDAG().clone();
-            auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(builder->getHeader(), indices_expression_dag.getRequiredColumnsNames(), ctx->context);
+            auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(
+                builder->getHeader(), indices_expression_dag.getRequiredColumnsNames(), ctx->context, &ctx->metadata_snapshot->getColumns());
             if (!extracting_subcolumns_dag.getNodes().empty())
                 indices_expression_dag = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(indices_expression_dag));
 

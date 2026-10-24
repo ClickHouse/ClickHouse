@@ -368,13 +368,18 @@ void MergeTask::GlobalRuntimeContext::checkOperationIsNotCanceled() const
     }
 }
 
-static String getColumnNameInStorage(const String & column_name, const NameSet & storage_columns, const NameSet & virtual_columns)
+static String getColumnNameInStorage(
+    const String & column_name, const NameSet & storage_columns, const NameSet & virtual_columns, const ColumnsDescription * columns_description = nullptr)
 {
     if (storage_columns.contains(column_name))
         return column_name;
 
     if (virtual_columns.contains(column_name))
         return column_name;
+
+    if (columns_description)
+        if (auto column = columns_description->tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name))
+            return column->getNameInStorage();
 
     /// If we don't have this column in storage columns, it must be a subcolumn of one of the storage columns.
     return String(Nested::getColumnFromSubcolumn(column_name, storage_columns));
@@ -390,8 +395,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
     NameSet key_columns;
     const auto storage_columns = global_ctx->storage_columns.getNameSet();
     const auto virtual_columns = global_ctx->virtual_columns.getNameSet();
+    const auto & columns_description = global_ctx->metadata_snapshot->getColumns();
     for (const auto & name : sort_key_columns_vec)
-        key_columns.insert(getColumnNameInStorage(name, storage_columns, virtual_columns));
+        key_columns.insert(getColumnNameInStorage(name, storage_columns, virtual_columns, &columns_description));
 
     /// Force sign column for Collapsing mode and VersionedCollapsing mode
     if (!global_ctx->merging_params.sign_column.empty())
@@ -421,7 +427,14 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
 
     /// Recalculate the min-max index for partition columns if the merge might reduce rows.
     if (global_ctx->merge_may_reduce_rows)
-        key_columns.insert_range(global_ctx->minmax_idx_columns.getNames());
+    {
+        for (const auto & name : global_ctx->minmax_idx_columns.getNames())
+        {
+            key_columns.insert(name);
+            if (auto column = columns_description.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name))
+                key_columns.insert(column->getNameInStorage());
+        }
+    }
 
     key_columns.insert(global_ctx->deduplicate_by_columns.begin(), global_ctx->deduplicate_by_columns.end());
 
@@ -470,12 +483,12 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
             if (index_columns.size() > 1)
             {
                 for (const auto & index_column : index_columns)
-                    key_columns.insert(getColumnNameInStorage(index_column, storage_columns, virtual_columns));
+                    key_columns.insert(getColumnNameInStorage(index_column, storage_columns, virtual_columns, &columns_description));
             }
         }
         else if (index_columns.size() == 1)
         {
-            auto column_name = getColumnNameInStorage(index_columns.front(), storage_columns, virtual_columns);
+            auto column_name = getColumnNameInStorage(index_columns.front(), storage_columns, virtual_columns, &columns_description);
             global_ctx->skip_indexes_by_column[column_name].push_back(index);
         }
         else
@@ -483,7 +496,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
             global_ctx->merging_skip_indexes.push_back(index);
 
             for (const auto & index_column : index_columns)
-                key_columns.insert(getColumnNameInStorage(index_column, storage_columns, virtual_columns));
+                key_columns.insert(getColumnNameInStorage(index_column, storage_columns, virtual_columns, &columns_description));
         }
     }
 
@@ -2015,7 +2028,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
             /// Same rationale as the horizontal-stage `merge` above: keep the row-reducing merge's
             /// incrementally-built minmax index in the parts arena.
             ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-            global_ctx->new_data_part->getMinMaxIndex()->update(block, global_ctx->minmax_idx_columns);
+            global_ctx->new_data_part->getMinMaxIndex()->update(block, global_ctx->minmax_idx_columns, &global_ctx->metadata_snapshot->getColumns());
         }
 
         calculateProjections(block, starting_offset);
@@ -3335,7 +3348,8 @@ void MergeTask::addSkipIndexesExpressionSteps(QueryPlan & plan, const IndicesDes
 
     auto indices_expression = indices_description.getSingleExpressionForIndices(columns_for_indices, global_ctx->data->getContext());
     auto indices_expression_dag = indices_expression->getActionsDAG().clone();
-    auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(*plan.getCurrentHeader(), indices_expression_dag.getRequiredColumnsNames(), global_ctx->data->getContext());
+    auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(
+        *plan.getCurrentHeader(), indices_expression_dag.getRequiredColumnsNames(), global_ctx->data->getContext(), &columns_for_indices);
     indices_expression_dag.addMaterializingOutputActions(/*materialize_sparse=*/ true); /// Const columns cannot be written without materialization.
 
     auto calculate_indices_expression_step = std::make_unique<ExpressionStep>(
@@ -3357,6 +3371,7 @@ void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPa
     std::vector<MergeTreeIndexPtr> indexes_to_build;
     const auto storage_columns = global_ctx->storage_columns.getNameSet();
     const auto virtual_columns = global_ctx->virtual_columns.getNameSet();
+    const auto & columns_description = global_ctx->metadata_snapshot->getColumns();
 
     for (const auto & index : global_ctx->text_indexes_to_merge)
     {
@@ -3364,7 +3379,7 @@ void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPa
 
         bool read_any_required_column = std::ranges::any_of(required_columns, [&](const auto & column_name)
         {
-            return read_column_names.contains(getColumnNameInStorage(column_name, storage_columns, virtual_columns));
+            return read_column_names.contains(getColumnNameInStorage(column_name, storage_columns, virtual_columns, &columns_description));
         });
 
         if (!read_any_required_column)
@@ -3594,7 +3609,11 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         /// Calculate sorting key expressions so that they are available for merge sorting.
         const auto & sorting_key_expression = global_ctx->metadata_snapshot->getSortingKey().expression;
         auto sorting_key_expression_dag = sorting_key_expression->getActionsDAG().clone();
-        auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(*merge_parts_query_plan.getCurrentHeader(), sorting_key_expression_dag.getRequiredColumnsNames(), global_ctx->data->getContext());
+        auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(
+            *merge_parts_query_plan.getCurrentHeader(),
+            sorting_key_expression_dag.getRequiredColumnsNames(),
+            global_ctx->data->getContext(),
+            &global_ctx->metadata_snapshot->getColumns());
         auto calculate_sorting_key_expression_step = std::make_unique<ExpressionStep>(
             merge_parts_query_plan.getCurrentHeader(),
             ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(sorting_key_expression_dag)));
