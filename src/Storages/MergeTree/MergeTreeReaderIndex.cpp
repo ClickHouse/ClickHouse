@@ -37,6 +37,7 @@ MergeTreeReaderIndex::MergeTreeReaderIndex(
           main_reader_->data_part_info_for_read,
           {},
           {},
+          {},
           main_reader_->storage_snapshot,
           main_reader_->storage_settings,
           nullptr,
