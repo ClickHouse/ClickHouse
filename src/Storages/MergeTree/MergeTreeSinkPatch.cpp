@@ -22,7 +22,8 @@ MergeTreeSinkPatch::MergeTreeSinkPatch(
         storage_,
         patch_metadata_.metadata,
         /*max_parts_per_block=*/ 0,
-        std::move(context_))
+        std::move(context_),
+        /*check_database_rows_limit=*/ false)
     , update_holder(std::move(update_holder_))
     , patch_metadata(std::move(patch_metadata_))
 {
