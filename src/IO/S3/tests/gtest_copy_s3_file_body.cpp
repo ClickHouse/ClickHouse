@@ -9,6 +9,13 @@
 #include <IO/StdStreamFromReadBuffer.h>
 
 #include <Common/Exception.h>
+#include <Common/Crypto/OpenSSLInitializer.h>
+
+#include <IO/S3/Client.h>
+
+#include <aws/core/utils/HashingUtils.h>
+
+#include <magic_enum.hpp>
 
 #include <memory>
 #include <string>
@@ -18,6 +25,30 @@ using namespace DB;
 namespace DB::ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
+}
+
+namespace
+{
+
+/// `createS3UploadBody` and the `HashingUtils` expectations go through the AWS SDK's crypto
+/// factories, whose C++ layer only hands out implementations once the underlying CRT crypto
+/// (aws-c-cal) is initialized. In production `S3::ClientFactory::instance()` does that as a side
+/// effect of `Aws::InitAPI`. This suite drives the body builder without any S3 client, so touch
+/// the same singleton for the whole test binary run; the destructor-side `ShutdownAPI` runs after
+/// every test has finished.
+class AwsCryptoEnvironment : public ::testing::Environment
+{
+public:
+    ~AwsCryptoEnvironment() override = default;
+
+    void SetUp() override { S3::ClientFactory::instance(); }
+
+    void TearDown() override { }
+};
+
+const ::testing::Environment * const aws_crypto_environment
+    = ::testing::AddGlobalTestEnvironment(new AwsCryptoEnvironment());
+
 }
 
 namespace
@@ -168,6 +199,146 @@ TEST(CopyS3FileBody, BodyForPartAtOffsetIsMemoryBacked)
     /// the `size` bytes of the part are read. The point is the source is read ONCE: rewinding the
     /// body rereads nothing from the source.
     EXPECT_EQ(source_bytes_read, size);
+}
+
+namespace
+{
+
+/// What `createS3UploadBody` feeds into `precalculated_checksum` must be exactly the base64 payload
+/// of the checksum header for the algorithm: `Content-MD5` for MD5, `x-amz-checksum-crc32`/
+/// `x-amz-checksum-sha256` otherwise. The expectation is derived independently with `HashingUtils`,
+/// the same primitive the SDK itself uses when it has to compute the header over a body.
+std::string expectedPrecalculatedChecksum(S3::RequestChecksum::Algorithm algorithm, const std::string & payload)
+{
+    switch (algorithm)
+    {
+        case S3::RequestChecksum::Algorithm::MD5:
+            return Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateMD5(payload));
+        case S3::RequestChecksum::Algorithm::CRC32:
+            return Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateCRC32(payload));
+        case S3::RequestChecksum::Algorithm::SHA256:
+            return Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateSHA256(payload));
+    }
+    UNREACHABLE();
+}
+
+/// Drives the real request-body builder with a checksum algorithm and returns the checksum it
+/// precalculated in the same pass that staged the data.
+std::string buildBodyAndGetPrecalculatedChecksum(S3::RequestChecksum::Algorithm algorithm, const std::string & payload)
+{
+    PrecalculatedUploadChecksum checksum;
+    size_t source_bytes_read = 0;
+    auto body = createS3UploadBody(
+        [payload, &source_bytes_read]() -> std::unique_ptr<SeekableReadBuffer>
+        {
+            return std::make_unique<ReadOnceThenFailSource>(payload, &source_bytes_read);
+        },
+        /* offset */ 0,
+        payload.size(),
+        algorithm,
+        &checksum);
+    EXPECT_TRUE(body);
+    return checksum.value;
+}
+
+}
+
+/// The checksum precalculated while staging the part must equal what the SDK would derive from the
+/// body -- otherwise attaching it would corrupt the request instead of saving a pass. Every
+/// algorithm takes the same single pass; only the hash differs.
+TEST(CopyS3FileBody, PrecalculatedChecksumMatchesTheBody)
+{
+    const std::string payload = "the quick brown fox jumps over the lazy dog";
+
+    for (const auto algorithm : {S3::RequestChecksum::Algorithm::CRC32, S3::RequestChecksum::Algorithm::SHA256})
+    {
+        SCOPED_TRACE(std::string(magic_enum::enum_name(algorithm)));
+        EXPECT_EQ(buildBodyAndGetPrecalculatedChecksum(algorithm, payload), expectedPrecalculatedChecksum(algorithm, payload));
+    }
+
+    /// MD5 is the default upload checksum; the SDK itself computes it over the whole body when the
+    /// header is absent, so a mismatched precalculated value would be a wrong `Content-MD5`, not a
+    /// skipped optimization.
+    if (!OpenSSLInitializer::instance().isFIPSEnabled())
+        EXPECT_EQ(
+            buildBodyAndGetPrecalculatedChecksum(S3::RequestChecksum::Algorithm::MD5, payload),
+            expectedPrecalculatedChecksum(S3::RequestChecksum::Algorithm::MD5, payload));
+}
+
+/// A part staged from a non-zero offset (the UploadPart path) must checksum exactly the part's
+/// bytes, not the whole source. Uses `CRC32` rather than `MD5` so the assertion holds under FIPS
+/// as well, where MD5 is unavailable and no checksum is precalculated at all.
+TEST(CopyS3FileBody, PrecalculatedChecksumForPartAtOffsetMatchesThePart)
+{
+    const std::string source_data(256, 'x');
+    const size_t offset = 64;
+    const size_t size = 64;
+
+    PrecalculatedUploadChecksum checksum;
+    size_t source_bytes_read = 0;
+    auto body = createS3UploadBody(
+        [&source_data, &source_bytes_read]() -> std::unique_ptr<SeekableReadBuffer>
+        {
+            return std::make_unique<ReadOnceThenFailSource>(source_data, &source_bytes_read);
+        },
+        offset,
+        size,
+        S3::RequestChecksum::Algorithm::CRC32,
+        &checksum);
+    ASSERT_TRUE(body);
+
+    const std::string part = source_data.substr(offset, size);
+    EXPECT_EQ(checksum.value, Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateCRC32(part)));
+}
+
+/// The MD5 twin of the test above (MD5 is the default upload checksum). Guarded like the other MD5
+/// assertions: under FIPS no MD5 implementation exists, and production never asks for one because
+/// `getPrecalculatedChecksumAlgorithm` filters it out before the body builder is reached.
+TEST(CopyS3FileBody, PrecalculatedMd5ChecksumForPartAtOffsetMatchesThePart)
+{
+    if (OpenSSLInitializer::instance().isFIPSEnabled())
+        return;
+
+    const std::string source_data(256, 'x');
+    const size_t offset = 64;
+    const size_t size = 64;
+
+    PrecalculatedUploadChecksum checksum;
+    size_t source_bytes_read = 0;
+    auto body = createS3UploadBody(
+        [&source_data, &source_bytes_read]() -> std::unique_ptr<SeekableReadBuffer>
+        {
+            return std::make_unique<ReadOnceThenFailSource>(source_data, &source_bytes_read);
+        },
+        offset,
+        size,
+        S3::RequestChecksum::Algorithm::MD5,
+        &checksum);
+    ASSERT_TRUE(body);
+
+    const std::string part = source_data.substr(offset, size);
+    EXPECT_EQ(checksum.value, Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateMD5(part)));
+}
+
+/// No checksum requested: nothing is precalculated and the staging pass stays a pure copy.
+TEST(CopyS3FileBody, NoChecksumRequestedLeavesPrecalculatedChecksumEmpty)
+{
+    const std::string payload = "the quick brown fox jumps over the lazy dog";
+
+    PrecalculatedUploadChecksum checksum;
+    size_t source_bytes_read = 0;
+    auto body = createS3UploadBody(
+        [payload, &source_bytes_read]() -> std::unique_ptr<SeekableReadBuffer>
+        {
+            return std::make_unique<ReadOnceThenFailSource>(payload, &source_bytes_read);
+        },
+        /* offset */ 0,
+        payload.size(),
+        std::nullopt,
+        &checksum);
+    ASSERT_TRUE(body);
+
+    EXPECT_TRUE(checksum.empty());
 }
 
 #endif

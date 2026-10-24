@@ -15,11 +15,13 @@
 
 #include <IO/WriteHelpers.h>
 #include <IO/S3Common.h>
+#include <IO/S3/copyS3File.h>
 #include <IO/S3/Requests.h>
 #include <IO/S3/getObjectInfo.h>
 #include <Common/BlobStorageLogWriter.h>
 #include <Common/getRandomASCIIString.h>
 
+#include <algorithm>
 #include <utility>
 
 
@@ -98,6 +100,39 @@ static BufferAllocationPolicyPtr createBufferAllocationPolicy(const S3::S3Reques
     allocation_settings.max_single_size = settings[S3RequestSetting::max_single_part_upload_size];
 
     return BufferAllocationPolicy::create(allocation_settings);
+}
+
+namespace
+{
+
+/// Hashes an already staged part out of the buffer that holds it and attaches the resulting checksum
+/// to the request, so the SDK sends the header instead of deriving it from the body (`Content-MD5`
+/// through the additional custom headers for MD5, `x-amz-checksum-*` plus the matching
+/// `ChecksumAlgorithm` for CRC32/SHA256). Returns the attached payload, or an empty string when no
+/// checksum applies (GCS fallback, FIPS).
+///
+/// Called from the upload worker, never from the staging loop: the staging loop runs on the single
+/// producer thread, so hashing there would put every part's checksum on that one thread and cap its
+/// throughput. Reading the staged buffer instead of the request body stream also avoids the SDK's
+/// 8 KiB stream reads through a stack buffer: the whole part goes into one `Update`.
+///
+/// An empty part has no bytes to feed and still yields the checksum of an empty payload, which is what
+/// a zero-byte object must carry.
+template <typename Request>
+String attachPrecalculatedChecksum(
+    Request & request, std::optional<S3::RequestChecksum::Algorithm> algorithm, const char * data, size_t size)
+{
+    if (!algorithm)
+        return {};
+
+    if (S3::RequestChecksum::usesFlexibleChecksumHeader(*algorithm))
+        request.setUploadChecksumAlgorithm(*algorithm);
+
+    String checksum = S3::RequestChecksum::calculateChecksum(*algorithm, data, size);
+    applyPrecalculatedUploadChecksum(request, *algorithm, {checksum});
+    return checksum;
+}
+
 }
 
 
@@ -187,9 +222,7 @@ void WriteBufferFromS3::preFinalize()
     if (do_single_part_upload)
     {
         if (detached_part_data.empty())
-        {
             makeSinglepartUpload({});
-        }
         else
         {
             makeSinglepartUpload(std::move(detached_part_data.front()));
@@ -533,16 +566,6 @@ S3::UploadPartRequest WriteBufferFromS3::getUploadRequest(size_t part_number, Pa
     /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
     req.SetContentType("binary/octet-stream");
 
-    /// Checksums need to be provided on CompleteMultipartUpload requests, so we calculate them manually and store in multipart_checksums.
-    const auto checksum_algorithm = getUploadChecksumAlgorithm();
-    if (checksum_algorithm && S3::RequestChecksum::usesFlexibleChecksumHeader(*checksum_algorithm))
-    {
-        req.setUploadChecksumAlgorithm(*checksum_algorithm);
-        auto checksum = S3::RequestChecksum::calculateFlexibleChecksum(req, *checksum_algorithm);
-        S3::RequestChecksum::setChecksum(req, *checksum_algorithm, checksum);
-        multipart_checksums.push_back(std::move(checksum));
-    }
-
     return req;
 }
 
@@ -558,6 +581,17 @@ void WriteBufferFromS3::writePart(WriteBufferFromS3::PartData && data)
     /// so we create part_tag reference after push_back as the reference will not be invalidated
     multipart_tags.push_back({});
     auto & part_tag = multipart_tags.back();
+
+    /// `CompleteMultipartUpload` has to list every part's checksum, so reserve the slot here and let
+    /// the worker fill it in together with the tag. A deque never invalidates references to existing
+    /// elements on push_back, so the reference stays valid.
+    const auto precalculated_checksum_algorithm = S3::RequestChecksum::getPrecalculatedChecksumAlgorithm(getUploadChecksumAlgorithm());
+    const bool uses_flexible_checksum = precalculated_checksum_algorithm
+        && S3::RequestChecksum::usesFlexibleChecksumHeader(*precalculated_checksum_algorithm);
+    if (uses_flexible_checksum)
+        multipart_checksums.push_back({});
+    auto * part_checksum = uses_flexible_checksum ? &multipart_checksums.back() : nullptr;
+
     size_t part_number = multipart_tags.size();
     LOG_TEST(limited_log, "writePart {}, part size {}, part number {}", getShortLogDetails(), data.data_size, part_number);
 
@@ -593,9 +627,10 @@ void WriteBufferFromS3::writePart(WriteBufferFromS3::PartData && data)
     auto req = getUploadRequest(part_number, data);
     auto worker_data = std::make_shared<std::tuple<S3::UploadPartRequest, WriteBufferFromS3::PartData>>(std::move(req), std::move(data));
 
-    auto upload_worker = [&, worker_data, part_number] ()
+    auto upload_worker = [&, worker_data, part_number, part_checksum, precalculated_checksum_algorithm] ()
     {
-        auto & data_size = std::get<1>(*worker_data).data_size;
+        auto & part = std::get<1>(*worker_data);
+        auto & data_size = part.data_size;
 
         LOG_TEST(limited_log, "Write part started {}, part size {}, part number {}",
                  getShortLogDetails(), data_size, part_number);
@@ -605,6 +640,13 @@ void WriteBufferFromS3::writePart(WriteBufferFromS3::PartData && data)
             ProfileEvents::increment(ProfileEvents::DiskS3UploadPart);
 
         auto & request = std::get<0>(*worker_data);
+
+        /// Hash the staged part here, on this worker: the producer thread only copies bytes, so its
+        /// throughput does not depend on the selected checksum algorithm.
+        String checksum = attachPrecalculatedChecksum(
+            request, precalculated_checksum_algorithm, part.memory.data(), data_size);
+        if (part_checksum)
+            *part_checksum = std::move(checksum);
 
         CurrentThread::IOSchedulingScope io_scope(write_settings.io_scheduling);
         CurrentThread::WriteThrottlingScope write_throttling_scope(write_settings.remote_throttler);
@@ -748,9 +790,6 @@ S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
     if (!request_settings[S3RequestSetting::storage_class_name].value.empty())
         req.SetStorageClass(S3::getStorageClassForName(request_settings[S3RequestSetting::storage_class_name]));
 
-    if (auto checksum_algorithm = getUploadChecksumAlgorithm(); checksum_algorithm && S3::RequestChecksum::usesFlexibleChecksumHeader(*checksum_algorithm))
-        req.setUploadChecksumAlgorithm(*checksum_algorithm);
-
     if (!write_settings.object_storage_write_if_none_match.empty())
         req.SetIfNoneMatch(write_settings.object_storage_write_if_none_match);
 
@@ -779,13 +818,20 @@ void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data
 
     auto req = getPutRequest(data);
     auto worker_data = std::make_shared<std::tuple<S3::PutObjectRequest, WriteBufferFromS3::PartData>>(std::move(req), std::move(data));
+    const auto precalculated_checksum_algorithm = S3::RequestChecksum::getPrecalculatedChecksumAlgorithm(getUploadChecksumAlgorithm());
 
-    auto upload_worker = [&, worker_data] ()
+    auto upload_worker = [&, worker_data, precalculated_checksum_algorithm] ()
     {
         LOG_TEST(limited_log, "writing single part upload started. {}", getShortLogDetails());
 
         auto & request = std::get<0>(*worker_data);
+        auto & part = std::get<1>(*worker_data);
         size_t content_length = request.GetContentLength();
+
+        /// Hash the staged part here, on this worker, rather than while it was staged on the producer
+        /// thread (see `attachPrecalculatedChecksum`). A zero-byte object reaches here through
+        /// `preFinalize` with an empty part, and still gets the checksum of an empty payload.
+        attachPrecalculatedChecksum(request, precalculated_checksum_algorithm, part.memory.data(), part.data_size);
 
         size_t max_retry = std::max<UInt64>(request_settings[S3RequestSetting::max_unexpected_write_error_retries].value, 1UL);
         for (size_t i = 0; i < max_retry; ++i)

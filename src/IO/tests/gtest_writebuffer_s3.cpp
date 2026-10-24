@@ -10,6 +10,8 @@
 #include <aws/core/auth/AWSCredentials.h>
 #include <aws/core/auth/AWSCredentialsProvider.h>
 #include <aws/core/config/AWSProfileConfigLoader.h>
+#include <aws/core/utils/HashingUtils.h>
+#include <aws/core/utils/crypto/Factories.h>
 
 #include <aws/s3/model/CreateMultipartUploadRequest.h>
 #include <aws/s3/model/CompleteMultipartUploadRequest.h>
@@ -589,6 +591,9 @@ struct ChecksumRecordingInjection : InjectionModel
         put_object_algorithm = request.GetChecksumAlgorithm();
         put_object_request_checksum_required = request.RequestChecksumRequired();
         put_object_should_compute_content_md5 = request.ShouldComputeContentMd5();
+        put_object_content_md5 = getAdditionalCustomHeader(request, "content-md5");
+        put_object_crc32_checksum = request.GetChecksumCRC32();
+        put_object_sha256_checksum = request.GetChecksumSHA256();
         return std::nullopt;
     }
 
@@ -603,6 +608,7 @@ struct ChecksumRecordingInjection : InjectionModel
         upload_part_algorithms.push_back(request.GetChecksumAlgorithm());
         upload_part_crc32_checksums.push_back(request.GetChecksumCRC32());
         upload_part_sha256_checksums.push_back(request.GetChecksumSHA256());
+        upload_part_content_md5s.push_back(getAdditionalCustomHeader(request, "content-md5"));
         return std::nullopt;
     }
 
@@ -616,13 +622,26 @@ struct ChecksumRecordingInjection : InjectionModel
         return std::nullopt;
     }
 
+    /// The value carried by an additional custom header (empty when absent). `SetAdditionalCustomHeaderValue`
+    /// lowercases the name on the way in, so the lookup must use the lower-case spelling.
+    static String getAdditionalCustomHeader(const Aws::AmazonWebServiceRequest & request, const std::string & name)
+    {
+        const auto & headers = request.GetAdditionalCustomHeaders();
+        const auto it = headers.find(Aws::String{name});
+        return it == headers.end() ? String{} : it->second;
+    }
+
     Aws::S3::Model::ChecksumAlgorithm put_object_algorithm = Aws::S3::Model::ChecksumAlgorithm::NOT_SET;
     bool put_object_request_checksum_required = false;
     bool put_object_should_compute_content_md5 = true;
+    String put_object_content_md5;
+    String put_object_crc32_checksum;
+    String put_object_sha256_checksum;
     Aws::S3::Model::ChecksumAlgorithm create_multipart_upload_algorithm = Aws::S3::Model::ChecksumAlgorithm::NOT_SET;
     std::vector<Aws::S3::Model::ChecksumAlgorithm> upload_part_algorithms;
     std::vector<String> upload_part_crc32_checksums;
     std::vector<String> upload_part_sha256_checksums;
+    std::vector<String> upload_part_content_md5s;
     std::vector<String> complete_part_crc32_checksums;
     std::vector<String> complete_part_sha256_checksums;
 };
@@ -902,6 +921,102 @@ struct SimpleAsyncTasks : BaseSyncPolicy
     }
 
     size_t size() const override { return queue.size(); }
+};
+
+/// Counts the two ways an MD5 can be produced: `Update` is the hash the upload path feeds from the
+/// staged part buffer, `Calculate` is the whole-body derivation the SDK performs on its own when the
+/// `Content-MD5` header is absent. Watching the counts tells a test *when* the part is hashed
+/// (which is what decides whether it happens on the writer thread or on an upload worker), not just
+/// what value came out.
+class CountingMD5Hash : public Aws::Utils::Crypto::Hash
+{
+public:
+    CountingMD5Hash(std::shared_ptr<Aws::Utils::Crypto::Hash> inner_, size_t * updates_, size_t * whole_body_)
+        : inner(std::move(inner_)), updates(updates_), whole_body(whole_body_) {}
+
+    Aws::Utils::Crypto::HashResult Calculate(const Aws::String & str) override
+    {
+        ++*whole_body;
+        return inner->Calculate(str);
+    }
+
+    Aws::Utils::Crypto::HashResult Calculate(Aws::IStream & stream) override
+    {
+        ++*whole_body;
+        return inner->Calculate(stream);
+    }
+
+    void Update(unsigned char * buffer, size_t buffer_size) override
+    {
+        ++*updates;
+        inner->Update(buffer, buffer_size);
+    }
+
+    Aws::Utils::Crypto::HashResult GetHash() override { return inner->GetHash(); }
+
+private:
+    std::shared_ptr<Aws::Utils::Crypto::Hash> inner;
+    size_t * updates;
+    size_t * whole_body;
+};
+
+/// Installs `CountingMD5Hash` as the SDK's MD5 implementation for the scope of a test. The SDK reads
+/// its factory through a bare pointer from a global slot, so `CreateImplementation` must step aside
+/// (a null factory is turned back into the default one by `InitCrypto`) to obtain the real
+/// implementation, then reinstall itself.
+class CountingMD5Factory : public Aws::Utils::Crypto::HashFactory
+{
+public:
+    CountingMD5Factory(size_t * updates_, size_t * whole_body_) : updates(updates_), whole_body(whole_body_) {}
+
+    /// Two-phase wiring: the factory can only be installed once its own shared_ptr exists. Weak on
+    /// purpose -- a strong self-reference would outlive the `ScopedMD5UpdateCounter` clearing the SDK
+    /// slot and leak, which LeakSanitizer reports as a failure of the whole test binary.
+    void holdSelfReference(const std::shared_ptr<Aws::Utils::Crypto::HashFactory> & self) { self_reference = self; }
+
+    std::shared_ptr<Aws::Utils::Crypto::Hash> CreateImplementation() const override
+    {
+        auto self = self_reference.lock();
+
+        Aws::Utils::Crypto::SetMD5Factory(nullptr);
+        Aws::Utils::Crypto::InitCrypto();
+        auto real = Aws::Utils::Crypto::CreateMD5Implementation();
+        Aws::Utils::Crypto::SetMD5Factory(self);
+
+        return std::make_shared<CountingMD5Hash>(std::move(real), updates, whole_body);
+    }
+
+private:
+    size_t * updates;
+    size_t * whole_body;
+    std::weak_ptr<Aws::Utils::Crypto::HashFactory> self_reference;
+};
+
+class ScopedMD5UpdateCounter
+{
+public:
+    ScopedMD5UpdateCounter()
+    {
+        auto factory = std::make_shared<CountingMD5Factory>(&updates, &whole_body);
+        factory->holdSelfReference(factory);
+        Aws::Utils::Crypto::SetMD5Factory(std::move(factory));
+    }
+
+    ~ScopedMD5UpdateCounter()
+    {
+        Aws::Utils::Crypto::SetMD5Factory(nullptr);
+        Aws::Utils::Crypto::InitCrypto();
+    }
+
+    ScopedMD5UpdateCounter(const ScopedMD5UpdateCounter &) = delete;
+    ScopedMD5UpdateCounter & operator=(const ScopedMD5UpdateCounter &) = delete;
+
+    size_t updateCalls() const { return updates; }
+    size_t wholeBodyComputations() const { return whole_body; }
+
+private:
+    size_t updates = 0;
+    size_t whole_body = 0;
 };
 
 }
@@ -1421,6 +1536,56 @@ TEST_F(WBS3Test, UploadChecksumAlgorithmEmptyDefaultSinglepart)
     ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::NOT_SET, injection->put_object_algorithm);
     ASSERT_FALSE(injection->put_object_request_checksum_required);
     ASSERT_TRUE(injection->put_object_should_compute_content_md5);
+
+    /// The default upload checksum (`Content-MD5`) is computed by the upload worker out of the staged
+    /// part and attached to the request before it is sent, so the SDK does not scan the body a second
+    /// time to derive the header. The value must be exactly the MD5 of what was written.
+    if (!DB::OpenSSLInitializer::instance().isFIPSEnabled())
+        ASSERT_EQ(injection->put_object_content_md5, Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateMD5(Aws::String(10, 'a'))));
+    else
+        ASSERT_TRUE(injection->put_object_content_md5.empty());
+}
+
+/// The multipart twin of the default-checksum test: every UploadPart request carries the MD5 the
+/// upload worker computed out of its own staged part buffer, each part's value covering exactly
+/// that part's bytes.
+TEST_F(WBS3Test, UploadChecksumAlgorithmEmptyDefaultMultipart)
+{
+    auto injection = std::make_shared<MockS3::ChecksumRecordingInjection>();
+    setInjectionModel(injection);
+
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0;
+    getSettings()[Setting::s3_min_upload_part_size] = 1;
+
+    auto buffer = getWriteBuffer("checksum_empty_default_multipart");
+    writeAsOneBlock(*buffer, 10);
+
+    getAsyncPolicy().setAutoExecute(true);
+    buffer->finalize();
+
+    ASSERT_THAT(injection->upload_part_content_md5s, testing::Not(testing::IsEmpty()));
+
+    if (DB::OpenSSLInitializer::instance().isFIPSEnabled())
+    {
+        ASSERT_THAT(injection->upload_part_content_md5s, testing::Each(testing::IsEmpty()));
+        return;
+    }
+
+    /// The written 10 bytes of 'a' were staged as parts (single bytes here, per `min_upload_part_size = 1`);
+    /// recompute each part's MD5 from the mock store's record of what each part actually contained, so
+    /// both the value and the per-part split are verified.
+    const auto & uploads = getCompletedPartUploads();
+    ASSERT_FALSE(uploads.empty());
+    for (const auto & [upload_id, parts] : uploads)
+    {
+        ASSERT_EQ(parts.size(), injection->upload_part_content_md5s.size());
+        for (size_t i = 0; i < parts.size(); ++i)
+        {
+            const auto part_md5 = Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateMD5(Aws::String(parts[i].data(), parts[i].size())));
+            ASSERT_EQ(injection->upload_part_content_md5s[i], part_md5) << "part " << i;
+        }
+    }
+    ASSERT_EQ(injection->upload_part_content_md5s.size(), 10u);
 }
 
 TEST_F(WBS3Test, UploadChecksumAlgorithmGCSIgnoresSetting)
@@ -1444,6 +1609,10 @@ TEST_F(WBS3Test, UploadChecksumAlgorithmGCSIgnoresSetting)
     ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::NOT_SET, injection->put_object_algorithm);
     ASSERT_FALSE(injection->put_object_request_checksum_required);
     ASSERT_TRUE(injection->put_object_should_compute_content_md5);
+
+    /// `GCS` keeps the plain `Content-MD5` path with no precalculated header injection: the flexible
+    /// checksums are rejected by GCS and the precalculation is skipped for it entirely.
+    ASSERT_TRUE(injection->put_object_content_md5.empty());
 }
 
 TEST_F(WBS3Test, UploadChecksumAlgorithmMD5Singlepart)
@@ -1465,6 +1634,139 @@ TEST_F(WBS3Test, UploadChecksumAlgorithmMD5Singlepart)
     ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::NOT_SET, injection->put_object_algorithm);
     ASSERT_FALSE(injection->put_object_request_checksum_required);
     ASSERT_TRUE(injection->put_object_should_compute_content_md5);
+
+    /// An explicit MD5 precalculates and attaches the same `Content-MD5` as the default does.
+    ASSERT_EQ(injection->put_object_content_md5, Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateMD5(Aws::String(10, 'a'))));
+}
+
+/// A zero-byte object never passes through `detachBuffer`, so it reaches the upload with an empty
+/// part. The worker still hashes that (empty) part before sending, so the request carries the
+/// checksum of an empty payload -- a well-defined constant for every algorithm. Without it the
+/// request would go out with an empty `Content-MD5`, or an empty `x-amz-checksum-*` that the SDK
+/// takes as "already provided" and sends as is.
+TEST_F(WBS3Test, EmptyObjectCarriesTheChecksumOfAnEmptyPayload)
+{
+    auto injection = std::make_shared<MockS3::ChecksumRecordingInjection>();
+    setInjectionModel(injection);
+
+    auto buffer = getWriteBuffer("checksum_empty_object");
+    /// Nothing is written: the buffer is finalized with zero bytes.
+    getAsyncPolicy().setAutoExecute(true);
+    buffer->finalize();
+
+    /// `operator[]` inserts a default-constructed entry, so check presence first: the upload must
+    /// really have stored an object, and that object must be empty.
+    const auto & stored_objects = client->store->GetBucketStore(bucket).objects;
+    ASSERT_TRUE(stored_objects.contains("checksum_empty_object"));
+    ASSERT_TRUE(stored_objects.at("checksum_empty_object").empty());
+
+    if (DB::OpenSSLInitializer::instance().isFIPSEnabled())
+    {
+        /// MD5 is unavailable under FIPS, so no checksum is computed or attached -- the historical behavior.
+        ASSERT_TRUE(injection->put_object_content_md5.empty());
+        return;
+    }
+
+    ASSERT_EQ(
+        injection->put_object_content_md5,
+        Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateMD5(Aws::String())));
+}
+
+/// The flexible-checksum twin of the test above: with an explicit algorithm the empty payload must
+/// carry `x-amz-checksum-*` of the empty string rather than an empty header value.
+TEST_F(WBS3Test, EmptyObjectCarriesTheFlexibleChecksumOfAnEmptyPayload)
+{
+    auto injection = std::make_shared<MockS3::ChecksumRecordingInjection>();
+    setInjectionModel(injection);
+
+    getSettings()[Setting::s3_upload_checksum_algorithm] = "CRC32";
+
+    auto buffer = getWriteBuffer("checksum_empty_object_crc32");
+    getAsyncPolicy().setAutoExecute(true);
+    buffer->finalize();
+
+    const auto & stored_objects = client->store->GetBucketStore(bucket).objects;
+    ASSERT_TRUE(stored_objects.contains("checksum_empty_object_crc32"));
+    ASSERT_TRUE(stored_objects.at("checksum_empty_object_crc32").empty());
+
+    ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::CRC32, injection->put_object_algorithm);
+    ASSERT_FALSE(injection->put_object_crc32_checksum.empty());
+    ASSERT_EQ(
+        injection->put_object_crc32_checksum,
+        Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateCRC32(Aws::String())));
+}
+
+/// The MD5 of a part is derived from the staged buffer right before the part is sent, so a multipart
+/// upload produces exactly one hash per part and the SDK never falls back to scanning the body
+/// itself. Counting `Update`/`Calculate` on the SDK's MD5 implementation pins both halves: the
+/// value is produced from the staged buffer, and the SDK adopts the attached header.
+TEST_F(WBS3Test, MultipartChecksumIsHashedOncePerPart)
+{
+    if (DB::OpenSSLInitializer::instance().isFIPSEnabled())
+        return;
+
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0;
+    getSettings()[Setting::s3_min_upload_part_size] = 10;
+
+    /// Constructed before the counter: `HashingUtils::CalculateMD5` in the expectations below would
+    /// otherwise be counted as an SDK-side whole-body computation.
+    auto expected_md5 = Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateMD5(Aws::String(10, 'a')));
+
+    MockS3::ScopedMD5UpdateCounter md5_counter;
+
+    auto injection = std::make_shared<MockS3::ChecksumRecordingInjection>();
+    setInjectionModel(injection);
+
+    auto buffer = getWriteBuffer("checksum_incremental_multipart");
+    /// Three parts of ten 'a's each, so every part's MD5 is the same known value.
+    writeAsOneBlock(*buffer, 30);
+
+    getAsyncPolicy().setAutoExecute(true);
+    buffer->finalize();
+
+    /// Each part's value is the MD5 of exactly its own bytes, and all of them came from `Update`.
+    ASSERT_EQ(injection->upload_part_content_md5s.size(), 3u);
+    ASSERT_THAT(injection->upload_part_content_md5s, testing::Each(expected_md5));
+    EXPECT_EQ(md5_counter.updateCalls(), injection->upload_part_content_md5s.size());
+
+    /// The SDK performed no whole-body MD5 of its own: it adopted the attached `Content-MD5`.
+    EXPECT_EQ(md5_counter.wholeBodyComputations(), 0u);
+}
+
+/// A part's checksum must be produced by the thread that sends it, not by the writer. The writer is a
+/// single thread shared by every part, so hashing there would make its throughput depend on the
+/// selected algorithm and cap the whole upload when parts are in flight in parallel.
+///
+/// The writer is exercised with the real async path (`SimpleAsyncTasks`, which queues the upload
+/// workers) and the check is that nothing was hashed while the parts were being written: after
+/// `preFinalize` the parts are staged but none has been sent, so the MD5 updates must still be zero.
+TEST_F(WBS3Test, ChecksumIsNotComputedOnTheWriterThread)
+{
+    if (DB::OpenSSLInitializer::instance().isFIPSEnabled())
+        return;
+
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0;
+    getSettings()[Setting::s3_min_upload_part_size] = 1;
+    getSettings()[Setting::s3_max_inflight_parts_for_one_file] = 0;
+
+    auto async_tasks = std::make_unique<MockS3::SimpleAsyncTasks>();
+    auto * async_tasks_ptr = async_tasks.get();
+    async_policy = std::move(async_tasks);
+
+    MockS3::ScopedMD5UpdateCounter md5_counter;
+
+    auto buffer = getWriteBuffer("checksum_not_on_writer_thread");
+    writeAsOneBlock(*buffer, 10);
+
+    /// Staging ran on this thread and nobody has sent anything yet.
+    buffer->preFinalize();
+    EXPECT_EQ(md5_counter.updateCalls(), 0u);
+
+    /// The upload workers hash each part when they run.
+    async_tasks_ptr->setAutoExecute(true);
+    buffer->finalize();
+    EXPECT_GT(md5_counter.updateCalls(), 0u);
+    EXPECT_EQ(md5_counter.wholeBodyComputations(), 0u);
 }
 
 TEST_F(WBS3Test, S3ExpressHonorsExplicitUploadChecksumAlgorithm)
@@ -1486,6 +1788,11 @@ TEST_F(WBS3Test, S3ExpressHonorsExplicitUploadChecksumAlgorithm)
 
     ASSERT_EQ(Aws::S3::Model::ChecksumAlgorithm::SHA256, injection->put_object_algorithm);
     ASSERT_TRUE(injection->put_object_request_checksum_required);
+    /// The value must be the precalculated SHA256 of the payload, not an empty placeholder the SDK
+    /// would treat as "already provided" and send as is.
+    ASSERT_EQ(
+        injection->put_object_sha256_checksum,
+        Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateSHA256(Aws::String(10, 'a'))));
 }
 
 TEST_P(SyncAsync, ExceptionOnCompleteMPU) {

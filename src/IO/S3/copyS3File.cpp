@@ -408,23 +408,31 @@ namespace
             normal_part_size = part_size;
         }
 
-        String prepareChecksums(Aws::AmazonWebServiceRequest & request) const
+        /// Adopts the checksum precalculated while the part body was staged. `makeUploadPartRequest`
+        /// has already attached it to the request, so there is nothing to compute over the body here;
+        /// the value is only recorded for `CompleteMultipartUpload`, which requires the per-part
+        /// checksums to be listed. Returns an empty string when no flexible checksum is in use.
+        String collectPrecalculatedChecksum(Aws::AmazonWebServiceRequest & request) const
         {
             if (!usesFlexibleUploadChecksumHeader())
                 return {};
 
-            auto & upload_part_request = typeid_cast<S3::UploadPartRequest &>(request);
-
-            upload_part_request.setUploadChecksumAlgorithm(*upload_checksum_algorithm);
-
-            auto checksum = S3::RequestChecksum::calculateFlexibleChecksum(upload_part_request, *upload_checksum_algorithm);
-            S3::RequestChecksum::setChecksum(upload_part_request, *upload_checksum_algorithm, checksum);
-            return checksum;
+            const auto & upload_part_request = typeid_cast<const S3::UploadPartRequest &>(request);
+            return S3::RequestChecksum::getChecksum(upload_part_request, *upload_checksum_algorithm);
         }
 
         bool usesFlexibleUploadChecksumHeader() const
         {
             return upload_checksum_algorithm && S3::RequestChecksum::usesFlexibleChecksumHeader(*upload_checksum_algorithm);
+        }
+
+        /// The algorithm for the checksum precalculated in the same pass that stages the part, or
+        /// `nullopt` when no checksum applies (GCS under the `Content-MD5` fallback, FIPS, or an
+        /// algorithm the environment rejects). Always derived from `upload_checksum_algorithm` so the
+        /// staged checksum and the request's own checksum fields cannot disagree.
+        std::optional<S3::RequestChecksum::Algorithm> getPrecalculatedChecksumAlgorithm() const
+        {
+            return S3::RequestChecksum::getPrecalculatedChecksumAlgorithm(upload_checksum_algorithm);
         }
 
         void processUploadTask(UploadPartTask & task, String & part_tag, String & part_checksum)
@@ -437,7 +445,7 @@ namespace
                 Stopwatch watch;
 
                 auto request = makeUploadPartRequest(task.part_number, task.part_offset, task.part_size);
-                auto checksum = prepareChecksums(*request);
+                auto checksum = collectPrecalculatedChecksum(*request);
                 auto tag = processUploadPartRequest(*request, task.part_size);
 
                 watch.stop();
@@ -445,8 +453,8 @@ namespace
                 ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, watch.elapsedMicroseconds());
 
                 part_tag = std::move(tag);
-                /// Empty unless a flexible checksum was requested; `prepareChecksums` guarantees a
-                /// non-empty value in that case (it throws otherwise), so there is nothing to re-check here.
+                /// Empty unless a flexible checksum was requested; the request builder guarantees a
+                /// non-empty value in that case, so there is nothing to re-check here.
                 part_checksum = std::move(checksum);
                 auto finished_count = ++num_finished_parts;
 
@@ -534,7 +542,8 @@ namespace
             request.SetBucket(dest_bucket);
             request.SetKey(dest_key);
             request.SetContentLength(size);
-            request.SetBody(createS3UploadBody(create_read_buffer, offset, size));
+            PrecalculatedUploadChecksum checksum;
+            request.SetBody(createS3UploadBody(create_read_buffer, offset, size, getPrecalculatedChecksumAlgorithm(), &checksum));
 
             if (object_metadata.has_value())
                 request.SetMetadata(object_metadata.value());
@@ -545,6 +554,8 @@ namespace
 
             if (usesFlexibleUploadChecksumHeader())
                 request.setUploadChecksumAlgorithm(*upload_checksum_algorithm);
+            if (!checksum.empty())
+                applyPrecalculatedUploadChecksum(request, *upload_checksum_algorithm, checksum);
 
             /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
             request.SetContentType("binary/octet-stream");
@@ -634,7 +645,13 @@ namespace
             request->SetPartNumber(static_cast<int>(part_number));
             request->SetUploadId(multipart_upload_id);
             request->SetContentLength(part_size);
-            request->SetBody(createS3UploadBody(create_read_buffer, part_offset, part_size));
+            PrecalculatedUploadChecksum checksum;
+            request->SetBody(createS3UploadBody(create_read_buffer, part_offset, part_size, getPrecalculatedChecksumAlgorithm(), &checksum));
+
+            if (usesFlexibleUploadChecksumHeader())
+                request->setUploadChecksumAlgorithm(*upload_checksum_algorithm);
+            if (!checksum.empty())
+                applyPrecalculatedUploadChecksum(*request, *upload_checksum_algorithm, checksum);
 
             /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
             request->SetContentType("binary/octet-stream");
@@ -933,7 +950,9 @@ namespace
 
 
 std::unique_ptr<StdStreamFromReadBuffer> createS3UploadBody(
-    const CreateReadBuffer & create_read_buffer, size_t offset, size_t size)
+    const CreateReadBuffer & create_read_buffer, size_t offset, size_t size,
+    const std::optional<S3::RequestChecksum::Algorithm> & checksum_algorithm,
+    PrecalculatedUploadChecksum * precalculated_checksum)
 {
     /// Read the part fully into memory and build the body from that owned copy. This decouples
     /// the read from the write: a source read failure happens here and is contained, while the
@@ -943,11 +962,53 @@ std::unique_ptr<StdStreamFromReadBuffer> createS3UploadBody(
     part_data.resize(size);
 
     LimitSeekableReadBuffer read_buffer(create_read_buffer(), offset, size);
+
+    /// Read the part fully into memory first, then hash the buffer that now holds it. Hashing after
+    /// the copy rather than from inside the copy loop is deliberate: an `Update` interleaved with the
+    /// `readStrict` that fills the next chunk is measurably slower (5-10% on this part, for every
+    /// algorithm, at every chunk size from 4 KiB to the whole part) than hashing the finished buffer,
+    /// because the interleaved version re-reads bytes the copy just wrote while they are still being
+    /// evicted, and pins the hash call inside the read loop. See the `BM_StagingShape` benchmark.
     read_buffer.readStrict(part_data.data(), size);
+
+    if (checksum_algorithm && precalculated_checksum)
+    {
+        /// A single `Update` over the whole staged part: the algorithm implementations read the
+        /// caller's bytes in place, so there is nothing to gain from chunking it (measured flat from
+        /// 4 KiB to the whole part).
+        precalculated_checksum->value = S3::RequestChecksum::calculateChecksum(*checksum_algorithm, part_data.data(), size);
+    }
 
     return std::make_unique<StdStreamFromReadBuffer>(
         std::make_unique<ReadBufferFromOwnString>(std::move(part_data)), size);
 }
+
+
+template <typename T>
+void applyPrecalculatedUploadChecksum(T & request, const S3::RequestChecksum::Algorithm & algorithm, const PrecalculatedUploadChecksum & checksum)
+{
+    switch (algorithm)
+    {
+        case S3::RequestChecksum::Algorithm::MD5:
+            /// The SDK computes `Content-MD5` by scanning the whole body before sending
+            /// (`AWSClient::AddContentBodyToRequest`), but skips that scan when the header is
+            /// already present. The value comes from the staging pass, so no separate pass is made
+            /// to produce it, on this attempt or on a retry. Set through the additional-headers
+            /// map, which the SDK lowercases to the canonical `content-md5`.
+            request.SetAdditionalCustomHeaderValue("Content-MD5", checksum.value);
+            return;
+        case S3::RequestChecksum::Algorithm::CRC32:
+        case S3::RequestChecksum::Algorithm::SHA256:
+            /// The smithy checksum interceptor adopts a provided `x-amz-checksum-*` value instead of
+            /// recomputing it from the body (`ChecksumInterceptor::handleProvidedChecksum`).
+            S3::RequestChecksum::setChecksum(request, algorithm, checksum.value);
+            return;
+    }
+    UNREACHABLE();
+}
+
+template void applyPrecalculatedUploadChecksum(S3::PutObjectRequest &, const S3::RequestChecksum::Algorithm &, const PrecalculatedUploadChecksum &);
+template void applyPrecalculatedUploadChecksum(S3::UploadPartRequest &, const S3::RequestChecksum::Algorithm &, const PrecalculatedUploadChecksum &);
 
 
 void copyDataToS3File(
