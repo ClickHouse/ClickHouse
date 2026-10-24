@@ -672,6 +672,9 @@ ReadSettings getUserFilesDiskReadSettings(ReadSettings settings)
     settings.use_page_cache_with_distributed_cache = false;
     settings.use_page_cache_for_local_disks = false;
     settings.use_page_cache_for_object_storage = false;
+    /// The key of the filesystem cache of a `cache` disk is the object path only, without a generation,
+    /// and a rewrite by another server sharing the disk does not invalidate the cache of this one.
+    settings.enable_filesystem_cache = false;
     if (settings.local_fs_settings.method == LocalFSReadMethod::mmap)
         settings.local_fs_settings.method = LocalFSReadMethod::pread;
     return settings;
@@ -4519,6 +4522,9 @@ SinkToStoragePtr StorageFile::write(
                         auto rel_pos = write_relative_path.find_first_of('.', rel_slash == std::string::npos ? 0 : rel_slash);
                         new_relative_path = write_relative_path.substr(0, rel_pos) + "." + std::to_string(index)
                             + (rel_pos == std::string::npos ? "" : write_relative_path.substr(rel_pos));
+                        /// Each candidate, and so the chosen destination, must not escape the disk root
+                        /// through a symlink: a dangling one does not exist, and writing would create its target.
+                        validateDiskRelativePathBoundary(write_disk, new_relative_path);
                     }
                     ++index;
                 }

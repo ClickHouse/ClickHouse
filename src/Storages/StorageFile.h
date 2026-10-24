@@ -56,7 +56,9 @@ bool isDiskRelativePathInsideRoot(const DiskPtr & disk, const String & relative_
 /// are mutable: `file` and `File` rewrite them in place, and so can anyone with access to the disk.
 /// The userspace page cache identifies a local file only by its path, so it would return stale bytes
 /// after a rewrite, and a concurrent truncation of a file read with `mmap` raises `SIGBUS`. Hence the
-/// page cache is disabled and `mmap` is replaced by `pread`, as the legacy local-file path does.
+/// page cache is disabled and `mmap` is replaced by `pread`, as the legacy local-file path does. The
+/// filesystem cache of a `cache` disk is keyed by the object path only, and a rewrite by another server
+/// sharing the disk would not invalidate it, so it is disabled too.
 ReadSettings getUserFilesDiskReadSettings(ReadSettings settings);
 
 struct ParquetCachedStatisticsFilter;
