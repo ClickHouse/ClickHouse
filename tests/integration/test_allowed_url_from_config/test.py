@@ -147,6 +147,43 @@ def test_azure_host_filter_before_client_creation(start_cluster, query):
     assert node5.query(container_requests) == before
 
 
+def test_object_storage_queue_move_destination_host_filter(start_cluster):
+    # The source is on an allowed host (`host:80`), so only the move destination can be rejected. `node1` has no
+    # Keeper, so a rejection with "not allowed" must come from the settings validation, which runs before any
+    # Keeper access.
+    s3_queue = (
+        "CREATE TABLE s3queue_move_host (x UInt8) "
+        "ENGINE = S3Queue('http://host:80/bucket/data/', 'key', 'secret', 'CSV') "
+        "SETTINGS mode = 'unordered', after_processing = 'move', "
+        "after_processing_move_uri = '{}', "
+        "after_processing_move_access_key_id = 'key', after_processing_move_secret_access_key = 'secret'"
+    )
+    azure_queue = (
+        "CREATE TABLE azurequeue_move_host (x UInt8) "
+        "ENGINE = AzureQueue('http://host:80', 'container', '*', 'account', 'YQ==', 'CSV') "
+        "SETTINGS mode = 'unordered', after_processing = 'move', "
+        "after_processing_move_connection_string = "
+        "'DefaultEndpointsProtocol=http;AccountName=account;AccountKey=YQ==;BlobEndpoint=http://host:123/account;', "
+        "after_processing_move_container = 'dst'"
+    )
+
+    try:
+        error = node1.query_and_get_error(s3_queue.format("http://host:123/bucket/"))
+        assert "not allowed" in error, error
+
+        error = node1.query_and_get_error(
+            azure_queue, settings={"azure_sdk_max_retries": 0}
+        )
+        assert "not allowed" in error, error
+
+        # Control: an allowed destination passes the host check and only fails later, on the missing Keeper.
+        error = node1.query_and_get_error(s3_queue.format("http://host:80/bucket/"))
+        assert "not allowed" not in error, error
+    finally:
+        node1.query("DROP TABLE IF EXISTS s3queue_move_host SYNC")
+        node1.query("DROP TABLE IF EXISTS azurequeue_move_host SYNC")
+
+
 def test_config_with_only_primary_hosts(start_cluster):
     assert (
         node2.query(

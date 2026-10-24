@@ -1,0 +1,26 @@
+table created
+-- ALTER with only ALTER SETTINGS
+settings that are not a destination: allowed
+-- ALTER with SELECT on the table, but no WRITE on S3
+-- ALTER ON CLUSTER is rejected by the initiator
+-- ALTER with WRITE on S3 limited by a URL filter
+-- ALTER with WRITE on S3
+destination with WRITE on S3: allowed
+empty destination without WRITE on S3: allowed
+-- ALTER with WRITE on S3, restricted by a row policy
+empty destination with a row policy: allowed
+-- ALTER through an Alias
+settings that are not a destination through an alias: allowed
+-- CREATE without WRITE on S3 or AZURE
+table without a destination: created
+-- CREATE AS with a destination, without WRITE on S3
+-- CREATE MATERIALIZED VIEW with a queue inner engine, without WRITE on S3
+-- CREATE AS ON CLUSTER with the legacy entry format, without WRITE on S3
+-- RESTORE of a queue with a destination, without WRITE on S3
+0
+0
+-- CREATE AS and CREATE MATERIALIZED VIEW with WRITE on S3
+CREATE AS with WRITE on S3: created
+materialized view with WRITE on S3: created
+RESTORE with WRITE on S3: restored
+RESTORE TEMPORARY with WRITE on S3: restored	1

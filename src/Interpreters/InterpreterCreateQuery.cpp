@@ -2348,6 +2348,13 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create, mode);
 
+    /// Only here is an engine inherited through `AS` known, and nothing is enqueued or created yet.
+    /// A replay of a stored definition was checked when it was created.
+    /// A definition from a backup is user input too, so it is checked under the restoring user
+    /// (`RestorerFromBackup` sets `setUnderRestore`; a replay on other replicas is not under restore).
+    if (isFreshTableDefinition(mode, create.attach_short_syntax) || getContext()->isUnderRestore())
+        checkExportAccess(create);
+
     /// The definition persisted below must not depend on the session setting, because reloads and
     /// replicas re-derive the key type from the stored text. This must happen after normalization:
     /// `CREATE TABLE ... AS` materializes copied columns and key expressions only there. A replayed
@@ -4103,6 +4110,21 @@ BlockIO InterpreterCreateQuery::execute()
                 /// getRequiredAccess sees no engine, because this query holds none of its own
                 if (inherited.storage && inherited.storage->engine)
                     getContext()->checkAccess(AccessType::TABLE_ENGINE, inherited.storage->engine->name);
+
+                /// setEngine copies only the outer engine of a `TimeSeries` source, and the worker copies
+                /// its inner engines while normalizing, so add the ones this query does not give itself
+                if (inherited.is_time_series_table)
+                {
+                    auto as_create_ptr = DatabaseCatalog::instance().getDatabase(inherited.as_database)->getCreateTableQuery(inherited.as_table, getContext());
+                    const auto & as_create = as_create_ptr->as<ASTCreateQuery &>();
+                    if (as_create.targets)
+                        for (const auto & target : as_create.targets->targets)
+                            if (target.inner_engine && !inherited.getTargetInnerEngine(target.kind))
+                                inherited.setTargetInnerEngine(target.kind, target.inner_engine->clone());
+                }
+
+                /// the worker inherits the move destination of the source too, and runs with no user
+                checkExportAccess(inherited);
             }
 
             /// This branch ships the query text as written, and `OLDEST_VERSION` also ships no settings,
@@ -4231,7 +4253,20 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
     if (create.has_attach_from_path)
         required_access.emplace_back(AccessType::READ | AccessType::WRITE, toStringSource(AccessTypeObjects::Source::FILE));
 
+    /// Settings that send the table's data elsewhere, e.g. the move destination of a queue, need the grants of that place.
+    required_access.append_range(StorageFactory::instance().getExportAccess(create));
+
     return required_access;
+}
+
+void InterpreterCreateQuery::checkExportAccess(const ASTCreateQuery & create) const
+{
+    /// Internal queries (initiated by the server itself) always have access to everything.
+    /// Except `RESTORE`: it creates tables with internal queries, but the definitions come from the backup.
+    if (internal && !getContext()->isUnderRestore())
+        return;
+
+    getContext()->checkAccess(StorageFactory::instance().getExportAccess(create));
 }
 
 void InterpreterCreateQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr) const

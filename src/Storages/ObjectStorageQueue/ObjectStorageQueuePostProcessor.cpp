@@ -14,6 +14,7 @@
 #include <IO/WriteSettings.h>
 #include <Interpreters/Context.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueuePostProcessor.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueMoveDestinationAccess.h>
 #include <base/scope_guard.h>
 
 #include <chrono>
@@ -52,6 +53,7 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString google_adc_client_id;
     extern const S3AuthSettingsString google_adc_client_secret;
     extern const S3AuthSettingsString google_adc_refresh_token;
+    extern const S3AuthSettingsS3UriStyle uri_style;
 }
 
 #endif
@@ -362,6 +364,10 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not enough settings to move S3 objects");
         }
 
+        /// The settings are checked at `CREATE` and `ALTER` too. This is defense in depth for a table that was created before
+        /// those checks existed, or before the list of allowed hosts was tightened. If it throws, nothing is copied and nothing is removed.
+        checkObjectStorageQueueS3MoveDestinationHost(move_uri, getContext()->getRemoteHostFilter());
+
         if (auto * s3_storage = dynamic_cast<S3ObjectStorage * >(object_storage.get()); s3_storage != nullptr)
         {
             auto src_client = s3_storage->getS3StorageClient();
@@ -392,6 +398,10 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
             /// headers and SSE-C/SSE-KMS keys) merged from the server `<s3>` config: otherwise the server's
             /// headers or encryption keys would be sent to the user-supplied move destination.
             s3_settings->auth_settings.clearServerManagedRequestAuth();
+            /// The host check and `dst_uri` below parse `move_uri` with automatic style detection. The client must use the same
+            /// parse, so the URI style of the server `<s3>` config or of the `s3_uri_style` query setting must not apply here:
+            /// otherwise the requests can go to a host that `checkObjectStorageQueueS3MoveDestinationHost` did not check.
+            s3_settings->auth_settings[S3AuthSetting::uri_style] = S3UriStyle::AUTO;
             std::shared_ptr<S3::Client> dst_client = getClient(
                 move_uri,
                 *s3_settings,
@@ -488,6 +498,9 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not enough settings to move Azure blobs");
         }
+
+        /// See the comment in `moveS3Objects`: if it throws, nothing is copied and nothing is removed.
+        checkObjectStorageQueueAzureMoveDestinationHost(move_connection_string, move_container, getContext()->getRemoteHostFilter());
 
         if (auto * azure_storage = dynamic_cast<AzureObjectStorage * >(object_storage.get()); azure_storage != nullptr)
         {
