@@ -129,6 +129,7 @@ namespace DB
     DECLARE(Bool, join_runtime_filter_from_fixed_hash_table, true, R"(When the hash join build side was converted to a FixedHashMap (see `enable_join_fixed_hash_table_conversion`), use that hash map directly as the runtime filter.)", 0) \
     DECLARE(Bool, enable_hash_join_row_store, true, "Enable transforming the payload of a hash join into a row-major layout.", 0) \
     DECLARE(Double, min_rows_ratio_for_hash_join_row_store, 3.0, "Minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed.", 0) \
+    DECLARE(UInt64, min_string_column_bytes_for_hash_join_row_store, 8_MiB, "Minimum estimated size of a build-side `String` column, the estimated number of rows multiplied by the average value size from statistics, to store it in the hash join row store. 0 means the size is not checked.", 0) \
 
 
 // clang-format on

@@ -1102,7 +1102,8 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             .estimated_rows = rel.estimated_rows,
             .source = rel.source,
             .imprecise_estimate = rel.imprecise_estimate,
-            .composite = rel.composite};
+            .composite = rel.composite,
+            .column_stats = rel.column_stats};
 
         if (isMissingStatisticsSource(rel.source))
             relations_without_statistics.push_back(rel.table_name.empty() ? fmt::format("table{}", i) : rel.table_name);
@@ -1465,7 +1466,8 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                 .name = join_step->getReadableRelationName(),
                 .estimated_rows = entry->estimated_rows,
                 .imprecise_estimate = imprecise_estimate,
-                .composite = true};
+                .composite = true,
+                .column_stats = entry->column_stats};
 
             join_step->setOptimized(entry->estimated_rows, entry->column_stats, imprecise_estimate, entry->cost, entry->selectivity, cluster_id);
 

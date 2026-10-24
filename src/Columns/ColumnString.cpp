@@ -11,6 +11,8 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
+#include <base/PackedStringRef.h>
+#include <base/unaligned.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/Function.h>
@@ -404,6 +406,46 @@ void ColumnString::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn:
     in.ignore(serialize_string_with_zero_byte);
 
     offsets.push_back(new_size);
+}
+
+void ColumnString::fillFromRowStorePtrs(const DataTypePtr &, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t, size_t begin, size_t count, PaddedPODArray<UInt8> * null_map)
+{
+    auto row_at = [&](size_t i)
+    {
+        return row_store_ptrs.base_ptr ? row_store_ptrs.base_ptr + (begin + i) * row_store_ptrs.row_length : row_store_ptrs.ptrs[begin + i];
+    };
+
+    /// A nullable field keeps its null byte right before the ref.
+    const size_t offset = null_map ? field_offset + 1 : field_offset;
+
+    UInt8 * out_null_map = nullptr;
+    if (null_map)
+    {
+        const size_t old_size = null_map->size();
+        null_map->resize(old_size + count);
+        out_null_map = null_map->data() + old_size;
+    }
+
+    const size_t old_rows = offsets.size();
+    offsets.resize(old_rows + count);
+    UInt64 * out_offsets = offsets.data() + old_rows;
+    UInt64 offsets_cursor = offsets[static_cast<ssize_t>(old_rows) - 1];
+    for (size_t i = 0; i < count; ++i)
+    {
+        const char * row = row_at(i);
+        if (out_null_map)
+            out_null_map[i] = static_cast<UInt8>(row[field_offset]);
+        offsets_cursor += unalignedLoad<UnhashedPackedStringRef>(row + offset).size();
+        out_offsets[i] = offsets_cursor;
+    }
+
+    const size_t old_chars = chars.size();
+    if (offsets_cursor == old_chars)
+        return;
+    chars.resize(offsets_cursor);
+    UInt8 * out_chars = chars.data() + old_chars;
+    for (size_t i = 0; i < count; ++i)
+        out_chars = unalignedLoad<UnhashedPackedStringRef>(row_at(i) + offset).copyTo(out_chars);
 }
 
 ColumnPtr ColumnString::index(const IColumn & indexes, size_t limit) const

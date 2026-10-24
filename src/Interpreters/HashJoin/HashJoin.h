@@ -789,7 +789,6 @@ private:
     template <bool is_signed, typename Key, typename MapsTemplate>
     void tryConvertToFixedHashMapImpl(MapsTemplate & maps);
 
-    bool isRowStoreSupported() const;
 
     void reinitUsedFlags();
 

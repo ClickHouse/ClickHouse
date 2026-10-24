@@ -17,6 +17,8 @@
 #include <Common/assert_cast.h>
 #include <Common/memcpySmall.h>
 #include <Common/typeid_cast.h>
+#include <base/PackedStringRef.h>
+#include <base/unaligned.h>
 
 #include <algorithm>
 #include <cstring>
@@ -462,11 +464,8 @@ void gatherNullableRows(
             });
         return;
     }
-    /// A row store holds nothing but fixed-width values, so only a column-major node gets here.
-    chassert(!row_store_row_length);
-    gatherFixedDispatch<false>(
-        dst.getNullMapColumn(), node.data_by_block.data(), 1, std::nullopt, words, words + count, count, &null_map_default);
-    gatherNodeRows(dst.getNestedColumn(), nested, words, count);
+    gatherFixedDispatch<false>(dst.getNullMapColumn(), node.data_by_block.data(), 1, row_store_row_length, words, words + count, count, &null_map_default);
+    gatherNodeRows(dst.getNestedColumn(), nested, words, count, row_store_row_length);
 }
 
 /// The characters of `gatherStringRows`, one copy per run of consecutive rows of one block. `row_no`
@@ -579,6 +578,100 @@ void gatherStringRows(ColumnString & dst, const GatherNode & node, const UInt64 
     UInt8 * const out_chars = dst_chars.data() + old_chars;
     UInt8 * const out_chars_end = dst_chars.data() + dst_chars.size();
     gatherStringChars(out_chars, out_chars_end, words, count, offsets_by_block, chars_by_block);
+}
+
+/// A row store string column is gathered in two steps. While the batches run we copy only the
+/// 16-byte refs out of the rows, so we know the total size of the chars when the batches are done
+/// and can allocate them exactly once, instead of growing them batch by batch.
+struct RowStoreStringRefs
+{
+    ColumnString * strings = nullptr;
+    IColumn * null_map = nullptr;
+    const GatherNode * null_node = nullptr;
+    const GatherNode * value_node = nullptr;
+    size_t row_length = 0;
+    PaddedPODArray<UnhashedPackedStringRef> values;
+    UInt64 cursor = 0;
+    size_t staged_rows = 0;
+};
+
+RowStoreStringRefs initRowStoreStringRefs(IColumn & column, const GatherNode & node, size_t rows, size_t row_length)
+{
+    RowStoreStringRefs refs;
+    refs.value_node = node.kind == GatherNode::Kind::Nullable ? &node.children.front() : &node;
+    chassert(refs.value_node->kind == GatherNode::Kind::String);
+    refs.row_length = row_length;
+    if (node.kind == GatherNode::Kind::Nullable)
+    {
+        auto & nullable_column = assert_cast<ColumnNullable &>(column);
+        refs.null_map = &nullable_column.getNullMapColumn();
+        refs.null_node = &node;
+        refs.strings = &assert_cast<ColumnString &>(nullable_column.getNestedColumn());
+    }
+    else
+        refs.strings = &assert_cast<ColumnString &>(column);
+
+    refs.values.resize(rows);
+    refs.cursor = refs.strings->getChars().size();
+    return refs;
+}
+
+void gatherColumnStringOffsetsAndRefs(RowStoreStringRefs & refs, const UInt64 * words, size_t count)
+{
+    if (refs.null_map)
+        gatherFixedDispatch<false>(
+            *refs.null_map, refs.null_node->data_by_block.data(), 1, refs.row_length, words, words + count, count, &null_map_default);
+
+    const void * const * values_by_block = refs.value_node->data_by_block.data();
+    auto value_at = [&](UInt64 word)
+    {
+        return static_cast<const char *>(values_by_block[refWordBlockNo(word)]) + static_cast<size_t>(refWordRowNo(word)) * refs.row_length;
+    };
+
+    ColumnString::Offsets & offsets = refs.strings->getOffsets();
+    const size_t old_rows = offsets.size();
+    offsets.resize(old_rows + count);
+    UnhashedPackedStringRef * batch_values = refs.values.data() + refs.staged_rows;
+    UInt64 * batch_offsets = offsets.data() + old_rows;
+    UInt64 batch_cursor = refs.cursor;
+    for (size_t i = 0; i < count; ++i)
+    {
+        if (i + look_ahead < count)
+        {
+            const UInt64 ahead = words[i + look_ahead];
+            if (ahead)
+                __builtin_prefetch(value_at(ahead));
+        }
+        const UInt64 word = words[i];
+        if (word)
+        {
+            batch_values[i] = unalignedLoad<UnhashedPackedStringRef>(value_at(word));
+            batch_cursor += batch_values[i].size();
+        }
+        else
+            batch_values[i] = {}; /// An unmatched row is the empty string.
+        batch_offsets[i] = batch_cursor;
+    }
+    refs.cursor = batch_cursor;
+    refs.staged_rows += count;
+}
+
+void gatherColumnStringChars(RowStoreStringRefs & refs)
+{
+    ColumnString::Chars & chars = refs.strings->getChars();
+    const size_t old_chars = chars.size();
+    if (refs.cursor == old_chars)
+    {
+        refs.values = {};
+        return;
+    }
+    chars.resize_exact(refs.cursor);
+    UInt8 * out_chars = chars.data() + old_chars;
+    for (size_t i = 0; i < refs.staged_rows; ++i)
+        out_chars = refs.values[i].copyTo(out_chars);
+    chassert(out_chars == chars.data() + chars.size());
+    /// Free the refs right away, the next column still has its own.
+    refs.values = {};
 }
 
 void gatherArrayRows(ColumnArray & dst, const GatherNode & node, const UInt64 * words, size_t count)
@@ -1083,28 +1176,40 @@ void resolveRowStoreGatherNode(
         if (static_cast<bool>(emit_nullable) != access.is_nullable)
             throwTypeDisagrees(*type, emit_column_ref);
         const IColumn & value_column = emit_nullable ? emit_nullable->getNestedColumn() : emit_column_ref;
-        if (!value_column.isFixedAndContiguous() || value_column.sizeOfValueIfFixed() != value_size)
+        if (access.is_string)
+        {
+            if (!typeid_cast<const ColumnString *>(&value_column) || value_size != sizeof(UnhashedPackedStringRef))
+                throwNoGatherKernel(*type, emit_column_ref, "the row store holds it as an `UnhashedPackedStringRef`");
+        }
+        else if (!value_column.isFixedAndContiguous() || value_column.sizeOfValueIfFixed() != value_size)
             throwNoGatherKernel(*type, emit_column_ref, "the row store holds it at another width");
 
         node.column_type = &typeid(emit_column_ref);
-        node.kind = access.is_nullable ? Nullable : Fixed;
         node.data_by_block.resize(num_blocks);
         if (access.is_nullable)
         {
+            node.kind = Nullable;
             node.children.resize(1);
             GatherNode & nested = node.children[0];
             nested.column_type = &typeid(value_column);
-            nested.kind = Fixed;
+            nested.kind = access.is_string ? String : Fixed;
             nested.stride = value_size;
             nested.data_by_block.resize(num_blocks);
-            nested.default_pattern = fixedDefaultPattern(value_column, /*type=*/ nullptr);
-            chassert(nested.default_pattern.size() == nested.stride);
+            if (!access.is_string)
+            {
+                nested.default_pattern = fixedDefaultPattern(value_column, /*type=*/ nullptr);
+                chassert(nested.default_pattern.size() == nested.stride);
+            }
         }
         else
         {
+            node.kind = access.is_string ? String : Fixed;
             node.stride = value_size;
-            node.default_pattern = fixedDefaultPattern(value_column, type.get());
-            chassert(node.default_pattern.size() == node.stride);
+            if (!access.is_string)
+            {
+                node.default_pattern = fixedDefaultPattern(value_column, type.get());
+                chassert(node.default_pattern.size() == node.stride);
+            }
         }
     }
     else
@@ -1157,6 +1262,15 @@ void gatherJoinOutputColumns(
         scratch.flat.resize(std::min(batch_rows, selection.rows));
 
     const UInt64 * flat = flatten_per_batch ? nullptr : flatWords(selection, /*remap_by_block=*/ nullptr, scratch);
+
+    auto is_string_node = [](const GatherNode & node)
+    {
+        const GatherNode & value_node = node.kind == GatherNode::Kind::Nullable ? node.children.front() : node;
+        return value_node.kind == GatherNode::Kind::String;
+    };
+
+    std::vector<std::optional<RowStoreStringRefs>> string_refs(gather.size());
+
     FlatWordCursor cursor{selection, scratch.flat.data()};
     for (size_t batch_begin = 0; batch_begin < selection.rows; batch_begin += batch_rows)
     {
@@ -1172,11 +1286,22 @@ void gatherJoinOutputColumns(
                 continue;
             /// Sized once for the whole selection, as every batch appends to the same column.
             if (batch_begin == 0)
+            {
                 columns[dst_idx]->reserve(columns[dst_idx]->size() + selection.rows);
+                if (is_string_node(*gather[dst_idx].node))
+                    string_refs[dst_idx] = initRowStoreStringRefs(*columns[dst_idx], *gather[dst_idx].node, selection.rows, *row_store_row_length);
+            }
 
-            gatherColumn(*columns[dst_idx], gather[dst_idx], batch, batch_scratch, row_store_row_length);
+            if (string_refs[dst_idx])
+                gatherColumnStringOffsetsAndRefs(*string_refs[dst_idx], words, rows);
+            else
+                gatherColumn(*columns[dst_idx], gather[dst_idx], batch, batch_scratch, row_store_row_length);
         }
     }
+
+    for (auto & refs : string_refs)
+        if (refs)
+            gatherColumnStringChars(*refs);
 }
 
 }
