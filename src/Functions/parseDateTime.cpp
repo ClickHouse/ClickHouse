@@ -25,6 +25,7 @@
 #include <boost/algorithm/string/case_conv.hpp>
 
 #include <expected>
+#include <limits>
 
 
 namespace DB
@@ -34,6 +35,7 @@ namespace Setting
     extern const SettingsBool formatdatetime_parsedatetime_m_is_month_name;
     extern const SettingsBool parsedatetime_parse_without_leading_zeros;
     extern const SettingsBool parsedatetime_e_requires_space_padding;
+    extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
 }
 
 namespace ErrorCodes
@@ -568,11 +570,14 @@ namespace
             return res;
         }
 
+        /// Calculate epoch seconds before applying DateTime's UInt32 range policy.
+        /// Named Joda timezones need this value while resolving their offset.
         [[nodiscard]]
-        Int64OrError buildDateTime(const DateLUTImpl & time_zone)
+        Int64OrError buildDateTimeUnbounded(const DateLUTImpl & time_zone) const
         {
-            if (is_hour_of_half_day && !is_am)
-                hour += 12;
+            /// This method also runs while resolving named Joda timezones.
+            /// Do not apply the PM offset to the stored hour twice.
+            const Int32 hour_of_day = hour + (is_hour_of_half_day && !is_am ? 12 : 0);
 
             // Convert the parsed date/time into a timestamp.
             Int32 days_since_epoch = 0;
@@ -583,19 +588,48 @@ namespace
             else
                 ASSIGN_RESULT_OR_RETURN_ERROR(days_since_epoch, daysSinceEpochFromDate(year, month, day))
 
-            Int64 seconds_since_epoch = days_since_epoch * 86400UZ + hour * 3600UZ + minute * 60UZ + second;
+            const Int64 seconds_since_epoch = days_since_epoch * 86400UZ + hour_of_day * 3600UZ + minute * 60UZ + second;
 
-            /// Time zone is not specified, use local time zone
-            if (!has_time_zone_offset)
-                time_zone_offset = time_zone.timezoneOffset(seconds_since_epoch);
+            /// Inline offsets belong to the parsed value; otherwise, resolve a temporary offset.
+            const Int64 offset_seconds = has_time_zone_offset ? time_zone_offset : time_zone.timezoneOffset(seconds_since_epoch);
+            return seconds_since_epoch - offset_seconds;
+        }
 
-            /// Time zone is specified in format string.
-            seconds_since_epoch -= time_zone_offset;
-            if constexpr (return_type == ReturnType::DateTime)
-                if (seconds_since_epoch < 0)
-                    RETURN_ERROR(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Seconds since epoch is negative")
+        [[nodiscard]]
+        static Int64OrError applyDateTimeOverflowBehavior(
+            Int64 seconds_since_epoch, FormatSettings::DateTimeOverflowBehavior overflow_behavior)
+        {
+            constexpr Int64 max_datetime_seconds = std::numeric_limits<UInt32>::max();
+            if (seconds_since_epoch >= 0 && seconds_since_epoch <= max_datetime_seconds)
+                return seconds_since_epoch;
+
+            if (overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+                RETURN_ERROR(
+                    ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                    "Seconds since epoch {} is out of DateTime range",
+                    seconds_since_epoch)
+
+            if (overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+                return seconds_since_epoch < 0 ? 0 : max_datetime_seconds;
+
+            /// Ignore retains the original rejection of negative timestamps and UInt32 wrapping of positive overflow.
+            if (seconds_since_epoch < 0)
+                RETURN_ERROR(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Seconds since epoch is negative")
 
             return seconds_since_epoch;
+        }
+
+        [[nodiscard]]
+        Int64OrError buildDateTime(const DateLUTImpl & time_zone, FormatSettings::DateTimeOverflowBehavior overflow_behavior) const
+        {
+            Int64OrError result = buildDateTimeUnbounded(time_zone);
+            if (!result.has_value())
+                return result;
+
+            if constexpr (return_type == ReturnType::DateTime)
+                return applyDateTimeOverflowBehavior(*result, overflow_behavior);
+
+            return result;
         }
     };
 
@@ -607,6 +641,7 @@ namespace
         const bool mysql_M_is_month_name;
         const bool mysql_parse_ckl_without_leading_zeros;
         const bool mysql_e_requires_space_padding;
+        const FormatSettings::DateTimeOverflowBehavior overflow_behavior;
 
         static constexpr auto name = Name::name;
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionParseDateTimeImpl>(context); }
@@ -615,6 +650,7 @@ namespace
             : mysql_M_is_month_name(context->getSettingsRef()[Setting::formatdatetime_parsedatetime_m_is_month_name])
             , mysql_parse_ckl_without_leading_zeros(context->getSettingsRef()[Setting::parsedatetime_parse_without_leading_zeros])
             , mysql_e_requires_space_padding(context->getSettingsRef()[Setting::parsedatetime_e_requires_space_padding])
+            , overflow_behavior(context->getSettingsRef()[Setting::date_time_overflow_behavior].value)
         {
         }
 
@@ -820,7 +856,7 @@ namespace
 
                 if (result.has_value())
                 {
-                    if (result = datetime.buildDateTime(time_zone); result.has_value())
+                    if (result = datetime.buildDateTime(time_zone, overflow_behavior); result.has_value())
                     {
                         if constexpr (return_type == ReturnType::DateTime)
                             res_data[i] = static_cast<UInt32>(*result);
@@ -1842,7 +1878,9 @@ namespace
             {
                 std::string_view read_time_zone{cur, end};
                 const DateLUTImpl & date_time_zone = DateLUT::instance(read_time_zone);
-                const auto result = parsed_value.buildDateTime(date_time_zone);
+                /// Resolve the named timezone without enforcing the final DateTime range.
+                /// Saturation must happen only after the parsed timezone offset is applied.
+                const auto result = parsed_value.buildDateTimeUnbounded(date_time_zone);
                 if (result.has_value())
                 {
                     const DateLUTImpl::Time timezone_offset = date_time_zone.timezoneOffset(*result);
