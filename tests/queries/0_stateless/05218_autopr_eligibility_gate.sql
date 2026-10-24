@@ -31,7 +31,6 @@ CREATE TABLE t_autopr_gate_hop ENGINE = Alias('v_autopr_gate');
 INSERT INTO t_autopr_gate SELECT number, number % 100 FROM numbers(10000);
 INSERT INTO t_autopr_gate_2 SELECT number, number % 10 FROM numbers(1000);
 
-SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
 SET cluster_for_parallel_replicas = 'parallel_replicas';
 SET max_parallel_replicas = 3;
