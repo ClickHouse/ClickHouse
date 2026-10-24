@@ -11342,6 +11342,23 @@ Sets the evaluation time to be used with promql dialect, as a Unix timestamp in 
         {"25.9", Field{"auto"}, Field{"auto"}, "The setting was renamed. The previous name is `evaluation_time`."}, \
         {"25.8", Field{"auto"}, Field{"auto"}, "New experimental setting. At the time the setting was named `evaluation_time`, which is now an alias of it."}) \
     \
+    DECLARE(Double, promql_lookback_delta, 300, R"(
+The lookback period of PromQL instant selectors, in seconds: an instant selector returns the latest sample newer than this.
+Applies to the `promql` dialect, the `prometheusQuery` and `prometheusQueryRange` table functions and the Prometheus HTTP API,
+where a non-zero `lookback_delta` URL parameter takes priority. It is the same as the `--query.lookback-delta` flag of Prometheus:
+0 means the default of 5 minutes. The value is kept to the microsecond, so a value below 1 microsecond also means the default.
+A negative value is an error.
+)", PRIVATE_PREVIEW, \
+        {"26.11", 300, 300, "New setting."}) \
+    \
+    DECLARE(Double, promql_default_subquery_step, 15, R"(
+The step of PromQL subqueries written without one, such as `max_over_time(rate(x[1m])[30m:])`, in seconds.
+Applies to the `promql` dialect, the `prometheusQuery` and `prometheusQueryRange` table functions and the Prometheus HTTP API.
+0 means the default of 15 seconds. Prometheus uses its global `evaluation_interval` here, which is 1 minute by default.
+The value is kept to the microsecond, so a value below 1 microsecond also means the default. A negative value is an error.
+)", PRIVATE_PREVIEW, \
+        {"26.11", 15, 15, "New setting."}) \
+    \
     DECLARE(Bool, promql_push_down_label_matchers, true, R"(
 Copies the label matchers of one side of a PromQL binary operator to the selectors of the other side for the labels the operator matches series by, so `b / on(job) a{job="x"}` reads only the series of `b` with `job="x"`.
 A matcher is not copied where the series it filters out could make Prometheus report duplicate series: into the "one" side of the operator unless it is an aggregation by the matched labels, into an operator between two vectors other than `and` and `unless`, and through a function over a range or an operator with a scalar unless its input is one metric selected by name.
