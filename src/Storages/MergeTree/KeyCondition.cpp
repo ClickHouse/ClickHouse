@@ -40,10 +40,13 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
 #include <DataTypes/transformTypesRecursively.h>
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
@@ -52,6 +55,7 @@
 #include <Interpreters/Set.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <base/itoa.h>
@@ -2005,6 +2009,225 @@ static std::optional<FieldRef> applyFunction(const FunctionBasePtr & func, size_
     return FieldRef(field.columns, field.row_idx, result_idx);
 }
 
+/// The members a value of the `Variant` or `Dynamic` type `type` may hold, each with its column if `column` holds the
+/// values, so that only the members actually held are returned. Returns nullopt when they are not known: for a
+/// `Dynamic` without its column. A value in the shared variant of a `Dynamic` is stored serialized, so only its type is
+/// returned, without a column.
+static std::optional<std::vector<std::pair<DataTypePtr, const IColumn *>>>
+tryGetHeldVariantMembers(const IDataType & type, const IColumn * column)
+{
+    const auto * variant_type = typeid_cast<const DataTypeVariant *>(&type);
+    const auto * variant_column = typeid_cast<const ColumnVariant *>(column);
+    const ColumnDynamic * dynamic_column = nullptr;
+    if (isDynamic(type))
+    {
+        dynamic_column = typeid_cast<const ColumnDynamic *>(column);
+        if (!dynamic_column)
+            return std::nullopt;
+        variant_type = assert_cast<const DataTypeVariant *>(dynamic_column->getVariantInfo().variant_type.get());
+        variant_column = &dynamic_column->getVariantColumn();
+    }
+
+    std::vector<std::pair<DataTypePtr, const IColumn *>> members;
+    const auto & alternatives = variant_type->getVariants();
+    for (size_t i = 0; i < alternatives.size(); ++i)
+    {
+        if (dynamic_column && i == dynamic_column->getSharedVariantDiscriminator())
+            continue;
+        const IColumn * alternative_column = variant_column ? &variant_column->getVariantByGlobalDiscriminator(i) : nullptr;
+        if (!alternative_column || !alternative_column->empty())
+            members.emplace_back(alternatives[i], alternative_column);
+    }
+
+    if (dynamic_column)
+    {
+        /// Each value of the shared variant starts with its binary encoded type, see `ColumnDynamic::getTypeAt`.
+        const auto & shared_variant = dynamic_column->getSharedVariant();
+        std::unordered_set<String> shared_type_names;
+        for (size_t i = 0; i < shared_variant.size(); ++i)
+        {
+            ReadBufferFromMemory buf(shared_variant.getDataAt(i));
+            auto shared_type = decodeDataType(buf);
+            if (shared_type_names.insert(shared_type->getName()).second)
+                members.emplace_back(std::move(shared_type), nullptr);
+        }
+    }
+    return members;
+}
+
+/// How `castMayDropFixedStringPadding` pairs the elements of two tuples: as `CAST` does, or by position, as a
+/// comparison and `convertFieldToType` do.
+enum class TuplePairing : uint8_t
+{
+    AsCast,
+    ByPosition,
+};
+
+/// A cast of a `FixedString` to `String` drops its trailing zero bytes, which changes how it compares. This also
+/// holds for a `FixedString` nested in an `Array`, a `Map`, a `Tuple` or a `Variant`, or held by a `Dynamic` value.
+/// The types are matched the way `CAST` converts them, with the tuple elements paired by `tuple_pairing`, so a
+/// `FixedString` that stays a `FixedString` does not count.
+/// Where the mapping is unknown, any `FixedString` or `Dynamic` in `from` and any `String` in `to` count.
+/// `from_column`, if given, holds the values to cast, and a `Variant` or `Dynamic` at any depth then only counts the
+/// members it actually holds. A `ColumnConst` hides them, so a constant is passed as its data column.
+static bool castMayDropFixedStringPadding(
+    const DataTypePtr & from_type, const DataTypePtr & to_type, const IColumn * from_column,
+    TuplePairing tuple_pairing = TuplePairing::AsCast)
+{
+    const auto from = removeLowCardinalityAndNullable(from_type);
+    const auto to = removeLowCardinalityAndNullable(to_type);
+    if (from->equals(*to) || !anyInTypeTree(*to, [](const IDataType & type) { return isString(type); }))
+        return false;
+
+    /// `LowCardinality` holds no `Variant` or `Dynamic`, so its column is not needed.
+    if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(from_column))
+        from_column = &nullable_column->getNestedColumn();
+
+    if (isVariant(from) || isDynamic(from))
+    {
+        const auto members = tryGetHeldVariantMembers(*from, from_column);
+        if (!members)
+            return true;
+        for (const auto & [member_type, member_column] : *members)
+            if (castMayDropFixedStringPadding(member_type, to, member_column, tuple_pairing))
+                return true;
+        return false;
+    }
+
+    const auto * from_array = typeid_cast<const DataTypeArray *>(from.get());
+    const auto * to_array = typeid_cast<const DataTypeArray *>(to.get());
+    if (from_array && to_array)
+    {
+        const auto * array_column = typeid_cast<const ColumnArray *>(from_column);
+        return castMayDropFixedStringPadding(
+            from_array->getNestedType(), to_array->getNestedType(), array_column ? &array_column->getData() : nullptr, tuple_pairing);
+    }
+
+    const auto * from_map = typeid_cast<const DataTypeMap *>(from.get());
+    const auto * to_map = typeid_cast<const DataTypeMap *>(to.get());
+    if (from_map && to_map)
+    {
+        const auto * map_column = typeid_cast<const ColumnMap *>(from_column);
+        return castMayDropFixedStringPadding(
+            from_map->getNestedType(), to_map->getNestedType(), map_column ? &map_column->getNestedColumn() : nullptr, tuple_pairing);
+    }
+
+    /// `CAST` pairs the elements of two tuples as in `FunctionCast::createTupleWrapper`: by name if both tuples are named
+    /// and share a name, where the unpaired elements are dropped or filled with defaults, otherwise by position.
+    const auto * from_tuple = typeid_cast<const DataTypeTuple *>(from.get());
+    const auto * to_tuple = typeid_cast<const DataTypeTuple *>(to.get());
+    if (from_tuple && to_tuple)
+    {
+        const auto & from_elements = from_tuple->getElements();
+        const auto & to_elements = to_tuple->getElements();
+        const auto * tuple_column = typeid_cast<const ColumnTuple *>(from_column);
+        auto pair_may_drop_padding = [&](size_t from_i, size_t to_i)
+        {
+            return castMayDropFixedStringPadding(
+                from_elements[from_i], to_elements[to_i], tuple_column ? &tuple_column->getColumn(from_i) : nullptr, tuple_pairing);
+        };
+
+        bool paired_by_name = false;
+        if (tuple_pairing == TuplePairing::AsCast && from_tuple->hasExplicitNames() && to_tuple->hasExplicitNames())
+        {
+            const auto & to_names = to_tuple->getElementNames();
+            for (size_t to_i = 0; to_i < to_names.size(); ++to_i)
+            {
+                if (auto from_i = from_tuple->tryGetPositionByName(to_names[to_i]))
+                {
+                    paired_by_name = true;
+                    if (pair_may_drop_padding(*from_i, to_i))
+                        return true;
+                }
+            }
+        }
+        if (paired_by_name)
+            return false;
+
+        /// Tuples of different sizes cannot be converted or compared, and `from` is judged as a whole below.
+        if (from_elements.size() == to_elements.size())
+        {
+            for (size_t i = 0; i < from_elements.size(); ++i)
+                if (pair_may_drop_padding(i, i))
+                    return true;
+            return false;
+        }
+    }
+
+    return anyInTypeTree(*from, [](const IDataType & type) { return isFixedString(type) || isDynamic(type); });
+}
+
+/// Whether `CAST` from `from_type` to `to_type` pairs the elements of two named tuples, at any depth, by name in another
+/// order than by position. A comparison pairs them by position, so a constant converted to the key type this way no
+/// longer names the value it is compared with. `from_column`, if given, holds the values to cast, and a `Variant` or
+/// `Dynamic` at any depth then only counts the members it actually holds. Without it, a `Dynamic` counts with any named
+/// tuple in `to_type`, as the tuples it holds are not known here.
+static bool castReordersTupleElements(const DataTypePtr & from_type, const DataTypePtr & to_type, const IColumn * from_column)
+{
+    const auto from = removeLowCardinalityAndNullable(from_type);
+    const auto to = removeLowCardinalityAndNullable(to_type);
+    if (from->equals(*to))
+        return false;
+
+    /// `LowCardinality` holds no `Variant` or `Dynamic`, so its column is not needed.
+    if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(from_column))
+        from_column = &nullable_column->getNestedColumn();
+
+    if (isVariant(from) || isDynamic(from))
+    {
+        const auto members = tryGetHeldVariantMembers(*from, from_column);
+        if (!members)
+            return anyInTypeTree(*to, [](const IDataType & type)
+            {
+                const auto * tuple = typeid_cast<const DataTypeTuple *>(&type);
+                return tuple && tuple->hasExplicitNames();
+            });
+        for (const auto & [member_type, member_column] : *members)
+            if (castReordersTupleElements(member_type, to, member_column))
+                return true;
+        return false;
+    }
+
+    const auto * from_array = typeid_cast<const DataTypeArray *>(from.get());
+    const auto * to_array = typeid_cast<const DataTypeArray *>(to.get());
+    if (from_array && to_array)
+    {
+        const auto * array_column = typeid_cast<const ColumnArray *>(from_column);
+        return castReordersTupleElements(
+            from_array->getNestedType(), to_array->getNestedType(), array_column ? &array_column->getData() : nullptr);
+    }
+
+    const auto * from_map = typeid_cast<const DataTypeMap *>(from.get());
+    const auto * to_map = typeid_cast<const DataTypeMap *>(to.get());
+    if (from_map && to_map)
+    {
+        const auto * map_column = typeid_cast<const ColumnMap *>(from_column);
+        return castReordersTupleElements(
+            from_map->getNestedType(), to_map->getNestedType(), map_column ? &map_column->getNestedColumn() : nullptr);
+    }
+
+    const auto * from_tuple = typeid_cast<const DataTypeTuple *>(from.get());
+    const auto * to_tuple = typeid_cast<const DataTypeTuple *>(to.get());
+    if (!from_tuple || !to_tuple)
+        return false;
+
+    /// See `FunctionCast::createTupleWrapper`: two named tuples that share a name are paired by name.
+    if (from_tuple->hasExplicitNames() && to_tuple->hasExplicitNames() && from_tuple->getElementNames() != to_tuple->getElementNames())
+    {
+        for (const auto & name : to_tuple->getElementNames())
+            if (from_tuple->tryGetPositionByName(name))
+                return true;
+    }
+
+    const auto & from_elements = from_tuple->getElements();
+    const auto & to_elements = to_tuple->getElements();
+    const auto * tuple_column = typeid_cast<const ColumnTuple *>(from_column);
+    for (size_t i = 0; i < std::min(from_elements.size(), to_elements.size()); ++i)
+        if (castReordersTupleElements(from_elements[i], to_elements[i], tuple_column ? &tuple_column->getColumn(i) : nullptr))
+            return true;
+    return false;
+}
+
 /// Sequentially applies functions to the column, returns `true`
 /// if all function arguments are compatible with functions
 /// signatures, and none of the functions produce `NULL` output.
@@ -2036,6 +2259,10 @@ static bool applyFunctionChainToColumn(
 
     /// And cast it to the argument type of the first function in the chain
     auto in_argument_type = removeLowCardinality(getArgumentTypeOfMonotonicFunction(*functions[0]));
+    if (castReordersTupleElements(result_type, in_argument_type, result_column.get())
+        || castMayDropFixedStringPadding(result_type, in_argument_type, result_column.get()))
+        return false;
+
     if (canBeSafelyCast(result_type, in_argument_type))
     {
         result_column = castColumnAccurate({result_column, result_type, ""}, in_argument_type);
@@ -2774,6 +3001,9 @@ static bool castColumnWithoutNulls(
 {
     out_is_exact = true;
 
+    if (castMayDropFixedStringPadding(type, target_type, column.get()))
+        return false;
+
     if (canBeSafelyCast(type, target_type))
     {
         column = castColumnAccurate({column, type, ""}, target_type);
@@ -3180,7 +3410,8 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
             continue;
 
         auto normalized_constant = constant;
-        if (!tryNormalizeTextConstantForZonelessDateTimeInput(candidate.dag.input_type, normalized_constant))
+        if (!tryNormalizeTextConstantForZonelessDateTimeInput(candidate.dag.input_type, normalized_constant)
+            || castReordersTupleElements(normalized_constant.type, candidate.dag.input_type, normalized_constant.column.get()))
             continue;
 
         /// Conversion to the transform's input type can turn a `String` constant into a NaN.
@@ -3494,6 +3725,9 @@ bool KeyCondition::tryPrepareSetColumnsForIndex(
             set_column = transformed_set_column;
             set_element_type = transformed_set_type;
         }
+
+        if (castMayDropFixedStringPadding(set_element_type, key_column_type, set_column.get()))
+            return false;
 
         if (canBeSafelyCast(set_element_type, key_column_type))
         {
@@ -5627,6 +5861,7 @@ std::vector<KeyCondition::ComparisonAtomCandidate> KeyCondition::collectComparis
             .argument_num_of_space_filling_curve = std::nullopt,
             .const_value = transformed.value,
             .const_type = transformed.type,
+            .const_column = {},
             .const_is_fixed_string = transformed.is_fixed_string,
             .is_relaxed = is_relaxed,
             .reverse_comparison = transformed.reverse_comparison});
@@ -5687,6 +5922,7 @@ std::vector<KeyCondition::ComparisonAtomCandidate> KeyCondition::collectComparis
                 .argument_num_of_space_filling_curve = argument_num_of_space_filling_curve,
                 .const_value = const_value,
                 .const_type = const_type,
+                .const_column = constant_for_transform.column,
                 .const_is_fixed_string = isFixedStringConstant(const_value, *constant_for_transform.column, const_type),
                 .is_relaxed = false});
         }
@@ -5959,6 +6195,16 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
             {
                 DataTypePtr common_type = tryGetLeastSupertype(DataTypes{key_expr_type_not_null, const_type});
                 if (!common_type)
+                    return std::nullopt;
+
+                /// A `FixedString` nested in a composite constant, such as a `Tuple` element, is compared
+                /// zero-padded with a `String` of the key, but as a single point in the range, see the `String`
+                /// case above. This holds whether the constant is converted to the common type or already has
+                /// it, as for a `Dynamic` element. Both the comparison and `convertFieldToType` pair tuple
+                /// elements by position.
+                const IColumn * const_column = candidate.const_column.get();
+                if (castMayDropFixedStringPadding(const_type, common_type, const_column, TuplePairing::ByPosition)
+                    || castMayDropFixedStringPadding(const_type, key_expr_type_not_null, const_column, TuplePairing::ByPosition))
                     return std::nullopt;
 
                 if (!const_type->equals(*common_type))
