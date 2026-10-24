@@ -297,6 +297,40 @@ namespace
         literal->value = new_database_name;
     }
 
+    /// Replaces a table name that a function spells out across two arguments, one naming the database and
+    /// one naming the table. The pair denotes a single table, so it has to be looked up as a single
+    /// qualified name - resolving the two halves independently would miss a per-table rename.
+    void replaceDatabaseAndTableNameInArguments(
+        const ASTFunction & function, const DDLRenamingVisitor::Data & data, size_t database_arg_idx, size_t table_arg_idx)
+    {
+        /// Just ignore incorrect arguments, proper exception will be thrown later
+        if (!function.arguments || function.arguments->children.size() <= std::max(database_arg_idx, table_arg_idx))
+            return;
+
+        auto & arguments = function.arguments->as<ASTExpressionList>()->children;
+        auto * database_literal = arguments[database_arg_idx]->as<ASTLiteral>();
+        auto * table_literal = arguments[table_arg_idx]->as<ASTLiteral>();
+        if (!database_literal || !table_literal)
+            return;
+        if (database_literal->value.getType() != Field::Types::String || table_literal->value.getType() != Field::Types::String)
+            return;
+
+        /// Neither half can be empty in a definition that was stored normally: `StorageBuffer` runs the
+        /// database argument through `evaluateConstantExpressionForDatabaseName`, which substitutes the
+        /// current database for an empty one, and an empty table name means the buffer has no
+        /// destination at all. Guard anyway rather than build a half-qualified name.
+        QualifiedTableName qualified_name{database_literal->value.safeGet<String>(), table_literal->value.safeGet<String>()};
+        if (qualified_name.database.empty() || qualified_name.table.empty())
+            return;
+
+        auto new_qualified_name = data.renaming_map.getNewTableName(qualified_name);
+        if (new_qualified_name == qualified_name)
+            return;
+
+        database_literal->value = new_qualified_name.database;
+        table_literal->value = new_qualified_name.table;
+    }
+
     void visitTableEngine(ASTStorage & storage, const DDLRenamingVisitor::Data & data)
     {
         if (!storage.engine)
@@ -313,6 +347,13 @@ namespace
             /// Syntax: CREATE TABLE ... Engine=Merge(db_name, tables_regexp)
             /// We'll try to replace the database name but we can do nothing to 'tables_regexp'.
             replaceDatabaseNameInArguments(*storage.engine, data, 0);
+        }
+        else if (storage.engine->name == "Buffer")
+        {
+            /// Syntax: CREATE TABLE ... Engine=Buffer(destination_database, destination_table, num_buckets, ...)
+            /// The first two arguments name the table the buffer flushes into, so leaving them unrenamed
+            /// makes writes to the restored table land in the source database.
+            replaceDatabaseAndTableNameInArguments(*storage.engine, data, 0, 1);
         }
     }
 
