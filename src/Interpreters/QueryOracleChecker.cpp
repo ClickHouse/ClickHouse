@@ -368,6 +368,26 @@ void forEachChild(const ASTPtr & ast, F && f)
     anyChild(ast, [&](const ASTPtr & child) { f(child); return false; });
 }
 
+/// A `{name:Identifier}` placeholder is an empty name part with an `ASTQueryParameter` child, substituted only
+/// when the query text is executed. Returns the name parts after substitution, or nothing if a value is missing.
+std::optional<Strings> substitutedNameParts(const ASTPtr & ast, const NameToNameMap & query_parameters)
+{
+    Strings parts = ast->as<ASTIdentifier &>().name_parts;
+    auto param = ast->children.begin();
+    for (auto & part : parts)
+    {
+        if (!part.empty())
+            continue;
+        if (param == ast->children.end())
+            return std::nullopt;
+        const auto it = query_parameters.find((*param++)->as<ASTQueryParameter &>().name);
+        if (it == query_parameters.end() || it->second.empty())
+            return std::nullopt;
+        part = it->second;
+    }
+    return parts;
+}
+
 /// Walk an AST tree and check whether any `ASTFunction` references something
 /// non-deterministic. The primary source of truth is `FunctionFactory` —
 /// every regular function exposes `isDeterministic`, so newly-added
@@ -448,17 +468,14 @@ bool hasNonDeterministicFunctionsImpl(const ASTPtr & ast, const ContextPtr & con
     /// A higher-order function accepts a function by its bare name instead of a lambda, e.g.
     /// `arrayMap(generateUUIDv7, arr)`: the name is an `ASTIdentifier`, not an `ASTFunction`.
     /// A column with the same name as a non-deterministic function only skips one more query, which is safe.
-    /// The fuzzer may also turn that name into a `{fuzz_param_N:Identifier}` placeholder: its name part
-    /// is empty in the AST, and the value is substituted only when the query text is executed, so look
-    /// the value up in the query parameters of the context. An unknown parameter skips the query.
+    /// The fuzzer may also turn that name into a `{fuzz_param_N:Identifier}` placeholder: an unknown parameter
+    /// skips the query.
     if (const auto * identifier = ast->as<ASTIdentifier>(); identifier && !identifier->compound())
     {
         if (identifier->isParam())
         {
-            const auto param = identifier->getParam();
-            const auto & params = context->getQueryParameters();
-            const auto it = params.find(param->as<ASTQueryParameter &>().name);
-            if (it == params.end() || namesNonDeterministicRegularFunction(it->second, context))
+            const auto parts = substitutedNameParts(ast, context->getQueryParameters());
+            if (!parts || namesNonDeterministicRegularFunction(parts->front(), context))
                 return true;
         }
         else if (namesNonDeterministicRegularFunction(identifier->name(), context))
@@ -618,15 +635,24 @@ void collectAliases(const ASTPtr & ast, std::unordered_set<String> & out)
 }
 
 /// True if the subtree references any of the given names, as an identifier or as a function:
-/// an alias of a lambda is callable.
-bool referencesAnyAlias(const ASTPtr & ast, const std::unordered_set<String> & aliases)
+/// an alias of a lambda is callable. A `{name:Identifier}` placeholder with an unknown value counts as a reference.
+bool referencesAnyAlias(const ASTPtr & ast, const std::unordered_set<String> & aliases, const NameToNameMap & query_parameters)
 {
     if (!ast)
         return false;
     if (const auto * ident = ast->as<ASTIdentifier>())
     {
-        if (aliases.contains(ident->name()) || aliases.contains(ident->shortName()))
-            return true;
+        if (!ident->isParam())
+        {
+            if (aliases.contains(ident->name()) || aliases.contains(ident->shortName()))
+                return true;
+        }
+        else
+        {
+            const auto parts = substitutedNameParts(ast, query_parameters);
+            if (!parts || aliases.contains(Poco::cat(String("."), parts->begin(), parts->end())) || aliases.contains(parts->back()))
+                return true;
+        }
     }
     else if (const auto * func = ast->as<ASTFunction>())
     {
@@ -638,7 +664,7 @@ bool referencesAnyAlias(const ASTPtr & ast, const std::unordered_set<String> & a
         if (aliases.contains(apply->func_name))
             return true;
     }
-    return anyChild(ast, [&](const ASTPtr & child) { return referencesAnyAlias(child, aliases); });
+    return anyChild(ast, [&](const ASTPtr & child) { return referencesAnyAlias(child, aliases, query_parameters); });
 }
 
 /// Settings that cap how much a query reads/produces, plus their overflow
@@ -785,7 +811,7 @@ bool isScopeFreeExpression(const ASTPtr & ast)
 /// or HAVING entirely) silently rebinds those references — e.g. the fuzzer
 /// produces `SELECT (SELECT x) FROM t WHERE f(... AS x)`: with the WHERE
 /// present `x` is the alias, without it `x` is the table column.
-bool clauseDefinesAliasUsedElsewhere(const ASTSelectQuery & select, const ASTPtr & clause)
+bool clauseDefinesAliasUsedElsewhere(const ASTSelectQuery & select, const ASTPtr & clause, const NameToNameMap & query_parameters)
 {
     if (!clause)
         return false;
@@ -797,7 +823,7 @@ bool clauseDefinesAliasUsedElsewhere(const ASTSelectQuery & select, const ASTPtr
     {
         if (child == clause)
             continue;
-        if (referencesAnyAlias(child, aliases))
+        if (referencesAnyAlias(child, aliases, query_parameters))
             return true;
     }
     return false;
@@ -851,6 +877,18 @@ bool hasWithFillAnywhere(const ASTPtr & ast)
         if (order_elem->with_fill)
             return true;
     return anyChild(ast, [](const ASTPtr & child) { return hasWithFillAnywhere(child); });
+}
+
+/// True if any SELECT has `WITH TOTALS`, which is not distributive over a WHERE: a filter pushed below the
+/// totals step recomputes the totals over the filtered rows, and `UNION ALL` keeps one branch's totals only.
+bool hasWithTotalsAnywhere(const ASTPtr & ast)
+{
+    if (!ast)
+        return false;
+    if (const auto * select = ast->as<ASTSelectQuery>())
+        if (select->group_by_with_totals)
+            return true;
+    return anyChild(ast, [](const ASTPtr & child) { return hasWithTotalsAnywhere(child); });
 }
 
 /// True if any table expression in the query uses `FINAL`. FINAL's dedup is
@@ -1121,6 +1159,7 @@ bool referencesUnscreenedDefinitionAnywhere(const ASTPtr & ast, const ContextPtr
                         || hasNonDeterministicJoinAnywhere(definition, context->getSettingsRef()[Setting::join_default_strictness])
                         || hasNonStrippableInlineSettings(definition)
                         || hasNestedThreadSettings(definition, nullptr)
+                        || hasWithTotalsAnywhere(definition)
                         || referencesSystemDatabaseAnywhere(definition, context->getCurrentDatabase())
                         || referencesDistributedTableAnywhere(definition, context)
                         || referencesUnscreenedDefinitionAnywhere(definition, context, depth + 1))
@@ -1429,6 +1468,9 @@ ContextMutablePtr QueryOracleChecker::makeOracleContext(const ContextMutablePtr 
     /// optimizer (and the CNF conversion that feeds it) off.
     oracle_context->setSetting("optimize_using_constraints", Field(false));
     oracle_context->setSetting("convert_query_to_cnf", Field(false));
+    /// A hash join compares a `Dynamic` key with a non-`Dynamic` one by type, unlike `equals`,
+    /// so moving an equality between WHERE and the JOIN keys would change the result.
+    oracle_context->setSetting("allow_dynamic_type_in_join_keys", Field(false));
     /// Neutralize session-leaked read/result caps (a seed's `SET
     /// max_rows_to_read = N, read_overflow_mode = 'break'` would truncate
     /// oracle sub-queries asymmetrically — see `truncatingSettings`).
@@ -1619,7 +1661,7 @@ bool QueryOracleChecker::checkTLPWhere(const ASTSelectQuery & select, const Cont
     if (hasNonDeterministicFunctions(select.clone(), context))
         return false;
 
-    if (clauseDefinesAliasUsedElsewhere(select, select.where()))
+    if (clauseDefinesAliasUsedElsewhere(select, select.where(), context->getQueryParameters()))
         return false;
 
     ASTPtr predicate = select.where()->clone();
@@ -1711,7 +1753,7 @@ bool QueryOracleChecker::checkNoREC(const ASTSelectQuery & select, const Context
     if (hasNonDeterministicFunctions(select.clone(), context))
         return false;
 
-    if (clauseDefinesAliasUsedElsewhere(select, select.where()))
+    if (clauseDefinesAliasUsedElsewhere(select, select.where(), context->getQueryParameters()))
         return false;
 
     /// The `countIf` rewrite drops the SELECT list. If the predicate
@@ -1722,7 +1764,7 @@ bool QueryOracleChecker::checkNoREC(const ASTSelectQuery & select, const Context
     {
         std::unordered_set<String> select_aliases;
         collectAliases(select.select(), select_aliases);
-        if (!select_aliases.empty() && referencesAnyAlias(select.where(), select_aliases))
+        if (!select_aliases.empty() && referencesAnyAlias(select.where(), select_aliases, context->getQueryParameters()))
             return false;
     }
 
@@ -1826,7 +1868,7 @@ bool QueryOracleChecker::checkTLPDistinct(const ASTSelectQuery & select, const C
     if (hasNonDeterministicFunctions(select.clone(), context))
         return false;
 
-    if (clauseDefinesAliasUsedElsewhere(select, select.where()))
+    if (clauseDefinesAliasUsedElsewhere(select, select.where(), context->getQueryParameters()))
         return false;
 
     ASTPtr predicate = select.where()->clone();
@@ -1888,7 +1930,7 @@ bool QueryOracleChecker::checkTLPGroupBy(const ASTSelectQuery & select, const Co
     if (hasNonDeterministicFunctions(select.clone(), context))
         return false;
 
-    if (clauseDefinesAliasUsedElsewhere(select, select.where()))
+    if (clauseDefinesAliasUsedElsewhere(select, select.where(), context->getQueryParameters()))
         return false;
 
     /// A non-injective projection (e.g. `SELECT g % 2 ... GROUP BY g`) can
@@ -1969,7 +2011,7 @@ bool QueryOracleChecker::checkTLPHaving(const ASTSelectQuery & select, const Con
     if (hasNonDeterministicFunctions(select.clone(), context))
         return false;
 
-    if (clauseDefinesAliasUsedElsewhere(select, select.having()))
+    if (clauseDefinesAliasUsedElsewhere(select, select.having(), context->getQueryParameters()))
         return false;
 
     ASTPtr having_pred = select.having()->clone();
@@ -2131,7 +2173,7 @@ bool QueryOracleChecker::checkTLPAggregate(const ASTSelectQuery & select, const 
     if (hasNonDeterministicFunctions(select.clone(), context))
         return false;
 
-    if (clauseDefinesAliasUsedElsewhere(select, select.where()))
+    if (clauseDefinesAliasUsedElsewhere(select, select.where(), context->getQueryParameters()))
         return false;
 
     /// Collect aggregate functions from the SELECT list.
@@ -2764,6 +2806,12 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     if (usesFinalAnywhere(query_ast))
     {
         LOG_TRACE(logger, "Oracle skip: FINAL (dedup is not distributive over WHERE partitions)");
+        return false;
+    }
+
+    if (hasWithTotalsAnywhere(query_ast))
+    {
+        LOG_TRACE(logger, "Oracle skip: WITH TOTALS (the totals row is not distributive over WHERE partitions)");
         return false;
     }
 

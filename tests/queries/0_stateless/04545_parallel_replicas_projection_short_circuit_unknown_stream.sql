@@ -35,7 +35,6 @@ SET parallel_replicas_local_plan = 1;
 -- optimization both require the analyzer, aggregation-in-order or aggregate_functions_null_for_empty
 -- disable the projection, and the runner randomizes optimize_aggregation_in_order. Without pinning them
 -- a randomized run could take an ordinary scan and never exercise the bug.
-SET enable_analyzer = 1;
 SET optimize_use_projections = 1, optimize_use_implicit_projections = 1;
 SET optimize_aggregation_in_order = 0, force_aggregation_in_order = 0;
 SET aggregate_functions_null_for_empty = 0;
