@@ -171,9 +171,11 @@ class Targeting:
         change still alters the surface of the test that consumes it, and a drift
         guard that skips it would false-green the very drift it exists to catch.
 
-        Fixtures carry their owning test's five-digit prefix by convention, so
-        the prefix narrows the candidates to the `NNNNN_*` tests at the suite
-        root (a handful of files, never the whole suite). Among those, prefer the
+        Fixtures carry their owning test's five-digit prefix followed by `_` or
+        `.` by convention; a longer digit run or `NNNNN-` (Lance and Iceberg data
+        file names) is not a test number. The prefix narrows the candidates to
+        the `NNNNN_*` tests at the suite root (a handful of files, never the
+        whole suite). Among those, prefer the
         ones whose body references the fixture's literal filename. When none
         does, retry with the extensionless stem, since format schemas are
         conventionally referenced without the extension
@@ -189,7 +191,7 @@ class Targeting:
         pattern that matches no test would make `clickhouse-test` exit 1 (the
         failure mode `PR #104097` fixed).
         """
-        match = re.match(r"(\d{5})", os.path.basename(fpath))
+        match = re.match(r"(\d{5})[_.]", os.path.basename(fpath))
         if match is None:
             return []
         prefix = match.group(1)
