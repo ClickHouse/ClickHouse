@@ -49,6 +49,7 @@ struct MutationCommand
         REWRITE_PARTS,
         RENAME_COLUMN,
         MATERIALIZE_COLUMN,
+        RECOMPRESS_COLUMN, /// Re-compress a column with its current codec without deserializing values.
         APPLY_DELETED_MASK,
         APPLY_PATCHES,
         ALTER_WITHOUT_MUTATION, /// pure metadata command
@@ -165,6 +166,14 @@ public:
     /// stick with other commands. Commands from one set have already been validated
     /// to be executed without issues on the creation state.
     bool containBarrierCommand() const;
+
+    /// The commands must not be executed by one mutation task together with the commands of other
+    /// mutations: either they contain a barrier command, or a `RECOMPRESS COLUMN`. A task computes
+    /// everything it builds from the values of the source part, so an index, a projection or a
+    /// `MATERIALIZED` column built by the same task as a lossy recompression would describe the
+    /// values as they were before the recompression. Unlike `containBarrierCommand`, this does not
+    /// make `ALTER` queries wait for the mutation.
+    bool containGroupingBarrierCommand() const;
     NameSet getAllUpdatedColumns() const;
 };
 

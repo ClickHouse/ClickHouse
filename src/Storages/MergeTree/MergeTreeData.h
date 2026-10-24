@@ -1205,6 +1205,31 @@ public:
     /// (currently no additional checks: always ok)
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
 
+    /// Rejects `RECOMPRESS COLUMN` of a column whose codec resolves to lossy compression when a
+    /// projection, a skip index, the partition key, the sorting key, or a stored `MATERIALIZED`
+    /// column depends on it: the recompression rewrites the column's values but not the dependents,
+    /// which would keep describing the pre-recompression values. A no-op for a lossless codec or a
+    /// column absent from the given metadata. Called from `checkMutationIsPossible` when the `ALTER`
+    /// is accepted and again by `MutateTask` when the mutation executes, because the codec and the
+    /// dependents can change in between. With `source_part`, only the projections and skip indices
+    /// the part actually has are considered: the mutation never builds an absent one, so a dependent
+    /// added to the metadata after the part was written does not describe its values. The same
+    /// applies to the stored `MATERIALIZED` columns; `alter_conversions` maps their names back to
+    /// the names the part stores them under before its pending renames. `task_commands` are all the
+    /// commands of the mutation task that runs the recompression: a dependent the part does not have
+    /// is still considered when the same task builds it (`MATERIALIZE INDEX`, `MATERIALIZE
+    /// PROJECTION`, `MATERIALIZE COLUMN`, or an `UPDATE` of a column it reads), because the task
+    /// computes it from the values as they were before the recompression; with `MATERIALIZE TTL` in
+    /// the task every dependent is considered. A computed (`DEFAULT` or `MATERIALIZED`) column the part
+    /// does not store is evaluated from its expression on reads, so a dependent reading it is checked
+    /// against the inputs of that expression.
+    void checkLossyRecompressionIsPossible(
+        const String & column_name,
+        const StorageMetadataPtr & metadata_snapshot,
+        const IMergeTreeDataPart * source_part = nullptr,
+        const AlterConversionsPtr & alter_conversions = nullptr,
+        const MutationCommands * task_commands = nullptr) const;
+
     /// Checks that partition name in all commands is valid
     void checkAlterPartitionIsPossible(
         const PartitionCommands & commands,

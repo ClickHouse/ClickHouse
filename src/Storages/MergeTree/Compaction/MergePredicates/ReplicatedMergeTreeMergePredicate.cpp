@@ -204,7 +204,7 @@ std::optional<std::pair<Int64, int>> ReplicatedMergeTreeZooKeeperMergePredicate:
         const auto & [mutation_version, mutation_status] = *it;
 
         /// Some commands cannot stick together with other commands
-        if (mutation_status->entry->commands.containBarrierCommand())
+        if (mutation_status->entry->commands.containGroupingBarrierCommand())
         {
             /// We already collected some mutation, we don't want to stick it with barrier
             if (max_version != mutation_version && max_version > current_version)
