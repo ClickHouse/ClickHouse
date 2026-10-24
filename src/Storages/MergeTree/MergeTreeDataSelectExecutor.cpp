@@ -119,6 +119,7 @@ namespace Setting
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool use_query_condition_cache_for_top_k;
     extern const SettingsBool use_query_condition_cache_for_changing_bounds;
+    extern const SettingsBool use_primary_key;
     extern const SettingsBool secondary_indexes_enable_bulk_filtering;
     extern const SettingsBool vector_search_with_rescoring;
     extern const SettingsBool use_skip_indexes_for_top_k;
@@ -1918,10 +1919,12 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
                         variant.band.emplace(
                             ActionsDAGWithInversionPushDown(variant.band_dag->getOutputs().front(), context, /*boolean_context=*/ true),
                             context,
-                            metadata_snapshot->getPrimaryKey());
+                            metadata_snapshot->getPrimaryKey(),
+                            /*single_point_=*/ false,
+                            /*skip_analysis_=*/ !settings[Setting::use_primary_key]);
                 }
 
-                /// The primary key tells nothing about the band, so every mark may have rows in it.
+                /// The primary key tells nothing about the band (or must not be used), so every mark may have rows in it.
                 if (variant.band && variant.band->alwaysUnknownOrTrue())
                     continue;
 
