@@ -1,0 +1,128 @@
+--- aggregates ---
+=== max: rewritten 1 ===
+1	10	30
+1	10	30
+1	30	30
+1	30	30
+2	5	1e308
+2	1e308	1e308
+=== min: rewritten 1 ===
+1	10	10
+1	10	10
+1	30	10
+1	30	10
+2	5	5
+2	1e308	5
+=== avg over Float64, the join repeats rows: rewritten 1 ===
+1	10	20
+1	10	20
+1	30	20
+1	30	20
+2	5	5e307
+2	1e308	5e307
+=== avg over Decimal: rewritten 1 ===
+1	10.25	20.5
+1	10.25	20.5
+1	30.75	20.5
+1	30.75	20.5
+2	5	5
+=== sum: rewritten 1 ===
+1	10	40
+1	10	40
+1	30	40
+1	30	40
+2	5	1e308
+2	1e308	1e308
+=== count: rewritten 1 ===
+1	10	2
+1	10	2
+1	30	2
+1	30	2
+2	5	2
+2	1e308	2
+=== two aggregates and parameters: rewritten 1 ===
+1	10	2
+1	10	2
+1	30	2
+1	30	2
+2	5	2
+2	1e308	2
+=== maxIf: rewritten 1 ===
+1	10	10
+1	10	10
+1	30	10
+1	30	10
+2	5	5
+2	1e308	5
+=== expression argument: rewritten 1 ===
+1	10	900
+1	10	900
+1	30	900
+1	30	900
+2	5	inf
+2	1e308	inf
+=== aggregate_functions_null_for_empty: rewritten 1 ===
+1	10	\N
+1	10	\N
+1	30	\N
+1	30	\N
+2	5	1e308
+2	1e308	1e308
+=== extra condition in the subquery: rewritten 1 ===
+1	10	10
+1	10	10
+1	30	10
+1	30	10
+2	5	5
+2	1e308	5
+=== no row matches the condition of the subquery: rewritten 1 ===
+1	10	1	\N
+1	10	1	\N
+1	30	1	\N
+1	30	1	\N
+2	5	1	1e308
+2	1e308	1	1e308
+=== outer key in the argument: rewritten 0 ===
+1	10	42
+1	10	42
+1	30	42
+1	30	42
+2	5	1e308
+2	1e308	1e308
+=== condition of a non-boolean type: rewritten 1 ===
+100	1	1
+101	2	3
+101	3	3
+200	4	4
+=== two subqueries: rewritten 1 ===
+1	10	10	2
+1	10	10	2
+1	30	10	2
+1	30	10	2
+2	5	5	2
+2	1e308	5	2
+--- keys ---
+=== Nullable key and argument: rewritten 1 ===
+1	10	10
+1	\N	10
+2	\N	\N
+=== NULL key, correlated to the same table: rewritten 1 ===
+1	10	2
+1	\N	2
+2	\N	1
+\N	5	\N
+\N	7	\N
+=== NULL key and an argument that may throw: rewritten 0 ===
+1	10	2
+1	\N	2
+2	\N	\N
+\N	5	\N
+\N	7	\N
+NULL key and a condition that may throw without short-circuit: rewritten	0
+=== Float key: rewritten 0 ===
+5
+=== key types differ: rewritten 0 ===
+1	10	30
+1	30	30
+2	5	1e308
+2	1e308	1e308
