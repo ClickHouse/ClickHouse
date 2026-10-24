@@ -1,0 +1,25 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <source>
+                <path>/var/lib/clickhouse/source/</path>
+            </source>
+            <destination>
+                <path>/var/lib/clickhouse/destination/</path>
+            </destination>
+        </disks>
+        <policies>
+            <local_copy>
+                <volumes>
+                    <source>
+                        <disk>source</disk>
+                    </source>
+                    <destination>
+                        <disk>destination</disk>
+                    </destination>
+                </volumes>
+                <move_factor>0</move_factor>
+            </local_copy>
+        </policies>
+    </storage_configuration>
+</clickhouse>
