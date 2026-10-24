@@ -65,6 +65,21 @@ AggregateFunctionTuple::AggregateFunctionTuple(
     total_state_size = ::Memory::alignUp(offset, max_state_align);
 }
 
+/// The elements share one base aggregate function and answer alike, except a placeholder built for an
+/// only-null element, which keeps the parameters its empty state never reads so that an outer wrapper
+/// still sees the caller's list. The shortest answer is therefore the one an element with a state gives.
+Array AggregateFunctionTuple::getStateParameters() const
+{
+    Array state_parameters = parameters;
+    for (const auto & func : nested_functions)
+    {
+        Array nested_parameters = func->getStateParameters();
+        if (nested_parameters.size() < state_parameters.size())
+            state_parameters = std::move(nested_parameters);
+    }
+    return state_parameters;
+}
+
 bool AggregateFunctionTuple::isVersioned() const
 {
     for (const auto & func : nested_functions)
@@ -113,7 +128,7 @@ DataTypePtr AggregateFunctionTuple::getStateType() const
         if (auto nested_version = nested_state->getVersionIfExplicit())
             version = std::max(version.value_or(0), *nested_version);
     }
-    return std::make_shared<DataTypeAggregateFunction>(shared_from_this(), argument_types, parameters, version);
+    return std::make_shared<DataTypeAggregateFunction>(shared_from_this(), argument_types, getStateParameters(), version);
 }
 
 void AggregateFunctionTuple::create(AggregateDataPtr __restrict place) const

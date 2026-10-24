@@ -1,7 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/Helpers.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeDate.h>
 
 #include <unordered_set>
@@ -193,16 +192,9 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    /// Parameters are non-semantic here and never reach the serialized state, so parameterized and
-    /// parameterless states share one representation and stay Merge-/CAST-compatible.
-    DataTypePtr getNormalizedStateType() const override
-    {
-        DataTypes normalized_argument_types;
-        normalized_argument_types.reserve(this->argument_types.size());
-        for (const auto & arg : this->argument_types)
-            normalized_argument_types.emplace_back(arg->getNormalizedType());
-        return std::make_shared<DataTypeAggregateFunction>(this->shared_from_this(), normalized_argument_types, Array{});
-    }
+    /// `intervalLengthSum` accepts parameters but never reads them, so parameterized and parameterless
+    /// states share one representation and stay Merge-/CAST-compatible.
+    Array getStateParameters() const override { return {}; }
 
     bool allocatesMemoryInArena() const override { return false; }
 
