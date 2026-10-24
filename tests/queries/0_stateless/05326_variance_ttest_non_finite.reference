@@ -1,0 +1,13 @@
+variance nan	nan	nan	nan	nan
+variance inf	nan	nan	nan	nan
+variance constant	0	0	0	0
+variance finite	1.555555555555556	2.333333333333334	1.247219	1.527525
+regr_syy = regr_count * varPop	nan	nan
+two-sample t-test	(nan,nan)	(nan,nan)
+one-sample t-test	(nan,nan)
+z-test p-value	nan
+t-test finite	0.021312
+skew/kurt nan	nan	nan	nan	nan
+skew/kurt constant	nan	nan
+Float32 nan	nan	nan
+window	[0,1,nan]

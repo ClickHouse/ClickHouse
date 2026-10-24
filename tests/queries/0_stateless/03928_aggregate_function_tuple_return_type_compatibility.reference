@@ -99,7 +99,7 @@ SELECT finalizeAggregation(CAST(unhex('01000000000000000000000000000000000000000
 (nan,nan)
 -- meanZTest legacy all-null state.
 SELECT finalizeAggregation(CAST(unhex('010000000000000000000000000000000000000000000000000000000000000000'), 'AggregateFunction(meanZTest(1., 1., 0.95), Nullable(Float64), Nullable(UInt8))'));
-(nan,0,nan,nan)
+(nan,nan,nan,nan)
 -- studentTTestOneSample legacy all-null state.
 SELECT finalizeAggregation(CAST(unhex('010000000000000000000000000000000000000000000000000000000000000000'), 'AggregateFunction(studentTTestOneSample, Nullable(Float64), Nullable(Float64))'));
 (nan,nan)
