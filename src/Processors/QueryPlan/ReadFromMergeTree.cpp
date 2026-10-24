@@ -768,6 +768,16 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
 }
 
 
+size_t ReadFromMergeTree::takeTotalRowsApprox(size_t rows_in_this_read)
+{
+    if (!total_rows_approx_budget)
+        return rows_in_this_read;
+
+    const size_t reported = std::min(rows_in_this_read, *total_rows_approx_budget);
+    *total_rows_approx_budget -= reported;
+    return reported;
+}
+
 Pipe ReadFromMergeTree::readFromPool(
     RangesInDataParts parts_with_range,
     const MergeTreeIndexBuildContextPtr & index_build_context,
@@ -901,7 +911,10 @@ Pipe ReadFromMergeTree::readFromPool(
             auto transform = std::make_shared<SealGatedReadTransform>(header, std::move(processor), seal_gate_refiner, data.getLogName());
 
             if (i == 0)
-                transform->addTotalRowsApprox(total_rows);
+            {
+                if (const size_t rows_to_report = takeTotalRowsApprox(total_rows))
+                    transform->addTotalRowsApprox(rows_to_report);
+            }
 
             connect(*(seal_output_it++), transform->getSealInput());
             processors->emplace_back(std::move(transform));
@@ -936,7 +949,10 @@ Pipe ReadFromMergeTree::readFromPool(
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
 
         if (i == 0)
-            source->addTotalRowsApprox(total_rows);
+        {
+            if (const size_t rows_to_report = takeTotalRowsApprox(total_rows))
+                source->addTotalRowsApprox(rows_to_report);
+        }
 
         pipes.emplace_back(std::move(source));
     }
@@ -1189,16 +1205,16 @@ Pipe ReadFromMergeTree::readInOrder(
                 continue;
         }
 
-        UInt64 total_rows = part_with_ranges.getRowsCount();
-        if (query_info.trivial_limit > 0 && query_info.trivial_limit < total_rows)
-            total_rows = query_info.trivial_limit;
-        else if (in_order_limit > 0 && in_order_limit < total_rows)
-            total_rows = in_order_limit;
+        UInt64 part_rows_approx = part_with_ranges.getRowsCount();
+        if (query_info.trivial_limit > 0 && query_info.trivial_limit < part_rows_approx)
+            part_rows_approx = query_info.trivial_limit;
+        else if (in_order_limit > 0 && in_order_limit < part_rows_approx)
+            part_rows_approx = in_order_limit;
 
         LOG_TRACE(log, "Reading {} ranges in{}order from part {}, approx. {} rows starting from {}",
             part_with_ranges.ranges.size(),
             read_type == ReadType::InReverseOrder ? " reverse " : " ",
-            part_with_ranges.data_part->name, total_rows,
+            part_with_ranges.data_part->name, part_rows_approx,
             part_with_ranges.data_part->index_granularity->getMarkStartingRow(part_with_ranges.ranges.front().begin));
 
         MergeTreeSelectAlgorithmPtr algorithm;
@@ -1234,7 +1250,10 @@ Pipe ReadFromMergeTree::readInOrder(
             auto header = std::make_shared<const Block>(processor->getHeader());
             auto gated_source = std::make_shared<SealGatedReadTransform>(header, std::move(processor), seal_gate_refiner, data.getLogName());
             if (set_total_rows_approx)
-                gated_source->addTotalRowsApprox(total_rows);
+            {
+                if (const size_t rows_to_report = takeTotalRowsApprox(part_with_ranges.getRowsCount()))
+                    gated_source->addTotalRowsApprox(rows_to_report);
+            }
 
             InputPort * pending_seal_input = &gated_source->getSealInput();
             auto gated_processors = std::make_shared<Processors>();
@@ -1245,7 +1264,10 @@ Pipe ReadFromMergeTree::readInOrder(
         {
             auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
             if (set_total_rows_approx)
-                source->addTotalRowsApprox(total_rows);
+            {
+                if (const size_t rows_to_report = takeTotalRowsApprox(part_with_ranges.getRowsCount()))
+                    source->addTotalRowsApprox(rows_to_report);
+            }
 
             pipe = Pipe(std::move(source));
         }
@@ -5376,6 +5398,12 @@ size_t ReadFromMergeTree::getNumStreamsWhenNothingToRead(const AnalysisResult & 
 void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[maybe_unused]] const BuildQueryPipelineSettings & settings)
 {
     auto & result = getAnalysisResult();
+
+    total_rows_approx_budget.reset();
+    if (query_info.trivial_limit)
+        total_rows_approx_budget = query_info.trivial_limit;
+    else if (query_info.input_order_info && query_info.input_order_info->limit)
+        total_rows_approx_budget = query_info.input_order_info->limit;
 
     /// Before any pool or processor copies the settings: both build the PREWHERE steps and must agree on them.
     reader_settings.read_ahead_prewhere_columns = canReadPrewhereColumnsAhead(result.parts_with_ranges);

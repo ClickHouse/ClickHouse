@@ -1253,7 +1253,7 @@ try
         /// Replay progress that was accumulated before the output format was created
         /// (e.g. from scalar subqueries evaluated during query analysis on the server).
         auto replayed = pending_progress.fetchAndResetPiecewiseAtomically();
-        if (replayed.read_rows || replayed.read_bytes)
+        if (replayed.read_rows || replayed.read_bytes || replayed.total_rows_to_read || replayed.total_bytes_to_read)
             output_format->onProgress(replayed);
 
         if ((!select_into_file || select_into_file_and_stdout)
@@ -2165,7 +2165,9 @@ bool ClientBase::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_)
 
 void ClientBase::onProgress(const Progress & value)
 {
-    if (!progress_indication.updateProgress(value))
+    /// `updateProgress` returns false when no rows moved, but an update carrying only totals is not a keep-alive.
+    const bool has_totals = value.total_rows_to_read || value.total_bytes_to_read;
+    if (!progress_indication.updateProgress(value) && !has_totals)
     {
         // Just a keep-alive update.
         return;

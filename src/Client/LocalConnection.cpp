@@ -333,7 +333,7 @@ void LocalConnection::sendQuery(
             if (progress_callback)
             {
                 auto progress = state->progress.fetchAndResetPiecewiseAtomically();
-                if (progress.read_rows || progress.read_bytes)
+                if (progress.read_rows || progress.read_bytes || progress.total_rows_to_read || progress.total_bytes_to_read)
                     progress_callback(progress);
             }
 
