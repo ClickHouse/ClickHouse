@@ -1,0 +1,12 @@
+Create with only SELECT on target
+ACCESS_DENIED
+Create with the full forwardable privilege set on target
+1
+SHOW CREATE carries the SQL SECURITY DEFINER clause
+SQL SECURITY DEFINER
+Reader DESCRIBEs the alias with no target grant
+id value 
+Reader sees the alias columns in system.columns with no target grant
+2
+Reader SELECTs through the alias with no target grant
+2

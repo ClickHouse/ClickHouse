@@ -56,7 +56,6 @@
 
 #include <IO/WriteHelpers.h>
 #include <Storages/IStorage.h>
-#include <Storages/StorageAlias.h>
 #include <Storages/StorageJoin.h>
 #include <Common/NamePrompter.h>
 #include <Common/checkStackSize.h>
@@ -1126,27 +1125,7 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
     {
         optimize_trivial_count = !columns_context.has_array_join;
 
-        const auto * alias = storage ? storage->as<StorageAlias>() : nullptr;
-        NamesAndTypesList accessible_columns;
-        if (alias)
-        {
-            /// An `Alias` fallback must read a column granted on both the alias and its target.
-            auto query_context = CurrentThread::tryGetQueryContext();
-            auto access = query_context ? query_context->getAccess() : nullptr;
-            const auto & storage_id = storage->getStorageID();
-            const NameSet chain_granted = access
-                ? alias->filterColumnsGrantedThroughChain(query_context, AccessType::SELECT, source_columns.getNames())
-                : NameSet{};
-            for (const auto & column : source_columns)
-            {
-                if (access
-                    && access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name)
-                    && chain_granted.contains(column.name))
-                    accessible_columns.push_back(column);
-            }
-        }
-
-        const auto & columns_for_fallback = alias && !accessible_columns.empty() ? accessible_columns : source_columns;
+        const auto & columns_for_fallback = source_columns;
 
         /// You need to read at least one column to find the number of rows.
         /// We will find a column with minimum <compressed_size, type_size, uncompressed_size>.

@@ -9,6 +9,8 @@
 namespace DB
 {
 
+class ASTSQLSecurity;
+
 class StorageAlias final : public IStorage, WithContext
 {
 public:
@@ -23,7 +25,8 @@ public:
         const StorageID & table_id_,
         ContextPtr context_,
         const String & target_database_,
-        const String & target_table_);
+        const String & target_table_,
+        const ASTSQLSecurity * sql_security_ = nullptr);
 
     std::string getName() const override { return "Alias"; }
 
@@ -52,19 +55,6 @@ public:
     /// Get the target storage this alias points to
     StoragePtr getTargetTable(std::optional<TargetAccess> access_check = std::nullopt) const;
     StoragePtr tryGetTargetTable() const { return DatabaseCatalog::instance().tryGetTable(StorageID(target_database, target_table), getContext()); }
-
-    /// Returns whether the current user has the specified access to every table this alias resolves
-    /// through, i.e. the whole chain when the target is itself an Alias. For callers that read metadata.
-    /// An empty `column_name` represents table-level access.
-    bool isTargetTableGranted(ContextPtr query_context, AccessType access_type, const String & column_name) const;
-
-    /// Same, for the target named in this alias's own definition only. For callers that expose that
-    /// definition and resolve nothing through it.
-    bool isDeclaredTargetGranted(ContextPtr query_context, AccessType access_type, const String & column_name) const;
-
-    /// Returns the subset of `column_names` the current user has this access to on every table this
-    /// alias resolves through. Resolves the chain once, whatever the grants look like.
-    NameSet filterColumnsGrantedThroughChain(ContextPtr query_context, AccessType access_type, const Names & column_names) const;
 
     /// Read from target table
     void read(
@@ -322,7 +312,7 @@ public:
 
     /// These operations are not proxied (executed on alias itself)
     /// Drop alias, not the target table
-    void drop() override {}
+    void drop() override;
 
     /// Rename alias, not the target table
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
@@ -330,6 +320,18 @@ public:
 protected:
     String target_database;
     String target_table;
+
+private:
+    /// Holds this alias's SQL security (always `DEFINER` for a freshly created alias; unset for a legacy
+    /// alias created before definer rights existed). The alias stores no column metadata of its own, so
+    /// this is kept separately from the target metadata returned by `getInMemoryMetadataPtr`.
+    StorageInMemoryMetadata security_metadata;
+
+    /// A legacy alias (no stored definer) cannot run any forwarded operation; it can only be dropped.
+    void checkUsable() const;
+
+    /// Context that runs a forwarded operation with the alias's definer rights. Throws for a legacy alias.
+    ContextMutablePtr getDefinerContext(ContextPtr local_context) const;
 };
 
 }

@@ -18,6 +18,7 @@
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Parsers/ASTSQLSecurity.h>
 #include <Core/UUID.h>
 
 #include <fmt/ranges.h>
@@ -687,12 +688,28 @@ bool DatabaseOverlayReadOnly::isTableExist(const String & table_name, ContextPtr
     return !findSourceDatabase(table_name, context_).empty();
 }
 
+namespace
+{
+
+/// An overlay presents each source table through a `StorageAlias`. These are not user-defined aliases,
+/// so they carry no definer and run with the invoker's rights (`SQL SECURITY INVOKER`): reaching a table
+/// through the overlay needs the same access on the source as reaching it directly. (A `StorageAlias`
+/// with no SQL security at all is a legacy user alias from before definer rights and is refused at use.)
+StoragePtr makeOverlayAlias(const StorageID & table_id, const ContextPtr & context, const String & source_database, const String & table_name)
+{
+    ASTSQLSecurity sql_security;
+    sql_security.type = SQLSecurityType::INVOKER;
+    return std::make_shared<StorageAlias>(table_id, context, source_database, table_name, &sql_security);
+}
+
+}
+
 StoragePtr DatabaseOverlayReadOnly::tryGetTable(const String & table_name, ContextPtr context_) const
 {
     String source = findSourceDatabase(table_name, context_);
     if (source.empty())
         return nullptr;
-    return std::make_shared<StorageAlias>(StorageID(getDatabaseName(), table_name), getContext(), source, table_name);
+    return makeOverlayAlias(StorageID(getDatabaseName(), table_name), getContext(), source, table_name);
 }
 
 DatabaseTablesIteratorPtr DatabaseOverlayReadOnly::getTablesIterator(
@@ -717,7 +734,7 @@ DatabaseTablesIteratorPtr DatabaseOverlayReadOnly::getTablesIteratorWithHint(
         {
             const String & name = it->name();
             if (isSourceTableVisible(source, name, context_) && seen.insert(name).second)
-                tables.emplace(name, std::make_shared<StorageAlias>(StorageID(getDatabaseName(), name), getContext(), source, name));
+                tables.emplace(name, makeOverlayAlias(StorageID(getDatabaseName(), name), getContext(), source, name));
         }
     }
     return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(tables), getDatabaseName());
