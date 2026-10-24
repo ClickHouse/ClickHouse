@@ -3065,9 +3065,10 @@ static BlockIO executeQueryImpl(
 
             insert_query->tail.reset();
         }
-        else
+        else if (!insert_query || !insert_query->returning)
         {
-            /// reset Input callbacks if query is not INSERT SELECT
+            /// reset Input callbacks if query is not INSERT SELECT,
+            /// and not INSERT ... RETURNING, which reads the data sent by the client with these callbacks.
             context->resetInputCallbacks();
         }
 
@@ -3085,6 +3086,8 @@ static BlockIO executeQueryImpl(
 
             if (!queue)
                 reason = "asynchronous insert queue is not configured";
+            else if (insert_query->returning)
+                reason = "the query has RETURNING";
             /// `INSERT ... SELECT` (including `FROM input()`) is routed through
             /// `InterpreterInsertQuery::execute` instead, so it must not reach `pushQueryWithInlinedData`.
             else if (!insert_query->select && insert_query->hasInlinedData())

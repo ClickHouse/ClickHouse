@@ -301,6 +301,9 @@ void StorageObjectStorageCluster::alter(const AlterCommands & params, ContextPtr
 
 void StorageObjectStorageCluster::checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const
 {
+    if (std::ranges::any_of(commands, [](const AlterCommand & command) { return command.isSettingsAlter(); }))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MODIFY SETTING and RESET SETTING are not supported by storage {}", getName());
+
     configuration->checkAlterIsPossible(object_storage, context, commands);
 }
 
@@ -339,10 +342,20 @@ void StorageObjectStorageCluster::drop()
 
 std::optional<UInt64> StorageObjectStorageCluster::totalRows(ContextPtr query_context) const
 {
+    return totalRowsInSnapshot(nullptr, query_context);
+}
+
+std::optional<UInt64> StorageObjectStorageCluster::totalRowsInSnapshot(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
+{
     configuration->lazyInitializeIfNeeded(
         object_storage,
         query_context);
-    return configuration->totalRows(query_context);
+
+    std::optional<DataLakeTableStateSnapshot> state;
+    if (storage_snapshot && storage_snapshot->metadata)
+        state = storage_snapshot->metadata->datalake_table_state;
+
+    return configuration->totalRows(query_context, state);
 }
 
 std::optional<UInt64> StorageObjectStorageCluster::totalBytes(ContextPtr query_context) const
@@ -426,6 +439,27 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
             cluster_name_arg = make_intrusive<ASTLiteral>(target_cluster_name);
         args.insert(args.begin(), std::move(cluster_name_arg));
     }
+
+    /// Make the replicas read the table state this query iterates.
+    const auto & table_state = storage_snapshot->metadata->datalake_table_state;
+    if (configuration->isDataLakeConfiguration() && table_state.has_value())
+    {
+        if (auto metadata = configuration->getExternalMetadata())
+        {
+            if (auto changes = metadata->getSettingsToResolveState(*table_state); !changes.empty())
+            {
+                if (!settings_temporary_storage)
+                {
+                    auto settings_ast = make_intrusive<ASTSetQuery>();
+                    settings_ast->is_standalone = false;
+                    settings_temporary_storage = std::move(settings_ast);
+                }
+                for (const auto & change : changes)
+                    settings_temporary_storage->as<ASTSetQuery &>().changes.setSetting(change.name, change.value);
+            }
+        }
+    }
+
     if (settings_temporary_storage)
     {
         args.insert(args.end(), std::move(settings_temporary_storage));
