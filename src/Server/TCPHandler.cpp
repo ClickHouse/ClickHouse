@@ -1789,18 +1789,25 @@ void TCPHandler::processTablesStatusRequest()
     /// authenticates the connection with the cluster secret. In interserver mode the request
     /// is authenticated with a cluster-secret hash that also covers the request body (mirroring
     /// the per-query secret hash `processQuery` computes over the query text), so a relayed hash
-    /// cannot be reused for a different set of tables. On that path the hash precedes the body on
-    /// the wire, so the body is deserialized to recompute the digest — but the tables are only
-    /// *resolved* (existence / readonly / replication-delay) after the hash has been validated.
-    /// An unauthenticated request that will be rejected is refused *before* its body is read, so an
-    /// unauthenticated peer cannot make the server deserialize an arbitrary request.
+    /// cannot be reused for a different set of tables. The hash precedes the body on the wire, so
+    /// the body is deserialized to recompute the digest - as `receiveQuery` deserializes the whole
+    /// Query packet of a not-yet-authenticated interserver peer before validating its hash - but the
+    /// tables are only *resolved* (existence / readonly / replication delay) once the peer has proven
+    /// knowledge of the secret. A peer that has not proven it gets a response that hides the table
+    /// status: it does not depend on the state of the tables, so nothing is disclosed.
     TablesStatusRequest request;
     ContextPtr context_to_resolve_table_names;
+    /// Set for an interserver peer that has not proven knowledge of the cluster secret: it gets a
+    /// response that hides the table status instead of the resolved one.
+    bool hide_table_status = false;
     if (is_interserver_mode)
     {
-#if USE_SSL
+        /// A peer that speaks the interserver protocol always has a cluster secret configured
+        /// (`Connection::sendHello` sends the interserver user marker only then), so from this
+        /// revision on the hash is always on the wire.
         if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_TABLES_STATUS)
         {
+#if USE_SSL
             std::string received_hash;
             readStringBinary(received_hash, *in, 32);
 
@@ -1837,29 +1844,30 @@ void TCPHandler::processTablesStatusRequest()
             if (encodeSHA256(data) != received_hash)
                 throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
                     "Interserver authentication failed for TablesStatusRequest");
-        }
-        else if (server.context()->getServerSettings()[ServerSetting::interserver_tables_status_require_auth]
-                 && !is_interserver_authenticated)
-        {
-            /// Older client that sends no hash: rejected by default
-            /// (`interserver_tables_status_require_auth` defaults to true), *before* reading the
-            /// body so an unauthenticated peer cannot make us deserialize its request. Operators can
-            /// turn the setting off as a temporary opt-out for a mixed-version rolling upgrade.
-            throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
-                "TablesStatusRequest requires interserver authentication");
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Inter-server secret support is disabled, because ClickHouse was built without SSL library");
+#endif
         }
         else
         {
-            /// Old client authenticated by an earlier query on this connection, or auth not required:
-            /// no hash to bind the body to, so just read it.
+            if (!is_interserver_authenticated
+                && server.context()->getServerSettings()[ServerSetting::interserver_tables_status_require_auth])
+                throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                    "TablesStatusRequest requires interserver authentication");
+
             request.read(*in, client_tcp_protocol_version);
+
+            if (!is_interserver_authenticated)
+            {
+                LOG_WARNING(LogFrequencyLimiter(log, 10),
+                    "Answering an unauthenticated interserver TablesStatusRequest without the table status, "
+                    "because the client is too old to sign it with the cluster secret. Replica staleness, "
+                    "readonly state and table existence are not taken into account for distributed queries "
+                    "initiated on such a client. Consider upgrading all nodes in cluster.");
+                hide_table_status = true;
+            }
         }
-#else
-        if (!is_interserver_authenticated)
-            throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
-                "TablesStatusRequest requires interserver authentication");
-        request.read(*in, client_tcp_protocol_version);
-#endif
 
         /// In the interserver mode session context does not exist, because authentication is done for each query.
         /// We also cannot create query context earlier, because it cannot be created before authentication,
@@ -1879,6 +1887,12 @@ void TCPHandler::processTablesStatusRequest()
     TablesStatusResponse response;
     for (const QualifiedTableName & table_name: request.tables)
     {
+        if (hide_table_status)
+        {
+            response.table_states_by_id.emplace(table_name, TableStatus{});
+            continue;
+        }
+
         auto resolved_id = context_to_resolve_table_names->tryResolveStorageID({table_name.database, table_name.table});
         StoragePtr table = DatabaseCatalog::instance().tryGetTable(resolved_id, context_to_resolve_table_names);
         if (!table)
