@@ -19,9 +19,13 @@
 #include <Server/HTTP/sendExceptionToHTTPClient.h>
 #include <Server/HTTPHandler.h>
 #include <Server/IServer.h>
+#include <Server/IcebergRESTCatalog/IcebergRESTCatalogCommitTable.h>
+#include <Server/IcebergRESTCatalog/IcebergRESTCatalogCreateTable.h>
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogJSON.h>
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogStorage.h>
-#include <Server/IcebergRESTCatalog/IcebergRESTCatalogCreateTable.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
+
+#include <Common/ZooKeeper/KeeperException.h>
 
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Parser.h>
@@ -46,6 +50,8 @@ namespace ErrorCodes
     extern const int ACCESS_DENIED;
     extern const int AUTHENTICATION_FAILED;
     extern const int BAD_ARGUMENTS;
+    extern const int METADATA_MISMATCH;
+    extern const int NOT_IMPLEMENTED;
     extern const int QUERY_IS_PROHIBITED;
     extern const int READONLY;
     extern const int KEEPER_EXCEPTION;
@@ -54,7 +60,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
-using namespace IcebergRESTCatalogJSON;
+using namespace IcebergRESTCatalog;
 
 namespace
 {
@@ -65,25 +71,22 @@ constexpr size_t MAX_NAMESPACE_LEVELS = 16;
 constexpr size_t MAX_NAMESPACE_LEVEL_LENGTH = 256;
 constexpr size_t MAX_NAMESPACE_PROPERTIES_SIZE = 64_KiB;
 constexpr size_t MAX_TABLE_NAME_LENGTH = 256;
-/// Metadata files with many snapshots reach tens of megabytes.
-constexpr size_t MAX_METADATA_FILE_SIZE = 64_MiB;
 constexpr char NAMESPACE_LEVEL_SEPARATOR = '\x1F';
 
-/// The Iceberg table property that names the codec of metadata files. The Java reference defaults to `none`.
+/// The Iceberg table property that names the codec of metadata files.
 constexpr auto METADATA_COMPRESSION_CODEC_PROPERTY = "write.metadata.compression-codec";
 
-/// The spec defines only these two. Other codecs would leave files that other engines cannot open.
-CompressionMethod getMetadataCompressionMethod(const std::map<String, String> & properties)
+CompressionMethod getMetadataCompressionMethod(const Poco::JSON::Object & metadata)
 {
-    const auto it = properties.find(METADATA_COMPRESSION_CODEC_PROPERTY);
-    if (it == properties.end())
+    const auto properties = getObject(metadata, Iceberg::f_properties);
+    const auto codec = properties->optValue<String>(METADATA_COMPRESSION_CODEC_PROPERTY, "none");
+    const auto lower = Poco::toLower(codec);
+    if (lower == "none")
         return CompressionMethod::None;
-    const auto codec = Poco::toLower(it->second);
-    if (codec == "none")
-        return CompressionMethod::None;
-    if (codec == "gzip")
+    if (lower == "gzip")
         return CompressionMethod::Gzip;
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "'{}' must be 'none' or 'gzip', got '{}'", METADATA_COMPRESSION_CODEC_PROPERTY, it->second);
+    /// The spec defines only none and gzip. Other codecs would leave files that other engines cannot open.
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "'{}' must be 'none' or 'gzip', got '{}'", METADATA_COMPRESSION_CODEC_PROPERTY, codec);
 }
 
 /// Codec suffix inside a metadata file name: `v1-<uuid>.gz.metadata.json`. The spec spells gzip as `gz`.
@@ -236,6 +239,8 @@ void IcebergRESTCatalogHandler::sendNoContent(HTTPServerResponse & response)
 void IcebergRESTCatalogHandler::sendError(
     HTTPServerResponse & response, Poco::Net::HTTPResponse::HTTPStatus status, const String & type, const String & message)
 {
+    LOG_DEBUG(getLogger("IcebergRESTCatalogHandler"), "Request rejected with {} {}: {}", static_cast<int>(status), type, message);
+
     /// ErrorModel from the Iceberg REST specification.
     Poco::JSON::Object error;
     error.set("message", message);
@@ -363,6 +368,9 @@ void IcebergRESTCatalogHandler::handleRequest(HTTPServerRequest & request, HTTPS
                 return;
             case IcebergRESTOperation::DropTable:
                 handleDropTable(*warehouse, *match, uri, response, *context);
+                return;
+            case IcebergRESTOperation::UpdateTable:
+                handleUpdateTable(*warehouse, *match, request, response, *context);
                 return;
             default:
                 sendError(
@@ -523,12 +531,16 @@ void IcebergRESTCatalogHandler::handleNamespaceExists(const IcebergRESTCatalogWa
     sendNoContent(response);
 }
 
+void IcebergRESTCatalogHandler::checkNotReadonly(const Context & context, const String & action)
+{
+    if (context.getSettingsRef()[Setting::readonly])
+        throw Exception(ErrorCodes::READONLY, "Cannot {} in readonly mode", action);
+}
+
 void IcebergRESTCatalogHandler::checkDDLAllowed(const Context & context, const String & action)
 {
-    const auto & settings = context.getSettingsRef();
-    if (settings[Setting::readonly])
-        throw Exception(ErrorCodes::READONLY, "Cannot {} in readonly mode", action);
-    if (!settings[Setting::allow_ddl])
+    checkNotReadonly(context, action);
+    if (!context.getSettingsRef()[Setting::allow_ddl])
         throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Cannot {}. DDL queries are prohibited for the user", action);
 }
 
@@ -599,6 +611,7 @@ void IcebergRESTCatalogHandler::handleCreateNamespace(const IcebergRESTCatalogWa
             fmt::format("Namespace already exists: {}", joinNamespace(name)));
         return;
     }
+    LOG_INFO(log, "Created namespace {}", joinNamespace(name));
 
     Poco::JSON::Object properties_json;
     for (const auto & [key, value] : properties)
@@ -626,8 +639,7 @@ Poco::JSON::Object::Ptr IcebergRESTCatalogHandler::readTableMetadata(
     const IcebergRESTCatalogWarehouse & warehouse, const IcebergTablePointer & pointer) const
 {
     const auto key = warehouse.objectKey(pointer.metadata_location);
-    const auto content = readObjectToString(
-        *warehouse.object_storage, key, server.context()->getReadSettings(), MAX_METADATA_FILE_SIZE, getMetadataFileCompressionMethod(key));
+    const auto content = readObjectToString(*warehouse.object_storage, key, server.context()->getReadSettings(), getMetadataFileCompressionMethod(key));
     return parseJSONObject(content, fmt::format("Metadata file {}", pointer.metadata_location));
 }
 
@@ -768,8 +780,6 @@ void IcebergRESTCatalogHandler::handleCreateTable(
                 properties[key] = value.convert<String>();
         }
 
-        compression_method = getMetadataCompressionMethod(properties);
-
         metadata = buildInitialTableMetadata(
             uuid,
             location,
@@ -777,6 +787,7 @@ void IcebergRESTCatalogHandler::handleCreateTable(
             getOptionalObject(*json, "partition-spec"),
             getOptionalObject(*json, "write-order"),
             std::move(properties));
+        compression_method = getMetadataCompressionMethod(*metadata);
 
         /// Same naming as the ClickHouse Iceberg writer: `<location>/metadata/v<version>-<uuid>.metadata.json`, starting at 1.
         pointer.metadata_location
@@ -841,6 +852,168 @@ void IcebergRESTCatalogHandler::handleCreateTable(
     LOG_INFO(log, "Created table {}.{} at {}", joinNamespace(ns), name, pointer.metadata_location);
     /// Answer from memory. The table is registered, so a failed read-back must not turn into a 500.
     sendLoadTableResult(pointer.metadata_location, metadata, response);
+}
+
+/// Checks requirements and applies updates in memory, then calls `commitTableMetadata`.
+void IcebergRESTCatalogHandler::handleUpdateTable(
+    const IcebergRESTCatalogWarehouse & warehouse,
+    const IcebergRESTRouteMatch & match,
+    HTTPServerRequest & request,
+    HTTPServerResponse & response,
+    const Context & context) const
+{
+    checkNotReadonly(context, "commit to table");
+
+    const auto ns = getNamespaceOrSendNotFound(warehouse, match, response);
+    if (!ns)
+        return;
+    const auto & table = match.path_params.at("table");
+
+    const auto body = readRequestBody(request, response, MAX_REQUEST_BODY_SIZE);
+    if (!body)
+        return;
+
+    const auto pointer = warehouse.store->getTable(*ns, table);
+    if (!pointer)
+    {
+        sendNoSuchTable(response, *ns, table);
+        return;
+    }
+    auto metadata = readTableMetadata(warehouse, *pointer);
+
+    CompressionMethod compression_method = CompressionMethod::None;
+    try
+    {
+        const auto json = Poco::JSON::Parser().parse(*body).extract<Poco::JSON::Object::Ptr>();
+        const auto requirements = getArray(*json, "requirements");
+        const auto updates = getArray(*json, "updates");
+
+        if (const auto result = checkTableRequirements(*metadata, *requirements); !result)
+        {
+            sendError(response, Poco::Net::HTTPResponse::HTTP_CONFLICT, "CommitFailedException", result.error());
+            return;
+        }
+
+        /// Do not write a new metadata version for an empty commit.
+        if (updates->size() == 0)
+        {
+            sendCommitTableResult(pointer->metadata_location, metadata, response);
+            return;
+        }
+
+        applyTableUpdatesToJSON(*metadata, *updates, pointer->metadata_location);
+        /// A `set-properties` update may change the codec. The new file follows the updated properties.
+        compression_method = getMetadataCompressionMethod(*metadata);
+    }
+    catch (const Exception & e)
+    {
+        /// The request was based on metadata that another commit has since replaced. The client retries after reloading.
+        if (e.code() == ErrorCodes::METADATA_MISMATCH)
+        {
+            sendError(response, Poco::Net::HTTPResponse::HTTP_CONFLICT, "CommitFailedException", e.message());
+            return;
+        }
+        /// Other errors are not caused by the client. The HTTP layer reports them as internal errors.
+        if (e.code() != ErrorCodes::NOT_IMPLEMENTED && e.code() != ErrorCodes::BAD_ARGUMENTS)
+            throw;
+        sendCommitRequestError(response, e.code(), e.message());
+        return;
+    }
+    catch (const Poco::Exception & e)
+    {
+        sendCommitRequestError(response, ErrorCodes::BAD_ARGUMENTS, e.displayText());
+        return;
+    }
+
+    commitTableMetadata(warehouse, *ns, table, *pointer, metadata, compression_method, response);
+}
+
+void IcebergRESTCatalogHandler::commitTableMetadata(
+    const IcebergRESTCatalogWarehouse & warehouse,
+    const IcebergNamespaceName & ns,
+    const String & table,
+    const IcebergTablePointer & pointer,
+    const Poco::JSON::Object::Ptr & metadata,
+    CompressionMethod compression_method,
+    HTTPServerResponse & response) const
+{
+    /// Get the name for the next metadata.json file.
+    const String new_location
+        = nextMetadataLocation(*metadata, pointer.metadata_location, getMetadataCompressionSuffix(compression_method));
+
+    /// Write the metadata.json to object storage.
+    const auto object_key = warehouse.objectKey(new_location);
+    writeNewObject(
+        *warehouse.object_storage,
+        object_key,
+        toJSONString(*metadata, 4),
+        server.context()->getWriteSettings(),
+        compression_method,
+        static_cast<int>(server.context()->getSettingsRef()[Setting::output_format_compression_level]));
+
+    /// Update Keeper.
+    using UpdateTableResult = KeeperIcebergRESTCatalogStore::UpdateTableResult;
+    std::optional<UpdateTableResult> result;
+    try
+    {
+        result = warehouse.store->updateTable(ns, table, pointer, {.uuid = pointer.uuid, .metadata_location = new_location});
+    }
+    catch (const zkutil::KeeperException & e)
+    {
+        /// The set may have been applied, so the new file must stay. The client reloads the table to find out.
+        LOG_WARNING(log, "Commit of {}.{} to {} has an unknown outcome: {}", joinNamespace(ns), table, new_location, e.message());
+        sendError(response, Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR, "CommitStateUnknownException", "Commit state is unknown");
+        return;
+    }
+
+    if (*result != UpdateTableResult::Updated)
+        warehouse.object_storage->removeObjectIfExists(StoredObject(object_key));
+
+    switch (*result)
+    {
+        case UpdateTableResult::Updated:
+            LOG_INFO(log, "Committed table {}.{}: {} -> {}", joinNamespace(ns), table, pointer.metadata_location, new_location);
+            sendCommitTableResult(new_location, metadata, response);
+            return;
+        case UpdateTableResult::VersionMismatch:
+            sendError(
+                response,
+                Poco::Net::HTTPResponse::HTTP_CONFLICT,
+                "CommitFailedException",
+                fmt::format("Table {}.{} was updated concurrently, retry the commit", joinNamespace(ns), table));
+            return;
+        case UpdateTableResult::UuidMismatch:
+            sendError(
+                response,
+                Poco::Net::HTTPResponse::HTTP_CONFLICT,
+                "CommitFailedException",
+                fmt::format("Table {}.{} was dropped and re-created, reload the table", joinNamespace(ns), table));
+            return;
+        case UpdateTableResult::TableMissing:
+            sendNoSuchTable(response, ns, table);
+            return;
+    }
+}
+
+void IcebergRESTCatalogHandler::sendCommitTableResult(
+    const String & metadata_location, const Poco::JSON::Object::Ptr & metadata, HTTPServerResponse & response)
+{
+    Poco::JSON::Object result;
+    result.set("metadata-location", metadata_location);
+    result.set("metadata", metadata);
+    sendJSON(response, result, Poco::Net::HTTPResponse::HTTP_OK);
+}
+
+void IcebergRESTCatalogHandler::sendCommitRequestError(HTTPServerResponse & response, int code, const String & message)
+{
+    if (code == ErrorCodes::NOT_IMPLEMENTED)
+        sendError(response, Poco::Net::HTTPResponse::HTTP_BAD_REQUEST, "UnsupportedOperationException", message);
+    else
+        sendError(
+            response,
+            Poco::Net::HTTPResponse::HTTP_BAD_REQUEST,
+            "BadRequestException",
+            fmt::format("Malformed commit request: {}", message));
 }
 
 void IcebergRESTCatalogHandler::handleDropTable(

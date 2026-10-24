@@ -5,8 +5,10 @@ import gzip
 import json
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import quote
 
+import pyarrow as pa
 import pytest
 import requests
 import urllib3
@@ -67,6 +69,9 @@ DEFAULT_SCHEMA = {
 }
 
 
+keeper = None
+
+
 def wait_catalog_ready(timeout=60, instance=None):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -80,15 +85,22 @@ def wait_catalog_ready(timeout=60, instance=None):
 
 @pytest.fixture(scope="module")
 def started_cluster():
+    global keeper
     try:
         cluster.start()
-        get_keeper().ensure_path("/aux_root")
+        # One Keeper session for the whole module. It reconnects on its own if Keeper restarts.
+        keeper = cluster.get_kazoo_client("zoo1")
+        keeper.ensure_path("/aux_root")
         if not cluster.minio_client.bucket_exists(BUCKET):
             cluster.minio_client.make_bucket(BUCKET)
         wait_catalog_ready()
         wait_catalog_ready(instance=node_aux)
         yield cluster
     finally:
+        if keeper is not None:
+            keeper.stop()
+            keeper.close()
+            keeper = None
         cluster.shutdown()
 
 
@@ -98,7 +110,7 @@ def catalog_url(path, instance=None):
 
 
 def get_keeper():
-    return cluster.get_kazoo_client("zoo1")
+    return keeper
 
 
 def restart_node():
@@ -187,6 +199,72 @@ def list_metadata_files(location):
     ]
 
 
+def commit_table(ns, table, requirements, updates, expected_code=200, auth=None):
+    return catalog_request(
+        "POST",
+        tables_url(ns, table),
+        json={"requirements": requirements, "updates": updates},
+        expected_code=expected_code,
+        auth=auth,
+    )
+
+
+# The server does not open the manifest list, so a fake path is enough for HTTP-level tests.
+def fake_snapshot(snapshot_id, sequence_number):
+    return {
+        "snapshot-id": snapshot_id,
+        "sequence-number": sequence_number,
+        "timestamp-ms": int(time.time() * 1000),
+        "manifest-list": f"{BASE_LOCATION}/fake/snap-{snapshot_id}.avro",
+        "summary": {"operation": "append"},
+        "schema-id": 0,
+    }
+
+
+def append_updates(snapshot):
+    return [
+        {"action": "add-snapshot", "snapshot": snapshot},
+        {
+            "action": "set-snapshot-ref",
+            "ref-name": "main",
+            "type": "branch",
+            "snapshot-id": snapshot["snapshot-id"],
+        },
+    ]
+
+
+# `None` means "main must not exist yet", as pyiceberg sends it.
+def assert_main_at(snapshot_id):
+    return [{"type": "assert-ref-snapshot-id", "ref": "main", "snapshot-id": snapshot_id}]
+
+
+def load_pyiceberg_catalog():
+    return load_catalog(
+        "ch",
+        **{
+            "uri": catalog_url(""),
+            "type": "rest",
+            "warehouse": "my_warehouse",
+            "auth": {"type": "basic", "basic": {"username": "default", "password": ""}},
+            "s3.endpoint": f"http://{cluster.minio_ip}:{cluster.minio_port}",
+            "s3.access-key-id": minio_access_key,
+            "s3.secret-access-key": minio_secret_key,
+        },
+    )
+
+
+def create_database_query(token):
+    return f"""
+        DROP DATABASE IF EXISTS rest_tables_db;
+        SET allow_experimental_database_iceberg = 1;
+        CREATE DATABASE rest_tables_db
+        ENGINE = DataLakeCatalog('http://localhost:{CATALOG_PORT}/v1', '{minio_access_key}', '{minio_secret_key}')
+        SETTINGS catalog_type = 'rest', warehouse = 'my_warehouse',
+            storage_endpoint = 'http://minio1:9001/{BUCKET}',
+            auth_header = 'Authorization: Basic {token}'
+        """
+
+
 def test_config(started_cluster):
     response = catalog_request(
         "GET", "/v1/config", params={"warehouse": "my_warehouse"}
@@ -204,6 +282,7 @@ def test_config(started_cluster):
         "POST /v1/{prefix}/namespaces/{namespace}/tables",
         "GET /v1/{prefix}/namespaces/{namespace}/tables/{table}",
         "HEAD /v1/{prefix}/namespaces/{namespace}/tables/{table}",
+        "POST /v1/{prefix}/namespaces/{namespace}/tables/{table}",
         "DELETE /v1/{prefix}/namespaces/{namespace}/tables/{table}",
     ]
 
@@ -320,11 +399,6 @@ def test_malformed_create_namespace(started_cluster):
 def test_not_implemented(started_cluster):
     response = catalog_request(
         "POST", "/v1/my_warehouse/tables/rename", expected_code=406
-    )
-    assert_error_shape(response, "UnsupportedOperationException")
-
-    response = catalog_request(
-        "POST", "/v1/my_warehouse/namespaces/sales/tables/t", expected_code=406
     )
     assert_error_shape(response, "UnsupportedOperationException")
 
@@ -480,6 +554,11 @@ def test_table_ddl_rejects_readonly(started_cluster):
         assert_error_shape(response, "ForbiddenException")
         response = drop_table(ns, "existing", auth=auth, expected_code=403)
         assert_error_shape(response, "ForbiddenException")
+
+    response = commit_table(ns, "existing", [], [], auth=("readonly_user", ""), expected_code=403)
+    assert_error_shape(response, "ForbiddenException")
+    # A commit is a data change, so `allow_ddl = 0` does not block it.
+    commit_table(ns, "existing", [], [], auth=("no_ddl_user", ""))
 
     assert list_tables(ns) == ["existing"]
 
@@ -906,6 +985,286 @@ def test_auxiliary_keeper(started_cluster):
     zk = get_keeper()
     assert zk.exists(f"/aux_root{KEEPER_ROOT}/namespaces/aux_ns")
     assert not zk.exists(f"{KEEPER_ROOT}/namespaces/aux_ns")
+
+
+def test_commit_append(started_cluster):
+    ns = f"commit_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+    created = create_table(ns, "events").json()
+    location = created["metadata"]["location"]
+
+    # First append, the way the ClickHouse client sends it: no `snapshot-id` key means `main` must not exist yet.
+    first = commit_table(
+        ns,
+        "events",
+        [{"type": "assert-ref-snapshot-id", "ref": "main"}],
+        append_updates(fake_snapshot(100, 1)),
+    ).json()
+    metadata = first["metadata"]
+    assert first["metadata-location"].startswith(f"{location}/metadata/v2-")
+    assert metadata["current-snapshot-id"] == 100
+    assert metadata["refs"] == {"main": {"type": "branch", "snapshot-id": 100}}
+    assert metadata["last-sequence-number"] == 1
+    assert [s["snapshot-id"] for s in metadata["snapshots"]] == [100]
+    assert [e["snapshot-id"] for e in metadata["snapshot-log"]] == [100]
+    assert [e["metadata-file"] for e in metadata["metadata-log"]] == [
+        created["metadata-location"]
+    ]
+
+    second = commit_table(
+        ns,
+        "events",
+        assert_main_at(100),
+        append_updates(fake_snapshot(200, 2)),
+    ).json()
+    assert second["metadata-location"].startswith(f"{location}/metadata/v3-")
+    assert second["metadata"]["current-snapshot-id"] == 200
+    assert [e["metadata-file"] for e in second["metadata"]["metadata-log"]] == [
+        created["metadata-location"],
+        first["metadata-location"],
+    ]
+
+    # Load returns the latest file, and every version is kept on storage.
+    loaded = catalog_request("GET", tables_url(ns, "events")).json()
+    assert loaded["metadata-location"] == second["metadata-location"]
+    assert loaded["metadata"] == second["metadata"]
+    assert len(list_metadata_files(location)) == 3
+
+    zk = get_keeper()
+    table_path = f"{KEEPER_ROOT}/namespaces/{ns}/tables/events"
+    table_uuid = zk.get(table_path)[0].decode()
+    assert zk.get(f"{table_path}/{table_uuid}")[0] == second["metadata-location"].encode()
+
+
+def test_commit_empty(started_cluster):
+    ns = f"commit_empty_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+    created = create_table(ns, "events").json()
+    location = created["metadata"]["location"]
+    first = commit_table(ns, "events", [], append_updates(fake_snapshot(100, 1))).json()
+
+    # Requirements are still checked.
+    commit_table(ns, "events", assert_main_at(None), [], expected_code=409)
+
+    # An empty commit returns the current state and writes nothing.
+    result = commit_table(ns, "events", assert_main_at(100), []).json()
+    assert result["metadata-location"] == first["metadata-location"]
+    assert result["metadata"] == first["metadata"]
+    assert len(list_metadata_files(location)) == 2
+
+    loaded = catalog_request("GET", tables_url(ns, "events")).json()
+    assert loaded["metadata-location"] == first["metadata-location"]
+    assert len(loaded["metadata"]["metadata-log"]) == 1
+
+
+def test_commit_rejected(started_cluster):
+    ns = f"commit_rejected_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+    created = create_table(ns, "events").json()
+    location = created["metadata"]["location"]
+    commit_table(ns, "events", assert_main_at(None), append_updates(fake_snapshot(100, 1)))
+
+    conflicts = [
+        [{"type": "assert-table-uuid", "uuid": str(uuid.uuid4())}],
+        [{"type": "assert-ref-snapshot-id", "ref": "main", "snapshot-id": None}],
+        [{"type": "assert-ref-snapshot-id", "ref": "main", "snapshot-id": 999}],
+        [{"type": "assert-current-schema-id", "current-schema-id": 5}],
+        [{"type": "assert-create"}],
+    ]
+    for requirements in conflicts:
+        response = commit_table(ns, "events", requirements, [], expected_code=409)
+        assert_error_shape(response, "CommitFailedException")
+
+    bad_updates = [
+        ({"action": "no-such-action"}, "BadRequestException"),
+        ({"action": "add-schema", "schema": DEFAULT_SCHEMA}, "UnsupportedOperationException"),
+        # Snapshot id 100 is taken.
+        ({"action": "add-snapshot", "snapshot": fake_snapshot(100, 2)}, "BadRequestException"),
+        # Optional snapshot fields keep their spec types.
+        ({"action": "add-snapshot", "snapshot": fake_snapshot(101, 2) | {"schema-id": "bad"}}, "BadRequestException"),
+        ({"action": "add-snapshot", "snapshot": fake_snapshot(101, 2) | {"parent-snapshot-id": "100"}}, "BadRequestException"),
+        ({"action": "add-snapshot", "snapshot": fake_snapshot(101, 2) | {"summary": {"operation": "append", "added-records": 10}}}, "BadRequestException"),
+        # Snapshot 5 does not exist.
+        ({"action": "set-snapshot-ref", "ref-name": "main", "type": "branch", "snapshot-id": 5}, "BadRequestException"),
+        # Retention settings must be positive integers.
+        ({"action": "set-snapshot-ref", "ref-name": "dev", "type": "branch", "snapshot-id": 100, "min-snapshots-to-keep": 0}, "BadRequestException"),
+        ({"action": "set-snapshot-ref", "ref-name": "dev", "type": "branch", "snapshot-id": 100, "max-ref-age-ms": "soon"}, "BadRequestException"),
+        # Tags carry only max-ref-age-ms.
+        ({"action": "set-snapshot-ref", "ref-name": "v1", "type": "tag", "snapshot-id": 100, "max-snapshot-age-ms": 1000}, "BadRequestException"),
+    ]
+    before = catalog_request("GET", tables_url(ns, "events")).json()
+    for update, expected_type in bad_updates:
+        response = commit_table(ns, "events", [], [update], expected_code=400)
+        assert_error_shape(response, expected_type)
+
+    # Rejected updates leave the metadata pointer and its content untouched.
+    after = catalog_request("GET", tables_url(ns, "events")).json()
+    assert after["metadata-location"] == before["metadata-location"]
+    assert after["metadata"] == before["metadata"]
+
+    # Sequence number 1 is not greater than the current one, so another commit landed first.
+    stale = {"action": "add-snapshot", "snapshot": fake_snapshot(101, 1)}
+    response = commit_table(ns, "events", [], [stale], expected_code=409)
+    assert_error_shape(response, "CommitFailedException")
+
+    response = commit_table(ns, "events", [{"type": "assert-something-else"}], [], expected_code=400)
+    assert_error_shape(response, "BadRequestException")
+
+    response = catalog_request(
+        "POST", tables_url(ns, "events"), json={"updates": []}, expected_code=400
+    )
+    assert_error_shape(response, "BadRequestException")
+    response = commit_table(ns, "missing", [], [], expected_code=404)
+    assert_error_shape(response, "NoSuchTableException")
+
+    # Rejected commits leave no files behind: create plus one successful commit.
+    assert len(list_metadata_files(location)) == 2
+    assert catalog_request("GET", tables_url(ns, "events")).json()["metadata"]["current-snapshot-id"] == 100
+
+
+def test_commit_properties_and_refs(started_cluster):
+    ns = f"commit_props_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+    create_table(ns, "events", properties={"owner": "alice"})
+
+    metadata = commit_table(
+        ns,
+        "events",
+        [],
+        [
+            {"action": "set-properties", "updates": {"team": "data", "owner": "bob"}},
+            {"action": "remove-properties", "removals": ["team", "unknown"]},
+        ],
+    ).json()["metadata"]
+    assert metadata["properties"] == {"owner": "bob"}
+
+    commit_table(ns, "events", [], append_updates(fake_snapshot(100, 1)))
+    metadata = commit_table(
+        ns,
+        "events",
+        [],
+        [{"action": "set-snapshot-ref", "ref-name": "v1", "type": "tag", "snapshot-id": 100, "max-ref-age-ms": 1000}],
+    ).json()["metadata"]
+    assert metadata["refs"]["v1"] == {"type": "tag", "snapshot-id": 100, "max-ref-age-ms": 1000}
+    assert metadata["current-snapshot-id"] == 100
+
+    metadata = commit_table(
+        ns,
+        "events",
+        [],
+        [
+            {"action": "remove-snapshot-ref", "ref-name": "v1"},
+            {"action": "remove-snapshot-ref", "ref-name": "main"},
+        ],
+    ).json()["metadata"]
+    assert metadata["refs"] == {}
+    assert metadata["current-snapshot-id"] == -1
+    assert len(metadata["snapshots"]) == 1
+
+
+def test_commit_concurrent(started_cluster):
+    ns = f"commit_concurrent_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+    location = create_table(ns, "events").json()["metadata"]["location"]
+
+    # Both writers expect no `main`. One wins. The other fails the requirement or, in a real race, the Keeper version check.
+    def commit(snapshot_id):
+        return requests.post(
+            catalog_url(tables_url(ns, "events")),
+            json={
+                "requirements": assert_main_at(None),
+                "updates": append_updates(fake_snapshot(snapshot_id, 1)),
+            },
+        ).status_code
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        codes = sorted(executor.map(commit, [100, 200]))
+    assert codes == [200, 409]
+    assert len(list_metadata_files(location)) == 2
+
+
+def test_pyiceberg_append(started_cluster):
+    ns = f"pyiceberg_append_{uuid.uuid4().hex[:8]}"
+    catalog = load_pyiceberg_catalog()
+    catalog.create_namespace(ns)
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=LongType(), required=True),
+        NestedField(field_id=2, name="name", field_type=StringType(), required=False),
+    )
+    table = catalog.create_table(f"{ns}.events", schema=schema)
+
+    rows = pa.Table.from_pylist(
+        [{"id": 1, "name": "a"}, {"id": 2, "name": "b"}],
+        schema=pa.schema([pa.field("id", pa.int64(), nullable=False), pa.field("name", pa.string())]),
+    )
+    table.append(rows)
+    table.append(rows)
+    assert len(table.metadata.snapshots) == 2
+    assert table.scan().to_arrow().num_rows == 4
+
+    table.transaction().set_properties(owner="alice").commit_transaction()
+    assert catalog.load_table(f"{ns}.events").properties["owner"] == "alice"
+
+
+def test_pyiceberg_transaction_history(started_cluster):
+    ns = f"pyiceberg_txn_{uuid.uuid4().hex[:8]}"
+    catalog = load_pyiceberg_catalog()
+    catalog.create_namespace(ns)
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=LongType(), required=True),
+        NestedField(field_id=2, name="name", field_type=StringType(), required=False),
+    )
+    table = catalog.create_table(f"{ns}.events", schema=schema)
+    rows = pa.Table.from_pylist(
+        [{"id": 1, "name": "a"}, {"id": 2, "name": "b"}],
+        schema=pa.schema([pa.field("id", pa.int64(), nullable=False), pa.field("name", pa.string())]),
+    )
+    table.append(rows)
+
+    # Two appends in one transaction are one commit. Only the final snapshot was ever current.
+    with table.transaction() as txn:
+        txn.append(rows)
+        txn.append(rows)
+    table = catalog.load_table(f"{ns}.events")
+    assert len(table.metadata.snapshots) == 3
+    assert [e.snapshot_id for e in table.metadata.snapshot_log] == [
+        table.metadata.snapshots[0].snapshot_id,
+        table.metadata.snapshots[2].snapshot_id,
+    ]
+
+    # A timestamp read at the commit time sees both appends of the transaction.
+    node.query(create_database_query("ZGVmYXVsdDo="))  # default:
+    try:
+        commit_ms = table.metadata.snapshot_log[-1].timestamp_ms
+        query = f"SELECT count() FROM rest_tables_db.`{ns}.events` SETTINGS iceberg_timestamp_ms = {commit_ms}"
+        assert node.query(query) == "6\n"
+    finally:
+        node.query("DROP DATABASE IF EXISTS rest_tables_db")
+
+
+def test_clickhouse_insert(started_cluster):
+    ns = f"chinsert_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+    create_table(ns, "events")
+    table = f"rest_tables_db.`{ns}.events`"
+
+    node.query(create_database_query("ZGVmYXVsdDo="))  # default:
+    try:
+        insert = f"INSERT INTO {table} SETTINGS allow_insert_into_iceberg = 1 VALUES (1, 'a'), (2, 'b')"
+        node.query(insert)
+        node.query(insert)
+        assert node.query(f"SELECT count() FROM {table}") == "4\n"
+
+        # Parallel inserts hit 409 on the catalog and retry.
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            list(executor.map(lambda _: node.query(insert), range(4)))
+        assert node.query(f"SELECT count() FROM {table}") == "12\n"
+
+        # pyiceberg reads what ClickHouse wrote.
+        pyiceberg_table = load_pyiceberg_catalog().load_table(f"{ns}.events")
+        assert pyiceberg_table.scan().to_arrow().num_rows == 12
+    finally:
+        node.query("DROP DATABASE IF EXISTS rest_tables_db")
 
 
 def test_secure_port(started_cluster):
