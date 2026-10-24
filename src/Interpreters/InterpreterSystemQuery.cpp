@@ -219,6 +219,8 @@ namespace ActionLocks
     extern const StorageActionBlockType ViewRefresh;
     extern const StorageActionBlockType ViewRefreshPause;
     extern const StorageActionBlockType StreamConsume;
+    extern const StorageActionBlockType VirtualPartsUpdate;
+    extern const StorageActionBlockType ReduceBlockingParts;
 }
 
 namespace
@@ -310,6 +312,10 @@ AccessType getRequiredAccessType(StorageActionBlockType action_type)
         return AccessType::SYSTEM_VIEWS;
     if (action_type == ActionLocks::StreamConsume)
         return AccessType::SYSTEM_STREAMING_ENGINES;
+    if (action_type == ActionLocks::VirtualPartsUpdate)
+        return AccessType::SYSTEM_VIRTUAL_PARTS_UPDATE;
+    if (action_type == ActionLocks::ReduceBlockingParts)
+        return AccessType::SYSTEM_REDUCE_BLOCKING_PARTS;
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown action type: {}", std::to_string(action_type));
 }
 
@@ -993,6 +999,12 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::START_REPLICATION_QUEUES:
             startStopAction(ActionLocks::ReplicationQueue, true);
             break;
+        case Type::STOP_REPLICATED_DDL_QUERIES:
+            stopReplicatedDDLQueries();
+            break;
+        case Type::START_REPLICATED_DDL_QUERIES:
+            startReplicatedDDLQueries();
+            break;
         case Type::STOP_DISTRIBUTED_SENDS:
             startStopAction(ActionLocks::DistributedSend, false);
             break;
@@ -1034,6 +1046,18 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::STOP_REPLICATED_VIEW:
             for (const auto & task : getRefreshTasks())
                 task->stopReplicated("SYSTEM STOP REPLICATED VIEW");
+            break;
+        case Type::STOP_VIRTUAL_PARTS_UPDATE:
+            startStopAction(ActionLocks::VirtualPartsUpdate, false);
+            break;
+        case Type::START_VIRTUAL_PARTS_UPDATE:
+            startStopAction(ActionLocks::VirtualPartsUpdate, true);
+            break;
+        case Type::STOP_REDUCE_BLOCKING_PARTS:
+            startStopAction(ActionLocks::ReduceBlockingParts, false);
+            break;
+        case Type::START_REDUCE_BLOCKING_PARTS:
+            startStopAction(ActionLocks::ReduceBlockingParts, true);
             break;
         case Type::REFRESH_VIEW:
             for (const auto & task : getRefreshTasks())
@@ -1491,6 +1515,7 @@ void InterpreterSystemQuery::restoreDatabaseReplica(ASTSystemQuery & query)
 
 StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, ContextMutablePtr system_context, bool throw_on_error)
 {
+    auto component_guard = Coordination::setCurrentComponent("InterpreterSystemQuery::doRestartReplica");
     LOG_TRACE(log, "Restarting replica {}", replica);
     auto table_ddl_guard = DatabaseCatalog::instance().getDDLGuard(replica.getDatabaseName(), replica.getTableName(), nullptr);
 
@@ -2298,10 +2323,9 @@ bool InterpreterSystemQuery::trySyncReplica(StoragePtr table, SyncReplicaMode sy
             break;
     }
 
-
+    auto log = getLogger("InterpreterSystemQuery");
     if (auto * storage_replicated = castStorage<StorageReplicatedMergeTree>(table, DeferredTable::Load).get())
     {
-        auto log = getLogger("InterpreterSystemQuery");
         LOG_TRACE(log, "Synchronizing entries in replica's queue with table's log and waiting for current last entry to be processed");
         auto sync_timeout = context_->getSettingsRef()[Setting::receive_timeout].totalMilliseconds();
         context_->onQueryExecutionStarted();
@@ -2341,6 +2365,61 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery & query)
     std::unordered_set<std::string> replicas(query.src_replicas.begin(), query.src_replicas.end());
     if (!trySyncReplica(table, query.sync_replica_mode, replicas, getContext()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), table_id.getNameForLogs());
+}
+
+namespace
+{
+
+/// Keeper connections of all `Replicated` databases: their initial DDL entries check the stop flag through them.
+std::vector<zkutil::ZooKeeperPtr> getKeepersOfReplicatedDatabases(const ContextPtr & context)
+{
+    std::set<String> zookeeper_names;
+    for (const auto & [_, database] : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false, .with_remote_databases = false}))
+        if (const auto * replicated = dynamic_cast<const DatabaseReplicated *>(database.get()))
+            zookeeper_names.insert(replicated->getZooKeeperName());
+
+    std::vector<zkutil::ZooKeeperPtr> keepers;
+    for (const auto & name : zookeeper_names)
+        keepers.push_back(context->getDefaultOrAuxiliaryZooKeeper(name));
+    return keepers;
+}
+
+}
+
+void InterpreterSystemQuery::stopReplicatedDDLQueries()
+{
+    auto component_guard = Coordination::setCurrentComponent("InterpreterSystemQuery::stopReplicatedDDLQueries");
+    getContext()->checkAccess(AccessType::SYSTEM_REPLICATION_QUEUES);
+
+    /// Reject new DDL queries first, then fence the already queued entries that have passed the in-memory check
+    /// (see `DatabaseReplicatedTask::makeQueryContext`). The flag in Keeper is ephemeral, because the in-memory
+    /// flag does not survive a restart of the server either.
+    DatabaseCatalog::instance().stopReplicatedDDLQueries();
+
+    String path = DatabaseReplicatedTask::getStopReplicatedDDLQueriesFlagPath();
+    for (const auto & zookeeper : getKeepersOfReplicatedDatabases(getContext()))
+    {
+        zookeeper->createAncestors(path);
+        auto code = zookeeper->tryCreate(path, "", zkutil::CreateMode::Ephemeral);
+        if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
+            throw zkutil::KeeperException::fromPath(code, path);
+    }
+}
+
+void InterpreterSystemQuery::startReplicatedDDLQueries()
+{
+    auto component_guard = Coordination::setCurrentComponent("InterpreterSystemQuery::startReplicatedDDLQueries");
+    getContext()->checkAccess(AccessType::SYSTEM_REPLICATION_QUEUES);
+
+    String path = DatabaseReplicatedTask::getStopReplicatedDDLQueriesFlagPath();
+    for (const auto & zookeeper : getKeepersOfReplicatedDatabases(getContext()))
+    {
+        auto code = zookeeper->tryRemove(path, -1);
+        if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
+            throw zkutil::KeeperException::fromPath(code, path);
+    }
+
+    DatabaseCatalog::instance().startReplicatedDDLQueries();
 }
 
 void InterpreterSystemQuery::waitLoadingParts()
@@ -3254,7 +3333,10 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         }
         case Type::REPLICA_READY:
         case Type::REPLICA_UNREADY:
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented");
+        {
+            required_access.emplace_back(AccessType::SYSTEM_REPLICA_READINESS);
+            break;
+        }
         case Type::RESTART_REPLICA:
         {
             required_access.emplace_back(AccessType::SYSTEM_RESTART_REPLICA, query.getDatabase(), query.getTable());

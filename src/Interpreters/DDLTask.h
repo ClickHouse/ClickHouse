@@ -200,6 +200,11 @@ struct DatabaseReplicatedTask : public DDLTaskBase
     Coordination::RequestPtr getOpToUpdateLogPointer() override;
     void createSyncedNodeIfNeed(const ZooKeeperPtr & zookeeper) override;
 
+    /// The node that `SYSTEM STOP REPLICATED DDL QUERIES` creates in the Keeper of every `Replicated` database
+    /// to fence the initial DDL entries of this server that are already queued. It uses the server UUID,
+    /// because the `{replica}` macro is optional and unique only within a shard.
+    static String getStopReplicatedDDLQueriesFlagPath();
+
     DatabaseReplicated * database;
 };
 
