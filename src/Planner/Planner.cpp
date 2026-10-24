@@ -3346,6 +3346,16 @@ void Planner::buildPlanForQueryNode()
                         "Before window functions",
                         useful_sets);
 
+                if (window_analysis_result.before_window_projection_actions)
+                    addExpressionStep(
+                        planner_context,
+                        query_plan,
+                        window_analysis_result.before_window_projection_actions,
+                        /*correlated_subtrees=*/{},
+                        select_query_options,
+                        "Projection before window functions",
+                        useful_sets);
+
                 addWindowSteps(query_plan, planner_context, window_analysis_result, select_query_options.max_step_description_length);
             }
 

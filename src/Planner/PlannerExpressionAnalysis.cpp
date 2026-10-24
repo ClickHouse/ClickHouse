@@ -3,6 +3,7 @@
 #include <stack>
 #include <Planner/PlannerExpressionAnalysis.h>
 
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/FilterDescription.h>
 
@@ -15,8 +16,11 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ConstantNode.h>
+#include <Analyzer/LambdaNode.h>
+#include <Analyzer/ListNode.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/Utils.h>
 #include <Analyzer/WindowNode.h>
@@ -330,6 +334,380 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
     return aggregation_analysis_result;
 }
 
+/** A lower bound of the number of bytes that a value of a type without a maximum size of value takes in a column.
+  */
+size_t getMinimumSizeOfUnboundedValue(const IDataType & type)
+{
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&type))
+        return 1 + getMinimumSizeOfUnboundedValue(*nullable_type->getNestedType());
+
+    /// The columns of these types keep an offset for each value.
+    if (isString(type) || isArray(type) || isMap(type))
+        return sizeof(UInt64);
+
+    /// For example, a `LowCardinality` column keeps only an index for each value, which can take one byte.
+    return 0;
+}
+
+/** The expression that computes the values of a column: for a column of a subquery, its projection expression,
+  * so that the columns of a subquery that are aliases of each other resolve to the same expression.
+  */
+QueryTreeNodePtr resolveColumnExpression(QueryTreeNodePtr node)
+{
+    static constexpr size_t max_steps = 100;
+    for (size_t step = 0; step < max_steps; ++step)
+    {
+        const auto * column_node = node->as<ColumnNode>();
+        if (!column_node)
+            break;
+
+        if (column_node->hasExpression() && column_node->getExpression()->getNodeType() == QueryTreeNodeType::CONSTANT)
+            return column_node->getExpression();
+
+        auto column_source = column_node->getColumnSourceOrNull();
+        const auto * subquery_node = column_source ? column_source->as<QueryNode>() : nullptr;
+        if (!subquery_node)
+            break;
+
+        const auto & projection_columns = subquery_node->getProjectionColumns();
+        const auto & projection_nodes = subquery_node->getProjection().getNodes();
+        if (projection_columns.size() != projection_nodes.size())
+            break;
+
+        auto it = std::find_if(projection_columns.begin(), projection_columns.end(),
+            [&](const auto & projection_column) { return projection_column.name == column_node->getColumnName(); });
+        if (it == projection_columns.end())
+            break;
+
+        node = projection_nodes[it - projection_columns.begin()];
+    }
+
+    return node;
+}
+
+/// The grouping keys of a query with aggregation, which are, like the aggregate function results,
+/// the input columns of the actions after aggregation.
+struct AggregationKeys
+{
+    bool has_aggregation = false;
+    QueryTreeNodePtrWithHashSet keys;
+};
+
+/** Whether the expression can be computed before the window functions instead of after them.
+  * The window step keeps every row and only changes the order of rows and their split into blocks,
+  * so an expression evaluated row by row has the same value on either side of it.
+  * The columns, the grouping keys and the aggregate function results that the expression reads and whose values
+  * have no maximum size, such as `String` or `Array`, are added to `unbounded_inputs`, except constant columns.
+  * A column is added as the expression that computes it, see `resolveColumnExpression`.
+  */
+bool canBeComputedBeforeWindow(
+    const QueryTreeNodePtr & node,
+    const ColumnNodePtrWithHashSet & correlated_columns_set,
+    const AggregationKeys & aggregation_keys,
+    QueryTreeNodePtrWithHashSet & unbounded_inputs)
+{
+    if (aggregation_keys.keys.contains(node))
+    {
+        if (!node->getResultType()->haveMaximumSizeOfValue())
+            unbounded_inputs.insert(node);
+        return true;
+    }
+
+    switch (node->getNodeType())
+    {
+        case QueryTreeNodeType::CONSTANT:
+            return true;
+        case QueryTreeNodeType::COLUMN:
+        {
+            const auto & column_node = node->as<ColumnNode &>();
+            auto column_source = column_node.getColumnSourceOrNull();
+            bool is_lambda_argument = column_source && column_source->getNodeType() == QueryTreeNodeType::LAMBDA_ARGS;
+
+            /// After aggregation, a column is read only as a part of a grouping key or of an aggregate function,
+            /// so the expression could not be matched with the input columns of the actions.
+            if (aggregation_keys.has_aggregation && !is_lambda_argument)
+                return false;
+
+            if (!is_lambda_argument && !column_node.getColumnType()->haveMaximumSizeOfValue())
+            {
+                auto column_expression = resolveColumnExpression(node);
+                if (column_expression->getNodeType() != QueryTreeNodeType::CONSTANT)
+                    unbounded_inputs.insert(column_expression);
+            }
+            return !correlated_columns_set.contains(std::static_pointer_cast<ColumnNode>(node));
+        }
+        case QueryTreeNodeType::LIST:
+        {
+            for (const auto & child : node->as<ListNode &>().getNodes())
+                if (!canBeComputedBeforeWindow(child, correlated_columns_set, aggregation_keys, unbounded_inputs))
+                    return false;
+            return true;
+        }
+        case QueryTreeNodeType::LAMBDA:
+            return canBeComputedBeforeWindow(node->as<LambdaNode &>().getExpression(), correlated_columns_set, aggregation_keys, unbounded_inputs);
+        case QueryTreeNodeType::FUNCTION:
+        {
+            const auto & function_node = node->as<FunctionNode &>();
+            if (function_node.isWindowFunction())
+                return false;
+
+            /// The result of an aggregate function is an input column of the actions after aggregation.
+            if (function_node.isAggregateFunction())
+            {
+                if (!function_node.getResultType()->haveMaximumSizeOfValue())
+                    unbounded_inputs.insert(node);
+                return true;
+            }
+
+            /// `arrayJoin` in the projection multiplies the rows only after the window functions are computed.
+            if (function_node.getFunctionName() == "arrayJoin")
+                return false;
+
+            /// Stateful functions (`rowNumberInBlock`, `runningDifference`, ...) depend on the order of rows,
+            /// some functions that are not deterministic in the scope of the query (`blockSize`) depend on blocks,
+            /// and the side effects of some functions (`sleepEachRow`) depend on blocks too.
+            if (auto function = function_node.getFunction();
+                function && (function->isStateful() || !function->isDeterministicInScopeOfQuery() || function->hasObservableSideEffects()))
+                return false;
+
+            return canBeComputedBeforeWindow(function_node.getArgumentsNode(), correlated_columns_set, aggregation_keys, unbounded_inputs);
+        }
+        default:
+            /// Subqueries.
+            return false;
+    }
+}
+
+struct ExpressionBeforeWindowCandidate
+{
+    QueryTreeNodePtr node;
+    QueryTreeNodePtrWithHashSet unbounded_inputs;
+    size_t maximum_size_of_result = 0;
+};
+
+/** Collect the largest subexpressions of the projection that can be computed before the window functions,
+  * read columns of unbounded size and have a result of a bounded size.
+  * The arguments of short-circuit functions that may be executed lazily are not collected, as computing them
+  * before the window step would execute them for all rows.
+  */
+void collectExpressionsComputableBeforeWindow(
+    const QueryTreeNodePtr & node,
+    const ColumnNodePtrWithHashSet & correlated_columns_set,
+    const AggregationKeys & aggregation_keys,
+    QueryTreeNodePtrWithHashSet & collected_nodes,
+    std::vector<ExpressionBeforeWindowCandidate> & result)
+{
+    auto * function_node = node->as<FunctionNode>();
+    if (!function_node || !function_node->isOrdinaryFunction())
+        return;
+
+    QueryTreeNodePtrWithHashSet unbounded_inputs;
+    const auto & result_type = function_node->getResultType();
+    if (canBeComputedBeforeWindow(node, correlated_columns_set, aggregation_keys, unbounded_inputs)
+        && !unbounded_inputs.empty()
+        && result_type->haveMaximumSizeOfValue())
+    {
+        if (collected_nodes.insert(node).second)
+            result.push_back({node, std::move(unbounded_inputs), result_type->getMaximumSizeOfValueInMemory()});
+        return;
+    }
+
+    const auto & arguments = function_node->getArguments().getNodes();
+
+    IFunctionBase::ShortCircuitSettings short_circuit_settings;
+    auto function = function_node->getFunction();
+    bool is_short_circuit = function && function->isShortCircuit(short_circuit_settings, arguments.size());
+
+    for (size_t i = 0; i < arguments.size(); ++i)
+    {
+        /// For commutative short-circuit functions (`and`, `or`) any argument may be executed lazily.
+        if (is_short_circuit
+            && (short_circuit_settings.arguments_are_commutative
+                || short_circuit_settings.force_enable_lazy_execution
+                || !short_circuit_settings.arguments_with_disabled_lazy_execution.contains(i)))
+            continue;
+
+        collectExpressionsComputableBeforeWindow(arguments[i], correlated_columns_set, aggregation_keys, collected_nodes, result);
+    }
+}
+
+/** Collect the columns of tables, the grouping keys and the aggregate function results from which the values
+  * of the expression are computed, following the columns of subqueries to their projection expressions and
+  * the columns with expressions (`ALIAS` columns) to their expressions. Two values can share memory
+  * (for example, if one is an identity `CAST` of the other) only if they are computed from common base columns.
+  * The grouping keys are matched only in the expressions of the query itself, `aggregation_keys` is null
+  * for the expressions of subqueries.
+  */
+void collectBaseColumns(
+    const QueryTreeNodePtr & node,
+    const AggregationKeys * aggregation_keys,
+    QueryTreeNodePtrWithHashSet & base_columns,
+    size_t depth = 0)
+{
+    static constexpr size_t max_depth = 100;
+    if (depth > max_depth || (aggregation_keys && aggregation_keys->keys.contains(node)))
+    {
+        base_columns.insert(node);
+        return;
+    }
+
+    if (node->getNodeType() == QueryTreeNodeType::CONSTANT)
+        return;
+
+    if (const auto * column_node = node->as<ColumnNode>())
+    {
+        auto column_source = column_node->getColumnSourceOrNull();
+        if (column_source && column_source->getNodeType() == QueryTreeNodeType::LAMBDA_ARGS)
+            return;
+
+        if (column_node->hasExpression())
+        {
+            collectBaseColumns(column_node->getExpression(), nullptr, base_columns, depth + 1);
+            return;
+        }
+
+        auto column_expression = resolveColumnExpression(node);
+        if (column_expression.get() == node.get())
+            base_columns.insert(node);
+        else
+            collectBaseColumns(column_expression, nullptr, base_columns, depth + 1);
+        return;
+    }
+
+    if (const auto * function_node = node->as<FunctionNode>(); function_node && function_node->isAggregateFunction() && !function_node->isWindowFunction())
+    {
+        base_columns.insert(node);
+        return;
+    }
+
+    for (const auto & child : node->getChildren())
+        if (child)
+            collectBaseColumns(child, aggregation_keys, base_columns, depth + 1);
+}
+
+/** Collect the base columns (see `collectBaseColumns`) of the values that are read after the window step
+  * by anything except the expressions computed before it.
+  * It includes the arguments of window functions, which the window step buffers anyway.
+  */
+void collectBaseColumnsReadAfterWindow(
+    const QueryTreeNodePtr & node,
+    const QueryTreeNodePtrWithHashSet & expressions_before_window,
+    const AggregationKeys & aggregation_keys,
+    QueryTreeNodePtrWithHashSet & base_columns)
+{
+    if (!node || expressions_before_window.contains(node))
+        return;
+
+    if (node->getNodeType() == QueryTreeNodeType::COLUMN || aggregation_keys.keys.contains(node))
+    {
+        collectBaseColumns(node, &aggregation_keys, base_columns);
+        return;
+    }
+
+    if (const auto * function_node = node->as<FunctionNode>(); function_node && function_node->isAggregateFunction() && !function_node->isWindowFunction())
+    {
+        base_columns.insert(node);
+        return;
+    }
+
+    for (const auto & child : node->getChildren())
+        collectBaseColumnsReadAfterWindow(child, expressions_before_window, aggregation_keys, base_columns);
+}
+
+/** Select the expressions worth computing before the window functions.
+  * Window functions buffer their input, so computing a projection expression before them lets the window step
+  * buffer its result instead of the values it reads, but a value is freed only if nothing else read after
+  * the window step can share its memory. This is assumed only if they have no common base columns, otherwise
+  * the value is not credited. The expressions with common base columns are selected or rejected together:
+  * only if the maximum size of their results is not larger than a lower bound of the size of the values they free,
+  * so the buffered rows can not become larger.
+  */
+QueryTreeNodes selectExpressionsWorthComputingBeforeWindow(
+    const QueryNode & query_node,
+    const AggregationKeys & aggregation_keys,
+    std::vector<ExpressionBeforeWindowCandidate> candidates)
+{
+    QueryTreeNodePtrWithHashSet candidate_nodes;
+    for (const auto & candidate : candidates)
+        candidate_nodes.insert(candidate.node);
+
+    QueryTreeNodePtrWithHashSet base_columns_read_after_window;
+    for (const auto * node : {&query_node.getProjectionNode(), &query_node.getOrderByNode(), &query_node.getInterpolate(), &query_node.getLimitByNode()})
+        collectBaseColumnsReadAfterWindow(*node, candidate_nodes, aggregation_keys, base_columns_read_after_window);
+
+    std::vector<QueryTreeNodePtrWithHashSet> candidates_base_columns(candidates.size());
+    for (size_t i = 0; i < candidates.size(); ++i)
+        for (const auto & input : candidates[i].unbounded_inputs)
+            collectBaseColumns(input.node, &aggregation_keys, candidates_base_columns[i]);
+
+    QueryTreeNodes result;
+    std::vector<bool> visited(candidates.size(), false);
+
+    for (size_t group_start = 0; group_start < candidates.size(); ++group_start)
+    {
+        if (visited[group_start])
+            continue;
+
+        /// The group of candidates connected by common base columns.
+        std::vector<size_t> group{group_start};
+        visited[group_start] = true;
+        QueryTreeNodePtrWithHashSet group_inputs = candidates[group_start].unbounded_inputs;
+
+        for (size_t i = 0; i < group.size(); ++i)
+        {
+            for (size_t other = 0; other < candidates.size(); ++other)
+            {
+                if (visited[other])
+                    continue;
+
+                bool has_common_base_columns = false;
+                for (const auto & base_column : candidates_base_columns[other])
+                    if (candidates_base_columns[group[i]].contains(base_column))
+                        has_common_base_columns = true;
+
+                if (!has_common_base_columns)
+                    continue;
+
+                visited[other] = true;
+                group.push_back(other);
+                group_inputs.insert(candidates[other].unbounded_inputs.begin(), candidates[other].unbounded_inputs.end());
+            }
+        }
+
+        size_t minimum_size_of_freed_inputs = 0;
+        QueryTreeNodePtrWithHashSet credited_base_columns;
+        for (const auto & input : group_inputs)
+        {
+            QueryTreeNodePtrWithHashSet input_base_columns;
+            collectBaseColumns(input.node, &aggregation_keys, input_base_columns);
+
+            /// A value without base columns, such as `materialize('a')`, may share memory with anything.
+            bool can_be_freed = !input_base_columns.empty();
+            for (const auto & base_column : input_base_columns)
+                if (base_columns_read_after_window.contains(base_column) || credited_base_columns.contains(base_column))
+                    can_be_freed = false;
+
+            if (!can_be_freed)
+                continue;
+
+            credited_base_columns.insert(input_base_columns.begin(), input_base_columns.end());
+            minimum_size_of_freed_inputs += getMinimumSizeOfUnboundedValue(*input.node->getResultType());
+        }
+
+        size_t maximum_size_of_results = 0;
+        for (size_t candidate_index : group)
+            maximum_size_of_results += candidates[candidate_index].maximum_size_of_result;
+
+        if (minimum_size_of_freed_inputs == 0 || maximum_size_of_results > minimum_size_of_freed_inputs)
+            continue;
+
+        for (size_t candidate_index : group)
+            result.push_back(candidates[candidate_index].node);
+    }
+
+    return result;
+}
+
 /** Construct window analysis result if query tree has window functions.
   * Actions before window functions are added into actions chain, if result is not null optional.
   */
@@ -450,13 +828,101 @@ std::optional<WindowAnalysisResult> analyzeWindow(
         for (auto & window_function : window_description.window_functions)
             window_functions_additional_columns.emplace_back(nullptr, window_function.aggregate_function->getResultType(), window_function.column_name);
 
-    auto before_window_step = std::make_unique<ActionsChainStep>(before_window_actions,
-        true /*use_actions_nodes_as_output_columns*/,
-        window_functions_additional_columns);
-    actions_chain.addStep(std::move(before_window_step));
+    /// With `QUALIFY`, the projection is computed only for the rows that pass the filter after the window functions,
+    /// and with `LIMIT`, `LIMIT AFTER` or `LIMIT UNTIL` it may be computed only for the first blocks of the result.
+    QueryTreeNodes expressions_before_window;
+    const auto & query_node = query_tree->as<const QueryNode &>();
+    if (!query_node.hasQualify() && !query_node.hasLimit() && !query_node.hasLimitAfter() && !query_node.hasLimitUntil())
+    {
+        AggregationKeys aggregation_keys;
+        aggregation_keys.has_aggregation = query_node.hasGroupBy() || hasAggregateFunctionNodes(query_tree);
+        if (query_node.hasGroupBy())
+        {
+            for (const auto & grouping_node : query_node.getGroupBy().getNodes())
+            {
+                if (query_node.isGroupByWithGroupingSets())
+                {
+                    for (const auto & key : grouping_node->as<ListNode &>().getNodes())
+                        aggregation_keys.keys.insert(key);
+                }
+                else
+                {
+                    aggregation_keys.keys.insert(grouping_node);
+                }
+            }
+        }
+
+        QueryTreeNodePtrWithHashSet collected_nodes;
+        std::vector<ExpressionBeforeWindowCandidate> candidates;
+        for (const auto & projection_node : query_node.getProjection().getNodes())
+            collectExpressionsComputableBeforeWindow(projection_node, correlated_columns_set, aggregation_keys, collected_nodes, candidates);
+
+        expressions_before_window = selectExpressionsWorthComputingBeforeWindow(query_node, aggregation_keys, std::move(candidates));
+    }
 
     WindowAnalysisResult result;
+
+    if (expressions_before_window.empty())
+    {
+        actions_chain.addStep(std::make_unique<ActionsChainStep>(before_window_actions,
+            true /*use_actions_nodes_as_output_columns*/,
+            window_functions_additional_columns));
+
+        result.before_window_actions = std::move(before_window_actions);
+        result.window_descriptions = std::move(window_descriptions);
+        return result;
+    }
+
+    actions_chain.addStep(std::make_unique<ActionsChainStep>(before_window_actions, true /*use_actions_nodes_as_output_columns*/));
+
+    /** The projection expressions are computed in a separate step, which is executed on the initiator together with
+      * the window functions, while the "Before WINDOW" actions may be executed on the shards.
+      * Keeping them separate keeps the header of the blocks sent by the shards the same as without this step.
+      */
+    auto before_window_projection_actions = std::make_shared<ActionsAndProjectInputsFlag>();
+    before_window_projection_actions->dag = ActionsDAG(actions_chain.getLastStepAvailableOutputColumns());
+
+    auto & before_window_projection_outputs = before_window_projection_actions->dag.getOutputs();
+    before_window_projection_outputs.clear();
+
+    std::unordered_set<std::string_view> before_window_projection_output_node_names;
+
+    std::unordered_map<std::string_view, const ActionsDAG::Node *> before_window_projection_inputs_by_name;
+    for (const auto * input_node : before_window_projection_actions->dag.getInputs())
+        before_window_projection_inputs_by_name.emplace(input_node->result_name, input_node);
+
+    /// The columns read by the window step.
+    for (const auto * before_window_output_node : before_window_actions->dag.getOutputs())
+    {
+        if (!before_window_projection_output_node_names.insert(before_window_output_node->result_name).second)
+            continue;
+
+        before_window_projection_outputs.push_back(before_window_projection_inputs_by_name.at(before_window_output_node->result_name));
+    }
+
+    for (const auto & expression : expressions_before_window)
+    {
+        auto [expression_dag_nodes, correlated_subtrees] = actions_visitor.visit(before_window_projection_actions->dag, expression);
+        correlated_subtrees.assertEmpty("in projection computed before window functions");
+
+        for (const auto * expression_dag_node : expression_dag_nodes)
+        {
+            if (expression_dag_node->column && isColumnConst(*expression_dag_node->column))
+                continue;
+
+            if (!before_window_projection_output_node_names.insert(expression_dag_node->result_name).second)
+                continue;
+
+            before_window_projection_outputs.push_back(expression_dag_node);
+        }
+    }
+
+    actions_chain.addStep(std::make_unique<ActionsChainStep>(before_window_projection_actions,
+        true /*use_actions_nodes_as_output_columns*/,
+        window_functions_additional_columns));
+
     result.before_window_actions = std::move(before_window_actions);
+    result.before_window_projection_actions = std::move(before_window_projection_actions);
     result.window_descriptions = std::move(window_descriptions);
 
     return result;
