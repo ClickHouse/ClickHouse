@@ -84,6 +84,8 @@ public:
         std::optional<std::ifstream> reader = std::nullopt;
         /// The last attempt to open the file failed for a reason of the file itself (missing, not readable).
         bool open_failed = false;
+        /// It cannot be checked yet whether this is the file its saved offset belongs to.
+        bool identity_unverified = false;
     };
 
     struct FileMeta
@@ -91,6 +93,8 @@ public:
         String file_name;
         UInt64 last_writen_position = 0;
         UInt64 last_open_end = 0;
+        /// Changes when the file system gives the inode number to another file.
+        std::optional<UInt32> inode_generation = std::nullopt;
         bool operator!() const { return file_name.empty(); }
     };
 
