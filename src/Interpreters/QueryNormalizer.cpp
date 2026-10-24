@@ -196,7 +196,7 @@ static bool needVisitChild(const ASTPtr & child)
     /// EXCEPT refers to a column name to exclude, not to the alias `Budget`.
     /// If the normalizer replaces it, the downstream ASTColumnsExceptTransformer::transform
     /// will encounter a non-ASTIdentifier child and throw a LOGICAL_ERROR.
-    if (child->as<IASTColumnsTransformer>())
+    if (dynamic_cast<const IASTColumnsTransformer *>(child.get()))
         return false;
 
     return true;
