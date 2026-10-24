@@ -2358,6 +2358,8 @@ static const String ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION = "diction
 static const String ARGUMENT_POSTING_LIST_BLOCK_SIZE = "posting_list_block_size";
 static const String ARGUMENT_POSTING_LIST_CODEC = "posting_list_codec";
 static const String ARGUMENT_POSITIONS = "support_phrase_search";
+/// The name of `support_phrase_search` before 26.7, kept so that tables created with it still load.
+static const String ARGUMENT_POSITIONS_LEGACY = "positions";
 
 namespace
 {
@@ -2440,6 +2442,16 @@ std::unordered_map<String, ASTPtr> convertArgumentsToOptionsMap(const ASTPtr & a
     return options;
 }
 
+std::optional<UInt64> extractPositionsOption(std::unordered_map<String, ASTPtr> & options)
+{
+    auto value = extractFieldOption<UInt64>(options, ARGUMENT_POSITIONS);
+    auto legacy_value = extractFieldOption<UInt64>(options, ARGUMENT_POSITIONS_LEGACY);
+    if (value && legacy_value)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index arguments '{}' and '{}' cannot be specified together",
+            ARGUMENT_POSITIONS, ARGUMENT_POSITIONS_LEGACY);
+    return value ? value : legacy_value;
+}
+
 }
 
 MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings)
@@ -2462,7 +2474,7 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
     UInt64 posting_list_block_size = extractFieldOption<UInt64>(options, ARGUMENT_POSTING_LIST_BLOCK_SIZE)
         .value_or(settings[MergeTreeSetting::text_index_posting_list_block_size]);
 
-    bool enable_positions = extractFieldOption<UInt64>(options, ARGUMENT_POSITIONS).value_or(DEFAULT_POSITIONS) != 0;
+    bool enable_positions = extractPositionsOption(options).value_or(DEFAULT_POSITIONS) != 0;
 
     String posting_list_codec_name = extractFieldOption<String>(options, ARGUMENT_POSTING_LIST_CODEC)
         .value_or(settings[MergeTreeSetting::text_index_posting_list_codec].toString());
@@ -2528,7 +2540,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
     if (posting_list_block_size == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be greater than 0, but got {}", ARGUMENT_POSTING_LIST_BLOCK_SIZE, posting_list_block_size);
 
-    UInt64 positions = extractFieldOption<UInt64>(options, ARGUMENT_POSITIONS).value_or(DEFAULT_POSITIONS);
+    UInt64 positions = extractPositionsOption(options).value_or(DEFAULT_POSITIONS);
     if (positions > 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be 0 or 1, but got {}", ARGUMENT_POSITIONS, positions);
 
