@@ -2709,8 +2709,8 @@ static MutationCommand createMaterializeTTLCommand()
 MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters, bool share_nested_offsets) const
 {
     /// Save a copy of the original metadata before applying commands.
-    /// We need it for isTTLAlter check below, because apply() updates TTL in metadata,
-    /// making it impossible to detect TTL changes afterwards.
+    /// We need it for the `isTTLAlter` check and projection dependencies below: applying commands
+    /// can change TTL and fold away projection inputs in the new schema.
     const StorageInMemoryMetadata original_metadata = metadata;
 
     /// Remove implicit statistics before applying commands to the metadata copy.
@@ -2724,8 +2724,34 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
     const UInt64 max_parser_backtracks = settings[Setting::max_parser_backtracks];
 
     MutationCommands result;
+    NameSet projections_to_clear;
     for (const auto & alter_cmd : *this)
     {
+        if (alter_cmd.type == AlterCommand::DROP_COLUMN && !alter_cmd.clear && !alter_cmd.ignore)
+        {
+            /// A drop followed by an add can preserve the declaration but change the meaning of stored states.
+            /// Inspect the original declaration AST as well as `required_columns`, which can lose inputs through folding.
+            for (const auto & projection : original_metadata.projections)
+            {
+                auto is_dropped_column = [&](const String & name)
+                {
+                    return name == alter_cmd.column_name || name.starts_with(alter_cmd.column_name + '.');
+                };
+                bool affected = std::ranges::any_of(projection.required_columns, is_dropped_column);
+                ASTs pending{projection.definition_ast};
+                while (!affected && !pending.empty())
+                {
+                    auto ast = std::move(pending.back());
+                    pending.pop_back();
+                    if (const auto * identifier = ast->as<ASTIdentifier>())
+                        affected = is_dropped_column(identifier->name());
+                    pending.insert(pending.end(), ast->children.begin(), ast->children.end());
+                }
+                if (affected)
+                    projections_to_clear.insert(projection.name);
+            }
+        }
+
         if (auto mutation_cmd = alter_cmd.tryConvertToMutationCommand(metadata, context, share_nested_offsets); mutation_cmd)
         {
             result.push_back(*mutation_cmd);
@@ -2739,6 +2765,26 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
                 .type = MutationCommand::Type::ALTER_WITHOUT_MUTATION,
             });
         }
+    }
+
+    for (const auto & projection : original_metadata.projections)
+    {
+        if (!projections_to_clear.contains(projection.name) || !metadata.projections.has(projection.name))
+            continue;
+
+        /// `CLEAR PROJECTION` removes existing parts without removing the declaration used by future inserts.
+        auto ast = make_intrusive<ASTAlterCommand>();
+        ast->type = ASTAlterCommand::DROP_PROJECTION;
+        ast->clear_projection = true;
+        ast->set(ast->projection, make_intrusive<ASTIdentifier>(projection.name));
+        result.push_back(MutationCommand{
+            .ast_text = ast->formatWithSecretsOneLine(),
+            .max_parser_depth = max_parser_depth,
+            .max_parser_backtracks = max_parser_backtracks,
+            .type = MutationCommand::DROP_PROJECTION,
+            .column_name = projection.name,
+            .clear = true,
+        });
     }
 
     if (materialize_ttl)
