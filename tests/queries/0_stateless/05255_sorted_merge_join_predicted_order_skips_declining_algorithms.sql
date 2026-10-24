@@ -55,18 +55,19 @@ SELECT 'partial_merge_selected', countIf(explain LIKE '%Algorithm: PartialMergeJ
 FROM (EXPLAIN actions = 1 SELECT sum(a.v) + sum(b.v) + sum(c.v) FROM pso_a AS a INNER JOIN pso_b AS b ON a.id = b.id ANY RIGHT JOIN pso_c AS c ON b.id = c.id
       SETTINGS join_algorithm = 'partial_merge,sorted_merge,hash');
 
--- The results match a plain `hash` join.
+-- The results match a plain `hash` join. `pso_b` holds two rows of every key, and an `ANY` join may match either of
+-- them, so the values of `pso_b` are compared through the key, which is the same for both rows.
 SELECT 'partial_merge_declines_result',
-    (SELECT (sum(a.v), sum(b.v), sum(c.v), count()) FROM pso_a AS a ANY RIGHT JOIN pso_b AS b ON a.id = b.id ANY RIGHT JOIN pso_c AS c ON b.id = c.id SETTINGS join_algorithm = 'partial_merge,sorted_merge,hash')
-  = (SELECT (sum(a.v), sum(b.v), sum(c.v), count()) FROM pso_a AS a ANY RIGHT JOIN pso_b AS b ON a.id = b.id ANY RIGHT JOIN pso_c AS c ON b.id = c.id SETTINGS join_algorithm = 'hash');
+    (SELECT (sum(a.v), sum(b.id), sum(c.v), count()) FROM pso_a AS a ANY RIGHT JOIN pso_b AS b ON a.id = b.id ANY RIGHT JOIN pso_c AS c ON b.id = c.id SETTINGS join_algorithm = 'partial_merge,sorted_merge,hash')
+  = (SELECT (sum(a.v), sum(b.id), sum(c.v), count()) FROM pso_a AS a ANY RIGHT JOIN pso_b AS b ON a.id = b.id ANY RIGHT JOIN pso_c AS c ON b.id = c.id SETTINGS join_algorithm = 'hash');
 
 SELECT 'grace_hash_skipped_result',
-    (SELECT (sum(a.v), sum(b.v), sum(c.v), count()) FROM pso_a AS a ANY RIGHT JOIN pso_b AS b ON a.id = b.id ANY RIGHT JOIN pso_c AS c ON b.id = c.id SETTINGS join_algorithm = 'grace_hash,sorted_merge,hash')
-  = (SELECT (sum(a.v), sum(b.v), sum(c.v), count()) FROM pso_a AS a ANY RIGHT JOIN pso_b AS b ON a.id = b.id ANY RIGHT JOIN pso_c AS c ON b.id = c.id SETTINGS join_algorithm = 'hash');
+    (SELECT (sum(a.v), sum(b.id), sum(c.v), count()) FROM pso_a AS a ANY RIGHT JOIN pso_b AS b ON a.id = b.id ANY RIGHT JOIN pso_c AS c ON b.id = c.id SETTINGS join_algorithm = 'grace_hash,sorted_merge,hash')
+  = (SELECT (sum(a.v), sum(b.id), sum(c.v), count()) FROM pso_a AS a ANY RIGHT JOIN pso_b AS b ON a.id = b.id ANY RIGHT JOIN pso_c AS c ON b.id = c.id SETTINGS join_algorithm = 'hash');
 
 SELECT 'ie_join_skipped_result',
-    (SELECT (sum(a.v), sum(b.v), sum(c.v), count()) FROM pso_a AS a ANY RIGHT JOIN pso_b AS b ON a.id = b.id ANY RIGHT JOIN pso_c AS c ON b.id = c.id SETTINGS join_algorithm = 'ie_join,sorted_merge,hash')
-  = (SELECT (sum(a.v), sum(b.v), sum(c.v), count()) FROM pso_a AS a ANY RIGHT JOIN pso_b AS b ON a.id = b.id ANY RIGHT JOIN pso_c AS c ON b.id = c.id SETTINGS join_algorithm = 'hash');
+    (SELECT (sum(a.v), sum(b.id), sum(c.v), count()) FROM pso_a AS a ANY RIGHT JOIN pso_b AS b ON a.id = b.id ANY RIGHT JOIN pso_c AS c ON b.id = c.id SETTINGS join_algorithm = 'ie_join,sorted_merge,hash')
+  = (SELECT (sum(a.v), sum(b.id), sum(c.v), count()) FROM pso_a AS a ANY RIGHT JOIN pso_b AS b ON a.id = b.id ANY RIGHT JOIN pso_c AS c ON b.id = c.id SETTINGS join_algorithm = 'hash');
 
 DROP TABLE pso_a;
 DROP TABLE pso_b;
