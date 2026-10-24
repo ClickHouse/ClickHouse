@@ -419,7 +419,7 @@ void WriteBufferFromS3::createMultipartUpload()
     /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
     req.SetContentType("binary/octet-stream");
 
-    req.SetMetadata(metadataWithIdempotencyId());
+    req.SetMetadata(S3::objectAttributesToAwsMap(metadataWithIdempotencyId()));
 
     /// The storage class of a multipart-uploaded object is determined by the CreateMultipartUpload
     /// request; it cannot be set on UploadPart or CompleteMultipartUpload. See issue #68551.
@@ -743,7 +743,7 @@ S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
     req.SetKey(key);
     req.SetContentLength(data.data_size);
     req.SetBody(data.createAwsBuffer());
-    req.SetMetadata(metadataWithIdempotencyId());
+    req.SetMetadata(S3::objectAttributesToAwsMap(metadataWithIdempotencyId()));
     req.setIdempotencyId(idempotency_id);
     if (!request_settings[S3RequestSetting::storage_class_name].value.empty())
         req.SetStorageClass(S3::getStorageClassForName(request_settings[S3RequestSetting::storage_class_name]));

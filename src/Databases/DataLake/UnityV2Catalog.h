@@ -25,9 +25,9 @@ public:
     UnityV2Catalog(
         const std::string & catalog_,
         const std::string & base_url_,
-        const std::string & catalog_credential_,
+        std::string_view catalog_credential_,
         const std::string & auth_scope_,
-        const std::string & auth_header_,
+        std::string_view auth_header_,
         const std::string & oauth_server_uri_,
         DB::ContextPtr context_);
 
@@ -116,7 +116,7 @@ private:
     /// Auth state: a user-supplied header, or a Bearer token (static or minted via OAuth).
     std::optional<DB::HTTPHeaderEntry> auth_header;
     std::string client_id;
-    std::string client_secret;
+    DB::SecretString client_secret;
     std::string auth_scope;
     std::string oauth_server_uri;
     bool use_oauth = false;
@@ -146,13 +146,13 @@ private:
     /// The `table_type` field of the table, such as `MANAGED` or `EXTERNAL`.
     String getTableType(const String & full_table_name) const;
 
-    std::string getBearerToken(bool force_refresh = false) const;
+    DB::SecretString getBearerToken(bool force_refresh = false) const;
 
     /// `auth_header` when set, otherwise the Bearer token.
     DB::HTTPHeaderEntries getAuthHeaders(bool force_refresh) const;
 
     /// Uses `auth_header_` only when `catalog_credential_` is empty, as in `RestCatalog`.
-    void maybeSetAuthHeader(const std::string & catalog_credential_, const std::string & auth_header_);
+    void maybeSetAuthHeader(std::string_view catalog_credential_, std::string_view auth_header_);
 
     void checkNamespaceExists(const std::string & schema_name) const;
 

@@ -19,7 +19,7 @@ struct BackupInfo
     NamedCollectionPtr frozen_named_collection;
 
     String toString() const;
-    static BackupInfo fromString(const String & str);
+    static BackupInfo fromString(std::string_view str);
 
     ASTPtr toAST() const;
     static BackupInfo fromAST(const IAST & ast);

@@ -29,6 +29,10 @@ void checkMetadataDoesNotExceedMaxQuerySize(const StorageID & table_id, const St
 ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_storage, bool only_ordinary,
     uint32_t max_parser_depth, uint32_t max_parser_backtracks, bool throw_on_error, ContextPtr context);
 
+/// Database engines keep their engine definition as text in a `SecretString` instead of an AST, so that credentials
+/// in the engine arguments do not rest in core-dumpable memory. The AST is needed rarely (SHOW CREATE, ALTER), so it is reparsed.
+ASTPtr parseDatabaseEngineDefinition(std::string_view definition);
+
 /// Cleans a CREATE QUERY from temporary flags like "IF NOT EXISTS", "OR REPLACE", "AS SELECT" (for non-views), etc.
 void cleanupObjectDefinitionFromTemporaryFlags(ASTCreateQuery & query);
 

@@ -639,7 +639,7 @@ TEST(IOTestAwsS3Client, AssumeRoleWithSessionPolicy)
     /// `ClientFactory::create` normally copies the region into the SDK configuration. This test bypasses it.
     client_configuration.region = region;
 
-    auto credentials_provider = std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>(access_key_id, "SECRET_ACCESS_KEY");
+    auto credentials_provider = std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>(Aws::String(access_key_id), "SECRET_ACCESS_KEY");
     auto client = DB::S3::AWSAssumeRoleClient::create(credentials_provider, client_configuration, sts_http.getUrl());
     ASSERT_TRUE(client);
 
@@ -648,7 +648,7 @@ TEST(IOTestAwsS3Client, AssumeRoleWithSessionPolicy)
     const std::string policy
         = R"({"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"arn:aws:s3:::bucket/table/*"}]})";
 
-    auto outcome = client->assumeRole(DB::S3::AssumeRoleRequest(role_arn, role_session_name, "", policy));
+    auto outcome = client->assumeRole(DB::S3::AssumeRoleRequest(Aws::String(role_arn), Aws::String(role_session_name), "", Aws::String(policy)));
     ASSERT_TRUE(outcome.IsSuccess()) << outcome.GetError().GetMessage();
 
     ASSERT_TRUE(sts_http.hasLastRequest());

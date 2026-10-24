@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/Common.h>
+#include <Common/SecretString.h>
 
 namespace DB
 {
@@ -129,9 +130,9 @@ public:
 
     void setInitializationAsOneLake(
         const String & client_id_,
-        const String & client_secret_,
+        std::string_view client_secret_,
         const String & tenant_id_,
-        const String & access_token_,
+        std::string_view access_token_,
         AzureBlobStorage::TokenProviderCredential::TokenProvider access_token_provider_,
         bool use_blob_endpoint_)
     {
@@ -157,9 +158,9 @@ private:
     DiskPtr disk;
 
     String onelake_client_id;
-    String onelake_client_secret;
+    SecretString onelake_client_secret;
     String onelake_tenant_id;
-    String onelake_access_token;
+    SecretString onelake_access_token;
     /// Set in refresh-token mode: yields a currently valid access token (renewed by the
     /// catalog client with the Entra ID refresh token) for every storage request.
     AzureBlobStorage::TokenProviderCredential::TokenProvider onelake_access_token_provider;

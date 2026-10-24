@@ -270,19 +270,21 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
             else if (storage_ast.ttl_table != nullptr) /// TTL was removed
                 storage_ast.reset(storage_ast.ttl_table);
 
-            if (metadata.settings_changes)
+            if (metadata.hasSettingsChanges())
             {
-                if (metadata.settings_changes->as<ASTSetQuery &>().changes.empty())
+                auto settings_changes_ast = metadata.getSettingsChanges();
+                if (settings_changes_ast->as<ASTSetQuery &>().changes.empty())
                     storage_ast.reset(storage_ast.settings);
                 else
-                    storage_ast.set(storage_ast.settings, metadata.settings_changes);
+                    storage_ast.set(storage_ast.settings, settings_changes_ast);
             }
         }
-        else if (metadata.settings_changes)
+        else if (metadata.hasSettingsChanges())
         {
-            auto & settings_changes = metadata.settings_changes->as<ASTSetQuery &>().changes;
+            auto settings_changes_ast = metadata.getSettingsChanges();
+            auto & settings_changes = settings_changes_ast->as<ASTSetQuery &>().changes;
             if (!settings_changes.empty())
-                storage_ast.set(storage_ast.settings, metadata.settings_changes);
+                storage_ast.set(storage_ast.settings, settings_changes_ast);
         }
     }
 
@@ -365,6 +367,12 @@ ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_
         create_table_query->set(create_table_query->columns_list, ast_columns_list);
     }
     return create_table_query;
+}
+
+ASTPtr parseDatabaseEngineDefinition(std::string_view definition)
+{
+    ParserStorage parser{ParserStorage::DATABASE_ENGINE};
+    return parseQuery(parser, definition.data(), definition.data() + definition.size(), "", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 }
 
 

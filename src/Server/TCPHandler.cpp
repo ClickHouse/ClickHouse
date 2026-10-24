@@ -1809,7 +1809,7 @@ void TCPHandler::processTablesStatusRequest()
             /// the hash validates below.
             request.read(*in, client_tcp_protocol_version);
 
-            String cluster_secret;
+            SecretString cluster_secret;
             try
             {
                 cluster_secret = server.context()->getCluster(cluster)->getSecret();
@@ -2299,7 +2299,7 @@ void TCPHandler::receiveHello()
         /// the exception back to the unauthenticated peer (see the handshake catch block).
         try
         {
-            String cluster_secret;
+            SecretString cluster_secret;
             try
             {
                 cluster_secret = server.context()->getCluster(cluster)->getSecret();
@@ -2729,7 +2729,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
         client_info.interface = ClientInfo::Interface::TCP_INTERSERVER;
 #if USE_SSL
 
-        String cluster_secret;
+        SecretString cluster_secret;
         try
         {
             cluster_secret = server.context()->getCluster(cluster)->getSecret();

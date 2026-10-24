@@ -40,8 +40,8 @@ ObjectInfo getObjectInfo(
 
 ObjectAttributes getObjectTags(
     const S3::Client & client,
-    const String & bucket,
-    const String & key,
+    std::string_view bucket,
+    std::string_view key,
     const String & version_id = {});
 
 size_t getObjectSize(

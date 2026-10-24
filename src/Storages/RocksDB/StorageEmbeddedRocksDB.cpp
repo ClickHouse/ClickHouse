@@ -1436,7 +1436,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     auto settings = std::make_unique<RocksDBSettings>();
     settings->loadFromQuery(*args.storage_def);
     if (args.storage_def->settings)
-        metadata.settings_changes = args.storage_def->settings->ptr();
+        metadata.setSettingsChanges(args.storage_def->settings->ptr());
     else
     {
         /// A workaround because embedded rocksdb doesn't have default immutable settings
@@ -1445,7 +1445,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         auto settings_changes = make_intrusive<ASTSetQuery>();
         settings_changes->is_standalone = false;
         settings_changes->changes.insertSetting("optimize_for_bulk_insert", (*settings)[RocksDBSetting::optimize_for_bulk_insert].value);
-        metadata.settings_changes = settings_changes;
+        metadata.setSettingsChanges(settings_changes);
     }
     return std::make_shared<StorageEmbeddedRocksDB>(
         args.table_id,
@@ -1624,9 +1624,10 @@ void StorageEmbeddedRocksDB::alter(const AlterCommands & params, ContextPtr quer
 {
     IStorage::alter(params, query_context, holder, ddl_guard);
     auto new_metadata = getInMemoryMetadataPtr(query_context, false);
-    if (new_metadata->settings_changes)
+    if (new_metadata->hasSettingsChanges())
     {
-        const auto & settings_changes = new_metadata->settings_changes->as<const ASTSetQuery &>();
+        const auto settings_changes_ast = new_metadata->getSettingsChanges();
+        const auto & settings_changes = settings_changes_ast->as<const ASTSetQuery &>();
         auto new_settings = std::make_unique<RocksDBSettings>();
         new_settings->applyChanges(settings_changes.changes);
         setSettings(std::move(new_settings));

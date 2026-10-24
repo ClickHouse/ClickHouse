@@ -625,11 +625,10 @@ void URI::getPathSegments(const std::string& path, std::vector<std::string>& seg
 }
 
 
-void URI::encode(const std::string& str, const std::string& reserved, std::string& encodedStr)
+void URI::encode(std::string_view str, std::string_view reserved, std::string& encodedStr)
 {
-	for (std::string::const_iterator it = str.begin(); it != str.end(); ++it)
+	for (char c : str)
 	{
-		char c = *it;
 		if ((c >= 'a' && c <= 'z') ||
 		    (c >= 'A' && c <= 'Z') ||
 		    (c >= '0' && c <= '9') ||
@@ -648,11 +647,11 @@ void URI::encode(const std::string& str, const std::string& reserved, std::strin
 }
 
 	
-void URI::decode(const std::string& str, std::string& decodedStr, bool plusAsSpace)
+void URI::decode(std::string_view str, std::string& decodedStr, bool plusAsSpace)
 {
 	bool inQuery = false;
-	std::string::const_iterator it  = str.begin();
-	std::string::const_iterator end = str.end();
+	std::string_view::const_iterator it  = str.begin();
+	std::string_view::const_iterator end = str.end();
 	while (it != end)
 	{
 		char c = *it++;
@@ -661,9 +660,9 @@ void URI::decode(const std::string& str, std::string& decodedStr, bool plusAsSpa
 		if (inQuery && plusAsSpace && c == '+') c = ' ';
 		else if (c == '%')
 		{
-			if (it == end) throw URISyntaxException("URI encoding: no hex digit following percent sign", str);
+			if (it == end) throw URISyntaxException("URI encoding: no hex digit following percent sign", std::string(str));
 			char hi = *it++;
-			if (it == end) throw URISyntaxException("URI encoding: two hex digits must follow percent sign", str);
+			if (it == end) throw URISyntaxException("URI encoding: two hex digits must follow percent sign", std::string(str));
 			char lo = *it++;
 			if (hi >= '0' && hi <= '9')
 				c = hi - '0';

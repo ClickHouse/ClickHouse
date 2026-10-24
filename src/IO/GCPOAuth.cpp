@@ -102,16 +102,16 @@ GCPOAuthToken postTokenRequest(
 
 }
 
-void checkGCPOAuthAccessToken(const std::string & access_token)
+void checkGCPOAuthAccessToken(std::string_view access_token)
 {
-    if (access_token.find_first_of("\r\n") != std::string::npos)
+    if (access_token.find_first_of("\r\n") != std::string_view::npos)
         throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "GCP access token contains CR or LF");
 }
 
 GCPOAuthToken fetchGCPOAuthToken(
     const std::string & client_id,
-    const std::string & client_secret,
-    const std::string & refresh_token,
+    std::string_view client_secret,
+    std::string_view refresh_token,
     const ConnectionTimeouts & timeouts,
     HTTPConnectionGroupType group,
     const std::string & token_endpoint)

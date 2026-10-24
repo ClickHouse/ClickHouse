@@ -71,7 +71,7 @@ void IAIProvider::embed(
 }
 
 AIProviderPtr createAIProvider(
-    const ContextPtr & context, const String & provider_name, const String & endpoint, const String & api_key, const String & api_version)
+    const ContextPtr & context, const String & provider_name, const String & endpoint, std::string_view api_key, const String & api_version)
 {
     AIProviderPtr provider;
     if (provider_name == "openai" || provider_name == "huggingface" || provider_name == "tei")

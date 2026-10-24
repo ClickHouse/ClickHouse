@@ -647,7 +647,7 @@ void StorageMergeTree::alter(
         bool workers_disabled_for_readonly_commit = false;
         try
         {
-            changeSettings(new_metadata.settings_changes, table_lock_holder);
+            changeSettings(new_metadata.getSettingsChanges(), table_lock_holder);
 
             /// The opposite transition, 0 -> 1, disables the workers before the commit as well. The
             /// cleanup thread and the asynchronous outdated and unexpected part loaders of a writable
@@ -717,7 +717,7 @@ void StorageMergeTree::alter(
             /// while the workers of a table that started writable, which the call found already
             /// running, are left as they were (disabled, see above). The cleanup thread is stopped
             /// as on a 0 -> 1 toggle: a read-only table never cleans its disk.
-            changeSettings(old_metadata.settings_changes, table_lock_holder);
+            changeSettings(old_metadata.getSettingsChanges(), table_lock_holder);
             if (statistics_changed)
                 setInMemoryMetadata(old_metadata);
             if ((*old_storage_settings)[MergeTreeSetting::table_readonly])
@@ -844,7 +844,7 @@ void StorageMergeTree::alter(
             std::optional<PreparedMutationEntry> prepared;
             try
             {
-                changeSettings(new_metadata.settings_changes, table_lock_holder);
+                changeSettings(new_metadata.getSettingsChanges(), table_lock_holder);
                 checkTTLExpressions(new_metadata, old_metadata);
 
                 /// Validate setting-dependent metadata against the just-applied settings
@@ -864,7 +864,7 @@ void StorageMergeTree::alter(
             catch (...)
             {
                 LOG_ERROR(log, "Failed to commit metadata changes, reverting settings");
-                changeSettings(old_metadata.settings_changes, table_lock_holder);
+                changeSettings(old_metadata.getSettingsChanges(), table_lock_holder);
                 /// `prepared` destructor removes the orphan `mutation_*.txt` (is_registered == false).
                 throw;
             }
@@ -1009,7 +1009,7 @@ void StorageMergeTree::alter(
                                 tryLogCurrentException(log, "Failed to remove rolled-back rename mutation file");
                             }
                         }
-                        changeSettings(old_metadata.settings_changes, table_lock_holder);
+                        changeSettings(old_metadata.getSettingsChanges(), table_lock_holder);
                     }
                     else
                     {

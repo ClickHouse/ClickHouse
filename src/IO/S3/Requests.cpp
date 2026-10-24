@@ -1,4 +1,5 @@
 #include <IO/S3/Requests.h>
+#include <IO/S3/AwsFormat.h>
 #include <Common/StringUtils.h>
 
 #include <algorithm>
@@ -38,7 +39,7 @@ Model::StorageClass getStorageClassForName(const std::string & name)
     /// An unknown name is sent as is, so it must not break the header line.
     if (name.find_first_of("\r\n") != std::string::npos)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting storage_class has invalid value: it contains CR or LF");
-    return Model::StorageClassMapper::GetStorageClassForName(name);
+    return Model::StorageClassMapper::GetStorageClassForName(Aws::String(name));
 }
 
 RequestChecksum::Algorithm RequestChecksum::getUploadChecksumAlgorithm(const S3RequestSettings & request_settings, bool is_s3express_bucket)
@@ -142,7 +143,7 @@ Aws::Http::HeaderValueCollection translateHeadersToGCS(Aws::Http::HeaderValueCol
     /// we have to replace all the prefixes client set internally
     const auto replace_with_gcs_header = [&](std::string_view amz_header, std::string_view gcs_header)
     {
-        if (const auto it = headers.find(std::string(amz_header)); it != headers.end())
+        if (const auto it = headers.find(Aws::String(amz_header)); it != headers.end())
         {
             auto header_value = std::move(it->second);
             headers.erase(it);
@@ -154,16 +155,16 @@ Aws::Http::HeaderValueCollection translateHeadersToGCS(Aws::Http::HeaderValueCol
         replace_with_gcs_header(amz_header, gcs_header);
 
     for (const auto & dropped_header : GCS_DROPPED_HEADERS)
-        headers.erase(std::string(dropped_header));
+        headers.erase(Aws::String(dropped_header));
 
     /// replace all x-amz-meta- headers
-    VectorWithMemoryTracking<std::pair<std::string, std::string>> new_meta_headers;
+    VectorWithMemoryTracking<std::pair<Aws::String, Aws::String>> new_meta_headers;
     for (auto it = headers.begin(); it != headers.end();)
     {
         if (it->first.starts_with(AMZ_META_PREFIX))
         {
             auto value = std::move(it->second);
-            auto header = std::string(GCS_META_PREFIX) + it->first.substr(AMZ_META_PREFIX.size());
+            auto header = Aws::String(GCS_META_PREFIX) + it->first.substr(AMZ_META_PREFIX.size());
             new_meta_headers.emplace_back(std::pair{std::move(header), std::move(value)});
             it = headers.erase(it);
         }
@@ -289,7 +290,7 @@ void ComposeObjectRequest::SetKey(const char * value)
     key.assign(value);
 }
 
-void ComposeObjectRequest::SetComponentNames(Strings component_names_)
+void ComposeObjectRequest::SetComponentNames(Aws::Vector<Aws::String> component_names_)
 {
     component_names = std::move(component_names_);
 }
@@ -319,7 +320,7 @@ static size_t getAttemptFromInfo(const Aws::String & request_info)
     auto value = request_info.substr(val_begin, val_end - val_begin);
     try
     {
-        return std::stol(value, nullptr, 10);
+        return std::stol(String(value), nullptr, 10);
     }
     catch (const std::exception &)
     {
@@ -327,7 +328,7 @@ static size_t getAttemptFromInfo(const Aws::String & request_info)
     }
 }
 
-static String getOrEmpty(const Aws::Http::HeaderValueCollection & map, const String & key)
+static Aws::String getOrEmpty(const Aws::Http::HeaderValueCollection & map, const Aws::String & key)
 {
     auto it = map.find(key);
     if (it == map.end())
@@ -337,7 +338,7 @@ static String getOrEmpty(const Aws::Http::HeaderValueCollection & map, const Str
 
 void setClickHouseAttemptNumber(Aws::AmazonWebServiceRequest & request, size_t attempt)
 {
-    request.SetAdditionalCustomHeaderValue("clickhouse-request", fmt::format("attempt={}", attempt));
+    request.SetAdditionalCustomHeaderValue("clickhouse-request", awsFormat("attempt={}", attempt));
 }
 
 size_t getClickHouseAttemptNumber(const Aws::AmazonWebServiceRequest & request)

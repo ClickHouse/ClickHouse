@@ -291,7 +291,7 @@ FunctionBaseAI::AIParams FunctionBaseAI::resolveAIParams(
     params.collection.collection_name = credentials;
     params.collection.provider = collection->getOrDefault<String>("provider", "");
     params.collection.endpoint = collection->getOrDefault<String>("endpoint", "");
-    params.collection.api_key = collection->getOrDefault<String>("api_key", "");
+    params.collection.api_key = collection->getOrDefault<SecretString>("api_key");
     params.collection.api_version = collection->getOrDefault<String>("api_version", "");
 
     if (params.collection.provider.empty())

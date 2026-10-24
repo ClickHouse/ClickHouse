@@ -43,11 +43,11 @@ struct URI
 
     URI() = default;
     explicit URI(
-        const std::string & uri_,
+        std::string_view uri_,
         bool allow_archive_path_syntax = false,
         bool keep_presigned_query_parameters = true,
         S3UriStyle uri_style = S3UriStyle::AUTO);
-    void addRegionToURI(const std::string & region);
+    void addRegionToURI(std::string_view region);
 
     /// Allowed by an <s3_bucket> entry for the endpoint and bucket, or by a <host>/<host_regexp> entry for the host.
     /// With throw_on_error, throws UNACCEPTABLE_URL instead of returning false.

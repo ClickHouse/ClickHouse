@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/SecretString.h>
 #include <Storages/UVLoop.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
 
@@ -12,11 +13,11 @@ struct RabbitMQConfiguration
     String host;
     UInt16 port{};
     String username;
-    String password;
+    SecretString password;
     String vhost;
 
     bool secure{};
-    String connection_string;
+    SecretString connection_string;
 };
 
 class RabbitMQConnection

@@ -385,7 +385,7 @@ namespace
 
             configuration.host = named_collection->getAny<String>({"host", "hostname"});
             configuration.port = static_cast<uint32_t>(named_collection->getOrDefault<UInt64>("port", 6379));
-            configuration.password = named_collection->getOrDefault<String>("password", DEFAULT_REDIS_PASSWORD);
+            configuration.password = named_collection->getOrDefault<SecretString>("password", SecretString(DEFAULT_REDIS_PASSWORD));
             configuration.db_index = static_cast<uint32_t>(named_collection->getOrDefault<UInt64>("db_index", DEFAULT_REDIS_DB_INDEX));
             configuration.pool_size = static_cast<uint32_t>(named_collection->getOrDefault<UInt64>("pool_size", DEFAULT_REDIS_POOL_SIZE));
         }

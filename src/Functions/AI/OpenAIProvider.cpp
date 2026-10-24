@@ -36,7 +36,7 @@ void setCommonHeaders(Poco::Net::HTTPRequest & http_request, const AIRequest & a
 
 }
 
-OpenAIProvider::OpenAIProvider(const String & endpoint_, const String & api_key_)
+OpenAIProvider::OpenAIProvider(const String & endpoint_, std::string_view api_key_)
     : endpoint(endpoint_)
     , api_key(api_key_)
     , uri(endpoint_)
@@ -47,7 +47,7 @@ HTTPHeaderEntries OpenAIProvider::getHeaders() const
 {
     if (api_key.empty()) /// not all providers need API key
         return {};
-    return {{"Authorization", "Bearer " + api_key}};
+    return {{"Authorization", fmt::format("Bearer {}", api_key)}};
 }
 
 void OpenAIProvider::call(const AIChatRequest & ai_request, const ConnectionTimeouts & timeouts, AIResponse & response)
@@ -88,7 +88,7 @@ void OpenAIProvider::call(const AIChatRequest & ai_request, const ConnectionTime
     Poco::Net::HTTPRequest http_request(Poco::Net::HTTPRequest::HTTP_POST, uri.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
     http_request.setContentType("application/json");
     for (const auto & header : getHeaders())
-        http_request.set(header.name, header.value);
+        http_request.set(header.name, String(header.value));
     setCommonHeaders(http_request, ai_request);
     http_request.setContentLength(body.size());
 
@@ -196,7 +196,7 @@ void OpenAIProvider::embed(
     Poco::Net::HTTPRequest http_request(Poco::Net::HTTPRequest::HTTP_POST, uri.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
     http_request.setContentType("application/json");
     for (const auto & header : getHeaders())
-        http_request.set(header.name, header.value);
+        http_request.set(header.name, String(header.value));
     setCommonHeaders(http_request, ai_embedding_request);
     http_request.setContentLength(body.size());
 
