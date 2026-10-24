@@ -21,6 +21,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/StreamInQueryResultCacheStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 
@@ -265,6 +266,11 @@ private:
 
             /// (3) IEJoin merges its pre-sorted inputs, its sortings are not redundant
             if (typeid_cast<const IEJoinStep *>(step))
+                return false;
+
+            /// (4) the query result cache stores the result of the (sub)query below it under a key which includes its ORDER BY,
+            /// so the sorting must be kept even if the steps above the cache do not need it
+            if (typeid_cast<const StreamInQueryResultCacheStep *>(step))
                 return false;
         }
 
