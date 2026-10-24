@@ -939,7 +939,8 @@ void registerParquetSchemaReader(FormatFactory & factory)
                 "schema_inference_make_columns_nullable={};schema_inference_make_json_columns_nullable={};"
                 "schema_inference_allow_nullable_tuple_type={};"
                 "enable_json_parsing={};max_parser_depth={};"
-                "local_time_as_utc={};allow_geoparquet_parser={};skip_columns_with_unsupported_types={}",
+                "local_time_as_utc={};allow_geoparquet_parser={};skip_columns_with_unsupported_types={};"
+                "detect_variant_by_structure={}",
                 settings.schema_inference_make_columns_nullable,
                 settings.schema_inference_make_json_columns_nullable,
                 settings.schema_inference_allow_nullable_tuple_type,
@@ -947,7 +948,8 @@ void registerParquetSchemaReader(FormatFactory & factory)
                 settings.max_parser_depth,
                 settings.parquet.local_time_as_utc,
                 settings.parquet.allow_geoparquet_parser,
-                settings.parquet.skip_columns_with_unsupported_types_in_schema_inference);
+                settings.parquet.skip_columns_with_unsupported_types_in_schema_inference,
+                settings.parquet.detect_variant_by_structure);
         });
 }
 
