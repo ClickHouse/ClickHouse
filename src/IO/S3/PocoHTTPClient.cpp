@@ -14,6 +14,7 @@
 
 #include <Common/logger_useful.h>
 #include <Common/Stopwatch.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Throttler.h>
 #include <Common/re2.h>
 #include <IO/Expect404ResponseScope.h>
@@ -77,6 +78,12 @@ namespace ProfileEvents
     extern const Event DiskS3PutRequestThrottlerCount;
     extern const Event DiskS3PutRequestThrottlerBlocked;
     extern const Event DiskS3PutRequestThrottlerSleepMicroseconds;
+    extern const Event S3CredentialsGCPRequests;
+    extern const Event S3CredentialsGCPErrors;
+    extern const Event S3CredentialsGCPMicroseconds;
+    extern const Event S3CredentialsHTTPRequests;
+    extern const Event S3CredentialsHTTPErrors;
+    extern const Event S3CredentialsHTTPMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -235,7 +242,8 @@ PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & client_config
     , http_max_field_value_size(client_configuration.http_max_field_value_size)
     , enable_s3_requests_logging(client_configuration.enable_s3_requests_logging)
     , for_disk_s3(client_configuration.for_disk_s3)
-    , request_throttler(client_configuration.request_throttler)
+    , for_credentials(client_configuration.for_credentials)
+    , request_throttler(client_configuration.for_credentials ? HTTPRequestThrottler{} : client_configuration.request_throttler)
     , extra_headers(client_configuration.extra_headers)
 {
 }
@@ -247,7 +255,9 @@ PocoHTTPClient::PocoHTTPClient(const Aws::Client::ClientConfiguration & client_c
        .withReceiveTimeout(Poco::Timespan(client_configuration.requestTimeoutMs * 1000))
        .withTCPKeepAliveTimeout(Poco::Timespan(
            client_configuration.enableTcpKeepAlive ? client_configuration.tcpKeepAliveIntervalMs * 1000 : 0))),
-    remote_host_filter(Context::getGlobalContextInstance()->getRemoteHostFilter())
+    remote_host_filter(Context::getGlobalContextInstance()->getRemoteHostFilter()),
+    /// Only the AWS SDK creates clients with its own configuration, to fetch ECS container credentials.
+    for_credentials(true)
 {
 }
 
@@ -332,6 +342,21 @@ PocoHTTPClient::S3MetricKind PocoHTTPClient::getMetricKind(const Aws::Http::Http
 
 void PocoHTTPClient::addMetric(const Aws::Http::HttpRequest & request, S3MetricType type, ProfileEvents::Count amount) const
 {
+    if (for_credentials)
+    {
+        static const ProfileEvents::Event credentials_events_map[static_cast<size_t>(S3MetricType::EnumSize)] =
+        {
+            ProfileEvents::S3CredentialsHTTPMicroseconds,
+            ProfileEvents::S3CredentialsHTTPRequests,
+            ProfileEvents::S3CredentialsHTTPErrors,
+            ProfileEvents::S3CredentialsHTTPErrors, /// Throttling
+            ProfileEvents::end(), /// Redirects
+        };
+        if (auto event = credentials_events_map[static_cast<unsigned int>(type)]; event != ProfileEvents::end())
+            ProfileEvents::increment(event, amount);
+        return;
+    }
+
     static const ProfileEvents::Event events_map[static_cast<size_t>(S3MetricType::EnumSize)][static_cast<size_t>(S3MetricKind::EnumSize)] =
     {
         {ProfileEvents::S3ReadMicroseconds, ProfileEvents::S3WriteMicroseconds},
@@ -359,7 +384,7 @@ void PocoHTTPClient::addMetric(const Aws::Http::HttpRequest & request, S3MetricT
 
 void PocoHTTPClient::observeLatency(const Aws::Http::HttpRequest & request, S3LatencyType type, HistogramMetrics::Value latency) const
 {
-    if (latency == 0)
+    if (latency == 0 || for_credentials)
         return;
 
     if (type == S3LatencyType::Connect)
@@ -519,7 +544,9 @@ void PocoHTTPClient::makeRequestInternalImpl(
     }
 
     addMetric(request, S3MetricType::Count);
-    CurrentMetrics::Increment metric_increment{CurrentMetrics::S3Requests};
+    std::optional<CurrentMetrics::Increment> metric_increment;
+    if (!for_credentials)
+        metric_increment.emplace(CurrentMetrics::S3Requests);
 
     UInt64 connect_time = 0;
     UInt64 first_byte_time = 0;
@@ -923,9 +950,23 @@ std::string PocoHTTPClientGCPOAuth::getBearerToken() const
 
 PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerToken() const
 {
-    if (!google_adc_client_id.empty() && !google_adc_client_secret.empty() && !google_adc_refresh_token.empty())
-        return requestBearerTokenFromADC();
+    ProfileEvents::increment(ProfileEvents::S3CredentialsGCPRequests);
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::S3CredentialsGCPMicroseconds);
+    try
+    {
+        if (!google_adc_client_id.empty() && !google_adc_client_secret.empty() && !google_adc_refresh_token.empty())
+            return requestBearerTokenFromADC();
+        return requestBearerTokenFromMetadataService();
+    }
+    catch (...)
+    {
+        ProfileEvents::increment(ProfileEvents::S3CredentialsGCPErrors);
+        throw;
+    }
+}
 
+PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerTokenFromMetadataService() const
+{
     chassert(!request_token_path.empty());
     chassert(!metadata_service.empty());
     chassert(!service_account.empty());

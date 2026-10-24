@@ -1870,6 +1870,29 @@ The server successfully detected this situation and will download merged part fr
     \
     M(S3CachedCredentialsProvidersReused, "Total number of reused credentials provider from the cache", ValueType::Number) \
     M(S3CachedCredentialsProvidersAdded, "Total number of newly added credentials providers to the cache", ValueType::Number) \
+    M(S3CredentialsIMDSRequests, "Number of attempts to load AWS credentials from the EC2 instance metadata service (IMDS).", ValueType::Number) \
+    M(S3CredentialsIMDSErrors, "Number of attempts to load AWS credentials from the EC2 instance metadata service (IMDS) that returned no credentials.", ValueType::Number) \
+    M(S3CredentialsIMDSMicroseconds, "Time spent loading AWS credentials from the EC2 instance metadata service (IMDS).", ValueType::Microseconds) \
+    M(S3CredentialsIMDSv1Fallbacks, "Number of times the IMDSv2 token request failed and AWS credentials were requested with IMDSv1 instead.", ValueType::Number) \
+    M(S3CredentialsAssumeRoleRequests, "Number of STS AssumeRole calls made to get AWS credentials for a `role_arn`.", ValueType::Number) \
+    M(S3CredentialsAssumeRoleErrors, "Number of STS AssumeRole calls made to get AWS credentials for a `role_arn` that failed or returned empty credentials.", ValueType::Number) \
+    M(S3CredentialsAssumeRoleMicroseconds, "Time spent in STS AssumeRole calls made to get AWS credentials for a `role_arn`.", ValueType::Microseconds) \
+    M(S3CredentialsAssumeRoleEmpty, "Number of times an STS AssumeRole credentials provider returned empty credentials because no AssumeRole call has succeeded yet. Requests signed with them are sent unsigned.", ValueType::Number) \
+    M(S3CredentialsWebIdentityRequests, "Number of STS AssumeRoleWithWebIdentity calls made to get AWS credentials (e.g. IRSA).", ValueType::Number) \
+    M(S3CredentialsWebIdentityErrors, "Number of STS AssumeRoleWithWebIdentity calls that returned no credentials, including the cases when the web identity token file cannot be read.", ValueType::Number) \
+    M(S3CredentialsWebIdentityMicroseconds, "Time spent in STS AssumeRoleWithWebIdentity calls.", ValueType::Microseconds) \
+    M(S3CredentialsWebIdentitySkipped, "Number of times an AWS credentials provider chain used another provider (another identity) because the configured web identity provider (e.g. IRSA) returned no credentials.", ValueType::Number) \
+    M(S3CredentialsSSORequests, "Number of AWS SSO GetRoleCredentials calls made to get AWS credentials.", ValueType::Number) \
+    M(S3CredentialsSSOErrors, "Number of AWS SSO GetRoleCredentials calls that returned no credentials.", ValueType::Number) \
+    M(S3CredentialsSSOMicroseconds, "Time spent in AWS SSO GetRoleCredentials calls.", ValueType::Microseconds) \
+    M(S3CredentialsGCPRequests, "Number of requests for a GCP OAuth access token, to the metadata server or with Application Default Credentials.", ValueType::Number) \
+    M(S3CredentialsGCPErrors, "Number of failed requests for a GCP OAuth access token.", ValueType::Number) \
+    M(S3CredentialsGCPMicroseconds, "Time spent requesting GCP OAuth access tokens.", ValueType::Microseconds) \
+    M(S3CredentialsHTTPRequests, "Number of HTTP requests made to fetch AWS credentials (IMDS, STS, SSO, ECS), including retries. They are not counted in the S3 request events.", ValueType::Number) \
+    M(S3CredentialsHTTPErrors, "Number of failed HTTP requests made to fetch AWS credentials (IMDS, STS, SSO, ECS).", ValueType::Number) \
+    M(S3CredentialsHTTPMicroseconds, "Time of HTTP requests made to fetch AWS credentials (IMDS, STS, SSO, ECS).", ValueType::Microseconds) \
+    M(S3CredentialsProviderChainEmpty, "Number of times no provider in a non-empty AWS credentials provider chain returned credentials. Requests signed with them are sent unsigned.", ValueType::Number) \
+    M(S3CredentialsProviderChainSwitches, "Number of times an AWS credentials provider chain started to use a different provider than before, so requests are signed with a different identity.", ValueType::Number) \
     \
     M(RuntimeFiltersCreated, "Number of distinct JOIN Runtime Filters created within a query", ValueType::Number) \
     M(RuntimeFilterBlocksProcessed, "Number of blocks processed by JOIN Runtime Filters", ValueType::Number) \

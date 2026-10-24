@@ -65,6 +65,8 @@ namespace S3
 #    include <Common/Concepts.h>
 #    include <Common/SipHash.h>
 #    include <Common/ProfileEvents.h>
+#    include <Common/ElapsedTimeProfileEventIncrement.h>
+#    include <base/demangle.h>
 #    include <IO/S3/PocoHTTPClient.h>
 #    include <IO/S3/Client.h>
 
@@ -82,6 +84,23 @@ namespace ProfileEvents
 {
     extern const Event S3CachedCredentialsProvidersReused;
     extern const Event S3CachedCredentialsProvidersAdded;
+    extern const Event S3CredentialsIMDSRequests;
+    extern const Event S3CredentialsIMDSErrors;
+    extern const Event S3CredentialsIMDSMicroseconds;
+    extern const Event S3CredentialsIMDSv1Fallbacks;
+    extern const Event S3CredentialsAssumeRoleRequests;
+    extern const Event S3CredentialsAssumeRoleErrors;
+    extern const Event S3CredentialsAssumeRoleMicroseconds;
+    extern const Event S3CredentialsAssumeRoleEmpty;
+    extern const Event S3CredentialsWebIdentityRequests;
+    extern const Event S3CredentialsWebIdentityErrors;
+    extern const Event S3CredentialsWebIdentityMicroseconds;
+    extern const Event S3CredentialsWebIdentitySkipped;
+    extern const Event S3CredentialsSSORequests;
+    extern const Event S3CredentialsSSOErrors;
+    extern const Event S3CredentialsSSOMicroseconds;
+    extern const Event S3CredentialsProviderChainEmpty;
+    extern const Event S3CredentialsProviderChainSwitches;
 }
 
 namespace CurrentMetrics
@@ -325,10 +344,11 @@ Aws::String AWSEC2MetadataClient::getDefaultCredentialsSecurely() const
     }
     if (response_code != Aws::Http::HttpResponseCode::OK || new_token.empty())
     {
-        LOG_TRACE(
+        ProfileEvents::increment(ProfileEvents::S3CredentialsIMDSv1Fallbacks);
+        LOG_WARNING(
             logger,
             "Calling EC2MetadataService to get token failed, "
-            "falling back to a less secure way. HTTP response code: {}",
+            "falling back to a less secure way (IMDSv1). HTTP response code: {}",
             response_code);
         return getDefaultCredentials();
     }
@@ -656,12 +676,33 @@ void AWSInstanceProfileCredentialsProvider::Reload()
     LOG_INFO(logger, "Credentials have expired, attempting to repull from EC2 Metadata Service.");
     auto old_credentials = GetAWSCredentialsImpl();
 
-    ec2_metadata_config_loader->Load();
+    ProfileEvents::increment(ProfileEvents::S3CredentialsIMDSRequests);
+    bool loaded = false;
+    {
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::S3CredentialsIMDSMicroseconds);
+        loaded = ec2_metadata_config_loader->Load();
+    }
     AWSCredentialsProvider::Reload();
 
     auto new_credentials = GetAWSCredentialsImpl();
-    LOG_INFO(logger, "Got {}credentials from EC2 Metadata Service",
-             new_credentials.IsEmpty() ? "empty " : ((new_credentials == old_credentials) ? "same " : ""));
+
+    /// A failed load keeps the previous profile, and a successful one may store empty credentials from an
+    /// IMDS error document (e.g. `AssumeRoleUnauthorizedAccess`), so check both.
+    if (!loaded || new_credentials.GetAWSAccessKeyId().empty() || new_credentials.GetAWSSecretKey().empty())
+        ProfileEvents::increment(ProfileEvents::S3CredentialsIMDSErrors);
+    if (new_credentials.IsEmpty())
+    {
+        /// Normal outside of EC2, so not a warning.
+        LOG_INFO(logger, "Got empty credentials from EC2 Metadata Service");
+    }
+    else if (!loaded)
+    {
+        LOG_WARNING(logger, "Failed to reload credentials from EC2 Metadata Service, keeping the previous ones");
+    }
+    else
+    {
+        LOG_INFO(logger, "Got {}credentials from EC2 Metadata Service", (new_credentials == old_credentials) ? "same " : "");
+    }
 }
 
 void AWSInstanceProfileCredentialsProvider::refreshIfExpired()
@@ -824,6 +865,9 @@ void AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::Reload()
 {
     LOG_INFO(logger, "Credentials have expired, attempting to renew from STS.");
 
+    ProfileEvents::increment(ProfileEvents::S3CredentialsWebIdentityRequests);
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::S3CredentialsWebIdentityMicroseconds);
+
     std::ifstream token_stream(token_file.data());
     if (token_stream)
     {
@@ -832,7 +876,8 @@ void AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::Reload()
     }
     else
     {
-        LOG_INFO(logger, "Can't open token file: {}", token_file);
+        ProfileEvents::increment(ProfileEvents::S3CredentialsWebIdentityErrors);
+        LOG_WARNING(logger, "Can't open token file: {}", token_file);
         return;
     }
     Aws::Internal::STSCredentialsClient::STSAssumeRoleWithWebIdentityRequest request{session_name, role_arn, token};
@@ -840,8 +885,15 @@ void AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::Reload()
     auto result = client->GetAssumeRoleWithWebIdentityCredentials(request);
     AWSCredentialsProvider::Reload();
 
-    LOG_INFO(logger, "Got {}credentials from STS",
-             result.creds.IsEmpty() ? "empty " : ((result.creds == credentials) ? "same " : ""));
+    if (result.creds.IsEmpty())
+    {
+        ProfileEvents::increment(ProfileEvents::S3CredentialsWebIdentityErrors);
+        LOG_WARNING(logger, "Got empty credentials from STS AssumeRoleWithWebIdentity");
+    }
+    else
+    {
+        LOG_INFO(logger, "Got {}credentials from STS", (result.creds == credentials) ? "same " : "");
+    }
 
     credentials = result.creds;
 }
@@ -915,8 +967,16 @@ void SSOCredentialsProvider::Reload()
     client = Aws::MakeUnique<Aws::Internal::SSOCredentialsClient>(SSO_CREDENTIALS_PROVIDER_LOG_TAG, aws_client_configuration);
 
     LOG_TRACE(logger, "Requesting credentials with AWS_ACCESS_KEY: {}", sso_account_id);
-    auto result = client->GetSSOCredentials(request);
+    ProfileEvents::increment(ProfileEvents::S3CredentialsSSORequests);
+    auto result = [&]
+    {
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::S3CredentialsSSOMicroseconds);
+        return client->GetSSOCredentials(request);
+    }();
     AWSCredentialsProvider::Reload();
+
+    if (result.creds.IsEmpty())
+        ProfileEvents::increment(ProfileEvents::S3CredentialsSSOErrors);
 
     LOG_INFO(logger, "Got {}credentials with AWS_ACCESS_KEY: {}",
              result.creds.IsEmpty() ? "empty " : ((credentials == result.creds) ? "same " : ""),
@@ -985,9 +1045,8 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
         const DB::S3::PocoHTTPClientConfiguration & configuration,
         const Aws::Auth::AWSCredentials & credentials,
         const CredentialsConfiguration & credentials_configuration)
+    : logger(getLogger("S3CredentialsProviderChain"))
 {
-    auto logger = getLogger("S3CredentialsProviderChain");
-
     /// we don't provide any credentials to avoid signing
     if (credentials_configuration.no_sign_request || boost::iequals(configuration.http_client, "gcp_oauth"))
         return;
@@ -1034,9 +1093,11 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
                 configuration.for_disk_s3,
                 configuration.opt_disk_name,
                 configuration.request_throttler);
-            AddProvider(
-                AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::create(
-                    aws_client_configuration, credentials_configuration.expiration_window_seconds, credentials_configuration.kms_role_arn));
+            aws_client_configuration.for_credentials = true;
+            /// It is an anonymous provider if web identity is configured only partially.
+            web_identity_provider = AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::create(
+                aws_client_configuration, credentials_configuration.expiration_window_seconds, credentials_configuration.kms_role_arn);
+            AddProvider(web_identity_provider);
         }
 
         AddProvider(std::make_shared<Aws::Auth::EnvironmentAWSCredentialsProvider>());
@@ -1053,6 +1114,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
                 configuration.for_disk_s3,
                 configuration.opt_disk_name,
                 configuration.request_throttler);
+            aws_client_configuration.for_credentials = true;
             AddProvider(std::make_shared<SSOCredentialsProvider>(
                 std::move(aws_client_configuration), credentials_configuration.expiration_window_seconds));
         }
@@ -1106,6 +1168,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
                 configuration.opt_disk_name,
                 configuration.request_throttler,
                 Aws::Http::SchemeMapper::ToString(Aws::Http::Scheme::HTTP));
+            aws_client_configuration.for_credentials = true;
 
             /// Explicitly set the proxy settings to empty/zero to avoid relying on defaults that could potentially change
             /// in the future.
@@ -1138,6 +1201,78 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
         /// in chain.
         AddProvider(std::make_shared<Aws::Auth::ProfileConfigFileAWSCredentialsProvider>());
     }
+}
+
+Aws::Auth::AWSCredentials S3CredentialsProviderChain::GetAWSCredentials()
+{
+    /// The signer sends a request unsigned if either key is empty.
+    auto is_usable = [](const Aws::Auth::AWSCredentials & credentials)
+    {
+        return !credentials.GetAWSAccessKeyId().empty() && !credentials.GetAWSSecretKey().empty();
+    };
+
+    auto provider_name = [](const Aws::Auth::AWSCredentialsProvider & provider)
+    {
+        return demangle(typeid(provider).name());
+    };
+
+    Aws::Utils::Threading::ReaderLockGuard lock(cached_provider_lock);
+    if (cached_provider)
+    {
+        auto credentials = cached_provider->GetAWSCredentials();
+        if (is_usable(credentials))
+            return credentials;
+    }
+
+    lock.UpgradeToWriterLock();
+    bool web_identity_skipped = false;
+    for (const auto & provider : GetProviders())
+    {
+        auto credentials = provider->GetAWSCredentials();
+        if (!is_usable(credentials))
+        {
+            /// Web identity is added only when configured, so other providers resolve a different identity.
+            if (provider == web_identity_provider)
+                web_identity_skipped = true;
+            continue;
+        }
+
+        if (web_identity_skipped)
+        {
+            ProfileEvents::increment(ProfileEvents::S3CredentialsWebIdentitySkipped);
+            LOG_WARNING(logger, "Web identity credentials provider is configured but returned no credentials, using {} instead",
+                provider_name(*provider));
+        }
+
+        if (last_used_provider && last_used_provider != provider)
+        {
+            ProfileEvents::increment(ProfileEvents::S3CredentialsProviderChainSwitches);
+            LOG_WARNING(logger, "Switched AWS credentials provider from {} to {}",
+                provider_name(*last_used_provider), provider_name(*provider));
+        }
+
+        cached_provider = provider;
+        last_used_provider = provider;
+        return credentials;
+    }
+
+    /// A chain without providers is anonymous on purpose (e.g. `use_environment_credentials = 0`).
+    if (!GetProviders().empty())
+    {
+        ProfileEvents::increment(ProfileEvents::S3CredentialsProviderChainEmpty);
+        /// Normal outside of AWS (e.g. a public bucket with `use_environment_credentials`), so not a warning.
+        LOG_INFO(LogFrequencyLimiter(logger, 10), "No AWS credentials provider in the chain returned credentials, requests will be sent unsigned");
+    }
+
+    return {};
+}
+
+void S3CredentialsProviderChain::SetNeedRefresh()
+{
+    Aws::Auth::AWSCredentialsProviderChain::SetNeedRefresh();
+
+    Aws::Utils::Threading::WriterLockGuard lock(cached_provider_lock);
+    cached_provider.reset();
 }
 
 AssumeRoleRequest::AssumeRoleRequest(std::string role_arn_, std::string role_session_name_, std::string external_id_, std::string policy_)
@@ -1253,6 +1388,7 @@ std::shared_ptr<AWSAssumeRoleClient> AWSAssumeRoleClient::create(
     /// cancellation-aware retry strategy and per-attempt timeout (never longer than the caller's) so an
     /// AssumeRole against a slow/unreachable STS endpoint stays bounded and respects query cancellation.
     auto sts_client_configuration = client_configuration;
+    sts_client_configuration.for_credentials = true;
 
     /// At most 3 retries.
     auto sts_retry_strategy = sts_client_configuration.retry_strategy;
@@ -1337,6 +1473,11 @@ Aws::Auth::AWSCredentials AwsAuthSTSAssumeRoleCredentialsProvider::GetAWSCredent
         return credentials;
 
     Reload();
+
+    /// The signer sends a request unsigned if either key is empty.
+    if (credentials.GetAWSAccessKeyId().empty() || credentials.GetAWSSecretKey().empty())
+        ProfileEvents::increment(ProfileEvents::S3CredentialsAssumeRoleEmpty);
+
     return credentials;
 }
 
@@ -1345,15 +1486,24 @@ void AwsAuthSTSAssumeRoleCredentialsProvider::Reload()
     LOG_INFO(logger, "Credentials are empty or expired, attempting to renew with AssumeRole");
 
     AssumeRoleRequest request(role_arn, session_name, external_id, /* policy_ */ "");
-    auto outcome = client->assumeRole(request);
+    ProfileEvents::increment(ProfileEvents::S3CredentialsAssumeRoleRequests);
+    auto outcome = [&]
+    {
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::S3CredentialsAssumeRoleMicroseconds);
+        return client->assumeRole(request);
+    }();
     if (!outcome.IsSuccess())
     {
+        ProfileEvents::increment(ProfileEvents::S3CredentialsAssumeRoleErrors);
         /// Keep `m_needsRefresh` and cached `credentials` so the next call retries STS.
         LOG_WARNING(logger, "Failed to get credentials using AssumeRule. Error: {}", outcome.GetError().GetMessage());
         return;
     }
 
     const auto & result = outcome.GetResult();
+    if (result.getAccessKeyID().empty() || result.getSecretAccessKey().empty())
+        ProfileEvents::increment(ProfileEvents::S3CredentialsAssumeRoleErrors);
+
     credentials.SetAWSAccessKeyId(result.getAccessKeyID());
     credentials.SetAWSSecretKey(result.getSecretAccessKey());
     credentials.SetSessionToken(result.getSessionToken());

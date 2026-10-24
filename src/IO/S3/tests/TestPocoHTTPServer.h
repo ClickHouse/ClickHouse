@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <memory>
 #include <string>
@@ -112,8 +113,10 @@ struct StsRequestInfo
 class MockStsRequestHandler : public Poco::Net::HTTPRequestHandler
 {
 public:
-    explicit MockStsRequestHandler(std::optional<StsRequestInfo> & last_request_info_, std::string role_access_key_, std::string role_secret_key_)
+    explicit MockStsRequestHandler(
+        std::optional<StsRequestInfo> & last_request_info_, const std::atomic<bool> & fail_, std::string role_access_key_, std::string role_secret_key_)
         : last_request_info(last_request_info_)
+        , fail(fail_)
         , role_access_key(std::move(role_access_key_))
         , role_secret_key(std::move(role_secret_key_))
     {
@@ -127,6 +130,20 @@ public:
         /// The parameters arrive form-encoded in the POST body, as the AWS SDK sends them.
         Poco::Net::HTMLForm form(request, request.stream());
         last_request_info->query_params.assign(form.begin(), form.end());
+
+        if (fail)
+        {
+            response.setStatus(Poco::Net::HTTPResponse::HTTP_FORBIDDEN);
+            response.send() << R"(
+<ErrorResponse xmlns="https://sts.amazonaws.com/doc/2011-06-15/">
+<Error>
+    <Type>Sender</Type>
+    <Code>AccessDenied</Code>
+    <Message>Not authorized to perform sts:AssumeRole</Message>
+</Error>
+</ErrorResponse>)";
+            return;
+        }
 
         response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
         auto & out = response.send();
@@ -147,6 +164,7 @@ public:
     }
 private:
     std::optional<StsRequestInfo> & last_request_info;
+    const std::atomic<bool> & fail;
     std::string role_access_key;
     std::string role_secret_key;
 };
@@ -154,16 +172,19 @@ private:
 class StsHTTPRequestHandlerFactory : public Poco::Net::HTTPRequestHandlerFactory
 {
     std::optional<StsRequestInfo> & last_request_info;
+    const std::atomic<bool> & fail;
     std::string role_access_key;
     std::string role_secret_key;
 
     Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest &) override
     {
-        return new MockStsRequestHandler(last_request_info, role_access_key, role_secret_key);
+        return new MockStsRequestHandler(last_request_info, fail, role_access_key, role_secret_key);
     }
 public:
-    explicit StsHTTPRequestHandlerFactory(std::optional<StsRequestInfo> & last_request_info_, std::string role_access_key_, std::string role_secret_key_)
+    explicit StsHTTPRequestHandlerFactory(
+        std::optional<StsRequestInfo> & last_request_info_, const std::atomic<bool> & fail_, std::string role_access_key_, std::string role_secret_key_)
         : last_request_info(last_request_info_)
+        , fail(fail_)
         , role_access_key(std::move(role_access_key_))
         , role_secret_key(std::move(role_secret_key_))
     {
@@ -181,11 +202,13 @@ class TestPocoHTTPStsServer
     // Stores the last request header handled. It's obviously not thread-safe to share the same
     // reference across request handlers, but it's good enough for this the purposes of this test.
     std::optional<StsRequestInfo> last_request_info;
+    /// When set, every AssumeRole call is answered with `AccessDenied`.
+    std::atomic<bool> fail = false;
 
 public:
     TestPocoHTTPStsServer(std::string role_access_key, std::string role_secret_key):
         server_socket(std::make_unique<Poco::Net::ServerSocket>(0)),
-        handler_factory(new StsHTTPRequestHandlerFactory(last_request_info, std::move(role_access_key), std::move(role_secret_key))),
+        handler_factory(new StsHTTPRequestHandlerFactory(last_request_info, fail, std::move(role_access_key), std::move(role_secret_key))),
         server_params(makeMockServerParams()),
         server(std::make_unique<Poco::Net::HTTPServer>(handler_factory, *server_socket, server_params))
     {
@@ -205,6 +228,11 @@ public:
     void resetLastRequest()
     {
         last_request_info.reset();
+    }
+
+    void setFail(bool fail_)
+    {
+        fail = fail_;
     }
 
     bool hasLastRequest() const
