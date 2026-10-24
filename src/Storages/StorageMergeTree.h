@@ -167,6 +167,10 @@ private:
     /// Unfinished mutations that are required for AlterConversions.
     MutationCounters mutation_counters;
 
+    /// The maximum version of a mutation removed from `current_mutations_by_version` by `clearOldMutations`
+    /// or `killMutation`. Updated under `currently_processing_in_background_mutex` before the removal.
+    std::atomic<Int64> max_removed_mutation_version = 0;
+
     CommittingBlocksSet committing_blocks;
     mutable std::mutex committing_blocks_mutex;
     mutable std::condition_variable committing_blocks_cv;
@@ -585,6 +589,7 @@ private:
     PartMutationBackoffPolicy mutation_backoff_policy;
 
     MutationsSnapshotPtr getMutationsSnapshot(const IMutationsSnapshot::Params & params) const override;
+    std::optional<Int64> getMaxRemovedMutationVersion() const override { return max_removed_mutation_version.load(); }
 };
 
 }

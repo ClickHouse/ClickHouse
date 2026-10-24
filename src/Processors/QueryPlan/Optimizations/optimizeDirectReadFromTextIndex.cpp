@@ -237,6 +237,25 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
 
     auto updated_columns = getColumnsUpdatedOnFly(*read_from_merge_tree_step);
 
+    /// A pending `RENAME COLUMN` or `DROP COLUMN` changes the identity of a column, so the index stored in a part
+    /// may describe the data of another column. Such mutations depend on the part, but they are rare, so the
+    /// alter conversions of each part are looked up only when the snapshot has metadata mutations.
+    auto mutations_snapshot = read_from_merge_tree_step->getMutationsSnapshot();
+    if (mutations_snapshot->hasMetadataMutations())
+    {
+        const auto & context = read_from_merge_tree_step->getContext();
+        for (const auto & part : unique_parts)
+        {
+            auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context
+#if CLICKHOUSE_CLOUD
+                , context->getAccess()->getEnabledMaskingPolicies()
+#endif
+            );
+            const auto & part_stale_columns = alter_conversions->getColumnsWithStaleIndexes();
+            updated_columns.insert(part_stale_columns.begin(), part_stale_columns.end());
+        }
+    }
+
     for (const auto & index : indexes->skip_indexes.useful_indices)
     {
         if (!index.index->isTextIndex())

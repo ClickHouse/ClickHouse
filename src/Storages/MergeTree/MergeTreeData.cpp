@@ -495,6 +495,9 @@ namespace FailPoints
     /// transient error (e.g. temporary disk unavailability). Used to test that the refresh task
     /// reschedules itself after such an error instead of stopping permanently.
     extern const char merge_tree_refresh_parts_throw_once[];
+    /// Pauses `getColumnDefaultnessStats` right after it captures the parts, so a test can complete
+    /// a pending metadata mutation before the defaultness stats of the captured parts are consumed.
+    extern const char mt_column_defaultness_stats_pause_after_parts_snapshot[];
     /// Throws a retryable error (`MEMORY_LIMIT_EXCEEDED`) while loading every outdated part in the
     /// background. Used to test that the loading is retried later instead of terminating the server.
     extern const char merge_tree_load_outdated_parts_retryable_error[];
@@ -8617,11 +8620,128 @@ MergeTreeData::getColumnDefaultnessStats(const String & column_name, ContextPtr 
     if (!column_in_metadata)
         return std::nullopt;
 
+    auto parts = getActivePartsForColumnDefaultnessStats(query_context);
+
+    FailPointInjection::pauseFailPoint(FailPoints::mt_column_defaultness_stats_pause_after_parts_snapshot);
+
+    /// Pending metadata mutations (`RENAME COLUMN`, `DROP COLUMN` possibly followed by re-adding a
+    /// column with the same name) are applied to reads on the fly, while `serialization.json`
+    /// stays keyed by the on-disk column names. The counter looked up by the queried name would
+    /// then describe a different column's data, or the data of a dropped column whose reads are
+    /// already filled with the new default. Only the parts where such a mutation touches the
+    /// requested column are affected.
+    ///
+    /// The snapshot is taken unconditionally and after the parts: a mutation can finish between
+    /// capturing the parts and this point, while the captured parts are still the unmutated ones.
+    /// The live counter of pending metadata mutations is zero then, so it must not gate the snapshot,
+    /// and `need_alter_mutations` makes `StorageMergeTree` include finished but not yet removed
+    /// mutations as well, the same way as the snapshot of a regular read does (see `createStorageSnapshot`).
+    /// The commands are still filtered by the data and metadata versions of each part.
+    auto parts_info = getPartsSnapshotInfo(parts);
+    IMutationsSnapshot::Params params
+    {
+        .metadata_version = metadata_snapshot->getMetadataVersion(),
+        .min_part_metadata_version = parts_info.min_metadata_version,
+        .min_part_data_versions = std::move(parts_info.min_data_versions),
+        .max_mutation_versions = nullptr,
+        .need_data_mutations = false,
+        .need_alter_mutations = true,
+        .need_patch_parts = false,
+        .has_lightweight_delete_parts = parts_info.has_lightweight_delete_parts,
+    };
+    auto mutations_snapshot = getMutationsSnapshot(params);
+
+    /// A finished mutation can also be removed from the history (see `finished_mutations_to_keep`)
+    /// before the snapshot is taken, and then its commands are missing for the captured unmutated parts.
+    /// A mutation is marked as done, and becomes removable, only after every active part has a data version
+    /// that is not lower than the mutation version. So if a captured part is still active after the snapshot,
+    /// it was active when the snapshot was taken, and the snapshot has all the commands that are not yet
+    /// applied to it. Otherwise the part was replaced in the meantime, and its column identity cannot be
+    /// established, so the optimization is declined.
+    /// Inside a transaction, the snapshot of the transaction also contains `Outdated` parts that are removed
+    /// by a transaction that is not committed yet, or committed after the snapshot of this one, the same as
+    /// a regular read does. A part replaced by a background merge or mutation gets a non-transactional removal,
+    /// which is visible to any snapshot, so such a part is no longer visible and is declined the same way.
+    /// The invariant above does not hold for a visible part that is not active: a mutation is marked as done
+    /// regardless of it, so its commands can be removed from the history while the part still needs them.
+    /// It does not hold either for a part that is active again after a rollback of the transaction that removed it
+    /// (see `restoreAndActivatePart`). So when the storage tracks the removed versions, any part is accepted only if
+    /// no mutation with a higher version than its data version was removed. For a part that stayed active this is
+    /// always the case, because a mutation is marked as done only when it is not newer than every active part.
+    /// When the storage does not track them, a part that is not active is declined.
+    /// The removed version is read after the snapshot, so a mutation removed before the snapshot is accounted.
+    const auto txn = query_context->getCurrentTransaction();
+    const std::optional<Int64> max_removed_mutation_version = getMaxRemovedMutationVersion();
+    for (const auto & part : parts)
+    {
+        bool is_active = part->getState() == DataPartState::Active;
+        bool still_visible = txn
+            ? part->version->isVisible(txn->getSnapshot(), txn->tid)
+            : is_active;
+
+        if (!still_visible)
+        {
+            LOG_DEBUG(log, "No defaultness stats for column {}: part {} is no longer visible", column_name, part->name);
+            return std::nullopt;
+        }
+
+        if (!max_removed_mutation_version)
+        {
+            if (!is_active)
+            {
+                LOG_DEBUG(
+                    log,
+                    "No defaultness stats for column {}: part {} is not active, and the history of mutations may be incomplete for it",
+                    column_name, part->name);
+                return std::nullopt;
+            }
+        }
+        else if (part->info.getDataVersion() < *max_removed_mutation_version)
+        {
+            LOG_DEBUG(
+                log,
+                "No defaultness stats for column {}: part {} has data version {}, and a mutation with version {} "
+                "that may be required for it was removed from the history",
+                column_name, part->name, part->info.getDataVersion(), *max_removed_mutation_version);
+            return std::nullopt;
+        }
+    }
+
+    /// Two dotted column names overlap when they are equal, or when one is an ancestor of the other
+    /// in the subcolumn hierarchy, e.g. a dropped `n` affects `n.a`.
+    auto overlaps_requested_column = [&](std::string_view name)
+    {
+        std::string_view lhs = name;
+        std::string_view rhs = column_name;
+        if (lhs.size() > rhs.size())
+            std::swap(lhs, rhs);
+        return rhs.starts_with(lhs) && (lhs.size() == rhs.size() || rhs[lhs.size()] == '.');
+    };
+
     ColumnDefaultnessStats aggregate;
-    for (const auto & part : getActivePartsForColumnDefaultnessStats(query_context))
+    for (const auto & part : parts)
     {
         if (part->isEmpty())
             continue;
+
+        if (mutations_snapshot->hasMetadataMutations())
+        {
+            auto alter_conversions = getAlterConversionsForPart(part, mutations_snapshot, query_context
+#if CLICKHOUSE_CLOUD
+                , query_context->getAccess()->getEnabledMaskingPolicies()
+#endif
+            );
+
+            bool is_affected = std::ranges::any_of(alter_conversions->getDroppedColumns(), overlaps_requested_column);
+            for (const auto & [rename_to, rename_from] : alter_conversions->getRenameMap())
+                is_affected = is_affected || overlaps_requested_column(rename_to) || overlaps_requested_column(rename_from);
+
+            if (is_affected)
+            {
+                LOG_DEBUG(log, "No defaultness stats for column {}: part {} has a pending metadata mutation of this column", column_name, part->name);
+                return std::nullopt;
+            }
+        }
 
         /// A metadata-only `MODIFY COLUMN` (e.g. `UInt64` -> `Nullable(UInt64)`) does not rewrite the part,
         /// so its `num_defaults` counts defaults of the old type while reads return the new type.

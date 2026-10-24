@@ -784,6 +784,17 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
     return res;
 }
 
+/// Two dotted column names overlap when they are equal, or when one is an ancestor
+/// of the other in the subcolumn hierarchy (a `.`-separated prefix). For example,
+/// `document` overlaps `document.country` (parent/child), but `document.city` and
+/// `document.country` do not (sibling subcolumns are independent).
+static bool columnNamesOverlap(std::string_view lhs, std::string_view rhs)
+{
+    if (lhs.size() > rhs.size())
+        std::swap(lhs, rhs);
+    return rhs.starts_with(lhs) && (lhs.size() == rhs.size() || rhs[lhs.size()] == '.');
+}
+
 std::expected<void, PreformattedMessage> MergeTreeDataSelectExecutor::canUseIndex(
     const MergeTreeIndexPtr & index,
     const StorageMetadataPtr & metadata_snapshot,
@@ -791,18 +802,6 @@ std::expected<void, PreformattedMessage> MergeTreeDataSelectExecutor::canUseInde
 {
     if (all_updated_columns.empty())
         return {};
-
-    /// Two dotted column names overlap when they are equal, or when one is an ancestor
-    /// of the other in the subcolumn hierarchy (a `.`-separated prefix). For example,
-    /// `document` overlaps `document.country` (parent/child), but `document.city` and
-    /// `document.country` do not (sibling subcolumns are independent).
-    auto overlaps = [](std::string_view updated, std::string_view required)
-    {
-        if (updated.size() > required.size())
-            std::swap(updated, required);
-        return required.starts_with(updated)
-            && (updated.size() == required.size() || required[updated.size()] == '.');
-    };
 
     auto options = GetColumnsOptions(GetColumnsOptions::Kind::All).withSubcolumns();
     auto required_columns_names = index->getColumnsRequiredForIndexCalc();
@@ -812,10 +811,10 @@ std::expected<void, PreformattedMessage> MergeTreeDataSelectExecutor::canUseInde
     {
         for (const auto & updated_column : all_updated_columns)
         {
-            if (overlaps(updated_column, required_column.name))
+            if (columnNamesOverlap(updated_column, required_column.name))
             {
                 return std::unexpected(PreformattedMessage::create(
-                    "Index {} depends on column `{}` which will be updated on the fly (by update of `{}`)",
+                    "Index {} depends on column `{}` which will be changed on the fly (by a pending mutation of `{}`)",
                     index->index.name, required_column.name, updated_column));
             }
         }
@@ -872,6 +871,44 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
 
     for (const auto & part : parts)
     {
+        /// A pending metadata mutation can change which on-disk column a queried name refers to,
+        /// while the part's statistics stay stored under the names the columns have on disk:
+        /// - a `RENAME COLUMN` is applied to reads on the fly, so an estimate looked up by the
+        ///   queried name describes a different column's data;
+        /// - a `DROP COLUMN` followed by adding a column with the same name makes reads treat the
+        ///   on-disk data as missing and fill the default instead, while the estimate still
+        ///   describes the dropped column's data.
+        /// Either way the estimates of such a part for the affected names do not describe the values
+        /// the query sees, so the part is not prunable if the pruner consults any of them. Both are
+        /// metadata mutations and appear in neither `hasDataMutations` nor `getAllUpdatedColumns`,
+        /// so the gate above does not see them.
+        if (mutations_snapshot && mutations_snapshot->hasMetadataMutations())
+        {
+            auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part.data_part, mutations_snapshot, context
+#if CLICKHOUSE_CLOUD
+                , context->getAccess()->getEnabledMaskingPolicies()
+#endif
+            );
+
+            auto is_consulted = [&](const String & name)
+            {
+                for (const auto & required : required_columns)
+                    if (columnNamesOverlap(name, required))
+                        return true;
+                return false;
+            };
+
+            bool has_affected_column = std::ranges::any_of(alter_conversions->getDroppedColumns(), is_consulted);
+            for (const auto & [rename_to, rename_from] : alter_conversions->getRenameMap())
+                has_affected_column = has_affected_column || is_consulted(rename_to) || is_consulted(rename_from);
+
+            if (has_affected_column)
+            {
+                res_parts.push_back(part);
+                continue;
+            }
+        }
+
         auto estimates = part.data_part->getEstimates(required_columns);
         try
         {
@@ -951,8 +988,10 @@ static bool partHasStaleTopKIndex(
 
     /// Pending on-the-fly mutations or patch parts not yet written into the part. hasAlterMutations()
     /// covers ALTER MODIFY COLUMN, which is a READ_COLUMN alter mutation (not a data mutation or patch).
+    /// hasMetadataMutations() covers a pending RENAME COLUMN / DROP COLUMN, which can make the implicit
+    /// minmax index found by name describe another column's data.
     if (mutations_snapshot
-        && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations()
+        && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasMetadataMutations()
             || mutations_snapshot->hasPatchParts() || has_masking_policies))
     {
         auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context
@@ -967,10 +1006,11 @@ static bool partHasStaleTopKIndex(
         if (alter_conversions->hasLightweightDelete() || alter_conversions->hasDeleteMutation())
             return true;
 
-        /// A pending update / patch / MODIFY COLUMN that touches the indexed column makes its minmax
-        /// stale. Reuse the same overlap check the regular skip-index path uses (canUseIndex), so the
-        /// top-k path is consistent with it. Changes to other columns leave the index valid.
-        if (!MergeTreeDataSelectExecutor::canUseIndex(top_k_index, metadata_snapshot, alter_conversions->getAllUpdatedColumns()))
+        /// A pending update / patch / MODIFY COLUMN / RENAME COLUMN / DROP COLUMN that touches the
+        /// indexed column makes its minmax stale. Reuse the same overlap check the regular skip-index
+        /// path uses (canUseIndex), so the top-k path is consistent with it. Changes to other columns
+        /// leave the index valid.
+        if (!MergeTreeDataSelectExecutor::canUseIndex(top_k_index, metadata_snapshot, alter_conversions->getColumnsWithStaleIndexes()))
             return true;
     }
 
@@ -1277,7 +1317,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     , context->getAccess()->getEnabledMaskingPolicies()
 #endif
                 );
-                const auto & all_updated_columns = alter_conversions->getAllUpdatedColumns();
+                const auto & all_updated_columns = alter_conversions->getColumnsWithStaleIndexes();
                 auto part_info_for_reader = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(ranges.data_part, alter_conversions);
 
                 auto can_use_index = [&](const MergeTreeIndexPtr & index) -> std::expected<void, PreformattedMessage>
