@@ -1496,6 +1496,38 @@ void Reader::prepareBloomFilterCondition()
     {
         bool any_column_uses_bf = false;
 
+        /// See `PrimitiveColumnInfo::physical_constants`.
+        static constexpr size_t max_physical_constants = 256;
+        auto give_up_physical_constants = [](PrimitiveColumnInfo & column_info)
+        {
+            column_info.physical_constants_complete = false;
+            std::vector<std::pair<UInt64, Int64>>().swap(column_info.physical_constants);
+            std::vector<UInt32>().swap(column_info.physical_constants_by_value);
+        };
+        auto record_physical_constant = [&](PrimitiveColumnInfo & column_info, const parquet::ColumnDescriptor & descriptor, const Field & f, UInt64 hash)
+        {
+            if (!column_info.physical_constants_complete)
+                return;
+            auto value = parquetTryPhysicalInteger(f, &descriptor);
+            if (!value.has_value())
+            {
+                give_up_physical_constants(column_info);
+                return;
+            }
+            const std::pair<UInt64, Int64> constant(hash, *value);
+            auto & constants = column_info.physical_constants;
+            auto it = std::lower_bound(constants.begin(), constants.end(), constant);
+            if (it != constants.end() && *it == constant)
+                return;
+            if (constants.size() >= max_physical_constants
+                || parquetTryHashField(Field(Int64(*value)), &descriptor) != std::optional<uint64_t>(hash))
+            {
+                give_up_physical_constants(column_info);
+                return;
+            }
+            constants.insert(it, constant);
+        };
+
         auto hash_one = [&](size_t column_idx, const Field & f) -> std::optional<uint64_t>
         {
             const auto & pair = bf_eligible_columns.at(column_idx);
@@ -1509,6 +1541,7 @@ void Reader::prepareBloomFilterCondition()
             PrimitiveColumnInfo & column_info = primitive_columns[primitive_idx];
             column_info.use_bloom_filter = true;
             column_info.bloom_filter_hashes.push_back(*hash);
+            record_physical_constant(column_info, descriptor, f, *hash);
             any_column_uses_bf = true;
             return hash;
         };
@@ -1536,6 +1569,17 @@ void Reader::prepareBloomFilterCondition()
 
             PrimitiveColumnInfo & column_info = primitive_columns[primitive_idx];
             column_info.use_bloom_filter = true;
+            /// `parquetTryHashColumn` hashes the nested values of a Nullable set column, one per row.
+            const IColumn * values = column.get();
+            if (const auto * nullable = checkAndGetColumn<ColumnNullable>(values))
+                values = &nullable->getNestedColumn();
+            chassert(values->size() == hashes->size());
+            Field f;
+            for (size_t i = 0; i < hashes->size() && column_info.physical_constants_complete; ++i)
+            {
+                values->get(i, f);
+                record_physical_constant(column_info, descriptor, f, (*hashes)[i]);
+            }
             if (!exceeds_bloom_filter_cap)
                 /// Register the hashes for bloom-filter prefetching. For an over-cap set we skip this:
                 /// the hashes are still returned (and reach the exact dictionary filter via the
@@ -1551,6 +1595,15 @@ void Reader::prepareBloomFilterCondition()
 
         bloom_filter_condition.emplace(*format_filter_info->key_condition);
         bloom_filter_condition->prepareBloomFilterData(hash_one, hash_many);
+
+        for (PrimitiveColumnInfo & column_info : primitive_columns)
+        {
+            const auto & constants = column_info.physical_constants;
+            auto & by_value = column_info.physical_constants_by_value;
+            by_value.resize(constants.size());
+            std::iota(by_value.begin(), by_value.end(), 0);
+            std::sort(by_value.begin(), by_value.end(), [&](UInt32 a, UInt32 b) { return constants[a].second < constants[b].second; });
+        }
 
         if (!any_column_uses_bf)
             bloom_filter_condition.reset();
@@ -2413,6 +2466,27 @@ struct DictionaryValueHashes
     }
 };
 
+/// The dictionary holds only non-null values. Returns false if nulls forbid pruning: without `input_format_null_as_default`
+/// reading one into a non-nullable column throws, so the row group must be read. Otherwise `default_value_hash` is the
+/// hash of the default value nulls are read as, or empty if no null can match.
+static bool hashDictionaryNulls(
+    const parq::FileMetaData & file_metadata, const ReadOptions & options,
+    const Reader::ColumnChunk & column, const Reader::PrimitiveColumnInfo & column_info,
+    std::optional<UInt64> & default_value_hash)
+{
+    default_value_hash.reset();
+    bool nullable = column_info.levels.back().def > 0;
+    bool can_be_null = !column.meta->meta_data.statistics.__isset.null_count
+        || column.meta->meta_data.statistics.null_count != 0;
+    if (!nullable || !can_be_null || column_info.output_nullable)
+        return true;
+    if (!options.format.null_as_default)
+        return false;
+    parquet::ColumnDescriptor desc = makeColumnDescriptor(file_metadata, column_info);
+    default_value_hash = parquetTryHashField(column_info.output_type->getDefault(), &desc);
+    return default_value_hash.has_value();
+}
+
 /// Hash all values of an already-decoded dictionary the same way query constants are hashed for
 /// bloom filters, so the two can be compared. Returns nullopt if the values can't be hashed (in
 /// which case the dictionary can't be used for filtering).
@@ -2521,34 +2595,8 @@ static std::optional<DictionaryValueHashes> hashDictionaryValues(
     /// factor of 0.5) would hold up to ~4 cells per value on top of this vector - several times the
     /// footprint for a value set that is built once per column chunk and probed a handful of times.
 
-    /// The dictionary holds only the non-null values of the column chunk, so we must account for how
-    /// nulls are read into the output, mirroring the conservative null handling of the min/max path in
-    /// `adjustRangeFromIndexIfNeeded`.
-    bool nullable = column_info.levels.back().def > 0;
-    bool can_be_null = !column.meta->meta_data.statistics.__isset.null_count
-        || column.meta->meta_data.statistics.null_count != 0;
-    if (nullable && can_be_null && !column_info.output_nullable)
-    {
-        if (options.format.null_as_default)
-        {
-            /// Under `input_format_null_as_default`, null values are decoded as the type's default
-            /// value, which is not in the dictionary; without accounting for it we'd wrongly skip a
-            /// row group whose nulls match the queried default (e.g. `WHERE x = 0` over an optional
-            /// column read as non-nullable `UInt64`). So add the default value's hash.
-            auto default_hash = parquetTryHashField(column_info.output_type->getDefault(), &desc);
-            /// If the default value can't be hashed, we can't rule out a match.
-            if (!default_hash.has_value())
-                return std::nullopt;
-            value_hashes.default_value_hash = default_hash;
-        }
-        else
-        {
-            /// Reading a null into a non-nullable column raises `CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN`
-            /// during decoding. Skipping the row group would suppress that error and change the query
-            /// result, so we must not prune: report that we can't rule out a match.
-            return std::nullopt;
-        }
-    }
+    if (!hashDictionaryNulls(file_metadata, options, column, column_info, value_hashes.default_value_hash))
+        return std::nullopt;
 
     /// The value set is kept alive (in its `DictionaryLookup`) until this whole row-group filter
     /// evaluation finishes, so keep its persistent footprint - the `hashes` buffer - reserved
@@ -2597,6 +2645,11 @@ struct Reader::DictionaryLookup : public KeyCondition::BloomFilter
     bool computed = false;
     std::optional<DictionaryValueHashes> value_hashes;
 
+    /// Whether each of `column_info.physical_constants` is in this dictionary, once compared with it.
+    enum class ConstantPresence : UInt8 { Unknown, Absent, Present };
+    std::vector<ConstantPresence> constant_presence;
+    size_t constants_compared_one_by_one = 0;
+
     /// Bloom filter of the same column chunk, kept as a fallback for when the exact dictionary value set
     /// can't be built within the pruning memory budget (see `hashDictionaryValues`). Without it such a
     /// chunk would be read in full even though its bloom filter could rule it out. Null when the chunk
@@ -2616,12 +2669,189 @@ struct Reader::DictionaryLookup : public KeyCondition::BloomFilter
     }
 
     bool findAnyHash(const std::vector<uint64_t> & hashes) override;
+
+    /// `findAnyHash` by comparing the stored values with the constants' physical values; nullopt if not applicable.
+    std::optional<bool> findPhysicalConstants(const std::vector<uint64_t> & hashes);
+
+    /// `entries` are indices of `column_info.physical_constants`.
+    template <typename T>
+    std::optional<bool> containsAnyConstantOfType(const std::vector<size_t> & entries);
+    template <typename T, typename P>
+    bool containsAnyConstant(const std::vector<size_t> & entries);
 };
+
+/// Compares after the `static_cast` to the physical type `P` that `parquetTryHashColumn` applies before hashing.
+template <typename T, typename P>
+static bool storedIntegersContain(const char * data, size_t count, P needle)
+{
+    static constexpr size_t block = 64;
+    size_t i = 0;
+    for (; i + block <= count; i += block)
+    {
+        bool found = false;
+        for (size_t j = 0; j < block; ++j)
+        {
+            const T value = unalignedLoad<T>(data + (i + j) * sizeof(T));
+            found |= static_cast<P>(value) == needle;
+        }
+        if (found)
+            return true;
+    }
+    for (; i < count; ++i)
+    {
+        const T value = unalignedLoad<T>(data + i * sizeof(T));
+        if (static_cast<P>(value) == needle)
+            return true;
+    }
+    return false;
+}
+
+/// Marks in `found` which of the sorted, distinct `needles` are among the stored values (after the cast to `P`).
+template <typename T, typename P>
+static void storedIntegersFindSorted(const char * data, size_t count, const std::vector<P> & needles, std::vector<UInt8> & found)
+{
+    chassert(!needles.empty() && found.size() == needles.size());
+    size_t not_found = needles.size();
+    for (size_t i = 0; i < count; ++i)
+    {
+        const P physical_value = static_cast<P>(unalignedLoad<T>(data + i * sizeof(T)));
+        /// Find the last needle that is not greater than the value (or the first needle if there is none).
+        const P * base = needles.data();
+        size_t len = needles.size();
+        while (len > 1)
+        {
+            const size_t half = len / 2;
+            base = base[half] <= physical_value ? base + half : base;
+            len -= half;
+        }
+        if (*base == physical_value)
+        {
+            UInt8 & mark = found[base - needles.data()];
+            if (!mark)
+            {
+                mark = 1;
+                if (--not_found == 0)
+                    return;
+            }
+        }
+    }
+}
+
+/// Constants beyond this many separate passes are compared in one pass with a binary search over them.
+static constexpr size_t max_constants_compared_one_by_one = 32;
+
+template <typename T, typename P>
+bool Reader::DictionaryLookup::containsAnyConstant(const std::vector<size_t> & entries)
+{
+    const Dictionary & dictionary = column.dictionary;
+    const auto & constants = column_info.physical_constants;
+    if (constant_presence.empty())
+        constant_presence.resize(constants.size(), ConstantPresence::Unknown);
+
+    size_t unknown = 0;
+    for (size_t entry : entries)
+    {
+        if (constant_presence[entry] == ConstantPresence::Present)
+            return true;
+        unknown += constant_presence[entry] == ConstantPresence::Unknown;
+    }
+
+    if (constants_compared_one_by_one + unknown > max_constants_compared_one_by_one)
+    {
+        const size_t num_unknown = std::count(constant_presence.begin(), constant_presence.end(), ConstantPresence::Unknown);
+        std::vector<P> needles;
+        std::vector<UInt32> needle_entries;
+        needles.reserve(num_unknown);
+        needle_entries.reserve(num_unknown);
+        for (UInt32 entry : column_info.physical_constants_by_value)
+        {
+            if (constant_presence[entry] != ConstantPresence::Unknown)
+                continue;
+            const P needle = static_cast<P>(constants[entry].second);
+            chassert(needles.empty() || needles.back() < needle);
+            needles.push_back(needle);
+            needle_entries.push_back(entry);
+        }
+        std::vector<UInt8> found(needles.size(), 0);
+        storedIntegersFindSorted<T, P>(dictionary.data.data(), dictionary.count, needles, found);
+        for (size_t j = 0; j < needles.size(); ++j)
+            constant_presence[needle_entries[j]] = found[j] ? ConstantPresence::Present : ConstantPresence::Absent;
+    }
+
+    for (size_t entry : entries)
+    {
+        if (constant_presence[entry] == ConstantPresence::Unknown)
+        {
+            const bool present = storedIntegersContain<T, P>(dictionary.data.data(), dictionary.count, static_cast<P>(constants[entry].second));
+            constant_presence[entry] = present ? ConstantPresence::Present : ConstantPresence::Absent;
+            ++constants_compared_one_by_one;
+        }
+        if (constant_presence[entry] == ConstantPresence::Present)
+            return true;
+    }
+    return false;
+}
+
+template <typename T>
+std::optional<bool> Reader::DictionaryLookup::containsAnyConstantOfType(const std::vector<size_t> & entries)
+{
+    if (column.dictionary.value_size != sizeof(T))
+        return std::nullopt;
+    if (reader.file_metadata().schema.at(column_info.schema_idx).type == parq::Type::INT32)
+        return containsAnyConstant<T, Int32>(entries);
+    return containsAnyConstant<T, Int64>(entries);
+}
+
+std::optional<bool> Reader::DictionaryLookup::findPhysicalConstants(const std::vector<uint64_t> & hashes)
+{
+    const Dictionary & dictionary = column.dictionary;
+    if (!column_info.physical_constants_complete || column_info.physical_constants.empty()
+        || dictionary.mode != Dictionary::Mode::FixedSize || dictionary.data.size() != dictionary.count * dictionary.value_size)
+        return std::nullopt;
+
+    /// Every hash produced for this column has its constants recorded; a hash collision only adds a constant to compare.
+    std::vector<size_t> entries;
+    const auto & constants = column_info.physical_constants;
+    for (UInt64 hash : hashes)
+    {
+        auto it = std::lower_bound(constants.begin(), constants.end(), hash,
+            [](const std::pair<UInt64, Int64> & constant, UInt64 h) { return constant.first < h; });
+        if (it == constants.end() || it->first != hash)
+            return std::nullopt;
+        for (; it != constants.end() && it->first == hash; ++it)
+            entries.push_back(it - constants.begin());
+    }
+
+    std::optional<UInt64> default_value_hash;
+    if (!hashDictionaryNulls(reader.file_metadata(), reader.options, column, column_info, default_value_hash))
+        return std::nullopt;
+    if (default_value_hash)
+        for (UInt64 hash : hashes)
+            if (hash == *default_value_hash)
+                return true;
+
+    /// `parquetTryHashColumn` hashes the values of the decoded type cast to the physical type, and only for
+    /// these column types (others go through `Field`); the stored values are the decoded ones.
+    switch (column_info.decoded_type->getTypeId())
+    {
+        case TypeIndex::Int8: return containsAnyConstantOfType<Int8>(entries);
+        case TypeIndex::Int16: return containsAnyConstantOfType<Int16>(entries);
+        case TypeIndex::Int32: return containsAnyConstantOfType<Int32>(entries);
+        case TypeIndex::Int64: return containsAnyConstantOfType<Int64>(entries);
+        case TypeIndex::UInt8: return containsAnyConstantOfType<UInt8>(entries);
+        case TypeIndex::UInt16: return containsAnyConstantOfType<UInt16>(entries);
+        case TypeIndex::UInt32: return containsAnyConstantOfType<UInt32>(entries);
+        case TypeIndex::UInt64: return containsAnyConstantOfType<UInt64>(entries);
+        default: return std::nullopt;
+    }
+}
 
 bool Reader::DictionaryLookup::findAnyHash(const std::vector<uint64_t> & hashes)
 {
     if (!computed)
     {
+        if (auto found = findPhysicalConstants(hashes))
+            return *found;
         value_hashes = hashDictionaryValues(reader.file_metadata(), reader.options, column, column_info, reservation, reserved_bytes);
         computed = true;
     }
