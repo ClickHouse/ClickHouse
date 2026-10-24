@@ -963,6 +963,9 @@ void MergeTreeData::MutationsSnapshotBase::addColumnsChangedOnFly(const Mutation
 
         if (is_applied)
             AlterConversions::addUpdatedColumns(command, result);
+        /// Metadata mutations are always applied on read, and the reader returns defaults for a dropped column.
+        else if (command.type == MutationCommand::DROP_COLUMN)
+            result.insert(command.column_name);
     }
 }
 

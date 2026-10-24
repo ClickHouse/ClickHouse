@@ -55,6 +55,10 @@ public:
 
     const NameSet & getAllUpdatedColumns() const { return all_updated_columns; }
     const NameSet & getColumnsUpdatedInPatches() const { return columns_updated_in_patches; }
+    /// Columns whose values change on the fly (ALTER UPDATE, patches, and pending drops, for which
+    /// the reader returns defaults), as opposed to a value-preserving type change (ALTER MODIFY COLUMN).
+    /// A skip index over such a column is stale regardless of how its granules were typed.
+    const NameSet & getValueUpdatedColumns() const { return value_updated_columns; }
 
     bool hasPatches() const { return !patch_parts.empty(); }
     bool hasMutations() const { return !mutation_commands.empty(); }
@@ -129,6 +133,9 @@ private:
     /// Names of columns which are updated by mutation commands.
     /// Used to check dependencies for ALTERs, lightweight deletes and MATERIALIZED columns
     NameSet all_updated_columns;
+
+    /// Not a subset of all_updated_columns: also holds columns dropped by a pending mutation.
+    NameSet value_updated_columns;
 
     /// Patches required to be applied for a part.
     PatchPartsForReader patch_parts;

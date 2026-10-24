@@ -33,6 +33,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/MaterializedColumnDependencies.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Cache/QueryConditionCacheTimeConditions.h>
@@ -782,9 +783,12 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
 std::expected<void, PreformattedMessage> MergeTreeDataSelectExecutor::canUseIndex(
     const MergeTreeIndexPtr & index,
     const StorageMetadataPtr & metadata_snapshot,
-    const NameSet & all_updated_columns)
+    const NameSet & all_updated_columns,
+    const NameSet & value_updated_columns,
+    const ContextPtr & context,
+    const IMergeTreeDataPart * part)
 {
-    if (all_updated_columns.empty())
+    if (all_updated_columns.empty() && value_updated_columns.empty())
         return {};
 
     /// Two dotted column names overlap when they are equal, or when one is an ancestor
@@ -803,17 +807,57 @@ std::expected<void, PreformattedMessage> MergeTreeDataSelectExecutor::canUseInde
     auto required_columns_names = index->getColumnsRequiredForIndexCalc();
     auto required_columns_list = metadata_snapshot->getColumns().getByNames(options, required_columns_names);
 
+    auto updated_on_the_fly = [&](const String & required_name, std::string_view updated_by)
+    {
+        return std::unexpected(PreformattedMessage::create(
+            "Index {} depends on column `{}` which will be updated on the fly (by update of `{}`)",
+            index->index.name, required_name, updated_by));
+    };
+
+    /// Built on first use: analysing a MATERIALIZED default runs the analyzer.
+    std::optional<MaterializedColumnDependencies> materialized_dependencies;
+
     for (const auto & required_column : required_columns_list)
     {
-        for (const auto & updated_column : all_updated_columns)
-        {
+        /// A value change makes the granules describe stale values, so the index is unusable however it
+        /// was typed.
+        for (const auto & updated_column : value_updated_columns)
             if (overlaps(updated_column, required_column.name))
-            {
+                return updated_on_the_fly(required_column.name, updated_column);
+
+        /// So does a MATERIALIZED column the read recalculates from an updated input. Same rule as in
+        /// `AlterConversions::buildMutationChainForRead`, so both agree on what is recalculated.
+        if (!all_updated_columns.empty())
+        {
+            if (!materialized_dependencies)
+                materialized_dependencies.emplace(metadata_snapshot->getColumns(), context);
+
+            const auto storage_name = required_column.getNameInStorage();
+            if (!materialized_dependencies->findColumnsToRecalculate(storage_name, all_updated_columns).empty())
                 return std::unexpected(PreformattedMessage::create(
-                    "Index {} depends on column `{}` which will be updated on the fly (by update of `{}`)",
-                    index->index.name, required_column.name, updated_column));
-            }
+                    "Index {} depends on column `{}` which will be recalculated on the fly from updated columns",
+                    index->index.name, required_column.name));
         }
+
+        std::string_view updated_by;
+        for (const auto & updated_column : all_updated_columns)
+            if (overlaps(updated_column, required_column.name))
+                updated_by = updated_column;
+
+        if (updated_by.empty())
+            continue;
+
+        /// A value-preserving type change keeps the values, so the index still prunes when its granules
+        /// were built against the current read type, which the part records. Without a part, stay
+        /// conservative and reject.
+        if (part)
+        {
+            auto built_type_name = part->getSecondaryIndexColumnTypes().tryGetBuiltType(index->index.name, required_column.name);
+            if (built_type_name && *built_type_name == required_column.type->getName())
+                continue;
+        }
+
+        return updated_on_the_fly(required_column.name, updated_by);
     }
 
     return {};
@@ -930,9 +974,11 @@ static bool partHasStaleTopKIndex(
         return true;
 
     /// Pending on-the-fly mutations or patch parts not yet written into the part. hasAlterMutations()
-    /// covers ALTER MODIFY COLUMN, which is a READ_COLUMN alter mutation (not a data mutation or patch).
+    /// covers ALTER MODIFY COLUMN, which is a READ_COLUMN alter mutation (not a data mutation or patch);
+    /// hasMetadataMutations() covers a pending DROP COLUMN, for which the reader returns defaults.
     if (mutations_snapshot
-        && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasPatchParts()))
+        && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations()
+            || mutations_snapshot->hasMetadataMutations() || mutations_snapshot->hasPatchParts()))
     {
         auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context);
 
@@ -945,7 +991,7 @@ static bool partHasStaleTopKIndex(
         /// A pending update / patch / MODIFY COLUMN that touches the indexed column makes its minmax
         /// stale. Reuse the same overlap check the regular skip-index path uses (canUseIndex), so the
         /// top-k path is consistent with it. Changes to other columns leave the index valid.
-        if (!MergeTreeDataSelectExecutor::canUseIndex(top_k_index, metadata_snapshot, alter_conversions->getAllUpdatedColumns()))
+        if (!MergeTreeDataSelectExecutor::canUseIndex(top_k_index, metadata_snapshot, alter_conversions->getAllUpdatedColumns(), alter_conversions->getValueUpdatedColumns(), context, part.get()))
             return true;
     }
 
@@ -1253,11 +1299,12 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 #endif
                 );
                 const auto & all_updated_columns = alter_conversions->getAllUpdatedColumns();
+                const auto & value_updated_columns = alter_conversions->getValueUpdatedColumns();
                 auto part_info_for_reader = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(ranges.data_part, alter_conversions);
 
                 auto can_use_index = [&](const MergeTreeIndexPtr & index) -> std::expected<void, PreformattedMessage>
                 {
-                    auto check_result = canUseIndex(index, metadata_snapshot, all_updated_columns);
+                    auto check_result = canUseIndex(index, metadata_snapshot, all_updated_columns, value_updated_columns, context, ranges.data_part.get());
                     if (!check_result)
                     {
                         return std::unexpected(PreformattedMessage::create(

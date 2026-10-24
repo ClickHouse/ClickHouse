@@ -235,6 +235,8 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
             rename_map.erase(it);
         }
 
+        /// The reader returns the replacement column's defaults instead of the stored values.
+        value_updated_columns.insert(dropped_column_name);
         dropped_columns.emplace(std::move(dropped_column_name));
     }
     else if (command.type == READ_COLUMN)
@@ -256,6 +258,7 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
                 "Function '{}' is non-deterministic", *result.nondeterministic_function_name);
 
         addUpdatedColumns(command, all_updated_columns);
+        addUpdatedColumns(command, value_updated_columns);
         mutation_commands.push_back(command);
     }
 }
@@ -277,6 +280,7 @@ void AlterConversions::addPatchPart(PatchPartInfoForReader patch_part)
             updated_column_name = patch_conversions->getColumnNewName(column.name);
 
         all_updated_columns.insert(updated_column_name);
+        value_updated_columns.insert(updated_column_name);
         columns_updated_in_patches.insert(updated_column_name);
     }
 
