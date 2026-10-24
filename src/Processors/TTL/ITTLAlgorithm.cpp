@@ -5,6 +5,7 @@
 #include <Common/DateLUTImpl.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/castColumn.h>
+#include <Interpreters/getColumnFromBlock.h>
 
 #include <Columns/ColumnsDateTime.h>
 
@@ -33,12 +34,21 @@ bool ITTLAlgorithm::isTTLExpired(time_t ttl) const
 }
 
 ColumnPtr ITTLAlgorithm::executeExpressionAndGetColumn(
-    const ExpressionActionsPtr & expression, const Block & block, const String & result_column)
+    const ExpressionActionsPtr & expression, const Block & block, const String & result_column, const NamesAndTypesList & inputs)
 {
     if (!expression)
         return nullptr;
 
-    if (block.has(result_column))
+    auto listed_subcolumn = [&](const String & name) -> std::optional<NameAndTypePair>
+    {
+        auto input = inputs.tryGetByName(name);
+        if (input && input->isSubcolumn())
+            return input;
+        return {};
+    };
+
+    auto result_input = listed_subcolumn(result_column);
+    if (block.has(result_column) && !(result_input && block.has(result_input->getNameInStorage())))
     {
         /// When the TTL expression is a bare source column (e.g. `TTL ts`), the block holds
         /// it in the original type, which may differ from the type the analyzed expression
@@ -60,7 +70,15 @@ ColumnPtr ITTLAlgorithm::executeExpressionAndGetColumn(
     Block block_copy;
     for (const auto & required : expression->getRequiredColumnsWithTypes())
     {
-        auto block_col = block.getColumnOrSubcolumnByName(required.name);
+        ColumnWithTypeAndName block_col;
+        auto input = listed_subcolumn(required.name);
+        if (input && (block.has(input->getNameInStorage()) || !block.has(required.name)))
+            block_col = ColumnWithTypeAndName(getColumnFromBlock(block, *input), input->type, required.name);
+        else if (const auto * column = block.findByName(required.name))
+            block_col = *column;
+        else
+            block_col = block.getColumnOrSubcolumnByName(required.name);
+
         if (!block_col.type->equals(*required.type))
         {
             block_col.column = castColumn(block_col, required.type);

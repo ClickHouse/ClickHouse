@@ -1444,6 +1444,17 @@ ExpressionAndSets TTLDescription::buildWhereExpression(const ContextPtr & contex
     return {};
 }
 
+/// A subcolumn input is read from the column the table resolves its name to, as queries read it.
+static void resolveSubcolumnOwners(NamesAndTypesList & inputs, const ColumnsDescription & columns)
+{
+    for (auto & input : inputs)
+    {
+        auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, input.name);
+        if (column && column->isSubcolumn())
+            input = NameAndTypePair(column->getNameInStorage(), column->getSubcolumnName(), column->getTypeInStorage(), input.type);
+    }
+}
+
 TTLDescription TTLDescription::getTTLFromAST(
     const ASTPtr & definition_ast,
     const ColumnsDescription & columns,
@@ -1480,6 +1491,7 @@ TTLDescription TTLDescription::getTTLFromAST(
     auto ttl_ast = result.expression_ast->clone();
     auto expression = buildExpressionAndSets(ttl_ast, columns.getAllPhysical(), expression_context, &result.expression_source_columns).expression;
     result.expression_columns = expression->getRequiredColumnsWithTypes();
+    resolveSubcolumnOwners(result.expression_columns, columns);
 
     result.result_column = expression->getSampleBlock().safeGetByPosition(0).name;
 
@@ -1508,6 +1520,7 @@ TTLDescription TTLDescription::getTTLFromAST(
                 = buildExpressionAndSets(
                     ast, columns.getAllPhysical(), expression_context, &result.where_expression_source_columns, /*widen_temporal_columns=*/ false).expression;
                 result.where_expression_columns = where_expression->getRequiredColumnsWithTypes();
+                resolveSubcolumnOwners(result.where_expression_columns, columns);
                 result.where_result_column = where_expression->getSampleBlock().safeGetByPosition(0).name;
             }
         }

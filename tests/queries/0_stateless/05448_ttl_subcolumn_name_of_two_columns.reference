@@ -1,0 +1,40 @@
+A: DELETE WHERE, horizontal merge
+200	100
+100	0
+B: DELETE WHERE, vertical merge
+200	100
+100	0
+C: DELETE WHERE, part TTL info written at insert
+200	100
+100	0
+D: DELETE WHERE, untyped JSON
+200	100
+100	0
+E: rows TTL and RECOMPRESS TTL
+200
+2001-01-01 00:00:00	2101-01-01 00:00:00
+100
+2101-01-01 00:00:00	2101-01-01 00:00:00
+F: JSON path starting with the name of another column, vertical merge
+200	100
+100	0
+G: GROUP BY TTL
+200	0
+150	50
+H: column TTL
+200	200
+200	100
+I: DELETE WHERE, vertical merge, both columns merged
+200	100
+100	0
+J: DELETE WHERE, subcolumn also a skip index input
+200	100
+100	0
+K: rows TTL on the subcolumn, subcolumn also in the sorting key
+200	100
+100	0
+merge algorithms
+t_a	Horizontal
+t_b	Vertical
+t_f	Vertical
+t_i	Vertical

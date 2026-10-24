@@ -317,7 +317,7 @@ void TTLTransform::recomputeDependentColumns(Block & block, const std::vector<De
                 [&](const auto & required) { return !block.has(required); }))
             continue;
 
-        auto recomputed = ITTLAlgorithm::executeExpressionAndGetColumn(dependent.expression, block, dependent.result_column_name);
+        auto recomputed = ITTLAlgorithm::executeExpressionAndGetColumn(dependent.expression, block, dependent.result_column_name, {});
         if (recomputed)
             block.getByName(dependent.name).column = recomputed->convertToFullColumnIfConst();
     }
@@ -355,7 +355,7 @@ void TTLTransform::consume(Chunk chunk)
     for (const auto & [column, data] : expired_columns_data)
     {
         auto default_column
-            = ITTLAlgorithm::executeExpressionAndGetColumn(data.default_expression, block, data.default_column_name);
+            = ITTLAlgorithm::executeExpressionAndGetColumn(data.default_expression, block, data.default_column_name, {});
         if (default_column)
             default_column = default_column->convertToFullColumnIfConst();
         else

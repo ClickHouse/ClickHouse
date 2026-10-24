@@ -202,8 +202,9 @@ void TTLAggregationAlgorithm::execute(Block & block)
         const auto & column_names = header.getNames();
         MutableColumns aggregate_columns = header.cloneEmptyColumns();
 
-        auto ttl_column = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
-        auto where_column = executeExpressionAndGetColumn(ttl_expressions.where_expression, block, description.where_result_column);
+        auto ttl_column = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column, description.expression_columns);
+        auto where_column = executeExpressionAndGetColumn(
+            ttl_expressions.where_expression, block, description.where_result_column, description.where_expression_columns);
         PaddedPODArray<Int64> timestamps;
         extractTimestamps(ttl_column.get(), timestamps);
 
@@ -287,8 +288,9 @@ void TTLAggregationAlgorithm::execute(Block & block)
     /// If some rows were aggregated we have to recalculate ttl info's
     if (some_rows_were_aggregated)
     {
-        auto ttl_column_after_aggregation = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
-        auto where_column_after_aggregation = executeExpressionAndGetColumn(ttl_expressions.where_expression, block, description.where_result_column);
+        auto ttl_column_after_aggregation = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column, description.expression_columns);
+        auto where_column_after_aggregation = executeExpressionAndGetColumn(
+            ttl_expressions.where_expression, block, description.where_result_column, description.where_expression_columns);
         PaddedPODArray<Int64> timestamps;
         extractTimestamps(ttl_column_after_aggregation.get(), timestamps);
         for (size_t i = 0; i < block.rows(); ++i)
