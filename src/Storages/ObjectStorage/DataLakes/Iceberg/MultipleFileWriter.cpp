@@ -61,7 +61,6 @@ void MultipleFileWriter::startNewFile()
 
     current_file_stats = std::make_shared<DataFileStatistics>(schema, fieldIdsOfWrittenColumns(*column_mapper, *sample_block));
     current_file_num_rows = 0;
-    current_file_num_bytes = 0;
     auto metadata_path = filename_generator.generateDataFileName();
     auto storage_path = path_resolver.resolve(metadata_path);
 
@@ -84,14 +83,18 @@ void MultipleFileWriter::startNewFile()
 
 void MultipleFileWriter::consume(const Chunk & chunk)
 {
-    if (!current_file_num_rows || *current_file_num_rows >= max_data_file_num_rows || *current_file_num_bytes >= max_data_file_num_bytes)
+    /// The size limit is compared against the bytes written to the current file so far, that is, the compressed size,
+    /// the same measure as `file_size_in_bytes` in the manifest, which the compaction uses to select its input files.
+    /// Comparing it against the uncompressed size makes the files smaller than the target by the compression ratio,
+    /// and the output of the compaction is selected by the compaction again. The file can exceed the limit
+    /// by what the output format has not written yet: an incomplete Parquet row group and the row groups being encoded.
+    if (!current_file_num_rows || *current_file_num_rows >= max_data_file_num_rows || buffer->count() >= max_data_file_num_bytes)
     {
         startNewFile();
     }
     output_format->write(sample_block->cloneWithColumns(chunk.getColumns()));
     output_format->flush();
     *current_file_num_rows += chunk.getNumRows();
-    *current_file_num_bytes += chunk.bytes();
     stats.update(chunk);
     current_file_stats->update(chunk);
 }
