@@ -93,10 +93,11 @@ StatisticsBasic::StatisticsBasic(const SingleStatisticsDescription & description
 
     if (canStatisticsTrackSum(data_type_))
     {
-        sum_arena = std::make_unique<Arena>();
         AggregateFunctionProperties properties;
         sum_function = AggregateFunctionFactory::instance().get("sum", NullsAction::EMPTY, {data_type}, {}, properties);
-        sum_state = sum_arena->alignedAlloc(sum_function->sizeOfData(), sum_function->alignOfData());
+        chassert(!sum_function->allocatesMemoryInArena());
+        sum_buffer.reset(sum_function->sizeOfData(), sum_function->alignOfData());
+        sum_state = sum_buffer.data();
         sum_function->create(sum_state);
         has_sum = true;
     }
@@ -137,9 +138,9 @@ void StatisticsBasic::build(const ColumnPtr & column)
         auto values = column->convertToFullColumnIfConst();
         const IColumn * values_ptr = values.get();
         if (typeid_cast<const ColumnSparse *>(values_ptr))
-            sum_function->addBatchSparseSinglePlace(0, column_size, sum_state, &values_ptr, sum_arena.get());
+            sum_function->addBatchSparseSinglePlace(0, column_size, sum_state, &values_ptr, nullptr);
         else
-            sum_function->addBatchSinglePlace(0, column_size, sum_state, &values_ptr, sum_arena.get());
+            sum_function->addBatchSinglePlace(0, column_size, sum_state, &values_ptr, nullptr);
     }
 
     row_count += column_size;
@@ -165,7 +166,7 @@ void StatisticsBasic::merge(const StatisticsPtr & other_stats)
     }
 
     if (has_sum && other->has_sum)
-        sum_function->merge(sum_state, other->sum_state, sum_arena.get());
+        sum_function->merge(sum_state, other->sum_state, nullptr);
     else
         has_sum = false;
 
@@ -230,7 +231,7 @@ void StatisticsBasic::deserialize(ReadBuffer & buf, StatisticsFileVersion /*vers
 Field StatisticsBasic::getSum() const
 {
     auto column = sum_function->getResultType()->createColumn();
-    sum_function->insertResultInto(sum_state, *column, sum_arena.get());
+    sum_function->insertResultInto(sum_state, *column, nullptr);
     return (*column)[0];
 }
 
@@ -279,9 +280,8 @@ std::optional<Float64> StatisticsBasic::estimateEqual(const Field & val) const
 size_t StatisticsBasic::allocatedBytes() const
 {
     size_t bytes = sizeof(*this) + fieldAllocatedBytes(min) + fieldAllocatedBytes(max) + fieldAllocatedBytes(column_default_field);
-    /// The state of `sum` is kept entirely in its arena.
-    if (sum_arena)
-        bytes += sizeof(Arena) + sum_arena->allocatedBytes();
+    if (sum_function)
+        bytes += sum_function->sizeOfData();
     return bytes;
 }
 

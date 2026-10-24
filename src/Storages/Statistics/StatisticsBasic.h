@@ -1,7 +1,7 @@
 #pragma once
 
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
-#include <Common/Arena.h>
+#include <Common/AlignedBuffer.h>
 #include <Core/Field.h>
 #include <Storages/Statistics/Statistics.h>
 
@@ -83,7 +83,7 @@ private:
     bool is_nullable = false;    /// column's type default is NULL (Nullable, LowCardinality(Nullable), Variant, Dynamic, ...)
     bool has_default_count = true; /// true unless deserialized from older code that did not write a default-value count
 
-    std::unique_ptr<Arena> sum_arena;
+    AlignedBuffer sum_buffer;
     AggregateFunctionPtr sum_function;
     AggregateDataPtr sum_state = nullptr;
     bool has_sum = false; /// false also when deserialized from older code that did not write the sum
