@@ -1007,6 +1007,12 @@ void optimizeTreeSecondPass(
         traverseQueryPlan(stack, root, [&](auto & frame_node) { tryOptimizeGroupByTopK(&frame_node, nodes, extra_settings); });
     }
 
+    /// The same placement as the pass above: no later optimization may change the steps the pass matched.
+    if (optimization_settings.enable_distinct_top_k_optimization)
+    {
+        traverseQueryPlan(stack, root, [&](auto & frame_node) { tryOptimizeDistinctTopK(&frame_node, nodes, extra_settings); });
+    }
+
     /// Runs behind every rewrite of the HAVING filter it reads, and behind the pass above, whose `top_k` it refuses.
     if (optimization_settings.aggregation_having_prefilter)
     {

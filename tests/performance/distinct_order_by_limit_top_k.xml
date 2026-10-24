@@ -1,0 +1,43 @@
+<test>
+    <!-- `SELECT DISTINCT ... ORDER BY ... LIMIT N` (`enable_distinct_top_k_optimization`): each stream of the preliminary
+         `DISTINCT` keeps only the `N` keys with the best rows instead of every distinct key, the boundary of the kept keys
+         filters the rows of the read (`use_top_k_dynamic_filtering`), and over sorted streams (read in order) the
+         preliminary `DISTINCT` stops after the first `N` keys of each stream. The queries do not name the setting, so
+         that the old server runs them too. -->
+
+    <create_query>
+        CREATE TABLE distinct_top_k_events (id UInt64, timestamp DateTime64(3), value String)
+        ENGINE = MergeTree ORDER BY id
+    </create_query>
+    <create_query>
+        CREATE TABLE distinct_top_k_events_by_time (id UInt64, timestamp DateTime64(3), value String)
+        ENGINE = MergeTree ORDER BY timestamp
+    </create_query>
+
+    <fill_query>
+        INSERT INTO distinct_top_k_events
+        SELECT number, toDateTime64(1767225600, 3) + toIntervalMillisecond(number * 7919 % 20000003), toString(cityHash64(number) % 20000000)
+        FROM numbers_mt(20000000)
+    </fill_query>
+    <fill_query>INSERT INTO distinct_top_k_events_by_time SELECT * FROM distinct_top_k_events</fill_query>
+    <fill_query>OPTIMIZE TABLE distinct_top_k_events FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE distinct_top_k_events_by_time FINAL</fill_query>
+
+    <!-- The `ORDER BY` columns are the `DISTINCT` keys. -->
+    <query>SELECT DISTINCT number AS x FROM numbers_mt(100000000) ORDER BY x LIMIT 31 FORMAT Null</query>
+    <query>SELECT DISTINCT number AS x FROM numbers_mt(100000000) ORDER BY x DESC LIMIT 3 FORMAT Null</query>
+    <query>SELECT DISTINCT value FROM distinct_top_k_events ORDER BY value LIMIT 100 FORMAT Null</query>
+
+    <!-- The `ORDER BY` columns are not `DISTINCT` keys. -->
+    <query>SELECT DISTINCT value FROM distinct_top_k_events ORDER BY timestamp LIMIT 10 FORMAT Null</query>
+    <query>SELECT DISTINCT value FROM distinct_top_k_events ORDER BY timestamp DESC LIMIT 1000 FORMAT Null</query>
+    <query>SELECT DISTINCT value FROM distinct_top_k_events ORDER BY toStartOfHour(timestamp), id LIMIT 10 FORMAT Null</query>
+    <query>SELECT DISTINCT SearchPhrase FROM hits_10m_single ORDER BY EventTime LIMIT 10 FORMAT Null</query>
+    <query>SELECT DISTINCT UserID FROM hits_10m_single ORDER BY EventTime DESC LIMIT 100 FORMAT Null</query>
+
+    <!-- Read in order. -->
+    <query>SELECT DISTINCT value FROM distinct_top_k_events_by_time ORDER BY timestamp LIMIT 10 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS distinct_top_k_events</drop_query>
+    <drop_query>DROP TABLE IF EXISTS distinct_top_k_events_by_time</drop_query>
+</test>

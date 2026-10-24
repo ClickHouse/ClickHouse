@@ -2374,6 +2374,21 @@ Possible values:
 - 1 — Enabled.
 )", 0, \
         {"26.10", false, true, "New setting: `GROUP BY key [ORDER BY key] LIMIT n` publishes the top-K heap boundary to the `MergeTree` reading step, which filters rows and skips granules by it. `compatibility` below 26.10 disables it."}) \
+    DECLARE(Bool, enable_distinct_top_k_optimization, true, R"(
+Enable the top-K optimization of the preliminary `DISTINCT` in `SELECT DISTINCT ... ORDER BY ... LIMIT N` queries.
+
+When enabled, each stream of the preliminary `DISTINCT` keeps only the `N` (`LIMIT` plus `OFFSET`) distinct keys with the best rows in the `ORDER BY` order, each with its best row, instead of every distinct key. The memory is bounded by the `LIMIT` instead of the number of distinct keys.
+
+When the `ORDER BY` columns are not `DISTINCT` keys, the `ORDER BY` value of each key is taken from its first row in the `ORDER BY` order. Without the optimization it is taken from an arbitrary row of the key. Both results are allowed by the semantics of `DISTINCT` with `ORDER BY`.
+
+The optimization is disabled when the requested `LIMIT` is higher than [query_plan_max_limit_for_top_k_optimization](#query_plan_max_limit_for_top_k_optimization) or than the hard cap of `100000`, with `LIMIT WITH TIES`, `WITH FILL` and `LIMIT BY`. The `max_rows_in_distinct` and `max_bytes_in_distinct` limits apply to the final `DISTINCT`, which sees only the keys the preliminary one passes.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0, \
+        {"26.11", false, true, "New setting: `SELECT DISTINCT ... ORDER BY ... LIMIT N` keeps only the `N` best distinct keys in the preliminary `DISTINCT`."}) \
     DECLARE(UInt64, query_plan_max_limit_for_top_k_optimization, 1000, R"(Control maximum limit value that allows to evaluate query plan for TopK optimization by using minmax skip index and dynamic threshold filtering. If zero, there is no limit.
 
 This setting also controls the behavior of [enable_group_by_top_k_optimization](#enable_group_by_top_k_optimization).

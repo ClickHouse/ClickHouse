@@ -439,6 +439,12 @@ public:
     /// Loads only those parts' primary indexes; returns false if part filters are unavailable.
     bool everyPartHasVirtualRowBound(bool read_in_reverse) const;
     bool readsInOrder() const;
+    /// Sets the estimation of the rows the query reads when reading in order (see `query_task_size_limit`), if not set yet.
+    void setQueryTaskSizeLimitIfNotSet(UInt64 task_size_limit)
+    {
+        if (!query_task_size_limit)
+            query_task_size_limit = task_size_limit;
+    }
     const InputOrderInfoPtr & getInputOrder() const { return query_info.input_order_info; }
     const SortDescription & getSortDescription() const override { return result_sort_description; }
 
