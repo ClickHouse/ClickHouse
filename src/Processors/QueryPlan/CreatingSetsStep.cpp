@@ -420,9 +420,8 @@ void forEachSubquerySet(const QueryPlan * root, const std::function<bool(FutureS
             forEachSubquerySet(read_from_local->getQueryPlan(), visit);
         }
 
-        /// Deliberately NOT descending into `node->step->getChildPlans()`, unlike the other plan-wide
-        /// walks (`hasCorrelatedExpressions`, `DistributedPlanSets`). No set is missed by stopping
-        /// here, for a different reason per carrier.
+        /// Deliberately NOT descending into `node->step->getChildPlans()`, unlike `DistributedPlanSets`.
+        /// No set is missed by stopping here, for a different reason per carrier.
         ///
         /// `ReadFromMerge` and `LazyReadReplacingFinalStep` build their child plans when asked for
         /// them rather than handing them out, and paying for that here loses more than the sharing
