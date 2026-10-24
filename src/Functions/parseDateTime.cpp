@@ -912,65 +912,36 @@ namespace
                 return cur;
             }
 
-            template <typename T, NeedCheckSpace need_check_space>
             [[nodiscard]]
-            static PosOrError readNumber2(Pos cur, Pos end, [[maybe_unused]] const String & fragment, T & res)
+            static bool isAsciiDigit(char digit)
             {
-                if constexpr (need_check_space == NeedCheckSpace::Yes)
-                    RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 2, "readNumber2 requires size >= 2", fragment))
-
-                res = (*cur - '0');
-                ++cur;
-                res = res * 10 + (*cur - '0');
-                ++cur;
-                return cur;
+                return digit >= '0' && digit <= '9';
             }
 
+            /// NeedCheckSpace::No is only safe after the caller has checked the complete field.
+            template <size_t digits, NeedCheckSpace need_check_space, typename T>
             [[nodiscard]]
-            static PosOrError readDayOfMonthNumber(Pos cur, Pos end, const String & fragment, Int32 & day_of_month)
-            {
-                RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 2, "two digits are expected for day of month", fragment))
-                if (cur[0] < '0' || cur[0] > '9' || cur[1] < '0' || cur[1] > '9') [[unlikely]]
-                    RETURN_ERROR(
-                        ErrorCodes::CANNOT_PARSE_DATETIME,
-                        "Unable to parse fragment {} from {} because two digits are expected for day of month",
-                        fragment,
-                        std::string_view(cur, end - cur))
-
-                return readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, day_of_month);
-            }
-
-            template <typename T, NeedCheckSpace need_check_space>
-            [[nodiscard]]
-            static PosOrError readNumber3(Pos cur, Pos end, [[maybe_unused]] const String & fragment, T & res)
+            static PosOrError readNumber(Pos cur, Pos end, const String & fragment, T & res)
             {
                 if constexpr (need_check_space == NeedCheckSpace::Yes)
-                    RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 3, "readNumber3 requires size >= 3", fragment))
-                res = (*cur - '0');
-                ++cur;
-                res = res * 10 + (*cur - '0');
-                ++cur;
-                res = res * 10 + (*cur - '0');
-                ++cur;
-                return cur;
-            }
+                    RETURN_ERROR_IF_FAILED(checkSpace(cur, end, digits, "not enough input for fixed-width number", fragment))
 
-            template <typename T, NeedCheckSpace need_check_space>
-            [[nodiscard]]
-            static PosOrError readNumber4(Pos cur, Pos end, [[maybe_unused]] const String & fragment, T & res)
-            {
-                if constexpr (need_check_space == NeedCheckSpace::Yes)
-                    RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 4, "readNumber4 requires size >= 4", fragment))
+                T number = 0;
+                for (size_t i = 0; i < digits; ++i)
+                {
+                    const char digit = cur[i];
+                    if (!isAsciiDigit(digit)) [[unlikely]]
+                        RETURN_ERROR(
+                            ErrorCodes::CANNOT_PARSE_DATETIME,
+                            "Unable to parse fragment {} from {} because {} digits are expected",
+                            fragment,
+                            std::string_view(cur, end - cur),
+                            digits)
 
-                res = (*cur - '0');
-                ++cur;
-                res = res * 10 + (*cur - '0');
-                ++cur;
-                res = res * 10 + (*cur - '0');
-                ++cur;
-                res = res * 10 + (*cur - '0');
-                ++cur;
-                return cur;
+                    number = number * 10 + (digit - '0');
+                }
+                res = number;
+                return cur + digits;
             }
 
             [[nodiscard]]
@@ -1013,7 +984,7 @@ namespace
                 if constexpr (need_check_space == NeedCheckSpace::Yes)
                     RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 1, "assertNumber requires size >= 1", fragment))
 
-                if (*cur < '0' || *cur > '9') [[unlikely]]
+                if (!isAsciiDigit(*cur)) [[unlikely]]
                     RETURN_ERROR(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because {} is not a number",
@@ -1101,7 +1072,7 @@ namespace
             static PosOrError mysqlMonth(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 month = 0;
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, month)))
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber<2, NeedCheckSpace::Yes>(cur, end, fragment, month)))
                 RETURN_ERROR_IF_FAILED(parsed_value.setMonth(month))
                 return cur;
             }
@@ -1119,7 +1090,7 @@ namespace
             static PosOrError mysqlCentury(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 century = 0;
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, century)))
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber<2, NeedCheckSpace::Yes>(cur, end, fragment, century)))
                 RETURN_ERROR_IF_FAILED(parsed_value.setCentury(century))
                 return cur;
             }
@@ -1128,7 +1099,7 @@ namespace
             static PosOrError mysqlDayOfMonth(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 day_of_month = 0;
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, day_of_month)))
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber<2, NeedCheckSpace::Yes>(cur, end, fragment, day_of_month)))
                 RETURN_ERROR_IF_FAILED(parsed_value.setDayOfMonth(day_of_month))
                 return cur;
             }
@@ -1139,17 +1110,17 @@ namespace
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 8, "mysqlAmericanDate requires size >= 8", fragment))
 
                 Int32 month = 0;
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, month)))
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber<2, NeedCheckSpace::No>(cur, end, fragment, month)))
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (assertChar<NeedCheckSpace::No>(cur, end, '/', fragment)))
                 RETURN_ERROR_IF_FAILED(parsed_value.setMonth(month))
 
                 Int32 day = 0;
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, readDayOfMonthNumber(cur, end, fragment, day))
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber<2, NeedCheckSpace::No>(cur, end, fragment, day)))
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (assertChar<NeedCheckSpace::No>(cur, end, '/', fragment)))
                 RETURN_ERROR_IF_FAILED(parsed_value.setDayOfMonth(day))
 
                 Int32 year = 0;
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, year)))
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber<2, NeedCheckSpace::No>(cur, end, fragment, year)))
                 RETURN_ERROR_IF_FAILED(parsed_value.setYear(year + 2000))
                 return cur;
             }
@@ -1158,6 +1129,13 @@ namespace
             static PosOrError mysqlDayOfMonthMandatorySpacePadding(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 2, "mysqlDayOfMonthMandatorySpacePadding requires size >= 2", fragment))
+
+                if ((cur[0] != ' ' && !isAsciiDigit(cur[0])) || !isAsciiDigit(cur[1])) [[unlikely]]
+                    RETURN_ERROR(
+                        ErrorCodes::CANNOT_PARSE_DATETIME,
+                        "Unable to parse fragment {} from {} because a space-padded day of month must contain digits",
+                        fragment,
+                        std::string_view(cur, end - cur))
 
                 Int32 day_of_month = *cur == ' ' ? 0 : (*cur - '0');
                 ++cur;
@@ -1192,11 +1170,11 @@ namespace
                 Int32 year = 0;
                 Int32 month = 0;
                 Int32 day = 0;
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber4<Int32, NeedCheckSpace::No>(cur, end, fragment, year)))
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber<4, NeedCheckSpace::No>(cur, end, fragment, year)))
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (assertChar<NeedCheckSpace::No>(cur, end, '-', fragment)))
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, month)))
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber<2, NeedCheckSpace::No>(cur, end, fragment, month)))
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (assertChar<NeedCheckSpace::No>(cur, end, '-', fragment)))
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, readDayOfMonthNumber(cur, end, fragment, day))
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber<2, NeedCheckSpace::No>(cur, end, fragment, day)))
 
                 RETURN_ERROR_IF_FAILED(parsed_value.setYear(year))
                 RETURN_ERROR_IF_FAILED(parsed_value.setMonth(month))
@@ -1208,7 +1186,7 @@ namespace
             static PosOrError mysqlISO8601Year2(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 year2 = 0;
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, year2)))
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber<2, NeedCheckSpace::Yes>(cur, end, fragment, year2)))
                 RETURN_ERROR_IF_FAILED(parsed_value.setYear2(year2))
                 return cur;
             }
@@ -1217,7 +1195,7 @@ namespace
             static PosOrError mysqlISO8601Year4(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 year = 0;
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber4<Int32, NeedCheckSpace::Yes>(cur, end, fragment, year)))
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber<4, NeedCheckSpace::Yes>(cur, end, fragment, year)))
                 RETURN_ERROR_IF_FAILED(parsed_value.setYear(year))
                 return cur;
             }
@@ -1226,7 +1204,7 @@ namespace
             static PosOrError mysqlDayOfYear(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 day_of_year = 0;
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber3<Int32, NeedCheckSpace::Yes>(cur, end, fragment, day_of_year)))
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber<3, NeedCheckSpace::Yes>(cur, end, fragment, day_of_year)))
                 RETURN_ERROR_IF_FAILED(parsed_value.setDayOfYear(day_of_year))
                 return cur;
             }
@@ -1244,7 +1222,7 @@ namespace
             static PosOrError mysqlISO8601Week(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 week = 0;
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, week)))
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber<2, NeedCheckSpace::Yes>(cur, end, fragment, week)))
                 RETURN_ERROR_IF_FAILED(parsed_value.setWeek(week))
                 return cur;
             }
@@ -1300,7 +1278,7 @@ namespace
             static PosOrError mysqlYear2(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 year2 = 0;
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, year2)))
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber<2, NeedCheckSpace::Yes>(cur, end, fragment, year2)))
                 RETURN_ERROR_IF_FAILED(parsed_value.setYear2(year2))
                 return cur;
             }
@@ -1309,7 +1287,7 @@ namespace
             static PosOrError mysqlYear4(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 year = 0;
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber4<Int32, NeedCheckSpace::Yes>(cur, end, fragment, year)))
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber<4, NeedCheckSpace::Yes>(cur, end, fragment, year)))
                 RETURN_ERROR_IF_FAILED(parsed_value.setYear(year))
                 return cur;
             }
@@ -1334,10 +1312,10 @@ namespace
                 ++cur;
 
                 Int32 hour = 0;
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, hour)))
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber<2, NeedCheckSpace::No>(cur, end, fragment, hour)))
 
                 Int32 minute = 0;
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, minute)))
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber<2, NeedCheckSpace::No>(cur, end, fragment, minute)))
 
                 parsed_value.has_time_zone_offset = true;
                 parsed_value.time_zone_offset = sign * (hour * 3600 + minute * 60);
@@ -1348,7 +1326,7 @@ namespace
             static PosOrError mysqlMinute(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 minute = 0;
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, minute)))
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber<2, NeedCheckSpace::Yes>(cur, end, fragment, minute)))
                 RETURN_ERROR_IF_FAILED(parsed_value.setMinute(minute))
                 return cur;
             }
@@ -1371,11 +1349,11 @@ namespace
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 8, "mysqlHHMM12 requires size >= 8", fragment))
 
                 Int32 hour = 0;
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, hour)))
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber<2, NeedCheckSpace::No>(cur, end, fragment, hour)))
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (assertChar<NeedCheckSpace::No>(cur, end, ':', fragment)))
                 RETURN_ERROR_IF_FAILED(parsed_value.setHour(hour, true, true))
                 Int32 minute = 0;
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, minute)))
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber<2, NeedCheckSpace::No>(cur, end, fragment, minute)))
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (assertChar<NeedCheckSpace::No>(cur, end, ' ', fragment)))
                 RETURN_ERROR_IF_FAILED(parsed_value.setMinute(minute))
 
@@ -1389,11 +1367,11 @@ namespace
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 5, "mysqlHHMM24 requires size >= 5", fragment))
 
                 Int32 hour = 0;
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, hour)))
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber<2, NeedCheckSpace::No>(cur, end, fragment, hour)))
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (assertChar<NeedCheckSpace::No>(cur, end, ':', fragment)))
                 RETURN_ERROR_IF_FAILED(parsed_value.setHour(hour, false, false))
                 Int32 minute = 0;
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, minute)))
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber<2, NeedCheckSpace::No>(cur, end, fragment, minute)))
                 RETURN_ERROR_IF_FAILED(parsed_value.setMinute(minute))
                 return cur;
             }
@@ -1402,7 +1380,7 @@ namespace
             static PosOrError mysqlSecond(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 second = 0;
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, second)))
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber<2, NeedCheckSpace::Yes>(cur, end, fragment, second)))
                 RETURN_ERROR_IF_FAILED(parsed_value.setSecond(second))
                 return cur;
             }
@@ -1454,11 +1432,11 @@ namespace
                 Int32 hour = 0;
                 Int32 minute = 0;
                 Int32 second = 0;
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, hour)))
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber<2, NeedCheckSpace::No>(cur, end, fragment, hour)))
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (assertChar<NeedCheckSpace::No>(cur, end, ':', fragment)))
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, minute)))
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber<2, NeedCheckSpace::No>(cur, end, fragment, minute)))
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (assertChar<NeedCheckSpace::No>(cur, end, ':', fragment)))
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, second)))
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber<2, NeedCheckSpace::No>(cur, end, fragment, second)))
                 RETURN_ERROR_IF_FAILED(parsed_value.setHour(hour, false, false))
                 RETURN_ERROR_IF_FAILED(parsed_value.setMinute(minute))
                 RETURN_ERROR_IF_FAILED(parsed_value.setSecond(second))
@@ -1469,7 +1447,7 @@ namespace
             static PosOrError mysqlHour12(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 hour = 0;
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, hour)))
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber<2, NeedCheckSpace::Yes>(cur, end, fragment, hour)))
                 RETURN_ERROR_IF_FAILED(parsed_value.setHour(hour, true, true))
                 return cur;
             }
@@ -1487,7 +1465,7 @@ namespace
             static PosOrError mysqlHour24(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 hour = 0;
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, hour)))
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber<2, NeedCheckSpace::Yes>(cur, end, fragment, hour)))
                 RETURN_ERROR_IF_FAILED(parsed_value.setHour(hour, false, false))
                 return cur;
             }
