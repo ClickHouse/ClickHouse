@@ -964,9 +964,7 @@ def create_log_export_configs():
         # is the one whose `system.settings` probe can fail; the patched server
         # is the side the check reports on, and it keeps its export.
         try:
-            if not log_export.create_config(config_dir, host, password):
-                print(f"WARNING: Failed to write the log export config into [{config_dir}]")
-                continue
+            log_export.create_config(config_dir, host, password)
             write_ci_logs_sender_user(config_dir, binary)
         except Exception:
             traceback.print_exc()
