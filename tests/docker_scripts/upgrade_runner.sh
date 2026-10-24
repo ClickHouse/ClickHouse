@@ -850,9 +850,9 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 # `Code: 153` + `Division by zero` in `intDiv(100, x)` + `While executing TTL` is `05073_column_ttl_recompute_materialized`
 #       failing a TTL merge on purpose: the column TTL resets `x` to 0, from which the `MATERIALIZED intDiv(100, x)` column
 #       of `t_column_ttl_materialized_undefined` cannot be computed. In a stress worker's shared `--database=test_N` the
-#       table outlives the test, as `--fake-drop` ignores its `DROP`, and the previous release already retries the same
-#       merge. The entry pins the code, the fixture's expression and the TTL context, so any other failing TTL merge still
-#       fails this job.
+#       table outlives the test, as `--fake-drop` ignores its `DROP`, and both the previous release and the upgraded server
+#       retry the merge without end (issue #123953). The entry pins the code, the fixture's expression and the TTL context,
+#       so any other failing TTL merge still fails this job.
 # `SystemLogQueue` + `Queue had been full` overflow happens under heavy stress test load and is not a
 #       compatibility bug. Filtered via regex in the secondary pipe below to require both the component name
 #       AND the specific overflow phrase together (the log format is `SystemLogQueue (system.<table>): Queue
