@@ -7298,12 +7298,14 @@ Possible values:
 - 1 - Enabled
 )", 0, \
         {"26.8", false, true, "New setting to gate the query condition cache for `ORDER BY ... LIMIT n` (TopK) reads; enabled by default. The gate is disabled in 26.7, so `compatibility` with an earlier version keeps it off."}) \
-    DECLARE(Bool, use_query_condition_cache_for_time_conditions, true, R"(
-Enable the [query condition cache](/concepts/features/performance/caches/query-condition-cache) for conditions that involve the current time, e.g. `WHERE time >= now() - INTERVAL 10 DAY`, when reading from `MergeTree` tables. Reads from files and object storage (`file`, `s3`, and similar) use the query condition cache only for deterministic conditions and are not affected by this setting.
+    DECLARE(Bool, use_query_condition_cache_for_changing_bounds, true, R"(
+Let the [query condition cache](/concepts/features/performance/caches/query-condition-cache) of `MergeTree` tables serve conditions with bounds that change from query to query, e.g. a dashboard query `WHERE time >= now() - INTERVAL 1 HOUR AND message LIKE '%error%'`, the same with literal bounds such as `WHERE time >= fromUnixTimestamp64Milli(1743410504651) AND time <= fromUnixTimestamp64Milli(1743493304654)` that move with every refresh, or `WHERE price > 100 AND category = 'books'` repeated with another threshold.
 
-Such conditions are non-deterministic (they change with the clock), so they cannot be cached directly. Instead, a deterministic condition is derived from them by rounding the folded current-time constant onto a time grid, e.g. `WHERE time >= '2026-08-09 12:34:56'` becomes `WHERE time >= '2026-08-09 00:00:00'` (rounding down for cache reads, up for cache writes, which keeps the cache sound). The grid step is proportional to the distance between the constant and the current time (see [`query_condition_cache_time_condition_grid_factor`](#query_condition_cache_time_condition_grid_factor)), clamped to between one second and one day.
+A bound is a comparison (`<`, `<=`, `>`, `>=`) of an expression with a constant of a numeric type (including `Decimal`, `Date`, `Date32`, `DateTime` and `DateTime64`, and constants computed from the current time, e.g. by `now()` or `today()`), or with a string constant if the expression has a date/time type. A condition that is non-deterministic only because of such bounds is cached under its own key, which includes the values of the bounds.
 
-If the constant is already aligned to the grid (e.g. `WHERE time >= today() - 10` or `WHERE time >= toStartOfDay(now())`), the cache is effective for the whole grid cell, e.g. until the end of the day. Otherwise, the cache is reused only for lower bounds on the time, e.g. `WHERE time >= now() - INTERVAL 10 DAY`: cache entries written during one grid cell are used during the next one. An unaligned upper bound such as `WHERE time < now()`, alone or as a part of a sliding window like `WHERE time >= now() - INTERVAL 10 DAY AND time < now()`, is not reused by later queries, because their condition is not contained in the condition of the earlier ones.
+A query looks for cache entries of up to four recent variants of the same condition with other values of the bounds. A granule recorded there as having no matching rows is skipped if the primary key shows that it has no rows that the new bounds admit but the bounds of that variant do not. The skipped granules are recorded for the new variant as well. This works best if the compared expression is (a prefix of) the primary key. If the new bounds are narrower than the cached ones, e.g. `WHERE time >= now() - INTERVAL 10 DAY` a while later, all granules recorded as not matching are skipped, whatever the primary key.
+
+Reads from files and object storage (`file`, `s3`, and similar) use the query condition cache only for deterministic conditions and are not affected by this setting.
 
 This setting has no effect unless `use_query_condition_cache` is also enabled.
 
@@ -7312,13 +7314,7 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0, \
-        {"26.10", false, true, "New setting to let the query condition cache serve conditions that involve the current time (e.g. `WHERE time >= now() - INTERVAL 10 DAY`) by deriving a deterministic condition with the time constant rounded onto a grid; enabled by default. previous_value=false so `compatibility` with an earlier version keeps such conditions uncached, as before."}) \
-    DECLARE(Float, query_condition_cache_time_condition_grid_factor, 1.0, R"(
-For conditions involving the current time in the [query condition cache](/concepts/features/performance/caches/query-condition-cache) of `MergeTree` tables (see [`use_query_condition_cache_for_time_conditions`](#use_query_condition_cache_for_time_conditions)): the size of the grid onto which time constants are rounded, as a fraction of the distance between the constant and the current time. For example, with the default factor 1.0, the constant in `WHERE time >= now() - INTERVAL 10 DAY` is rounded onto a one day grid (capped at one day), and the constant in `WHERE time >= now() - INTERVAL 1 HOUR` onto a one hour grid.
-
-Smaller values keep the derived condition closer to the original one (less over-reading near the boundary) at the cost of the cache key rotating more frequently. The grid step is clamped to at least one second, so a small factor makes the derived condition converge to the original one instead of disabling it. Values less than or equal to 0 disable the derivation entirely.
-)", 0, \
-        {"26.10", 1., 1., "New setting: the grid step used when deriving deterministic conditions from conditions involving the current time for the query condition cache, as a fraction of the distance between the time constant and the current time."}) \
+        {"26.11", false, true, "New setting to let the query condition cache serve conditions with bounds that change from query to query (e.g. `WHERE time >= now() - INTERVAL 10 DAY`, literal bounds moved by a dashboard refresh, or another threshold of a numeric condition) by reusing the entries of earlier variants with other bounds; enabled by default."}) \
     DECLARE(Bool, enable_shared_storage_snapshot_in_query, true, R"(
 If enabled, all subqueries within a single query will share the same StorageSnapshot for each table.
 This ensures a consistent view of the data across the entire query, even if the same table is accessed multiple times.

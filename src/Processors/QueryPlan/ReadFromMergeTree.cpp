@@ -22,7 +22,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
-#include <Interpreters/Cache/QueryConditionCacheTimeConditions.h>
+#include <Interpreters/Cache/QueryConditionCacheBounds.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ClusterProxy/distributedIndexAnalysis.h>
 #include <Interpreters/Context.h>
@@ -346,8 +346,7 @@ namespace Setting
     extern const SettingsBool use_top_k_dynamic_filtering;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool use_query_condition_cache_for_top_k;
-    extern const SettingsBool use_query_condition_cache_for_time_conditions;
-    extern const SettingsFloat query_condition_cache_time_condition_grid_factor;
+    extern const SettingsBool use_query_condition_cache_for_changing_bounds;
     extern const SettingsUInt64 predicate_statistics_sample_rate;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 query_plan_max_step_description_length;
@@ -3900,6 +3899,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                 result.sampling.use_sampling,
                 mutations_snapshot,
                 *indexes,
+                metadata_snapshot,
                 context_,
                 log);
 
@@ -4052,20 +4052,13 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                 {
                     hash = outputs.front()->getHash();
                 }
-                else if (settings[Setting::use_query_condition_cache_for_time_conditions] && !top_k_filter_info)
+                else if (settings[Setting::use_query_condition_cache_for_changing_bounds] && !top_k_filter_info
+                    && isDeterministicExceptBounds(outputs.front()))
                 {
-                    /// A condition involving the current time can be cached under the deterministic
-                    /// condition derived by rounding its time constants onto a grid (issue #115504).
-                    /// This is a write side, so the derived condition must *strengthen* the original
-                    /// one: index analysis proved that no rows of the excluded granules match the
-                    /// condition, hence none match the (stricter) derived condition either.
-                    /// Not for TopK reads, see `deriveDeterministicTimeCondition`.
-                    if (auto derived = deriveDeterministicTimeCondition(
-                            outputs.front(),
-                            TimeConditionRounding::Strengthen,
-                            static_cast<double>(settings[Setting::query_condition_cache_time_condition_grid_factor]),
-                            time(nullptr)))
-                        hash = derived->hash;
+                    /// A condition involving the current time is cached under its own hash, which
+                    /// includes the value of the folded constant (see `ConditionBounds`).
+                    /// Not for TopK reads, like in `updateQueryConditionCache`.
+                    hash = outputs.front()->getHash();
                 }
 
                 if (hash)

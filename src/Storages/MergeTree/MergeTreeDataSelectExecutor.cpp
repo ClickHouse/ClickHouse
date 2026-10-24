@@ -39,7 +39,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
-#include <Interpreters/Cache/QueryConditionCacheTimeConditions.h>
+#include <Interpreters/Cache/QueryConditionCacheBounds.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -123,8 +123,8 @@ namespace Setting
     extern const SettingsBool distributed_index_analysis;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool use_query_condition_cache_for_top_k;
-    extern const SettingsBool use_query_condition_cache_for_time_conditions;
-    extern const SettingsFloat query_condition_cache_time_condition_grid_factor;
+    extern const SettingsBool use_query_condition_cache_for_changing_bounds;
+    extern const SettingsBool use_primary_key;
     extern const SettingsBool secondary_indexes_enable_bulk_filtering;
     extern const SettingsBool vector_search_with_rescoring;
     extern const SettingsBool use_skip_indexes_for_top_k;
@@ -1701,9 +1701,8 @@ static bool isTopKFilterFunction(const ActionsDAG::Node * node)
 /// alone, so strip internal TopK nodes before probing reuse. In the WHERE DAG, `__topKFilter` no longer
 /// originates from the optimizer (it is merged into the PREWHERE after the pass that builds that DAG);
 /// in the PREWHERE, `buildTopKDynamicFilterPrewhere` produces `and(__topKFilter(...), <user PREWHERE>)`.
-/// Returns the predicate-only node; the caller turns it into a cache key (which, for a condition
-/// involving the current time, is the hash of the derived deterministic condition, not the node's
-/// own hash). The returned node may be owned by `scratch`, which must outlive its use.
+/// Returns the predicate-only node; the caller turns it into a cache key.
+/// The returned node may be owned by `scratch`, which must outlive its use.
 static const ActionsDAG::Node * getTopKReusePredicateOnlyNode(const ActionsDAG::Node * node, ActionsDAG & scratch)
 {
     if (!node)
@@ -1756,6 +1755,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     bool use_sampling,
     const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
     const ReadFromMergeTree::Indexes & indexes,
+    const StorageMetadataPtr & metadata_snapshot,
     const ContextPtr & context,
     LoggerPtr log)
 {
@@ -1826,39 +1826,13 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
 
     auto drop_mark_ranges = [&](const ActionsDAG::Node * dag, bool apply_top_k_salt, bool prewhere_top_k_salt)
     {
-        /// A condition involving the current time (e.g. `time >= now() - INTERVAL 10 DAY`) is
-        /// non-deterministic and its own hash changes with every query, so probing it would always
-        /// miss. Probe the deterministic condition derived from it instead (issue #115504). Since
-        /// this is the consult side, the derivation must *weaken* the condition: "no rows of this
-        /// granule match the weakened condition" implies "no rows match the actual condition", so
-        /// skipping the granule is sound. The write sides store entries under the strengthened
-        /// variant, which coincides with the weakened one for grid-aligned constants and equals the
-        /// weakened variant of the next grid cell otherwise.
-        const time_t current_time = time(nullptr);
-        auto derive = [&](const ActionsDAG::Node * node) -> std::optional<DeterministicTimeCondition>
-        {
-            if (!settings[Setting::use_query_condition_cache_for_time_conditions])
-                return std::nullopt;
-            return deriveDeterministicTimeCondition(
-                node,
-                TimeConditionRounding::Weaken,
-                static_cast<double>(settings[Setting::query_condition_cache_time_condition_grid_factor]),
-                current_time);
-        };
-
-        /// The WHERE writers of a TopK read never store entries under a derived condition (see
-        /// `deriveDeterministicTimeCondition`), so the TopK-salted WHERE key is not derived either;
-        /// such a read only reuses plain entries through the predicate-only hash below. The TopK-salted
-        /// PREWHERE key is derived like its writer in `MergeTreeSelectProcessor` does.
-        const bool is_top_k_where_key = apply_top_k_salt && !prewhere_top_k_salt && top_k_filter_info;
-        std::optional<DeterministicTimeCondition> derived = is_top_k_where_key ? std::nullopt : derive(dag);
-
         /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on platforms where
         /// they differ (e.g. Apple, where `size_t` is `unsigned long` but `UInt64` is `unsigned long long`).
-        size_t condition_hash = queryConditionCacheHash(derived ? derived->hash : dag->getHash(), settings_salt);
+        size_t condition_hash = queryConditionCacheHash(dag->getHash(), settings_salt);
         size_t topk_reuse_predicate_only_hash = 0;
         bool has_topk_reuse_predicate_only_hash = false;
-        /// The same applies to a TopK-salted PREWHERE: `buildTopKDynamicFilterPrewhere` rewrites an explicit
+        /// A TopK read also reuses plain entries through the predicate-only hash below. This applies to a
+        /// TopK-salted PREWHERE as well: `buildTopKDynamicFilterPrewhere` rewrites an explicit
         /// user PREWHERE to `and(__topKFilter(...), <user predicate>)`, while a plain read of the same
         /// PREWHERE records its entries under `<user predicate>` alone.
         if (apply_top_k_salt && top_k_filter_info && (prewhere_top_k_salt || top_k_filter_info->where_clause))
@@ -1869,10 +1843,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
             ActionsDAG scratch;
             if (const auto * stripped = getTopKReusePredicateOnlyNode(dag, scratch))
             {
-                /// Key the stripped predicate the same way a plain `SELECT ... WHERE` would: through
-                /// the derived deterministic condition when it involves the current time.
-                auto stripped_derived = derive(stripped);
-                topk_reuse_predicate_only_hash = queryConditionCacheHash(stripped_derived ? stripped_derived->hash : stripped->getHash(), settings_salt);
+                topk_reuse_predicate_only_hash = queryConditionCacheHash(stripped->getHash(), settings_salt);
                 has_topk_reuse_predicate_only_hash = true;
             }
         }
@@ -1905,6 +1876,127 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         const bool probe_topk_reuse_predicate_only_profiled_hash
             = also_probe_topk_reuse_predicate_only_hash
             && topk_reuse_predicate_only_profiled_hash != topk_reuse_predicate_only_hash;
+
+        /// A condition with bounds can use the entries of its earlier variants with other values of
+        /// the bounds (see `ConditionBounds`). Not for a TopK-salted key, whose entries depend on the
+        /// TopK plan as well.
+        struct EarlierBoundsVariant
+        {
+            UInt64 condition_hash = 0;
+            UInt64 profiled_condition_hash = 0;
+            std::vector<Field> values;
+            /// The condition on the primary key for the band, built on first use. Without it there is no band.
+            bool prepared = false;
+            std::optional<ActionsDAG> band_dag;
+            std::optional<KeyCondition> band;
+        };
+        std::optional<ConditionBounds> condition_bounds;
+        std::vector<EarlierBoundsVariant> earlier_bounds_variants;
+        const UUID table_uuid = parts_with_ranges.empty() ? UUIDHelpers::Nil : parts_with_ranges.front().data_part->storage.getStorageID().uuid;
+        if (settings[Setting::use_query_condition_cache_for_changing_bounds] && !(apply_top_k_salt && top_k_filter_info))
+            condition_bounds = abstractConditionBounds(dag);
+        if (condition_bounds)
+        {
+            condition_bounds->structure_hash = queryConditionCacheHash(condition_bounds->structure_hash, settings_salt);
+            for (auto & variant : query_condition_cache->getBoundsVariants(table_uuid, condition_bounds->structure_hash))
+            {
+                if (variant.condition_hash == condition_hash || variant.values.size() != condition_bounds->bounds.size())
+                    continue;
+                UInt64 variant_profiled_condition_hash
+                    = getSkipIndexProfiledConditionHash(variant.condition_hash, indexes, settings[Setting::distributed_index_analysis]);
+                earlier_bounds_variants.push_back({
+                    .condition_hash = variant.condition_hash,
+                    .profiled_condition_hash = variant_profiled_condition_hash,
+                    .values = std::move(variant.values),
+                    .band_dag = {},
+                    .band = {},
+                });
+            }
+        }
+
+        /// Derive the matching marks of a part from the entries of an earlier variant: a mark that has no
+        /// rows matching the earlier variant has no rows matching this one, unless it may have rows in the
+        /// band. Record the derived marks under this variant as well, so that the entries of this variant
+        /// stay complete for the next queries, which will use them instead of the older ones.
+        auto read_earlier_bounds_variants = [&](
+            const RangesInDataPart & part_with_ranges,
+            const String & part_name,
+            std::optional<QueryConditionCache::MatchingMarks> & row_level_marks,
+            std::optional<QueryConditionCache::MatchingMarks> & skip_index_marks)
+        {
+            const auto & data_part = part_with_ranges.data_part;
+            /// The band is checked with the primary key of the table.
+            if (data_part->isProjectionPart())
+                return;
+
+            const size_t marks_count = data_part->index_granularity->getMarksCount();
+            for (auto & variant : earlier_bounds_variants)
+            {
+                auto earlier_row_level_marks = query_condition_cache->read(table_uuid, part_name, variant.condition_hash, /*increment_profile_events=*/false);
+                std::optional<QueryConditionCache::MatchingMarks> earlier_skip_index_marks;
+                if (probe_profiled_condition_hash)
+                    earlier_skip_index_marks = query_condition_cache->read(table_uuid, part_name, variant.profiled_condition_hash, /*increment_profile_events=*/false);
+                if (!earlier_row_level_marks && !earlier_skip_index_marks)
+                    continue;
+
+                if (!variant.prepared)
+                {
+                    variant.prepared = true;
+                    variant.band_dag = buildConditionBoundsBand(*condition_bounds, variant.values, context);
+                    if (variant.band_dag)
+                        variant.band.emplace(
+                            ActionsDAGWithInversionPushDown(variant.band_dag->getOutputs().front(), context, /*boolean_context=*/ true),
+                            context,
+                            metadata_snapshot->getPrimaryKey(),
+                            /*single_point_=*/ false,
+                            /*skip_analysis_=*/ !settings[Setting::use_primary_key]);
+                }
+
+                /// The primary key tells nothing about the band (or must not be used), so every mark may have rows in it.
+                if (variant.band && variant.band->alwaysUnknownOrTrue())
+                    continue;
+
+                MarkRanges band_ranges;
+                if (variant.band)
+                    band_ranges = markRangesFromPKRange(
+                        part_with_ranges, metadata_snapshot, *variant.band, nullptr, nullptr, nullptr, nullptr, settings, log);
+
+                auto derive_marks = [&](const std::optional<QueryConditionCache::MatchingMarks> & earlier_marks, UInt64 hash)
+                    -> std::optional<QueryConditionCache::MatchingMarks>
+                {
+                    if (!earlier_marks || earlier_marks->size() != marks_count)
+                        return std::nullopt;
+
+                    QueryConditionCache::MatchingMarks marks(marks_count, true);
+                    for (const auto & range : part_with_ranges.ranges)
+                        for (size_t mark = range.begin; mark < range.end; ++mark)
+                            marks[mark] = (*earlier_marks)[mark];
+                    for (const auto & range : band_ranges)
+                        std::fill(marks.begin() + range.begin, marks.begin() + range.end, true);
+
+                    MarkRanges marks_without_matches;
+                    for (size_t mark = 0; mark < marks_count; ++mark)
+                    {
+                        if (marks[mark])
+                            continue;
+                        if (!marks_without_matches.empty() && marks_without_matches.back().end == mark)
+                            ++marks_without_matches.back().end;
+                        else
+                            marks_without_matches.emplace_back(mark, mark + 1);
+                    }
+                    if (!marks_without_matches.empty())
+                        query_condition_cache->write(
+                            table_uuid, part_name, hash, dag->result_name, marks_without_matches, marks_count, /*has_final_mark=*/ false);
+
+                    return marks;
+                };
+
+                row_level_marks = derive_marks(earlier_row_level_marks, condition_hash);
+                skip_index_marks = derive_marks(earlier_skip_index_marks, profiled_condition_hash);
+                if (row_level_marks || skip_index_marks)
+                    return;
+            }
+        };
 
         Stats stats;
 
@@ -1946,6 +2038,10 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
                 if (probe_topk_reuse_predicate_only_profiled_hash)
                     topk_reuse_predicate_only_skip_index_marks_opt = query_condition_cache->read(storage_id.uuid, part_name, topk_reuse_predicate_only_profiled_hash, /*increment_profile_events=*/false);
             }
+            if (!row_level_marks_opt && !skip_index_marks_opt
+                && !topk_reuse_predicate_only_row_level_marks_opt && !topk_reuse_predicate_only_skip_index_marks_opt
+                && !earlier_bounds_variants.empty())
+                read_earlier_bounds_variants(part_with_ranges, part_name, row_level_marks_opt, skip_index_marks_opt);
             if (!row_level_marks_opt && !skip_index_marks_opt
                 && !topk_reuse_predicate_only_row_level_marks_opt && !topk_reuse_predicate_only_skip_index_marks_opt)
             {
@@ -2029,6 +2125,10 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
                 ++it;
             }
         }
+
+        /// The writers of this query store their entries under this variant.
+        if (condition_bounds)
+            query_condition_cache->addBoundsVariant(table_uuid, condition_bounds->structure_hash, {condition_hash, condition_bounds->values()});
 
         return stats;
     };

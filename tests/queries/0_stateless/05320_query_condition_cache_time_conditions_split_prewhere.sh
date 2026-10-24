@@ -18,7 +18,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # move_all_conditions_to_prewhere = 0: move only the cheap `time` condition to PREWHERE, not the
 # condition on the large column `s` (wide parts: the column sizes are known per column).
-settings="use_query_condition_cache = true, use_query_condition_cache_for_time_conditions = true,
+settings="use_query_condition_cache = true, use_query_condition_cache_for_changing_bounds = true,
     optimize_move_to_prewhere = 1, move_all_conditions_to_prewhere = 0, use_top_k_dynamic_filtering = 0"
 
 # A single part with three kinds of granules: old rows (filtered by PREWHERE), recent rows not
