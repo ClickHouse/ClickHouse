@@ -10254,6 +10254,10 @@ Choosing finer granularity (like `bucket`) can improve parallelism when working 
 For instance, if a Parquet file contains multiple row groups, enabling `bucket` granularity allows each group to be processed independently by different workers.
 )", 0, \
         {"25.11", "file", "file", "New setting."}) \
+    DECLARE(String, cluster_table_function_pushed_down_filter, "", R"(
+This is an internal setting that should not be used directly. The initiator of a query with a cluster table function sets it for the replicas to the serialized filter on the table, so that the replicas drop the rows that do not pass it before sending them.
+)", 0, \
+        {"26.11", "", "", "New internal setting."}) \
     DECLARE(UInt64, cluster_table_function_buckets_batch_size, 0, R"(
 Defines the approximate size of a batch (in bytes) used in distributed processing of tasks in cluster table functions with `bucket` split granularity. The system accumulates data until at least this amount is reached. The actual size may be slightly larger to align with data boundaries.
 )", 0, \

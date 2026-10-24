@@ -335,6 +335,18 @@ static void makeSetsFromSubqueries(QueryPlan & plan, std::list<QueryPlanAndSets:
     plan.addStep(std::move(step));
 }
 
+void QueryPlan::serializeReadySets(SerializedSetsRegistry & registry, WriteBuffer & out)
+{
+    SerializationFlags flags;
+    flags.sets_must_be_ready = true;
+    serializeSets(registry, out, flags);
+}
+
+void QueryPlan::deserializeAndMakeSets(DeserializedSetsRegistry & registry, ReadBuffer & in, const ContextPtr & context)
+{
+    makeSets(deserializeSets(QueryPlan{}, registry, in, SerializationFlags{}, context, 0), context);
+}
+
 QueryPlan QueryPlan::makeSets(QueryPlanAndSets plan_and_sets, const ContextPtr & context)
 {
     auto & plan = plan_and_sets.plan;

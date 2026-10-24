@@ -19,6 +19,10 @@
 #include <Interpreters/DatabaseCatalog.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/FilterStep.h>
+#include <Interpreters/SetSerialization.h>
+#include <IO/ReadBufferFromString.h>
+#include <Common/Base64.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -62,6 +66,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool optimize_count_from_files;
+    extern const SettingsString cluster_table_function_pushed_down_filter;
     extern const SettingsBool throw_on_hive_partitioning_resolution_failure;
     extern const SettingsBool use_hive_partitioning;
     extern const SettingsInt64 delta_lake_snapshot_start_version;
@@ -977,6 +982,50 @@ void StorageObjectStorage::read(
         num_streams);
 
     query_plan.addStep(std::move(read_step));
+
+    if (distributed_processing)
+        addFilterPushedDownByInitiator(query_plan, local_context);
+}
+
+void StorageObjectStorage::addFilterPushedDownByInitiator(QueryPlan & query_plan, const ContextPtr & local_context)
+{
+    const String & serialized = local_context->getSettingsRef()[Setting::cluster_table_function_pushed_down_filter].value;
+    if (serialized.empty())
+        return;
+
+    const String decoded = base64Decode(serialized);
+    ReadBufferFromString in(decoded);
+    DeserializedSetsRegistry registry;
+    auto filter = ActionsDAG::deserialize(in, registry, local_context);
+    QueryPlan::deserializeAndMakeSets(registry, in, local_context);
+
+    const auto header = query_plan.getCurrentHeader();
+    std::unordered_map<String, const ActionsDAG::Node *> inputs;
+    for (const auto * input : filter.getInputs())
+    {
+        const auto * column = header->findByName(input->result_name);
+        if (!column || !column->type->equals(*input->result_type))
+            return;
+        inputs.emplace(input->result_name, input);
+    }
+
+    const auto * filter_node = filter.getOutputs().at(0);
+    const String filter_column_name = filter_node->result_name;
+    const bool filter_is_read_column = filter_node->type == ActionsDAG::ActionType::INPUT;
+
+    ActionsDAG::NodeRawConstPtrs outputs{filter_node};
+    for (const auto & column : header->getColumnsWithTypeAndName())
+    {
+        auto it = inputs.find(column.name);
+        const auto * node = it != inputs.end() ? it->second : &filter.addInput(column.name, column.type);
+        if (node != filter_node)
+            outputs.push_back(node);
+    }
+    filter.getOutputs() = std::move(outputs);
+
+    auto filter_step = std::make_unique<FilterStep>(header, std::move(filter), filter_column_name, !filter_is_read_column);
+    filter_step->setStepDescription("Filter pushed down by the initiator");
+    query_plan.addStep(std::move(filter_step));
 }
 
 SinkToStoragePtr StorageObjectStorage::write(
