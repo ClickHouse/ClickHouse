@@ -9,6 +9,7 @@ assumeNotNull(c0) IN (0)	3	3
 isNull and isNotNull compared with a constant
 (c0 IS NULL) >= true	2	2
 (c0 IS NOT NULL) < true	2	2
+not(1 < (c0 IS NULL))	5	5
 the partition step is the sole pruner here, and it now keeps the NULL partition
 Min-Max
 Condition: true

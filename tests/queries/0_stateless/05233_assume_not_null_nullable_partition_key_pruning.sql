@@ -1,7 +1,7 @@
 -- Tags: no-replicated-database, no-parallel-replicas
 -- no-replicated-database: EXPLAIN output differs for replicated database.
 -- no-parallel-replicas: EXPLAIN output differs for parallel replicas.
--- Test for https://github.com/ClickHouse/ClickHouse/issues/121133 and https://github.com/ClickHouse/ClickHouse/issues/126369
+-- Test for https://github.com/ClickHouse/ClickHouse/issues/121133, https://github.com/ClickHouse/ClickHouse/issues/126369 and https://github.com/ClickHouse/ClickHouse/issues/127755
 
 -- Randomized to 0 or 1, and the value changes the plan the EXPLAIN blocks below print.
 SET parallel_replicas_local_plan = 1;
@@ -38,6 +38,7 @@ SELECT 'assumeNotNull(c0) IN (0)', (SELECT count() FROM t_flat WHERE assumeNotNu
 SELECT 'isNull and isNotNull compared with a constant';
 SELECT '(c0 IS NULL) >= true', (SELECT count() FROM t_flat WHERE (c0 IS NULL) >= true), (SELECT count() FROM t_part WHERE (c0 IS NULL) >= true);
 SELECT '(c0 IS NOT NULL) < true', (SELECT count() FROM t_flat WHERE (c0 IS NOT NULL) < true), (SELECT count() FROM t_part WHERE (c0 IS NOT NULL) < true);
+SELECT 'not(1 < (c0 IS NULL))', (SELECT count() FROM t_flat WHERE not(1 < (c0 IS NULL))), (SELECT count() FROM t_part WHERE not(1 < (c0 IS NULL)));
 
 -- `isNull` reports no monotonicity, so only the single-point Partition step can use it: it is the sole
 -- pruner and its Parts: denominator is the table's part count.
