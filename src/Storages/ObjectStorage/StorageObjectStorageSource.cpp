@@ -33,6 +33,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/Impl/ParquetMetadataCache.h>
 #include <Processors/QueryPlan/LazilyReadFromObjectStorage.h>
@@ -2027,6 +2028,25 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 {
                     return std::make_shared<AddingDefaultsTransform>(header, read_from_format_info.columns_description, *input_format, context_);
                 });
+        }
+
+        /// A file read under its own schema yields whole top-level columns, while a tuple element can be requested
+        /// as a flat column (see `filterTupleColumnsToRead`), so extract such elements from their parent.
+        if (schema_changed)
+        {
+            NameSet names_in_storage;
+            for (const auto & column : read_from_format_info.requested_columns)
+                names_in_storage.insert(column.getNameInStorage());
+            auto extract_dag = createSubcolumnsExtractionActions(
+                builder.getHeader(), Names(names_in_storage.begin(), names_in_storage.end()), context_);
+            if (!extract_dag.getNodes().empty())
+            {
+                auto extract_actions = std::make_shared<ExpressionActions>(std::move(extract_dag));
+                builder.addSimpleTransform([&](const SharedHeader & header)
+                {
+                    return std::make_shared<ExpressionTransform>(header, extract_actions);
+                });
+            }
         }
 
         source = input_format;
