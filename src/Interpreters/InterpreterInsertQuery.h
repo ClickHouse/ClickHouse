@@ -57,6 +57,8 @@ public:
         bool no_destination = false,
         bool allow_materialized = false);
 
+    static Block getSampleBlockWithoutColumnList(const StorageMetadataPtr & metadata_snapshot, bool no_destination);
+
     bool supportsTransactions() const override { return true; }
 
     /// Skip the target-table `INSERT` access check for this query. Used only for the internal populate of
