@@ -94,7 +94,7 @@ void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::readPrefix()
     }
 
     /// Skip prefix before names and types.
-    format_reader->skipPrefixBeforeHeader();
+    size_t skipped_prefix_rows = format_reader->skipPrefixBeforeHeader();
 
     std::vector<String> column_names;
     std::vector<String> type_names;
@@ -110,6 +110,9 @@ void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::readPrefix()
 
     if (!with_names && !with_types && try_detect_header)
         tryDetectHeader(column_names, type_names);
+
+    number_of_header_rows = skipped_prefix_rows + static_cast<size_t>(with_names || is_header_detected)
+        + static_cast<size_t>(with_types || !type_names.empty());
 
     if (!column_names.empty())
     {
@@ -471,7 +474,12 @@ NamesAndTypesList FormatWithNamesAndTypesSchemaReader::readSchema()
     }
 
     if (!with_names && !with_types && try_detect_header)
+    {
         tryDetectHeader(column_names, data_type_names);
+        header_detection_attempted = true;
+        names_detected_from_data = !column_names.empty();
+        types_detected_from_data = !data_type_names.empty();
+    }
 
     if (!data_type_names.empty())
     {

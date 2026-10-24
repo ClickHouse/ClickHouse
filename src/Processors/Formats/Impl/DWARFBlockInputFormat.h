@@ -127,6 +127,18 @@ public:
     explicit DWARFSchemaReader(ReadBuffer & in_);
 
     NamesAndTypesList readSchema() override;
+
+    /// The format produces a fixed set of named columns and the parser fills only the subset of them
+    /// requested by name, regardless of `input_format_skip_unknown_fields`.
+    bool mapsColumnsByName() const override { return true; }
+    bool alwaysSkipsUnknownFields() const override { return true; }
+
+    /// `DWARFBlockInputFormat::read` casts every selected column to the requested type with
+    /// `castColumnToRequestedType`, so a `String` / `LowCardinality(String)` source column may be valid
+    /// for scalar or nested destinations, and `CAST` into the `UInt32`-backed `IPv4` is implemented
+    /// from an unsigned integer source column such as `offset UInt64`.
+    bool castsStringSourceColumns() const override { return true; }
+    NumericValueIntoIPv4Column readsNumericValueIntoIPv4Column() const override { return NumericValueIntoIPv4Column::UnsignedIntegerOnly; }
 };
 
 }

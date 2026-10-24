@@ -41,6 +41,16 @@ class JSONObjectEachRowSchemaReader final : public IRowWithNamesSchemaReader
 public:
     JSONObjectEachRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
 
+    bool readsTypedJSONValueTokens() const override { return true; }
+
+    /// The parser (a `JSONEachRowRowInputFormat` subclass) resolves field names through
+    /// `CaseAwareBlockNameMap`, honoring `input_format_column_name_matching_mode`.
+    bool honorsColumnNameMatchingMode() const override { return true; }
+
+    /// The parser (a `JSONEachRowRowInputFormat` subclass) registers the `Nested` prefixes under
+    /// `input_format_import_nested_json`.
+    bool importsNestedJSONObjects() const override { return true; }
+
 private:
     NamesAndTypesList readRowAndGetNamesAndDataTypes(bool & eof) override;
     NamesAndTypesList getStaticNamesAndTypes() override;

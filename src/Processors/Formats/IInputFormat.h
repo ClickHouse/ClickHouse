@@ -10,6 +10,9 @@
 #include <base/types.h>
 #include <Processors/ISource.h>
 
+#include <functional>
+#include <optional>
+
 
 namespace DB
 {
@@ -139,10 +142,43 @@ public:
 
     virtual std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const { return std::nullopt; }
 
+    /// Set a callback that produces an additional explanation to attach to the message of a
+    /// parse-error exception thrown while reading. It is used for INSERT queries to compare the
+    /// structure of the data being inserted with the expected structure and report a mismatch.
+    /// The callback receives the number of the row the parser had reached when the error was thrown
+    /// (see getRowsReachedOnParseError), so the explanation can be derived from the data the parser
+    /// actually read rather than from rows it never reached.
+    /// The callback must return an empty string when there is nothing to report.
+    /// A wrapper that reads through another input format without calling its own `generate` forwards
+    /// the callback to the wrapped format, which is where the parse errors are thrown.
+    virtual void setParseErrorDiagnosticProvider(std::function<String(std::optional<size_t>)> provider)
+    {
+        parse_error_diagnostic_provider = std::move(provider);
+    }
+
+    /// For the parse-error diagnostic above: the 1-based number of the input row the parser had
+    /// reached when the error was thrown, counting the row whose parsing failed. Row-based formats
+    /// override this, and `ParallelParsingInputFormat` propagates the value from the child parser
+    /// whose unit failed (its segmenting thread reads ahead of the parsers, but the child parsers
+    /// count rows globally); `nullopt` means the format cannot tell, in which case the diagnostic
+    /// falls back to sampling the data without a row bound.
+    virtual std::optional<size_t> getRowsReachedOnParseError() const { return std::nullopt; }
+
+    /// The number of header rows (skipped first lines, column names, column types) read by `readPrefix`.
+    /// They are not counted as data rows by the parser, but the file segmentation engine of
+    /// `ParallelParsingInputFormat` counts them in the row offsets of the later units.
+    virtual size_t getNumberOfHeaderRows() const { return 0; }
+
+    /// How many of the rows passed to `setRowsReadBefore` were header rows rather than data rows
+    /// (see getNumberOfHeaderRows). The row numbers reported in parse errors exclude them, so they
+    /// match the numbers reported when the same data is parsed without `ParallelParsingInputFormat`.
+    virtual void setHeaderRowsReadBefore(size_t /*rows*/) {}
+
     /// TopN dynamic filtering with `FormatTopKFilterInfo::track_row_group_best_values`: for the buckets
     /// which returned rows, the best value of the sort column among these rows, in the query's order.
     /// A bucket whose best value is beyond the final threshold holds no row of the result.
     virtual std::vector<std::pair<size_t, Field>> getTopKBestValuesOfBuckets() const { return {}; }
+
     /// Whether the format has applied TopN dynamic filtering (`FormatFilterInfo::top_k_filter`) to the
     /// rows it read. A format can decline it per file, e.g. when the file does not store the sort column.
     virtual bool isTopKFilterApplied() const { return false; }
@@ -166,8 +202,18 @@ private:
     void resetOwnedBuffers();
 
     std::vector<std::unique_ptr<ReadBuffer>> owned_buffers;
+
+    /// See setParseErrorDiagnosticProvider.
+    std::function<String(std::optional<size_t>)> parse_error_diagnostic_provider;
 };
 
 using InputFormatPtr = std::shared_ptr<IInputFormat>;
+
+/// Whether an exception thrown while reading the data of an `INSERT` is worth explaining with the
+/// schema-mismatch diagnostic (see `IInputFormat::setParseErrorDiagnosticProvider`). Besides genuine
+/// parse errors (`isParseError`) it covers `CANNOT_PARSE_TEXT`, which is thrown when a format that
+/// decodes a typed source column (`Native`, `Arrow`, `Parquet`, `ORC`, ...) casts it into the
+/// destination type, e.g. a source `String` into `UInt8`.
+bool isInsertDataErrorWorthExplaining(int code);
 
 }

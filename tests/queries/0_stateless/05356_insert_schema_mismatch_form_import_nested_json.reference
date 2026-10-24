@@ -1,0 +1,4 @@
+-- Form: a mismatch is explained with input_format_import_nested_json disabled
+explanation present
+-- Form: a mismatch is explained with input_format_import_nested_json enabled
+explanation present

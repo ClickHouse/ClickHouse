@@ -1,0 +1,12 @@
+-- Native: Int64 source column into an IPv4 column
+explanation present
+-- Native: Float64 source column into an IPv4 column
+explanation present
+-- Native: UInt32 source column into an IPv4 column
+explanation missing
+-- Arrow: Int64 source column into an IPv4 column
+explanation present
+-- Arrow: Float64 source column into an IPv4 column
+explanation present
+-- Arrow: UInt32 source column into an IPv4 column
+explanation missing

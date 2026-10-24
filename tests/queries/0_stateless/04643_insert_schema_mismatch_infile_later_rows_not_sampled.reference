@@ -1,0 +1,14 @@
+-- input_format_parallel_parsing = 0
+-- the first row fails on a value; the conflicting second row is not sampled (no false positive)
+insert failed as expected
+explanation missing
+-- the failing row itself is sampled: text where a number is expected (explanation still fires)
+insert failed as expected
+explanation present
+-- input_format_parallel_parsing = 1
+-- the first row fails on a value; the conflicting second row is not sampled (no false positive)
+insert failed as expected
+explanation missing
+-- the failing row itself is sampled: text where a number is expected (explanation still fires)
+insert failed as expected
+explanation present

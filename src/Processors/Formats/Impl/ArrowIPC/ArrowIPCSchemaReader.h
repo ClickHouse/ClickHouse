@@ -22,6 +22,24 @@ public:
 
     std::optional<size_t> readNumberOrRows() override;
 
+    /// The parser reads only the requested columns and never touches the rest of the file,
+    /// regardless of `input_format_skip_unknown_fields`.
+    bool alwaysSkipsUnknownFields() const override { return true; }
+
+    /// The parser `castColumn`s a decoded numeric column to the requested destination type, and
+    /// `CAST` into the `UInt32`-backed `IPv4` is implemented only from an unsigned integer, so only
+    /// an unsigned integer source column is accepted into an `IPv4` column.
+    NumericValueIntoIPv4Column readsNumericValueIntoIPv4Column() const override { return NumericValueIntoIPv4Column::UnsignedIntegerOnly; }
+
+    bool castsStringSourceColumns() const override { return true; }
+
+    /// The data carries named columns that the parser maps onto the destination by name.
+    bool mapsColumnsByName() const override { return true; }
+
+    bool allowsMissingNamedColumns() const override { return format_settings.arrow.allow_missing_columns; }
+
+    bool usesCaseInsensitiveColumnMatching() const override { return format_settings.arrow.case_insensitive_column_matching; }
+
 private:
     const bool stream;
     const FormatSettings format_settings;

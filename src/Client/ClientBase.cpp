@@ -78,6 +78,7 @@
 #include <IO/Ask.h>
 #include <IO/CompressionMethod.h>
 #include <IO/ForkWriteBuffer.h>
+#include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/WriteBufferDecorator.h>
@@ -95,6 +96,7 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -2771,6 +2773,30 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         }
         catch (Exception & e)
         {
+            /// If parsing the file failed, explain a possible structure mismatch between the data and
+            /// the destination (for diagnostics only). The input format is created deep inside the
+            /// `StorageFile` pipeline, so unlike the inline/stdin paths there is no input format at hand
+            /// to attach a lazy provider to; classify the exception here instead and re-read a bounded
+            /// prefix of the file.
+            if (isInsertDataErrorWorthExplaining(e.code()))
+            {
+                /// Bound the inference by the row the parser had reached, so that a row it never read
+                /// cannot contaminate the diagnosis of an earlier failure. The row number is taken
+                /// from the message, which is the only place it is available here. It counts rows
+                /// from the beginning of the file even under parallel parsing, because
+                /// `ParallelParsingInputFormat` gives every unit's parser the number of rows read
+                /// before it (`setRowsReadBefore`) and how many of them were header rows that are not
+                /// counted (`setHeaderRowsReadBefore`), so the bound does not depend on how the read
+                /// happened to be parallelized. When the message carries no row number (e.g. the
+                /// error came from segmentation rather than from a row parser), sampling stays
+                /// unbounded.
+                std::optional<size_t> rows_reached_by_parser = getRowsReachedFromParseErrorMessage(e.message());
+
+                String description = getInsertDataSchemaMismatchDescriptionFromFile(
+                    in_file, compression_method, current_format, sample, client_context, rows_reached_by_parser);
+                if (!description.empty())
+                    e.addMessage(description);
+            }
             e.addMessage("data for INSERT was parsed from file");
             throw;
         }
@@ -2784,7 +2810,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         ReadBufferFromMemory data_in(parsed_insert_query->data, parsed_insert_query->end - parsed_insert_query->data);
         try
         {
-            sendDataFrom(data_in, sample, columns_description_for_query, parsed_query, have_data_in_stdin);
+            sendDataFrom(data_in, sample, columns_description_for_query, parsed_query, have_data_in_stdin, /*data_is_inline=*/ true);
             if (have_data_in_stdin && !cancelled)
                 sendDataFromStdin(sample, columns_description_for_query, parsed_query);
         }
@@ -2809,16 +2835,15 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
 }
 
 
-void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query, bool have_more_data)
+void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query, bool have_more_data, bool data_is_inline)
 {
     String current_format = "Values";
 
+    const auto * insert = parsed_query->as<ASTInsertQuery>();
+
     /// Data format can be specified in the INSERT query.
-    if (const auto * insert = parsed_query->as<ASTInsertQuery>())
-    {
-        if (!insert->format.empty())
-            current_format = insert->format;
-    }
+    if (insert && !insert->format.empty())
+        current_format = insert->format;
 
     const Settings & settings = client_context->getSettingsRef();
 
@@ -2847,15 +2872,89 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
         ? settings[Setting::min_insert_block_size_bytes]
         : insert_format_min_block_size_bytes_from_config.value_or(settings[Setting::min_insert_block_size_bytes]);
 
+    /// If the data being parsed by this call is not the inline data of the query text (e.g. it is read
+    /// from stdin, separately from a query given via --query), the parse-error diagnostic below cannot
+    /// re-read the failing bytes from ASTInsertQuery::data. This is decided by the caller and passed via
+    /// `data_is_inline`, because the same ASTInsertQuery is reused for the streamed stdin tail even when
+    /// it also carries an inline prefix, so ASTInsertQuery::data alone cannot tell the two sources apart.
+    /// When the data is not inline, capture a bounded prefix of it as it streams through instead.
+    /// The capture happens on every insert, including the ones that succeed, so it is capped the same
+    /// way as the streamed server-side path (see getInsertDataPrefixCaptureLimitForDiagnostic).
+    ///
+    /// A regular file redirected to stdin is the exception: the columnar readers (`Parquet`, `ORC`,
+    /// `Arrow`) rely on the random access and the known size of such a buffer, and a wrapper would make
+    /// them read the whole file into memory. There the data is left unwrapped, and the diagnostic re-reads
+    /// a bounded prefix of the file with `pread`, which does not move the offset of the descriptor.
+    const size_t capture_limit = getInsertDataPrefixCaptureLimitForDiagnostic(client_context);
+    auto * file_descriptor_buf = data_is_inline ? nullptr : typeid_cast<ReadBufferFromFileDescriptor *>(&buf);
+    /// The offset of the descriptor is taken from the kernel rather than from the buffer, which counts
+    /// from zero even if stdin was handed over at a nonzero offset; the bytes buffered but not yet
+    /// consumed are still part of the data.
+    off_t data_start_in_file = -1;
+    if (file_descriptor_buf && file_descriptor_buf->checkIfActuallySeekable())
+    {
+        off_t descriptor_offset = ::lseek(file_descriptor_buf->getFD(), 0, SEEK_CUR);
+        if (descriptor_offset >= 0)
+            data_start_in_file = descriptor_offset - static_cast<off_t>(file_descriptor_buf->available());
+    }
+    const bool data_is_regular_file = data_start_in_file >= 0;
+
+    std::optional<PrefixCapturingReadBuffer> capturing_buf;
+    if (!data_is_inline && !data_is_regular_file)
+        capturing_buf.emplace(buf, capture_limit);
+
+    /// Declared before `source`, so that it runs after the input format, together with the buffers it
+    /// stacks on top of the wrapper, is destroyed and has returned its position to the wrapper.
+    SCOPE_EXIT({
+        if (capturing_buf)
+            capturing_buf->returnPositionToWrappedBuffer();
+    });
+
     auto source = client_context->getInputFormat(
         current_format,
-        buf,
+        capturing_buf ? static_cast<ReadBuffer &>(*capturing_buf) : buf,
         sample,
         insert_format_max_block_size_rows,
         std::nullopt,
         insert_format_max_block_size_bytes,
         insert_format_min_block_size_rows,
         insert_format_min_block_size_bytes);
+
+    /// If parsing of the data fails, explain a possible structure mismatch between the data and the
+    /// destination (for diagnostics only).
+    if (data_is_inline)
+        setInsertSchemaMismatchDiagnostic(*source, parsed_query, current_format, sample, client_context);
+    else if (data_is_regular_file)
+        source->setParseErrorDiagnosticProvider(
+            [fd = file_descriptor_buf->getFD(), data_start_in_file, capture_limit, current_format, expected_header = sample,
+             context = client_context](std::optional<size_t> rows_reached_by_parser) -> String
+            {
+                ReadBufferFromFileDescriptorPRead file_in(fd);
+                file_in.seek(data_start_in_file, SEEK_SET);
+                /// One byte more than the limit tells whether the prefix is the whole data.
+                String prefix(capture_limit + 1, '\0');
+                prefix.resize(file_in.read(prefix.data(), prefix.size()));
+                const bool truncated = prefix.size() > capture_limit;
+                if (truncated)
+                    prefix.resize(capture_limit);
+                return getInsertDataSchemaMismatchDescription(
+                    prefix, current_format, expected_header, context, rows_reached_by_parser, truncated);
+            });
+    else
+        source->setParseErrorDiagnosticProvider(
+            [&capturing_buf, current_format, expected_header = sample, context = client_context](
+                std::optional<size_t> rows_reached_by_parser) -> String
+            {
+                const auto prefix = capturing_buf->getCapturedPrefix(current_format);
+                return getInsertDataSchemaMismatchDescription(
+                    prefix.data,
+                    current_format,
+                    expected_header,
+                    context,
+                    rows_reached_by_parser,
+                    prefix.truncated);
+            });
+
     Pipe pipe(source);
 
     if (columns_description.hasDefaults())

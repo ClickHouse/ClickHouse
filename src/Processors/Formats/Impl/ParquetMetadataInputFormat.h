@@ -97,6 +97,11 @@ public:
     explicit ParquetMetadataSchemaReader(ReadBuffer & in_);
 
     NamesAndTypesList readSchema() override;
+
+    /// The format produces a fixed set of named columns and the parser fills only the subset of them
+    /// requested by name, regardless of `input_format_skip_unknown_fields`.
+    bool mapsColumnsByName() const override { return true; }
+    bool alwaysSkipsUnknownFields() const override { return true; }
 };
 
 }

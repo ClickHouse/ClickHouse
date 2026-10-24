@@ -1,5 +1,6 @@
 #include <optional>
 #include <Processors/Formats/IInputFormat.h>
+#include <Formats/ParseError.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WithFileName.h>
 #include <Common/Exception.h>
@@ -9,6 +10,15 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int CANNOT_PARSE_TEXT;
+}
+
+bool isInsertDataErrorWorthExplaining(int code)
+{
+    return isParseError(code) || code == ErrorCodes::CANNOT_PARSE_TEXT;
+}
 
 ChunkInfoRowNumbers::ChunkInfoRowNumbers(size_t row_num_offset_, std::optional<IColumnFilter> applied_filter_)
     : row_num_offset(row_num_offset_), applied_filter(std::move(applied_filter_)) { }
@@ -38,6 +48,14 @@ Chunk IInputFormat::generate()
         auto file_name = getFileNameFromReadBuffer(getReadBuffer());
         if (!file_name.empty())
             e.addMessage(fmt::format("(in file/uri {})", file_name));
+
+        /// For a parse or conversion error, attach the schema-mismatch explanation if one is available.
+        if (parse_error_diagnostic_provider && isInsertDataErrorWorthExplaining(e.code()))
+        {
+            if (String diagnostic = parse_error_diagnostic_provider(getRowsReachedOnParseError()); !diagnostic.empty())
+                e.addMessage(diagnostic);
+        }
+
         throw;
     }
 }

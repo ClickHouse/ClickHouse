@@ -123,10 +123,11 @@ CustomSeparatedFormatReader::CustomSeparatedFormatReader(
 {
 }
 
-void CustomSeparatedFormatReader::skipPrefixBeforeHeader()
+size_t CustomSeparatedFormatReader::skipPrefixBeforeHeader()
 {
     skipSpaces();
     assertString(format_settings.custom.result_before_delimiter, *buf);
+    return 0;
 }
 
 void CustomSeparatedFormatReader::skipRowStartDelimiter()
