@@ -345,6 +345,51 @@ Converts a value to a specified data type.
 Unlike the reinterpret function, CAST tries to generate the same value in the target type.
 If that is not possible, an exception is raised.
 
+`CAST` removes the `LowCardinality` wrapper. In contrast, `to<Type>` functions retain it.
+`to<Type>` functions also retain the `Nullable` wrapper. `CAST` removes `Nullable` by default, but
+retains it when the [`cast_keep_nullable`](/reference/settings/session-settings/cast#cast_keep_nullable)
+setting is enabled.
+
+```sql title="Query"
+SELECT
+    toTypeName(toLowCardinality('') AS val) AS source_type,
+    toTypeName(toString(val)) AS to_type_result_type,
+    toTypeName(CAST(val, 'String')) AS cast_result_type
+```
+
+```text title="Response"
+┌─source_type────────────┬─to_type_result_type────┬─cast_result_type─┐
+│ LowCardinality(String) │ LowCardinality(String) │ String           │
+└────────────────────────┴────────────────────────┴──────────────────┘
+```
+
+```sql title="Query"
+SELECT
+    toTypeName(toNullable('') AS val) AS source_type,
+    toTypeName(toString(val)) AS to_type_result_type,
+    toTypeName(CAST(val, 'String')) AS cast_result_type
+```
+
+```text title="Response"
+┌─source_type──────┬─to_type_result_type─┬─cast_result_type─┐
+│ Nullable(String) │ Nullable(String)    │ String           │
+└──────────────────┴─────────────────────┴──────────────────┘
+```
+
+```sql title="Query"
+SELECT
+    toTypeName(toNullable('') AS val) AS source_type,
+    toTypeName(toString(val)) AS to_type_result_type,
+    toTypeName(CAST(val, 'String')) AS cast_result_type
+SETTINGS cast_keep_nullable = 1
+```
+
+```text title="Response"
+┌─source_type──────┬─to_type_result_type─┬─cast_result_type─┐
+│ Nullable(String) │ Nullable(String)    │ Nullable(String) │
+└──────────────────┴─────────────────────┴──────────────────┘
+```
+
 When `x` is written as a number and `T` is a `Decimal` or an integer wider than 64 bits, the digits
 of the number are read directly with `T`, so no precision is lost on the way. Without this,
 `CAST(0.1 AS Decimal256(76))` would read `0.1` as a `Float64` first and return
