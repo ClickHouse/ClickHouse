@@ -289,6 +289,7 @@ def check_system_tables(cluster, backup_query_id=None):
     expected_disks = (
         ("default", "Local", "None", "None"),
         ("disk_s3", "ObjectStorage", "S3", "Local"),
+        ("disk_s3_broken", "ObjectStorage", "S3", "Local"),
         ("disk_s3_cache", "ObjectStorage", "S3", "Local"),
         ("disk_s3_encrypted", "ObjectStorage", "S3", "Local"),
         ("disk_s3_other_bucket", "ObjectStorage", "S3", "Local"),
@@ -1713,9 +1714,12 @@ def restore_from_broken_disk_backup(backup_destination, retry_attempts):
 def test_restore_retries_the_upload_into_the_destination(cluster, broken_s3):
     # `disk_s3_broken` allows no retries, so the restore gets its data in only if the upload into the
     # destination is retried with the `backup_restore_s3_retry_attempts` of the restore instead.
+    #
+    # The backup is on the endpoint of the disk because `DataSourceDescription::sameKind` compares it: on another
+    # endpoint the restore would copy through buffers instead, which is the path this does not cover.
     node = cluster.instances["node"]
     backup_name = new_backup_name()
-    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', '{minio_secret_key}')"
+    backup_destination = f"S3('http://resolver:8084/root/data/backups/{backup_name}', 'minio', '{minio_secret_key}')"
     backup_table_on_broken_disk(node, backup_destination)
 
     node.query("DROP TABLE IF EXISTS data_restored SYNC;")
@@ -1731,7 +1735,7 @@ def test_restore_gives_up_the_upload_into_the_destination_without_retries(cluste
     # enough to fail it, so that test cannot pass on a client that merely retries a lot.
     node = cluster.instances["node"]
     backup_name = new_backup_name()
-    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', '{minio_secret_key}')"
+    backup_destination = f"S3('http://resolver:8084/root/data/backups/{backup_name}', 'minio', '{minio_secret_key}')"
     backup_table_on_broken_disk(node, backup_destination)
 
     node.query("DROP TABLE IF EXISTS data_restored SYNC;")
@@ -1740,4 +1744,4 @@ def test_restore_gives_up_the_upload_into_the_destination_without_retries(cluste
     error = node.query_and_get_error(
         restore_from_broken_disk_backup(backup_destination, retry_attempts=0)
     )
-    assert "SlowDown" in error, error
+    assert "Slow Down" in error, error
