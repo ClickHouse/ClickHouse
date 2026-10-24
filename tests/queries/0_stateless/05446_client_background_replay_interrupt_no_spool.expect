@@ -1,0 +1,111 @@
+#!/usr/bin/expect -f
+# Tags: no-fasttest
+
+# Ctrl+C during `\fg` stops the replay and keeps both the client and the job. A foreground query does not need the
+# spools of a detachable one: without a usable temporary directory it runs as an ordinary query.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max -d 100000
+expect_after {
+    -i $any_spawn_id eof     { exp_continue }
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+proc submit {text} {
+    send -- $text
+    expect -ex $text
+    send -- "\r"
+}
+
+proc wait_for_final_state {job_id} {
+    set waiting_re [format {(?i)\[%s\][^\r\n]*(starting|running)} $job_id]
+    set terminal_re [format {(?i)\[%s\][^\r\n]*(succeeded|completed|failed|cancel+ed)} $job_id]
+    for {set attempt 0} {$attempt < 300} {incr attempt} {
+        submit {\jobs}
+        expect {
+            -re $terminal_re {
+                set state $expect_out(1,string)
+                expect ":) "
+                return $state
+            }
+            -re $waiting_re {
+                expect ":) "
+                after 100
+            }
+        }
+    }
+    exit 1
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file"
+expect ":) "
+
+submit {\bg SELECT number FROM numbers(20000000) FORMAT TabSeparatedRaw}
+expect -ex {Background job 1 started}
+expect ":) "
+wait_for_final_state 1
+
+submit {\fg 1}
+expect -re {\r\n[0-9]+\r\n}
+send -- "\3"
+expect -ex {Replay of background job 1 interrupted; the job is kept}
+expect ":) "
+
+# The client is still there, and so is the job.
+submit {\jobs}
+expect -re {(?i)\[1\][^\r\n]*succeeded}
+expect ":) "
+submit {SELECT 'alive-05446' FORMAT TabSeparatedRaw}
+expect -ex {alive-05446}
+expect ":) "
+submit {\cancel 1}
+expect -ex {Discarded background job 1}
+expect ":) "
+
+# The same holds while replaying a large diagnostics spool after an empty result.
+submit {\bg SELECT logTrace(repeat('a', 1000000)), logTrace(repeat('b', 1000000)), logTrace(repeat('c', 1000000)), logTrace(repeat('d', 1000000)), logTrace(repeat('e', 1000000)) SETTINGS send_logs_level = 'trace' FORMAT Null}
+expect -ex {Background job 2 started}
+expect ":) "
+wait_for_final_state 2
+
+submit {\fg 2}
+expect -re {aaaaaaaaaa}
+send -- "\3"
+expect {
+    -ex {Replay of background job 2 interrupted; the job is kept} {}
+    -ex {Background job 2 succeeded} { exit 1 }
+}
+expect ":) "
+
+submit {\jobs}
+expect -re {(?i)\[2\][^\r\n]*succeeded}
+expect ":) "
+submit {SELECT 'alive-diagnostics-05446' FORMAT TabSeparatedRaw}
+expect -ex {alive-diagnostics-05446}
+expect ":) "
+submit {\cancel 2}
+expect -ex {Discarded background job 2}
+expect ":) "
+send -- "\4"
+expect eof
+
+spawn bash -c "source $basedir/../shell_config.sh ; TMPDIR=/nonexistent-05446 \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file"
+expect ":) "
+
+expect_before -ex {background-query spool} { exit 1 }
+submit {SELECT concat('plain-', '05446') FORMAT TabSeparatedRaw}
+expect -ex {plain-05446}
+expect ":) "
+send -- "\4"
+expect eof

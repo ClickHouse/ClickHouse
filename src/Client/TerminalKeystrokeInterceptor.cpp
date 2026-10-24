@@ -7,6 +7,7 @@
 
 #include <mutex>
 #include <ostream>
+#include <utility>
 #include <termios.h>
 #include <unistd.h>
 #include <base/defines.h>
@@ -69,7 +70,7 @@ void TerminalKeystrokeInterceptor::startIntercept()
     raw.c_lflag &= ~(ECHO | ICANON);
     raw.c_cc[VMIN] = 0;
     raw.c_cc[VTIME] = 1;
-    if (tcsetattr(fd, TCSAFLUSH, &raw))
+    if (tcsetattr(fd, TCSANOW, &raw))
         throw DB::ErrnoException(
             DB::ErrorCodes::SYSTEM_ERROR, "Cannot set terminal to the raw mode for the terminal referred to by file descriptor '{}'", fd);
 
@@ -93,7 +94,7 @@ void TerminalKeystrokeInterceptor::stopIntercept()
     /// Set to the original (canonical) terminal mode.
     if (orig_termios)
     {
-        if (tcsetattr(fd, TCSAFLUSH, orig_termios.get()))
+        if (tcsetattr(fd, TCSANOW, orig_termios.get()))
             throw DB::ErrnoException(
                 DB::ErrorCodes::SYSTEM_ERROR,
                 "Cannot set terminal to the original (canonical) mode for the terminal referred to by file descriptor '{}'",
@@ -122,10 +123,14 @@ void TerminalKeystrokeInterceptor::run(TerminalKeystrokeInterceptor::CallbackMap
     }
 }
 
-void TerminalKeystrokeInterceptor::runImpl(const DB::TerminalKeystrokeInterceptor::CallbackMap & map) const
+std::string TerminalKeystrokeInterceptor::takeUnhandledInput()
 {
-    char ch = 0;
+    std::unique_lock<std::mutex> lk(stop_requested_mutex);
+    return std::exchange(unhandled_input, {});
+}
 
+void TerminalKeystrokeInterceptor::runImpl(const DB::TerminalKeystrokeInterceptor::CallbackMap & map)
+{
     int available = 0;
     if (ioctl(fd, FIONREAD, &available) < 0)
         throw DB::ErrnoException(DB::ErrorCodes::SYSTEM_ERROR, "ioctl({}, FIONREAD)", fd);
@@ -133,14 +138,21 @@ void TerminalKeystrokeInterceptor::runImpl(const DB::TerminalKeystrokeIntercepto
     if (available <= 0)
         return;
 
-    if (read(fd, &ch, 1) > 0)  /// NOLINT(clang-analyzer-unix.BlockInCriticalSection)
+    /// Read everything available at once, so a multi-byte key is not split.
+    std::string bytes(static_cast<size_t>(available), '\0');
+    ssize_t res = read(fd, bytes.data(), bytes.size());  /// NOLINT(clang-analyzer-unix.BlockInCriticalSection)
+    for (ssize_t i = 0; i < res; ++i)
     {
-        auto it = map.find(ch);
+        /// A space typed after other text, or pasted along with it, is part of that text, not the hotkey.
+        bool is_text = bytes[i] == ' ' && (!unhandled_input.empty() || res > 1);
+        auto it = is_text ? map.end() : map.find(bytes[i]);
         if (it != map.end())
         {
             auto fn = it->second;
             fn();
         }
+        else
+            unhandled_input += bytes[i];
     }
 }
 

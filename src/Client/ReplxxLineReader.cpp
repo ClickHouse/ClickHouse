@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <stdexcept>
+#include <unordered_map>
 #include <unordered_set>
 #include <chrono>
 #include <cerrno>
@@ -28,6 +29,7 @@
 #include <fmt/format.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
+#include <Common/UTF8Helpers.h>
 #include "config.h" // USE_SKIM
 
 #if USE_SKIM
@@ -628,6 +630,10 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     /// bind C-j to ENTER action.
     rx.bind_key(Replxx::KEY::control('J'), commit_action);
     rx.bind_key(Replxx::KEY::ENTER, commit_action);
+    /// A newline inside of the input that `addTypedInput` replays: it must stay in the edit buffer. `commit_action`
+    /// tells a pasted newline from a typed one by the bytes that are still queued in the TTY, and replayed bytes
+    /// have already been read from it.
+    rx.bind_key(Replxx::KEY::meta('J'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::NEW_LINE, code); });
 
     /// By default COMPLETE_NEXT/COMPLETE_PREV was bound to C-p/C-n, re-bind
     /// to M-P/M-N (that was used for HISTORY_COMMON_PREFIX_SEARCH before, but
@@ -1031,6 +1037,63 @@ void ReplxxLineReader::setInitialText(const String & text)
         /// preload, in which case it just stays inert).
         suppress_hints_once = true;
         suppress_hints_for_text = text;
+    }
+}
+
+void ReplxxLineReader::addTypedInput(const String & bytes)
+{
+    using Key = replxx::Replxx::KEY;
+    for (size_t i = 0; i < bytes.size();)
+    {
+        const auto c = static_cast<UInt8>(bytes[i]);
+        if (c == 0x1B)
+        {
+            /// Keep plain arrows, Home and End (ESC [ x or ESC O x); drop other escape sequences.
+            size_t end = i + 1;
+            if (end < bytes.size() && (bytes[end] == '[' || bytes[end] == 'O'))
+            {
+                ++end;
+                while (end < bytes.size() && bytes[end] >= 0x30 && bytes[end] <= 0x3F)
+                    ++end;
+                if (end == i + 2 && end < bytes.size())
+                {
+                    static const std::unordered_map<char, char32_t> keys
+                        = {{'A', Key::UP}, {'B', Key::DOWN}, {'C', Key::RIGHT}, {'D', Key::LEFT}, {'H', Key::HOME}, {'F', Key::END}};
+                    if (auto it = keys.find(bytes[end]); it != keys.end())
+                        rx.emulate_key_press(it->second);
+                }
+            }
+            i = std::min(end + 1, bytes.size());
+        }
+        else if (c == 0x7F)
+        {
+            rx.emulate_key_press(Key::BACKSPACE);
+            ++i;
+        }
+        else if ((c == '\n' || c == '\r')
+                 && std::any_of(bytes.begin() + i + 1, bytes.end(), [](char next) { return next != '\n' && next != '\r'; }))
+        {
+            /// More input follows the newline, so it is a line of a pasted (or typed ahead) multi-line statement, not
+            /// the end of the input: keep it in the edit buffer, and commit at the last newline.
+            rx.emulate_key_press(Key::meta('J'));
+            /// A CRLF is one newline.
+            if (c == '\r' && bytes[i + 1] == '\n')
+                ++i;
+            ++i;
+        }
+        else if (c < 0x20)
+        {
+            /// The same mapping as replxx applies to control characters read from the terminal.
+            rx.emulate_key_press(Key::control(c < 27 ? c + 0x40 : c + 0x18));
+            ++i;
+        }
+        else
+        {
+            const size_t length = std::min(UTF8::seqLength(c), bytes.size() - i);
+            if (auto code_point = UTF8::convertUTF8ToCodePoint(bytes.data() + i, length))
+                rx.emulate_key_press(*code_point);
+            i += length;
+        }
     }
 }
 

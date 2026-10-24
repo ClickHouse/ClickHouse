@@ -89,6 +89,9 @@ public:
     /// Set text to be prepopulated in the next readLine call
     virtual void setInitialText(const String &) {}
 
+    /// Replay raw terminal bytes typed while a query ran as key presses of the next readLine call.
+    virtual void addTypedInput(const String &) {}
+
     bool hasInputData() const;
 
 protected:

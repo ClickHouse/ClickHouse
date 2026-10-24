@@ -2,6 +2,7 @@
 
 #if USE_JWT_CPP && USE_SSL
 #include <Client/JWTProvider.h>
+#include <Client/NonInteractiveAuthentication.h>
 #include <Client/OAuthDeviceFlow.h>
 #include <Common/Exception.h>
 
@@ -98,6 +99,12 @@ JWTProvider::JWTProvider(
 }
 
 std::string JWTProvider::getJWT()
+{
+    std::lock_guard lock(token_mutex);
+    return fetchJWT();
+}
+
+std::string JWTProvider::fetchJWT()
 {
     Poco::Timestamp now;
     Poco::Timestamp expiration_buffer = 15 * Poco::Timespan::SECONDS;
@@ -220,6 +227,14 @@ void JWTProvider::ensureOAuthEndpointsResolved()
 
 void JWTProvider::deviceCodeLogin()
 {
+    /// The login prints instructions to the terminal and polls until the user authorizes, ignoring cancellation,
+    /// while the token mutex is held. Only the main thread may start it.
+    if (NonInteractiveAuthenticationScope::isActive())
+        throw Exception(
+            ErrorCodes::AUTHENTICATION_FAILED,
+            "The access token has expired and cannot be renewed without logging in again, which a background job "
+            "cannot do. Run a query at the prompt to log in again, then retry");
+
     if (oauth_client_id.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error: --oauth-client-id is required for --login.");
 
@@ -536,7 +551,7 @@ void JWTProvider::tryPrintQRCode(const std::string & url, std::ostream & out)
     out << "\nQR code for the shortcut URL (scan with another device):\n";
     char buffer[4096];
     ssize_t n = 0;
-    while ((n = read(pipefd[0], buffer, sizeof(buffer))) > 0)
+    while ((n = read(pipefd[0], buffer, sizeof(buffer))) > 0) /// NOLINT(clang-analyzer-unix.BlockInCriticalSection)
         out.write(buffer, static_cast<std::streamsize>(n));
     closeFD(pipefd[0]);
 

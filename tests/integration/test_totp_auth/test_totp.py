@@ -23,6 +23,7 @@ USERS_CONFIG = os.path.join(SCRIPT_DIR, "config/users.xml")
 # with at most two logins per user: first with the code for the current time step, then with
 # the code for the next time step, which is within the server time tolerance.
 INTERACTIVE_USERS = [f"totuser_interactive_{i}" for i in range(3)]
+BACKGROUND_USERS = [f"totuser_background_{i}" for i in range(3)]
 NO_PASSWORD_USERS = [f"totuser_no_password_{i}" for i in range(2)]
 EMPTY_PASSWORD_USERS = [f"totuser_empty_password_{i}" for i in range(2)]
 MYSQL_USERS = {
@@ -242,6 +243,83 @@ def test_interactive_totp_authentication(started_cluster):
         command=f"{client_command(user0)} --password wrongpwd+{get_otp(user0)}"
     ) as c:
         c.expect(expected_error)
+
+
+def wait_for_job(c, job_id):
+    """Wait until the background job is over. `\\fg` of a job that still runs returns at once and leaves its
+    output spooled, so a job is replayed only after `\\jobs` reports a final state."""
+    for _ in range(200):
+        c.send("\\jobs")
+        c.expect(rf"(?i)\[{job_id}\][^\r\n]*(starting|running|succeeded|completed|failed|cancel+ed)")
+        state = c.match.group(1).lower()
+        c.expect(prompt)
+        if state not in ("starting", "running"):
+            return
+        time.sleep(0.1)
+    raise AssertionError(f"Background job {job_id} did not finish")
+
+
+def test_background_job_asks_for_fresh_totp(started_cluster):
+    """A background job opens a session of its own, and the server accepts a code once, so the client has
+    to ask for a new one instead of reusing the one of the login."""
+    user0, _, user2 = BACKGROUND_USERS
+
+    with client(
+        command=f"{client_command(user0)} --password aa+bb --one-time-password {get_otp(user0)}"
+    ) as c:
+        c.expect(prompt)
+        c.send("\\bg SELECT currentUser() || '42' FORMAT TSVRaw")
+        c.expect("TOTP.*:")
+        c.send(get_otp(user0, offset_steps=1), eol="\r")
+        c.expect("Background job 1 started")
+        c.expect(prompt)
+        wait_for_job(c, 1)
+        c.send("\\fg 1")
+        c.expect(f"{user0}42")
+        c.expect(prompt)
+
+    # Nothing is entered: the job is not started, and the session stays usable.
+    with client(
+        command=f"{client_command(user2)} --password aa+bb --one-time-password {get_otp(user2)}"
+    ) as c:
+        c.expect(prompt)
+        c.send("\\bg SELECT 1")
+        c.expect("TOTP.*:")
+        c.send("", eol="\r")
+        c.expect("none was entered")
+        c.expect(prompt)
+        c.send("\\jobs")
+        c.expect("No background jobs")
+        c.expect(prompt)
+        c.send("SELECT currentUser() || '42' FORMAT TSVRaw;")
+        c.expect(f"{user2}42")
+        c.expect(prompt)
+
+
+def test_reconnect_after_detach_asks_for_fresh_totp(started_cluster):
+    """After Ctrl+B the main client continues in a new session, which cannot reuse the code of the login."""
+    user = BACKGROUND_USERS[1]
+
+    with client(
+        command=f"{client_command(user)} --password aa+bb --one-time-password {get_otp(user)}"
+    ) as c:
+        c.expect(prompt)
+        c.send(
+            "SELECT concat('detached-row-', toString(number), '-totp') FROM numbers(20) WHERE sleepEachRow(0.5) = 0 "
+            "SETTINGS max_threads = 1, max_block_size = 1, function_sleep_max_microseconds_per_block = 60000000 "
+            "FORMAT TabSeparatedRaw"
+        )
+        c.expect("detached-row-0-totp")
+        c.send("\x02", eol="")
+        c.expect("detached")
+        c.expect(prompt)
+
+        c.send("SELECT currentUser() || '42' FORMAT TSVRaw;")
+        c.expect("TOTP.*:")
+        c.send(get_otp(user, offset_steps=1), eol="\r")
+        c.expect(f"{user}42")
+        c.expect(prompt)
+
 
 
 def mysql_connect(user, password):

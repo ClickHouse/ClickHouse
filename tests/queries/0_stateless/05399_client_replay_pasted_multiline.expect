@@ -1,0 +1,67 @@
+#!/usr/bin/expect -f
+
+# A multi-line statement pasted while a query runs is replayed at the next prompt as one statement.
+# The keys typed during a query are read from the terminal by the client, so the check of the line reader that tells
+# a pasted newline from a typed one (more bytes queued in the TTY) cannot see them: the first line must not be run
+# on its own, with the rest of the statement left to fail as another statement.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+
+log_user 0
+set timeout 60
+match_max -d 100000
+expect_after {
+    -i $any_spawn_id eof     { exp_continue }
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+proc submit {text} {
+    send -- $text
+    expect -ex $text
+    send -- "\r"
+}
+
+# Waits for the line break of the Enter, so the paste is typed into a running query: an Enter that
+# arrives in the same read as the paste is a newline of the paste.
+proc run_slow_query {} {
+    submit {SELECT sleep(2) FORMAT Null}
+    expect -ex "\r\n"
+    sleep 0.5
+}
+
+set history_file $CLICKHOUSE_TMP/$basename.history
+spawn bash -c {
+    source "$1/../shell_config.sh"
+    ${CLICKHOUSE_CLIENT_BINARY} ${CLICKHOUSE_CLIENT_EXPECT_OPT} --history_file="$2"
+} bash $basedir $history_file
+expect ":) "
+
+# The paste arrives while this query runs. The second line is what makes the statement a different one: alone it
+# is a syntax error, and without it the statement counts all 7 rows.
+run_slow_query
+send -- "SELECT concat('rows-', toString(count())) FROM numbers(7)\rWHERE number = 3 FORMAT TabSeparatedRaw;\r"
+
+expect_before -re {(?i)syntax error} { exit 1 }
+expect -ex "rows-1\r\n"
+expect ":) "
+
+# Nothing was left over: the prompt takes the next statement.
+submit {SELECT 'next-05399' FORMAT TabSeparatedRaw}
+expect -ex {next-05399}
+expect ":) "
+
+# The same with CRLF line ends, which some terminals send for a paste.
+run_slow_query
+send -- "SELECT concat('rows-', toString(count())) FROM numbers(9)\r\nWHERE number < 4 FORMAT TabSeparatedRaw;\r"
+expect -ex "rows-4\r\n"
+expect ":) "
+
+send -- "\4"
+expect eof
