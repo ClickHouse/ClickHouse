@@ -3749,6 +3749,12 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
             auto internal_context = Context::createCopy(context);
             internal_context->makeQueryContext();
             internal_context->setCurrentQueryId({});
+            /// The copy inherits the callback with which a `run_query_in_background` query reports that its
+            /// main work has started, and the internal `DETACH` would fire it (`InterpreterDropQuery` does).
+            /// The submitter would then get its reply before the statement's own interpreter runs, and an
+            /// error that the statement raises before its main work (e.g. `ALTER_OF_COLUMN_IS_FORBIDDEN`)
+            /// would be only logged instead of returned. The pair is not the statement's work, so drop it.
+            internal_context->setQueryExecutionStartedCallback({});
             /// Run the pair with the server's default settings rather than the outer query's. Copying the
             /// context copies the settings too, and a setting that only describes how the outer statement
             /// reads its data can still make the `ATTACH` back fail while the `DETACH` succeeds — which
