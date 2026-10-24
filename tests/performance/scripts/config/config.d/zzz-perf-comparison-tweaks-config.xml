@@ -58,6 +58,11 @@
     -->
     <skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>
     <columns_cache_size>0</columns_cache_size>
+    <!--
+        The tables of the tests live in `Atomic` databases, which keep the data of a dropped table
+        for this long; the tests create and drop large tables, so free their disk space at once.
+    -->
+    <database_atomic_delay_before_drop_table_sec>0</database_atomic_delay_before_drop_table_sec>
     <asynchronous_metrics_update_period_s>10</asynchronous_metrics_update_period_s>
     <remap_executable replace="replace">true</remap_executable>
 </clickhouse>

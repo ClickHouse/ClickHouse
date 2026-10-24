@@ -6,12 +6,14 @@
 #include <Common/Base64.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
+#include <Common/quoteString.h>
 
 namespace DB
 {
 namespace ErrorCodes
 {
 extern const int BUZZHOUSE;
+extern const int BUZZHOUSE_ORACLE;
 extern const int NETWORK_ERROR;
 }
 }
@@ -382,7 +384,10 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
            {"arrowflight", allow_arrowflight},
            {"alias", allow_alias},
            {"kafka", allow_kafka},
-           {"backup", allow_backup}};
+           {"backup", allow_backup},
+           {"clusterdatabase", allow_cluster_database},
+           {"remotedatabase", allow_remote_database},
+           {"overlay", allow_overlay_database}};
 
     const SettingEntries configEntries = {
         {"client_file_path", [&](const JSONObjectType & value) { client_file_path = std::filesystem::path(String(value.getString())); }},
@@ -1197,6 +1202,30 @@ String FuzzConfig::tableGetRandomPartitionOrPart(
     return res;
 }
 
+/// The value of `key` in a random row of the table, as a literal for `PARTITION <expr>`
+String FuzzConfig::tableGetRandomKeyValue(const String & database, const String & table, const String & key)
+{
+    String res;
+
+    /// The Values format writes the row as a parenthesized tuple of SQL literals
+    if (processServerQuery(
+            true,
+            fmt::format(
+                "SELECT {} FROM {}.{} ORDER BY rand() LIMIT 1 INTO OUTFILE '{}' TRUNCATE FORMAT Values;",
+                key,
+                DB::backQuote(database),
+                DB::backQuote(table),
+                fuzzer_out_file.generic_string())))
+    {
+        std::ifstream infile(fuzzer_out_file, std::ios::in);
+
+        std::getline(infile, res);
+        if (!res.empty() && res.back() == '\r')
+            res.pop_back();
+    }
+    return res;
+}
+
 String FuzzConfig::tableGetRandomPartitionValue(const uint64_t rand_val, const String & database, const String & table)
 {
     String res;
@@ -1427,7 +1456,7 @@ void FuzzConfig::validateClickHouseHealth()
                     }
                 }
                 throw DB::Exception(
-                    DB::ErrorCodes::BUZZHOUSE,
+                    DB::ErrorCodes::BUZZHOUSE_ORACLE,
                     "ClickHouse health check on {}:{}: found {} {}{}",
                     host,
                     port,
@@ -1465,7 +1494,7 @@ void FuzzConfig::comparePerformanceResults(const String & oracle_name, Performan
                            static_cast<double>(peer.metrics.at(key)) * (1 + (static_cast<double>(val.threshold) / 100.0))))
                 {
                     throw DB::Exception(
-                        DB::ErrorCodes::BUZZHOUSE,
+                        DB::ErrorCodes::BUZZHOUSE_ORACLE,
                         "{}: ClickHouse peer server {}: {} was less than the target server: {}",
                         oracle_name,
                         key,
