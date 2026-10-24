@@ -294,6 +294,12 @@ struct QueryPlanOptimizationSettings
 
     size_t max_parallel_replicas = 1;
     size_t automatic_parallel_replicas_mode;
+    /// The settings of the codec a replica sends its output to the initiator with. The runtime dataflow
+    /// statistics price a parallel-replicas plan by the bytes that reach the initiator, so their compression
+    /// samples have to be measured with it. Resolved into the codec only once the statistics are about to be
+    /// used, so that a query that never considers parallel replicas does not start failing for a bad value.
+    String network_compression_method;
+    Int64 network_zstd_compression_level = 1;
     size_t min_bytes_per_task_for_reading;
     size_t automatic_parallel_replicas_min_bytes_per_replica;
     float automatic_parallel_replicas_max_duplicated_read_ratio;

@@ -1,0 +1,3 @@
+query	stats_collected	pr_used
+04653_autopr_state_size_estimate_small_buckets_query_0	1	0
+04653_autopr_state_size_estimate_small_buckets_query_1	0	1

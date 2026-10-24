@@ -15,4 +15,8 @@ struct Settings;
 /// default codec is used.
 CompressionCodecPtr chooseNetworkCompressionCodec(const Settings * settings);
 
+/// The same, from the values of `network_compression_method` and `network_zstd_compression_level`, for
+/// callers that resolve the codec after the settings object is gone.
+CompressionCodecPtr chooseNetworkCompressionCodec(const String & network_compression_method, Int64 network_zstd_compression_level);
+
 }

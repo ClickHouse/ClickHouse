@@ -137,4 +137,20 @@ protected:
 using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
 using Codecs = VectorWithMemoryTracking<CompressionCodecPtr>;
 
+/// How far back `codec` can reference already-seen data, in bytes. `LZ4` cannot reference data farther
+/// than 64 KiB back; other codecs are reported as reaching a whole compressed block, which is exact for the
+/// only other codecs the interserver protocol can pick (`NONE` and `ZSTD`, see
+/// `chooseNetworkCompressionCodec`) and an upper estimate elsewhere.
+size_t compressionMatchDistance(const ICompressionCodec & codec);
+
+/// How many consecutive identical copies of a `copy_bytes` payload `codec` compresses against each other,
+/// i.e. how many of them share one compressed block (`DBMS_DEFAULT_BUFFER_SIZE`) with each copy matched
+/// against the previous one. The match distance is a sliding limit, not a block boundary: a copy that fits
+/// it references its immediate predecessor all along the block, so the copies within a block compress
+/// together even when the block is much larger than the distance. A copy that alone exceeds the distance
+/// cannot reference the previous copy at all, and the copies are compressed independently (one per "block").
+/// Estimators that measure a truncated sample and extrapolate it to the full payload need this: measuring
+/// more copies than the full payload packs together would invent cross-copy compression.
+size_t compressionCopiesPerBlock(const ICompressionCodec & codec, size_t copy_bytes);
+
 }
