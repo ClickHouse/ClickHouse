@@ -13,4 +13,10 @@ CREATE TABLE default.add_nested_sno0\n(\n    `key` UInt64,\n    `n.a` Array(UInt
 CREATE TABLE default.add_nested_mut\n(\n    `key` UInt64,\n    `n.a` UInt32,\n    `n2` String\n)\nENGINE = MergeTree\nORDER BY key\nSETTINGS share_nested_offsets = 0, index_granularity = 8192
 CREATE TABLE default.add_nested_exact_sno0\n(\n    `key` UInt64,\n    `n` String\n)\nENGINE = MergeTree\nORDER BY key\nSETTINGS share_nested_offsets = 0, index_granularity = 8192
 CREATE TABLE default.add_nested_rename_child\n(\n    `n.a` Array(UInt32),\n    `m` Array(String)\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS share_nested_offsets = 0, index_granularity = 8192
-CREATE TABLE default.add_nested_cond_rename\n(\n    `n.a` Array(UInt32),\n    `n.b` Array(String)\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS share_nested_offsets = 0, index_granularity = 8192
+CREATE TABLE default.add_nested_cond_rename\n(\n    `n.a` Array(UInt32),\n    `m` Array(String)\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS share_nested_offsets = 0, index_granularity = 8192
+CREATE TABLE default.add_nested_absent_rename\n(\n    `n.a` Array(UInt32)\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS share_nested_offsets = 0, index_granularity = 8192
+CREATE TABLE default.replace_column_if_exists\n(\n    `key` UInt64,\n    `value1` String\n)\nENGINE = MergeTree\nORDER BY key\nSETTINGS index_granularity = 8192
+CREATE TABLE default.replace_only_column\n(\n    `value1` String\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS index_granularity = 8192
+CREATE TABLE default.replace_only_column\n(\n    `value1` String,\n    `value2` UInt64\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS index_granularity = 8192
+CREATE TABLE default.add_then_rename_if_exists\n(\n    `key` UInt64,\n    `c` UInt64\n)\nENGINE = MergeTree\nORDER BY key\nSETTINGS index_granularity = 8192
+CREATE TABLE default.add_then_modify_if_exists\n(\n    `key` UInt64,\n    `b` String\n)\nENGINE = MergeTree\nORDER BY key\nSETTINGS index_granularity = 8192
