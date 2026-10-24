@@ -256,6 +256,7 @@ private:
     std::optional<String> connection_name;
 
     bool round_robin;
+    bool comparison_mode = false;
     unsigned concurrency;
     unsigned max_concurrency;
     unsigned threads;
@@ -462,6 +463,10 @@ private:
             std::lock_guard lock(queries_per_connection_mutex);
             queries_per_connection.resize(connections.size(), 0);
         }
+
+        /// Student's T-test compares exactly two distributions, so enable the comparison
+        /// report only for two non-round-robin endpoints.
+        comparison_mode = !round_robin && connections.size() == 2;
     }
 
     void readQueries()
@@ -801,7 +806,8 @@ private:
 
         std::lock_guard lock(mutex);
         total_stats[info_index]->add(duration, progress.read_rows, progress.read_bytes, info.rows, info.bytes);
-        t_test.add(info_index, duration);
+        if (comparison_mode)
+            t_test.add(info_index, duration);
     }
 
     void report(const MultiStats & infos, double seconds, size_t used_threads = 0)
@@ -830,7 +836,11 @@ private:
 
             /// Avoid zeros, nans or exceptions
             if (0 == info->finished_queries)
-                return;
+            {
+                if (comparison_mode)
+                    return;
+                continue;
+            }
 
             std::string connection_description = connections[i]->getDescription();
             if (round_robin)
@@ -865,6 +875,8 @@ private:
             log << percent << "%\t\t";
             for (const auto & info : infos)
             {
+                if (0 == info->finished_queries)
+                    continue;
                 log << fmt::format("{:.3f}", info->sampler.quantileNearest(percent / 100.0)) << " sec.\t";
             }
             log << "\n";
@@ -878,7 +890,8 @@ private:
         print_percentile(99.9);
         print_percentile(99.99);
 
-        log << "\n" << t_test.compareAndReport(confidence).second << "\n";
+        if (comparison_mode)
+            log << "\n" << t_test.compareAndReport(confidence).second << "\n";
 
         log.next();
     }
