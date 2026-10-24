@@ -330,7 +330,14 @@ struct IMergeTreeIndex
 
     /// Superset: every substream any version of this index could have written, whatever a given
     /// part holds. Takes no part and must do no I/O, so it is safe during part destruction.
-    virtual MergeTreeIndexSubstreams getPotentialSubstreams() const { return withPartialIndexMarker(getSubstreams()); }
+    virtual MergeTreeIndexSubstreams getPotentialSubstreams() const
+    {
+        auto substreams = withPartialIndexMarker(getSubstreams());
+        /// A partial index also lists the ordinary layout: a part attached under the other definition can hold it.
+        if (index.where_expression)
+            substreams.push_back({MergeTreeIndexSubstream::Type::Regular, "", ".idx"});
+        return substreams;
+    }
 
     /// A partial index (with `WHERE`) stores, next to its granules, a marker file with the signature of the
     /// predicate that decided which rows were indexed: the identity of the condition, plus whatever the

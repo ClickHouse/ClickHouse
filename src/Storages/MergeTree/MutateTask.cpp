@@ -3107,7 +3107,7 @@ static bool keepsUnreadablePartialIndexes(const MutationCommands & commands)
     return std::ranges::all_of(commands, [](const MutationCommand & command) { return command.type == MutationCommand::RENAME_COLUMN; });
 }
 
-/// The part has files of the partial index `index`, but their marker is for another definition.
+/// The part has files under the name of the partial index `index` that it cannot read: another marker, or the ordinary layout.
 static bool hasUnreadablePartialIndex(const MergeTreeDataPartPtr & part, const IndexDescription & index, const StorageMetadataPtr & metadata)
 {
     if (!index.where_expression)
@@ -3115,7 +3115,8 @@ static bool hasUnreadablePartialIndex(const MergeTreeDataPartPtr & part, const I
 
     const String file_name = getIndexFileName(index.name, metadata->escape_index_filenames);
     const bool has_files = part->getStreamNameOrHashResolved(file_name, ".idxp")
-        || IMergeTreeDataPart::getStreamNameOrHash(file_name, IMergeTreeIndex::PARTIAL_INDEX_MARKER_EXTENSION, part->checksums);
+        || IMergeTreeDataPart::getStreamNameOrHash(file_name, IMergeTreeIndex::PARTIAL_INDEX_MARKER_EXTENSION, part->checksums)
+        || part->getStreamNameOrHashResolved(file_name, ".idx") || part->getStreamNameOrHashResolved(file_name, ".idx2");
     return has_files && !part->hasSecondaryIndex(index.name, metadata);
 }
 
