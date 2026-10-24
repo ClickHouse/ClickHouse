@@ -9,8 +9,6 @@
 -- hold whatever the default factors are, and every estimate is required to be non-null so that a
 -- failed extraction cannot satisfy the comparisons vacuously.
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS t_atom_order;
 DROP TABLE IF EXISTS t_atom_order_dim;
 DROP TABLE IF EXISTS t_atom_order_estimates;

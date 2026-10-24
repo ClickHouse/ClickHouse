@@ -10,10 +10,8 @@
 #include <Common/WKB.h>
 #include <IO/ReadBuffer.h>
 #include <IO/SeekableReadBuffer.h>
-#include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WithFileSize.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Block.h>
@@ -50,7 +48,6 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int THERE_IS_NO_COLUMN;
-    extern const int DUPLICATE_COLUMN;
 }
 
 namespace
@@ -193,8 +190,26 @@ DataTypePtr alignStructFieldNamesCaseInsensitive(const DataTypePtr & from, const
     if (const auto * to_tuple = typeid_cast<const DataTypeTuple *>(to.get()))
     {
         const auto * from_tuple = typeid_cast<const DataTypeTuple *>(from.get());
-        if (!from_tuple || !from_tuple->hasExplicitNames() || !to_tuple->hasExplicitNames())
+        if (!from_tuple)
             return from;
+
+        /// Without names on both sides, `prepareArrowColumnForCast` matches elements by position (e.g. a struct with
+        /// empty or repeated field names, read as an unnamed tuple), so descend the same way: named structs nested
+        /// inside still need their names aligned. The source keeps its own names, or the lack of them.
+        if (!from_tuple->hasExplicitNames() || !to_tuple->hasExplicitNames())
+        {
+            const auto & from_elems = from_tuple->getElements();
+            const auto & to_elems = to_tuple->getElements();
+            if (from_elems.size() != to_elems.size())
+                return from;
+            DataTypes new_elems;
+            new_elems.reserve(from_elems.size());
+            for (size_t i = 0; i < from_elems.size(); ++i)
+                new_elems.push_back(alignStructFieldNamesCaseInsensitive(from_elems[i], to_elems[i]));
+            return from_tuple->hasExplicitNames()
+                ? std::make_shared<DataTypeTuple>(new_elems, from_tuple->getElementNames())
+                : std::make_shared<DataTypeTuple>(new_elems);
+        }
 
         const auto & from_elems = from_tuple->getElements();
         const auto & from_names = from_tuple->getElementNames();
@@ -420,14 +435,7 @@ void ArrowIPCBlockInputFormat::prepareReader()
             geo_it != arrow_schema->custom_metadata.end() ? &geo_it->second : nullptr);
     }
 
-    /// Reject duplicate column names, matching the Apache Arrow library based reader.
-    UnorderedSetWithMemoryTracking<String> seen_names;
-    for (const auto & field : arrow_schema->fields)
-    {
-        if (!seen_names.insert(field.name).second)
-            throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Duplicate column '{}' in the Arrow schema", field.name);
-    }
-
+    /// Repeated column names were made unique by `parseSchema`.
     collectDictionaryFields(arrow_schema->fields);
     decoder = std::make_unique<ArrowIPC::RecordBatchDecoder>(*arrow_schema, format_settings, dictionaries);
 
@@ -486,17 +494,18 @@ void ArrowIPCBlockInputFormat::prepareFileReader()
         in->readStrict(magic, sizeof(magic));
         if (std::string_view(magic, sizeof(magic)) != ARROW_FILE_MAGIC)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Not an Arrow file: the leading {} magic is missing", ARROW_FILE_MAGIC);
-        file_data.assign(magic, sizeof(magic));
-        WriteBufferFromString out(file_data, AppendModeTag{});
-        copyData(*in, out, is_stopped);
-        out.finalize();
-        /// `copyData` returns early when the read was cancelled, leaving `file_data` partial. Do not parse
+        auto data = std::make_unique<ArrowIPC::InMemoryFile>();
+        data->write(magic, sizeof(magic));
+        copyData(*in, *data, is_stopped);
+        data->finalize();
+        /// `copyData` returns early when the read was cancelled, leaving `data` partial. Do not parse
         /// that truncated buffer as an Arrow file — bail out and let `prepareReader`/`read` finish cleanly
         /// (matching the library path, which returned without parsing after a cancelled `asArrowFile`).
         if (is_stopped)
             return;
-        file_size = file_data.size();
-        memory_buffer = std::make_unique<ReadBufferFromMemory>(file_data.data(), file_data.size());
+        file_size = data->count();
+        memory_buffer = data->getSeekableReadBuffer();
+        file_data = std::move(data);
         seekable = memory_buffer.get();
     }
     message_reader.emplace(*seekable);
@@ -753,8 +762,11 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
         {
             /// Resolve the element's target exactly as the decoder did when it decoded this element: by
             /// name for a named target Tuple (so reordered or subset targets pair correctly), by position
-            /// for an unnamed one. An element the request does not mention stays as decoded.
-            const DataTypePtr elem_target = ArrowIPC::tupleElementHint(to_type, from_names[i], i, case_insensitive);
+            /// for an unnamed one, and also by position for a struct with empty or repeated field names,
+            /// which is decoded as an unnamed Tuple. An element the request does not mention stays as decoded.
+            const DataTypePtr elem_target = from_tup->hasExplicitNames()
+                ? ArrowIPC::tupleElementHint(to_type, from_names[i], i, case_insensitive)
+                : ArrowIPC::tupleElementHintByPosition(to_type, i);
             if (elem_target)
             {
                 auto [c, t] = reinterpretRawBytes(
@@ -1267,7 +1279,7 @@ void ArrowIPCBlockInputFormat::resetParser()
     record_batch_current = 0;
     seekable = nullptr;
     memory_buffer.reset();
-    file_data.clear();
+    file_data.reset();
     block_missing_values.clear();
     approx_bytes_read_for_chunk = 0;
 }
@@ -1343,6 +1355,7 @@ The table below shows the supported data types and how they correspond to ClickH
 | `FIXED_SIZE_BINARY`, `BINARY`           | [Int128/UInt128/Int256/UInt256](/reference/data-types/int-uint)                             | `FIXED_SIZE_BINARY`        |
 | `DURATION`                              | [Interval](/reference/data-types/special-data-types/interval) (Nanosecond/Microsecond/Millisecond/Second) | `DURATION`    |
 | `INT64`                                 | [Interval](/reference/data-types/special-data-types/interval) (Minute/Hour/Day/Week/Month/Quarter/Year) | `INT64`         |
+| `INTERVAL`                              | [Interval](/reference/data-types/special-data-types/interval) (Month), or a [Tuple](/reference/data-types/tuple) of intervals for `DAY_TIME` and `MONTH_DAY_NANO` | `INT64`, `STRUCT` |
 
 Arrays can be nested and can have a value of the `Nullable` type as an argument. `Tuple` and `Map` types can also be nested.
 

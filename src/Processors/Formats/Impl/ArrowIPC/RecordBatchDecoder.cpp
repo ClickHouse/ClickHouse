@@ -90,6 +90,24 @@ DataTypePtr matchColumnNullability(const DataTypePtr & type, const ColumnPtr & c
     return is_nullable ? std::make_shared<DataTypeNullable>(nested_type) : nested_type;
 }
 
+void declareNullable(ArrowField & copy, const ArrowField & original, const UnorderedSetWithMemoryTracking<const ArrowField *> & fields)
+{
+    if (fields.contains(&original))
+        copy.nullable = true;
+    /// Promotion depends on each batch's nulls, and a `Variant` type can't be converted to another one.
+    if (original.type.kind == TypeKind::Union)
+        return;
+    for (size_t i = 0; i < original.type.children.size(); ++i)
+        declareNullable(copy.type.children[i], original.type.children[i], fields);
+    /// The map entries and keys stay non-nullable, as `parseSchema` requires, so their nulls are rejected.
+    if (original.type.kind == TypeKind::Map)
+    {
+        ArrowField & entries = copy.type.children.at(0);
+        entries.nullable = false;
+        entries.type.children.at(0).nullable = false;
+    }
+}
+
 /// Expand an Arrow LSB-first bitmap into one byte per row (0 or 1). With `invert` each output byte is
 /// flipped, turning the validity bitmap (1 = valid) into a ClickHouse null map (1 = null). Unpacks 8 bits
 /// at a time via SWAR (the same trick as the Parquet decoder), scalar for the trailing < 8 bits.
@@ -143,7 +161,13 @@ DataTypePtr tupleElementHint(const DataTypePtr & hint, const String & child_name
             return tuple->getElements()[*position];
         return nullptr;
     }
-    if (pos < tuple->getElements().size())
+    return tupleElementHintByPosition(hint, pos);
+}
+
+DataTypePtr tupleElementHintByPosition(const DataTypePtr & hint, size_t pos)
+{
+    const auto * tuple = typeid_cast<const DataTypeTuple *>(stripHint(hint).get());
+    if (tuple && pos < tuple->getElements().size())
         return tuple->getElements()[pos];
     return nullptr;
 }
@@ -1001,6 +1025,57 @@ ColumnPtr RecordBatchDecoder::decodeInner(
             fillFixed<ColumnInt64>(*column, rows, values, 8, invisible_rows);
             break;
         }
+        case TypeKind::Interval:
+        {
+            /// Each value is one count (YEAR_MONTH: Int32 months) or a packed struct of counts (DAY_TIME: Int32
+            /// days, Int32 milliseconds; MONTH_DAY_NANO: Int32 months, Int32 days, Int64 nanoseconds), read into
+            /// the Int64 interval columns of the type from `fieldToCHType`. Invisible slots are zero.
+            const Slice values = nextBuffer();
+            auto fill_count = [&](IColumn & dst, size_t value_width, size_t offset, bool is_int64)
+            {
+                auto & data = assert_cast<ColumnInt64 &>(dst).getData();
+                data.resize(rows);
+                for (size_t i = 0; i < rows; ++i)
+                {
+                    if (isInvisible(invisible_rows, i))
+                    {
+                        data[i] = 0;
+                        continue;
+                    }
+                    const char * src = values.ptr + i * value_width + offset;
+                    if (is_int64)
+                    {
+                        Int64 count = 0;
+                        memcpy(&count, src, sizeof(count));
+                        data[i] = count;
+                    }
+                    else
+                    {
+                        Int32 count = 0;
+                        memcpy(&count, src, sizeof(count));
+                        data[i] = count;
+                    }
+                }
+            };
+            if (type.unit == flatbuf::IntervalUnit_YEAR_MONTH)
+            {
+                fill_count(*column, 4, 0, false);
+            }
+            else if (type.unit == flatbuf::IntervalUnit_DAY_TIME)
+            {
+                auto & tuple = assert_cast<ColumnTuple &>(*column);
+                fill_count(tuple.getColumn(0), 8, 0, false);
+                fill_count(tuple.getColumn(1), 8, 4, false);
+            }
+            else
+            {
+                auto & tuple = assert_cast<ColumnTuple &>(*column);
+                fill_count(tuple.getColumn(0), 16, 0, false);
+                fill_count(tuple.getColumn(1), 16, 4, false);
+                fill_count(tuple.getColumn(2), 16, 8, true);
+            }
+            break;
+        }
         case TypeKind::Utf8:
         case TypeKind::Binary:
         case TypeKind::LargeUtf8:
@@ -1222,9 +1297,8 @@ ColumnPtr RecordBatchDecoder::decodeInner(
                 /// unchanged: the bytes of a child slot under a null struct row are undefined per the
                 /// Arrow spec even when the child's own validity marks the slot valid.
                 ColumnPtr element = decodeField(
-                    child, /*allow_low_cardinality=*/false,
-                    tupleElementHint(effective_hint, child.name, i, settings.arrow.case_insensitive_column_matching),
-                    childPath(path, child.name), list_depth, invisible_rows);
+                    child, /*allow_low_cardinality=*/false, structFieldHint(effective_hint, type, i),
+                    structFieldPath(path, type, i), list_depth, invisible_rows);
                 elements.push_back(std::move(element));
             }
             return ColumnTuple::create(elements);
@@ -1254,9 +1328,10 @@ ColumnPtr RecordBatchDecoder::decodeInner(
             ColumnPtr entries = decodeField(
                 entries_field, /*allow_low_cardinality=*/false, mapEntriesHint(effective_hint), path, list_depth + 1,
                 maskPtr(entries_invisible));
-            const auto & entries_tuple = assert_cast<const ColumnTuple &>(*entries);
-            if (entries_tuple.tupleSize() != 2)
+            const auto * entries_tuple_ptr = typeid_cast<const ColumnTuple *>(entries.get());
+            if (!entries_tuple_ptr || entries_tuple_ptr->tupleSize() != 2)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC map entries must be a struct of (key, value)");
+            const auto & entries_tuple = *entries_tuple_ptr;
             /// A sliced Arrow map can begin at a non-zero first offset; only entries[base, prev) are
             /// referenced. Slice the key/value columns to that range so their size matches the base-relative
             /// offsets (matching the Apache Arrow library reader).
@@ -1562,8 +1637,7 @@ ColumnPtr RecordBatchDecoder::buildSizeDeterminedColumn(
             const ArrowField & child = type.children[i];
             expectNextNodeLength(declared_rows, fmt::format("struct field '{}'", child.name));
             elements.push_back(buildSizeDeterminedColumn(
-                child, rows, tupleElementHint(effective_hint, child.name, i, settings.arrow.case_insensitive_column_matching),
-                childPath(path, child.name), list_depth));
+                child, rows, structFieldHint(effective_hint, type, i), structFieldPath(path, type, i), list_depth));
         }
         inner = type.children.empty() ? ColumnTuple::create(rows) : ColumnTuple::create(elements);
     }
@@ -2041,8 +2115,10 @@ bool RecordBatchDecoder::wrapsInNullable(const ArrowField & field, const IColumn
     const bool preserve_struct_nulls = settings.schema_inference_allow_nullable_tuple_type
         || (effective_hint && (effective_hint->isNullable() || effective_hint->isLowCardinalityNullable()
             || isTuple(stripHint(effective_hint))));
-    return field.nullable && inner.canBeInsideNullable()
-        && (field.type.kind != TypeKind::Struct || preserve_struct_nulls);
+    /// A DAY_TIME or MONTH_DAY_NANO interval is also a `Tuple` (see `fieldToCHType`), with the same rule.
+    const bool is_tuple = field.type.kind == TypeKind::Struct
+        || (field.type.kind == TypeKind::Interval && field.type.unit != flatbuf::IntervalUnit_YEAR_MONTH);
+    return field.nullable && inner.canBeInsideNullable() && (!is_tuple || preserve_struct_nulls);
 }
 
 void RecordBatchDecoder::advanceField(const ArrowField & field, bool validate_lengths)
@@ -2050,6 +2126,10 @@ void RecordBatchDecoder::advanceField(const ArrowField & field, bool validate_le
     const auto & node = nextNode();
     if (validate_lengths && node.length() < 0)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC field node has a negative length {}", node.length());
+    /// Unions and run-end-encoded fields have no validity bitmap: `decodeField` rejects their nulls.
+    if (validate_lengths && !field.nullable && node.null_count() != 0
+        && (field.dictionary || (field.type.kind != TypeKind::Union && field.type.kind != TypeKind::RunEndEncoded)))
+        undeclared_null_fields.insert(&field);
     const size_t rows = validate_lengths ? static_cast<size_t>(node.length()) : 0;
 
     auto consume_buffer = [&](size_t count, size_t width, const char * what, ByteSwap swap = ByteSwap::Elements)
@@ -2257,7 +2337,8 @@ RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeBatch(
         }
         /// `normalized_name` seeds the requested-type lookup in `target_types`.
         /// Nested fields derive their hints through `decodeField` and `decodeInner`.
-        result.push_back(decodeBatchColumn(field, /*target_hint=*/nullptr, normalized_name, /*list_depth=*/0));
+        result.push_back(
+            decodeBatchColumn(field, /*target_hint=*/nullptr, normalized_name, /*list_depth=*/0, /*read_undeclared_nulls=*/true));
     }
 
     finishBatch();
@@ -2273,7 +2354,9 @@ DictionaryRegistry::Values RecordBatchDecoder::decodeDictionaryValues(
         convertBuffersFromBigEndian(&value_field, 1);
     expectNextNodeLength(static_cast<size_t>(batch.length()), fmt::format("column '{}'", value_field.name));
     ColumnUInt8::Ptr null_map;
-    DecodedColumn values = decodeBatchColumn(value_field, use.hint, use.position.path, use.position.list_depth, &null_map);
+    /// Values of delta batches are merged into one column, so their types must not depend on each batch's nulls.
+    DecodedColumn values = decodeBatchColumn(
+        value_field, use.hint, use.position.path, use.position.list_depth, /*read_undeclared_nulls=*/false, &null_map);
     finishBatch();
     ColumnPtr dictionary_null_map = std::move(null_map);
     if (dictionary_null_map && isColumnConst(*values.column))
@@ -2311,7 +2394,7 @@ void RecordBatchDecoder::beginBatch(
 }
 
 RecordBatchDecoder::DecodedColumn RecordBatchDecoder::decodeBatchColumn(
-    const ArrowField & field, const DataTypePtr & target_hint, const String & path, size_t list_depth,
+    const ArrowField & field, const DataTypePtr & target_hint, const String & path, size_t list_depth, bool read_undeclared_nulls,
     ColumnUInt8::Ptr * decoded_null_map)
 {
     const size_t batch_rows = static_cast<size_t>(current_batch->length());
@@ -2319,28 +2402,13 @@ RecordBatchDecoder::DecodedColumn RecordBatchDecoder::decodeBatchColumn(
     DecodedColumn decoded;
     decoded.name = field.name;
     decoded.field = &field;
-    /// Dictionary values retain the type produced by their requested hints. The referencing field
-    /// determines whether that type keeps its outer `Nullable` wrapper.
-    if (field.dictionary)
-    {
-        const auto & dictionary = registry.get(field.dictionary->id, FieldPosition{path, list_depth});
-        const DataTypePtr & value_type = dictionary.segments.front().type;
-        decoded.type = field.nullable ? value_type : removeNullable(value_type);
-        if (decoded.type->canBeInsideLowCardinality())
-            decoded.type = std::make_shared<DataTypeLowCardinality>(decoded.type);
-    }
-    else
-        decoded.type = fieldToCHType(field, settings, isNullableField(field), /*allow_null_type=*/true);
     /// Bufferless roots store one physical value. The reader chooses the output row count before
     /// expanding it, and dictionaries retain its compact representation across deltas.
     const bool constant = batch_rows != 0 && isSizeDeterminedSubtree(field);
-    if (constant)
-    {
-        decoded.column = buildSizeDeterminedColumn(field, 1, target_hint, path, list_depth);
-        if (decoded_null_map && field.type.kind == TypeKind::Null)
-            *decoded_null_map = assert_cast<const ColumnNullable &>(*decoded.column).getNullMapColumn().getPtr();
-    }
-    else
+    /// Nulls in fields declared non-nullable are read as NULL, as the Apache Arrow library did. Decoding a
+    /// nullable copy of the field keeps the types derived from the schema consistent with the decoded columns.
+    std::optional<ArrowField> nullable_copy;
+    if (!constant)
     {
         if (hasRowsBackedByBuffers(field))
             checkRowCountWithinBody(batch_rows, fmt::format("column '{}'", field.name));
@@ -2349,12 +2417,41 @@ RecordBatchDecoder::DecodedColumn RecordBatchDecoder::decodeBatchColumn(
         const size_t first_node = node_index;
         const size_t first_buffer = buffer_index;
         const size_t first_variadic = variadic_index;
+        undeclared_null_fields.clear();
         advanceField(field, /*validate_lengths=*/true);
         node_index = first_node;
         buffer_index = first_buffer;
         variadic_index = first_variadic;
+        if (read_undeclared_nulls && !undeclared_null_fields.empty())
+        {
+            nullable_copy = field;
+            declareNullable(*nullable_copy, field, undeclared_null_fields);
+        }
+    }
+    const ArrowField & effective_field = nullable_copy ? *nullable_copy : field;
+
+    /// Dictionary values retain the type produced by their requested hints. The referencing field
+    /// determines whether that type keeps its outer `Nullable` wrapper.
+    if (effective_field.dictionary)
+    {
+        const auto & dictionary = registry.get(effective_field.dictionary->id, FieldPosition{path, list_depth});
+        const DataTypePtr & value_type = dictionary.segments.front().type;
+        decoded.type = effective_field.nullable ? value_type : removeNullable(value_type);
+        if (decoded.type->canBeInsideLowCardinality())
+            decoded.type = std::make_shared<DataTypeLowCardinality>(decoded.type);
+    }
+    else
+        decoded.type = fieldToCHType(effective_field, settings, isNullableField(effective_field), /*allow_null_type=*/true);
+    if (constant)
+    {
+        decoded.column = buildSizeDeterminedColumn(field, 1, target_hint, path, list_depth);
+        if (decoded_null_map && field.type.kind == TypeKind::Null)
+            *decoded_null_map = assert_cast<const ColumnNullable &>(*decoded.column).getNullMapColumn().getPtr();
+    }
+    else
+    {
         decoded.column = decodeField(
-            field,
+            effective_field,
             /*allow_low_cardinality=*/true,
             target_hint,
             path,
@@ -2398,6 +2495,18 @@ String RecordBatchDecoder::childPath(const String & path, const String & child_n
 {
     const String seg = normalizedName(child_name);
     return path.empty() ? seg : path + "." + seg;
+}
+
+DataTypePtr RecordBatchDecoder::structFieldHint(const DataTypePtr & hint, const ArrowType & type, size_t i) const
+{
+    if (type.positional_fields)
+        return tupleElementHintByPosition(hint, i);
+    return tupleElementHint(hint, type.children[i].name, i, settings.arrow.case_insensitive_column_matching);
+}
+
+String RecordBatchDecoder::structFieldPath(const String & path, const ArrowType & type, size_t i) const
+{
+    return childPath(path, type.positional_fields ? std::to_string(i + 1) : type.children[i].name);
 }
 
 void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, const PODArray<char> & body, const VectorWithMemoryTracking<char> * reachable)
@@ -2761,8 +2870,8 @@ void RecordBatchDecoder::collectDictionaryUses(
             {
                 const ArrowField & child = type.children[i];
                 collectDictionaryUses(
-                    child, tupleElementHint(effective_hint, child.name, i, settings.arrow.case_insensitive_column_matching),
-                    childPath(path, child.name), list_depth, lookup_types, uses);
+                    child, structFieldHint(effective_hint, type, i), structFieldPath(path, type, i), list_depth,
+                    lookup_types, uses);
             }
             break;
         case TypeKind::RunEndEncoded:

@@ -27,6 +27,8 @@
 #include <IO/SeekableReadBuffer.h>
 #include <IO/NetUtils.h>
 #include <Common/PODArray.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wimplicit-int-conversion"
@@ -246,9 +248,16 @@ ArrowType parseType(const flatbuf::Field & field)
             requireSingleChild(type, "FixedSizeList");
             break;
         case flatbuf::Type_Struct_:
+        {
             type.kind = TypeKind::Struct;
             type.children = parseChildren(field.children());
+            Strings names;
+            names.reserve(type.children.size());
+            for (const ArrowField & child : type.children)
+                names.push_back(child.name);
+            type.positional_fields = !DataTypeTuple::hasValidElementNames(names);
             break;
+        }
         case flatbuf::Type_Map:
             type.kind = TypeKind::Map;
             type.children = parseChildren(field.children());
@@ -346,6 +355,38 @@ ArrowType parseType(const flatbuf::Field & field)
     return type;
 }
 
+/// Arrow allows several top-level fields with the same name, but the columns of a table must have unique names.
+/// A repeated name gets the first free numeric suffix (`ints`, `ints_1`, `ints_2`), skipping the names of other
+/// fields, so that every field can be inferred, requested and matched by its own name.
+void makeFieldNamesUnique(ArrowFields & fields)
+{
+    UnorderedSetWithMemoryTracking<std::string> original_names;
+    for (const ArrowField & field : fields)
+        original_names.insert(field.name);
+    if (original_names.size() == fields.size())
+        return;
+
+    UnorderedSetWithMemoryTracking<std::string> used_names;
+    /// The next suffix to try for each repeated name, so that every candidate is tried at most once (a schema with many
+    /// equal names would otherwise take quadratic time).
+    UnorderedMapWithMemoryTracking<std::string, size_t> next_suffix;
+    for (ArrowField & field : fields)
+    {
+        if (used_names.insert(field.name).second)
+            continue;
+        size_t & suffix = next_suffix.try_emplace(field.name, 1).first->second;
+        while (true)
+        {
+            std::string candidate = fmt::format("{}_{}", field.name, suffix++);
+            if (!original_names.contains(candidate) && used_names.insert(candidate).second)
+            {
+                field.name = std::move(candidate);
+                break;
+            }
+        }
+    }
+}
+
 }
 
 namespace
@@ -404,6 +445,7 @@ ArrowSchema parseSchema(const flatbuf::Schema & schema, flatbuf::MetadataVersion
             result.fields.push_back(std::move(f));
         }
     }
+    makeFieldNamesUnique(result.fields);
 
     result.custom_metadata = parseMetadata(schema.custom_metadata());
     if (version != flatbuf::MetadataVersion_V5)
@@ -1234,7 +1276,10 @@ DataTypePtr fieldToCHType(
                 elems.push_back(fieldToCHType(child, settings, isNullableField(child), allow_null_type));
                 names.push_back(child.name);
             }
-            result = std::make_shared<DataTypeTuple>(elems, names);
+            if (type.positional_fields)
+                result = std::make_shared<DataTypeTuple>(elems);
+            else
+                result = std::make_shared<DataTypeTuple>(elems, names);
             break;
         }
         case TypeKind::Map:
@@ -1283,10 +1328,30 @@ DataTypePtr fieldToCHType(
             return fieldToCHType(type.children.at(1), settings, make_nullable, allow_null_type);
         }
         case TypeKind::Interval:
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "Native Arrow IPC reader does not support this type yet (field '{}')",
-                field.name);
+            /// YEAR_MONTH is a number of months. DAY_TIME and MONTH_DAY_NANO pack several counts into one value,
+            /// which are kept apart in a `Tuple` of intervals, as they cannot be converted into each other.
+            switch (type.unit)
+            {
+                case flatbuf::IntervalUnit_YEAR_MONTH:
+                    result = std::make_shared<DataTypeInterval>(IntervalKind::Kind::Month);
+                    break;
+                case flatbuf::IntervalUnit_DAY_TIME:
+                    result = std::make_shared<DataTypeTuple>(
+                        DataTypes{
+                            std::make_shared<DataTypeInterval>(IntervalKind::Kind::Day),
+                            std::make_shared<DataTypeInterval>(IntervalKind::Kind::Millisecond)},
+                        Names{"days", "milliseconds"});
+                    break;
+                default:
+                    result = std::make_shared<DataTypeTuple>(
+                        DataTypes{
+                            std::make_shared<DataTypeInterval>(IntervalKind::Kind::Month),
+                            std::make_shared<DataTypeInterval>(IntervalKind::Kind::Day),
+                            std::make_shared<DataTypeInterval>(IntervalKind::Kind::Nanosecond)},
+                        Names{"months", "days", "nanoseconds"});
+                    break;
+            }
+            break;
         case TypeKind::Unsupported:
             /// `UNKNOWN_TYPE` so schema inference can drop the column with
             /// `input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference`.

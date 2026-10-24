@@ -830,10 +830,10 @@ Function 'geoToH3' accepts (lon, lat) if set to 'lon_lat' and (lat, lon) if set 
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "120000"},{"label": "New setting"}]}]}/>
 
-Defines how many milliseconds a Keeper client waits to acquire the corresponding `Context` mutex before failing.
+Defines how many milliseconds a query waits for a Keeper client: for the `Context` mutex of the client, and for a connection attempt that another thread is making for it. When the time is exceeded, the query fails with `TIMEOUT_EXCEEDED`. The query also stops waiting when it is cancelled.
 
-The value is taken from the `Context` that performs the acquisition. A per-query override applies only when the operation uses the query context, such as reads from `system.zookeeper`, `zookeeperSessionUptime`, `SYSTEM RECONNECT ZOOKEEPER`, and query-context auxiliary Keeper access.
-Operations that use a global or background context, including `BACKUP` and `RESTORE` coordination and `Replicated` database activity, use that context's value instead, and get the timeout as a Keeper error (`ZOPERATIONTIMEOUT`) that they handle like other Keeper errors.
+The value is taken from the query context, so it applies to operations that use it, such as reads from `system.zookeeper`, `zookeeperSessionUptime`, `SYSTEM RECONNECT ZOOKEEPER`, and query-context auxiliary Keeper access.
+Operations that use a global or background context, including `BACKUP` and `RESTORE` coordination and `Replicated` database activity, wait until the connection attempt ends and get its client or its Keeper error.
 `SYSTEM RELOAD CONFIG` and `SYSTEM RELOAD ASYNCHRONOUS METRICS` are not covered because they use independently serialized reload paths.
 
 Possible values:
@@ -1983,7 +1983,22 @@ controls what happens for rows whose actual type is incompatible with the functi
 
 <SettingsInfoBlock type="TransactionsWaitCSNMode" default_value="wait_unknown" />
 
-Wait for committed changes to become actually visible in the latest snapshot
+What `COMMIT` waits for:
+- `wait_commit`: the commit request. If its outcome is unknown (the Keeper connection was lost), `COMMIT` throws `UNKNOWN_STATUS_OF_TRANSACTION`.
+- `wait_unknown`: also the outcome of a commit whose status is unknown.
+- `wait_visible`: also until a new transaction on this replica sees the changes, at most `wait_changes_become_visible_timeout_ms`; then `COMMIT` throws `TIMEOUT_EXCEEDED`, although the transaction is committed.
+
+## wait_changes_become_visible_timeout_ms {#wait_changes_become_visible_timeout_ms}
+
+<ExperimentalBadge/>
+
+<SettingsInfoBlock type="UInt64" default_value="10000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.11"},{"label": "10000"},{"label": "New setting bounding how long `SYSTEM SYNC TRANSACTION LOG`, `BACKUP` and `COMMIT` wait for commits to become visible on this replica."}]}]}/>
+
+How long `SYSTEM SYNC TRANSACTION LOG`, `BACKUP` of a table with transactions, and `COMMIT` with
+`wait_changes_become_visible_after_commit_mode = 'wait_visible'` wait until the commits are visible to a new
+transaction on this replica. On expiry they throw `TIMEOUT_EXCEEDED`.
 
 ## weight {#weight}
 
