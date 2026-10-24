@@ -2363,8 +2363,8 @@ void addRowCountMarkerStepIfNeeded(QueryPlan & query_plan, const PlannerContextP
     ColumnIdentifierSet row_count_only_identifiers;
     for (const auto & [_, table_expression_data] : planner_context->getTableExpressionNodeToData())
     {
-        if (const auto & column_identifier = table_expression_data.getRowCountOnlyColumnIdentifier())
-            row_count_only_identifiers.insert(*column_identifier);
+        const auto & column_identifiers = table_expression_data.getRowCountOnlyColumnIdentifiers();
+        row_count_only_identifiers.insert(column_identifiers.begin(), column_identifiers.end());
     }
 
     if (row_count_only_identifiers.empty())
