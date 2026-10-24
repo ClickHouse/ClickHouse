@@ -6,8 +6,6 @@ SELECT formatDateTime(now(), now()); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT formatDateTime(now(), 'good format pattern', now()); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT formatDateTime(now(), 'unescaped %'); -- { serverError BAD_ARGUMENTS }
 SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%U'); -- { serverError NOT_IMPLEMENTED }
-SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%v'); -- { serverError NOT_IMPLEMENTED }
-SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%x'); -- { serverError NOT_IMPLEMENTED }
 SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%X'); -- { serverError NOT_IMPLEMENTED }
 
 SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%a'), formatDateTime(toDate32('2018-01-02'), '%a');
@@ -102,3 +100,28 @@ select formatDateTime(toDateTime('2022-01-08 02:11:29', 'UTC'), '%m') settings f
 select formatDateTime(toDateTime('2022-01-08 02:11:29', 'UTC'), '%k') settings formatdatetime_format_without_leading_zeros = 1;
 select formatDateTime(toDateTime('2022-01-08 02:11:29', 'UTC'), '%l') settings formatdatetime_format_without_leading_zeros = 1;
 select formatDateTime(toDateTime('2022-01-08 02:11:29', 'UTC'), '%h') settings formatdatetime_format_without_leading_zeros = 1;
+
+-- %v is the Monday-first ISO week number and %x is its ISO week-year.
+SELECT formatDateTime(toDate('2018-01-02'), '%x-%v');
+SELECT formatDateTime(toDate('2020-12-31'), '%x-%v');
+SELECT formatDateTime(toDate('2021-01-01'), '%x-%v');
+SELECT formatDateTime(toDate('2021-01-04'), '%x-%v');
+SELECT formatDateTime(toDate('2024-12-29'), '%x-%v');
+SELECT formatDateTime(toDate('2024-12-30'), '%x-%v');
+SELECT formatDateTime(toDate('2016-01-01'), '%x-%v');
+SELECT formatDateTime(toDate32('1969-12-29'), '%x-%v');
+SELECT formatDateTime(toDateTime('2021-01-01 12:00:00', 'UTC'), '%x-%v', 'UTC');
+SELECT formatDateTime(toDateTime64('2021-01-04 12:00:00', 3, 'UTC'), '%x-%v', 'UTC');
+SELECT formatDateTime(toDateTime('2021-01-04 00:30:00', 'UTC'), '%x-%v', 'America/Los_Angeles');
+SELECT formatDateTime(toDate('2021-01-01'), '%x-%v') = formatDateTime(toDate('2021-01-01'), '%G-%V');
+SELECT countIf(formatDateTime(addDays(toDate('2020-12-20'), toInt32(number)), '%x-%v') != formatDateTime(addDays(toDate('2020-12-20'), toInt32(number)), '%G-%V')) FROM numbers(30);
+SELECT countIf(toUInt32(formatDateTime(addDays(toDate('2020-12-20'), toInt32(number)), '%x%v')) != toYearWeek(addDays(toDate('2020-12-20'), toInt32(number)), 3)) FROM numbers(30);
+
+-- At a year boundary, the ISO week-year can differ from the calendar year.
+SELECT formatDateTime(toDate('2021-01-01'), '%Y-%x-%v');
+SELECT formatDateTime(toDate('2021-01-04'), '%x'), formatDateTime(toDate('2021-01-04'), '%v');
+
+-- fromUnixTimestamp uses the same MySQL format parser for integer timestamps.
+SELECT fromUnixTimestamp(toUInt64(1609720200), '%x-%v', 'UTC');
+SELECT fromUnixTimestamp(toUInt64(1609720200), '%x-%v', 'America/Los_Angeles');
+SELECT formatDateTime(toDate('2021-01-01'), 'ISO:%x-%v calendar:%Y');
