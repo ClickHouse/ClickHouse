@@ -1,8 +1,6 @@
 -- Tags: no-parallel-replicas
 SET explain_query_plan_default = 'legacy';
 
-set enable_analyzer = 1;
-
 drop table if exists mt_commit_order_idx sync;
 
 CREATE TABLE mt_commit_order_idx(
