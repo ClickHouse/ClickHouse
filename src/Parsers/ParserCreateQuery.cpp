@@ -2942,6 +2942,27 @@ These codecs are designed to make compression more effective by exploiting speci
 
 `GCD()` - - Calculates the greatest common denominator (GCD) of the values in the column, then divides each value by the GCD. Can be used with integer, decimal and date/time columns. The codec is well suited for columns with values that change (increase or decrease) in multiples of the GCD, e.g. 24, 28, 16, 24, 8, 24 (GCD = 4). GCD is a data preparation codec, i.e. it cannot be used stand-alone.
 
+### ByteReverse {#bytereverse}
+
+<ExperimentalBadge/>
+
+`ByteReverse` — writes the bytes of every compressed block in the reverse order. It is a data preparation codec, i.e. it cannot be used stand-alone and must be followed by a general purpose codec, for example `CODEC(ByteReverse, ZSTD(3))`.
+
+The codec works on the raw bytes of a block and does not need to know where the values start and end, so it can be applied to a column of any type, but it is meant for text-like data. On log-like `String` columns (a row begins with variable fields such as a timestamp or identifiers and continues with a repeated part) the fast LZ-based codecs (`LZ4`, `ZSTD` at low levels) found fewer and longer matches in the reversed bytes in measurements, which gave a smaller result and faster decompression of the compressed data. The effect decreases at higher compression levels and depends on the data, and it can be neutral or negative for data that is not text-like. The reversal itself runs at memory speed in both directions.
+
+```sql
+CREATE TABLE logs
+(
+    message String CODEC(ByteReverse, ZSTD(3))
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+```
+
+<Note>
+This codec is experimental and requires `SET enable_bytereverse_codec = 1` to use.
+</Note>
+
 ### Gorilla {#gorilla}
 
 `Gorilla(bytes_size)` — Calculates XOR between current and previous floating point value and writes it in compact binary form. The smaller the difference between consecutive values is, i.e. the slower the values of the series changes, the better the compression rate. Implements the algorithm used in Gorilla TSDB, extending it to support 64-bit types. Possible `bytes_size` values: 1, 2, 4, 8, the default value is `sizeof(type)` if equal to 1, 2, 4, or 8. In all other cases, it's 1. For additional information, see section 4.1 in [Gorilla: A Fast, Scalable, In-Memory Time Series Database](https://doi.org/10.14778/2824032.2824078).
