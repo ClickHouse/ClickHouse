@@ -516,6 +516,32 @@ void ObjectStorageQueuePostProcessor::checkAzureMoveDestination(
 #endif
 }
 
+void ObjectStorageQueuePostProcessor::checkS3MoveDestination(
+    [[maybe_unused]] const String & move_uri,
+    [[maybe_unused]] const String & move_prefix,
+    [[maybe_unused]] bool preserve_path,
+    [[maybe_unused]] IObjectStorage & source_storage)
+{
+#if USE_AWS_S3
+    /// Only a move that drops the source directories writes with `If-None-Match`, see `moveS3Objects`.
+    if (move_prefix.empty() || preserve_path)
+        return;
+
+    bool to_gcs = false;
+    if (!move_uri.empty())
+        to_gcs = S3::URI(move_uri).endpoint.contains("storage.googleapis.com"); /// The test `S3::Client` uses.
+    else if (auto * s3_storage = dynamic_cast<S3ObjectStorage *>(&source_storage))
+        to_gcs = s3_storage->getS3StorageClient()->isClientForGCS();
+
+    if (to_gcs)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "A move with `after_processing_move_prefix` and `after_processing_move_preserve_path` = 0 is not supported "
+            "to GCS: GCS cannot refuse to overwrite an existing object, so one processed file could replace another. "
+            "Set `after_processing_move_preserve_path` = 1");
+#endif
+}
+
 void ObjectStorageQueuePostProcessor::moveWithinBucket(
     const StoredObjects & objects,
     const String & move_prefix,

@@ -11,6 +11,8 @@
 #include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
+#include <map>
+
 
 namespace Poco { class Logger; }
 
@@ -229,7 +231,11 @@ public:
         PartitionLastProcessedFileInfoMap & file_map,
         LastProcessedFileInfoMapPtr created_nodes = nullptr,
         const std::string & exception_message = {},
-        int error_code = 0);
+        int error_code = 0,
+        const std::map<size_t, String> & reread_paths_per_bucket = {});
+
+    /// Ordered mode: the lowest path per bucket of this source's files that are read again because their generation was rewritten.
+    void collectRereadPaths(std::map<size_t, String> & reread_paths_per_bucket) const;
 
     static void preparePartitionProcessedRequests(
         Coordination::Requests & requests,
@@ -330,6 +336,9 @@ private:
     };
     std::vector<ProcessedFile> processed_files;
     Source::ReaderHolder reader;
+
+    /// The file is reset without charging a retry, so its new generation is read again from the start.
+    static bool isRereadAfterRewrite(const ProcessedFile & file);
 };
 
 }

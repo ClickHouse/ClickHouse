@@ -44,6 +44,10 @@ public:
     /// Like a move to another S3 bucket, a move to another Azure container must carry its own credentials.
     static void checkAzureMoveDestination(const String & move_connection_string, const String & move_container);
 
+    /// A flattened move needs a write that refuses to overwrite, which GCS does not support.
+    static void checkS3MoveDestination(
+        const String & move_uri, const String & move_prefix, bool preserve_path, IObjectStorage & source_storage);
+
     /// Apply post-processing to the objects. Can throw exceptions in case of misconfiguration.
     /// Storage errors are only logged, except `FILE_CHANGED_DURING_READ` / `S3_OBJECT_CHANGED_DURING_READ`: those are rethrown
     /// after the whole batch is handled, leaving the changed object in place, so the file is not committed as processed.

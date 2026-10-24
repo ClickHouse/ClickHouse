@@ -77,6 +77,7 @@ namespace FailPoints
     extern const char object_storage_queue_fail_commit_after_success[];
     extern const char object_storage_queue_cancel_in_generate[];
     extern const char object_storage_queue_sleep_in_generate[];
+    extern const char object_storage_queue_pause_after_listing[];
     extern const char object_storage_queue_fail_tags_fetch[];
 }
 
@@ -298,6 +299,9 @@ ObjectStorageQueueSource::FileIterator::next()
 
             /// Filter out files which we know we would not need to process.
             filterProcessableFiles(new_batch);
+
+            if (!new_batch.empty())
+                FailPointInjection::pauseFailPoint(FailPoints::object_storage_queue_pause_after_listing);
 
             LOG_TEST(log, "Filtered processed and failed files: {} -> {}", previous_size, new_batch.size());
 
@@ -1640,7 +1644,8 @@ void ObjectStorageQueueSource::prepareCommitRequests(
     PartitionLastProcessedFileInfoMap & file_map,
     LastProcessedFileInfoMapPtr created_nodes,
     const std::string & exception_message,
-    int error_code)
+    int error_code,
+    const std::map<size_t, String> & reread_paths_per_bucket)
 {
     if (processed_files.empty())
         return;
@@ -1655,6 +1660,13 @@ void ObjectStorageQueueSource::prepareCommitRequests(
     const bool use_buckets_for_processing = file_iterator->useBucketsForProcessing();
     const bool has_partitioning = files_metadata->getPartitioningMode() != ObjectStorageQueuePartitioningMode::NONE;
     std::map<size_t, size_t> last_processed_file_idx_per_bucket;
+    /// A key above a file that is read again must not move the pointer past it, so it is committed like a non-last key.
+    auto is_above_reread_path = [&](const FileMetadataPtr & file_metadata)
+    {
+        const auto bucket = use_buckets_for_processing ? file_metadata->getBucket() : 0;
+        const auto it = reread_paths_per_bucket.find(bucket);
+        return it != reread_paths_per_bucket.end() && file_metadata->getPath() > it->second;
+    };
 
     /// For Ordered mode collect a map: bucket_id -> max_processed_path.
     /// If no buckets are used, we still do this for Ordered mode,
@@ -1667,7 +1679,7 @@ void ObjectStorageQueueSource::prepareCommitRequests(
             const auto & file_path = file_metadata->getPath();
             const auto bucket = use_buckets_for_processing ? file_metadata->getBucket() : 0;
 
-            if (processed_files[i].state != FileState::Processed)
+            if (processed_files[i].state != FileState::Processed || is_above_reread_path(file_metadata))
                 continue;
 
             auto [it, inserted] = last_processed_file_idx_per_bucket.emplace(bucket, i);
@@ -1718,7 +1730,8 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                         /// only one max_processed_file per each bucket,
                         /// for all other files we only remove Processing nodes.
                         const auto bucket = use_buckets_for_processing ? file_metadata->getBucket() : 0;
-                        if (last_processed_file_idx_per_bucket[bucket] == i)
+                        const auto last_it = last_processed_file_idx_per_bucket.find(bucket);
+                        if (last_it != last_processed_file_idx_per_bucket.end() && last_it->second == i)
                         {
                             file_metadata->prepareProcessedRequests(requests, created_nodes);
                         }
@@ -1726,7 +1739,7 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                         {
                             file_metadata->prepareResetProcessingRequests(requests);
                         }
-                        if (has_partitioning)
+                        if (has_partitioning && !is_above_reread_path(file_metadata))
                             file_metadata->preparePartitionProcessedMap(file_map);
                     }
                     else
@@ -1790,25 +1803,43 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                     {storage_id.getDatabaseName(), storage_id.getTableName(), "read", String(ErrorCodes::getName(exception_during_read_code))});
 
                 chassert(!exception_during_read.empty());
-                /// A pinned read fails with `*_OBJECT_CHANGED_DURING_READ` when the object is rewritten: a race, not a bad file,
-                /// so reset the processing without charging the retry budget (else the path becomes `failed`).
-                const bool the_generation_was_rewritten = exception_during_read_code == ErrorCodes::FILE_CHANGED_DURING_READ
-                    || exception_during_read_code == ErrorCodes::AZURE_OBJECT_CHANGED_DURING_READ
-                    || exception_during_read_code == ErrorCodes::S3_OBJECT_CHANGED_DURING_READ;
-
-                /// Resetting replays the path from offset 0 and duplicates rows already emitted (`deduplication_v2` tokens name the new
-                /// generation), so a file that emitted rows keeps the ordinary failure handling.
-                const bool a_replay_would_duplicate_rows = file_metadata->getFileStatus()->processed_rows > 0;
+                const bool reread = isRereadAfterRewrite(processed_files[i]);
                 /// Ordered mode must read the new generation before later keys move the pointer past it.
-                if (is_ordered_mode && the_generation_was_rewritten && !a_replay_would_duplicate_rows)
+                if (is_ordered_mode && reread)
                     file_iterator->invalidate();
-                file_metadata->prepareFailedRequests(
-                    requests,
-                    exception_during_read,
-                    /* reduce_retry_count */!the_generation_was_rewritten || a_replay_would_duplicate_rows);
+                file_metadata->prepareFailedRequests(requests, exception_during_read, /* reduce_retry_count */ !reread);
                 break;
             }
         }
+    }
+}
+
+bool ObjectStorageQueueSource::isRereadAfterRewrite(const ProcessedFile & file)
+{
+    if (file.state != FileState::ErrorOnRead)
+        return false;
+    /// A pinned read fails with `*_OBJECT_CHANGED_DURING_READ` when the object is rewritten: a race, not a bad file,
+    /// so reset the processing without charging the retry budget (else the path becomes `failed`).
+    const bool the_generation_was_rewritten = file.exception_during_read_code == ErrorCodes::FILE_CHANGED_DURING_READ
+        || file.exception_during_read_code == ErrorCodes::AZURE_OBJECT_CHANGED_DURING_READ
+        || file.exception_during_read_code == ErrorCodes::S3_OBJECT_CHANGED_DURING_READ;
+    /// Resetting replays the path from offset 0 and duplicates rows already emitted (`deduplication_v2` tokens name the new
+    /// generation), so a file that emitted rows keeps the ordinary failure handling.
+    const bool a_replay_would_duplicate_rows = file.metadata->getFileStatus()->processed_rows > 0;
+    return the_generation_was_rewritten && !a_replay_would_duplicate_rows;
+}
+
+void ObjectStorageQueueSource::collectRereadPaths(std::map<size_t, String> & reread_paths_per_bucket) const
+{
+    const bool use_buckets_for_processing = file_iterator->useBucketsForProcessing();
+    for (const auto & file : processed_files)
+    {
+        if (!isRereadAfterRewrite(file))
+            continue;
+        const auto bucket = use_buckets_for_processing ? file.metadata->getBucket() : 0;
+        auto [it, inserted] = reread_paths_per_bucket.emplace(bucket, file.metadata->getPath());
+        if (!inserted && file.metadata->getPath() < it->second)
+            it->second = file.metadata->getPath();
     }
 }
 

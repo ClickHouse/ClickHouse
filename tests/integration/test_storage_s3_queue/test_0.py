@@ -962,6 +962,7 @@ PAUSE_AFTER_MOVE_SOURCE_LOOKUP_FAILPOINT = (
     "object_storage_queue_pause_after_move_source_lookup"
 )
 PAUSE_AFTER_COMMIT_FAILPOINT = "object_storage_queue_pause_after_commit"
+PAUSE_AFTER_LISTING_FAILPOINT = "object_storage_queue_pause_after_listing"
 
 
 @pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
@@ -1224,6 +1225,56 @@ def test_ordered_reads_a_rewritten_file_before_a_later_key(started_cluster):
             f"SELECT column1, column2, column3 FROM {table_name}_dst ORDER BY ALL"
         )
         == "1\t2\t3\n4\t5\t6\n7\t8\t9\n",
+        timeout=90,
+    )
+    wait_until(
+        lambda: move_counts(
+            started_cluster, "S3Queue", None, files_path, processed_prefix
+        )
+        == (2, 0),
+        timeout=90,
+    )
+
+
+def test_ordered_threads_keep_the_pointer_below_a_rewritten_file(started_cluster):
+    """With two processing threads sharing one ordered bucket, a file read by the other thread in the
+    same batch must not move the processed pointer past a file whose new generation is read again."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string().lower()
+    table_name = f"ordered_threads_rewrite_{token}"
+    files_path = f"{table_name}_data"
+    processed_prefix = f"{token}_moved"
+    put_s3_file_content(started_cluster, f"{files_path}/a.csv", b"1,2,3\n")
+    put_s3_file_content(started_cluster, f"{files_path}/b.csv", b"4,5,6\n")
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        after_processing="move",
+        move_to_prefix=processed_prefix,
+        additional_settings={
+            "processing_threads_num": 2,
+            "buckets": 1,
+        },
+    )
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {PAUSE_AFTER_LISTING_FAILPOINT}")
+    try:
+        create_mv(node, table_name, f"{table_name}_dst")
+        wait_failpoint_paused(node, PAUSE_AFTER_LISTING_FAILPOINT)
+        # Both keys are listed; the read of a.csv is pinned to the listed generation and now fails.
+        put_s3_file_content(started_cluster, f"{files_path}/a.csv", b"7,8,9\n")
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {PAUSE_AFTER_LISTING_FAILPOINT}")
+
+    wait_until(
+        lambda: node.query(
+            f"SELECT column1, column2, column3 FROM {table_name}_dst ORDER BY ALL"
+        )
+        == "4\t5\t6\n7\t8\t9\n",
         timeout=90,
     )
     wait_until(

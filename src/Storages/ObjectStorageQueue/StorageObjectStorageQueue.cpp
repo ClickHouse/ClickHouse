@@ -399,6 +399,12 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         "s3_allow_server_credentials_in_user_queries",
         allow_server_credentials_in_user_queries_);
     object_storage = configuration->createObjectStorage(object_storage_context, /* is_readonly */true, std::nullopt);
+    if (!isLoadingFromExistingMetadata(mode) && (*queue_settings_)[ObjectStorageQueueSetting::after_processing] == ObjectStorageQueueAction::MOVE)
+        ObjectStorageQueuePostProcessor::checkS3MoveDestination(
+            (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_uri],
+            (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_prefix],
+            (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_preserve_path],
+            *object_storage);
     FormatFactory::instance().checkFormatName(configuration->format);
     configuration->check(context_);
 
@@ -1263,11 +1269,16 @@ void StorageObjectStorageQueue::commit(
 
     PartitionLastProcessedFileInfoMap last_processed_file_per_partition;
     auto created_nodes = std::make_shared<LastProcessedFileInfoMap>();
+    /// In ordered mode a file of another source that is read again bounds which key may move the pointer.
+    std::map<size_t, String> reread_paths_per_bucket;
+    if (metadata.getTableMetadata().getMode() == ObjectStorageQueueMode::ORDERED)
+        for (const auto & source : sources)
+            source->collectRereadPaths(reread_paths_per_bucket);
     for (auto & source : sources)
     {
         source->prepareCommitRequests(
             requests, insert_succeeded, successful_objects,
-            last_processed_file_per_partition, created_nodes, exception_message, error_code);
+            last_processed_file_per_partition, created_nodes, exception_message, error_code, reread_paths_per_bucket);
     }
 
     // Use partition-based processing for both HIVE and REGEX modes
@@ -1844,6 +1855,19 @@ void StorageObjectStorageQueue::alter(
             }
 
             changed_settings.push_back(setting);
+        }
+        /// A setting change can turn the definition into a flattened move to GCS, which CREATE refuses.
+        if (std::ranges::any_of(changed_settings, [](const SettingChange & change)
+            { return change.name == "after_processing" || change.name.starts_with("after_processing_move_"); }))
+        {
+            ObjectStorageQueueSettings effective_settings;
+            effective_settings.applyChanges(new_settings);
+            if (effective_settings[ObjectStorageQueueSetting::after_processing] == ObjectStorageQueueAction::MOVE)
+                ObjectStorageQueuePostProcessor::checkS3MoveDestination(
+                    effective_settings[ObjectStorageQueueSetting::after_processing_move_uri],
+                    effective_settings[ObjectStorageQueueSetting::after_processing_move_prefix],
+                    effective_settings[ObjectStorageQueueSetting::after_processing_move_preserve_path],
+                    *object_storage);
         }
         if (requires_detached_mv)
         {
