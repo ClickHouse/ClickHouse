@@ -1,0 +1,17 @@
+-- build side computed key
+Input (left): k, v
+Input (right): plus(k, 1_UInt8)
+1
+24877500
+24877500
+-- probe side computed key
+Input (left): plus(k, 1_UInt8), v
+Input (right): k
+1
+24372600
+24372600
+-- merged subquery projection, inputs listing a column twice
+0
+1
+496485000
+496485000

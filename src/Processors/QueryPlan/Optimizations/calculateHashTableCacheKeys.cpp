@@ -337,6 +337,36 @@ static bool forwardsInputsInOrder(const IQueryPlanStep & step)
     return true;
 }
 
+/// A step that keeps the byte layout contributes nothing to a key, so neither does one that replaces
+/// the columns it reads with a join key computed from them. Returns what computes the key in that case.
+static std::optional<UInt64> transparentlyComputedKeyIdentity(const QueryPlan::Node & child, String name)
+{
+    for (const auto * node = &child; node->children.size() == 1; node = node->children.front())
+    {
+        const auto * transform = dynamic_cast<const ITransformingStep *>(node->step.get());
+        if (!transform || !isByteTransparentTransform(*transform))
+            return {};
+
+        const auto * expression = typeid_cast<const ExpressionStep *>(transform);
+        if (!expression)
+        {
+            if (!node->children.front()->step->getOutputHeader()->has(name))
+                return {};
+            continue;
+        }
+
+        const auto & actions = expression->getExpression();
+        const auto * output = actions.tryFindInOutputs(name);
+        if (!output)
+            return {};
+        const auto * source = output->getWithoutAlias();
+        if (source->type != ActionsDAG::ActionType::INPUT)
+            return actions.getOutputIdentity(name, expression->getInputHeaders().front().get());
+        name = source->result_name;
+    }
+    return {};
+}
+
 UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, JoinTableSide side)
 {
     SipHash hash;
@@ -486,12 +516,15 @@ void calculateHashTableCacheKeys(
             /// below, applied to its keys.
             const auto & left_header = *node.children.at(0)->step->getOutputHeader();
             const auto & right_header = *node.children.at(1)->step->getOutputHeader();
-            auto update_with_column = [](SipHash & key_hash, const Block & header, const String & name)
+            auto update_with_column = [](SipHash & key_hash, const QueryPlan::Node & child, const String & name)
             {
+                const auto & header = *child.step->getOutputHeader();
                 if (const auto * column = header.findByName(name))
                 {
                     key_hash.update(header.getPositionByName(name));
                     key_hash.update(column->type->getName());
+                    if (auto identity = transparentlyComputedKeyIdentity(child, name))
+                        key_hash.update(*identity);
                 }
                 /// A key that is not a column of this side's header is produced by the join itself;
                 /// there is nothing build-independent to say about it, so it contributes nothing.
@@ -504,14 +537,14 @@ void calculateHashTableCacheKeys(
                 for (size_t i = 0; i < clause.keysCount(); ++i)
                 {
                     const bool nullsafe = clause.nullsafe_compare_key_indexes.contains(i);
-                    update_with_column(keys_left, left_header, clause.key_names_left[i]);
+                    update_with_column(keys_left, *node.children.at(0), clause.key_names_left[i]);
                     keys_left.update(nullsafe);
-                    update_with_column(keys_right, right_header, clause.key_names_right[i]);
+                    update_with_column(keys_right, *node.children.at(1), clause.key_names_right[i]);
                     keys_right.update(nullsafe);
                 }
                 const auto [left_cond, right_cond] = clause.condColumnNames();
-                update_with_column(keys_left, left_header, left_cond);
-                update_with_column(keys_right, right_header, right_cond);
+                update_with_column(keys_left, *node.children.at(0), left_cond);
+                update_with_column(keys_right, *node.children.at(1), right_cond);
             }
             auto a = cache_keys[node.children.at(0)] ^ keys_left.get64();
             auto b = cache_keys[node.children.at(1)] ^ keys_right.get64();

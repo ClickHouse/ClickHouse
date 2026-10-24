@@ -313,6 +313,7 @@ protected:
     TemporaryDataOnDiskScopePtr tmp_data;
 
 private:
+    void resetNodeSourcesFromDAG();
 
     bool disjunctions_optimization_applied = false;
 };
