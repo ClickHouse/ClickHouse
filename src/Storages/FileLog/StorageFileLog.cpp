@@ -335,7 +335,7 @@ void StorageFileLog::loadMetaFiles(bool attach)
     }
 }
 
-bool StorageFileLog::isDataFileAllowed(const String & file_path) const
+bool StorageFileLog::isDataFileAllowed(const String & file_path, bool log_if_denied) const
 {
     /// Under `user_files_policy` the user files directory is a boundary that symlinks must not escape, so a file
     /// found in the directory, e.g. `logs/leak.log -> /outside/secret`, is checked like the configured path.
@@ -344,8 +344,9 @@ bool StorageFileLog::isDataFileAllowed(const String & file_path) const
         return true;
     if (getContext()->isUserFilesPath(file_path))
         return true;
-    LOG_WARNING(log, "File {} resolves outside `user_files_path` ({}) after symlink resolution, it will not be read",
-        file_path, getContext()->getUserFilesPath());
+    if (log_if_denied)
+        LOG_WARNING(log, "File {} resolves outside `user_files_path` ({}) after symlink resolution, it will not be read",
+            file_path, getContext()->getUserFilesPath());
     return false;
 }
 
@@ -649,16 +650,26 @@ void StorageFileLog::openFilesAndSetPos()
         auto & file_ctx = findInMap(file_infos.context_by_name, file);
         if (file_ctx.status != FileStatus::NO_CHANGE || file_ctx.open_failed)
         {
-            file_ctx.reader.emplace(getFullDataPath(file));
-            const int open_errno = errno;
-            if (!file_ctx.reader->is_open() && open_errno == ENOENT && isTrackedByDirectoryEvents(file))
+            /// The path was checked when the file was found, but a symlink can be retargeted outside
+            /// `user_files_path` afterwards, so it is checked again right before every (re)open. A file
+            /// that is not allowed is handled as one that cannot be opened for lack of permissions.
+            int open_errno = EACCES;
+            if (isDataFileAllowed(getFullDataPath(file), /*log_if_denied=*/ false))
+            {
+                file_ctx.reader.emplace(getFullDataPath(file));
+                open_errno = errno;
+            }
+            else
+                file_ctx.reader.reset();
+            const bool is_open = file_ctx.reader && file_ctx.reader->is_open();
+            if (!is_open && open_errno == ENOENT && isTrackedByDirectoryEvents(file))
             {
                 /// Removed or renamed: the pending directory events drop the file or move its offset to the new name.
                 file_ctx.reader.reset();
                 file_ctx.status = FileStatus::NO_CHANGE;
                 continue;
             }
-            if (!file_ctx.reader->is_open()
+            if (!is_open
                 && (open_errno == ENOENT || open_errno == EACCES || open_errno == EPERM || open_errno == ELOOP))
             {
                 if (!file_ctx.open_failed)

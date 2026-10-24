@@ -210,7 +210,7 @@ private:
     void loadFiles();
 
     /// Whether a data file found in the watched directory may be read.
-    bool isDataFileAllowed(const String & file_path) const;
+    bool isDataFileAllowed(const String & file_path, bool log_if_denied = true) const;
 
     void loadMetaFiles(bool attach);
 
