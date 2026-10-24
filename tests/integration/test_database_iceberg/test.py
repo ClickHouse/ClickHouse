@@ -1814,6 +1814,44 @@ ORDER BY (id, name)
     assert all(isinstance(field.transform, IdentityTransform) for field in sort_fields), sort_fields
 
 
+def test_create_table_order_by_empty_tuple(started_cluster):
+    # `ORDER BY tuple()` is the unsorted order: Java Iceberg must accept it, through the catalog and from storage.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_create_table_order_by_empty_tuple_{uuid.uuid4()}"
+    root_namespace = f"{test_ref}_namespace"
+    table_name = f"{test_ref}_table"
+    plain_table = f"{test_ref}_plain"
+
+    catalog = load_catalog_impl(started_cluster)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    node.query(
+        f"""
+CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (id Int64)
+ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{table_name}/', '{minio_access_key}', '{minio_secret_key}')
+ORDER BY tuple()
+        """,
+        settings={"allow_database_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+    assert catalog.load_table(f"{root_namespace}.{table_name}").sort_order().is_unsorted
+
+    node.query(
+        f"""
+CREATE TABLE `{plain_table}` (id Int64)
+ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{plain_table}/', '{minio_access_key}', '{minio_secret_key}')
+ORDER BY tuple()
+        """,
+        settings={"write_full_path_in_iceberg_metadata": 1},
+    )
+    registered = catalog.register_table(
+        f"{root_namespace}.{plain_table}", 
+        f"s3://warehouse-rest/{plain_table}/metadata/v1.metadata.json"
+    )
+    assert registered.sort_order().is_unsorted
+    node.query(f"DROP TABLE `{plain_table}`")
+    
+
 def test_table_with_slash(started_cluster):
     node = started_cluster.instances["node1"]
 
