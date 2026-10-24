@@ -57,6 +57,7 @@ struct Optimization
         bool use_skip_indexes_for_top_k{};
         bool use_top_k_dynamic_filtering{};
         bool use_top_k_dynamic_filtering_for_variable_length_types{};
+        bool use_top_k_dynamic_filtering_for_single_string_sort_column{};
         size_t max_limit_for_top_k_optimization{};
         bool use_skip_indexes_on_data_read{};
         bool read_in_order{};
@@ -319,6 +320,12 @@ void optimizePrewhere(QueryPlan::Node & parent_node, bool remove_unused_columns,
 void installTopKDynamicFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings, size_t max_limit_for_lazy_materialization);
+
+/// Lazy materialization over joins, decided on one merged `ActionsDAG` for the whole subtree below the
+/// `LIMIT` rather than by splitting each step's expressions on its own. Enabled by
+/// `query_plan_lazy_materialization_for_join`. Runs while the joins are still `JoinStepLogical`, after
+/// PREWHERE optimization. Returns false for a plan it does not handle.
+bool optimizeLazyMaterialization3(QueryPlan::Node & root, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings);
 void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void optimizeJoinByShards(QueryPlan::Node & root);

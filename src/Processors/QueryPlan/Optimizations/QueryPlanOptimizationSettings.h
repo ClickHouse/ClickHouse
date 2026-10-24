@@ -99,6 +99,8 @@ struct QueryPlanOptimizationSettings
     bool aggregate_partitions_independently;
     bool limit_by_partitions_independently;
     bool distinct_partitions_independently;
+    bool parallel_distinct;
+    bool force_distinct_partitions_independently;
     bool window_partitions_independently;
     bool force_window_partitions_independently;
     bool creating_set_partitions_independently;
@@ -157,7 +159,8 @@ struct QueryPlanOptimizationSettings
     bool use_query_condition_cache_for_top_k;
     bool use_query_condition_cache_for_time_conditions;
     double query_condition_cache_time_condition_grid_factor;
-    bool read_in_order_through_join;
+    /// 0 - off, 1 - on, 2 - on even when the parts have no virtual rows (`force`).
+    UInt64 read_in_order_through_join;
     bool optimize_aggregation_in_order_limit;
     bool correlated_subqueries_use_in_memory_buffer;
     bool push_limit_by_into_sort;
@@ -187,6 +190,7 @@ struct QueryPlanOptimizationSettings
     UInt64 distributed_plan_max_rows_to_broadcast = 20000; /// Max number of rows to broadcast in distributed query plan
     bool distributed_plan_read_in_order = false; /// Allow read-in-order for ORDER BY in a distributed plan
     bool distributed_plan_force_shuffle_aggregation = false; /// Force Shuffle strategy instead of PartialAggregation + Merge for distributed aggregation
+    bool distributed_plan_partial_aggregation_before_shuffle = true; /// Shuffle partial aggregation states instead of input rows
     bool distributed_aggregation_memory_efficient = true; /// Is the memory-saving mode of distributed aggregation enabled
     bool distributed_plan_prefer_replicas_over_workers = false; /// Use ReadFromMergeTree with catalog access over ReadFromMergeTreeAtWorker
     bool distributed_plan_join_runtime_filters = false; /// Send join runtime filters between stages of a distributed query plan
@@ -220,6 +224,7 @@ struct QueryPlanOptimizationSettings
     bool optimize_lazy_materialization = false;
     bool optimize_lazy_materialization_for_object_storage = false;
     bool optimize_lazy_materialization_for_file = false;
+    bool lazy_materialization_for_join = false;
     size_t max_limit_for_lazy_materialization = 0;
 
     /// If lazy FINAL optimization for ReplacingMergeTree is enabled
@@ -241,6 +246,7 @@ struct QueryPlanOptimizationSettings
     bool use_skip_indexes_for_top_k;
     bool use_top_k_dynamic_filtering;
     bool use_top_k_dynamic_filtering_for_variable_length_types;
+    bool use_top_k_dynamic_filtering_for_single_string_sort_column;
     bool use_skip_indexes_on_data_read;
     size_t max_limit_for_top_k_optimization = 0;
 
@@ -256,6 +262,7 @@ struct QueryPlanOptimizationSettings
     UInt64 max_size_to_preallocate_for_joins;
     bool collect_hash_table_stats_during_joins;
     bool collect_hash_table_stats_during_aggregation;
+    bool optimize_uniq_exact_radix_partitioning;
     String initial_query_id;
     std::chrono::milliseconds lock_acquire_timeout{};
     ExpressionActionsSettings actions_settings;

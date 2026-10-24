@@ -34,6 +34,7 @@
 
 #include <map>
 #include <optional>
+#include <set>
 #include <tuple>
 #include <unordered_set>
 
@@ -62,11 +63,6 @@ extern const Event AutoParallelReplicasBytesPerReplica;
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-extern const int LOGICAL_ERROR;
-}
 
 namespace
 {
@@ -751,8 +747,38 @@ bool transplantAnalysisToAllReads(QueryPlan::Node & single_node_root, QueryPlan:
 /// on the parallel-replicas side - inside the local branch under `ReadFromLocalParallelReplicaStep`,
 /// which is not a child node. A set missed here is not adopted from the single-replica plan and its
 /// subquery runs a second time at execution, which is exactly what this transplant exists to avoid.
-void moveSetsFromLocalPlanToReplicasPlan(const QueryPlan & single_replica_plan, const QueryPlan & parallel_replicas_plan)
+///
+/// Sets are paired by hash, and nothing guarantees that the two plans hash a set the same way: the
+/// parallel-replicas plan is built from the query tree shipped to the replicas, and a set may be keyed
+/// by something that differs between two builds of a plan (`convertJoinToIn` keys its set by a random
+/// UUID). Returns false, leaving both plans untouched, when a set of the parallel-replicas plan has no
+/// counterpart; the caller then keeps the single-replica plan.
+bool moveSetsFromLocalPlanToReplicasPlan(const QueryPlan & single_replica_plan, const QueryPlan & parallel_replicas_plan)
 {
+    std::set<FutureSet::Hash> single_replica_hashes;
+    forEachSubquerySet(
+        &single_replica_plan,
+        [&](FutureSetFromSubquery & future_set)
+        {
+            if (future_set.getSetAndKey())
+                single_replica_hashes.insert(future_set.getHash());
+            return true;
+        });
+
+    bool all_sets_paired = true;
+    forEachSubquerySet(
+        &parallel_replicas_plan,
+        [&](FutureSetFromSubquery & future_set)
+        {
+            if (!single_replica_hashes.contains(future_set.getHash()))
+                all_sets_paired = false;
+            /// Mirrors the walk below, which does not descend into a set it pairs.
+            return false;
+        });
+
+    if (!all_sets_paired)
+        return false;
+
     std::map<FutureSet::Hash, SetAndKeyPtr> sets_map;
 
     // Create a map: set_key -> set
@@ -770,17 +796,14 @@ void moveSetsFromLocalPlanToReplicasPlan(const QueryPlan & single_replica_plan, 
         &parallel_replicas_plan,
         [&](FutureSetFromSubquery & future_set)
         {
-            auto it = sets_map.find(future_set.getHash());
-            if (it == sets_map.end())
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR, "Cannot find a matching set in the map of sets from single-replica plan");
-
-            future_set.replaceSetAndKey(it->second);
+            future_set.replaceSetAndKey(sets_map.at(future_set.getHash()));
             /// The set is built now, so this plan will not run and the sets nested in it will never be
             /// created. The single-replica plan has no counterparts for them either - its own nested
             /// sources are long gone by this point - so descending would only fail the lookup above.
             return false;
         });
+
+    return true;
 }
 }
 
@@ -1356,6 +1379,19 @@ static bool decideAtBoundary(
                     ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
                     return false;
                 }
+                /// The transplant pairs reads by name, while the read the decision stands on was found by
+                /// walking down from the node matched by hash. Identical subtrees hash alike, so that node
+                /// can be in another subtree than the one the replicas plan ships, and then the coordinated
+                /// read was given the analysis of another read than the one the decision priced.
+                if (reads->in_replicas_plan->getAnalyzedResult() != analysis)
+                {
+                    ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
+                    LOG_TRACE(
+                        getLogger("AutoParallelReplicas"),
+                        "The coordinated read was paired with another single-node read than the one the decision "
+                        "was made for. Skipping optimization");
+                    return false;
+                }
                 /// The candidate's reads have their filter actions only now, so the pass that tags a filter
                 /// step for the query condition cache - which runs early in this same optimization and gives
                 /// up when a read has none - saw nothing to tag, and the cache would never be populated by a
@@ -1380,17 +1416,15 @@ static bool decideAtBoundary(
                     }
                 }
 
-
-                /// The read whose ranges the replicas split already carries the single-node index
-                /// analysis, and it is this very one: the transplant above pairs it with the same
-                /// single-node read `source_reading_step` names, installs that read's analysis and filter
-                /// state on it, and declines the candidate when any read cannot be paired - so reaching
-                /// this point means it was. Assert rather than install it a second time. Firing here would
-                /// mean the transplant's pairing and the read the decision was matched on disagree, which
-                /// is worth knowing about: the reads would then be carrying ranges selected for another
-                /// read's predicates.
-                chassert(reads->in_replicas_plan->getAnalyzedResult() == analysis);
-                moveSetsFromLocalPlanToReplicasPlan(query_plan, *plan_with_parallel_replicas);
+                if (!moveSetsFromLocalPlanToReplicasPlan(query_plan, *plan_with_parallel_replicas))
+                {
+                    ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlansNotComparable);
+                    LOG_TRACE(
+                        getLogger("AutoParallelReplicas"),
+                        "A set of the plan with parallel replicas has no counterpart in the single-replica plan. "
+                        "Skipping optimization");
+                    return false;
+                }
                 LOG_TRACE(
                     getLogger("AutoParallelReplicas"),
                     "Replacing the plan with the parallel replicas one for hash {}",
@@ -1398,8 +1432,8 @@ static bool decideAtBoundary(
                 query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(*plan_with_parallel_replicas));
                 /// The one event that says the optimization changed this query. `ParallelReplicasQueryCount`
                 /// does not: building the plan above increments it even when the plan is thrown away. Counted
-                /// after the swap, not before: both calls above can throw, and a query that failed on the way
-                /// there did not get the optimization applied to it.
+                /// after the swap, not before: the swap can throw, and a query that failed on the way there
+                /// did not get the optimization applied to it.
                 ProfileEvents::increment(ProfileEvents::AutoParallelReplicasApplied);
                 return false;
             }
