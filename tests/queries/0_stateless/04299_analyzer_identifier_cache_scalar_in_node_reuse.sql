@@ -6,8 +6,6 @@
 -- the cache for scalar `IN` (treating a literal-set `IN` as a subquery scope again, as in
 -- the bug this guards) would make the two trees below converge and fail this test.
 
-SET enable_analyzer = 1;
-
 SELECT '-- cache disabled: x re-resolved per IN (distinct plus node ids) --';
 EXPLAIN QUERY TREE
     SELECT number + 1 AS x, x IN (1, 2, 3) AS a, x IN (4, 5, 6) AS b
