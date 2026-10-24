@@ -32,7 +32,7 @@ SELECT count(), countIf(l.b IS NULL), sum(l.id + r.id) FROM t_ns_left l INNER JO
 SELECT count(), countIf(l.b IS NULL), sum(l.id + r.id) FROM t_ns_left l INNER JOIN t_ns_right r ON tuple(l.a) = tuple(r.a) AND tuple(l.b::Nullable(FixedString(1))) = tuple(r.b::Nullable(FixedString(1)));
 SELECT count() FROM t_ns_left l SEMI LEFT JOIN t_ns_right r ON l.b <=> r.b AND l.c <=> r.c;
 SELECT count() FROM t_ns_left l ANTI LEFT JOIN t_ns_right r ON l.b <=> r.b AND l.c <=> r.c;
-SELECT count() FROM t_ns_left l ANY LEFT JOIN t_ns_right r ON l.a <=> r.a WHERE r.id > 0;
+SELECT count(), countIf(r.id IS NOT NULL), countIf(l.a <=> r.a) FROM t_ns_left l ANY LEFT JOIN t_ns_right r ON l.a <=> r.a SETTINGS join_use_nulls = 1;
 
 SELECT 'the right key column is the stored one, not the derived key';
 SELECT l.a, r.a, r.d FROM t_ns_left l JOIN t_ns_right r ON l.a <=> r.a AND l.d <=> r.d WHERE l.id < 4 AND r.id < 4 ORDER BY l.id, r.id;
