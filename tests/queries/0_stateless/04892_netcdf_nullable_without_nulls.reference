@@ -1,0 +1,9 @@
+--- a Nullable column with no NULLs: no _FillValue, read back as not Nullable
+x	UInt16
+0
+1
+--- the same column with a NULL: the attribute is written and the column stays Nullable
+x	Nullable(UInt16)
+1	0
+--- a NULL in the data, but the file is read without the setting: a plain number
+x	UInt16

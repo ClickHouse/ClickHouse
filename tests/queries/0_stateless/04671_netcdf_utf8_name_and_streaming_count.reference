@@ -1,0 +1,12 @@
+--- a name that is not valid UTF-8 cannot be written
+1
+1
+1
+--- and a valid UTF-8 name outside of ASCII is accepted when it can be validated
+1
+1
+--- the number of rows of a streaming file comes from the metadata
+3
+--- and the count is the same with and without the fast path
+3
+3
