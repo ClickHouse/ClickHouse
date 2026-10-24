@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-random-settings, no-random-merge-tree-settings
+# Tags: long, no-random-settings, no-random-merge-tree-settings, no-parallel-replicas
 #
 # no-random-settings: the read-speed family (local_filesystem_read_method, max_read_buffer_size,
 # enable_filesystem_cache, use_page_cache_for_local_disks,
@@ -14,6 +14,8 @@
 # index_granularity = 1, and both that and min_bytes_for_wide_part are randomized. Redundant
 # today, since no-random-settings already disables the merge-tree randomizer, but kept so the
 # requirement is explicit.
+# no-parallel-replicas: parallel replicas hand out the part in mark ranges, so the read is not one
+# walk over every mark, and a finished range delivers rows before the cancel.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
