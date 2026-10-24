@@ -951,9 +951,16 @@ Chunk StorageObjectStorageSource::generate()
 
             FailPointInjection::pauseFailPoint(FailPoints::object_storage_source_pause_before_virtual_columns);
 
+            /// Only a web source has the HTTP `_headers` column. For other sources `_headers` is a hive partition column.
+            const bool http_headers = configuration->getType() == ObjectStorageType::Web
+                && read_from_format_info.requested_virtual_columns.contains("_headers");
+            NamesAndTypesList virtual_columns_without_headers;
+            if (http_headers)
+                virtual_columns_without_headers = read_from_format_info.requested_virtual_columns.eraseNames({"_headers"});
+
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk,
-                read_from_format_info.requested_virtual_columns,
+                http_headers ? virtual_columns_without_headers : read_from_format_info.requested_virtual_columns,
                 {
                     .path = path,
                     .storage_id = storage_id,
@@ -976,7 +983,7 @@ Chunk StorageObjectStorageSource::generate()
                 read_context,
                 format_settings);
 
-            if (read_from_format_info.requested_virtual_columns.contains("_headers"))
+            if (http_headers)
             {
                 auto type = std::make_shared<DataTypeMap>(
                     std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
