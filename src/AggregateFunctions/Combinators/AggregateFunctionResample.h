@@ -27,6 +27,9 @@ extern const char aggregate_function_state_transfer_throw[];
 template <typename Key>
 class AggregateFunctionResample final : public IAggregateFunctionHelper<AggregateFunctionResample<Key>>
 {
+    template <typename OtherKey>
+    friend class AggregateFunctionResample;
+
 private:
     /// Sanity threshold to avoid creation of too large arrays. The choice of this number is arbitrary.
     static constexpr size_t max_elements = 1048576;
@@ -95,6 +98,26 @@ public:
         if (total > max_elements)
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The range given in function {} contains too many elements",
                     getName());
+
+        /// Nested -Resample combinators multiply the number of nested states, and every `create`,
+        /// `destroy`, `merge`, ... loops over all of them. `sizeOfData` bounds the total state size, but a
+        /// nested level with an empty range (or a nested function without state) makes the state size zero
+        /// while the loops still run, so `countResampleResampleResample(0, 0, 1, 0, 1048576, 1, 0, 1048576, 1)`
+        /// used to spin through 2^40 nested calls. Bound the number of nested states directly.
+        size_t nested_elements = std::max<size_t>(total, 1);
+        for (auto nested = nested_function; nested; nested = nested->getNestedFunction())
+        {
+            size_t nested_total = 0;
+            if (const auto * resample = dynamic_cast<const AggregateFunctionResample<UInt64> *>(nested.get()))
+                nested_total = resample->total;
+            else if (const auto * resample_signed = dynamic_cast<const AggregateFunctionResample<Int64> *>(nested.get()))
+                nested_total = resample_signed->total;
+            else
+                continue;
+            if (common::mulOverflow(nested_elements, std::max<size_t>(nested_total, 1), nested_elements) || nested_elements > max_elements)
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                    "The nested -Resample combinators of function {} produce too many elements", getName());
+        }
     }
 
     String getName() const override
