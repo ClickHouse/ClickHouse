@@ -1,4 +1,6 @@
 #include <Functions/FunctionsConversion.h>
+#include <Functions/FunctionConversionMatching.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/iota.h>
@@ -3528,6 +3530,299 @@ FunctionBasePtr createFunctionBaseCast(
 
     return std::make_unique<detail::FunctionCast>(
         *settings, name, std::move(monotonicity), data_types, return_type, diagnostic, cast_type);
+}
+
+namespace
+{
+
+bool hasNoCustomConversionSerialization(const IDataType & type)
+{
+    return !type.getCustomName() && !type.getCustomSerialization();
+}
+
+bool isAuditedPrimitiveNumericType(const IDataType & type)
+{
+    if (!hasNoCustomConversionSerialization(type))
+        return false;
+
+    return typeid(type) == typeid(DataTypeUInt8) || typeid(type) == typeid(DataTypeUInt16)
+        || typeid(type) == typeid(DataTypeUInt32) || typeid(type) == typeid(DataTypeUInt64)
+        || typeid(type) == typeid(DataTypeUInt128) || typeid(type) == typeid(DataTypeUInt256)
+        || typeid(type) == typeid(DataTypeInt8) || typeid(type) == typeid(DataTypeInt16)
+        || typeid(type) == typeid(DataTypeInt32) || typeid(type) == typeid(DataTypeInt64)
+        || typeid(type) == typeid(DataTypeInt128) || typeid(type) == typeid(DataTypeInt256)
+        || typeid(type) == typeid(DataTypeBFloat16) || typeid(type) == typeid(DataTypeFloat32)
+        || typeid(type) == typeid(DataTypeFloat64);
+}
+
+bool isAuditedPrimitiveIntegerType(const IDataType & type)
+{
+    const bool is_native_integer = typeid(type) == typeid(DataTypeUInt8) || typeid(type) == typeid(DataTypeUInt16)
+        || typeid(type) == typeid(DataTypeUInt32) || typeid(type) == typeid(DataTypeUInt64) || typeid(type) == typeid(DataTypeUInt128)
+        || typeid(type) == typeid(DataTypeUInt256) || typeid(type) == typeid(DataTypeInt8) || typeid(type) == typeid(DataTypeInt16)
+        || typeid(type) == typeid(DataTypeInt32) || typeid(type) == typeid(DataTypeInt64) || typeid(type) == typeid(DataTypeInt128)
+        || typeid(type) == typeid(DataTypeInt256);
+
+    return is_native_integer && hasNoCustomConversionSerialization(type);
+}
+
+template <typename Type>
+bool isConcreteDataType(const IDataType & type)
+{
+    return typeid(type) == typeid(Type);
+}
+
+bool isAuditedCastTypePair(const IDataType & from_type, const IDataType & to_type)
+{
+    if (!hasNoCustomConversionSerialization(from_type) || !hasNoCustomConversionSerialization(to_type))
+        return false;
+
+    if (isAuditedPrimitiveNumericType(from_type) && isConcreteDataType<DataTypeString>(to_type))
+        return true;
+
+    if (isConcreteDataType<DataTypeString>(from_type))
+        return isConcreteDataType<DataTypeDateTime>(to_type)
+            || isConcreteDataType<DataTypeDateTime64>(to_type)
+            || isConcreteDataType<DataTypeEnum8>(to_type)
+            || isConcreteDataType<DataTypeEnum16>(to_type);
+
+    return false;
+}
+
+template <typename DecimalType>
+bool haveEqualConcreteDecimalTypes(const IDataType & left, const IDataType & right)
+{
+    if (!isConcreteDataType<DecimalType>(left) || !isConcreteDataType<DecimalType>(right)
+        || !hasNoCustomConversionSerialization(left) || !hasNoCustomConversionSerialization(right))
+        return false;
+
+    const auto & left_decimal = assert_cast<const DecimalType &>(left);
+    const auto & right_decimal = assert_cast<const DecimalType &>(right);
+    return left_decimal.getPrecision() == right_decimal.getPrecision()
+        && left_decimal.getScale() == right_decimal.getScale();
+}
+
+bool isConcreteDecimalType(const IDataType & type)
+{
+    return isConcreteDataType<DataTypeDecimal32>(type)
+        || isConcreteDataType<DataTypeDecimal64>(type)
+        || isConcreteDataType<DataTypeDecimal128>(type)
+        || isConcreteDataType<DataTypeDecimal256>(type);
+}
+
+bool haveEqualConcreteDecimalTypes(const IDataType & left, const IDataType & right)
+{
+    return haveEqualConcreteDecimalTypes<DataTypeDecimal32>(left, right)
+        || haveEqualConcreteDecimalTypes<DataTypeDecimal64>(left, right)
+        || haveEqualConcreteDecimalTypes<DataTypeDecimal128>(left, right)
+        || haveEqualConcreteDecimalTypes<DataTypeDecimal256>(left, right);
+}
+
+bool isAuditedDecimalScaleType(const IDataType & type)
+{
+    return isConcreteDataType<DataTypeUInt8>(type)
+        || isConcreteDataType<DataTypeUInt16>(type)
+        || isConcreteDataType<DataTypeUInt32>(type)
+        || isConcreteDataType<DataTypeUInt64>(type);
+}
+
+bool haveEqualConcreteNonDecimalTypes(const IDataType & left, const IDataType & right)
+{
+    return typeid(left) == typeid(right)
+        && hasNoCustomConversionSerialization(left)
+        && hasNoCustomConversionSerialization(right)
+        && left.equals(right);
+}
+
+bool isFunctionToDecimal(const IFunction & function, const IDataType & result_type)
+{
+    if (typeid(function) == typeid(detail::FunctionToDecimal32))
+        return isConcreteDataType<DataTypeDecimal32>(result_type);
+    if (typeid(function) == typeid(detail::FunctionToDecimal64))
+        return isConcreteDataType<DataTypeDecimal64>(result_type);
+    if (typeid(function) == typeid(detail::FunctionToDecimal128))
+        return isConcreteDataType<DataTypeDecimal128>(result_type);
+    if (typeid(function) == typeid(detail::FunctionToDecimal256))
+        return isConcreteDataType<DataTypeDecimal256>(result_type);
+    return false;
+}
+
+bool isFunctionToDecimal(const IFunction & function)
+{
+    return typeid(function) == typeid(detail::FunctionToDecimal32)
+        || typeid(function) == typeid(detail::FunctionToDecimal64)
+        || typeid(function) == typeid(detail::FunctionToDecimal128)
+        || typeid(function) == typeid(detail::FunctionToDecimal256);
+}
+
+bool haveEqualExplicitConversionSettings(const FunctionConvertSettings & left, const FunctionConvertSettings & right)
+{
+    return left.date_time_overflow_behavior == right.date_time_overflow_behavior
+        && left.precise_float_parsing == right.precise_float_parsing
+        && left.cast_ipv4_ipv6_default_on_conversion_error == right.cast_ipv4_ipv6_default_on_conversion_error
+        && left.cast_string_to_variant_use_inference == right.cast_string_to_variant_use_inference
+        && left.cast_string_to_dynamic_use_inference == right.cast_string_to_dynamic_use_inference
+        && left.input_format_ipv4_default_on_conversion_error == right.input_format_ipv4_default_on_conversion_error
+        && left.input_format_ipv6_default_on_conversion_error == right.input_format_ipv6_default_on_conversion_error
+        && left.check_conversion_from_numbers_to_enum == right.check_conversion_from_numbers_to_enum
+        && left.date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands
+            == right.date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands
+        && left.cast_keep_nullable == right.cast_keep_nullable
+        && left.cast_string_to_date_time_mode == right.cast_string_to_date_time_mode;
+}
+
+}
+
+bool detail::FunctionCast::isEquivalentForBloomFilterExpressionMatching(const detail::FunctionCast & other) const
+{
+    if (argument_types.size() != 2 || other.argument_types.size() != 2
+        || !argument_types[0] || !argument_types[1] || !other.argument_types[0] || !other.argument_types[1]
+        || !return_type || !other.return_type
+        || !argument_types[0]->equals(*other.argument_types[0])
+        || !argument_types[1]->equals(*other.argument_types[1])
+        || !return_type->equals(*other.return_type)
+        || !isConcreteDataType<DataTypeString>(*argument_types[1])
+        || !isConcreteDataType<DataTypeString>(*other.argument_types[1])
+        || !hasNoCustomConversionSerialization(*argument_types[1])
+        || !hasNoCustomConversionSerialization(*other.argument_types[1])
+        || String(cast_name) != String(other.cast_name)
+        || cast_type != other.cast_type
+        || !haveEqualExplicitConversionSettings(settings, other.settings)
+        || !isAuditedCastTypePair(*argument_types[0], *return_type)
+        || !isAuditedCastTypePair(*other.argument_types[0], *other.return_type))
+        return false;
+
+    if (isConcreteDataType<DataTypeDateTime>(*return_type))
+    {
+        const auto & left_datetime = assert_cast<const DataTypeDateTime &>(*return_type);
+        const auto & right_datetime = assert_cast<const DataTypeDateTime &>(*other.return_type);
+        return left_datetime.hasExplicitTimeZone() == right_datetime.hasExplicitTimeZone()
+            && left_datetime.getTimeZone().getTimeZone() == right_datetime.getTimeZone().getTimeZone();
+    }
+
+    if (isConcreteDataType<DataTypeDateTime64>(*return_type))
+    {
+        const auto & left_datetime = assert_cast<const DataTypeDateTime64 &>(*return_type);
+        const auto & right_datetime = assert_cast<const DataTypeDateTime64 &>(*other.return_type);
+        return left_datetime.getScale() == right_datetime.getScale()
+            && left_datetime.hasExplicitTimeZone() == right_datetime.hasExplicitTimeZone()
+            && left_datetime.getTimeZone().getTimeZone() == right_datetime.getTimeZone().getTimeZone();
+    }
+
+    return true;
+}
+
+bool areCastsEquivalentForBloomFilterExpressionMatching(const IFunctionBase & left, const IFunctionBase & right)
+{
+    const auto * left_cast = dynamic_cast<const detail::FunctionCast *>(&left);
+    const auto * right_cast = dynamic_cast<const detail::FunctionCast *>(&right);
+    return left_cast && right_cast && left_cast->isEquivalentForBloomFilterExpressionMatching(*right_cast);
+}
+
+bool isNativeCastForBloomFilterExpressionMatching(const IFunctionBase & function)
+{
+    return dynamic_cast<const detail::FunctionCast *>(&function) != nullptr;
+}
+
+bool isNativeDateTimeModeDependentConversionForBloomFilterExpressionMatching(const IFunctionBase & function)
+{
+    const auto * adaptor = dynamic_cast<const FunctionToFunctionBaseAdaptor *>(&function);
+    if (!adaptor)
+        return false;
+
+    const auto * native_function = adaptor->getFunction().get();
+    if (!native_function)
+        return false;
+
+    return typeid(*native_function) == typeid(detail::FunctionToDateTime)
+        || typeid(*native_function) == typeid(detail::FunctionToDateTime32)
+        || typeid(*native_function) == typeid(detail::FunctionToDateTime64)
+        || typeid(*native_function) == typeid(detail::FunctionToUnixTimestamp);
+}
+
+bool isNativeSettingsCapturingConversionForBloomFilterExpressionMatching(const IFunctionBase & function)
+{
+    if (isNativeCastForBloomFilterExpressionMatching(function))
+        return true;
+
+    const auto * adaptor = dynamic_cast<const FunctionToFunctionBaseAdaptor *>(&function);
+    if (!adaptor)
+        return false;
+
+    const auto * native_function = adaptor->getFunction().get();
+    return native_function && dynamic_cast<const detail::IFunctionWithConversionSettings *>(native_function);
+}
+
+bool areNativeConversionsEquivalentForBloomFilterExpressionMatching(const IFunctionBase & left, const IFunctionBase & right)
+{
+    const auto * left_adaptor = dynamic_cast<const FunctionToFunctionBaseAdaptor *>(&left);
+    const auto * right_adaptor = dynamic_cast<const FunctionToFunctionBaseAdaptor *>(&right);
+    if (!left_adaptor || !right_adaptor)
+        return false;
+
+    const auto & left_function_ptr = left_adaptor->getFunction();
+    const auto & right_function_ptr = right_adaptor->getFunction();
+    if (!left_function_ptr || !right_function_ptr)
+        return false;
+
+    const auto & left_function = *left_function_ptr;
+    const auto & right_function = *right_function_ptr;
+    if (typeid(left_function) != typeid(right_function))
+        return false;
+
+    const auto & left_arguments = left_adaptor->getArgumentTypes();
+    const auto & right_arguments = right_adaptor->getArgumentTypes();
+    const auto & left_result = left_adaptor->getResultType();
+    const auto & right_result = right_adaptor->getResultType();
+    if (!left_result || !right_result)
+        return false;
+
+    if (typeid(left_function) == typeid(detail::FunctionToUInt8))
+    {
+        return left_arguments.size() == 1 && right_arguments.size() == 1 && left_arguments[0] && right_arguments[0]
+            && isAuditedPrimitiveIntegerType(*left_arguments[0]) && isAuditedPrimitiveIntegerType(*right_arguments[0])
+            && haveEqualConcreteNonDecimalTypes(*left_arguments[0], *right_arguments[0]) && isConcreteDataType<DataTypeUInt8>(*left_result)
+            && isConcreteDataType<DataTypeUInt8>(*right_result) && haveEqualConcreteNonDecimalTypes(*left_result, *right_result);
+    }
+
+    if (isFunctionToDecimal(left_function))
+    {
+        if (left_arguments.size() != 2 || right_arguments.size() != 2
+            || !left_arguments[0] || !left_arguments[1] || !right_arguments[0] || !right_arguments[1]
+            || !isFunctionToDecimal(left_function, *left_result)
+            || !isFunctionToDecimal(right_function, *right_result)
+            || !haveEqualConcreteDecimalTypes(*left_result, *right_result)
+            || !isAuditedPrimitiveNumericType(*left_arguments[0])
+            || !isAuditedPrimitiveNumericType(*right_arguments[0])
+            || !haveEqualConcreteNonDecimalTypes(*left_arguments[0], *right_arguments[0])
+            || !isAuditedDecimalScaleType(*left_arguments[1])
+            || !isAuditedDecimalScaleType(*right_arguments[1])
+            || !haveEqualConcreteNonDecimalTypes(*left_arguments[1], *right_arguments[1]))
+            return false;
+
+        return true;
+    }
+
+    if (typeid(left_function) == typeid(detail::FunctionToString))
+    {
+        if (left_arguments.size() != 1 || right_arguments.size() != 1
+            || !left_arguments[0] || !right_arguments[0]
+            || !isConcreteDataType<DataTypeString>(*left_result)
+            || !isConcreteDataType<DataTypeString>(*right_result)
+            || !hasNoCustomConversionSerialization(*left_result)
+            || !hasNoCustomConversionSerialization(*right_result))
+            return false;
+
+        if (isAuditedPrimitiveNumericType(*left_arguments[0])
+            && isAuditedPrimitiveNumericType(*right_arguments[0]))
+            return haveEqualConcreteNonDecimalTypes(*left_arguments[0], *right_arguments[0]);
+
+        return isConcreteDecimalType(*left_arguments[0])
+            && isConcreteDecimalType(*right_arguments[0])
+            && haveEqualConcreteDecimalTypes(*left_arguments[0], *right_arguments[0]);
+    }
+
+    return false;
 }
 
 

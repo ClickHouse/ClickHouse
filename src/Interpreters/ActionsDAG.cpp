@@ -1117,6 +1117,14 @@ bool ActionsDAG::removeUnusedActions(const std::unordered_set<const Node *> & us
                     && (!node->children.empty()
                         || (node->type == ActionType::FUNCTION && WhichDataType(node->result_type).isFunction())))
                 {
+                    /// Preserve function ancestry before this fold erases the child edges.
+                    node->has_folded_function = node->has_folded_function || node->type == ActionsDAG::ActionType::FUNCTION;
+                    for (const auto * child : node->children)
+                    {
+                        if (child->type == ActionsDAG::ActionType::FUNCTION || child->has_folded_function)
+                            node->has_folded_function = true;
+                    }
+
                     node->type = ActionsDAG::ActionType::COLUMN;
                     node->children.clear();
                     node->is_deterministic_constant = !non_deterministic_nodes.contains(node);

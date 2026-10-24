@@ -50,6 +50,10 @@ public:
 
     bool has(const std::string & name) const;
 
+    /// Returns the registered canonical creator for a function name without invoking it.
+    /// Aliases and case-insensitive names are resolved using the same registry rules as tryGetImpl.
+    const FunctionCreator * tryGetCanonicalCreator(const std::string & name) const;
+
     /// Throws an exception if not found.
     FunctionOverloadResolverPtr get(const std::string & name, ContextPtr context) const;
 

@@ -1,0 +1,118 @@
+Granules: 16/16
+Name: idx_bool
+Granules: 1/16
+Granules: 16/16
+Name: idx_u8
+Granules: 1/16
+Granules: 16/16
+Name: idx_map_keys
+Granules: 1/16
+Granules: 16/16
+Name: idx_array_sort
+Granules: 1/16
+Granules: 16/16
+Name: idx_array_reverse
+Granules: 1/16
+1
+1
+Granules: 16/16
+Name: idx_map_keys_physical
+Granules: 1/16
+Granules: 16/16
+Name: idx_array_sort_physical
+Granules: 1/16
+Granules: 16/16
+Name: idx_map_keys
+Granules: 1/16
+Granules: 16/16
+Name: idx_array_sort
+Granules: 1/16
+Granules: 16/16
+Name: idx_array_sort
+Granules: 1/16
+tuple hash IN full scan preserves typed rows	1
+tuple hash IN indexed read preserves typed rows	1
+tuple hash IN uses named index and prunes 1/16	1
+tuple hash child expression mismatch full scan preserves typed rows	1
+tuple hash child expression mismatch indexed read preserves typed rows	1
+tuple hash child expression mismatch declines index and reads 16/16	1
+arraySlice IN full scan preserves typed rows	1
+arraySlice IN indexed read preserves typed rows	1
+arraySlice IN uses named index and prunes 1/16	1
+arraySlice offset mismatch full scan preserves typed rows	1
+arraySlice offset mismatch indexed read preserves typed rows	1
+arraySlice offset mismatch declines index and reads 16/16	1
+arrayResize IN full scan preserves typed rows	1
+arrayResize IN indexed read preserves typed rows	1
+arrayResize IN uses named index and prunes 1/16	1
+arrayResize length mismatch full scan preserves every typed row	1
+arrayResize length mismatch indexed read preserves every typed row	1
+arrayResize length mismatch declines index and reads 16/16	1
+map physical	3	[]
+map physical	4	['3']
+array physical	3	[]
+array physical	4	['3']
+Bool indexed	[3]
+Bool full scan	[3]
+UInt8 indexed	[3]
+UInt8 full scan	[3]
+map indexed	[3]
+map full scan	[3]
+map computed collision	[3]
+map computed collision full scan	[3]
+map physical collision	[4]
+array indexed	[3]
+array full scan	[3]
+array computed collision	[3]
+array computed collision full scan	[3]
+array physical collision	[4]
+arrayReverse indexed	[3]
+arrayReverse full scan	[3]
+array DirectIN indexed rows preserve typed values	1
+array DirectIN full scan preserves typed values	1
+array DirectIN uses named index and prunes 1/16	1
+arrayJoin control indexed rows preserve typed values	1
+arrayJoin control full scan preserves typed values	1
+arrayJoin control retains index pruning 1/16	1
+unequal array literal indexed rows preserve typed values	1
+unequal array literal full scan preserves typed values	1
+unequal array literal declines index and reads 16/16	1
+Decimal32 IN indexed rows preserve typed values	1
+Decimal32 IN full scan preserves typed values	1
+Decimal32 IN uses named index and prunes 1/16	1
+Decimal32 scale mismatch indexed rows preserve typed values	1
+Decimal32 scale mismatch full scan preserves typed values	1
+Decimal32 scale mismatch declines index and reads 16/16	1
+Decimal64 IN indexed rows preserve typed values	1
+Decimal64 IN full scan preserves typed values	1
+Decimal64 IN uses named index and prunes 1/16	1
+Decimal64 scale mismatch indexed rows preserve typed values	1
+Decimal64 scale mismatch full scan preserves typed values	1
+Decimal64 scale mismatch declines index and reads 16/16	1
+Decimal128 IN indexed rows preserve typed values	1
+Decimal128 IN full scan preserves typed values	1
+Decimal128 IN uses named index and prunes 1/16	1
+Decimal128 scale mismatch indexed rows preserve typed values	1
+Decimal128 scale mismatch full scan preserves typed values	1
+Decimal128 scale mismatch declines index and reads 16/16	1
+Decimal256 IN indexed rows preserve typed values	1
+Decimal256 IN full scan preserves typed values	1
+Decimal256 IN uses named index and prunes 1/16	1
+Decimal256 scale mismatch indexed rows preserve typed values	1
+Decimal256 scale mismatch full scan preserves typed values	1
+Decimal256 scale mismatch declines index and reads 16/16	1
+UInt64 toString IN changed unrelated setting uses index and prunes 1/16	1
+UInt64 toString IN changed unrelated setting preserves row	1
+Int256 toString IN changed unrelated setting uses index and prunes 1/16	1
+Int256 toString IN changed unrelated setting preserves row	1
+Float64 toString IN changed unrelated setting uses index and prunes 1/16	1
+Float64 toString IN changed unrelated setting preserves row	1
+DateTime64 effective setting changes toString output	1
+DateTime64 effective format mismatch declines index and reads 16/16	1
+DateTime64 effective format mismatch preserves row	1
+Nullable if direct IN uses index and prunes 1/16	1
+Nullable if direct IN preserves row	1
+Nullable if equality control uses index and prunes 1/16	1
+Nullable if equality control preserves row	1
+Empty-string if expression declines NULL index and reads 16/16	1
+Empty-string if expression preserves even rows	1

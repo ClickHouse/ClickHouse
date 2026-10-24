@@ -1,0 +1,19 @@
+formatter query setting is 0	1
+formatter mismatch declines pruning after reattach	1
+formatter indexed results preserve rows	1
+formatter fullscan preserves rows	1
+arrayDistinct Dynamic arrayJoin retains 1 of 16 granules	1
+arrayDistinct indexed result is nonempty target row	1
+arrayDistinct fullscan agrees	1
+abs IN retains 1 of 16 granules	1
+abs indexed rows are nonempty target row	1
+abs fullscan rows agree	1
+negate IN retains 1 of 16 granules	1
+negate indexed rows are nonempty target row	1
+negate fullscan rows agree	1
+sign IN retains 1 of 16 granules	1
+sign indexed rows are nonempty target row	1
+sign fullscan rows agree	1
+bitNot IN retains 1 of 16 granules	1
+bitNot indexed rows are nonempty target row	1
+bitNot fullscan rows agree	1

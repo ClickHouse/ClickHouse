@@ -1,0 +1,36 @@
+plain direct IN indexed rows	1
+plain direct IN full scan rows	1
+plain direct IN uses named index and prunes 1/16	1
+plain arrayJoin IN indexed rows	1
+plain arrayJoin IN full scan rows	1
+plain arrayJoin IN uses named index and prunes 1/16	1
+different body direct IN indexed rows	1
+different body direct IN full scan rows	1
+different body direct IN declines indexes and reads 16/16	1
+different body arrayJoin IN indexed rows	1
+different body arrayJoin IN full scan rows	1
+different body arrayJoin IN declines indexes and reads 16/16	1
+captured direct IN indexed rows	1
+captured direct IN full scan rows	1
+captured direct IN uses named index and prunes 1/16	1
+captured arrayJoin IN indexed rows	1
+captured arrayJoin IN full scan rows	1
+captured arrayJoin IN uses named index and prunes 1/16	1
+different capture direct IN indexed rows	1
+different capture direct IN full scan rows	1
+different capture direct IN declines indexes and reads 16/16	1
+different capture arrayJoin IN indexed rows	1
+different capture arrayJoin IN full scan rows	1
+different capture arrayJoin IN declines indexes and reads 16/16	1
+UInt64 row capture direct IN indexed rows	1
+UInt64 row capture direct IN full scan rows	1
+UInt64 row capture direct IN declines index and reads 16/16	1
+UInt64 row capture arrayJoin IN indexed rows	1
+UInt64 row capture arrayJoin IN full scan rows	1
+UInt64 row capture arrayJoin IN declines index and reads 16/16	1
+changed UInt64 constant direct IN indexed rows	1
+changed UInt64 constant direct IN full scan rows	1
+changed UInt64 constant direct IN declines index and reads 16/16	1
+changed UInt64 constant arrayJoin IN indexed rows	1
+changed UInt64 constant arrayJoin IN full scan rows	1
+changed UInt64 constant arrayJoin IN declines index and reads 16/16	1

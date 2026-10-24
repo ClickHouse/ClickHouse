@@ -1,0 +1,56 @@
+DateTime64(3, UTC) CAST preserves typed rows	1
+DateTime64(3, UTC) CAST declines unknown persisted context, reads 16/16	1
+DateTime64 scale mismatch preserves typed rows	1
+DateTime64 scale mismatch declines idx_dt64_cast	1
+DateTime64 timezone mismatch preserves typed rows	1
+DateTime64 timezone mismatch declines idx_dt64_cast	1
+DateTime64 implicit timezone preserves typed rows	1
+DateTime64 implicit timezone declines explicit idx_dt64_cast	1
+Shared Enum16 raw column preserves typed rows	1
+Shared Enum16 raw column prunes 1/16	1
+Enum8 CAST preserves typed rows	1
+Enum8 CAST prunes 1/16	1
+Enum16 CAST preserves typed rows	1
+Enum16 CAST prunes 1/16	1
+Enum8 map mismatch preserves typed rows	1
+Enum8 map mismatch declines idx_enum8_cast	1
+Enum8 index to Enum16 query preserves typed rows	1
+Enum8 index to Enum16 query declines idx_enum8_cast	1
+UInt64 arrayDistinct plus arrayConcat preserves duplicate rows	1
+UInt64 arrayDistinct plus safe arrayConcat prunes 1/16	1
+UInt64 to Int64 array coercion preserves rows	1
+UInt64 to Int64 array coercion declines idx_nums_numeric	1
+UInt64 nullable array wrapper preserves rows	1
+UInt64 nullable array wrapper declines idx_nums_numeric	1
+UInt64 numeric constant append selective needle preserves typed rows	1
+UInt64 numeric constant append selective needle declines named index, reads 16/16	1
+UInt64 numeric constant mismatch preserves typed rows	1
+UInt64 numeric constant mismatch declines idx_nums_constant, reads 16/16	1
+signedzero expression returns UInt64 and preserves matching row	1
+signedzero bit-mismatched constant declines idx_signedzero	1
+DateTime64 CAST format flag cannot prove persisted context, reads 16/16	1
+DateTime64 CAST parquet dictionary flag 0 full OFF/ON typed rows	1
+Enum8 CAST parallel-parsing flag 0 keeps named index at 1/16	1
+Enum8 CAST parallel-parsing flag 0 full OFF/ON typed rows	1
+DateTime64(7) CAST-to-String default context preserves typed rows	1
+DateTime64(7) CAST-to-String format-only mismatch declines index, reads 16/16	1
+DateTime64(7) CAST-to-String format-only mismatch full OFF/ON typed rows	1
+DateTime64(7) CAST-to-String four format flags full OFF/ON typed rows	1
+DateTime64(7) trailing-zero mismatch full OFF/ON typed rows	1
+DateTime64(7) trailing-zero mismatch declines idx_dt64_cast_text, reads 16/16	1
+DateTime64 array wrapper selective needle preserves typed rows	1
+DateTime64 array wrapper selective needle declines named index, reads 16/16	1
+DateTime64 array wrapper mismatch full scan preserves complete typed rows	1
+DateTime64 array wrapper mismatch indexed read preserves complete typed rows	1
+DateTime64 array wrapper mismatch declines named index, reads 16/16	1
+UUID array wrapper selective needle preserves typed rows	1
+UUID array wrapper selective needle declines named index, reads 16/16	1
+UUID array wrapper mismatch full scan preserves complete typed rows	1
+UUID array wrapper mismatch indexed read preserves complete typed rows	1
+UUID array wrapper mismatch declines named index, reads 16/16	1
+FixedString(4) constant append preserves typed padded rows	1
+FixedString(4) constant append declines named index, reads 16/16	1
+FixedString(4) unequal-byte append preserves all typed rows	1
+FixedString(4) unequal-byte append declines index and reads 16/16	1
+FixedString(4) embedded-NUL unequal suffix preserves all typed rows	1
+FixedString(4) embedded-NUL unequal suffix declines index and reads 16/16	1

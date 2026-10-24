@@ -1,0 +1,188 @@
+DIRECT_IN_LOWER_READBACK_BEGIN
+1	TARGET	target	String	String
+2	noise02	noise02	String	String
+3	noise03	noise03	String	String
+4	noise04	noise04	String	String
+5	noise05	noise05	String	String
+6	noise06	noise06	String	String
+7	noise07	noise07	String	String
+8	noise08	noise08	String	String
+9	noise09	noise09	String	String
+10	noise10	noise10	String	String
+11	noise11	noise11	String	String
+12	noise12	noise12	String	String
+13	noise13	noise13	String	String
+14	noise14	noise14	String	String
+15	noise15	noise15	String	String
+16	target	target	String	String
+DIRECT_IN_LOWER_READBACK_END
+DIRECT_IN_CAST_U8_READBACK_BEGIN
+1	7	7	UInt8	String
+2	102	102	UInt8	String
+3	103	103	UInt8	String
+4	104	104	UInt8	String
+5	105	105	UInt8	String
+6	106	106	UInt8	String
+7	107	107	UInt8	String
+8	108	108	UInt8	String
+9	109	109	UInt8	String
+10	110	110	UInt8	String
+11	111	111	UInt8	String
+12	112	112	UInt8	String
+13	113	113	UInt8	String
+14	114	114	UInt8	String
+15	115	115	UInt8	String
+16	7	7	UInt8	String
+DIRECT_IN_CAST_U8_READBACK_END
+DIRECT_IN_YEAR_READBACK_BEGIN
+1	2024	DateTime('UTC')	UInt16
+2	2010	DateTime('UTC')	UInt16
+3	2011	DateTime('UTC')	UInt16
+4	2012	DateTime('UTC')	UInt16
+5	2013	DateTime('UTC')	UInt16
+6	2014	DateTime('UTC')	UInt16
+7	2015	DateTime('UTC')	UInt16
+8	2016	DateTime('UTC')	UInt16
+9	2017	DateTime('UTC')	UInt16
+10	2018	DateTime('UTC')	UInt16
+11	2019	DateTime('UTC')	UInt16
+12	2020	DateTime('UTC')	UInt16
+13	2021	DateTime('UTC')	UInt16
+14	2022	DateTime('UTC')	UInt16
+15	2023	DateTime('UTC')	UInt16
+16	2024	DateTime('UTC')	UInt16
+DIRECT_IN_YEAR_READBACK_END
+DIRECT_IN_PLUS_READBACK_BEGIN
+1	1	2	UInt64	UInt64
+2	102	103	UInt64	UInt64
+3	103	104	UInt64	UInt64
+4	104	105	UInt64	UInt64
+5	105	106	UInt64	UInt64
+6	106	107	UInt64	UInt64
+7	107	108	UInt64	UInt64
+8	108	109	UInt64	UInt64
+9	109	110	UInt64	UInt64
+10	110	111	UInt64	UInt64
+11	111	112	UInt64	UInt64
+12	112	113	UInt64	UInt64
+13	113	114	UInt64	UInt64
+14	114	115	UInt64	UInt64
+15	115	116	UInt64	UInt64
+16	1	2	UInt64	UInt64
+DIRECT_IN_PLUS_READBACK_END
+DIRECT_IN_ARRAY_READBACK_BEGIN
+1	['target','target']	['target']	Array(String)	Array(String)
+2	['noise02','noise02']	['noise02']	Array(String)	Array(String)
+3	['noise03','noise03']	['noise03']	Array(String)	Array(String)
+4	['noise04','noise04']	['noise04']	Array(String)	Array(String)
+5	['noise05','noise05']	['noise05']	Array(String)	Array(String)
+6	['noise06','noise06']	['noise06']	Array(String)	Array(String)
+7	['noise07','noise07']	['noise07']	Array(String)	Array(String)
+8	['noise08','noise08']	['noise08']	Array(String)	Array(String)
+9	['noise09','noise09']	['noise09']	Array(String)	Array(String)
+10	['noise10','noise10']	['noise10']	Array(String)	Array(String)
+11	['noise11','noise11']	['noise11']	Array(String)	Array(String)
+12	['noise12','noise12']	['noise12']	Array(String)	Array(String)
+13	['noise13','noise13']	['noise13']	Array(String)	Array(String)
+14	['noise14','noise14']	['noise14']	Array(String)	Array(String)
+15	['noise15','noise15']	['noise15']	Array(String)	Array(String)
+16	['target','target']	['target']	Array(String)	Array(String)
+DIRECT_IN_ARRAY_READBACK_END
+DIRECT_IN_ARRAY_EMPTY_READBACK_BEGIN
+1	[]	[]	Array(String)	Array(String)
+2	['noise02','noise02']	['noise02']	Array(String)	Array(String)
+3	[]	[]	Array(String)	Array(String)
+4	['noise04','noise04']	['noise04']	Array(String)	Array(String)
+DIRECT_IN_ARRAY_EMPTY_READBACK_END
+DIRECT_IN_NESTED_READBACK_BEGIN
+1	['a','a']	['x','y']	['a']	1	2	Array(String)	Array(String)	Array(String)
+2	['b','c']	['z']	['b','c']	2	1	Array(String)	Array(String)	Array(String)
+3	['d','d','d']	['u','v']	['d']	1	2	Array(String)	Array(String)	Array(String)
+4	['e','f','g']	['w']	['e','f','g']	3	1	Array(String)	Array(String)	Array(String)
+DIRECT_IN_NESTED_READBACK_END
+DIRECT_IN_CAST_BEST_EFFORT_CONTEXT_BEGIN
+best_effort	UTC
+DIRECT_IN_CAST_BEST_EFFORT_CONTEXT_END
+DIRECT_IN_CAST_BEST_EFFORT_READBACK_BEGIN
+1	2020-02-01 20:00:00	2020-02-01 20:00:00	DateTime('UTC')
+2	2020-05-02 20:00:00	2020-05-02 20:00:00	DateTime('UTC')
+3	2020-05-03 20:00:00	2020-05-03 20:00:00	DateTime('UTC')
+4	2020-05-04 20:00:00	2020-05-04 20:00:00	DateTime('UTC')
+5	2020-05-05 20:00:00	2020-05-05 20:00:00	DateTime('UTC')
+6	2020-05-06 20:00:00	2020-05-06 20:00:00	DateTime('UTC')
+7	2020-05-07 20:00:00	2020-05-07 20:00:00	DateTime('UTC')
+8	2020-05-08 20:00:00	2020-05-08 20:00:00	DateTime('UTC')
+9	2020-05-09 20:00:00	2020-05-09 20:00:00	DateTime('UTC')
+10	2020-05-10 20:00:00	2020-05-10 20:00:00	DateTime('UTC')
+11	2020-05-11 20:00:00	2020-05-11 20:00:00	DateTime('UTC')
+12	2020-05-12 20:00:00	2020-05-12 20:00:00	DateTime('UTC')
+13	2020-05-13 20:00:00	2020-05-13 20:00:00	DateTime('UTC')
+14	2020-05-14 20:00:00	2020-05-14 20:00:00	DateTime('UTC')
+15	2020-05-15 20:00:00	2020-05-15 20:00:00	DateTime('UTC')
+16	2020-02-01 20:00:00	2020-02-01 20:00:00	DateTime('UTC')
+DIRECT_IN_CAST_BEST_EFFORT_READBACK_END
+DIRECT_IN_CAST_BEST_EFFORT_US_CONTEXT_BEGIN
+best_effort_us	UTC
+DIRECT_IN_CAST_BEST_EFFORT_US_CONTEXT_END
+DIRECT_IN_CAST_BEST_EFFORT_US_READBACK_BEGIN
+1	2020-02-01 20:00:00	2020-02-01 20:00:00	DateTime('UTC')
+2	2020-05-02 20:00:00	2020-05-02 20:00:00	DateTime('UTC')
+3	2020-05-03 20:00:00	2020-05-03 20:00:00	DateTime('UTC')
+4	2020-05-04 20:00:00	2020-05-04 20:00:00	DateTime('UTC')
+5	2020-05-05 20:00:00	2020-05-05 20:00:00	DateTime('UTC')
+6	2020-05-06 20:00:00	2020-05-06 20:00:00	DateTime('UTC')
+7	2020-05-07 20:00:00	2020-05-07 20:00:00	DateTime('UTC')
+8	2020-05-08 20:00:00	2020-05-08 20:00:00	DateTime('UTC')
+9	2020-05-09 20:00:00	2020-05-09 20:00:00	DateTime('UTC')
+10	2020-05-10 20:00:00	2020-05-10 20:00:00	DateTime('UTC')
+11	2020-05-11 20:00:00	2020-05-11 20:00:00	DateTime('UTC')
+12	2020-05-12 20:00:00	2020-05-12 20:00:00	DateTime('UTC')
+13	2020-05-13 20:00:00	2020-05-13 20:00:00	DateTime('UTC')
+14	2020-05-14 20:00:00	2020-05-14 20:00:00	DateTime('UTC')
+15	2020-05-15 20:00:00	2020-05-15 20:00:00	DateTime('UTC')
+16	2020-02-01 20:00:00	2020-02-01 20:00:00	DateTime('UTC')
+DIRECT_IN_CAST_BEST_EFFORT_US_READBACK_END
+lower: named index prunes 2/16	1
+UInt8 CAST-to-String: named index prunes 2/16	1
+toYear UTC: named index prunes 2/16	1
+plus(x,1): named index prunes 2/16	1
+arrayDistinct direct Array result: named index prunes 2/16	1
+nested length(arrayDistinct) FUNCTION control: named index prunes 1/4	1
+CAST persisted context unknown: declines named index, reads 16/16	1
+empty Array IN declines index, reads 4/4	1
+quoted INPUT collision declines idx_direct_in_length, reads 4/4	1
+CAST best_effort_us mismatch declines idx_direct_in_cast_context, reads 16/16	1
+lower full OFF/ON multiset	1
+UInt8 CAST-to-String full OFF/ON multiset	1
+toYear full OFF/ON multiset	1
+plus(x,1) full OFF/ON multiset	1
+arrayDistinct full OFF/ON multiset	1
+empty Array IN full OFF/ON multiset	1
+nested FUNCTION positive full OFF/ON multiset	1
+quoted INPUT collision full OFF/ON multiset	1
+CAST same best_effort context full OFF/ON multiset	1
+CAST best_effort_us mismatch full OFF/ON multiset	1
+DIRECT_IN_NULLABLE_RHS_READBACK_BEGIN
+target	Nullable(String)	0
+\N	Nullable(String)	1
+DIRECT_IN_NULLABLE_RHS_READBACK_END
+Nullable(String)
+Nullable-LHS IN null-stripped Set: named index prunes 2/16	1
+Nullable-LHS GLOBAL IN null-stripped Set: named index prunes 2/16	1
+Nullable-LHS IN NULL-bearing Set: declines named index, reads 16/16	1
+Nullable-LHS GLOBAL IN NULL-bearing Set: declines named index, reads 16/16	1
+Nullable-LHS IN NULL-bearing Set full OFF/ON exact multiset	1
+Nullable-LHS GLOBAL IN NULL-bearing Set full OFF/ON exact multiset	1
+UInt8 CAST allow-special serialization flag 0 keeps named index at 2/16	1
+UInt8 CAST parallel-formatting flag 0 keeps named index at 2/16	1
+String-to-DateTime format flags cannot prove persisted context, reads 16/16	1
+UInt8 CAST precise-float context mismatch declines named index, reads 16/16	1
+UInt8 CAST allow-special serialization flag 0 full OFF/ON typed rows	1
+UInt8 CAST parallel-formatting flag 0 full OFF/ON typed rows	1
+UInt8 CAST two format flags 0 full OFF/ON typed rows	1
+String-to-DateTime four format flags 0 full OFF/ON typed rows	1
+UInt8 CAST precise-float context mismatch full OFF/ON typed rows	1
+signed toUInt8 IN across parsing settings prunes 2/16	1
+signed toUInt8 negative and wrapped inputs preserve typed rows	1
+unsigned toUInt8 IN across parsing settings prunes 2/16	1
+unsigned toUInt8 in-range and wrapped inputs preserve typed rows	1
