@@ -20,6 +20,7 @@ SELECT 'saf bytes', arraySort(groupArray(reinterpretAsUInt8(b))) FROM t_saf;
 SELECT 'saf not in', (SELECT count() FROM t_saf WHERE b NOT IN (1)), (SELECT countIf(b NOT IN (1)) FROM t_saf);
 SELECT 'saf not has', (SELECT count() FROM t_saf WHERE NOT has([toUInt8(1)], b)), (SELECT countIf(NOT has([toUInt8(1)], b)) FROM t_saf);
 SELECT 'saf in', (SELECT count() FROM t_saf WHERE b IN (2)), (SELECT countIf(b IN (2)) FROM t_saf);
+SELECT 'saf in uses key', b FROM t_saf WHERE b IN (2) SETTINGS force_primary_key = 1;
 SELECT 'saf group by', count() FROM (SELECT 1 FROM t_saf GROUP BY toString(b)) SETTINGS optimize_injective_functions_in_group_by = 1;
 SELECT 'saf uniq', uniqExact(toString(b)) FROM t_saf SETTINGS optimize_injective_functions_inside_uniq = 1;
 SELECT 'saf limit by', count() FROM (SELECT b FROM t_saf LIMIT 1 BY toString(b)) SETTINGS optimize_injective_functions_in_limit_by = 1;

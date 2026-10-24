@@ -2,6 +2,7 @@ saf bytes	[0,1,2]
 saf not in	2	2
 saf not has	2	2
 saf in	1	1
+saf in uses key	true
 saf group by	2
 saf uniq	2
 saf limit by	2
