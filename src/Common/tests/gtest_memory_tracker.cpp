@@ -2,6 +2,7 @@
 
 #include <cstdlib>
 #include <functional>
+#include <limits>
 #include <future>
 #include <memory>
 #include <thread>
@@ -673,4 +674,34 @@ TEST(MemoryTracker, UserSettlesToZeroWhenItsLastQueryEnds)
     runAttachedTo(total_memory_tracker, [](MemoryTracker &) { std::ignore = CurrentMemoryTracker::free(10 * MB); });
 }
 
+}
+
+/// `MemoryCredits` must not wrap for large amounts of memory held for long intervals, and the sub-second parts of
+/// many short intervals must add up instead of being truncated away.
+TEST(MemoryTracker, MemoryCreditsConversionDoesNotOverflow)
+{
+    static constexpr UInt64 gibibyte = 1ULL << 30;
+    static constexpr UInt64 hour_us = 3600ULL * 1'000'000;
+
+    std::atomic<UInt64> remainder{0};
+
+    /// 1 TiB held for an hour is far beyond 2^64 byte-microseconds.
+    EXPECT_EQ(MemoryTracker::convertMemoryCreditsToByteSeconds(1024 * gibibyte, hour_us, remainder), 1024 * gibibyte * 3600);
+    EXPECT_EQ(remainder.load(), 0u);
+
+    /// 64 GiB held for a day.
+    EXPECT_EQ(MemoryTracker::convertMemoryCreditsToByteSeconds(64 * gibibyte, 24 * hour_us, remainder), 64 * gibibyte * 3600 * 24);
+
+    /// One byte held for a million intervals of one microsecond is exactly one byte-second.
+    std::atomic<UInt64> small_remainder{0};
+    UInt64 total = 0;
+    for (size_t i = 0; i < 1'000'000; ++i)
+        total += MemoryTracker::convertMemoryCreditsToByteSeconds(1, 1, small_remainder);
+    EXPECT_EQ(total, 1u);
+
+    /// The result saturates instead of wrapping for absurd values.
+    std::atomic<UInt64> absurd_remainder{0};
+    EXPECT_EQ(
+        MemoryTracker::convertMemoryCreditsToByteSeconds(std::numeric_limits<UInt64>::max(), std::numeric_limits<UInt64>::max(), absurd_remainder),
+        std::numeric_limits<UInt64>::max());
 }
