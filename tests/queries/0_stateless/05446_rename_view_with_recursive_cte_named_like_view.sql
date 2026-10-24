@@ -25,7 +25,9 @@ CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.r (n UInt64) ENGINE = Memory;
 CREATE VIEW {CLICKHOUSE_DATABASE_1:Identifier}.reads_cte AS
     WITH RECURSIVE r AS (SELECT 1 AS n UNION ALL SELECT n + 1 FROM r WHERE n < 3)
     SELECT * FROM r;
-SELECT name, dependencies_table FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 'r';
+USE {CLICKHOUSE_DATABASE_1:Identifier};
+SELECT name, dependencies_table FROM system.tables WHERE database = currentDatabase() AND name = 'r';
+USE {CLICKHOUSE_DATABASE:Identifier};
 
 SELECT '-- a view reading a table of the destination database named like it';
 CREATE DATABASE {CLICKHOUSE_DATABASE_2:Identifier} ENGINE = Atomic;
