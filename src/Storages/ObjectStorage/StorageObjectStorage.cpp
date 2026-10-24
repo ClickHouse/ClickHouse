@@ -16,6 +16,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLTask.h>
 #include <Interpreters/DatabaseCatalog.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -67,7 +68,7 @@ namespace Setting
     extern const SettingsInt64 delta_lake_snapshot_start_version;
     extern const SettingsInt64 delta_lake_snapshot_end_version;
     extern const SettingsUInt64 max_streams_for_files_processing_in_cluster_functions;
-    extern const SettingsBool iceberg_delete_data_on_drop;
+    extern const SettingsBool data_lake_delete_data_on_drop;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsBool parallel_replicas_for_object_storage_tables;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
@@ -1115,36 +1116,71 @@ void StorageObjectStorage::truncate(
     object_storage->removeObjectsIfExist(objects);
 }
 
-void StorageObjectStorage::checkTableCanBeDropped(ContextPtr query_context) const
+void StorageObjectStorage::prepareForDrop(ContextPtr query_context)
 {
-    /// Dropping a data lake may delete its data with the client it holds: in the query, or later in the background with
-    /// the global settings.
-    if (configuration->isDataLakeConfiguration()
-        && (query_context->getSettingsRef()[Setting::iceberg_delete_data_on_drop]
-            || query_context->getGlobalContext()->getSettingsRef()[Setting::iceberg_delete_data_on_drop]))
+    delete_data_on_drop = prepareForDropImpl(object_storage, configuration, catalog, query_context);
+}
+
+bool StorageObjectStorage::prepareForDropImpl(
+    const ObjectStoragePtr & object_storage,
+    const StorageObjectStorageConfigurationPtr & configuration,
+    const std::shared_ptr<DataLake::ICatalog> & catalog,
+    const ContextPtr & query_context)
+{
+    if (!query_context->getSettingsRef()[Setting::data_lake_delete_data_on_drop])
+        return false;
+
+    /// On a secondary replica of a `Replicated` database, data shared by the replicas was already deleted by the initiator.
+    /// Local data belongs to each replica.
+    if (object_storage->getType() != ObjectStorageType::Local)
+    {
+        if (auto txn = query_context->getZooKeeperMetadataTransaction(); txn && !txn->isInitialQuery())
+            return false;
+    }
+
+    /// Dropping a data lake deletes its data with the client it holds.
+    if (configuration->isDataLakeConfiguration())
         checkSessionMayUseServerIdentity(*object_storage, query_context);
+
+    /// `drop` runs in the background, where the metadata of a table that has not been accessed since the server
+    /// started is still unloaded and `configuration->drop` would find nothing to delete: load it now, with the
+    /// query context at hand. Only Iceberg deletes its own data, and a catalog table is purged by the catalog instead.
+    if (!catalog && configuration->isIcebergConfiguration())
+        configuration->lazyInitializeIfNeeded(object_storage, query_context);
+    return true;
 }
 
 void StorageObjectStorage::drop()
 {
-    dropTable(configuration, catalog, storage_id);
+    dropImpl(delete_data_on_drop.load(), catalog, configuration, storage_id, log);
 }
 
-void StorageObjectStorage::dropTable(
-    const StorageObjectStorageConfigurationPtr & configuration,
+void StorageObjectStorage::dropImpl(
+    const std::optional<bool> & delete_data_on_drop,
     const std::shared_ptr<DataLake::ICatalog> & catalog,
-    const StorageID & storage_id)
+    const StorageObjectStorageConfigurationPtr & configuration,
+    const StorageID & storage_id,
+    const LoggerPtr & log)
 {
-    /// A table of an `Atomic` database is dropped by a background thread, which has no query context.
-    /// A table of a `DataLakeCatalog` database is dropped inside the query, so the query settings apply.
-    auto query_context = CurrentThread::tryGetQueryContext();
-    auto drop_context = query_context ? query_context : Context::getGlobalContextInstance();
+    const bool delete_data = delete_data_on_drop.value_or(false);
+
+    if (!delete_data_on_drop
+        && Context::getGlobalContextInstance()->getSettingsRef()[Setting::data_lake_delete_data_on_drop])
+    {
+        LOG_WARNING(
+            log,
+            "Keeping the data of table {} although `data_lake_delete_data_on_drop` is enabled server-wide: the value for this drop "
+            "could not be captured, which happens when the table was never loaded, and data is never deleted on a fallback path. "
+            "Access the table before dropping it, so that the settings of the `DROP TABLE` query reach the table.",
+            storage_id.getNameForLogs());
+    }
+
     if (catalog)
     {
         const auto [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
-        catalog->dropTable(namespace_name, table_name, drop_context->getSettingsRef()[Setting::iceberg_delete_data_on_drop]);
+        catalog->dropTable(namespace_name, table_name, delete_data, /* if_exists */ false);
     }
-    configuration->drop(drop_context);
+    configuration->drop(delete_data);
 }
 
 std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterator(

@@ -2584,3 +2584,55 @@ def test_mixed_alter_races_replicated_alter_metadata(started_cluster):
     )
     main_node.query("DROP DATABASE IF EXISTS mixed_race SYNC")
     competing_node.query("DROP DATABASE IF EXISTS mixed_race SYNC")
+
+
+def test_drop_deletes_replica_local_iceberg_data_on_every_replica(started_cluster):
+    db = "drop_replica_local_iceberg"
+    path = f"/var/lib/clickhouse/user_files/{db}"
+
+    def files_left(node):
+        return int(node.exec_in_container(["bash", "-c", f"find {path} -type f 2>/dev/null | wc -l"]).strip())
+
+    main_node.query(f"CREATE DATABASE {db} ENGINE = Replicated('/test/{db}', 'shard1', 'replica1')")
+    dummy_node.query(f"CREATE DATABASE {db} ENGINE = Replicated('/test/{db}', 'shard1', 'replica2')")
+    try:
+        main_node.query(f"CREATE TABLE {db}.t (x Int64) ENGINE = IcebergLocal('{path}/')")
+        dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {db}")
+        main_node.query(f"INSERT INTO {db}.t VALUES (1)", settings={"allow_insert_into_iceberg": 1})
+        # The secondary gets its own Iceberg table under the same local path.
+        dummy_node.query(f"CREATE TABLE default.{db}_src (x Int64) ENGINE = IcebergLocal('{path}/')")
+        dummy_node.query(f"INSERT INTO default.{db}_src VALUES (1)", settings={"allow_insert_into_iceberg": 1})
+        dummy_node.query(f"DROP TABLE default.{db}_src SYNC", settings={"data_lake_delete_data_on_drop": 0})
+        for node in [main_node, dummy_node]:
+            assert files_left(node) > 0
+
+        main_node.query(f"DROP TABLE {db}.t SYNC", settings={"data_lake_delete_data_on_drop": 1})
+        dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {db}")
+
+        assert dummy_node.query(f"EXISTS TABLE {db}.t") == "0\n"
+        assert files_left(main_node) == 0
+        assert files_left(dummy_node) == 0
+    finally:
+        main_node.query(f"DROP DATABASE IF EXISTS {db} SYNC")
+        dummy_node.query(f"DROP DATABASE IF EXISTS {db} SYNC")
+        for node in [main_node, dummy_node]:
+            node.exec_in_container(["bash", "-c", f"rm -rf {path}"])
+
+
+def test_drop_with_purge_of_iceberg_data_only_on_initiator(started_cluster):
+    db = "drop_initiator_only_iceberg"
+    path = f"/var/lib/clickhouse/user_files/{db}"
+    main_node.query(f"CREATE DATABASE {db} ENGINE = Replicated('/test/{db}', 'shard1', 'replica1')")
+    dummy_node.query(f"CREATE DATABASE {db} ENGINE = Replicated('/test/{db}', 'shard1', 'replica2')")
+    try:
+        main_node.query(f"CREATE TABLE {db}.t (x Int64) ENGINE = IcebergLocal('{path}/')")
+        main_node.query(f"INSERT INTO {db}.t VALUES (1)", settings={"allow_insert_into_iceberg": 1})
+        dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {db}")
+        main_node.query(f"DROP TABLE {db}.t SYNC", settings={"data_lake_delete_data_on_drop": 1})
+        dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {db}")
+        assert dummy_node.query(f"EXISTS TABLE {db}.t") == "0\n"
+    finally:
+        main_node.query(f"DROP DATABASE IF EXISTS {db} SYNC")
+        dummy_node.query(f"DROP DATABASE IF EXISTS {db} SYNC")
+        for node in [main_node, dummy_node]:
+            node.exec_in_container(["bash", "-c", f"rm -rf {path}"])

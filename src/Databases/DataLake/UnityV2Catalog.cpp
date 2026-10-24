@@ -391,27 +391,30 @@ void UnityV2Catalog::checkNamespaceExists(const std::string & schema_name) const
     }
 }
 
-void UnityV2Catalog::createTable(
+bool UnityV2Catalog::createTable(
     const String & namespace_name,
     const String & table_name,
-    const String & table_location,
-    Poco::JSON::Object::Ptr metadata_content) const
+    const String & new_metadata_path,
+    Poco::JSON::Object::Ptr metadata_content,
+    DB::CompressionMethod metadata_compression_method,
+    bool if_not_exists) const
 {
     /// Iceberg metadata carries `schemas`, Delta metadata carries `fields`.
     if (!metadata_content->has("fields"))
     {
         /// Registers an external table at the location where `v1.metadata.json` was already written, like the Delta branch below.
-        requestWithRetry([&](bool force_refresh)
+        return requestWithRetry([&](bool force_refresh)
         {
-            getIcebergRestCatalog(force_refresh)->createTable(namespace_name, table_name, table_location, metadata_content);
+            return getIcebergRestCatalog(force_refresh)->createTable(
+                namespace_name, table_name, new_metadata_path, metadata_content, metadata_compression_method, if_not_exists);
         });
-        return;
     }
 
     auto fields = metadata_content->getArray("fields");
     if (!fields)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Delta schema fields are missing for Unity createTable");
 
+    const String table_location = metadata_content->getValue<String>("location");
     auto body = buildUnityCreateTableBody(
         warehouse, namespace_name, table_name, table_location, buildUnityColumnsFromDeltaSchema(fields));
 
@@ -435,6 +438,8 @@ void UnityV2Catalog::createTable(
             "Failed to create table {}.{} in Unity catalog: {}",
             namespace_name, table_name, DB::getCurrentExceptionMessage(/* with_stacktrace */ false));
     }
+
+    return true;
 }
 
 std::optional<std::string> UnityV2Catalog::getDefaultTableLocation(
@@ -462,19 +467,38 @@ void UnityV2Catalog::createNamespaceIfNotExists(const String & namespace_name) c
     checkNamespaceExists(namespace_name);
 }
 
-void UnityV2Catalog::dropTable(const String & namespace_name, const String & table_name, bool delete_data) const
+void UnityV2Catalog::dropTable(const String & namespace_name, const String & table_name, bool purge, bool if_exists) const
 {
+    if (if_exists && !existsTable(namespace_name, table_name))
+        return;
+
     auto full_table_name = fmt::format("{}.{}.{}", warehouse, namespace_name, table_name);
 
+    /// The table may be dropped by another client after the existence probe above.
+    auto is_gone_and_if_exists = [&](const DB::HTTPException & e)
+    {
+        return if_exists && e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_NOT_FOUND;
+    };
+
     /// Databricks decides what happens to the data: a managed table loses it, an external table keeps it.
-    /// The drop goes ahead only when `iceberg_delete_data_on_drop` agrees with that.
-    const auto table_type = getTableType(full_table_name);
+    /// The drop goes ahead only when `data_lake_delete_data_on_drop` agrees with that.
+    String table_type;
+    try
+    {
+        table_type = getTableType(full_table_name);
+    }
+    catch (const DB::HTTPException & e)
+    {
+        if (is_gone_and_if_exists(e))
+            return;
+        throw;
+    }
     const bool data_will_be_deleted = table_type == "MANAGED";
-    if (data_will_be_deleted != delete_data)
+    if (data_will_be_deleted != purge)
         throw DB::Exception(
             DB::ErrorCodes::SUPPORT_IS_DISABLED,
             "Table {}.{} has table_type {} in Unity catalog, so Databricks {} its data on drop. "
-            "Set `iceberg_delete_data_on_drop` to {} to drop it",
+            "Set `data_lake_delete_data_on_drop` to {} to drop it",
             namespace_name, table_name, table_type, data_will_be_deleted ? "deletes" : "keeps", data_will_be_deleted ? 1 : 0);
 
     LOG_DEBUG(log, "Dropping table {} from Unity catalog", full_table_name);
@@ -482,6 +506,15 @@ void UnityV2Catalog::dropTable(const String & namespace_name, const String & tab
     try
     {
         deleteRequest(std::filesystem::path{TABLES_ENDPOINT} / full_table_name);
+    }
+    catch (const DB::HTTPException & e)
+    {
+        if (is_gone_and_if_exists(e))
+            return;
+        throw DB::Exception(
+            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+            "Failed to drop table {}.{} from Unity catalog: {}",
+            namespace_name, table_name, DB::getCurrentExceptionMessage(/* with_stacktrace */ false));
     }
     catch (...)
     {

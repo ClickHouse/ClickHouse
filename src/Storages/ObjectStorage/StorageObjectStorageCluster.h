@@ -4,6 +4,8 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Interpreters/Context_fwd.h>
 
+#include <atomic>
+
 namespace DB
 {
 
@@ -80,6 +82,8 @@ public:
 
     void drop() override;
 
+    void prepareForDrop(ContextPtr query_context) override;
+
     RemoteQueryExecutor::Extension getTaskIteratorExtension(
         const ActionsDAG::Node * predicate,
         const ActionsDAG * filter,
@@ -111,6 +115,8 @@ private:
     const std::shared_ptr<DataLake::ICatalog> catalog;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
     const ConstStoragePtr table;
+
+    std::atomic<std::optional<bool>> delete_data_on_drop;
 };
 
 }

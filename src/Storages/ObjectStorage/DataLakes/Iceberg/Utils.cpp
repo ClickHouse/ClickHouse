@@ -22,6 +22,10 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/parseQuery.h>
+#include <fmt/ranges.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStateSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
@@ -100,6 +104,7 @@ namespace DB::DataLakeStorageSetting
 namespace DB::Setting
 {
 extern const SettingsString iceberg_metadata_compression_method;
+extern const SettingsBool datalake_ignore_unsupported_table_properties;
 }
 
 namespace ProfileEvents
@@ -495,6 +500,8 @@ bool tryWriteVersionHintFile(
         }
         else
         {
+            /// The metadata file written with `If-None-Match: *` is the commit itself, and another writer
+            /// may already have advanced the hint past it, building on this version.
             if (old_version >= metadata_file_info.version)
                 return true;
         }
@@ -519,7 +526,21 @@ bool tryWriteVersionHintFile(
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
-    return false;
+
+    if (assert_version_exactly)
+        return false;
+
+    /// The metadata file is already written with `If-None-Match: *`, which is the commit itself: reporting
+    /// a failure here would make the caller retry and commit the same change a second time. A stale hint
+    /// only delays readers with `iceberg_use_version_hint = 1` until the next writer advances it.
+    LOG_WARNING(
+        getLogger("IcebergMetadataFileWriter"),
+        "Committed the Iceberg metadata file {}, but could not advance {} to version {} after {} attempts",
+        storage_metadata_path,
+        storage_version_hint_path,
+        metadata_file_info.version,
+        MAX_TRANSACTION_RETRIES);
+    return true;
 }
 
 bool writeMetadataFileAndVersionHint(
@@ -534,7 +555,7 @@ bool writeMetadataFileAndVersionHint(
     if (!writeMetadataFile(resolver, metadata_file_info, metadata_file_content, object_storage, context))
         return false;
 
-    (void)tryWriteVersionHintFile(
+    return tryWriteVersionHintFile(
         resolver,
         metadata_file_info,
         version_hint_path,
@@ -542,7 +563,6 @@ bool writeMetadataFileAndVersionHint(
         context,
         /* create */ try_write_version_hint,
         /* assert_version_exactly */ false);
-    return true;
 }
 
 
@@ -1033,6 +1053,8 @@ static Poco::JSON::Object::Ptr getPartitionField(
     {
         if (!param.has_value())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "TRUNCATE function for iceberg partitioning requires one integer parameter");
+        if (*param <= 0 || *param > std::numeric_limits<Int32>::max())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "TRUNCATE function for iceberg partitioning requires a positive 32-bit width, got {}", *param);
         result->set(Iceberg::f_transform, fmt::format("truncate[{}]", *param));
         return result;
     }
@@ -1040,6 +1062,8 @@ static Poco::JSON::Object::Ptr getPartitionField(
     {
         if (!param.has_value())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "BUCKET function for iceberg partitioning requires one integer parameter");
+        if (*param <= 0 || *param > std::numeric_limits<Int32>::max())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "BUCKET function for iceberg partitioning requires a positive 32-bit number of buckets, got {}", *param);
         result->set(Iceberg::f_transform, fmt::format("bucket[{}]", *param));
         return result;
     }
@@ -1057,6 +1081,19 @@ static std::pair<Poco::JSON::Object::Ptr, Int32> getPartitionSpec(
     Poco::JSON::Array::Ptr fields = new Poco::JSON::Array;
     /// Partition field ids start at 1000. The first field gets 1000 after the pre-increment.
     Int32 partition_iter = 999;
+    /// A partition field is named after its source column, and the names must be unique in the manifest schema.
+    std::unordered_set<String> partition_field_names;
+    auto add_partition_field = [&](const ASTPtr & partition_by_element)
+    {
+        auto partition_field = getPartitionField(partition_by_element, column_name_to_source_id, partition_iter);
+        const auto & name = partition_field->getValue<String>(Iceberg::f_name);
+        if (!partition_field_names.insert(name).second)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Iceberg partitioning uses the column {} more than once, which is not supported",
+                name);
+        fields->add(partition_field);
+    };
     if (partition_by)
     {
         if (const auto * partition_function = partition_by->as<ASTFunction>(); partition_function && partition_function->name == "tuple")
@@ -1065,16 +1102,12 @@ static std::pair<Poco::JSON::Object::Ptr, Int32> getPartitionSpec(
             {
                 const auto * expression_list = child->as<ASTExpressionList>();
                 for (const auto & expression_list_child : expression_list->children)
-                {
-                    auto partition_field = getPartitionField(expression_list_child, column_name_to_source_id, partition_iter);
-                    fields->add(partition_field);
-                }
+                    add_partition_field(expression_list_child);
             }
         }
         else
         {
-            auto partition_field = getPartitionField(partition_by, column_name_to_source_id, partition_iter);
-            fields->add(partition_field);
+            add_partition_field(partition_by);
         }
     }
 
@@ -1093,18 +1126,23 @@ static String parseColumnArgument(const ASTPtr & arg_ast, const String & clickho
     return identifier->name();
 }
 
+static const std::unordered_map<String, String> clickhouse_name_to_iceberg
+{
+    {"identity", "identity"},
+    {"icebergBucket", "bucket"},
+    {"icebergTruncate", "truncate"},
+    {"icebergYear", "year"},
+    {"icebergMonth", "month"},
+    {"icebergDay", "day"},
+    {"icebergHour", "hour"},
+    {"toYearNumSinceEpoch", "year"},
+    {"toMonthNumSinceEpoch", "month"},
+    {"toRelativeDayNum", "day"},
+    {"toRelativeHourNum", "hour"}
+};
+
 static std::pair<String, String> parseFunction(const ASTPtr & func_object)
 {
-    const static std::unordered_map<String, String> clickhouse_name_to_iceberg = {
-            {"identity", "identity"},
-            {"icebergBucket", "bucket"},
-            {"icebergTruncate", "truncate"},
-            {"icebergYear", "year"},
-            {"icebergMonth", "month"},
-            {"icebergDay", "day"},
-            {"icebergHour", "hour"}
-        };
-
     const auto * func = func_object ? func_object->as<ASTFunction>() : nullptr;
     if (!func)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid iceberg sort order expression, expected a function");
@@ -1148,6 +1186,12 @@ static std::pair<String, String> parseFunction(const ASTPtr & func_object)
                 ErrorCodes::BAD_ARGUMENTS,
                 "Invalid iceberg sort order function {}: expected a non-negative integer literal as first argument",
                 clickhouse_name);
+
+        if (*arg > static_cast<size_t>(std::numeric_limits<Int32>::max()))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Invalid iceberg sort order function {}: the integer literal {} does not fit in a signed 32-bit integer",
+                clickhouse_name, *arg);
     }
     else
     {
@@ -1239,15 +1283,137 @@ static std::vector<std::pair<String, String>> parseTransformAndColumnPairs(ASTPt
     return result;
 }
 
+/// Source types accepted by an Iceberg transform: https://iceberg.apache.org/spec/#partition-transforms
+static bool isTransformApplicableToType(const String & transform, const String & source_type)
+{
+    if (transform == "identity")
+        return source_type != Iceberg::f_geometry;
+
+    /// Strip the parameters of `decimal(P, S)` and `fixed[L]`.
+    const String type = source_type.substr(0, source_type.find_first_of("(["));
+    static const std::unordered_map<String, std::unordered_set<String>> transform_source_types
+    {
+        {"bucket", {"int", "long", "decimal", "date", "time", "timestamp", "timestamptz", "timestamp_ns", "timestamptz_ns", "string", "uuid", "fixed", "binary"}},
+        {"truncate", {"int", "long", "decimal", "string", "binary"}},
+        {"year", {"date", "timestamp", "timestamptz", "timestamp_ns", "timestamptz_ns"}},
+        {"month", {"date", "timestamp", "timestamptz", "timestamp_ns", "timestamptz_ns"}},
+        {"day", {"date", "timestamp", "timestamptz", "timestamp_ns", "timestamptz_ns"}},
+        {"hour", {"timestamp", "timestamptz", "timestamp_ns", "timestamptz_ns"}},
+    };
+    const auto it = transform_source_types.find(transform);
+    return it != transform_source_types.end() && it->second.contains(type);
+}
+
+/// SQL expressions are validated separately; this only checks whether an Iceberg transform can encode the key.
+/// Iceberg keys can only be sourced from columns of primitive types, and each transform accepts only some of them.
+static bool isRepresentableKey(ASTPtr key, const std::unordered_map<String, String> & primitive_column_types, bool is_top_level = true)
+{
+    key = unwrapOrderByElement(key);
+    if (const auto * identifier = key->as<ASTIdentifier>())
+    {
+        const auto it = primitive_column_types.find(identifier->name());
+        return it != primitive_column_types.end() && isTransformApplicableToType("identity", it->second);
+    }
+
+    const auto * function = key->as<ASTFunction>();
+    const auto * expressions = key->as<ASTExpressionList>();
+    if (function && function->name == "tuple")
+        expressions = function->arguments->as<ASTExpressionList>();
+    if (expressions)
+    {
+        /// Iceberg keys are flat lists of fields.
+        if (!is_top_level)
+            return false;
+        bool representable = true;
+        for (const auto & child : expressions->children)
+            representable = isRepresentableKey(child, primitive_column_types, /*is_top_level=*/ false) && representable;
+        return representable;
+    }
+
+    if (!function)
+        return false;
+    const auto transform = clickhouse_name_to_iceberg.find(function->name);
+    if (transform == clickhouse_name_to_iceberg.end())
+        return false;
+
+    const auto & arguments = function->arguments->children;
+    const bool has_parameter = function->name == "icebergBucket" || function->name == "icebergTruncate";
+    if (arguments.size() != (has_parameter ? 2 : 1))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid arguments for Iceberg transform {}", function->name);
+    if (has_parameter)
+    {
+        const auto * parameter = arguments.front()->as<ASTLiteral>();
+        if (!parameter)
+            return false;
+        /// Iceberg readers parse transform parameters as signed 32-bit integers.
+        const Int64 value = parameter->value.safeGet<Int64>();
+        if (value <= 0 || value > std::numeric_limits<Int32>::max())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg transform {} requires a positive 32-bit parameter, got {}", function->name, value);
+    }
+    const auto * column = arguments.back()->as<ASTIdentifier>();
+    if (!column)
+        return false;
+    const auto it = primitive_column_types.find(column->name());
+    return it != primitive_column_types.end() && isTransformApplicableToType(transform->second, it->second);
+}
+
+/// Iceberg limits the precision of a decimal to 38: https://iceberg.apache.org/spec/#primitive-types
+static void checkIcebergDecimalPrecision(const DataTypePtr & type)
+{
+    if (isDecimal(type))
+    {
+        if (getDecimalPrecision(*type) > 38)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Type {} cannot be stored in Iceberg: the maximum precision of an Iceberg decimal is 38",
+                type->getName());
+    }
+    else if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+        checkIcebergDecimalPrecision(nullable->getNestedType());
+    else if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
+        checkIcebergDecimalPrecision(array->getNestedType());
+    else if (const auto * map = typeid_cast<const DataTypeMap *>(type.get()))
+    {
+        checkIcebergDecimalPrecision(map->getKeyType());
+        checkIcebergDecimalPrecision(map->getValueType());
+    }
+    else if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        for (const auto & element : tuple->getElements())
+            checkIcebergDecimalPrecision(element);
+    }
+}
+
+/// Partition fields are named after their source columns, so a partition key that uses a column twice cannot be represented.
+static bool partitionKeyUsesColumnMoreThanOnce(const ASTPtr & partition_by)
+{
+    ASTs elements{partition_by};
+    if (const auto * function = partition_by->as<ASTFunction>(); function && function->name == "tuple")
+        elements = function->arguments->children;
+
+    std::unordered_set<String> columns;
+    for (const auto & element : elements)
+    {
+        const auto * column = element->as<ASTIdentifier>();
+        if (const auto * function = element->as<ASTFunction>())
+            column = function->arguments->children.back()->as<ASTIdentifier>();
+        if (column && !columns.insert(column->name()).second)
+            return true;
+    }
+    return false;
+}
+
 std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     String path_location,
     const ColumnsDescription & columns,
     ASTPtr partition_by,
     ASTPtr order_by,
     ContextPtr context,
-    UInt64 format_version)
+    UInt64 format_version,
+    bool is_catalog_table)
 {
     std::unordered_map<String, Int32> column_name_to_source_id;
+    std::unordered_map<String, String> primitive_column_types;
     static Poco::UUIDGenerator uuid_generator;
 
     Poco::JSON::Object::Ptr new_metadata_file_content = new Poco::JSON::Object;
@@ -1285,6 +1451,9 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
         field->set(Iceberg::f_required, type.second);
         field->set(Iceberg::f_type, type.first);
         column_name_to_source_id[column.name] = iter_for_initial_columns;
+        /// Nested Iceberg types are JSON objects, primitive ones are strings.
+        if (type.first.isString())
+            primitive_column_types.emplace(column.name, type.first.extract<String>());
         schema_fields->add(field);
     }
     new_metadata_file_content->set(Iceberg::f_last_column_id, iter);
@@ -1292,6 +1461,32 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     Poco::JSON::Array::Ptr schema_array = new Poco::JSON::Array;
     schema_array->add(schema_representation);
     new_metadata_file_content->set(Iceberg::f_schemas, schema_array);
+
+    if (is_catalog_table)
+    {
+        for (const auto & column : columns)
+            checkIcebergDecimalPrecision(column.type);
+
+        const bool ignore_unsupported_properties = context->getSettingsRef()[Setting::datalake_ignore_unsupported_table_properties];
+        auto validate_key = [&](ASTPtr & key, const char * clause, bool is_partition_key)
+        {
+            if (!key)
+                return;
+            /// Validate even when omissions are allowed: invalid SQL must not silently disappear.
+            KeyDescription::getKeyFromAST(key, columns, {}, context);
+            if (!isRepresentableKey(key, primitive_column_types) || (is_partition_key && partitionKeyUsesColumnMoreThanOnce(key)))
+            {
+                if (!ignore_unsupported_properties)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot represent {} expression {} in Iceberg. "
+                        "Set datalake_ignore_unsupported_table_properties = 1 to omit unsupported properties",
+                        clause, key->formatForLogging());
+                key.reset();
+            }
+        };
+        validate_key(partition_by, "PARTITION BY", /*is_partition_key=*/ true);
+        validate_key(order_by, "ORDER BY", /*is_partition_key=*/ false);
+    }
 
     new_metadata_file_content->set(Iceberg::f_default_spec_id, 0);
     Poco::JSON::Object::Ptr partition_spec = new Poco::JSON::Object;
@@ -1311,12 +1506,7 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     new_metadata_file_content->set(Iceberg::f_snapshot_log, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
     new_metadata_file_content->set(Iceberg::f_metadata_log, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
 
-    /// The spec reserves sort order id 0 for the unsorted order.
-    const Int64 sort_order_id = order_by ? 1 : 0;
-    new_metadata_file_content->set(Iceberg::f_default_sort_order_id, sort_order_id);
-    Poco::JSON::Object::Ptr sort_order = new Poco::JSON::Object;
-    sort_order->set(Iceberg::f_order_id, sort_order_id);
-
+    Poco::JSON::Array::Ptr sorting_fields = new Poco::JSON::Array;
     if (order_by)
     {
         auto sort_columns_key_description = KeyDescription::getKeyFromAST(order_by, columns, {}, context);
@@ -1332,7 +1522,6 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
                 "Invalid iceberg sort order: expected {} elements, but got {}",
                 sort_columns.size(), transform_and_column_pairs.size());
 
-        Poco::JSON::Array::Ptr sorting_fields = new Poco::JSON::Array;
         for (size_t i = 0; i < transform_and_column_pairs.size(); ++i)
         {
             const auto & [transform_name, column_name] = transform_and_column_pairs[i];
@@ -1346,12 +1535,14 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
             sorting_field->set("null-order", "nulls-first");
             sorting_fields->add(sorting_field);
         }
-        sort_order->set(Iceberg::f_fields, sorting_fields);
     }
-    else
-    {
-        sort_order->set(Iceberg::f_fields, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
-    }
+
+    /// The spec reserves sort order id 0 for the unsorted order, i.e. an order without fields.
+    const Int64 sort_order_id = sorting_fields->size() ? 1 : 0;
+    new_metadata_file_content->set(Iceberg::f_default_sort_order_id, sort_order_id);
+    Poco::JSON::Object::Ptr sort_order = new Poco::JSON::Object;
+    sort_order->set(Iceberg::f_order_id, sort_order_id);
+    sort_order->set(Iceberg::f_fields, sorting_fields);
 
     Poco::JSON::Array::Ptr sort_orders = new Poco::JSON::Array;
     sort_orders->add(sort_order);
@@ -1957,6 +2148,152 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
     }
     order_by_str.pop_back();
     return KeyDescription::parse(order_by_str, ColumnsDescription(ch_schema), {}, local_context, true);
+}
+
+/// Returns `std::nullopt` when the field cannot be represented in `CREATE TABLE`, and an empty string for a `void` field.
+static std::optional<String> formatIcebergTransformExpression(
+    Poco::JSON::Object::Ptr field, const std::unordered_map<Int32, String> & source_id_to_column_name)
+{
+    const auto transform = parseTransformAndArgument(field->getValue<String>(f_transform));
+    if (!transform)
+        return std::nullopt;
+
+    if (transform->transform_name == "tuple")
+        return String{};
+
+    const auto it = source_id_to_column_name.find(field->getValue<Int32>(f_source_id));
+    if (it == source_id_to_column_name.end())
+        return std::nullopt;
+
+    auto column_name = backQuoteIfNeed(it->second);
+    if (transform->transform_name == "identity")
+        return column_name;
+    if (transform->argument)
+        return fmt::format("{}({}, {})", transform->transform_name, *transform->argument, column_name);
+    return fmt::format("{}({})", transform->transform_name, column_name);
+}
+
+std::tuple<ASTPtr, ASTPtr, String> getPartitionAndSortingKeyASTsFromMetadata(const Poco::JSON::Object::Ptr & metadata_object)
+{
+    const auto schema = metadata_object->has(f_schemas) && metadata_object->has(f_current_schema_id)
+        ? parseTableSchemaV2Method(metadata_object).first
+        : parseTableSchemaV1Method(metadata_object).first;
+
+    std::unordered_map<Int32, String> source_id_to_column_name;
+    const auto schema_fields = schema->getArray(f_fields);
+    for (UInt32 i = 0; i < schema_fields->size(); ++i)
+    {
+        const auto field = schema_fields->getObject(i);
+        source_id_to_column_name[field->getValue<Int32>(f_id)] = field->getValue<String>(f_name);
+    }
+
+    Poco::JSON::Array::Ptr partition_fields;
+    if (metadata_object->has(f_partition_specs))
+    {
+        const auto default_spec_id = metadata_object->getValue<Int64>(f_default_spec_id);
+        const auto partition_specs = metadata_object->getArray(f_partition_specs);
+        for (UInt32 i = 0; i < partition_specs->size(); ++i)
+        {
+            const auto partition_spec = partition_specs->getObject(i);
+            if (partition_spec->getValue<Int64>(f_spec_id) == default_spec_id)
+            {
+                partition_fields = partition_spec->getArray(f_fields);
+                break;
+            }
+        }
+    }
+    else if (metadata_object->has(f_partition_spec))
+    {
+        partition_fields = metadata_object->getArray(f_partition_spec);
+    }
+
+    String unsupported_properties;
+    ASTPtr partition_by;
+    if (partition_fields)
+    {
+        /// `PARTITION BY` is omitted entirely if any field cannot be represented. A partition field created from
+        /// `PARTITION BY` is named after its source column, so two fields with the same source cannot be represented.
+        bool representable = true;
+        std::vector<String> expressions;
+        std::unordered_set<Int32> source_ids;
+        for (UInt32 i = 0; representable && i < partition_fields->size(); ++i)
+        {
+            const auto partition_field = partition_fields->getObject(i);
+            auto expression = formatIcebergTransformExpression(partition_field, source_id_to_column_name);
+            if (!expression)
+                representable = false;
+            else if (!expression->empty())
+            {
+                representable = source_ids.insert(partition_field->getValue<Int32>(f_source_id)).second;
+                expressions.push_back(std::move(*expression));
+            }
+        }
+
+        if (!representable)
+            unsupported_properties = "PARTITION BY";
+
+        if (representable && !expressions.empty())
+        {
+            String partition_by_str = fmt::format("{}", fmt::join(expressions, ", "));
+            if (expressions.size() > 1)
+                partition_by_str = "(" + partition_by_str + ")";
+            ParserExpression parser;
+            partition_by = parseQuery(parser, partition_by_str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+        }
+    }
+
+    ASTPtr order_by;
+    if (metadata_object->has(f_sort_orders))
+    {
+        const auto default_sort_order_id = metadata_object->getValue<Int64>(f_default_sort_order_id);
+        const auto sort_orders = metadata_object->getArray(f_sort_orders);
+        for (UInt32 i = 0; i < sort_orders->size(); ++i)
+        {
+            const auto sort_order = sort_orders->getObject(i);
+            if (sort_order->getValue<Int64>(f_order_id) != default_sort_order_id)
+                continue;
+
+            /// `ORDER BY` is omitted entirely if any field cannot be represented. Table `ORDER BY` has no
+            /// `NULLS FIRST/LAST`, and `CREATE TABLE` writes `nulls-first`, so any other null order is unrepresentable.
+            bool representable = true;
+            std::vector<String> expressions;
+            const auto sort_fields = sort_order->getArray(f_fields);
+            for (UInt32 field_index = 0; representable && field_index < sort_fields->size(); ++field_index)
+            {
+                const auto sort_field = sort_fields->getObject(field_index);
+                auto expression = formatIcebergTransformExpression(sort_field, source_id_to_column_name);
+                if (!expression || Poco::toLower(sort_field->getValue<String>("null-order")) != "nulls-first")
+                {
+                    representable = false;
+                    continue;
+                }
+                if (expression->empty())
+                    continue;
+                if (Poco::toLower(sort_field->getValue<String>(f_direction)) == "desc")
+                    *expression += " DESC";
+                expressions.push_back(std::move(*expression));
+            }
+
+            if (!representable)
+            {
+                if (!unsupported_properties.empty())
+                    unsupported_properties += ", ";
+                unsupported_properties += "ORDER BY";
+            }
+
+            if (representable && !expressions.empty())
+            {
+                String order_by_str = fmt::format("{}", fmt::join(expressions, ", "));
+                if (expressions.size() > 1)
+                    order_by_str = "(" + order_by_str + ")";
+                ParserStorageOrderByClause parser(/*allow_order_=*/ true);
+                order_by = parseQuery(parser, order_by_str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+            }
+            break;
+        }
+    }
+
+    return {partition_by, order_by, unsupported_properties};
 }
 
 DataTypePtr getFunctionResultType(const String & iceberg_transform_name, DataTypePtr source_type)

@@ -2,6 +2,7 @@
 #include <Databases/TablesDependencyGraph.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/DDLTask.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/InterpreterFactory.h>
@@ -102,6 +103,9 @@ BlockIO InterpreterDropQuery::execute()
 BlockIO InterpreterDropQuery::executeSingleDropQuery(const ASTPtr & drop_query_ptr)
 {
     auto & drop = drop_query_ptr->as<ASTDropQuery &>();
+    /// A bare table name is resolved per host, and checked, by `executeDDLQueryOnCluster`.
+    if (!drop.cluster.empty() && drop.database)
+        checkDatabaseSupportsOnClusterDDL(DatabaseCatalog::instance().tryGetDatabase(drop.getDatabase()));
     if (!drop.cluster.empty() && drop.table && !drop.if_empty && !maybeRemoveOnCluster(current_query_ptr, getContext()))
     {
         DDLQueryOnClusterParams params;
@@ -392,6 +396,25 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];
             DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
 
+            /// A secondary replica of a `Replicated` database cannot reject a drop the initiator has committed,
+            /// so a failure to prepare the deletion of its own data keeps the data instead of failing the drop.
+            if (auto txn = context_->getZooKeeperMetadataTransaction(); txn && !txn->isInitialQuery())
+            {
+                try
+                {
+                    table->prepareForDrop(context_);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(
+                        "InterpreterDropQuery",
+                        fmt::format("Cannot prepare the data of {} for deletion on drop, keeping it", table_id.getNameForLogs()),
+                        LogsLevel::warning);
+                }
+            }
+            else
+                table->prepareForDrop(context_);
+
             context_->onQueryExecutionStarted();
             table->flushAndShutdown(true);
 
@@ -401,7 +424,11 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
             DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
             NamedCollectionFactory::instance().removeDependencies(table_id);
-            database->dropTable(context_, table_id.table_name, query.sync);
+            /// Otherwise the inner tables would be dropped from `drop` with the global context, ignoring the settings
+            /// of this query (e.g. `data_lake_delete_data_on_drop`). `DatabaseAtomic::dropTable` does the same.
+            if (database->getUUID() == UUIDHelpers::Nil)
+                table->dropInnerTableIfAny(query.sync, context_);
+            database->dropTable(context_, table_id.table_name, query.sync, query.if_exists);
 
             /// We have to clear mmapio cache when dropping table from Ordinary database
             /// to avoid reading old data if new table with the same name is created
@@ -443,6 +470,7 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
         }
         else if (kind == ASTDropQuery::Kind::Drop)
         {
+            table->prepareForDrop(getContext());
             context_handle->removeExternalTable(table_name);
         }
     }

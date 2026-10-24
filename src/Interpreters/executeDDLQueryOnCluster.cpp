@@ -6,6 +6,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/DatabaseReplicated.h>
+#include <Databases/IDatabase.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
@@ -15,11 +16,14 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTRenameQuery.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Processors/Sinks/EmptySink.h>
+#include <Storages/StorageAlias.h>
 #include <base/sort.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #if CLICKHOUSE_CLOUD
@@ -45,9 +49,72 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
+extern const int ACCESS_DENIED;
 extern const int NOT_IMPLEMENTED;
 extern const int QUERY_IS_PROHIBITED;
 extern const int LOGICAL_ERROR;
+}
+
+
+/// Adds the databases of the tables an `Alias` chain starting at `table` forwards to.
+/// Each target must be visible to the user before it is resolved, so the result does not disclose a hidden table.
+static void addAliasTargetDatabases(StoragePtr table, std::vector<String> & target_databases, const ContextPtr & context)
+{
+    std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> visited;
+    while (const auto * alias = table ? table->as<StorageAlias>() : nullptr)
+    {
+        if (!alias->isDeclaredTargetGranted(context, AccessType::SHOW_TABLES, {}))
+            throw Exception(ErrorCodes::ACCESS_DENIED,
+                "{}: Not enough privileges to access the target table of {}",
+                context->getUserName(), alias->getStorageID().getNameForLogs());
+        table = alias->tryGetTargetTable();
+        if (!table || !visited.insert(table->getStorageID()).second)
+            break;
+        target_databases.push_back(table->getStorageID().database_name);
+    }
+}
+
+void checkQueryDatabasesSupportOnClusterDDL(const ASTPtr & query_ptr, const Strings & default_databases, const ContextPtr & context)
+{
+    /// `RENAME` / `EXCHANGE TABLE` is `ASTRenameQuery`, which does not derive from `ASTQueryWithTableAndOutput`;
+    /// queries with no target table (`CREATE DATABASE`, `SYSTEM`, ...) contribute none.
+    std::vector<String> target_databases;
+    const auto add_target_database = [&](String name)
+    {
+        if (name.empty())
+            target_databases.insert(target_databases.end(), default_databases.begin(), default_databases.end());
+        else
+            target_databases.push_back(std::move(name));
+    };
+
+    if (const auto * with_table = dynamic_cast<const ASTQueryWithTableAndOutput *>(query_ptr.get());
+        with_table && with_table->table)
+    {
+        add_target_database(with_table->getDatabase());
+
+        /// An `Alias` forwards `ALTER`, `TRUNCATE`, `OPTIMIZE` and mutations to its target, so every host would
+        /// apply them to the target. `CREATE`, `DROP` and `DETACH` act on the alias itself.
+        const auto * drop = query_ptr->as<ASTDropQuery>();
+        const bool acts_on_alias_itself = query_ptr->as<ASTCreateQuery>() || (drop && drop->kind != ASTDropQuery::Kind::Truncate);
+        if (!acts_on_alias_itself)
+        {
+            const Strings named_databases(target_databases);
+            for (const auto & database_name : named_databases)
+                addAliasTargetDatabases(
+                    DatabaseCatalog::instance().tryGetTable(StorageID(database_name, with_table->getTable()), context), target_databases, context);
+        }
+    }
+    else if (const auto * rename = dynamic_cast<const ASTRenameQuery *>(query_ptr.get()); rename && !rename->database)
+    {
+        for (const auto & elem : rename->getElements())
+        {
+            add_target_database(elem.from.getDatabase());
+            add_target_database(elem.to.getDatabase());
+        }
+    }
+
+    for (const auto & database_name : target_databases)
+        checkDatabaseSupportsOnClusterDDL(DatabaseCatalog::instance().tryGetDatabase(database_name));
 }
 
 
@@ -207,6 +274,12 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     /// Check access rights, assume that all servers have the same users config
     context->checkAccess(access_to_check);
 
+    /// Initiator-side guard; workers re-check in `DDLWorker::tryExecuteQuery`. A table name still bare after the
+    /// rewrite above is resolved on each host against its `default_database` from the cluster definition, so it is
+    /// checked against those databases rather than against the initiator's current one.
+    /// It runs after the access check so that it does not disclose anything about tables the user may not access.
+    checkQueryDatabasesSupportOnClusterDDL(query_ptr, access_check_default_databases, context);
+
     DDLLogEntry entry;
     entry.hosts = std::move(hosts);
     /// Strip the initiator-only settings from the queued DDL query text too — the `DDLLogEntry` settings
@@ -254,6 +327,14 @@ BlockIO getDDLOnClusterStatus(const String & node_path, const String & replicas_
         io.pipeline.complete(std::make_shared<EmptySink>(io.pipeline.getSharedHeader()));
 
     return io;
+}
+
+void checkDatabaseSupportsOnClusterDDL(const DatabasePtr & database)
+{
+    if (database && database->isDatalakeCatalog())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "ON CLUSTER is not supported for DataLakeCatalog databases: "
+            "the catalog is shared, run the query without ON CLUSTER");
 }
 
 bool maybeRemoveOnCluster(const ASTPtr & query_ptr, ContextPtr context)
