@@ -58,6 +58,8 @@ public:
         = 0;
 
     virtual void addTextLog(std::shared_ptr<DB::TextLogQueue> log_queue, int max_priority) = 0;
+    /// Changes the level of the text_log sink added with addTextLog (e.g. on configuration reload).
+    virtual void setTextLogLevel(int max_priority) = 0;
 
     virtual void setLevel(const std::string & name, int level) = 0;
 };
@@ -82,6 +84,7 @@ public:
         ChannelPtr channel, const std::string & name, int level, const ProfileEvents::Event &, const ProfileEvents::Event &) override;
 
     void addTextLog(std::shared_ptr<DB::TextLogQueue> log_queue, int max_priority) override;
+    void setTextLogLevel(int max_priority) override;
 
     void setLevel(const std::string & name, int level) override;
 
@@ -129,6 +132,7 @@ public:
         const ProfileEvents::Event & event_on_dropped_message_) override;
 
     void addTextLog(std::shared_ptr<DB::TextLogQueue> log_queue, int max_priority) override;
+    void setTextLogLevel(int max_priority) override;
     void setLevel(const std::string & name, int level) override;
 
     void flushTextLogs();

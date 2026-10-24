@@ -51,3 +51,36 @@ def test_text_log_keeps_trace_after_reload(start_cluster):
     )
     assert "<Trace>" not in log
     assert "<Debug>" not in log
+
+
+def set_text_log_level(node, level):
+    node.replace_config(
+        "/etc/clickhouse-server/config.d/logger.xml",
+        f"""<clickhouse>
+    <logger>
+        <level>information</level>
+        <log>/var/log/clickhouse-server/clickhouse-server.log</log>
+    </logger>
+    <text_log>
+        <level>{level}</level>
+    </text_log>
+</clickhouse>""",
+    )
+    node.query("SYSTEM RELOAD CONFIG")
+
+
+def test_text_log_level_is_reloadable(start_cluster):
+    try:
+        set_text_log_level(node, "information")
+        since = now(node)
+        for _ in range(5):
+            node.query("SELECT 1")
+        assert trace_rows_since(node, since) == 0
+
+        set_text_log_level(node, "trace")
+        since = now(node)
+        for _ in range(5):
+            node.query("SELECT 1")
+        assert trace_rows_since(node, since) > 0
+    finally:
+        set_text_log_level(node, "trace")
