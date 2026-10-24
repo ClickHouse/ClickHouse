@@ -2,5 +2,9 @@
 no-connection skip on async path marks span ERROR: OK
 1
 no-connection skip on sync path marks span ERROR: OK
-query with ignored remote exception succeeded
+ALL_CONNECTION_TRIES_FAILED
 ignored remote exception marks span ERROR: OK
+ALL_CONNECTION_TRIES_FAILED
+every shard skipped on async path marks every span ERROR: OK
+ALL_CONNECTION_TRIES_FAILED
+every shard skipped on sync path marks every span ERROR: OK

@@ -14,7 +14,7 @@ INSERT INTO logs_04817 VALUES
     ('2024-01-01 22:00:00', 'monday-night', '7'),
     ('2024-01-06 12:00:00', 'saturday-noon', '11');
 
-SET allow_experimental_logsql_dialect = 1;
+SET enable_logsql_dialect = 1;
 SET logsql_table = 'logs_04817';
 SET dialect = 'logsql';
 

@@ -18,14 +18,12 @@ ClickHouse は、いくつかの種類のユーザー定義関数 (UDFs) をサ�
 * [Experimental WebAssembly UDFs](#webassembly-user-defined-functions) は、WebAssembly にコンパイルされたコードを、サーバープロセス内のサンドボックスで実行します。外部の実行可能ファイルよりも呼び出しごとのオーバーヘッドが低く、ネイティブ拡張機能よりも優れた分離性を備えているため、WASM をターゲットにできる言語 (例: C/C++/Rust) で記述されたカスタムアルゴリズムに適しています。
 * [Experimental ドライバーベースの実行可能 UDF](#driver-based-executable-user-defined-functions) では、オペレーターが提供する &quot;ドライバー&quot; により、`CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` で指定されたコードスニペットを、関数作成時に実行可能 UDF に変換できます (たとえばコンパイルして)。これは実行可能 UDF をベースとしており、サーバー側のドライバー設定が必要です。
 
-<div id="executable-user-defined-functions">
-  ## 実行可能ユーザー定義関数
-</div>
+## 実行可能ユーザー定義関数 {#executable-user-defined-functions}
 
 <BetaBadge />
 
 <Note>
-  ClickHouse Cloud では、実行可能 UDF はパブリックベータとして提供されており、Cloud コンソールの UI から作成します。Cloud 固有のワークフローについては、[Cloud でのユーザー定義関数](/ja/products/cloud/features/sql-console-features/user-defined-functions) を参照してください。
+  ClickHouse Cloud では、実行可能 UDF は一般提供 (GA) されており、Cloud コンソール、Cloud API、または Terraform から作成します。コンパイル済みバイナリ向けの Native ランタイムを含む Cloud 固有のワークフローについては、[Cloud でのユーザー定義関数](/ja/products/cloud/features/sql-console-features/user-defined-functions) を参照してください。
 </Note>
 
 ClickHouse は、データ処理のために任意の外部実行可能プログラムまたはスクリプトを呼び出すことができます。
@@ -58,17 +56,11 @@ ClickHouse は、データ処理のために任意の外部実行可能プログ
 
 コマンドは `STDIN` から引数を読み取り、結果を `STDOUT` に出力する必要があります。また、引数は反復的に処理する必要があります。つまり、1 つの chunk の引数を処理したら、次の chunk を待機しなければなりません。
 
-<div id="executable-user-defined-functions">
-  ## 実行可能ユーザー定義関数
-</div>
+## 実行可能ユーザー定義関数 {#executable-user-defined-functions}
 
-<div id="examples">
-  ## 例
-</div>
+## 例 {#examples}
 
-<div id="udf-inline">
-  ### インラインスクリプトからの UDF
-</div>
+### インラインスクリプトからの UDF {#udf-inline}
 
 XML または YAML の設定で `execute_direct` を `0` に明示的に指定し、`test_function_sum` を手動で作成します。
 
@@ -132,9 +124,7 @@ SELECT test_function_sum(2, 2);
 └─────────────────────────┘
 ```
 
-<div id="udf-python">
-  ### Python スクリプトからの UDF
-</div>
+### Python スクリプトからの UDF {#udf-python}
 
 この例では、`STDIN` から値を読み取り、それを文字列として返す UDF を作成します。
 
@@ -203,9 +193,7 @@ SELECT test_function_python(toUInt64(2));
 └─────────────────────────┘
 ```
 
-<div id="udf-stdin">
-  ### `STDIN` から 2 つの値を読み取り、その合計を JSON オブジェクトとして返す
-</div>
+### `STDIN` から 2 つの値を読み取り、その合計を JSON オブジェクトとして返す {#udf-stdin}
 
 名前付き引数と [JSONEachRow](/ja/reference/formats/JSON/JSONEachRow) フォーマットを使用して、XML または YAML の設定で `test_function_sum_json` を作成します。
 
@@ -285,9 +273,7 @@ SELECT test_function_sum_json(2, 2);
 └──────────────────────────────┘
 ```
 
-<div id="udf-parameters-in-command">
-  ### `command` 設定でパラメータを使用する
-</div>
+### `command` 設定でパラメータを使用する {#udf-parameters-in-command}
 
 実行可能なユーザー定義関数では、`command` 設定で構成した定数パラメータを受け取れます (これは `executable` 型のユーザー定義関数でのみ機能します) 。
 また、シェルの引数展開による脆弱性を防ぐため、`execute_direct` オプションも必要です。
@@ -355,9 +341,7 @@ SELECT test_function_parameter_python(1)(2);
 └──────────────────────────────────────┘
 ```
 
-<div id="udf-shell-script">
-  ### シェルスクリプトによるUDF
-</div>
+### シェルスクリプトによるUDF {#udf-shell-script}
 
 この例では、各値を 2 倍するシェルスクリプトを作成します。
 
@@ -430,26 +414,20 @@ SELECT test_shell(number) FROM numbers(10);
     └────────────────────┘
 ```
 
-<div id="error-handling">
-  ## エラー処理
-</div>
+## エラー処理 {#error-handling}
 
 一部の関数では、データが無効な場合に例外がスローされることがあります。
 この場合、クエリはキャンセルされ、エラーメッセージがクライアントに返されます。
 分散処理では、いずれかのサーバーで例外が発生すると、他のサーバーでもクエリの中止が試みられます。
 
-<div id="evaluation-of-argument-expressions">
-  ## 引数式の評価
-</div>
+## 引数式の評価 {#evaluation-of-argument-expressions}
 
 ほとんどすべてのプログラミング言語では、特定の演算子では引数の1つが評価されないことがあります。
 通常は、`&&`、`||`、`?:` といった演算子です。
 ClickHouse では、関数 (演算子) の引数は常に評価されます。
 これは、各行を個別に計算するのではなく、カラムのパーツ全体が一度に評価されるためです。
 
-<div id="performing-functions-for-distributed-query-processing">
-  ## 分散クエリ処理における関数の実行
-</div>
+## 分散クエリ処理における関数の実行 {#performing-functions-for-distributed-query-processing}
 
 分散クエリ処理では、クエリ処理の各段階のうち、可能な限り多くの段階がリモートサーバー上で実行され、残りの段階 (中間結果のマージとそれ以降のすべて) はリクエスト元のサーバーで実行されます。
 
@@ -465,15 +443,11 @@ ClickHouse では、関数 (演算子) の引数は常に評価されます。
 
 クエリ内の関数がリクエスト元のサーバーで実行されるものの、リモートサーバーで実行する必要がある場合は、その関数を &#39;any&#39; 集約関数でラップするか、`GROUP BY` のキーに追加できます。
 
-<div id="sql-user-defined-functions">
-  ## SQL ユーザー定義関数
-</div>
+## SQL ユーザー定義関数 {#sql-user-defined-functions}
 
 ラムダ式からカスタム関数を作成するには、[CREATE FUNCTION](/ja/reference/statements/create/function) ステートメントを使用します。これらの関数を削除するには、[DROP FUNCTION](/ja/reference/statements/drop#drop-function) ステートメントを使用します。
 
-<div id="webassembly-user-defined-functions">
-  ## WebAssembly ユーザー定義関数
-</div>
+## WebAssembly ユーザー定義関数 {#webassembly-user-defined-functions}
 
 <CloudNotSupportedBadge />
 
@@ -481,9 +455,7 @@ ClickHouse では、関数 (演算子) の引数は常に評価されます。
 
 WebAssembly ユーザー定義関数 (WASM UDFs) を使用すると、WebAssembly にコンパイルしたカスタムコードを ClickHouse サーバープロセス内で実行できます。
 
-<div id="quick-start">
-  ### クイックスタート
-</div>
+### クイックスタート {#quick-start}
 
 ClickHouse の設定で、実験的な WebAssembly サポートを有効にします。
 
@@ -517,15 +489,11 @@ RETURNS UInt32;
 SELECT my_function(10, 20);
 ```
 
-<div id="more-information">
-  ### 詳細情報
-</div>
+### 詳細情報 {#more-information}
 
 詳細については、[WebAssembly ユーザー定義関数](/ja/reference/functions/regular-functions/wasm_udf) のドキュメントを参照してください。
 
-<div id="driver-based-executable-user-defined-functions">
-  ## ドライバーベースの実行可能なユーザー定義関数
-</div>
+## ドライバーベースの実行可能なユーザー定義関数 {#driver-based-executable-user-defined-functions}
 
 <CloudNotSupportedBadge />
 
@@ -539,9 +507,7 @@ SELECT my_function(10, 20);
 
 これにより管理者は、サーバーの設定ファイルやファイルシステムへのアクセスを与えることなく、任意の言語 (たとえば、サンドボックス化されたコンテナー内でコンパイルされる C) で関数を定義できる、安全かつ限定的な手段をユーザーに提供できます。利用可能なドライバーのセットは、オペレーターが完全に制御します。
 
-<div id="enabling-drivers">
-  ### ドライバーの有効化
-</div>
+### ドライバーの有効化 {#enabling-drivers}
 
 ドライバーベースの実行可能 UDF は、デフォルトで無効になっています。有効にするには、次の手順を実行します。
 
@@ -564,9 +530,7 @@ SELECT my_function(10, 20);
 
 ドライバー registry は server の起動時に読み込まれ、`SYSTEM RELOAD CONFIG` で更新されるため、server を再起動せずにドライバーを追加、変更、削除できます。
 
-<div id="driver-configuration">
-  ### ドライバー設定
-</div>
+### ドライバー設定 {#driver-configuration}
 
 ドライバーは、最上位要素として `<driver>` を持つ XML (または YAML) ファイルで記述します。サポートされるフィールドは次のとおりです。
 
@@ -597,9 +561,7 @@ SELECT my_function(10, 20);
 </clickhouse>
 ```
 
-<div id="driver-invocation-contract">
-  #### ドライバー呼び出し契約
-</div>
+#### ドライバー呼び出し契約 {#driver-invocation-contract}
 
 `CREATE FUNCTION` を実行すると、設定された `env` 変数がセットされた状態で `create_command` が呼び出され、次の引数が渡されます。
 
@@ -612,9 +574,7 @@ SELECT my_function(10, 20);
 
 `drop_command` は、存在する場合、関数が削除されるときに同じ方法で呼び出されます (stdin に code のボディは渡されません) 。
 
-<div id="creating-a-function-with-a-driver">
-  ### function の作成
-</div>
+### function の作成 {#creating-a-function-with-a-driver}
 
 ```sql
 CREATE [OR REPLACE] FUNCTION [IF NOT EXISTS] name [ON CLUSTER cluster]
@@ -625,9 +585,7 @@ CREATE [OR REPLACE] FUNCTION [IF NOT EXISTS] name [ON CLUSTER cluster]
 
 ClickHouse はドライバーの `create_command` を実行し、生成された設定を [`dynamic_user_defined_executable_functions_path`](/ja/reference/settings/server-settings/settings/other#dynamic_user_defined_executable_functions_path) に書き込みます。すると、既存の実行可能 UDF ローダーがそれを検出します。その後、その関数は他の関数と同様に呼び出せます。
 
-<div id="dropping-a-function-with-a-driver">
-  ### 関数の削除
-</div>
+### 関数の削除 {#dropping-a-function-with-a-driver}
 
 ```sql
 DROP FUNCTION [IF EXISTS] name [ON CLUSTER cluster]
@@ -635,23 +593,17 @@ DROP FUNCTION [IF EXISTS] name [ON CLUSTER cluster]
 
 `DROP FUNCTION` は、ドライバーの `drop_command` (存在する場合) を呼び出し、生成された動的設定と関数ごとの作業ディレクトリを削除し、実行可能 UDF ローダーを再読み込みして、永続化されたクエリを削除します。
 
-<div id="driver-persistence-and-restart">
-  ### 永続化と再起動
-</div>
+### 永続化と再起動 {#driver-persistence-and-restart}
 
 元のクエリは、ユーザー定義 SQL オブジェクトディレクトリに `ATTACH FUNCTION ...` ステートメントとして永続化されるため、サーバーを再起動しても関数は保持されます。起動時には、[`dynamic_user_defined_executable_functions_path`](/ja/reference/settings/server-settings/settings/other#dynamic_user_defined_executable_functions_path) 内の生成済み構成が、ドライバーを再実行することなく直接読み込まれます。永続化された `ATTACH FUNCTION` に対応する生成済み構成がない場合 (たとえば動的ディレクトリが失われた場合) 、それを再作成するためにドライバーが再実行されます。
 
-<div id="driver-limitations">
-  ### 制限事項
-</div>
+### 制限事項 {#driver-limitations}
 
 * この機能は実験的で、`allow_experimental_executable_udf_drivers` を有効にした場合にのみ利用できます。
 * ドライバーベースの関数は、レプリケーション対応のユーザー定義関数ストレージ (`ON CLUSTER` および `<user_defined_zookeeper_path>`) ではサポートされていません。レプリケートされるのは生成されたアーティファクトではなく、元のクエリだけであるためです。
 * バックアップされたドライバーベースの関数を `RESTORE` すると、クエリ自体は保持されますが、ドライバーは再実行されません。生成された設定は、その後の再起動時の復旧によって実体化されます。
 
-<div id="example-c-drivers">
-  ### 例: C ドライバー
-</div>
+### 例: C ドライバー {#example-c-drivers}
 
 ソースツリーには、C の関数本体をコンパイルして実行する概念実証用ドライバーが `programs/server/user_defined_executable_function_drivers_config.d/` 配下に含まれています。これらはあくまで例であり、**パッケージには含まれず、インストールもされません**。
 
@@ -661,8 +613,6 @@ DROP FUNCTION [IF EXISTS] name [ON CLUSTER cluster]
 
 これらのサンプルドライバーは出発点として用意されています。信頼できないユーザーに公開する前に、利用環境に合わせてサンドボックス化の内容を確認し、強化してください。
 
-<div id="related-content">
-  ## 関連コンテンツ
-</div>
+## 関連コンテンツ {#related-content}
 
 * [ClickHouse Cloudのユーザー定義関数](https://clickhouse.com/blog/user-defined-functions-clickhouse-udfs)
