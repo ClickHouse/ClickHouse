@@ -406,7 +406,7 @@ bool ReplicatedMergeTreeQueue::havePendingPatchPartsForMutation(
 
     for (const auto & fetch_entry : queue)
     {
-        if (fetch_entry->type != LogEntry::GET_PART)
+        if (fetch_entry->type != LogEntry::GET_PART && fetch_entry->type != LogEntry::ATTACH_PART)
             continue;
 
         auto fetch_part_info = MergeTreePartInfo::fromPartName(fetch_entry->new_part_name, format_version);

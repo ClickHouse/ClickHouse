@@ -78,7 +78,8 @@ namespace DB
   *  and then executes them (queueTask).
   * Despite the name of the "queue", execution can be reordered, if necessary (shouldExecuteLogEntry, executeLogEntry).
   * In addition, the records in the queue can be generated independently (not from the log), in the following cases:
-  * - when creating a new replica, actions are put on GET from other replicas (createReplica);
+  * - when creating a new replica, `ATTACH_PART` tasks reuse original detached names, or `GET_PART`
+  *   tasks fetch a covering part when an exact checksum is unavailable (`cloneReplica`);
   * - if the part is corrupt (removePartAndEnqueueFetch) or absent during the check
   *   (at start - checkParts, while running - searchForMissingPart), actions are put on GET from other replicas;
   *
@@ -679,7 +680,8 @@ private:
 
     /// Lookup the part for the entry in the detached/ folder.
     /// returns nullptr if the part is corrupt or missing.
-    MutableDataPartPtr attachPartHelperFoundValidPart(const LogEntry& entry, PartsTemporaryRename & rename_parts) const;
+    MutableDataPartPtr attachPartHelperFoundValidPart(
+        const LogEntry & entry, PartsTemporaryRename & rename_parts, bool exact_part_name = false) const;
 
     void executeDropRange(const LogEntry & entry);
 
@@ -710,7 +712,8 @@ private:
     /** Clone data from another replica.
       * If replica can not be cloned throw Exception.
       */
-    void cloneReplica(const String & source_replica, Coordination::Stat source_is_lost_stat, zkutil::ZooKeeperPtr & zookeeper);
+    void cloneReplica(
+        const String & source_replica, Coordination::Stat source_is_lost_stat, zkutil::ZooKeeperPtr & zookeeper, bool is_new_replica);
 
     /// Repairs metadata of staled replica. Called from cloneReplica(...)
     void cloneMetadataIfNeeded(const String & source_replica, const String & source_path, zkutil::ZooKeeperPtr & zookeeper);
