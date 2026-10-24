@@ -61,6 +61,20 @@ private:
 
 using PaimonProcessingLockPtr = std::unique_ptr<PaimonProcessingLock>;
 
+/// Tells apart two Paimon snapshots with the same id: manifest list names carry a per-writer UUID.
+struct PaimonSnapshotIdentity
+{
+    Int64 time_millis = 0;
+    String base_manifest_list;
+    String delta_manifest_list;
+
+    bool operator==(const PaimonSnapshotIdentity &) const = default;
+
+    String toJSON() const;
+    /// Throws unless `json` is an object with exactly the fields written by `toJSON`.
+    static PaimonSnapshotIdentity fromJSON(const String & json);
+};
+
 /// The committed watermark as a read observed it under the processing lock. The read's
 /// batch is computed from this value, so the commit is conditioned on the node still
 /// being exactly this one: `version` for an existing node, absence when `snapshot_id`
@@ -69,6 +83,9 @@ struct PaimonCommittedSnapshot
 {
     std::optional<Int64> snapshot_id;
     Int32 version = -1;
+    /// Set only when the identity node was written in the same transaction as the watermark.
+    std::optional<PaimonSnapshotIdentity> snapshot_identity;
+    bool identity_node_exists = false;
 };
 
 /// Manages the incremental read state for Paimon tables using ClickHouse Keeper.
@@ -77,6 +94,7 @@ struct PaimonCommittedSnapshot
 /// Keeper path structure:
 ///   {keeper_path}/
 ///   ├── committed_snapshot      # Last consumed snapshot ID (advanced at read time)
+///   ├── committed_snapshot_identity  # Snapshot committed_snapshot points at, valid while both have the same mzxid
 ///   ├── processing_lock         # Ephemeral lock to prevent concurrent incremental reads.
 ///   │                           # Its value is an ownership token:
 ///   │                           # {replica_name}/{server_uuid}/{keeper_session_id}
@@ -87,7 +105,7 @@ struct PaimonCommittedSnapshot
 /// The workflow is:
 /// 1. Acquire processing_lock (ephemeral). If it exists, fail: another read is in progress.
 /// 2. Read committed_snapshot from Keeper
-/// 3. Find all snapshots > committed_snapshot
+/// 3. Find all snapshots > committed_snapshot; a bound identity must match the snapshot at that id
 /// 4. Collect data files and advance committed_snapshot, fenced by the lock and
 ///    conditioned on committed_snapshot being unchanged since step 2
 /// 5. Release processing_lock (only if we still own it)
@@ -129,7 +147,11 @@ public:
     /// Advance the committed watermark from `observed` to `snapshot_id`, fenced by the
     /// processing lock. Throws INVALID_STATE if the lock was lost or the watermark is
     /// no longer `observed`.
-    void setCommittedSnapshot(const PaimonProcessingLock & lock, const PaimonCommittedSnapshot & observed, Int64 snapshot_id);
+    void setCommittedSnapshot(
+        const PaimonProcessingLock & lock,
+        const PaimonCommittedSnapshot & observed,
+        Int64 snapshot_id,
+        const std::optional<PaimonSnapshotIdentity> & snapshot_identity);
 
     /// Initialize Keeper nodes if they don't exist
     void initializeKeeperNodes();
@@ -164,6 +186,7 @@ private:
 
     // Keeper node names
     static constexpr auto COMMITTED_SNAPSHOT_NODE = "committed_snapshot";
+    static constexpr auto COMMITTED_SNAPSHOT_IDENTITY_NODE = "committed_snapshot_identity";
     static constexpr auto PROCESSING_LOCK_NODE = "processing_lock";
     static constexpr auto REPLICAS_NODE = "replicas";
     static constexpr auto IS_ACTIVE_NODE = "is_active";

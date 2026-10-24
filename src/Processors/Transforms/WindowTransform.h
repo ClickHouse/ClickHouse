@@ -32,11 +32,11 @@ class Arena;
  *                |<------------------ stored ------------------>|<----------- not read yet ----------- .
  *   partition         |<---------------------------------------- - - - - - - - - - - - - - ->|
  *   frame                        |<------------>|
- *   peers                          |<------->|
- *   current row                           ^
+ *   peers                              |<--------->|
+ *   current row                             ^
  *
  * - partition: rows range with the current row's PARTITION BY key.
- * - frame: rows range used to calcualte window functions.
+ * - frame: rows range available to the aggregation window function while it is being evaluated.
  * - peers: rows range with the current row's ORDER BY key.
  * - current row: the row being computed right now.
  */
@@ -44,25 +44,15 @@ class WindowTransform final : public IProcessor
 {
 public:
     WindowTransform(
-            SharedHeader input_header_,
-            SharedHeader output_header_,
-            const WindowDescription & window_description_,
-            const std::vector<WindowFunctionDescription> &
-                functions);
+        SharedHeader input_header_, SharedHeader output_header_,
+        const WindowDescription & window_description_, const std::vector<WindowFunctionDescription> & functions);
 
     ~WindowTransform() override;
 
-    void initWorkspaces(const std::vector<WindowFunctionDescription> & functions);
-
-    String getName() const override
-    {
-        return "WindowTransform";
-    }
+    String getName() const override { return "WindowTransform"; }
 
     static Block transformHeader(Block header, const ExpressionActionsPtr & expression);
 
-    /* Implementation of IProcessor;
-     */
     Status prepare() override;
     void work() override;
     void addInputBlock(Chunk chunk);
@@ -70,43 +60,32 @@ public:
     void startNextPartition();
     void releaseUnusedBlocks();
 
-    /* Implementation details.
-     */
     void updateAggregationState();
     void writeOutCurrentRow();
 
-    /// Data for window transform itself.
+    /// Everything fixed at construction.
     const WindowTransformParams params;
 
-    /// Runtime data.
-    InputPort & input;
-    OutputPort & output;
     std::optional<Chunk> pending_input;
     bool input_is_finished = false;
 
-    // Per-window-function scratch spaces.
+    /// One per window function.
     std::vector<WindowFunctionWorkspace> workspaces;
 
-    // One arena shared by the aggregate function states of the current partition.
-    // Results never live in it: plain functions write values into the output
-    // column, and -State results are merged into the ColumnAggregateFunction's
-    // own arena. It is replaced when the partition changes, right after the
-    // states are destroyed, so it does not grow across partitions.
+    /// Shared by the aggregate states of the current partition and replaced with it, so it does not grow across
+    /// partitions. No result lives in it: a -State result is merged into the arena of the output column.
     std::unique_ptr<Arena> arena;
 
     SlidingBlocks blocks;
     SlidingIndexes indexes;
-    // The next block we are going to pass to the consumer.
+    /// The first stored block not yet passed to the consumer.
     Int64 next_output_block_number = 0;
 
-    // Window runtime information: the current row with its peer group, the partition and the frame.
     Partition partition;
     Frame frame;
     Peers peers;
 
-    // The previous frame that corresponds to the current state of the
-    // aggregate function. We use it to determine how to update the aggregation
-    // state after we find the new frame.
+    /// The frame the aggregate states hold; the next frame is compared with it to add only the new rows.
     FrameBounds prev_frame;
 };
 
