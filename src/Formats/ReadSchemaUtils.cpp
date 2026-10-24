@@ -1,3 +1,4 @@
+#include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
@@ -376,11 +377,13 @@ try
                 if (!format_name)
                 {
                     /// These text formats accept almost any bytes, so binary data (e.g. the `.dbf` table of a shapefile)
-                    /// would be detected as one of them with meaningless columns. Text has no zero bytes: if the first
-                    /// buffer of data has one, don't try them.
+                    /// would be detected as one of them with meaningless columns. Text has no zero bytes: if the start
+                    /// of the data has one, don't try them. Only a prefix is checked: a memory-mapped file is one buffer
+                    /// with all of its data.
+                    static constexpr size_t max_bytes_to_check_for_zero_byte = DBMS_DEFAULT_BUFFER_SIZE;
                     ReadBuffer & detection_buf = support_buf_recreation ? *iterator_data.buf : *peekable_buf;
                     bool has_zero_byte = !detection_buf.eof()
-                        && memchr(detection_buf.position(), 0, detection_buf.available()) != nullptr;
+                        && memchr(detection_buf.position(), 0, std::min(detection_buf.available(), max_bytes_to_check_for_zero_byte)) != nullptr;
 
                     static const std::vector<String> no_formats;
                     std::unordered_map<String, NamesAndTypesList> format_to_schema;

@@ -16,3 +16,9 @@ ${CLICKHOUSE_LOCAL} --query "DESC file('${DATA_FILE}')" 2>&1 | grep -o -F 'CANNO
 
 printf 'a\t1\nb\t2\n' > "${TEXT_FILE}"
 ${CLICKHOUSE_LOCAL} --query "DESC file('${TEXT_FILE}')"
+
+# Only the start of the data is checked for a zero byte: a memory-mapped file is one buffer with all of the data, and
+# one zero byte after more than 1 MiB of text does not stop the detection of the text format.
+for _ in $(seq 1 300); do printf 'a\t1\n%.0s' $(seq 1 1000); done > "${TEXT_FILE}"
+printf '\0\n' >> "${TEXT_FILE}"
+${CLICKHOUSE_LOCAL} --query "DESC file('${TEXT_FILE}') SETTINGS storage_file_read_method = 'mmap', input_format_max_rows_to_read_for_schema_inference = 10"
