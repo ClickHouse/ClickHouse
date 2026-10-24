@@ -797,19 +797,10 @@ const std::unordered_map<String, Rewriter> & getRewriters()
                 return;  /// map() constructs an empty map in both systems.
             function.name = "mapFromArrays";
         }},
-        {"map_from_entries", [](ASTPtr & node, ASTFunction & function, ASTs & arguments)
+        {"map_from_entries", [](ASTPtr &, ASTFunction & function, ASTs & arguments)
         {
             requireArguments(function, arguments, 1, 1, "(array of key-value tuples)");
-            ASTPtr entry = make_intrusive<ASTIdentifier>("__trino_entry");
-            ASTPtr keys = makeFunctionWithArguments(
-                "arrayMap",
-                {makeLambda({"__trino_entry"}, makeFunctionWithArguments("tupleElement", {entry, make_intrusive<ASTLiteral>(UInt64(1))})),
-                 arguments[0]});
-            ASTPtr values = makeFunctionWithArguments(
-                "arrayMap",
-                {makeLambda({"__trino_entry"}, makeFunctionWithArguments("tupleElement", {entry->clone(), make_intrusive<ASTLiteral>(UInt64(2))})),
-                 arguments[0]->clone()});
-            node = makeFunctionWithArguments("mapFromArrays", {keys, values});
+            function.name = "mapFromEntries";
         }},
         {"map_entries", [](ASTPtr &, ASTFunction & function, ASTs & arguments)
         {
