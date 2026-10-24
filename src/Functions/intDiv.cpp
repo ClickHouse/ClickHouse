@@ -84,6 +84,22 @@ struct DivideIntegralByConstantImpl
         /// Division with too large divisor.
         if (b > std::numeric_limits<A>::max()) [[unlikely]]
         {
+            if constexpr (std::is_signed_v<A>)
+            {
+                // Special case: INT_MIN / (INT_MAX + 1) == -1 for signed types.
+                // b > max(A) catches this, but for INT_MIN the result is -1, not 0.
+                // Only triggers when b == max(A) + 1 and a[i] == min(A).
+                bool has_min = false;
+                for (size_t i = 0; i < size; ++i)
+                    has_min |= (a_pos[i] == std::numeric_limits<A>::min());
+
+                if (has_min)
+                {
+                    for (size_t i = 0; i < size; ++i)
+                        c_pos[i] = (a_pos[i] == std::numeric_limits<A>::min()) ? -1 : 0;
+                    return;
+                }
+            }
             for (size_t i = 0; i < size; ++i)
                 c_pos[i] = 0;
             return;
