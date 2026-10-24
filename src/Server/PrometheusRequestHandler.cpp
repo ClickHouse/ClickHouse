@@ -514,6 +514,10 @@ public:
                 return;
             }
 
+            /// Check the grant before the lookup, so a missing table gives the same error as an existing one.
+            if (uri_path.ends_with("/federate"))
+                context->checkAccess(AccessType::SELECT, getTimeSeriesTableID());
+
             auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
             PrometheusHTTPProtocolAPI protocol{table, context};
 
@@ -567,6 +571,11 @@ public:
                 };
 
                 protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);
+            }
+            else if (uri_path.ends_with("/federate"))
+            {
+                response.setContentType("text/plain; version=0.0.4; charset=utf-8; escaping=underscores");
+                protocol.federate(getOutputStream(response), params->getAll("match[]"), query_finish_callback);
             }
             else if (uri_path.ends_with("/parse_query"))
             {
@@ -631,6 +640,8 @@ public:
             /// not with the query: report it as an internal error so that clients don't attribute it
             /// to the PromQL expression.
             bool server_side_error = (e.code() == ErrorCodes::INCOMPATIBLE_SCHEMA);
+            /// The error body is JSON, also for endpoints whose success body is not.
+            response.setContentType("application/json");
             response.setStatusAndReason(
                 server_side_error ? Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR : Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
             String error_str;
