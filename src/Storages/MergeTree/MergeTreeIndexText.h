@@ -161,7 +161,43 @@ public:
     /// Adds a value to the inline array or to the large (heap) buffer.
     /// Flushes full blocks to the encoder as the buffer fills.
     /// When positions are enabled, records the position of the token within the row.
-    void add(UInt32 value, UInt32 position, const PostingListBuildContext & context);
+    /// It runs for every token occurrence, so the common cases are inlined into the caller,
+    /// while spilling to the heap, flushing and positions are handled out of line by `addSlow`.
+    ALWAYS_INLINE void add(UInt32 value, UInt32 position, const PostingListBuildContext & context)
+    {
+        if (auto * inline_state = std::get_if<Inline>(&state))
+        {
+            /// Values are added in non-descending order.
+            chassert(inline_state->size != 0);
+            chassert(value >= inline_state->values[inline_state->size - 1]);
+
+            /// In-row repeat.
+            if (value == inline_state->values[inline_state->size - 1])
+                return;
+
+            if (inline_state->size < inline_capacity)
+            {
+                inline_state->values[inline_state->size++] = value;
+                return;
+            }
+        }
+        else if (auto * large = std::get_if<Large>(&state); large && !context.enable_positions)
+        {
+            chassert(!large->values.empty() && value >= large->values.back());
+
+            /// In-row repeat.
+            if (value == large->values.back())
+                return;
+
+            if (large->values.size() < IPostingListEncoder::append_granularity)
+            {
+                large->values.push_back(value);
+                return;
+            }
+        }
+
+        addSlow(value, position, context);
+    }
 
     bool isLarge() const { return std::holds_alternative<Large>(state); }
     bool isInline() const { return std::holds_alternative<Inline>(state); }
@@ -172,6 +208,9 @@ public:
     PositionListBuilder * getPositions();
 
 private:
+    /// Handles every case of `add`, including the ones handled by its inlined part.
+    void addSlow(UInt32 value, UInt32 position, const PostingListBuildContext & context);
+
     std::variant<Inline, Large, Filtered> state;
 };
 
@@ -181,6 +220,8 @@ struct SortedToken
 {
     std::string_view token;
     PostingListBuilder * postings = nullptr;
+    /// The first 8 bytes of the token as a big-endian integer. Used only while sorting the tokens.
+    UInt64 prefix = 0;
 };
 
 using SortedTokens = std::vector<SortedToken>;
@@ -495,6 +536,26 @@ struct MergeTreeIndexTextGranuleBuilder
     /// Adds the rows from a column or array of `LowCardinality`, tokenizing each dictionary value once.
     void addDocumentsFromLowCardinality(ColumnPtr column, size_t start_row, size_t rows_read, const PostingListBuildContext & context);
 
+    /// A token whose key (with its hash) is built ahead of the insertion into the token map.
+    struct PreparedToken
+    {
+        PackedStringRef key;
+        UInt32 row = 0;
+        UInt32 position = 0;
+    };
+
+    /// Whether the token map has outgrown the CPU cache, so that every insertion misses it. Then the callers collect
+    /// the tokens of many rows with `prepareDocument` and insert them with `addTokens`, which prefetches the cells.
+    /// The map only grows until `reset`, so this stays true once it becomes true.
+    bool shouldPrefetch() const { return tokens_map.getBufferSizeInBytes() > min_bytes_for_prefetch; }
+    /// Extracts tokens from the document of the current row and appends them to `tokens`.
+    /// The keys point into the document, which must stay alive until the tokens are added.
+    void prepareDocument(std::string_view document, std::vector<PreparedToken> & tokens) const;
+    /// Appends the token of the current row to `tokens`, like `prepareDocument` does for each token of a document.
+    void prepareToken(std::string_view token, UInt32 token_position, std::vector<PreparedToken> & tokens) const;
+    /// Adds the tokens in order, prefetching the hash table cell of each token a few tokens before inserting it.
+    void addTokens(std::span<const PreparedToken> tokens, const PostingListBuildContext & context);
+
     void incrementCurrentRow();
     void setCurrentRow(size_t row) { current_row = row; }
 
@@ -504,9 +565,14 @@ struct MergeTreeIndexTextGranuleBuilder
 
     void seedDropFilter();
 
+    /// Adds the token with the built key to the given row.
+    void addTokenImpl(PackedStringRef packed_key, UInt32 row, UInt32 token_position, const PostingListBuildContext & context);
+
     MergeTreeIndexTextParams params;
     TokenizerPtr tokenizer;
     const IPostingListCodec * posting_list_codec = nullptr;
+    /// See `shouldPrefetch`.
+    size_t min_bytes_for_prefetch = 0;
 
     bool is_empty = true;
     UInt64 current_row = 0;
@@ -550,8 +616,19 @@ private:
     template <bool tokenize>
     void addDocumentsFromArray(ColumnPtr column, size_t start_row, size_t rows_read, const PostingListBuildContext & context);
 
+    /// Tokenizes the rows of a String or FixedString column slice, skipping the rows marked in `null_map` if `has_null_map`.
+    template <bool has_null_map>
+    void addDocumentsFromStrings(const IColumn & column, const UInt8 * null_map, size_t start_row, size_t rows_read, const PostingListBuildContext & context);
+
     /// One token per `(key, value)` pair of a ColumnMap slice. `keyValuePairs` only.
     void addDocumentsFromMap(ColumnPtr column, size_t start_row, size_t rows_read, const PostingListBuildContext & context);
+
+    /// The number of prepared tokens (see `MergeTreeIndexTextGranuleBuilder::shouldPrefetch`) collected before they are added:
+    /// enough to make the prefetching pay off, few enough to keep the tokens in the CPU cache.
+    static constexpr size_t prepared_tokens_batch_size = 1024;
+    /// Adds the prepared tokens to the granule and clears them if there are at least `min_tokens` of them.
+    void addPreparedTokens(
+        std::vector<MergeTreeIndexTextGranuleBuilder::PreparedToken> & prepared_tokens, size_t min_tokens, const PostingListBuildContext & context);
 
     String index_column_name;
     MergeTreeIndexTextParams params;
