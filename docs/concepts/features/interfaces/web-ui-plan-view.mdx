@@ -1,0 +1,61 @@
+---
+description: 'Documentation for the Plan view of the built-in Web SQL UI (`/play`), which shows the query plan of a statement as a tree or a graph'
+sidebarTitle: 'Web UI Plan View'
+slug: /interfaces/web-ui-plan-view
+title: 'Web UI Plan View'
+doc_type: 'reference'
+sidebar: false
+---
+
+The built-in Web SQL UI (`play.html`, served at the [`/play`](/concepts/features/interfaces/http) path of any ClickHouse HTTP port) can show the query plan of a statement next to its result, as a collapsible tree or as a graph. The plan is the one [`EXPLAIN PLAN`](/reference/statements/explain#explain-plan) returns.
+
+## Opening the plan {#opening-the-plan}
+
+A **Plan** toggle appears next to **Logs** and **Metrics** in the progress line when the statement has a plan to show:
+
+- an `EXPLAIN` or `EXPLAIN PLAN` statement;
+- a `SELECT` query, including one that begins with `WITH` or `FROM`, and a parenthesized `UNION`.
+
+The result stays on screen. Click **Plan** to show the plan, and click it again to return to the result.
+
+An `EXPLAIN PLAN json = 1` returns the plan itself, so its Plan view opens on its own.
+
+## How the plan is fetched {#how-the-plan-is-fetched}
+
+The statement runs exactly as written, and the result shows what the server returned: for an `EXPLAIN`, the usual indented text. The plan is fetched with a second request, sent the first time the Plan view is opened:
+
+- for an `EXPLAIN`, the same statement with `json = 1, indexes = 1, header = 1, actions = 1` added in front of its own settings. A setting the statement sets itself is kept, so `EXPLAIN indexes = 0 SELECT ...` still leaves out the indexes;
+- for a `SELECT`, `EXPLAIN PLAN json = 1, indexes = 1, header = 1, actions = 1` followed by the query.
+
+A trailing `FORMAT` clause is left out of this request. It goes to the server, user, database and query parameters of the run; for a `SELECT` it also carries the sorting, filtering and page chosen in the result (see [Web UI Sorting, Filtering and Pagination](/concepts/features/interfaces/web-ui-result-shaping)), which change the plan.
+
+The plan is made when the view is opened, so if the tables changed since the query ran, it can differ from the plan the query ran with. The caption `planned at <time>` shows when it was made. On a connection with a `session_id`, the request waits until the query finishes, because a session runs one query at a time.
+
+## Tree and graph {#tree-and-graph}
+
+**Tree**, the default, nests each plan node under the node that consumes its output. A row shows the node type, its description and its scalar properties; the structured ones, such as `Header`, `Indexes` and `Expression`, are sub-entries that start collapsed. Click a caret to fold or unfold a node, or use **Expand all** and **Collapse all**. Hovering a row shows its `Node Id`. The two inputs of a `Join` are labelled `left` and `right`, and the input its hash table is built from is marked `build`.
+
+**Graph** draws the same plan with an edge in the direction the data flows, from the reading steps up to the result. It is rendered in the browser with Viz.js, which the server serves along with the page.
+
+## Node details {#node-details}
+
+Clicking a row of the tree or a box of the graph selects that node, and a `<node type> details` button appears. It opens a pane beside the plan with all the properties of the node, including:
+
+- the columns it outputs, with their types (`Header`);
+- for `ReadFromMergeTree`, the table it reads and, for each index, the parts and granules before and after the index, the share it removed, the condition and the search algorithm.
+
+The pane follows the selection while it is open.
+
+## When it is not available {#when-it-is-not-available}
+
+The Plan toggle is not offered for:
+
+- other `EXPLAIN` kinds (`PIPELINE`, `AST`, `SYNTAX`, `QUERY TREE`, `ESTIMATE`), which have no plan in JSON. `EXPLAIN PIPELINE graph = 1` is still drawn as a graph in the result;
+- an `EXPLAIN PLAN json = 0`, which asks for the text;
+- an `EXPLAIN PLAN distributed = 1`, because the server does not support `json` together with `distributed`;
+- statements other than queries, such as `INSERT`, `CREATE` or `SHOW`, and a query with `INTO OUTFILE`;
+- the statements of a "Run all" (multi-query) run.
+
+## Persistence {#persistence}
+
+The plan is not saved with the result. When a result is restored, after a reload, a tab switch or a step through the browser history, the Plan toggle is offered again whenever the result's Download button is, and the plan is fetched again when the view is opened. The result of an `EXPLAIN PLAN json = 1` is saved like any other result and shows its plan again on restore.
