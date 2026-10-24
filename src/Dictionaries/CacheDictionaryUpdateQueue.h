@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <mutex>
 #include <functional>
 
@@ -7,6 +8,7 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/PODArray.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/HashTable/HashMap.h>
 #include <Columns/IColumn_fwd.h>
 #include <Dictionaries/ICacheDictionaryStorage.h>
@@ -42,26 +44,32 @@ public:
         const Columns & key_columns_,
         const PaddedPODArray<KeyState> & key_index_to_state_from_storage_,
         const DictionaryStorageFetchRequest & request_,
-        size_t keys_to_update_size_)
+        size_t keys_to_update_size_,
+        size_t distinct_keys_to_update_size_)
         : key_columns(key_columns_)
         , key_index_to_state(key_index_to_state_from_storage_.begin(), key_index_to_state_from_storage_.end())
         , request(request_)
         , keys_to_update_size(keys_to_update_size_)
+        , distinct_keys_to_update_size(distinct_keys_to_update_size_)
         , alive_keys(CurrentMetrics::CacheDictionaryUpdateQueueKeys, keys_to_update_size)
     {}
 
     CacheDictionaryUpdateUnit()
         : keys_to_update_size(0)
+        , distinct_keys_to_update_size(0)
         , alive_keys(CurrentMetrics::CacheDictionaryUpdateQueueKeys, 0)
     {}
 
     const Columns key_columns;
     const PaddedPODArray<KeyState> key_index_to_state;
     const DictionaryStorageFetchRequest request;
+    /// Rows of the block whose key is expired or not found.
     const size_t keys_to_update_size;
+    const size_t distinct_keys_to_update_size;
 
-    HashMap<KeyType, size_t> requested_keys_to_fetched_columns_during_update_index;
-    MutableColumns fetched_columns_during_update;
+    /// Shared by all units of one update batch, so they are read-only after the update.
+    std::shared_ptr<const HashMap<KeyType, size_t>> requested_keys_to_fetched_columns_during_update_index;
+    Columns fetched_columns_during_update;
 
     /// Complex keys are serialized in this arena
     DictionaryKeysArenaHolder<dictionary_key_type> complex_keys_arena_holder;
@@ -103,12 +111,23 @@ struct CacheDictionaryUpdateQueueConfiguration
 
     It is responsibility of CacheDictionary to perform update with UpdateUnit using UpdateFunction.
 */
+/// Keys that one update requested from the source.
+struct CacheDictionaryUpdateKeys
+{
+    /// Sum over the units of the update of the distinct keys of each unit.
+    size_t unit_keys = 0;
+    /// Distinct keys of all units. Less than unit_keys when different units request the same keys.
+    size_t batch_keys = 0;
+};
+
 template <DictionaryKeyType dictionary_key_type>
 class CacheDictionaryUpdateQueue
 {
 public:
     /// Client of update queue must provide this function in constructor and perform update using update unit.
-    using UpdateFunction = std::function<void (CacheDictionaryUpdateUnitPtr<dictionary_key_type>)>;
+    /// Gets one unit for complex keys, and one or more units for simple keys.
+    using UpdateFunction
+        = std::function<CacheDictionaryUpdateKeys(VectorWithMemoryTracking<CacheDictionaryUpdateUnitPtr<dictionary_key_type>> &)>;
 
     CacheDictionaryUpdateQueue(
         String dictionary_name_for_logs_,
@@ -158,6 +177,19 @@ private:
 
     UpdateQueue update_queue;
     ThreadPool update_pool;
+
+    /// Number of update threads that are updating a batch (the others wait for a unit in the queue).
+    std::atomic<size_t> busy_update_threads{0};
+
+    /// Moving average of the share of keys of recent batches that more than one unit requested.
+    /// Keys that repeat inside one unit are not counted, because one unit requests them once.
+    /// Approximate: concurrent updates of the average can overwrite each other.
+    /// Without repeated keys a batch still saves source requests, but it serializes fetches that the threads can do
+    /// in parallel, and this was slower in the cold-key benchmark of the PR that added batching.
+    /// It starts at the threshold, so the first batch is tried and one batch without overlap disables batching.
+    static constexpr double min_repeated_keys_share = 0.1;
+    std::atomic<double> repeated_keys_share{min_repeated_keys_share};
+    std::atomic<size_t> updates_count{0};
 };
 
 extern template class CacheDictionaryUpdateQueue<DictionaryKeyType::Simple>;
