@@ -13,23 +13,23 @@ INSERT INTO t_105462 SELECT if(number % 5 = 0, NULL, toUInt16(number)) FROM numb
 -- Each query must complete without crashing the server. We do not assert
 -- specific lengths because they encode internal `UniquesHashSet` layout.
 
-SELECT 'uniqStateOrNull WITH ROLLUP', count() FROM (
+SELECT 'uniqStateOrNull WITH ROLLUP', count(s) FROM (
     SELECT hex(uniqStateOrNull(h)) AS s FROM t_105462 GROUP BY h WITH ROLLUP);
 
-SELECT 'uniqStateOrNull WITH CUBE', count() FROM (
+SELECT 'uniqStateOrNull WITH CUBE', count(s) FROM (
     SELECT hex(uniqStateOrNull(h)) AS s FROM t_105462 GROUP BY h WITH CUBE);
 
-SELECT 'uniqStateOrNull WITH TOTALS', count() FROM (
+SELECT 'uniqStateOrNull WITH TOTALS', count(s) FROM (
     SELECT hex(uniqStateOrNull(h)) AS s FROM t_105462 GROUP BY h WITH TOTALS);
 
-SELECT 'uniqStateOrDefault WITH ROLLUP', count() FROM (
+SELECT 'uniqStateOrDefault WITH ROLLUP', count(s) FROM (
     SELECT hex(uniqStateOrDefault(h)) AS s FROM t_105462 GROUP BY h WITH ROLLUP);
 
-SELECT 'uniqOrNullState WITH ROLLUP', count() FROM (
+SELECT 'uniqOrNullState WITH ROLLUP', count(s) FROM (
     SELECT hex(uniqOrNullState(h)) AS s FROM t_105462 GROUP BY h WITH ROLLUP);
 
 -- Sanity check: the same query without the rollup modifier still works.
-SELECT 'plain GROUP BY', count() FROM (
+SELECT 'plain GROUP BY', count(s) FROM (
     SELECT hex(uniqStateOrNull(h)) AS s FROM t_105462 GROUP BY h);
 
 DROP TABLE t_105462;

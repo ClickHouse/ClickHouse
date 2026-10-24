@@ -30,12 +30,12 @@ INSERT INTO bnl_bs_build SELECT number, repeat('b', 1000) FROM numbers(500);
 -- Neither limit set: the whole result of a probe chunk goes out in as few blocks as `max_block_size`
 -- allows, so the blocks are far larger than either limit below would let them be.
 SELECT 'matched, unlimited', max(bs) > 10000
-FROM (SELECT blockSize() AS bs FROM (
+FROM (SELECT blockSize() + ignore(s, y) AS bs FROM (
     SELECT l.s, r.y FROM bnl_bs_probe l LEFT JOIN bnl_bs_build r ON l.x < r.y))
 SETTINGS max_joined_block_size_rows = 0, max_joined_block_size_bytes = 0;
 
 SELECT 'matched, rows', max(bs)
-FROM (SELECT blockSize() AS bs FROM (
+FROM (SELECT blockSize() + ignore(s, y) AS bs FROM (
     SELECT l.s, r.y FROM bnl_bs_probe l LEFT JOIN bnl_bs_build r ON l.x < r.y))
 SETTINGS max_joined_block_size_rows = 111, max_joined_block_size_bytes = 0;
 
@@ -47,7 +47,7 @@ SETTINGS max_joined_block_size_rows = 100000, max_joined_block_size_bytes = 1000
 
 -- Nothing matches, so the whole result of each of these is the padded side.
 SELECT 'unmatched probe rows, unlimited', max(bs)
-FROM (SELECT blockSize() AS bs FROM (
+FROM (SELECT blockSize() + ignore(s) AS bs FROM (
     SELECT l.s FROM bnl_bs_probe l LEFT JOIN bnl_bs_build r ON l.x + 1000 < r.y))
 SETTINGS max_joined_block_size_rows = 0, max_joined_block_size_bytes = 0;
 
@@ -57,7 +57,7 @@ FROM (SELECT blockSize() AS bs, s FROM (
 SETTINGS max_joined_block_size_rows = 0, max_joined_block_size_bytes = 10000;
 
 SELECT 'unmatched build rows, unlimited', max(bs)
-FROM (SELECT blockSize() AS bs FROM (
+FROM (SELECT blockSize() + ignore(t) AS bs FROM (
     SELECT r.t FROM bnl_bs_probe l RIGHT JOIN bnl_bs_build r ON l.x > r.y + 1000))
 SETTINGS max_joined_block_size_rows = 0, max_joined_block_size_bytes = 0;
 

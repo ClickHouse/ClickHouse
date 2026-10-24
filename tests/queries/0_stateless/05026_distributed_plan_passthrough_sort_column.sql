@@ -41,7 +41,7 @@ SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_ex
 
 -- The outer window argument is a non-trivial expression on purpose: a plain aggregate is pushed below
 -- the gather and does not build the failing shape.
-SELECT 'query runs', count() FROM
+SELECT 'query runs', sum(r) FROM
 (
     SELECT uniq(modulo(s, finalizeAggregation(initializeAggregation('anyState', toNullable(-1)))))
         OVER (PARTITION BY 'c' ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS r
@@ -49,14 +49,14 @@ SELECT 'query runs', count() FROM
 ) SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 -- The same shape with the sort column wrapped. Each of these was rejected before the fix too.
-SELECT 'Nullable key', count() FROM
+SELECT 'Nullable key', sum(r) FROM
 (
     SELECT uniq(modulo(s, finalizeAggregation(initializeAggregation('anyState', toNullable(-1)))))
         OVER (PARTITION BY 'c' ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS r
     FROM (SELECT a_nullable, v, sum(v) OVER (PARTITION BY a_nullable ORDER BY v) AS s FROM t_passthrough_sort)
 ) SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
-SELECT 'LowCardinality key', count() FROM
+SELECT 'LowCardinality key', sum(r) FROM
 (
     SELECT uniq(modulo(s, finalizeAggregation(initializeAggregation('anyState', toNullable(-1)))))
         OVER (PARTITION BY 'c' ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS r
@@ -64,7 +64,7 @@ SELECT 'LowCardinality key', count() FROM
         FROM t_passthrough_sort)
 ) SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
-SELECT 'LowCardinality(Nullable) key', count() FROM
+SELECT 'LowCardinality(Nullable) key', sum(r) FROM
 (
     SELECT uniq(modulo(s, finalizeAggregation(initializeAggregation('anyState', toNullable(-1)))))
         OVER (PARTITION BY 'c' ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS r
@@ -72,7 +72,7 @@ SELECT 'LowCardinality(Nullable) key', count() FROM
         sum(v) OVER (PARTITION BY a_low_cardinality_nullable ORDER BY v) AS s FROM t_passthrough_sort)
 ) SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
-SELECT 'Array key', count() FROM
+SELECT 'Array key', sum(r) FROM
 (
     SELECT uniq(modulo(s, finalizeAggregation(initializeAggregation('anyState', toNullable(-1)))))
         OVER (PARTITION BY 'c' ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS r
@@ -80,7 +80,7 @@ SELECT 'Array key', count() FROM
 ) SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 -- An empty input still builds the plan, so the branch is reached with no rows to merge.
-SELECT 'empty input', count() FROM
+SELECT 'empty input', sum(r) FROM
 (
     SELECT uniq(modulo(s, finalizeAggregation(initializeAggregation('anyState', toNullable(-1)))))
         OVER (PARTITION BY 'c' ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS r
@@ -97,7 +97,7 @@ SELECT 'empty input', count() FROM
 -- and the outer query must stay local.
 SELECT 'inner sorted gather moved up', count() = 0 FROM
 (
-    EXPLAIN SELECT count() FROM
+    EXPLAIN SELECT sum(r) FROM
     (
         SELECT uniq(modulo(s, finalizeAggregation(initializeAggregation('anyState', toNullable(-1)))))
             OVER (PARTITION BY 'c' ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS r
@@ -111,7 +111,7 @@ SETTINGS make_distributed_plan = 0;
 -- gather must still be there. Without this the arm could pass for a planner that stopped distributing.
 SELECT 'rewrite off keeps the gather below', count() > 0 FROM
 (
-    EXPLAIN SELECT count() FROM
+    EXPLAIN SELECT sum(r) FROM
     (
         SELECT uniq(modulo(s, finalizeAggregation(initializeAggregation('anyState', toNullable(-1)))))
             OVER (PARTITION BY 'c' ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS r

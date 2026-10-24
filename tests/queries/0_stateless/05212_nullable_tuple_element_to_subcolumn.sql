@@ -41,7 +41,7 @@ SELECT count() FROM (EXPLAIN QUERY TREE
     SELECT tupleElement(t, 1), tupleElement(t, 1::Int64), tupleElement(t, -6) FROM nullable_tuple_elements)
 WHERE explain LIKE '%column_name: t.u%';
 SELECT tupleElement(t, 'absent', 99) FROM nullable_tuple_elements ORDER BY id;
-SELECT count() FROM (SELECT tupleElement(t, 'u') FROM nullable_tuple_elements WHERE id > 10);
+SELECT count(ignore(*)) FROM (SELECT tupleElement(t, 'u') FROM nullable_tuple_elements WHERE id > 10);
 
 -- A filter can read an element while the projection reads the entire tuple.
 SELECT id, t FROM nullable_tuple_elements WHERE tupleElement(t, 'u') = 12;
