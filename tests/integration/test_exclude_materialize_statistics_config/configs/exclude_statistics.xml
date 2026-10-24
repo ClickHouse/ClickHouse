@@ -1,0 +1,5 @@
+<clickhouse>
+    <merge_tree>
+        <exclude_materialize_statistics_on_merge>b</exclude_materialize_statistics_on_merge>
+    </merge_tree>
+</clickhouse>
