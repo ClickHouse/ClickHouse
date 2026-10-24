@@ -2301,10 +2301,6 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
             "max_compress_block_size",
             "min_compress_block_size"/*,
             "output_format_orc_compression_block_size" can give std::exception */};
-    /// Context::getReadSettings() rejects these below MIN_READER_EXECUTOR_SIZE even with
-    /// use_reader_executor disabled, so anything under the floor dies in settings loading
-    /// instead of reaching the reader-executor paths.
-    DB::Strings reader_executor_sizes = {"reader_executor_block_size", "reader_executor_window_size"};
     DB::Strings max_columns_values;
 
     if (!fc.allow_query_oracles)
@@ -2443,29 +2439,35 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
         performanceSettings.insert({{entry, CHSetting(highRangeNonZero, {"1024", "2048", "4096", "8192", "16384"}, false)}});
         serverSettings.insert({{entry, CHSetting(highRangeNonZero, blockSizes, false)}});
     }
-    const auto readerExecutorSizeRange = [](RandomGenerator & rg, FuzzConfig &)
+    /// `Context::getReadSettings` rejects a bad combination even with `use_reader_executor` disabled: the look-ahead must be
+    /// at least the block size and twice the window size. Settings are drawn independently, so every range keeps both
+    /// rules against the defaults of the others.
+    static constexpr uint64_t reader_executor_max_block_size = UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024);
+    static constexpr uint64_t reader_executor_max_window_size = DB::DEFAULT_READER_EXECUTOR_PLAN_LOOK_AHEAD / 2;
+    static_assert(reader_executor_max_block_size <= DB::DEFAULT_READER_EXECUTOR_PLAN_LOOK_AHEAD);
+    const auto readerExecutorSizeRange = [](const uint64_t min_val, const uint64_t max_val)
     {
-        return std::to_string(
-            rg.thresholdGenerator<uint64_t>(0.2, 0.2, DB::MIN_READER_EXECUTOR_SIZE, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024)));
+        return [min_val, max_val](RandomGenerator & rg, FuzzConfig &)
+        { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, min_val, max_val)); };
     };
-    for (const auto & entry : reader_executor_sizes)
-    {
-        performanceSettings.insert({{entry, CHSetting(readerExecutorSizeRange, {"131072", "1048576", "'10M'"}, false)}});
-        serverSettings.insert({{entry, CHSetting(readerExecutorSizeRange, {"131072", "1048576", "'10M'"}, false)}});
-    }
-    /// Shares the same band, but `reader_executor_plan_look_ahead` must also be at least
-    /// `reader_executor_block_size`. Staying at or above that setting's ceiling keeps every draw
-    /// legal without coupling the two generators; same reason the oracle values start at 10 MiB.
-    const auto readerExecutorPlanLookAheadSetting = CHSetting(
-        [](RandomGenerator & rg, FuzzConfig &)
-        {
-            return std::to_string(rg.thresholdGenerator<uint64_t>(
-                0.2, 0.2, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024), DB::MAX_READER_EXECUTOR_SIZE));
-        },
-        {"'10M'", "'20M'", "'40M'"},
-        false);
-    performanceSettings.insert({{"reader_executor_plan_look_ahead", readerExecutorPlanLookAheadSetting}});
-    serverSettings.insert({{"reader_executor_plan_look_ahead", readerExecutorPlanLookAheadSetting}});
+    const std::unordered_map<String, CHSetting> reader_executor_sizes
+        = {{"reader_executor_block_size",
+            CHSetting(
+                readerExecutorSizeRange(DB::MIN_READER_EXECUTOR_SIZE, reader_executor_max_block_size),
+                {"131072", "1048576", "'10M'"},
+                false)},
+           {"reader_executor_window_size",
+            CHSetting(
+                readerExecutorSizeRange(DB::MIN_READER_EXECUTOR_SIZE, reader_executor_max_window_size),
+                {"131072", "1048576", std::to_string(reader_executor_max_window_size)},
+                false)},
+           {"reader_executor_plan_look_ahead",
+            CHSetting(
+                readerExecutorSizeRange(DB::DEFAULT_READER_EXECUTOR_PLAN_LOOK_AHEAD, DB::MAX_READER_EXECUTOR_SIZE),
+                {std::to_string(DB::DEFAULT_READER_EXECUTOR_PLAN_LOOK_AHEAD), "31457280", "41943040"},
+                false)}};
+    performanceSettings.insert(reader_executor_sizes.begin(), reader_executor_sizes.end());
+    serverSettings.insert(reader_executor_sizes.begin(), reader_executor_sizes.end());
     for (const auto & entry : max_columns_values)
     {
         chassert(!fc.allow_query_oracles);

@@ -10029,6 +10029,11 @@ ReadSettings Context::getReadSettings() const
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
             "Invalid value {} for reader_executor_plan_look_ahead: must be at least reader_executor_block_size ({} bytes)",
             res.reader_executor.plan_look_ahead, res.reader_executor.block_size);
+    /// The plan refills once half of it is left, so twice the window keeps a whole fetch resolved ahead.
+    if (res.reader_executor.plan_look_ahead < 2 * res.reader_executor.window_size)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "Invalid value {} for reader_executor_plan_look_ahead: must be at least twice reader_executor_window_size ({} bytes)",
+            res.reader_executor.plan_look_ahead, res.reader_executor.window_size);
     res.reader_executor.min_bytes_for_seek = settings_ref[Setting::reader_executor_min_bytes_for_seek];
     res.reader_executor.max_tail_for_drain = settings_ref[Setting::reader_executor_max_tail_for_drain];
     res.page_cache_settings.read_if_exists_otherwise_bypass
