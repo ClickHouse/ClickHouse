@@ -1574,7 +1574,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
     bool is_special_function_in = false;
     bool is_special_function_dict_get = false;
-    bool is_special_function_assign_centroid = false;
+    std::optional<size_t> dictionary_name_position;
     bool is_special_function_join_get = false;
     bool is_special_function_exists = false;
     bool is_special_function_if = false;
@@ -1584,7 +1584,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     {
         is_special_function_in = isNameOfInFunction(function_name);
         is_special_function_dict_get = functionIsDictGet(function_name);
-        is_special_function_assign_centroid = function_name == "assignCentroid";
+        dictionary_name_position = getDictionaryNameArgumentPosition(function_name);
         is_special_function_join_get = functionIsJoinGet(function_name);
         is_special_function_exists = function_name == "exists";
         is_special_function_if = function_name == "if";
@@ -2515,13 +2515,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
       * belongs to an XML dictionary, and when no such dictionary exists in the current database - in the
       * last case the name may still be meant for a dictionary that only exists on the shards.
       */
-    if (is_special_function_dict_get || is_special_function_assign_centroid)
+    if (dictionary_name_position)
     {
-        const size_t dictionary_name_position = is_special_function_dict_get ? 0 : 1;
         auto & arguments = function_node_ptr->getArguments().getNodes();
-        if (dictionary_name_position < arguments.size())
+        if (*dictionary_name_position < arguments.size())
         {
-            auto & dictionary_name_argument = arguments[dictionary_name_position];
+            auto & dictionary_name_argument = arguments[*dictionary_name_position];
             const auto * dictionary_name_node = dictionary_name_argument->as<ConstantNode>();
             if (dictionary_name_node && dictionary_name_node->getValue().getType() == Field::Types::String)
             {
