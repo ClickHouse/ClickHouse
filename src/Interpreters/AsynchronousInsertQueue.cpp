@@ -1601,6 +1601,9 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     /// by materialized views.
     auto format_context = Context::createCopy(insert_context);
     InterpreterSetQuery::applySettingsFromQuery(key.query, format_context);
+    /// The `SETTINGS` clause must not undo the mandatory overrides of the queue: the parser below is
+    /// reused across entries with `resetParser`, which parallel parsing does not support.
+    format_context->setSetting("input_format_parallel_parsing", false);
 
     auto format = getInputFormatFromASTInsertQuery(key.query, false, header, format_context, nullptr);
     std::shared_ptr<ISimpleTransform> adding_defaults_transform;
