@@ -1,14 +1,11 @@
 #pragma once
 
-#include <Databases/DatabaseReplicated.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 namespace DB
 {
 
 class Context;
-class Cluster;
-class DatabaseReplicated;
 
 /** Implements system table 'clusters'
   *  that allows to obtain information about available clusters
@@ -23,11 +20,14 @@ public:
 
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
-    using NameAndCluster = std::pair<String, std::shared_ptr<Cluster>>;
 
-    void fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8> columns_mask) const override;
-    static void writeCluster(MutableColumns & res_columns, const std::vector<UInt8> & columns_mask, const NameAndCluster & name_and_cluster, std::function<ReplicasInfo()> && replicas_info_getter);
+    void fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8> columns_mask) const override;
+    Block getFilterSampleBlock() const override;
     bool supportsColumnsMask() const override { return true; }
+
+private:
+    /// Whether any of the columns filled from the replica state in Keeper is requested.
+    bool needsReplicasInfo(const std::vector<UInt8> & columns_mask, const ContextPtr & context) const;
 };
 
 }
