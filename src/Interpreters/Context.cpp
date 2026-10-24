@@ -144,6 +144,7 @@
 #include <Common/Scheduler/createResourceManager.h>
 #include <Common/Scheduler/Workload/createWorkloadEntityStorage.h>
 #include <Common/StackTrace.h>
+#include <Common/CurrentThread.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionDriverRegistry.h>
 #include <Poco/Glob.h>
@@ -316,6 +317,7 @@ ContextPtr ContextData::global_context_instance;
 ContextPtr ContextData::background_context_instance;
 namespace Setting
 {
+    extern const SettingsString metadata_workload;
     extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 ai_function_max_input_tokens_per_query;
     extern const SettingsUInt64 ai_function_max_output_tokens_per_query;
@@ -748,6 +750,7 @@ struct ContextSharedPart : boost::noncopyable
     bool show_license_expiration_warnings TSA_GUARDED_BY(mutex) = true; /// Whether to show the license expiration warning in system.warnings
     bool throw_on_unknown_workload TSA_GUARDED_BY(mutex) = false;
     bool cpu_slot_preemption TSA_GUARDED_BY(mutex) = false;
+    bool use_metadata_workload TSA_GUARDED_BY(mutex) = false;      /// Schedule metadata queries under the `metadata_workload` setting instead of exempting them
     UInt64 cpu_slot_quantum_ns TSA_GUARDED_BY(mutex) = 10'000'000;
     UInt64 cpu_slot_preemption_timeout_ms TSA_GUARDED_BY(mutex) = 1000;
     bool cpu_slot_parking TSA_GUARDED_BY(mutex) = true;
@@ -1695,6 +1698,7 @@ ContextData::ContextData(const ContextData &o) :
     is_automatic_parallel_replicas_probe(o.is_automatic_parallel_replicas_probe),
     temp_data_on_disk(o.temp_data_on_disk),
     classifier(o.classifier),
+    metadata_query_scheduling(o.metadata_query_scheduling),
     prepared_sets_cache(o.prepared_sets_cache),
     offset_parallel_replicas_enabled(o.offset_parallel_replicas_enabled),
     runtime_filter_lookup(o.runtime_filter_lookup),
@@ -2912,6 +2916,25 @@ ResourceManagerPtr Context::getResourceManager() const
     return shared->resource_manager;
 }
 
+namespace
+{
+    /// Maps every resource to an empty ResourceLink, so a query using it is exempt from all workload
+    /// scheduling (query-slot and memory-reservation admission, CPU and IO) and never throws on an
+    /// unknown workload. Stateless, so a single shared instance serves every exempt query.
+    class ExemptClassifier : public IClassifier
+    {
+    public:
+        bool has(const String &) override { return false; }
+        ResourceLink get(const String &) override { return {}; }
+        WorkloadSettings getWorkloadSettings(const String &) const override { return {}; }
+        const String & getWorkloadName() const override
+        {
+            static const String none;
+            return none;
+        }
+    };
+}
+
 ClassifierPtr Context::getWorkloadClassifier() const
 {
     const auto & query_settings = getSettingsRef();
@@ -2930,8 +2953,44 @@ ClassifierPtr Context::getWorkloadClassifier() const
     std::lock_guard lock(mutex);
     // NOTE: Workload cannot be changed after query start, and getWorkloadClassifier() should not be called before proper `workload` is set
     if (!classifier)
-        classifier = getResourceManager()->acquire(query_settings[Setting::workload], settings);
+    {
+        if (metadata_query_scheduling == MetadataQueryScheduling::NotMetadataQuery)
+            classifier = getResourceManager()->acquire(query_settings[Setting::workload], settings);
+        else if (metadata_query_scheduling == MetadataQueryScheduling::MetadataWorkload)
+        {
+            /// `metadata_workload` has its own constraints and is not validated against those of `workload`.
+            const String & metadata_workload = query_settings[Setting::metadata_workload];
+            classifier = getResourceManager()->acquire(metadata_workload.empty() ? String("default") : metadata_workload, settings);
+        }
+        else
+        {
+            /// Exempt from workload scheduling. `workload` is left as is, so the `max_concurrent_queries*`
+            /// limits still apply and the sub-queries sent to other servers are scheduled there as usual.
+            static const ClassifierPtr exempt_classifier = std::make_shared<ExemptClassifier>();
+            classifier = exempt_classifier;
+        }
+    }
     return classifier;
+}
+
+void Context::setMetadataQuery()
+{
+    /// A metadata query executed as part of another one on the same thread group (e.g. the initiator of a
+    /// `Replicated` database running the DDL from its queue entry) keeps the mode of that query, which
+    /// its CPU and IO are scheduled under. Both are read before `mutex` to avoid nested locking.
+    MetadataQueryScheduling mode = MetadataQueryScheduling::NotMetadataQuery;
+    if (auto thread_query_context = CurrentThread::tryGetQueryContext(); thread_query_context && thread_query_context.get() != this)
+        mode = thread_query_context->getMetadataQueryScheduling();
+    if (mode == MetadataQueryScheduling::NotMetadataQuery)
+        mode = getUseMetadataWorkload() ? MetadataQueryScheduling::MetadataWorkload : MetadataQueryScheduling::Exempt;
+    std::lock_guard lock(mutex);
+    metadata_query_scheduling = mode;
+}
+
+Context::MetadataQueryScheduling Context::getMetadataQueryScheduling() const
+{
+    std::lock_guard lock(mutex);
+    return metadata_query_scheduling;
 }
 
 void Context::releaseQuerySlot() const
@@ -3025,6 +3084,18 @@ void Context::setCPUSlotPreemption(bool cpu_slot_preemption, UInt64 cpu_slot_qua
     shared->cpu_slot_preemption = cpu_slot_preemption;
     shared->cpu_slot_quantum_ns = cpu_slot_quantum_ns;
     shared->cpu_slot_preemption_timeout_ms = cpu_slot_preemption_timeout_ms;
+}
+
+bool Context::getUseMetadataWorkload() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->use_metadata_workload;
+}
+
+void Context::setUseMetadataWorkload(bool use_metadata_workload)
+{
+    std::lock_guard lock(shared->mutex);
+    shared->use_metadata_workload = use_metadata_workload;
 }
 
 bool Context::getCPUSlotParking() const
@@ -4551,12 +4622,14 @@ void Context::makeQueryContext()
 void Context::makeQueryContextForMerge(const MergeTreeSettings & merge_tree_settings)
 {
     makeQueryContext(); // resets the classifier (see makeQueryContext); rebuilt lazily under the merge workload set below
+    metadata_query_scheduling = MetadataQueryScheduling::NotMetadataQuery; // A merge always uses the merge workload, whatever context it is copied from
     (*settings)[Setting::workload] = merge_tree_settings[MergeTreeSetting::merge_workload].value.empty() ? getMergeWorkload() : merge_tree_settings[MergeTreeSetting::merge_workload];
 }
 
 void Context::makeQueryContextForMutate(const MergeTreeSettings & merge_tree_settings)
 {
     makeQueryContext(); // resets the classifier (see makeQueryContext); rebuilt lazily under the mutation workload set below
+    metadata_query_scheduling = MetadataQueryScheduling::NotMetadataQuery; // Likewise, a mutation always uses the mutation workload
     (*settings)[Setting::workload]
         = merge_tree_settings[MergeTreeSetting::mutation_workload].value.empty() ? getMutationWorkload() : merge_tree_settings[MergeTreeSetting::mutation_workload];
 

@@ -2999,6 +2999,9 @@ static BlockIO executeQueryImpl(
         /// Put query to process list. But don't put SHOW PROCESSLIST query itself.
         if (!(out_ast && out_ast->as<ASTShowProcesslistQuery>()))
         {
+            /// Before the workload classifier is acquired in insert: metadata queries are scheduled according to `use_metadata_workload`.
+            if (isMetadataQuery(out_ast.get()))
+                context->setMetadataQuery();
             /// processlist also has query masked now, to avoid secrets leaks though SHOW PROCESSLIST by other users.
             process_list_entry = context->getProcessList().insert(query_for_logging, normalized_query_hash, out_ast.get(), context, start_watch.getStart(), internal);
             context->setProcessListElement(process_list_entry->getQueryStatus());
