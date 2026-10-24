@@ -241,6 +241,10 @@ private:
     /// part by every read, like a partially read column. Filled by `addStreams`.
     NameSet columns_not_cacheable;
 
+    /// Columns that miss a stream of a typed `JSON` path. `addStreams` assumes the dense layout of
+    /// typed paths, so such a column is reclassified once the prefixes tell the actual layout.
+    NameSet columns_with_unknown_layout;
+
     /// Whether the column at `pos` is read from the part even when the rest of the granule is
     /// served from the cache: a partially read column or a column that is not cacheable.
     bool isColumnReadOnlyFromPart(size_t pos) const;

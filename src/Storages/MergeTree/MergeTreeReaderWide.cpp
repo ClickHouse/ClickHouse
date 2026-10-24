@@ -298,7 +298,12 @@ size_t MergeTreeReaderWide::readRows(
             /// not read. Fall back to the task's last mark when the caller did not provide the
             /// range end.
             if (!continue_reading)
+            {
+                /// A column is classified for the whole range below, see `columns_with_unknown_layout`.
+                if (!columns_with_unknown_layout.empty())
+                    deserializePrefixForAllColumns(num_columns, from_mark);
                 startColumnsCacheRange(from_mark, current_range_last_mark ? current_range_last_mark : last_mark_to_read, num_columns);
+            }
 
             read_rows = readRowsWithColumnsCache(max_rows_to_read, res_columns, shared_columns);
         }
@@ -1153,6 +1158,8 @@ void MergeTreeReaderWide::addStreams(
         if (!stream_name)
         {
             has_all_streams = false;
+            if (std::ranges::any_of(substream_path, [](const auto & substream) { return substream.type == ISerialization::Substream::ObjectTypedPath; }))
+                columns_with_unknown_layout.insert(name_and_type.name);
             return;
         }
 
@@ -1563,6 +1570,40 @@ void MergeTreeReaderWide::deserializePrefixForAllColumnsImpl(size_t num_columns,
         deserialize_binary_bulk_state_map = deserialization_prefixes_cache->getOrSet(deserialize);
     else
         deserialize_binary_bulk_state_map = deserialize();
+
+    /// A sparse typed path of a V4 part has sparse offsets instead of the streams `addStreams`
+    /// expected, for example no null map stream for a `Nullable` path. Classify such columns again
+    /// with the actual layout. Readers consult the classification only after this point.
+    for (size_t pos = 0; pos < num_columns && !columns_with_unknown_layout.empty(); ++pos)
+    {
+        const auto & name_and_type = columns_to_read[pos];
+        if (!columns_with_unknown_layout.erase(name_and_type.name))
+            continue;
+        bool has_any_stream = false;
+        bool has_all_streams = true;
+        bool has_derived_stream = false;
+        auto callback = [&](const ISerialization::SubstreamPath & path)
+        {
+            if (ISerialization::isEphemeralSubcolumn(path, path.size()))
+                has_derived_stream = true;
+            else if (IMergeTreeDataPart::getStreamNameForColumn(name_and_type, path, ".bin", data_part_info_for_read->getChecksums(), storage_settings))
+                has_any_stream = true;
+            else
+                has_all_streams = false;
+        };
+        ISerialization::EnumerateStreamsSettings enumerate_settings;
+        const auto & serialization = serializations[pos];
+        auto data = ISerialization::SubstreamData(serialization)
+                        .withType(name_and_type.type)
+                        .withDeserializeState(deserialize_binary_bulk_state_map[name_and_type.name]);
+        serialization->enumerateStreams(enumerate_settings, callback, data);
+        /// The same classification as in `addStreams`.
+        if (has_all_streams && (has_any_stream || has_derived_stream))
+        {
+            partially_read_columns.erase(name_and_type.name);
+            columns_absent_from_part.erase(name_and_type.name);
+        }
+    }
 }
 
 void MergeTreeReaderWide::deserializePrefixForAllColumns(size_t num_columns, size_t from_mark)
