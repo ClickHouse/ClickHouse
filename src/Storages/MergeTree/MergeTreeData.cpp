@@ -39,6 +39,7 @@
 #include <Core/QueryProcessingStage.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Core/SortDescription.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -5756,12 +5757,23 @@ void checkVersionColumnTypesConversion(const IDataType * old_type, const IDataTy
     }
 }
 
-/// Source columns an expression reads, resolved against `columns` via the query analyzer over a fake
-/// table. keep_alias_columns=false expands ALIAS chains to their base columns.
-Names expressionSourceColumns(const ASTPtr & ast, const ColumnsDescription & columns, const ContextPtr & context)
+struct ExpressionSources
 {
+    /// The columns an expression reads, where an ALIAS column stands for the columns its expression reads.
+    Names columns;
+    /// The ALIAS columns read on the way. Filled only with `keep_alias_columns`.
+    Names alias_columns;
+    bool is_deterministic = true;
+};
+
+/// Resolves an expression against `columns` via the query analyzer over a fake table.
+/// keep_alias_columns=false inlines ALIAS chains, so `is_deterministic` covers their expressions too.
+ExpressionSources analyzeExpressionSources(
+    const ASTPtr & ast, const ColumnsDescription & columns, const ContextPtr & context, bool keep_alias_columns, bool check_determinism)
+{
+    ExpressionSources result;
     if (!ast)
-        return {};
+        return result;
 
     auto analysis_context = Context::createCopy(context);
     auto expression = buildQueryTree(ast, analysis_context);
@@ -5775,12 +5787,202 @@ Names expressionSourceColumns(const ASTPtr & ast, const ColumnsDescription & col
     auto global_planner_context
         = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
     auto planner_context = std::make_shared<PlannerContext>(analysis_context, global_planner_context, SelectQueryOptions{});
-    collectSetsAndSourceColumns(expression, planner_context, /*keep_alias_columns=*/ false);
+    collectSetsAndSourceColumns(expression, planner_context, keep_alias_columns);
 
-    /// ALIAS columns are inlined above, so the physical columns their expressions read are the dependencies.
     if (const auto * table_expression_data = planner_context->getTableExpressionDataOrNull(table_node))
-        return table_expression_data->getColumnNames();
-    return {};
+    {
+        result.columns = table_expression_data->getColumnNames();
+        for (const auto & [alias_column, _] : table_expression_data->getAliasColumnExpressions())
+            result.alias_columns.push_back(alias_column);
+    }
+
+    if (check_determinism)
+    {
+        ColumnNodePtrWithHashSet empty_correlated_columns_set;
+        auto [actions, _] = buildActionsDAGFromExpressionNode(expression, {}, planner_context, empty_correlated_columns_set);
+        result.is_deterministic = !actions.hasNonDeterministic();
+    }
+
+    return result;
+}
+
+/// Source columns an expression reads, with ALIAS chains expanded to their base columns.
+Names expressionSourceColumns(const ASTPtr & ast, const ColumnsDescription & columns, const ContextPtr & context)
+{
+    return analyzeExpressionSources(ast, columns, context, /*keep_alias_columns=*/ false, /*check_determinism=*/ false).columns;
+}
+
+/// A part written before a column was added to the sorting key does not store it, so its readers compute the
+/// column from its DEFAULT or MATERIALIZED expression, which must therefore be constant over equal values of the
+/// sorting key elements before it.
+void checkDefaultsOfSortingKeyColumns(
+    const AlterCommands & commands,
+    const StorageInMemoryMetadata & old_metadata,
+    const StorageInMemoryMetadata & new_metadata,
+    const ContextPtr & context)
+{
+    const auto & old_columns = old_metadata.columns;
+    const auto & new_columns = new_metadata.columns;
+
+    auto name_in_storage = [&](const String & name, const ColumnsDescription & columns)
+    {
+        const auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
+        return column ? column->getNameInStorage() : name;
+    };
+
+    NameSet changed;
+    for (const auto & command : commands)
+    {
+        if (command.type != AlterCommand::MODIFY_COLUMN)
+            continue;
+
+        const auto * old_column = old_columns.tryGet(command.column_name);
+        const auto * new_column = new_columns.tryGet(command.column_name);
+        if (old_column && new_column
+            && (old_column->default_desc != new_column->default_desc || !old_column->type->equals(*new_column->type)))
+            changed.insert(command.column_name);
+    }
+
+    if (changed.empty())
+        return;
+
+    /// Every part stores these columns: no ALTER adds them, and ATTACH PARTITION FROM requires the same keys.
+    NameSet stored_in_every_part;
+    auto add_stored_in_every_part = [&](const Names & names)
+    {
+        for (const auto & name : names)
+            stored_in_every_part.insert(name_in_storage(name, new_columns));
+    };
+    add_stored_in_every_part(new_metadata.getColumnsRequiredForPrimaryKey());
+    add_stored_in_every_part(new_metadata.getColumnsRequiredForPartitionKey());
+
+    /// Rows with equal values of the sorting key elements before a column are adjacent in a part, and for the
+    /// identifiers among those elements collected here equal means identical.
+    auto collect_identifiers_before = [&](const StorageInMemoryMetadata & metadata)
+    {
+        std::unordered_map<String, NameSet> identifiers_before;
+        const auto & sorting_key_ast = metadata.sorting_key.expression_list_ast;
+        if (!sorting_key_ast)
+            return identifiers_before;
+
+        NameSet identifiers;
+        for (const auto & element : sorting_key_ast->children)
+        {
+            IdentifierNameSet element_names;
+            element->collectIdentifierNames(element_names);
+            for (const auto & name : element_names)
+                identifiers_before.try_emplace(name_in_storage(name, metadata.columns), identifiers);
+
+            const auto * identifier = element->as<ASTIdentifier>();
+            if (!identifier)
+                continue;
+
+            const auto column = metadata.columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, identifier->name());
+            if (column && !comparisonCanMergeDistinctValues(*column->type)
+                && !anyInTypeTree(*column->type, [](const IDataType & type) { return type.isNullable(); }))
+                identifiers.insert(identifier->name());
+        }
+        return identifiers_before;
+    };
+    const auto new_identifiers_before = collect_identifiers_before(new_metadata);
+    const auto old_identifiers_before = collect_identifiers_before(old_metadata);
+
+    auto keeps_order = [&](
+        const StorageInMemoryMetadata & metadata, const std::unordered_map<String, NameSet> & identifiers_before, const String & column_name)
+    {
+        const auto column_default = metadata.columns.getDefault(column_name);
+        if (!column_default
+            || (column_default->kind != ColumnDefaultKind::Default && column_default->kind != ColumnDefaultKind::Materialized))
+            return true;
+
+        const auto it = identifiers_before.find(column_name);
+        const auto sources = analyzeExpressionSources(
+            column_default->expression, metadata.columns, context, /*keep_alias_columns=*/ false, /*check_determinism=*/ true);
+        return sources.is_deterministic
+            && std::ranges::all_of(
+                   sources.columns, [&](const String & name) { return it != identifiers_before.end() && it->second.contains(name); });
+    };
+
+    /// An expression is judged for the whole column, so breaking the rule does not mean breaking the order of a key
+    /// element that is not the bare column, like `k % 2` or `t.p`.
+    NameSet in_key_not_bare;
+    if (const auto & sorting_key_ast = new_metadata.sorting_key.expression_list_ast)
+    {
+        for (const auto & element : sorting_key_ast->children)
+        {
+            IdentifierNameSet element_names;
+            element->collectIdentifierNames(element_names);
+            const bool is_identifier = element->as<ASTIdentifier>() != nullptr;
+            for (const auto & name : element_names)
+                if (const String column_name = name_in_storage(name, new_columns); !is_identifier || column_name != name)
+                    in_key_not_bare.insert(column_name);
+        }
+    }
+
+    NameSet checked;
+    for (const auto & key_column : new_metadata.getColumnsRequiredForSortingKey())
+    {
+        const String column_name = name_in_storage(key_column, new_columns);
+        if (stored_in_every_part.contains(column_name) || !checked.insert(column_name).second)
+            continue;
+
+        const auto column_default = new_columns.getDefault(column_name);
+        if (!column_default
+            || (column_default->kind != ColumnDefaultKind::Default && column_default->kind != ColumnDefaultKind::Materialized))
+            continue;
+
+        /// The columns whose expressions a reader evaluates to compute this one, as `evaluateMissingDefaults` does.
+        Names dependencies;
+        NameSet visited;
+        std::vector<ASTPtr> expressions{column_default->expression};
+        while (!expressions.empty())
+        {
+            const auto expression = std::move(expressions.back());
+            expressions.pop_back();
+
+            const auto sources = analyzeExpressionSources(
+                expression, new_columns, context, /*keep_alias_columns=*/ true, /*check_determinism=*/ false);
+            for (const auto * names : {&sources.alias_columns, &sources.columns})
+            {
+                for (const auto & name : *names)
+                {
+                    const String dependency = name_in_storage(name, new_columns);
+                    if (!visited.insert(dependency).second)
+                        continue;
+
+                    dependencies.push_back(dependency);
+                    const auto dependency_default = new_columns.getDefault(dependency);
+                    if (dependency_default && dependency_default->kind != ColumnDefaultKind::Alias)
+                        expressions.push_back(dependency_default->expression);
+                }
+            }
+        }
+
+        String through;
+        if (!changed.contains(column_name))
+        {
+            const auto it = std::ranges::find_if(dependencies, [&](const String & name) { return changed.contains(name); });
+            if (it == dependencies.end())
+                continue;
+            through = fmt::format(" through column {}", backQuoteIfNeed(*it));
+        }
+
+        if (keeps_order(new_metadata, new_identifiers_before, column_name))
+            continue;
+
+        /// Refusing to change an expression that already breaks the rule, like one from CREATE, protects nothing.
+        if (!in_key_not_bare.contains(column_name) && !keeps_order(old_metadata, old_identifiers_before, column_name))
+            continue;
+
+        throw Exception(
+            ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+            "Cannot change the {} expression of column {}{}: the column is in the sorting key but not in the primary key, "
+            "so parts that do not store it would compute it from the expression {} and would not be sorted. "
+            "Only a deterministic expression that reads nothing but the sorting key columns before it (as they are, "
+            "and not of a Float, Nullable or dynamic type) is allowed",
+            toString(column_default->kind), backQuoteIfNeed(column_name), through,
+            column_default->expression->formatForErrorMessage());
+    }
 }
 
 }
@@ -7009,6 +7211,8 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                         backQuoteIfNeed(command.column_name), backQuoteIfNeed(command.rename_to));
             }
         }
+
+        checkDefaultsOfSortingKeyColumns(commands, old_metadata, new_metadata, local_context);
     }
 
     checkProperties(new_metadata, old_metadata, false, false, allow_nullable_key, local_context, alter_effective_settings.get());
