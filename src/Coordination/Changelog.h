@@ -103,6 +103,10 @@ struct ChangelogFileDescription
     /// Unknown-version move marker retained with an unselected startup recovery copy.
     std::optional<std::string> recovery_marker_path;
 
+    /// Every location a move of this changelog wrote to, guarded by file_mutex. A retained recovery
+    /// copy at one of them was overwritten by this file, so it may have been removed with it.
+    std::vector<std::pair<DiskPtr, std::string>> move_destinations;
+
     bool broken_at_end = false;
 
     /// Guards disk/path/removed_from_disk. Readers take the shared lock and run concurrently;

@@ -111,6 +111,8 @@ KeeperMoveResult moveChangelogBetweenDisks(
     const KeeperContextPtr & keeper_context)
 {
     auto path_from = description->path;
+    /// Recorded before the move: even a failed move can overwrite the destination.
+    description->withWriteLock([&] { description->move_destinations.emplace_back(disk_to, path_to); });
     const auto move_result = moveFileBetweenDisks(
         disk_from,
         path_from,
@@ -213,6 +215,19 @@ bool isChangelogGapCoveredBySnapshot(uint64_t next_from_log_index, uint64_t last
 bool aliasesChangelog(const ChangelogFileDescription & recovery_copy, ChangelogFileDescription & registered)
 {
     return registered.withReadLock([&] { return registered.disk == recovery_copy.disk && registered.path == recovery_copy.path; });
+}
+
+/// Whether a move of the registered changelog of its range wrote to the location of a retained
+/// recovery copy. Then the copy was overwritten and may have been removed as a move source since.
+bool overwrittenByMove(const ChangelogFileDescription & recovery_copy, ChangelogFileDescription & registered)
+{
+    return registered.withReadLock(
+        [&]
+        {
+            return std::ranges::any_of(
+                registered.move_destinations,
+                [&](const auto & destination) { return destination.first == recovery_copy.disk && destination.second == recovery_copy.path; });
+        });
 }
 
 struct RemoveChangelog
@@ -4247,8 +4262,9 @@ void Changelog::finalizeChangelogsAfterRead(
         auto latest_log_disk = getLatestLogDisk();
         auto disk = getDisk();
 
+        /// A failed move is logged, and the changelog stays on the latest log disk.
         if (latest_log_disk != disk && latest_log_disk == description->disk)
-            moveChangelogBetweenDisks(latest_log_disk, description, disk, description->path, keeper_context);
+            std::ignore = moveChangelogBetweenDisks(latest_log_disk, description, disk, description->path, keeper_context);
     };
 
     /// we can have empty log (with zero entries) and last_log_read_outcome will be initialized
@@ -4352,7 +4368,8 @@ void Changelog::finalizeChangelogsAfterRead(
                 {
                     const auto source_disk = description->disk;
                     const auto source_path = description->path;
-                    moveChangelogBetweenDisks(source_disk, description, disk, source_path, keeper_context);
+                    /// A failed move is logged, and the changelog stays where it is.
+                    std::ignore = moveChangelogBetweenDisks(source_disk, description, disk, source_path, keeper_context);
                 });
         }
         pool.wait();
@@ -4519,11 +4536,11 @@ void Changelog::removeExistingLogs(ChangelogIter begin, ChangelogIter end, bool 
             catch (const DB::Exception & e)
             {
                 if (e.code() == DB::ErrorCodes::NOT_IMPLEMENTED)
-                    moveChangelogBetweenDisks(changelog_disk, changelog_description, disk, new_path, keeper_context);
+                    std::ignore = moveChangelogBetweenDisks(changelog_disk, changelog_description, disk, new_path, keeper_context);
             }
         }
         else
-            moveChangelogBetweenDisks(changelog_disk, changelog_description, disk, new_path, keeper_context);
+            std::ignore = moveChangelogBetweenDisks(changelog_disk, changelog_description, disk, new_path, keeper_context);
 
         if (remove_recovery_copies)
             removeRetainedChangelogCopies(from_log_index, *changelog_description);
@@ -5138,41 +5155,44 @@ void Changelog::backgroundChangelogOperationsThread()
             auto & changelog = *changelog_operation->changelog; /// mutable: we set removed_from_disk
             /// Operations run in queue order, so the registered changelog was already removed and none
             /// of its moves is pending. A move of the registered changelog can land on the path of a
-            /// retained recovery copy, and then that copy is the removed file itself.
-            if (remove_operation->registered && aliasesChangelog(changelog, *remove_operation->registered))
-            {
-                LOG_INFO(
-                    log,
-                    "Recovery copy {} on disk {} was replaced by a move of the registered changelog and is already removed",
-                    changelog.path,
-                    changelog.disk->getName());
-            }
-            else
-            {
-                changelog.withWriteLock(
-                    [&]
+            /// retained recovery copy. Then that copy is either the removed file itself, or it was
+            /// removed as the source of a later move, or it is what a failed move left there.
+            const bool overwritten_by_move = remove_operation->registered && overwrittenByMove(changelog, *remove_operation->registered);
+            changelog.withWriteLock(
+                [&]
+                {
+                    changelog.removed_from_disk = true; /// set BEFORE removeFile
+                    FailPointInjection::pauseFailPoint(FailPoints::keeper_changelog_removed_from_disk_set);
+                    try
                     {
-                        changelog.removed_from_disk = true; /// set BEFORE removeFile
-                        FailPointInjection::pauseFailPoint(FailPoints::keeper_changelog_removed_from_disk_set);
-                        try
+                        if (overwritten_by_move)
+                        {
+                            changelog.disk->removeFileIfExists(changelog.path);
+                            LOG_INFO(
+                                log,
+                                "Removed recovery copy {} on disk {} overwritten by a move of the registered changelog, if it remained",
+                                changelog.path,
+                                changelog.disk->getName());
+                        }
+                        else
                         {
                             changelog.disk->removeFile(changelog.path);
-                            if (changelog.recovery_marker_path)
-                                changelog.disk->removeFileIfExists(*changelog.recovery_marker_path);
                             LOG_INFO(log, "Removed changelog {} because of compaction.", changelog.path);
                         }
-                        catch (Exception & e)
-                        {
-                            LOG_WARNING(log, "Failed to remove changelog {} in compaction, error message: {}", changelog.path, e.message());
-                            changelog_operation->setError(std::current_exception());
-                        }
-                        catch (...)
-                        {
-                            tryLogCurrentException(log);
-                            changelog_operation->setError(std::current_exception());
-                        }
-                    });
-            }
+                        if (changelog.recovery_marker_path)
+                            changelog.disk->removeFileIfExists(*changelog.recovery_marker_path);
+                    }
+                    catch (Exception & e)
+                    {
+                        LOG_WARNING(log, "Failed to remove changelog {} in compaction, error message: {}", changelog.path, e.message());
+                        changelog_operation->setError(std::current_exception());
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(log);
+                        changelog_operation->setError(std::current_exception());
+                    }
+                });
         }
         else if (auto * move_operation = std::get_if<MoveChangelog>(&changelog_operation->operation))
         {
@@ -5185,6 +5205,7 @@ void Changelog::backgroundChangelogOperationsThread()
                     changelog->withWriteLock(
                         [&]
                         {
+                            changelog->move_destinations.emplace_back(changelog->disk, move_operation->new_path);
                             try
                             {
                                 changelog->disk->moveFile(changelog->path, move_operation->new_path);
@@ -5203,7 +5224,8 @@ void Changelog::backgroundChangelogOperationsThread()
             {
                 try
                 {
-                    moveChangelogBetweenDisks(changelog->disk, changelog, move_operation->new_disk, move_operation->new_path, keeper_context);
+                    /// A failed move is logged, and the changelog stays where it is.
+                    std::ignore = moveChangelogBetweenDisks(changelog->disk, changelog, move_operation->new_disk, move_operation->new_path, keeper_context);
                 }
                 catch (...)
                 {

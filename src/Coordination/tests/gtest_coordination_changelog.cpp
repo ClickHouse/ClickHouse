@@ -5212,4 +5212,58 @@ TYPED_TEST(CoordinationChangelogTest, SuffixReplacementAfterStartupMoveOntoRetai
     EXPECT_EQ(recovered.getNextEntryIndex(), 6);
 }
 
+TYPED_TEST(CoordinationChangelogTest, SuffixReplacementAfterMovesAwayFromRetainedCopy)
+{
+    if (this->enable_compression)
+        GTEST_SKIP() << "the recovery matrix is independent of compression";
+
+    ChangelogDirTest regular("./logs_move_away_from_retained_copy_regular");
+    ChangelogDirTest latest("./logs_move_away_from_retained_copy_latest");
+    DB::DiskPtr regular_disk = std::make_shared<DB::DiskLocal>("regular", regular.path);
+    DB::DiskPtr latest_disk = std::make_shared<DB::DiskLocal>("latest", latest.path);
+    const DB::LogFileSettings settings{
+        .force_sync = false,
+        .compress_logs = false,
+        .rotate_interval = 10,
+        .startup_read_max_streams = 4,
+    };
+    constexpr std::string_view duplicated_path = "changelog_11_20.bin";
+
+    this->keeper_context->setLogDisk(regular_disk);
+    {
+        DB::Changelog writer(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        writer.readChangelogAndInitWriter(0, 0);
+        for (uint64_t index = 1; index <= 25; ++index)
+            writer.appendEntry(index, getLogEntry("entry_" + std::to_string(index), 1));
+        writer.flush();
+    }
+    regular_disk->copyFile(String(duplicated_path), *latest_disk, String(duplicated_path), {});
+
+    /// Startup selects the latest-disk copy, retains the regular one, and then moves the selected
+    /// copy back onto the path of the retained one.
+    this->keeper_context->setLatestLogDisk(latest_disk);
+    DB::Changelog recovered(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+    ASSERT_NO_THROW(recovered.readChangelogAndInitWriter(0, 0));
+    EXPECT_EQ(recovered.getNextEntryIndex(), 26);
+
+    /// The first rewrite moves the registered changelog away from the path of the retained copy,
+    /// removing the file there.
+    recovered.writeAt(15, getLogEntry("rewrite_15", 2));
+    recovered.flush();
+    EXPECT_FALSE(regular_disk->existsFile(String(duplicated_path)));
+    EXPECT_TRUE(latest_disk->existsFile(String(duplicated_path)));
+
+    /// The second rewrite finalizes the registered changelog under another name and removes it
+    /// together with the retained copy, whose file is already gone.
+    recovered.writeAt(5, getLogEntry("rewrite_5", 2));
+    recovered.flush();
+    for (const auto & disk : {regular_disk, latest_disk})
+    {
+        EXPECT_FALSE(disk->existsFile(String(duplicated_path)));
+        EXPECT_FALSE(disk->existsFile("changelog_11_15.bin"));
+        EXPECT_FALSE(disk->existsFile("changelog_21_30.bin"));
+    }
+    EXPECT_EQ(recovered.getNextEntryIndex(), 6);
+}
+
 #endif
