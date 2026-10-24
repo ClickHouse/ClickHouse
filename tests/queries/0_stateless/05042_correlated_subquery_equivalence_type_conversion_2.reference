@@ -26,12 +26,12 @@ bb
 plan: cross_joins=0 substituted=1 null_prefiltered=1
 0	1
 1	2
-2	\N
-705032704	\N
+2	0
+705032704	0
 -- Case 23: scalar count() through the float-to-int accurate cast, outer Int32 vs inner Float64; outer 0 must count only the genuine 0.0 (0.5 and 1.5 must not fold into 0), and 3.0 must count for 3
 plan: cross_joins=0 substituted=1 null_prefiltered=1
 0	1
-1	\N
+1	0
 3	1
 -- Case 24: guarded, outer Float64 vs inner Nullable(Float64); a float correlated value cannot be reconstructed exactly when the types differ: equals merges -0.0 and +0.0 (each outer zero counts both inner zeros, count 2 with the equality kept as a filter (see issue #116358)) while a substituted plan would group bitwise (count 1); inner NULL never counts
 plan: substituted=0
@@ -52,7 +52,7 @@ plan: substituted=0
 1
 -- Case 28: outer Bool vs inner Nullable(Bool); the wrapper-only difference is faithful for Bool (isNotNull + assumeNotNull, canonical 0/1 values), so it is substituted; inner NULL never counts
 plan: cross_joins=0 substituted=1 null_prefiltered=1
-false	\N
+false	0
 true	2
 -- Case 29: guarded, outer Bool vs inner UInt8; Bool is a custom-named UInt8 and must not be reconstructed from a plain UInt8 member: the smuggled non-canonical 2 would reach expressions that are safe over the Bool domain (here intDiv(1, 2 - o.x) would throw)
 plan: substituted=0
