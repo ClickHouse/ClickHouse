@@ -69,6 +69,14 @@ public:
     /// `source_ast`, when set, is tokenized instead of `col_name`, so the caller can splice in the preprocessor expression.
     ActionsDAG getOriginalActionsDAG(const String & col_name, const DataTypePtr & col_type, const String & tokenizer_description, const ASTPtr & source_ast = nullptr) const;
 
+    /// arrayExists(e -> hasPhrase(arrayMap(x -> postprocessor(x), tokens(e, '<tokenizer>')), phrase_tokens, 'array'), col).
+    ActionsDAG getPhraseActionsDAG(
+        const String & col_name,
+        const DataTypePtr & col_type,
+        const String & tokenizer_description,
+        const Array & phrase_tokens,
+        const ASTPtr & source_ast = nullptr) const;
+
 private:
     std::optional<ExpressionActions> actions;
     ASTPtr original_expression_ast;   ///< original AST before token-placeholder substitution

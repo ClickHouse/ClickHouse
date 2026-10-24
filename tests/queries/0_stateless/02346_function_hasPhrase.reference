@@ -45,22 +45,25 @@ Default tokenizer (splitByNonAlpha)
 1
 \N
 -- Array input: elements are tokenized
-1
-0
-1
-1
-1
 0
 0
 0
 0
--- the tokens of one row are one sequence, so a phrase spans elements
+0
+0
+0
+0
+0
+-- a phrase does not span elements
+0
+-- with the array tokenizer every element is one token, so a phrase spans elements
 1
+0
 -- empty or NULL element is not a token
-1
-1
+0
+0
 -- Array(FixedString) input
-1
+0
 -- a FixedString keeps its zero padding, which some tokenizers put inside a token
 1
 1
@@ -74,11 +77,10 @@ Default tokenizer (splitByNonAlpha)
 -- the array tokenizer is what the postprocessor rewrite passes
 1
 -- tokenizer applies to input elements and a String phrase
-1
+0
 1
 -- Array(String) column values
-1
-1	1
+1	0
 2	0
 3	0
 -- Nullable(String) column values

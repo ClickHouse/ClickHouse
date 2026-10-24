@@ -1,0 +1,53 @@
+Array column
+hasAllTokens quick fox
+[1,4]
+[1,4]
+[1,4]
+hasAnyTokens jumps dog
+[1,5]
+[1,5]
+[1,5]
+hasAllTokens brown
+[1,2]
+[1,2]
+[1,2]
+Array column with a postprocessor
+hasAllTokens quick fox, lowercased
+[1]
+[1]
+[1]
+hasAnyTokens lazy, lowercased
+[3]
+[3]
+[3]
+hasPhrase quick brown, lowercased
+[1]
+[1]
+[1]
+hasPhrase brown fox, lowercased
+[2]
+[2]
+[2]
+hasPhrase lazy dog, lowercased
+[]
+[]
+[]
+Array column with the array tokenizer and a postprocessor
+hasPhrase hello world spans elements
+[1]
+[1]
+[1]
+Array column with a preprocessor and a postprocessor
+hasPhrase hello world, a dropped token does not break a phrase within one element
+[1]
+[1]
+[1]
+hasPhrase on an Array column
+hasPhrase hello world
+[7]
+[7]
+[7]
+hasPhrase brown fox
+[2]
+[2]
+[2]

@@ -266,4 +266,37 @@ ActionsDAG MergeTreeIndexTextPostprocessor::getOriginalActionsDAG(
     NamesAndTypesList source_columns{{col_name, col_type}};
     return buildActionsDAGFromAST(std::move(expr), source_columns);
 }
+
+ActionsDAG MergeTreeIndexTextPostprocessor::getPhraseActionsDAG(
+    const String & col_name,
+    const DataTypePtr & col_type,
+    const String & tokenizer_description,
+    const Array & phrase_tokens,
+    const ASTPtr & source_ast) const
+{
+    chassert(actions);
+    chassert(isArray(col_type));
+
+    ASTPtr expr = original_expression_ast->clone();
+    replaceExpressionToIdentifier(expr, index_column_name, postprocessor_lambda_arg);
+
+    ASTPtr element_tokens = makeASTFunction("arrayMap",
+        makeASTLambda({postprocessor_lambda_arg}, std::move(expr)),
+        makeASTFunction("tokens",
+            make_intrusive<ASTIdentifier>(postprocessor_element_arg),
+            make_intrusive<ASTLiteral>(Field(tokenizer_description))));
+
+    ASTPtr has_phrase = makeASTFunction("hasPhrase",
+        std::move(element_tokens),
+        make_intrusive<ASTLiteral>(Field(phrase_tokens)),
+        make_intrusive<ASTLiteral>(Field(ArrayTokenizer::getName())));
+
+    ASTPtr column = source_ast ? source_ast->clone() : ASTPtr(make_intrusive<ASTIdentifier>(col_name));
+    ASTPtr result = makeASTFunction("arrayExists",
+        makeASTLambda({postprocessor_element_arg}, std::move(has_phrase)),
+        std::move(column));
+
+    NamesAndTypesList source_columns{{col_name, col_type}};
+    return buildActionsDAGFromAST(std::move(result), source_columns);
+}
 }

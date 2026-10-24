@@ -796,10 +796,14 @@ private:
             }
         }
 
+        /// A phrase must lie within one element, so the tokens of an Array are not flattened for it.
+        const bool match_phrase_per_element = apply_postprocessor && function_name == "hasPhrase"
+            && isArray(new_children[0]->result_type) && tokenizer->getType() != ITokenizer::Type::Array;
+
         /// Rewrite the haystack into the postprocessed tokens the index stores, so the row-level
         /// function still matches when the index isn't read directly (direct read off, or unmaterialized
         /// parts). getOriginalActionsDAG yields an Array(String) of postprocessed tokens.
-        if (apply_postprocessor)
+        if (apply_postprocessor && !match_phrase_per_element)
         {
             /// Name the postprocessor's haystack input after the haystack node's actual result_name so
             /// mergeNodes reuses that node (it matches by result_name). A reconstructed name can diverge for
@@ -811,7 +815,10 @@ private:
                 &merged_outputs);
             chassert(merged_outputs.size() == 1);
             new_children[0] = merged_outputs.front();
+        }
 
+        if (apply_postprocessor)
+        {
             /// new_children[0] is now an Array(String) of postprocessed tokens. Switch the tokenizer argument
             /// to 'array' to match them verbatim, instead of re-splitting tokens the index stores whole.
             if (function_name == "hasAnyTokens" || function_name == "hasAllTokens" || function_name == "hasPhrase")
@@ -883,6 +890,26 @@ private:
                 needles_field = Array(tokens.begin(), tokens.end());
                 needles_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
             }
+        }
+
+        if (match_phrase_per_element)
+        {
+            ActionsDAG::NodeRawConstPtrs merged_outputs;
+            actions_dag.mergeNodes(
+                postprocessor->getPhraseActionsDAG(
+                    new_children[0]->result_name,
+                    new_children[0]->result_type,
+                    tokenizer->getDescription(),
+                    needles_field.safeGet<Array>(),
+                    preprocessor_source_ast),
+                &merged_outputs);
+            chassert(merged_outputs.size() == 1);
+
+            const ActionsDAG::Node * phrase_node = merged_outputs.front();
+            if (!phrase_node->result_type->equals(*function_node.result_type))
+                phrase_node = &actions_dag.addCast(*phrase_node, function_node.result_type, "", context);
+
+            return &actions_dag.addAlias(*phrase_node, function_node.result_name);
         }
 
         /// Recreate an argument with needles.

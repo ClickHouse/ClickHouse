@@ -135,7 +135,6 @@ void validateTokenPositions(const TokenPostingsInfo & info, size_t file_size);
 class PositionListBuilder
 {
 public:
-    /// Positions may repeat or go backwards within a row: each element of a tokenized Array restarts them at 0.
     void add(UInt32 doc_id, UInt32 position)
     {
         if (has_document && doc_id != current_doc)
