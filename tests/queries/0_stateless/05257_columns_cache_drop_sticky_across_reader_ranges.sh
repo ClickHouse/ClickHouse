@@ -23,9 +23,11 @@ function cleanup()
 }
 trap cleanup EXIT
 
-# Two mark ranges of one part, [0, 10) and [90, 100), read by one reader.
+# Two mark ranges of one part, [0, 10) and [90, 100), read by one reader. With parallel replicas,
+# another replica may get some of the marks and cache them from a reader created after the drop.
 QUERY="SELECT count(), sum(v) FROM t_cc_sticky WHERE k < 100 OR k >= 900
-    SETTINGS use_columns_cache = 1, max_threads = 1, optimize_move_to_prewhere = 0, use_query_condition_cache = 0"
+    SETTINGS use_columns_cache = 1, max_threads = 1, optimize_move_to_prewhere = 0, use_query_condition_cache = 0,
+        enable_parallel_replicas = 0"
 
 $CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS t_cc_sticky;
