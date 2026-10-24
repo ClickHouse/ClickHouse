@@ -1062,6 +1062,7 @@ cc_library(
         exclude = [
             "llvm/include/llvm/DebugInfo/PDB/DIA/**",
             "llvm/include/llvm/Support/Solaris/**",
+            "llvm/include/llvm/Support/SystemZ/zos_wrappers/*.h",
             "llvm/include/llvm/Support/Windows/**",
             "llvm/include/llvm/PassAnalysisSupport.h",
             "llvm/include/llvm/PassSupport.h",
@@ -1685,7 +1686,10 @@ cc_library(
         "llvm/include/llvm/Transforms/Vectorize/LoopVectorizationLegality.h",
         "llvm/include/llvm/WindowsManifest/WindowsManifestMerger.h",
         "third-party/siphash/include/siphash/SipHash.h",
-    ],
+    ] + select({
+        "@platforms//os:linux": [],
+        "//conditions:default": glob(["llvm/include/llvm/Support/SystemZ/zos_wrappers/*.h"]),
+    }),
     includes = [
         "llvm/include",
         "gen/llvm/include",

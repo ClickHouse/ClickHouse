@@ -246,7 +246,7 @@ def declare_from_references(root, references):
     values come from set() records at each configure_file(), never from the
     host on which this generator runs.
     """
-    from initial_migration.build_file import BuildFile, Glob, select
+    from initial_migration.build_file import BuildFile, Concat, Glob, select
     from initial_migration.repository_inputs import REPOSITORIES, cmake_has_source_prefix_map, source_label
 
     repository = REPOSITORIES[PREFIX]
@@ -277,7 +277,15 @@ def declare_from_references(root, references):
         for subdir in ('llvm/include', 'llvm/lib', 'third-party/siphash/include')
         for suffix in ('.h', '.hh', '.hpp', '.hxx', '.inc', '.def', '.ipp', '.inl')
     ]
-    build.rule('filegroup', 'llvm_source_headers', {'srcs': Glob(header_patterns, component_header_exclusions())})
+    # LLVM puts zos_wrappers on the system include path only when building for OS390.
+    zos_wrappers = 'llvm/include/llvm/Support/SystemZ/zos_wrappers/*.h'
+    build.rule('filegroup', 'llvm_source_headers', {'srcs': Concat([
+        Glob(header_patterns, (*component_header_exclusions(), zos_wrappers)),
+        select({
+            '@platforms//os:linux': [],
+            '//conditions:default': Glob([zos_wrappers]),
+        }),
+    ])})
     build.rule('filegroup', 'llvm_tablegen_inputs', {
         'srcs': Glob(['llvm/include/**/*.td', 'llvm/lib/Target/**/*.td']),
     })

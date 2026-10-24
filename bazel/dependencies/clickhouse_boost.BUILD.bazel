@@ -201,7 +201,9 @@ _BOOST_CONFIG_HEADERS = [
     "boost/config/detail/select_platform_config.hpp",
     "boost/config/detail/select_stdlib_config.hpp",
     "boost/config/helper_macros.hpp",
+    "boost/config/no_tr1/utility.hpp",
     "boost/config/platform/linux.hpp",
+    "boost/config/pragma_message.hpp",
     "boost/config/stdlib/libcpp.hpp",
     "boost/config/user.hpp",
 ]
@@ -237,14 +239,19 @@ cc_library(
 # function2.hpp, function3.hpp and function4.hpp set args for function_n.hpp.
 # The Fusion fold wrappers choose detail/fold.hpp or their preprocessed expansion.
 # result_of.hpp includes the variadic implementation or repeats result_of_iterate.hpp with BOOST_PP_ITERATE.
+# Boost.MPL wrappers define AUX778076_OP_NAME or BOOST_MPL_PREPROCESSED_HEADER for each inclusion.
 # BOOST_PP_ITERATE and BOOST_PP_ASSIGN_SLOT repeatedly include their detail headers.
 _BOOST_MACRO_FRAGMENTS = glob([
     "boost/fusion/algorithm/iteration/detail/preprocessed/*fold.hpp",
+    "boost/mpl/**/aux_/include_preprocessed.hpp",
     "boost/preprocessor/iteration/detail/**/*.hpp",
     "boost/preprocessor/slot/detail/slot*.hpp",
 ]) + [
     "boost/accumulators/numeric/detail/function_n.hpp",
     "boost/fusion/algorithm/iteration/detail/fold.hpp",
+    "boost/mpl/aux_/arithmetic_op.hpp",
+    "boost/mpl/aux_/comparison_op.hpp",
+    "boost/mpl/aux_/shift_op.hpp",
     "boost/preprocessor/slot/detail/counter.hpp",
     "boost/preprocessor/slot/detail/shared.hpp",
     "boost/utility/detail/result_of_iterate.hpp",
@@ -326,6 +333,25 @@ _WINDOWS_PROCESS_HEADERS = glob(
     ],
 )
 
+# Boost.Config selects these four platform implementations outside Linux.
+# The Interprocess and Thread wrappers choose Windows implementations from Win32
+# macros. mfc_thread_init.hpp can also be included without MFC.
+_NON_LINUX_HEADERS = glob(
+    [
+        "boost/interprocess/*windows_shared_memory.hpp",
+        "boost/interprocess/detail/win32_api.hpp",
+        "boost/interprocess/detail/windows_intermodule_singleton.hpp",
+        "boost/interprocess/sync/windows/*.hpp",
+        "boost/thread/win32/*.hpp",
+    ],
+    exclude = ["boost/thread/win32/mfc_thread_init.hpp"],
+) + [
+    "boost/config/platform/bsd.hpp",
+    "boost/config/platform/cygwin.hpp",
+    "boost/config/platform/symbian.hpp",
+    "boost/config/platform/vxworks.hpp",
+]
+
 cc_library(
     name = "boost_headers_no_openssl",
     srcs = _ASIO_IMPLEMENTATIONS,
@@ -335,7 +361,7 @@ cc_library(
             "boost/**/*.hpp",
             "boost/**/*.ipp",
         ],
-        exclude = _ASIO_COMPILER_OPTIONS + _BOOST_CONFIG_HEADERS + _BOOST_CONFIG_PRIVATE_HEADERS + _BOOST_CONFIG_ABI + _BOOST_MACRO_FRAGMENTS + _ASIO_IMPLEMENTATIONS + _ASIO_SEPARATE_COMPILATION + _OPENSSL_HEADERS + _OPENSSL_IMPLEMENTATIONS + _OPENSSL_SEPARATE_COMPILATION + _WINAPI_HEADERS + _WINDOWS_PROCESS_HEADERS + [
+        exclude = _ASIO_COMPILER_OPTIONS + _BOOST_CONFIG_HEADERS + _BOOST_CONFIG_PRIVATE_HEADERS + _BOOST_CONFIG_ABI + _BOOST_MACRO_FRAGMENTS + _ASIO_IMPLEMENTATIONS + _ASIO_SEPARATE_COMPILATION + _OPENSSL_HEADERS + _OPENSSL_IMPLEMENTATIONS + _OPENSSL_SEPARATE_COMPILATION + _WINAPI_HEADERS + _WINDOWS_PROCESS_HEADERS + _NON_LINUX_HEADERS + [
             "boost/compute.hpp",
             "boost/compute/**",
             # ClickHouse enables no Boost.Python, MPI, GIL image codecs, or OdeInt external backends.
@@ -370,8 +396,8 @@ cc_library(
         ],
     ) + select({
         "@platforms//os:linux": [],
-        "@platforms//os:windows": _WINAPI_HEADERS + _WINDOWS_PROCESS_HEADERS + ["boost/parser/detail/vs_output_stream.hpp"],
-        "//conditions:default": _WINAPI_HEADERS,
+        "@platforms//os:windows": _WINAPI_HEADERS + _WINDOWS_PROCESS_HEADERS + _NON_LINUX_HEADERS + ["boost/parser/detail/vs_output_stream.hpp"],
+        "//conditions:default": _WINAPI_HEADERS + _NON_LINUX_HEADERS,
     }),
     features = ["external_include_paths"],
     textual_hdrs = glob(["boost/**/*.inc"]) + _BOOST_MACRO_FRAGMENTS + _ASIO_SEPARATE_COMPILATION,

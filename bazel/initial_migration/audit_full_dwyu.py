@@ -519,8 +519,62 @@ def parse_cquery(raw):
     return rules, dict(sorted(skipped.items()))
 
 
-def add_actions(path, rules):
+def read_action_graph(graph):
+    return graph if isinstance(graph, dict) else json.loads(graph.read_bytes())
+
+
+def declared_action_graph(path, rows, name, accounting):
+    """Join Bazel 9.3 aquery actions to config(set(...), target) from cquery."""
     data = json.loads(path.read_bytes())
+    requested = {r["label"]: r for r in rows.values()}
+    def table(field):
+        entries = data.get(field, [])
+        by_id = {str(entry["id"]): entry for entry in entries}
+        if len(by_id) != len(entries):
+            raise ValueError("duplicate aquery IDs in " + field)
+        return by_id
+    targets, configs, classes = map(table, ("targets", "configuration", "ruleClasses"))
+    kept, matched, other = [], set(), Counter()
+    for action in data.get("actions", []):
+        target = targets.get(str(action.get("targetId")), {})
+        cfg = configs.get(str(action.get("configurationId")), {})
+        label = canonical(target.get("label", ""))
+        checksum = cfg.get("checksum", "")
+        tool = cfg.get("isTool", False) if cfg else None
+        kind = classes.get(str(target.get("ruleClassId")), {}).get("name", "")
+        mnemonic = action.get("mnemonic", "")
+        row = requested.get(label)
+        if (row and kind == row["rule_class"] and type(tool) is bool and
+                re.fullmatch("[0-9a-f]{64}", checksum) and mnemonic):
+            if checksum == row["checksum"] and tool == row["is_tool"]:
+                kept.append(action)
+                matched.add((label, mnemonic))
+                continue
+            if tool and not row["is_tool"] and checksum != row["checksum"]:
+                other[("exec", label, checksum, tool, kind, mnemonic)] += 1
+                continue
+        other[("unmatched", label, checksum, tool, kind, mnemonic)] += 1
+    # An exec instance never substitutes for the selected target's own action.
+    for group in list(other):
+        disposition, label, checksum, tool, kind, mnemonic = group
+        if disposition == "exec" and (label, mnemonic) not in matched:
+            other[("unmatched", label, checksum, tool, kind, mnemonic)] += other.pop(group)
+    groups = [[*group, n] for group, n in sorted(other.items(), key=lambda pair: repr(pair[0]))]
+    unmatched = sum(g[-1] for g in groups if g[0] == "unmatched")
+    receipt = {"name": name, "input": sha_file(path), "target_actions": len(kept),
+               "exec_actions": sum(other.values()) - unmatched, "unmatched_actions": unmatched,
+               "total_groups": len(groups), "groups": groups[:64], "groups_sha256": hashlib.sha256(
+                   json.dumps(groups, separators=(",", ":")).encode()).hexdigest()}
+    accounting[name] = receipt
+    print("DWYU_QUERY_OWNER_CONFIGS=" + json.dumps(receipt, separators=(",", ":")), flush=True)
+    if unmatched:
+        raise ValueError(name + ": actions outside the selected target and its verified exec configuration")
+    data["actions"] = kept
+    return data
+
+
+def add_actions(path, rules):
+    data = read_action_graph(path)
     configs = configuration_map(data, "configuration")
     targets = {str(target["id"]): target for target in data.get("targets", [])}
     classes = {str(rule["id"]): rule["name"] for rule in data.get("ruleClasses", [])}
@@ -859,7 +913,7 @@ class RuntimeActionGraph:
     """Decode original aquery artifacts and actions, optionally constrained to cquery rows."""
 
     def __init__(self, path, mnemonic, rows, rule_classes=("llvm_runtime_objects",)):
-        data = json.loads(path.read_bytes())
+        data = read_action_graph(path)
         self.configs = configuration_map(data, "configuration")
         self.aspect_descriptors = {str(a["id"]): a for a in data.get("aspectDescriptors", [])}
         self.targets = {str(t["id"]): t for t in data.get("targets", [])}
@@ -1586,56 +1640,91 @@ def audit_declared_owners(audit, census, selected, extra_fixtures):
     active = {key: row for key, row in rows.items() if not incompatible[key]}
     analyzers, headers, ordinary, ordinary_events, strict, strict_events, filesets = {}, {}, {}, {}, {}, {}, {}
     ready = {}
+    accounting, errors = {}, {}
+    def record_error(name, error):
+        errors[name] = (type(error).__name__ + ": " + str(error))[:1024]
+        failure = {"name": name, "error": errors[name]}
+        if name in ("requested-actions", "requested-cpp-outputs") and name not in accounting:
+            accounting[name] = failure
+            print("DWYU_QUERY_OWNER_CONFIGS=" + json.dumps(failure), flush=True)
+        print("DWYU_DECLARED_EVIDENCE_ERROR=" + json.dumps(failure), flush=True)
+
+    # These operations inspect evidence. Source identity, target configuration
+    # and platform compatibility have already been checked above.
+    evidence_errors = (ValueError, KeyError, TypeError, AttributeError, IndexError, RuntimeError, OSError)
     if active:
         roots = sorted(apparent[row["label"]] for row in active.values())
         expr = query_labels(roots)
-        if add_actions(audit.query("requested-actions", "aquery", expr), active):
-            raise ValueError("ordinary actions refer to unrequested owner/configuration")
+        name = "requested-actions"
+        try:
+            graph = declared_action_graph(audit.query(name, "aquery", expr), active, name, accounting)
+            if add_actions(graph, active):
+                raise ValueError("ordinary action missing from configured target rows")
+            del graph
+        except evidence_errors as exc:
+            record_error(name, exc)
         outputs = "outputs('.*(_dwyu_report[.]json|[.]dwyu_owned_headers[.]json)$', " + expr + ")"
-        analyzers, headers = configured_analyzers(audit.query("requested-cpp-outputs", "aquery", outputs, (
-            "--config=dwyu", "--include_aspects", "--include_artifacts", "--include_file_write_contents",
-            "--include_commandline", "--include_param_files")))
-        if (set(analyzers) | set(headers)) - set(active):
-            raise ValueError("DWYU actions refer to unrequested owner/configuration")
-        info = audit.command("execution-root", "info", ["execution_root"])
-        if info["exit_code"]:
-            raise ValueError("execution_root unavailable")
-        execroot = Path(Path(info["stdout"]["file"]).read_text().strip())
-        if not execroot.is_absolute():
-            raise ValueError("invalid execution_root")
-        ordinary, ordinary_events, _ = audit.build("ordinary", roots, False)
-        for key, row in active.items():
-            row["category"] = native_category(key, row, analyzers, headers)
-            if not analyzers.get(key):
-                continue
-            relative, = analyzers[key]
-            path = execroot / relative
-            if path != report_path(execroot, row) or ".." in path.parts:
-                raise ValueError("unexpected DWYU report: " + relative)
-            existed = path.exists() or path.is_symlink()
-            if existed:
-                path.unlink()
-            ready[key] = (path, existed)
-        if ready:
-            targets = sorted(apparent[rows[key]["label"]] for key in ready)
-            strict, strict_events, filesets = audit.build("strict", targets, True)
-        if "invocation_uuid" not in ordinary or (ready and (
-                "invocation_uuid" not in strict or ordinary["invocation_uuid"] == strict["invocation_uuid"])):
-            raise ValueError("missing or repeated ordinary/strict build identity")
+        name = "requested-cpp-outputs"
+        try:
+            graph = declared_action_graph(audit.query(name, "aquery", outputs, (
+                "--config=dwyu", "--include_aspects", "--include_artifacts", "--include_file_write_contents",
+                "--include_commandline", "--include_param_files")), active, name, accounting)
+            analyzers, headers = configured_analyzers(graph)
+            del graph
+        except evidence_errors as exc:
+            record_error(name, exc)
+        execroot = None
+        try:
+            info = audit.command("execution-root", "info", ["execution_root"])
+            directory = Path(Path(info["stdout"]["file"]).read_text().strip())
+            if info["exit_code"] or not directory.is_absolute():
+                raise ValueError("execution_root unavailable")
+            execroot = directory
+        except evidence_errors as exc:
+            record_error("execution-root", exc)
+        try:
+            ordinary, ordinary_events, _ = audit.build("ordinary", roots, False)
+        except evidence_errors as exc:
+            record_error("ordinary", exc)
+        try:
+            for key, row in active.items():
+                row["category"] = native_category(key, row, analyzers, headers)
+                if not execroot or not analyzers.get(key):
+                    continue
+                relative, = analyzers[key]
+                path = execroot / relative
+                if path != report_path(execroot, row) or ".." in path.parts:
+                    raise ValueError("unexpected DWYU report: " + relative)
+                existed = path.exists() or path.is_symlink()
+                if existed:
+                    path.unlink()
+                ready[key] = (path, existed)
+        except evidence_errors as exc:
+            ready.clear()
+            record_error("configured-reports", exc)
+        # The selected target patterns do not depend on whether aquery found
+        # their analyzers. A failed query cannot cancel the requested builds.
+        try:
+            strict, strict_events, filesets = audit.build("strict", roots, True)
+        except evidence_errors as exc:
+            record_error("strict", exc)
+        if (not ordinary.get("invocation_uuid") or not strict.get("invocation_uuid") or
+                ordinary["invocation_uuid"] == strict["invocation_uuid"]):
+            record_error("build-identities", ValueError("missing or repeated ordinary/strict build identity"))
 
     statuses, categories, actionables, original_bytes = Counter(), Counter(), [], 0
     summaries = {"fixture": Counter(), "production": statuses}
     for key, row in sorted(rows.items()):
         label = apparent[row["label"]]
         row["scope"] = "fixture" if label in fixtures else "production"
-        row["category"] = row.get("category", "incompatible")
+        row["category"] = row.get("category", "incompatible" if incompatible[key] else "unverified")
         category = row["category"]
         ordinary_completed = select_completions(ordinary_events.get(key, []), False, row=row)
         row["ordinary"] = {"status": ("passed" if ordinary_completed[0].get("completed", {}).get("success") is True
                                       else "failed") if ordinary_completed else "not_tested",
                            "completion": ordinary_completed, "invocation_uuid": ordinary.get("invocation_uuid")}
         status = row["strict"] = {"status": "incompatible" if incompatible[key] else "not_tested"}
-        if key in ready:
+        if key in ready and strict.get("invocation_uuid"):
             path, existed = ready[key]
             if path.is_file():
                 original_bytes += path.stat().st_size
@@ -1680,12 +1769,14 @@ def audit_declared_owners(audit, census, selected, extra_fixtures):
             outcome = "ordinary_" + row["ordinary"]["status"]
         if category == "compiled_native" and row["actions"].get("CppModuleCompile") and outcome == "clean":
             outcome = "unchecked_modules"
+        if errors and outcome in ("clean", "no_cpp", "header_pp_not_verified", "no_compiled_cpp_proof"):
+            outcome = "unverified_query_accounting"
         row["outcome"] = outcome
         summaries[row["scope"]][outcome] += 1
         if row["scope"] == "production":
             categories[category] += 1
 
-    if audit.args.declared_contexts and ready:
+    if audit.args.declared_contexts and ready and not errors:
         # The closure auditor also invokes these two readers. They attach their
         # own evidence and cannot turn an unentered header into a compiled C++ pass.
         from audit_rust_import_dwyu import CONSUMERS, collect_consumer_evidence
@@ -1719,11 +1810,12 @@ def audit_declared_owners(audit, census, selected, extra_fixtures):
             "omitted_production": len(production - labels), "omitted_fixtures": len(fixtures - labels),
             "ignored_other_overlay": census["ignored_declarations"],
             "ordinary_invocation": ordinary.get("invocation_uuid"), "strict_invocation": strict.get("invocation_uuid"),
+            "query_accounting": accounting, "accounting_errors": errors,
             "statuses": {k: dict(v) for k, v in summaries.items()}, "records": capture, "runs": audit.runs,
             "actionable_production": sorted(set(actionables) - fixtures),
-            "compiled_owners_clean": bool(scored) and all(r["outcome"] == "clean" for r in scored),
+            "compiled_owners_clean": not errors and bool(scored) and all(r["outcome"] == "clean" for r in scored),
             "incomplete_build_evidence": [r["label"] for r in production_rows if
-                r["category"] != "incompatible" and (r["ordinary"]["status"] != "passed" or
+                r["category"] != "incompatible" and (errors or r["ordinary"]["status"] != "passed" or
                 r["outcome"] in ("invalid", "missing", "failed", "unproved_failed_report") or
                 r["actions"].get("CppCompile") and r["category"] != "compiled_native")],
             "consumer_evidence_requested": audit.args.declared_contexts,
