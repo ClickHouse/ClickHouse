@@ -7,6 +7,7 @@
 #include <Processors/Transforms/LimitByTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Core/Settings.h>
+#include <Core/SettingsQuirks.h>
 #include <Core/ProtocolDefines.h>
 #include <Interpreters/Context.h>
 #include <Common/Exception.h>
@@ -58,6 +59,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int CORRUPTED_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 /// The share of the available memory that a `LIMIT BY` may hold before it spills, in bytes. This is
@@ -111,18 +113,25 @@ LimitByStep::ExternalSettings::ExternalSettings(const QueryPlanSerializationSett
     , max_block_size(settings[QueryPlanSerializationSetting::max_block_size])
     , min_free_disk_space(settings[QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data])
     , temporary_files_codec(settings[QueryPlanSerializationSetting::temporary_files_codec])
-    , temporary_files_buffer_size(settings[QueryPlanSerializationSetting::temporary_files_buffer_size])
+    , temporary_files_buffer_size(clampTemporaryFilesBufferSize(settings[QueryPlanSerializationSetting::temporary_files_buffer_size]))
 {
 }
 
-void LimitByStep::ExternalSettings::updatePlanSettings(QueryPlanSerializationSettings & settings) const
+void LimitByStep::ExternalSettings::updatePlanSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
 {
     settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
-    settings[QueryPlanSerializationSetting::max_bytes_before_external_limit_by] = max_bytes_in_state_before_external_limit_by;
-    settings[QueryPlanSerializationSetting::max_bytes_ratio_before_external_limit_by] = max_bytes_ratio_before_external_limit_by;
     settings[QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data] = min_free_disk_space;
     settings[QueryPlanSerializationSetting::temporary_files_codec] = temporary_files_codec;
     settings[QueryPlanSerializationSetting::temporary_files_buffer_size] = temporary_files_buffer_size;
+
+    /// `QueryPlanSerializationSettings` is a strict named schema: an older peer throws on a name it
+    /// does not know. A peer that predates these names has no external `LIMIT BY`, so leaving them
+    /// out is also the correct behaviour: it keeps the in-memory path.
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_LIMIT_BY)
+    {
+        settings[QueryPlanSerializationSetting::max_bytes_before_external_limit_by] = max_bytes_in_state_before_external_limit_by;
+        settings[QueryPlanSerializationSetting::max_bytes_ratio_before_external_limit_by] = max_bytes_ratio_before_external_limit_by;
+    }
 }
 
 static ITransformingStep::Traits getTraits()
@@ -155,7 +164,9 @@ LimitByStep::LimitByStep(
 
 ProcessorPtr LimitByStep::makeHashTransform(const SharedHeader & header, size_t length, size_t offset, bool can_spill) const
 {
-    if (!can_spill)
+    /// Constant-only keys are one group and never spill. Keep `LimitByTransform` so it can stop
+    /// reading after `offset + length` rows instead of draining the whole input.
+    if (!can_spill || filterNonConstKeys(*header, columns).names.empty())
         return std::make_shared<LimitByTransform>(header, length, offset, columns, always_read_till_end);
 
     TemporaryDataOnDiskScopePtr tmp_data_on_disk;
@@ -168,10 +179,8 @@ ProcessorPtr LimitByStep::makeHashTransform(const SharedHeader & header, size_t 
             external_settings.temporary_files_buffer_size,
             external_settings.temporary_files_codec);
 
-    /// Without temporary storage there is nothing to spill into, so keep everything in memory rather
-    /// than failing a query that the in-memory implementation can still answer.
     if (!tmp_data_on_disk)
-        return std::make_shared<LimitByTransform>(header, length, offset, columns, always_read_till_end);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary data storage for external LIMIT BY is not provided");
 
     return std::make_shared<ExternalLimitByTransform>(
         header,
@@ -333,9 +342,9 @@ void LimitByStep::describeActions(JSONBuilder::JSONMap & map) const
         map.add("Skip stream merging", true);
 }
 
-void LimitByStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
+void LimitByStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
 {
-    external_settings.updatePlanSettings(settings);
+    external_settings.updatePlanSettings(settings, version);
 }
 
 void LimitByStep::serialize(Serialization & ctx) const

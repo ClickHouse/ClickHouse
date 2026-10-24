@@ -288,7 +288,8 @@ void ExternalLimitByTransform::consume(Chunk chunk)
     removeConstColumns(chunk);
     bufferChunkForSpill(std::move(chunk));
 
-    if (buffered_bytes > max_bytes_in_state_before_external_limit_by || shouldSpill())
+    if ((max_bytes_in_state_before_external_limit_by && buffered_bytes > max_bytes_in_state_before_external_limit_by)
+        || shouldSpill())
         spillBufferedChunks();
 }
 
@@ -441,7 +442,7 @@ void ExternalLimitByTransform::convertGroupsToStateRows()
     Chunk state_chunk(std::move(spill_columns), num_rows);
     addSortedChunkToBuffer(std::move(state_chunk));
 
-    if (buffered_bytes > max_bytes_in_state_before_external_limit_by)
+    if (max_bytes_in_state_before_external_limit_by && buffered_bytes > max_bytes_in_state_before_external_limit_by)
         spillBufferedChunks();
 }
 

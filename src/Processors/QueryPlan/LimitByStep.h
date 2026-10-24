@@ -19,7 +19,7 @@ public:
         explicit ExternalSettings(const Settings & settings);
         explicit ExternalSettings(const QueryPlanSerializationSettings & settings);
 
-        void updatePlanSettings(QueryPlanSerializationSettings & settings) const;
+        void updatePlanSettings(QueryPlanSerializationSettings & settings, UInt64 version) const;
 
         bool isEnabled() const
         {

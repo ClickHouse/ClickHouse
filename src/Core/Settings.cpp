@@ -3905,6 +3905,7 @@ in-order implementation is used, which needs constant memory and never spills. S
 rows that were not emitted before the spill, so it is not used when the step has to preserve the
 order of its input (a query with `ORDER BY` over different columns).
 )", 0, \
+        {"26.11", 0, 0, "The setting was backported to 26.10."}, \
         {"26.10", 0, 0, "New setting to enable spilling of the hash-based `LIMIT BY` to disk when memory usage exceeds the given threshold in bytes. If 0, only `max_bytes_ratio_before_external_limit_by` applies."}) \
     DECLARE(Double, max_bytes_ratio_before_external_limit_by, 0.5, R"(
 The ratio of available memory that is allowed for `LIMIT BY`. Once reached, external memory is used.
@@ -3915,6 +3916,7 @@ For example, if set to `0.6`, `LIMIT BY` will allow using `60%` of the available
 If both `max_bytes_before_external_limit_by` and `max_bytes_ratio_before_external_limit_by` are set,
 the smaller resulting threshold is used. Setting both to `0` disables external `LIMIT BY`.
 )", 0, \
+        {"26.11", 0.5, 0.5, "The default change to 0.5 was backported to 26.10."}, \
         {"26.10", 0., 0.5, "New setting to enable spilling of the hash-based `LIMIT BY` to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_limit_by` applies."}) \
     \
     DECLARE(UInt64, max_bytes_before_external_distinct, 0, R"(
