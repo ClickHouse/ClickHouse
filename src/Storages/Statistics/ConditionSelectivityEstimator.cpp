@@ -173,8 +173,8 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
                     rpn_stack.push(&element);
                 else
                 {
-                    left_element->finalize(column_estimators, metadata);
-                    right_element->finalize(column_estimators, metadata);
+                    left_element->finalize(payload->column_estimators, metadata);
+                    right_element->finalize(payload->column_estimators, metadata);
                     /// P(c1 and c2) = P(c1) * P(c2)
                     if (element.function == RPNElement::FUNCTION_AND)
                         element.selectivity = left_element->selectivity.applyAnd(right_element->selectivity);
@@ -197,7 +197,7 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
                 /// to report the selectivity of the un-negated predicate. Finalize both first, so the
                 /// negation applies to a plain selectivity.
                 if (!last_element->finalized && (last_element->hasAbsorbed() || last_element->isConstantFactor()))
-                    last_element->finalize(column_estimators, metadata);
+                    last_element->finalize(payload->column_estimators, metadata);
                 if (last_element->finalized)
                     last_element->selectivity = last_element->selectivity.applyNot();
                 else
@@ -222,17 +222,17 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
         }
     }
     auto * final_element = rpn_stack.top();
-    final_element->finalize(column_estimators, metadata);
+    final_element->finalize(payload->column_estimators, metadata);
     RelationProfile result;
-    Float64 final_rows = final_element->selectivity.true_sel * static_cast<Float64>(total_rows);
+    Float64 final_rows = final_element->selectivity.true_sel * static_cast<Float64>(payload->total_rows);
     /// Clamp to [0, total_rows] and handle NaN/Inf to avoid undefined behavior
     /// in the float-to-UInt64 cast below (UBSAN float-cast-overflow).
     if (!std::isfinite(final_rows) || final_rows < 0)
         final_rows = 0;
-    else if (final_rows > static_cast<Float64>(total_rows))
-        final_rows = static_cast<Float64>(total_rows);
+    else if (final_rows > static_cast<Float64>(payload->total_rows))
+        final_rows = static_cast<Float64>(payload->total_rows);
     result.rows = static_cast<UInt64>(final_rows);
-    for (const auto & [column_name, estimator] : column_estimators)
+    for (const auto & [column_name, estimator] : payload->column_estimators)
     {
         if (!isCompatibleStatistics(metadata, estimator.stats, column_name))
             continue;
@@ -246,8 +246,8 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
 RelationProfile ConditionSelectivityEstimator::estimateRelationProfile() const
 {
     RelationProfile result;
-    result.rows = total_rows;
-    for (const auto & [column_name, estimator] : column_estimators)
+    result.rows = payload->total_rows;
+    for (const auto & [column_name, estimator] : payload->column_estimators)
     {
         result.column_stats.emplace(column_name, makeColumnStats(estimator.estimateCardinality(), estimator.stats));
     }
@@ -627,14 +627,20 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
     return false;
 }
 
+ConditionSelectivityEstimator::ConditionSelectivityEstimator(PayloadPtr payload_, ContextPtr context_)
+    : WithContext(context_), payload(std::move(payload_))
+{
+    chassert(payload);
+}
+
 ConditionSelectivityEstimatorBuilder::ConditionSelectivityEstimatorBuilder(ContextPtr context_)
-    : estimator(std::make_shared<ConditionSelectivityEstimator>(context_))
+    : context(std::move(context_)), payload(std::make_shared<ConditionSelectivityEstimator::Payload>())
 {
 }
 
 void ConditionSelectivityEstimatorBuilder::incrementRowCount(UInt64 rows)
 {
-    estimator->total_rows += rows;
+    payload->total_rows += rows;
 }
 
 void ConditionSelectivityEstimatorBuilder::addStatistics(const String & column_name, const ColumnStatisticsPtr & column_stats)
@@ -643,7 +649,7 @@ void ConditionSelectivityEstimatorBuilder::addStatistics(const String & column_n
         return;
 
     has_data = true;
-    auto & column_estimator = estimator->column_estimators[column_name];
+    auto & column_estimator = payload->column_estimators[column_name];
 
     /// The statistics of a part are shared through the statistics cache, so they are never merged into
     /// in place: the estimator accumulates the parts into its own copy, starting from an empty one of
@@ -662,9 +668,16 @@ void ConditionSelectivityEstimatorBuilder::addStatistics(const String & column_n
     /// estimator still works with the compatible parts instead of crashing.
 }
 
+ConditionSelectivityPayloadPtr ConditionSelectivityEstimatorBuilder::getPayload() const
+{
+    return has_data ? payload : nullptr;
+}
+
 ConditionSelectivityEstimatorPtr ConditionSelectivityEstimatorBuilder::getEstimator() const
 {
-    return has_data ? estimator : nullptr;
+    if (!has_data)
+        return nullptr;
+    return std::make_shared<ConditionSelectivityEstimator>(payload, context);
 }
 
 ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::Selectivity::applyNot() const
@@ -742,8 +755,8 @@ ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::estima
     /// set's exact number of distinct values, directly comparable with the column's estimated cardinality.
     const size_t set_size = set_elements.size();
 
-    auto it = column_estimators.find(column_name);
-    if (it == column_estimators.end() || !isCompatibleStatistics(metadata, it->second.stats, column_name))
+    auto it = payload->column_estimators.find(column_name);
+    if (it == payload->column_estimators.end() || !isCompatibleStatistics(metadata, it->second.stats, column_name))
     {
         /// No statistics: match what `finalize` assumes for a list of point ranges on an unknown column.
         const Selectivity selectivity{std::min(static_cast<Float64>(set_size) * getEqualFactor(set_type), 1.0), 0};

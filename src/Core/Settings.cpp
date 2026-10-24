@@ -2280,6 +2280,19 @@ Possible values:
 - 1 — Enabled.
 )", 0, \
         {"26.4", false, true, "New setting to use statistics for part pruning during query execution."}) \
+    DECLARE(UInt64, statistics_cache_max_entries, 1024, R"(
+Maximal number of merged statistics of data parts that one query keeps for reuse.
+
+A query that reads the same table many times (for example, a `UNION ALL` of many branches) asks for the same statistics once per read. The statistics of each data part are cached by the server (see the server setting `statistics_cache_size`), but they are merged into an estimator for every read. With this cache, the merged statistics of a set of data parts and columns are kept until the end of the query, so they are merged once. Once the limit is reached, reads needing statistics that are not kept merge them again.
+
+The limit counts entries, not bytes: the size of an entry grows with the number of columns it covers and with the statistics types declared on them.
+
+Possible values:
+
+- 0 — Disabled.
+- Positive integer — The maximal number of entries.
+)", 0, \
+        {"26.11", 1024, 1024, "New setting to reuse the merged statistics of data parts within one query."}) \
     DECLARE(Bool, use_statistics_for_min_max_aggregation, true, R"(
 Answer `min`, `max` and `count` aggregations from per-part column statistics instead of reading data.
 
