@@ -2517,6 +2517,35 @@ static bool typeHasValueCarriers(const IDataType & type)
     return anyInTypeTree(type, [](const IDataType & node) { return isDynamic(node) || isVariant(node) || isObject(node); });
 }
 
+/// Merges the key-wrapping candidates found in the alternative (analyzer-rewritten) form of the key
+/// expression into the candidates found in its original form. Each form can constrain different key
+/// columns: e.g. the original form wraps the expression only into a later key column, while the
+/// rewritten form wraps it into the leading one, so the alternative candidates are needed even when
+/// the original form has some. A key column already constrained by an original candidate is not
+/// added again. With `first_match_only`, each list holds at most one candidate, and the one on the
+/// earliest key column is kept, because a constraint on a leading key column prunes the most.
+template <typename Candidate>
+static void mergeAlternativeKeyCandidates(
+    std::vector<Candidate> & result, std::vector<Candidate> && alternative, bool first_match_only)
+{
+    std::unordered_set<size_t> key_columns;
+    for (const auto & candidate : result)
+        key_columns.insert(candidate.key_column_num);
+
+    for (auto & candidate : alternative)
+        if (!key_columns.contains(candidate.key_column_num))
+            result.push_back(std::move(candidate));
+
+    if (first_match_only && result.size() > 1)
+    {
+        auto earliest = std::min_element(
+            result.begin(), result.end(), [](const auto & lhs, const auto & rhs) { return lhs.key_column_num < rhs.key_column_num; });
+        auto first = std::move(*earliest);
+        result.clear();
+        result.push_back(std::move(first));
+    }
+}
+
 /// Returns deterministic sub-DAGs that can be extracted to compute key columns
 /// from a single key subexpression (`expr_name`), without depending on any other inputs.
 /// Assumes `expr_name` matches a key subexpression name (checked by the caller).
@@ -2537,8 +2566,11 @@ std::vector<KeyCondition::DeterministicKeyDag> KeyCondition::collectKeyWrappingD
         = collectKeyWrappingDagsFromKeyExpr(*info.key_expr, /*is_alternative_key_expr=*/ false, expr_name, first_match_only);
 
     /// The filter expression can be in the analyzer-rewritten form: search the alternative key expression too.
-    if (result.empty() && info.alternative_key_expr)
-        result = collectKeyWrappingDagsFromKeyExpr(*info.alternative_key_expr, /*is_alternative_key_expr=*/ true, expr_name, first_match_only);
+    if (info.alternative_key_expr)
+        mergeAlternativeKeyCandidates(
+            result,
+            collectKeyWrappingDagsFromKeyExpr(*info.alternative_key_expr, /*is_alternative_key_expr=*/ true, expr_name, first_match_only),
+            first_match_only);
 
     return result;
 }
@@ -4642,9 +4674,12 @@ std::vector<KeyCondition::KeyWrappingChain> KeyCondition::collectKeyWrappingChai
         context, *info.key_expr, /*is_alternative_key_expr=*/ false, expr_name, first_match_only, allow_key_function);
 
     /// The filter expression can be in the analyzer-rewritten form: search the alternative key expression too.
-    if (result.empty() && info.alternative_key_expr)
-        result = collectKeyWrappingChainsFromKeyExpr(
-            context, *info.alternative_key_expr, /*is_alternative_key_expr=*/ true, expr_name, first_match_only, allow_key_function);
+    if (info.alternative_key_expr)
+        mergeAlternativeKeyCandidates(
+            result,
+            collectKeyWrappingChainsFromKeyExpr(
+                context, *info.alternative_key_expr, /*is_alternative_key_expr=*/ true, expr_name, first_match_only, allow_key_function),
+            first_match_only);
 
     return result;
 }
