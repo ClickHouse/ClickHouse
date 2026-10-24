@@ -31,6 +31,7 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentThread.h>
+#include <Common/Scheduler/CurrentCPULease.h>
 #include <Common/FailPoint.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/createHardLink.h>
@@ -347,9 +348,17 @@ void DistributedSink::initWritingJobs(const Block & first_block, size_t start, s
 }
 
 
+void DistributedSink::waitForPool()
+{
+    /// The writing jobs may need this thread's CPU slot.
+    CPULeaseParkGuard cpu_park;
+    pool->wait();
+}
+
+
 void DistributedSink::waitForJobs()
 {
-    pool->wait();
+    waitForPool();
 
     /// Neither the elapsed-time verdict below nor the job count says anything useful about an insert
     /// that is being cancelled.
@@ -394,6 +403,14 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
         ThreadGroupSwitcher switcher(thread_group, ThreadName::DISTRIBUTED_SINK);
 
         OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
+
+        /// The job's executor keeps its CPU slot parked while no job of it runs.
+        if (job.executor)
+            job.executor->unparkCPU();
+        SCOPE_EXIT_SAFE({
+            if (job.executor)
+                job.executor->parkCPUUntilNextPush();
+        });
 
         ++job.blocks_started;
 
@@ -642,7 +659,7 @@ void DistributedSink::writeSync(const Block & block)
     }
     catch (...)
     {
-        pool->wait();
+        waitForPool();
         throw;
     }
 
@@ -699,13 +716,13 @@ void DistributedSink::onFinish()
         }
         catch (...)
         {
-            pool->wait();
+            waitForPool();
             throw;
         }
 
         try
         {
-            pool->wait();
+            waitForPool();
             log_performance();
         }
         catch (Exception & exception)

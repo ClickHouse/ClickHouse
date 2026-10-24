@@ -53,6 +53,7 @@
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/QueryScope.h>
+#include <Common/Scheduler/CurrentCPULease.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
@@ -1369,6 +1370,11 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
 
     while (tcp_server.isOpen() || !server.isCancelled())
     {
+        /// The insert executor's CPU slot (if published) is idle while no packet is pending.
+        std::optional<CPULeaseParkGuard> cpu_park;
+        if (getCurrentCPULease() && !in->poll(0))
+            cpu_park.emplace();
+
         while (!in->poll(timeout_us))
         {
             size_t elapsed = size_t(watch.elapsedSeconds());
@@ -1379,6 +1385,7 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
                                 elapsed, receive_timeout.totalSeconds());
             }
         }
+        cpu_park.reset();
 
         UInt64 packet_type = 0;
         /// The type is a varuint, so a client can leave the input mid-packet by truncating it.
@@ -1566,6 +1573,14 @@ void TCPHandler::processInsertQuery(QueryState & state)
 
     auto run_executor = [&](auto & executor, Block processed_data)
     {
+        auto receive_next_block = [&]
+        {
+            std::optional<ScopedCPULease> cpu_lease;
+            if constexpr (std::is_same_v<std::decay_t<decltype(executor)>, PushingPipelineExecutor>)
+                cpu_lease.emplace(executor.getCPULease());
+            return receivePacketsExpectDataConcurrentWithExecutor(state);
+        };
+
         try
         {
             /// Made above the rest of the lines,
@@ -1578,7 +1593,7 @@ void TCPHandler::processInsertQuery(QueryState & state)
             else
                 startInsertQuery(state);
 
-            while (receivePacketsExpectDataConcurrentWithExecutor(state))
+            while (receive_next_block())
             {
                 executor.push(std::move(state.block_for_insert));
 
