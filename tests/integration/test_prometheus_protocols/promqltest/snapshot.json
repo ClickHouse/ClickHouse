@@ -8,6 +8,7 @@
     "at_modifier.test",
     "collision.test",
     "functions.test",
+    "histograms.test",
     "limit.test",
     "literals.test",
     "name_label_dropping.test",
@@ -20,7 +21,6 @@
     "trig_functions.test"
   ],
   "excluded_files": [
-    "histograms.test",
     "native_histograms.test",
     "info.test",
     "type_and_unit.test",
@@ -48,6 +48,11 @@
       "name": "functions.test",
       "sha256": "04b1655168755367f99342c408e55f1c3ae070a9a1625deab85ad76e08240918",
       "bytes": 73957
+    },
+    {
+      "name": "histograms.test",
+      "sha256": "256a17922aa7a9f5ae29ce79042662a91a393a8eb4d0c1999eafe235535a12f4",
+      "bytes": 43704
     },
     {
       "name": "limit.test",
