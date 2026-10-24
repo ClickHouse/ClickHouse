@@ -29,6 +29,11 @@ void VirtualColumnsDescription::add(VirtualColumnDescription desc)
     container.get<0>().push_back(std::move(desc));
 }
 
+void VirtualColumnsDescription::remove(const String & name)
+{
+    container.get<1>().erase(name);
+}
+
 void VirtualColumnsDescription::addEphemeral(String name, DataTypePtr type, String comment, VirtualsMaterializationPlace place, bool deterministic)
 {
     add({std::move(name), std::move(type), nullptr, std::move(comment), VirtualsKind::Ephemeral, place, deterministic});
