@@ -816,7 +816,7 @@ Pipe ReadFromMergeTree::readFromPool(
     bool use_prefetched_read_pool = query_info.trivial_limit == 0 && !query_info.small_limit_above_array_join
         && (allow_prefetched_remote || allow_prefetched_local);
 
-    /// The gating edge guarantees the seal_gate_refiner receives its filter before the first
+    /// The gating edge guarantees the seal_gate_refiner receives its filter, if any, before the first
     /// task cut. TODO: combine with the projection index refiner when both apply.
     if (use_prefetched_read_pool)
     {
@@ -871,7 +871,7 @@ Pipe ReadFromMergeTree::readFromPool(
         seal_gate_refiner ? " (gated by a runtime filter seal)" : "");
 
     /// Seal-gated reading: the sources are replaced by transforms whose input is the seal,
-    /// so nothing is read until the build side of the JOIN completes its runtime filter.
+    /// so nothing is read until the build side of the JOIN is complete.
     /// One seal is copied to every stream; the copy input is registered on the pipe as
     /// pending and is connected by the join pipeline wiring.
     if (seal_gate_refiner)
@@ -1228,9 +1228,9 @@ Pipe ReadFromMergeTree::readInOrder(
         if (seal_gate_refiner)
         {
             /// Seal-gated reading: the source is replaced by a transform whose input is the
-            /// seal, so nothing is read until the build side of the JOIN completes its runtime
-            /// filter. Every part contributes its own pending seal input; the join pipeline
-            /// wiring fans one seal out to all of them.
+            /// seal, so nothing is read until the build side of the JOIN is complete. Every part
+            /// contributes its own pending seal input; the join pipeline wiring fans one seal out
+            /// to all of them.
             auto header = std::make_shared<const Block>(processor->getHeader());
             auto gated_source = std::make_shared<SealGatedReadTransform>(header, std::move(processor), seal_gate_refiner, data.getLogName());
             if (set_total_rows_approx)

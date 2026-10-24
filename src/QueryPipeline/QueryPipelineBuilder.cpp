@@ -549,14 +549,20 @@ void QueryPipelineBuilder::wireSealGatedReading(
         build.pipe.processors->emplace_back(std::move(processor));
     };
 
-    /// The optional seal payload: the runtime filter built from this join's build side. It is
-    /// complete by the time the seal is emitted: each build stream publishes its part before
-    /// closing (see `BuildRuntimeFilterTransform::prepare`), and the seal follows the last close.
+    /// The optional seal payload: the runtime filter built from this join's build side, if it is complete.
+    /// A join which stops reading its build side early (`join_overflow_mode = 'break'`) can complete the build
+    /// before the stopped streams publish their parts; the gated read then proceeds without the filter.
     FillingRightJoinSideTransform::SealPayloadGetter payload_getter;
     if (!runtime_filter_key.empty())
     {
         if (auto query_context = CurrentThread::get().tryGetQueryContext())
-            payload_getter = [query_context, runtime_filter_key] { return query_context->getRuntimeFilterLookup()->find(runtime_filter_key); };
+        {
+            payload_getter = [query_context, runtime_filter_key]() -> RuntimeFilterConstPtr
+            {
+                auto filter = query_context->getRuntimeFilterLookup()->find(runtime_filter_key);
+                return filter && filter->isReady() ? filter : nullptr;
+            };
+        }
     }
 
     /// Exactly one of the concurrent filling transforms emits the seal (the one which

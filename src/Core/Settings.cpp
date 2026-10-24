@@ -6885,9 +6885,9 @@ If the estimated number of rows to read from the table is greater than or equal 
 )", 0, \
         {"25.11", 1'000'000, 1'000'000, "New setting"}) \
     DECLARE(Bool, enable_join_seal_gated_reading, false, R"(
-Gate the probe-side reading of a hash JOIN on the completion of the build-side runtime filter (see `enable_join_runtime_filters`): nothing is read on the probe side until the filter is complete, and the filter is then used to prune whole mark ranges by the primary key before read tasks are created, in addition to the ordinary row-level filtering. The gating is expressed as an edge of the query pipeline. On a gated read, the read-time index analysis of the same runtime filter (see `enable_join_runtime_filters_index_analysis`) is skipped as redundant.
+Gate the probe-side reading of a hash JOIN on the completion of its build side (see `enable_join_runtime_filters`): nothing is read on the probe side until the build side is complete, and the build-side runtime filter is then used to prune whole mark ranges by the primary key before read tasks are created, in addition to the ordinary row-level filtering. The gating is expressed as an edge of the query pipeline. On a gated read, the read-time index analysis of the same runtime filter (see `enable_join_runtime_filters_index_analysis`) is skipped as redundant.
 
-Experimental. Local reads are gated, including single-threaded and in-order reading; reads under FINAL, parallel replicas, or a join sharded by primary key ranges fall back to ungated reading with row-level filtering.
+Experimental. Local reads are gated, including single-threaded and in-order reading; reads under FINAL, parallel replicas, or a join sharded by primary key ranges fall back to ungated reading with row-level filtering. A join which stops reading its build side early (`join_overflow_mode = 'break'`) can complete before its runtime filter does, and then the probe side is read without the mark range pruning.
 )", EXPERIMENTAL, \
         {"26.10", false, false, "New experimental setting to gate the probe-side reading of a hash JOIN on the build-side runtime filter completion and prune read ranges by it."}) \
     DECLARE(Bool, use_indexes_refiner_in_read_pools, false, R"(
