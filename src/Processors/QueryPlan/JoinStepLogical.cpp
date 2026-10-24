@@ -2900,10 +2900,77 @@ std::vector<JoinActionRef> JoinStepLogical::getOutputActions() const
 }
 
 
+/// Whether the join has an equality between the two tables, which becomes a hash join key.
+static bool hasEqualityBetweenTables(const JoinOperator & join_operator)
+{
+    for (const auto & condition : join_operator.expression)
+    {
+        auto [predicate_op, lhs, rhs] = condition.asBinaryPredicate();
+        if (predicate_op != JoinConditionOperator::Equals && predicate_op != JoinConditionOperator::NullSafeEquals)
+            continue;
+        if ((lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft()))
+            return true;
+    }
+    return false;
+}
+
+/// Only the full-sort algorithms (`full_sorting_merge`, `parallel_full_sorting_merge`) and `ie_join`
+/// put local `SortingStep`s under a join, so only they consume `max_streams_per_hierarchical_merge`.
+/// The algorithms in `join_algorithm` are tried in order, so a sorting algorithm may be used only when
+/// the algorithms before it can decline the join:
+/// - `ie_join` listed first may claim the join; listed later, it is used only when the join has no
+///   equality between the tables (otherwise the equalities are claimed as hash join keys);
+/// - `full_sorting_merge` and `parallel_full_sorting_merge` are never reached after `hash`,
+///   `parallel_hash`, `prefer_partial_merge`, `default` or `auto`, because those never decline the join;
+/// - nor after a `grace_hash` that is sure to take the join (see below).
+/// Any other algorithm may decline, so it does not stop the walk and the check stays fail-closed.
+///
+/// `grace_hash` takes the join when `GraceHashJoin::isSupported` accepts it (not ASOF, an INNER / LEFT /
+/// RIGHT / FULL kind, and a single clause, which a step has exactly when it has an equality between the
+/// tables) - unless it has no spill threshold and is not the only algorithm in the list, in which case a
+/// peer that knows `legacy_join_size_limits_trigger_spilling` passes the join on to the next algorithm.
+/// A threshold given only as `max_bytes_ratio_before_external_join` depends on the memory of the peer,
+/// so it does not count, and `grace_hash` is assumed to decline.
+static bool joinMayBuildFullSort(const JoinSettings & join_settings, const JoinOperator & join_operator)
+{
+    const bool has_equality = hasEqualityBetweenTables(join_operator);
+    const bool grace_hash_supported = has_equality && join_operator.strictness != JoinStrictness::Asof
+        && (isInner(join_operator.kind) || isLeft(join_operator.kind) || isRight(join_operator.kind) || isFull(join_operator.kind));
+    const bool grace_hash_takes_join = grace_hash_supported
+        && (join_settings.legacy_join_size_limits_trigger_spilling || join_settings.max_bytes_before_external_join != 0
+            || join_settings.join_algorithms.size() == 1);
+    bool is_first = true;
+    bool full_sort_reachable = true;
+    for (auto algorithm : join_settings.join_algorithms)
+    {
+        if (algorithm == JoinAlgorithm::IE_JOIN && (is_first || !has_equality))
+            return true;
+
+        if ((algorithm == JoinAlgorithm::FULL_SORTING_MERGE || algorithm == JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE)
+            && full_sort_reachable)
+            return true;
+
+        if (algorithm == JoinAlgorithm::HASH || algorithm == JoinAlgorithm::PARALLEL_HASH
+            || algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE || algorithm == JoinAlgorithm::DEFAULT
+            || algorithm == JoinAlgorithm::AUTO || (algorithm == JoinAlgorithm::GRACE_HASH && grace_hash_takes_join))
+            full_sort_reachable = false;
+
+        is_first = false;
+    }
+    return false;
+}
+
 void JoinStepLogical::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
 {
+    /// A peer below this version cannot carry the validation value, so fail closed - but only when the peer
+    /// may actually build a full sort for this join. A join whose algorithms never sort its inputs (e.g. `hash`)
+    /// ignores the setting on both sides and is shipped as is.
+    if (version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_HIERARCHICAL_MERGE_VALIDATION
+        && joinMayBuildFullSort(join_settings, join_operator))
+        sorting_settings.checkMaxStreamsPerHierarchicalMerge();
+
     join_settings.updatePlanSettings(settings, version, join_operator);
-    sorting_settings.updatePlanSettings(settings);
+    sorting_settings.updatePlanSettings(settings, version);
 }
 
 static void serializeNodeList(
