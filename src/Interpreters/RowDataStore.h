@@ -6,6 +6,7 @@
 #include <Common/PODArray.h>
 #include <base/types.h>
 
+#include <optional>
 #include <vector>
 
 
@@ -14,7 +15,8 @@ namespace DB
 
 /// Stores multiple columns in row-major format.
 /// Each row is a tuple of values from several source columns.
-/// Plain fixed-width columns, `String` columns and `Nullable(T)` wrappers over such columns are supported.
+/// Plain fixed-width columns, `String` columns, `Tuple` columns of fixed-width elements and `Nullable(T)`
+/// wrappers over such columns are supported.
 ///
 /// Row Layout:
 ///   [field_0 | field_1 | ... | field_n ]
@@ -23,6 +25,8 @@ namespace DB
 /// where `null_byte` is 1 if the value is NULL and 0 otherwise.
 /// A string field is a 16-byte `UnhashedPackedStringRef`: a value of up to 15 bytes is stored inline,
 /// a longer one points to the overflow buffer.
+/// A tuple field is its elements laid out one after another, each one a field of its own whose offset
+/// is counted from the start of the row.
 ///
 /// The order of fields matches the order of source columns.
 class RowDataStore;
@@ -40,6 +44,23 @@ public:
         size_t size;
         bool is_nullable;
         bool is_string = false;
+        std::vector<FieldLayout> elements;
+    };
+
+    struct FieldPlanes
+    {
+        enum class Shape : UInt8
+        {
+            Fixed,
+            String,
+            Tuple,
+        };
+
+        Shape shape = Shape::Fixed;
+        std::optional<const char *> null_map;
+        const char * data = nullptr;
+        size_t stride = 0;
+        std::vector<const FieldLayout *> children;
     };
 
     using RowLayout = std::vector<FieldLayout>;
@@ -64,6 +85,7 @@ public:
     MutableColumns scatterRows(const PaddedPODArray<UInt64> & row_nums) const;
 
     const FieldLayout & getFieldLayout(size_t input_col_index) const;
+    FieldPlanes getPlanes(const FieldLayout & field) const;
 
     const char * getRowAt(size_t index) const { return chars.data() + index * row_length; }
     size_t size() const { return row_length != 0 ? chars.size() / row_length : 0; }
