@@ -272,8 +272,12 @@ void Aggregator::stageChunk(
 {
     /// Coalescing pays in proportion to how many batches merge into one chunk. A batch of at
     /// least half the seal target could only ever merge with one neighbor, gaining almost
-    /// nothing for a full extra copy of its data, so it is enqueued as-is.
-    if (estimated_payload_bytes * 2 >= adaptive_seal_target_bytes)
+    /// nothing for a full extra copy of its data, so it is enqueued as-is; so is a batch whose
+    /// bucket slices are already long enough for the drain (see `adaptive_seal_direct_records`).
+    /// A count batch must also not need the seal's cross-batch dedup, which is the only place
+    /// keys repeating across blocks merge before the drain.
+    if (estimated_payload_bytes * 2 >= adaptive_seal_target_bytes
+        || (block->keys.size() >= adaptive_seal_direct_records && (!block->countsOnly() || adaptive.seal_dedup.canSkip())))
     {
         publishStagedChunk(*adaptive.session, std::move(block));
         return;
