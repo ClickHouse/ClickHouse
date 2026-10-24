@@ -68,6 +68,8 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int UNEXPECTED_TABLE_ENGINE;
     extern const int UNKNOWN_DATABASE;
+    extern const int UNKNOWN_FUNCTION;
+    extern const int UNKNOWN_SETTING;
     extern const int UNKNOWN_TABLE;
 }
 
@@ -196,8 +198,8 @@ namespace
         /// A secondary query of the request it serves, as the wire already sends it: a shard can then name that
         /// request, and the kind pins the per-probe id ask() sets out of the initial one.
         probe_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
-        /// The initial user is left unset: an interserver secret authenticates a secondary query as the user it
-        /// names, while the probe asks each replica on this server's own rights.
+        /// An interserver secret runs a secondary query as the initial user it names, so the probe asks as the caller.
+        probe_context->setInitialUserName(context->getClientInfo().initial_user);
         probe_context->setInitialQueryId(context->getInitialQueryId());
         if (const auto & initial_address = context->getClientInfo().initial_address)
             probe_context->setInitialAddress(*initial_address);
@@ -244,9 +246,10 @@ namespace
                 on_block(convertBLOBColumns(block));
         };
 
-        /// getSetting needs no grant and throws on a server that does not know the setting,
-        /// so only a replica that will refuse a wrong target on its own insert passes.
-        auto checks_own_insert = [&](const auto & pool)
+        /// getSetting needs no grant. A server that knows this setting checks the target of its own insert and the access of
+        /// its timeSeriesSelector, which came in the same release; an older one refuses the name.
+        enum class Capability { Current, Older, Unknown };
+        auto replica_capability = [&](const auto & pool)
         {
             bool answered = false;
             try
@@ -254,12 +257,16 @@ namespace
                 ask(pool, "SELECT getSetting('insert_expected_table_engine') AS s", setting_header,
                     [&](const Block &) { answered = true; });
             }
-            catch (const Exception &)
+            catch (const Exception & e)
             {
-                return false;
+                if (e.code() == ErrorCodes::UNKNOWN_SETTING || e.code() == ErrorCodes::UNKNOWN_FUNCTION)
+                    return Capability::Older;
+                return Capability::Unknown;
             }
-            return answered;
+            return answered ? Capability::Current : Capability::Unknown;
         };
+        /// Such a replica would take a write unchecked or answer a read past the policies of its shard-local table.
+        Strings older_replicas;
 
         /// CHECK GRANT needs no grant itself, and asks on the connection the sink's own insert uses.
         String check_insert_grant = "CHECK GRANT INSERT(";
@@ -326,6 +333,13 @@ namespace
                     continue;
                 }
 
+                const auto capability = replica_capability(pool);
+                if (capability == Capability::Older)
+                {
+                    older_replicas.push_back(fmt::format("{} ({})", pool->getAddress(), replica_table));
+                    continue;
+                }
+
                 /// SHOW CREATE TABLE and DESC TABLE ask the replica for SHOW COLUMNS on that table alone, so the
                 /// probe reads no `system` table of its own; a replica that will not answer even that is skipped below.
                 String engine;
@@ -361,7 +375,7 @@ namespace
                             ++verified_on_shard;
                             continue;
                         }
-                        if (!checks_own_insert(pool))
+                        if (capability != Capability::Current)
                             unavailable = "denies the probe and does not check its own insert";
                         /// Refused before any shard is written, rather than by that insert once another shard took its rows.
                         else
@@ -419,6 +433,15 @@ namespace
                 "while the table declares {}",
                 storage.getStorageID().getNameForLogs(), wrong_type_replicas.size(), backQuoteIfNeed(remote_id.table_name),
                 samples_column, fmt::join(wrong_type_replicas, ", "), time_series_type);
+
+        /// Retryable: the replicas pass once they are upgraded.
+        if (!older_replicas.empty())
+            throw Exception(
+                ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
+                "{} over table {} is refused while {} replica(s) run an older server, which checks neither the target "
+                "of an insert nor the access of timeSeriesSelector, retry once they are upgraded: {}",
+                for_write ? "Remote write" : "A prometheus query", storage.getStorageID().getNameForLogs(),
+                older_replicas.size(), fmt::join(older_replicas, ", "));
 
         /// A replica the check could not see would take the samples unchecked.
         if (for_write && !unavailable_replicas.empty())

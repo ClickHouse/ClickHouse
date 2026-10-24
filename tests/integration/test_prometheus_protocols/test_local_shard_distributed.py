@@ -76,9 +76,22 @@ EARLY_COMMIT_SETTING = {
     "min_insert_block_size_rows": 0,
     "min_insert_block_size_bytes": 0,
 }
+# Query parameters that cut a batch into one-row pieces, on the initiator and in a shard's own insert
+# of the samples, where its sink commits each piece once the next one arrives.
+STRICT_SPLIT_SETTING = {
+    "use_strict_insert_block_limits": 1,
+    "max_insert_block_size": 1,
+    "min_insert_block_size_rows": 0,
+    "min_insert_block_size_bytes": 0,
+}
+# The samples of those requests, later than any other test's.
+STRICT_SPLIT_TIME = START_TIME + 1000000
 # cityHash64(host) % 2 over two shards of equal weight, shard 0 being the local one.
 LOCAL_HOST = "h3"
 REMOTE_HOST = "h1"
+
+# May read and write the wrapper over `secret_remote_dist` and holds nothing on its shard-local table.
+SECRET_CALLER = "prom_secret_caller"
 
 # What the shard probe says about that table, in the words no denied caller may see.
 SHARD_LOCAL_LEAK = ["shard-local", "not TimeSeries", "UNEXPECTED_TABLE_ENGINE"]
@@ -170,6 +183,20 @@ def start_cluster():
             f"CREATE USER {SWAP_DENIED_USER} IDENTIFIED WITH no_password DEFAULT DATABASE metrics"
         )
         node.query(f"GRANT INSERT ON default.prom_swap TO {SWAP_DENIED_USER}")
+
+        # A wrong-engine table on the shard of a secret cluster, which its caller may not describe.
+        node.query(
+            "CREATE TABLE remote_shard.ts_secret AS metrics.ts_local ENGINE = MergeTree ORDER BY tuple()"
+        )
+        node.query(
+            "CREATE TABLE metrics.prom_secret AS metrics.ts_local "
+            "ENGINE = Distributed(secret_remote_dist, '', ts_secret)"
+        )
+        node.query(f"CREATE USER {SECRET_CALLER} IDENTIFIED WITH no_password")
+        node.query(
+            f"GRANT READ ON REMOTE, CREATE TEMPORARY TABLE ON *.* TO {SECRET_CALLER}"
+        )
+        node.query(f"GRANT SELECT, INSERT ON metrics.prom_secret TO {SECRET_CALLER}")
         yield cluster
     finally:
         cluster.shutdown()
@@ -181,8 +208,8 @@ def one_sample(metric_name, host="h0"):
     )
 
 
-def mixed_write(metric_name, hosts, user, settings=None):
-    """A remote write of one sample per host over the mixed wrapper, as a caller of this name."""
+def mixed_write(metric_name, hosts, user, settings=None, samples=None):
+    """A remote write of one series per host over the mixed wrapper, as a caller of this name."""
     query = f"user={user}&password="
     for name, value in (settings or {}).items():
         query += f"&{name}={value}"
@@ -192,7 +219,7 @@ def mixed_write(metric_name, hosts, user, settings=None):
         f"/mixed/write?{query}",
         convert_time_series_to_protobuf(
             [
-                ({"__name__": metric_name, "host": host}, {START_TIME: 1.0})
+                ({"__name__": metric_name, "host": host}, samples or {START_TIME: 1.0})
                 for host in hosts
             ]
         ),
@@ -393,6 +420,51 @@ def test_an_early_commit_setting_still_writes_the_shards_a_caller_may_write():
     assert mixed_counts("early_commit_ok_metric") == [1, 1]
 
 
+def strict_split_samples():
+    """How many samples of the strict-split requests each shard of the mixed wrapper holds, local first."""
+    return [
+        int(
+            node.query(
+                f"SELECT count() FROM timeSeriesSamples({table}) "
+                f"WHERE timestamp >= toDateTime64({STRICT_SPLIT_TIME}, 3)"
+            )
+        )
+        for table in MIXED_SHARDS
+    ]
+
+
+def test_no_shard_keeps_samples_when_the_caller_asks_for_strict_block_limits():
+    """Those limits would cut the remote series into pieces that its shard commits one by one, before
+    the local delivery is refused: they are pinned off, so the refused batch leaves nothing behind.
+    """
+    samples = {STRICT_SPLIT_TIME + i: 1.0 for i in range(10)}
+    response = mixed_write(
+        "strict_split_metric",
+        [REMOTE_HOST, LOCAL_HOST],
+        MIXED_INSERT_USER,
+        STRICT_SPLIT_SETTING,
+        samples,
+    )
+    assert response.status_code == 403, response.text
+    assert "metrics.ts_mixed" in response.text, response.text
+
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        assert strict_split_samples() == [0, 0]
+        time.sleep(0.5)
+
+    # The same request from a caller granted both shards is the write it always was.
+    response = mixed_write(
+        "strict_split_metric",
+        [REMOTE_HOST, LOCAL_HOST],
+        "prom_metrics",
+        STRICT_SPLIT_SETTING,
+        samples,
+    )
+    assert response.status_code == 204, response.text
+    assert strict_split_samples() == [10, 10]
+
+
 def test_a_denied_caller_is_not_told_what_the_local_shard_holds():
     """The probe reads the shard-local table on the caller's context, so a caller without the grant
     the sink's own insert asks for is skipped there, exactly as a remote replica that denies it is.
@@ -414,6 +486,33 @@ def test_a_denied_caller_is_not_told_what_the_local_shard_holds():
     assert "metrics.ts_swap" in denied.text, denied.text
     for fragment in SHARD_LOCAL_LEAK:
         assert fragment not in denied.text, denied.text
+
+
+def test_a_secret_cluster_probes_its_shard_as_the_caller():
+    """Under an interserver secret the shard runs the request as its caller, so the probe asks as
+    that caller too: one the shard would deny learns that, and never what the shard-local table is.
+    """
+    sql = f"SELECT count() FROM prometheusQuery(metrics.prom_secret, 'secret_metric', {START_TIME})"
+    # The premise: a caller the shard lets describe the table is told what the probe found.
+    allowed = node.query_and_get_error(sql)
+    assert "not TimeSeries" in allowed, allowed
+
+    denied = node.query_and_get_error(sql, user=SECRET_CALLER).split("Stack trace:")[0]
+    assert "Not enough privileges" in denied, denied
+    for fragment in SHARD_LOCAL_LEAK:
+        assert fragment not in denied, denied
+
+    response = get_response_to_remote_write(
+        node.ip_address,
+        9093,
+        f"/secret/write?user={SECRET_CALLER}&password=",
+        one_sample("secret_metric"),
+    )
+    assert response.status_code >= 500, response.text
+    assert "no INSERT grant on remote_shard.ts_secret" in response.text, response.text
+    for fragment in SHARD_LOCAL_LEAK:
+        assert fragment not in response.text, response.text
+    assert int(node.query("SELECT count() FROM remote_shard.ts_secret")) == 0
 
 
 def query_as(endpoint, user, settings=None):

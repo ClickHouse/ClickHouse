@@ -327,6 +327,8 @@ void forceDeliveryToShards(const StorageInMemoryMetadata & metadata, const char 
     /// took its half of the batch behind once a later shard refuses its own.
     context->setSetting("input_format_max_block_wait_ms", Field(UInt64(0)));
     context->setSetting("wait_for_part_commit_in_dependent_materialized_views", false);
+    /// So does a cut of the batch into pieces by strict block limits, here or in a shard's own inner insert.
+    context->setSetting("use_strict_insert_block_limits", false);
     /// A shard the sink skipped is a silent drop under a 204: fail the write closed, as the check does.
     context->setSetting("skip_unavailable_shards", false);
     /// A shard that is this server itself is always written in-process, as the shard-target check assumes.

@@ -114,6 +114,8 @@ namespace Setting
     extern const SettingsUInt64 min_insert_block_size_rows_for_materialized_views;
     extern const SettingsUInt64 min_insert_block_size_bytes_for_materialized_views;
     extern const SettingsBool ignore_materialized_views_with_dropped_target_table;
+    extern const SettingsString insert_expected_table_engine;
+    extern const SettingsMap insert_expected_column_types;
     extern const SettingsBool distributed_foreground_insert;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsBool insert_null_as_default;
@@ -1355,6 +1357,13 @@ std::pair<ContextPtr, ContextPtr> InsertDependenciesBuilder::createSelectInsertC
     // Processing of blocks for MVs is done block by block, and there will
     // be no parallel reading after (plus it is not a costless operation)
     select_context->setSetting("parallelize_output_from_storages", Field{false});
+    /// The insert_expected_* requirements are for the table the INSERT names, never for what its views write.
+    if (!select_context->getSettingsRef()[Setting::insert_expected_table_engine].value.empty()
+        || !select_context->getSettingsRef()[Setting::insert_expected_column_types].value.empty())
+    {
+        select_context->setSetting("insert_expected_table_engine", String{});
+        select_context->setSetting("insert_expected_column_types", Field{Map{}});
+    }
 
     auto insert_context = Context::createCopy(select_context);
     insert_context->setQueryAccessInfo(parent_select_context->getQueryAccessInfoPtr());
