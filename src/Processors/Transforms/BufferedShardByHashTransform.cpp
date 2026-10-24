@@ -34,11 +34,23 @@ static Int64 releaseChunkChargeUnlocked(BufferedShardByHashBudget & budget, cons
     return released_bytes;
 }
 
+/// The charge of one shard chunk that has left the scatter's queue. Besides the objects it registered, it holds a
+/// reference to the chunk's columns until it is released. The table in `BufferedShardByHashBudget` is keyed by raw
+/// address, so none of those objects may be freed while their entries are still registered: a buffer allocated
+/// later at the recycled address would be taken for an already-charged one. The downstream does not guarantee that
+/// order on its own - e.g. `Chunk::operator=` (used when a merge replaces its retained input) destroys the old
+/// columns before the old chunk infos, so the `BufferedShardByHashChunkInfo` that releases this charge would run
+/// only after the columns are gone, and the release itself can wait for `budget->mutex` while a sibling scatter
+/// registers a new column at the freed address. Every registered object is reachable from these columns (a
+/// `LowCardinality` dictionary, the arenas of a `ColumnAggregateFunction` and its source column are all owned
+/// through them), so retaining the columns keeps every address in `touched` alive until it is deregistered.
 struct BufferedShardByHashChunkCharge
 {
-    BufferedShardByHashChunkCharge(std::shared_ptr<BufferedShardByHashBudget> budget_, const std::vector<const void *> & touched_)
+    BufferedShardByHashChunkCharge(
+        std::shared_ptr<BufferedShardByHashBudget> budget_, const std::vector<const void *> & touched_, Columns retained_columns_)
         : budget(std::move(budget_))
         , touched(touched_)
+        , retained_columns(std::move(retained_columns_))
     {
     }
 
@@ -47,12 +59,15 @@ struct BufferedShardByHashChunkCharge
         active.store(true, std::memory_order_relaxed);
     }
 
-    void releaseUnlocked()
+    /// Deregisters the charge and returns the retained columns, which may only be destroyed after that (the caller
+    /// can let them go outside of `budget->mutex`).
+    Columns releaseUnlocked()
     {
         if (!active.exchange(false, std::memory_order_relaxed))
-            return;
+            return {};
 
         budget->total_buffered_bytes.fetch_sub(releaseChunkChargeUnlocked(*budget, touched), std::memory_order_relaxed);
+        return std::move(retained_columns);
     }
 
     void release()
@@ -63,12 +78,16 @@ struct BufferedShardByHashChunkCharge
         if (!active.load(std::memory_order_relaxed))
             return;
 
+        /// Declared before the lock, so the columns are freed after the mutex is released.
+        Columns released_columns;
         std::lock_guard lock(budget->mutex);
-        releaseUnlocked();
+        released_columns = releaseUnlocked();
     }
 
     std::shared_ptr<BufferedShardByHashBudget> budget;
     std::vector<const void *> touched;
+    /// Owned by whichever thread wins `active` (under `budget->mutex`), or destroyed with the charge.
+    Columns retained_columns;
     std::atomic_bool active = false;
 };
 
@@ -776,7 +795,8 @@ void BufferedShardByHashTransform::work()
         /// the queue's charge to it and the explicit port handle releases it if downstream closes this output.
         if (budget_enabled)
         {
-            auto charge = std::make_shared<BufferedShardByHashChunkCharge>(budget, queue.front().touched_objects);
+            auto charge = std::make_shared<BufferedShardByHashChunkCharge>(
+                budget, queue.front().touched_objects, queue.front().chunk.getColumns());
             auto info = std::make_shared<BufferedShardByHashChunkInfo>(charge);
             queue.front().chunk.getChunkInfos().add(std::move(info));
             QueuedChunk queued = dequeue(shard);

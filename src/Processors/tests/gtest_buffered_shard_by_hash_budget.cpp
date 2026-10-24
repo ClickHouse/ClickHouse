@@ -1329,6 +1329,59 @@ TEST(BufferedShardByHashTransform, PartiallyConsumedBlockReleasesTheConsumedChun
     EXPECT_GT(partially_drained.bytes_after_second_buffered, partially_drained.bytes_while_first_parked / 4);
 }
 
+/// A downstream merge replaces a retained input with `Chunk::operator=`, which destroys the old columns BEFORE the old
+/// chunk infos - so the `BufferedShardByHashChunkInfo` releasing the charge runs only after the columns it accounts
+/// for are gone. If those columns were really freed at that point, a sibling scatter could allocate a buffer at the
+/// recycled address and register it while the stale entry is still in the de-duplication table: it would be charged
+/// nothing, and the stale cached bytes would be released against it later. The charge therefore keeps the columns
+/// alive until it is released.
+///
+/// This pulls every chunk of the first scatter, drops its columns while keeping the chunk (and its infos) - what
+/// the replacement does in between its two steps - and only then builds and buffers the second scatter's block. The
+/// counter must hold both: the first block, still charged by the retained chunk infos, and the second block in full.
+TEST(BufferedShardByHashTransform, RetainedInputColumnsFreedBeforeChunkInfoDoNotAliasLaterBuffers)
+{
+    const size_t num_shards = 8;
+    const size_t first_rows = 4000;
+    const size_t second_rows = 250;
+
+    Block header_block{
+        ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k"),
+        ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "v"),
+    };
+    auto header = std::make_shared<const Block>(std::move(header_block));
+
+    const Int64 second_resident = bufferedBytesAfterSplit(
+        header, Columns{makeDistinctKeyColumn(second_rows), makeUInt64ValueColumn(second_rows)}, num_shards, ColumnNumbers{0});
+    ASSERT_GT(second_resident, 0);
+
+    auto budget = std::make_shared<BufferedShardByHashBudget>();
+    auto first = makeConnectedScatter(header, num_shards, ColumnNumbers{0}, /*max_buffered_bytes=*/ (1ULL << 40), budget);
+    auto second = makeConnectedScatter(header, num_shards, ColumnNumbers{0}, /*max_buffered_bytes=*/ (1ULL << 40), budget);
+
+    first.source->push(
+        Chunk(Columns{makeDistinctKeyColumn(first_rows), makeUInt64ValueColumn(first_rows)}, first_rows));
+    drive(first);
+    const Int64 first_resident = budget->total_buffered_bytes.load();
+    ASSERT_GT(first_resident, 4 * second_resident);
+
+    std::vector<Chunk> retained;
+    for (auto & sink : first.sinks)
+        if (sink->hasData())
+            retained.push_back(sink->pull());
+    ASSERT_EQ(retained.size(), num_shards);
+    for (auto & chunk : retained)
+        chunk.detachColumns();
+
+    second.source->push(
+        Chunk(Columns{makeDistinctKeyColumn(second_rows), makeUInt64ValueColumn(second_rows)}, second_rows));
+    ASSERT_FALSE(drive(second));
+    EXPECT_EQ(budget->total_buffered_bytes.load(), first_resident + second_resident);
+
+    retained.clear();
+    EXPECT_EQ(budget->total_buffered_bytes.load(), second_resident);
+}
+
 /// The buffer budget must de-duplicate a physical buffer shared, by pointer, across SIBLING SCATTERS of the
 /// stage, not only within one scatter. A shuffle stage runs one `BufferedShardByHashTransform` per input
 /// stream, all sharing one `BufferedShardByHashBudget`, and two streams can buffer chunks reaching the identical

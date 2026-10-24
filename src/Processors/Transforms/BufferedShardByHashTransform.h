@@ -31,14 +31,17 @@ struct BufferedShardByHashChunkCharge;
 ///
 /// The key is a raw address, so an entry must never outlive the object it accounts for: a buffer allocated later
 /// could land on the freed address and be mistaken for this one (charged nothing, then billed this entry's stale
-/// `bytes` when it is released). Two properties keep that from happening. Every charge is released as soon as the
+/// `bytes` when it is released). Three properties keep that from happening. Every charge is released as soon as the
 /// chunk holding it stops being reachable - per buffered chunk, not per input block, so the exclusive buffers of
 /// a shard chunk the downstream has consumed are forgotten even while its siblings from the same block stay
 /// buffered. And the one charge whose release is inherently deferred - a chunk parked in an output port, released
 /// only once the port shows the downstream pulled it, which the owning scatter can notice no earlier than its
 /// next `prepare()` - is reclaimed across the whole stage before any new registration
 /// (`BufferedShardByHashTransform::reclaimAllPortResidentChunks`), so no registration can ever consult the table
-/// while it still holds an entry for a chunk that has left the pipeline.
+/// while it still holds an entry for a chunk that has left the pipeline. And once a chunk has left the scatter, its
+/// charge (`BufferedShardByHashChunkCharge`) keeps the chunk's columns - and so every object it registered - alive
+/// until the charge is released, because the downstream may free the columns before it drops the chunk info that
+/// releases the charge (`Chunk::operator=` destroys the old columns first).
 struct SharedObjectAccounting
 {
     size_t refcount = 0;
