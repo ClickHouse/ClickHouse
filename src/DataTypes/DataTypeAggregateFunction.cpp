@@ -419,8 +419,43 @@ void setVersionToAggregateFunctions(DataTypePtr & type, bool if_empty, std::opti
     });
 }
 
+/// Whether `type` spells version 0 of a versioned state explicitly, which its printed name cannot carry.
+static bool hasExplicitStateVersionZero(const DataTypePtr & type)
+{
+    return anyInTypeTree(*type, [](const IDataType & child)
+    {
+        /// The storage of a nested `SimpleAggregateFunction` has lost the 0 already, only its value type keeps it.
+        if (const auto * simple = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(child.getCustomName()))
+            if (std::ranges::any_of(simple->getArgumentsDataTypes(), hasExplicitStateVersionZero))
+                return true;
+
+        const auto * aggregate_function_type = typeid_cast<const DataTypeAggregateFunction *>(&child);
+        return aggregate_function_type && aggregate_function_type->isVersioned() && aggregate_function_type->getVersionIfExplicit() == 0;
+    });
+}
+
 void pinCurrentStateVersionToAggregateFunctions(DataTypePtr & type)
 {
+    /// A `SimpleAggregateFunction` parses its storage type from the name of its value type, which does not print version 0,
+    /// so an explicit 0 survives only in the value type. Pin it there and rebuild the node from its name, as loading does.
+    auto pin_simple_aggregate_function = [](const DataTypePtr & node) -> DataTypePtr
+    {
+        const auto * simple = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(node->getCustomName());
+        if (!simple || !std::ranges::any_of(simple->getArgumentsDataTypes(), hasExplicitStateVersionZero))
+            return node;
+
+        DataTypes argument_types = simple->getArgumentsDataTypes();
+        for (auto & argument_type : argument_types)
+            pinCurrentStateVersionToAggregateFunctions(argument_type);
+
+        auto pinned = DataTypeFactory::instance().get(
+            DataTypeCustomSimpleAggregateFunction(simple->getFunction(), argument_types, simple->getParameters()).getName());
+        setVersionToAggregateFunctions(pinned, /* if_empty= */ true);
+        return pinned;
+    };
+    if (auto rewritten = rewriteTypeTree(type, pin_simple_aggregate_function, CustomizationPolicy::Keep))
+        type = rewritten;
+
     setVersionToAggregateFunctionsImpl(type, /* if_empty= */ true, [](const AggregateFunctionPtr & function) -> std::optional<size_t>
     {
         /// Pin only a version that is newer than the default the function would fall back to anyway:
