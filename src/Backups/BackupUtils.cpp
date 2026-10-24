@@ -119,6 +119,12 @@ bool compareRestoredTableDef(const IAST & restored_table_create_query, const IAS
         adjustCreateQueryForBackup(new_query, global_context);
         new_query->resetUUIDs();
         new_query->if_not_exists = false;
+        /// An `Alias` carries a `SQL SECURITY` clause only since definer rights were added; a definition
+        /// written by an older server has none. Ignore it for the comparison (but keep it in the backup
+        /// itself) so a definition from an older backup compares equal to one written now. Only for an
+        /// `Alias`, so that a view's definer is still compared.
+        if (new_query->isAliasEngine() && new_query->sql_security)
+            new_query->reset(new_query->sql_security);
         return new_query;
     };
 
