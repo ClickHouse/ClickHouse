@@ -52,7 +52,8 @@ CREATE TABLE tab_uncompressed
     ts DateTime CODEC(LZ4),
     str String CODEC(LZ4),
     INDEX inv_idx str TYPE text(
-        tokenizer = 'splitByNonAlpha'
+        tokenizer = 'splitByNonAlpha',
+        posting_list_codec = 'none'
     )
 )
 ENGINE = MergeTree

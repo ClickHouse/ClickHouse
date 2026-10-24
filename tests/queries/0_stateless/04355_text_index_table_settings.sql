@@ -3,12 +3,12 @@
 -- text_index_posting_list_codec), that these table-level defaults feed the index creator, and that an
 -- explicit per-index argument still overrides the table setting.
 --
--- The defaults of these settings happen to equal the historical built-in constants, so the tables below
--- deliberately pin non-default values; a silent fallback to the old constants would show the default layout.
+-- The tables below deliberately pin non-default values; a silent fallback to the built-in defaults would show
+-- the default layout.
 -- The resulting layout is observed through the mergeTreeTextIndex() introspection function:
 --   - dictionary_compression  -> 'raw' (front coding off) vs 'front_coded' (front coding on),
 --   - num_posting_blocks      -> how the posting list of a high-cardinality token is split into blocks,
---   - has_compressed_postings -> whether the posting list is stored with the 'bitpacking' codec.
+--   - has_compressed_postings -> whether the posting list is stored with a compression codec ('pfor').
 -- The high-cardinality token 'hello' is present in every row; with 200000 rows its posting list spans
 -- multiple roaring containers, so a small posting_list_block_size splits it into more than one block.
 
@@ -21,7 +21,7 @@ ENGINE = MergeTree ORDER BY tuple()
 SETTINGS
     text_index_dictionary_block_frontcoding_compression = 0, -- default 1 (front coding on)
     text_index_posting_list_block_size = 256,                -- default 1048576 (single block)
-    text_index_posting_list_codec = 'bitpacking';            -- default 'none' (uncompressed)
+    text_index_posting_list_codec = 'none';                  -- default 'pfor' (compressed)
 
 INSERT INTO t_text_settings SELECT 'hello world ' || toString(number) FROM numbers(200000);
 
@@ -41,7 +41,7 @@ ENGINE = MergeTree ORDER BY tuple()
 SETTINGS
     text_index_dictionary_block_frontcoding_compression = 1,
     text_index_posting_list_block_size = 1048576,
-    text_index_posting_list_codec = 'none';
+    text_index_posting_list_codec = 'pfor';
 
 INSERT INTO t_text_defaults SELECT 'hello world ' || toString(number) FROM numbers(200000);
 
@@ -59,12 +59,12 @@ CREATE TABLE t_text_override (s String, INDEX idx s TYPE text(
         tokenizer = 'splitByNonAlpha',
         dictionary_block_frontcoding_compression = 1,
         posting_list_block_size = 1048576,
-        posting_list_codec = 'none'))
+        posting_list_codec = 'pfor'))
 ENGINE = MergeTree ORDER BY tuple()
 SETTINGS
     text_index_dictionary_block_frontcoding_compression = 0,
     text_index_posting_list_block_size = 256,
-    text_index_posting_list_codec = 'bitpacking';
+    text_index_posting_list_codec = 'none';
 
 INSERT INTO t_text_override SELECT 'hello world ' || toString(number) FROM numbers(200000);
 
