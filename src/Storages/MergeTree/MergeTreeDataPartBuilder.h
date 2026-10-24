@@ -15,6 +15,8 @@ class IMergeTreeDataPart;
 class IVolume;
 class IDisk;
 class MergeTreeData;
+struct MergeTreeSettings;
+using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
 
 struct ProjectionDescription;
 using ProjectionDescriptionRawPtr = const ProjectionDescription *;
@@ -49,6 +51,11 @@ public:
     Self & withPartInfo(MergeTreePartInfo part_info_);
     Self & withParentPart(const IMergeTreeDataPart * parent_part_);
     Self & withProjection(ProjectionDescriptionRawPtr projection_);
+    /// The effective settings of the part (with a projection's `WITH SETTINGS` already applied).
+    /// A merge passes the snapshot it priced its memory reservation against, so the part it builds
+    /// (e.g. its mark layout) cannot observe a concurrent `ALTER ... MODIFY SETTING`. If not set, the
+    /// live table settings are used.
+    Self & withSettings(MergeTreeSettingsPtr settings_);
     Self & withPartType(MergeTreeDataPartType part_type_);
     Self & withPartStorageType(MergeTreeDataPartStorageType storage_type_);
     Self & withPartFormat(MergeTreeDataPartFormat format_);
@@ -86,6 +93,7 @@ private:
     MutableDataPartStoragePtr part_storage;
     const IMergeTreeDataPart * parent_part = nullptr;
     ProjectionDescriptionRawPtr projection = nullptr;
+    MergeTreeSettingsPtr settings;
 
     const PartDirIntent intent;
     const ReadSettings read_settings;

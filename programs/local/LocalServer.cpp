@@ -6,6 +6,7 @@
 #include <Common/Config/getConfigPath.h>
 #include <Common/Config/getLocalConfigPath.h>
 #include <Common/CurrentMemoryTracker.h>
+#include <Common/MemoryTracker.h>
 #include <Common/PerCPUMemory.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
@@ -118,6 +119,7 @@ namespace fs = std::filesystem;
 namespace CurrentMetrics
 {
     extern const Metric MemoryTracking;
+    extern const Metric MergesMutationsMemoryTracking;
 }
 
 namespace ProfileEvents
@@ -217,6 +219,8 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_parts_cleaning_thread_pool_size;
     extern const ServerSettingsUInt64 max_server_memory_usage;
     extern const ServerSettingsDouble max_server_memory_usage_to_ram_ratio;
+    extern const ServerSettingsUInt64 merges_mutations_memory_usage_soft_limit;
+    extern const ServerSettingsDouble merges_mutations_memory_usage_to_ram_ratio;
     extern const ServerSettingsUInt64 max_temporary_data_on_disk_size;
     extern const ServerSettingsUInt64 max_thread_pool_free_size;
     extern const ServerSettingsUInt64 max_thread_pool_size;
@@ -1618,6 +1622,45 @@ void LocalServer::processConfig()
 
     per_cpu_memory.setBudgetCapacity(server_settings[ServerSetting::max_per_cpu_untracked_memory]);
     per_cpu_memory.setThreadBuffer(server_settings[ServerSetting::per_cpu_untracked_memory_thread_buffer]);
+
+    /// An explicitly configured merges/mutations memory limit takes effect the same way as in the server:
+    /// it gates selection of background merges (canEnqueueBackgroundTask) and bounds their up-front memory
+    /// reservations (MergeMemoryReservation). A non-zero `merges_mutations_memory_usage_soft_limit` is
+    /// clamped by the ram ratio, and a zero one is derived from the ram ratio - but, unlike the server, only
+    /// when `merges_mutations_memory_usage_to_ram_ratio` is set explicitly: plain `clickhouse-local`
+    /// historically runs its background merges ungated, and only an explicit setting opts into the gate.
+    size_t merges_mutations_memory_usage_soft_limit = server_settings[ServerSetting::merges_mutations_memory_usage_soft_limit];
+    const bool merges_mutations_ratio_is_explicit = config().has("merges_mutations_memory_usage_to_ram_ratio");
+    if (merges_mutations_memory_usage_soft_limit != 0 || merges_mutations_ratio_is_explicit)
+    {
+        const double merges_mutations_memory_usage_to_ram_ratio = server_settings[ServerSetting::merges_mutations_memory_usage_to_ram_ratio];
+        const size_t default_merges_mutations_server_memory_usage
+            = static_cast<size_t>(static_cast<double>(physical_server_memory) * merges_mutations_memory_usage_to_ram_ratio);
+        if (merges_mutations_memory_usage_soft_limit == 0)
+        {
+            merges_mutations_memory_usage_soft_limit = default_merges_mutations_server_memory_usage;
+            LOG_INFO(log, "Setting 'merges_mutations_memory_usage_soft_limit' was set to {}"
+                " ({} available * {:.2f} merges_mutations_memory_usage_to_ram_ratio)",
+                formatReadableSizeWithBinarySuffix(merges_mutations_memory_usage_soft_limit),
+                formatReadableSizeWithBinarySuffix(physical_server_memory),
+                merges_mutations_memory_usage_to_ram_ratio);
+        }
+        else if (merges_mutations_memory_usage_soft_limit > default_merges_mutations_server_memory_usage)
+        {
+            merges_mutations_memory_usage_soft_limit = default_merges_mutations_server_memory_usage;
+            LOG_WARNING(log, "Lowered setting 'merges_mutations_memory_usage_soft_limit' to {}"
+                " ({} available * {:.2f} merges_mutations_memory_usage_to_ram_ratio)",
+                formatReadableSizeWithBinarySuffix(merges_mutations_memory_usage_soft_limit),
+                formatReadableSizeWithBinarySuffix(physical_server_memory),
+                merges_mutations_memory_usage_to_ram_ratio);
+        }
+
+        LOG_INFO(log, "Merges and mutations memory limit is set to {}",
+            formatReadableSizeWithBinarySuffix(merges_mutations_memory_usage_soft_limit));
+        background_memory_tracker.setSoftLimit(merges_mutations_memory_usage_soft_limit);
+        background_memory_tracker.setDescription("(background)");
+        background_memory_tracker.setMetric(CurrentMetrics::MergesMutationsMemoryTracking);
+    }
 
     size_t page_cache_min_size = server_settings[ServerSetting::page_cache_min_size];
     size_t page_cache_max_size = server_settings[ServerSetting::page_cache_max_size];
