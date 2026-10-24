@@ -1,0 +1,4 @@
+direct read:	200
+no direct read:	200
+direct read with other columns:	201	199001
+no direct read with other columns:	201	199001

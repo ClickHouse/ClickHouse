@@ -11,16 +11,24 @@ namespace DB
 
 struct MergeTreeReaderSettings;
 class IMergeTreeDataPartInfoForReader;
+struct IMergeTreeIndex;
 
 NameSet injectRequiredColumns(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,
+    const IndexReadTasks & index_read_tasks,
     bool with_subcolumns,
     Names & columns);
 
 /// Whether the virtual columns of a text index can be read from the index in a part (direct read).
-/// Otherwise they are computed by their default expressions.
-bool canReadTextIndexInPart(const AlterConversionsPtr & alter_conversions);
+/// Otherwise they are computed by their default expressions from the column data.
+///
+/// The decision has to be made at two places, and they must agree: `injectRequiredColumns` decides
+/// whether to read the columns that the default expressions depend on, and
+/// `MergeTreeReadTask::createReaders` decides whether to create the index reader for the step.
+/// If the former assumes a direct read and the latter does not, the main reader has to evaluate
+/// the default expressions on a block that does not contain the columns they refer to.
+bool canReadTextIndexInPart(const IMergeTreeIndex & index, const IMergeTreeDataPartInfoForReader & part_info);
 
 PrewhereExprStepPtr createLightweightDeleteStep(bool remove_filter_column);
 
