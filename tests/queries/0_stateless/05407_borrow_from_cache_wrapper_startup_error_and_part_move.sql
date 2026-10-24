@@ -40,7 +40,7 @@ SETTINGS disk = disk(
     disk = '05407_borrowed_disk',
     name = '05407_wrapper',
     path = '05407_wrapper_cache/',
-    max_size = '10Mi',
+    max_size = '100Mi',
     load_metadata_asynchronously = 0
 ); -- { serverError FAULT_INJECTED }
 SYSTEM DISABLE FAILPOINT disk_object_storage_fail_commit_metadata_transaction;
