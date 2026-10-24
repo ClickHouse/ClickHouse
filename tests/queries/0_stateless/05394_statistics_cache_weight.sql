@@ -7,6 +7,7 @@
 -- state lives in an arena with a 4 KiB chunk. The `basic` statistics have no arena, but the entry retains the ASTs
 -- of their descriptions: one in the description of the column statistics and one in the statistics object.
 
+SET min_marks_to_use_statistics = 0;
 SET use_statistics = 1;
 SET materialize_statistics_on_insert = 1;
 -- The statistics are loaded to reorder the PREWHERE conditions.

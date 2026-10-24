@@ -6,6 +6,7 @@ SET enable_join_runtime_filters = 0;
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0; -- Disable automatic spilling for this test
 SET optimize_move_to_prewhere = 1;
 SET use_statistics_for_part_pruning = 1, materialize_statistics_on_insert = 1;
+SET min_marks_to_use_statistics = 0;
 SET query_plan_convert_any_join_to_semi_or_anti_join = 1; -- CI may inject False, preventing LEFT/RIGHT ANY → SEMI conversion that this test validates
 
 -- Pin min/max statistics so randomized statistics types do not change the asserted plans.

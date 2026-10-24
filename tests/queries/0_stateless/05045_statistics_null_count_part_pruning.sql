@@ -1,6 +1,7 @@
 -- Test NULL count from `Basic` statistics: part pruning with `IS NULL` / `IS NOT NULL`
 -- and tightened min/max ranges on Nullable columns.
 
+SET min_marks_to_use_statistics = 0;
 SET allow_statistics = 1;
 SET use_statistics_for_part_pruning = 1;
 SET optimize_functions_to_subcolumns = 1;

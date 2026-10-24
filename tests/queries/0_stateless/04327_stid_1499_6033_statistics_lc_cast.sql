@@ -1,3 +1,4 @@
+SET min_marks_to_use_statistics = 0;
 SET allow_suspicious_low_cardinality_types = 1;
 SET allow_experimental_statistics = 1;
 SET materialize_statistics_on_insert = 1;

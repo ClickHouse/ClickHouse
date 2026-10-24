@@ -5,6 +5,8 @@
 --
 -- Tags: no-fasttest
 
+SET min_marks_to_use_statistics = 0;
+
 DROP TABLE IF EXISTS test_prewhere_decimal_overflow;
 
 CREATE TABLE test_prewhere_decimal_overflow

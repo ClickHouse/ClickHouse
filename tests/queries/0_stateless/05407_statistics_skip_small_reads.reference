@@ -1,0 +1,24 @@
+-- the primary key leaves two marks of two parts: no statistics
+1
+0
+-- the same read with the threshold disabled: statistics are used
+1
+1
+-- the small read again: the statistics loaded by the previous query are used
+1
+1
+-- a large read: statistics are used
+5000
+1
+-- the same read without statistics
+5000
+05407_query_large	1
+05407_query_small	0
+05407_query_small_no_threshold	1
+-- row limits apply to the parts left after pruning by statistics
+45
+45
+-- parts pruned by statistics in memory do not load the primary index
+0
+0
+0	0

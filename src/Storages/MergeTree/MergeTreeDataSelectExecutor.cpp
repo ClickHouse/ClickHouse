@@ -220,6 +220,53 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
 }
 
 
+bool MergeTreeDataSelectExecutor::hasFewerMarksToReadThan(
+    const RangesInDataParts & parts,
+    const StorageMetadataPtr & metadata_snapshot,
+    const ConditionTemplate<KeyCondition>::Ptr & key_condition,
+    size_t limit,
+    const Settings & settings,
+    LoggerPtr log)
+{
+    if (limit == 0)
+        return false;
+
+    if (parts.getMarksCountAllParts() < limit)
+        return true;
+
+    if (!metadata_snapshot->hasPrimaryKey() || !key_condition || key_condition->generateUnsubstituted().alwaysUnknownOrTrue())
+        return false;
+
+    std::vector<std::optional<size_t>> pk_to_minmax_slot;
+    if (settings[Setting::use_partition_minmax_for_primary_key_pruning] && !parts.empty())
+        pk_to_minmax_slot = buildPrimaryKeyToMinMaxSlotMapping(metadata_snapshot, parts.front().data_part->storage.getSettings());
+    const auto * pk_to_minmax_slot_ptr = pk_to_minmax_slot.empty() ? nullptr : &pk_to_minmax_slot;
+
+    /// Bound the analysis of each part by a small number of steps of the generic exclusion search. The ranges
+    /// left unanalyzed are accepted as a whole, so the number of marks is an upper bound, and an inconclusive
+    /// probe chooses to use statistics, which is what the read did before this check existed.
+    static constexpr UInt64 max_steps_per_part = 256;
+    Settings probe_settings = settings;
+    const UInt64 user_max_steps = settings[Setting::merge_tree_generic_exclusion_search_max_steps];
+    probe_settings[Setting::merge_tree_generic_exclusion_search_max_steps]
+        = user_max_steps ? std::min(user_max_steps, max_steps_per_part) : max_steps_per_part;
+
+    /// Stop as soon as the limit is reached, so a large read costs the analysis of a few parts only.
+    size_t marks = 0;
+    for (const auto & part : parts)
+    {
+        marks += markRangesFromPKRange(
+            part, metadata_snapshot, key_condition->generateForPart(part.data_part), nullptr, nullptr,
+            /*exact_ranges=*/nullptr, pk_to_minmax_slot_ptr, probe_settings, log).getNumberOfMarks();
+
+        if (marks >= limit)
+            return false;
+    }
+
+    return true;
+}
+
+
 using RelativeSize = boost::rational<ASTSampleRatio::BigNum>;
 
 static std::string toString(const RelativeSize & x)
@@ -696,17 +743,14 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterParts(
     const ReadFromMergeTree::Indexes & indexes,
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeData & data,
-    const SelectQueryInfo & query_info,
-    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
     const ContextPtr & context,
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
     LoggerPtr log,
     ReadFromMergeTree::IndexStats & index_stats)
 {
-    auto res = filterPartsByPartition(
+    return filterPartsByPartition(
         parts, indexes.partition_pruner, indexes.minmax_idx_condition, indexes.part_values,
         metadata_snapshot, data, context, max_block_numbers_to_read, log, index_stats);
-    return filterPartsByStatistics(res, metadata_snapshot, query_info, mutations_snapshot, context, log, index_stats);
 }
 
 RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
@@ -830,6 +874,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
     const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+    const ConditionTemplate<KeyCondition>::Ptr & key_condition,
+    size_t min_marks_to_use_statistics,
     const ContextPtr & context,
     LoggerPtr log,
     ReadFromMergeTree::IndexStats & index_stats)
@@ -866,9 +912,25 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     if (statistics_pruner.isUseless())
         return parts;
 
+    const NameSet required_columns = statistics_pruner.getRequiredColumns();
+
+    /// Statistics that are already in memory cost nothing, so the read is bounded only if they would be loaded.
+    auto statistics_in_memory = [&]
+    {
+        return std::ranges::all_of(
+            parts, [&](const RangesInDataPart & part) { return part.data_part->areEstimatesInMemory(required_columns); });
+    };
+
+    if (min_marks_to_use_statistics && !statistics_in_memory()
+        && hasFewerMarksToReadThan(parts, metadata_snapshot, key_condition, min_marks_to_use_statistics, settings, log))
+    {
+        LOG_TRACE(log, "Not pruning parts by statistics, because fewer than {} marks are left to read by the primary key",
+            min_marks_to_use_statistics);
+        return parts;
+    }
+
     RangesInDataParts res_parts;
     size_t total_parts_before = parts.size();
-    const NameSet required_columns = statistics_pruner.getRequiredColumns();
 
     for (const auto & part : parts)
     {
@@ -894,9 +956,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     {
         size_t total_granules_after = 0;
         for (const auto & part : res_parts)
-        {
-            total_granules_after += part.data_part->index_granularity->getMarksCountWithoutFinal();
-        }
+            total_granules_after += part.getMarksCount();
 
         index_stats.emplace_back(ReadFromMergeTree::IndexStat{
             .type = ReadFromMergeTree::IndexType::Statistics,

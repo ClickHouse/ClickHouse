@@ -9,6 +9,9 @@
 SET parallel_replicas_local_plan = 1;
 SET explain_query_plan_default = 'legacy';
 
+-- The tables are small, so use statistics regardless of the size of the read.
+SET min_marks_to_use_statistics = 0;
+
 -- Statistics pruning reads the column min/max that a `basic` statistic holds, and the test runner
 -- randomizes both `auto_statistics_types` and `materialize_statistics_on_insert`. Pin them, otherwise a
 -- run without materialized `basic` statistics never reaches the statistics pruner and the

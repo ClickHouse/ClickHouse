@@ -1,3 +1,4 @@
+SET min_marks_to_use_statistics = 0;
 SET optimize_move_to_prewhere = 1;
 -- Statistics-load counts measure one local planner, without additional parallel-replica candidate plans.
 SET enable_parallel_replicas = 0;

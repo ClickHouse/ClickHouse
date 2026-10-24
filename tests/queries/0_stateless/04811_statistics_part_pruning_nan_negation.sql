@@ -3,6 +3,8 @@
 -- NaN, so the stored range excludes NaN; yet NaN sorts after +inf and satisfies negated predicates
 -- like NOT (f < c), f <> c and f NOT IN (...). The result with pruning on must match pruning off.
 
+SET min_marks_to_use_statistics = 0;
+
 DROP TABLE IF EXISTS t;
 
 -- `basic` statistics hold the column min/max the pruner reads; pin it because `auto_statistics_types` is randomized by clickhouse-test.

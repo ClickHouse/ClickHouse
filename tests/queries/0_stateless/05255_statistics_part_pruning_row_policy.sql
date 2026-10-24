@@ -12,6 +12,7 @@ DROP TABLE IF EXISTS payroll_merge;
 DROP TABLE IF EXISTS payroll_alias;
 DROP TABLE IF EXISTS payroll;
 
+SET min_marks_to_use_statistics = 0;
 SET use_statistics_for_part_pruning = 1;
 SET materialize_statistics_on_insert = 1;
 SET use_query_condition_cache = 0;

@@ -1,6 +1,7 @@
 -- Tests that a column TTL which empties a column does not leave a stale statistic for it behind:
 -- min()/max() and a filtered count() on that column must agree with the rows the table stores.
 
+SET min_marks_to_use_statistics = 0;
 SET mutations_sync = 2, alter_sync = 2, materialize_statistics_on_insert = 1;
 -- Pin every gate the two statistics consumers below depend on, so that neither a randomized draw
 -- nor a future default flip can disarm this test silently.

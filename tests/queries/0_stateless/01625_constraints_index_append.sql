@@ -1,5 +1,6 @@
 -- Tags: no-parallel, no-flaky-check
 -- CNF optimization uses QueryNodeHash to order conditions. We need fixed database.table.column identifier name to stabilize result
+SET min_marks_to_use_statistics = 0;
 SET explain_query_plan_default = 'legacy';
 SET use_statistics_for_part_pruning = 1, materialize_statistics_on_insert = 1;
 DROP DATABASE IF EXISTS db_memory_01625;

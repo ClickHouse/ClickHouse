@@ -8,7 +8,7 @@ readonly query_prefix=$CLICKHOUSE_DATABASE
 
 # The query runs on the replicas, so keep the local plan: the ProfileEvents this test asserts on
 # are only collected for the part of the query the coordinator runs itself.
-CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --parallel_replicas_local_plan 1 --use_statistics_for_part_pruning=0"
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --parallel_replicas_local_plan 1 --use_statistics_for_part_pruning=0 --min_marks_to_use_statistics=0"
 
 $CLICKHOUSE_CLIENT -n -q "
 DROP TABLE IF EXISTS t;
