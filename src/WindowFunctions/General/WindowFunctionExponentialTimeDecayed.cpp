@@ -1,10 +1,13 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <WindowFunctions/IWindowFunction.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Processors/Transforms/WindowTransform.h>
-#include <WindowFunctions/helpers.h>
+#include <WindowFunctions/Common/WindowArguments.h>
+#include <WindowFunctions/Common/WindowBounds.h>
+#include <WindowFunctions/IGeneralWindowFunction.h>
+#include <WindowFunctions/WindowFunction.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/assert_cast.h>
 
 #include <cmath>
 #include <limits>
@@ -21,388 +24,297 @@ namespace ErrorCodes
 namespace
 {
 
-struct ExponentialTimeDecayedSumState
+constexpr size_t ARGUMENT_VALUE = 0;
+constexpr size_t ARGUMENT_TIME = 1;
+
+struct DecayedSumState
 {
-    Float64 previous_time;
-    Float64 previous_sum;
+    Int64 covered_start = 0;
+    Int64 covered_end = 0;
+    Float64 previous_sum = 0;
+    Float64 previous_time = 0;
 };
 
-struct ExponentialTimeDecayedAvgState
+struct DecayedAvgState
 {
-    Float64 previous_time;
-    Float64 previous_sum;
-    Float64 previous_count;
+    Int64 covered_start = 0;
+    Int64 covered_end = 0;
+    Float64 previous_sum = 0;
+    Float64 previous_count = 0;
+    Float64 previous_time = 0;
 };
 
-struct WindowFunctionExponentialTimeDecayedSum final : public StatefulWindowFunction<ExponentialTimeDecayedSumState>
+Float64 getDecayLength(const Array & parameters, const String & name)
 {
-    static constexpr size_t ARGUMENT_VALUE = 0;
-    static constexpr size_t ARGUMENT_TIME = 1;
+    if (parameters.size() != 1)
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} takes exactly one parameter", name);
 
-    static Float64 getDecayLength(const Array & parameters_, const std::string & name_)
-    {
-        if (parameters_.size() != 1)
-        {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} takes exactly one parameter", name_);
-        }
-        return applyVisitor(FieldVisitorConvertToNumber<Float64>(), parameters_[0]);
-    }
+    return applyVisitor(FieldVisitorConvertToNumber<Float64>(), parameters[0]);
+}
 
-    WindowFunctionExponentialTimeDecayedSum(const std::string & name_,
-            const DataTypes & argument_types_, const Array & parameters_)
-        : StatefulWindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeFloat64>())
+void checkTimeArgument(const DataTypes & argument_types, size_t index)
+{
+    if (!isNumber(argument_types[index]) && !isDateTime(argument_types[index]) && !isDateTime64(argument_types[index]))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument {} must be DateTime, DateTime64 or a number, '{}' given", index, argument_types[index]->getName());
+}
+
+void checkValueAndTimeArguments(const String & name, const DataTypes & argument_types)
+{
+    if (argument_types.size() != 2)
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} takes exactly two arguments", name);
+
+    if (!isNumber(argument_types[ARGUMENT_VALUE]))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument {} must be a number, '{}' given", ARGUMENT_VALUE, argument_types[ARGUMENT_VALUE]->getName());
+
+    checkTimeArgument(argument_types, ARGUMENT_TIME);
+}
+
+Float64 argumentAt(const WindowArguments & arguments, size_t argument, Int64 row)
+{
+    return arguments.at(argument, row).getFloat64();
+}
+
+bool framesOverlap(Int64 covered_start, Int64 covered_end, Int64 start, Int64 end)
+{
+    return covered_start <= start && start < covered_end && covered_end <= end;
+}
+
+class WindowFunctionExponentialTimeDecayedSum final : public IGeneralWindowFunction
+{
+public:
+    WindowFunctionExponentialTimeDecayedSum(const String & name_, const DataTypes & argument_types_, const Array & parameters_)
+        : IGeneralWindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeFloat64>())
         , decay_length(getDecayLength(parameters_, name_))
     {
-        if (argument_types.size() != 2)
-        {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} takes exactly two arguments", name_);
-        }
-
-        if (!isNumber(argument_types[ARGUMENT_VALUE]))
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Argument {} must be a number, '{}' given",
-                ARGUMENT_VALUE,
-                argument_types[ARGUMENT_VALUE]->getName());
-        }
-
-        if (!isNumber(argument_types[ARGUMENT_TIME]) && !isDateTime(argument_types[ARGUMENT_TIME]) && !isDateTime64(argument_types[ARGUMENT_TIME]))
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Argument {} must be DateTime, DateTime64 or a number, '{}' given",
-                ARGUMENT_TIME,
-                argument_types[ARGUMENT_TIME]->getName());
-        }
+        checkValueAndTimeArguments(name_, argument_types);
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
-
-    void windowInsertResultInto(const WindowTransform * transform,
-        size_t function_index) const override
+    WindowFunctionRequirements getRequirements(const WindowDescription &) const override
     {
-        const auto & workspace = transform->workspaces[function_index];
-        auto & state = getState(workspace);
-
-        Float64 result = 0;
-
-        if (transform->frame.bounds().start.location < transform->frame.bounds().end.location)
-        {
-            RowNumber frame_back = transform->blocks.prev(transform->frame.bounds().end.location);
-            Float64 back_t = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_TIME, frame_back);
-
-            if (transform->prev_frame.start.location <= transform->frame.bounds().start.location
-                && transform->frame.bounds().start.location < transform->prev_frame.end.location
-                && transform->prev_frame.end.location <= transform->frame.bounds().end.location)
-            {
-                for (RowNumber i = transform->prev_frame.start.location; i < transform->frame.bounds().start.location; i = transform->blocks.next(i))
-                {
-                    Float64 prev_val = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_VALUE, i);
-                    Float64 prev_t = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_TIME, i);
-                    result -= std::exp((prev_t - back_t) / decay_length) * prev_val;
-                }
-                result += std::exp((state.previous_time - back_t) / decay_length) * state.previous_sum;
-                for (RowNumber i = transform->prev_frame.end.location; i < transform->frame.bounds().end.location; i = transform->blocks.next(i))
-                {
-                    Float64 prev_val = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_VALUE, i);
-                    Float64 prev_t = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_TIME, i);
-                    result += std::exp((prev_t - back_t) / decay_length) * prev_val;
-                }
-            }
-            else
-            {
-                for (RowNumber i = transform->frame.bounds().start.location; i < transform->frame.bounds().end.location; i = transform->blocks.next(i))
-                {
-                    Float64 prev_val = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_VALUE, i);
-                    Float64 prev_t = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_TIME, i);
-                    result += std::exp((prev_t - back_t) / decay_length) * prev_val;
-                }
-            }
-
-            state.previous_sum = result;
-            state.previous_time = back_t;
-        }
-
-        WindowRowAccess::insertResultFloat64(transform, function_index, result);
+        return WindowFunctionRequirements{.frame = true};
     }
 
-    private:
-        const Float64 decay_length;
+    size_t sizeOfState() const override { return sizeof(DecayedSumState); }
+    size_t alignOfState() const override { return alignof(DecayedSumState); }
+    void createState(char * place) const override { new (place) DecayedSumState(); }
+    void resetPartition(char * place) const override { new (place) DecayedSumState(); }
+
+    void evaluate(char * place, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
+    {
+        DecayedSumState & state = *reinterpret_cast<DecayedSumState *>(place);
+        auto & data = assert_cast<ColumnFloat64 &>(result).getData();
+        for (size_t i = 0; i < bounds.rows; ++i)
+        {
+            const Int64 start = bounds.frame_start[i];
+            const Int64 end = bounds.frame_end[i];
+            Float64 sum = 0;
+            if (start < end)
+            {
+                const Float64 back_time = argumentAt(arguments, ARGUMENT_TIME, end - 1);
+                if (framesOverlap(state.covered_start, state.covered_end, start, end))
+                {
+                    for (Int64 row = state.covered_start; row < start; ++row)
+                        sum -= std::exp((argumentAt(arguments, ARGUMENT_TIME, row) - back_time) / decay_length) * argumentAt(arguments, ARGUMENT_VALUE, row);
+                    sum += std::exp((state.previous_time - back_time) / decay_length) * state.previous_sum;
+                    for (Int64 row = state.covered_end; row < end; ++row)
+                        sum += std::exp((argumentAt(arguments, ARGUMENT_TIME, row) - back_time) / decay_length) * argumentAt(arguments, ARGUMENT_VALUE, row);
+                }
+                else
+                {
+                    for (Int64 row = start; row < end; ++row)
+                        sum += std::exp((argumentAt(arguments, ARGUMENT_TIME, row) - back_time) / decay_length) * argumentAt(arguments, ARGUMENT_VALUE, row);
+                }
+                state.previous_sum = sum;
+                state.previous_time = back_time;
+            }
+            state.covered_start = start;
+            state.covered_end = end;
+            data.push_back(sum);
+        }
+    }
+
+private:
+    const Float64 decay_length;
 };
 
-struct WindowFunctionExponentialTimeDecayedMax final : public StatelessWindowFunction
+class WindowFunctionExponentialTimeDecayedMax final : public IGeneralWindowFunction
 {
-    static constexpr size_t ARGUMENT_VALUE = 0;
-    static constexpr size_t ARGUMENT_TIME = 1;
-
-    static Float64 getDecayLength(const Array & parameters_, const std::string & name_)
-    {
-        if (parameters_.size() != 1)
-        {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} takes exactly one parameter", name_);
-        }
-        return applyVisitor(FieldVisitorConvertToNumber<Float64>(), parameters_[0]);
-    }
-
-    WindowFunctionExponentialTimeDecayedMax(const std::string & name_, const DataTypes & argument_types_, const Array & parameters_)
-        : StatelessWindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeFloat64>())
+public:
+    WindowFunctionExponentialTimeDecayedMax(const String & name_, const DataTypes & argument_types_, const Array & parameters_)
+        : IGeneralWindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeFloat64>())
         , decay_length(getDecayLength(parameters_, name_))
     {
-        if (argument_types.size() != 2)
-        {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} takes exactly two arguments", name_);
-        }
-
-        if (!isNumber(argument_types[ARGUMENT_VALUE]))
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Argument {} must be a number, '{}' given",
-                ARGUMENT_VALUE,
-                argument_types[ARGUMENT_VALUE]->getName());
-        }
-
-        if (!isNumber(argument_types[ARGUMENT_TIME]) && !isDateTime(argument_types[ARGUMENT_TIME]) && !isDateTime64(argument_types[ARGUMENT_TIME]))
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Argument {} must be DateTime, DateTime64 or a number, '{}' given",
-                ARGUMENT_TIME,
-                argument_types[ARGUMENT_TIME]->getName());
-        }
+        checkValueAndTimeArguments(name_, argument_types);
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
-
-    void windowInsertResultInto(const WindowTransform * transform,
-        size_t function_index) const override
+    WindowFunctionRequirements getRequirements(const WindowDescription &) const override
     {
-        Float64 result = std::numeric_limits<Float64>::quiet_NaN();
+        return WindowFunctionRequirements{.frame = true};
+    }
 
-        if (transform->frame.bounds().start.location < transform->frame.bounds().end.location)
+    void evaluate(char *, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
+    {
+        auto & data = assert_cast<ColumnFloat64 &>(result).getData();
+        for (size_t i = 0; i < bounds.rows; ++i)
         {
-            result = std::numeric_limits<Float64>::lowest();
-            RowNumber frame_back = transform->blocks.prev(transform->frame.bounds().end.location);
-            Float64 back_t = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_TIME, frame_back);
-
-            for (RowNumber i = transform->frame.bounds().start.location; i < transform->frame.bounds().end.location; i = transform->blocks.next(i))
+            const Int64 start = bounds.frame_start[i];
+            const Int64 end = bounds.frame_end[i];
+            Float64 max = std::numeric_limits<Float64>::quiet_NaN();
+            if (start < end)
             {
-                Float64 value = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_VALUE, i);
-                Float64 t = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_TIME, i);
-
-                /// Avoiding extra calls to `exp` and multiplications.
-                if (value > result || t > back_t || result < 0)
+                max = std::numeric_limits<Float64>::lowest();
+                const Float64 back_time = argumentAt(arguments, ARGUMENT_TIME, end - 1);
+                for (Int64 row = start; row < end; ++row)
                 {
-                    result = std::max(std::exp((t - back_t) / decay_length) * value, result);
+                    const Float64 value = argumentAt(arguments, ARGUMENT_VALUE, row);
+                    const Float64 time = argumentAt(arguments, ARGUMENT_TIME, row);
+                    if (value > max || time > back_time || max < 0)
+                        max = std::max(std::exp((time - back_time) / decay_length) * value, max);
                 }
             }
+            data.push_back(max);
         }
-
-        WindowRowAccess::insertResultFloat64(transform, function_index, result);
     }
 
-    private:
-        const Float64 decay_length;
+private:
+    const Float64 decay_length;
 };
 
-struct WindowFunctionExponentialTimeDecayedCount final : public StatefulWindowFunction<ExponentialTimeDecayedSumState>
+class WindowFunctionExponentialTimeDecayedCount final : public IGeneralWindowFunction
 {
-    static constexpr size_t ARGUMENT_TIME = 0;
-
-    static Float64 getDecayLength(const Array & parameters_, const std::string & name_)
-    {
-        if (parameters_.size() != 1)
-        {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} takes exactly one parameter", name_);
-        }
-        return applyVisitor(FieldVisitorConvertToNumber<Float64>(), parameters_[0]);
-    }
-
-    WindowFunctionExponentialTimeDecayedCount(const std::string & name_,
-            const DataTypes & argument_types_, const Array & parameters_)
-        : StatefulWindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeFloat64>())
+public:
+    WindowFunctionExponentialTimeDecayedCount(const String & name_, const DataTypes & argument_types_, const Array & parameters_)
+        : IGeneralWindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeFloat64>())
         , decay_length(getDecayLength(parameters_, name_))
     {
         if (argument_types.size() != 1)
-        {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} takes exactly one argument", name_);
-        }
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} takes exactly one argument", name_);
 
-        if (!isNumber(argument_types[ARGUMENT_TIME]) && !isDateTime(argument_types[ARGUMENT_TIME]) && !isDateTime64(argument_types[ARGUMENT_TIME]))
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Argument {} must be DateTime, DateTime64 or a number, '{}' given",
-                ARGUMENT_TIME,
-                argument_types[ARGUMENT_TIME]->getName());
-        }
+        checkTimeArgument(argument_types, 0);
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
-
-    void windowInsertResultInto(const WindowTransform * transform,
-        size_t function_index) const override
+    WindowFunctionRequirements getRequirements(const WindowDescription &) const override
     {
-        const auto & workspace = transform->workspaces[function_index];
-        auto & state = getState(workspace);
-
-        Float64 result = 0;
-
-        if (transform->frame.bounds().start.location < transform->frame.bounds().end.location)
-        {
-            RowNumber frame_back = transform->blocks.prev(transform->frame.bounds().end.location);
-            Float64 back_t = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_TIME, frame_back);
-
-            if (transform->prev_frame.start.location <= transform->frame.bounds().start.location
-                && transform->frame.bounds().start.location < transform->prev_frame.end.location
-                && transform->prev_frame.end.location <= transform->frame.bounds().end.location)
-            {
-                for (RowNumber i = transform->prev_frame.start.location; i < transform->frame.bounds().start.location; i = transform->blocks.next(i))
-                {
-                    Float64 prev_t = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_TIME, i);
-                    result -= std::exp((prev_t - back_t) / decay_length);
-                }
-                result += std::exp((state.previous_time - back_t) / decay_length) * state.previous_sum;
-                for (RowNumber i = transform->prev_frame.end.location; i < transform->frame.bounds().end.location; i = transform->blocks.next(i))
-                {
-                    Float64 prev_t = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_TIME, i);
-                    result += std::exp((prev_t - back_t) / decay_length);
-                }
-            }
-            else
-            {
-                for (RowNumber i = transform->frame.bounds().start.location; i < transform->frame.bounds().end.location; i = transform->blocks.next(i))
-                {
-                    Float64 prev_t = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_TIME, i);
-                    result += std::exp((prev_t - back_t) / decay_length);
-                }
-            }
-
-            state.previous_sum = result;
-            state.previous_time = back_t;
-        }
-
-        WindowRowAccess::insertResultFloat64(transform, function_index, result);
+        return WindowFunctionRequirements{.frame = true};
     }
 
-    private:
-        const Float64 decay_length;
+    size_t sizeOfState() const override { return sizeof(DecayedSumState); }
+    size_t alignOfState() const override { return alignof(DecayedSumState); }
+    void createState(char * place) const override { new (place) DecayedSumState(); }
+    void resetPartition(char * place) const override { new (place) DecayedSumState(); }
+
+    void evaluate(char * place, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
+    {
+        DecayedSumState & state = *reinterpret_cast<DecayedSumState *>(place);
+        auto & data = assert_cast<ColumnFloat64 &>(result).getData();
+        for (size_t i = 0; i < bounds.rows; ++i)
+        {
+            const Int64 start = bounds.frame_start[i];
+            const Int64 end = bounds.frame_end[i];
+            Float64 count = 0;
+            if (start < end)
+            {
+                const Float64 back_time = argumentAt(arguments, 0, end - 1);
+                if (framesOverlap(state.covered_start, state.covered_end, start, end))
+                {
+                    for (Int64 row = state.covered_start; row < start; ++row)
+                        count -= std::exp((argumentAt(arguments, 0, row) - back_time) / decay_length);
+                    count += std::exp((state.previous_time - back_time) / decay_length) * state.previous_sum;
+                    for (Int64 row = state.covered_end; row < end; ++row)
+                        count += std::exp((argumentAt(arguments, 0, row) - back_time) / decay_length);
+                }
+                else
+                {
+                    for (Int64 row = start; row < end; ++row)
+                        count += std::exp((argumentAt(arguments, 0, row) - back_time) / decay_length);
+                }
+                state.previous_sum = count;
+                state.previous_time = back_time;
+            }
+            state.covered_start = start;
+            state.covered_end = end;
+            data.push_back(count);
+        }
+    }
+
+private:
+    const Float64 decay_length;
 };
 
-struct WindowFunctionExponentialTimeDecayedAvg final : public StatefulWindowFunction<ExponentialTimeDecayedAvgState>
+class WindowFunctionExponentialTimeDecayedAvg final : public IGeneralWindowFunction
 {
-    static constexpr size_t ARGUMENT_VALUE = 0;
-    static constexpr size_t ARGUMENT_TIME = 1;
-
-    static Float64 getDecayLength(const Array & parameters_, const std::string & name_)
-    {
-        if (parameters_.size() != 1)
-        {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} takes exactly one parameter", name_);
-        }
-        return applyVisitor(FieldVisitorConvertToNumber<Float64>(), parameters_[0]);
-    }
-
-    WindowFunctionExponentialTimeDecayedAvg(const std::string & name_,
-            const DataTypes & argument_types_, const Array & parameters_)
-        : StatefulWindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeFloat64>())
+public:
+    WindowFunctionExponentialTimeDecayedAvg(const String & name_, const DataTypes & argument_types_, const Array & parameters_)
+        : IGeneralWindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeFloat64>())
         , decay_length(getDecayLength(parameters_, name_))
     {
-        if (argument_types.size() != 2)
-        {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} takes exactly two arguments", name_);
-        }
-
-        if (!isNumber(argument_types[ARGUMENT_VALUE]))
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Argument {} must be a number, '{}' given",
-                ARGUMENT_VALUE,
-                argument_types[ARGUMENT_VALUE]->getName());
-        }
-
-        if (!isNumber(argument_types[ARGUMENT_TIME]) && !isDateTime(argument_types[ARGUMENT_TIME]) && !isDateTime64(argument_types[ARGUMENT_TIME]))
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Argument {} must be DateTime, DateTime64 or a number, '{}' given",
-                ARGUMENT_TIME,
-                argument_types[ARGUMENT_TIME]->getName());
-        }
+        checkValueAndTimeArguments(name_, argument_types);
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
-
-    void windowInsertResultInto(const WindowTransform * transform,
-        size_t function_index) const override
+    WindowFunctionRequirements getRequirements(const WindowDescription &) const override
     {
-        const auto & workspace = transform->workspaces[function_index];
-        auto & state = getState(workspace);
+        return WindowFunctionRequirements{.frame = true};
+    }
 
-        Float64 count = 0;
-        Float64 sum = 0;
-        Float64 result = std::numeric_limits<Float64>::quiet_NaN();
+    size_t sizeOfState() const override { return sizeof(DecayedAvgState); }
+    size_t alignOfState() const override { return alignof(DecayedAvgState); }
+    void createState(char * place) const override { new (place) DecayedAvgState(); }
+    void resetPartition(char * place) const override { new (place) DecayedAvgState(); }
 
-        if (transform->frame.bounds().start.location < transform->frame.bounds().end.location)
+    void evaluate(char * place, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
+    {
+        DecayedAvgState & state = *reinterpret_cast<DecayedAvgState *>(place);
+        auto & data = assert_cast<ColumnFloat64 &>(result).getData();
+        for (size_t i = 0; i < bounds.rows; ++i)
         {
-            RowNumber frame_back = transform->blocks.prev(transform->frame.bounds().end.location);
-            Float64 back_t = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_TIME, frame_back);
-
-            if (transform->prev_frame.start.location <= transform->frame.bounds().start.location
-                && transform->frame.bounds().start.location < transform->prev_frame.end.location
-                && transform->prev_frame.end.location <= transform->frame.bounds().end.location)
+            const Int64 start = bounds.frame_start[i];
+            const Int64 end = bounds.frame_end[i];
+            Float64 avg = std::numeric_limits<Float64>::quiet_NaN();
+            if (start < end)
             {
-                for (RowNumber i = transform->prev_frame.start.location; i < transform->frame.bounds().start.location; i = transform->blocks.next(i))
+                Float64 sum = 0;
+                Float64 count = 0;
+                const Float64 back_time = argumentAt(arguments, ARGUMENT_TIME, end - 1);
+                if (framesOverlap(state.covered_start, state.covered_end, start, end))
                 {
-                    Float64 prev_val = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_VALUE, i);
-                    Float64 prev_t = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_TIME, i);
-                    Float64 decay = std::exp((prev_t - back_t) / decay_length);
-                    sum -= decay * prev_val;
-                    count -= decay;
-                }
-
-                {
-                    Float64 decay = std::exp((state.previous_time - back_t) / decay_length);
+                    for (Int64 row = state.covered_start; row < start; ++row)
+                    {
+                        const Float64 decay = std::exp((argumentAt(arguments, ARGUMENT_TIME, row) - back_time) / decay_length);
+                        sum -= decay * argumentAt(arguments, ARGUMENT_VALUE, row);
+                        count -= decay;
+                    }
+                    const Float64 decay = std::exp((state.previous_time - back_time) / decay_length);
                     sum += decay * state.previous_sum;
                     count += decay * state.previous_count;
+                    for (Int64 row = state.covered_end; row < end; ++row)
+                    {
+                        const Float64 row_decay = std::exp((argumentAt(arguments, ARGUMENT_TIME, row) - back_time) / decay_length);
+                        sum += row_decay * argumentAt(arguments, ARGUMENT_VALUE, row);
+                        count += row_decay;
+                    }
                 }
-
-                for (RowNumber i = transform->prev_frame.end.location; i < transform->frame.bounds().end.location; i = transform->blocks.next(i))
+                else
                 {
-                    Float64 prev_val = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_VALUE, i);
-                    Float64 prev_t = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_TIME, i);
-                    Float64 decay = std::exp((prev_t - back_t) / decay_length);
-                    sum += decay * prev_val;
-                    count += decay;
+                    for (Int64 row = start; row < end; ++row)
+                    {
+                        const Float64 decay = std::exp((argumentAt(arguments, ARGUMENT_TIME, row) - back_time) / decay_length);
+                        sum += decay * argumentAt(arguments, ARGUMENT_VALUE, row);
+                        count += decay;
+                    }
                 }
+                state.previous_sum = sum;
+                state.previous_count = count;
+                state.previous_time = back_time;
+                avg = sum / count;
             }
-            else
-            {
-                for (RowNumber i = transform->frame.bounds().start.location; i < transform->frame.bounds().end.location; i = transform->blocks.next(i))
-                {
-                    Float64 prev_val = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_VALUE, i);
-                    Float64 prev_t = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_TIME, i);
-                    Float64 decay = std::exp((prev_t - back_t) / decay_length);
-                    sum += decay * prev_val;
-                    count += decay;
-                }
-            }
-
-            state.previous_sum = sum;
-            state.previous_count = count;
-            state.previous_time = back_t;
-
-            result = sum/count;
+            state.covered_start = start;
+            state.covered_end = end;
+            data.push_back(avg);
         }
-
-        WindowRowAccess::insertResultFloat64(transform, function_index, result);
     }
 
-    private:
-        const Float64 decay_length;
+private:
+    const Float64 decay_length;
 };
 
 }
@@ -502,8 +414,7 @@ FROM
     factory.registerFunction("exponentialTimeDecayedSum", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
-            return std::make_shared<WindowFunctionExponentialTimeDecayedSum>(
-                name, argument_types, parameters);
+            return std::make_shared<WindowFunction>(std::make_shared<WindowFunctionExponentialTimeDecayedSum>(name, argument_types, parameters));
         }, exponentialTimeDecayedSum_documentation, properties});
 
     FunctionDocumentation::Description exponentialTimeDecayedMax_description = R"(
@@ -598,8 +509,7 @@ FROM
     factory.registerFunction("exponentialTimeDecayedMax", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
-            return std::make_shared<WindowFunctionExponentialTimeDecayedMax>(
-                name, argument_types, parameters);
+            return std::make_shared<WindowFunction>(std::make_shared<WindowFunctionExponentialTimeDecayedMax>(name, argument_types, parameters));
         }, exponentialTimeDecayedMax_documentation, properties});
 
     FunctionDocumentation::Description exponentialTimeDecayedCount_description = R"(
@@ -693,8 +603,7 @@ FROM
     factory.registerFunction("exponentialTimeDecayedCount", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
-            return std::make_shared<WindowFunctionExponentialTimeDecayedCount>(
-                name, argument_types, parameters);
+            return std::make_shared<WindowFunction>(std::make_shared<WindowFunctionExponentialTimeDecayedCount>(name, argument_types, parameters));
         }, exponentialTimeDecayedCount_documentation, properties});
 
     FunctionDocumentation::Description exponentialTimeDecayedAvg_description = R"(
@@ -789,8 +698,7 @@ FROM
     factory.registerFunction("exponentialTimeDecayedAvg", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
-            return std::make_shared<WindowFunctionExponentialTimeDecayedAvg>(
-                name, argument_types, parameters);
+            return std::make_shared<WindowFunction>(std::make_shared<WindowFunctionExponentialTimeDecayedAvg>(name, argument_types, parameters));
         }, exponentialTimeDecayedAvg_documentation, properties});
 }
 

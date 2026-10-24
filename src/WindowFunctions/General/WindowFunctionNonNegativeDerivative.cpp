@@ -1,12 +1,14 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <WindowFunctions/IWindowFunction.h>
+#include <Columns/ColumnsNumber.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
-#include <Processors/Transforms/WindowTransform.h>
-#include <WindowFunctions/helpers.h>
+#include <WindowFunctions/Common/WindowArguments.h>
+#include <WindowFunctions/Common/WindowBounds.h>
+#include <WindowFunctions/IGeneralWindowFunction.h>
+#include <WindowFunctions/WindowFunction.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 
@@ -39,36 +41,19 @@ struct NonNegativeDerivativeParams
     bool interval_specified = false;
     Int64 ts_scale_multiplier = 0;
 
-    NonNegativeDerivativeParams(
-        const std::string & name_, const DataTypes & argument_types, const Array & parameters)
+    NonNegativeDerivativeParams(const String & name_, const DataTypes & argument_types, const Array & parameters)
     {
         if (!parameters.empty())
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Function {} cannot be parameterized", name_);
-        }
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} cannot be parameterized", name_);
 
         if (argument_types.size() != 2 && argument_types.size() != 3)
-        {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Function {} takes 2 or 3 arguments", name_);
-        }
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} takes 2 or 3 arguments", name_);
 
         if (!isNumber(argument_types[ARGUMENT_METRIC]))
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Argument {} must be a number, '{}' given",
-                            ARGUMENT_METRIC,
-                            argument_types[ARGUMENT_METRIC]->getName());
-        }
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument {} must be a number, '{}' given", ARGUMENT_METRIC, argument_types[ARGUMENT_METRIC]->getName());
 
         if (!isDateTime(argument_types[ARGUMENT_TIMESTAMP]) && !isDateTime64(argument_types[ARGUMENT_TIMESTAMP]))
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Argument {} must be DateTime or DateTime64, '{}' given",
-                            ARGUMENT_TIMESTAMP,
-                            argument_types[ARGUMENT_TIMESTAMP]->getName());
-        }
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument {} must be DateTime or DateTime64, '{}' given", ARGUMENT_TIMESTAMP, argument_types[ARGUMENT_TIMESTAMP]->getName());
 
         if (isDateTime64(argument_types[ARGUMENT_TIMESTAMP]))
         {
@@ -80,76 +65,62 @@ struct NonNegativeDerivativeParams
         {
             const DataTypeInterval * interval_datatype = checkAndGetDataType<DataTypeInterval>(argument_types[ARGUMENT_INTERVAL].get());
             if (!interval_datatype)
-            {
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Argument {} must be an INTERVAL, '{}' given",
-                    ARGUMENT_INTERVAL,
-                    argument_types[ARGUMENT_INTERVAL]->getName());
-            }
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument {} must be an INTERVAL, '{}' given", ARGUMENT_INTERVAL, argument_types[ARGUMENT_INTERVAL]->getName());
+
             if (!interval_datatype->getKind().isFixedLength())
-            {
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "The INTERVAL must be a week or shorter, '{}' given",
-                    argument_types[ARGUMENT_INTERVAL]->getName());
-            }
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The INTERVAL must be a week or shorter, '{}' given", argument_types[ARGUMENT_INTERVAL]->getName());
+
             interval_length = interval_datatype->getKind().toSeconds();
             interval_specified = true;
         }
     }
 };
 
-// nonNegativeDerivative(metric_column, timestamp_column[, INTERVAL 1 SECOND])
-struct WindowFunctionNonNegativeDerivative final : public StatefulWindowFunction<NonNegativeDerivativeState>, public NonNegativeDerivativeParams
+class WindowFunctionNonNegativeDerivative final : public IGeneralWindowFunction
 {
-    using Params = NonNegativeDerivativeParams;
-
-    WindowFunctionNonNegativeDerivative(const std::string & name_,
-                                            const DataTypes & argument_types_, const Array & parameters_)
-        : StatefulWindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeFloat64>())
-        , NonNegativeDerivativeParams(name, argument_types, parameters)
-    {}
-
-    bool allocatesMemoryInArena() const override { return false; }
-
-    void windowInsertResultInto(const WindowTransform * transform,
-                                size_t function_index) const override
+public:
+    WindowFunctionNonNegativeDerivative(const String & name_, const DataTypes & argument_types_, const Array & parameters_)
+        : IGeneralWindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeFloat64>())
+        , params(name_, argument_types_, parameters_)
     {
-        const auto & current_block = transform->blocks.blockAt(transform->peers.current().location.block);
-        const auto & workspace = transform->workspaces[function_index];
-        auto & state = getState(workspace);
-
-        auto interval_duration = interval_specified ? interval_length *
-            (*current_block.materialized_columns[workspace.argument_column_indices[ARGUMENT_INTERVAL]]).getFloat64(0) : 1;
-
-        Float64 curr_metric = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_METRIC, transform->peers.current().location);
-        Float64 metric_diff = curr_metric - state.previous_metric;
-        Float64 result = 0;
-
-        if (ts_scale_multiplier)
-        {
-            const auto & column = transform->blocks.blockAt(transform->peers.current().location.block).materialized_columns[workspace.argument_column_indices[ARGUMENT_TIMESTAMP]];
-            const auto & curr_timestamp = checkAndGetColumn<DataTypeDateTime64::ColumnType>(*column).getInt(transform->peers.current().location.row);
-
-            Float64 time_elapsed = static_cast<Float64>(curr_timestamp) - state.previous_timestamp;
-            result = (time_elapsed > 0) ? (metric_diff * static_cast<Float64>(ts_scale_multiplier) / time_elapsed  * interval_duration) : 0;
-            state.previous_timestamp = static_cast<Float64>(curr_timestamp);
-        }
-        else
-        {
-            Float64 curr_timestamp = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_TIMESTAMP, transform->peers.current().location);
-            Float64 time_elapsed = curr_timestamp - state.previous_timestamp;
-            result = (time_elapsed > 0) ? (metric_diff / time_elapsed * interval_duration) : 0;
-            state.previous_timestamp = curr_timestamp;
-        }
-        state.previous_metric = curr_metric;
-
-        if (unlikely(!transform->peers.current().location.row))
-            result = 0;
-
-        WindowRowAccess::insertResultFloat64(transform, function_index, result >= 0 ? result : 0);
     }
+
+    WindowFunctionRequirements getRequirements(const WindowDescription &) const override
+    {
+        return WindowFunctionRequirements{.frame = true};
+    }
+
+    size_t sizeOfState() const override { return sizeof(NonNegativeDerivativeState); }
+    size_t alignOfState() const override { return alignof(NonNegativeDerivativeState); }
+    void createState(char * place) const override { new (place) NonNegativeDerivativeState(); }
+    void resetPartition(char * place) const override { new (place) NonNegativeDerivativeState(); }
+
+    void evaluate(char * place, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
+    {
+        NonNegativeDerivativeState & state = *reinterpret_cast<NonNegativeDerivativeState *>(place);
+        const Float64 timestamp_scale = params.ts_scale_multiplier ? static_cast<Float64>(params.ts_scale_multiplier) : 1;
+        auto & data = assert_cast<ColumnFloat64 &>(result).getData();
+        for (size_t i = 0; i < bounds.rows; ++i)
+        {
+            const Int64 row = bounds.row[i];
+            const Float64 interval_duration = params.interval_specified
+                ? params.interval_length * arguments.at(NonNegativeDerivativeParams::ARGUMENT_INTERVAL, row).getFloat64()
+                : 1;
+            const Float64 metric = arguments.at(NonNegativeDerivativeParams::ARGUMENT_METRIC, row).getFloat64();
+            const ArgumentValue timestamp_value = arguments.at(NonNegativeDerivativeParams::ARGUMENT_TIMESTAMP, row);
+            const Float64 timestamp = params.ts_scale_multiplier ? static_cast<Float64>(timestamp_value.getInt()) : timestamp_value.getFloat64();
+            const Float64 time_elapsed = timestamp - state.previous_timestamp;
+            Float64 derivative = time_elapsed > 0 ? (metric - state.previous_metric) * timestamp_scale / time_elapsed * interval_duration : 0;
+            if (row == 0)
+                derivative = 0;
+            state.previous_metric = metric;
+            state.previous_timestamp = timestamp;
+            data.push_back(derivative >= 0 ? derivative : 0);
+        }
+    }
+
+private:
+    const NonNegativeDerivativeParams params;
 };
 
 }
@@ -160,8 +131,7 @@ void registerWindowFunctionNonNegativeDerivative(AggregateFunctionFactory & fact
     factory.registerFunction("nonNegativeDerivative", {[](const std::string & name,
            const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
-            return std::make_shared<WindowFunctionNonNegativeDerivative>(
-                name, argument_types, parameters);
+            return std::make_shared<WindowFunction>(std::make_shared<WindowFunctionNonNegativeDerivative>(name, argument_types, parameters));
         }, {.description = R"DOCS_MD(
 Computes the non-negative derivative of `metric_column` with respect to `timestamp_column`.
 This is a ClickHouse-specific window function, not part of standard SQL.
