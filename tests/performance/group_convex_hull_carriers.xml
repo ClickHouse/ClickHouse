@@ -1,0 +1,21 @@
+<test>
+    <drop_query>DROP TABLE IF EXISTS bench_convex_hull_carriers</drop_query>
+
+    <create_query>
+        CREATE TABLE bench_convex_hull_carriers (r Ring, p Polygon, m MultiLineString) ENGINE = Memory
+    </create_query>
+
+    <fill_query>
+        INSERT INTO bench_convex_hull_carriers
+        WITH toFloat64(number % 1024) AS x,
+            [(x, 0.), (x + 2, 0.), (x, 2.), (x, 0.)] AS ring
+        SELECT ring, [ring], [[ring[1], ring[2]], [ring[3], ring[4]]]
+        FROM numbers(100000)
+    </fill_query>
+
+    <query>SELECT groupConvexHull(r) FROM bench_convex_hull_carriers FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT groupConvexHull(p) FROM bench_convex_hull_carriers FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT groupConvexHull(m) FROM bench_convex_hull_carriers FORMAT Null SETTINGS max_threads = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS bench_convex_hull_carriers</drop_query>
+</test>

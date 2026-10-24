@@ -1,0 +1,24 @@
+union_edge_touching
+8
+union_vertex_touching
+8
+union_disjoint
+2
+intersect_edge_touching
+0
+intersect_contained
+9
+convex_hull_collinear
+1
+union_with_hole
+88
+intersect_with_hole
+84
+convex_hull_single_point
+POLYGON((3 4,3 4,3 4,3 4))
+convex_hull_two_points
+1
+intersect_vertex_touching
+0
+union_fills_hole_geometric_equivalence
+1

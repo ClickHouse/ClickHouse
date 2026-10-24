@@ -1,0 +1,29 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>n</name>
+            <values>
+                <value>5000</value>
+                <value>10000</value>
+                <value>20000</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <drop_query>DROP TABLE IF EXISTS bench_union_{n}</drop_query>
+
+    <create_query>CREATE TABLE bench_union_{n} (poly Polygon, group_id UInt32) ENGINE = Memory</create_query>
+
+    <fill_query>
+        INSERT INTO bench_union_{n} SELECT
+            [[(toFloat64(number), 0.), (toFloat64(number + 2), 0.),
+              (toFloat64(number + 2), 2.), (toFloat64(number), 2.), (toFloat64(number), 0.)]],
+            number % 64
+        FROM numbers({n})
+    </fill_query>
+
+    <query>SELECT groupPolygonUnion(poly) FROM bench_union_{n} FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT group_id, groupPolygonUnion(poly) FROM bench_union_{n} GROUP BY group_id FORMAT Null SETTINGS max_threads = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS bench_union_{n}</drop_query>
+</test>

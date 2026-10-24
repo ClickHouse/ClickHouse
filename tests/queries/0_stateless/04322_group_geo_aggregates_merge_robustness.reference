@@ -1,0 +1,12 @@
+convex_hull_merge_tree
+1	1	1	1
+union_merge_tree
+1	1
+intersect_merge_tree
+1	1
+intersect_early_empty_merge_tree
+0	0
+union_stress_50
+1
+convex_hull_stress_40
+1	1

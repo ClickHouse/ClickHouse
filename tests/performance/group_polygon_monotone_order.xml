@@ -1,0 +1,25 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>n</name>
+            <values>
+                <value>128</value>
+                <value>512</value>
+            </values>
+        </substitution>
+    </substitutions>
+    <drop_query>DROP TABLE IF EXISTS bench_monotone_order_{n}</drop_query>
+    <create_query>CREATE TABLE bench_monotone_order_{n} (id UInt64, p Polygon) ENGINE = Memory</create_query>
+    <fill_query>
+        INSERT INTO bench_monotone_order_{n}
+        SELECT number, [
+            [(0.,0.),(0.,8.),(1.5 * {n} + 5,8.),(1.5 * {n} + 5,0.),(0.,0.)],
+            [(1.5 * number + 1,1. + number % 2),(1.5 * number + 3,1. + number % 2),
+             (1.5 * number + 3,4. + number % 2),(1.5 * number + 1,4. + number % 2),
+             (1.5 * number + 1,1. + number % 2)]
+        ] FROM numbers({n})
+    </fill_query>
+    <query>SELECT groupPolygonIntersection(p) FROM (SELECT * FROM bench_monotone_order_{n} ORDER BY id DESC) FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT groupPolygonIntersection(p) FROM (SELECT * FROM bench_monotone_order_{n} ORDER BY cityHash64(id)) FORMAT Null SETTINGS max_threads = 1</query>
+    <drop_query>DROP TABLE IF EXISTS bench_monotone_order_{n}</drop_query>
+</test>
