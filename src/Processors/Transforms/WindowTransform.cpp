@@ -107,6 +107,8 @@ WindowTransform::WindowTransform(
 
     try
     {
+        general_functions.reserve(functions.size());
+        workspaces.reserve(functions.size());
         for (size_t result_column = 0; result_column < functions.size(); ++result_column)
         {
             const WindowFunctionDescription & function = functions[result_column];

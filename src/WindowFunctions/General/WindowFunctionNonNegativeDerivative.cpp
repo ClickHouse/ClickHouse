@@ -98,14 +98,14 @@ public:
     void evaluate(char * place, const WindowBounds & bounds, const WindowArguments & arguments, IColumn & result) const override
     {
         NonNegativeDerivativeState & state = *reinterpret_cast<NonNegativeDerivativeState *>(place);
-        const Float64 interval_duration = params.interval_specified
-            ? params.interval_length * arguments.at(NonNegativeDerivativeParams::ARGUMENT_INTERVAL, bounds.row[0]).getFloat64()
-            : 1;
         const Float64 timestamp_scale = params.ts_scale_multiplier ? static_cast<Float64>(params.ts_scale_multiplier) : 1;
         auto & data = assert_cast<ColumnFloat64 &>(result).getData();
         for (size_t i = 0; i < bounds.rows; ++i)
         {
             const Int64 row = bounds.row[i];
+            const Float64 interval_duration = params.interval_specified
+                ? params.interval_length * arguments.at(NonNegativeDerivativeParams::ARGUMENT_INTERVAL, row).getFloat64()
+                : 1;
             const Float64 metric = arguments.at(NonNegativeDerivativeParams::ARGUMENT_METRIC, row).getFloat64();
             const ArgumentValue timestamp_value = arguments.at(NonNegativeDerivativeParams::ARGUMENT_TIMESTAMP, row);
             const Float64 timestamp = params.ts_scale_multiplier ? static_cast<Float64>(timestamp_value.getInt()) : timestamp_value.getFloat64();
