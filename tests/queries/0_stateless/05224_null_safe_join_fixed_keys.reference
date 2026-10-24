@@ -38,8 +38,8 @@ every algorithm
 String, compound and Nothing keys keep the tuple
 \N	\N
 Join conditions: tuple(NULL) <=> tuple(NULL)
-6	4
-6	4
+8	4
+8	4
 2
 Join conditions: tuple(if(number MOD 3 = 0, NULL, tuple(if(number MOD 5, NULL, number)))) <=> tuple(if(number MOD 3 = 0, NULL, tuple(if(number MOD 5, NULL, number))))
 the keys split only if the whole clause packs into 32 bytes

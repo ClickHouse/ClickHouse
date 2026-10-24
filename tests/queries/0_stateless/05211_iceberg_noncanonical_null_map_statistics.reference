@@ -1,0 +1,2 @@
+--- a null count is the number of NULL rows, never the sum of the null-map bytes ---
+30	20	0
