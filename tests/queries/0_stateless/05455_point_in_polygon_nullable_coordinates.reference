@@ -1,0 +1,9 @@
+1	1	1	Nullable(UInt8)
+2	0	0	Nullable(UInt8)
+3	\N	\N	Nullable(UInt8)
+4	\N	\N	Nullable(UInt8)
+5	\N	\N	Nullable(UInt8)
+1	Nullable(UInt8)
+\N	Nullable(UInt8)
+1	Nullable(UInt8)
+1	UInt8
