@@ -5,6 +5,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
+#include <algorithm>
+#include <cstring>
 #include <limits>
 #include <numeric>
 
@@ -19,19 +21,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-/// Varint into a staged buffer — payloads are assembled before the directory that sizes them.
-size_t writeVarUIntTo(uint8_t * out, UInt64 v)
-{
-    size_t n = 0;
-    while (v >= 0x80)
-    {
-        out[n++] = static_cast<uint8_t>(v) | 0x80;
-        v >>= 7;
-    }
-    out[n++] = static_cast<uint8_t>(v);
-    return n;
-}
 
 UInt64 readVarUIntFrom(const uint8_t *& pos, const uint8_t * end)
 {
@@ -58,47 +47,47 @@ void parseBlock(
     const uint8_t * payload,
     size_t payload_bytes,
     size_t docs_in_block,
-    PaddedPODArray<UInt64> & doc_offsets,
-    PaddedPODArray<UInt32> & values)
+    TextIndexBlockedPositionsCodec::DecodeScratch & scratch)
 {
     const uint8_t * pos = payload;
     const uint8_t * end = payload + payload_bytes;
-
+    auto & doc_offsets = scratch.doc_offsets;
     doc_offsets.resize(docs_in_block + 1);
-    for (size_t i = 0; i < docs_in_block; ++i)
-        doc_offsets[i] = 1;
 
-    const UInt64 num_exceptions = readVarUIntFrom(pos, end);
-    if (num_exceptions > docs_in_block)
+    const UInt64 freq_bytes = readVarUIntFrom(pos, end);
+    if (freq_bytes > static_cast<UInt64>(end - pos))
         throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "Corrupt text index positions: {} frequency exceptions for {} documents", num_exceptions, docs_in_block);
+            "Corrupt text index positions: frequency run of {} bytes exceeds the {}-byte block", freq_bytes, payload_bytes);
 
     /// PFor emits >= 1 byte per block, so payload size bounds the value count (reject before alloc).
-    const UInt64 max_total = docs_in_block + payload_bytes * PFor::BLOCK;
-
-    UInt64 total = docs_in_block;
-    UInt64 prev_rank = 0;
-    for (UInt64 e = 0; e < num_exceptions; ++e)
+    const UInt64 max_total = payload_bytes * PFor::BLOCK;
+    UInt64 total = 0;
+    if (freq_bytes == 0)
     {
-        const UInt64 local_rank = readVarUIntFrom(pos, end);
-        const UInt64 freq = readVarUIntFrom(pos, end);
-        if (local_rank >= docs_in_block || (e > 0 && local_rank <= prev_rank))
-            throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "Corrupt text index positions: exception rank {} out of order or out of range {}", local_rank, docs_in_block);
-        if ((freq < 2) || (freq > std::numeric_limits<UInt32>::max()) || (total + (freq - 1) > max_total))
-            throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "Corrupt text index positions: invalid frequency {} (total would exceed {})", freq, max_total);
-        doc_offsets[local_rank] = freq;
-        total += freq - 1;
-        prev_rank = local_rank;
+        std::iota(doc_offsets.begin(), doc_offsets.begin() + docs_in_block, UInt64{0});
+        total = docs_in_block;
     }
+    else
+    {
+        scratch.freqs.resize(docs_in_block);
+        if (PFor::decodeBlocks<UInt32>(pos, docs_in_block, PFor::Delta::none, scratch.freqs.data(), pos + freq_bytes) != freq_bytes)
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupt text index positions: malformed frequency run");
+        pos += freq_bytes;
 
-    /// Frequencies become exclusive prefix sums. The tail entry closes the last document's slice.
-    std::exclusive_scan(doc_offsets.begin(), doc_offsets.begin() + docs_in_block, doc_offsets.begin(), UInt64{});
+        for (size_t i = 0; i < docs_in_block; ++i)
+        {
+            doc_offsets[i] = total;
+            total += UInt64{scratch.freqs[i]} + 1;
+            /// Positions are addressed with UInt32 offsets.
+            if (total > std::min<UInt64>(max_total, std::numeric_limits<UInt32>::max()))
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Corrupt text index positions: frequencies exceed the {} positions a {}-byte block can hold", max_total, payload_bytes);
+        }
+    }
     doc_offsets[docs_in_block] = total;
 
-    values.resize(total);
-    const size_t consumed = PFor::decodeBlocks<UInt32>(pos, total, PFor::Delta::none, values.data(), end);
+    scratch.values.resize(total);
+    const size_t consumed = PFor::decodeBlocks<UInt32>(pos, total, PFor::Delta::none, scratch.values.data(), end);
     if (consumed == 0 || pos + consumed != end)
         throw Exception(ErrorCodes::CORRUPTED_DATA,
             "Corrupt text index positions: malformed position lane ({} of {} payload bytes consumed)",
@@ -132,11 +121,8 @@ void TextIndexBlockedPositionsCodec::Encoder::finishDocument(bool sorted)
     /// The first position of a document is stored absolute, the rest as deltas.
     std::adjacent_difference(first, last, first);
 
-    if (freq > 1)
-    {
-        exceptions.push_back(static_cast<UInt32>(docs_in_block));
-        exceptions.push_back(static_cast<UInt32>(freq));
-    }
+    frequencies_minus_one.push_back(static_cast<UInt32>(freq - 1));
+    has_frequency_run |= freq > 1;
 
     ++docs_in_block;
     ++num_docs;
@@ -157,19 +143,29 @@ void TextIndexBlockedPositionsCodec::Encoder::addDocument(std::span<const UInt32
 
 size_t TextIndexBlockedPositionsCodec::Encoder::encodeBlock(PaddedPODArray<UInt8> & out)
 {
-    const size_t num_exceptions = exceptions.size() / 2;
+    const size_t max_freq_bytes = PFor::maxCompressedBytes<UInt32>(docs_in_block);
+
+    /// The frequency size precedes the run, so the run is encoded to `runs` first.
+    runs.resize(max_freq_bytes);
+    auto * runs_data = reinterpret_cast<uint8_t *>(runs.data());
+
     const size_t begin = out.size();
-    out.resize(begin + 10 + num_exceptions * 20 + PFor::maxCompressedBytes<UInt32>(values.size()));
+    out.resize(begin + 10 + max_freq_bytes + PFor::maxCompressedBytes<UInt32>(values.size()));
+    auto * block_begin = reinterpret_cast<char *>(out.data() + begin);
 
-    auto * block_begin = reinterpret_cast<uint8_t *>(out.data() + begin);
-    size_t offset = writeVarUIntTo(block_begin, num_exceptions);
-    for (UInt32 value : exceptions)
-        offset += writeVarUIntTo(block_begin + offset, value);
-    offset += PFor::encodeBlocks<UInt32>(std::span<const UInt32>(values.data(), values.size()), PFor::Delta::none, block_begin + offset);
+    const size_t freq_bytes = has_frequency_run
+        ? PFor::encodeBlocks<UInt32>(std::span<const UInt32>(frequencies_minus_one.data(), frequencies_minus_one.size()), PFor::Delta::none, runs_data)
+        : 0;
+    size_t offset = writeVarUInt(freq_bytes, block_begin) - block_begin;
+    memcpy(block_begin + offset, runs_data, freq_bytes);
+    offset += freq_bytes;
+    offset += PFor::encodeBlocks<UInt32>(std::span<const UInt32>(values.data(), values.size()), PFor::Delta::none, reinterpret_cast<uint8_t *>(block_begin + offset));
 
+    chassert(offset <= out.size() - begin);
     out.resize(begin + offset);
     values.clear();
-    exceptions.clear();
+    frequencies_minus_one.clear();
+    has_frequency_run = false;
     open_document_begin = 0;
     docs_in_block = 0;
     return offset;
@@ -212,7 +208,7 @@ TextIndexBlockedPositionsCodec::Directory TextIndexBlockedPositionsCodec::readDi
     if (dir.num_docs == 0)
         return dir;
 
-    /// Every block holds >= 1 document: 1 byte exception count + >= 1 byte PFor lane.
+    /// Every block holds >= 1 document: a 1-byte frequency size + >= 1 byte of PFor.
     if (num_blocks * 2 > available_bytes)
         throw Exception(ErrorCodes::CORRUPTED_DATA,
             "Corrupt text index positions: {} blocks cannot fit into {} available bytes", num_blocks, available_bytes);
@@ -263,8 +259,7 @@ void TextIndexBlockedPositionsCodec::readBlock(ReadBuffer & in, const Directory 
     scratch.payload.resize(payload_bytes);
     in.readStrict(scratch.payload.data(), payload_bytes);
 
-    parseBlock(reinterpret_cast<const uint8_t *>(scratch.payload.data()), payload_bytes,
-               dir.docsInBlock(block_idx), scratch.doc_offsets, scratch.values);
+    parseBlock(reinterpret_cast<const uint8_t *>(scratch.payload.data()), payload_bytes, dir.docsInBlock(block_idx), scratch);
 }
 
 void TextIndexBlockedPositionsCodec::emitRanks(
