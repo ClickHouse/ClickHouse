@@ -249,14 +249,7 @@ void SerializationFixedString::serializeTextQuoted(const IColumn & column, size_
 {
     const char * pos = reinterpret_cast<const char *>(&assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
     const char * end = getEndWithOptionalTrim(pos, n, settings);
-    if (settings.values.escape_quote_with_quote)
-    {
-        writeChar('\'', ostr);
-        writeAnyEscapedString<'\'', true, false>(pos, end, ostr);
-        writeChar('\'', ostr);
-    }
-    else
-        writeAnyQuotedString<'\''>(pos, end, ostr);
+    writeStringForValues(std::string_view(pos, end - pos), ostr, settings);
 }
 
 

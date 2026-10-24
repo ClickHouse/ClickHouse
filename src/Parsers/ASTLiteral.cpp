@@ -246,6 +246,24 @@ private:
     }
 };
 
+/// Like `FieldVisitorToString`, but strings are formatted so MySQL reads back exactly the
+/// original bytes. Non-printable, non-ASCII and backslash-containing strings use hexadecimal
+/// literals, which avoids MySQL interpreting ClickHouse backslash escapes differently.
+class FieldVisitorToStringMySQL : public FieldVisitorToStringForDialect<FieldVisitorToStringMySQL>
+{
+public:
+    static constexpr const char * dialect_name = "MySQL";
+
+    using FieldVisitorToStringForDialect<FieldVisitorToStringMySQL>::operator();
+
+    String operator() (const String & x) const
+    {
+        WriteBufferFromOwnString wb;
+        writeMySQLStringLiteral(x, wb);
+        return wb.str();
+    }
+};
+
 /// Like `FieldVisitorToString`, but strings are escaped so that PostgreSQL reads back exactly the
 /// original bytes (`writeQuotedStringPostgreSQLLossless`).
 class FieldVisitorToStringPostgreSQL : public FieldVisitorToStringForDialect<FieldVisitorToStringPostgreSQL>
@@ -301,6 +319,8 @@ void ASTLiteral::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings
 {
     if (settings.literal_escaping_style == LiteralEscapingStyle::Regular)
         ostr << applyVisitor(FieldVisitorToString(), value);
+    else if (settings.literal_escaping_style == LiteralEscapingStyle::MySQL)
+        ostr << applyVisitor(FieldVisitorToStringMySQL(), value);
     else if (settings.literal_escaping_style == LiteralEscapingStyle::PostgreSQL)
         ostr << applyVisitor(FieldVisitorToStringPostgreSQL(), value);
     else
