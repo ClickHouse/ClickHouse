@@ -2,6 +2,7 @@
 #include <Storages/StorageDistributed.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Access/ContextAccess.h>
 
 #include <Databases/IDatabase.h>
 #include <Databases/LoadingStrictnessLevel.h>
@@ -98,6 +99,7 @@
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/PreparedSets.h>
 
+#include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionView.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/KnownObjectNames.h>
@@ -1718,6 +1720,12 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
     }
 
     if (!src_storage)
+        return {};
+
+    /// This is the only place source SELECT access is enforced in this case
+    const auto src_id = src_storage->getStorageID();
+    if (src_id.database_name != ITableFunction::getDatabaseName()
+        && !local_context->getAccess()->isGranted(AccessType::SELECT, src_id.database_name, src_id.table_name))
         return {};
 
     if (auto src_distributed = std::dynamic_pointer_cast<StorageDistributed>(src_storage))
