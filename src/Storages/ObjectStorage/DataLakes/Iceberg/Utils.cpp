@@ -733,12 +733,12 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     IcebergMetadataFilesCachePtr metadata_cache,
     const ContextPtr & local_context,
     LoggerPtr log,
-    CompressionMethod compression_method,
     const std::optional<String> & table_uuid)
 {
     auto read_fn = [&]()
     {
-        return readMetadataJSONString(metadata_file_path, object_storage, metadata_cache != nullptr, local_context, log, compression_method);
+        /// The codec is a property of the file being opened, not of the table.
+        return readMetadataJSONString(metadata_file_path, object_storage, metadata_cache != nullptr, local_context, log, getCompressionMethodFromMetadataFile(metadata_file_path));
     };
 
     if (!metadata_cache || !table_uuid.has_value())
@@ -1516,12 +1516,12 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
                 continue;
             if (own_scheme_is_version_numbered && isVersionNumberedCommitScheme(filename) != *own_scheme_is_version_numbered)
                 continue;
-            auto [version, metadata_file_path, compression_method] = getMetadataFileAndVersion(path);
+            auto [version, metadata_file_path, _] = getMetadataFileAndVersion(path);
 
             if (need_all_metadata_files_parsing)
             {
                 auto metadata_file_object = getMetadataJSONObject(
-                    metadata_file_path, object_storage, metadata_cache, local_context, log, compression_method, table_uuid);
+                    metadata_file_path, object_storage, metadata_cache, local_context, log, table_uuid);
                 if (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection)
                 {
                     if (metadata_file_object->has(Iceberg::f_table_uuid))
