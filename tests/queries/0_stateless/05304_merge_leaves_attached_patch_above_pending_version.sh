@@ -5,8 +5,7 @@
 # no-shared-merge-tree -- the bounds under test are `MergeTreeMergePredicate`'s.
 
 # `ATTACH PART` of a patch takes a fresh block number without waiting, so it can land above a not yet registered
-# mutation or above a running `OPTIMIZE`'s snapshot. The merge must leave such a patch for read time: the second
-# arm attaches it after the selection copied the snapshot, so the merge neither applies it nor records its version.
+# mutation or above a running `OPTIMIZE`'s snapshot. The merge must leave such a patch for read time.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

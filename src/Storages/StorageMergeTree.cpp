@@ -119,7 +119,6 @@ namespace FailPoints
     extern const char mt_throw_after_mutation_commit[];
     extern const char mt_pause_before_register_mutation[];
     extern const char mt_alter_throw_in_durable_rollback[];
-    extern const char mt_optimize_pause_after_reservation_snapshot[];
     extern const char mt_mutation_pause_before_block_allocation[];
     extern const char mt_lightweight_update_pause_after_block_allocation[];
 }
@@ -2219,9 +2218,6 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             /// Rebuilt on every attempt: the wait below releases the mutex, and a stale snapshot of the allocated
             /// block numbers would drop the parts inserted meanwhile from the candidates.
             build_predicate_and_collector();
-
-            /// Test hook: the snapshot is taken, the parts are not collected yet. `PAUSEABLE_ONCE`, so a retry does not pause again.
-            FailPointInjection::pauseFailPoint(FailPoints::mt_optimize_pause_after_reservation_snapshot);
 
             auto select_result = merger_mutator.selectAllPartsToMergeWithinPartition(
                 metadata_snapshot,

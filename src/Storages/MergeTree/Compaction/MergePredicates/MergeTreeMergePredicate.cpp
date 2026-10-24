@@ -1,3 +1,6 @@
+#include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
+#include <Common/ThreadStatus.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Storages/MergeTree/Compaction/MergePredicates/MergeTreeMergePredicate.h>
@@ -10,6 +13,11 @@
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char mt_optimize_pause_after_reservation_snapshot[];
+}
 
 static std::vector<MergeTreePartInfo> getPatchPartInfos(const StorageMergeTree & storage, const MergeTreeTransactionPtr & tx)
 {
@@ -86,6 +94,11 @@ MergeTreeMergePredicate::MergeTreeMergePredicate(
     , merge_mutate_lock(merge_mutate_lock_)
     , reservations(storage.getCommittingBlocksSnapshot())
 {
+    /// Test hook between the snapshot and the reads below, for explicit `OPTIMIZE` only: a query thread has a
+    /// query context, the background scheduler does not, and it would consume the one-shot pause on any table.
+    if (CurrentThread::isInitialized() && CurrentThread::get().tryGetQueryContext())
+        FailPointInjection::pauseFailPoint(FailPoints::mt_optimize_pause_after_reservation_snapshot);
+
     /// The wider set is used only to find the data versions that a merge of patch parts must not span.
     /// A version that only a rollbackable outdated part has still has to be seen here, otherwise the
     /// merge becomes wrong as soon as that part is active again.
