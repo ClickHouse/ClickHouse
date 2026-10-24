@@ -227,7 +227,8 @@ QueryPlanStepPtr LimitRangeStep::deserialize(Deserialization & ctx)
     auto start_column_name = read_column_name(flags & 1);
     auto end_column_name = read_column_name(flags & 2);
 
-    auto conditions = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity);
+    auto conditions = ActionsDAG::deserialize(
+        ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity, /*nesting_depth=*/ 0, ctx.input_headers);
 
     /// The plan may come from a client (`process_query_plan_packet`), so the conditions are checked the
     /// way the planner checks them for a query: boolean result columns, and no `ARRAY JOIN`, which would

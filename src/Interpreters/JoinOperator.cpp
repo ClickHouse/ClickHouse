@@ -627,9 +627,9 @@ static std::vector<JoinActionRef> deserializeNodeList(ReadBuffer & in, const Act
     return result;
 }
 
-JoinOperator JoinOperator::deserialize(ReadBuffer & in, JoinExpressionActions & expression_actions)
+JoinOperator JoinOperator::deserialize(ReadBuffer & in, JoinExpressionActions & expression_actions,
+    const ActionsDAG::NodeRawConstPtrs & id_to_node)
 {
-    auto id_to_node = expression_actions.getActionsDAG()->getIdToNode();
     auto actions = deserializeNodeList(in, id_to_node, expression_actions);
     auto residual_filter = deserializeNodeList(in, id_to_node, expression_actions);
 

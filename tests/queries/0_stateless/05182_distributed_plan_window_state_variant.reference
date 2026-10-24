@@ -1,0 +1,56 @@
+sorted gather above the window step: 	1
+-- contingency, distributed: finalized values
+0	0	nan
+0	4	0.707107
+0	8	0.816497
+0	12	0.816497
+0	16	0.774597
+-- contingency: distributed then local
+7796960712233641812
+7796960712233641812
+-- contingencyMap: distributed then local
+686921820781794206
+686921820781794206
+-- theilsU control: distributed then local
+8028078959096672967
+8028078959096672967
+-- Variant of a window and an ordinary state: distributed then local
+0.075652
+0.075652
+Variant shape distributes
+-- Dynamic: distributed then local
+0.075652
+0.075652
+-- CAST to the state type: distributed then local
+0.075652
+0.075652
+-- contingencyMerge of the window state: distributed then local
+0.075652
+0.075652
+-- contingencyTupleMerge of the window state: distributed then local
+0.075652
+0.075652
+-- lambda capture of the window state: distributed then local
+0.075652
+0.075652
+-- lambda over the window state: distributed then local
+[0.075652]
+[0.075652]
+-- lambda with the window state as argument and capture: distributed then local
+0.075652
+0.075652
+-- lambda capturing a lambda over the window state: distributed then local
+0.075652
+0.075652
+-- array of window states through an external sort: spilled then not spilled
+16564983051024262348
+16564983051024262348
+-- tuple of window states through an external sort: spilled then not spilled
+4873130676055992815
+4873130676055992815
+-- contingencyTuple window state through an external sort: spilled then not spilled
+4873130676055992815
+4873130676055992815
+-- arrayJoin over the window state, not lowered: distributed then local
+0.075652
+0.075652

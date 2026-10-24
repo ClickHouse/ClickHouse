@@ -3,6 +3,7 @@
 #include <Analyzer/TableQualifiers.h>
 
 #include <Analyzer/FunctionNode.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeFunction.h>
@@ -5333,11 +5334,6 @@ std::unordered_map<const ActionsDAG::Node *, size_t> ActionsDAG::getNodeToIdMap(
     return node_to_id;
 }
 
-std::vector<const ActionsDAG::Node *> ActionsDAG::getIdToNode() const
-{
-    return std::ranges::to<std::vector>(nodes | std::views::transform([](const auto & node) { return &node; }));
-}
-
 /// Reorder DAG nodes so that the whole subgraph of the inputs is listed before the node itself
 static void addChildrenBeforeNode(std::vector<const ActionsDAG::Node *> & reordered_nodes, std::unordered_set<const ActionsDAG::Node *> & already_added_nodes, const ActionsDAG::Node * node)
 {
@@ -5482,7 +5478,9 @@ ActionsDAG ActionsDAG::deserialize(
     DeserializedSetsRegistry & registry,
     const ContextPtr & context,
     size_t max_type_complexity,
-    size_t nesting_depth)
+    size_t nesting_depth,
+    const SharedHeaders & actual_input_headers,
+    NodeRawConstPtrs * wire_nodes)
 {
     /// max_type_complexity is the type-complexity guard resolved once by the caller: the effective setting for
     /// client-reachable QueryPlan packets, or unlimited (0) for trusted internal metadata (e.g. data-lake
@@ -5490,13 +5488,42 @@ ActionsDAG ActionsDAG::deserialize(
 
     checkActionsDAGDeserializationDepth(nesting_depth);
 
+    std::unordered_map<std::string_view, std::pair<size_t, DataTypePtr>> actual_input_types;
+    for (const auto & header : actual_input_headers)
+    {
+        if (!header)
+            continue;
+
+        for (const auto & column : *header)
+        {
+            auto & [count, type] = actual_input_types[column.name];
+            ++count;
+            type = column.type;
+        }
+    }
+
+    std::unordered_map<const Node *, DataTypePtr> wire_types;
+    auto adopt_state_variant = [&wire_types](Node & node, const DataTypePtr & actual_type)
+    {
+        if (node.column || !actual_type || !differsOnlyByAggregateStateVariant(actual_type, node.result_type))
+            return false;
+
+        wire_types.emplace(&node, node.result_type);
+        node.result_type = actual_type;
+        return true;
+    };
+
     size_t nodes_size = 0;
     readVarUInt(nodes_size, in);
 
     std::list<Node> nodes;
     std::unordered_map<size_t, Node *> id_to_node;
+    std::vector<std::list<Node>::iterator> positions;
     for (size_t i = 0; i < nodes_size; ++i)
+    {
         id_to_node.emplace(i, &nodes.emplace_back(Node{}));
+        positions.push_back(std::prev(nodes.end()));
+    }
 
     for (size_t i = 0; i < nodes_size; ++i)
     {
@@ -5537,6 +5564,10 @@ ActionsDAG ActionsDAG::deserialize(
             /// nothing to deserialize
             if (!node.children.empty())
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Deserialized input can't have children");
+
+            /// The type encoding omits the aggregate state variant; take it from the actual input column.
+            if (auto it = actual_input_types.find(node.result_name); it != actual_input_types.end() && it->second.first == 1)
+                adopt_state_variant(node, it->second.second);
         }
         else if (node.type == ActionType::COLUMN)
         {
@@ -5549,11 +5580,54 @@ ActionsDAG ActionsDAG::deserialize(
             /// nothing to deserialize
             if (node.children.size() != 1)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Deserialized alias must have one children");
+
+            adopt_state_variant(node, node.children.front()->result_type);
         }
         else if (node.type == ActionType::FUNCTION)
         {
             String function_name;
             readStringBinary(function_name, in);
+
+            auto is_lambda = [](const Node * child)
+            { return typeid_cast<const DataTypeFunction *>(child->result_type.get()) != nullptr; };
+
+            /// A lambda is built for the wire types of its arguments, so adopted arguments are cast back for it.
+            if (!(column_flags & 4) && std::ranges::any_of(node.children, is_lambda))
+            {
+                std::unordered_map<const Node *, const Node *> casts;
+                for (auto & child : node.children)
+                {
+                    auto wire_type = wire_types.find(child);
+                    if (is_lambda(child) || wire_type == wire_types.end())
+                        continue;
+
+                    auto [cast, inserted] = casts.emplace(child, nullptr);
+                    if (inserted)
+                    {
+                        Field type_name(wire_type->second->getName());
+                        Node & type_name_node = *nodes.emplace(positions[i]);
+                        type_name_node.type = ActionType::COLUMN;
+                        type_name_node.result_type = std::make_shared<DataTypeString>();
+                        type_name_node.column = type_name_node.result_type->createColumnConst(0, type_name);
+                        type_name_node.result_name = calculateConstantActionNodeName(type_name);
+
+                        Node & cast_node = *nodes.emplace(positions[i]);
+                        cast_node.type = ActionType::FUNCTION;
+                        cast_node.children = {child, &type_name_node};
+                        cast_node.function_base = createInternalCast(
+                            {child->result_type, child->result_name}, wire_type->second, CastType::nonAccurate, {}, context);
+                        cast_node.function = cast_node.function_base->prepare(
+                            {{child->column, child->result_type, child->result_name},
+                             {type_name_node.column, type_name_node.result_type, type_name_node.result_name}});
+                        cast_node.result_type = cast_node.function_base->getResultType();
+                        cast_node.result_name
+                            = cast_node.function_base->getName() + "(" + child->result_name + ", " + type_name_node.result_name + ")";
+                        cast->second = &cast_node;
+                    }
+
+                    child = cast->second;
+                }
+            }
 
             ColumnsWithTypeAndName arguments;
             arguments.reserve(node.children.size());
@@ -5571,7 +5645,33 @@ ActionsDAG ActionsDAG::deserialize(
             {
                 LambdaCapture capture;
                 deserializeCapture(capture, in, max_type_complexity);
-                auto capture_dag = ActionsDAG::deserialize(in, registry, context, max_type_complexity, nesting_depth + 1);
+
+                /// The captured columns are the node's children, in the order of the captured names.
+                const size_t num_captured = std::min(capture.captured_names.size(), capture.captured_types.size());
+                ColumnsWithTypeAndName captured_columns;
+                captured_columns.reserve(num_captured);
+                for (size_t k = 0; k < num_captured; ++k)
+                {
+                    if (k < node.children.size() && node.children[k]->result_name == capture.captured_names[k]
+                        && node.children[k]->result_type
+                        && differsOnlyByAggregateStateVariant(node.children[k]->result_type, capture.captured_types[k]))
+                        capture.captured_types[k] = node.children[k]->result_type;
+
+                    captured_columns.emplace_back(nullptr, capture.captured_types[k], capture.captured_names[k]);
+                }
+
+                auto capture_dag = ActionsDAG::deserialize(
+                    in, registry, context, max_type_complexity, nesting_depth + 1,
+                    {std::make_shared<const Block>(std::move(captured_columns))});
+
+                if (const auto * capture_output = capture_dag.tryFindInOutputs(capture.return_name);
+                    capture_output && differsOnlyByAggregateStateVariant(capture_output->result_type, capture.return_type))
+                    capture.return_type = capture_output->result_type;
+
+                if (const auto * function_type = typeid_cast<const DataTypeFunction *>(node.result_type.get());
+                    !node.column && function_type && function_type->getReturnType()
+                    && differsOnlyByAggregateStateVariant(capture.return_type, function_type->getReturnType()))
+                    node.result_type = std::make_shared<DataTypeFunction>(function_type->getArgumentTypes(), capture.return_type);
 
                 node.function_base = std::make_shared<FunctionCapture>(
                     std::make_shared<ExpressionActions>(
@@ -5600,7 +5700,7 @@ ActionsDAG ActionsDAG::deserialize(
                 if (const auto * rhs_tuple = typeid_cast<const DataTypeTuple *>(rhs_type.get()))
                     rhs_type = std::make_shared<DataTypeTuple>(rhs_tuple->getElements());
 
-                if (!lhs_type->equals(*rhs_type))
+                if (!lhs_type->equals(*rhs_type) && !adopt_state_variant(node, node.function_base->getResultType()))
                     throw Exception(ErrorCodes::INCORRECT_DATA,
                         "Deserialized function {} has invalid type. Expected {}, deserialized {}.",
                         function_name,
@@ -5613,6 +5713,9 @@ ActionsDAG ActionsDAG::deserialize(
             /// nothing to deserialize
             if (node.children.size() != 1)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Deserialized array join must have one children");
+
+            if (auto array_type = getArrayJoinDataType(node.children.front()->result_type))
+                adopt_state_variant(node, array_type->getNestedType());
         }
         else
         {
@@ -5659,6 +5762,13 @@ ActionsDAG ActionsDAG::deserialize(
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Deserialized input {} is not in the inputs list",
                 node.result_name);
+
+    if (wire_nodes)
+    {
+        wire_nodes->resize(nodes_size);
+        for (size_t k = 0; k < nodes_size; ++k)
+            (*wire_nodes)[k] = id_to_node.at(k);
+    }
 
     ActionsDAG dag;
     dag.nodes = std::move(nodes);
