@@ -3545,6 +3545,8 @@ void Planner::buildPlanForQueryNode()
         // A local shard/replica plan is united into the parent pipeline in this process, where
         // nothing unmarshalls the blocks.
         && !select_query_options.is_local_plan_for_distributed_query
+        // Steps a logical plan's builder adds on top must not read marshalled columns.
+        && !select_query_options.build_logical_plan
     )
         query_plan.addStep(std::make_unique<BlocksMarshallingStep>(query_plan.getCurrentHeader()));
 
