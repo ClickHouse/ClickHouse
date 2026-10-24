@@ -1,5 +1,5 @@
--- The one-byte threshold starts spilling before the first chunk is inserted. Sort equality keeps
--- the first representative of signed zeros and `NaN` payloads, both within and across input chunks.
+-- The one-byte threshold starts spilling before the first chunk is inserted. Fingerprint equality
+-- preserves signed zeros and distinct `NaN` payloads, both within and across input chunks.
 SET max_threads = 1;
 SET max_block_size = 2;
 SET max_bytes_before_external_distinct = 1;
