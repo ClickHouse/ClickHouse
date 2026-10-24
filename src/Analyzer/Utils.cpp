@@ -959,6 +959,42 @@ private:
     bool has_function = false;
 };
 
+/// `arrayJoin` can be spelled through its case-insensitive alias `unnest`, and with
+/// `normalize_function_names = 0` the alias reaches the query tree unchanged, so a literal
+/// name comparison (as in `hasFunctionNode`) would miss it. Compare canonical names instead.
+class CheckArrayJoinExistsVisitor : public ConstInDepthQueryTreeVisitor<CheckArrayJoinExistsVisitor>
+{
+public:
+    void visitImpl(const QueryTreeNodePtr & node)
+    {
+        if (has_array_join)
+            return;
+
+        const auto * function_node = node->as<FunctionNode>();
+        if (!function_node)
+            return;
+
+        has_array_join = getFunctionCanonicalNameIfAny(function_node->getFunctionName()) == "arrayJoin";
+    }
+
+    bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node) const
+    {
+        if (has_array_join)
+            return false;
+
+        auto child_node_type = child_node->getNodeType();
+        return !(child_node_type == QueryTreeNodeType::QUERY || child_node_type == QueryTreeNodeType::UNION);
+    }
+
+    bool hasArrayJoin() const
+    {
+        return has_array_join;
+    }
+
+private:
+    bool has_array_join = false;
+};
+
 inline DataTypes getArgumentNodeTypes(const FunctionNode & function_node)
 {
     return function_node.getArguments().getNodes()
@@ -998,6 +1034,19 @@ bool hasFunctionNode(const QueryTreeNodePtr & node, std::string_view function_na
     visitor.visit(node);
 
     return visitor.hasFunction();
+}
+
+bool hasArrayJoinFunctionNode(const QueryTreeNodePtr & node)
+{
+    CheckArrayJoinExistsVisitor visitor;
+    visitor.visit(node);
+    return visitor.hasArrayJoin();
+}
+
+bool isLocalPhysicalTable(const IStorage & storage)
+{
+    return (storage.isMergeTree() || storage.getName() == "Memory") && !storage.isView() && !storage.isRemote()
+        && storage.getName() != "Alias";
 }
 
 namespace
