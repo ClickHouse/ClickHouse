@@ -17,11 +17,6 @@
 -- incremented by the single update that caches the collected statistics, which runs only when at
 -- least one of them is non-zero, so their sum is exactly "the query was instrumented".
 
--- Pinned to the query-based implementation: `applyParallelReplicas` keeps a read selected for top-k
--- filtering local, so the `ORDER BY ... LIMIT` queries below are not parallelized under plan-based and
--- no statistics are collected for them.
-SET parallel_replicas_plan_based = 0;
-
 DROP TABLE IF EXISTS t_autopr_lazy_read;
 
 -- Both columns are stored uncompressed so that their sizes do not depend on the server's compression

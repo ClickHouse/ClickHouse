@@ -12,11 +12,6 @@
 -- `RuntimeDataflowStatisticsInputBytes` is non-zero only for a query the check let through and the
 -- optimization then instrumented, so it is what says this query is still a candidate.
 
--- Pinned to the query-based implementation: with plan-based the `IN` set over `numbers` leaves the
--- query unparallelized, so automatic parallel replicas has nothing to instrument and the candidacy
--- assertions below read 0.
-SET parallel_replicas_plan_based = 0;
-
 DROP TABLE IF EXISTS t_autopr_set_source;
 
 CREATE TABLE t_autopr_set_source (key UInt64, non_key UInt64, pad String) ENGINE = MergeTree ORDER BY key;
