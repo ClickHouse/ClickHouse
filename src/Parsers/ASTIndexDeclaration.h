@@ -9,7 +9,7 @@ namespace DB
 
 class ASTFunction;
 
-/** name BY expr TYPE typename(args) GRANULARITY int in create query
+/** name BY expr TYPE typename(args) GRANULARITY int [WHERE cond] in create query
   */
 class ASTIndexDeclaration : public IAST
 {
@@ -19,7 +19,7 @@ public:
     static constexpr auto DEFAULT_VECTOR_SIMILARITY_INDEX_GRANULARITY = 100'000'000uz;
 
     ASTIndexDeclaration() : granularity(0) {}
-    ASTIndexDeclaration(ASTPtr expression, ASTPtr type, const String & name_);
+    ASTIndexDeclaration(ASTPtr expression, ASTPtr type, const String & name_, ASTPtr where = nullptr);
 
     String name;
     UInt64 granularity = DEFAULT_INDEX_GRANULARITY;
@@ -35,6 +35,8 @@ public:
 
     ASTPtr getExpression() const;
     boost::intrusive_ptr<ASTFunction> getType() const;
+    /// Condition of a partial index: only rows satisfying it are indexed. Null if absent.
+    ASTPtr getWhere() const;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
@@ -42,6 +44,7 @@ protected:
 private:
     static constexpr size_t expression_idx = 0;
     static constexpr size_t type_idx = 1;
+    static constexpr size_t where_idx = 2;
 };
 
 class ASTFunction;

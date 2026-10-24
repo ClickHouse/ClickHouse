@@ -2631,7 +2631,7 @@ The following operations are available:
 
 ## ADD INDEX {#add-index}
 
-`ALTER TABLE [db.]table_name [ON CLUSTER cluster] ADD INDEX [IF NOT EXISTS] name expression TYPE type [GRANULARITY value] [FIRST|AFTER name]` - Adds index description to tables metadata.
+`ALTER TABLE [db.]table_name [ON CLUSTER cluster] ADD INDEX [IF NOT EXISTS] name expression TYPE type [GRANULARITY value] [WHERE condition] [FIRST|AFTER name]` - Adds index description to tables metadata. With `WHERE`, only rows satisfying the condition are indexed.
 
 ## DROP INDEX {#drop-index}
 

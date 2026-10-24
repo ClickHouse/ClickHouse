@@ -459,7 +459,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
         if (MergeTreeIndexFactory::instance().get(global_ctx->metadata_snapshot, index, *global_ctx->data_settings)->isInert())
             continue;
 
-        auto index_columns = index.expression->getRequiredColumns();
+        auto index_columns = index.getRequiredColumns();
 
         /// Calculate indexes that depend only on one column on vertical
         /// stage and other indexes on horizonatal stage of merge.

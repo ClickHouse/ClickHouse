@@ -269,6 +269,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_drop_detached;
+    extern const SettingsBool allow_experimental_partial_skip_indexes;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_non_metadata_alters;
     extern const SettingsBool allow_suspicious_indexes;
@@ -1322,25 +1323,22 @@ void MergeTreeData::checkProperties(
             checkSuspiciousIndices(index_function);
 
     /// The sorting key, the partition id and the part minmax index are computed from the block before
-    /// compression, so a lossy codec (e.g. SZ3) on a column backing either key leaves them describing values
-    /// the data on disk no longer holds. Not on attach, so a table stored by an earlier version stays loadable.
+    /// compression, and so is the condition of a partial index, which decides what its granules contain.
+    /// A lossy codec (e.g. SZ3) on a column backing any of them leaves them describing values the data on
+    /// disk no longer holds. Not on attach, so a table stored by an earlier version stays loadable.
     if (!attach)
     {
-        Names key_columns = new_metadata.getColumnsRequiredForSortingKey();
-        const Names partition_key_columns = new_metadata.getColumnsRequiredForPartitionKey();
-        key_columns.insert(key_columns.end(), partition_key_columns.begin(), partition_key_columns.end());
-
-        for (const auto & name : key_columns)
+        /// A codec applies to `Array(Float64)` through its float substream, not through the outer type,
+        /// so lossiness is resolved per substream the way the part writer resolves it.
+        auto is_lossy_column = [&](const String & name)
         {
             /// A key may use a subcolumn, whose streams are a part of the streams of its column.
             const auto written_column = new_metadata.columns.tryGetColumn(
                 GetColumnsOptions(GetColumnsOptions::AllPhysical).withRegularSubcolumns(), name);
             const auto * column = written_column ? new_metadata.columns.tryGet(written_column->getNameInStorage()) : nullptr;
             if (!column || (!column->codec && column->subcolumn_codecs.empty()))
-                continue;
+                return false;
 
-            /// A codec applies to `Array(Float64)` through its float substream, not through the outer type,
-            /// so lossiness is resolved per substream the way the part writer resolves it.
             bool is_lossy = false;
             ISerialization::StreamCallback callback = [&](const auto & substream_path)
             {
@@ -1353,12 +1351,31 @@ void MergeTreeData::checkProperties(
                 ? type_in_storage->getSubcolumnSerialization(written_column->getSubcolumnName(), type_in_storage->getDefaultSerialization())
                 : type_in_storage->getDefaultSerialization();
             serialization->enumerateStreams(callback, written_column->type);
+            return is_lossy;
+        };
 
-            if (is_lossy)
+        Names key_columns = new_metadata.getColumnsRequiredForSortingKey();
+        const Names partition_key_columns = new_metadata.getColumnsRequiredForPartitionKey();
+        key_columns.insert(key_columns.end(), partition_key_columns.begin(), partition_key_columns.end());
+
+        for (const auto & name : key_columns)
+            if (is_lossy_column(name))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Column {} is used in the sorting key or the partition key, so it cannot be compressed "
                     "with a lossy codec",
                     backQuoteIfNeed(name));
+
+        for (const auto & index : new_metadata.getSecondaryIndices())
+        {
+            if (!index.where_expression)
+                continue;
+
+            for (const auto & name : index.where_expression->getRequiredColumns())
+                if (is_lossy_column(name))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Column {} is used in the WHERE of the skip index {}, so it cannot be compressed "
+                        "with a lossy codec",
+                        backQuoteIfNeed(name), backQuoteIfNeed(index.name));
         }
     }
 
@@ -1888,6 +1905,15 @@ ExpressionActionsPtr getCombinedIndicesExpression(
 
     for (const auto & index : indices)
     {
+        /// The writer calculates a partial index from its columns, for the rows its condition selects only.
+        if (index->index.where_expression)
+        {
+            for (const auto & column : index->index.getRequiredColumns())
+                if (!use_index_expression || use_index_expression(column))
+                    combined_expr_list->children.push_back(make_intrusive<ASTIdentifier>(column));
+            continue;
+        }
+
         /// `column_names` are the analyzed result names, one per expression.
         const auto & index_exprs = index->index.expression_list_ast->children;
         chassert(index_exprs.size() == index->index.column_names.size());
@@ -6407,6 +6433,22 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         }
     }
 
+    if (!settings[Setting::allow_experimental_partial_skip_indexes])
+    {
+        for (const auto & command : commands)
+        {
+            if (command.type != AlterCommand::ADD_INDEX)
+                continue;
+            /// The declaration of the command itself: with `IF NOT EXISTS` the index of that name in the new
+            /// metadata can be an older one, and with `DROP INDEX` of the same name it can be absent.
+            const auto * declaration = command.index_decl ? command.index_decl->as<ASTIndexDeclaration>() : nullptr;
+            if (declaration && declaration->getWhere())
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Skip index '{}' with WHERE is experimental. Enable the setting 'allow_experimental_partial_skip_indexes' to use it",
+                    declaration->name);
+        }
+    }
+
     if (AlterCommands::hasTextIndex(new_metadata) && !settings[Setting::enable_full_text_index])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "Text index feature is not enabled (turn on setting 'enable_full_text_index')");
@@ -6434,7 +6476,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     {
         if (!index.isImplicitlyCreated())
         {
-            for (const String & col : index.expression->getRequiredColumns())
+            for (const String & col : old_metadata.getColumnsRequiredForIndex(index))
                 columns_in_explicit_indices.emplace(col, index.name);
         }
     }
@@ -6820,7 +6862,9 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             const auto & new_indices = new_metadata.getSecondaryIndices();
             for (const auto & old_index : old_metadata.getSecondaryIndices())
             {
-                if (!expression_uses_changed_subcolumn(old_index.expression))
+                /// A partial index's WHERE fixes the indexed row set; a change that flips it leaves a stale index.
+                if (!expression_uses_changed_subcolumn(old_index.expression)
+                    && !(old_index.where_expression && expression_uses_changed_subcolumn(old_index.where_expression)))
                     continue;
 
                 /// Dropped in the same ALTER: nothing to corrupt.

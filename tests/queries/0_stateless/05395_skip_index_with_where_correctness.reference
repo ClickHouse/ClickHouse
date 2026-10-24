@@ -1,0 +1,102 @@
+predicate column type change
+1
+1
+1
+lambda in the condition
+function that captures a setting
+1
+1
+1
+0
+ordinary index replaced by a partial one under the same name
+1
+1
+1
+partial index replaced by an ordinary one under the same name
+1
+1
+1
+condition evaluated under another session time zone when the part is written
+1
+1
+1
+0
+0
+0
+1
+1
+1
+1
+one partial condition replaced by another under the same name
+1
+1
+1
+1
+1
+set index that overflows in some granules
+8
+8
+8
+24
+24
+24
+MATERIALIZE INDEX rebuilds an index left stale by a rename of the condition column
+1
+1
+1
+1
+condition analysed under another time zone than the one a query runs in
+1
+1
+1
+partial minmax index redefined as a set index under the same name
+1
+1
+1
+1
+1
+function that captures a setting: named tuple from JSON
+1
+1
+1
+0
+0
+0
+function that captures format settings: formatRow
+1
+1
+1
+formatRow field names given by aliases
+1
+1
+1
+formatRow field names whose bytes run together the same way
+1
+1
+1
+formatRow field names given by aliases in the index condition are rejected
+setting read from the query that writes the part: use_legacy_to_time
+1
+1
+1
+update of the parent column of a subcolumn the condition reads
+1
+1
+1
+1
+1
+1
+subcolumn index, compact part with a patch part and a DELETE
+5
+5
+5
+type of the column a subcolumn index reads is changed
+8
+8
+8
+experimental gate
+i
+j
+t_clone	i
+t_copy	i
+t_src	i

@@ -172,6 +172,7 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 {
     ParserKeyword s_type(Keyword::TYPE);
     ParserKeyword s_granularity(Keyword::GRANULARITY);
+    ParserKeyword s_where(Keyword::WHERE);
 
     ParserIdentifier name_p;
     ParserExpressionWithOptionalArguments type_p;
@@ -182,6 +183,7 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ASTPtr expr;
     ASTPtr type;
     ASTPtr granularity;
+    ASTPtr where;
 
     if (!name_p.parse(pos, name, expected))
         return false;
@@ -201,7 +203,13 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
             return false;
     }
 
-    auto index = make_intrusive<ASTIndexDeclaration>(expr, type, name->as<ASTIdentifier &>().name());
+    if (s_where.ignore(pos, expected))
+    {
+        if (!expression_p.parse(pos, where, expected))
+            return false;
+    }
+
+    auto index = make_intrusive<ASTIndexDeclaration>(expr, type, name->as<ASTIdentifier &>().name(), where);
     index->granularity = getSecondaryIndexGranularity(index->getType(), granularity);
     node = index;
     return true;

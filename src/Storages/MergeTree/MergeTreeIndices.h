@@ -19,6 +19,7 @@ namespace DB
 {
 
 class IDataPartStorage;
+struct MergeTreeDataPartChecksum;
 class IMergeTreeDataPart;
 class IMergeTreeDataPartInfoForReader;
 
@@ -267,7 +268,13 @@ struct IMergeTreeIndex
     /// `getPhysicalFormat` and `getPotentialSubstreams` should be reimplemented too,
     /// and check all previous extensions for substreams too
     /// (to avoid breaking backward compatibility).
-    virtual MergeTreeIndexSubstreams getSubstreams() const { return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}; }
+    ///
+    /// A partial index (with `WHERE`) prefixes every granule with a has_rows flag, so it is written to its own
+    /// `.idxp` file: a file of the other layout under the same name is then never decoded by mistake.
+    virtual MergeTreeIndexSubstreams getSubstreams() const
+    {
+        return {{MergeTreeIndexSubstream::Type::Regular, "", index.where_expression ? ".idxp" : ".idx"}};
+    }
 
     /// Two distinct questions are asked about a part's copy of an index, and they must not be conflated:
     ///
@@ -323,7 +330,18 @@ struct IMergeTreeIndex
 
     /// Superset: every substream any version of this index could have written, whatever a given
     /// part holds. Takes no part and must do no I/O, so it is safe during part destruction.
-    virtual MergeTreeIndexSubstreams getPotentialSubstreams() const { return getSubstreams(); }
+    virtual MergeTreeIndexSubstreams getPotentialSubstreams() const { return withPartialIndexMarker(getSubstreams()); }
+
+    /// A partial index (with `WHERE`) stores, next to its granules, a marker file with the signature of the
+    /// predicate that decided which rows were indexed: the identity of the condition, plus whatever the
+    /// condition reads when it is evaluated and is not part of the metadata (the session time zone). A part is
+    /// readable only if the marker equals what the current definition and the reading query would have written.
+    /// The signature is validated against `checksums.txt`, so reading it costs no I/O.
+    static constexpr const char * PARTIAL_INDEX_MARKER_EXTENSION = ".idxs";
+    String getPartialIndexSignature() const { return getPartialIndexSignature(index); }
+    static String getPartialIndexSignature(const IndexDescription & index_description);
+    static MergeTreeDataPartChecksum getPartialIndexMarkerChecksum(const String & signature);
+    MergeTreeIndexSubstreams withPartialIndexMarker(MergeTreeIndexSubstreams substreams) const;
 
     virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
 
@@ -363,7 +381,7 @@ struct IMergeTreeIndex
     virtual bool isCompressible() const { return true; }
 
     Names getColumnsRequiredForIndexCalc() const;
-    const NamesAndTypesList & getColumnsWithTypesRequiredForIndexCalc() const;
+    NamesAndTypesList getColumnsWithTypesRequiredForIndexCalc() const;
 
     NameSet getColumnsShadowingMapSubcolumns() const;
 

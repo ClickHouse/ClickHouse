@@ -2995,7 +2995,8 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     }
 
     /// Whether we should use a more optimal filtering.
-    bool bulk_filtering = reader_settings.secondary_indices_enable_bulk_filtering && index_helper->supportsBulkFiltering() && !use_skip_indexes_for_disjunctions;
+    bool bulk_filtering = reader_settings.secondary_indices_enable_bulk_filtering && index_helper->supportsBulkFiltering() && !use_skip_indexes_for_disjunctions
+        && !index_helper->index.where_expression;
 
     auto skip_index_granularity = index_helper->index.granularity;
     const auto & index_granularity = part_info->getIndexGranularity();
@@ -3211,6 +3212,10 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                 {
                     reader.read(index_mark, condition.get(), granule, /*readable_ranges=*/ nullptr);
                 }
+
+                /// A partial index granule without indexed rows: no row there satisfies the query filter.
+                if (!granule)
+                    continue;
 
                 if (index_helper->isVectorSimilarityIndex())
                 {

@@ -22,6 +22,8 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/DataTypeString.h>
+#include <Functions/FunctionFactory.h>
 #include <Disks/SingleDiskVolume.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -677,7 +679,7 @@ static void splitAndModifyMutationCommands(
                     {
                         if (index.name == command.index_name)
                         {
-                            auto required_columns = index.expression->getRequiredColumns();
+                            auto required_columns = index.getRequiredColumns();
                             for (const auto & column : required_columns)
                             {
                                 auto column_in_storage = Nested::tryGetColumnNameInStorage(column, storage_columns);
@@ -821,7 +823,7 @@ static void splitAndModifyMutationCommands(
             if (!part->hasSecondaryIndex(index.name, metadata_snapshot))
                 continue;
 
-            for (const auto & column : index.expression->getRequiredColumns())
+            for (const auto & column : index.getRequiredColumns())
             {
                 auto column_in_storage = Nested::tryGetColumnNameInStorage(column, storage_columns);
                 if (column_in_storage && !part_columns.has(*column_in_storage))
@@ -1818,7 +1820,7 @@ static NameToNameVector collectFilesForRenames(
     /// extension that substream declares: claiming a substream or extension the type does not write
     /// would protect, and so leak, a file of the index being dropped.
     static const std::array<String, 4> owned_substream_suffixes = {"", ".dct", ".pst", ".pos"};
-    static const std::array<String, 2> owned_index_extensions = {".idx2", ".idx"};
+    static const std::array<String, 4> owned_index_extensions = {".idxp", ".idx2", ".idx", ".idxs"};
 
     NameSet surviving_index_owned_files;
     {
@@ -1843,6 +1845,9 @@ static NameToNameVector collectFilesForRenames(
                 };
 
                 protect(substream.extension);
+                /// The marker of a partial index goes wherever its granules go.
+                if (surviving_index->index.where_expression)
+                    protect(IMergeTreeIndex::PARTIAL_INDEX_MARKER_EXTENSION);
                 /// minmax changed `.idx` (v1) -> `.idx2` (v2), so an upgraded part may still carry
                 /// the legacy file for a substream that now declares `.idx2`.
                 if (substream.extension == ".idx2")
@@ -2579,6 +2584,8 @@ struct MutationContext
     /// Skip-index files on disk but missing from `checksums.txt`, so no checksums-based resolver
     /// sees them. Merged into `files_to_skip` so the hardlink loop drops them.
     NameSet orphan_skip_index_files;
+    /// Standalone files of partial indexes of names the metadata does not declare as partial indexes, dropped by the mutation.
+    NameSet foreign_partial_index_files;
     ColumnsStatistics stats_to_recalc;
     /// The statistics objects the mutation must compute from the blocks it writes. This is a
     /// subset of `all_gathered_data.statistics`: the remaining entries were loaded from the
@@ -3107,6 +3114,73 @@ void PartMergerWriter::finalize()
         temporary_text_index_storage->removeRecursive();
 }
 
+/// A mutation that changes data drops the files of partial indexes the metadata cannot read, as they could describe old data
+/// under a definition restored later. A mutation that only renames columns changes no data, so it keeps them.
+static bool keepsUnreadablePartialIndexes(const MutationCommands & commands)
+{
+    return std::ranges::all_of(commands, [](const MutationCommand & command) { return command.type == MutationCommand::RENAME_COLUMN; });
+}
+
+/// The part has files of the partial index `index`, but their marker is for another definition.
+static bool hasUnreadablePartialIndex(const MergeTreeDataPartPtr & part, const IndexDescription & index, const StorageMetadataPtr & metadata)
+{
+    if (!index.where_expression)
+        return false;
+
+    const String file_name = getIndexFileName(index.name, metadata->escape_index_filenames);
+    const bool has_files = part->getStreamNameOrHashResolved(file_name, ".idxp")
+        || IMergeTreeDataPart::getStreamNameOrHash(file_name, IMergeTreeIndex::PARTIAL_INDEX_MARKER_EXTENSION, part->checksums);
+    return has_files && !part->hasSecondaryIndex(index.name, metadata);
+}
+
+/// The files of partial indexes whose name is not declared as a partial index now (it was dropped, or declared ordinary, while
+/// the part was detached): standalone ones into `files`, members of the packed archive into `archive_files`.
+static void collectForeignPartialIndexFiles(
+    const MergeTreeDataPartPtr & part, const StorageMetadataPtr & metadata, const String & mrk_extension, NameSet & files, NameSet & archive_files)
+{
+    const std::array<String, 2> extensions = {".idxp", IMergeTreeIndex::PARTIAL_INDEX_MARKER_EXTENSION};
+    const auto & checksums = part->checksums;
+
+    NameSet declared_bases;
+    for (const auto & index : metadata->getSecondaryIndices())
+    {
+        if (!index.where_expression)
+            continue;
+        const String file_name = getIndexFileName(index.name, metadata->escape_index_filenames);
+        for (const auto & extension : extensions)
+            if (auto base = IMergeTreeDataPart::getStreamNameOrHash(file_name, extension, checksums))
+                declared_bases.insert(*base);
+    }
+
+    /// The marker of a partial index is always a standalone file, so it finds the indexes inside the packed archive too.
+    NameSet foreign_bases;
+    for (const auto & [name, _] : checksums.files)
+        for (const auto & extension : extensions)
+            if (name.ends_with(extension) && !declared_bases.contains(name.substr(0, name.size() - extension.size())))
+                foreign_bases.insert(name.substr(0, name.size() - extension.size()));
+
+    const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&part->getDataPartStorage());
+    auto exists_in_archive = [&](const String & name) { return disk_storage && disk_storage->isFileInPackedSkipIndicesArchive(name); };
+
+    for (const auto & base : foreign_bases)
+    {
+        Names candidates = {base + extensions[0], base + extensions[1]};
+        /// The marks have the same name as the ones of an ordinary index of the same name, which keeps them.
+        const bool has_ordinary = checksums.files.contains(base + ".idx") || checksums.files.contains(base + ".idx2")
+            || exists_in_archive(base + ".idx") || exists_in_archive(base + ".idx2");
+        if (!has_ordinary)
+            candidates.push_back(base + mrk_extension);
+
+        for (const auto & candidate : candidates)
+        {
+            if (checksums.files.contains(candidate))
+                files.insert(candidate);
+            else if (exists_in_archive(candidate))
+                archive_files.insert(candidate);
+        }
+    }
+}
+
 /// Is `index` resolvable from `checksums.txt` (or from the packed archive) using only files it
 /// actually owns? `getAllSubstreamsInPart` probes speculative extensions, so with
 /// `escape_index_filenames` = 0 that probe can land on a sibling's file, and a sibling's file is not
@@ -3208,16 +3282,92 @@ void PartMergerWriter::tryCleanupTemporaryFiles() const noexcept
 /// after the TTL transforms: the writer reuses whatever expression column it finds in the block, so
 /// evaluating it earlier writes an index that describes the pre-TTL values of a column the TTL reset
 /// or of a `MATERIALIZED` column recomputed from one - the index then prunes granules that do match.
+/// The mutation reads a subcolumn that an index uses (`p.size0`) from the source part, next to the column it belongs to
+/// (`p`), which an `UPDATE` may have just replaced: the subcolumn then describes the old values. Take the subcolumns
+/// of the columns of the block from those columns.
+static void addSubcolumnsRefreshFromParentsTransform(QueryPipelineBuilder & builder, const MutationContextPtr & ctx)
+{
+    const auto & header = builder.getHeader();
+
+    /// Subcolumn name -> (name of its column, name of the subcolumn within it).
+    std::unordered_map<String, std::pair<String, String>> stale;
+    for (const auto & column : header)
+    {
+        /// A physical column named like a subcolumn (`a.size0` next to `a`) is a column of its own, not a subcolumn.
+        if (ctx->metadata_snapshot->getColumns().hasPhysical(column.name))
+            continue;
+
+        for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(column.name))
+        {
+            const auto * parent = header.findByName(column_name);
+            if (parent && parent->type->tryGetSubcolumnType(subcolumn_name))
+            {
+                stale.emplace(column.name, std::make_pair(String(column_name), String(subcolumn_name)));
+                break;
+            }
+        }
+    }
+
+    if (stale.empty())
+        return;
+
+    ActionsDAG dag;
+    std::unordered_map<String, const ActionsDAG::Node *> inputs;
+    for (const auto & column : header)
+        inputs.emplace(column.name, &dag.addInput(column));
+
+    for (const auto & column : header)
+    {
+        auto it = stale.find(column.name);
+        if (it == stale.end())
+        {
+            dag.getOutputs().push_back(inputs.at(column.name));
+            continue;
+        }
+
+        auto subcolumn_name_type = std::make_shared<DataTypeString>();
+        const auto & subcolumn_name_arg = dag.addColumn(
+            subcolumn_name_type->createColumnConst(0, it->second.second), subcolumn_name_type, it->second.second);
+        const auto & function_node = dag.addFunction(
+            FunctionFactory::instance().get("getSubcolumn", ctx->context), {inputs.at(it->second.first), &subcolumn_name_arg}, {});
+        dag.getOutputs().push_back(&dag.addAlias(function_node, column.name));
+    }
+
+    builder.addTransform(std::make_shared<ExpressionTransform>(builder.getSharedHeader(), std::make_shared<ExpressionActions>(std::move(dag))));
+}
+
 static void addIndicesRecalculationTransform(QueryPipelineBuilder & builder, const MutationContextPtr & ctx)
 {
     if (!ctx->indices_recalc_expr_list)
         return;
 
-    auto syntax_result
-        = TreeRewriter(ctx->context).analyze(ctx->indices_recalc_expr_list, builder.getHeader().getNamesAndTypesList());
+    addSubcolumnsRefreshFromParentsTransform(builder, ctx);
+
+    /// An index can read a subcolumn of a column of the block (`p.size0` of `p`) that the block does not carry as a
+    /// column of its own: the expressions are analysed with the subcolumns available, and extracted from the column
+    /// before the expressions run.
+    const auto & header = builder.getHeader();
+    NamesAndTypesList source_columns = header.getNamesAndTypesList();
+    {
+        NameSet present;
+        for (const auto & column : header)
+            present.insert(column.name);
+        for (const auto & column : header)
+            for (const auto & subcolumn_name : column.type->getSubcolumnNames())
+                if (auto subcolumn_type = column.type->tryGetSubcolumnType(subcolumn_name);
+                    subcolumn_type && present.insert(Nested::concatenateName(column.name, subcolumn_name)).second)
+                    source_columns.emplace_back(column.name, subcolumn_name, column.type, subcolumn_type);
+    }
+
+    auto syntax_result = TreeRewriter(ctx->context).analyze(ctx->indices_recalc_expr_list, source_columns);
     auto expression = ExpressionAnalyzer(ctx->indices_recalc_expr_list, syntax_result, ctx->context).getActions(false);
 
-    builder.addTransform(std::make_shared<ExpressionTransform>(builder.getSharedHeader(), expression));
+    auto dag = expression->getActionsDAG().clone();
+    auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(header, dag.getRequiredColumnsNames(), ctx->context);
+    if (!extracting_subcolumns_dag.getNodes().empty())
+        dag = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(dag));
+
+    builder.addTransform(std::make_shared<ExpressionTransform>(builder.getSharedHeader(), std::make_shared<ExpressionActions>(std::move(dag))));
     builder.addTransform(std::make_shared<MaterializingTransform>(builder.getSharedHeader()));
 }
 
@@ -3333,6 +3483,10 @@ private:
                 continue;
 
             if (ctx->indices_to_drop_names.contains(idx.name))
+                continue;
+
+            if (!ctx->materialized_indices.contains(idx.name) && !keepsUnreadablePartialIndexes(ctx->commands_for_part)
+                && hasUnreadablePartialIndex(ctx->source_part, idx, ctx->metadata_snapshot))
                 continue;
 
             auto index_ptr = MergeTreeIndexFactory::instance().get(ctx->metadata_snapshot, idx, *ctx->data->getSettings());
@@ -3503,6 +3657,9 @@ private:
         /// describing the data of the source part instead of the data of the new part.
         if (ctx->metadata_snapshot->hasPrimaryKey() || ctx->metadata_snapshot->hasSecondaryIndices())
         {
+            /// The columns the mutation has just updated, not the source part, are what their subcolumns are taken from.
+            addSubcolumnsRefreshFromParentsTransform(*builder, ctx);
+
             auto indices_expression_dag = ctx->data->getPrimaryKeyAndSkipIndicesExpression(ctx->metadata_snapshot, skip_indices)->getActionsDAG().clone();
             auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(builder->getHeader(), indices_expression_dag.getRequiredColumnsNames(), ctx->context);
             if (!extracting_subcolumns_dag.getNodes().empty())
@@ -3854,6 +4011,8 @@ private:
             remove_per_substream_checksums(index);
         for (const auto & index : ctx->text_indices_to_recalc)
             remove_per_substream_checksums(index);
+        for (const auto & file : ctx->foreign_partial_index_files)
+            ctx->new_data_part->checksums.remove(file);
 
         /// When DROP INDEX targets an index that lives inside skp_idx.packed there is no
         /// mutations pipeline (DROP INDEX commands never produce one), so no writer will
@@ -4435,6 +4594,16 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
             ctx->indices_to_drop_names.insert(cmd.column_name);
     }
 
+    if (!keepsUnreadablePartialIndexes(ctx->commands_for_part))
+    {
+        for (const auto & index : indices)
+            if (!ctx->materialized_indices.contains(index.name) && hasUnreadablePartialIndex(source_part, index, metadata_snapshot))
+                ctx->indices_to_drop_names.insert(index.name);
+
+        collectForeignPartialIndexFiles(
+            source_part, metadata_snapshot, ctx->mrk_extension, ctx->foreign_partial_index_files, ctx->dropped_skip_index_archive_file_names);
+    }
+
     for (const auto & index : indices)
     {
         if (ctx->indices_to_drop_names.contains(index.name))
@@ -4462,7 +4631,13 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
             else
                 inserted = ctx->indices_to_recalc.insert(index_ptr).second;
 
-            if (inserted)
+            if (inserted && index.where_expression)
+            {
+                /// The writer calculates a partial index from its columns, for the rows its condition selects only.
+                for (const auto & column : index.getRequiredColumns())
+                    indices_recalc_expr_list->children.push_back(make_intrusive<ASTIdentifier>(column));
+            }
+            else if (inserted)
             {
                 ASTPtr expr_list = index.expression_list_ast->clone();
                 for (const auto & expr : expr_list->children)
@@ -4533,7 +4708,7 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
         /// the exact in-archive filenames the filter must remove (avoiding a prefix collision when
         /// two indices share a getIndexFileName prefix, e.g. `a` and `a.b` with `escape_index_filenames` = 0).
         static const std::array<String, 4> known_substream_suffixes = {"", ".dct", ".pst", ".pos"};
-        static const std::array<String, 2> known_index_extensions = {".idx2", ".idx"};
+        static const std::array<String, 4> known_index_extensions = {".idxp", ".idx2", ".idx", ".idxs"};
         const bool escape_filenames = ctx->metadata_snapshot->escape_index_filenames;
 
         /// Exact in-archive filenames owned by the surviving indices, so a speculative suffix never
@@ -5145,6 +5320,7 @@ bool MutateTask::prepare()
         /// Skip the corrupted-part orphan files (see `MutationContext::orphan_skip_index_files`);
         /// `collectFilesToSkip` cannot reach them since they are absent from `checksums.txt`.
         ctx->files_to_skip.insert(ctx->orphan_skip_index_files.begin(), ctx->orphan_skip_index_files.end());
+        ctx->files_to_skip.insert(ctx->foreign_partial_index_files.begin(), ctx->foreign_partial_index_files.end());
 
         /// A declaration that could not be analyzed has no `ProjectionDescription`, so nothing above can decide
         /// whether its data still matches the rows this mutation rewrites. Leave it out of the new part when a

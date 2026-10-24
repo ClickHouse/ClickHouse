@@ -101,6 +101,8 @@ BlockIO createHypotheticalIndex(
     const ContextPtr & context)
 {
     const auto & index_ast = query.index_decl->as<ASTIndexDeclaration &>();
+    if (index_ast.getWhere())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Hypothetical indexes with WHERE are not supported");
 
     /// `IF NOT EXISTS` must short-circuit before building/validating the descriptor,
     /// matching `ALTER TABLE ... ADD INDEX IF NOT EXISTS`. The name is taken if a

@@ -3837,8 +3837,30 @@ bool IMergeTreeDataPart::hasSecondaryIndex(const String & index_name, const Stor
     auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::hasSecondaryIndex");
 
     auto file_name = getIndexFileName(index_name, metadata->escape_index_filenames);
-    return getStreamNameOrHashResolved(file_name, ".idx").has_value()
+    const bool has_ordinary = getStreamNameOrHashResolved(file_name, ".idx").has_value()
         || getStreamNameOrHashResolved(file_name, ".idx2").has_value();
+    const bool has_partial = getStreamNameOrHashResolved(file_name, ".idxp").has_value();
+
+    /// The two layouts are not interchangeable: only the one the index is declared with counts.
+    for (const auto & declared : metadata->getSecondaryIndices())
+    {
+        if (declared.name != index_name)
+            continue;
+
+        if (!declared.where_expression)
+            return has_ordinary;
+
+        /// Granules of another condition (or built in another environment) do not count as the index being
+        /// there, so that rebuilding commands such as MATERIALIZE INDEX replace them.
+        const auto marker_name = getStreamNameOrHash(file_name, IMergeTreeIndex::PARTIAL_INDEX_MARKER_EXTENSION, checksums);
+        if (!has_partial || !marker_name)
+            return false;
+        const auto it = checksums.files.find(*marker_name + IMergeTreeIndex::PARTIAL_INDEX_MARKER_EXTENSION);
+        const auto expected = IMergeTreeIndex::getPartialIndexMarkerChecksum(IMergeTreeIndex::getPartialIndexSignature(declared));
+        return it != checksums.files.end() && it->second.file_size == expected.file_size && it->second.file_hash == expected.file_hash;
+    }
+
+    return has_ordinary || has_partial;
 }
 
 bool IMergeTreeDataPart::isSkipIndexInPackedArchive(const IMergeTreeIndex & skip_index) const

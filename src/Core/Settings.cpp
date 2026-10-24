@@ -7756,6 +7756,11 @@ Allow to execute correlated subqueries.
         {"25.8", false, true, "Mark correlated subqueries support as Beta. At the time the setting was named `allow_experimental_correlated_subqueries`, which is now an alias of it."}, \
         {"25.4", false, false, "Added new setting to allow correlated subqueries execution. At the time the setting was named `allow_experimental_correlated_subqueries`, which is now an alias of it."}) \
     \
+    DECLARE(Bool, allow_experimental_partial_skip_indexes, false, R"(
+Allow data skipping indexes with a `WHERE` clause (`INDEX name expr TYPE type WHERE condition`). Such an index stores only the rows that satisfy the condition and is used by queries whose filter contains the same condition. The on-disk layout of these indexes and the condition matching are experimental.
+)", EXPERIMENTAL, \
+        {"26.11", false, false, "New setting to allow data skipping indexes with a `WHERE` clause."}) \
+    \
     DECLARE(Bool, allow_experimental_lateral_join, false, R"(
 Allow LATERAL JOIN syntax. When enabled, subqueries in the right side of a JOIN can reference columns from the left side, enabling correlated subqueries in the FROM clause (SQL standard LATERAL JOIN).
 )", EXPERIMENTAL, \
