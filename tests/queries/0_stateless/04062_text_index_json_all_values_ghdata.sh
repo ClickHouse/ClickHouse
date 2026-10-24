@@ -51,7 +51,7 @@ $MY_CLICKHOUSE_CLIENT --query "
         text_index_posting_list_codec = 'none',
         text_index_posting_list_block_size = 1048576,
         text_index_dictionary_block_size = 512,
-        text_index_dictionary_block_frontcoding_compression = 1;
+        text_index_dictionary_block_encoding = 'frontcoding_v1';
 "
 
 cat "$CUR_DIR"/data_json/ghdata_sample.json | $MY_CLICKHOUSE_CLIENT \

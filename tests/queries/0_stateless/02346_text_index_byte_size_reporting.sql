@@ -13,7 +13,7 @@ ORDER BY tuple()
 SETTINGS
     text_index_dictionary_block_size = 512,
     text_index_posting_list_block_size = 10000000,
-    text_index_dictionary_block_frontcoding_compression = 1;
+    text_index_dictionary_block_encoding = 'frontcoding_v1';
 
 INSERT INTO tab (s) SELECT number FROM numbers(10000);
 

@@ -96,7 +96,7 @@ CREATE TABLE table
                                 [, support_phrase_search = 0 | 1 ] -- experimental
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
-                                [, dictionary_block_frontcoding_compression = B]
+                                [, dictionary_block_encoding = 'none' | 'frontcoding_v1' | 'frontcoding_v2']
                                 [, posting_list_block_size = C]
                                 [, posting_list_codec = 'none' | 'bitpacking' | 'pfor' ]
                             )
@@ -136,7 +136,7 @@ ALTER TABLE table
                                 [, support_phrase_search = 0 | 1 ] -- experimental
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
-                                [, dictionary_block_frontcoding_compression = B]
+                                [, dictionary_block_encoding = 'none' | 'frontcoding_v1' | 'frontcoding_v2']
                                 [, posting_list_block_size = C]
                                 [, posting_list_codec = 'none' | 'bitpacking' | 'pfor' ]
                             )
@@ -631,7 +631,12 @@ We do not recommend changing them.
 
 Optional parameter `dictionary_block_size` (default: 512) specifies the size of dictionary blocks in rows.
 
-Optional parameter `dictionary_block_frontcoding_compression` (default: 1) specifies if the dictionary blocks use front coding as compression.
+Optional parameter `dictionary_block_encoding` (default: `frontcoding_v1`) specifies the layout of tokens in dictionary blocks:
+- `none` - the tokens are stored as is.
+- `frontcoding_v1` - [front coding](https://en.wikipedia.org/wiki/Incremental_encoding): each token stores the length of the prefix shared with the previous token, the length of the remaining suffix, and the suffix.
+- `frontcoding_v2` - front coding with the prefix and suffix lengths of a block stored as two bit-packed columns. Smaller and faster to decode than `frontcoding_v1`, especially for short tokens (e.g. with the `ngrams` tokenizer).
+
+Parameter `dictionary_block_frontcoding_compression` is deprecated: `1` is the same as `dictionary_block_encoding = 'frontcoding_v1'`, `0` is the same as `dictionary_block_encoding = 'none'`. It cannot be combined with `dictionary_block_encoding`.
 
 Optional parameter `posting_list_block_size` (default: 1048576) specifies the size of posting list blocks in rows.
 
@@ -640,7 +645,7 @@ Optional parameter `posting_list_codec` (default: `none`) specifies the codec fo
 - `bitpacking` - apply [differential (delta) coding](https://en.wikipedia.org/wiki/Delta_encoding), followed by [bit-packing](https://dev.to/madhav_baby_giraffe/bit-packing-the-secret-to-optimizing-data-storage-and-transmission-m70) (each within blocks of fixed-size). Slows down SELECT queries, not recommended at the moment.
 - `pfor` - apply differential (delta) coding, followed by PFor bit-packing (each within blocks of fixed size). Like `bitpacking`, but the per-block bit width is chosen to minimise the total size and the values that do not fit are stored separately as patched exceptions, so a single large gap no longer widens the whole block. Blocks whose deltas are all equal collapse to a constant.
 
-The advanced parameters above can alternatively be set at the table level through the corresponding MergeTree settings: [`text_index_dictionary_block_size`](/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_size), [`text_index_dictionary_block_frontcoding_compression`](/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_frontcoding_compression), [`text_index_posting_list_block_size`](/reference/settings/merge-tree-settings/text-index#text_index_posting_list_block_size), and [`text_index_posting_list_codec`](/reference/settings/merge-tree-settings/text-index#text_index_posting_list_codec).
+The advanced parameters above can alternatively be set at the table level through the corresponding MergeTree settings: [`text_index_dictionary_block_size`](/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_size), [`text_index_dictionary_block_encoding`](/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_encoding), [`text_index_posting_list_block_size`](/reference/settings/merge-tree-settings/text-index#text_index_posting_list_block_size), and [`text_index_posting_list_codec`](/reference/settings/merge-tree-settings/text-index#text_index_posting_list_codec).
 They apply to every text index of the table that does not specify the parameter explicitly.
 
 The main use case of the table-level settings is to change the index parameters of an existing table without dropping and re-creating the text index on all table parts.
@@ -1622,6 +1627,7 @@ The on-disk format version of text indexes is controlled by the table-level sett
 The setting is a preference rather than a hard constraint: if the configured version cannot represent an index, a newer version that can represent it is chosen automatically, so writing a text index never fails because of this setting.
 During a rolling upgrade, pin the format with the [`compatibility`](/reference/settings/session-settings/compatibility#compatibility) setting on the already upgraded servers: when it is set to a version older than the one that introduced the corresponding format, `text_index_serialization_version` reverts to an older value automatically and newer servers keep writing the format that older servers can still read.
 The posting list codec is not governed by this version: a part written with `posting_list_codec = 'pfor'` (or the `text_index_posting_list_codec` setting) cannot be read by servers that predate the codec, and neither `text_index_serialization_version` nor `compatibility` prevents it from being used, because a codec named for the index takes precedence over the version preference in the same way `support_phrase_search` does. Do not enable `pfor` until every server that may read the table has been upgraded.
+The same applies to `dictionary_block_encoding = 'frontcoding_v2'` (or the `text_index_dictionary_block_encoding` setting): servers before version 26.10 cannot read such parts.
 
 ## Text Indexes vs Bloom-Filter-Based Indexes {#text-index-vs-bloom-filter-indexes}
 
