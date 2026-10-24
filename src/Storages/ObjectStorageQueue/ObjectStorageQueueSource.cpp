@@ -77,6 +77,7 @@ namespace FailPoints
     extern const char object_storage_queue_cancel_in_generate[];
     extern const char object_storage_queue_sleep_in_generate[];
     extern const char object_storage_queue_fail_tags_fetch[];
+    extern const char object_storage_queue_pause_after_blocked_files_replay_cap[];
 }
 
 namespace ErrorCodes
@@ -177,14 +178,23 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
 
 bool ObjectStorageQueueSource::FileIterator::isFinished()
 {
-    if (iterator_invalidated)
-        return true;
+    if (!iterator_invalidated)
+    {
+        std::lock_guard lock(mutex);
+        LOG_TEST(log, "Iterator finished: {}, objects to retry: {}", iterator_finished.load(), objects_to_retry.size());
+        if (!iterator_finished
+            || !std::all_of(keys_cache_per_bucket.begin(), keys_cache_per_bucket.end(), [](const auto & v) { return v.second->keys.empty(); })
+            || !objects_to_retry.empty())
+            return false;
+    }
 
-    std::lock_guard lock(mutex);
-    LOG_TEST(log, "Iterator finished: {}, objects to retry: {}", iterator_finished.load(), objects_to_retry.size());
-    return iterator_finished
-        && std::all_of(keys_cache_per_bucket.begin(), keys_cache_per_bucket.end(), [](const auto & v) { return v.second->keys.empty(); })
-        && objects_to_retry.empty();
+    /// Ordered mode: a file handed out by this iterator can still turn out to be foreign-held.
+    /// The streaming task replaces a finished iterator, and the replacement does not know about
+    /// such a file: it could commit a later file of the domain and advance the `processed` pointer
+    /// past it. Wait for the outcomes, after which `inheritForeignProcessingRechecks` keeps
+    /// a foreign-held file as a blocker of its domain in the replacement.
+    waitAllSetProcessingResolved();
+    return true;
 }
 
 size_t ObjectStorageQueueSource::FileIterator::estimatedKeysCount()
@@ -219,49 +229,138 @@ ObjectStorageQueueSource::FileIterator::next()
 
         while (new_batch.empty())
         {
-            auto result = object_storage_iterator->getCurrentBatchAndScheduleNext();
+            std::vector<std::string> taken_replays;
+            /// Files skipped earlier because of a fresh foreign `processing` observation are
+            /// rechecked at the first batch boundary after the observation expires, without
+            /// waiting for the rest of the listing pass (it can take much longer than the TTL).
+            /// A batch of rechecks is followed by a listing batch, so that the listing keeps
+            /// progressing even if the rechecks keep becoming due.
+            const bool rechecks_first = listing_exhausted || !std::exchange(last_batch_was_recheck, false);
+            if (rechecks_first)
+                new_batch = takeDueForeignProcessingRechecks(taken_replays);
+
+            std::optional<RelativePathsWithMetadata> result;
+            if (new_batch.empty() && !listing_exhausted)
+            {
+                result = object_storage_iterator->getCurrentBatchAndScheduleNext();
+                if (!result.has_value())
+                {
+                    listing_exhausted = true;
+                    if (!rechecks_first)
+                        new_batch = takeDueForeignProcessingRechecks(taken_replays);
+                }
+            }
+
             if (!result.has_value())
             {
-                is_finished = true;
-                return {};
+                if (new_batch.empty())
+                {
+                    is_finished = true;
+                    return {};
+                }
+
+                last_batch_was_recheck = true;
+                LOG_TEST(log, "Rechecking {} files whose foreign `processing` observation expired", new_batch.size());
             }
-
-            LOG_TEST(log, "Received batch of size: {}", result->size());
-
-            std::transform(
-                result->begin(),
-                result->end(),
-                std::back_inserter(new_batch),
-                [&](const std::shared_ptr<RelativePathWithMetadata> & object) { return std::make_shared<ObjectInfo>(*object); });
-            ProfileEvents::increment(ProfileEvents::ObjectStorageQueueListedFiles, new_batch.size());
-
-            for (auto it = new_batch.begin(); it != new_batch.end();)
+            else
             {
-                if (!recursive && !re2::RE2::FullMatch((*it)->getPath(), *matcher))
-                    it = new_batch.erase(it);
-                else
-                    ++it;
-            }
 
-            if (filter_expr)
-            {
-                std::vector<String> paths;
-                paths.reserve(new_batch.size());
-                for (const auto & object_info : new_batch)
-                    paths.push_back(Source::getUniqueStoragePathIdentifier(*configuration, *object_info, false));
+                LOG_TEST(log, "Received batch of size: {}", result->size());
 
-                /// Hive partition columns were not being used in ObjectStorageQueue before the refactoring from (virtual -> physical).
-                /// So we are keeping it the way it is for now
-                VirtualColumnUtils::filterByPathOrFile(
-                    new_batch, paths, filter_expr, virtual_columns, hive_partition_columns_to_read_from_file_path, getContext());
+                std::transform(
+                    result->begin(),
+                    result->end(),
+                    std::back_inserter(new_batch),
+                    [&](const std::shared_ptr<RelativePathWithMetadata> & object) { return std::make_shared<ObjectInfo>(*object); });
+                ProfileEvents::increment(ProfileEvents::ObjectStorageQueueListedFiles, new_batch.size());
 
-                LOG_TEST(log, "Filtered files: {} -> {} by path or filename", paths.size(), new_batch.size());
+                /// A file taken over from the previous iterator is listed again by this pass:
+                /// drop any pending recheck of it (the inherited copy, or the one queued again
+                /// after the inherited copy was rechecked), the listed one goes through the
+                /// regular filtering.
+                if (!inherited_foreign_processing_rechecks.empty())
+                {
+                    std::unordered_set<std::string> relisted;
+                    for (const auto & object_info : new_batch)
+                    {
+                        if (inherited_foreign_processing_rechecks.erase(object_info->getPath()))
+                            relisted.insert(object_info->getPath());
+                    }
+                    if (!relisted.empty())
+                    {
+                        std::erase_if(foreign_processing_files_to_recheck, [&](const PendingRecheck & pending) TSA_REQUIRES(next_mutex)
+                        {
+                            if (!relisted.contains(pending.object->getPath()))
+                                return false;
+                            /// The inherited recheck could have become a replay in the meantime:
+                            /// its ordering barrier goes away with it.
+                            if (pending.is_replay)
+                                forgetPendingReplay(pending.object->getPath());
+                            return true;
+                        });
+                    }
+                }
+
+                for (auto it = new_batch.begin(); it != new_batch.end();)
+                {
+                    if (!recursive && !re2::RE2::FullMatch((*it)->getPath(), *matcher))
+                        it = new_batch.erase(it);
+                    else
+                        ++it;
+                }
+
+                if (filter_expr)
+                {
+                    std::vector<String> paths;
+                    paths.reserve(new_batch.size());
+                    for (const auto & object_info : new_batch)
+                        paths.push_back(Source::getUniqueStoragePathIdentifier(*configuration, *object_info, false));
+
+                    /// Hive partition columns were not being used in ObjectStorageQueue before the refactoring from (virtual -> physical).
+                    /// So we are keeping it the way it is for now
+                    VirtualColumnUtils::filterByPathOrFile(
+                        new_batch, paths, filter_expr, virtual_columns, hive_partition_columns_to_read_from_file_path, getContext());
+
+                    LOG_TEST(log, "Filtered files: {} -> {} by path or filename", paths.size(), new_batch.size());
+                }
             }
 
             size_t previous_size = new_batch.size();
 
             /// Filter out files which we know we would not need to process.
-            filterProcessableFiles(new_batch);
+            try
+            {
+                filterProcessableFiles(new_batch);
+            }
+            catch (...)
+            {
+                /// Ordered mode: the files of the batch are neither handed out nor queued any more,
+                /// and a taken replay stays in `in_flight_replays_per_domain`, deferring the later
+                /// files of its domain forever. Continuing would also let the later files of the
+                /// listing be committed past the lost ones. Stop this iterator instead: the next
+                /// one does not inherit anything from it, and its fresh listing pass lists the lost
+                /// files again in order.
+                if (mode == ObjectStorageQueueMode::ORDERED)
+                    iterator_invalidated = true;
+                throw;
+            }
+
+            /// The taken replays which did not survive the filtering are not handed out,
+            /// so they are not ordering barriers any more (if a replay was queued again or
+            /// retained behind a blocker, that keeps its domain ordered instead).
+            if (!taken_replays.empty())
+            {
+                std::unordered_multiset<std::string> survived;
+                for (const auto & object_info : new_batch)
+                    survived.insert(object_info->getPath());
+                for (const auto & path : taken_replays)
+                {
+                    if (const auto it = survived.find(path); it != survived.end())
+                        survived.erase(it);
+                    else
+                        forgetInFlightReplay(path);
+                }
+            }
 
             LOG_TEST(log, "Filtered processed and failed files: {} -> {}", previous_size, new_batch.size());
 
@@ -314,6 +413,13 @@ ObjectStorageQueueSource::FileIterator::next()
                     }
                     else
                     {
+                        /// Declined because of a fresh foreign `processing` observation:
+                        /// recheck the file when the observation expires.
+                        const auto status = file_metadatas[i]->getFileStatus();
+                        if (status->state.load() == ObjectStorageQueueIFileMetadata::FileStatus::State::Processing
+                            && status->isProcessingObservedInKeeper())
+                            queueForeignProcessingRecheck(new_batch[i], status);
+
                         new_batch[i] = nullptr;
                         file_metadatas[i] = nullptr;
                     }
@@ -508,9 +614,59 @@ void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(ObjectInfos 
     if (enable_hash_ring_filtering && mode == ObjectStorageQueueMode::UNORDERED)
         metadata->filterOutForProcessor(paths, storage_id);
 
+    using FileStatus = ObjectStorageQueueIFileMetadata::FileStatus;
+
+    /// A fresh cached observation of a foreign `processing` node is trusted:
+    /// skip the file without including it into the keeper requests below,
+    /// and recheck it when the observation expires.
+    std::unordered_map<std::string, ObjectStorageQueueIFileMetadata::FileStatusPtr> skipped_foreign_processing;
+    std::erase_if(paths, [&](const std::string & path) TSA_REQUIRES(next_mutex)
+    {
+        auto status = metadata->tryGetFileStatus(path);
+        if (!status || !status->isProcessingObservedInKeeperTrusted(metadata->getProcessingStateCacheTTLSeconds()))
+            return false;
+
+        LOG_TEST(log, "Skipping file {}: Processing by another processor", path);
+        skipped_foreign_processing.emplace(path, std::move(status));
+        recordForeignHeldFile(path);
+        return true;
+    });
+
+    /// Ordered mode: while a smaller file of the same ordering domain is held by a foreign
+    /// `processing` node, later files are held until the blocker is resolved — committing one
+    /// would advance the `processed` pointer past the held file and lose it forever.
+    std::unordered_set<std::string> blocked_by_foreign_held_file;
+    /// Ordered mode: a smaller file of the same ordering domain is pending a replay, so this
+    /// file must not be handed out before it either. It is replayed together with it, in path order.
+    std::unordered_set<std::string> behind_pending_replay;
+    if (mode == ObjectStorageQueueMode::ORDERED)
+    {
+        std::erase_if(paths, [&](const std::string & path) TSA_REQUIRES(next_mutex)
+        {
+            if (isBlockedByForeignHeldFile(path))
+            {
+                LOG_TEST(log, "Skipping file {}: a smaller file of its ordering domain is processed by another processor", path);
+                blocked_by_foreign_held_file.insert(path);
+                return true;
+            }
+
+            if (isBehindPendingReplay(path))
+            {
+                LOG_TEST(log, "Deferring file {}: a smaller file of its ordering domain is pending a replay", path);
+                behind_pending_replay.insert(path);
+                return true;
+            }
+
+            return false;
+        });
+    }
+
+    std::unordered_map<std::string, ObjectStorageQueueIFileMetadata::FileTerminalState> terminal_states;
+
     const auto & zookeeper_name = metadata->getZooKeeperName();
     if (mode == ObjectStorageQueueMode::UNORDERED)
-        ObjectStorageQueueUnorderedFileMetadata::filterOutProcessedAndFailed(paths, metadata->getPath(), zookeeper_name, log);
+        ObjectStorageQueueUnorderedFileMetadata::filterOutProcessedAndFailed(
+            paths, metadata->getPath(), zookeeper_name, terminal_states, log);
     else if (mode == ObjectStorageQueueMode::EXCLUSIVE)
         ObjectStorageQueueExclusiveFileMetadata::filterOutProcessedAndFailed(paths, metadata->getPath(), zookeeper_name, log);
     else
@@ -522,7 +678,51 @@ void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(ObjectInfos 
             metadata->getBucketingMode(),
             metadata->getPartitioningMode(),
             metadata->getFilenameParser(),
+            terminal_states,
             log);
+
+    for (auto & object : objects)
+    {
+        if (blocked_by_foreign_held_file.contains(object->getPath()))
+            rememberBlockedFile(std::move(object));
+        else if (behind_pending_replay.contains(object->getPath()))
+            deferBehindReplay(std::move(object));
+    }
+
+    /// The states found terminal in keeper are terminal for the file status cache
+    /// (`system.s3queue_metadata_cache`) as well: without this a file committed by another
+    /// processor could stay cached as `Processing` until cache eviction.
+    for (const auto & [path, terminal_state] : terminal_states)
+    {
+        /// A terminal state resolves the file: it no longer blocks its ordering domain.
+        resolveForeignHeldFile(path);
+
+        const auto status = metadata->tryGetFileStatus(path);
+        if (!status)
+            continue;
+
+        /// `trySetProcessing` updates the same shared record under `processing_lock`, so the
+        /// read-check-write below is serialized with it: otherwise a concurrent loser of the
+        /// race for the `processing` node could interleave with this write-back.
+        std::lock_guard processing_lock(status->processing_lock);
+
+        const auto cached_state = status->state.load();
+
+        /// The cached record already has this terminal state: it describes a local attempt
+        /// (e.g. `rows_processed` of a file processed by this server), so keep it.
+        /// A cached `Failed` may describe an earlier retriable local attempt, so it is kept
+        /// only when its retry count matches the terminal `failed` node payload.
+        if (cached_state == terminal_state.state
+            && (terminal_state.state != FileStatus::State::Failed
+                || status->retries.load() == terminal_state.retries))
+            continue;
+
+        /// A locally owned `Processing` state is updated by its owner on commit.
+        if (cached_state == FileStatus::State::Processing && !status->isProcessingObservedInKeeper())
+            continue;
+
+        status->onTerminalStateObservedInKeeper(terminal_state.state, terminal_state.exception, terminal_state.retries);
+    }
 
     std::unordered_set<std::string> paths_set;
     std::ranges::move(paths, std::inserter(paths_set, paths_set.end()));
@@ -531,10 +731,657 @@ void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(ObjectInfos 
     result.reserve(paths_set.size());
     for (auto & object : objects)
     {
+        if (!object)
+            continue;
+
         if (paths_set.contains(object->getPath()))
+        {
             result.push_back(std::move(object));
+        }
+        else if (const auto skipped = skipped_foreign_processing.find(object->getPath()); skipped != skipped_foreign_processing.end())
+        {
+            queueForeignProcessingRecheck(std::move(object), skipped->second);
+        }
     }
     objects = std::move(result);
+}
+
+void ObjectStorageQueueSource::FileIterator::queueForeignProcessingRecheck(
+    ObjectInfoPtr object, const ObjectStorageQueueIFileMetadata::FileStatusPtr & status)
+{
+    const time_t observed_time = status ? status->processing_observed_in_keeper_time.load() : 0;
+    foreign_processing_files_to_recheck.push_back({std::move(object), observed_time});
+}
+
+ObjectInfos ObjectStorageQueueSource::FileIterator::takeDueForeignProcessingRechecks(std::vector<std::string> & taken_replays)
+{
+    if (foreign_processing_files_to_recheck.empty())
+        return {};
+
+    const size_t ttl_sec = metadata->getProcessingStateCacheTTLSeconds();
+    const time_t current_time = std::time(nullptr);
+
+    std::vector<char> is_due(foreign_processing_files_to_recheck.size());
+    for (size_t i = 0; i < foreign_processing_files_to_recheck.size(); ++i)
+        is_due[i] = current_time >= getRecheckDeadline(foreign_processing_files_to_recheck[i], ttl_sec);
+
+    /// Ordered mode: a file which is not due yet still blocks the larger files of its ordering
+    /// domain - committing one of them would advance the `processed` pointer past it.
+    std::map<OrderingDomain, std::string> smallest_not_due_per_domain;
+    if (mode == ObjectStorageQueueMode::ORDERED)
+    {
+        for (size_t i = 0; i < foreign_processing_files_to_recheck.size(); ++i)
+        {
+            if (is_due[i])
+                continue;
+            const auto & path = foreign_processing_files_to_recheck[i].object->getPath();
+            auto [it, inserted] = smallest_not_due_per_domain.try_emplace(getOrderingDomain(path), path);
+            if (!inserted && path < it->second)
+                it->second = path;
+        }
+    }
+
+    ObjectInfos due;
+    std::deque<PendingRecheck> remaining;
+    for (size_t i = 0; i < foreign_processing_files_to_recheck.size(); ++i)
+    {
+        auto & pending = foreign_processing_files_to_recheck[i];
+        bool take = is_due[i];
+        if (take && !smallest_not_due_per_domain.empty())
+        {
+            const auto it = smallest_not_due_per_domain.find(getOrderingDomain(pending.object->getPath()));
+            take = it == smallest_not_due_per_domain.end() || pending.object->getPath() < it->second;
+        }
+
+        /// The path stays in `inherited_foreign_processing_rechecks` until this pass lists it
+        /// again: if the file is still foreign-held, `recheckForeignProcessingLater` queues it
+        /// again, and the relisted copy must replace that entry instead of being added next to it.
+        if (take)
+        {
+            if (pending.is_replay)
+            {
+                /// Not pending in the queue any more, but still not handed out: with buckets it can
+                /// be appended to a bucket cache behind a later file of its domain, see `in_flight_replays_per_domain`.
+                const auto & path = pending.object->getPath();
+                forgetPendingReplay(path);
+                in_flight_replays_per_domain[getOrderingDomain(path)].insert(path);
+                taken_replays.push_back(path);
+            }
+            due.push_back(std::move(pending.object));
+        }
+        else
+            remaining.push_back(std::move(pending));
+    }
+    foreign_processing_files_to_recheck = std::move(remaining);
+
+    /// Ordered mode: hand out the files in path order. The queue is not ordered (e.g. files
+    /// unblocked by a resolved blocker are appended behind other pending rechecks), and a
+    /// larger file handed out first could commit and advance the `processed` pointer past
+    /// a smaller file of its domain before the smaller one is claimed.
+    if (mode == ObjectStorageQueueMode::ORDERED)
+        std::ranges::sort(due, [](const ObjectInfoPtr & lhs, const ObjectInfoPtr & rhs) { return lhs->getPath() < rhs->getPath(); });
+
+    return due;
+}
+
+time_t ObjectStorageQueueSource::FileIterator::getRecheckDeadline(const PendingRecheck & pending, size_t ttl_sec) const
+{
+    /// The cached status has the most recent observation of the foreign `processing` node.
+    /// Without one (the status was evicted, or the file is not foreign-held any more) the
+    /// observation recorded with the entry applies, so that cache eviction cannot make the
+    /// recheck due before the observation it was queued for expires. Either way the current
+    /// TTL applies, so that `ALTER TABLE ... MODIFY SETTING` takes effect on every pending recheck.
+    /// Not trusted any more after the TTL, see `isProcessingObservedInKeeperTrusted`.
+    const auto status = metadata->tryGetFileStatus(pending.object->getPath());
+    if (status && status->state.load() == ObjectStorageQueueIFileMetadata::FileStatus::State::Processing
+        && status->isProcessingObservedInKeeper())
+    {
+        const time_t observed_at = status->processing_observed_in_keeper_time.load();
+        return observed_at ? observed_at + static_cast<time_t>(ttl_sec) : 0;
+    }
+    if (pending.observed_time)
+        return pending.observed_time + static_cast<time_t>(ttl_sec);
+    return pending.due_time;
+}
+
+std::vector<ObjectStorageQueueSource::FileIterator::PendingRecheck>
+ObjectStorageQueueSource::FileIterator::takeForeignProcessingRechecksToInherit()
+{
+    std::vector<PendingRecheck> result;
+    if (mode != ObjectStorageQueueMode::ORDERED)
+    {
+        std::move(foreign_processing_files_to_recheck.begin(), foreign_processing_files_to_recheck.end(), std::back_inserter(result));
+        foreign_processing_files_to_recheck.clear();
+        inherited_foreign_processing_rechecks.clear();
+        clearPendingReplays();
+        in_flight_replays_per_domain.clear();
+        return result;
+    }
+
+    /// Ordered mode: an invalidated iterator (lost bucket lock) stops early and may still hold
+    /// unclaimed smaller files of a domain in `keys_cache_per_bucket`, `objects_to_retry` or its
+    /// unfinished listing. An inherited later file could then be committed before the next
+    /// listing pass reaches them and advance the `processed` pointer past them. Inherit nothing:
+    /// the next listing pass rechecks every file in order.
+    if (iterator_invalidated)
+    {
+        foreign_processing_files_to_recheck.clear();
+        inherited_foreign_processing_rechecks.clear();
+        clearPendingReplays();
+        in_flight_replays_per_domain.clear();
+        return result;
+    }
+
+    /// Ordered mode: the next iterator knows the unprocessed files of a domain below its listing
+    /// position only from the inherited ones. A domain is inherited only if this iterator knows
+    /// nothing else unprocessed in it:
+    /// - every foreign-held file of the domain is pending a recheck - otherwise the next iterator
+    ///   could process a later inherited file before its listing pass reaches the smaller
+    ///   foreign-held one;
+    /// - no file of the domain is retained behind a blocker (`blocked_files_per_domain`), and no
+    ///   range of it was dropped at the replay cap (`dropped_blocked_files_per_domain`) - the next
+    ///   iterator does not have these files, so once the inherited blockers resolve it could
+    ///   process a later inherited file and advance the `processed` pointer past them;
+    /// - no replay of the domain was taken from the queue without being handed out
+    ///   (`in_flight_replays_per_domain`), and no file of the domain handed out to a processing
+    ///   thread has an unknown set-processing outcome (`unresolved_set_processing_per_domain`,
+    ///   normally empty here, see `isFinished`), for the same reason.
+    /// The files of other domains are not inherited: the next listing pass rechecks them in order.
+    std::unordered_set<std::string> pending_paths;
+    for (const auto & pending : foreign_processing_files_to_recheck)
+        pending_paths.insert(pending.object->getPath());
+
+    std::map<OrderingDomain, bool> can_inherit_per_domain;
+    for (auto & pending : foreign_processing_files_to_recheck)
+    {
+        const auto domain = getOrderingDomain(pending.object->getPath());
+        auto [it, inserted] = can_inherit_per_domain.try_emplace(domain, true);
+        if (inserted)
+        {
+            const auto held = foreign_held_files_per_domain.find(domain);
+            if (held != foreign_held_files_per_domain.end())
+                it->second = std::ranges::all_of(held->second, [&](const std::string & path) { return pending_paths.contains(path); });
+            if (blocked_files_per_domain.contains(domain) || dropped_blocked_files_per_domain.contains(domain)
+                || in_flight_replays_per_domain.contains(domain) || unresolved_set_processing_per_domain.contains(domain))
+                it->second = false;
+        }
+
+        if (it->second)
+            result.push_back(std::move(pending));
+    }
+    foreign_processing_files_to_recheck.clear();
+    inherited_foreign_processing_rechecks.clear();
+    clearPendingReplays();
+    in_flight_replays_per_domain.clear();
+    return result;
+}
+
+void ObjectStorageQueueSource::FileIterator::inheritForeignProcessingRechecks(FileIterator & previous)
+{
+    std::vector<PendingRecheck> inherited;
+    {
+        std::lock_guard previous_lock(previous.next_mutex);
+        inherited = previous.takeForeignProcessingRechecksToInherit();
+    }
+    if (inherited.empty())
+        return;
+
+    LOG_TEST(log, "Taking over {} pending rechecks of files processed by another processor from the previous iterator", inherited.size());
+
+    std::lock_guard lock(next_mutex);
+    for (auto & pending : inherited)
+    {
+        /// Ordered mode: an inherited file still blocks the later files of its ordering domain,
+        /// as it did in the previous iterator, until its recheck resolves it.
+        /// It is recorded as foreign-held here, so it does not need to be a replay barrier.
+        recordForeignHeldFile(pending.object->getPath());
+        inherited_foreign_processing_rechecks.insert(pending.object->getPath());
+        pending.is_replay = false;
+        foreign_processing_files_to_recheck.push_back(std::move(pending));
+    }
+}
+
+std::optional<time_t> ObjectStorageQueueSource::FileIterator::earliestForeignProcessingRecheckTime()
+{
+    const auto ttl_sec = static_cast<time_t>(metadata->getProcessingStateCacheTTLSeconds());
+
+    std::lock_guard lock(next_mutex);
+    if (foreign_processing_files_to_recheck.empty())
+        return {};
+
+    if (mode != ObjectStorageQueueMode::ORDERED)
+    {
+        std::optional<time_t> earliest;
+        for (const auto & pending : foreign_processing_files_to_recheck)
+        {
+            const time_t recheck_time = getRecheckDeadline(pending, ttl_sec);
+            if (!earliest.has_value() || recheck_time < *earliest)
+                earliest = recheck_time;
+        }
+        return earliest;
+    }
+
+    /// Ordered mode: `takeDueForeignProcessingRechecks` takes a due file only when every smaller
+    /// pending file of its ordering domain is due as well, so a file becomes actionable at the
+    /// latest deadline among itself and the smaller pending files of its domain. Otherwise an
+    /// expired file behind a fresh smaller one would request an immediate poll without any
+    /// recheck being taken.
+    std::map<OrderingDomain, std::vector<std::pair<std::string, time_t>>> deadlines_per_domain;
+    for (const auto & pending : foreign_processing_files_to_recheck)
+        deadlines_per_domain[getOrderingDomain(pending.object->getPath())].emplace_back(
+            pending.object->getPath(), getRecheckDeadline(pending, ttl_sec));
+
+    std::optional<time_t> earliest;
+    for (auto & [domain, deadlines] : deadlines_per_domain)
+    {
+        std::ranges::sort(deadlines);
+        time_t actionable_time = std::numeric_limits<time_t>::min();
+        for (const auto & [path, deadline] : deadlines)
+        {
+            actionable_time = std::max(actionable_time, deadline);
+            if (!earliest.has_value() || actionable_time < *earliest)
+                earliest = actionable_time;
+        }
+    }
+    return earliest;
+}
+
+void ObjectStorageQueueSource::FileIterator::recheckForeignProcessingLater(
+    ObjectInfoPtr object_info, const FileMetadataPtr & file_metadata)
+{
+    using FileStatus = ObjectStorageQueueIFileMetadata::FileStatus;
+
+    const auto status = file_metadata->getFileStatus();
+    const auto state = status->state.load();
+    const bool foreign_processing = state == FileStatus::State::Processing && status->isProcessingObservedInKeeper();
+
+    /// Ordered mode: only a foreign `processing` node or a terminal state is a known outcome.
+    /// A claim which lost the race for `processing_lock` consulted neither keeper nor the cached
+    /// state, and a file held by a concurrent local processor (e.g. of another table sharing the
+    /// keeper path) may still be released without a commit. Either way the file can still turn
+    /// out to be unprocessed, so it keeps blocking the later files of its ordering domain.
+    const bool outcome_unknown = mode == ObjectStorageQueueMode::ORDERED && !foreign_processing
+        && (file_metadata->isSetProcessingContended()
+            || (state != FileStatus::State::Processed && state != FileStatus::State::Failed));
+
+    std::lock_guard lock(next_mutex);
+
+    if (outcome_unknown)
+    {
+        LOG_TEST(log, "The set-processing outcome of file {} is unknown (state: {}), will retry it", object_info->getPath(), state);
+        retryUnresolvedSetProcessingLater(std::move(object_info));
+        return;
+    }
+
+    /// The set-processing attempt is resolved: wake up the later files of the
+    /// ordering domain waiting for its outcome.
+    resolveSetProcessingUnlocked(object_info->getPath());
+
+    if (!foreign_processing)
+    {
+        /// The failed attempt discovered a terminal state instead of a foreign
+        /// `processing` node: the file no longer blocks its ordering domain.
+        resolveForeignHeldFile(object_info->getPath());
+        return;
+    }
+
+    recordForeignHeldFile(object_info->getPath());
+
+    /// Only a fresh observation defers the recheck. An already-expired one (e.g. the TTL
+    /// is zero) means keeper is checked on every pass: queueing the file would make it
+    /// due immediately and spin the iterator instead of letting the pass finish.
+    if (!status->isProcessingObservedInKeeperTrusted(metadata->getProcessingStateCacheTTLSeconds()))
+        return;
+
+    queueForeignProcessingRecheck(std::move(object_info), status);
+}
+
+ObjectStorageQueueSource::FileIterator::OrderingDomain
+ObjectStorageQueueSource::FileIterator::getOrderingDomain(const std::string & path) const
+{
+    const Bucket bucket = use_buckets_for_processing
+        ? ObjectStorageQueueMetadata::getBucketForPath(
+              path, buckets_num, metadata->getBucketingMode(), metadata->getPartitioningMode(), metadata->getFilenameParser())
+        : 0;
+    return {bucket, ObjectStorageQueueOrderedFileMetadata::getPartitionKeyForPath(path, metadata->getPartitioningMode(), metadata->getFilenameParser())};
+}
+
+void ObjectStorageQueueSource::FileIterator::recordForeignHeldFile(const std::string & path)
+{
+    if (mode != ObjectStorageQueueMode::ORDERED)
+        return;
+
+    foreign_held_files_per_domain[getOrderingDomain(path)].insert(path);
+}
+
+void ObjectStorageQueueSource::FileIterator::resolveForeignHeldFile(const std::string & path)
+{
+    if (mode != ObjectStorageQueueMode::ORDERED || foreign_held_files_per_domain.empty())
+        return;
+
+    const auto it = foreign_held_files_per_domain.find(getOrderingDomain(path));
+    if (it == foreign_held_files_per_domain.end())
+        return;
+
+    auto & held_files = it->second;
+    const auto held_it = held_files.find(path);
+    if (held_it == held_files.end())
+        return;
+
+    /// Only the smallest blocker of a domain blocks anything that the remaining ones do not.
+    const bool smallest_blocker_resolved = held_it == held_files.begin();
+    held_files.erase(held_it);
+    if (!smallest_blocker_resolved)
+        return;
+
+    const auto domain = it->first;
+    std::optional<std::string> smallest_remaining_blocker;
+    if (held_files.empty())
+        foreign_held_files_per_domain.erase(it);
+    else
+        smallest_remaining_blocker = *held_files.begin();
+
+    recheckBlockedFilesForDomain(domain, smallest_remaining_blocker);
+}
+
+void ObjectStorageQueueSource::FileIterator::rememberBlockedFile(ObjectInfoPtr object)
+{
+    const auto & path = object->getPath();
+    const auto domain = getOrderingDomain(path);
+
+    /// This domain already dropped a smaller file: everything from that path on is blocked
+    /// until a fresh listing pass lists it again, so retaining this one would only replay it
+    /// into a range which must not be processed yet.
+    const auto dropped = dropped_blocked_files_per_domain.find(domain);
+    if (dropped != dropped_blocked_files_per_domain.end() && dropped->second <= path)
+        return;
+
+    /// Retaining the blocked files only saves them a relisting, so the memory spent on it
+    /// must not depend on the size of the namespace: a foreign-held file near the beginning
+    /// of a large domain blocks everything after it, which can be millions of objects.
+    /// Beyond the cap the file is dropped and listed again by the next pass. The dropped
+    /// range leaves this pass, so it also keeps its domain blocked from that path on
+    /// (`isBlockedByForeignHeldFile`): once the blocker resolves the pass may still hand out
+    /// later files of the domain, and committing one of them would advance the `processed`
+    /// pointer past the dropped files and skip them forever.
+    if (blocked_files_count >= max_blocked_files_to_replay)
+    {
+        dropFileUntilRelisted(domain, path);
+        return;
+    }
+
+    blocked_files_per_domain[domain].push_back(std::move(object));
+    ++blocked_files_count;
+}
+
+void ObjectStorageQueueSource::FileIterator::dropFileUntilRelisted(const OrderingDomain & domain, const std::string & path)
+{
+    /// Only the smallest dropped path matters: everything above it is blocked anyway.
+    const auto [dropped, inserted] = dropped_blocked_files_per_domain.try_emplace(domain, path);
+    if (!inserted && path < dropped->second)
+        dropped->second = path;
+
+    if (!std::exchange(blocked_files_replay_capped, true))
+    {
+        LOG_TRACE(
+            log,
+            "Not retaining more than {} files blocked by a foreign-held file or deferred behind a replay in their ordering domain, "
+            "the rest of their domains stays blocked until the next listing pass lists them again",
+            max_blocked_files_to_replay);
+
+        /// Test-only: park right after the first drop, so a test can resolve the blocker
+        /// of the domain while the listing pass is still running.
+        FailPointInjection::pauseFailPoint(FailPoints::object_storage_queue_pause_after_blocked_files_replay_cap);
+    }
+}
+
+void ObjectStorageQueueSource::FileIterator::deferBehindReplay(ObjectInfoPtr object)
+{
+    /// The replay ahead of this file can stay pending for long: a file whose set-processing
+    /// outcome is unknown (e.g. it is processed by another table sharing the keeper path) is
+    /// retried again and again, and every later file of its domain is deferred behind it.
+    /// Retaining them only saves a relisting, so beyond the cap the file is dropped, and its
+    /// domain stays blocked from its path on until the next listing pass lists it again:
+    /// committing a later file would advance the `processed` pointer past the dropped one.
+    if (pending_replays_count >= max_blocked_files_to_replay)
+    {
+        const auto & path = object->getPath();
+        dropFileUntilRelisted(getOrderingDomain(path), path);
+        return;
+    }
+
+    queueReplay(std::move(object));
+}
+
+void ObjectStorageQueueSource::FileIterator::recheckBlockedFilesForDomain(
+    const OrderingDomain & domain, const std::optional<std::string> & smallest_remaining_blocker)
+{
+    const auto it = blocked_files_per_domain.find(domain);
+    if (it == blocked_files_per_domain.end())
+        return;
+
+    /// The files above the smallest remaining blocker are still blocked by it: keep them.
+    auto & blocked_files = it->second;
+    const auto still_blocked = std::stable_partition(
+        blocked_files.begin(),
+        blocked_files.end(),
+        [&](const ObjectInfoPtr & object) { return smallest_remaining_blocker && *smallest_remaining_blocker < object->getPath(); });
+
+    const size_t unblocked_count = std::distance(still_blocked, blocked_files.end());
+    if (!unblocked_count)
+        return;
+
+    LOG_TEST(log, "Rechecking {} files after a foreign-held file in their ordering domain was resolved", unblocked_count);
+    chassert(blocked_files_count >= unblocked_count);
+    blocked_files_count -= unblocked_count;
+    /// Due immediately, unless the file turns out to be foreign-held itself.
+    for (auto unblocked = still_blocked; unblocked != blocked_files.end(); ++unblocked)
+        queueReplay(std::move(*unblocked));
+    blocked_files.erase(still_blocked, blocked_files.end());
+    if (blocked_files.empty())
+        blocked_files_per_domain.erase(it);
+}
+
+bool ObjectStorageQueueSource::FileIterator::isBlockedByForeignHeldFile(const std::string & path)
+{
+    if (mode != ObjectStorageQueueMode::ORDERED
+        || (foreign_held_files_per_domain.empty() && dropped_blocked_files_per_domain.empty()))
+        return false;
+
+    const auto domain = getOrderingDomain(path);
+
+    const auto it = foreign_held_files_per_domain.find(domain);
+    if (it != foreign_held_files_per_domain.end() && *it->second.begin() < path)
+        return true;
+
+    /// The files this pass dropped at the replay cap are not covered by it any more, so
+    /// nothing at or above the smallest dropped path of the domain may be processed before a
+    /// fresh listing pass lists that range again: the `processed` pointer of the domain would
+    /// otherwise move past the dropped files and declare them processed forever.
+    const auto dropped = dropped_blocked_files_per_domain.find(domain);
+    return dropped != dropped_blocked_files_per_domain.end() && dropped->second <= path;
+}
+
+void ObjectStorageQueueSource::FileIterator::queueReplay(ObjectInfoPtr object, time_t due_time)
+{
+    pending_replays_per_domain[getOrderingDomain(object->getPath())].insert(object->getPath());
+    ++pending_replays_count;
+    foreign_processing_files_to_recheck.push_back({std::move(object), /* observed_time */ 0, due_time, /* is_replay */ true});
+}
+
+void ObjectStorageQueueSource::FileIterator::clearPendingReplays()
+{
+    pending_replays_per_domain.clear();
+    pending_replays_count = 0;
+}
+
+void ObjectStorageQueueSource::FileIterator::retryUnresolvedSetProcessingLater(ObjectInfoPtr object)
+{
+    chassert(mode == ObjectStorageQueueMode::ORDERED);
+    const auto path = object->getPath();
+
+    /// The file becomes a pending replay before its unresolved barrier is removed, under the same
+    /// lock, so that no later file of the domain can pass the gate in between. The replay is
+    /// delayed a little: the outcome usually becomes known within a keeper round trip, and
+    /// retrying at once would spin the iterator while a concurrent local claim is in flight.
+    queueReplay(std::move(object), std::time(nullptr) + 1);
+    resolveSetProcessingUnlocked(path);
+}
+
+void ObjectStorageQueueSource::FileIterator::forgetPendingReplay(const std::string & path)
+{
+    const auto it = pending_replays_per_domain.find(getOrderingDomain(path));
+    if (it == pending_replays_per_domain.end())
+        return;
+
+    if (const auto path_it = it->second.find(path); path_it != it->second.end())
+    {
+        it->second.erase(path_it);
+        chassert(pending_replays_count > 0);
+        --pending_replays_count;
+    }
+    if (it->second.empty())
+        pending_replays_per_domain.erase(it);
+}
+
+bool ObjectStorageQueueSource::FileIterator::isBehindPendingReplay(const std::string & path)
+{
+    if (mode != ObjectStorageQueueMode::ORDERED || pending_replays_per_domain.empty())
+        return false;
+
+    const auto it = pending_replays_per_domain.find(getOrderingDomain(path));
+    return it != pending_replays_per_domain.end() && *it->second.begin() < path;
+}
+
+void ObjectStorageQueueSource::FileIterator::forgetInFlightReplay(const std::string & path)
+{
+    const auto it = in_flight_replays_per_domain.find(getOrderingDomain(path));
+    if (it == in_flight_replays_per_domain.end())
+        return;
+
+    if (const auto path_it = it->second.find(path); path_it != it->second.end())
+        it->second.erase(path_it);
+    if (it->second.empty())
+        in_flight_replays_per_domain.erase(it);
+}
+
+bool ObjectStorageQueueSource::FileIterator::isBehindInFlightReplay(const std::string & path)
+{
+    if (mode != ObjectStorageQueueMode::ORDERED || in_flight_replays_per_domain.empty())
+        return false;
+
+    const auto it = in_flight_replays_per_domain.find(getOrderingDomain(path));
+    return it != in_flight_replays_per_domain.end() && *it->second.begin() < path;
+}
+
+void ObjectStorageQueueSource::FileIterator::registerUnresolvedSetProcessing(const std::string & path)
+{
+    if (mode != ObjectStorageQueueMode::ORDERED)
+        return;
+
+    std::lock_guard lock(next_mutex);
+    forgetInFlightReplay(path);
+    unresolved_set_processing_per_domain[getOrderingDomain(path)].insert(path);
+}
+
+void ObjectStorageQueueSource::FileIterator::onSetProcessingException(ObjectInfoPtr object)
+{
+    if (mode != ObjectStorageQueueMode::ORDERED)
+        return;
+
+    /// The exception establishes neither the ownership of the file nor its terminal state (e.g.
+    /// keeper retries were exhausted before a foreign `processing` node was observed), and the file
+    /// is not among the processed files of the source yet, so nothing else would retry it. Keep it
+    /// as an ordering barrier and retry it: the iterator outlives the failed source, and committing
+    /// a later file of the domain would advance the `processed` pointer past this one.
+    std::lock_guard lock(next_mutex);
+    retryUnresolvedSetProcessingLater(std::move(object));
+}
+
+void ObjectStorageQueueSource::FileIterator::resolveSetProcessing(const std::string & path)
+{
+    if (mode != ObjectStorageQueueMode::ORDERED)
+        return;
+
+    std::lock_guard lock(next_mutex);
+    resolveSetProcessingUnlocked(path);
+}
+
+void ObjectStorageQueueSource::FileIterator::resolveSetProcessingUnlocked(const std::string & path)
+{
+    if (unresolved_set_processing_per_domain.empty())
+        return;
+
+    const auto it = unresolved_set_processing_per_domain.find(getOrderingDomain(path));
+    if (it == unresolved_set_processing_per_domain.end())
+        return;
+
+    it->second.erase(path);
+    if (it->second.empty())
+        unresolved_set_processing_per_domain.erase(it);
+
+    set_processing_resolved_cv.notify_all();
+}
+
+bool ObjectStorageQueueSource::FileIterator::hasSmallerUnresolvedSetProcessing(const std::string & path)
+{
+    if (unresolved_set_processing_per_domain.empty())
+        return false;
+
+    const auto it = unresolved_set_processing_per_domain.find(getOrderingDomain(path));
+    return it != unresolved_set_processing_per_domain.end() && !it->second.empty() && *it->second.begin() < path;
+}
+
+ObjectStorageQueueSource::FileIterator::OrderingDomainGate
+ObjectStorageQueueSource::FileIterator::waitOrderingDomainGate(ObjectInfoPtr & object_info)
+{
+    const auto path = object_info->getPath();
+    std::unique_lock lock(next_mutex);
+
+    while (!shutdown_called)
+    {
+        /// The deferred file is queued before its unresolved barrier is removed, under the same
+        /// lock: otherwise its blocker could resolve in between and let a later file of the domain
+        /// pass the gate, and nothing would replay this file before the later one is committed.
+        if (isBlockedByForeignHeldFile(path))
+        {
+            LOG_TEST(log, "Skipping file {}: a smaller file of its ordering domain is processed by another processor", path);
+            rememberBlockedFile(std::move(object_info));
+            resolveSetProcessingUnlocked(path);
+            return OrderingDomainGate::Blocked;
+        }
+
+        /// A replay which is not handed out yet can wait in a bucket cache behind this file.
+        if (isBehindPendingReplay(path) || isBehindInFlightReplay(path))
+        {
+            LOG_TEST(log, "Deferring file {}: a smaller file of its ordering domain is pending a replay", path);
+            deferBehindReplay(std::move(object_info));
+            resolveSetProcessingUnlocked(path);
+            return OrderingDomainGate::BehindReplay;
+        }
+
+        if (!hasSmallerUnresolvedSetProcessing(path))
+            return OrderingDomainGate::Proceed;
+
+        /// The outcome of the smaller file's set-processing attempt resolves within
+        /// one keeper round trip; the timeout only guards against a missed wake-up.
+        set_processing_resolved_cv.wait_for(lock, std::chrono::milliseconds(100));
+    }
+
+    resolveSetProcessingUnlocked(path);
+    return OrderingDomainGate::Shutdown;
+}
+
+void ObjectStorageQueueSource::FileIterator::waitAllSetProcessingResolved()
+{
+    if (mode != ObjectStorageQueueMode::ORDERED)
+        return;
+
+    std::unique_lock lock(next_mutex);
+    /// The outcome of a set-processing attempt resolves within one keeper round trip;
+    /// the timeout only guards against a missed wake-up.
+    while (!shutdown_called && !unresolved_set_processing_per_domain.empty())
+        set_processing_resolved_cv.wait_for(lock, std::chrono::milliseconds(100));
 }
 
 ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
@@ -557,17 +1404,28 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
 
             if (iterator_invalidated)
             {
-                LOG_WARNING(log, "Bucket lock refresh failed, stopping the file iterator");
+                LOG_WARNING(log, "Bucket lock refresh or preparing a batch of files failed, stopping the file iterator");
                 return {};
             }
             auto result = getNextKeyFromAcquiredBucket(processor);
             object_info = result.object_info;
             file_metadata = result.file_metadata;
             bucket_info = result.bucket_info;
+
+            /// While `mutex` is held: later files of the domain must see this file
+            /// as unresolved before they can be handed out.
+            if (object_info && !file_metadata)
+                registerUnresolvedSetProcessing(object_info->getPath());
         }
         else
         {
             std::lock_guard lock(mutex);
+
+            if (iterator_invalidated)
+            {
+                LOG_WARNING(log, "Preparing a batch of files failed, stopping the file iterator");
+                return {};
+            }
             if (objects_to_retry.empty())
             {
                 std::tie(object_info, file_metadata) = next();
@@ -579,6 +1437,11 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
                 std::tie(object_info, file_metadata) = objects_to_retry.front();
                 objects_to_retry.pop_front();
             }
+
+            /// While `mutex` is held: later files of the domain must see this file
+            /// as unresolved before they can be handed out.
+            if (object_info && !file_metadata)
+                registerUnresolvedSetProcessing(object_info->getPath());
         }
 
         if (!object_info)
@@ -590,16 +1453,45 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
         if (shutdown_called)
         {
             LOG_DEBUG(log, "Shutdown was called, stopping file iterator");
+            if (!file_metadata)
+                resolveSetProcessing(object_info->getPath());
             return {};
+        }
+
+        if (mode == ObjectStorageQueueMode::ORDERED)
+        {
+            /// Wait until the set-processing attempts of the smaller files of the ordering
+            /// domain are resolved: any of them can still turn out to be foreign-held, and
+            /// committing this file would advance the `processed` pointer past a held file.
+            ///
+            /// `Blocked`: a smaller file of the same ordering domain is held by a foreign
+            /// `processing` node: processing this file would advance the `processed` pointer past
+            /// the held file and lose it forever. The gate keeps it pending until the blocker
+            /// resolves, then it goes through filtering again.
+            /// `BehindReplay`: a smaller file of the same ordering domain is pending a replay and
+            /// is not handed out yet: the gate queues this file to be replayed together with it,
+            /// in path order.
+            const auto gate = waitOrderingDomainGate(object_info);
+            if (gate == OrderingDomainGate::Shutdown)
+                return {};
+            if (gate == OrderingDomainGate::Blocked || gate == OrderingDomainGate::BehindReplay)
+            {
+                /// If the replay of the file is handed out before this reset completes, its claim
+                /// sees our `processing` node, and is retried as an unknown outcome
+                /// (see `recheckForeignProcessingLater`).
+                if (file_metadata)
+                    file_metadata->resetProcessing();
+                continue;
+            }
         }
 
         if (!file_metadata)
         {
-            file_metadata = metadata->getFileMetadata(object_info->getPath(), bucket_info);
+            bool set_processing = false;
             try
             {
-                if (!file_metadata->trySetProcessing())
-                    continue;
+                file_metadata = metadata->getFileMetadata(object_info->getPath(), bucket_info);
+                set_processing = file_metadata->trySetProcessing();
             }
             catch (const zkutil::KeeperException & e)
             {
@@ -612,7 +1504,29 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
                 DimensionalMetrics::add(
                     DimensionalMetrics::ObjectStorageQueueFailures,
                     {storage_id.getDatabaseName(), storage_id.getTableName(), "set_processing", String(magic_enum::enum_name(e.code))});
+                onSetProcessingException(std::move(object_info));
                 throw;
+            }
+            catch (...)
+            {
+                onSetProcessingException(std::move(object_info));
+                throw;
+            }
+            if (!set_processing)
+            {
+                /// If the file is processing by another processor, recheck it when
+                /// the cached observation of its `processing` node expires.
+                /// In Ordered mode a foreign `processing` node also blocks the later
+                /// files of the ordering domain until the file is resolved.
+                recheckForeignProcessingLater(object_info, file_metadata);
+                continue;
+            }
+            if (mode == ObjectStorageQueueMode::ORDERED)
+            {
+                /// This server now owns the file: it no longer blocks its ordering domain.
+                std::lock_guard lock(next_mutex);
+                resolveForeignHeldFile(object_info->getPath());
+                resolveSetProcessingUnlocked(object_info->getPath());
             }
         }
 
@@ -1071,7 +1985,8 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     bool is_direct_select_,
     bool add_deduplication_info_,
     bool is_deduplication_v2_,
-    IStreamingStorage & streaming_storage_)
+    IStreamingStorage & streaming_storage_,
+    std::atomic_bool * iterator_consumed_)
     : ISource(std::make_shared<const Block>(read_from_format_info_.source_header))
     , WithContext(context_)
     , name(std::move(name_))
@@ -1098,6 +2013,7 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     , cancel_epoch(streaming_storage_.currentCancelEpoch())
     , add_deduplication_info(add_deduplication_info_)
     , is_deduplication_v2(is_deduplication_v2_)
+    , iterator_consumed(iterator_consumed_)
     , log(log_)
 {
     if (commit_once_processed)
@@ -1254,7 +2170,9 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 max_block_size,
                 parser_shared_resources,
                 nullptr,
-                /* need_only_count */ false);
+                /* need_only_count */ false,
+                /* top_k_query_condition_cache_key */ nullptr,
+                iterator_consumed);
 
             if (!reader)
             {
