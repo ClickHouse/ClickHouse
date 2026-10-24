@@ -6429,13 +6429,13 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
     /// We use columns_in_indices to prevent alters that change column data type in a way that requires
     /// reindexing secondary indices (respecting alter_column_secondary_index_mode). But only care about explicit indices
-    std::unordered_map<String, String> columns_in_explicit_indices;
+    std::unordered_map<String, Names> columns_in_explicit_indices;
     for (const auto & index : old_metadata.getSecondaryIndices())
     {
         if (!index.isImplicitlyCreated())
         {
             for (const String & col : index.expression->getRequiredColumns())
-                columns_in_explicit_indices.emplace(col, index.name);
+                columns_in_explicit_indices[col].push_back(index.name);
         }
     }
 
@@ -6571,10 +6571,10 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 {
                     throw Exception(
                         ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                        "The ALTER of the column '{}' is forbidden because it is used by the index '{}'. Check the MergeTree "
+                        "The ALTER of the column '{}' is forbidden because it is used by the indices {}. Check the MergeTree "
                         "setting 'alter_column_secondary_index_mode' to change this behaviour",
                         backQuoteIfNeed(command.column_name),
-                        it->second);
+                        backQuotedList(it->second));
                 }
             }
 
@@ -6616,10 +6616,10 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                     {
                         throw Exception(
                             ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                            "The ALTER CLEAR of the column '{}' is forbidden because it is used by the index '{}'. Check the "
+                            "The ALTER CLEAR of the column '{}' is forbidden because it is used by the indices {}. Check the "
                             "MergeTree setting 'alter_column_secondary_index_mode' to change this behaviour",
                             backQuoteIfNeed(command.column_name),
-                            it->second);
+                            backQuotedList(it->second));
                     }
                 }
             }
@@ -6687,10 +6687,10 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 {
                     throw Exception(
                         ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                        "The ALTER of the column '{}' is forbidden because it is used by the index '{}'. Check the MergeTree setting "
+                        "The ALTER of the column '{}' is forbidden because it is used by the indices {}. Check the MergeTree setting "
                         "'alter_column_secondary_index_mode' to change this behaviour",
                         backQuoteIfNeed(command.column_name),
-                        it->second);
+                        backQuotedList(it->second));
                 }
             }
 

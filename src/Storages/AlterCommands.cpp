@@ -54,6 +54,7 @@
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
 
+#include <fmt/ranges.h>
 #include <ranges>
 #include <vector>
 
@@ -1906,6 +1907,9 @@ void AlterCommands::apply(
     /// The resolved index type is persisted, so it must be the type a fresh reload resolves: analyse it
     /// in the global context, not in the session that happens to issue the `ALTER`.
     const ContextPtr index_context = context->getGlobalContext();
+    Strings index_errors;
+    /// Preserve the error code of the first broken index, matching the behaviour when a single index breaks.
+    int first_index_error_code = 0;
     for (auto & index : metadata_copy.secondary_indices)
     {
         try
@@ -1915,9 +1919,17 @@ void AlterCommands::apply(
         }
         catch (const Exception & exception)
         {
-            throw Exception(exception.code(), "Cannot apply ALTER because it breaks skip index {}: {}", index.name, exception.message());
+            if (index_errors.empty())
+                first_index_error_code = exception.code();
+            index_errors.push_back(fmt::format("{}: {}", backQuoteIfNeed(index.name), exception.message()));
         }
     }
+
+    if (!index_errors.empty())
+        throw Exception(
+            first_index_error_code,
+            "Cannot apply ALTER because it breaks skip indices: {}",
+            fmt::join(index_errors, "; "));
 
     /// Changes in columns may lead to changes in projections
     ProjectionsDescription new_projections;
