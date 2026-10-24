@@ -210,6 +210,7 @@ public:
             /* no_destination */ false,
             /* async_insert */ async_insert);
 
+        interpreter.setSkipWriteAccounting(true);
         block_io = interpreter.execute();
         executor = std::make_unique<PushingPipelineExecutor>(block_io.pipeline);
         executor->start();
