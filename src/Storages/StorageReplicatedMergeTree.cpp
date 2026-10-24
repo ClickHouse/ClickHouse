@@ -40,6 +40,7 @@
 
 #include <base/sleep.h>
 #include <base/sort.h>
+#include <unordered_set>
 
 #include <Storages/buildQueryTreeForShard.h>
 #include <Storages/AlterCommands.h>
@@ -52,6 +53,7 @@
 #include <Storages/MergeTree/LeaderElection.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergeFromLogEntryTask.h>
+#include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
@@ -8982,9 +8984,137 @@ void StorageReplicatedMergeTree::waitMutation(const String & znode_name, size_t 
     waitMutationToFinishOnReplicas(replicas, znode_name, /*only_active=*/ mutations_sync == 3);
 }
 
+void StorageReplicatedMergeTree::dropMutationInitialBytes(const String & mutation_id)
+{
+    std::lock_guard initial_bytes_lock(mutation_initial_bytes_mutex);
+    mutation_initial_bytes.erase(mutation_id);
+    /// Recorded even when nothing was cached: a reader whose snapshot predates this call may not
+    /// have created the entry yet, and it must not create it afterwards either.
+    if (!mutation_initial_bytes_readers.empty())
+        mutation_initial_bytes_dropped[mutation_id] = mutation_initial_bytes_next_reader;
+}
+
 std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsStatus() const
 {
-    return queue.getMutationsStatus();
+    UInt64 reader_generation = 0;
+    {
+        std::lock_guard initial_bytes_lock(mutation_initial_bytes_mutex);
+        reader_generation = mutation_initial_bytes_next_reader++;
+        mutation_initial_bytes_readers.insert(reader_generation);
+    }
+    SCOPE_EXIT({
+        std::lock_guard initial_bytes_lock(mutation_initial_bytes_mutex);
+        mutation_initial_bytes_readers.erase(reader_generation);
+        /// A drop only matters to readers that started before it.
+        std::erase_if(mutation_initial_bytes_dropped, [&](const auto & dropped)
+        {
+            return mutation_initial_bytes_readers.empty() || dropped.second <= *mutation_initial_bytes_readers.begin();
+        });
+    });
+
+    auto statuses = queue.getMutationsStatus();
+    if (statuses.empty())
+        return statuses;
+
+    /// Finished mutations need no part sizes, so a table with only those does not scan its parts.
+    if (std::ranges::all_of(statuses, [](const auto & status) { return status.is_done; }))
+    {
+        for (auto & status : statuses)
+            status.progress = 1.0;
+        return statuses;
+    }
+
+    /// Byte-weighted progress is resolved here, outside of the queue's state lock: part
+    /// sizes need the parts set, and parts locks must not be taken under the queue mutex.
+    std::unordered_map<String, UInt64> part_bytes_on_disk;
+    for (const auto & part : getDataPartsVectorForInternalUsage())
+        part_bytes_on_disk[part->name] = part->getBytesOnDisk();
+
+    std::unordered_map<String, Float64> mutating_part_progress;
+    for (const auto & merge : getContext()->getMergeList().get())
+    {
+        if (!merge.is_mutation || merge.database != getStorageID().getDatabaseName() || merge.table != getStorageID().getTableName())
+            continue;
+        for (const auto & source_part_name : merge.source_part_names)
+            mutating_part_progress[source_part_name.safeGet<String>()] = merge.progress;
+    }
+
+    for (auto & status : statuses)
+    {
+        /// An unfinished mutation with nothing to do is waiting for an in-flight INSERT whose part
+        /// is not committed yet, so the remaining bytes are unknown and `progress` stays unset.
+        if (!status.is_done && status.parts_to_do_names.empty())
+            continue;
+
+        /// A rewrite of a part may stop short of this mutation's version, in which case it advances
+        /// an earlier mutation only. `parts_in_progress_names` holds the cutoff for this mutation.
+        const auto & in_progress = status.parts_in_progress_names;
+
+        UInt64 bytes_to_do = 0;
+        Float64 bytes_in_flight_done = 0;
+        bool remaining_size_known = true;
+        std::vector<std::pair<String, UInt64>> sized_parts_to_do;
+        for (const auto & part_name : status.parts_to_do_names)
+        {
+            auto it = part_bytes_on_disk.find(part_name);
+            if (it == part_bytes_on_disk.end())
+            {
+                /// The queue tracks parts of log entries this replica has not executed yet, so a
+                /// part still to be fetched or merged has no size here and the remainder is unknown.
+                remaining_size_known = false;
+                continue;
+            }
+            bytes_to_do += it->second;
+            sized_parts_to_do.emplace_back(part_name, it->second);
+            if (std::find(in_progress.begin(), in_progress.end(), part_name) == in_progress.end())
+                continue;
+            if (auto progress_it = mutating_part_progress.find(part_name); progress_it != mutating_part_progress.end())
+                bytes_in_flight_done += static_cast<Float64>(it->second) * progress_it->second;
+        }
+        /// Only the parts that are on disk have a known size, so this is a lower bound when some
+        /// of the remaining work has not reached this replica yet.
+        status.bytes_to_do = bytes_to_do;
+
+        /// The denominator is the byte weight each remaining part had when this replica first
+        /// saw it in the mutation's scope (a lower bound if some parts were already rewritten by
+        /// then), so finished parts keep their pre-mutation weight whatever size the rewrite left
+        /// behind, and remaining work discovered later grows the denominator instead of clamping
+        /// it to the current remainder. The parts whose size is known are accounted even while
+        /// others are still unsized: a part that finishes before a queued one is fetched must keep
+        /// its share, and only the ratio below can be deferred.
+        UInt64 initial_bytes = 0;
+        {
+            std::lock_guard initial_bytes_lock(mutation_initial_bytes_mutex);
+            /// This mutation was removed since the snapshot: re-creating its entry here would leave
+            /// a denominator behind that no later queue transition removes again.
+            MutationScopeInitialBytes transient;
+            auto it = mutation_initial_bytes.find(status.id);
+            if (it == mutation_initial_bytes.end() && !mutation_initial_bytes_dropped.contains(status.id))
+                it = mutation_initial_bytes.try_emplace(status.id).first;
+            auto & stored = it == mutation_initial_bytes.end() ? transient : it->second;
+            for (const auto & [part_name, part_bytes] : sized_parts_to_do)
+                stored.account(MergeTreePartInfo::fromPartName(part_name, format_version), part_bytes);
+            /// A finished mutation stays listed until queue cleanup; only its scalar denominator is needed.
+            if (status.is_done)
+                stored.finalize();
+            initial_bytes = stored.bytes;
+        }
+
+        if (!remaining_size_known)
+            continue;
+
+        status.progress = std::clamp(
+            1.0 - (static_cast<Float64>(bytes_to_do) - bytes_in_flight_done)
+                / std::max<Float64>(static_cast<Float64>(initial_bytes), 1.0),
+            0.0, 1.0);
+    }
+
+    /// Denominators are dropped by `dropMutationInitialBytes` on the queue transitions that remove
+    /// a mutation (finished and cleaned up, or killed). Pruning them from a reader's snapshot
+    /// instead would race: a reader holding an older snapshot would erase the denominator of a
+    /// mutation added since, and the next read would restart its progress from the remainder.
+    /// The opposite direction of that race is handled above by `mutation_initial_bytes_dropped`.
+    return statuses;
 }
 
 CancellationCode StorageReplicatedMergeTree::killMutation(const String & mutation_id)

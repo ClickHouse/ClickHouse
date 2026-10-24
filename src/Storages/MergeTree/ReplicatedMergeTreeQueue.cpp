@@ -18,6 +18,7 @@
 #include <Common/StringUtils.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/formatReadable.h>
+#include <Common/FailPoint.h>
 #include <Storages/MutationCommands.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <base/defines.h>
@@ -25,6 +26,11 @@
 #include <ranges>
 #include <shared_mutex>
 #include <Poco/Timestamp.h>
+
+namespace DB::FailPoints
+{
+    extern const char replicated_queue_pause_before_loading_mutations[];
+}
 
 namespace ProfileEvents
 {
@@ -88,6 +94,8 @@ void ReplicatedMergeTreeQueue::clear()
     virtual_parts.clear();
     queue.clear();
     inserts_by_time.clear();
+    for (const auto & [znode, _] : mutations_by_znode)
+        mutations_cleared.insert(znode);
     mutations_by_znode.clear();
     mutations_by_partition.clear();
     mutation_pointer.clear();
@@ -1209,6 +1217,7 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
 
                 if (hasSupportedMetadataMutation(entry.commands))
                     num_metadata_mutations_in_map.fetch_sub(1, std::memory_order_release);
+                storage.dropMutationInitialBytes(entry.znode_name);
 
                 if (!it->second.is_done)
                 {
@@ -1221,6 +1230,20 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
             }
             else
                 ++it;
+        }
+
+        /// `clear` skipped the removal above, so a mutation killed while the queue was being rebuilt is released here.
+        /// One still in Keeper stays remembered until it is loaded again, as it can be removed before that.
+        for (auto it = mutations_cleared.begin(); it != mutations_cleared.end();)
+        {
+            if (entries_in_zk_set.contains(*it))
+            {
+                ++it;
+                continue;
+            }
+            LOG_DEBUG(log, "Mutation {} was removed while the queue was rebuilt, dropping its progress state", *it);
+            storage.dropMutationInitialBytes(*it);
+            it = mutations_cleared.erase(it);
         }
 
         for (const String & znode : entries_in_zk_set)
@@ -1243,6 +1266,7 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
         for (const String & entry : entries_to_load)
             entry_paths.emplace_back(fs::path(zookeeper_path) / "mutations" / entry);
 
+        FailPointInjection::pauseFailPoint(FailPoints::replicated_queue_pause_before_loading_mutations);
         auto entries = zookeeper->tryGet(entry_paths);
 
         std::vector<ReplicatedMergeTreeMutationEntryPtr> new_mutations;
@@ -1255,6 +1279,12 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
                 /// It's ok if it happened on server startup or table creation and replica loads all mutation entries.
                 /// It's also ok if mutation was killed.
                 LOG_WARNING(log, "Cannot get mutation node {} ({}), probably it was concurrently removed", entries_to_load[i], maybe_response.error);
+                std::lock_guard state_lock(state_mutex);
+                if (mutations_cleared.erase(entries_to_load[i]))
+                {
+                    LOG_DEBUG(log, "Mutation {} was removed while the queue was rebuilt, dropping its progress state", entries_to_load[i]);
+                    storage.dropMutationInitialBytes(entries_to_load[i]);
+                }
                 continue;
             }
             new_mutations.push_back(std::make_shared<ReplicatedMergeTreeMutationEntry>(
@@ -1267,6 +1297,7 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
 
             for (const ReplicatedMergeTreeMutationEntryPtr & entry : new_mutations)
             {
+                mutations_cleared.erase(entry->znode_name);
                 auto & mutation = mutations_by_znode.emplace(entry->znode_name, MutationStatus(entry, format_version)).first->second;
                 incrementMutationsCounters(mutation_counters, entry->commands);
                 if (hasSupportedMetadataMutation(entry->commands))
@@ -1353,6 +1384,7 @@ ReplicatedMergeTreeMutationEntryPtr ReplicatedMergeTreeQueue::removeMutation(
             num_metadata_mutations_in_map.fetch_sub(1, std::memory_order_release);
 
         mutations_by_znode.erase(it);
+        storage.dropMutationInitialBytes(mutation_id);
         LOG_DEBUG(log, "Removed mutation {} from local state.", entry->znode_name);
     }
 
@@ -2630,6 +2662,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
             {
                 LOG_TRACE(log, "Marking mutation {} done because it is <= mutation_pointer ({})", znode, mutation_pointer);
                 mutation.is_done = true;
+                storage.dropMutationInitialBytes(znode);
                 /// The pointer mtime is the time the mutation it points at was finalized.
                 /// For older mutations the pointer has already been overwritten, so their
                 /// completion time is unknown and `finish_time` is left zero.
@@ -2702,6 +2735,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
             {
                 LOG_TRACE(log, "Mutation {} is done", entry->znode_name);
                 it->second.is_done = true;
+                storage.dropMutationInitialBytes(entry->znode_name);
                 it->second.finish_time = finish_time;
                 it->second.latest_fail_reason.clear();
                 it->second.latest_fail_error_code_name.clear();
