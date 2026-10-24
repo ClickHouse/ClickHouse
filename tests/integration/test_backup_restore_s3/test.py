@@ -1702,12 +1702,25 @@ def backup_table_on_broken_disk(node, backup_destination):
     node.query(f"BACKUP TABLE data TO {backup_destination}")
 
 
+def prepare_restore_target(node):
+    """Creates the table the restore writes into, before anything is injected. Creating a `MergeTree` table
+    writes `format_version.txt`, a one-byte object, with the client of the disk, which allows no retries, so an
+    injected answer landing on that write fails the restore before it copies anything. It is not the write
+    these tests are about."""
+    node.query("DROP TABLE IF EXISTS data_restored SYNC;")
+    node.query(
+        "CREATE TABLE data_restored (key Int) Engine=MergeTree() ORDER BY tuple() SETTINGS storage_policy='policy_s3_broken';"
+    )
+
+
 def restore_from_broken_disk_backup(backup_destination, retry_attempts):
     """`allow_s3_native_copy=0` is what makes the restore upload into the destination disk itself, which is the
-    only thing the client of that disk does during a restore."""
+    only thing the client of that disk does during a restore. `allow_different_table_def` accepts the table
+    created above, whose definition differs from the one in the backup only by its name."""
     return f"""
         RESTORE TABLE data AS data_restored FROM {backup_destination}
-        SETTINGS allow_s3_native_copy=0, backup_restore_s3_retry_attempts={retry_attempts}
+        SETTINGS allow_s3_native_copy=0, allow_different_table_def=1,
+                 backup_restore_s3_retry_attempts={retry_attempts}
     """
 
 
@@ -1722,7 +1735,7 @@ def test_restore_retries_the_upload_into_the_destination(cluster, broken_s3):
     backup_destination = f"S3('http://resolver:8084/root/data/backups/{backup_name}', 'minio', '{minio_secret_key}')"
     backup_table_on_broken_disk(node, backup_destination)
 
-    node.query("DROP TABLE IF EXISTS data_restored SYNC;")
+    prepare_restore_target(node)
     broken_s3.setup_at_object_upload(after=0, count=3, action="slow_down")
 
     node.query(restore_from_broken_disk_backup(backup_destination, retry_attempts=100))
@@ -1738,7 +1751,7 @@ def test_restore_gives_up_the_upload_into_the_destination_without_retries(cluste
     backup_destination = f"S3('http://resolver:8084/root/data/backups/{backup_name}', 'minio', '{minio_secret_key}')"
     backup_table_on_broken_disk(node, backup_destination)
 
-    node.query("DROP TABLE IF EXISTS data_restored SYNC;")
+    prepare_restore_target(node)
     broken_s3.setup_at_object_upload(after=0, count=1, action="slow_down")
 
     error = node.query_and_get_error(
