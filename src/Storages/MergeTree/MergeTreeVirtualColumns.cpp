@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/Utils.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -52,9 +53,17 @@ const String PartitionIdColumn::name = "_partition_id";
 const DataTypePtr PartitionIdColumn::type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
 
 const String PartitionValueColumn::name = "_partition_value";
-DataTypePtr PartitionValueColumn::type(const KeyDescription * partition_key)
+DataTypePtr PartitionValueColumn::type(const KeyDescription & declared_key, const KeyDescription & produced_key)
 {
-    auto partition_types = partition_key->sample_block.getDataTypes();
+    auto partition_types = declared_key.sample_block.getDataTypes();
+    const auto produced_types = produced_key.sample_block.getDataTypes();
+    /// Both blocks come from analysing the same PARTITION BY, so they are element-wise counterparts.
+    chassert(partition_types.size() == produced_types.size());
+
+    for (size_t i = 0, size = std::min(partition_types.size(), produced_types.size()); i < size; ++i)
+        if (!canBeSafelyCast(produced_types[i], partition_types[i]))
+            partition_types[i] = produced_types[i];
+
     return std::make_shared<DataTypeTuple>(std::move(partition_types));
 }
 
