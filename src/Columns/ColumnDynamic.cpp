@@ -381,6 +381,8 @@ void ColumnDynamic::insertFrom(const IColumn & src_, size_t n)
 void ColumnDynamic::doInsertFrom(const IColumn & src_, size_t n)
 #endif
 {
+    checkStackSize();
+
     const auto & dynamic_src = assert_cast<const ColumnDynamic &>(src_);
 
     /// Same variants: copy the Variant column directly. Skip this fast path when the source has values in
@@ -460,6 +462,8 @@ void ColumnDynamic::insertRangeFrom(const IColumn & src_, size_t start, size_t l
 void ColumnDynamic::doInsertRangeFrom(const IColumn & src_, size_t start, size_t length)
 #endif
 {
+    checkStackSize();
+
     if (start + length > src_.size())
         throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameter out of bound in ColumnDynamic::insertRangeFrom method. "
                                                             "[start({}) + length({}) > src.size()({})]", start, length, src_.size());
@@ -692,6 +696,8 @@ void ColumnDynamic::insertManyFrom(const IColumn & src_, size_t position, size_t
 void ColumnDynamic::doInsertManyFrom(const IColumn & src_, size_t position, size_t length)
 #endif
 {
+    checkStackSize();
+
     const auto & dynamic_src = assert_cast<const ColumnDynamic &>(src_);
     auto & variant_col = getVariantColumn();
 
@@ -895,6 +901,8 @@ void ColumnDynamic::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn
 
 void ColumnDynamic::updateHashWithValue(size_t n, SipHash & hash) const
 {
+    checkStackSize();
+
     const auto & variant_col = getVariantColumn();
     auto discr = variant_col.globalDiscriminatorAt(n);
     if (discr == ColumnVariant::NULL_DISCRIMINATOR)
@@ -1172,6 +1180,8 @@ int ColumnDynamic::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_di
 int ColumnDynamic::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
 #endif
 {
+    checkStackSize();
+
     const auto & left_variant = getVariantColumn();
     const auto & right_dynamic = assert_cast<const ColumnDynamic &>(rhs);
     const auto & right_variant = right_dynamic.getVariantColumn();
