@@ -97,6 +97,11 @@ struct ArrowType
     /// Children (List/LargeList/FixedSizeList element, Struct/Union fields, Map's key_value struct).
     VectorWithMemoryTracking<ArrowField> children;
 
+    /// Struct: the field names are empty or repeated, which Arrow allows but a named `Tuple` cannot have. Such a
+    /// struct is read as an unnamed `Tuple`, and its fields are matched with the requested type and identified by
+    /// position instead of by name.
+    bool positional_fields = false;
+
     /// The Arrow type name for a `TypeKind::Unsupported` placeholder (used in the error message).
     std::string unsupported_type_name;
 };
@@ -130,8 +135,10 @@ struct ArrowSchema
     bool little_endian = true;
 };
 
-/// Parses the IPC Schema FlatBuffer into the Arrow-free description above.
-ArrowSchema parseSchema(const flatbuf::Schema & schema);
+/// Parses the IPC Schema FlatBuffer into the Arrow-free description above. `version` is the metadata
+/// version of the message (or file footer) the schema came from: the union buffer layout differs between
+/// V4 and V5, and only the V5 one is implemented, so a union field under V4 is rejected here.
+ArrowSchema parseSchema(const flatbuf::Schema & schema, flatbuf::MetadataVersion version);
 
 /// Whether a fixed_size_binary(16) field is flagged as the Arrow UUID extension type.
 bool isUUIDField(const ArrowField & field);
