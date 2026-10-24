@@ -1,0 +1,13 @@
+same result as quantilePrometheusHistogram
+0.06499999999999995	0.06499999999999995
+1	1
+a different level in each group
+1	0.25
+2	0.9166666666666667
+3	1
+a different level in each position with -ForEach
+[0.25,0.9166666666666667,1]
+the state keeps the level
+0.9166666666666667
+0.9166666666666667
+errors
