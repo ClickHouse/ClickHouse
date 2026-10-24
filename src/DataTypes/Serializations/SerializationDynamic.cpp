@@ -914,8 +914,11 @@ static void deserializeTextImpl(
     const auto & variant_info = dynamic_column.getVariantInfo();
     const auto & variant_types = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
     String field = read_field(istr);
-    /// readQuotedField preserves string quotes and normalizes bare NULL tokens to uppercase.
-    if (escaping_rule == FormatSettings::EscapingRule::Quoted && field == "NULL")
+    /// Field readers preserve quotes and escapes, so literal strings remain distinguishable from NULL.
+    /// readQuotedField also normalizes bare NULL tokens to uppercase.
+    if ((escaping_rule == FormatSettings::EscapingRule::Quoted && field == "NULL")
+        || (escaping_rule == FormatSettings::EscapingRule::CSV && field == settings.csv.null_representation)
+        || (escaping_rule == FormatSettings::EscapingRule::Escaped && field == settings.tsv.null_representation))
     {
         dynamic_column.insertDefault();
         return;
@@ -1087,10 +1090,11 @@ void SerializationDynamic::serializeTextEscaped(const IColumn & column, size_t r
 
 void SerializationDynamic::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    auto read_field = [](ReadBuffer & buf)
+    auto read_field = [&settings](ReadBuffer & buf)
     {
         String field;
-        readEscapedString(field, buf);
+        /// Preserve escapes for the NULL check and deserialize them only once in the nested serialization.
+        settings.tsv.crlf_end_of_line_input ? readTSVFieldCRLF(field, buf) : readTSVField(field, buf);
         return field;
     };
 
