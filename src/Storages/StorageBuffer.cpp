@@ -40,6 +40,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageValues.h>
+#include <Storages/Utils.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/IStorage.h>
 #include <Storages/VirtualColumnsDescription.h>
@@ -274,7 +275,7 @@ private:
 QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(
     ContextPtr local_context,
     QueryProcessingStage::Enum to_stage,
-    const StorageSnapshotPtr &,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info) const
 {
     if (auto destination = getDestinationTable())
@@ -285,9 +286,10 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(
             to_stage = QueryProcessingStage::WithMergeableState;
 
         const auto destination_metadata = destination->getInMemoryMetadataPtr(local_context, false);
-        const auto stage = destination->getQueryProcessingStage(
-            local_context, to_stage, destination->getStorageSnapshot(destination_metadata, local_context), query_info);
-        return merged_above ? std::min(stage, QueryProcessingStage::WithMergeableState) : stage;
+        const auto destination_snapshot = destination->getStorageSnapshot(destination_metadata, local_context);
+        const auto stage = destination->getQueryProcessingStage(local_context, to_stage, destination_snapshot, query_info);
+        const auto merged_stage = merged_above ? std::min(stage, QueryProcessingStage::WithMergeableState) : stage;
+        return getStageForConvertingRead(merged_stage, destination, destination_snapshot, storage_snapshot);
     }
 
     return QueryProcessingStage::FetchColumns;
@@ -350,6 +352,10 @@ void StorageBuffer::read(
         resolveStorageProxy(destination)->updateExternalDynamicMetadataIfExists(local_context);
         auto destination_metadata_snapshot = destination->getInMemoryMetadataPtr(local_context, false);
         auto destination_snapshot = destination->getStorageSnapshot(destination_metadata_snapshot, local_context);
+
+        /// The stage was chosen from an earlier, unlocked snapshot and can no longer be lowered here.
+        checkStageForConvertingRead(processed_stage, destination, destination_snapshot, storage_snapshot, getStorageID());
+
         const auto get_columns_options = GetColumnsOptions(GetColumnsOptions::AllPhysicalAndAliases).withSubcolumns().withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
         auto destination_columns = destination_snapshot->getColumns(get_columns_options);
         auto our_columns = storage_snapshot->getColumns(get_columns_options);

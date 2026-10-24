@@ -37,6 +37,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/SelectQueryDescription.h>
+#include <Storages/Utils.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -479,11 +480,14 @@ StorageMaterializedView::StorageMaterializedView(
 QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(
     ContextPtr local_context,
     QueryProcessingStage::Enum to_stage,
-    const StorageSnapshotPtr &,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info) const
 {
-    const auto target_metadata = getTargetTable()->getInMemoryMetadataPtr(local_context, false);
-    return getTargetTable()->getQueryProcessingStage(local_context, to_stage, getTargetTable()->getStorageSnapshot(target_metadata, local_context), query_info);
+    const auto target = getTargetTable();
+    const auto target_metadata = target->getInMemoryMetadataPtr(local_context, false);
+    const auto target_snapshot = target->getStorageSnapshot(target_metadata, local_context);
+    const auto stage = target->getQueryProcessingStage(local_context, to_stage, target_snapshot, query_info);
+    return getStageForConvertingRead(stage, target, target_snapshot, storage_snapshot);
 }
 
 StorageMetadataHandle StorageMaterializedView::getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const
@@ -555,6 +559,8 @@ void StorageMaterializedView::readImpl(
     /// We don't need to check access if the inner table was created automatically.
     if (!has_inner_table && !storage_id.empty() && view_metadata->sql_security_type)
         context->checkAccess(AccessType::SELECT, storage_id, column_names);
+
+    checkStageForConvertingRead(processed_stage, storage, target_storage_snapshot, storage_snapshot, getStorageID());
 
     auto src_table_query_info = query_info;
     src_table_query_info.initial_storage_snapshot = storage_snapshot;
