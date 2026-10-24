@@ -8,7 +8,6 @@
 -- reads nothing from disk.
 
 SET min_marks_to_use_statistics = 0;
-SET enable_analyzer = 1;
 SET use_statistics = 1;
 SET use_statistics_for_part_pruning = 0;
 SET materialize_statistics_on_insert = 1;

@@ -4,7 +4,6 @@
 SET min_marks_to_use_statistics = 0;
 SET allow_statistics = 1;
 SET use_statistics_for_part_pruning = 1;
-SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 1;
 SET materialize_statistics_on_insert = 1;
 SET allow_suspicious_low_cardinality_types = 1;

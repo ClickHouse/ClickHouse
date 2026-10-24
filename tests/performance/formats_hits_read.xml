@@ -1,0 +1,136 @@
+<!--
+    Reading the fixed public `hits` files (8873898 rows, 133 columns, written by ClickHouse in 2022-01) in eight input formats:
+    the columnar formats whole and five columns; ORC and Arrow also one wide column and a text filter (too fast on Parquet);
+    the row formats whole and `count()` (the count paths: ArrowStream skips the record-batch bodies, TSV only finds row ends);
+    RowBinary and Avro a prefix (their single-threaded readers take 50 s and 130 s for the whole file).
+    The objects are copied byte for byte into `user_files` as one `RawBLOB` value each (`hits.orc`, 3.9 GB, needs about 12 GB
+    of memory); the `.zst` ones are decompressed by streaming them as `LineAsString` into `RawBLOB` with '\n' re-added after
+    every line but the last (no binary file ends with '\n'; the TSV file does and is written back as lines). The `File` tables
+    take their schema from the files; RowBinary and TSV reuse the Native types. `use_cache_for_count_from_files = 0`, else
+    `count()` comes from the cache after the prewarm. The whole-file reads depend on the page cache: both servers' files take
+    83 GB.
+    The setup checks every timed result shape against values that agree across all eight formats (all columns cast to the
+    Native types, the five columns, `URL`, the filter count, the `count()` paths) and the prefixes against a full read. The TSV
+    file has its times in Europe/Moscow and its `ParsedParams.ValueDouble` (values about 1e-303) with 16 digits, one ULP off
+    for a quarter of the arrays: the full-row check sets `session_timezone` and compares that column by length and sum.
+    Per server and invocation: 12.6 GB downloaded; 46.9 GB written into `user_files` (12.6 GB of copies, 34.3 GB decompressed;
+    the 5.5 GB of `.zst` copies are emptied after decompression), 41.4 GB stay during the queries; no S3.
+-->
+<test run_all_queries="1" max_query_seconds="60">
+
+<tags><tag>long</tag></tags>
+
+<settings>
+    <max_execution_time>0</max_execution_time>
+    <use_cache_for_count_from_files>0</use_cache_for_count_from_files>
+    <http_max_tries>30</http_max_tries>
+</settings>
+
+<substitutions>
+    <substitution>
+        <name>columnar</name>
+        <values>
+            <value>fmt_parquet</value>
+            <value>fmt_orc</value>
+            <value>fmt_arrow</value>
+        </values>
+    </substitution>
+    <substitution>
+        <name>orc_arrow</name>
+        <values>
+            <value>fmt_orc</value>
+            <value>fmt_arrow</value>
+        </values>
+    </substitution>
+    <substitution>
+        <name>zst</name>
+        <values>
+            <value>arrow</value>
+            <value>arrow_stream</value>
+            <value>native</value>
+            <value>rowbinary</value>
+        </values>
+    </substitution>
+    <substitution>
+        <name>table</name>
+        <values>
+            <value>fmt_parquet</value>
+            <value>fmt_orc</value>
+            <value>fmt_avro</value>
+            <value>fmt_arrow</value>
+            <value>fmt_arrow_stream</value>
+            <value>fmt_native</value>
+            <value>fmt_rowbinary</value>
+            <value>fmt_tsv</value>
+        </values>
+    </substitution>
+    <substitution>
+        <name>native_types</name>
+        <values><value>assumeNotNull((SELECT concat('Tuple(', arrayStringConcat(groupArray(type), ', '), ')') FROM (SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'fmt_native' AND name != 'ParsedParams.ValueDouble' ORDER BY position)))</value></values>
+    </substitution>
+</substitutions>
+
+<fill_query>INSERT INTO FUNCTION file('formats_hits_read/hits.parquet', RawBLOB) SELECT * FROM url('https://clickhouse-public-datasets.s3.amazonaws.com/hits.parquet', RawBLOB) SETTINGS engine_file_truncate_on_insert = 1</fill_query>
+<fill_query>INSERT INTO FUNCTION file('formats_hits_read/hits.orc', RawBLOB) SELECT * FROM url('https://clickhouse-public-datasets.s3.amazonaws.com/hits.orc', RawBLOB) SETTINGS engine_file_truncate_on_insert = 1</fill_query>
+<fill_query>INSERT INTO FUNCTION file('formats_hits_read/hits.avro', RawBLOB) SELECT * FROM url('https://clickhouse-public-datasets.s3.amazonaws.com/hits.avro', RawBLOB) SETTINGS engine_file_truncate_on_insert = 1</fill_query>
+<fill_query>INSERT INTO FUNCTION file('formats_hits_read/{zst}.zst', RawBLOB, 'raw_blob String', 'none') SELECT * FROM url('https://clickhouse-public-datasets.s3.amazonaws.com/hits.{zst}.zst', RawBLOB, 'raw_blob String', 'none') SETTINGS engine_file_truncate_on_insert = 1</fill_query>
+<fill_query>INSERT INTO FUNCTION file('formats_hits_read/tsv.zst', RawBLOB, 'raw_blob String', 'none') SELECT * FROM url('https://clickhouse-public-datasets.s3.amazonaws.com/hits.tsv.zst', RawBLOB, 'raw_blob String', 'none') SETTINGS engine_file_truncate_on_insert = 1</fill_query>
+<fill_query>SELECT throwIf(groupArray((_file, _size)) != [('arrow.zst', 1184001801), ('arrow_stream.zst', 1184213258), ('hits.avro', 1862157764), ('hits.orc', 3935355335), ('hits.parquet', 1316858464), ('native.zst', 898217804), ('rowbinary.zst', 989480943), ('tsv.zst', 1214829832)]) FROM (SELECT _file, _size FROM file('formats_hits_read/*', One) ORDER BY _file)</fill_query>
+
+<fill_query>INSERT INTO FUNCTION file('formats_hits_read/hits.{zst}', RawBLOB) WITH (SELECT count() FROM file('formats_hits_read/{zst}.zst', LineAsString)) AS n SELECT if(rowNumberInAllBlocks() + 1 &lt; n, line || '\n', line) FROM file('formats_hits_read/{zst}.zst', LineAsString) SETTINGS max_threads = 1, engine_file_truncate_on_insert = 1</fill_query>
+<fill_query>INSERT INTO FUNCTION file('formats_hits_read/hits.tsv', LineAsString) SELECT * FROM file('formats_hits_read/tsv.zst', LineAsString) SETTINGS max_threads = 1, engine_file_truncate_on_insert = 1</fill_query>
+<fill_query>INSERT INTO FUNCTION file('formats_hits_read/{zst}.zst', RawBLOB) SELECT '' SETTINGS engine_file_truncate_on_insert = 1</fill_query>
+<fill_query>INSERT INTO FUNCTION file('formats_hits_read/tsv.zst', RawBLOB) SELECT '' SETTINGS engine_file_truncate_on_insert = 1</fill_query>
+<fill_query>SELECT throwIf(groupArray((_file, _size)) != [('hits.arrow', 7103779634), ('hits.arrow_stream', 7103745632), ('hits.native', 6509566030), ('hits.rowbinary', 5761177036), ('hits.tsv', 7784351125)]) FROM (SELECT _file, _size FROM file('formats_hits_read/hits.{{arrow,arrow_stream,native,rowbinary,tsv}}', One) ORDER BY _file)</fill_query>
+
+<fill_query>CREATE TABLE fmt_parquet ENGINE = File(Parquet, 'formats_hits_read/hits.parquet')</fill_query>
+<fill_query>CREATE TABLE fmt_orc ENGINE = File(ORC, 'formats_hits_read/hits.orc')</fill_query>
+<fill_query>CREATE TABLE fmt_avro ENGINE = File(Avro, 'formats_hits_read/hits.avro')</fill_query>
+<fill_query>CREATE TABLE fmt_arrow ENGINE = File(Arrow, 'formats_hits_read/hits.arrow')</fill_query>
+<fill_query>CREATE TABLE fmt_arrow_stream ENGINE = File(ArrowStream, 'formats_hits_read/hits.arrow_stream')</fill_query>
+<fill_query>CREATE TABLE fmt_native ENGINE = File(Native, 'formats_hits_read/hits.native')</fill_query>
+<fill_query>CREATE TABLE fmt_rowbinary AS fmt_native ENGINE = File(RowBinary, 'formats_hits_read/hits.rowbinary')</fill_query>
+<fill_query>CREATE TABLE fmt_tsv AS fmt_native ENGINE = File(TSV, 'formats_hits_read/hits.tsv')</fill_query>
+
+<fill_query>
+    WITH CAST(`ParsedParams.ValueDouble`, 'Array(Float64)') AS v
+    SELECT throwIf((count(), sum(cityHash64(CAST(tuple(* EXCEPT `ParsedParams.ValueDouble`), {native_types}))), sum(length(v)),
+            abs(sum(arraySum(v)) / 3.090814809576928e-297 - 1) &lt; 1e-9) != (8873898, 1187126851002700114, 1025826, 1))
+    FROM {table} SETTINGS session_timezone = 'Europe/Moscow'
+</fill_query>
+<fill_query>SELECT throwIf(sum(cityHash64(CAST((CounterID, EventDate, UserID, URL, SearchPhrase), 'Tuple(UInt32, Date, UInt64, String, String)'))) != 5398164332370448589) FROM {columnar}</fill_query>
+<fill_query>SELECT throwIf(((SELECT sum(cityHash64(CAST(URL, 'String'))) FROM {orc_arrow}), (SELECT count() FROM {orc_arrow} WHERE URL LIKE '%google%')) != (10733078607936066276, 1109))</fill_query>
+<fill_query>
+    SELECT throwIf(((SELECT count() FROM fmt_arrow_stream), (SELECT count() FROM fmt_native), (SELECT count() FROM fmt_tsv), (SELECT sum(cityHash64(UserID)) FROM fmt_native))
+        != (8873898, 8873898, 8873898, 4448911935324481208))
+</fill_query>
+<fill_query>
+    SELECT throwIf((SELECT (count(), sum(cityHash64(tuple(*)))) FROM (SELECT * FROM fmt_rowbinary LIMIT 2000000))
+        != (SELECT (count(), sum(cityHash64(tuple(* EXCEPT n)))) FROM (SELECT *, rowNumberInAllBlocks() AS n FROM fmt_rowbinary) WHERE n &lt; 2000000))
+    SETTINGS max_threads = 1
+</fill_query>
+<fill_query>
+    SELECT throwIf((SELECT (count(), sum(cityHash64(tuple(*)))) FROM (SELECT * FROM fmt_avro LIMIT 1000000))
+        != (SELECT (count(), sum(cityHash64(tuple(* EXCEPT n)))) FROM (SELECT *, rowNumberInAllBlocks() AS n FROM fmt_avro) WHERE n &lt; 1000000))
+    SETTINGS max_threads = 1
+</fill_query>
+
+<query>SELECT * FROM {columnar} FORMAT Null</query>
+<query>SELECT CounterID, EventDate, UserID, URL, SearchPhrase FROM {columnar} FORMAT Null</query>
+<query>SELECT URL FROM {orc_arrow} FORMAT Null</query>
+<query>SELECT count() FROM {orc_arrow} WHERE URL LIKE '%google%'</query>
+
+<query>SELECT count() FROM fmt_arrow_stream</query>
+<query>SELECT * FROM fmt_arrow_stream FORMAT Null</query>
+<query>SELECT count() FROM fmt_native</query>
+<query>SELECT * FROM fmt_native FORMAT Null</query>
+<query>SELECT UserID FROM fmt_native FORMAT Null</query>
+<query>SELECT count() FROM fmt_tsv</query>
+<query>SELECT * FROM fmt_tsv FORMAT Null</query>
+<query>SELECT * FROM fmt_rowbinary LIMIT 2000000 FORMAT Null</query>
+<query>SELECT * FROM fmt_avro LIMIT 1000000 FORMAT Null</query>
+
+<drop_query>TRUNCATE TABLE IF EXISTS {table}</drop_query>
+<drop_query>DROP TABLE IF EXISTS {table} SYNC</drop_query>
+
+</test>
