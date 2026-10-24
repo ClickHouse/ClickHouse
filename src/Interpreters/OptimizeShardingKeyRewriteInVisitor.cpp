@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/convertFieldToType.h>
@@ -73,6 +74,31 @@ bool shardContains(
 {
     /// Type of column in storage (used for implicit conversion from i.e. String to Int)
     const DataTypePtr & column_type = data.sharding_key_expr->getSampleBlock().getByName(sharding_column_name).type;
+
+    /// A `Variant` or `Dynamic` constant carries its active value under the declared type. `convertFieldToType` takes the
+    /// layout of a `UUID` / `UUID2` value from the single such alternative of a `Variant`, but with a `Dynamic` or with
+    /// both alternatives the layout is unknown: keep the value rather than risk routing it to the wrong shard.
+    if (from_type_hint && (isVariant(*from_type_hint) || isDynamic(*from_type_hint)))
+    {
+        const auto decayed_column_type = removeNullable(removeLowCardinality(column_type));
+        if (isUUID(decayed_column_type) || isUUID2(decayed_column_type))
+        {
+            const auto * variant_hint = typeid_cast<const DataTypeVariant *>(from_type_hint);
+            if (!variant_hint)
+                return true;
+            bool has_uuid = false;
+            bool has_uuid2 = false;
+            for (const auto & alternative : variant_hint->getVariants())
+            {
+                const auto decayed_alternative = removeNullable(removeLowCardinality(alternative));
+                has_uuid |= isUUID(decayed_alternative);
+                has_uuid2 |= isUUID2(decayed_alternative);
+            }
+            if (has_uuid && has_uuid2)
+                return true;
+        }
+    }
+
     /// Implicit conversion.
     column_value = convertFieldToType(column_value, *column_type, from_type_hint);
 

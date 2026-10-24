@@ -1422,7 +1422,15 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
             const auto & index_type = header.getByPosition(position).type;
             const auto actual_type = BloomFilter::getPrimitiveType(index_type);
-            auto converted_const_value = convertFieldToType(const_value, *actual_type, removeNullable(removeLowCardinality(const_value_type)).get());
+            const auto const_value_type_decayed = const_value_type ? removeNullable(removeLowCardinality(const_value_type)) : nullptr;
+
+            /// As for the scalar column above: the layout of a `UUID` / `UUID2` value carried by a `Variant` or `Dynamic`
+            /// constant is unknown, and hashing the other layout could skip matching granules.
+            if (const_value_type_decayed && (isVariant(const_value_type_decayed) || isDynamic(const_value_type_decayed))
+                && (isUUID(removeNullable(removeLowCardinality(actual_type))) || isUUID2(removeNullable(removeLowCardinality(actual_type)))))
+                return false;
+
+            auto converted_const_value = convertFieldToType(const_value, *actual_type, const_value_type_decayed.get());
             if (converted_const_value.isNull())
                 return false;
             out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_const_value)));

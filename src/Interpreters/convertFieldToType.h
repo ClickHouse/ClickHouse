@@ -112,6 +112,14 @@ Field tryConvertFieldToTypeExact(const Field & from_value, const IDataType & to_
 /// Returns Null otherwise, and when the integers fit neither `Int256` nor `UInt256` elements.
 Field convertFieldToTypeWithWiderIntegers(const Field & src, DataTypePtr & type, const IDataType * from_type_hint, const FormatSettings & format_settings);
 
+/// A `Field` without a type, such as a parameter of a parametric function, keeps its `UUID` values in the historical
+/// layout of the `UUID` data type, as `FieldVisitorToString` and `FieldToDataType` assume. Converts the `UUID2` values
+/// of `value` of the type `type` to that layout.
+Field convertUUID2LeavesToUUIDLayout(const Field & value, const IDataType & type);
+
+/// Converts a `Field` without a type, with `UUID` values in the layout described above, to `to_type`.
+Field convertUntypedFieldToType(const Field & value, const IDataType & to_type);
+
 /// Where a decimal integer literal falls relative to the range of an integer type. `NotApplicable` also covers
 /// a non-integer type, a non-decimal literal, and `-0` against an unsigned type.
 enum class IntegerLiteralRange : uint8_t

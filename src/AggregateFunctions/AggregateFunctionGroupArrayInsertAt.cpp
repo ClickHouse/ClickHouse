@@ -95,7 +95,7 @@ public:
             default_value = type->getDefault();
         else
         {
-            Field converted = convertFieldToType(default_value, *type);
+            Field converted = convertUntypedFieldToType(default_value, *type);
             if (converted.isNull())
                 throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert parameter of aggregate function {} ({}) "
                                 "to type {} to be used as default value in array",

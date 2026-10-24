@@ -39,6 +39,7 @@
 #include <Common/DateLUT.h>
 #include <base/arithmeticOverflow.h>
 
+#include <algorithm>
 #include <optional>
 
 namespace DB
@@ -563,6 +564,79 @@ Field uuid2LeavesToUUIDLayout(const Field & src, const IDataType & src_type)
     }
 
     return src;
+}
+
+bool fieldContainsUUID(const Field & value)
+{
+    switch (value.getType())
+    {
+        case Field::Types::UUID:
+            return true;
+        case Field::Types::Array:
+            return std::ranges::any_of(value.safeGet<Array>(), fieldContainsUUID);
+        case Field::Types::Tuple:
+            return std::ranges::any_of(value.safeGet<Tuple>(), fieldContainsUUID);
+        case Field::Types::Map:
+            return std::ranges::any_of(value.safeGet<Map>(), fieldContainsUUID);
+        default:
+            return false;
+    }
+}
+
+/// The source type of a nested element `value` (an element of an array, a tuple or a map), for the conversion of its
+/// `UUID` leaves to `type`. A `Variant` value loses its discriminator when it becomes a `Field`, so a `Variant` hint
+/// is resolved to its only alternative that can hold a value of this kind. When the hint does not tell the type
+/// (a `Dynamic`, or a `Variant` with several such alternatives) and the value has `UUID` leaves to convert to `UUID`
+/// or `UUID2`, the layout of these leaves is unknown, and the conversion is rejected instead of guessing.
+const IDataType * resolveNestedSourceTypeHint(const Field & value, const IDataType & type, const IDataType * hint)
+{
+    const IDataType * unwrapped_hint = removeNullableAndLowCardinalityFromHint(hint);
+    if (!unwrapped_hint || value.isNull())
+        return hint;
+
+    if (const auto * variant_hint = typeid_cast<const DataTypeVariant *>(unwrapped_hint))
+    {
+        /// `getUUIDSourceType` resolves a scalar value by itself.
+        if (value.getType() == Field::Types::UUID)
+            return hint;
+
+        const auto has_kind = [&value](const IDataType & alternative)
+        {
+            const IDataType * unwrapped = removeNullableAndLowCardinalityFromHint(&alternative);
+            switch (value.getType())
+            {
+                case Field::Types::Array: return typeid_cast<const DataTypeArray *>(unwrapped) != nullptr;
+                case Field::Types::Tuple: return typeid_cast<const DataTypeTuple *>(unwrapped) != nullptr;
+                case Field::Types::Map: return typeid_cast<const DataTypeMap *>(unwrapped) != nullptr;
+                default: return false;
+            }
+        };
+
+        const IDataType * matching_alternative = nullptr;
+        size_t num_matching_alternatives = 0;
+        for (const auto & alternative : variant_hint->getVariants())
+        {
+            if (has_kind(*alternative))
+            {
+                matching_alternative = alternative.get();
+                ++num_matching_alternatives;
+            }
+        }
+        if (num_matching_alternatives == 1)
+            return matching_alternative;
+    }
+    else if (!isDynamic(*unwrapped_hint))
+    {
+        return hint;
+    }
+
+    if (fieldContainsUUID(value) && anyInTypeTree(type, [](const IDataType & t) { return WhichDataType(t).isUUID() || WhichDataType(t).isUUID2(); }))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Cannot convert a value of type {} to {}: it is not known whether the nested UUID values are UUID or UUID2. "
+            "Cast the value to a concrete type first",
+            hint->getName(), type.getName());
+
+    return hint;
 }
 
 /// Splits a decimal integer literal into sign and magnitude; `magnitude_overflowed` leaves only the sign meaningful.
@@ -1286,7 +1360,8 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
                 res[i] = convertFieldToType(
                     src_arr[i],
                     element_type,
-                    tuple_from_hint ? tuple_from_hint->getElements()[i].get() : element_from_hint,
+                    resolveNestedSourceTypeHint(
+                        src_arr[i], element_type, tuple_from_hint ? tuple_from_hint->getElements()[i].get() : element_from_hint),
                     format_settings,
                     strict,
                     convert_inexact_floats);
@@ -1330,7 +1405,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
                 res[i] = convertFieldToType(
                     src_tuple[i],
                     element_type,
-                    tuple_from_hint ? tuple_from_hint->getElements()[i].get() : nullptr,
+                    resolveNestedSourceTypeHint(src_tuple[i], element_type, tuple_from_hint ? tuple_from_hint->getElements()[i].get() : nullptr),
                     format_settings,
                     strict,
                     convert_inexact_floats);
@@ -1534,12 +1609,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
                 Tuple updated_entry(2);
 
-                updated_entry[0] = convertFieldToType(key, key_type, key_from_hint, format_settings, strict, convert_inexact_floats);
+                updated_entry[0] = convertFieldToType(key, key_type, resolveNestedSourceTypeHint(key, key_type, key_from_hint), format_settings, strict, convert_inexact_floats);
 
                 if (updated_entry[0].isNull() && (!canContainNull(key_type) || (strict && !key.isNull())))
                     have_unconvertible_element = true;
 
-                updated_entry[1] = convertFieldToType(value, value_type, value_from_hint, format_settings, strict, convert_inexact_floats);
+                updated_entry[1] = convertFieldToType(value, value_type, resolveNestedSourceTypeHint(value, value_type, value_from_hint), format_settings, strict, convert_inexact_floats);
                 if (updated_entry[1].isNull() && (!canContainNull(value_type) || (strict && !value.isNull())))
                     have_unconvertible_element = true;
 
@@ -1893,6 +1968,23 @@ Field convertFieldToTypeOrThrow(const Field & from_value, const IDataType & to_t
             to_type.getName());
 
     return converted;
+}
+
+Field convertUUID2LeavesToUUIDLayout(const Field & value, const IDataType & type)
+{
+    if (!typeContainsUUID2(type))
+        return value;
+    return uuid2LeavesToUUIDLayout(value, type);
+}
+
+Field convertUntypedFieldToType(const Field & value, const IDataType & to_type)
+{
+    if (!fieldContainsUUID(value))
+        return convertFieldToType(value, to_type);
+
+    /// The type inferred from the `Field` has `UUID` for its `UUID` values, which is the layout they have.
+    const auto inferred_type = applyVisitor(FieldToDataType<LeastSupertypeOnError::Null>(), value);
+    return convertFieldToType(value, to_type, inferred_type.get());
 }
 
 }

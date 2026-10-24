@@ -694,6 +694,23 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
 
     std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(ast, context);
 
+    if (needsColumnCastForUUIDLayout(*value_raw.second, type))
+    {
+        if (value_raw.first.isNull() && !canContainNull(type) && format_settings.null_as_default)
+        {
+            type.insertDefaultInto(column);
+            return false;
+        }
+
+        /// The `Field` has already lost the type of the active alternative (and a column created from it would infer
+        /// `UUID` for a `Dynamic`), so the `Field` conversion cannot tell the layout of a nested `UUID` value. Evaluate
+        /// the expression as a column instead. This path is rare, so evaluating twice is fine.
+        auto constant = evaluateConstantExpressionAsColumn(ast, context);
+        auto casted_column = castColumn(ColumnWithTypeAndName(constant.getColumn(), constant.getType(), ""), type.getPtr(), nullptr);
+        column.insertFrom(*casted_column->convertToFullColumnIfConst(), 0);
+        return true;
+    }
+
     Field & expression_value = value_raw.first;
 
     if (format_settings.null_as_default)
@@ -720,15 +737,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     }
 
     /// Insert value into the column.
-    if (needsColumnCastForUUIDLayout(*value_raw.second, type))
-    {
-        /// The `Field` has already lost the type of the active alternative (and a column created from it would infer
-        /// `UUID` for a `Dynamic`), so evaluate the expression as a column. This path is rare, so evaluating twice is fine.
-        auto constant = evaluateConstantExpressionAsColumn(ast, context);
-        auto casted_column = castColumn(ColumnWithTypeAndName(constant.getColumn(), constant.getType(), ""), type.getPtr(), nullptr);
-        column.insertFrom(*casted_column->convertToFullColumnIfConst(), 0);
-    }
-    else if (type.hasDynamicStructure())
+    if (type.hasDynamicStructure())
     {
         /// For Dynamic type we cannot just insert Field as we lose information about the data type.
         /// Instead try to create a column with single element and cast it to the destination type.
