@@ -1,0 +1,8 @@
+1
+LowCardinality(String)	30000	30000
+LowCardinality(Nullable(String))	1000	1000
+LowCardinality(FixedString(3))	1000	1000
+1
+MergeTree LowCardinality(String)	5000	5000
+MergeTree LowCardinality(Nullable(String))	200	200
+only NULLs	0

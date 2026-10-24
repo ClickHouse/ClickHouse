@@ -504,12 +504,8 @@ bool AggregatingStep::canUseRadixUniqExact() const
         return false;
 
     const auto & aggregate = params.aggregates[0];
-    if (aggregate.function->getName() != "uniqExact" || !aggregate.parameters.empty() || aggregate.argument_names.size() != 1
-        || !WhichDataType(aggregate.function->getResultType()).isUInt64())
-        return false;
-
-    /// The type of the column as the transforms read it, not the argument type of the function, which has no `LowCardinality`.
-    return isRadixUniqExactSupported(*input_headers.front()->getByName(aggregate.argument_names[0]).type);
+    return aggregate.function->getName() == "uniqExact" && aggregate.parameters.empty() && aggregate.argument_names.size() == 1
+        && WhichDataType(aggregate.function->getResultType()).isUInt64();
 }
 
 void AggregatingStep::buildRadixUniqExact(
