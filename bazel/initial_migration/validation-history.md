@@ -1753,3 +1753,44 @@ Ten benchmark archive hashes and sizes matched the previous native build, includ
 x86-64: strict DWYU graded 16 of 782 production targets (4 `clean`, 1 `header_pp_not_verified`, 1 `unentered_owned_files`, 10 `unverified_link_deps`); the negative fixture reported its expected unused dependency. 766 production targets were outside the strict results. ARM64: strict DWYU graded 16 of 782 production targets (4 `clean`, 1 `header_pp_not_verified`, 1 `unentered_owned_files`, 10 `unverified_link_deps`); the negative fixture reported its expected unused dependency. 766 production targets were outside the strict results.
 
 [39d0c249f](https://github.com/dzbarsky/clickhouse/commit/39d0c249fa553c80e28de390893982fe9f152761) had no strict child. The earlier strict run on [a38921cb8](https://github.com/dzbarsky/clickhouse/commit/a38921cb8dd22a3f8c942b0e6249d076ad4e2e04) recorded 486 failed standalone headers per CPU; its failing umbrella targets are outside the current strict roster. The failure totals across these rosters do not measure resolved failures.
+
+## 2a7b93ea2
+
+The compiled `//src/Parsers:clickhouse_parsers` target now owns 38 parser headers and publishes `//bazel:clickhouse_config_headers` for `ASTSystemQuery.h`. `//src/Common:once_and_atomic` now provides `callOnce.h` and `CopyableAtomic.h` to their declared consumers. Zstd exposes four public API headers. Jieba names its dictionary through its Bazel package. The SQLConsole generator takes its 22 assets through the package filegroup; Arrow no longer exports two same-package protobuf inputs.
+
+[2a7b93ea2](https://github.com/dzbarsky/clickhouse/commit/2a7b93ea2ee2dfac734f3a4991ac059141d11f08) built all 62 native targets on x86-64 and ARM64. Both normalized ClickHouse hashes and sizes matched native CMake.
+
+| Native Bazel build | ELF | SHA-256 | Bytes |
+| --- | --- | --- | --- |
+| [x86-64](https://app.buildbuddy.io/invocation/7ceaa9b1-cfa4-4525-821b-f4df0780e153) | `//bazel/initial_migration:clickhouse.normalized` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
+| [x86-64](https://app.buildbuddy.io/invocation/7ceaa9b1-cfa4-4525-821b-f4df0780e153) | `//:clickhouse` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 |
+| [x86-64](https://app.buildbuddy.io/invocation/7ceaa9b1-cfa4-4525-821b-f4df0780e153) | `//src:unit_tests_dbms` | `2a6934b1d4523406f0c1e45b68b515914ba14a4167ffb6c05c0668a5ffb11260` | 811968280 |
+| [ARM64](https://app.buildbuddy.io/invocation/a54e1298-2c66-43fc-8d7c-9c8185a64d2a) | `//bazel/initial_migration:clickhouse.normalized` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
+| [ARM64](https://app.buildbuddy.io/invocation/a54e1298-2c66-43fc-8d7c-9c8185a64d2a) | `//:clickhouse` | `2363f1ffebe756464876c0e91ca336d77c4d17e6a27afe2fb22b8f337ac2d744` | 907067440 |
+| [ARM64](https://app.buildbuddy.io/invocation/a54e1298-2c66-43fc-8d7c-9c8185a64d2a) | `//src:unit_tests_dbms` | `d489d1b0fd52b57389f107e5650cb58c5f6a33689d9c6090a5198cf0bdef2176` | 795060896 |
+
+The raw ClickHouse and `unit_tests_dbms` hashes and sizes matched [e08f9c4dd](https://github.com/dzbarsky/clickhouse/commit/e08f9c4dd495b472912d2e650008fc09463e7002). On each CPU, 38 GoogleTests, six SQL cases and 16 Decimal boundary checks passed. BuildBuddy recorded all 77 existing consumer objects, 41 objects from the new ownership checks and 23 SQLConsole generated outputs. `src/Interpreters/SetSerialization.h` remains outside the standalone public-header fixtures.
+
+The two embedded CcInfo reports per CPU matched all 17 ordered fields against their definitions. Relative to [e08f9c4dd](https://github.com/dzbarsky/clickhouse/commit/e08f9c4dd495b472912d2e650008fc09463e7002), each has one more LinkerInput, owned by `//src/Common:once_and_atomic`, with no libraries or link flags. The other 16 counts are unchanged. The reports identify both synchronization headers as source files and retain the physical `src/Common/IThrottler.h`. All ten benchmark archive hashes and sizes matched. The 16-field Boost report and the 4,096-byte CRoaring alignment check also passed.
+
+The preceding strict builds on [e08f9c4dd](https://github.com/dzbarsky/clickhouse/commit/e08f9c4dd495b472912d2e650008fc09463e7002) graded 16 production targets on each CPU: four clean, ten with unverified link dependencies, one with unentered files, and one without verified public-header preprocessing. Both negative fixtures reported their expected unused dependency. Those builds omitted `//src:headers` and `//src/Parsers:clickhouse_parsers`.
+
+| CPU | Ordinary DWYU | Strict DWYU | Production graded | Strict outcomes | Negative fixture |
+| --- | --- | --- | --- | --- | --- |
+| [x86-64 parent Failed](https://app.buildbuddy.io/invocation/36fc8b84-0b66-4f64-8247-4b62aaf443ad) | [exit 0](https://app.buildbuddy.io/invocation/d1a0f56c-712a-4add-a1c5-ec6dece8205e) | [exit 1](https://app.buildbuddy.io/invocation/f5be0c7c-dd4c-42ca-bde2-c7ee21aad9bf) | 5/783 | 1 `clean`, 1 `failed`, 1 `findings`, 1 `header_pp_not_verified`, 1 `unverified_link_deps` | Expected unused dependency |
+| [ARM64 parent Failed](https://app.buildbuddy.io/invocation/0628d294-67d9-4fad-8d70-3072908f61e3) | [exit 0](https://app.buildbuddy.io/invocation/e850488d-c2b8-43f6-aa14-631cbe8cbd48) | [exit 1](https://app.buildbuddy.io/invocation/f8927ae9-8faa-48cf-9dd4-15057bf7835f) | 5/783 | 1 `clean`, 1 `failed`, 1 `findings`, 1 `header_pp_not_verified`, 1 `unverified_link_deps` | Expected unused dependency |
+
+The earlier [a38921cb8](https://github.com/dzbarsky/clickhouse/commit/a38921cb8dd22a3f8c942b0e6249d076ad4e2e04) standalone checks first missed `Common/callOnce.h` in 11 headers and `Common/CopyableAtomic.h` in seven. The table distinguishes a successful preprocessing action from output metadata and a source-analyzer result. A different stderr digest does not identify a new first missing include.
+
+| CPU | Preprocessor succeeded | Preprocessed output only | Analyzer action or output only | Same stderr | Different stderr | Other failure | No individual result |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| x86-64 | 0 | 0 | 0 | 0 | 15 | 0 | 3 |
+| ARM64 | 0 | 0 | 0 | 0 | 15 | 0 | 3 |
+
+The earlier compiled Parser report had four `config.h` paths for `src/Parsers/ASTSystemQuery.h`. x86-64: The current report has no `ASTSystemQuery.h` finding for `config.h`. The compiled Parser owner's full result is `unverified_link_deps`; the report lists 10 unverified link dependencies. ARM64: The current report has no `ASTSystemQuery.h` finding for `config.h`. The compiled Parser owner's full result is `unverified_link_deps`; the report lists 10 unverified link dependencies.
+
+The 15 compiler messages were identical across CPUs (5,585 bytes total). Their first missing headers were `Common/SSHWrapper.h` (6), `Common/ZooKeeper/Types.h` (5), `Common/ZooKeeper/IKeeper.h` (2), `Common/HashTable/Hash.h` (1), `Common/StatusFile.h` (1). Three other headers had no individually verified preprocessing result. Both zstd reports recommend making `@clickhouse_zstd//:_zstd__compile_1` an implementation dependency. The x86-64 report attributed `HUF_decompress4X1_usingDTable_internal_fast_asm_loop` and `HUF_decompress4X2_usingDTable_internal_fast_asm_loop` to that target; the ARM64 report listed no directly owned link symbols.
+
+Bazel recorded 126 remote executions on each native build, compared with 5,228 on each preceding native build. The [x86-64](https://app.buildbuddy.io/invocation/7ceaa9b1-cfa4-4525-821b-f4df0780e153) build recorded 51,565 remote cache hits; [ARM64](https://app.buildbuddy.io/invocation/a54e1298-2c66-43fc-8d7c-9c8185a64d2a) recorded 52,085. Both builds used minimal downloads. The preceding native builds did not report the 23 SQLConsole outputs individually, so no comparison of their output hashes is available.
+
+The original CcInfo reader selected a module from the current build when it loaded the previous build’s verification code. Both original native builds succeeded, but the reader marked their CcInfo comparisons invalid. Replaying the original four configured FileWrites with the previous build’s module verified both 17-field reports on each CPU. The replay used the same build results, binary hashes, tests and DWYU records; it made no remote build or service request.

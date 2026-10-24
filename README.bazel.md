@@ -47,18 +47,18 @@ of `//:clickhouse`. The output is a Linux ELF even when the client is macOS.
 
 ## Binary comparison
 
-[e08f9c4dd](https://github.com/dzbarsky/clickhouse/commit/e08f9c4dd495b472912d2e650008fc09463e7002) built all 61 native Bazel targets on x86-64 and ARM64. Both normalized ClickHouse hashes and sizes matched native CMake.
+[2a7b93ea2](https://github.com/dzbarsky/clickhouse/commit/2a7b93ea2ee2dfac734f3a4991ac059141d11f08) built all 62 native targets on x86-64 and ARM64. Both normalized ClickHouse hashes and sizes matched native CMake.
 
 | Native Bazel build | ELF | SHA-256 | Bytes |
 | --- | --- | --- | --- |
-| [x86-64](https://app.buildbuddy.io/invocation/0f276f0a-f9ae-4ba8-ab62-d49c22209206) | `//bazel/initial_migration:clickhouse.normalized` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
-| [x86-64](https://app.buildbuddy.io/invocation/0f276f0a-f9ae-4ba8-ab62-d49c22209206) | `//:clickhouse` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 |
-| [x86-64](https://app.buildbuddy.io/invocation/0f276f0a-f9ae-4ba8-ab62-d49c22209206) | `//src:unit_tests_dbms` | `2a6934b1d4523406f0c1e45b68b515914ba14a4167ffb6c05c0668a5ffb11260` | 811968280 |
-| [ARM64](https://app.buildbuddy.io/invocation/85466011-9431-403e-b2e5-c7a408e7e933) | `//bazel/initial_migration:clickhouse.normalized` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
-| [ARM64](https://app.buildbuddy.io/invocation/85466011-9431-403e-b2e5-c7a408e7e933) | `//:clickhouse` | `2363f1ffebe756464876c0e91ca336d77c4d17e6a27afe2fb22b8f337ac2d744` | 907067440 |
-| [ARM64](https://app.buildbuddy.io/invocation/85466011-9431-403e-b2e5-c7a408e7e933) | `//src:unit_tests_dbms` | `d489d1b0fd52b57389f107e5650cb58c5f6a33689d9c6090a5198cf0bdef2176` | 795060896 |
+| [x86-64](https://app.buildbuddy.io/invocation/7ceaa9b1-cfa4-4525-821b-f4df0780e153) | `//bazel/initial_migration:clickhouse.normalized` | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710693736 |
+| [x86-64](https://app.buildbuddy.io/invocation/7ceaa9b1-cfa4-4525-821b-f4df0780e153) | `//:clickhouse` | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929619680 |
+| [x86-64](https://app.buildbuddy.io/invocation/7ceaa9b1-cfa4-4525-821b-f4df0780e153) | `//src:unit_tests_dbms` | `2a6934b1d4523406f0c1e45b68b515914ba14a4167ffb6c05c0668a5ffb11260` | 811968280 |
+| [ARM64](https://app.buildbuddy.io/invocation/a54e1298-2c66-43fc-8d7c-9c8185a64d2a) | `//bazel/initial_migration:clickhouse.normalized` | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637316696 |
+| [ARM64](https://app.buildbuddy.io/invocation/a54e1298-2c66-43fc-8d7c-9c8185a64d2a) | `//:clickhouse` | `2363f1ffebe756464876c0e91ca336d77c4d17e6a27afe2fb22b8f337ac2d744` | 907067440 |
+| [ARM64](https://app.buildbuddy.io/invocation/a54e1298-2c66-43fc-8d7c-9c8185a64d2a) | `//src:unit_tests_dbms` | `d489d1b0fd52b57389f107e5650cb58c5f6a33689d9c6090a5198cf0bdef2176` | 795060896 |
 
-The raw ClickHouse and `unit_tests_dbms` executables matched [39d0c249f](https://github.com/dzbarsky/clickhouse/commit/39d0c249fa553c80e28de390893982fe9f152761). On each CPU, 38 GoogleTests, six SQL cases and 16 Decimal boundary checks passed. BuildBuddy reported the object for each of 51 standalone public-header consumers, eight SDK consumers and 18 additional public-header consumers. `src/Interpreters/SetSerialization.h` remains outside these fixtures. The hashes and sizes come from output metadata.
+The raw ClickHouse and `unit_tests_dbms` hashes and sizes matched [e08f9c4dd](https://github.com/dzbarsky/clickhouse/commit/e08f9c4dd495b472912d2e650008fc09463e7002). On each CPU, 38 GoogleTests, six SQL cases and 16 Decimal boundary checks passed. BuildBuddy recorded all 77 existing consumer objects, 41 objects from the new ownership checks and 23 SQLConsole generated outputs. `src/Interpreters/SetSerialization.h` remains outside the standalone public-header fixtures.
 
 To check a change against these references without downloading either ELF, run:
 
@@ -177,4 +177,4 @@ python3 bazel/initial_migration/audit_full_dwyu.py --config cmake_match --out /t
 python3 bazel/initial_migration/audit_full_dwyu.py --config cmake_match_aarch64 --out /tmp/clickhouse-dwyu-arm
 ```
 
-At [e08f9c4dd](https://github.com/dzbarsky/clickhouse/commit/e08f9c4dd495b472912d2e650008fc09463e7002), x86-64: strict DWYU graded 16 of 782 production targets (4 `clean`, 1 `header_pp_not_verified`, 1 `unentered_owned_files`, 10 `unverified_link_deps`); the negative fixture reported its expected unused dependency. 766 production targets were outside the strict results. ARM64: strict DWYU graded 16 of 782 production targets (4 `clean`, 1 `header_pp_not_verified`, 1 `unentered_owned_files`, 10 `unverified_link_deps`); the negative fixture reported its expected unused dependency. 766 production targets were outside the strict results. See the [validation history](bazel/initial_migration/validation-history.md#e08f9c4dd).
+At [2a7b93ea2](https://github.com/dzbarsky/clickhouse/commit/2a7b93ea2ee2dfac734f3a4991ac059141d11f08), strict DWYU reported x86-64: 5/783 production targets graded; 1 `clean`, 1 `failed`, 1 `findings`, 1 `header_pp_not_verified`, 1 `unverified_link_deps`; ARM64: 5/783 production targets graded; 1 `clean`, 1 `failed`, 1 `findings`, 1 `header_pp_not_verified`, 1 `unverified_link_deps`. See the [per-header results and validation history](bazel/initial_migration/validation-history.md#2a7b93ea2). On each CPU, 15 of the 18 headers that previously first missed `Common/callOnce.h` or `Common/CopyableAtomic.h` now failed on other headers; three had no individual result. No successful preprocess was observed for these 18. The compiled Parser report no longer lists `config.h` for `ASTSystemQuery.h`. Both zstd reports flag `_zstd__compile_1` as a private dependency.
