@@ -80,7 +80,7 @@ $CLICKHOUSE_CLIENT -q "
 
 echo "============="
 
-$CLICKHOUSE_CLIENT --enable_analyzer=1 -q "
+$CLICKHOUSE_CLIENT -q "
     WITH (data.2)['aa'] AS aa, (data.2)['bb'] AS bb
     SELECT aa.k1 AS k1,
            aa.k4 AS k4
