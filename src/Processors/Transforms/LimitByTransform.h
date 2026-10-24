@@ -49,8 +49,11 @@ protected:
 
 private:
     /// Once a group has filled its window every later run for it is a no-op, so keep that test at the
-    /// call site: the call costs more than the work.
-    void processRun(UInt64 run_start_row, UInt64 run_row_count, size_t group_idx)
+    /// call site: the call costs more than the work. It must be inlined into the row loop of `consumeImpl`:
+    /// as an out-of-line call, clang 23 on AArch64 pairs the callee-saved register that holds the
+    /// loop-invariant hash-table pointer with the one that holds the group index just loaded from the table
+    /// in a single `stp`, which makes the next row's bucket address depend on the previous row's lookup.
+    ALWAYS_INLINE void processRun(UInt64 run_start_row, UInt64 run_row_count, size_t group_idx)
     {
         chassert(group_idx < group_counts.size());
         const UInt64 group_rows_seen_before_run = group_counts[group_idx];

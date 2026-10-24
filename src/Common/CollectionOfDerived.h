@@ -5,6 +5,7 @@
 #include <Common/Exception.h>
 
 #include <algorithm>
+#include <iterator>
 #include <memory>
 #include <typeindex>
 #include <vector>

@@ -1891,8 +1891,10 @@ def test_metadata_cache_exact_size_tracking(started_cluster):
     sizeof_file_status = cache_size_bytes
     logging.info(f"sizeof(FileStatus) = {sizeof_file_status} bytes")
 
-    # Sanity check: FileStatus has 2 mutexes + 6 atomics + 1 string + additional cache tracking fields
-    assert 200 <= sizeof_file_status <= 300, f"Unexpected sizeof(FileStatus) = {sizeof_file_status}"
+    # Sanity check: FileStatus has 2 mutexes + 6 atomics + 1 string + additional cache tracking fields.
+    # The weight also includes the capacity of the path string, which depends on the allocation
+    # rounding of the standard library (libc++ from LLVM 23 rounds long strings to 16 bytes instead of 8).
+    assert 200 <= sizeof_file_status <= 320, f"Unexpected sizeof(FileStatus) = {sizeof_file_status}"
 
     # Process 19 more files
     files_to_generate = 19
