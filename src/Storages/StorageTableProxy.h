@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <functional>
 
 #include <Storages/StorageProxy.h>
@@ -10,6 +11,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int TABLE_IS_BEING_RESTARTED;
+}
 
 /// Lazily creates underlying storage for tables in databases with `lazy_load_tables` setting.
 /// Similar to `StorageTableFunctionProxy`, but for real on-disk tables.
@@ -76,20 +82,98 @@ public:
         if (nested)
             return nested;
 
+        /// `SYSTEM RESTART REPLICA` marks the table, then shuts it down through this proxy, which waits
+        /// for `nested_mutex`. A load that starts after the mark would bring back the very replica the
+        /// restart is retiring and start its background threads, only for the following `lockForShare`
+        /// to reject the query anyway. A load already running when the mark is set is shut down by the
+        /// restart as soon as it finishes.
+        if (is_being_restarted)
+            throw Exception(ErrorCodes::TABLE_IS_BEING_RESTARTED, "Table {} is being restarted", getStorageID().getNameForLogs());
+
         LOG_TRACE(log, "Loading lazy table on first access");
 
         auto nested_storage = get_nested();
+        /// The database replaces this proxy with the loaded storage as soon as it notices the load
+        /// (see `DatabaseWithOwnTablesBase::replaceLoadedLazyTableUnlocked`), after which the two
+        /// objects are both around and both reachable as this table. Hand over the table-level
+        /// locks and the lifecycle flags, so that they keep excluding each other across the
+        /// replacement, and a `DETACH`, `DROP` or `SYSTEM RESTART REPLICA` marking either object is
+        /// seen through both.
+        nested_storage->takeTableLocksFrom(*this);
         nested_storage->startup();
         nested_storage->renameInMemory(getStorageID());
         nested = nested_storage;
         get_nested = {};
+        is_loaded.store(true, std::memory_order_release);
         return nested;
     }
 
+    StoragePtr getLoadedLazyTable() const override
+    {
+        /// Never wait for the load to finish, and do not take `nested_mutex` at all: this is called
+        /// by the database with its own mutex held, while `getNested` keeps `nested_mutex` for as
+        /// long as the table takes to load. `nested` is assigned once, before `is_loaded` is set,
+        /// and never changes after that, so it can be read without the mutex once `is_loaded` is.
+        if (!is_loaded.load(std::memory_order_acquire))
+            return nullptr;
+        return nested;
+    }
+
+    StoragePtr loadLazyTable() const override { return getNested(); }
+
+    /// `SYSTEM START ...` may lift an action lock through a proxy it resolved before the replacement,
+    /// e.g. from a database-wide snapshot of the tables. The lock itself is keyed by the loaded storage
+    /// (see `ActionLocksManager`), and the wake-up has to reach that storage as well, otherwise the
+    /// background work it reschedules stays asleep. A proxy that has not been loaded cannot hold an
+    /// action lock, so there is nothing to wake up, and nothing is loaded here.
+    void onActionLockRemove(StorageActionBlockType action_type) override
+    {
+        if (auto loaded = getLoadedLazyTable())
+            loaded->onActionLockRemove(action_type);
+    }
+
+    /// `StorageProxy` forwards `mutate`, but not the checks that gate a mutation, an UPDATE or a
+    /// DELETE, including whether it may run inside a transaction. Without these, the first such statement addressed to a table that has not been loaded
+    /// yet is answered by the `IStorage` defaults and rejected, e.g. with
+    /// `Table engine MergeTree doesn't support mutations`. They all mean the table is about to be
+    /// written to, so materializing it here costs nothing.
+    void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override
+    {
+        getNested()->checkMutationIsPossible(commands, settings);
+    }
+
+    /// Only asked inside a transaction, about a table the query is going to read or write.
+    bool supportsTransactions() const override { return getNested()->supportsTransactions(); }
+    bool supportsDelete() const override { return getNested()->supportsDelete(); }
+    bool supportsLightweightDelete() const override { return getNested()->supportsLightweightDelete(); }
+    std::expected<void, PreformattedMessage> supportsLightweightUpdate() const override { return getNested()->supportsLightweightUpdate(); }
+    QueryPipeline updateLightweight(const MutationCommands & commands, ContextPtr context) override
+    {
+        return getNested()->updateLightweight(commands, context);
+    }
+
+    /// Asked by `ALTER`, `DELETE`, lightweight `UPDATE` and `TRUNCATE` before they write to the table,
+    /// so loading it costs nothing. Answered by the proxy, the `IStorage` default would see no storage
+    /// policy and let a table on read-only or write-once disks through the `TABLE_IS_PERMANENTLY_READ_ONLY` check.
+    bool isStaticStorage() const override { return getNested()->isStaticStorage(); }
+
     bool storesDataOnDisk() const override { return true; }
-    /// Report the restrictive answer instead of loading the nested table just to inspect its on-disk data.
-    bool hasUnreplicatedTableDataOnDisk() const override { return true; }
-    StoragePolicyPtr getStoragePolicy() const override { return nullptr; }
+
+    /// Until the table is loaded, report the restrictive answer instead of loading it just to inspect its on-disk data.
+    bool hasUnreplicatedTableDataOnDisk() const override
+    {
+        if (auto loaded = getLoadedLazyTable())
+            return loaded->hasUnreplicatedTableDataOnDisk();
+        return true;
+    }
+
+    /// Not worth loading the table for, e.g. for `system.tables`.
+    StoragePolicyPtr getStoragePolicy() const override
+    {
+        if (auto loaded = getLoadedLazyTable())
+            return loaded->getStoragePolicy();
+        return nullptr;
+    }
     bool isView() const override { return false; }
 
     /// Startup is deferred until first access via `getNested`.
@@ -231,6 +315,7 @@ private:
     mutable std::recursive_mutex nested_mutex; /// Guards both `get_nested` and `nested`.
     mutable std::function<StoragePtr()> get_nested; /// Factory that creates the real storage. Cleared after first use.
     mutable StoragePtr nested; /// The materialized real storage, set on first access.
+    mutable std::atomic<bool> is_loaded{false}; /// Set once `nested` has been assigned, see getLoadedLazyTable.
     LoggerPtr log;
 };
 

@@ -426,6 +426,42 @@ public:
     /// heavyweight and makes table irresponsive.
     TableExclusiveLockHolder lockExclusively(const String & query_id, const Poco::Timespan & acquire_timeout);
 
+    /// For a lazily loaded table (see the `lazy_load_tables` database setting), the storage this one
+    /// stands for, once it has been loaded, and nullptr before that. Never triggers the load.
+    /// Any other storage returns nullptr: it already is the storage it stands for.
+    virtual StoragePtr getLoadedLazyTable() const { return nullptr; }
+
+    /// For a lazily loaded table, the storage this one stands for, loading it first if that has not
+    /// happened yet. Any other storage returns nullptr. Use this instead of getLoadedLazyTable
+    /// wherever waiting for the load is acceptable and the answer must not depend on timing, e.g. to
+    /// address the storage itself when the table is about to be written to.
+    virtual StoragePtr loadLazyTable() const { return nullptr; }
+
+    /// Make this storage use the very same table-level locks and lifecycle flags (`is_dropped`,
+    /// `is_detached`, `is_being_restarted`) as `other` instead of its own, so that the two objects
+    /// form a single lock domain for lockForShare, lockForAlter and lockExclusively, and a `DROP`,
+    /// `DETACH` or `SYSTEM RESTART REPLICA` that marks either object is seen through both.
+    ///
+    /// This exists for lazily loaded tables. A `StorageTableProxy` is published in the database
+    /// before the real storage exists, and is replaced by the real storage once it has been loaded.
+    /// Queries that resolved the table before the replacement keep a reference to the proxy and lock
+    /// it, while queries that resolve it afterwards lock the real storage. Unless both objects lock
+    /// the same primitives, a DROP or an ALTER would not wait for a SELECT that is still running.
+    /// And unless both share the lifecycle flags, a query that switched to the real storage while the
+    /// database still held the proxy could lock a table that has just been detached through the proxy.
+    ///
+    /// Must be called on a freshly created storage that has not been published anywhere yet, and
+    /// both storages must stand for the same table.
+    void takeTableLocksFrom(const IStorage & other);
+
+    /// Whether `table` is held by nobody but the reference passed here, e.g. a detached or dropped
+    /// table that may now be destroyed, or another instance of which may now be attached.
+    ///
+    /// For a lazily loaded table that has been loaded, the storage it stands for must not be held by
+    /// anybody but the proxy either: a query may have switched from the proxy to that storage while
+    /// the database still held the proxy, and the catalog only tracks the object it held.
+    static bool isTableNotInUse(const StoragePtr & table);
+
     /** Returns stage to which query is going to be processed in read() function.
       * (Normally, the function only reads the columns from the list, but in other cases,
       *  for example, the request can be partially processed on a remote server, or an aggregate projection.)
@@ -746,9 +782,31 @@ public:
     /// uncommitted result so it is retried later. No-op for tables without such activity.
     virtual void cancelBackgroundActivity() {}
 
-    std::atomic<bool> is_dropped{false};
-    std::atomic<bool> is_detached{false};
-    std::atomic<bool> is_being_restarted{false};
+    /// A flag of the table lifecycle that can be shared with another storage, see takeTableLocksFrom.
+    /// Reads and writes like a `std::atomic<bool>`.
+    class SharedLifecycleFlag
+    {
+    public:
+        SharedLifecycleFlag() = default;
+        SharedLifecycleFlag(const SharedLifecycleFlag &) = delete;
+        SharedLifecycleFlag & operator=(const SharedLifecycleFlag &) = delete;
+
+        SharedLifecycleFlag & operator=(bool value)
+        {
+            flag->store(value);
+            return *this;
+        }
+        operator bool() const { return flag->load(); } // NOLINT(google-explicit-constructor)
+        bool load() const { return flag->load(); }
+
+    private:
+        friend class IStorage;
+        std::shared_ptr<std::atomic<bool>> flag = std::make_shared<std::atomic<bool>>(false);
+    };
+
+    SharedLifecycleFlag is_dropped;
+    SharedLifecycleFlag is_detached;
+    SharedLifecycleFlag is_being_restarted;
 
     /** A list of tasks to check a validity of data.
       * Each IStorage implementation may interpret this task in its own way.
@@ -931,7 +989,8 @@ public:
 private:
     /// Lock required for alter queries (lockForAlter).
     /// Allows to execute only one simultaneous alter query.
-    mutable std::timed_mutex alter_lock;
+    /// Held behind a shared_ptr so that it can be shared with another storage, see takeTableLocksFrom.
+    mutable std::shared_ptr<std::timed_mutex> alter_lock = std::make_shared<std::timed_mutex>();
 
     /// Lock required for drop queries. Every thread that want to ensure, that
     /// table is not dropped have to table this lock for read (lockForShare).

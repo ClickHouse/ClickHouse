@@ -22,6 +22,8 @@
 #include <Backups/IBackup.h>
 #include <Planner/collectSelectedColumnsFromTable.h>
 
+#include <base/isSharedPtrUnique.h>
+
 #include <algorithm>
 
 
@@ -154,7 +156,7 @@ TableLockHolder IStorage::tryLockForShare(
 
 std::optional<IStorage::AlterLockHolder> IStorage::tryLockForAlter(const Poco::Timespan & acquire_timeout)
 {
-    AlterLockHolder lock{alter_lock, std::defer_lock};
+    AlterLockHolder lock{*alter_lock, std::defer_lock};
 
     if (!lock.try_lock_for(saturatedMilliseconds(acquire_timeout.totalMilliseconds())))
         return {};
@@ -176,6 +178,25 @@ IStorage::AlterLockHolder IStorage::lockForAlter(const Poco::Timespan & acquire_
     return std::move(*lock);
 }
 
+
+void IStorage::takeTableLocksFrom(const IStorage & other)
+{
+    alter_lock = other.alter_lock;
+    drop_lock = other.drop_lock;
+    is_dropped.flag = other.is_dropped.flag;
+    is_detached.flag = other.is_detached.flag;
+    is_being_restarted.flag = other.is_being_restarted.flag;
+}
+
+bool IStorage::isTableNotInUse(const StoragePtr & table)
+{
+    if (!isSharedPtrUnique(table))
+        return false;
+
+    /// The proxy holds one reference to the storage it stands for, and `loaded` is the other one.
+    auto loaded = table->getLoadedLazyTable();
+    return !loaded || loaded.use_count() == 2;
+}
 
 TableExclusiveLockHolder IStorage::lockExclusively(const String & query_id, const Poco::Timespan & acquire_timeout)
 {
@@ -386,6 +407,14 @@ CancellationCode IStorage::killPartMoveToShard(const UUID & /*task_uuid*/)
 
 StorageID IStorage::getStorageID() const
 {
+    /// A lazily loaded table that has been replaced in its database by the loaded storage keeps being
+    /// held by queries that resolved it before the replacement. From then on, a rename updates only the
+    /// loaded storage (e.g. a move from an `Atomic` to an `Ordinary` database clears the UUID), so the
+    /// proxy answers with the identity of that storage, never with a stale copy of its own. The
+    /// lifecycle checks in lockForShare and tryLockForShare depend on whether the table has a UUID.
+    if (auto loaded = getLoadedLazyTable())
+        return loaded->getStorageID();
+
     std::lock_guard lock(id_mutex);
     return storage_id;
 }

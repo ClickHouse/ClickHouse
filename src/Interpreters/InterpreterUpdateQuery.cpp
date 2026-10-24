@@ -20,6 +20,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/MutationCommands.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Core/Settings.h>
@@ -114,6 +115,11 @@ BlockIO InterpreterUpdateQuery::execute()
     /// mask - stays a real update requiring ALTER UPDATE. The shortcut applies only when `_row_exists`
     /// is the hidden virtual marker; on an engine where it is an ordinary physical column it is a normal
     /// update. Resolve the table best-effort (null for a non-local ON CLUSTER target) and fail closed.
+    bool has_lightweight_delete_assignment = false;
+    for (const ASTPtr & assignment_ast : update_query.assignments->children)
+        if (isLightweightDeleteAssignment(assignment_ast->as<const ASTAssignment &>()))
+            has_lightweight_delete_assignment = true;
+
     StoragePtr table_for_access;
     auto resolved_table_id = getContext()->tryResolveStorageID(update_query, Context::ResolveOrdinary);
     if (resolved_table_id)
@@ -122,7 +128,22 @@ BlockIO InterpreterUpdateQuery::execute()
         /// from it: otherwise they are expanded to the configured default database of each host, so the
         /// rights that are checked and the table that is updated can name different databases.
         update_query.setDatabase(resolved_table_id.database_name);
-        table_for_access = DatabaseCatalog::instance().tryGetTable(resolved_table_id, getContext());
+        table_for_access = resolveStorageProxy(DatabaseCatalog::instance().tryGetTable(resolved_table_id, getContext()));
+
+        /// A lazily loaded table that is not loaded yet is a proxy with columns-only metadata, without
+        /// the `_row_exists` virtual column, which would classify `SET _row_exists = 0` as an update
+        /// instead of a delete. The classification only matters for that assignment, so load the table
+        /// only when it is present, and only for a user who holds at least one of the rights the query
+        /// can require: a user without them must not be able to load tables by sending `UPDATE`.
+        const auto * proxy = dynamic_cast<const StorageProxy *>(table_for_access.get());
+        if (proxy && proxy->isLazyStandIn() && has_lightweight_delete_assignment)
+        {
+            const auto & access = getContext()->getAccess();
+            if (!access->isGranted(AccessType::ALTER_DELETE, update_query.getDatabase(), update_query.getTable())
+                && !access->isGranted(AccessType::ALTER_UPDATE, update_query.getDatabase(), update_query.getTable()))
+                getContext()->checkAccess(AccessType::ALTER_DELETE, update_query.getDatabase(), update_query.getTable());
+            table_for_access = resolveStorageProxyLoading(table_for_access);
+        }
     }
     const auto row_exists_column_kind = InterpreterAlterQuery::getRowExistsColumnKind(table_for_access, getContext());
 
