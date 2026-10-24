@@ -319,6 +319,8 @@ Valor predeterminado: 0.
 
 Este ajuste habilita o deshabilita el privilegio `SHOW NAMED COLLECTIONS SECRETS` para el usuario, que le permite ver los valores almacenados en las [colecciones con nombre](/es/concepts/features/configuration/server-config/named-collections), por ejemplo en la tabla [`system.named_collections`](/es/reference/system-tables/named_collections).
 
+También es necesario para sobrescribir una clave almacenada en una colección con nombre al utilizar dicha colección, por ejemplo `url` en `s3(my_collection, url = '...')`, en una cláusula `SETTINGS` de un motor de tabla o en una clave de una fuente de diccionario. No es necesario para añadir una clave que no esté almacenada en la colección.
+
 Está deshabilitado de forma predeterminada: poder administrar colecciones con nombre no implica poder leer las credenciales que ya están almacenadas en ellas.
 
 Este ajuste solo surte efecto junto con `named_collection_control`, ya que, si `named_collection_control` está deshabilitado, todos los privilegios sobre colecciones con nombre, incluido `SHOW NAMED COLLECTIONS SECRETS`, se revocan de todos modos.

@@ -25,4 +25,6 @@ SELECT arrayMinIndex([(2, 'b'), (1, 'a'), (1, 'a')]), arrayMaxIndex([(2, 'b'), (
 SELECT arrayMinIndex([toDecimal32(2, 2), toDecimal32(1, 2), toDecimal32(1, 2)]), arrayMaxIndex([toDecimal32(2, 2), toDecimal32(1, 2), toDecimal32(1, 2)]);
 SELECT arrayMinIndex([toDate('2024-01-02'), toDate('2024-01-01'), toDate('2024-01-01')]), arrayMaxIndex([toDate('2024-01-02'), toDate('2024-01-01'), toDate('2024-01-01')]);
 SELECT arrayMinIndex([toDateTime64('2024-01-03 00:00:00', 3), toDateTime64('2024-01-01 00:00:00', 3), toDateTime64('2024-01-01 00:00:00', 3)]), arrayMaxIndex([toDateTime64('2024-01-03 00:00:00', 3), toDateTime64('2024-01-01 00:00:00', 3), toDateTime64('2024-01-01 00:00:00', 3)]);
+SELECT arrayMinIndex([toInt128(0), toInt128(-1), toInt128(-1), toInt128(1)]), arrayMaxIndex([toUInt128(0), toUInt128(2), toUInt128(2), toUInt128(1)]);
 SELECT arrayMinIndex([toInt256(0), toInt256(-1), toInt256(-1), toInt256(1)]), arrayMaxIndex([toUInt256(0), toUInt256(2), toUInt256(2), toUInt256(1)]);
+SELECT arrayMinIndex([toDecimal128(2, 2), toDecimal128(1, 2), toDecimal128(1, 2)]), arrayMaxIndex([toDecimal256(2, 2), toDecimal256(3, 2), toDecimal256(3, 2)]);

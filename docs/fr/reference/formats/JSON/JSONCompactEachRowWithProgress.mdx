@@ -15,26 +15,34 @@ doc_type: 'référence'
 | ------ | ------ | ----- |
 | ✗      | ✔      |       |
 
-<div id="description">
-  ## Description
-</div>
+## Description {#description}
 
-Ce format combine la sortie compacte ligne par ligne de JSONCompactEachRow avec des informations de progression
-diffusées en continu.
-Il produit les données sous forme d&#39;objets JSON distincts pour les métadonnées, les lignes individuelles, les mises à jour de progression,
-les totaux et les exceptions. Les valeurs sont représentées dans leurs types natifs.
+Combine la sortie compacte ligne par ligne de [`JSONCompactEachRow`](/fr/reference/formats/JSON/JSONCompactEachRow) avec des informations de progression transmises en continu. ClickHouse transmet chaque événement sous la forme d&#39;un objet JSON distinct ; les valeurs de colonne conservent leurs types JSON natifs.
 
-Caractéristiques principales :
+Le format apparenté `JSONCompactStringsEachRowWithProgress` utilise les mêmes kinds d&#39;objets de premier niveau, mais les valeurs des champs y sont sérialisées sous forme de chaînes de caractères.
 
-* Affiche d&#39;abord les métadonnées avec les noms et les types des colonnes
-* Chaque ligne est un objet JSON distinct avec une clé &quot;row&quot; contenant un tableau de valeurs
-* Inclut des mises à jour de progression pendant l&#39;exécution de la requête (sous forme d&#39;objets `{"progress":...}`)
-* Prend en charge les totaux et les extrêmes
-* Les valeurs conservent leurs types natifs (les nombres restent des nombres, les chaînes restent des chaînes)
+Partage le même contrat de flux que [`JSONEachRowWithProgress`](/fr/reference/formats/JSON/JSONEachRowWithProgress) (`writesProgressConcurrently` / `finalizeImpl`), à ceci près que les charges utiles `row` / `totals` / `min` / `max` sont des **tableaux** de valeurs ordonnées selon les colonnes, et non des objets nommés.
 
-<div id="example-usage">
-  ## Exemple d’utilisation
-</div>
+## Objets du flux {#stream-objects}
+
+Chaque ligne de la réponse est un objet JSON. Les clients doivent aiguiller le traitement en fonction de la clé de premier niveau :
+
+| Clé de premier niveau        | Quand elle apparaît                                                                                | Forme                                                                                                                                                        |
+| ---------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `meta`                       | Une seule fois, avant le premier `row` (un objet `progress` peut être émis avant)                  | `{"meta":[{"name":...,"type":...}, ...]}` — noms et types des colonnes                                                                                       |
+| `row`                        | Une fois par ligne de résultat                                                                     | `{"row":[...]}` — valeurs des colonnes dans l&#39;ordre de l&#39;en-tête                                                                                     |
+| `progress`                   | Périodiquement pendant l&#39;exécution de la requête                                               | `{"progress":{...}}` — compteurs tels que `read_rows`, `read_bytes`, `total_rows_to_read`                                                                    |
+| `totals`                     | Lorsque des totaux sont présents                                                                   | `{"totals":[...]}` — valeurs de la ligne des totaux dans l&#39;ordre de l&#39;en-tête                                                                        |
+| `min` / `max`                | Lorsque des valeurs extrêmes sont présentes                                                        | `{"min":[...]}` / `{"max":[...]}` — valeurs des lignes extrêmes dans l&#39;ordre de l&#39;en-tête                                                            |
+| `rows_before_limit_at_least` | Lorsque la requête contient `LIMIT`                                                                | `{"rows_before_limit_at_least":N}` — estimation basse du nombre de lignes qu&#39;il y aurait eu sans `LIMIT` (ne prouve pas que des lignes ont été écartées) |
+| `rows_before_aggregation`    | Lorsque la requête effectue une agrégation et que le compteur `rows_before_aggregation` est activé | `{"rows_before_aggregation":N}`                                                                                                                              |
+| `exception`                  | Lorsque la requête échoue, via HTTP avec `http_write_exception_in_output_format=1`                 | `{"exception":"..."}` — texte de l&#39;erreur sous forme de **string de premier niveau**, non imbriquée sous `row`                                           |
+
+L&#39;objet `rows_before_limit_at_least` est émis dès que la requête contient `LIMIT`, même si la limite n&#39;a écarté aucune ligne. Il s&#39;agit d&#39;une estimation basse du nombre de lignes qu&#39;il y aurait eu sans `LIMIT` (même signification que dans `JSON`) ; les clients ne doivent pas y voir la preuve que des lignes ont été écartées.
+
+`meta` est émis une seule fois, avant le premier `row`, mais un objet `progress` peut arriver avant `meta`. Via HTTP, l&#39;objet `exception` de premier niveau n&#39;est émis que si `http_write_exception_in_output_format=1` ; sinon, l&#39;erreur est remontée par la couche de transport. Lorsqu&#39;il est émis, il s&#39;agit d&#39;un objet de premier niveau distinct, non imbriqué sous `row`.
+
+## Exemple d’utilisation {#example-usage}
 
 ```sql title="Query"
 SELECT *
@@ -54,8 +62,6 @@ FORMAT JSONCompactEachRowWithProgress
 {"rows_before_limit_at_least":5}
 ```
 
-<div id="format-settings">
-  ## Paramètres de format
-</div>
+## Paramètres de format {#format-settings}
 
 {/*AUTOGENERATED_END*/}

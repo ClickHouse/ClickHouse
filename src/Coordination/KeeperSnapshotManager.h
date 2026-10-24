@@ -303,6 +303,10 @@ public:
     SnapshotFileInfoPtr writeSnapshotFile(const KeeperStorageSnapshot & snapshot);
     SnapshotFileInfoPtr writeSnapshotBufferToFile(nuraft::buffer & buffer, uint64_t up_to_log_idx);
 
+    /// Startup-only: publish a repaired snapshot after orphan recovery and log-tail validation.
+    /// Preserve the original and same-index duplicates under names excluded from snapshot discovery.
+    SnapshotFileInfoPtr rewriteSnapshotAfterRecovery(const KeeperStorageSnapshot & snapshot);
+
     /// Returns the already-registered entry for `up_to_log_idx` so the caller can skip rewriting.
     /// Returns nullptr if nothing is registered.
     SnapshotFileInfoPtr tryReuseRegisteredSnapshot(uint64_t up_to_log_idx) const;
@@ -386,6 +390,15 @@ public:
     void setProtectedPendingSnapshotIndex(uint64_t log_idx);
 
 private:
+    SnapshotFileInfoPtr writeSnapshotFile(
+        const KeeperStorageSnapshot & snapshot,
+        const DiskPtr & disk,
+        const std::string & snapshot_file_name,
+        bool checked_directory_sync = false);
+
+    /// Copy to an ignored backup, synchronize, then remove the old discoverable name.
+    void archiveSnapshotFile(const SnapshotFileInfoPtr & file_info);
+
     /// Detach the entry at `it` and same-index recovery copies, marking retired; caller's drop unlinks them.
     std::vector<SnapshotFileInfoPtr> detachSnapshotForRemoval(std::map<uint64_t, SnapshotFileInfoPtr>::iterator it);
     /// `just_written_log_idx` (0 = none) pins the calling writer's own entry through this pass.

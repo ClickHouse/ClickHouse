@@ -248,6 +248,11 @@ public:
     /// Is used to optimize some computations (in aggregation, for example).
     [[nodiscard]] virtual std::string_view getDataAt(size_t n) const = 0;
 
+    /// Whether getDataAt is implemented for this column (for ColumnNullable - for its non-NULL rows).
+    /// Columns that store a value in multiple non-contiguous memory regions (e.g. Tuple, Map, Object, Variant,
+    /// Array of non-fixed elements) cannot return a single contiguous chunk and throw an exception from getDataAt.
+    [[nodiscard]] virtual bool supportsGetDataAt() const { return true; }
+
     /// If column stores integers, it returns n-th element transformed to UInt64 using static_cast.
     /// If column stores floating point numbers, bits of n-th elements are copied to lower bits of UInt64, the remaining bits are zeros.
     /// Is used to optimize some computations (in aggregation, for example).
@@ -398,7 +403,8 @@ public:
     /// cannot be used and serializeValueIntoArena should be used instead,
     virtual std::optional<size_t> getSerializedValueSize(size_t n, const SerializationSettings *) const { return byteSizeAt(n); }
 
-    virtual void batchSerializeValueIntoMemory(std::span<char *> /* memories */, const SerializationSettings * settings) const;
+    /// Serialize the rows starting from `start_row`, one row into each element of `memories`, and advance the elements.
+    virtual void batchSerializeValueIntoMemory(std::span<char *> /* memories */, size_t /* start_row */, const SerializationSettings * settings) const;
 
     /// Nullable variant to avoid calling virtualized method inside ColumnNullable.
     virtual std::string_view serializeValueIntoArenaWithNull(
@@ -410,7 +416,7 @@ public:
 
     virtual char * serializeValueIntoMemoryWithNull(size_t /* n */, char * /* memory */, const UInt8 * /* is_null */, const SerializationSettings * settings) const;
 
-    virtual void batchSerializeValueIntoMemoryWithNull(std::span<char *> /* memories */, const UInt8 * /* is_null */, const SerializationSettings * settings) const;
+    virtual void batchSerializeValueIntoMemoryWithNull(std::span<char *> /* memories */, size_t /* start_row */, const UInt8 * /* is_null */, const SerializationSettings * settings) const;
 
     /// Calculate all the sizes of serialized data (as in the methods above) in the column and add to `sizes`.
     /// If `is_null` is not nullptr, also take null byte into account.
@@ -712,6 +718,9 @@ public:
     /// Zero, if could not be determined.
     [[nodiscard]] virtual size_t allocatedBytes() const = 0;
 
+    /// `sizeof` of the column object itself, which `allocatedBytes` does not count. Implemented by `COWHelper`.
+    [[nodiscard]] virtual size_t sizeOfObject() const = 0;
+
     /// Make memory region readonly with mprotect if it is large enough.
     /// The operation is slow and performed only for debug builds.
     virtual void protect() {}
@@ -821,14 +830,6 @@ public:
     [[nodiscard]] virtual Ptr decompress() const
     {
         return getPtr();
-    }
-
-    /// Fills column values from row-store referenced by a RowRefList.
-    virtual void fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const RowDataStore * const * block_row_stores, PaddedPODArray<UInt8> * null_map);
-
-    void fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const RowDataStore * const * block_row_stores)
-    {
-        fillFromRowRefsWithRowStore(type, source_field_offset, source_field_size, row_refs_begin, row_refs_end, block_row_stores, /*null_map=*/ nullptr);
     }
 
     /// Fills column values from pre-resolved row-store pointers.
@@ -1120,18 +1121,15 @@ private:
     /// Devirtualize updateAt.
     void updateInplaceFrom(const IColumn::Patch & patch) override;
 
-    /// Fills column values from row-store referenced by a RowRefList
-    void fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const RowDataStore * const * block_row_stores, PaddedPODArray<UInt8> * null_map) override;
-
     /// Fills column values from pre-resolved row-store pointers
     void fillFromRowStorePtrs(const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> * null_map) override;
 
     /// Move common implementations into the same translation unit to ensure they are properly inlined.
     char * serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
-    void batchSerializeValueIntoMemoryWithNull(std::span<char *> memories, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
+    void batchSerializeValueIntoMemoryWithNull(std::span<char *> memories, size_t start_row, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
 
     char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
-    void batchSerializeValueIntoMemory(std::span<char *> memories, const IColumn::SerializationSettings * settings) const override;
+    void batchSerializeValueIntoMemory(std::span<char *> memories, size_t start_row, const IColumn::SerializationSettings * settings) const override;
 
     std::string_view serializeValueIntoArenaWithNull(size_t n, Arena & arena, char const *& begin, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
     std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;

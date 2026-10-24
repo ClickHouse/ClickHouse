@@ -24,3 +24,7 @@ $CLICKHOUSE_CLIENT -q "SELECT countIf(explain ILIKE '%constant_value: \'folded_m
 WRAPPED=$($CLICKHOUSE_CLIENT -q "SELECT ($SUB) AS a, blockSerializedSize(__getScalar(toNullable('$HASH'))) AS b FORMAT Null" 2>&1)
 case "$WRAPPED" in *'should not be used directly'*) echo 'rejected' ;; *) echo "NOT REJECTED: $WRAPPED" ;; esac
 $CLICKHOUSE_CLIENT -q "SELECT 'alive'"
+
+# Tuple and LowCardinality scalar subqueries as ROLLUP keys with `group_by_use_nulls`.
+$CLICKHOUSE_CLIENT -q "SELECT (SELECT 1, 'a') AS t, t.2 AS e, toTypeName(e) FROM numbers(3) GROUP BY t WITH ROLLUP ORDER BY ALL SETTINGS group_by_use_nulls = 1"
+$CLICKHOUSE_CLIENT -q "SELECT (SELECT toLowCardinality('a')) AS t, concat(t, 'x') AS e, toTypeName(e) FROM numbers(3) GROUP BY t WITH ROLLUP ORDER BY ALL SETTINGS group_by_use_nulls = 1"
