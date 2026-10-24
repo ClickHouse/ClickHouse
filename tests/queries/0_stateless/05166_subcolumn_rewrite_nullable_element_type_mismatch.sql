@@ -2,7 +2,6 @@
 -- exposed bare, while a member that can be is wrapped by the enclosing null map. Every query below
 -- must give the same answer with the optimization on and off.
 
-SET enable_analyzer = 1;
 SET enable_nullable_tuple_type = 1;
 SET enable_variant_type = 1;
 

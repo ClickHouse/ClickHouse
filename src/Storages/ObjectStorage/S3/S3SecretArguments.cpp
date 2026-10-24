@@ -73,7 +73,7 @@ std::vector<size_t> classifyS3Arguments(FunctionSecretArgumentsFinder & finder, 
                         String url;
                         if (f->arguments->at(1)->tryGetString(&url, /* allow_identifier= */ false))
                         {
-                            if (maskS3URICredentials(url, /* value_is_url= */ true))
+                            if (maskURICredentials(url))
                                 finder.result.replaced_arguments[i] = "url = " + quoteString(url);
                         }
                         else
@@ -190,7 +190,7 @@ void maskS3PositionalsFrom(FunctionSecretArgumentsFinder & finder, const std::ve
 
 /// The S3 URL itself can carry credentials: a userinfo part and presigned-URL query parameters.
 /// If the url positional does, replace it with a partially masked copy that keeps the host and
-/// path visible. The field set mirrors `BackupInfo::removeCredentialsFromS3URL`.
+/// path visible.
 void maskS3UrlArgument(FunctionSecretArgumentsFinder & finder, const std::vector<size_t> & positional, size_t url_slot)
 {
     if (url_slot >= positional.size())
@@ -204,7 +204,7 @@ void maskS3UrlArgument(FunctionSecretArgumentsFinder & finder, const std::vector
         finder.markSecretArgument(positional[url_slot]);
         return;
     }
-    if (maskS3URICredentials(url, /* value_is_url= */ true))
+    if (maskURICredentials(url))
         finder.result.replaced_arguments[positional[url_slot]] = quoteString(url);
 }
 
@@ -327,25 +327,6 @@ bool isNonSecretExtraCredentialsKey(std::string_view key)
 bool isS3SecretKey(std::string_view key)
 {
     return std::find(std::begin(s3_secret_keys), std::end(s3_secret_keys), key) != std::end(s3_secret_keys);
-}
-
-bool maskS3URICredentials(String & value, bool value_is_url)
-{
-    /// The userinfo scan reads a scheme at the start of the value only, so that an '@' in a path or
-    /// query is not taken for a credential. A url whose scheme is not at position 0, preceded by
-    /// something or absent entirely, is unreadable to it and its '@' can still be userinfo: hide it.
-    if (value_is_url && findURIAuthority(value) == String::npos && value.contains('@'))
-    {
-        value = HIDDEN_SECRET;
-        return true;
-    }
-
-    /// The parameter set mirrors `BackupInfo::removeCredentialsFromS3URL` (which strips the same fields from
-    /// persisted backup metadata). Both scans live in `Common/maskURIPassword.h` and are checked against the
-    /// regular expressions they replaced in `src/Common/tests/gtest_mask_uri_password.cpp`.
-    bool changed = maskURIUserinfo(value);
-    changed |= maskPresignedURLParameters(value);
-    return changed;
 }
 
 SecretArgumentsSpec s3TableFunctionSecretArguments(bool is_cluster_function)

@@ -103,7 +103,18 @@ public:
         const String & column_name,
         const String & glue_column_type);
 
+    using FieldTypes = std::unordered_map<String, String>;
+
+    static FieldTypes getCurrentSchemaFieldTypes(const Poco::JSON::Object::Ptr & metadata_object);
+
+    static String resolveTimestampType(const FieldTypes & field_types, const String & column_name, const String & glue_column_type);
+
 private:
+    struct FieldTypesWeightFunction
+    {
+        size_t operator()(const FieldTypes & field_types) const;
+    };
+
     std::unique_ptr<Aws::Glue::GlueClient> glue_client;
     const LoggerPtr log;
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider;
@@ -132,7 +143,7 @@ private:
 
     ObjectStorageWithPath createObjectStorageForEarlyTableAccess(const String & s3_location, const TableMetadata & table_metadata) const;
 
-    mutable DB::CacheBase<String, Poco::JSON::Object::Ptr> metadata_objects;
+    mutable DB::CacheBase<String, FieldTypes, std::hash<String>, FieldTypesWeightFunction> current_schema_field_types;
 };
 
 }
