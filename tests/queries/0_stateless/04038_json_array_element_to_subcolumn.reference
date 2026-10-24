@@ -90,21 +90,21 @@ negative_index
 3
 where_clause
 1
-final_blocked
+final_allowed
 QUERY id: 0
   PROJECTION COLUMNS
     tupleElement(arrayElement(json.a, 1), \'b\') Dynamic
   PROJECTION
     LIST id: 1, nodes: 1
-      FUNCTION id: 2, function_name: tupleElement, function_type: ordinary, result_type: Dynamic
+      FUNCTION id: 2, function_name: _CAST, function_type: ordinary, result_type: Dynamic
         ARGUMENTS
           LIST id: 3, nodes: 2
-            FUNCTION id: 4, function_name: arrayElement, function_type: ordinary, result_type: Dynamic
+            FUNCTION id: 4, function_name: arrayElement, function_type: ordinary, result_type: Dynamic(max_types=16)
               ARGUMENTS
                 LIST id: 5, nodes: 2
-                  COLUMN id: 6, column_name: json.a, result_type: Dynamic, source_id: 7
+                  COLUMN id: 6, column_name: json.a.:`Array(JSON)`.b, result_type: Array(Dynamic(max_types=16)), source_id: 7
                   CONSTANT id: 8, constant_value: UInt64_1, constant_value_type: UInt8
-            CONSTANT id: 9, constant_value: \'b\', constant_value_type: String
+            CONSTANT id: 9, constant_value: \'Dynamic\', constant_value_type: String
   JOIN TREE
     TABLE id: 7, alias: __table1, table_name: default.test_json_final, final: 1
   SETTINGS optimize_functions_to_subcolumns=1
