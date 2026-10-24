@@ -382,15 +382,28 @@ bool isRowLineageColumn(const String & name)
 std::shared_ptr<const ActionsDAG> ReadFromFormatInfo::getFormatFilter(
     const std::shared_ptr<const ActionsDAG> & filter_actions_dag, bool keep_row_lineage_columns) const
 {
-    if (!filter_actions_dag || (hive_partition_columns_to_read_from_file_path.empty() && requested_virtual_columns.empty()))
+    if (!filter_actions_dag
+        || (hive_partition_columns_to_read_from_file_path.empty() && requested_virtual_columns.empty() && !columns_description.hasDefaults()))
         return filter_actions_dag;
     if (formatReadsHivePartitionColumns())
         return nullptr;
 
+    /// The format compares its own placeholders for missing values (the type default for a `NULL`) against the filter, but
+    /// `AddingDefaultsTransform` replaces them with the `DEFAULT` expression afterwards, so the format could prune rows
+    /// that match. Same reasoning as for the top-K threshold in `ReadFromFile`.
+    auto has_default_expression = [&](const String & name)
+    {
+        if (columns_description.hasDefault(name))
+            return true;
+        auto column = columns_description.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name);
+        return column && column->isSubcolumn() && columns_description.hasDefault(column->getNameInStorage());
+    };
+
     auto is_added_after_format = [&](const String & name)
     {
         return hive_partition_columns_to_read_from_file_path.contains(name)
-            || (requested_virtual_columns.contains(name) && !(keep_row_lineage_columns && isRowLineageColumn(name)));
+            || (requested_virtual_columns.contains(name) && !(keep_row_lineage_columns && isRowLineageColumn(name)))
+            || has_default_expression(name);
     };
 
     auto reads_added_column = [&](const ActionsDAG::Node * atom)
