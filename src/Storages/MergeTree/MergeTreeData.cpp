@@ -495,6 +495,8 @@ namespace FailPoints
     /// transient error (e.g. temporary disk unavailability). Used to test that the refresh task
     /// reschedules itself after such an error instead of stopping permanently.
     extern const char merge_tree_refresh_parts_throw_once[];
+    /// Pauses a commit after the covering parts are durable and before the covered parts get their removal TID.
+    extern const char merge_tree_commit_pause_before_removing_covered_parts[];
     /// Throws a retryable error (`MEMORY_LIMIT_EXCEEDED`) while loading every outdated part in the
     /// background. Used to test that the loading is retried later instead of terminating the server.
     extern const char merge_tree_load_outdated_parts_retryable_error[];
@@ -2955,6 +2957,40 @@ static void preparePartForRemoval(const MergeTreeMutableDataPartPtr & part)
     }
 }
 
+/// A part covered by an `Active` part has been removed even when its removal TID is not on disk: a commit makes
+/// the covering part durable before `MergeTreeTransaction::addNewPartAndRemoveCovered` stores the TID.
+static void completeRemovalOfCoveredPart(
+    const MergeTreeMutableDataPartPtr & part,
+    bool covering_part_is_non_transactional,
+    const String & covering_part_name,
+    const LoggerPtr & log)
+{
+    auto current_version_info = part->version->getInfo();
+
+    /// `Tx::NonTransactionalTID` marks a removal visible from the beginning of time: truthful only for an unremoved part
+    /// created by a committed transaction and covered by a non-transactional part. Other states keep failing the check above.
+    if (current_version_info.isRemoved())
+        return;
+
+    if (!current_version_info.isCreated() || current_version_info.creation_tid.isNonTransactional()
+        || current_version_info.creation_tid.local_tid <= Tx::MaxReservedLocalTID)
+        return;
+
+    if (!covering_part_is_non_transactional)
+        return;
+
+    LOG_WARNING(
+        log,
+        "Part {} is covered by {}, which was created without a transaction, but its removal TID was not stored: {}. "
+        "Completing the interrupted removal",
+        part->name,
+        covering_part_name,
+        current_version_info.toString(/*one_line=*/true));
+
+    TransactionInfoContext transaction_context{part->storage.getStorageID(), part->name};
+    part->version->setAndStoreNonTransactionalRemovalTID(LockKind::REMOVAL, transaction_context);
+}
+
 static constexpr size_t loading_parts_initial_backoff_ms = 100;
 static constexpr size_t loading_parts_max_backoff_ms = 5000;
 static constexpr size_t loading_parts_max_tries = 3;
@@ -3006,6 +3042,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
     const MergeTreePartInfo & part_info,
     const String & part_name,
     const DiskPtr & part_disk_ptr,
+    const PartLoadingTree::NodePtr & part_loading_node,
     MergeTreeDataPartState to_state,
     DB::SharedMutex & part_loading_mutex,
     bool is_last_attempt)
@@ -3129,6 +3166,12 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
         return res;
     }
 
+    /// Before the part is in `data_parts_indexes`, where a merge started by `startup` also stamps removal TIDs.
+    if (part_loading_node)
+        completeRemovalOfCoveredPart(
+            res.part, part_loading_node->covering_part_is_non_transactional, part_loading_node->covering_part_name,
+            log.load());
+
     res.part->setState(to_state);
 
     DataPartIteratorByInfo it;
@@ -3172,6 +3215,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPartWithRetries(
     const MergeTreePartInfo & part_info,
     const String & part_name,
     const DiskPtr & part_disk_ptr,
+    const PartLoadingTree::NodePtr & part_loading_node,
     MergeTreeDataPartState to_state,
     DB::SharedMutex & part_loading_mutex,
     size_t initial_backoff_ms,
@@ -3195,7 +3239,9 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPartWithRetries(
     {
         try
         {
-            return loadDataPart(part_info, part_name, part_disk_ptr, to_state, part_loading_mutex, /*is_last_attempt=*/ try_no + 1 == max_tries);
+            return loadDataPart(
+                part_info, part_name, part_disk_ptr, part_loading_node, to_state, part_loading_mutex,
+                /*is_last_attempt=*/ try_no + 1 == max_tries);
         }
         catch (...)
         {
@@ -3260,12 +3306,32 @@ std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(
                 /// Pass a separate mutex to guard the set of parts, because this lambda
                 /// is called concurrently but with already locked @data_parts_mutex.
                 auto res = loadDataPartWithRetries(
-                    part->info, part->name, part->disk,
+                    part->info, part->name, part->disk, /*part_loading_node=*/nullptr,
                     DataPartState::Active, part_loading_mutex, loading_parts_initial_backoff_ms,
                     loading_parts_max_backoff_ms, loading_parts_max_tries);
 
                 part->is_loaded = true;
                 bool is_active_part = res.part->getState() == DataPartState::Active;
+
+                /// An `Active` part covers its whole subtree; a part that is not `Active` requeues its children below.
+                if (is_active_part && !part->children.empty())
+                {
+                    auto covering_info = res.part->version->getInfo();
+                    bool non_transactional = covering_info.creation_tid == Tx::NonTransactionalTID
+                        && covering_info.creation_csn == Tx::NonTransactionalCSN;
+
+                    std::function<void(const PartLoadingTree::NodePtr &)> mark_subtree
+                        = [&](const PartLoadingTree::NodePtr & node)
+                    {
+                        node->covering_part_is_non_transactional = non_transactional;
+                        node->covering_part_name = res.part->name;
+                        for (const auto & [_, child] : node->children)
+                            mark_subtree(child);
+                    };
+
+                    for (const auto & [_, node] : part->children)
+                        mark_subtree(node);
+                }
 
                 /// If part is broken or duplicate or should be removed according to transaction
                 /// and it has any covered parts then try to load them to replace this part.
@@ -3800,7 +3866,7 @@ void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
         /// NOLINTNEXTLINE(performance-unnecessary-copy-initialization)
         auto my_part = parts_to_add[i];
         auto res = loadDataPartWithRetries(
-            my_part->info, my_part->name, my_part->disk,
+            my_part->info, my_part->name, my_part->disk, /*part_loading_node=*/nullptr,
             DataPartState::PreActive, data_parts_mutex, loading_parts_initial_backoff_ms,
             loading_parts_max_backoff_ms, loading_parts_max_tries);
 
@@ -4011,6 +4077,7 @@ try
         {
             outdated_data_parts_loading_finished = true;
             outdated_data_parts_cv.notify_all();
+            triggerBackgroundOperations();
             return;
         }
 
@@ -4144,7 +4211,7 @@ try
                 });
 
                 res = loadDataPartWithRetries(
-                    my_part->info, my_part->name, my_part->disk,
+                    my_part->info, my_part->name, my_part->disk, my_part,
                     DataPartState::Outdated, data_parts_mutex, loading_parts_initial_backoff_ms,
                     loading_parts_max_backoff_ms, loading_parts_max_tries);
             }
@@ -4226,6 +4293,8 @@ try
 
     outdated_data_parts_loading_finished = true;
     outdated_data_parts_cv.notify_all();
+    /// Transactional merges and mutations wait for the outdated parts to be loaded.
+    triggerBackgroundOperations();
 }
 catch (...)
 {
@@ -12853,6 +12922,13 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
             covering_parts.push_back(std::move(covering_part));
             covered_parts_for_commit.push_back(std::move(covered_parts));
         }
+
+        bool removes_covered_parts = false;
+        for (size_t idx = 0; idx < covering_parts.size(); ++idx)
+            removes_covered_parts |= !covering_parts[idx] && !covered_parts_for_commit[idx].empty();
+
+        if (removes_covered_parts)
+            FailPointInjection::pauseFailPoint(FailPoints::merge_tree_commit_pause_before_removing_covered_parts);
 
         /// Remove the covered parts. Skip when a covering part exists -- NOEXCEPT_SCOPE below
         /// marks the precommitted part obsolete instead.

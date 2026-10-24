@@ -2206,6 +2206,9 @@ protected:
             const DiskPtr disk;
 
             bool is_loaded = false;
+            /// Set from the ancestor that loaded `Active` and therefore covers this part.
+            bool covering_part_is_non_transactional = false;
+            String covering_part_name;
             std::map<MergeTreePartInfo, std::shared_ptr<Node>> children;
         };
 
@@ -2467,6 +2470,7 @@ private:
         const MergeTreePartInfo & part_info,
         const String & part_name,
         const DiskPtr & part_disk_ptr,
+        const PartLoadingTree::NodePtr & part_loading_node,
         MergeTreeDataPartState to_state,
         DB::SharedMutex & part_loading_mutex,
         bool is_last_attempt);
@@ -2475,6 +2479,7 @@ private:
         const MergeTreePartInfo & part_info,
         const String & part_name,
         const DiskPtr & part_disk_ptr,
+        const PartLoadingTree::NodePtr & part_loading_node,
         MergeTreeDataPartState to_state,
         DB::SharedMutex & part_loading_mutex,
         size_t backoff_ms,
