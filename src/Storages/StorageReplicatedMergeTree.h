@@ -93,6 +93,7 @@ namespace DB
   */
 
 class ZooKeeperWithFaultInjection;
+class ReplicatedMergeTreePartHeader;
 using ZooKeeperWithFaultInjectionPtr = std::shared_ptr<ZooKeeperWithFaultInjection>;
 
 class StorageReplicatedMergeTree final : public MergeTreeData
@@ -643,7 +644,12 @@ private:
                                              Coordination::Requests & ops, size_t & num_check_ops);
 
     /// Accepts a PreActive part, atomically checks its checksums with ones on other replicas and commit the part
-    DataPartsVector checkPartChecksumsAndCommit(Transaction & transaction, const MutableDataPartPtr & part, std::optional<HardlinkedFiles> hardlinked_files = {}, bool replace_zero_copy_lock=false);
+    DataPartsVector checkPartChecksumsAndCommit(
+        Transaction & transaction,
+        const MutableDataPartPtr & part,
+        std::optional<HardlinkedFiles> hardlinked_files = {},
+        bool replace_zero_copy_lock = false,
+        std::optional<Int32> log_version = std::nullopt);
 
     bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const override;
 
@@ -680,6 +686,13 @@ private:
     /// Lookup the part for the entry in the detached/ folder.
     /// returns nullptr if the part is corrupt or missing.
     MutableDataPartPtr attachPartHelperFoundValidPart(const LogEntry& entry, PartsTemporaryRename & rename_parts) const;
+
+    bool tryGetPartHeaderForAttach(
+        const zkutil::ZooKeeperPtr & zookeeper,
+        const String & part_name,
+        ReplicatedMergeTreePartHeader & header) const;
+
+    PartitionCommandsResultInfo attachPartPreservingName(const PartitionCommand & command, ContextPtr query_context);
 
     void executeDropRange(const LogEntry & entry);
 

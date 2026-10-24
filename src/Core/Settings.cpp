@@ -1241,6 +1241,16 @@ Possible values:
     DECLARE(Bool, alter_move_to_space_execute_async, false, R"(
 Execute ALTER TABLE MOVE ... TO [DISK|VOLUME] asynchronously
 )", 0) \
+    DECLARE(Bool, attach_preserve_part_name, false, R"(
+Restore a detached part under its existing replicated identity instead of importing it with a new block number.
+
+Supported only for `ALTER TABLE ... ATTACH PART` on `ReplicatedMergeTree`. The original part
+must still be required by the replica's replication state, and its `Keeper` metadata must be
+available. Detached data is verified against that metadata. The setting does not fall back to
+ordinary attachment if validation fails.
+
+The operation is local to the replica and does not add a shared replication-log entry.
+)", 0) \
     \
     DECLARE(LoadBalancing, load_balancing, LoadBalancing::RANDOM, R"(
 Specifies the algorithm of replicas selection that is used for distributed query processing.

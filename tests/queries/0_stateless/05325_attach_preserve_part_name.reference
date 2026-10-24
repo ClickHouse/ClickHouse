@@ -1,0 +1,19 @@
+metadata_before	0
+restored	2	334
+same_identity	1
+metadata_after	1
+no_shared_log_entry	1
+no_new_block_number	1
+source_unchanged	3	667
+CHECKSUM_DOESNT_MATCH
+unchanged_after_rejection	2	334
+mismatched_seed_preserved	1
+corrupt_candidate_rejected
+unchanged_after_corruption	2	334
+corrupt_seed_preserved	1
+DUPLICATE_DATA_PART
+BAD_ARGUMENTS
+NOT_IMPLEMENTED
+ordinary_attachment	4	1666
+peer_received_import	4	1666
+ordinary_allocates_block	1

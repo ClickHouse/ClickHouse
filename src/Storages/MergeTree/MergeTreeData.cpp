@@ -269,6 +269,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_drop_detached;
+    extern const SettingsBool attach_preserve_part_name;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_non_metadata_alters;
     extern const SettingsBool allow_suspicious_indexes;
@@ -9728,6 +9729,18 @@ void MergeTreeData::checkAlterPartitionIsPossible(
     const auto disks = getDisks();
     for (const auto & command : commands)
     {
+        if (settings[Setting::attach_preserve_part_name]
+            && (command.type == PartitionCommand::ATTACH_PARTITION
+                || (command.type == PartitionCommand::REPLACE_PARTITION && !command.replace)))
+        {
+            if (command.type != PartitionCommand::ATTACH_PARTITION || !command.part || !command.from_path.empty())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "attach_preserve_part_name supports only ATTACH PART from the detached directory");
+            if (!supportsReplication() || isSharedStorage())
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "attach_preserve_part_name supports only ReplicatedMergeTree");
+        }
+
         if (command.type == PartitionCommand::DROP_DETACHED_PARTITION && !settings[Setting::allow_drop_detached])
             throw DB::Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                                 "Cannot execute query: DROP DETACHED PART "

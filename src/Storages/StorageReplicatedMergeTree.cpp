@@ -184,6 +184,7 @@ namespace Setting
     extern const SettingsBool allow_replace_partition_from_empty_source;
     extern const SettingsBool allow_suspicious_primary_key;
     extern const SettingsUInt64 alter_sync;
+    extern const SettingsBool attach_preserve_part_name;
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsUInt64Auto insert_quorum;
@@ -2393,8 +2394,12 @@ bool StorageReplicatedMergeTree::getOpsToCheckPartChecksumsAndCommit(const ZooKe
 }
 
 
-MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAndCommit(Transaction & transaction,
-    const MutableDataPartPtr & part, std::optional<HardlinkedFiles> hardlinked_files, bool replace_zero_copy_lock)
+MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAndCommit(
+    Transaction & transaction,
+    const MutableDataPartPtr & part,
+    std::optional<HardlinkedFiles> hardlinked_files,
+    bool replace_zero_copy_lock,
+    std::optional<Int32> log_version)
 {
     auto zookeeper = std::make_shared<ZooKeeperWithFaultInjection>(getZooKeeper());
 
@@ -2419,6 +2424,12 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
         Coordination::Requests ops;
         size_t num_check_ops = 0;
         getOpsToCheckPartChecksumsAndCommit(zookeeper, part, hardlinked_files, replace_zero_copy_lock, ops, num_check_ops);
+        if (log_version)
+        {
+            ops.emplace_back(zkutil::makeCheckRequest(fs::path(zookeeper_path) / "log", *log_version));
+            zkutil::addCheckNotExistsRequest(
+                ops, *zookeeper->getKeeper(), fs::path(zookeeper_path) / "quorum" / "failed_parts" / part->name);
+        }
 
         Coordination::Responses responses;
         Coordination::Error e{};
@@ -2578,6 +2589,38 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
     }
 
     return {};
+}
+
+bool StorageReplicatedMergeTree::tryGetPartHeaderForAttach(
+    const zkutil::ZooKeeperPtr & zookeeper,
+    const String & part_name,
+    ReplicatedMergeTreePartHeader & header) const
+{
+    auto try_get_header = [&](const String & replica)
+    {
+        const fs::path part_path = fs::path(zookeeper_path) / "replicas" / replica / "parts" / part_name;
+        String part_znode;
+        if (!zookeeper->tryGet(part_path, part_znode))
+            return false;
+
+        if (!part_znode.empty())
+            header = ReplicatedMergeTreePartHeader::fromString(part_znode);
+        else
+            header = ReplicatedMergeTreePartHeader::fromColumnsAndChecksumsZNodes(
+                zookeeper->get(part_path / "columns"), zookeeper->get(part_path / "checksums"));
+        return true;
+    };
+
+    if (try_get_header(replica_name))
+        return true;
+
+    for (const auto & replica : zookeeper->getChildren(fs::path(zookeeper_path) / "replicas"))
+    {
+        if (replica != replica_name && try_get_header(replica))
+            return true;
+    }
+
+    return false;
 }
 
 bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
@@ -7828,8 +7871,145 @@ void StorageReplicatedMergeTree::truncate(
 PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
     const PartitionCommand & command, const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context)
 {
+    if (query_context->getSettingsRef()[Setting::attach_preserve_part_name])
+        return attachPartPreservingName(command, query_context);
+
     return attachPartitionImpl(
         command, metadata_snapshot, query_context, /* allow_attach_while_readonly */ false, /* deduplicate_part */ true);
+}
+
+PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartPreservingName(
+    const PartitionCommand & command, ContextPtr query_context)
+{
+    ProfileEventsScope profile_events_scope;
+    assertNotReadonly();
+    if (format_version != MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "attach_preserve_part_name requires the custom partitioning part format");
+
+    const auto * literal = command.partition->as<ASTLiteral>();
+    if (!literal)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a string literal for the part name");
+
+    const String part_name = literal->value.safeGet<String>();
+    validateDetachedPartName(part_name);
+    const auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
+
+    SCOPE_EXIT_SAFE({ background_operations_assignee.trigger(); });
+
+    /// Block new part-producing work in this range before waiting for current work to finish.
+    queue.addDropReplaceIntent(part_info);
+    SCOPE_EXIT({ queue.removeDropReplaceIntent(part_info); });
+    queue.waitForCurrentlyExecutingOpsInRange(part_info);
+    auto pause_checking_parts = part_check_thread.temporaryPause();
+
+    auto zookeeper = getZooKeeperAndAssertNotReadonly();
+    if (zookeeper->exists(fs::path(zookeeper_path) / "quorum" / "failed_parts" / part_name))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot restore part {} because its insertion quorum failed", part_name);
+
+    auto merge_predicate = queue.getMergePredicate(zookeeper, PartitionIdsHint{part_info.getPartitionId()});
+    if (merge_predicate->isGoingToBeDropped(part_info))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot restore part {} because it is going to be dropped", part_name);
+    if (merge_predicate->getCoveringVirtualPart(part_name) != part_name)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Part {} is not an existing required part in this replica's replication state", part_name);
+    if (auto existing_part = getActiveContainingPart(part_name))
+        throw Exception(ErrorCodes::DUPLICATE_DATA_PART, "Part {} is already covered by active part {}", part_name, existing_part->name);
+
+    ReplicatedMergeTreePartHeader expected_header;
+    if (!tryGetPartHeaderForAttach(zookeeper, part_name, expected_header))
+        throw Exception(
+            ErrorCodes::NO_REPLICA_HAS_PART, "Cannot restore part {} because no replica has its original Keeper metadata", part_name);
+
+    PartsTemporaryRename renamed_parts(*this, DETACHED_DIR_NAME);
+    auto loaded_parts = tryLoadPartsToAttach(command, query_context, renamed_parts);
+    if (loaded_parts.empty())
+        throw Exception(ErrorCodes::PART_IS_TEMPORARILY_LOCKED, "Detached part {} is temporarily unavailable for attachment", part_name);
+    auto part = loaded_parts.front();
+
+    auto local_header = ReplicatedMergeTreePartHeader::fromColumnsAndChecksums(part->getColumns(), part->checksums);
+    if (local_header.getChecksums().hash_of_all_files != expected_header.getChecksums().hash_of_all_files)
+        throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH, "Detached part {} has different checksums from its Keeper metadata", part_name);
+    if (local_header.getColumnsHash() != expected_header.getColumnsHash())
+        throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH, "Detached part {} has different columns from its Keeper metadata", part_name);
+    expected_header.getChecksums().checkEqual(local_header.getChecksums(), true, part_name);
+
+    auto process_list_element = query_context->getProcessListElement();
+    auto is_cancelled = [process_list_element]
+    {
+        if (!process_list_element)
+            return false;
+        return !process_list_element->checkTimeLimit();
+    };
+    bool is_broken_projection = false;
+    if (checkDataPart(
+            part,
+            /* require_checksums= */ true,
+            is_broken_projection,
+            is_cancelled,
+            /* throw_on_broken_projection= */ true)
+            .empty())
+        throw Exception(ErrorCodes::ABORTED, "Could not verify detached part {}", part_name);
+
+    Transaction transaction(*this, NO_TRANSACTION_RAW);
+    part->version->setAndStoreCreationTID(Tx::NonTransactionalTID, nullptr);
+    DataPartsVector replaced_parts;
+    try
+    {
+        renameTempPartAndReplace(part, transaction, /* rename_in_transaction= */ true, /* check_table_size_limits= */ false);
+        if (transaction.isEmpty())
+            throw Exception(
+                ErrorCodes::PART_IS_TEMPORARILY_LOCKED, "Part {} became obsolete while restoring its replicated identity", part_name);
+        transaction.renameParts();
+        replaced_parts = checkPartChecksumsAndCommit(
+            transaction, part, /* hardlinked_files= */ {}, /* replace_zero_copy_lock= */ true, merge_predicate->getVersion());
+    }
+    catch (...)
+    {
+        /// `Transaction::commit` can throw while scheduling after activating the part.
+        /// Keep the backup candidate on failure, but never rename an already committed part.
+        if (part->getState() == MergeTreeDataPartState::Temporary || part->getState() == MergeTreeDataPartState::PreActive)
+        {
+            transaction.rollbackPartsToTemporaryState();
+            if (part->getDataPartStorage().getParentDirectory() != DETACHED_DIR_NAME)
+                part->renameTo(fs::path(DETACHED_DIR_NAME) / renamed_parts.old_and_new_names.front().new_dir, false);
+        }
+        else
+            renamed_parts.old_and_new_names.front().old_dir.clear();
+        throw;
+    }
+
+    chassert(renamed_parts.renamed && renamed_parts.old_and_new_names.size() == 1);
+    renamed_parts.old_and_new_names.front().old_dir.clear();
+    /// A queued `GET_PART` will now be skipped, so acknowledge any pending insertion quorum here.
+    updateQuorum(part_name, /* is_parallel= */ false);
+    if (part_info.level == 0 && part_info.mutation == 0)
+        updateQuorum(part_name, /* is_parallel= */ true);
+    else
+    {
+        for (const auto & quorum_part : zookeeper->getChildren(fs::path(zookeeper_path) / "quorum" / "parallel"))
+        {
+            if (part_info.contains(MergeTreePartInfo::fromPartName(quorum_part, format_version)))
+                updateQuorum(quorum_part, /* is_parallel= */ true);
+        }
+    }
+    writePartLog(
+        PartLogElement::NEW_PART,
+        {},
+        0,
+        part->name,
+        part,
+        replaced_parts,
+        nullptr,
+        profile_events_scope.getSnapshot(),
+        {},
+        {});
+
+    return {PartitionCommandResultInfo{
+        .command_type = "ATTACH PART",
+        .partition_id = part_info.getPartitionId(),
+        .part_name = part_name,
+        .old_part_name = part_name,
+    }};
 }
 
 PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartitionImpl(
