@@ -315,17 +315,18 @@ diff --git a/3rd_party/llvm-project/x.x/libunwind/libunwind.BUILD.bazel b/3rd_pa
 diff --git a/toolchain/features/BUILD.bazel b/toolchain/features/BUILD.bazel
 --- a/toolchain/features/BUILD.bazel
 +++ b/toolchain/features/BUILD.bazel
-@@ -5,6 +5,9 @@
+@@ -5,6 +5,10 @@
  load("@rules_cc//cc/toolchains/impl:documented_api.bzl", "cc_args_list")
 
  package(default_visibility = ["//visibility:public"])
 +
 +cc_feature(name = "fortify_source", feature_name = "fortify_source")
 +cc_feature(name = "llvm_system_c_headers", feature_name = "llvm_system_c_headers")
++cc_feature(name = "skip_virtual_includes", feature_name = "skip_virtual_includes")
 
  _DEBUG_INFO_COMPILE_ACTIONS = [
      "@rules_cc//cc/toolchains/actions:c_compile",
-@@ -229,6 +232,7 @@
+@@ -229,6 +233,7 @@
 
  cc_args(
      name = "opt_fortify",
@@ -342,7 +343,7 @@ diff --git a/toolchain/cc_toolchain.bzl b/toolchain/cc_toolchain.bzl
          }),
 -        known_features = [name + "_selected_known_features"],
 -        enabled_features = [name + "_selected_enabled_features"],
-+        known_features = [name + "_selected_known_features", "@llvm//toolchain/features:fortify_source", "@llvm//toolchain/features:llvm_system_c_headers"],
++        known_features = [name + "_selected_known_features", "@llvm//toolchain/features:fortify_source", "@llvm//toolchain/features:llvm_system_c_headers", "@llvm//toolchain/features:skip_virtual_includes"],
 +        enabled_features = [name + "_selected_enabled_features", "@llvm//toolchain/features:fortify_source", "@llvm//toolchain/features:llvm_system_c_headers"],
          tool_map = tool_map,
          module_map = module_map,

@@ -902,6 +902,7 @@ ch_cc_library(
 ch_cc_library(
     name = "throttler_interface",
     hdrs = ["IThrottler.h"],
+    features = ["skip_virtual_includes"],
     strip_include_prefix = "/src",
     deps = [
         "//base:common",

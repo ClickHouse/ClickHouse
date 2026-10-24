@@ -281,6 +281,7 @@ def declare_throttler_headers(root, common, rules):
 ch_cc_library(
     name = "throttler_interface",
     hdrs = ["IThrottler.h"],
+    features = ["skip_virtual_includes"],
     strip_include_prefix = "/src",
     deps = [
         "//base:common",
