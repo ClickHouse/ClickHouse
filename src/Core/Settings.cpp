@@ -7950,6 +7950,17 @@ Possible values:
 - 1 - Enable
 )", 0, \
         {"26.6", false, true, "New setting that pushes a per-stream LIMIT BY into the sort pipeline when LIMIT BY's columns are a prefix of ORDER BY, reducing rows flowing through the final merge."}) \
+    DECLARE(Bool, query_plan_limit_by_use_outer_limit, true, R"(
+For `ORDER BY ... LIMIT BY ... LIMIT` queries where [query_plan_push_limit_by_into_sort](#query_plan_push_limit_by_into_sort) applies, each sorted stream stops reading once it has produced as many `LIMIT BY` groups as the `LIMIT` needs rows, because every further group of that stream sorts after them and cannot reach the result.
+
+Only takes effect if setting [query_plan_push_limit_by_into_sort](#query_plan_push_limit_by_into_sort) is 1.
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+)", 0, \
+        {"26.10", false, true, "New setting that lets each sorted stream of an `ORDER BY ... LIMIT BY ... LIMIT` query stop reading once it has produced as many `LIMIT BY` groups as the `LIMIT` needs rows."}) \
     DECLARE(Bool, query_plan_fuse_filter_into_array_join, true, R"(
 Toggles a query-plan-level optimization which fuses a filter on `ARRAY JOIN`ed element columns into the `ARRAY JOIN` step, filtering the arrays in element space before expansion so that filtered-out elements are never expanded or replicated.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.

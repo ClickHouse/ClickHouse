@@ -280,10 +280,15 @@ void SortingStep::updateOutputHeader()
     output_header = input_headers.front();
 }
 
-void SortingStep::updateLimitByHint(Names limit_by_columns_, UInt64 limit_by_group_length_, bool limit_by_always_read_till_end_)
+void SortingStep::updateLimitByHint(
+    Names limit_by_columns_,
+    UInt64 limit_by_group_length_,
+    UInt64 limit_by_max_groups_,
+    bool limit_by_always_read_till_end_)
 {
     limit_by_columns = std::move(limit_by_columns_);
     limit_by_group_length = limit_by_group_length_;
+    limit_by_max_groups = limit_by_max_groups_;
     limit_by_always_read_till_end = limit_by_always_read_till_end_;
 }
 
@@ -302,7 +307,7 @@ void SortingStep::addPerStreamLimitByIfNeeded(QueryPipelineBuilder & pipeline, c
             if (stream_type != QueryPipelineBuilder::StreamType::Main)
                 return nullptr;
             return std::make_shared<LimitBySortedStreamTransform>(
-                header, limit_by_group_length, 0, sort_prefix, limit_by_always_read_till_end);
+                header, limit_by_group_length, 0, sort_prefix, limit_by_always_read_till_end, limit_by_max_groups);
         });
 }
 
@@ -732,6 +737,9 @@ void SortingStep::describeActions(FormatSettings & settings) const
         settings.out << '\n';
 
         settings.out << prefix << "Per-stream LIMIT BY length " << limit_by_group_length << '\n';
+
+        if (limit_by_max_groups)
+            settings.out << prefix << "Per-stream LIMIT BY max groups " << limit_by_max_groups << '\n';
     }
 }
 
@@ -759,6 +767,9 @@ void SortingStep::describeActions(JSONBuilder::JSONMap & map) const
 
         map.add("Per-stream LIMIT BY Columns", std::move(columns_array));
         map.add("Per-stream LIMIT BY Length", limit_by_group_length);
+
+        if (limit_by_max_groups)
+            map.add("Per-stream LIMIT BY Max Groups", limit_by_max_groups);
     }
 }
 
@@ -880,6 +891,7 @@ QueryPlanStepPtr SortingStep::clone() const
     cloned->threshold_tracker = threshold_tracker;
     cloned->limit_by_columns = limit_by_columns;
     cloned->limit_by_group_length = limit_by_group_length;
+    cloned->limit_by_max_groups = limit_by_max_groups;
     cloned->limit_by_always_read_till_end = limit_by_always_read_till_end;
     return cloned;
 }
