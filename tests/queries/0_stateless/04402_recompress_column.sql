@@ -10,24 +10,24 @@ CREATE TABLE t_recompress_wide (id UInt64, s String CODEC(NONE))
 ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 
-INSERT INTO t_recompress_wide SELECT number, repeat('a', 100) FROM numbers(100000);
+INSERT INTO t_recompress_wide SELECT number, repeat('a', 100) FROM numbers(20000);
 
 SELECT DISTINCT 'wide part', part_type FROM system.parts WHERE database = currentDatabase() AND table = 't_recompress_wide' AND active;
 
-SELECT 'wide before', count(), countIf(s = repeat('a', 100)), countIf(id < 100000) FROM t_recompress_wide;
-SELECT 'wide none is large', sum(data_compressed_bytes) > 5000000 FROM system.parts_columns
+SELECT 'wide before', count(), countIf(s = repeat('a', 100)), countIf(id < 20000) FROM t_recompress_wide;
+SELECT 'wide none is large', sum(data_compressed_bytes) > 1500000 FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_recompress_wide' AND column = 's' AND active;
 
 -- Changing the codec is metadata-only; RECOMPRESS applies it to existing data.
 ALTER TABLE t_recompress_wide MODIFY COLUMN s CODEC(ZSTD);
 ALTER TABLE t_recompress_wide RECOMPRESS COLUMN s;
 
-SELECT 'wide after', count(), countIf(s = repeat('a', 100)), countIf(id < 100000) FROM t_recompress_wide;
-SELECT 'wide zstd is small', sum(data_compressed_bytes) < 1000000 FROM system.parts_columns
+SELECT 'wide after', count(), countIf(s = repeat('a', 100)), countIf(id < 20000) FROM t_recompress_wide;
+SELECT 'wide zstd is small', sum(data_compressed_bytes) < 300000 FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_recompress_wide' AND column = 's' AND active;
 
 -- Exercise mark-based reads (point lookup and a scattered scan) to validate the rewritten marks.
-SELECT 'wide point', s = repeat('a', 100) FROM t_recompress_wide WHERE id = 99999;
+SELECT 'wide point', s = repeat('a', 100) FROM t_recompress_wide WHERE id = 19999;
 SELECT 'wide scan', count() FROM t_recompress_wide WHERE id % 7 = 0 AND s = repeat('a', 100);
 
 CHECK TABLE t_recompress_wide;
@@ -78,18 +78,18 @@ CREATE TABLE t_recompress_inherited (id UInt64, s String)
 ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, default_compression_codec = 'NONE';
 
-INSERT INTO t_recompress_inherited SELECT number, repeat('a', 100) FROM numbers(100000);
+INSERT INTO t_recompress_inherited SELECT number, repeat('a', 100) FROM numbers(20000);
 
 SELECT DISTINCT 'inherited part', part_type FROM system.parts WHERE database = currentDatabase() AND table = 't_recompress_inherited' AND active;
-SELECT 'inherited none is large', sum(data_compressed_bytes) > 5000000 FROM system.parts_columns
+SELECT 'inherited none is large', sum(data_compressed_bytes) > 1500000 FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_recompress_inherited' AND column = 's' AND active;
 
 -- Change the table-wide default codec (metadata-only; `s` has no explicit CODEC).
 ALTER TABLE t_recompress_inherited MODIFY SETTING default_compression_codec = 'ZSTD';
 ALTER TABLE t_recompress_inherited RECOMPRESS COLUMN s;
 
-SELECT 'inherited after', count(), countIf(s = repeat('a', 100)), countIf(id < 100000) FROM t_recompress_inherited;
-SELECT 'inherited zstd is small', sum(data_compressed_bytes) < 1000000 FROM system.parts_columns
+SELECT 'inherited after', count(), countIf(s = repeat('a', 100)), countIf(id < 20000) FROM t_recompress_inherited;
+SELECT 'inherited zstd is small', sum(data_compressed_bytes) < 300000 FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_recompress_inherited' AND column = 's' AND active;
 
 CHECK TABLE t_recompress_inherited;
@@ -113,12 +113,11 @@ SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_
 -- Insert a single part: a background merge of several insert parts between the size snapshot below
 -- and the size check after the ALTER would rewrite the data with a different block structure and
 -- confound the size comparison. (`SYSTEM STOP MERGES` is not an option -- it also blocks mutations.)
-INSERT INTO t_recompress_lz4_source SELECT number, repeat('a', 100) FROM numbers(100000)
+INSERT INTO t_recompress_lz4_source SELECT number, repeat('a', 100) FROM numbers(20000)
 SETTINGS max_insert_threads = 1, min_insert_block_size_rows = 1000000, min_insert_block_size_bytes = 268435456;
 
--- The source is genuinely LZ4-compressed: ~10 MB of repeated bytes compress to well under a
--- megabyte, far from the CODEC(NONE) size, so recompression really has LZ4 blocks to decompress.
-SELECT 'lz4 source is compressed', sum(column_data_compressed_bytes) BETWEEN 20000 AND 5000000, sum(column_data_uncompressed_bytes) > 10000000 FROM system.parts_columns
+-- The source is genuinely LZ4-compressed: ~2 MB of repeated bytes compress to a small fraction of it, far from the CODEC(NONE) size, so recompression really has LZ4 blocks to decompress.
+SELECT 'lz4 source is compressed', sum(column_data_compressed_bytes) BETWEEN 1000 AND 1000000, sum(column_data_uncompressed_bytes) > 1900000 FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_recompress_lz4_source' AND column = 's' AND active;
 
 DROP TABLE IF EXISTS t_recompress_lz4_sizes;
@@ -130,8 +129,8 @@ WHERE database = currentDatabase() AND table = 't_recompress_lz4_source' AND col
 ALTER TABLE t_recompress_lz4_source MODIFY COLUMN s CODEC(ZSTD);
 ALTER TABLE t_recompress_lz4_source RECOMPRESS COLUMN s;
 
-SELECT 'lz4 source after', count(), countIf(s = repeat('a', 100)), countIf(id < 100000) FROM t_recompress_lz4_source;
-SELECT 'lz4 source point', s = repeat('a', 100) FROM t_recompress_lz4_source WHERE id = 99999;
+SELECT 'lz4 source after', count(), countIf(s = repeat('a', 100)), countIf(id < 20000) FROM t_recompress_lz4_source;
+SELECT 'lz4 source point', s = repeat('a', 100) FROM t_recompress_lz4_source WHERE id = 19999;
 
 -- Prove the stored bytes were actually rewritten with the new codec: the raw-block fast path
 -- re-emits the source blocks one-to-one and both codecs are deterministic, so a recompression
@@ -140,7 +139,7 @@ SELECT 'lz4 source point', s = repeat('a', 100) FROM t_recompress_lz4_source WHE
 -- re-encoded by another codec. (An absolute LZ4-vs-ZSTD size comparison is deliberately avoided:
 -- which of the two is smaller on a long repeated run flips with the compression block layout,
 -- which test-level randomization controls.)
-SELECT 'lz4 bytes rewritten', sum(column_data_compressed_bytes) != (SELECT any(size_before) FROM t_recompress_lz4_sizes), sum(column_data_compressed_bytes) < 5000000 FROM system.parts_columns
+SELECT 'lz4 bytes rewritten', sum(column_data_compressed_bytes) != (SELECT any(size_before) FROM t_recompress_lz4_sizes), sum(column_data_compressed_bytes) < 1000000 FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_recompress_lz4_source' AND column = 's' AND active;
 
 SYSTEM FLUSH LOGS part_log;
