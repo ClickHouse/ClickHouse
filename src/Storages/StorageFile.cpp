@@ -2037,6 +2037,12 @@ Chunk StorageFileSource::generate()
 
                     if (!existsOrFileNameTooLong([&] { return fs::exists(current_path); }))
                     {
+                        /// The file existed when it was split, and the other buckets may be read already:
+                        /// skipping only this one would return a part of the file.
+                        if (split_file)
+                            throw Exception(ErrorCodes::FILE_CHANGED_DURING_READ,
+                                "File {} was removed while being read. Rerun the query", current_path);
+
                         if (getContext()->getSettingsRef()[Setting::engine_file_empty_if_not_exists])
                         {
                             /// The file existed when the TopK key was made, so it has changed since.
