@@ -73,7 +73,7 @@ std::vector<size_t> classifyS3Arguments(FunctionSecretArgumentsFinder & finder, 
                         String url;
                         if (f->arguments->at(1)->tryGetString(&url, /* allow_identifier= */ false))
                         {
-                            if (maskURICredentials(url))
+                            if (maskURICredentials(url, /* hide_unreadable= */ true))
                                 finder.result.replaced_arguments[i] = "url = " + quoteString(url);
                         }
                         else
@@ -204,7 +204,7 @@ void maskS3UrlArgument(FunctionSecretArgumentsFinder & finder, const std::vector
         finder.markSecretArgument(positional[url_slot]);
         return;
     }
-    if (maskURICredentials(url))
+    if (maskURICredentials(url, /* hide_unreadable= */ true))
         finder.result.replaced_arguments[positional[url_slot]] = quoteString(url);
 }
 

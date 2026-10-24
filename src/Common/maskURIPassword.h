@@ -373,9 +373,20 @@ inline bool maskPresignedURLParameters(std::string & url)
   * This is the masking to use for a whole HTTP/S3 URL. Scanning for a presigned parameter is only
   * sound on a value that is one whole URL (see `maskPresignedURLParameters`), so the argument must be
   * one URL, not a URL embedded in a longer string.
+  *
+  * `hide_unreadable`: the value is known to be a URL, so one with an '@' the userinfo scan cannot read is hidden whole.
   */
-inline bool maskURICredentials(std::string & url)
+inline bool maskURICredentials(std::string & url, bool hide_unreadable = false)
 {
+    /// The userinfo scan reads a scheme at the start of the value only, so that an '@' in a path or
+    /// query is not taken for a credential. A url whose scheme is not at position 0, preceded by
+    /// something or absent entirely, is unreadable to it and its '@' can still be userinfo: hide it.
+    if (hide_unreadable && findURIAuthority(url) == std::string::npos && url.contains('@'))
+    {
+        url = HIDDEN_SECRET;
+        return true;
+    }
+
     bool masked = maskURIUserinfo(url);
     masked |= maskPresignedURLParameters(url);
     return masked;

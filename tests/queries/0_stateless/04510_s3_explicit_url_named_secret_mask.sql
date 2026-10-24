@@ -190,7 +190,13 @@ CREATE DATABASE db_04510_ncleadspace ENGINE = Backup('', S3(nc_04510_ncspace_mis
 SELECT * FROM s3(' https://localhost:11111/x', 'TSV', 'x UInt8'); -- { serverError POCO_EXCEPTION }
 SELECT * FROM s3('https://localhost:11111/x?email=a@b.com', 'TSV', 'x UInt8'); -- { serverError BAD_ARGUMENTS }
 CREATE DATABASE db_04510_atpath ENGINE = Backup('', S3(nc_04510_atpath_missing,
-                 'backups/user@host/data')); -- { serverError BAD_ARGUMENTS }
+                 'backups/user@host/data', secret_access_key = 'SEKRIT_ATPATH')); -- { serverError BAD_ARGUMENTS }
+-- Nor is an access key id, positional or named. Each locator carries a secret, so it is rebuilt and the
+-- row shows whether the '@' argument stays visible.
+CREATE DATABASE db_04510_akat ENGINE = Backup('', S3('https://localhost:11111/x', 'ak@id',
+                 'SEKRIT_AKAT')); -- { serverError BAD_ARGUMENTS }
+CREATE DATABASE db_04510_ncakat ENGINE = Backup('', S3(nc_04510_ncakat_missing, access_key_id = 'ak@id',
+                 secret_access_key = 'SEKRIT_NCAKAT')); -- { serverError BAD_ARGUMENTS }
 
 -- Same for BACKUP and the Backup database reconstructor.
 BACKUP TABLE nonexistent_04510 TO S3('https://user:SEKRIT_PW@localhost:11111/x?X-Amz-Signature=SEKRIT_SIG',
