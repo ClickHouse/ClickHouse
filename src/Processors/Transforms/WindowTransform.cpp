@@ -188,7 +188,7 @@ void WindowTransform::addInputBlock(Chunk chunk)
 void WindowTransform::computeReadyRows()
 {
     /// The cancel check is per row, since one block can take long on quadratic frames; prepare picks up the rest.
-    while (!isCancelled())
+    while (!isCancelledOrOuterCancelled())
     {
         if (peers.current().location == partition.bounds().end.location)
         {
@@ -332,6 +332,8 @@ void WindowTransform::computeQueryResultPreview()
         /// a workload limited to one concurrent thread, forever).
         WindowTransform transform(
             inputs.front().getSharedHeader(), outputs.front().getSharedHeader(), params.window_description, window_functions_for_preview);
+        /// The executor cancels this transform only, so the one-shot one observes its flag in its per-row check.
+        transform.outer_cancellation_flag = &getCancellationFlag();
         OutputPort source(inputs.front().getSharedHeader());
         InputPort sink(outputs.front().getSharedHeader());
         connect(source, transform.getInputs().front());

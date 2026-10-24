@@ -82,7 +82,15 @@ public:
     Chunk query_result_preview_input;
     Chunk pending_query_result_preview;
 
+    /// Set on the one-shot transform computing a query result preview: the cancellation flag of the
+    /// transform in the pipeline, which the one-shot one is not a part of, so the executor never cancels it.
+    const std::atomic<bool> * outer_cancellation_flag = nullptr;
+
     void computeQueryResultPreview();
+    bool isCancelledOrOuterCancelled() const
+    {
+        return isCancelled() || (outer_cancellation_flag && outer_cancellation_flag->load(std::memory_order_acquire));
+    }
 
     /// One per window function.
     std::vector<WindowFunctionWorkspace> workspaces;
