@@ -12,7 +12,10 @@ cluster = ClickHouseCluster(__file__)
 
 node_local = cluster.add_instance(
     "node_local",
-    main_configs=["configs/config.d/storage_configuration.xml"],
+    main_configs=[
+        "configs/config.d/storage_configuration.xml",
+        "configs/config.d/enable_read_write_grants.xml",
+    ],
     tmpfs=[
         "/test_user_files_disk1:size=100M",
     ],
@@ -1658,3 +1661,123 @@ def test_local_filelog_skips_child_symlink_outside_disk():
                 "rm -rf /test_user_files_disk1/filelog_dir /tmp/filelog_secret.log",
             ]
         )
+
+
+def test_local_filelog_rechecks_retargeted_symlink_before_opening():
+    """A tracked file is opened only at the first read, so its symlink may have been retargeted
+    outside the disk root after `CREATE TABLE` checked it: the path is checked again on opening."""
+    node_local.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "echo safe > /test_user_files_disk1/filelog_safe.log && "
+            "ln -snf /test_user_files_disk1/filelog_safe.log /test_user_files_disk1/filelog_live.log && "
+            "echo secret > /tmp/filelog_retarget_secret.log",
+        ]
+    )
+    try:
+        node_local.query(
+            "CREATE TABLE filelog_retarget (line String) ENGINE = FileLog('filelog_live.log', 'LineAsString')"
+        )
+        node_local.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "ln -snf /tmp/filelog_retarget_secret.log /test_user_files_disk1/filelog_live.log",
+            ]
+        )
+        result = node_local.query(
+            "SELECT line FROM filelog_retarget SETTINGS stream_like_engine_allow_direct_select = 1"
+        )
+        assert "secret" not in result, result
+    finally:
+        node_local.query("DROP TABLE IF EXISTS filelog_retarget SYNC")
+        node_local.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "rm -f /test_user_files_disk1/filelog_live.log /test_user_files_disk1/filelog_safe.log "
+                "/tmp/filelog_retarget_secret.log",
+            ]
+        )
+
+
+def test_local_numbered_destination_through_dangling_symlink_rejected():
+    """With `engine_file_allow_create_multiple_files` an insert into a populated file writes to a
+    numbered sibling, which must pass the containment check like the original destination."""
+    node_local.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "rm -rf /tmp/numbered_target /test_user_files_disk1/numbered.parquet && "
+            "mkdir -p /tmp/numbered_target && "
+            "ln -snf /tmp/numbered_target/new.parquet /test_user_files_disk1/numbered.1.parquet",
+        ]
+    )
+    try:
+        node_local.query(
+            "INSERT INTO FUNCTION file('numbered.parquet', 'Parquet', 'x UInt64') SELECT 1"
+        )
+        err = node_local.query_and_get_error(
+            "INSERT INTO FUNCTION file('numbered.parquet', 'Parquet', 'x UInt64') SELECT 2 "
+            "SETTINGS engine_file_allow_create_multiple_files = 1"
+        )
+        assert "DATABASE_ACCESS_DENIED" in err, err
+        assert (
+            node_local.exec_in_container(
+                ["bash", "-c", "test -e /tmp/numbered_target/new.parquet && echo exists || echo absent"]
+            ).strip()
+            == "absent"
+        )
+    finally:
+        node_local.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "rm -rf /test_user_files_disk1/numbered.parquet /test_user_files_disk1/numbered.1.parquet "
+                "/tmp/numbered_target",
+            ]
+        )
+
+
+def test_local_filesystem_database_write_needs_write_grant():
+    """With `enable_read_write_grants` a `READ ON FILE` grant does not allow writing, so the tables
+    of a `Filesystem` database check `WRITE ON FILE` for a write even after reading is allowed."""
+    user = "fsdb_writer"
+    node_local.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "rm -rf /test_user_files_disk1/fsdb_write && mkdir -p /test_user_files_disk1/fsdb_write && "
+            "echo 1 > /test_user_files_disk1/fsdb_write/data.csv",
+        ]
+    )
+    node_local.query("DROP DATABASE IF EXISTS fsdb_write")
+    node_local.query(f"DROP USER IF EXISTS {user}")
+    try:
+        node_local.query("CREATE DATABASE fsdb_write ENGINE = Filesystem('fsdb_write')")
+        node_local.query(f"CREATE USER {user}")
+        node_local.query(f"GRANT SELECT, INSERT, TRUNCATE ON fsdb_write.* TO {user}")
+        node_local.query(f"GRANT CREATE TEMPORARY TABLE ON *.* TO {user}")
+        node_local.query(f"GRANT READ ON FILE TO {user}")
+
+        assert node_local.query("SELECT * FROM fsdb_write.`data.csv`", user=user).strip() == "1"
+
+        for query, settings in [
+            ("INSERT INTO fsdb_write.`data.csv` VALUES (2)", {}),
+            ("INSERT INTO fsdb_write.`data.csv` VALUES (2)", {"async_insert": 1, "wait_for_async_insert": 0}),
+            ("TRUNCATE TABLE fsdb_write.`data.csv`", {}),
+        ]:
+            err = node_local.query_and_get_error(query, user=user, settings=settings)
+            assert "ACCESS_DENIED" in err, err
+        assert node_local.query("SELECT * FROM fsdb_write.`data.csv`").strip() == "1"
+
+        node_local.query(f"GRANT WRITE ON FILE TO {user}")
+        node_local.query("INSERT INTO fsdb_write.`data.csv` VALUES (2)", user=user)
+        assert node_local.query("SELECT * FROM fsdb_write.`data.csv` ORDER BY ALL", user=user).strip() == "1\n2"
+        node_local.query("TRUNCATE TABLE fsdb_write.`data.csv`", user=user)
+        assert node_local.query("SELECT count() FROM fsdb_write.`data.csv`", user=user).strip() == "0"
+    finally:
+        node_local.query("DROP DATABASE IF EXISTS fsdb_write")
+        node_local.query(f"DROP USER IF EXISTS {user}")
+        node_local.exec_in_container(["bash", "-c", "rm -rf /test_user_files_disk1/fsdb_write"])
