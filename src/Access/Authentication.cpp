@@ -7,6 +7,7 @@
 #include <Common/Base64.h>
 #include <Common/Crypto/X509Certificate.h>
 #include <Common/Exception.h>
+#include <Common/Hex.h>
 #include <Common/SSHWrapper.h>
 #include <Common/typeid_cast.h>
 #include <Poco/SHA1Engine.h>
@@ -29,6 +30,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -167,6 +169,47 @@ namespace
                     mysql_credentials->getScramble(),
                     mysql_credentials->getScrambledPassword(),
                     authentication_method.getPasswordHashBinary());
+            default:
+                return false;
+        }
+    }
+
+    /// Recomputes the AWS Signature Version 4 with the stored password as the secret access key.
+    bool checkAWSSignatureV4Authentication(
+        [[maybe_unused]] const AWSSignatureV4Credentials * credentials,
+        const AuthenticationData & authentication_method)
+    {
+        /// The signature is derived from the password alone, so it cannot carry a one-time password.
+        if (authentication_method.getOneTimePassword())
+            return false;
+
+        switch (authentication_method.getType())
+        {
+            case AuthenticationType::NO_PASSWORD:
+                return true; /// The same as for `BasicCredentials`: any password (here - any secret key) is accepted.
+            case AuthenticationType::PLAINTEXT_PASSWORD:
+            {
+#if USE_SSL
+                /// Only the plaintext password can be used: the signing key is derived from the secret itself,
+                /// so a hash of the password is not enough to verify the signature.
+                const auto & password = authentication_method.getPasswordHashBinary();
+                String secret = "AWS4";
+                secret.append(password.begin(), password.end());
+
+                std::vector<uint8_t> key(secret.begin(), secret.end());
+                key = hmacSHA256(key, credentials->getDate());
+                key = hmacSHA256(key, credentials->getRegion());
+                key = hmacSHA256(key, credentials->getService());
+                key = hmacSHA256(key, "aws4_request");
+                auto signature_binary = hmacSHA256(key, credentials->getStringToSign());
+
+                String signature(signature_binary.size() * 2, '\0');
+                encodeHexStringLower(reinterpret_cast<uint8_t *>(signature.data()), signature_binary.data(), signature_binary.size());
+                return constantTimeEquals(signature, credentials->getSignature());
+#else
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "AWS Signature Version 4 authentication requires ClickHouse to be built with SSL");
+#endif
+            }
             default:
                 return false;
         }
@@ -414,6 +457,12 @@ Authentication::CredentialsCheckResult Authentication::areCredentialsValid(
     if (const auto * basic_credentials = typeid_cast<const BasicCredentials *>(&credentials))
     {
         return checkBasicAuthentication(basic_credentials, authentication_method, external_authenticators, client_info, settings);
+    }
+
+    if (const auto * aws_signature_v4_credentials = typeid_cast<const AWSSignatureV4Credentials *>(&credentials))
+    {
+        return checkAWSSignatureV4Authentication(aws_signature_v4_credentials, authentication_method) ?
+            CredentialsCheckResult::Success : CredentialsCheckResult::Fail;
     }
 
     if (const auto * scram_shh256_credentials = typeid_cast<const ScramSHA256Credentials *>(&credentials))

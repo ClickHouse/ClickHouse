@@ -1,0 +1,36 @@
+GET: 200 1	Hello
+2	World
+GET with a query parameter: 200 Hello
+World
+HEAD: 200 16 0 True
+GET presigned: 200 1	Hello
+2	World
+GET presigned with a query: 200 42
+wrong secret: 403 Code: 516
+unknown user: 403 Code: 516
+password stored as a hash: 403 Code: 516
+presigned with wrong secret: 403 Code: 516
+presigned and expired: 403 Code: 516
+request too old: 403 Code: 516
+unsigned X-ClickHouse header: 403 Code: 516
+signed X-ClickHouse header: 200 1,"Hello"
+2,"World"
+tampered query: 403 Code: 516
+presigned with a body: 403 Code: 516
+unsigned payload with a body: 403 Code: 516
+signed payload with a body: 200 1
+range from the beginning: 200 1	Hello
+2	World
+range: 400 Code: 36
+PUT: 200 
+PUT with unsigned payload: 200 
+PUT presigned: 200 
+PUT aws-chunked: 200 
+PUT with wrong payload hash: 400 Code: 117
+PUT with signed streaming payload: 501 Code: 48
+GET after PUT: 200 1	Hello
+2	World
+3	PUT
+4	unsigned
+5	presigned
+6	chunked

@@ -693,6 +693,8 @@ void addCatchAllQueryHandlerFactory(
                                || method == Poco::Net::HTTPRequest::HTTP_HEAD;
             bool is_post_or_options = method == Poco::Net::HTTPRequest::HTTP_POST
                                    || method == Poco::Net::HTTPRequest::HTTP_OPTIONS;
+            /// `PUT /database/table.format` uploads a file into a table (see `HTTPHandler::processQuery`).
+            bool is_put = method == Poco::Net::HTTPRequest::HTTP_PUT;
 
             /// An `OPTIONS` request is a CORS preflight (and the web-UI connectivity health-check).
             /// `HTTPHandler::handleRequest` answers it via `processOptionsRequest` before
@@ -705,7 +707,7 @@ void addCatchAllQueryHandlerFactory(
             if (method == Poco::Net::HTTPRequest::HTTP_OPTIONS)
                 return true;
 
-            if (!is_get_or_head && !is_post_or_options)
+            if (!is_get_or_head && !is_post_or_options && !is_put)
                 return false;
 
             /// Everything below is the path-as-file extension. Skip it unless path requests are
@@ -716,13 +718,11 @@ void addCatchAllQueryHandlerFactory(
                 return false;
 
             /// Skip the path-as-file routing for clients sending an `Authorization` header with a
-            /// scheme ClickHouse does not implement (e.g. `AWS4-HMAC-SHA256`, used by
-            /// `clickhouse-local`'s S3 client when probing paths like `/nonexistent`). The dynamic
-            /// handler would otherwise reject the request with `AUTHENTICATION_FAILED` (HTTP 403)
-            /// before it has a chance to look up the path against the catalog; the
-            /// `NotFoundHandler` fallback returns a plain 404 the S3 client is already prepared to
-            /// handle as non-retriable. Supported schemes (Basic, Negotiate) still get the
-            /// dynamic-handler treatment.
+            /// scheme ClickHouse does not implement. The dynamic handler would otherwise reject the
+            /// request with `AUTHENTICATION_FAILED` (HTTP 403) before it has a chance to look up the
+            /// path against the catalog; the `NotFoundHandler` fallback returns a plain 404.
+            /// Supported schemes (Basic, Negotiate, and `AWS4-HMAC-SHA256` used by S3 clients)
+            /// get the dynamic-handler treatment.
             if (request.has("Authorization"))
             {
                 const auto & auth_header = request.get("Authorization");
@@ -734,7 +734,8 @@ void addCatchAllQueryHandlerFactory(
                 /// ignore credentials (see `03362_basic_auth_interactive_not_with_authorization_never`);
                 /// let it through so a path-style request is handled the same way the query-string
                 /// route is, instead of falling through to `NotFoundHandler`.
-                if (!boost::iequals(scheme, "Basic") && !boost::iequals(scheme, "Negotiate") && !boost::iequals(auth_header, "never"))
+                if (!boost::iequals(scheme, "Basic") && !boost::iequals(scheme, "Negotiate") && scheme != "AWS4-HMAC-SHA256"
+                    && !boost::iequals(auth_header, "never"))
                     return false;
             }
 
