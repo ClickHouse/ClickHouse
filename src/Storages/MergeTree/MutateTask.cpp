@@ -4252,7 +4252,17 @@ MutateTask::MutateTask(
         partition_id = ctx->future_part->part_info.getPartitionId(),
         mutate_entry = ctx->mutate_entry]
     {
-        return merges_blocker->isCancelledForPartition(partition_id) || (*mutate_entry)->is_cancelled;
+        /// Latched, so that a blocker released between two polls does not resurrect a cancelled read.
+        if ((*mutate_entry)->is_cancelled.load(std::memory_order_relaxed))
+            return true;
+
+        if (merges_blocker->isCancelledForPartition(partition_id))
+        {
+            (*mutate_entry)->is_cancelled.store(true, std::memory_order_relaxed);
+            return true;
+        }
+
+        return false;
     };
     (*ctx->mutate_entry)->thread_group->setQueryCancellationPredicates(
         mutation_cancelled,

@@ -714,6 +714,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         ctx->need_remove_expired_values = false;
     }
 
+    global_ctx->merge_list_element_ptr->is_removing_expired_values.store(
+        ctx->need_remove_expired_values, std::memory_order_relaxed);
+
     const auto & patch_parts = global_ctx->future_part->patch_parts;
 
     /// Snapshot of pending mutations for the source parts, fetched once and reused for
@@ -1355,7 +1358,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     ctx->is_cancelled = [merges_blocker = global_ctx->merges_blocker,
         ttl_merges_blocker = global_ctx->ttl_merges_blocker,
-        need_remove = ctx->need_remove_expired_values,
+        ttl_cancellable = ctx->need_remove_expired_values || isTTLMergeType(global_ctx->future_part->merge_type),
         merge_list_element = global_ctx->merge_list_element_ptr,
         partition_id = global_ctx->future_part->part_info.getPartitionId()]() -> bool
     {
@@ -1365,7 +1368,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             return true;
 
         bool cancelled = merges_blocker->isCancelledForPartition(partition_id)
-            || (need_remove && ttl_merges_blocker->isCancelled());
+            || (ttl_cancellable && ttl_merges_blocker->isCancelled());
 
         if (cancelled)
         {

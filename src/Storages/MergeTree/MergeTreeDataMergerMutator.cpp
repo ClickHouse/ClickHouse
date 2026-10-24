@@ -6,6 +6,7 @@
 #include <Storages/StorageInMemoryMetadata.h>
 
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/ThreadStatus.h>
 #include <Common/quoteString.h>
 #include <Common/WeightedRandomSampling.h>
 #include <Common/formatReadable.h>
@@ -536,6 +537,54 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
         metadata_snapshot = std::move(patch_metadata);
     }
 
+    /// Root merges only: a projection sub-merge re-enters this under a running merge whose group is already
+    /// attached, and an attach copies `shared_data` once, so a write here would not reach its threads.
+    if (!projection_merge_list_element)
+    {
+        auto entry_context = (*merge_entry)->thread_group->query_context.lock();
+        if (!entry_context)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Merge list entry for part {} has no query context: every caller keeps it alive for the "
+                "whole merge",
+                future_part->name);
+
+        /// `optimizeDryRun` runs the task inline under a user query's group, whose cancellation already applies.
+        if (entry_context->isBackgroundContext())
+        {
+            /// Latched, because a blocker released between two independent polls must not resurrect the read.
+            auto is_cancelled = [&blocker = merges_blocker,
+                                 &ttl_blocker = ttl_merges_blocker,
+                                 is_ttl_merge = isTTLMergeType(future_part->merge_type),
+                                 merge_entry,
+                                 partition_id = future_part->part_info.getPartitionId()]
+            {
+                if ((*merge_entry)->is_cancelled.load(std::memory_order_relaxed))
+                    return true;
+
+                const bool removes_expired_values
+                    = is_ttl_merge || (*merge_entry)->is_removing_expired_values.load(std::memory_order_relaxed);
+
+                if (blocker.isCancelledForPartition(partition_id) || (removes_expired_values && ttl_blocker.isCancelled()))
+                {
+                    (*merge_entry)->is_cancelled.store(true, std::memory_order_relaxed);
+                    return true;
+                }
+
+                return false;
+            };
+
+            /// Installed before the first attach: `MergeTask::prepare` replaces it only at its end, after its first reads.
+            (*merge_entry)->thread_group->setQueryCancellationPredicates(
+                is_cancelled,
+                [is_cancelled]
+                {
+                    if (is_cancelled())
+                        throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts");
+                });
+        }
+    }
+
     return std::make_shared<MergeTask>(
         std::move(future_part),
         std::move(metadata_snapshot),
@@ -583,8 +632,12 @@ MutateTaskPtr MergeTreeDataMergerMutator::mutatePartToTemporaryPart(
     context->setInteractiveCancelCallback(
         [&blocker = merges_blocker, merge_entry, partition_id]()
         {
+            /// Persisted for the IO layer, which polls rarely and may miss a short-lived blocker.
             if (blocker.isCancelledForPartition(partition_id) || (*merge_entry)->is_cancelled)
+            {
+                (*merge_entry)->is_cancelled.store(true, std::memory_order_relaxed);
                 throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
+            }
             return false;
         });
 
