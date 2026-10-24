@@ -32,6 +32,10 @@ struct SSLParams
     std::string cert_pem;
     std::string key_pem;
 
+    /// Passphrase of an encrypted `key_path` / `key_pem`. Accepted from SQL and from the configuration
+    /// file alike: it is a secret, not a path the server would open with its own privileges.
+    std::string key_passphrase;
+
     bool empty() const
     {
         return ca_path.empty() && cert_path.empty() && key_path.empty() && ca_pem.empty() && cert_pem.empty() && key_pem.empty();
