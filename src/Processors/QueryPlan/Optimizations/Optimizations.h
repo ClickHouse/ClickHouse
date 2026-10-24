@@ -165,11 +165,12 @@ collectVolumeReducingFunctionsReplacingTheirArgument(const ActionsDAG & actions)
 /// pushed step into its neighbor, the argument may be a computed column or have other readers
 /// (a `Filter` condition), yet the function still has to stay below. Functions whose argument is
 /// surfaced by the DAG anyway are not collected — the wide column crosses the step regardless, so
-/// lifting them loses nothing. `low_part_root` identifies nodes that a caller already keeps below
-/// its barrier (for example, a `FilterStep` predicate) and which therefore do not make the
-/// argument flow through that barrier.
+/// lifting them loses nothing. `low_part_roots` are the nodes a caller keeps below its barrier anyway
+/// (a `FilterStep` predicate, the sort columns of a `SortingStep`), so their reads of an argument do not
+/// make it cross the barrier. `is_filter` adds the conditions under which `tryPushDownVolumeReducingFunction`
+/// moves a function below a `FilterStep`.
 std::unordered_set<const ActionsDAG::Node *> collectVolumeReducingFunctionsToKeepBelow(
-    const ActionsDAG & actions, const ActionsDAG::Node * low_part_root = nullptr);
+    const ActionsDAG & actions, const ActionsDAG::NodeRawConstPtrs & low_part_roots, bool is_filter);
 
 /// Convert OUTER JOIN to INNER JOIN if filter after JOIN always filters default values
 size_t tryConvertOuterJoinToInnerJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
