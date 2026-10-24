@@ -123,6 +123,7 @@ namespace Setting
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsBool parallel_replicas_support_projection;
+    extern const SettingsUInt64 distributed_group_by_top_k;
 }
 
 namespace DistributedSetting
@@ -173,6 +174,14 @@ void stripDatabaseSetting(Settings & settings)
 
 void stripInitiatorOnlySettings(Settings & settings)
 {
+    /// Set by the initiator for its own remote reading (`enableGroupByTopK`) after this strip: the servers it queries
+    /// further have no sort of the initiator above them.
+    if (settings[Setting::distributed_group_by_top_k].changed || settings[Setting::distributed_group_by_top_k] != 0)
+    {
+        settings[Setting::distributed_group_by_top_k] = 0;
+        settings[Setting::distributed_group_by_top_k].changed = false;
+    }
+
     /// All of the settings below are interpreted only at the initiator: they either shape the
     /// final query (`select`, `order`, `sort`, `filter`, `limit`, `offset`, `page`,
     /// `additional_result_filter`) or shape how the result is serialised to the user
@@ -328,6 +337,7 @@ constexpr std::string_view initiator_only_setting_names[] = {
     "async_insert_select_as_async_insert",
     "parallel_replicas_for_object_storage_tables",
     "database",
+    "distributed_group_by_top_k",
 };
 
 bool isInitiatorOnlySettingName(std::string_view name)

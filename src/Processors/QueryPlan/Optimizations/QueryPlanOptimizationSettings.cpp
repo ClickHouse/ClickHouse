@@ -48,6 +48,8 @@ namespace Setting
     extern const SettingsBool enable_group_by_top_k_optimization;
     extern const SettingsBool enable_group_by_top_k_dynamic_filtering;
     extern const SettingsUInt64 group_by_top_k_optimization_observation_rows;
+    extern const SettingsUInt64 distributed_group_by_top_k;
+    extern const SettingsUInt64 max_rows_to_group_by;
     extern const SettingsBool group_by_top_k_optimization_shared_boundary;
     extern const SettingsBool distributed_plan_fallback_to_local_execution;
     extern const SettingsBool distributed_plan_execute_locally;
@@ -290,6 +292,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
         = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_aggregation_having_prefilter];
     top_k_optimization_observation_rows = from[Setting::group_by_top_k_optimization_observation_rows];
     top_k_optimization_shared_boundary = from[Setting::group_by_top_k_optimization_shared_boundary];
+    max_rows_to_group_by = from[Setting::max_rows_to_group_by];
     enable_group_by_top_k_dynamic_filtering = from[Setting::enable_group_by_top_k_dynamic_filtering];
     top_k_through_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_top_k_through_join];
     min_max_from_files = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_min_max_from_files];
@@ -496,6 +499,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
             && from->getSettingsRef()[Setting::parallel_replicas_support_projection])
 {
     skip_forced_projection_check = from->skipsForcedProjectionCheck();
+    if (from->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+        distributed_group_by_top_k = from->getSettingsRef()[Setting::distributed_group_by_top_k];
     distributed_plan_local_object = from->getDistributedPlanLocalObject();
     max_parallel_replicas = from->getSettingsRef()[Setting::max_parallel_replicas];
     if (auto cluster_name = from->getSettingsRef()[Setting::cluster_for_parallel_replicas].value; !cluster_name.empty())
