@@ -787,7 +787,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     joined_tables.rewriteDistributedInAndJoins(query_ptr);
 
-    max_streams = getEffectiveMaxThreads(settings);
+    max_streams = getEffectiveMaxThreads(*context);
     ASTSelectQuery & query = getSelectQuery();
     std::shared_ptr<TableJoin> table_join = joined_tables.makeTableJoin(query);
 
@@ -2348,12 +2348,13 @@ static void executeMergeAggregatedImpl(
     bool final,
     bool is_remote_storage,
     bool has_grouping_sets,
-    const Settings & settings,
+    const Context & context,
     const NamesAndTypesList & aggregation_keys,
     const NamesAndTypesLists & aggregation_keys_list,
     const AggregateDescriptions & aggregates,
     bool should_produce_results_in_order_of_bucket_number)
 {
+    const Settings & settings = context.getSettingsRef();
     auto keys = aggregation_keys.getNames();
 
     /** There are two modes of distributed aggregation.
@@ -2375,7 +2376,7 @@ static void executeMergeAggregatedImpl(
         keys,
         aggregates,
         overflow_row,
-        getEffectiveMaxThreads(settings),
+        getEffectiveMaxThreads(context),
         settings[Setting::max_block_size],
         settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization],
         settings[Setting::serialize_string_in_memory_with_zero_byte],
@@ -2790,7 +2791,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
             settings[Setting::max_columns_to_read].value);
 
     /// General limit for the number of threads.
-    size_t max_threads_execute_query = getEffectiveMaxThreads(settings);
+    size_t max_threads_execute_query = getEffectiveMaxThreads(*context);
 
     /**
      * To simultaneously query more remote servers when async_socket_for_remote is off
@@ -2980,7 +2981,7 @@ static Aggregator::Params getAggregatorParams(
             || (settings[Setting::empty_result_for_aggregation_by_constant_keys_on_empty_set] && keys.empty()
                 && query_analyzer.hasConstAggregationKeys()),
         context.getTempDataOnDisk(),
-        getEffectiveMaxThreads(settings),
+        getEffectiveMaxThreads(context),
         settings[Setting::min_free_disk_space_for_temporary_data],
         settings[Setting::compile_aggregate_expressions],
         settings[Setting::min_count_to_compile_aggregate_expression],
@@ -3037,7 +3038,7 @@ void InterpreterSelectQuery::executeAggregation(
     auto merge_threads = max_streams;
     auto temporary_data_merge_threads = settings[Setting::aggregation_memory_efficient_merge_threads]
         ? static_cast<size_t>(settings[Setting::aggregation_memory_efficient_merge_threads])
-        : getEffectiveMaxThreads(settings);
+        : getEffectiveMaxThreads(*context);
 
     bool storage_has_evenly_distributed_read = storage && storage->hasEvenlyDistributedRead();
 
@@ -3077,7 +3078,7 @@ void InterpreterSelectQuery::executeMergeAggregated(QueryPlan & query_plan, bool
         final,
         storage && (storage->isRemote() || parallel_replicas_from_merge_tree),
         has_grouping_sets,
-        context->getSettingsRef(),
+        *context,
         query_analyzer->aggregationKeys(),
         query_analyzer->aggregationKeysList(),
         query_analyzer->aggregates(),
@@ -3224,7 +3225,7 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
         bool need_sort = !window.full_sort_description.empty();
         if (need_sort && i != 0)
         {
-            const size_t effective_max_threads = getEffectiveMaxThreads(settings);
+            const size_t effective_max_threads = getEffectiveMaxThreads(*context);
             need_sort = !sortIsPrefix(window, *windows_sorted[i - 1])
                 || (effective_max_threads != 1 && window.partition_by.size() != windows_sorted[i - 1]->partition_by.size());
         }

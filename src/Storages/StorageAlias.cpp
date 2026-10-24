@@ -187,6 +187,9 @@ public:
 
         auto insert_context = Context::createCopy(getContext());
         insert_context->makeQueryContext();
+        /// The nested `INSERT` is a part of the outer query: plan it with the same free memory and fair share of CPU slots.
+        if (const auto & snapshot = getContext()->getQueryMaxThreadsSnapshot())
+            insert_context->setQueryMaxThreadsSnapshot(snapshot);
         if (getContext()->hasQueryContext())
             insert_context->setQueryAccessInfo(getContext()->getQueryContext()->getQueryAccessInfoPtr());
         addInterpreterContext(insert_context);

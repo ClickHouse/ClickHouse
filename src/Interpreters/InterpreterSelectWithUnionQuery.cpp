@@ -309,7 +309,7 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
             headers[i] = plans[i]->getCurrentHeader();
         }
 
-        auto max_threads = getEffectiveMaxThreads(settings);
+        auto max_threads = getEffectiveMaxThreads(*context);
         auto union_step = std::make_unique<UnionStep>(std::move(headers), max_threads, /* allow_narrowing = */ true);
 
         query_plan.unitePlans(std::move(union_step), std::move(plans));
