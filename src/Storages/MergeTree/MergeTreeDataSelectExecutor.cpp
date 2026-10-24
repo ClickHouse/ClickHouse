@@ -977,6 +977,33 @@ static bool partHasStaleTopKIndex(
     return false;
 }
 
+void MergeTreeDataSelectExecutor::checkForcedSkipIndexes(const UsefulSkipIndexes & skip_indexes, const Settings & settings)
+{
+    if (!settings[Setting::force_data_skipping_indexes].changed)
+        return;
+
+    const auto & indices_str = settings[Setting::force_data_skipping_indexes].toString();
+    auto forced_indices = parseIdentifiersOrStringLiterals(indices_str, settings);
+
+    if (forced_indices.empty())
+        throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "No indices parsed from force_data_skipping_indices ('{}')", indices_str);
+
+    std::unordered_set<std::string> useful_indices_names;
+    for (const auto & useful_index : skip_indexes.useful_indices)
+        useful_indices_names.insert(useful_index.index->index.name);
+
+    for (const auto & index_name : forced_indices)
+    {
+        if (!useful_indices_names.contains(index_name))
+        {
+            throw Exception(
+                ErrorCodes::INDEX_NOT_USED,
+                "Index {} is not used and setting 'force_data_skipping_indices' contains it",
+                backQuote(index_name));
+        }
+    }
+}
+
 RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(IndexAnalysisContext & filter_context, RangesInDataParts parts_with_ranges, ReadFromMergeTree::IndexStats & index_stats)
 {
     auto & metadata_snapshot = filter_context.metadata_snapshot;
@@ -1004,29 +1031,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     const auto original_num_parts = parts_with_ranges.size();
     const Settings & settings = context->getSettingsRef();
 
-    if (use_skip_indexes && settings[Setting::force_data_skipping_indexes].changed)
-    {
-        const auto & indices_str = settings[Setting::force_data_skipping_indexes].toString();
-        auto forced_indices = parseIdentifiersOrStringLiterals(indices_str, settings);
-
-        if (forced_indices.empty())
-            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "No indices parsed from force_data_skipping_indices ('{}')", indices_str);
-
-        std::unordered_set<std::string> useful_indices_names;
-        for (const auto & useful_index : skip_indexes.useful_indices)
-            useful_indices_names.insert(useful_index.index->index.name);
-
-        for (const auto & index_name : forced_indices)
-        {
-            if (!useful_indices_names.contains(index_name))
-            {
-                throw Exception(
-                    ErrorCodes::INDEX_NOT_USED,
-                    "Index {} is not used and setting 'force_data_skipping_indices' contains it",
-                    backQuote(index_name));
-            }
-        }
-    }
+    if (use_skip_indexes)
+        checkForcedSkipIndexes(skip_indexes, settings);
 
     struct IndexStat
     {
@@ -2287,9 +2293,36 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     const Settings & settings,
     LoggerPtr log)
 {
+    return markRangesFromPKRange(
+        LoadedMergeTreeDataPartInfoForReader(part, /*alter_conversions_=*/ nullptr),
+        part_ranges,
+        part_starting_offset_in_query,
+        metadata_snapshot,
+        key_condition,
+        part_offset_condition,
+        total_offset_condition,
+        exact_ranges,
+        pk_to_minmax_slot,
+        settings,
+        log);
+}
+
+MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
+    const IMergeTreeDataPartInfoForReader & part,
+    const MarkRanges & part_ranges,
+    size_t part_starting_offset_in_query,
+    const StorageMetadataPtr & metadata_snapshot,
+    const KeyCondition & key_condition,
+    const KeyCondition * part_offset_condition,
+    const KeyCondition * total_offset_condition,
+    MarkRanges * exact_ranges,
+    const std::vector<std::optional<size_t>> * pk_to_minmax_slot,
+    const Settings & settings,
+    LoggerPtr log)
+{
     MarkRanges res;
 
-    size_t marks_count = part->index_granularity->getMarksCount();
+    size_t marks_count = part.getIndexGranularity().getMarksCount();
     if (marks_count == 0)
         return res;
 
@@ -2314,7 +2347,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     const KeyOrder & key_order = key_condition.getKeyOrder();
     chassert(key_order.matchesPrefix(metadata_snapshot->getSortingKey().reverse_flags, primary_key.column_names.size()));
 
-    const auto index = part->getIndex();
+    const auto index = part.getIndexPtr();
     const bool use_sparse_pk_representation
         = settings[Setting::use_lightweight_primary_key_index_analysis];
 
@@ -2340,7 +2373,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         && std::any_of(pk_to_minmax_slot->begin(),
                        pk_to_minmax_slot->begin() + std::min(pk_to_minmax_slot->size(), used_key_prefix_size),
                        [](const auto & slot) { return slot.has_value(); });
-    const auto part_minmax_index = partition_bound_usable ? part->getMinMaxIndex() : nullptr;
+    const auto part_minmax_index = partition_bound_usable ? part.getMinMaxIndex() : nullptr;
     const bool part_has_minmax_index = part_minmax_index && part_minmax_index->initialized;
 
     /// Number of leading primary key columns covered by the index analysis (`index_bounds` has one entry
@@ -2686,8 +2719,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
         auto check_part_offset_condition = [&]()
         {
-            auto begin = part->index_granularity->getMarkStartingRow(range.begin);
-            auto end = part->index_granularity->getMarkStartingRow(range.end) - 1;
+            auto begin = part.getIndexGranularity().getMarkStartingRow(range.begin);
+            auto end = part.getIndexGranularity().getMarkStartingRow(range.end) - 1;
             if (begin > end)
             {
                 /// Empty mark (final mark)
@@ -2697,8 +2730,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             part_offset_left[0] = begin;
             part_offset_right[0] = end;
 
-            part_offset_left[1] = part->name;
-            part_offset_right[1] = part->name;
+            part_offset_left[1] = part.getPartName();
+            part_offset_right[1] = part.getPartName();
 
             return checked_part_offset_condition->checkInRange(
                 2, part_offset_left.data(), part_offset_right.data(), part_offset_types, initial_mask);
@@ -2706,8 +2739,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
         auto check_total_offset_condition = [&]()
         {
-            auto begin = part->index_granularity->getMarkStartingRow(range.begin);
-            auto end = part->index_granularity->getMarkStartingRow(range.end) - 1;
+            auto begin = part.getIndexGranularity().getMarkStartingRow(range.begin);
+            auto end = part.getIndexGranularity().getMarkStartingRow(range.end) - 1;
             if (begin > end)
             {
                 /// Empty mark (final mark)
@@ -2737,7 +2770,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     bool key_condition_exact_range = !key_condition_useful || key_condition.matchesExactContinuousRange();
     bool part_offset_condition_exact_range = !part_offset_condition_useful || part_offset_condition->matchesExactContinuousRange();
     bool total_offset_condition_exact_range = !total_offset_condition_useful || total_offset_condition->matchesExactContinuousRange();
-    const String & part_name = part->isProjectionPart() ? fmt::format("{}.{}", part->name, part->getParentPart()->name) : part->name;
+    const String & part_name = part.isProjectionPart() ? fmt::format("{}.{}", part.getPartName(), part.getParentPartName()) : part.getPartName();
 
     if (!key_condition_exact_range || !part_offset_condition_exact_range || !total_offset_condition_exact_range)
     {
@@ -2749,8 +2782,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         size_t min_marks_for_seek = roundRowsOrBytesToMarks(
             settings[Setting::merge_tree_min_rows_for_seek],
             settings[Setting::merge_tree_min_bytes_for_seek],
-            part->index_granularity_info.fixed_index_granularity,
-            part->index_granularity_info.index_granularity_bytes);
+            part.getIndexGranularityInfo().fixed_index_granularity,
+            part.getIndexGranularityInfo().index_granularity_bytes);
 
         GenericExclusionSearchSettings search_settings
         {

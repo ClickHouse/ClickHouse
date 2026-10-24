@@ -26,6 +26,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
+#include <Storages/MergeTree/MergeTreePartMinMaxIndex.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
 #include <Storages/MergeTree/PatchParts/PatchPartIndex.h>
 #include <Storages/MergeTree/PartDirIntent.h>
@@ -435,49 +436,8 @@ public:
     /// As index always loaded into memory
     MergeTreeIndexGranularityPtr index_granularity;
 
-    /// Index that for each part stores min and max values of a set of columns. This allows quickly excluding
-    /// parts based on conditions on these columns imposed by a query.
-    /// Currently this index is built using only columns required by partition expression, but in principle it
-    /// can be built using any set of columns.
-    struct MinMaxIndex
-    {
-        /// A direct product of ranges for each key column. See Storages/MergeTree/KeyCondition.cpp for details.
-        Ranges hyperrectangle;
-        bool initialized = false;
-
-    public:
-        MinMaxIndex() = default;
-
-        /// For month-based partitioning.
-        MinMaxIndex(DayNum min_date, DayNum max_date)
-            : hyperrectangle(1, Range(min_date, true, max_date, true))
-            , initialized(true)
-        {
-        }
-
-        void load(const IMergeTreeDataPart & part);
-
-        using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
-
-        [[nodiscard]] WrittenFiles store(StorageMetadataPtr metadata_snapshot, IDataPartStorage & part_storage, Checksums & checksums, const MergeTreeSettingsPtr & storage_settings) const;
-        [[nodiscard]] WrittenFiles store(const NamesAndTypesList & columns, IDataPartStorage & part_storage, Checksums & checksums, const MergeTreeSettingsPtr & storage_settings) const;
-
-        void update(const Block & block, const NamesAndTypesList & columns);
-        void merge(const MinMaxIndex & other);
-
-        /// Repair the block column ranges of an index inherited from `source_part` when that part does not
-        /// know them: grow the index to the current set of minmax columns and re-derive the ranges of
-        /// `_block_number` / `_block_offset` that came back as the whole universe. See the implementation
-        /// for when each range is recoverable. No-op for an uninitialized index, projection and patch parts.
-        void repairInheritedBlockColumns(const IMergeTreeDataPart & source_part, const StorageMetadataPtr & metadata_snapshot);
-        Names getProbablyWrittenFiles(const IMergeTreeDataPart & part) const;
-        /// For Store
-        static String getFileColumnName(const String & column_name, const MergeTreeSettingsPtr & storage_settings_, const IDataPartStorage & data_part_storage);
-        /// For Load
-        static String getFileColumnName(const String & column_name, const Checksums & checksums_);
-    };
-
-    using MinMaxIndexPtr = std::shared_ptr<MinMaxIndex>;
+    using MinMaxIndex = MergeTreePartMinMaxIndex;
+    using MinMaxIndexPtr = MergeTreePartMinMaxIndexPtr;
 
 private:
     mutable std::mutex minmax_idx_mutex;
@@ -1075,6 +1035,11 @@ bool isWidePart(const MergeTreeDataPartPtr & data_part);
 
 inline String getIndexExtension(bool is_compressed_primary_key) { return is_compressed_primary_key ? ".cidx" : ".idx"; }
 bool isCompressedFromIndexExtension(const String & index_extension);
+
+/// Reads a small file of a part, as `IMergeTreeDataPart::readFile` does, so it works without an `IMergeTreeDataPart`.
+std::unique_ptr<ReadBuffer> readPartFile(const IDataPartStorage & data_part_storage, const ReadSettings & read_settings, const String & file_name);
+/// Same as `readPartFile`, or nullptr if the file does not exist.
+std::unique_ptr<ReadBuffer> readPartFileIfExists(const IDataPartStorage & data_part_storage, const ReadSettings & read_settings, const String & file_name);
 
 using MergeTreeDataPartsVector = std::vector<MergeTreeDataPartPtr>;
 

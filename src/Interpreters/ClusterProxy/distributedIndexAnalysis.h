@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <unordered_map>
+#include <Core/Block_fwd.h>
 #include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
@@ -21,6 +22,13 @@ using IndexAnalysisPartsRanges = std::unordered_map<std::string, MarkRanges>;
 using DistributedIndexAnalysisPartsRanges = std::vector<std::pair<std::string, IndexAnalysisPartsRanges>>;
 
 using LocalIndexAnalysisCallback = std::function<IndexAnalysisPartsRanges(const std::vector<std::string_view> & parts)>;
+
+/// Header of an index analysis result: one row (`part_name`, `ranges`) per part.
+SharedHeader indexAnalysisSampleBlock();
+
+/// Appends the ranges of every part in `block` to `result`. `block` must have the structure of `indexAnalysisSampleBlock`:
+/// the column types are checked only by `assert_cast`, so another structure is undefined behavior in release builds.
+void parseIndexAnalysisBlock(Block block, IndexAnalysisPartsRanges & result);
 
 /// Do index analysis on replicas from the cluster_for_parallel_replicas
 /// by sending mergeTreeAnalyzeIndexesUUID() to each replica with list of assigned parts,

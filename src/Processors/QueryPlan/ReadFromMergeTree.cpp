@@ -3214,6 +3214,21 @@ RangesInDataParts ReadFromMergeTree::filterPartsForStatistics(
         /* check_index_usage */ false);
 }
 
+ConditionTemplate<KeyCondition>::Ptr ReadFromMergeTree::buildPrimaryKeyCondition(
+    std::shared_ptr<ActionsDAGWithInversionPushDown> filter_dag,
+    const StorageMetadataPtr & metadata_snapshot,
+    const ContextPtr & query_context,
+    bool skip_constant_folding)
+{
+    auto key_condition_factory = [query_context, metadata_snapshot](const ActionsDAG *, const ActionsDAG::Node * predicate)
+    {
+        ActionsDAGWithInversionPushDown wrapped(predicate, query_context, /* boolean_context */ false);
+        return KeyCondition{wrapped, query_context, metadata_snapshot->getPrimaryKey(), /* single_point_ = */ false, !query_context->getSettingsRef()[Setting::use_primary_key]};
+    };
+    return std::make_shared<ConditionTemplate<KeyCondition>>(
+        std::move(filter_dag), std::move(key_condition_factory), metadata_snapshot, query_context, skip_constant_folding);
+}
+
 void ReadFromMergeTree::buildIndexes(
     std::optional<ReadFromMergeTree::Indexes> & indexes,
     const ActionsDAG * filter_actions_dag_,
@@ -3237,15 +3252,7 @@ void ReadFromMergeTree::buildIndexes(
     auto filter_dag_ptr = std::make_shared<ActionsDAGWithInversionPushDown>(filter_actions_dag_ ? filter_actions_dag_->getOutputs().front() : nullptr, query_context, /* boolean_context */ true);
     const auto & filter_dag = *filter_dag_ptr;
 
-    {
-        auto key_condition_factory = [query_context, metadata_snapshot](const ActionsDAG *, const ActionsDAG::Node * predicate)
-        {
-            ActionsDAGWithInversionPushDown wrapped(predicate, query_context, /* boolean_context */ false);
-            return KeyCondition{wrapped, query_context, metadata_snapshot->getPrimaryKey(), /* single_point_ = */ false, !query_context->getSettingsRef()[Setting::use_primary_key]};
-        };
-        auto key_condition_template = std::make_shared<ConditionTemplate<KeyCondition>>(filter_dag_ptr, std::move(key_condition_factory), metadata_snapshot, query_context, skip_constant_folding);
-        indexes.emplace(std::move(key_condition_template));
-    }
+    indexes.emplace(buildPrimaryKeyCondition(filter_dag_ptr, metadata_snapshot, query_context, skip_constant_folding));
 
     {
         auto key_condition_factory = [query_context](const ActionsDAG *, const ActionsDAG::Node * predicate)
