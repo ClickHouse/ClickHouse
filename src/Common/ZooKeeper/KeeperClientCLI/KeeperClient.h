@@ -30,6 +30,9 @@ static const NameSet four_letter_word_commands
 /// Used by both `ls` output and tab completion.
 String formatKeeperNodeName(const String & name);
 
+/// Lexically normalize a Keeper (znode) absolute path without filesystem resolution.
+String normalizeKeeperPath(String path);
+
 class KeeperClientBase
 {
 public:
