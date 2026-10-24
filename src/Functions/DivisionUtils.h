@@ -78,8 +78,8 @@ inline bool integerDivisionLeadsToFPE(A a, B b)
 /// is treated as the null case (matching `divideOrNull`). The plain `divisionLeadsToFPE(a, b)` cannot
 /// be used for floating operands because `Float32`/`Float64` are signed and
 /// `std::numeric_limits<Float>::min()` is the smallest positive value, so it would wrongly flag e.g.
-/// `moduloOrNull(toFloat32(1.17549435e-38), toFloat32(-1))`. Integer modulo keeps the full check
-/// because the `idiv` instruction computes the quotient too, so `INT_MIN % -1` raises just like division.
+/// `moduloOrNull(toFloat32(1.17549435e-38), toFloat32(-1))`. Integer modulo keeps the full check:
+/// the `*OrNull` functions document `NULL` for `INT_MIN % -1`, even though `modulo` returns `0` there.
 template <typename A, typename B>
 inline bool moduloLeadsToFPE(A a, B b)
 {
@@ -196,6 +196,20 @@ struct DivideIntegralOrNullImpl : DivideIntegralImpl<A, B>
     }
 };
 
+/// The magnitude `|x|` of an integer as an unsigned type `U` at least as wide as `x`. It is exact for every value,
+/// including the minimal signed number, whose magnitude does not fit its signed type: unsigned subtraction is
+/// modulo 2^width, so `U(0) - U(x)` is `|x|` for a negative `x`.
+template <typename U, typename T>
+constexpr U moduloMagnitude(T x)
+{
+    if constexpr (is_signed_v<T>)
+    {
+        if (x < 0)
+            return U(0) - static_cast<U>(x);
+    }
+    return static_cast<U>(x);
+}
+
 template <typename A, typename B>
 struct ModuloImpl
 {
@@ -232,7 +246,10 @@ struct ModuloImpl
                 if (isNaN(b) || b > std::numeric_limits<IntegerBType>::max() || b < std::numeric_limits<IntegerBType>::lowest())
                     throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Cannot perform integer division on infinite or too large floating point numbers");
 
-            throwIfDivisionLeadsToFPE(IntegerAType(a), IntegerBType(b));
+            /// Only a zero divisor fails. Signed operands are reduced to unsigned magnitudes below,
+            /// so `INT_MIN % -1` never reaches a signed division and is just `0`.
+            if (IntegerBType(b) == 0) [[unlikely]]
+                throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by zero");
 
             using CastA = std::conditional_t<std::is_same_v<IntegerAType, UInt8>, uint8_t, IntegerAType>;
             using CastB = std::conditional_t<std::is_same_v<IntegerBType, UInt8>, uint8_t, IntegerBType>;
@@ -253,7 +270,7 @@ struct ModuloImpl
             /// overflowing it, and returned the wrong remainder for an input the un-fixed code had
             /// answered correctly by an unrelated pair of wraps that happened to cancel out.
             ///
-            /// Work in UNSIGNED magnitudes instead, which never overflows at any width: casting any
+            /// Work in UNSIGNED magnitudes (`moduloMagnitude`) instead, which never overflows at any width: casting any
             /// value - signed or unsigned, including the minimal signed number - to an unsigned type
             /// at least as wide as its own is exact (mod 2^width, which recovers the true value for a
             /// non-negative one); negating that exact unsigned value with unsigned subtraction is
@@ -270,12 +287,8 @@ struct ModuloImpl
                     std::max(sizeof(CastA), sizeof(CastB))>::Type;
 
                 const bool a_negative = is_signed_v<CastA> && (IntegerAType(a) < 0);
-                const CommonUnsigned ua = static_cast<CommonUnsigned>(IntegerAType(a));
-                const CommonUnsigned magnitude_a = a_negative ? (CommonUnsigned(0) - ua) : ua;
-
-                const bool b_negative = is_signed_v<CastB> && (IntegerBType(b) < 0);
-                const CommonUnsigned ub = static_cast<CommonUnsigned>(IntegerBType(b));
-                const CommonUnsigned magnitude_b = b_negative ? (CommonUnsigned(0) - ub) : ub;
+                const CommonUnsigned magnitude_a = moduloMagnitude<CommonUnsigned>(IntegerAType(a));
+                const CommonUnsigned magnitude_b = moduloMagnitude<CommonUnsigned>(IntegerBType(b));
 
                 const CommonUnsigned magnitude_result = magnitude_a % magnitude_b;
                 if (!a_negative)

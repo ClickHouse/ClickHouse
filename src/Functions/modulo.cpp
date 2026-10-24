@@ -55,108 +55,85 @@ struct ModuloByConstantImpl
 
     static void NO_INLINE NO_SANITIZE_UNDEFINED vectorConstant(const A * __restrict src, B b, ResultType * __restrict dst, size_t size)
     {
-        /// Modulo with too small divisor.
-        if (b == 1) [[unlikely]]
-        {
-            for (size_t i = 0; i < size; ++i)
-                dst[i] = 0;
-            return;
-        }
-        else
-        {
-            if constexpr (std::is_signed_v<B>)
-            {
-                if (b == -1) [[unlikely]]
-                {
-                    for (size_t i = 0; i < size; ++i)
-                        dst[i] = 0;
-                    return;
-                }
-            }
-        }
+        /// The same formula as `ModuloImpl::apply`: the remainder has the sign of the dividend and the magnitude `|a| mod |b|`.
+        using UnsignedA = make_unsigned_t<A>;
+        using UnsignedB = make_unsigned_t<B>;
 
-        /// Modulo with too large divisor.
-        if (b > std::numeric_limits<A>::max()) [[unlikely]]
-        {
-            for (size_t i = 0; i < size; ++i)
-                dst[i] = static_cast<ResultType>(src[i]);
-            return;
-        }
-        else
-        {
-            if constexpr (std::is_signed_v<A> && std::is_signed_v<B>)
-            {
-                if (b < std::numeric_limits<A>::lowest()) [[unlikely]]
-                {
-                    for (size_t i = 0; i < size; ++i)
-                        dst[i] = static_cast<ResultType>(src[i]);
-                    return;
-                }
-            }
-        }
-
-        if (static_cast<A>(b) == 0) [[unlikely]]
+        const UnsignedB magnitude_b = moduloMagnitude<UnsignedB>(b);
+        if (magnitude_b == 0) [[unlikely]]
             throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by zero");
 
-        /// The minimum signed divisor cannot be negated, so use the generic modulo implementation.
-        if constexpr (std::is_signed_v<B>)
+        /// The largest magnitude of a dividend. A divisor of a larger magnitude leaves every dividend as is. A divisor equal
+        /// to `|lowest(A)|` is not larger: it takes the power-of-two path below, which gives `0` for `lowest(A)`.
+        constexpr UnsignedA max_magnitude_a = is_signed_v<A>
+            ? moduloMagnitude<UnsignedA>(std::numeric_limits<A>::lowest())
+            : std::numeric_limits<UnsignedA>::max();
+        constexpr UnsignedB max_magnitude_b = is_signed_v<B>
+            ? moduloMagnitude<UnsignedB>(std::numeric_limits<B>::lowest())
+            : std::numeric_limits<UnsignedB>::max();
+        if constexpr (max_magnitude_b > max_magnitude_a)
         {
-            if (b == std::numeric_limits<B>::lowest()) [[unlikely]]
+            if (magnitude_b > max_magnitude_a) [[unlikely]]
             {
                 for (size_t i = 0; i < size; ++i)
-                    dst[i] = Op::template apply<ResultType>(src[i], b);
+                    dst[i] = static_cast<ResultType>(src[i]);
                 return;
             }
         }
 
-        /// Modulo of division by negative number is the same as the positive number.
-        if (b < 0)
-            b = static_cast<B>(-b);
+        const UnsignedA d = static_cast<UnsignedA>(magnitude_b);
 
-        if (b & (b - 1))
+        /// A power of two, including `1`, `|lowest(B)|` and `max(A) + 1`.
+        if ((d & (d - 1)) == 0)
         {
-            /// BRANCHFULL: the per-iteration algorithm-type branch is
-            /// perfectly predicted (loop-invariant) and lets most divisors
-            /// take the fast `mullhi >> shift` path (2 ops vs BRANCHFREE's
-            /// unconditional 5 ops).  The compiler auto-vectorizes each
-            /// path independently (via vpmuludq on x86, NEON on ARM).
-            /// For 64-bit types, suppress auto-vectorization: there is no
-            /// vpmuludq for 64-bit, so the compiler emits scalar
-            /// extract/insert sequences that are slower than the scalar loop.
-            libdivide::divider<A, libdivide::BRANCHFULL> divider(static_cast<A>(b));
-            if constexpr (sizeof(A) >= 8)
-            {
+            vectorPowerOfTwo(src, static_cast<A>(d - 1), dst, size);
+            return;
+        }
+
+        /// Not a power of two, so `d` fits `A` as a positive value: for a signed `A`, it is less than `|lowest(A)|`.
+        const A divisor = static_cast<A>(d);
+
+        /// BRANCHFULL: the per-iteration algorithm-type branch is
+        /// perfectly predicted (loop-invariant) and lets most divisors
+        /// take the fast `mullhi >> shift` path (2 ops vs BRANCHFREE's
+        /// unconditional 5 ops).  The compiler auto-vectorizes each
+        /// path independently (via vpmuludq on x86, NEON on ARM).
+        /// For 64-bit types, suppress auto-vectorization: there is no
+        /// vpmuludq for 64-bit, so the compiler emits scalar
+        /// extract/insert sequences that are slower than the scalar loop.
+        libdivide::divider<A, libdivide::BRANCHFULL> divider(divisor);
+        if constexpr (sizeof(A) >= 8)
+        {
 #pragma clang loop vectorize(disable)
-                for (size_t i = 0; i < size; ++i)
-                    dst[i] = static_cast<ResultType>(src[i] - (src[i] / divider) * b);
-            }
-            else
-            {
-                for (size_t i = 0; i < size; ++i)
-                    dst[i] = static_cast<ResultType>(src[i] - (src[i] / divider) * b);
-            }
+            for (size_t i = 0; i < size; ++i)
+                dst[i] = static_cast<ResultType>(src[i] - (src[i] / divider) * divisor);
         }
         else
         {
-            /// Power-of-two: a single AND is cheaper than libdivide's multiply-shift
-            auto mask = b - 1;
             for (size_t i = 0; i < size; ++i)
-            {
-                A a = src[i];
-                ResultType r = static_cast<ResultType>(a & mask);
-                if constexpr (std::is_signed_v<A> && std::is_signed_v<ResultType>)
-                {
-                    /// Sign-extend the result to match the behavior of %, to make the const and non-const
-                    /// versions of the modulo function behave the same way.
-                    ResultType sign_ext = static_cast<ResultType>(-static_cast<ResultType>((a < 0) & (r != 0)));
-                    r |= sign_ext & ~static_cast<ResultType>(mask);
-                }
-                dst[i] = r;
-            }
+                dst[i] = static_cast<ResultType>(src[i] - (src[i] / divider) * divisor);
         }
     }
 
 private:
+    /// Power-of-two divisor: a single AND is cheaper than libdivide's multiply-shift.
+    static void ALWAYS_INLINE NO_SANITIZE_UNDEFINED vectorPowerOfTwo(const A * __restrict src, A mask, ResultType * __restrict dst, size_t size)
+    {
+        for (size_t i = 0; i < size; ++i)
+        {
+            A a = src[i];
+            ResultType r = static_cast<ResultType>(a & mask);
+            if constexpr (std::is_signed_v<A> && std::is_signed_v<ResultType>)
+            {
+                /// Sign-extend the result to match the behavior of %, to make the const and non-const
+                /// versions of the modulo function behave the same way.
+                ResultType sign_ext = static_cast<ResultType>(-static_cast<ResultType>((a < 0) & (r != 0)));
+                r |= sign_ext & ~static_cast<ResultType>(mask);
+            }
+            dst[i] = r;
+        }
+    }
+
     template <OpCase op_case>
     static void apply(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t i)
     {
@@ -216,8 +193,7 @@ inputs is a floating-point number, the result type is Float64.
 The remainder is computed like in C++. Truncated division is used for
 negative numbers.
 
-An exception is thrown when dividing by zero or when dividing a minimal
-negative number by minus one.
+An exception is thrown when dividing by zero.
     )";
     FunctionDocumentation::Syntax syntax = "modulo(a, b)";
     FunctionDocumentation::Argument argument1 = {"a", "The dividend"};
