@@ -70,6 +70,8 @@ public:
 
     void onFinish() override;
 
+    void onCancel() noexcept override;
+
     static std::shared_ptr<IObjectIterator> createFileIterator(
         StorageObjectStorageConfigurationPtr configuration,
         const StorageObjectStorageQuerySettings & query_settings,
@@ -165,6 +167,7 @@ protected:
         /// the entries of the predicate alone did not.
         bool skipped_row_groups_by_top_k_entry = false;
         const IInputFormat * getInputFormat() const { return dynamic_cast<const IInputFormat *>(source.get()); }
+        IInputFormat * getInputFormat() { return dynamic_cast<IInputFormat *>(source.get()); }
         ReadBuffer * readBuffer() const { return read_buf.get(); }
 
     private:
@@ -175,6 +178,8 @@ protected:
         std::unique_ptr<PullingPipelineExecutor> reader;
     };
 
+    /// `reader` is replaced only under `reader_mutex`, which `onCancel` takes from another thread.
+    std::mutex reader_mutex;
     ReaderHolder reader;
     ThreadPoolCallbackRunnerUnsafe<ReaderHolder> create_reader_scheduler;
     std::future<ReaderHolder> reader_future;

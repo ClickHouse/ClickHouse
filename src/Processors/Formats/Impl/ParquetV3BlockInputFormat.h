@@ -73,6 +73,8 @@ public:
 
     void cacheFilterColumnStatistics() override;
 
+    bool supportsCancellationDuringRead() const override { return true; }
+
     /// Use the columns cache, see `Parquet::ColumnsCacheOptions`. Must be called before the first read.
     void setColumnsCacheOptions(std::shared_ptr<const Parquet::ColumnsCacheOptions> options) { read_options.columns_cache = std::move(options); }
 

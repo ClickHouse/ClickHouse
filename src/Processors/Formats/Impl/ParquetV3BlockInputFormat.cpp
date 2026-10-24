@@ -204,8 +204,13 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
             });
 
         {
-            std::lock_guard lock(reader_mutex);
+            std::unique_lock lock(reader_mutex);
             reader.emplace();
+            /// `onCancel` may have run before the emplace and found no reader.
+            if (isCancelled())
+                reader->cancel();
+            lock.unlock();
+
             reader->reader.prefetcher.init(in, read_options, parser_shared_resources);
             auto cache_key = getMetadataCacheKey();
             ParquetMetadataCache::MappedPtr cache_cell;

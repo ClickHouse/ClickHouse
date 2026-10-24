@@ -22,7 +22,6 @@ namespace DB::ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
-    extern const int QUERY_WAS_CANCELLED;
 }
 
 namespace ProfileEvents
@@ -147,6 +146,9 @@ void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, 
             finishRowGroupStage(i, ReadStage::NotStarted, diff);
     }
     flushMemoryUsageDiff(std::move(diff));
+
+    std::lock_guard lock(delivery_mutex);
+    initialized = true;
 }
 
 /// The ReadManager whose admitTopKRowGroups is running in this thread, to keep it from recursing.
@@ -210,6 +212,8 @@ void ReadManager::releaseTopKAdmission(size_t row_group_idx, MemoryUsageDiff & d
 
 void ReadManager::shutdownTasks()
 {
+    /// Decode tasks may be waiting for reads, so the reads are stopped before waiting for the tasks.
+    reader.prefetcher.cancelReads();
     shutdown->shutdown();
     reader.prefetcher.shutdownTasks();
 }
@@ -232,13 +236,16 @@ ReadManager::~ReadManager()
 
 void ReadManager::cancel() noexcept
 {
+    bool stop_reads = false;
     {
         std::lock_guard lock(delivery_mutex);
-        if (exception)
-            return;
-        exception = std::make_exception_ptr(Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Cancelled"));
+        cancelled = true;
+        stop_reads = initialized;
     }
     delivery_cv.notify_all();
+    /// With the manual executor, `read` itself runs the decode tasks, which may be waiting for a read.
+    if (stop_reads)
+        reader.prefetcher.cancelReads();
 }
 
 void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, MemoryUsageDiff & diff)
@@ -1490,6 +1497,10 @@ ReadManager::ReadResult ReadManager::read()
         while (true)
         {
             bool thread_pool_was_idle = parser_shared_resources->parsing_runner.isIdle();
+
+            /// Before `exception`: the reads stopped by `cancel` fail the tasks that wait for them.
+            if (cancelled)
+                return {};
 
             if (exception)
                 std::rethrow_exception(copyMutableException(exception));
