@@ -122,6 +122,7 @@ namespace DB
     DECLARE(Bool, enable_software_prefetch_in_join, true, "Enable use of software prefetch in hash join probe phase", 0) \
     DECLARE(Bool, legacy_join_size_limits_trigger_spilling, false, "Treat max_rows_in_join / max_bytes_in_join as a spill trigger instead of a hard cap", 0) \
     DECLARE(Bool, serialize_string_in_memory_with_zero_byte, true, "Serialize String values during aggregation with zero byte at the end. Enable to keep compatibility when querying cluster of incompatible versions.", 0) \
+    DECLARE(Bool, aggregation_stop_all_streams_at_max_rows_to_group_by, false, "Without aggregate functions, stop all aggregation streams once any of them has `max_rows_to_group_by` keys.", 0) \
     DECLARE(Bool, use_aggregation_memory_tracker, true, "Measure the size of the aggregation state compared with `group_by_two_level_threshold_bytes` with the memory tracker dedicated to the aggregation. When disabled, the size is measured as the growth of the memory usage of the whole query since the aggregation was created.", 0) \
     DECLARE(Bool, use_hash_table_stats_for_join_reordering, false, "Enable using collected hash table statistics for cardinality estimation during join reordering", 0) \
     DECLARE(Bool, enable_join_fixed_hash_table_conversion, true, R"(Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range)", 0) \

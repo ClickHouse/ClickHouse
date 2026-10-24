@@ -140,6 +140,7 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 20 also registers the `MergeRuntimeFilters` step and adds the `join_runtime_filter_exact_bytes_limit`
 /// plan setting.
 /// Version 21 adds the `min_bytes_before_external_group_by` plan setting.
+/// Version 21 also adds `aggregation_stop_all_streams_at_max_rows_to_group_by` to the aggregation step settings.
 ///
 /// Rules for this version:
 /// - Bump it at most once per release: the first change in a release that needs it bumps it, later changes
@@ -180,6 +181,8 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOCK_NESTE
 /// written, because a strict named schema makes an older peer throw on an unknown name; that peer then runs the
 /// aggregation with its own two-level decision.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_AGGREGATION_MEMORY_TRACKER = 20;
+/// First query-plan serialization version that knows `aggregation_stop_all_streams_at_max_rows_to_group_by`.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_AGGREGATION_STOP_ALL_STREAMS = 21;
 /// First query-plan serialization version that registers a "Window" step. Used to gate serializing a
 /// `WindowStep` for `make_distributed_plan`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_STEP = 4;

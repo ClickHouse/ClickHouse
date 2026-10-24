@@ -3516,9 +3516,16 @@ bool Aggregator::checkLimits(size_t result_size, bool & no_more_keys) const
             case OverflowMode::ANY:
                 ProfileEvents::increment(ProfileEvents::OverflowAny);
                 no_more_keys = true;
+                /// Without aggregate functions, the rest of the input cannot change the result.
+                if (params.aggregates_size == 0)
+                    return false;
                 break;
         }
     }
+
+    /// Exactly enough keys for the `LIMIT`. Checked before a spill can empty the table.
+    if (params.stop_all_streams_at_max_rows_to_group_by && result_size >= params.max_rows_to_group_by)
+        return false;
 
     /// Some aggregate functions cannot throw exceptions on allocations (e.g. from C malloc)
     /// but still tracks memory. Check it here.

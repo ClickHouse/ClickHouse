@@ -279,6 +279,10 @@ public:
         /// See `ManyAggregatedData::SharedKeptKeys` for the protocol.
         bool shared_kept_keys_for_overflow_any = false;
 
+        /// Without aggregate functions, once any stream has `max_rows_to_group_by` keys, all streams stop.
+        /// Sound only if a `LIMIT` of at most `max_rows_to_group_by` rows follows.
+        bool stop_all_streams_at_max_rows_to_group_by = false;
+
         /// Runtime arbitration between the kept-keys cutoff and external aggregation, shared by
         /// every stream (and every `Aggregator`) of one aggregation step. Spilled buckets would
         /// bypass the restriction to the kept keys, so before the kept keys are frozen the two

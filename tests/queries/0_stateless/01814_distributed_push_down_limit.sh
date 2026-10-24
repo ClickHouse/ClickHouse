@@ -48,12 +48,13 @@ function test_distributed_push_down_limit_with_query_log()
     #   about optimize_aggregation_in_order,
     # - limit push down can be checked only with optimize_aggregation_in_order,
     #   since otherwise the query will be canceled too early, and read_rows will be
-    #   small.
+    #   small; for the same reason the aggregation must not stop early by itself.
     local settings_and_opts=(
         --query_id "$query_id"
 
         --max_block_size 20
         --optimize_aggregation_in_order 1
+        --optimize_trivial_group_by_limit_query 0
         --log_queries 1
         --log_queries_min_type 'QUERY_FINISH'
 
