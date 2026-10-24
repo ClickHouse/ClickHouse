@@ -263,7 +263,8 @@ std::pair<String, size_t> truncateName(String name, size_t cut_to, size_t hyster
 {
     size_t length = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(name.data()), name.size());
 
-    if (!cut_to || length <= cut_to + hysteresis || isValidIdentifier(name))
+    /// `cut_to + hysteresis` could overflow for a huge `cut_to`, turning short names into names "cut" to that width.
+    if (!cut_to || length <= cut_to || length - cut_to <= hysteresis || isValidIdentifier(name))
         return {name, length};
 
     /// We cut characters in the middle and insert filler there.
