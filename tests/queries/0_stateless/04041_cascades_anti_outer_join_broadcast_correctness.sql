@@ -8,7 +8,6 @@
 -- debug-build time budget of the flaky check.
 
 SET explain_query_plan_default = 'legacy';
-SET enable_analyzer = 1;
 SET enable_cascades_optimizer = 1;
 SET make_distributed_plan = 1;
 SET distributed_plan_execute_locally = 1;
@@ -72,7 +71,7 @@ EXPLAIN PLAN keep_logical_steps = 1
 SELECT count() FROM test_lineitem RIGHT ANTI JOIN test_orders ON l_orderkey = o_orderkey;
 
 SELECT count() FROM test_lineitem RIGHT ANTI JOIN test_orders ON l_orderkey = o_orderkey
-SETTINGS distributed_plan_execute_locally = 1;
+SETTINGS distributed_plan_execute_locally = 1, distributed_plan_fallback_to_local_execution = 0;
 
 SELECT count() FROM test_lineitem RIGHT ANTI JOIN test_orders ON l_orderkey = o_orderkey
 SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
@@ -85,7 +84,7 @@ EXPLAIN PLAN keep_logical_steps = 1
 SELECT count() FROM test_orders RIGHT JOIN test_lineitem ON o_orderkey = l_orderkey;
 
 SELECT count() FROM test_orders RIGHT JOIN test_lineitem ON o_orderkey = l_orderkey
-SETTINGS distributed_plan_execute_locally = 1;
+SETTINGS distributed_plan_execute_locally = 1, distributed_plan_fallback_to_local_execution = 0;
 
 SELECT count() FROM test_orders RIGHT JOIN test_lineitem ON o_orderkey = l_orderkey
 SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
@@ -97,7 +96,7 @@ EXPLAIN PLAN keep_logical_steps = 1
 SELECT count() FROM test_orders FULL JOIN test_lineitem ON o_orderkey = l_orderkey;
 
 SELECT count() FROM test_orders FULL JOIN test_lineitem ON o_orderkey = l_orderkey
-SETTINGS distributed_plan_execute_locally = 1;
+SETTINGS distributed_plan_execute_locally = 1, distributed_plan_fallback_to_local_execution = 0;
 
 SELECT count() FROM test_orders FULL JOIN test_lineitem ON o_orderkey = l_orderkey
 SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;

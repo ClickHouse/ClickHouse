@@ -63,7 +63,29 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    /// `arrayIntersect` uses `mostSubtype` to narrow the element types so that
+    /// the same value can fit in every input array. `arrayUnion` and
+    /// `arraySymmetricDifference` widen instead via `leastSupertype`.
+    /// The signature is documentation-only: `arrayUnion` additionally rejects mixing
+    /// `Decimal` with non-`Decimal` elements, which `leastSupertype` accepts, so both
+    /// entry points resolve through the handwritten `getReturnTypeImpl` below.
+    String getSignatureString() const override
+    {
+        if (mode == ArraySetMode::Intersect)
+            return "(Array(T), ...) -> Array(mostSubtype(T, ...))";
+        return "(Array(T), ...) -> Array(leastSupertype(T, ...))";
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        DataTypes types;
+        types.reserve(arguments.size());
+        for (const auto & argument : arguments)
+            types.push_back(argument.type);
+        return getReturnTypeImpl(types);
+    }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 
@@ -621,14 +643,12 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
         = !is_numeric_column && !std::is_same_v<ColumnType, ColumnString> && !std::is_same_v<ColumnType, ColumnFixedString>;
 
     /// The arena holding the serialized keys of `map`. `map.clear()` does not free them (a
-    /// `ClearableHashMap` only advances its version), so the arena is recreated at every row
-    /// boundary - otherwise the keys inserted for every previous row would stay resident until the
-    /// end of the block, and the memory would grow with the whole column instead of being bounded
-    /// by one row of the argument that seeds the map. The guard is on `allocatedBytes`, not
-    /// `usedBytes`: probe-side keys are rolled back after the lookup, which returns `usedBytes` to
-    /// zero but keeps the grown chunks resident, and a freshly constructed `Arena` allocates its
-    /// first chunk lazily, so `allocatedBytes` is non-zero exactly when the previous rows left
-    /// anything behind.
+    /// `ClearableHashMap` only advances its version), so the arena is recreated at a row boundary
+    /// once it holds more than `max_arena_bytes` - otherwise the keys inserted for every previous row
+    /// would stay resident until the end of the block and the memory would grow with the whole column.
+    /// The guard is on `allocatedBytes`, not `usedBytes`: probe-side keys are rolled back after the
+    /// lookup, which returns `usedBytes` to zero but keeps the grown chunks resident.
+    static constexpr size_t max_arena_bytes = 64 * 1024;
     std::optional<Arena> arena;
     if constexpr (serialized_keys)
         arena.emplace();
@@ -674,7 +694,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
         map.clear();
         if constexpr (serialized_keys)
         {
-            if (arena->allocatedBytes())
+            if (arena->allocatedBytes() > max_arena_bytes)
                 arena.emplace();
         }
 
@@ -943,6 +963,7 @@ arrayUnion([1, 3, NULL], [2, 3, NULL]) as null_example
     factory.registerFunction("arrayUnion",
         [](ContextPtr ctx){ return FunctionArrayIntersect::create("arrayUnion", ArraySetMode::Union, std::move(ctx)); },
         union_documentation);
+    factory.registerAlias("array_union", "arrayUnion", FunctionFactory::Case::Insensitive);
 
     FunctionDocumentation::Description symdiff_description = R"(Takes multiple arrays and returns an array with elements that are not present in all source arrays. The result contains only unique values.
 

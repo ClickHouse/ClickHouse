@@ -61,7 +61,7 @@ Set the following values for the phases you selected. Initial load settings appl
 | Snapshot number of tables in parallel | Maximum number of source tables ClickPipes loads at the same time. |
 | CDC number of tables in parallel | Maximum number of tables ClickPipes reads and sends to ClickHouse concurrently. |
 | CDC safety buffer (seconds) | How far behind the current BigQuery time ClickPipes ends each CDC query. This gives recent writes time to become available before ClickPipes reads them. |
-| CDC maximum single query window (seconds) | Maximum time range covered by one CDC query. ClickPipes splits longer periods into separate queries. For events based replication, keep this at or below 86,400 seconds, BigQuery's [one-day limit](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions). |
+| CDC maximum single query window (seconds) | Maximum time range covered by one CDC query. ClickPipes splits longer periods into separate queries. For `CHANGES` replication, keep this at or below 86,400 seconds, BigQuery's [one-day limit](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/time-series-functions#changes). |
 </Step>
 <Step title="Configure tables" id="4-configure-tables">
 

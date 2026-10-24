@@ -1,0 +1,62 @@
+---
+slug: /concepts/features/operations/insert/async-insert-select
+sidebarTitle: '비동기 INSERT ... SELECT'
+title: '비동기 INSERT ... SELECT'
+description: 'INSERT ... SELECT가 비동기 삽입 큐를 거치는 조건과 적용되는 라우팅, 쓰기 작업 집계 및 취소 규칙을 설명합니다.'
+keywords: ['asynchronous inserts', 'async_insert', 'insert select', 'async_insert_select_as_async_insert']
+doc_type: 'guide'
+---
+
+일반적인 `INSERT ... VALUES`뿐 아니라 `INSERT ... SELECT`도 [비동기 삽입](/ko/optimize/asynchronous-inserts) 큐를 거칠 수 있습니다. 이 페이지에서는 어떤 조건에서 이 경로를 사용하는지, 쓰기 작업을 어떻게 집계하는지, 쿼리가 취소되거나 시간 초과되면 어떻게 되는지 설명합니다.
+
+## 적용 조건과 라우팅 {#eligibility-and-routing}
+
+`INSERT ... SELECT`는 다음 조건을 모두 충족할 때만 비동기 큐 경로를 사용합니다.
+
+* `async_insert = 1`.
+* `async_insert_select_as_async_insert = 1`(기본값). 이 설정은 비동기 경로 사용 여부를 결정하는 핵심 설정입니다. 꺼져 있으면 `async_insert` 값과 관계없이 `INSERT ... SELECT`는 항상 동기식으로 실행됩니다. `compatibility`를 26.10 이전 버전으로 설정하면 기본값이 `0`으로 바뀌지만, `async_insert_select_as_async_insert = 1`을 명시하면 비동기 경로를 다시 사용할 수 있습니다.
+* 전체 `SELECT` 결과가 단일 블록이며 크기가 `async_insert_max_data_size` 이하입니다.
+* 대상이 `MergeTree` 계열 테이블입니다. 이 조건을 확인할 때 대상이 별칭이면 별칭이 가리키는 테이블을 확인합니다.
+
+위 조건을 모두 충족하더라도 다음 중 하나에 해당하면 삽입은 동기식 경로로 폴백됩니다.
+
+* 결과가 여러 블록에 걸쳐 있거나, `async_insert_max_data_size`를 초과하거나, 비어 있습니다.
+* 비병렬 쿼럼을 사용합니다. 즉, `insert_quorum`이 설정되어 있고 `insert_quorum_parallel = 0`입니다.
+* 대상에 종속된 materialized view(Materialized View)가 있습니다.
+* 대상이 materialized view입니다. `MergeTree` 조건은 뷰의 대상 테이블이 아닌 뷰 자체에 적용되므로 비동기 경로를 사용할 수 없습니다.
+* 대상이 테이블 함수이거나 `Distributed`와 같은 원격 테이블 엔진입니다.
+* `SELECT`가 삽입 대상 테이블 자체를 읽습니다(`INSERT INTO t SELECT ... FROM t`).
+* `insert_null_as_default`가 `Nullable` `SELECT` 컬럼의 값을 널을 허용하지 않는 대상 컬럼에 맞게 기본값으로 대체해야 합니다.
+* 내부 삽입입니다(갱신 가능 materialized view의 갱신, `POPULATE` 또는 `CREATE TABLE ... AS SELECT`). 이러한 삽입은 항상 동기식으로 실행되며 `async_insert_select_as_async_insert`와 `async_insert`를 무시합니다.
+
+트랜잭션은 다르게 처리됩니다. 쿼리가 트랜잭션 내에서 실행되면(명시적 트랜잭션 또는 `implicit_transaction = 1`) 비동기 경로를 사용할 수 없습니다. 기본적으로 ClickHouse는 동기식 경로로 폴백하는 대신 `NOT_IMPLEMENTED` 예외를 발생시킵니다. `throw_on_unsupported_query_inside_transaction = 0`일 때만 동기식 삽입으로 폴백됩니다.
+
+비동기 경로 진입 전에 결정된 라우팅이 우선하므로 `SELECT` 측의 조건만으로도 비동기 경로를 사용할 수 없게 됩니다. 기본적으로 활성화된 `parallel_distributed_insert_select`를 사용할 때 `s3Cluster`와 같은 클러스터 소스에서 읽어 복제된 테이블(Replicated Table)에 삽입하는 `INSERT ... SELECT`는 분산 삽입 경로에서 실행되며 비동기 큐에는 도달하지 않습니다. 병렬 레플리카도 동일하게 동작합니다.
+
+## 반환 방식과 대기 {#return-mode-and-waiting}
+
+`wait_for_async_insert`는 다른 비동기 삽입과 동일하게 동작합니다. `1`(기본값)은 플러시가 완료될 때까지 대기하고, `0`은 블록이 큐에 추가되는 즉시 반환합니다.
+
+`SELECT`가 비동기 삽입 경로에 필요한 블록 1개를 생성하도록 하려면 [`optimize_trivial_insert_select`](/ko/reference/settings/session-settings/optimize-trivial#optimize_trivial_insert_select)를 사용하세요. 이 설정은 서로 다른 테이블을 대상으로 하는 단순한 `INSERT INTO dest SELECT ... FROM source` 쿼리에서 읽기 스레드 수를 [`max_insert_threads`](/ko/reference/settings/session-settings/max-insert#max_insert_threads)로 제한합니다. `max_insert_threads = 1`로 설정하면 `SELECT`는 일반적으로 블록 1개를 생성합니다.
+
+## 쓰기 집계 및 관측성 {#write-accounting-and-observability}
+
+쓰기 작업은 원래의 `INSERT ... SELECT`가 아니라 플러시 쿼리에 귀속됩니다.
+
+* 쓰기 관련 `ProfileEvents`(`InsertedRows`, `InsertedBytes`)는 플러시 쿼리에 귀속되며, `system.query_log`에도 플러시 쿼리의 쓰기 기록이 별도 행으로 남습니다. 원래 `INSERT ... SELECT` 행에서 해당 `ProfileEvents` 값은 `0`입니다. 플러시 쿼리 자체의 쓰기 수치를 확인하려면 `system.query_log`와 `system.asynchronous_insert_log`에서 해당 행을 조회하세요.
+* `wait_for_async_insert = 1`(기본값)이면 쿼리 자체의 `written_rows`와 `written_bytes`(및 HTTP `X-ClickHouse-Summary` 헤더)는 플러시 쿼리의 전체 수치가 아니라 `SELECT`에서 받아들인 행 수와 바이트 수를 보고합니다. 플러시가 실패하면 클라이언트에도 오류가 전달됩니다.
+* `wait_for_async_insert = 0`이면 플러시 결과가 나오기 전에 쿼리가 반환되므로 해당 수치는 보고되지 않습니다.
+* `WRITTEN_BYTES` 할당량은 플러시 과정에서 한 번 차감되며, 플러시가 실패해도 차감 내역은 되돌려지지 않습니다.
+
+## 취소 및 타임아웃 {#cancellation-and-timeouts}
+
+플러시를 기다리기 전에 블록이 큐에 들어가므로, 쿼리를 취소해도 클라이언트의 대기만 중단되고 큐의 플러시는 계속됩니다.
+
+* `KILL QUERY`를 실행하거나 대기 중 `max_execution_time`에 도달하면 클라이언트에 오류가 반환되지만, 행은 여전히 기록될 수 있습니다. 이 경로에서 쿼리가 취소되거나 타임아웃이 발생했다고 해서 데이터가 기록되지 않았다고 단정하지 마십시오.
+* `timeout_overflow_mode = 'break'`에서는 오류가 발생하지 않고 조기 반환도 하지 않습니다. 쿼리는 `max_execution_time`이 지나도 `wait_for_async_insert_timeout`에 도달할 때까지 플러시를 기다립니다. 일찍 반환하면 쓰기가 확인되기 전에 성공으로 보고하게 됩니다.
+
+## 결정이 확정되는 시점 {#when-decisions-are-bound}
+
+비동기 경로 적용 여부는 쿼리가 시작될 때, 블록이 큐에 들어가기 전에 한 번 결정됩니다. 이때 초기 액세스 검사에서 권한이 없는 삽입 요청을 즉시 거부합니다. `INSERT ... SELECT`가 비동기 경로를 사용하는지는 `async_insert` 설정만이 아니라 결과 블록의 구조에도 달려 있습니다.
+
+대상 조회와 바인딩 권한 검사는 [모든 비동기 삽입](/ko/optimize/asynchronous-inserts)과 마찬가지로 플러시 시점에 실행됩니다. 따라서 큐에 들어간 후 플러시되기 전에 대상에 materialized view가 연결되거나 권한 부여가 철회되면 플러시 결과에 영향을 줍니다.

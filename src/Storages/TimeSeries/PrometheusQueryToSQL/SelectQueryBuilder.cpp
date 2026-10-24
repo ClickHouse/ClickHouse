@@ -86,6 +86,7 @@ ASTPtr SelectQueryBuilder::getSelectQuery()
             order_by_element->children.push_back(std::move(order_by_expression));
             chassert(abs(order_direction) == 1); /// `direction` must be set either to 1 or -1
             order_by_element->direction = order_direction;
+            order_by_element->nulls_direction = order_direction;
             order_by_list->children.push_back(std::move(order_by_element));
         }
         select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, std::move(order_by_list));

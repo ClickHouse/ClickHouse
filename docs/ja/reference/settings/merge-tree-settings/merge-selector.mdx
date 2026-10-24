@@ -14,9 +14,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.merge&#95;tree&#95;settings](/ja/reference/system-tables/merge_tree_settings) で確認でき、ClickHouse のソースコードから自動生成されています。
 
-<div id="merge_selector_algorithm">
-  ## merge_selector_algorithm
-</div>
+## merge_selector_algorithm {#merge_selector_algorithm}
 
 <ExperimentalBadge />
 
@@ -24,26 +22,20 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 マージ割り当ての対象となるパーツを選択するアルゴリズム
 
-<div id="merge_selector_base">
-  ## merge_selector_base
-</div>
+## merge_selector_base {#merge_selector_base}
 
 <SettingsInfoBlock type="Float" default_value="5" />
 
 割り当てられたマージの書き込み増幅に影響します (上級者向けの設定です。内容を理解していない場合は変更しないでください) 。Simple および StochasticSimple の merge selector で動作します
 
-<div id="merge_selector_blurry_base_scale_factor">
-  ## merge_selector_blurry_base_scale_factor
-</div>
+## merge_selector_blurry_base_scale_factor {#merge_selector_blurry_base_scale_factor}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 パーティション内のパーツ数に対して、このロジックがいつ作動するかを制御します。
 factor が大きいほど、反応は遅くなります。
 
-<div id="merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once">
-  ## merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once
-</div>
+## merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once {#merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -53,18 +45,14 @@ factor が大きいほど、反応は遅くなります。
 これにより同時実行されるマージ数が増え、TOO&#95;MANY&#95;PARTS
 エラーの軽減に役立つ可能性がありますが、その一方で書き込み増幅は増加します。
 
-<div id="merge_selector_enable_heuristic_to_remove_small_parts_at_right">
-  ## merge_selector_enable_heuristic_to_remove_small_parts_at_right
-</div>
+## merge_selector_enable_heuristic_to_remove_small_parts_at_right {#merge_selector_enable_heuristic_to_remove_small_parts_at_right}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 サイズが `sum_size` の指定比率 (0.01) 未満のパーツを、範囲の右側から除外する merge 用パーツ選択 ヒューリスティック を有効にします。
 Simple および StochasticSimple merge selector で動作します
 
-<div id="merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent">
-  ## merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent
-</div>
+## merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent {#merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent}
 
 <ExperimentalBadge />
 
@@ -75,9 +63,17 @@ Simple および StochasticSimple merge selector で動作します
 低下カーブを構築する式で使用される指数の値を制御します。指数を小さくすると
 マージ幅が小さくなり、書き込み増幅が増加します。逆も同様です。
 
-<div id="merge_selector_window_size">
-  ## merge_selector_window_size
-</div>
+## merge_selector_min_age_to_disable_right_tail_heuristic {#merge_selector_min_age_to_disable_right_tail_heuristic}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "新しい設定"}]}]} />
+
+0 より大きい値が設定され、かつ `merge_selector_enable_heuristic_to_remove_small_parts_at_right` が有効な場合、
+すべてのパーツの経過時間がこの秒数以上である範囲では、このヒューリスティックを無効にします。`0` を指定すると、このチェックは無効になります。
+Simple および StochasticSimple のマージセレクタで有効です。
+
+## merge_selector_window_size {#merge_selector_window_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 

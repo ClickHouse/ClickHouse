@@ -3,8 +3,6 @@
 
 -- Test for issue #81506 (recursive CTEs return wrong results if the query condition cache is on)
 
-SET allow_experimental_analyzer = 1; -- needed by recursive CTEs
-
 -- Start from a clean query condition cache
 SYSTEM CLEAR QUERY CONDITION CACHE;
 

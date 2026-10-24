@@ -39,13 +39,11 @@ for security in DEFINER NONE INVOKER; do
 
         $CLICKHOUSE_CLIENT --query "CREATE OR REPLACE VIEW v_04810 SQL SECURITY ${security} AS SELECT * FROM ${inner}"
 
-        for analyzer in 1; do
-            echo "--- ${security} / ${fn} / enable_analyzer=${analyzer} ---"
-            $CLICKHOUSE_CLIENT --query "
-                SELECT count() FROM remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}', currentDatabase(), 'v_04810')
-                SETTINGS prefer_localhost_replica = 0, enable_analyzer = ${analyzer}
-            " 2>&1 | grep -o -m1 "cannot be nested inside another distributed query"
-        done
+        echo "--- ${security} / ${fn} ---"
+        $CLICKHOUSE_CLIENT --query "
+            SELECT count() FROM remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}', currentDatabase(), 'v_04810')
+            SETTINGS prefer_localhost_replica = 0
+        " 2>&1 | grep -o -m1 "cannot be nested inside another distributed query"
     done
 done
 

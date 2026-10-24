@@ -51,7 +51,7 @@ namespace DB
             return std::make_unique<RedisDictionarySource>(dict_struct, configuration, std::make_shared<const Block>(std::move(sample_block)));
         };
 
-        factory.registerSource("redis", create_table_source, Documentation{
+        factory.registerSource("redis", create_table_source, SecretArgumentsSpec{.secret_keys = {"password"}}, Documentation{
             .description = R"DOCS_MD(
 # Redis dictionary source
 
