@@ -1283,7 +1283,9 @@ void processAndOptimizeTextIndexFunctions(
 
             bool removes_filter_column = filter_step->removesFilterColumn();
             auto new_filter_column_name = result_filter_node->result_name;
-            node->step = std::make_unique<FilterStep>(read_from_merge_tree_step->getOutputHeader(), filter_dag.clone(), new_filter_column_name, removes_filter_column);
+            auto new_filter_step = std::make_unique<FilterStep>(read_from_merge_tree_step->getOutputHeader(), filter_dag.clone(), new_filter_column_name, removes_filter_column);
+            new_filter_step->setOptimizeConstantColumnsAfterFilter(filter_step->getOptimizeConstantColumnsAfterFilter());
+            node->step = std::move(new_filter_step);
             continue;
         }
 
@@ -1296,7 +1298,11 @@ void processAndOptimizeTextIndexFunctions(
 
         const SharedHeader & input_header = step->getInputHeaders().front();
         if (filter_step)
-            node->step = std::make_unique<FilterStep>(input_header, dag.clone(), filter_step->getFilterColumnName(), filter_step->removesFilterColumn());
+        {
+            auto new_filter_step = std::make_unique<FilterStep>(input_header, dag.clone(), filter_step->getFilterColumnName(), filter_step->removesFilterColumn());
+            new_filter_step->setOptimizeConstantColumnsAfterFilter(filter_step->getOptimizeConstantColumnsAfterFilter());
+            node->step = std::move(new_filter_step);
+        }
         else
             node->step = std::make_unique<ExpressionStep>(input_header, dag.clone());
     }

@@ -119,6 +119,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsMap additional_table_filters;
+    extern const SettingsBool optimize_constant_columns_after_filter;
     extern const SettingsUInt64 aggregation_in_order_max_block_bytes;
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
@@ -732,6 +733,8 @@ ALWAYS_INLINE void addFilterStep(
         std::move(actions),
         filter_analysis_result.filter_column_name,
         filter_analysis_result.remove_filter_column);
+    where_step->setOptimizeConstantColumnsAfterFilter(
+        planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_constant_columns_after_filter]);
     appendSetsFromActionsDAG(where_step->getExpression(), useful_sets);
     where_step->setStepDescription(step_description);
     query_plan.addStep(std::move(where_step));

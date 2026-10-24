@@ -3,6 +3,8 @@
 #include <Columns/FilterDescription.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Interpreters/SetSpillable.h>
+#include <utility>
+#include <vector>
 
 namespace DB
 {
@@ -25,7 +27,8 @@ public:
         SharedHeader header_, ExpressionActionsPtr expression_, String filter_column_name_,
         bool remove_filter_column_, bool on_totals_ = false, std::shared_ptr<std::atomic<size_t>> rows_filtered_ = nullptr,
         std::optional<std::pair<UInt64, String>> condition_ = std::nullopt,
-        bool update_row_numbers_info_ = false);
+        bool update_row_numbers_info_ = false,
+        std::optional<bool> optimize_constant_columns_after_filter_ = std::nullopt);
 
     /// Use this overload when the transformed header (the header after the expression, but before
     /// removing the filter column) is already known (computed once per step) to avoid recomputing
@@ -35,7 +38,8 @@ public:
         SharedHeader header_, SharedHeader transformed_header_, ExpressionActionsPtr expression_, String filter_column_name_,
         bool remove_filter_column_, bool on_totals_ = false, std::shared_ptr<std::atomic<size_t>> rows_filtered_ = nullptr,
         std::optional<std::pair<UInt64, String>> condition_ = std::nullopt,
-        bool update_row_numbers_info_ = false);
+        bool update_row_numbers_info_ = false,
+        std::optional<bool> optimize_constant_columns_after_filter_ = std::nullopt);
 
     static Block
     transformHeader(const Block & header, const ActionsDAG * expression, const String & filter_column_name, bool remove_filter_column);
@@ -78,10 +82,16 @@ private:
     /// Header after expression, but before removing filter column.
     Block transformed_header;
 
+    std::vector<size_t> constant_columns_after_filter;
+    /// The value of `optimize_constant_columns_after_filter` from the context the filter was planned in.
+    /// If not set, it is read from the query context.
+    std::optional<bool> optimize_constant_columns_after_filter;
+
     bool are_prepared_sets_initialized = false;
 
     void doTransform(Chunk & chunk);
     void removeFilterIfNeed(Columns & columns) const;
+    void applyConstantColumnsAfterFilter(Columns & columns, size_t num_rows) const;
 
     void writeIntoQueryConditionCache(const MarkRangesInfoPtr & mark_ranges_info);
     /// For a chunk that is filtered only partially, see `MarkRangesInfo::rows_per_mark`.
