@@ -13,13 +13,13 @@ CREATE TABLE test_a1 (id UInt32, category String, service String, value UInt32) 
 INSERT INTO test_a1 VALUES (1,'a','svc1',10),(2,'a','svc2',20),(3,'b','svc1',30);
 
 -- Default: error (standard SQL semantics).
-SELECT category, sum(value) FROM test_a1 GROUP BY category HAVING service = 'svc1' SETTINGS enable_analyzer = 1; -- { serverError NOT_AN_AGGREGATE }
+SELECT category, sum(value) FROM test_a1 GROUP BY category HAVING service = 'svc1'; -- { serverError NOT_AN_AGGREGATE }
 
 -- A.1 - plain column in HAVING.
 SELECT 'A.1';
 SELECT category, sum(value) AS total FROM test_a1 GROUP BY category HAVING service = 'svc1'
 ORDER BY category
-SETTINGS enable_analyzer = 1, analyzer_compatibility_allow_non_aggregate_in_having = 1;
+SETTINGS analyzer_compatibility_allow_non_aggregate_in_having = 1;
 
 -- A.2 - JOIN-aliased column in HAVING.
 CREATE TABLE test_a2 (id UInt32, state String, created DateTime) ENGINE = MergeTree ORDER BY id;
@@ -38,7 +38,7 @@ INNER JOIN test_a2 AS m_end ON m_start.id = m_end.id
 GROUP BY start_time
 HAVING (m_start.state = 'started') AND (m_end.state = 'finished')
 ORDER BY start_time
-SETTINGS enable_analyzer = 1, analyzer_compatibility_allow_non_aggregate_in_having = 1;
+SETTINGS analyzer_compatibility_allow_non_aggregate_in_having = 1;
 
 -- A.3 - ARRAY JOIN-introduced column in HAVING.
 CREATE TABLE test_a3 (
@@ -56,7 +56,7 @@ LEFT ARRAY JOIN vuln_ids AS cve, vuln_scores AS severity
 GROUP BY site_id, asset_key
 HAVING severity > 5.0
 ORDER BY asset_key
-SETTINGS enable_analyzer = 1, analyzer_compatibility_allow_non_aggregate_in_having = 1;
+SETTINGS analyzer_compatibility_allow_non_aggregate_in_having = 1;
 
 -- A.4 - map element GROUP BY, plain column in HAVING.
 CREATE TABLE test_a4 (
@@ -75,7 +75,7 @@ FROM test_a4
 GROUP BY idCompany, idApp
 HAVING (service = 'web') AND (value > 0)
 ORDER BY idCompany, idApp
-SETTINGS enable_analyzer = 1, analyzer_compatibility_allow_non_aggregate_in_having = 1;
+SETTINGS analyzer_compatibility_allow_non_aggregate_in_having = 1;
 
 -- A.5 - HAVING in CTE body.
 CREATE TABLE test_a5 (
@@ -96,7 +96,7 @@ WITH filtered AS (
 )
 SELECT * FROM filtered
 ORDER BY hour, category
-SETTINGS enable_analyzer = 1, analyzer_compatibility_allow_non_aggregate_in_having = 1;
+SETTINGS analyzer_compatibility_allow_non_aggregate_in_having = 1;
 
 -- A.6 - mixed aggregate alias and raw column.
 CREATE TABLE test_a6 (
@@ -114,7 +114,7 @@ FROM test_a6
 GROUP BY session_id, device_id
 HAVING (total_attempts > 0) AND (ad_attempts > 0)
 ORDER BY session_id, device_id
-SETTINGS enable_analyzer = 1, analyzer_compatibility_allow_non_aggregate_in_having = 1;
+SETTINGS analyzer_compatibility_allow_non_aggregate_in_having = 1;
 
 -- Result must match the legacy analyzer for the canonical case. The legacy AST-level
 -- HAVING-to-WHERE rewrite lives in `PredicateExpressionsOptimizer` and is gated on
@@ -127,45 +127,45 @@ SELECT 'A.1 legacy parity';
 SELECT 'A.1 legacy parity';
 SELECT category, sum(value) AS total FROM test_a1 GROUP BY category HAVING service = 'svc1'
 ORDER BY category
-SETTINGS enable_analyzer = 1, analyzer_compatibility_allow_non_aggregate_in_having = 1, group_by_use_nulls = 1;
+SETTINGS analyzer_compatibility_allow_non_aggregate_in_having = 1, group_by_use_nulls = 1;
 
 -- Setting enabled but without GROUP BY/aggregates: setting is a no-op.
 SELECT 'no-aggregation no-op';
-SELECT count() FROM test_a1 SETTINGS enable_analyzer = 1, analyzer_compatibility_allow_non_aggregate_in_having = 1;
+SELECT count() FROM test_a1 SETTINGS analyzer_compatibility_allow_non_aggregate_in_having = 1;
 
 -- WITH CUBE: setting must NOT bypass validation.
 SELECT category, sum(value) FROM test_a1 GROUP BY category WITH CUBE HAVING service = 'svc1'
-SETTINGS enable_analyzer = 1, analyzer_compatibility_allow_non_aggregate_in_having = 1; -- { serverError NOT_AN_AGGREGATE }
+SETTINGS analyzer_compatibility_allow_non_aggregate_in_having = 1; -- { serverError NOT_AN_AGGREGATE }
 
 -- WITH ROLLUP: setting must NOT bypass validation.
 SELECT category, sum(value) FROM test_a1 GROUP BY category WITH ROLLUP HAVING service = 'svc1'
-SETTINGS enable_analyzer = 1, analyzer_compatibility_allow_non_aggregate_in_having = 1; -- { serverError NOT_AN_AGGREGATE }
+SETTINGS analyzer_compatibility_allow_non_aggregate_in_having = 1; -- { serverError NOT_AN_AGGREGATE }
 
 -- WITH TOTALS: setting must NOT bypass validation.
 SELECT category, sum(value) FROM test_a1 GROUP BY category WITH TOTALS HAVING service = 'svc1'
-SETTINGS enable_analyzer = 1, analyzer_compatibility_allow_non_aggregate_in_having = 1; -- { serverError NOT_AN_AGGREGATE }
+SETTINGS analyzer_compatibility_allow_non_aggregate_in_having = 1; -- { serverError NOT_AN_AGGREGATE }
 
 -- GROUPING SETS: setting must NOT bypass validation.
 SELECT category, sum(value) FROM test_a1 GROUP BY GROUPING SETS ((category)) HAVING service = 'svc1'
-SETTINGS enable_analyzer = 1, analyzer_compatibility_allow_non_aggregate_in_having = 1; -- { serverError NOT_AN_AGGREGATE }
+SETTINGS analyzer_compatibility_allow_non_aggregate_in_having = 1; -- { serverError NOT_AN_AGGREGATE }
 
 -- WITH ROLLUP combined with group_by_use_nulls: the early WITH-ROLLUP guard wins, so still errors.
 SELECT category, sum(value) FROM test_a1 GROUP BY category WITH ROLLUP HAVING service = 'svc1'
-SETTINGS enable_analyzer = 1, analyzer_compatibility_allow_non_aggregate_in_having = 1, group_by_use_nulls = 1; -- { serverError NOT_AN_AGGREGATE }
+SETTINGS analyzer_compatibility_allow_non_aggregate_in_having = 1, group_by_use_nulls = 1; -- { serverError NOT_AN_AGGREGATE }
 
 -- A stateful function in any conjunct aborts the legacy rewrite; matches `tryMovePredicatesFromHavingToWhere` legacy behavior.
 SELECT category, sum(value) FROM test_a1 GROUP BY category HAVING rowNumberInBlock() >= 0 AND service = 'svc1'
-SETTINGS enable_analyzer = 1, analyzer_compatibility_allow_non_aggregate_in_having = 1; -- { serverError NOT_AN_AGGREGATE }
+SETTINGS analyzer_compatibility_allow_non_aggregate_in_having = 1; -- { serverError NOT_AN_AGGREGATE }
 
 -- A window function in any conjunct aborts the legacy rewrite; legacy `tryMovePredicatesFromHavingToWhere` also `return false`s on window funcs. Window funcs in HAVING are invalid; validation surfaces its own error.
 SELECT category, sum(value) FROM test_a1 GROUP BY category HAVING (count() OVER ()) > 0 AND service = 'svc1'
-SETTINGS enable_analyzer = 1, analyzer_compatibility_allow_non_aggregate_in_having = 1; -- { serverError ILLEGAL_AGGREGATION }
+SETTINGS analyzer_compatibility_allow_non_aggregate_in_having = 1; -- { serverError ILLEGAL_AGGREGATION }
 
 -- Non-deterministic predicates stay in HAVING (stricter than legacy, which would have moved them to WHERE and silently changed per-group evaluation to per-row). Sibling deterministic conjuncts still move to WHERE.
 SELECT 'A.7 non-deterministic conjunct stays in HAVING';
 SELECT category, sum(value) AS total FROM test_a1 GROUP BY category HAVING ((rand() % 1) = 0) AND service = 'svc1'
 ORDER BY category
-SETTINGS enable_analyzer = 1, analyzer_compatibility_allow_non_aggregate_in_having = 1;
+SETTINGS analyzer_compatibility_allow_non_aggregate_in_having = 1;
 
 -- A.8 - `grouping` predicate must stay in HAVING (validation rejects it in WHERE).
 -- Without WITH ROLLUP/CUBE/GROUPING SETS, `grouping(x)` returns 0 for all rows
@@ -173,13 +173,13 @@ SETTINGS enable_analyzer = 1, analyzer_compatibility_allow_non_aggregate_in_havi
 SELECT 'A.8 grouping predicate stays in HAVING';
 SELECT category, sum(value) AS total FROM test_a1 GROUP BY category HAVING grouping(category) = 0
 ORDER BY category
-SETTINGS enable_analyzer = 1, analyzer_compatibility_allow_non_aggregate_in_having = 1;
+SETTINGS analyzer_compatibility_allow_non_aggregate_in_having = 1;
 
 -- A.9 - `grouping` conjunct stays in HAVING; plain-column sibling still moves to WHERE.
 SELECT 'A.9 grouping conjunct stays, sibling moves to WHERE';
 SELECT category, sum(value) AS total FROM test_a1 GROUP BY category HAVING grouping(category) = 0 AND service = 'svc1'
 ORDER BY category
-SETTINGS enable_analyzer = 1, analyzer_compatibility_allow_non_aggregate_in_having = 1;
+SETTINGS analyzer_compatibility_allow_non_aggregate_in_having = 1;
 
 -- A.10 - nested AND from explicit parens: non-aggregate sibling must move to WHERE.
 -- The parser builds `and(and(service='svc1', sum>0), sum<100)`; without flattening the
@@ -188,14 +188,14 @@ SELECT 'A.10 nested AND with parens';
 SELECT category, sum(value) AS total FROM test_a1 GROUP BY category
 HAVING (service = 'svc1' AND sum(value) > 0) AND sum(value) < 100
 ORDER BY category
-SETTINGS enable_analyzer = 1, analyzer_compatibility_allow_non_aggregate_in_having = 1;
+SETTINGS analyzer_compatibility_allow_non_aggregate_in_having = 1;
 
 -- A.11 - deeply nested AND chain `((a AND b) AND c) AND d`: recursion must reach every leaf.
 SELECT 'A.11 deeply nested AND chain';
 SELECT category, sum(value) AS total FROM test_a1 GROUP BY category
 HAVING ((service = 'svc1' AND sum(value) > 0) AND sum(value) < 100) AND category != 'zzz'
 ORDER BY category
-SETTINGS enable_analyzer = 1, analyzer_compatibility_allow_non_aggregate_in_having = 1;
+SETTINGS analyzer_compatibility_allow_non_aggregate_in_having = 1;
 
 DROP TABLE test_a1;
 DROP TABLE test_a2;
