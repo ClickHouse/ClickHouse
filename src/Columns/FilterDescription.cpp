@@ -4,11 +4,15 @@
 #include <Columns/FilterDescription.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSparse.h>
 #include <Common/TargetSpecific.h>
+#include <Common/PODArray.h>
 #include <Core/ColumnWithTypeAndName.h>
+
+#include <algorithm>
 
 
 namespace DB
@@ -75,6 +79,95 @@ ConstantFilterDescription::ConstantFilterDescription(const IColumn & column)
         const ColumnConst & column_const = assert_cast<const ColumnConst &>(column);
         (column_const.getBool(0) ? always_true : always_false) = true;
     }
+}
+
+namespace
+{
+
+/// Bit `v` of `seen` is set when a row with truth value `v` (0 or 1) exists.
+/// Returns false if `indexes_column` is not a `ColumnVector<IndexType>`.
+/// A `UInt8` dictionary has at most 256 values plus one NULL key, so 257 covers it on the stack.
+using TruthOfKeyTable = PODArrayWithStackMemory<UInt8, 257>;
+
+template <typename IndexType>
+bool collectTruthOfRows(const IColumn & indexes_column, const TruthOfKeyTable & truth_of_key, UInt8 & seen)
+{
+    const auto * indexes = typeid_cast<const ColumnVector<IndexType> *>(&indexes_column);
+    if (!indexes)
+        return false;
+
+    const auto & data = indexes->getData();
+    constexpr size_t block_size = 4096;
+
+    for (size_t begin = 0; begin < data.size(); begin += block_size)
+    {
+        const size_t end = std::min(begin + block_size, data.size());
+        for (size_t i = begin; i < end; ++i)
+        {
+            chassert(data[i] < truth_of_key.size());
+            seen |= static_cast<UInt8>(1 << truth_of_key[data[i]]);
+        }
+
+        /// Both values are present, so the filter is not constant.
+        if (seen == 3)
+            break;
+    }
+
+    return true;
+}
+
+}
+
+std::optional<bool> tryGetConstantTruthOfLowCardinalityFilter(const IColumn & column)
+{
+    const auto * column_lc = typeid_cast<const ColumnLowCardinality *>(&column);
+    if (!column_lc || column_lc->empty())
+        return std::nullopt;
+
+    /// The dictionary holds the values of the keys: `UInt8`, or `Nullable(UInt8)` with NULL as a special key.
+    const IColumn * keys = column_lc->getDictionary().getNestedColumn().get();
+    const NullMap * key_null_map = nullptr;
+    if (const auto * nullable_keys = typeid_cast<const ColumnNullable *>(keys))
+    {
+        keys = &nullable_keys->getNestedColumn();
+        key_null_map = &nullable_keys->getNullMapData();
+    }
+
+    const auto * uint8_keys = typeid_cast<const ColumnUInt8 *>(keys);
+    if (!uint8_keys)
+        return std::nullopt;
+
+    const auto & key_values = uint8_keys->getData();
+    TruthOfKeyTable truth_of_key(key_values.size());
+    UInt8 dict_seen = 0;
+    for (size_t i = 0; i < key_values.size(); ++i)
+    {
+        truth_of_key[i] = key_values[i] && !(key_null_map && (*key_null_map)[i]);
+        dict_seen |= static_cast<UInt8>(1 << truth_of_key[i]);
+    }
+
+    /// Every dictionary entry already agrees on the truth value (e.g. the typical `s IN ('z')`
+    /// with `'z'` absent from the whole column, where the dictionary holds only `false`): the
+    /// block is constant regardless of which entries its indexes actually reference, without
+    /// scanning a single one of them.
+    if (dict_seen == 1)
+        return false;
+    if (dict_seen == 2)
+        return true;
+
+    const IColumn & indexes = column_lc->getIndexes();
+    UInt8 seen = 0;
+    if (!collectTruthOfRows<UInt8>(indexes, truth_of_key, seen)
+        && !collectTruthOfRows<UInt16>(indexes, truth_of_key, seen)
+        && !collectTruthOfRows<UInt32>(indexes, truth_of_key, seen)
+        && !collectTruthOfRows<UInt64>(indexes, truth_of_key, seen))
+        return std::nullopt;
+
+    if (seen == 1)
+        return false;
+    if (seen == 2)
+        return true;
+    return std::nullopt;
 }
 
 /// Extracts or converts filter data out of ColumnVector<some int or float>.
