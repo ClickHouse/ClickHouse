@@ -164,6 +164,7 @@
 #include <Common/JemallocCacheArena.h>
 #include <Common/JemallocMergeTreeArena.h>
 
+#include <Server/MongoHandlerFactory.h>
 #include "config.h"
 #include <Common/config_version.h>
 
@@ -578,6 +579,8 @@ namespace ProfileEvents
     extern const Event InterfaceMySQLReceiveBytes;
     extern const Event InterfacePostgreSQLSendBytes;
     extern const Event InterfacePostgreSQLReceiveBytes;
+    extern const Event InterfaceMongoSendBytes;
+    extern const Event InterfaceMongoReceiveBytes;
 }
 
 namespace fs = std::filesystem;
@@ -4307,6 +4310,10 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
             return TCPServerConnectionFactory::Ptr(
                 new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPHandler-factory"), ProfileEvents::InterfaceInterserverReceiveBytes, ProfileEvents::InterfaceInterserverSendBytes)
             );
+#if USE_MONGODB && USE_RAPIDJSON
+        if (type == "mongo")
+            return TCPServerConnectionFactory::Ptr(new MongoHandlerFactory(*this, /* secure */ false, ProfileEvents::InterfaceMongoReceiveBytes, ProfileEvents::InterfaceMongoSendBytes));
+#endif
 
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol configuration error, unknown protocol name '{}'", type);
     };
@@ -4753,6 +4760,61 @@ void Server::createServers(
 #endif
             });
         }
+
+#if USE_MONGODB && USE_RAPIDJSON
+        if (server_type.shouldStart(ServerType::Type::MONGO))
+        {
+            port_name = "mongo_port";
+            createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            {
+                Poco::Net::ServerSocket socket;
+                auto address = socketBindListen(server_settings, socket, listen_host, port);
+                socket.setReceiveTimeout(settings[Setting::receive_timeout]);
+                socket.setSendTimeout(settings[Setting::send_timeout]);
+                return ProtocolServerAdapter(
+                    listen_host,
+                    port_name,
+                    ServerType::Type::MONGO,
+                    "Mongo compatibility protocol: " + address.toString(),
+                    std::make_unique<TCPServer>(
+                        new MongoHandlerFactory(*this, /* secure */ false, ProfileEvents::InterfaceMongoReceiveBytes, ProfileEvents::InterfaceMongoSendBytes),
+                        server_pool,
+                        socket,
+                        makeServerParams(server_settings),
+                        connection_filter));
+            });
+        }
+
+        /// The Mongo wire protocol has no in-band upgrade to TLS: a Mongo client with `tls=true`
+        /// starts the TLS handshake as soon as it connects, so the secure variant is a port of its own.
+        if (server_type.shouldStart(ServerType::Type::MONGO_SECURE))
+        {
+            port_name = "mongo_port_secure";
+            createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            {
+#if USE_SSL
+                Poco::Net::SecureServerSocket socket;
+                auto address = socketBindListen(server_settings, socket, listen_host, port, /* secure = */ true);
+                socket.setReceiveTimeout(settings[Setting::receive_timeout]);
+                socket.setSendTimeout(settings[Setting::send_timeout]);
+                return ProtocolServerAdapter(
+                    listen_host,
+                    port_name,
+                    ServerType::Type::MONGO_SECURE,
+                    "secure Mongo compatibility protocol: " + address.toString(),
+                    std::make_unique<TCPServer>(
+                        new MongoHandlerFactory(*this, /* secure */ true, ProfileEvents::InterfaceMongoReceiveBytes, ProfileEvents::InterfaceMongoSendBytes),
+                        server_pool,
+                        socket,
+                        makeServerParams(server_settings),
+                        connection_filter));
+#else
+                UNUSED(port);
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for the Mongo protocol is disabled because Poco library was built without NetSSL support.");
+#endif
+            });
+        }
+#endif
 
 #if USE_GRPC
         if (server_type.shouldStart(ServerType::Type::GRPC)

@@ -608,6 +608,8 @@ String toString(ClientInfo::Interface interface)
             return "ARROWFLIGHT";
         case ClientInfo::Interface::ICEBERG_REST_CATALOG:
             return "ICEBERG_REST_CATALOG";
+        case ClientInfo::Interface::MONGO:
+            return "MONGO";
     }
 
     return fmt::format("Unknown server interface ({}).", static_cast<int>(interface));
@@ -707,6 +709,7 @@ constexpr std::array interface_names
     std::pair{std::string_view{"Background"}, ClientInfo::Interface::BACKGROUND},
     std::pair{std::string_view{"ArrowFlight"}, ClientInfo::Interface::ARROW_FLIGHT},
     std::pair{std::string_view{"IcebergRESTCatalog"}, ClientInfo::Interface::ICEBERG_REST_CATALOG},
+    std::pair{std::string_view{"Mongo"}, ClientInfo::Interface::MONGO},
 };
 
 constexpr std::array http_method_names

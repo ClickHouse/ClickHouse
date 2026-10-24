@@ -1,0 +1,22 @@
+-- $rename of a subdocument replaces the target
+1		alpha	0
+-- an update without access to the table reveals nothing about its columns
+(ACCESS_DENIED)
+(ACCESS_DENIED)
+-- the nesting of a query is bounded by max_parser_depth
+(TOO_DEEP_RECURSION)
+1
+-- a query with leading whitespace
+1
+-- the date formats are the ones of MongoDB
+2021-03-20T11:30:05.123Z	11:30 % 20/03/2021	7 6 11 11 2021 079	17:00+0530
+2021-03-20 11:30:05
+(NOT_IMPLEMENTED)
+(NOT_IMPLEMENTED)
+-- the options of $dateTrunc
+2021-03-20 11:00:00	2021-03-15
+(NOT_IMPLEMENTED)
+(NOT_IMPLEMENTED)
+(NOT_IMPLEMENTED)
+(NOT_IMPLEMENTED)
+(BAD_ARGUMENTS)
