@@ -43,6 +43,7 @@
 #include <base/unit.h>
 
 #include <algorithm>
+#include <filesystem>
 #include <functional>
 #include <unordered_set>
 
@@ -356,6 +357,7 @@ String getInsertDataSchemaMismatchDescription(
     bool format_always_skips_unknown_fields = false;
     bool format_allows_missing_named_columns = true;
     bool format_read_rows_ahead_to_detect_header = false;
+    bool format_validates_schema_as_metadata_by_exact_name = false;
     try
     {
         auto probe_buffer = std::make_unique<ReadBufferFromMemory>(data.data(), data.size());
@@ -399,6 +401,7 @@ String getInsertDataSchemaMismatchDescription(
         format_always_skips_unknown_fields = schema_reader->alwaysSkipsUnknownFields();
         format_allows_missing_named_columns = schema_reader->allowsMissingNamedColumns();
         format_read_rows_ahead_to_detect_header = schema_reader->readRowsAheadToDetectHeaderAndFoundNone();
+        format_validates_schema_as_metadata_by_exact_name = schema_reader->validatesSchemaAsMetadataByExactName();
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
@@ -473,6 +476,30 @@ String getInsertDataSchemaMismatchDescription(
     /// not risk attaching a misleading explanation to an unrelated parse error.
     if (inferred.empty())
         return {};
+
+    /// With `input_format_csv_deserialize_separate_columns_into_tuple` (the default), the `CSV`
+    /// deserializer of a `Tuple` consumes one physical field per element, while schema inference
+    /// reports each of those fields as a separate column. The inferred layout then does not line up
+    /// with the logical columns of the destination, so a comparison would manufacture a mismatch for
+    /// data that the parser accepts (e.g. `1,2,1.5` into `(a Tuple(UInt8, UInt8), n UInt8)`, failing
+    /// only on `1.5`). Stay inconclusive for such a destination in the formats that read fields with
+    /// the `CSV` escaping rule.
+    {
+        bool format_reads_csv_fields = format_name.starts_with("CSV")
+            || (format_name.starts_with("CustomSeparated") && format_settings.custom.escaping_rule == FormatSettings::EscapingRule::CSV)
+            || (format_name == "Regexp" && format_settings.regexp.escaping_rule == FormatSettings::EscapingRule::CSV)
+            /// The escaping rules of `Template` are given per field in the template itself.
+            || format_name.starts_with("Template");
+        if (format_reads_csv_fields && format_settings.csv.deserialize_separate_columns_into_tuple
+            && std::ranges::any_of(
+                expected,
+                [](const NameAndTypePair & column)
+                {
+                    const auto * tuple = typeid_cast<const DataTypeTuple *>(removeLowCardinality(column.type).get());
+                    return tuple && !tuple->getElements().empty();
+                }))
+            return {};
+    }
 
     /// Distinguish a genuinely non-numeric string from a quoted numeric string. Schema inference keeps a
     /// quoted numeric value (the JSON value `"1"`, the CSV field `"1"`, ...) as `String` by default, but
@@ -1258,6 +1285,26 @@ String getInsertDataSchemaMismatchDescription(
 
         if (which_inferred.isString())
         {
+            /// Schema inference substitutes `String` for a type it could not complete: a value that is
+            /// `NULL` in every sampled row, and an empty JSON object, become `String` /
+            /// `Nullable(String)` (`input_format_json_infer_incomplete_types_as_strings`, the default
+            /// type of the text formats). That is a placeholder for missing evidence, not a string
+            /// token: `{}` is a valid empty `Map`, and `NULL` is read as the default of an `Array` or a
+            /// `Bool` column with `input_format_null_as_default`. So when every sampled value is `NULL`
+            /// or an empty object, the comparison is inconclusive.
+            if (evidence.column_index
+                && sampled_string_values_satisfy(
+                       *evidence.column_index,
+                       evidence.path,
+                       [](const String & value)
+                       {
+                           String text = value;
+                           std::erase_if(text, isWhitespaceASCII);
+                           return text == "{}";
+                       })
+                       .value_or(false))
+                return true;
+
             /// `Bool` is backed by `UInt8` but is not a generic numeric destination: its deserializers
             /// accept only the bare literal tokens (`true` / `false` / `1` / `0`, ...), so a string
             /// value is a genuine structure mismatch even when it holds a quoted numeric (`"1"`) that a
@@ -1561,7 +1608,11 @@ String getInsertDataSchemaMismatchDescription(
         /// reported by the schema reader.
         std::vector<DataTypePtr> expected_types;
         expected_types.reserve(expected.size());
-        const auto matching_case_sensitivity = format_uses_case_insensitive_column_matching
+        /// The declared names of a metadata section are validated by an exact lookup, whatever the
+        /// resolution mode of the data fields (see `validatesSchemaAsMetadataByExactName`).
+        const auto matching_case_sensitivity = format_validates_schema_as_metadata_by_exact_name
+            ? FormatSettings::InputFormatColumnMatchingCaseSensitivity::MATCH_CASE
+            : format_uses_case_insensitive_column_matching
             ? FormatSettings::InputFormatColumnMatchingCaseSensitivity::IGNORE_CASE
             : format_honors_column_name_matching_mode
                 ? format_settings.input_format_column_matching_case_sensitivity
@@ -1608,7 +1659,11 @@ String getInsertDataSchemaMismatchDescription(
                 /// (`Avro`, the columnar `Parquet` / `Arrow` / `ORC`). Otherwise the parser rejects
                 /// the row precisely because of the unknown field (`INCORRECT_DATA`), and pointing
                 /// out the differing structure is accurate.
-                if (format_settings.skip_unknown_fields || format_always_skips_unknown_fields)
+                /// A declared name of a validated metadata section that is unknown to the destination is
+                /// skipped by `JSONUtils::validateMetadataByHeader`, and the data field it describes may
+                /// still be matched to a column case-insensitively: it constrains nothing.
+                if (format_settings.skip_unknown_fields || format_always_skips_unknown_fields
+                    || format_validates_schema_as_metadata_by_exact_name)
                     continue;
                 corresponds = false;
                 break;
@@ -1790,6 +1845,13 @@ String getInsertDataSchemaMismatchDescriptionFromFile(
     std::optional<size_t> rows_reached_by_parser)
 {
     if (format_name.empty() || !FormatFactory::instance().checkIfFormatHasSchemaReader(format_name))
+        return {};
+
+    /// Only a regular file can be read a second time. A named pipe or a character device (e.g.
+    /// `/dev/stdin`) was consumed by the failed attempt, and opening a FIFO again blocks until
+    /// another writer appears, so the original exception would never be reported.
+    std::error_code ec;
+    if (!std::filesystem::is_regular_file(file_path, ec))
         return {};
 
     String prefix;

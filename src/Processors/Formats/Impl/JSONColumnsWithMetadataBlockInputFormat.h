@@ -36,6 +36,9 @@ public:
     bool mapsColumnsByName() const override { return true; }
     bool honorsColumnNameMatchingMode() const override { return true; }
 
+    /// The parser checks the declared types with `JSONUtils::validateMetadataByHeader`.
+    bool validatesSchemaAsMetadataByExactName() const override { return format_settings.json.validate_types_from_metadata; }
+
 private:
     const FormatSettings format_settings;
 };

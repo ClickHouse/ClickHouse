@@ -56,12 +56,14 @@ public:
     /// therefore known only after `readSchema` has inspected the data.
     bool hasExactTypesFromData() const override
     {
-        return read_metadata_from_input && format_settings.json.validate_types_from_metadata;
+        return read_metadata_from_input && !metadata_ignored_by_parser && format_settings.json.validate_types_from_metadata;
     }
     bool schemaDescribesParsedData() const override
     {
-        return !read_metadata_from_input || format_settings.json.validate_types_from_metadata;
+        return !read_metadata_from_input || (!metadata_ignored_by_parser && format_settings.json.validate_types_from_metadata);
     }
+    /// `JSONRowInputFormat::readPrefix` checks the declared types with `JSONUtils::validateMetadataByHeader`.
+    bool validatesSchemaAsMetadataByExactName() const override { return hasExactTypesFromData(); }
 
 private:
     JSONRowSchemaReader(std::unique_ptr<PeekableReadBuffer> buf, const FormatSettings & format_settings_, bool fallback_to_json_each_row_);
@@ -71,6 +73,9 @@ private:
     /// Set by `readSchema` when the input actually contained a `meta` section (rather than falling
     /// back to `JSONEachRow`), so the two properties above can mirror the real parser.
     bool read_metadata_from_input = false;
+    /// Set together with `read_metadata_from_input` when the `meta` section is not followed by a `data`
+    /// array, so the parser rewinds and reads the whole object as `JSONEachRow`, ignoring the metadata.
+    bool metadata_ignored_by_parser = false;
 };
 
 }

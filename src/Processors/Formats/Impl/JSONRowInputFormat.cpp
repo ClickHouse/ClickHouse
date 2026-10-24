@@ -92,7 +92,23 @@ NamesAndTypesList JSONRowSchemaReader::readSchema()
         NamesAndTypesList names_and_types;
         if (JSONUtils::checkAndSkipObjectStart(*peekable_buf) && JSONUtils::tryReadMetadata(*peekable_buf, names_and_types, format_settings.json))
         {
+            /// `JSONRowInputFormat::readPrefix` uses the metadata only when it is followed by a `data`
+            /// array; otherwise it rewinds and parses the whole object as `JSONEachRow`, ignoring the
+            /// metadata. Inference keeps returning the metadata in that case, but remember that the
+            /// parser does not follow it (see `schemaDescribesParsedData`).
+            bool data_follows_metadata = false;
+            try
+            {
+                data_follows_metadata = JSONUtils::checkAndSkipComma(*peekable_buf)
+                    && JSONUtils::skipUntilFieldInObject(*peekable_buf, "data", format_settings.json)
+                    && JSONUtils::checkAndSkipArrayStart(*peekable_buf);
+            }
+            catch (...) // NOLINT(bugprone-empty-catch)
+            {
+                /// The parser fails the same check the same way and falls back to `JSONEachRow`.
+            }
             read_metadata_from_input = true;
+            metadata_ignored_by_parser = !data_follows_metadata;
             return names_and_types;
         }
 

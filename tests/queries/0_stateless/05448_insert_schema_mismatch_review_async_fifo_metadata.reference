@@ -1,0 +1,24 @@
+-- async insert with explicit parallel parsing in the query SETTINGS succeeds
+2
+-- FROM INFILE of a consumed named pipe returns the parse error
+parse error returned
+-- an empty JSON object is not a string token for a Map column
+explanation missing
+{}	1
+-- a NULL is not a string token for an Array or a Bool column
+explanation missing
+explanation missing
+[]	1
+-- a genuine string token for an Array column is still explained
+explanation present
+-- CSV: a Tuple column spans several fields
+explanation missing
+(1,2)	1
+-- JSON: a meta field not followed by a data array is ordinary data
+explanation missing
+1
+-- metadata names are validated exactly
+explanation missing
+1	1
+explanation missing
+1	1

@@ -294,6 +294,15 @@ public:
     /// then, exactly as the reader decided.
     virtual bool readRowsAheadToDetectHeaderAndFoundNone() const { return false; }
 
+    /// True when the inferred schema is a metadata section of the input that the parser validates
+    /// against the destination with `JSONUtils::validateMetadataByHeader`: a declared name is looked
+    /// up exactly (regardless of `input_format_column_name_matching_mode`, which only applies to the
+    /// data fields) and a name unknown to the destination is skipped rather than rejected. A caller
+    /// comparing the inferred schema against an expected one uses this to compare the declared types
+    /// by the same rules: a case-only difference in a declared name is not a type constraint on the
+    /// column the data field is matched to.
+    virtual bool validatesSchemaAsMetadataByExactName() const { return false; }
+
     virtual bool needContext() const { return false; }
     virtual void setContext(const ContextPtr &) {}
 
