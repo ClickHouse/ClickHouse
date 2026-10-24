@@ -129,6 +129,16 @@ namespace
         return 1.0;
 #endif
     }
+
+    constexpr bool getDefaultMemoryWorkerCorrectMemoryTracker() {
+#if defined(ADDRESS_SANITIZER) || defined(THREAD_SANITIZER) || defined(MEMORY_SANITIZER)
+        /// Here the worker measures with the sanitizer allocator's counter, which moves milliseconds apart from the
+        /// tracker while a large chunk is mapped or unmapped, so correcting on every tick can drive the tracker negative.
+        return false;
+#else
+        return true;
+#endif
+    }
 }
 
 // clang-format off
@@ -1465,14 +1475,14 @@ The threshold ratio for purging jemalloc relative to the memory available to Cli
     DECLARE(UInt64, memory_worker_decay_adjustment_period_ms, 5000, R"(
 Duration in milliseconds that memory pressure must persist before dynamically adjusting jemalloc's `dirty_decay_ms`. When memory usage remains above the purge threshold for this period, automatic dirty page decay is disabled (`dirty_decay_ms=0`) to aggressively reclaim memory. When usage stays below the threshold for this period, the default decay behavior is restored. Set to 0 to disable dynamic adjustment and use jemalloc's default decay settings.
 )", 0) \
-    DECLARE(Bool, memory_worker_correct_memory_tracker, 1, R"(
+    DECLARE(Bool, memory_worker_correct_memory_tracker, getDefaultMemoryWorkerCorrectMemoryTracker(), R"(
 Whether the background memory worker corrects the global memory tracker, on every tick, from an external measurement of the memory the process really uses: the cgroup memory usage when cgroups are available (see `memory_worker_use_cgroup`), otherwise jemalloc's `stats.resident`. The tracker is set to the maximum of this measurement and jemalloc's `stats.allocated`, so that memory which is allocated but not touched yet, and therefore not resident, stays accounted, and concurrent queries cannot be admitted past `max_server_memory_usage` before their pages are touched.
 
 The global memory tracker is a counter: allocations add to it and deallocations subtract from it. Any accounting asymmetry stays in it for the lifetime of the process, because nothing else lowers it, and an upward drift is never worked off — the memory it describes has already been freed. Once the drift alone exceeds `max_server_memory_usage`, every allocation fails, down to the zero-byte check at the start of a connection, and the server rejects all queries while using a fraction of its limit. Correcting from a measurement bounds the lifetime of such a drift to one tick of the worker (`memory_worker_period_ms`, by default 50 ms when reading from cgroups and 100 ms when reading from jemalloc).
 
 The correction does not hide the drift. `MemoryTrackingUncorrected` keeps the value the tracker would have had with no corrections applied (a snapshot of the plain counter, refreshed on every tick of the worker), so `MemoryTrackingUncorrected - MemoryTracking` is the drift accumulated so far.
 
-Setting this to `0` restores the behavior of previous versions: the tracker is corrected only on the first tick of the worker and whenever it goes negative.
+Setting this to `0` restores the behavior of previous versions: the tracker is corrected only on the first tick of the worker and whenever it goes negative. Builds with ASan, MSan or TSan default to `0`, because there the measurement is the sanitizer allocator's own counter, which changes milliseconds apart from the tracker while a large chunk is mapped or unmapped, so a correction in between could drive the tracker below zero.
 )", 0) \
     DECLARE(Bool, memory_worker_use_cgroup, true, "Use current cgroup memory usage information to correct memory tracking.", 0) \
     DECLARE(Double, memory_worker_rss_speculative_reserve_ratio, getDefaultMemoryWorkerRssSpeculativeReserveRatio(), R"(
