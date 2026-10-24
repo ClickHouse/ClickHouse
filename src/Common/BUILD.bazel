@@ -834,6 +834,8 @@ ch_cc_library(
             "exp10_i32.h",
             "intExp.h",
             "IThrottler.h",
+            "CopyableAtomic.h",
+            "callOnce.h",
         ],
     ),
     clickhouse_code = True,
@@ -909,4 +911,15 @@ ch_cc_library(
         "//base/poco/Net:_poco_net",
         "@clickhouse_boost//:boost_headers_no_openssl",
     ],
+)
+
+ch_cc_library(
+    name = "once_and_atomic",
+    hdrs = [
+        "CopyableAtomic.h",
+        "callOnce.h",
+    ],
+    clickhouse_code = True,
+    features = ["skip_virtual_includes"],
+    strip_include_prefix = "/src",
 )

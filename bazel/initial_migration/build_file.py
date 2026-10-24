@@ -192,6 +192,12 @@ def split_system_includes(flags, owner, native_library, public_includes=(),
     return options, source_includes + includes
 
 
+@dataclass(frozen=True)
+class PackageEmbedDirectory:
+    target: str
+    directory: str
+
+
 @dataclass
 class CMakeCopts:
     flags: object
@@ -269,6 +275,9 @@ def starlark(value, indent=0, paths=False, step=2):
             return json.dumps(directory)
         return ('repository_local_include(' + expression +
                 (', ' + json.dumps(value.owner) if value.owner else '') + ')')
+    if isinstance(value, PackageEmbedDirectory):
+        return ('"--embed-dir=" + package_relative_label(' + json.dumps(':' + value.target)
+                + ').workspace_root + ' + json.dumps('/' + value.directory))
     if isinstance(value, CMakeCopts):
         return (starlark(value.flags, indent, paths, step) + ' + cmake_prefix_maps('
                 + json.dumps(value.arches) + ')')
@@ -585,6 +594,19 @@ class BuildFile:
         for old_field, directories in original.items():
             for directory in directories:
                 owner = repository(directory)
+                if directory == 'contrib/zstd/lib' and owner == self.owner and name == '_zstd':
+                    # zstd installs lib/*.h; also retain its deprecated zbuff API.
+                    if group['language'] == 'C':
+                        fields['hdrs'].append(Glob(['lib/*.h', 'lib/deprecated/*.h']))
+                        fields['srcs'].append(Glob([
+                            'lib/common/*.h', 'lib/compress/*.h', 'lib/decompress/*.h',
+                            'lib/dictBuilder/*.h', 'lib/legacy/*.h',
+                        ], ('lib/common/portability_macros.h',)))
+                    elif group['language'] == 'ASM':
+                        fields['hdrs'].append('lib/common/portability_macros.h')
+                    else:
+                        raise ValueError("Unexpected zstd compile language: " + group['language'])
+                    continue
                 if directory == 'contrib/arrow/cpp/src' and owner != self.owner:
                     # Search directories do not make their entire contents compiler inputs.
                     continue
@@ -1124,6 +1146,10 @@ class BuildFile:
                                     if value[:len(code_defaults)] != code_defaults:
                                         raise ValueError(f'{name} {arch}: ch_cc_library CXX flags are not the expected prefix')
                                     value = value[len(code_defaults):]
+                            if self.owner:
+                                prefix = '--embed-dir=' + self.owner + '/'
+                                value = [PackageEmbedDirectory(name, flag.removeprefix(prefix))
+                                         if flag.startswith(prefix) else flag for flag in value]
                             if language in {'C', 'CXX'} and '-Weverything' in value:
                                 start = value.index('-Weverything')
                                 end = start + len(CLICKHOUSE_WARNINGS)
@@ -1376,6 +1402,10 @@ def dependency_inputs(builds, owners):
         build(owner).rule('filegroup', 'cmake_cargo_sources', {
             'srcs': Glob(['**'], ('**/BUILD', '**/BUILD.bazel', 'target/**')),
         })
+    build('contrib/sql-console').rule('filegroup', 'dist_standalone', {
+        'srcs': Glob(['dist-standalone/**']),
+        'visibility': ['@clickhouse//bazel:__pkg__'],
+    })
     build('contrib/chdig').rule('filegroup', 'cargo_manifest', {'srcs': ['Cargo.toml']})
     build('contrib/openssl').rule('filegroup', 'headers', {'srcs': Glob(['include/**'])})
     for arch in ARCHES:

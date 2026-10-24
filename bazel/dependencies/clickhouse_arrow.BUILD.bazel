@@ -91,8 +91,6 @@ exports_files([
     "LICENSE.txt",
     "cpp/src/arrow/ipc/feather.fbs",
     "format/File.fbs",
-    "format/Flight.proto",
-    "format/FlightSql.proto",
     "format/Message.fbs",
     "format/Schema.fbs",
     "format/SparseTensor.fbs",

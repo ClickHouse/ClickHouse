@@ -103,6 +103,7 @@ FIRST_PARTY_HEADER_DEPS = {
     ],
     ("src/Functions/array", "clickhouse_functions_array__compile_1", "implementation_deps"): ["//src:column_types"],
     ("src/Loggers", "loggers", "deps"): ["//src/Common:parser_support_api"],
+    ("src/Parsers", "clickhouse_parsers", "deps"): ["//bazel:clickhouse_config_headers"],
     ("src/Storages/System", "clickhouse_storages_system__compile_1", "implementation_deps"): ["//src/Access/Common:headers"],
     ("src/Storages/System", "clickhouse_storages_system__compile_1", "deps"): [
         "//bazel:clickhouse_config_headers", "//src:with_context",
@@ -307,6 +308,20 @@ def declare_common_header_owners(root, rules):
     common_name = declare_throttler_headers(root, common, rules)
     common = Document(root / "src/Common/BUILD.bazel", package="src/Common")
     owners = rules(common)
+    if "once_and_atomic" not in owners:
+        headers = ["CopyableAtomic.h", "callOnce.h"]
+        exclude = exclude_common_headers(common, owners[common_name], headers)
+        common.path.write_text(common.source.rewrite([exclude]) + f"""
+ch_cc_library(
+    name = "once_and_atomic",
+    hdrs = {json.dumps(headers)},
+    clickhouse_code = True,
+    features = ["skip_virtual_includes"],
+    strip_include_prefix = "/src",
+)
+""")
+        common = Document(common.path, package="src/Common")
+        owners = rules(common)
     # These public headers and translation units include intExp.h or exp10_i32.h directly.
     edges = {
         (package, name, field): ["//src/Common:int_exp"] for package, name, field in (
@@ -325,6 +340,8 @@ def declare_common_header_owners(root, rules):
     ):
         label = ":throttler_interface" if package == "src/Common" else "//src/Common:throttler_interface"
         edges.setdefault((package, name, field), []).append(label)
+    for name, field in (("headers", "deps"), ("dbms__compile_0", "implementation_deps")):
+        edges["src", name, field].append("//src/Common:once_and_atomic")
     edits = []
 
     def add(source, items, name, anchor, *, before=False):
@@ -534,6 +551,7 @@ def declare_first_party_header_deps(root):
                 doc = Document(path, package=package)
         attrs = {kw.arg: kw.value for kw in rules(doc)[target].keywords}
         if field == "deps" and (package, target) in {
+            ("src/Parsers", "clickhouse_parsers"),
             ("src", "dbms__compile_0"),
             ("src", "clickhouse_common_io__compile_0"),
             ("src/Storages/System", "clickhouse_storages_system__compile_1"),
@@ -605,11 +623,24 @@ def declare_compiled_parser_headers(path):
     from initial_migration.prune_inherited_headers import ARCHES, Document
 
     headers = [
-        "ASTSystemQuery.h", "Access/ASTExecuteAsQuery.h", "Access/ParserCreateUserQuery.h",
-        "ParserAttachAccessEntity.h",
-        "ParserCreateFunctionQuery.h", "ParserCreateResourceQuery.h", "ParserCreateWorkloadQuery.h",
-        "ParserDropResourceQuery.h", "ParserDropWorkloadQuery.h", "ParserOptimizeQuery.h",
-        "parseIdentifierOrStringLiteral.h", "registerParsers.h",
+        "ASTAssignment.h", "ASTAsterisk.h", "ASTColumnsMatcher.h", "ASTColumnsTransformers.h",
+        "ASTCreateIndexQuery.h", "ASTDeleteQuery.h", "ASTDropFunctionQuery.h",
+        "ASTDropHandlerQuery.h", "ASTDropIndexQuery.h", "ASTEnumDataType.h",
+        "ASTHypotheticalObjectQuery.h", "ASTInterpolateElement.h", "ASTKillQueryQuery.h",
+        "ASTOrderByElement.h", "ASTParallelWithQuery.h", "ASTPartition.h",
+        "ASTProjectionSelectQuery.h", "ASTQualifiedAsterisk.h", "ASTShowColumnsQuery.h",
+        "ASTShowFunctionsQuery.h", "ASTShowIndexesQuery.h", "ASTSnapshotQuery.h",
+        "ASTStatisticsDeclaration.h", "ASTSystemQuery.h", "ASTTransactionControl.h",
+        "ASTTupleDataType.h", "ASTUndropQuery.h", "ASTUpdateQuery.h", "ASTWithElement.h",
+        "Access/ASTCreateQuotaQuery.h", "Access/ASTCreateRoleQuery.h",
+        "Access/ASTCreateRowPolicyQuery.h", "Access/ASTCreateSettingsProfileQuery.h",
+        "Access/ASTCreateUserQuery.h", "Access/ASTDropAccessEntityQuery.h",
+        "Access/ASTExecuteAsQuery.h", "Access/ASTGrantQuery.h", "Access/ASTPublicSSHKey.h",
+        "Access/ASTSetRoleQuery.h", "Access/ParserCreateUserQuery.h", "Access/ParserGrantQuery.h",
+        "ParserAttachAccessEntity.h", "ParserCreateFunctionQuery.h",
+        "ParserCreateResourceQuery.h", "ParserCreateWorkloadQuery.h", "ParserDropResourceQuery.h",
+        "ParserDropWorkloadQuery.h", "ParserOptimizeQuery.h", "parseIdentifierOrStringLiteral.h",
+        "registerParsers.h",
     ]
     def attrs(doc, name):
         return next({kw.arg: kw.value for kw in call.keywords} for _, call in doc.source.rules()

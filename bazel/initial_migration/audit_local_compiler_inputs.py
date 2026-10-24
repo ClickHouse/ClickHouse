@@ -70,6 +70,8 @@ def known_expression(doc, node, field, constants=()):
     """Never infer missing source or flag inputs from an opaque expression."""
     if node is None or isinstance(node, ast.Constant):
         return True
+    if isinstance(node, ast.Attribute):
+        return field == "copts" and string_values(doc, node, ARCHES[0]) is not None
     if isinstance(node, ast.Name):
         if node.id in doc.constants and node.id not in constants:
             return known_expression(doc, doc.constants[node.id], field, (*constants, node.id))

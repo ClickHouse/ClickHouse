@@ -385,7 +385,9 @@ class Codegen:
             self.nodes[path] = node
         prefix = 'gen/' + self.graph.arch + '/'
         attrs = dict(
-            srcs=[self.label(p.relative_to(self.root).as_posix()) for p in files],
+            srcs=['@clickhouse_sql_console//:dist_standalone'] if sql_console else [
+                self.label(p.relative_to(self.root).as_posix()) for p in files
+            ],
             outs=[prefix + p for p in node['outputs']],
             tools=['//bazel/rules:embed_resources'],
             cmd='execroot=$$PWD\n$(execpath //bazel/rules:embed_resources) --source=' + self.shell_path(str(self.root / source))

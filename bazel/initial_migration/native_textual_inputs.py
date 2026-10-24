@@ -85,6 +85,11 @@ def string_values(doc, node, cpu):
         return []
     if isinstance(node, ast.Constant):
         return node.value
+    if (doc.owner and isinstance(node, ast.Attribute) and node.attr == 'workspace_root'
+            and isinstance(node.value, ast.Call) and getattr(node.value.func, 'id', '') == 'package_relative_label'
+            and len(node.value.args) == 1 and not node.value.keywords
+            and (string(node.value.args[0]) or '').startswith(':')):
+        return '@SOURCE@/' + doc.owner
     if isinstance(node, ast.Name) and node.id in doc.constants:
         return string_values(doc, doc.constants[node.id], cpu)
     if isinstance(node, (ast.List, ast.Tuple)):

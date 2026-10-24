@@ -2,26 +2,12 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "LICENSE",
-    "dist-standalone/assets/ClickHouse-Loading-Cp50uPrc.webp",
-    "dist-standalone/assets/ClickHouse-Loading-kVEqsD08.gif",
-    "dist-standalone/assets/Inconsolata-300-DXcVWPXv.woff2",
-    "dist-standalone/assets/Inconsolata-400-Bi4PjdUK.woff2",
-    "dist-standalone/assets/Inconsolata-500-17nMkOBT.woff2",
-    "dist-standalone/assets/Inconsolata-600-BDPepyOS.woff2",
-    "dist-standalone/assets/Inconsolata-700-Ddcx5qPW.woff2",
-    "dist-standalone/assets/Inter-300-BXF1tPR-.woff2",
-    "dist-standalone/assets/Inter-400-B7ia0BOz.woff2",
-    "dist-standalone/assets/Inter-500-CR8hRDQ3.woff2",
-    "dist-standalone/assets/Inter-600-CYOlcO97.woff2",
-    "dist-standalone/assets/Inter-700-BfGwuJ4y.woff2",
-    "dist-standalone/assets/codicon-Hscy-R9e.ttf",
-    "dist-standalone/assets/favicon-BkF1J_Wl.ico",
-    "dist-standalone/assets/index-CYeFS1sY.js",
-    "dist-standalone/assets/index-CxcVzgQB.js",
-    "dist-standalone/assets/index-DKO4wyyL.css",
-    "dist-standalone/env.js",
-    "dist-standalone/index.html",
-    "dist-standalone/monacoeditorwork/editor.worker.bundle.js",
-    "dist-standalone/third-party-license-types.json",
-    "dist-standalone/third-party-licenses.json",
 ])
+
+filegroup(
+    name = "dist_standalone",
+    srcs = glob(["dist-standalone/**"]),
+    visibility = [
+        "@clickhouse//bazel:__pkg__",
+    ],
+)

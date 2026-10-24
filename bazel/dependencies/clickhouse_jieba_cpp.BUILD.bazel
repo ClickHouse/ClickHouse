@@ -1,5 +1,4 @@
 load("@clickhouse//bazel/rules:ch_cc_library.bzl", "CXX_RUNTIME_DEFINES", "ch_cc_library")
-load("@clickhouse//bazel/rules:repository_paths.bzl", "repository_path")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -15,7 +14,7 @@ ch_cc_library(
     copts = [
         "-w",
         "-std=c++23",
-        "--embed-dir=" + repository_path("contrib/Jieba-CPP") + "/data",
+        "--embed-dir=" + package_relative_label(":_jieba").workspace_root + "/data",
     ],
     implementation_deps = ["@clickhouse_zstd//:_zstd"],
     includes = [

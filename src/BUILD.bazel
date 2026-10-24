@@ -3036,6 +3036,7 @@ ch_cc_library(
         "//src/Functions:cast_api",
         "//src/Common:int_exp",
         "//src/Common:throttler_interface",
+        "//src/Common:once_and_atomic",
     ],
     includes = _DBMS_0_COMPILE_ATTRIBUTES["includes"],
     local_defines = _DBMS_0_COMPILE_ATTRIBUTES["local_defines"],
@@ -4499,6 +4500,7 @@ ch_cc_library(
         "//src/Compression:codec_api",
         "//src/Common:int_exp",
         "//src/Common:throttler_interface",
+        "//src/Common:once_and_atomic",
     ],
 )
 
