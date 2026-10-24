@@ -551,9 +551,9 @@ void NetCDFOutputFormat::finalizeImpl()
                 : nullptr;
             bool has_nulls = false;
             /// The bytes that occur anywhere in the values of the column. The `_FillValue` that is
-            /// chosen below, only when the column has a NULL in it, must be none of them: it is a
-            /// scalar of the type `char`, and the netCDF library masks every single character that
-            /// is equal to it, not only a whole string that consists of it.
+            /// chosen below must be none of them: it is a scalar of the type `char`, and the netCDF
+            /// library masks every single character that is equal to it, not only a whole string
+            /// that consists of it.
             std::bitset<256> taken_bytes;
             for (size_t i = 0; i < variable.data->size(); ++i)
             {
@@ -565,9 +565,8 @@ void NetCDFOutputFormat::finalizeImpl()
 
                 std::string_view value = variable.data->getDataAt(i);
 
-                if (null_map)
-                    for (char c : value)
-                        taken_bytes.set(static_cast<UInt8>(c));
+                for (char c : value)
+                    taken_bytes.set(static_cast<UInt8>(c));
 
                 /// A string shorter than the dimension of the variable is padded with zero bytes,
                 /// so a value that itself ends in a zero byte cannot be read back intact: every
@@ -585,7 +584,8 @@ void NetCDFOutputFormat::finalizeImpl()
             /// A NULL of a string column is written as a one-byte string of a character that does not
             /// occur anywhere in the data of the column, published as the `_FillValue` attribute, so
             /// that a NULL and an empty string are not both stored as the same empty payload. A column
-            /// with no NULLs in it gets no attribute and is read back as not `Nullable`.
+            /// with no NULLs in it gets no attribute, unless its values contain a zero byte, and is
+            /// read back as not `Nullable`.
             if (has_nulls)
             {
                 variable.fill_value = chooseStringFillValue(taken_bytes);
@@ -598,6 +598,18 @@ void NetCDFOutputFormat::finalizeImpl()
                         "so the NetCDF format has no character left to write the NULLs as", variable.name);
 
                 variable.string_length = std::max<UInt64>(variable.string_length, variable.fill_value.size());
+            }
+            else if (taken_bytes.test(0))
+            {
+                /// A column without NULLs needs no value to write them as. But a variable without
+                /// the attribute is not free of missing data for the readers: `netCDF4` takes the
+                /// default fill value of `char`, the zero byte, as missing, and masks a zero byte
+                /// inside a value. The values never end in a zero byte (see above), so the zero
+                /// bytes in them are real. Then an explicit `_FillValue` that the data does not
+                /// contain is written, the same as for the numeric types below. When the data
+                /// contains every other byte, there is nothing to choose, and the attribute is not
+                /// written, as it would mark a real character as missing either way.
+                variable.fill_value = chooseStringFillValue(taken_bytes);
             }
 
             /// A dimension of a length of zero is only allowed for the unlimited dimension.

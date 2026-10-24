@@ -1274,10 +1274,11 @@ format take that value as missing even without the attribute, so then the column
 `_FillValue` that its data does not contain, the same as a column with a `NULL`. This applies to
 the types of one byte as well: the netCDF conventions exempt them, but `netCDF4` masks their default
 fill values in the classic formats all the same. A String column works the same way: the `_FillValue` of a `char` variable is a
-single character other than the zero byte, chosen so that the data of the column does not contain
-the string of that one character, so a `NULL` and an empty string stay different values. A column
-that contains a `NULL` and all of the 255 such one-character strings cannot be written, and throws
-an exception.
+single character other than the zero byte, chosen so that it does not occur anywhere in the data of
+the column, so a `NULL` and an empty string stay different values. A column that contains a `NULL`
+and all of the 255 such characters cannot be written, and throws an exception. A String column
+without `NULL`s gets the attribute when its values contain a zero byte, which is the default fill
+value of `char`, so that the readers do not take that byte as missing.
 
 ## Format settings {#format-settings}
 
