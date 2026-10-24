@@ -2,11 +2,15 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
+#include <Common/HTTPConnectionInfo.h>
 #include <Common/HTTPConnectionPool.h>
 #include <Common/HostResolvePool.h>
+#include <Common/RemoteProxyConfigurationResolver.h>
 #include <Common/Throttler.h>
 #include <Common/ThreadStatus.h>
 #include <base/scope_guard.h>
+#include <base/sleep.h>
 #include <base/unit.h>
 
 #include <Poco/URI.h>
@@ -26,6 +30,11 @@
 #include <limits>
 
 #include <gtest/gtest.h>
+
+namespace DB::FailPoints
+{
+extern const char http_connection_socket_inode_unavailable[];
+}
 
 namespace
 {
@@ -575,6 +584,424 @@ TEST_F(ConnectionPoolTest, CanReconnectAndReuse)
 
     ASSERT_EQ(count-1, CurrentMetrics::get(metrics.active_count));
     ASSERT_EQ(count-2, CurrentMetrics::get(metrics.stored_count));
+}
+
+/// The code that logs a blob storage request (S3, Azure) opens an `HTTPConnectionInfoScope` around
+/// issuing the request and writing the row that describes it; nothing is published outside of one.
+/// This is that pattern in miniature: request, then take, inside one scope.
+static DB::HTTPConnectionInfo echoRequestAndTakeConnectionInfo(String data, HTTPSession & session)
+{
+    DB::HTTPConnectionInfoScope scope(true);
+    echoRequest(std::move(data), session);
+    return DB::takeCurrentHTTPConnectionInfo();
+}
+
+/// The connection info published for a request must describe the socket that actually carried it.
+/// The three tests below exercise `PooledConnection::reconnect`, which swaps the whole socket - and
+/// the bookkeeping that goes with it - out from under a session that is already in the middle of a
+/// request, or fails trying.
+
+TEST_F(ConnectionPoolTest, ConnectionInfoNewIdAfterReconnect)
+{
+    auto pool = getPool();
+
+    auto connection = pool->getConnection(timeouts, nullptr);
+
+    auto first = echoRequestAndTakeConnectionInfo("Hello", *connection);
+    ASSERT_TRUE(first.has_value);
+    ASSERT_NE(0, first.id);
+    ASSERT_EQ(0, first.requests_served);
+
+    connection->abort(); // further usage requires reconnect, the pool is empty so a new socket
+
+    auto second = echoRequestAndTakeConnectionInfo("Hello", *connection);
+    ASSERT_TRUE(second.has_value);
+
+    /// A different TCP connection, even though the kernel usually hands back the same file
+    /// descriptor number - and often the same socket inode - right after the previous one closed.
+    ASSERT_NE(first.id, second.id);
+    ASSERT_EQ(0, second.requests_served);
+}
+
+/// Some systems expose no inode for a socket: on macOS `fstat` succeeds with `st_ino` set to zero.
+/// The connection must get its identity all the same, keep it across reuse, and get a new one
+/// on reconnect.
+TEST_F(ConnectionPoolTest, ConnectionInfoWithoutSocketInode)
+{
+    DB::FailPointInjection::enableFailPoint(DB::FailPoints::http_connection_socket_inode_unavailable);
+    SCOPE_EXIT(DB::FailPointInjection::disableFailPoint(DB::FailPoints::http_connection_socket_inode_unavailable));
+
+    auto ka = Poco::Timespan(10, 0); // 10 seconds
+    timeouts.withHTTPKeepAliveTimeout(ka);
+
+    auto pool = getPool();
+
+    DB::HTTPConnectionInfo first;
+    {
+        auto connection = pool->getConnection(timeouts, nullptr);
+        first = echoRequestAndTakeConnectionInfo("Hello", *connection);
+    } // returned to the pool
+
+    ASSERT_TRUE(first.has_value);
+    ASSERT_NE(0, first.id);
+    ASSERT_EQ(0, first.socket_inode);
+    ASSERT_EQ(0, first.requests_served);
+
+    auto connection = pool->getConnection(timeouts, nullptr);
+    auto reused = echoRequestAndTakeConnectionInfo("Hello", *connection);
+
+    ASSERT_TRUE(reused.has_value);
+    ASSERT_EQ(first.id, reused.id);
+    ASSERT_EQ(0, reused.socket_inode);
+    ASSERT_EQ(1, reused.requests_served);
+
+    connection->abort(); // further usage requires reconnect, the pool is empty so a new socket
+
+    auto reconnected = echoRequestAndTakeConnectionInfo("Hello", *connection);
+
+    ASSERT_TRUE(reconnected.has_value);
+    ASSERT_NE(0, reconnected.id);
+    ASSERT_NE(first.id, reconnected.id);
+    ASSERT_EQ(0, reconnected.socket_inode);
+    ASSERT_EQ(0, reconnected.requests_served);
+}
+
+TEST_F(ConnectionPoolTest, ConnectionInfoIdleTimeAfterReconnect)
+{
+    auto ka = Poco::Timespan(10, 0); // 10 seconds
+    timeouts.withHTTPKeepAliveTimeout(ka);
+
+    auto pool = getPool();
+
+    auto first_connection = pool->getConnection(timeouts, nullptr);
+    echoRequestAndTakeConnectionInfo("Hello", *first_connection);
+
+    DB::HTTPConnectionInfo stored_info;
+    {
+        auto second_connection = pool->getConnection(timeouts, nullptr);
+        stored_info = echoRequestAndTakeConnectionInfo("Hello", *second_connection);
+    } // returned to the pool, and starts sitting there idle from now on
+
+    ASSERT_TRUE(stored_info.has_value);
+    ASSERT_EQ(0, stored_info.idle_microseconds); // its first and only request so far
+
+    const uint64_t idle_for_microseconds = 300 * 1000;
+    sleepForMicroseconds(idle_for_microseconds);
+
+    first_connection->abort(); // further usage requires reconnect, reuse the idle stored connection
+
+    auto reused = echoRequestAndTakeConnectionInfo("Hello", *first_connection);
+
+    ASSERT_TRUE(reused.has_value);
+    /// The very socket that was waiting in the pool, with its own history - not a fresh one, and
+    /// not the aborted one.
+    ASSERT_EQ(stored_info.id, reused.id);
+    ASSERT_EQ(1, reused.requests_served);
+    /// And the idle time is how long that socket really waited, not the sample taken for its
+    /// previous request.
+    ASSERT_GE(reused.idle_microseconds, idle_for_microseconds / 2);
+}
+
+/// The idle time is the time a connection spent in the pool, not the time since its previous
+/// request went out. The latter also covers the transfer of that request's response, so a warm
+/// connection that has just finished a slow exchange and is borrowed again right away would land
+/// among the stale ones this column exists to find.
+TEST_F(ConnectionPoolTest, ConnectionInfoIdleTimeExcludesTransfer)
+{
+    auto ka = Poco::Timespan(10, 0); // 10 seconds
+    timeouts.withHTTPKeepAliveTimeout(ka);
+
+    auto pool = getPool();
+
+    DB::HTTPConnectionInfo slow_info;
+    {
+        auto connection = pool->getConnection(timeouts, nullptr);
+        echoRequestAndTakeConnectionInfo("Hello", *connection);
+
+        setSlowDown(1);
+        slow_info = echoRequestAndTakeConnectionInfo("Hello", *connection);
+        setSlowDown(0);
+    } // returned to the pool right after the slow response has been read
+
+    ASSERT_TRUE(slow_info.has_value);
+    /// A second request over the same checkout: the connection was held by its user, not idle.
+    ASSERT_EQ(0, slow_info.idle_microseconds);
+
+    auto connection = pool->getConnection(timeouts, nullptr);
+    auto reused = echoRequestAndTakeConnectionInfo("Hello", *connection);
+
+    ASSERT_TRUE(reused.has_value);
+    ASSERT_EQ(slow_info.id, reused.id);
+    ASSERT_EQ(2, reused.requests_served);
+    /// Borrowed again immediately: the second the server spent on the previous response is not idle time.
+    ASSERT_LT(reused.idle_microseconds, 500 * 1000);
+}
+
+/// A reconnect can also fail, and then the request never reaches a socket at all. The caller learns
+/// that from the exception and writes its error row inside the same scope - failed requests being
+/// among the rows users inspect most closely - so the slot must not still be holding the identity of
+/// the socket that was discarded on the way.
+TEST_F(ConnectionPoolTest, ConnectionInfoClearedWhenReconnectFails)
+{
+    /// A hard limit of one, reached by the connection below, so its reconnect cannot obtain a
+    /// replacement: `PooledConnection::create` throws `HTTP_CONNECTION_LIMIT_REACHED` before any
+    /// connect attempt is made. The store limit of zero keeps the pool empty, so there is no stored
+    /// connection to be reused instead.
+    DB::HTTPConnectionPools::Limits limits {0, 0, 0, 1};
+    DB::HTTPConnectionPools::instance().setLimits(limits, limits, limits);
+
+    auto pool = getPool();
+
+    auto connection = pool->getConnection(timeouts, nullptr);
+
+    auto first = echoRequestAndTakeConnectionInfo("Hello", *connection);
+    ASSERT_TRUE(first.has_value);
+    ASSERT_NE(0, first.id);
+
+    connection->abort(); // further usage requires a reconnect - the one that is going to fail
+
+    {
+        DB::HTTPConnectionInfoScope scope(true);
+
+        auto data = String("Hello");
+        Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_PUT, "/", "HTTP/1.1");
+        request.setContentLength(data.size());
+        ASSERT_ANY_THROW(connection->sendRequest(request));
+
+        /// This is where the caller logs the failure. No socket carried the request, so the row
+        /// reports zeroes - and in particular neither the id, nor the request count, nor the age of
+        /// the socket that was dropped.
+        auto info = DB::takeCurrentHTTPConnectionInfo();
+        ASSERT_FALSE(info.has_value);
+        ASSERT_NE(first.id, info.id);
+    }
+}
+
+/// The pool is shared with everything that speaks HTTP - `StorageURL`, dictionary sources, the
+/// proxy resolver, the REST catalogs, the SDKs' credential refreshes - and none of that logs to
+/// `system.blob_storage_log`. A request they make must not be left in the slot for the next blob
+/// storage row on this thread, which would otherwise report a socket it never used - including rows
+/// for local or HDFS object storage, which use no HTTP connection at all.
+TEST_F(ConnectionPoolTest, ConnectionInfoIsNotPublishedOutsideScope)
+{
+    auto pool = getPool();
+
+    auto connection = pool->getConnection(timeouts, nullptr);
+
+    echoRequest("Hello", *connection);
+    ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+
+    /// A blob storage request in between is recorded as usual.
+    auto info = echoRequestAndTakeConnectionInfo("Hello", *connection);
+    ASSERT_TRUE(info.has_value);
+    ASSERT_NE(0, info.id);
+
+    /// And an unrelated request after it does not resurrect the slot.
+    echoRequest("Hello", *connection);
+    ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+}
+
+/// Not every request made inside a scope ends up taken: the SDK may retry, refresh credentials on
+/// the way, or the code that opened the scope may skip writing its row. Whatever is left when the
+/// scope ends must go with it - otherwise a later row on this thread, possibly for a request that
+/// never reached the wire, would inherit it. This is the stale-slot case that a post-upload
+/// `HeadObject` existence check, which no row describes, used to produce when the scope was owned
+/// by the HTTP client rather than by the logging code.
+TEST_F(ConnectionPoolTest, ConnectionInfoIsClearedWhenScopeEnds)
+{
+    auto pool = getPool();
+
+    auto connection = pool->getConnection(timeouts, nullptr);
+
+    {
+        DB::HTTPConnectionInfoScope scope(true);
+        echoRequest("Hello", *connection);
+        /// Published, but deliberately not taken.
+    }
+    ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+
+    /// The next scoped request starts from a clean slot and sees only itself.
+    {
+        DB::HTTPConnectionInfoScope scope(true);
+        auto before = DB::takeCurrentHTTPConnectionInfo();
+        ASSERT_FALSE(before.has_value);
+
+        echoRequest("Hello", *connection);
+        auto info = DB::takeCurrentHTTPConnectionInfo();
+        ASSERT_TRUE(info.has_value);
+        ASSERT_EQ(1, info.requests_served);
+
+        /// Taking is one-shot: the tail entries of a batch that shared one request see nothing.
+        ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+    }
+    ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+}
+
+/// A logging site whose `system.blob_storage_log` is turned off opens a disabled scope: nothing is
+/// published for its requests, but they still count towards the socket's request number.
+TEST_F(ConnectionPoolTest, ConnectionInfoIsNotPublishedInDisabledScope)
+{
+    auto pool = getPool();
+
+    auto connection = pool->getConnection(timeouts, nullptr);
+
+    {
+        DB::HTTPConnectionInfoScope scope(false);
+        ASSERT_FALSE(DB::isHTTPConnectionInfoCaptureEnabled());
+        echoRequest("Hello", *connection);
+        ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+    }
+
+    auto info = echoRequestAndTakeConnectionInfo("Hello", *connection);
+    ASSERT_TRUE(info.has_value);
+    ASSERT_EQ(1, info.requests_served);
+}
+
+/// A row whose timing covers several requests - an SDK that retried a write, a credential refresh
+/// made on the way to it - cannot honestly name a connection: `elapsed_microseconds` describes the
+/// whole sequence, including the backoff sleeps, while at most one of the sockets could be named.
+/// The retrying Azure write paths log exactly one such row, so the columns must come out empty
+/// there rather than describing whichever attempt happened to be last.
+TEST_F(ConnectionPoolTest, ConnectionInfoIsEmptyWhenScopeSpansSeveralRequests)
+{
+    auto pool = getPool();
+
+    auto connection = pool->getConnection(timeouts, nullptr);
+
+    {
+        DB::HTTPConnectionInfoScope scope(true);
+        echoRequest("Hello", *connection);
+        echoRequest("Hello", *connection);
+        ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+    }
+
+    /// And the ambiguity does not outlive the scope that had it: the next single request is
+    /// recorded as usual.
+    auto info = echoRequestAndTakeConnectionInfo("Hello", *connection);
+    ASSERT_TRUE(info.has_value);
+    ASSERT_EQ(2, info.requests_served);
+}
+
+/// The object storage transports count each attempt before setting up its connection, which can
+/// fail on its own - a connect timeout that the SDK then retries never reaches the pooled session.
+/// Such a retry still makes the entry span several attempts, while an attempt that does reach the
+/// pooled session must not be counted a second time there.
+TEST_F(ConnectionPoolTest, ConnectionInfoCountsAttemptsFailedBeforeSending)
+{
+    auto pool = getPool();
+
+    auto connection = pool->getConnection(timeouts, nullptr);
+
+    {
+        DB::HTTPConnectionInfoScope scope(true);
+        DB::beginHTTPConnectionInfoTransportAttempt(/* logged_request = */ true);
+        echoRequest("Hello", *connection);
+        auto info = DB::takeCurrentHTTPConnectionInfo();
+        ASSERT_TRUE(info.has_value);
+        ASSERT_EQ(0, info.requests_served);
+    }
+
+    {
+        DB::HTTPConnectionInfoScope scope(true);
+        DB::beginHTTPConnectionInfoTransportAttempt(/* logged_request = */ true); /// fails while connecting, then retried
+        DB::beginHTTPConnectionInfoTransportAttempt(/* logged_request = */ true);
+        echoRequest("Hello", *connection);
+        ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+    }
+}
+
+/// A credential's token request can be the only request that reaches the wire inside the scope of a
+/// logged one: when the token endpoint rejects it, the SDK throws before the object request is sent,
+/// and the read path still writes an error row for the blob. That row must not carry the identity
+/// service's connection, whether the token request came through a helper transport or as a raw
+/// request made by a credentials provider. A helper request still counts towards the requests the
+/// entry spans, so a logged request that follows it is not attributed either.
+TEST_F(ConnectionPoolTest, ConnectionInfoIgnoresHelperRequests)
+{
+    auto pool = getPool();
+
+    auto connection = pool->getConnection(timeouts, nullptr);
+
+    {
+        DB::HTTPConnectionInfoScope scope(true);
+        DB::beginHTTPConnectionInfoTransportAttempt(/* logged_request = */ false);
+        echoRequest("Hello", *connection);
+        ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+    }
+
+    {
+        DB::HTTPConnectionInfoScope scope(true);
+        {
+            DB::HTTPConnectionInfoHelperRequests helper_requests;
+            echoRequest("Hello", *connection);
+        }
+        ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+    }
+
+    {
+        DB::HTTPConnectionInfoScope scope(true);
+        DB::beginHTTPConnectionInfoTransportAttempt(/* logged_request = */ false);
+        echoRequest("Hello", *connection);
+        DB::beginHTTPConnectionInfoTransportAttempt(/* logged_request = */ true);
+        echoRequest("Hello", *connection);
+        ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+    }
+
+    /// The helper status ends with the guard: the next logged request is recorded as usual.
+    {
+        DB::HTTPConnectionInfoScope scope(true);
+        DB::beginHTTPConnectionInfoTransportAttempt(/* logged_request = */ true);
+        echoRequest("Hello", *connection);
+        auto info = DB::takeCurrentHTTPConnectionInfo();
+        ASSERT_TRUE(info.has_value);
+        ASSERT_EQ(4, info.requests_served);
+    }
+}
+
+/// The remote proxy resolver sends its own pooled request from inside the S3 client, before the
+/// object request's transport attempt is counted. When the lookup times out, the S3 call fails without
+/// sending the object request, and the read path still writes an error row for the blob. That row must
+/// not carry the resolver's connection - and neither must a row whose lookup succeeded.
+TEST_F(ConnectionPoolTest, ConnectionInfoIgnoresProxyResolverRequests)
+{
+    DB::RemoteProxyHostFetcherImpl fetcher;
+    auto uri = Poco::URI(getServerUrl() + "/proxy");
+
+    {
+        DB::HTTPConnectionInfoScope scope(true);
+        ASSERT_NO_THROW(fetcher.fetch(uri, timeouts));
+        ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+    }
+
+    {
+        /// A connect attempt of the object request failed, and its retry looks the proxy up again.
+        DB::HTTPConnectionInfoScope scope(true);
+        DB::beginHTTPConnectionInfoTransportAttempt(/* logged_request = */ true);
+        ASSERT_NO_THROW(fetcher.fetch(uri, timeouts));
+        ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+    }
+
+    {
+        /// The object request went out, failed with a retryable error, and its retry - counted before
+        /// the proxy is resolved - could not even reach the resolver. The row spans both attempts.
+        auto pool = getPool();
+        auto connection = pool->getConnection(timeouts, nullptr);
+        DB::HTTPConnectionInfoScope scope(true);
+        DB::beginHTTPConnectionInfoTransportAttempt(/* logged_request = */ true);
+        echoRequest("Hello", *connection);
+        DB::beginHTTPConnectionInfoTransportAttempt(/* logged_request = */ true);
+        ASSERT_ANY_THROW(fetcher.fetch(Poco::URI("http://127.0.0.1:1/proxy"), timeouts));
+        ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+    }
+
+    setSlowDown(2);
+    timeouts.withReceiveTimeout(1);
+
+    {
+        DB::HTTPConnectionInfoScope scope(true);
+        ASSERT_ANY_THROW(fetcher.fetch(uri, timeouts));
+        ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+    }
 }
 
 TEST_F(ConnectionPoolTest, ReceiveTimeout)

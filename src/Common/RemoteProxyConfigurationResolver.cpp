@@ -6,6 +6,7 @@
 #include <IO/ReadHelpers.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
+#include <Common/HTTPConnectionInfo.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -18,6 +19,10 @@ namespace ErrorCodes
 
 std::string RemoteProxyHostFetcherImpl::fetch(const Poco::URI & endpoint, const ConnectionTimeouts & timeouts)
 {
+    /// The lookup can go out inside the scope of a logged object storage request, right before it,
+    /// but is not that request: never report its connection as the one that carried the object.
+    HTTPConnectionInfoHelperRequests helper_requests;
+
     auto request = Poco::Net::HTTPRequest(Poco::Net::HTTPRequest::HTTP_GET, endpoint.getPath(), Poco::Net::HTTPRequest::HTTP_1_1);
     auto session = makeHTTPSession(HTTPConnectionGroupType::HTTP, endpoint, timeouts);
 
