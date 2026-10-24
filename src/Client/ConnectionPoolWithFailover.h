@@ -111,6 +111,20 @@ public:
         Base::incrementErrorCount(pool);
     }
 
+    /// Penalize the nested pool with the given address, e.g. when an established connection
+    /// to it fails mid-query with a network error. Does nothing if no nested pool matches.
+    void incrementErrorCount(const String & replica_host, UInt16 replica_port)
+    {
+        for (const auto & pool : nested_pools)
+        {
+            if (pool->getHost() == replica_host && pool->getPort() == replica_port)
+            {
+                Base::incrementErrorCount(pool);
+                return;
+            }
+        }
+    }
+
     size_t getPoolSize() const { return Base::getPoolSize(); }
 
 private:
