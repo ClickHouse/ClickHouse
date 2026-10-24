@@ -134,7 +134,7 @@ MergeTreeReaderWide::MergeTreeReaderWide(
         for (size_t i = 0; i < columns_to_read.size(); ++i)
         {
             /// Column was dropped by a pending mutation or invalidated. Don't read stale data;
-            if (!isColumnDroppedByPendingMutation(i) && !isSystemColumnInvalidated(i))
+            if (!isColumnSkipped(i))
                 addStreams(columns_to_read[i], serializations[i]);
         }
     }
@@ -446,7 +446,7 @@ bool MergeTreeReaderWide::isColumnPartiallyRead(size_t pos) const
 
 bool MergeTreeReaderWide::isColumnSkipped(size_t pos) const
 {
-    return isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos);
+    return isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos) || isSubcolumnOfColumnWithReplacedNulls(pos);
 }
 
 void MergeTreeReaderWide::lookupColumnsCache(
@@ -1531,7 +1531,7 @@ void MergeTreeReaderWide::deserializePrefixForAllColumnsImpl(size_t num_columns,
         DeserializeBinaryBulkStateMap deserialize_state_map;
         for (size_t pos = 0; pos < num_columns; ++pos)
         {
-            if (isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos))
+            if (isColumnSkipped(pos))
                 continue;
 
             try

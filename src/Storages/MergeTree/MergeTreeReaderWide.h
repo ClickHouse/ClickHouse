@@ -265,8 +265,8 @@ private:
     /// so it has to be read from the part even when the rest of the granule is served from cache.
     bool isColumnPartiallyRead(size_t pos) const;
 
-    /// The column at `pos` is not read at all: dropped by a pending mutation, or an invalidated
-    /// system column. Both paths leave it null.
+    /// The column at `pos` is not read at all: dropped by a pending mutation, an invalidated system
+    /// column, or a subcolumn extracted from its converted column. All paths leave it null.
     bool isColumnSkipped(size_t pos) const;
 
     /// The columns cache.

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Names.h>
+#include <DataTypes/IDataType_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Common/COW.h>
@@ -45,6 +46,9 @@ std::optional<ActionsDAG> evaluateMissingDefaults(
     ContextPtr context,
     bool save_unneeded_columns = true,
     bool null_as_default = false);
+
+/// Converting between these types replaces NULLs with the column DEFAULT, so subcolumns must come from the converted column.
+bool conversionReplacesNullsWithDefault(const DataTypePtr & type_in_part, const DataTypePtr & type_in_storage);
 
 /// Tries to convert columns in block to required_columns
 void performRequiredConversions(Block & block, const NamesAndTypesList & required_columns, ContextPtr context,
