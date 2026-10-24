@@ -10,6 +10,9 @@
 -- template for one over-matched (and could reject or rewrite) the other. The tree hashes now fold
 -- those fields in, so only the intended statement matches.
 
+-- The `KILL ... WHERE 0` statements below match nothing; they must not throw `NOTHING_TO_KILL`.
+SET kill_throw_if_noop = 0;
+
 -- SYSTEM: two no-child statements that differ only in `type`.
 CREATE RULE rule_system_overmatch AS (SYSTEM DROP UNCOMPRESSED CACHE) REJECT WITH 'blocked';
 SET query_rules = 'rule_system_overmatch';
