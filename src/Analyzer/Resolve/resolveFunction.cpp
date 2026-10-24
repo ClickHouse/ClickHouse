@@ -5,6 +5,7 @@
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/ColumnTransformers.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/JoinNode.h>
@@ -1366,6 +1367,84 @@ QueryTreeNodePtr QueryAnalyzer::castNodeToType(
     return result;
 }
 
+/** Rewrite `UNIQUE(subquery)` into the scalar subquery
+  * `ifNull((SELECT count() = uniqExact(*) FROM (subquery) WHERE and(1, * APPLY isNotNull)), 1)`.
+  * Per the SQL standard, rows that have a NULL in any column are never duplicates, so they are filtered out.
+  * The rewritten subquery is resolved as an ordinary scalar subquery: it is evaluated during analysis
+  * if it is not correlated, and it is decorrelated by the planner otherwise.
+  * The aggregation always returns exactly one row over a non-empty input. The decorrelated subquery returns NULL
+  * for an outer row without inner rows, and an empty input is vacuously unique, hence `ifNull(..., 1)`.
+  * It also removes the `Nullable` wrapper that a scalar subquery result gets.
+  */
+ProjectionNames QueryAnalyzer::resolveUniquePredicate(
+    QueryTreeNodePtr & node,
+    const FunctionNodePtr & function_node_ptr,
+    IdentifierResolveScope & scope,
+    bool allow_niladic_functions)
+{
+    checkFunctionNodeHasEmptyNullsAction(*function_node_ptr);
+
+    if (function_node_ptr->getArguments().getNodes().size() != 1)
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Function 'UNIQUE' expects exactly one subquery argument. In scope {}",
+            scope.scope_node->formatASTForErrorMessage());
+
+    const auto & unique_subquery_argument = function_node_ptr->getArguments().getNodes().at(0);
+    auto unique_subquery_argument_node_type = unique_subquery_argument->getNodeType();
+    if (unique_subquery_argument_node_type != QueryTreeNodeType::QUERY
+        && unique_subquery_argument_node_type != QueryTreeNodeType::UNION)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Function 'UNIQUE' expects a subquery argument. Actual: {}. In scope {}",
+            unique_subquery_argument->formatASTForErrorMessage(),
+            scope.scope_node->formatASTForErrorMessage());
+    }
+
+    auto new_unique_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
+    new_unique_subquery->setIsSubquery(true);
+
+    auto uniq_exact_function = std::make_shared<FunctionNode>("uniqExact");
+    uniq_exact_function->getArguments().getNodes().push_back(std::make_shared<MatcherNode>());
+    auto equals_function = std::make_shared<FunctionNode>("equals");
+    equals_function->getArguments().getNodes().push_back(std::make_shared<FunctionNode>("count"));
+    equals_function->getArguments().getNodes().push_back(std::move(uniq_exact_function));
+    new_unique_subquery->getProjection().getNodes().push_back(std::move(equals_function));
+    new_unique_subquery->getJoinTreeNode() = unique_subquery_argument;
+
+    /// The matcher expands to every column of the subquery, so the filter does not refer to the columns by name.
+    /// The constant makes `and` have at least two arguments.
+    ColumnTransformersNodes is_not_null_transformers;
+    is_not_null_transformers.push_back(std::make_shared<ApplyColumnTransformerNode>(std::make_shared<FunctionNode>("isNotNull")));
+    auto where_function = std::make_shared<FunctionNode>("and");
+    where_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(static_cast<UInt8>(1), std::make_shared<DataTypeUInt8>()));
+    where_function->getArguments().getNodes().push_back(std::make_shared<MatcherNode>(std::move(is_not_null_transformers)));
+    new_unique_subquery->getWhere() = std::move(where_function);
+
+    QueryTreeNodePtr new_unique_argument = new_unique_subquery;
+    auto unique_subquery_projection_names = resolveExpressionNode(
+        new_unique_argument,
+        scope,
+        false /*allow_lambda_expression*/,
+        false /*allow_table_expression*/,
+        false /*ignore_alias*/,
+        allow_niladic_functions);
+
+    auto if_null_function = std::make_shared<FunctionNode>("ifNull");
+    if_null_function->getArguments().getNodes().push_back(std::move(new_unique_argument));
+    if_null_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(static_cast<UInt8>(1), std::make_shared<DataTypeUInt8>()));
+    node = std::move(if_null_function);
+    resolveExpressionNode(
+        node,
+        scope,
+        false /*allow_lambda_expression*/,
+        false /*allow_table_expression*/,
+        false /*ignore_alias*/,
+        allow_niladic_functions);
+
+    /// The same projection name as for a correlated `EXISTS`, but with the public name of the predicate.
+    return {"UNIQUE(" + unique_subquery_projection_names.at(0) + ")"};
+}
+
 /** Resolve function node in scope.
   * During function node resolve, function node can be replaced with another expression (if it match lambda or sql user defined function),
   * with constant (if it allow constant folding), or with expression list. It is caller responsibility to handle such cases appropriately.
@@ -1578,6 +1657,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     bool is_special_function_join_get = false;
     bool is_special_function_exists = false;
     bool is_special_function_if = false;
+    bool is_special_function_unique = false;
     bool is_special_function_multi_if = false;
 
     if (!lambda_expression_untyped)
@@ -1588,6 +1668,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         is_special_function_join_get = functionIsJoinGet(function_name);
         is_special_function_exists = function_name == "exists";
         is_special_function_if = function_name == "if";
+        is_special_function_unique = function_name == "__unique";
         is_special_function_multi_if = function_name == "multiIf";
 
         /** Special handling for count and countState functions (including with combinators like countIf, countIfState, etc.).
@@ -2121,6 +2202,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             }
         }
     }
+
+    if (is_special_function_unique)
+        return resolveUniquePredicate(node, function_node_ptr, scope, allow_niladic_functions);
 
     if (is_special_function_exists)
     {
