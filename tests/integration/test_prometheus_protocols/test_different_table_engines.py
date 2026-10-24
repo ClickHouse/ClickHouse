@@ -1,10 +1,13 @@
 import pytest
 import re
+import requests
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV, tsv_close_to
 from .prometheus_test_utils import (
+    convert_time_series_to_protobuf,
     execute_query_via_http_api,
+    get_response_to_remote_write,
     load_preset,
     send_protobuf_to_remote_write,
 )
@@ -252,6 +255,32 @@ def test_microsecond_precision():
     create_query = node.query("SHOW CREATE TABLE prometheus")
     assert re.search(r"(?s)SAMPLES INNER COLUMNS.*`timestamp` DateTime64\(6\)", create_query)
     assert re.search(r"\btimestamp\s+DateTime64\(6\)", node.query("DESCRIBE timeSeriesSamples(prometheus)"))
+
+
+# Checks that RemoteWrite rejects a sample timestamp the timestamp column cannot hold with HTTP 400:
+# Prometheus resends a batch answered with a 5xx for as long as it keeps the batch.
+@pytest.mark.parametrize(
+    "timestamp_type, max_timestamp_ms, max_timestamp, out_of_range_ms",
+    [
+        ("DateTime64(9)", 9223372036854, "2262-04-11 23:47:16.854000000", [9223372036855, -9223372036855]),
+        ("DateTime", 4294967295999, "2106-02-07 06:28:15", [4294967296000, -1000]),
+    ],
+)
+def test_out_of_range_timestamp(timestamp_type, max_timestamp_ms, max_timestamp, out_of_range_ms):
+    node.query(f"CREATE TABLE prometheus (samples Array(Tuple({timestamp_type}, Float64))) ENGINE=TimeSeries")
+
+    def write(timestamp_ms):
+        write_request = convert_time_series_to_protobuf([({"__name__": "foo"}, {0: 1.0})])
+        write_request.timeseries[0].samples[0].timestamp = timestamp_ms
+        return get_response_to_remote_write(node.ip_address, 9093, "/write", write_request)
+
+    for timestamp_ms in out_of_range_ms:
+        response = write(timestamp_ms)
+        assert response.status_code == requests.codes.bad_request, response.text
+        assert "out of range" in response.text
+
+    assert write(max_timestamp_ms).status_code == requests.codes.no_content
+    assert node.query("SELECT timestamp FROM timeSeriesSamples(prometheus)", settings={"session_timezone": "UTC"}) == f"{max_timestamp}\n"
 
 
 # Checks that scalar values can be stored as `Float32` instead of the default `Float64`.
