@@ -145,6 +145,7 @@ static MergeTreeReaderSettings adjustReaderSettingsForColumnsCacheWrites(
             = std::shared_ptr<std::atomic<size_t>>(budget, &budget->bytes_written);
         settings.columns_cache_writes_disabled
             = std::shared_ptr<std::atomic<bool>>(budget, &budget->writes_disabled);
+        settings.columns_cache_write_budget = budget;
     }
     else
     {
@@ -342,7 +343,8 @@ static double estimateUncompressedColumnsSizePerMark(const IMergeTreeDataPart & 
 /// so this has to be evaluated for each of them separately.
 static bool partCanWriteToColumnsCache(const IMergeTreeDataPart & part)
 {
-    return part.getType() == MergeTreeDataPartType::Wide
+    return (part.getType() == MergeTreeDataPartType::Wide
+            || (part.getType() == MergeTreeDataPartType::Parquet && !part.isProjectionPart()))
         && canUseColumnsCacheForPart(part.storage.getStorageID().uuid);
 }
 

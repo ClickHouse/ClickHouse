@@ -3526,8 +3526,12 @@ private:
         }
 
         MergeTreeIndexGranularityPtr index_granularity_ptr;
-        /// Reuse source part granularity if mutation does not change number of rows
-        if (!affects_all_columns && ctx->execute_ttl_type == ExecuteTTLType::NONE)
+        /// Reuse source part granularity if mutation does not change number of rows.
+        /// The granules of a parquet part are its row groups, which are sized differently, so the granularity
+        /// is not reused when the mutation changes the part type to or from parquet.
+        bool same_kind_of_granularity = (ctx->source_part->getType() == MergeTreeDataPartType::Parquet)
+            == (ctx->new_data_part->getType() == MergeTreeDataPartType::Parquet);
+        if (!affects_all_columns && ctx->execute_ttl_type == ExecuteTTLType::NONE && same_kind_of_granularity)
         {
             index_granularity_ptr = ctx->source_part->index_granularity;
         }
@@ -4984,6 +4988,16 @@ bool MutateTask::prepare()
 
     /// The name is deterministic, so claim it and reclaim a leftover of an interrupted mutation.
     ctx->temporary_directory_lock = ctx->data->claimTemporaryPartDirectory(ctx->disk, tmp_part_dir_name);
+
+    /// The mutated part keeps the format of the source part, but a `Parquet` part can be written only while the codecs
+    /// allow it: they could have changed since the source part was written, e.g. by `default_compression_codec` with
+    /// encryption, or by a new encrypted column. Then the format is chosen again, and the whole part is rewritten.
+    if (ctx->future_part->part_format.part_type == MergeTreeDataPartType::Parquet
+        && !ctx->data->canUseParquetPartFormat(*ctx->metadata_snapshot, /*projection=*/ nullptr))
+    {
+        ctx->future_part->part_format = ctx->data->choosePartFormat(
+            ctx->source_part->getBytesUncompressedOnDisk(), ctx->source_part->rows_count, ctx->source_part->info.level, /*projection=*/ nullptr);
+    }
 
     auto builder = ctx->data->getDataPartBuilder(ctx->future_part->name, single_disk_volume, tmp_part_dir_name, getReadSettings(), PartDirIntent::CreateFresh);
     builder.withPartFormat(ctx->future_part->part_format);

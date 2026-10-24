@@ -201,6 +201,7 @@ class ActionLocksManager;
 using ActionLocksManagerPtr = std::shared_ptr<ActionLocksManager>;
 class ShellCommand;
 class ICompressionCodec;
+class CompressionCodecSelector;
 class AccessControl;
 class GSSAcceptorContext;
 struct Settings;
@@ -1982,6 +1983,8 @@ public:
 
     /// Lets you select the compression codec according to the conditions described in the configuration file.
     std::shared_ptr<ICompressionCodec> chooseCompressionCodec(size_t part_size, double part_size_ratio) const;
+    /// All codecs that `chooseCompressionCodec` may return, for any size of a part.
+    std::vector<std::shared_ptr<ICompressionCodec>> getAllCompressionCodecsFromConfig() const;
 
 
     /// Provides storage disks
@@ -2252,6 +2255,8 @@ public:
     ServerSettings getServerSettingsCopy() const;
 
 private:
+    const CompressionCodecSelector & getCompressionCodecSelector() const;
+
     /// `ignore_automatic_parallel_replicas` is for cluster engines (`s3`, `url`, a table of a data lake catalog, ...):
     /// `automatic_parallel_replicas_mode` only decides for `MergeTree` reads, so they use parallel replicas whenever
     /// they are enabled. It is also set for a follower, which reads the way the initiator decided.

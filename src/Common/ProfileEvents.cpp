@@ -701,8 +701,10 @@
     \
     M(InsertedWideParts, "Number of parts inserted in Wide format.", ValueType::Number) \
     M(InsertedCompactParts, "Number of parts inserted in Compact format.", ValueType::Number) \
+    M(InsertedParquetParts, "Number of parts inserted in Parquet format.", ValueType::Number) \
     M(MergedIntoWideParts, "Number of parts merged into Wide format.", ValueType::Number) \
     M(MergedIntoCompactParts, "Number of parts merged into Compact format.", ValueType::Number) \
+    M(MergedIntoParquetParts, "Number of parts merged into Parquet format.", ValueType::Number) \
     \
     M(MergeTreeDataProjectionWriterRows, "Number of rows INSERTed to MergeTree tables projection.", ValueType::Number) \
     M(MergeTreeDataProjectionWriterUncompressedBytes, "Uncompressed bytes (for columns as they stored in memory) INSERTed to MergeTree tables projection.", ValueType::Bytes) \

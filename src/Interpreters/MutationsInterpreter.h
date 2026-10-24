@@ -190,6 +190,7 @@ public:
         bool hasBrokenProjection(const String & name) const;
         bool hasUnloadedProjection(const String & name) const;
         bool isCompactPart() const;
+        bool isParquetPart() const;
 
         void read(
             Stage & first_stage,

@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
+#include <Storages/MergeTree/MergeTreeDataPartParquet.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
@@ -276,6 +277,12 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         checksum_file(MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION);
         /// Uncompressed checksums in compact parts are computed in a complex way.
         /// We check only checksum of compressed file.
+        check_uncompressed = false;
+    }
+    else if (part_type == MergeTreeDataPartType::Parquet)
+    {
+        /// The Parquet file has compression inside, it is checked as a whole.
+        checksum_file(MergeTreeDataPartParquet::DATA_FILE_NAME_WITH_EXTENSION);
         check_uncompressed = false;
     }
     else if (part_type == MergeTreeDataPartType::Wide)

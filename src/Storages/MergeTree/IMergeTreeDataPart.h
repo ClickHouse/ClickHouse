@@ -140,6 +140,11 @@ public:
     using Checksum = MergeTreeDataPartChecksums::Checksum;
 
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
+
+    /// The sizes of the columns calculated by the writer of the part. Used by the formats which calculate
+    /// the sizes of columns from the files of the part, which can't be read yet when the part is being written
+    /// (e.g. with packed storage).
+    virtual void setWrittenColumnSizes(ColumnSizeByName /*sizes*/) {}
     using ColumnSizeByNameConstPtr = std::shared_ptr<const ColumnSizeByName>;
     using NameToNumber = SharedPartColumns::NameToNumber;
 
@@ -1071,6 +1076,7 @@ using MergeTreeDataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 using MergeTreeMutableDataPartPtr = std::shared_ptr<IMergeTreeDataPart>;
 
 bool isCompactPart(const MergeTreeDataPartPtr & data_part);
+bool isParquetPart(const MergeTreeDataPartPtr & data_part);
 bool isWidePart(const MergeTreeDataPartPtr & data_part);
 
 inline String getIndexExtension(bool is_compressed_primary_key) { return is_compressed_primary_key ? ".cidx" : ".idx"; }

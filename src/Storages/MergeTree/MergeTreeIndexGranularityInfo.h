@@ -15,7 +15,8 @@ struct ProjectionDescription;
 using ProjectionDescriptionRawPtr = const ProjectionDescription *;
 
 /** Various types of mark files are stored in files with various extensions:
-  * .mrk, .mrk2, .mrk3, .mrk4, .cmrk, .cmrk2, .cmrk3, .cmrk4.
+  * .mrk, .mrk2, .mrk3, .mrk4, .mrk5, .cmrk, .cmrk2, .cmrk3, .cmrk4, .cmrk5.
+  * .mrk and .mrk2 are used by Wide parts, .mrk3 and .mrk4 by Compact parts, .mrk5 by Parquet parts.
   * This helper allows to obtain mark type from file extension and vice versa.
   */
 struct MarkType

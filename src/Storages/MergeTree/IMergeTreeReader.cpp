@@ -608,7 +608,7 @@ IMergeTreeReader::ColumnAndSerializationInPart IMergeTreeReader::getColumnAndSer
         return {missed_column, IDataType::getSerialization(missed_column)};
     }
 
-    /// The `Quantize` codec attaches a custom serialization that exposes companion subcolumns (`quantized`,
+    /// The `Quantized` codec attaches a custom serialization that exposes companion subcolumns (`quantized`,
     /// `pq_codebook`) which the part's plain columns list (columns.txt) cannot represent - they round-trip to the bare
     /// type name and are lost. Honor that serialization directly: rebuilding it from the part's `SerializationInfo` via
     /// `IDataType::getSerialization(info)` would re-wrap it with the recorded kind stack and discard the companion
@@ -839,6 +839,20 @@ MergeTreeReaderPtr createMergeTreeReaderCompact(
     const ValueSizeMap & avg_value_size_hints,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback);
 
+MergeTreeReaderPtr createMergeTreeReaderParquet(
+    const MergeTreeDataPartInfoForReaderPtr & read_info,
+    const NamesAndTypesList & columns_to_read,
+    const StorageSnapshotPtr & storage_snapshot,
+    const MergeTreeSettingsPtr & storage_settings,
+    const MarkRanges & mark_ranges,
+    const VirtualFields & virtual_fields,
+    UncompressedCache * uncompressed_cache,
+    ColumnsCache * columns_cache,
+    MarkCache * mark_cache,
+    const MergeTreeReaderSettings & reader_settings,
+    const ValueSizeMap & avg_value_size_hints,
+    const ReadBufferFromFileBase::ProfileCallback & profile_callback);
+
 MergeTreeReaderPtr createMergeTreeReaderWide(
     const MergeTreeDataPartInfoForReaderPtr & read_info,
     const NamesAndTypesList & columns_to_read,
@@ -881,6 +895,21 @@ MergeTreeReaderPtr createMergeTreeReader(
             columns_cache,
             mark_cache,
             deserialization_prefixes_cache,
+            reader_settings,
+            avg_value_size_hints,
+            profile_callback);
+
+    if (read_info->isParquetPart())
+        return createMergeTreeReaderParquet(
+            read_info,
+            columns_to_read,
+            storage_snapshot,
+            storage_settings,
+            mark_ranges,
+            virtual_fields,
+            uncompressed_cache,
+            columns_cache,
+            mark_cache,
             reader_settings,
             avg_value_size_hints,
             profile_callback);

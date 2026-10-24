@@ -2041,7 +2041,8 @@ void writeFileFooter(FileWriteState & file,
     SchemaElements schema,
     const WriteOptions & options,
     WriteBuffer & out,
-    const Block & header)
+    const Block & header,
+    const std::vector<std::pair<String, String>> & key_value_metadata)
 {
     chassert(file.offset != 0);
     chassert(file.current_row_group.row_group.columns.empty());
@@ -2149,6 +2150,16 @@ void writeFileFooter(FileWriteState & file,
             meta.key_value_metadata.push_back(std::move(key_value));
             meta.__isset.key_value_metadata = true;
         }
+    }
+
+    for (const auto & [key, value] : key_value_metadata)
+    {
+        parquet::format::KeyValue key_value;
+        key_value.__set_key(key);
+        key_value.__set_value(value);
+
+        meta.key_value_metadata.push_back(std::move(key_value));
+        meta.__isset.key_value_metadata = true;
     }
 
     size_t footer_size = serializeThriftStruct(meta, out);

@@ -12,6 +12,7 @@
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/VirtualColumnsDescription.h>
 #include <Formats/MarkInCompressedFile.h>
+#include <Storages/ColumnSize.h>
 
 
 namespace DB
@@ -79,6 +80,9 @@ public:
     virtual const Block & getColumnsSample() const = 0;
 
     virtual const ColumnsSubstreams & getColumnsSubstreams() const = 0;
+
+    /// The sizes of the written columns, if the writer calculates them (see `IMergeTreeDataPart::setWrittenColumnSizes`).
+    virtual std::optional<std::unordered_map<String, ColumnSize>> getWrittenColumnSizes() const { return {}; }
 
 protected:
     SerializationPtr getSerialization(const String & column_name) const;

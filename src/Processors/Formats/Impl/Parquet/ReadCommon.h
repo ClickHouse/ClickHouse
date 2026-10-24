@@ -52,6 +52,10 @@ struct ColumnsCacheOptions
 
     /// Shared by all readers of the query, so that the budgets above apply to the query as a whole.
     std::shared_ptr<ColumnsCacheWriteBudget> write_budget;
+
+    /// Whether the reader charges the estimate budget of `write_budget` with the size of the columns it is
+    /// going to write. False if the caller has already charged it (as `MergeTree` read pools do).
+    bool charge_estimated_bytes = true;
 };
 
 struct ReadOptions
@@ -80,6 +84,11 @@ struct ReadOptions
 
     /// Null if the columns cache is not used.
     std::shared_ptr<const ColumnsCacheOptions> columns_cache;
+
+    /// Match the requested columns only with the top-level fields of the file, not with the nested fields
+    /// (e.g. elements of tuples). For files whose top-level fields can have names like `m.value`, which are
+    /// different from the nested field `value` of the map `m`.
+    bool match_only_top_level_columns = false;
 };
 
 struct SharedResourcesExt

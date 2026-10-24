@@ -362,6 +362,7 @@ namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
+    extern const MergeTreeSettingsUInt64 parquet_row_group_granularity_bytes;
     extern const MergeTreeSettingsUInt64 max_concurrent_queries;
     extern const MergeTreeSettingsInt64 max_partitions_to_read;
     extern const MergeTreeSettingsUInt64 min_marks_to_honor_max_concurrent_queries;
@@ -1354,6 +1355,10 @@ struct PartRangesReadInfo
         /// Count marks for each part.
         sum_marks_in_parts.resize(parts.size());
 
+        size_t parquet_parts = 0;
+        size_t parquet_rows = 0;
+        size_t parquet_marks = 0;
+
         for (size_t i = 0; i < parts.size(); ++i)
         {
             total_rows += parts[i].getRowsCount();
@@ -1362,15 +1367,31 @@ struct PartRangesReadInfo
 
             if (parts[i].data_part->index_granularity_info.mark_type.adaptive)
                 ++adaptive_parts;
+
+            if (parts[i].data_part->getType() == MergeTreeDataPartType::Parquet)
+            {
+                ++parquet_parts;
+                parquet_rows += parts[i].getRowsCount();
+                parquet_marks += sum_marks_in_parts[i];
+            }
         }
+
+        size_t index_granularity = data_settings[MergeTreeSetting::index_granularity];
 
         if (adaptive_parts > parts.size() / 2)
             index_granularity_bytes = data_settings[MergeTreeSetting::index_granularity_bytes];
 
+        /// The granules of parquet parts are their row groups, which are usually much larger than granules of other parts.
+        if (parquet_parts > parts.size() / 2 && parquet_marks != 0)
+        {
+            index_granularity = std::max<size_t>(1, parquet_rows / parquet_marks);
+            index_granularity_bytes = data_settings[MergeTreeSetting::parquet_row_group_granularity_bytes];
+        }
+
         max_marks_to_use_cache = MergeTreeDataSelectExecutor::roundRowsOrBytesToMarks(
             settings[Setting::merge_tree_max_rows_to_use_cache],
             settings[Setting::merge_tree_max_bytes_to_use_cache],
-            data_settings[MergeTreeSetting::index_granularity],
+            index_granularity,
             index_granularity_bytes);
 
         auto all_parts_on_remote_disk = checkAllPartsOnRemoteFS(parts);
@@ -1390,7 +1411,7 @@ struct PartRangesReadInfo
 
         min_marks_for_concurrent_read = MergeTreeDataSelectExecutor::minMarksForConcurrentRead(
             min_rows_for_concurrent_read, min_bytes_for_concurrent_read,
-            data_settings[MergeTreeSetting::index_granularity], index_granularity_bytes, settings[Setting::merge_tree_min_read_task_size], sum_marks);
+            index_granularity, index_granularity_bytes, settings[Setting::merge_tree_min_read_task_size], sum_marks);
 
         use_uncompressed_cache = settings[Setting::use_uncompressed_cache];
         if (sum_marks > max_marks_to_use_cache)
