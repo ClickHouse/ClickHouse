@@ -19,8 +19,8 @@
 #include <Planner/PlannerContext.h>
 #include <Planner/CollectTableExpressionData.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/RenameColumnVisitor.h>
@@ -1087,7 +1087,8 @@ void AlterCommand::apply(
         metadata.secondary_indices.emplace(
             insert_it,
             IndexDescription::getIndexFromAST(
-                index_decl, metadata.columns, /* is_implicitly_created */ false, metadata.escape_index_filenames, context));
+                index_decl, metadata.columns, /* is_implicitly_created */ false, metadata.escape_index_filenames, context,
+                /* validate_expressions = */ true));
     }
     else if (type == DROP_INDEX)
     {
@@ -1910,8 +1911,20 @@ void AlterCommands::apply(
     {
         try
         {
+            /// Existing indices are rebuilt because the column layout changed, not because the user
+            /// redefined them, so an unrelated `ALTER` must not start failing on grandfathered metadata.
+            /// But if this `ALTER` changed an `ALIAS` column the index expands through, the expanded
+            /// expression is fresh user input and must pass the same checks as a new definition. Compare
+            /// before compiling: the compilation builds the sets of `IN`, so an unvalidated `x IN table`
+            /// in a changed alias would already read that table.
+            auto expanded_expression_list = IndexDescription::getExpandedExpressionList(index.definition_ast, columns_with_virtuals, index_context);
+            const bool validate_expressions = !index.expression_list_ast || !expanded_expression_list
+                || expanded_expression_list->getTreeHash(/* ignore_aliases = */ false)
+                    != index.expression_list_ast->getTreeHash(/* ignore_aliases = */ false);
+
             index = IndexDescription::getIndexFromAST(
-                index.definition_ast, columns_with_virtuals, index.isImplicitlyCreated(), index.escape_filenames, index_context);
+                index.definition_ast, columns_with_virtuals, index.isImplicitlyCreated(), index.escape_filenames, index_context,
+                validate_expressions);
         }
         catch (const Exception & exception)
         {
@@ -2278,6 +2291,11 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         /// doesn't depend on how the same logical alter is spelled.
         if (command.column_statistics_decl != nullptr && !table->supportsStatistics())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Engine {} doesn't support statistics", table->getName());
+
+        /// Reject a `CHECK` constraint that can never be evaluated before it gets into the metadata.
+        /// The companion row-count check (`checkExpressionsPreserveRowCount`) runs earlier in this loop.
+        if (command.type == AlterCommand::ADD_CONSTRAINT || command.type == AlterCommand::MODIFY_CONSTRAINT)
+            ConstraintsDescription::validateNoSubqueries({command.constraint_decl}, context);
 
         const auto & column_name = command.column_name;
         if (command.type == AlterCommand::ADD_COLUMN)

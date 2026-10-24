@@ -81,6 +81,7 @@
 #include <Interpreters/TransactionManager.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/SelectQueryOptions.h>
+#include <Planner/AnalyzeExpression.h>
 #include <Planner/TableExpressionData.h>
 #include <Storages/StorageDummy.h>
 #include <Interpreters/convertFieldToType.h>
@@ -1899,8 +1900,7 @@ ExpressionActionsPtr getCombinedIndicesExpression(
     if (!key && combined_expr_list->children.empty())
         return nullptr;
 
-    auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, VirtualColumnUtils::getColumnsWithVirtualsForAnalysis(columns, virtuals));
-    return ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);
+    return analyzeExpressionToActions(combined_expr_list, VirtualColumnUtils::getColumnsWithVirtualsForAnalysis(columns, virtuals), context);
 }
 
 }

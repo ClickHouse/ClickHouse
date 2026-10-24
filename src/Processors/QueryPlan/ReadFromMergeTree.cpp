@@ -29,11 +29,10 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/StorageProxy.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/extractStringValueFilters.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/PredicateStatisticsLog.h>
-#include <Interpreters/TreeRewriter.h>
+#include <Planner/AnalyzeExpression.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -2381,10 +2380,13 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     {
         size_t prefix_size = input_order_info->used_prefix_of_sorting_key_size;
         auto order_key_prefix_ast = storage_snapshot->metadata->getSortingKey().expression_list_ast->clone();
+        /// `resize` must only ever cut here: growing the list would pad it with null `ASTPtr`s, and the
+        /// `sorting_columns` loop below would index past the end for the same reason. The prefix is
+        /// bounded by this table's sorting key in `requestReadingInOrder`, which is the only way an
+        /// `input_order_info` gets installed.
         order_key_prefix_ast->children.resize(prefix_size);
 
-        auto syntax_result = TreeRewriter(context).analyze(order_key_prefix_ast, storage_snapshot->metadata->getColumns().get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()));
-        auto sorting_key_prefix_expr = ExpressionAnalyzer(order_key_prefix_ast, syntax_result, context).getActionsDAG(false);
+        auto sorting_key_prefix_expr = analyzeExpressionToActionsDAG(order_key_prefix_ast, storage_snapshot->metadata->getColumns().get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()), context);
         const auto & sorting_columns = storage_snapshot->metadata->getSortingKey().column_names;
         std::vector<bool> reverse_flags = storage_snapshot->metadata->getSortingKeyReverseFlags();
 
@@ -4266,6 +4268,11 @@ bool ReadFromMergeTree::canReadInReverseOrder() const
             && context->getSettingsRef()[Setting::optimize_read_in_reverse_order_final]);
 }
 
+bool ReadFromMergeTree::canReadInOrderWithPrefix(size_t prefix_size) const
+{
+    return prefix_size <= storage_snapshot->metadata->getSortingKey().column_names.size();
+}
+
 bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit)
 {
     /// if direction is not set, use current one
@@ -4277,7 +4284,9 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
 
     /// The prefix indexes this snapshot's sorting key, and a clone of its expression list is resized
     /// to `prefix_size`, which appends null `ASTPtr` children when the prefix is longer than the key.
-    if (prefix_size > storage_snapshot->metadata->getSortingKey().column_names.size())
+    /// `ReadFromMerge::requestReadingInOrder` hands one prefix to the reads of all its children and asks
+    /// `canReadInOrderWithPrefix` of every one of them first, so that none is switched when one refuses.
+    if (!canReadInOrderWithPrefix(prefix_size))
         return false;
 
     /// Only a later request that WIDENS an already-established prefix (distinct/aggregation-in-order

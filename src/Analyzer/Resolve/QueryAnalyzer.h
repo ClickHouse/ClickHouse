@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <unordered_map>
 #include <unordered_set>
 #include <Analyzer/TableNode.h>
@@ -118,7 +119,20 @@ struct Settings;
 class QueryAnalyzer
 {
 public:
-    explicit QueryAnalyzer(bool only_analyze_, bool positional_arguments_already_resolved_ = false);
+    /// `identifier_typo_hint_columns_` restricts the `maybe you meant` suggestions for an unresolved
+    /// identifier to these names. A caller that analyzes an expression over every column of a table
+    /// but whose own subsequent check accepts only a part of them (@sa `KeyDescription::getKeyFromAST`)
+    /// uses it so that the suggestion names a column the expression may actually use. Unset means
+    /// every identifier visible in the scope is a candidate.
+    ///
+    /// `typo_correction_columns_` are additional candidates for the `maybe you meant` suggestions, for a
+    /// caller that resolves an expression over a part of the columns it accepts (@sa `buildExpressionCoreDAG`).
+    /// The list must outlive the analyzer.
+    explicit QueryAnalyzer(
+        bool only_analyze_,
+        bool positional_arguments_already_resolved_ = false,
+        std::optional<Names> identifier_typo_hint_columns_ = {},
+        const NamesAndTypesList * typo_correction_columns_ = nullptr);
     ~QueryAnalyzer();
 
     void resolve(QueryTreeNodePtr & node, const TableExpressionNodePtr & table_expression, ContextPtr context);
@@ -382,6 +396,12 @@ private:
     std::map<IQueryTreeNode::Hash, FunctionBasePtr> functions_cache;
 
     const bool only_analyze;
+
+    /// @sa the constructor.
+    const std::optional<Names> identifier_typo_hint_columns;
+
+    /// @sa the constructor.
+    const NamesAndTypesList * const typo_correction_columns;
 
     /// Not passed to the analyzers of inlined views and their row policies: those queries are not printed from a resolved tree.
     const bool positional_arguments_already_resolved;

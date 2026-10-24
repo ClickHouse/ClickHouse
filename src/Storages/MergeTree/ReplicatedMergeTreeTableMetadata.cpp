@@ -305,7 +305,8 @@ ReplicatedMergeTreeTableMetadata ReplicatedMergeTreeTableMetadata::parseAndNorma
             has_implicit = true;
         else
             explicit_indices.emplace_back(IndexDescription::getIndexFromAST(
-                index, columns, /* is_implicitly_created */ false, escape_index_filenames, context));
+                index, columns, /* is_implicitly_created */ false, escape_index_filenames, context,
+                /* validate_expressions = */ false));
     }
 
     if (has_implicit)

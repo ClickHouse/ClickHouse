@@ -4,15 +4,26 @@
 #include <Core/Settings.h>
 
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSampleRatio.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/InDepthNodeVisitor.h>
+#include <Interpreters/misc.h>
 
+#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
+#include <Storages/ReplaceAliasByExpressionVisitor.h>
+#include <Storages/extractKeyExpressionList.h>
+
+#include <Common/checkStackSize.h>
 
 #include <boost/rational.hpp>
+#include <fmt/ranges.h>
+
+#include <unordered_set>
 
 
 namespace DB
@@ -31,6 +42,66 @@ namespace ErrorCodes
     extern const int INVALID_SETTING_VALUE;
 }
 
+namespace
+{
+
+/// Collects the identifiers on the right-hand side of `IN` which name an argument of an enclosing lambda,
+/// e.g. `z` in `arrayCount(z -> a IN z, arrs)`, or a field of such an argument, e.g. `z.v` in
+/// `arrayCount(z -> a IN z.v, arrs)`. Such an identifier is an array, not a table.
+void collectInLambdaArgumentIdentifiers(
+    const IAST & ast, std::vector<String> & lambda_arguments, std::unordered_set<const IAST *> & result)
+{
+    checkStackSize();
+
+    const auto * func = ast.as<ASTFunction>();
+    if (func && func->name == "lambda" && func->arguments && func->arguments->children.size() == 2)
+    {
+        size_t num_outer_arguments = lambda_arguments.size();
+        if (const auto * lambda_args_tuple = func->arguments->children[0]->as<ASTFunction>();
+            lambda_args_tuple && lambda_args_tuple->arguments)
+        {
+            for (const auto & argument : lambda_args_tuple->arguments->children)
+                if (const auto * argument_identifier = argument->as<ASTIdentifier>())
+                    lambda_arguments.push_back(argument_identifier->name());
+        }
+
+        collectInLambdaArgumentIdentifiers(*func->arguments->children[1], lambda_arguments, result);
+        lambda_arguments.resize(num_outer_arguments);
+        return;
+    }
+
+    if (func && functionIsInOrGlobalInOperator(func->name) && func->arguments && func->arguments->children.size() == 2)
+    {
+        const auto & rhs = func->arguments->children[1];
+        if (const auto * rhs_identifier = rhs->as<ASTIdentifier>(); rhs_identifier && !rhs->as<ASTTableIdentifier>()
+            && std::find(lambda_arguments.begin(), lambda_arguments.end(), rhs_identifier->name_parts.front()) != lambda_arguments.end())
+            result.insert(rhs.get());
+    }
+
+    for (const auto & child : ast.children)
+        collectInLambdaArgumentIdentifiers(*child, lambda_arguments, result);
+}
+
+/// Whether an identifier on the right-hand side of `IN` in the custom key names a column of the table,
+/// possibly qualified with the table name (`t.arr`) or with the database and table names (`db.t.arr`).
+bool isColumnIdentifier(const ASTIdentifier & identifier, const ColumnsDescription & columns)
+{
+    if (columns.hasColumnOrSubcolumn(GetColumnsOptions::All, identifier.name()))
+        return true;
+
+    const auto & parts = identifier.name_parts;
+    for (size_t num_qualifiers = 1; num_qualifiers <= 2 && num_qualifiers < parts.size(); ++num_qualifiers)
+    {
+        String unqualified_name = fmt::format("{}", fmt::join(parts.begin() + num_qualifiers, parts.end(), "."));
+        if (columns.hasColumnOrSubcolumn(GetColumnsOptions::All, unqualified_name))
+            return true;
+    }
+
+    return false;
+}
+
+}
+
 ASTPtr getCustomKeyFilterForParallelReplica(
     size_t replicas_count,
     size_t replica_num,
@@ -41,6 +112,30 @@ ASTPtr getCustomKeyFilterForParallelReplica(
 {
     chassert(replicas_count > 1);
     chassert(filter.filter_type == ParallelReplicasMode::CUSTOM_KEY_SAMPLING || filter.filter_type == ParallelReplicasMode::CUSTOM_KEY_RANGE);
+
+    /// `parseCustomKeyForTable` validates the key as written, but the key may reference an `ALIAS`
+    /// column of the table, and the filter built below resolves it to the alias expression. Check the
+    /// key again after alias replacement, so a subquery or a column matcher hidden in an `ALIAS` column
+    /// is rejected too. The key is a setting of the current query, so there is no stored metadata to
+    /// keep loading, unlike an index over such a column.
+    {
+        using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
+        ASTPtr expanded_custom_key_ast = custom_key_ast->clone();
+        ReplaceAliasToExprVisitor::Data data{columns, {}};
+        ReplaceAliasToExprVisitor{data}.visit(expanded_custom_key_ast);
+        /// Unlike a DDL key, the setting is not rewritten by `AddDefaultDatabaseVisitor`, so `a IN arr`
+        /// arrives with a plain identifier on the right-hand side. It is a table only if it is neither
+        /// a column (possibly table-qualified, `a IN t.arr`) nor a lambda argument (`z -> a IN z`).
+        std::vector<String> lambda_arguments;
+        std::unordered_set<const IAST *> lambda_argument_identifiers;
+        collectInLambdaArgumentIdentifiers(*expanded_custom_key_ast, lambda_arguments, lambda_argument_identifiers);
+        checkExpressionDoesntContainSubqueries(
+            *expanded_custom_key_ast,
+            [&](const ASTIdentifier & identifier)
+            { return lambda_argument_identifiers.contains(&identifier) || isColumnIdentifier(identifier, columns); });
+        checkExpressionDoesntContainMatchers(*expanded_custom_key_ast);
+    }
+
     if (filter.filter_type == ParallelReplicasMode::CUSTOM_KEY_SAMPLING)
     {
         // first we do modulo with replica count
@@ -191,7 +286,7 @@ ASTPtr parseCustomKeyForTable(const String & custom_key, const Context & context
     /// Try to parse expression
     ParserExpression parser;
     const auto & settings = context.getSettingsRef();
-    return parseQuery(
+    ASTPtr custom_key_ast = parseQuery(
         parser,
         custom_key.data(),
         custom_key.data() + custom_key.size(),
@@ -199,6 +294,25 @@ ASTPtr parseCustomKeyForTable(const String & custom_key, const Context & context
         settings[Setting::max_query_size],
         settings[Setting::max_parser_depth],
         settings[Setting::max_parser_backtracks]);
+
+    /// The DDL interpreters inline SQL UDFs before table metadata is built, but the custom key
+    /// arrives as a setting string parsed right here, so inline UDFs explicitly. Otherwise a UDF
+    /// body could hide a subquery or a column matcher from the key-expression validation.
+    ///
+    /// Validate right here as well, rather than only in `KeyDescription::getKeyFromAST`: the callers
+    /// analyze the key over the table (e.g. `buildFilterQueryTree` for the access check) before a
+    /// `custom_key_range` key reaches `getKeyFromAST`, and a `custom_key_sampling` key never does.
+    if (custom_key_ast)
+    {
+        UserDefinedSQLFunctionVisitor::visit(custom_key_ast, context.shared_from_this());
+        /// The columns of the table are not known here, so an identifier on the right-hand side of `IN`
+        /// may be an array column (`a IN arr`). `getCustomKeyFilterForParallelReplica` checks it against
+        /// the columns before the key is used to filter the data.
+        checkExpressionDoesntContainSubqueries(*custom_key_ast, [](const ASTIdentifier &) { return true; });
+        checkExpressionDoesntContainMatchers(*custom_key_ast);
+    }
+
+    return custom_key_ast;
 }
 
 }
