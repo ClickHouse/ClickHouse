@@ -26,5 +26,8 @@ r=0.5:  host1 host2 host3 host4 host6
 r=-0.5: host5 
 r=0.2:  host1 host4 
 r=-0.3: host5 
+-- limit_ratio over abs(up), which has no metric name, hashes the labels left, as in Prometheus.
+abs, r=0.5:  host1 host5 
+abs, r=-0.5: host2 host3 host4 host6 
 -- limit_ratio keeps the original series labels (including the metric name).
 [('__name__','up'),('instance','host1')]	2023-11-14 22:13:20.000	1

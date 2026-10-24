@@ -85,6 +85,10 @@ echo -n "r=-0.5: "; promql_instances "limit_ratio(-0.5, up)"
 echo -n "r=0.2:  "; promql_instances "limit_ratio(0.2, up)"
 echo -n "r=-0.3: "; promql_instances "limit_ratio(-0.3, up)"
 
+echo "-- limit_ratio over abs(up), which has no metric name, hashes the labels left, as in Prometheus."
+echo -n "abs, r=0.5:  "; promql_instances "limit_ratio(0.5, abs(up))"
+echo -n "abs, r=-0.5: "; promql_instances "limit_ratio(-0.5, abs(up))"
+
 echo "-- limit_ratio keeps the original series labels (including the metric name)."
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 --dialect promql --promql_table ts --promql_evaluation_time 1700000000 \
     -q "limit_ratio(1, up)" | sort | head -1
