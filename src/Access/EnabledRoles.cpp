@@ -20,17 +20,20 @@ std::shared_ptr<const EnabledRolesInfo> EnabledRoles::getRolesInfo() const
 }
 
 
-scope_guard EnabledRoles::subscribeForChanges(const OnChangeHandler & handler) const
+EnabledRoles::Subscription EnabledRoles::subscribeForChanges(
+    const OnChangeHandler & handler, const std::optional<UUID> & cache_user_id) const
 {
-    std::lock_guard lock{handlers->mutex};
+    std::lock_guard lock{handlers->access_cache.getMutex()};
+    auto access_cache = cache_user_id ? handlers->access_cache.registerContext(*cache_user_id) : EffectiveAccessRightsCache::Handle{};
     handlers->list.push_back(handler);
     auto it = std::prev(handlers->list.end());
 
-    return [my_handlers = handlers, it]
+    scope_guard unsubscribe = [my_handlers = handlers, it]
     {
         std::lock_guard lock2{my_handlers->mutex};
         my_handlers->list.erase(it);
     };
+    return {std::move(unsubscribe), std::move(access_cache)};
 }
 
 
