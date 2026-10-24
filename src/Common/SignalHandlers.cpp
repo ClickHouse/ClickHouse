@@ -61,6 +61,8 @@ static std::atomic_flag handled_signals_were_reset;
 /// so we need to preserve the address for core dump analysis.
 static std::atomic<uintptr_t> saved_fault_address{0};
 static_assert(std::atomic<uintptr_t>::is_always_lock_free, "saved_fault_address must be lock-free for use in signal handlers");
+static std::atomic<const char *> saved_fault_access_type{nullptr};
+static_assert(std::atomic<const char *>::is_always_lock_free, "saved_fault_access_type must be lock-free for use in signal handlers");
 
 
 void call_default_signal_handler([[maybe_unused]] int sig)
@@ -140,7 +142,10 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
 
     if (sig == SIGSEGV || sig == SIGBUS || sig == SIGILL || sig == SIGFPE)
+    {
         saved_fault_address.store(reinterpret_cast<uintptr_t>(info->si_addr), std::memory_order_relaxed);
+        saved_fault_access_type.store(getFaultMemoryAccessType(sig, *info, *reinterpret_cast<const ucontext_t *>(context)), std::memory_order_relaxed);
+    }
 
     if (sig != SIGTSTP)
         is_crashed.store(true, std::memory_order_relaxed);
@@ -776,7 +781,7 @@ try
     if (collectCrashLog)
     {
         const std::optional<UInt64> fault_address = getFaultAddress(sig, info);
-        const String fault_access_type = getFaultMemoryAccessType(sig, *context);
+        const String fault_access_type = getFaultMemoryAccessType(sig, info, *context);
         const String si_code_description = getSignalCodeDescription(sig, info.si_code);
 
         collectCrashLog(

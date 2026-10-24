@@ -102,6 +102,9 @@ def test_crash_log_synchronous(started_node):
             "SELECT event_time, timestamp_ns, signal, signal_description, query "
             "FROM system.crash_log ORDER BY timestamp_ns FORMAT Vertical"
         )
+        if signal == "SEGV":
+            assert started_node.query("SELECT signal, fault_access_type FROM system.crash_log") == "11\t\n"
+            assert "Access: <not available>." in read_server_log(started_node)
 
         # A frame in the main executable is stored as its file offset, which is what keeps the row
         # resolvable after the restart a crash forces. Frames in other objects stay runtime
@@ -153,6 +156,27 @@ def test_crash_log_extra_fields(started_node, failpoint, trace_column):
             AND length(architecture) > 0
         """
     ).strip() == "1"
+
+
+@pytest.mark.parametrize(
+    "failpoint, access_type",
+    [
+        ("segfault_read_access", "read"),
+        ("segfault_write_access", "write"),
+    ]
+)
+def test_crash_log_fault_access_type(started_node, failpoint, access_type):
+    started_node.query("TRUNCATE TABLE IF EXISTS system.crash_log")
+    started_node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    started_node.query("SELECT 1", ignore_error=True)
+    wait_for_clickhouse_stop(started_node)
+    started_node.restart_clickhouse()
+
+    assert (
+        started_node.query("SELECT signal, fault_access_type FROM system.crash_log")
+        == f"11\t{access_type}\n"
+    )
+    assert f"Access: {access_type}." in read_server_log(started_node)
 
 
 # The fault handler writes one bare dump under `Stack trace:`, and one under `Job's origin stack

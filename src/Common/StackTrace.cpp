@@ -115,7 +115,7 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused
             address = "NULL pointer";
         else if (const auto resolved = resolveFaultAddress(info.si_addr))
             address = resolved->object.empty() ? fmt::format("{}", resolved->address) : fmt::format("{} in {}", resolved->address, resolved->object);
-        std::string access = getFaultMemoryAccessType(sig, context);
+        std::string access = getFaultMemoryAccessType(sig, info, context);
         if (access.empty())
             access = "<not available>";
         return fmt::format("Address: {}. Access: {}. {}", address, access, message);
@@ -149,14 +149,44 @@ std::optional<UInt64> getFaultAddress(int sig, const siginfo_t & info)
     return reinterpret_cast<UInt64>(resolved->address);
 }
 
-std::string getFaultMemoryAccessType(int sig, [[maybe_unused]] const ucontext_t & context)
+const char * getFaultMemoryAccessType(int sig, const siginfo_t & info, [[maybe_unused]] const ucontext_t & context)
 {
     /// Only SIGSEGV and SIGBUS have meaningful memory access types
     if (sig != SIGSEGV && sig != SIGBUS)
         return "";
 
+    if (info.si_code <= 0)
+        return "";
+
 #if defined(__x86_64__) && !defined(OS_DARWIN) && !defined(OS_FREEBSD)
     return (context.uc_mcontext.gregs[REG_ERR] & 0x02) ? "write" : "read";
+#elif defined(__aarch64__) && defined(OS_LINUX)
+    const auto * records = reinterpret_cast<const char *>(context.uc_mcontext.__reserved);
+    constexpr size_t records_size = sizeof(context.uc_mcontext.__reserved);
+    for (size_t offset = 0; offset + sizeof(_aarch64_ctx) <= records_size;)
+    {
+        _aarch64_ctx head{};
+        memcpy(&head, records + offset, sizeof(head));
+        if (head.size < sizeof(head) || head.size > records_size - offset)
+            return "";
+
+        if (head.magic == ESR_MAGIC && head.size >= sizeof(esr_context))
+        {
+            esr_context record{};
+            memcpy(&record, records + offset, sizeof(record));
+            constexpr UInt64 ESR_ELx_EC_SHIFT = 26;
+            constexpr UInt64 ESR_ELx_EC_MASK = 0x3FULL << ESR_ELx_EC_SHIFT;
+            constexpr UInt64 ESR_ELx_EC_DABT_LOW = 0x24;
+            constexpr UInt64 ESR_ELx_CM = 1ULL << 8;
+            constexpr UInt64 ESR_ELx_WNR = 1ULL << 6;
+            if ((record.esr & ESR_ELx_EC_MASK) >> ESR_ELx_EC_SHIFT != ESR_ELx_EC_DABT_LOW || (record.esr & ESR_ELx_CM))
+                return "";
+
+            return (record.esr & ESR_ELx_WNR) ? "write" : "read";
+        }
+        offset += head.size;
+    }
+    return "";
 #else
     return "";  // Not available on this platform
 #endif
