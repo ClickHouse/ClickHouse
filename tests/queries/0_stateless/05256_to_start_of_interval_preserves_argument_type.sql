@@ -90,6 +90,13 @@ SELECT toStartOfInterval(toDate('2023-01-17'), INTERVAL 1 WEEK, toDate('2023-01-
 
 SELECT '-- dateTrunc keeps its own result type';
 SELECT toTypeName(dateTrunc('day', toDate('2023-05-17'))), toTypeName(dateTrunc('week', toDateTime('2023-05-17 12:34:56'))), toTypeName(dateTrunc('hour', toDateTime64('2023-05-17 12:34:56.123', 3)));
+-- and its results near the epoch do not depend on the setting
+SELECT dateTrunc('day', toDateTime(0, 'Asia/Tokyo')) AS x, toTypeName(x);
+SELECT dateTrunc('day', toDateTime(0, 'Asia/Tokyo')) AS x, toTypeName(x) SETTINGS to_start_of_interval_preserves_argument_type = 0;
+SELECT dateTrunc('week', toDateTime(0, 'Asia/Tokyo')) AS x, toTypeName(x);
+SELECT dateTrunc('week', toDateTime(0, 'Asia/Tokyo')) AS x, toTypeName(x) SETTINGS to_start_of_interval_preserves_argument_type = 0;
+SELECT dateTrunc('day', toDateTime(0, 'America/New_York')) AS x, toTypeName(x);
+SELECT dateTrunc('day', toDateTime(0, 'America/New_York')) AS x, toTypeName(x) SETTINGS to_start_of_interval_preserves_argument_type = 0;
 
 SELECT '-- legacy behavior';
 SET to_start_of_interval_preserves_argument_type = 0;

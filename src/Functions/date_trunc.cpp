@@ -11,6 +11,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <Functions/toStartOfInterval.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
@@ -93,7 +94,9 @@ public:
     static constexpr auto name = "dateTrunc";
 
     explicit FunctionDateTruncOverloadResolver(ContextPtr context)
-        : to_start_of_interval(FunctionFactory::instance().get("toStartOfInterval", context))
+        /// `dateTrunc` has its own result type, and its results must not depend on `to_start_of_interval_preserves_argument_type`,
+        /// which also changes how `toStartOfInterval` clamps values near the epoch.
+        : to_start_of_interval(createLegacyToStartOfIntervalOverloadResolver(context))
         , function_date_trunc_return_type_behavior(context->getSettingsRef()[Setting::function_date_trunc_return_type_behavior])
     {
     }

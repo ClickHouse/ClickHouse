@@ -14,6 +14,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <Functions/toStartOfInterval.h>
 #include <IO/WriteHelpers.h>
 #include <algorithm>
 #include <Core/Settings.h>
@@ -130,6 +131,58 @@ constexpr Int64 subsecondUnitScale()
         return 1'000;
     else
         return 1;
+}
+
+/// An upper bound of the length of `unit` in seconds, including the changes of the offset of a time zone, and 0 for
+/// the subsecond units.
+template <IntervalKind::Kind unit>
+constexpr Int64 maxUnitLengthInSeconds()
+{
+    constexpr Int64 max_day_length = 2 * 86400;
+    if constexpr (unit == IntervalKind::Kind::Second)
+        return 1;
+    else if constexpr (unit == IntervalKind::Kind::Minute)
+        return 60;
+    else if constexpr (unit == IntervalKind::Kind::Hour)
+        return 3600;
+    else if constexpr (unit == IntervalKind::Kind::Day)
+        return max_day_length;
+    else if constexpr (unit == IntervalKind::Kind::Week)
+        return 7 * max_day_length;
+    else if constexpr (unit == IntervalKind::Kind::Month)
+        return 31 * max_day_length;
+    else if constexpr (unit == IntervalKind::Kind::Quarter)
+        return 92 * max_day_length;
+    else if constexpr (unit == IntervalKind::Kind::Year)
+        return 366 * max_day_length;
+    else
+        return 0;
+}
+
+/// Whether the start of the interval of each value of a `DateTime` column is certainly not before the epoch: each value
+/// is later than the epoch by more than the length of the interval and two days for the offset of the time zone. The
+/// unsigned overload of `ToStartOfInterval<unit>`, which is faster than the signed one, gives the same results then, and
+/// they need no clamping.
+template <IntervalKind::Kind unit, typename Container>
+bool isFarFromEpoch(const Container & time_data, Int64 num_units)
+{
+    constexpr Int64 max_unit_length = maxUnitLengthInSeconds<unit>();
+    if constexpr (max_unit_length == 0)
+    {
+        return false;
+    }
+    else
+    {
+        Int64 min_time = 0;
+        if (common::mulOverflow(num_units, max_unit_length, min_time) || common::addOverflow(min_time, Int64(2 * 86400), min_time)
+            || min_time > std::numeric_limits<UInt32>::max())
+            return false;
+        const UInt32 min_time_unsigned = static_cast<UInt32>(min_time);
+        bool result = true;
+        for (const auto time : time_data)
+            result &= static_cast<UInt32>(time) >= min_time_unsigned;
+        return result;
+    }
 }
 
 /// `ToStartOfInterval<unit>` returns a day number for the units of a week and longer, ticks of the unit for the
@@ -649,7 +702,11 @@ private:
             /// so that the setting restores the old results exactly.
             if constexpr (std::is_same_v<TimeDataType, ResultDataType> && !legacy_saturate)
             {
-                if (preserve_argument_type)
+                bool saturate = preserve_argument_type;
+                if constexpr (std::is_same_v<TimeColumnType, ColumnDateTime>)
+                    saturate = saturate && !isFarFromEpoch<unit>(time_data, num_units);
+
+                if (saturate)
                     execute_default.template operator()<true>();
                 else
                     execute_default.template operator()<false>();
@@ -671,8 +728,13 @@ public:
     static FunctionOverloadResolverPtr create(ContextPtr context_) { return std::make_unique<FunctionToStartOfIntervalOverloadResolver>(context_); }
 
     explicit FunctionToStartOfIntervalOverloadResolver(ContextPtr context_)
+        : FunctionToStartOfIntervalOverloadResolver(context_, context_->getSettingsRef()[Setting::to_start_of_interval_preserves_argument_type])
+    {
+    }
+
+    FunctionToStartOfIntervalOverloadResolver(ContextPtr context_, bool preserve_argument_type_)
         : enable_extended_results_for_datetime_functions(context_->getSettingsRef()[Setting::enable_extended_results_for_datetime_functions])
-        , preserve_argument_type(context_->getSettingsRef()[Setting::to_start_of_interval_preserves_argument_type])
+        , preserve_argument_type(preserve_argument_type_)
     {
     }
 
@@ -926,6 +988,11 @@ private:
     const bool preserve_argument_type;
 };
 
+}
+
+FunctionOverloadResolverPtr createLegacyToStartOfIntervalOverloadResolver(ContextPtr context)
+{
+    return std::make_unique<FunctionToStartOfIntervalOverloadResolver>(context, /* preserve_argument_type_ = */ false);
 }
 
 REGISTER_FUNCTION(ToStartOfInterval)
