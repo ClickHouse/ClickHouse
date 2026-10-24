@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# Tags: no-fasttest
+# no-fasttest: needs pyarrow to check record batch size.
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+set -e
+
+TMP_DIR=$(mktemp -d)
+trap 'rm -rf "$TMP_DIR"' EXIT
+
+check_batches()
+{
+    local format="$1"
+    local filename="$TMP_DIR/out_${format}.arrow"
+
+    # CLICKHOUSE_CLIENT intentionally contains the binary plus test-runner options.
+    # shellcheck disable=SC2086
+    ${CLICKHOUSE_CLIENT} --query "
+        SELECT number
+        FROM numbers(5)
+        SETTINGS
+            max_block_size = 5,
+            output_format_arrow_row_group_size = 2
+        FORMAT ${format}
+    " > "$filename"
+
+    python3 - "$format" "$filename" <<'PY'
+import sys
+import pyarrow.ipc as ipc
+
+fmt = sys.argv[1]
+path = sys.argv[2]
+
+with open(path, "rb") as f:
+    if fmt == "ArrowStream":
+        reader = ipc.open_stream(f)
+        batch_sizes = [batch.num_rows for batch in reader]
+    else:
+        reader = ipc.open_file(f)
+        batch_sizes = [
+            reader.get_batch(i).num_rows
+            for i in range(reader.num_record_batches)
+        ]
+
+print(fmt, batch_sizes)
+PY
+}
+
+check_batches ArrowStream
+check_batches Arrow
+
+# CLICKHOUSE_CLIENT intentionally contains the binary plus test-runner options.
+# shellcheck disable=SC2086
+${CLICKHOUSE_CLIENT} --query "
+    SELECT number
+    FROM numbers(1)
+    SETTINGS output_format_arrow_row_group_size = 0
+    FORMAT ArrowStream
+" 2>&1 >/dev/null | grep -q "BAD_ARGUMENTS" && echo "zero rejected"
