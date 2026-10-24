@@ -89,11 +89,13 @@ ASTPtr ASTColumnsListMatcher::clone() const
     auto clone = make_intrusive<ASTColumnsListMatcher>(*this);
     clone->children.clear();
 
+    /// Keep the order of `children` the parser produces, so that a clone has the same tree hash.
     if (expression) { clone->expression = expression->clone(); clone->children.push_back(clone->expression); }
-    if (transformers) { clone->transformers = transformers->clone(); clone->children.push_back(clone->transformers); }
 
     clone->column_list = column_list->clone();
     clone->children.push_back(clone->column_list);
+
+    if (transformers) { clone->transformers = transformers->clone(); clone->children.push_back(clone->transformers); }
 
     return clone;
 }
@@ -147,10 +149,11 @@ ASTPtr ASTQualifiedColumnsRegexpMatcher::clone() const
     auto clone = make_intrusive<ASTQualifiedColumnsRegexpMatcher>(*this);
     clone->children.clear();
 
-    if (transformers) { clone->transformers = transformers->clone(); clone->children.push_back(clone->transformers); }
-
+    /// Keep the order of `children` the parser produces, so that a clone has the same tree hash.
     clone->qualifier = qualifier->clone();
     clone->children.push_back(clone->qualifier);
+
+    if (transformers) { clone->transformers = transformers->clone(); clone->children.push_back(clone->transformers); }
 
     return clone;
 }
@@ -206,13 +209,14 @@ ASTPtr ASTQualifiedColumnsListMatcher::clone() const
     auto clone = make_intrusive<ASTQualifiedColumnsListMatcher>(*this);
     clone->children.clear();
 
-    if (transformers) { clone->transformers = transformers->clone(); clone->children.push_back(clone->transformers); }
-
+    /// Keep the order of `children` the parser produces, so that a clone has the same tree hash.
     clone->qualifier = qualifier->clone();
     clone->column_list = column_list->clone();
 
     clone->children.push_back(clone->qualifier);
     clone->children.push_back(clone->column_list);
+
+    if (transformers) { clone->transformers = transformers->clone(); clone->children.push_back(clone->transformers); }
 
     return clone;
 }

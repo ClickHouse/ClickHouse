@@ -10,6 +10,7 @@
 #include <Parsers/stripQuerySettings.h>
 #include <base/EnumReflection.h>
 #include <Common/Exception.h>
+#include <Common/SipHash.h>
 #include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
@@ -413,6 +414,88 @@ void ASTBackupQuery::setCurrentDatabase(ASTBackupQuery::Elements & elements, con
 String ASTBackupQuery::getID(char) const
 {
     return (kind == Kind::BACKUP) ? "BackupQuery" : "RestoreQuery";
+}
+
+
+void ASTBackupQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    ASTQueryWithOutput::updateTreeHashImpl(hash_state, ignore_aliases);
+    /// `ASTBackupQuery` keeps most of its semantic state outside `children` (only the destination
+    /// and the base backup / snapshot names are attached through `set`), and `getID` only
+    /// distinguishes `BACKUP` from `RESTORE`. Fold every distinguishing field in so that
+    /// e.g. `BACKUP TABLE a TO Disk('d', 'p')` and `BACKUP TABLE b TO Disk('d', 'p')` (differ in the
+    /// object list), or two backups to different destinations, do not share a tree hash. The
+    /// rewrite-rule matcher treats an equal `getTreeHash(true)` as semantic equality, so an
+    /// incomplete hash here would let a rule over-match an unrelated `BACKUP` / `RESTORE`. Each field
+    /// hashed below is either produced by the formatter (so it survives a format -> parse round-trip,
+    /// which the debug-build AST consistency check requires) or is never set by the parser.
+    /// `SipHash::update` appends only the bytes of a string, so every name is prefixed with its
+    /// length: otherwise adjacent names could exchange characters and still hash the same
+    /// (`BACKUP TABLE a.bc` and `BACKUP TABLE ca.b` would both append `bcabca`).
+    auto fold_string = [&](const String & str)
+    {
+        hash_state.update(str.size());
+        hash_state.update(str);
+    };
+
+    hash_state.update(kind);
+    hash_state.update(elements.size());
+    for (const auto & element : elements)
+    {
+        hash_state.update(element.type);
+        fold_string(element.table_name);
+        fold_string(element.database_name);
+        fold_string(element.new_table_name);
+        fold_string(element.new_database_name);
+
+        hash_state.update(element.partitions.has_value());
+        if (element.partitions)
+        {
+            hash_state.update(element.partitions->size());
+            for (const auto & partition : *element.partitions)
+                partition->updateTreeHash(hash_state, ignore_aliases);
+        }
+
+        hash_state.update(element.except_tables.size());
+        for (const auto & [except_database, except_table] : element.except_tables)
+        {
+            fold_string(except_database);
+            fold_string(except_table);
+        }
+
+        hash_state.update(element.except_databases.size());
+        for (const auto & except_database : element.except_databases)
+            fold_string(except_database);
+
+        /// `EXCEPT DATA FROM TABLE(S)`: whether the data of the selected tables goes into the backup.
+        hash_state.update(element.except_data_tables.size());
+        for (const auto & [except_database, except_table] : element.except_data_tables)
+        {
+            fold_string(except_database);
+            fold_string(except_table);
+        }
+        hash_state.update(element.except_data);
+        /// The formatter writes `except_data_database_name` only while the element's own database is
+        /// unresolved (see `formatExceptDataFromThisTable`), so fold it under the same condition.
+        fold_string(element.database_name.empty() ? element.except_data_database_name : String{});
+    }
+
+    /// `backup_name`, `base_backup_name` and `base_snapshot_name` are attached through `set`, so they
+    /// live in `children` and are already folded by the base class (and reached by every
+    /// `children` walk, including the rewrite-rule placeholder screening and AST-limit checks).
+    /// `settings` is a plain (non-`children`) AST member and has to be folded here.
+    hash_state.update(settings != nullptr);
+    if (settings)
+        settings->updateTreeHash(hash_state, ignore_aliases);
+
+    /// `cluster_host_ids` is only populated during `ON CLUSTER` expansion, never by the parser, so a
+    /// user-submitted (parsed) query always has it null; folded for completeness.
+    hash_state.update(cluster_host_ids != nullptr);
+    if (cluster_host_ids)
+        cluster_host_ids->updateTreeHash(hash_state, ignore_aliases);
+
+    /// The `ON CLUSTER` name (inherited from `ASTQueryWithOnCluster`) is a plain member too.
+    fold_string(cluster);
 }
 
 

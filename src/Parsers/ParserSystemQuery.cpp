@@ -47,7 +47,6 @@ namespace ErrorCodes
     }
 
     bool parsed_table = false;
-    bool children_already_added = false;
     if (allow_string_literal)
     {
         ASTPtr ast;
@@ -67,7 +66,6 @@ namespace ErrorCodes
                 res->setTable(name);
             }
             parsed_table = true;
-            children_already_added = true; /// setDatabase/setTable already push to children
         }
     }
 
@@ -82,15 +80,7 @@ namespace ErrorCodes
             return false;
 
     res->cluster = cluster;
-
-    if (!children_already_added)
-    {
-        if (res->database)
-            res->children.push_back(res->database);
-        if (res->table)
-            res->children.push_back(res->table);
-    }
-
+    /// `database` / `table` are attached to `children` once, at the end of `ParserSystemQuery::parseImpl`.
     return true;
 }
 
@@ -1145,12 +1135,16 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         }
     }
 
-    if (res->database)
-        res->children.push_back(res->database);
-    if (res->table)
-        res->children.push_back(res->table);
-    if (res->query_settings)
-        res->children.push_back(res->query_settings);
+    /// Attach each member once: `setDatabase` / `setTable` (used for some statement types) already put
+    /// it into `children`. A duplicate would make the tree hash differ from that of `clone`.
+    auto attach_child = [&](const ASTPtr & child)
+    {
+        if (child && std::find(res->children.begin(), res->children.end(), child) == res->children.end())
+            res->children.push_back(child);
+    };
+    attach_child(res->database);
+    attach_child(res->table);
+    attach_child(res->query_settings);
 
     node = std::move(res);
     return true;

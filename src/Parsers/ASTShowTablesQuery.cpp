@@ -79,6 +79,10 @@ String ASTShowTablesQuery::getFrom() const
 
 void ASTShowTablesQuery::formatLike(WriteBuffer & ostr, const FormatSettings &) const
 {
+    /// Emit the clause whenever a `LIKE` was present, even with an empty pattern: `SHOW TABLES
+    /// LIKE ''` differs from plain `SHOW TABLES` (see the `has_like` comment in the header), and
+    /// dropping the clause would lose it and the `not_like` / `case_insensitive_like` modifiers
+    /// on a format -> parse round-trip.
     if (has_like)
     {
         ostr << (not_like ? " NOT" : "")
@@ -98,7 +102,10 @@ void ASTShowTablesQuery::formatLimit(WriteBuffer & ostr, const FormatSettings & 
 
 void ASTShowTablesQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    /// `ParserShowTablesQuery` accepts `FULL` before every form.
+    /// The `FULL` modifier is parsed for every `SHOW` variant (before the selector keyword), so it
+    /// must be emitted here for every variant. Otherwise `SHOW FULL TABLES` formats as `SHOW TABLES`
+    /// and re-parses with `full = false`, which both loses semantics (`full` changes the result
+    /// columns) and breaks the format -> parse tree-hash round-trip the rewrite-rule matcher relies on.
     ostr << "SHOW " << (full ? "FULL " : "");
 
     if (databases)

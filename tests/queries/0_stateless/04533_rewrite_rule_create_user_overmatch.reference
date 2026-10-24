@@ -1,0 +1,10 @@
+names exact: rejected
+names other: not rejected
+host exact: rejected
+host different: not rejected
+default database exact: rejected
+default database different: not rejected
+settings exact: rejected
+settings different value: not rejected
+position exact: rejected
+position different member: not rejected

@@ -45,6 +45,11 @@ public:
     ASTPtr clone() const override { return make_intrusive<ASTRowPolicyNames>(*this); }
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTRowPolicyNames>(clone()); }
 
+    /// `full_names` and the `ON CLUSTER` name are plain members outside `children`, so `getTreeHash`
+    /// would otherwise ignore them and treat e.g. `SHOW CREATE ROW POLICY p1 ON db.t` and
+    /// `SHOW CREATE ROW POLICY p2 ON db.t` as equal. Fold them into the hash.
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+
     void replaceEmptyDatabase(const String & current_database);
 
 protected:

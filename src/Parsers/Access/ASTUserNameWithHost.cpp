@@ -7,6 +7,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Common/Exception.h>
+#include <Common/SipHash.h>
 #include <Common/quoteString.h>
 
 
@@ -50,6 +51,29 @@ String ASTUserNameWithHost::toString() const
         ostr << "@" << pattern;
 
     return ostr.str();
+}
+
+void ASTUserNameWithHost::updateTreeHashOfFormattedName(SipHash & hash_state, bool ignore_aliases) const
+{
+    /// A substituted query parameter is hashed as the name it stands for, so that a statement with a
+    /// name passed as a query parameter hashes the same as one with the name written literally.
+    const bool is_query_parameter = usernameIsQueryParameter();
+    hash_state.update(is_query_parameter);
+    if (is_query_parameter)
+    {
+        updateTreeHash(hash_state, ignore_aliases);
+        return;
+    }
+
+    const String name = toString();
+    hash_state.update(name.size());
+    hash_state.update(name);
+}
+
+bool ASTUserNameWithHost::usernameIsQueryParameter() const
+{
+    const auto * identifier = username ? username->as<ASTIdentifier>() : nullptr;
+    return identifier && identifier->isParam();
 }
 
 void ASTUserNameWithHost::replace(const String name)
