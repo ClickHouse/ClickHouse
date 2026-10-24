@@ -1171,8 +1171,14 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
     /// of the session that issued the `ALTER`. Otherwise a metadata-only `ALTER` (e.g. `MODIFY COMMENT`)
     /// issued from another database would move the dependencies of the table to same-named tables there.
     /// `MODIFY QUERY` qualifies the new query with the table's own database as well.
-    auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast, table_id.database_name);
-    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast, table_id.database_name);
+    /// The arguments of the table engine are not stored qualified, so they are resolved against the current database,
+    /// as on the `CREATE` path (`addTableDependencies` in `InterpreterCreateQuery`).
+    auto ref_dependencies = getDependenciesFromCreateQuery(
+        local_context->getGlobalContext(), table_id.getQualifiedName(), ast, table_id.database_name, /*can_throw*/false,
+        /*validate_current_database*/true, /*max_expanded_ast_elements*/0, /*engine_arguments_database*/local_context->getCurrentDatabase());
+    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(
+        local_context->getGlobalContext(), table_id.getQualifiedName(), ast, table_id.database_name, /*can_throw*/false,
+        /*engine_arguments_database*/local_context->getCurrentDatabase());
     DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(table_id.getQualifiedName(), ref_dependencies.dependencies, loading_dependencies);
     writeMetadataFile(
         db_disk,
