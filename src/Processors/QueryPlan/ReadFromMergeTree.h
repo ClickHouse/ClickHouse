@@ -148,6 +148,7 @@ public:
         PrimaryKeyExpand,
         Statistics,
         NonIntersectingSplit,
+        MaxBySortingKey,
     };
 
     struct DistributedIndexStat
@@ -461,6 +462,11 @@ public:
     bool requestOutputEachPartitionThroughSeparatePortForCreatingSet();
 
     bool willOutputEachPartitionThroughSeparatePort() const { return output_each_partition_through_separate_port; }
+
+    /// Caps `min_marks_for_concurrent_read`. For optimizations that leave short, scattered mark ranges (see
+    /// `optimizeAggregationMaxBySortingKey`): sized by the number of marks, the read would get few streams, each
+    /// reading many ranges one after another, so their seeks would add up instead of overlapping.
+    void limitMinMarksForConcurrentRead(size_t marks) { max_min_marks_for_concurrent_read = std::max<size_t>(marks, 1); }
 
     /// Cost heuristic for per-partition (independent) processing, shared by GROUP BY, DISTINCT and
     /// window functions.
@@ -815,6 +821,9 @@ private:
     UInt64 query_task_size_limit = 0;
 
     std::optional<VectorSearchParameters> vector_search_parameters;
+
+    /// See `limitMinMarksForConcurrentRead`.
+    std::optional<size_t> max_min_marks_for_concurrent_read;
 
     using PoolSettings = MergeTreeReadPoolBase::PoolSettings;
 

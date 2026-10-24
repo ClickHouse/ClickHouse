@@ -1,0 +1,15 @@
+-- argMax of the column
+not applied
+1	11
+1	11
+-- LIMIT BY
+not applied
+1	11	11
+1	11	11
+-- any default that calls a function: not applied
+not applied
+1	22
+-- a constant default: the optimization still applies
+Granules: 1/3
+1	7
+1	7

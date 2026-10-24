@@ -5185,6 +5185,14 @@ Possible values:
 When enabled and aggregation in order is active, pushes LIMIT into the aggregation step to enable early termination after producing enough groups. This reduces the amount of data read when ORDER BY matches the GROUP BY key prefix. May reduce the value reported by `rows_before_limit_at_least`; use `exact_rows_before_limit` if exact counts are needed.
 )", 0, \
         {"26.7", false, true, "New setting to push the `LIMIT` into aggregation-in-order for early termination when the `ORDER BY` is a prefix of the `GROUP BY` sort description."}) \
+    DECLARE(Bool, optimize_aggregation_max_by_sorting_key, false, R"(
+Skip granules that cannot contain the answer for any group, using only the primary index. Applies to `GROUP BY <keys>` where every key depends only on the sorting key columns before a sorting key column `k`, with the aggregates `max(k)`, `argMax(x, k)`, `min(k)` and `argMin(x, k)`, and aggregates whose result depends only on the distinct values of prefix columns (such as `any`, `uniq` or `groupUniqArray`). Also applies to `DISTINCT` and `count(DISTINCT)` on a sorting key prefix, and to `ORDER BY <keys>, k LIMIT n BY <keys>`.
+
+Filters on the prefix columns are supported. Other filters are supported when the primary index can prove them for the rows that bound the skipped granules; otherwise the optimization is not applied. Also applies to the parts of a projection that was already chosen for the query. Not applied with `FINAL`, sampling or parallel replicas, or to `Nullable` or floating point key columns. Parts with deleted rows, patch parts or on-the-fly mutations are read in full.
+
+For example, with `ORDER BY (symbol, ts)`, `SELECT symbol, argMax(price, ts) FROM t GROUP BY symbol` reads about one granule per symbol in each part.
+)", 0, \
+        {"26.11", false, false, "New setting to skip granules that cannot contain any group's answer for `GROUP BY` with `max`/`min` of a sorting key column, `DISTINCT` and `LIMIT BY` on a sorting key prefix, using the primary index."}) \
     DECLARE(Bool, enable_adaptive_aggregator, true, R"(
 Enables the adaptive `GROUP BY` algorithm: every thread aggregates into its local hash table until it reaches `adaptive_aggregator_freeze_threshold` keys (or `adaptive_aggregator_freeze_threshold_bytes` of memory), then the table freezes, so that rows of already-seen (frequent) keys keep updating it in place, while new (rare) keys are routed by their hash into per-bucket backlogs and aggregated exactly once, inside the bucket-parallel merge. Frequent keys stay in small cache-resident tables, and rare keys are stored and processed once instead of once per thread.
 

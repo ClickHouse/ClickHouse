@@ -103,6 +103,7 @@ namespace Setting
     extern const SettingsBool optimize_min_max_from_files;
     extern const SettingsBoolForce query_plan_read_in_order_through_join;
     extern const SettingsBool optimize_aggregation_in_order_limit;
+    extern const SettingsBool optimize_aggregation_max_by_sorting_key;
     extern const SettingsBool query_plan_remove_redundant_distinct;
     extern const SettingsBool query_plan_remove_redundant_sorting;
     extern const SettingsBool query_plan_remove_unused_columns;
@@ -339,6 +340,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     optimize_sorting_by_input_stream_properties = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_sorting_by_input_stream_properties];
     aggregation_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_aggregation_in_order];
     optimize_aggregation_in_order_limit = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_aggregation_in_order_limit];
+    optimize_aggregation_max_by_sorting_key = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_aggregation_max_by_sorting_key];
     optimize_projection = from[Setting::optimize_use_projections];
     use_query_condition_cache = from[Setting::use_query_condition_cache];
     use_query_condition_cache_for_top_k = from[Setting::use_query_condition_cache_for_top_k];

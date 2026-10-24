@@ -1930,6 +1930,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
     LOG_TRACE(log, "Spreading mark ranges among streams (default reading)");
 
     PartRangesReadInfo info(parts_with_ranges, settings, *data_settings);
+    if (max_min_marks_for_concurrent_read)
+        info.min_marks_for_concurrent_read = std::min(info.min_marks_for_concurrent_read, *max_min_marks_for_concurrent_read);
     Names tmp_column_names(column_names.begin(), column_names.end());
 
     if (0 == info.sum_marks)
@@ -2138,6 +2140,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     LOG_TRACE(log, "Spreading ranges among streams with order");
 
     PartRangesReadInfo info(parts_with_ranges, settings, *data_settings);
+    if (max_min_marks_for_concurrent_read)
+        info.min_marks_for_concurrent_read = std::min(info.min_marks_for_concurrent_read, *max_min_marks_for_concurrent_read);
 
     Pipes res;
 
@@ -6197,6 +6201,8 @@ static const char * indexTypeToString(ReadFromMergeTree::IndexType type)
             return "PrimaryKeyExpand";
         case ReadFromMergeTree::IndexType::NonIntersectingSplit:
             return "NonIntersectingSplit";
+        case ReadFromMergeTree::IndexType::MaxBySortingKey:
+            return "MaxBySortingKey";
     }
 }
 
