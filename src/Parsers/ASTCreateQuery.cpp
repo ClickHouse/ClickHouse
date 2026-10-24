@@ -145,14 +145,25 @@ void ASTStorage::writeJSON(WriteBuffer & out) const
 
 void ASTStorage::readJSON(const Poco::JSON::Object & json)
 {
-    JSONObjectReader r(json);
+    /// The engine's kind is positional (`ParserStorage`). The payload's kind is dropped unchecked: a rejected query is logged unmasked.
+    Poco::JSON::Object storage_json(json);
+    if (const auto engine_json = json.getObject("engine"))
+    {
+        Poco::JSON::Object::Ptr engine_without_kind = new Poco::JSON::Object(*engine_json);
+        engine_without_kind->remove("kind");
+        storage_json.set("engine", engine_without_kind);
+    }
+    JSONObjectReader r(storage_json);
 
     /// `engine` (`ASTFunction`) and `settings` (`ASTSetQuery`) are concrete typed members; a wrong node
     /// type from malformed `clickhouse_json` would otherwise reach `set` as a `LOGICAL_ERROR` cast
     /// failure instead of a user-facing `BAD_ARGUMENTS`. The remaining slots are arbitrary expressions.
     auto child = r.readFunctionChildWithExpressionArguments("engine");
     if (child)
+    {
+        child->as<ASTFunction &>().setKind(ASTFunction::Kind::TABLE_ENGINE);
         set(engine, child);
+    }
 
     child = r.readExpressionChild("partition_by");
     if (child)
@@ -739,7 +750,11 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
 
     child = r.readChildOfType<ASTStorage>("storage");
     if (child)
+    {
         set(storage, child);
+        if (storage->engine && database && !table)
+            storage->engine->setKind(ASTFunction::Kind::DATABASE_ENGINE);
+    }
 
     /// `as_table_function` is parser-produced as an `ASTFunction` (`AS table_function(...)`);
     /// `InterpreterCreateQuery::setEngine` does `as_table_function->as<ASTFunction>()->name`.
