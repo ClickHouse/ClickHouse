@@ -65,6 +65,7 @@
 #include <Processors/QueryPlan/MaterializingCTEStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/ISimpleTransform.h>
@@ -1873,7 +1874,11 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
     return modified_query_info;
 }
 
-static bool recursivelyApplyToReadingSteps(QueryPlan::Node * node, const std::function<bool(ReadFromMergeTree &)> & func)
+static bool recursivelyApplyToReadingSteps(
+    QueryPlan::Node * node,
+    const std::function<bool(ReadFromMergeTree &)> & func,
+    const std::function<bool(ReadFromMerge &)> & merge_func,
+    const std::function<bool(ReadFromObjectStorageStep &)> & object_storage_func)
 {
     bool ok = true;
     /// Only the first child of a set-creating step is the main pipeline; the rest read unrelated
@@ -1881,12 +1886,12 @@ static bool recursivelyApplyToReadingSteps(QueryPlan::Node * node, const std::fu
     if (typeid_cast<CreatingSetsStep *>(node->step.get()) || typeid_cast<DelayedCreatingSetsStep *>(node->step.get()))
     {
         if (!node->children.empty())
-            ok &= recursivelyApplyToReadingSteps(node->children.front(), func);
+            ok &= recursivelyApplyToReadingSteps(node->children.front(), func, merge_func, object_storage_func);
     }
     else
     {
         for (auto * child : node->children)
-            ok &= recursivelyApplyToReadingSteps(child, func);
+            ok &= recursivelyApplyToReadingSteps(child, func, merge_func, object_storage_func);
     }
 
     // This code is mainly meant to be used to call `requestReadingInOrder` on child steps.
@@ -1897,8 +1902,18 @@ static bool recursivelyApplyToReadingSteps(QueryPlan::Node * node, const std::fu
 
     if (auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(node->step.get()))
         ok &= func(*read_from_merge_tree);
+    /// A child table of a `Merge` table can itself be a `Merge` table. The readers of the nested
+    /// `Merge` live in the nested step's internal child plans, not in `node->children`, so they
+    /// can only be reached through the nested step itself.
+    else if (auto * read_from_merge = typeid_cast<ReadFromMerge *>(node->step.get()))
+        ok &= merge_func(*read_from_merge);
+    /// A child table can also be an object storage table (a data lake such as `Iceberg`). Unlike a
+    /// `MergeTree` part, an object storage table is only sorted by its sorting key when the data
+    /// files say so, so the reader has to be asked - a declared sorting key alone means nothing.
+    else if (auto * read_from_object_storage = typeid_cast<ReadFromObjectStorageStep *>(node->step.get()))
+        ok &= object_storage_func(*read_from_object_storage);
     else if (node->children.empty() && !typeid_cast<ReadNothingStep *>(node->step.get()))
-        return false; /// Only a `ReadFromMergeTree` can be asked to read in order; any other read does not promise it.
+        return false; /// Any other read does not promise an order.
 
     return ok;
 }
@@ -2603,29 +2618,48 @@ const ReadFromMerge::StorageListWithLocks & ReadFromMerge::getSelectedTables()
     return selected_tables;
 }
 
-bool ReadFromMerge::canReadInOrder(const InputOrderInfo & order_info_, bool allow_shorter_read_key)
+bool ReadFromMerge::canReadInOrder(const InputOrderInfo & order_info_)
 {
     filterTablesAndCreateChildrenPlans();
+
+    const size_t prefix_size = order_info_.used_prefix_of_sorting_key_size;
+    const int direction = order_info_.direction;
+
+    auto can_read_in_order_nested = [&order_info_](ReadFromMerge & nested_read_from_merge)
+    {
+        return nested_read_from_merge.canReadInOrder(order_info_);
+    };
+
+    /// The object storage reader cannot preserve order when it is reached through a `Merge`
+    /// table. Keep this in sync with `requestReadingInOrder` below.
+    auto can_read_in_order_object_storage = [](ReadFromObjectStorageStep &)
+    {
+        return false;
+    };
 
     auto table_it = selected_tables.begin();
     for (const auto & child_plan : *child_plans)
     {
         const auto table_metadata = std::get<StoragePtr>(*table_it++)->getInMemoryMetadataPtr(context, false);
-        auto can_read = [&](ReadFromMergeTree & read_from_merge_tree)
+
+        /// Ask the reader itself, so that every condition under which its `requestReadingInOrder`
+        /// refuses (such as a prefix longer than its own sorting key, or a reverse direction with
+        /// `FINAL`, see `ReadFromMergeTree::canReadInReverseOrder`) is covered.
+        auto can_read_in_order = [&](ReadFromMergeTree & read_from_merge_tree)
         {
-            if (order_info_.direction != 1 && !read_from_merge_tree.canReadInReverseOrder())
+            if (!read_from_merge_tree.canReadInOrder(prefix_size, direction))
                 return false;
 
             /// The prefix counts columns of each table's sorting key, while a child read may be sorted by another key (a projection's).
             const auto read_metadata = read_from_merge_tree.getStorageMetadata();
-            const auto & read_key = read_metadata->getSortingKey();
-            size_t prefix_size = order_info_.used_prefix_of_sorting_key_size;
-            if (allow_shorter_read_key)
-                prefix_size = std::min(prefix_size, read_key.column_names.size());
-            return sortingKeysSharePrefix(read_key, table_metadata->getSortingKey(), prefix_size);
+            return sortingKeysSharePrefix(read_metadata->getSortingKey(), table_metadata->getSortingKey(), prefix_size);
         };
-        if (child_plan.plan.isInitialized()
-            && !recursivelyApplyToReadingSteps(child_plan.plan.getRootNode(), can_read))
+
+        if (child_plan.plan.isInitialized() && !recursivelyApplyToReadingSteps(
+                child_plan.plan.getRootNode(),
+                can_read_in_order,
+                can_read_in_order_nested,
+                can_read_in_order_object_storage))
             return false;
     }
 
@@ -2644,8 +2678,20 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t 
 {
     filterTablesAndCreateChildrenPlans();
 
-    /// Ask every reading step first: the loop below switches the children one by one.
-    if (!canReadInOrder(*order_info_, /*allow_shorter_read_key=*/ true))
+    /// Probe the whole child set before touching any of it, so that the request is all-or-nothing.
+    /// The pass below switches every child reader into read-in-order mode in place, and a child
+    /// that rejects the request is only discovered when it is reached. Without this preflight, a
+    /// `Merge` table mixing a `MergeTree` child with a child that cannot preserve order (an object
+    /// storage table, or a nested `Merge` containing one) would return `false` here - the parent
+    /// keeps its own sorting step - while the earlier children stay in read-in-order mode with a
+    /// narrowed stream budget, `has_outer_limit` and the per-part `PrefetchingConcat` safeguards
+    /// applied: all of the cost of reading in order and none of its benefit.
+    ///
+    /// `canReadInOrder` covers every rejection condition of the mutating pass (it asks every
+    /// `ReadFromMergeTree` child through `ReadFromMergeTree::canReadInOrder`, rejects an object
+    /// storage child, and recurses through a nested `Merge`), and additionally checks that each
+    /// child read is sorted like its table on the prefix, so once it accepts, no child below can refuse.
+    if (!canReadInOrder(*order_info_))
         return false;
 
     auto request_read_in_order = [order_info_, query_limit](ReadFromMergeTree & read_from_merge_tree)
@@ -2654,17 +2700,76 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t 
             order_info_->used_prefix_of_sorting_key_size, order_info_->direction, order_info_->limit, query_limit);
     };
 
+    /// A nested `Merge` table is handled through its own `requestReadingInOrder`, so the nested
+    /// step also records the order it must preserve when uniting its child pipelines, and the
+    /// `query_limit` reaches the readers of the nested child plans (`has_outer_limit`).
+    auto request_read_in_order_nested = [order_info_, query_limit](ReadFromMerge & nested_read_from_merge)
+    {
+        return nested_read_from_merge.requestReadingInOrder(order_info_, query_limit);
+    };
+
+    /// Fail closed for an object storage table. Even when its data files really are sorted -
+    /// `ReadFromObjectStorageStep::requestReadingInOrder` would accept the natural direction -
+    /// its `initializePipeline` does not preserve that order yet: every source pulls files from
+    /// one shared iterator, so which stream reads which file is a race, and the pipe may be
+    /// resized afterwards (https://github.com/ClickHouse/ClickHouse/issues/112981). The direct
+    /// read path has the same limitation and is being fixed separately; until the object storage
+    /// pipeline delivers ordered streams, a `Merge` table must not advertise an order its child
+    /// reader does not deliver. Once it does, this can simply delegate to
+    /// `requestReadingInOrder(order_info_->direction)`.
+    auto request_read_in_order_object_storage = [](ReadFromObjectStorageStep &)
+    {
+        return false;
+    };
+
     bool ok = true;
     for (const auto & child_plan : *child_plans)
         if (child_plan.plan.isInitialized())
-            ok &= recursivelyApplyToReadingSteps(child_plan.plan.getRootNode(), request_read_in_order);
+            ok &= recursivelyApplyToReadingSteps(
+                child_plan.plan.getRootNode(),
+                request_read_in_order,
+                request_read_in_order_nested,
+                request_read_in_order_object_storage);
 
+    /// Guaranteed by the `canReadInOrder` preflight above: if this ever fires, the two have drifted
+    /// apart and some children have already been mutated, which is exactly what the preflight is
+    /// there to prevent.
+    chassert(ok);
     if (!ok)
         return false;
 
     order_info = order_info_;
     query_info.input_order_info = order_info;
     return true;
+}
+
+void ReadFromMerge::setPreferMultipleStreams()
+{
+    filterTablesAndCreateChildrenPlans();
+
+    auto prefer_multiple_streams = [](ReadFromMergeTree & read_from_merge_tree)
+    {
+        read_from_merge_tree.setPreferMultipleStreams();
+        return true;
+    };
+
+    auto prefer_multiple_streams_nested = [](ReadFromMerge & nested_read_from_merge)
+    {
+        nested_read_from_merge.setPreferMultipleStreams();
+        return true;
+    };
+
+    /// Per-part prefetching is a `MergeTree` reading mode, so there is nothing to disable for an
+    /// object storage reader.
+    auto prefer_multiple_streams_object_storage = [](ReadFromObjectStorageStep &) { return true; };
+
+    for (const auto & child_plan : *child_plans)
+        if (child_plan.plan.isInitialized())
+            recursivelyApplyToReadingSteps(
+                child_plan.plan.getRootNode(),
+                prefer_multiple_streams,
+                prefer_multiple_streams_nested,
+                prefer_multiple_streams_object_storage);
 }
 
 void ReadFromMerge::applyFilters(ActionDAGNodes added_filter_nodes)
