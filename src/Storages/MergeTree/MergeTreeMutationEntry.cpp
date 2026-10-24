@@ -49,13 +49,14 @@ UInt64 MergeTreeMutationEntry::parseFileName(const String & file_name_)
 }
 
 MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk_, const String & path_prefix_, UInt64 tmp_number,
-                                               const TransactionID & tid_, const WriteSettings & settings)
+                                               const TransactionID & tid_, const WriteSettings & settings, bool fsync_directory_)
     : create_time(time(nullptr))
     , commands(std::make_shared<MutationCommands>(std::move(commands_)))
     , disk(std::move(disk_))
     , path_prefix(path_prefix_)
     , file_name("tmp_mutation_" + toString(tmp_number) + ".txt")
     , is_temp(true)
+    , fsync_directory(fsync_directory_)
     , tid(tid_)
 {
     try
@@ -91,6 +92,10 @@ void MergeTreeMutationEntry::commit(UInt64 block_number_)
     chassert(block_number_);
     block_number = block_number_;
     String new_file_name = versionToFileName(block_number);
+    /// Open the guard before the rename so it fsyncs the directory on destruction. See #111380.
+    SyncGuardPtr sync_guard;
+    if (fsync_directory)
+        sync_guard = disk->getDirectorySyncGuard(path_prefix);
     disk->moveFile(path_prefix + file_name, path_prefix + new_file_name);
     is_temp = false;
     file_name = new_file_name;
@@ -103,6 +108,10 @@ void MergeTreeMutationEntry::removeFile()
         if (!disk->existsFile(path_prefix + file_name))
             return;
 
+        /// Open the guard before the unlink so it fsyncs the directory on destruction. See #111380.
+        SyncGuardPtr sync_guard;
+        if (fsync_directory)
+            sync_guard = disk->getDirectorySyncGuard(path_prefix);
         disk->removeFileIfExists(path_prefix + file_name);
         file_name.clear();
     }
@@ -167,6 +176,7 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MergeTreeMutationEntry && other) 
     , file_name(std::exchange(other.file_name, {}))
     , is_temp(std::exchange(other.is_temp, false))
     , is_registered(std::exchange(other.is_registered, false))
+    , fsync_directory(other.fsync_directory)
     , is_done(other.is_done)
     , block_number(other.block_number)
     , latest_failed_part(std::move(other.latest_failed_part))
