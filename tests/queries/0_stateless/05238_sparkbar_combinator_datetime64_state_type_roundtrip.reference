@@ -1,0 +1,5 @@
+AggregateFunction(countSparkbar(3, \'1704067200\'::Decimal64(3), \'1704240000\'::Decimal64(3)), DateTime64(3))
+██▄
+AggregateFunction(countSparkbar(3, \'1704067200\'::Decimal64(3), \'1704240000\'::Decimal64(3)), DateTime64(3))
+███
+AggregateFunction(countSparkbar(3, 0, 2), UInt64)
