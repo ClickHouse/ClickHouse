@@ -1046,20 +1046,30 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
     # Wait for last queries to finish if any, not longer than 300 seconds
     cutoff_time = time.time() + 300
     while time.time() < cutoff_time:
-        queries = int(
-            check_output(
-                make_query_command(
-                    "SELECT count() FROM system.processes WHERE query NOT LIKE '%FROM system.processes%'"
-                ),
-                shell=True,
-                stderr=STDOUT,
-                timeout=30,
+        try:
+            queries = int(
+                check_output(
+                    make_query_command(
+                        "SELECT count() FROM system.processes WHERE query NOT LIKE '%FROM system.processes%'"
+                    ),
+                    shell=True,
+                    stderr=STDOUT,
+                    timeout=30,
+                )
+                .decode("utf-8")
+                .strip()
             )
-            .decode("utf-8")
-            .strip()
-        )
-        if queries == 0:
-            break
+        except Exception as ex:
+            # A server at its memory limit refuses connections for a few seconds at a time.
+            output = getattr(ex, "output", None) or b""
+            logging.warning(
+                "Failed to count running queries, will retry until the cutoff: %s %s",
+                ex,
+                output.decode("utf-8", errors="replace").strip(),
+            )
+        else:
+            if queries == 0:
+                break
         time.sleep(1)
 
     # Even if all clickhouse-test processes are finished, there are probably some sh scripts,
