@@ -107,9 +107,11 @@ QueryPipelineBuilderPtr MaterializingCTEsStep::updatePipeline(QueryPipelineBuild
 
 DelayedMaterializingCTEsStep::DelayedMaterializingCTEsStep(
     SharedHeader input_header,
-    std::vector<MaterializedCTEPtr> ctes_
+    std::vector<MaterializedCTEPtr> ctes_,
+    bool is_safety_net_
 )
     : ctes(std::move(ctes_))
+    , is_safety_net(is_safety_net_)
 {
     input_headers = {input_header};
     output_header = std::move(input_header);
@@ -193,7 +195,7 @@ std::vector<DelayedMaterializingCTEsStep::ClaimedCTE> DelayedMaterializingCTEsSt
 /// pre-built IN-subquery plan for *runtime* set construction. The strip is
 /// what guarantees the outer query plan's `resolveMaterializingCTEs` wins
 /// `is_materialization_planned.exchange(true)` for every referenced CTE — if
-/// any `DelayedMaterializingCTEsStep` survives in the sub-plan tree, the
+/// any step for a CTE an enclosing plan materializes survives in the sub-plan tree, the
 /// sub-plan's recursive `plan->optimize` will claim the CTE first, attach the
 /// writer somewhere inside the sub-plan tree (in the worst case inside a
 /// single `UnionStep` branch), and leave the outer-plan step degenerate. That
@@ -274,9 +276,19 @@ static void removeDelayedMaterializingCTEsStepIf(
     }
 }
 
-void removeAllDelayedMaterializingCTEsStep(QueryPlan & plan)
+void removeSafetyNetDelayedMaterializingCTEsSteps(QueryPlan & plan)
 {
-    removeDelayedMaterializingCTEsStepIf(plan, [](DelayedMaterializingCTEsStep &) { return true; });
+    MaterializedCTESet safety_net_ctes;
+    removeDelayedMaterializingCTEsStepIf(
+        plan,
+        [&](DelayedMaterializingCTEsStep & step)
+        {
+            if (step.isSafetyNet())
+                safety_net_ctes.insert(step.getCTEs().begin(), step.getCTEs().end());
+            return false;
+        });
+
+    removeDelayedMaterializingCTEsStepFor(plan, safety_net_ctes);
 }
 
 void removeDelayedMaterializingCTEsStepFor(QueryPlan & plan, const MaterializedCTESet & ctes_to_remove)

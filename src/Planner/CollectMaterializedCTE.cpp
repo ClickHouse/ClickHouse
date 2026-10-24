@@ -200,7 +200,8 @@ void addBuildSubqueriesForMaterializedCTEsIfNeeded(
 
         auto delayed_step = std::make_unique<DelayedMaterializingCTEsStep>(
             query_plan.getCurrentHeader(),
-            std::move(ctes));
+            std::move(ctes),
+            select_query_options.force_materialize_cte);
         query_plan.addStep(std::move(delayed_step));
     }
 }
