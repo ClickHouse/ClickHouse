@@ -132,6 +132,9 @@ protected:
     bool is_initialized_in_update = false;
     bool allow_subcolumns_sizes_calculation = false;
 
+    /// All columns the reader reads, including those that are absent from the result block after PREWHERE.
+    Block initial_sample_block;
+
     void initialize(const Block & sample_block, const Columns & columns, const Names & names, bool from_update = false);
 
 public:
