@@ -3672,13 +3672,19 @@ private:
                 *index_ptr, ctx->source_part, ctx->metadata_snapshot, *ctx->data->getSettings(), idx.name);
             bool index_checksums_missing = index_present_on_disk && !index_resolvable_from_checksums;
 
+            /// The rewrite records every column at its current type, which would make readable the
+            /// granules the reader refuses on the source part for the types recorded there.
+            bool index_type_stale = ctx->source_part->hasSecondaryIndex(idx.name, ctx->metadata_snapshot)
+                && !index_ptr->isPartTypeCompatible(*ctx->source_part);
+
             /// For packed part we need to recalculate all indices because they are stored inside packed parts format
             /// For compact parts we need to recalculate indices because rewrite of compact part may produce a little bit different data part
             /// with different number of marks.
             bool need_recalculate = ctx->materialized_indices.contains(idx.name)
                 || (!is_full_wide_part && ctx->source_part->hasSecondaryIndex(idx.name, ctx->metadata_snapshot))
                 || ctx->source_part->isSkipIndexInPackedArchive(*index_ptr)
-                || index_checksums_missing;
+                || index_checksums_missing
+                || index_type_stale;
 
             if (need_recalculate)
             {

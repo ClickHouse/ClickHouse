@@ -2,7 +2,7 @@
 -- no-random-merge-tree-settings: every case pins index_granularity so the granule counts are stable.
 -- no-parallel-replicas: EXPLAIN output differs for parallel replicas (an extra per-node Granules
 -- block).
--- Cases 28-29 of the series started in 04165_skip_index_stale_type_after_alter and continued in
+-- Cases 28-29 and 36 of the series started in 04165_skip_index_stale_type_after_alter and continued in
 -- 04869_skip_index_stale_type_absent_column: a part carries index files for a column it holds no
 -- bytes of, and a SECOND index on the part decides whether the mutation may record that column.
 -- The series is split across files because one test exceeded the flaky-check runtime limit under
@@ -111,6 +111,46 @@ SELECT count() FROM t_sibling_rebuilt WHERE c = '150' SETTINGS use_skip_indexes 
 SELECT count() FROM t_sibling_rebuilt WHERE c = '';
 SELECT count() FROM t_sibling_rebuilt WHERE c = '' SETTINGS use_skip_indexes = 0;
 
+SELECT '-- 36. a mutation that rewrites the whole part rebuilds a sibling index refused for its column type';
+-- idx_new reads every column, so materializing it over the absent c rewrites the whole part, and the
+-- rewrite records dt at its new timezone. idx_old was built under UTC and is refused until then; it
+-- must be rebuilt, not carried over: its old granules hold hour 0 for every row.
+DROP TABLE IF EXISTS t_full_rewrite_stale;
+CREATE TABLE t_full_rewrite_stale (k UInt64, dt DateTime('UTC'), INDEX idx_old toHour(dt) TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k
+SETTINGS index_granularity = 4, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+    packed_skip_index_max_bytes = 0;
+INSERT INTO t_full_rewrite_stale SELECT number, toDateTime('2020-01-01 00:00:00', 'UTC') FROM numbers(64);
+ALTER TABLE t_full_rewrite_stale MODIFY COLUMN dt DateTime('Asia/Tokyo') SETTINGS mutations_sync = 2, alter_sync = 2;
+ALTER TABLE t_full_rewrite_stale ADD COLUMN c UInt64 DEFAULT k * 3 SETTINGS alter_sync = 2;
+ALTER TABLE t_full_rewrite_stale ADD INDEX idx_new (c, k, dt) TYPE set(100) GRANULARITY 1 SETTINGS alter_sync = 2;
+SELECT type FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_full_rewrite_stale' AND active AND column = 'dt';
+ALTER TABLE t_full_rewrite_stale MATERIALIZE INDEX idx_new SETTINGS mutations_sync = 2, alter_sync = 2;
+SELECT type FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_full_rewrite_stale' AND active AND column = 'dt';
+SELECT countIf(data_uncompressed_bytes > 0) FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 't_full_rewrite_stale';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_full_rewrite_stale WHERE toHour(dt) = 0
+    SETTINGS ignore_data_skipping_indices = 'idx_new') WHERE explain ILIKE '%Granules: 0/16%';
+SELECT count() FROM t_full_rewrite_stale WHERE toHour(dt) = 9 SETTINGS ignore_data_skipping_indices = 'idx_new';
+SELECT count() FROM t_full_rewrite_stale WHERE toHour(dt) = 9 SETTINGS use_skip_indexes = 0;
+
+SELECT '-- 36b. the same when an UPDATE of another column is what rewrites the whole part';
+DROP TABLE IF EXISTS t_full_rewrite_stale_update;
+CREATE TABLE t_full_rewrite_stale_update (k UInt64, dt DateTime('UTC'), v UInt64,
+    INDEX idx_old toHour(dt) TYPE set(100) GRANULARITY 1, INDEX idx_all (k, v, dt) TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k
+SETTINGS index_granularity = 4, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+    packed_skip_index_max_bytes = 0;
+INSERT INTO t_full_rewrite_stale_update SELECT number, toDateTime('2020-01-01 00:00:00', 'UTC'), number FROM numbers(64);
+ALTER TABLE t_full_rewrite_stale_update MODIFY COLUMN dt DateTime('Asia/Tokyo') SETTINGS mutations_sync = 2, alter_sync = 2;
+ALTER TABLE t_full_rewrite_stale_update UPDATE v = v + 1 WHERE 1 SETTINGS mutations_sync = 2, alter_sync = 2;
+SELECT type FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_full_rewrite_stale_update' AND active AND column = 'dt';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_full_rewrite_stale_update WHERE toHour(dt) = 0
+    SETTINGS ignore_data_skipping_indices = 'idx_all') WHERE explain ILIKE '%Granules: 0/16%';
+SELECT count() FROM t_full_rewrite_stale_update WHERE toHour(dt) = 9 SETTINGS ignore_data_skipping_indices = 'idx_all';
+SELECT count() FROM t_full_rewrite_stale_update WHERE toHour(dt) = 9 SETTINGS use_skip_indexes = 0;
+
 DROP TABLE t_two_indices_absent;
 DROP TABLE t_two_indices_dotted;
 DROP TABLE t_sibling_rebuilt;
+DROP TABLE t_full_rewrite_stale;
+DROP TABLE t_full_rewrite_stale_update;
