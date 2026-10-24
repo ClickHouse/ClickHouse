@@ -1786,7 +1786,7 @@ Table function `iceberg` is an alias to `icebergS3` now.
 
 ## Virtual Columns {#virtual-columns}
 
-- `_path` — Path to the file. Type: `LowCardinality(String)`.
+- `_path` — Path to the file as written in the Iceberg manifest, for example `s3://bucket/table/data/file.parquet`. It may be an absolute URI outside the table location. Type: `LowCardinality(String)`.
 - `_file` — Name of the file. Type: `LowCardinality(String)`.
 - `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the file size is unknown, the value is `NULL`.
 - `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
