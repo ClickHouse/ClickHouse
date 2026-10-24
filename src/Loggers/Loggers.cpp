@@ -287,6 +287,11 @@ void Loggers::buildLoggers(
         String text_log_level_str = config.getString("text_log.level", "trace");
         int text_log_level = Poco::Logger::parseLevel(text_log_level_str);
 
+        // Same rule as in updateLevels: an explicitly configured text_log.level takes part in the
+        // root level, so startup messages reach text_log; an unset level keeps the previous behaviour.
+        if (config.has("text_log.level"))
+            max_log_level = std::max(text_log_level, max_log_level);
+
         DB::SystemLogQueueSettings log_settings;
         DB::readSystemLogQueueSettingsFromConfig<DB::TextLog>(log_settings, config, "text_log");
         log_settings.turn_off_logger = DB::TextLog::shouldTurnOffLogger();
@@ -386,6 +391,16 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Log
         max_log_level = std::max(syslog_level, max_log_level);
     }
     split->setLevel("Syslog", syslog_level);
+
+    // text_log is a sink like the others: the root logger must stay at least as verbose as an
+    // explicitly configured text_log.level, otherwise those messages never reach the text_log channel.
+    // An unset text_log.level keeps the previous behaviour (text_log capped by the other sinks).
+    if (allowTextLog() && config.has("text_log.level"))
+    {
+        int text_log_level = Poco::Logger::parseLevel(config.getString("text_log.level"));
+        max_log_level = std::max(text_log_level, max_log_level);
+        split->setTextLogLevel(text_log_level);
+    }
 
     // Global logging level (it can be overridden for specific loggers).
     logger.setLevel(max_log_level);
