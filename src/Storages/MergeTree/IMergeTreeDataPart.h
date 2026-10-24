@@ -516,6 +516,11 @@ public:
     /// as a part with no `checksums.txt` at all.
     bool checksums_were_regenerated = false;
 
+    /// Whether `checksums` can vouch for the files of the part. They cannot when there are none (parts
+    /// of very old formats) or when `loadChecksums` regenerated them from the files as they are on disk:
+    /// then a marks file torn or lost in a crash has to be detected from the shape of the files instead.
+    bool hasTrustworthyChecksums() const { return !checksums.empty() && !checksums_were_regenerated; }
+
     mutable std::unique_ptr<VersionMetadata> version;
 
     /// Version of part metadata (columns, pk and so on). Managed properly only for replicated merge tree.
@@ -905,6 +910,15 @@ protected:
     std::pair<bool, NameSet> canRemovePart() const;
 
     virtual void doCheckConsistency(bool require_part_metadata) const;
+
+    /// Checks that no mark of `marks_file_name` points past the end of `data_file_name`. Missing or
+    /// regenerated checksums cannot vouch for a data file torn by a crash: if it was cut at a compressed
+    /// block boundary, it still decompresses, only to fewer rows, and the marks of the rest point beyond it.
+    /// Without a final mark (non-adaptive granularity) the last mark is only the start of the last granule;
+    /// if `min_bytes_per_row` is known for a stream of a `Wide` part, the last granule is checked to have
+    /// at least that many bytes for each of its rows.
+    void checkDataFileCoversMarks(
+        const String & data_file_name, const String & marks_file_name, size_t num_columns_in_mark, size_t min_bytes_per_row = 0) const;
 
 private:
     String mutable_name;

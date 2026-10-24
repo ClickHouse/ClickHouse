@@ -1068,7 +1068,8 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
             settings.exchange_lookup = exchange_lookup;
             VectorWithMemoryTracking<ExchangeStreamId> stream_ids;
             stream_ids.push_back(result_stream_id);
-            auto builder = receiveExchangeStreams(result_header, exchange_name, stream_ids, settings, /*spread_over_max_threads=*/ false);
+            auto builder = receiveExchangeStreams(
+                result_header, exchange_name, stream_ids, settings, /*spread_over_max_threads=*/ false, /*advisory=*/ false);
             /// An in-memory exchange source emits zero-row chunks as scheduling ticks while
             /// waiting for data; drop them so they do not reach the client as empty `Data` packets.
             builder.addSimpleTransform([](const SharedHeader & header) { return makeSkipZeroRowChunksTransform(header); });

@@ -26,6 +26,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <utility>
 
 namespace CurrentMetrics
 {
@@ -37,6 +38,7 @@ namespace CurrentMetrics
 namespace ProfileEvents
 {
     extern const Event ExternalAggregationMerge;
+    extern const Event AdaptiveAggregationPressureStandDowns;
     extern const Event AggregationSharedKeptKeysRebuilds;
 }
 
@@ -1229,6 +1231,50 @@ void rebuildVariantsToKeptKeys(
 
 }
 
+/// One component for the shared backlog and drain residue, independent of each producer's local table.
+class AdaptiveAggregationSpillable
+{
+public:
+    AdaptiveAggregationSpillable(AggregatingTransformParamsPtr params_, AdaptiveAggregationSessionPtr session_)
+        : params(std::move(params_)), session(std::move(session_))
+    {
+    }
+
+    SpillableAdapter<AdaptiveAggregationSpillable> spillable{*this};
+
+    ProcessorMemoryStats getMemoryStats() const
+    {
+        if (!accepting_spills.load(std::memory_order_acquire)
+            || !params->params.tmp_data_scope || !session->initialized.load(std::memory_order_acquire))
+            return {};
+        return {.spillable_memory_bytes = static_cast<Int64>(
+            session->backlog.enqueuedBytes() + session->early_drain_tracked_bytes.load(std::memory_order_relaxed))};
+    }
+
+    size_t spill(size_t at_least_bytes)
+    {
+        std::lock_guard lock(mutex);
+        if (!accepting_spills || !params->params.tmp_data_scope || !session->initialized.load(std::memory_order_acquire))
+            return 0;
+        return params->aggregator.drainStagedChunksForSpill(*session, at_least_bytes);
+    }
+
+    const TemporaryDataOnDiskScope * getSpillScope() const { return params->aggregator.getSpillScope(); }
+
+    void finish()
+    {
+        /// Wait for a spill serviced by an already finished producer before exposing merge readers.
+        std::lock_guard lock(mutex);
+        accepting_spills.store(false, std::memory_order_release);
+    }
+
+private:
+    AggregatingTransformParamsPtr params;
+    AdaptiveAggregationSessionPtr session;
+    std::mutex mutex;
+    std::atomic<bool> accepting_spills = true;
+};
+
 AggregatingTransform::AggregatingTransform(
     SharedHeader header, AggregatingTransformParamsPtr params_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_, size_t output_streams_)
     : AggregatingTransform(
@@ -1273,7 +1319,14 @@ AggregatingTransform::AggregatingTransform(
     /// `AggregatingStep` leaves its engagement verdict in the flag. Without a producer nothing is ever
     /// staged, so the merge-time drains find empty backlogs and do nothing.
     if (many_data->adaptive_session && params->aggregator.getParams().enable_adaptive_aggregator)
+    {
         adaptive_context = std::make_unique<AdaptiveAggregationProducer>(many_data->adaptive_session);
+        if (!many_data->adaptive_spillable)
+            many_data->adaptive_spillable = std::make_shared<AdaptiveAggregationSpillable>(params, many_data->adaptive_session);
+        adaptive_spillable = many_data->adaptive_spillable;
+        /// Prefer shedding the shared backlog before standing down a producer's local table.
+        spillables = {&adaptive_spillable->spillable, &spillable};
+    }
 }
 
 AggregatingTransform::~AggregatingTransform() = default;
@@ -1465,7 +1518,8 @@ void AggregatingTransform::capturePerStreamKeptKeysSeed()
 
     /// Only for the cutoff of the trivial `GROUP BY ... LIMIT` optimization, and only when the
     /// table can actually be flushed to disk: the seed is needed to re-fill it after the flush.
-    if (!aggregator_params.shared_kept_keys_for_overflow_any || !aggregator_params.max_bytes_before_external_group_by)
+    /// Scheduler spills are possible even with `max_bytes_before_external_group_by` disabled.
+    if (!aggregator_params.shared_kept_keys_for_overflow_any || !aggregator_params.tmp_data_scope)
         return;
 
     /// Already captured — the flag stays set for the rest of the aggregation.
@@ -1531,6 +1585,44 @@ void AggregatingTransform::applySharedKeptKeysCutoff(bool may_freeze)
     no_more_keys = true;
 }
 
+ProcessorMemoryStats AggregatingTransform::getMemoryStats() const
+{
+    /// Reclaimable only while the table is still being filled and can be written out as two-level.
+    if (is_consume_finished || !variants.hasData() || !params->params.tmp_data_scope)
+        return {};
+    if (!variants.isTwoLevel() && !variants.isConvertibleToTwoLevel())
+        return {};
+    ProcessorMemoryStats res;
+    res.spillable_memory_bytes = variants.memoryUsage();
+    res.need_reserved_memory_bytes = variants.isTwoLevel() ? /* negligible */ 0 : res.spillable_memory_bytes;
+    return res;
+}
+
+size_t AggregatingTransform::spill(size_t)
+{
+    if (!getMemoryStats().spillable_memory_bytes)
+        return 0;
+
+    if (adaptive_context && adaptive_context->session->initialized.load(std::memory_order_acquire))
+        /// Publishing producer-local chunks is not reclamation; the shared component drains them.
+        params->aggregator.flushPendingChunks(*adaptive_context);
+
+    /// Only the baseline path flushes: a learning or frozen table leaves the adaptive path for good,
+    /// the records it staged so far stay published and are drained by the merge (same as the thaw).
+    if (adaptive_context && !adaptive_context->isBaseline())
+    {
+        ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPressureStandDowns);
+        adaptive_context->standDown(AdaptiveAggregationProducer::BaselineState::Reason::MemoryPressure);
+    }
+
+    /// Another producer may have frozen the kept keys while this one was idle.
+    if (const auto & shared = many_data->shared_kept_keys;
+        shared && !no_more_keys && shared->frozen.load(std::memory_order_acquire))
+        applySharedKeptKeysCutoff(/*may_freeze=*/false);
+
+    return params->aggregator.spill(variants, no_more_keys);
+}
+
 void AggregatingTransform::initGenerate()
 {
     if (is_generate_initialized.test_and_set())
@@ -1594,6 +1686,9 @@ void AggregatingTransform::initGenerate()
         many_data.reset();
         return;
     }
+
+    if (adaptive_spillable)
+        adaptive_spillable->finish();
 
     /// If the kept-keys cutoff froze, restrict the variants of the streams that finished
     /// consuming before discovering the freeze: they still hold arbitrary keys whose merged

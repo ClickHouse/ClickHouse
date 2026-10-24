@@ -165,6 +165,7 @@ FilterTransform::FilterTransform(
 {
     if (expression)
     {
+        set_spillables.add(expression->getActionsDAG());
         /// Special check to stop queries like "WHERE ignore(...)"
         const auto * node = &expression->getActionsDAG().findInOutputs(filter_column_name);
         while (node->type == ActionsDAG::ActionType::ALIAS)

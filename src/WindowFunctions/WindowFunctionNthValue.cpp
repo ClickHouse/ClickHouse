@@ -67,10 +67,8 @@ struct WindowFunctionNthValue final : public StatelessWindowFunction
         }
 
         --offset;
-        const auto target_row = transform->blocks.move(transform->frame_start, offset);
-        if (!target_row
-            || *target_row < transform->frame_start
-            || transform->frame_end <= *target_row)
+        const FrameBounds & frame = transform->frame.bounds();
+        if (offset >= frame.end.row_index_in_partition - frame.start.row_index_in_partition)
         {
             // Offset is outside the frame.
             to.insertDefault();
@@ -78,9 +76,10 @@ struct WindowFunctionNthValue final : public StatelessWindowFunction
         else
         {
             // Offset is inside the frame.
-            to.insertFrom(*transform->blocks.blockAt(target_row->block).materialized_columns[
+            const RowNumber target_row = transform->blocks.move(frame.start.location, offset);
+            to.insertFrom(*transform->blocks.blockAt(target_row.block).materialized_columns[
                     workspace.argument_column_indices[0]],
-               target_row->row);
+               target_row.row);
         }
     }
 };

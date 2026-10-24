@@ -101,6 +101,7 @@ public:
     void waitDatabaseStarted() const override;
     void stopLoading() override;
     void checkMetadataFilenameAvailability(const String & table_name) const override;
+    bool canReattachTableWithFullDefinition() const override;
     void checkTableNameLength(const String & table_name) const override;
 
 protected:

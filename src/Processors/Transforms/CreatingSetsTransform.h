@@ -7,6 +7,7 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
+#include <Interpreters/SetSpillable.h>
 #include <Common/Logger.h>
 #include <Common/Stopwatch.h>
 
@@ -40,6 +41,7 @@ public:
     ~CreatingSetsTransform() override;
 
     String getName() const override { return "CreatingSetsTransform"; }
+    std::span<ISpillable * const> getSpillables() override { return set_spillables.get(); }
 
     Status prepare() override;
     void work() override;
@@ -48,6 +50,7 @@ public:
 
 private:
     SetAndKeyPtr set_and_key;
+    SetSpillables set_spillables;
     std::optional<std::promise<SetPtr>> promise_to_build;
 
     QueryPipeline table_out;

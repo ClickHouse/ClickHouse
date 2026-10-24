@@ -137,7 +137,7 @@ private:
 
     std::pair<Poco::Dynamic::Var, std::string> postJSONRequest(
         const std::string & route,
-        std::function<void(std::ostream &)> out_stream_callback) const;
+        std::function<void(DB::WriteBuffer &)> out_stream_callback) const;
 
     std::string getBearerToken(bool force_refresh = false) const;
 

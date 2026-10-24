@@ -2408,13 +2408,51 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
     {
         /// Look through `LowCardinality` the same way `division_by_nullable` does in the resolver, so that
-        /// `canThrow` (which falls back to this method) agrees with the execution path.
+        /// `canThrowIfKnown` (which relies on this method) agrees with the execution path.
         return ((IsOperation<Op>::int_div || IsOperation<Op>::modulo || IsOperation<Op>::positive_modulo) && !arguments[1].is_const)
             || (IsOperation<Op>::div_floating
                 && (isDecimalOrNullableDecimal(recursiveRemoveLowCardinality(arguments[0].type))
                     || isDecimalOrNullableDecimal(recursiveRemoveLowCardinality(arguments[1].type))));
     }
 
+    /// Only the operations on native numbers that are known not to throw are described, everything else
+    /// (`Decimal` overflow, `Date` and `Interval` arithmetic, negative shifts, `intDiv` of floats, etc.) may throw.
+    std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & arguments) const override
+    {
+        return canThrowImpl(arguments, /* divisor_is_known_safe */ false);
+    }
+
+protected:
+    /// `DataTypesWithConstInfo` does not carry the value of a constant divisor, so `intDiv` and `modulo` are
+    /// described as not throwing only if the caller knows that the constant divisor is safe: it is not zero
+    /// and, for a signed dividend, it does not become negative after the cast to a signed type.
+    bool canThrowImpl(const DataTypesWithConstInfo & arguments, bool divisor_is_known_safe) const
+    {
+        if (arguments.size() != 2 || isSuitableForShortCircuitArgumentsExecution(arguments))
+            return true;
+
+        const auto left = removeNullable(recursiveRemoveLowCardinality(arguments[0].type));
+        const auto right = removeNullable(recursiveRemoveLowCardinality(arguments[1].type));
+        if (!isNativeNumber(left) || !isNativeNumber(right))
+            return true;
+
+        constexpr std::string_view name_view = Name::name;
+        if constexpr (is_plus || is_minus || is_multiply || IsOperation<Op>::div_floating
+            || IsOperation<Op>::least || IsOperation<Op>::greatest
+            || name_view == "bitAnd" || name_view == "bitOr" || name_view == "bitXor")
+            return false;
+
+        /// The divisor is a constant here (see `isSuitableForShortCircuitArgumentsExecution`). Division by a zero
+        /// constant throws on every row, but it must not be moved ahead of a condition that skips all the rows,
+        /// so the divisor must be known to be non-zero. Division of the minimal signed number by minus one depends
+        /// on the rows, so the divisor must be unsigned, and must stay positive after the cast to a signed type.
+        if constexpr (IsOperation<Op>::int_div || IsOperation<Op>::modulo || IsOperation<Op>::positive_modulo)
+            return !divisor_is_known_safe || !isNativeInteger(left) || !isNativeUInt(right);
+
+        return true;
+    }
+
+public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         /// Type resolution runs during analysis while the context is alive, but it is also re-invoked from
@@ -3848,6 +3886,31 @@ public:
         bool division_by_nullable_ = false)
         : Base(context_, left_.type, right_.type, division_by_nullable_), left(left_), right(right_), return_type(return_type_)
     {
+    }
+
+    std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & arguments) const override
+    {
+        bool divisor_is_known_safe = false;
+        if (arguments.size() == 2 && right.column && isColumnConst(*right.column))
+        {
+            const Field divisor = (*right.column)[0];
+            if (divisor.getType() == Field::Types::UInt64 && divisor.safeGet<UInt64>() != 0)
+            {
+                /// For a signed dividend, the unsigned divisor is cast to the signed type of the same size
+                /// (see `DivideIntegralImpl::apply`), so it must stay positive after this cast,
+                /// otherwise e.g. `intDiv(toInt8(-128), toUInt8(255))` divides by minus one.
+                const auto left_type = removeNullable(recursiveRemoveLowCardinality(arguments[0].type));
+                const auto right_type = removeNullable(recursiveRemoveLowCardinality(arguments[1].type));
+                if (isNativeUInt(left_type))
+                    divisor_is_known_safe = true;
+                else if (isNativeUInt(right_type) && right_type->getSizeOfValueInMemory() <= sizeof(UInt64))
+                {
+                    const UInt64 max_signed = (UInt64(1) << (right_type->getSizeOfValueInMemory() * 8 - 1)) - 1;
+                    divisor_is_known_safe = divisor.safeGet<UInt64>() <= max_signed;
+                }
+            }
+        }
+        return Base::canThrowImpl(arguments, divisor_is_known_safe);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override

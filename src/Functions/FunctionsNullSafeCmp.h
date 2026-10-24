@@ -72,9 +72,9 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    /// See `FunctionComparison::canThrow`. Both sides are cast to their common type before they are
+    /// See `FunctionComparison::canThrowIfKnown`. Both sides are cast to their common type before they are
     /// compared, so only the types that need no cast at all are reported as not throwing.
-    bool canThrow(const DataTypesWithConstInfo & arguments) const override
+    std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & arguments) const override
     {
         if (arguments.size() != 2)
             return true;

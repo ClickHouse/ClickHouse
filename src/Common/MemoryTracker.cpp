@@ -723,6 +723,10 @@ Int64 MemoryTracker::unexpectedDrift() const
     if (!loaded_parent || loaded_parent->level != VariableContext::User || drift_expected.load(std::memory_order_relaxed))
         return 0;
     Int64 drift = amount.load(std::memory_order_relaxed);
+    /// Threads batch what they allocate and free (`max_untracked_memory`), so a free can arrive before the allocation
+    /// it matches. It goes to the server total, and the allocation, arriving later, stays here without being drift.
+    if (drift > 0)
+        drift = std::max<Int64>(drift - freed_beyond_held.load(std::memory_order_relaxed), 0);
     return std::abs(drift) > drift_warn_threshold ? drift : 0;
 #else
     return 0;
@@ -921,6 +925,9 @@ AllocationTrace MemoryTracker::free(Int64 size, double _sample_probability)
     if (accounted_size < size && loaded_next->level == VariableContext::User)
     {
         std::ignore = total_memory_tracker.free(size - accounted_size, _sample_probability);
+#ifdef DEBUG_OR_SANITIZER_BUILD
+        freed_beyond_held.fetch_add(size - accounted_size, std::memory_order_relaxed);
+#endif
         size = accounted_size;
     }
 

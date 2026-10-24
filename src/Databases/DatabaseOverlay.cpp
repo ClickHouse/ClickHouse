@@ -605,6 +605,18 @@ void DatabaseOverlay::checkMetadataFilenameAvailability(const String & table_nam
     }
 }
 
+bool DatabaseOverlay::canReattachTableWithFullDefinition() const
+{
+    /// `createTable` writes to the first writable member, so that member decides whether a detached name is reserved.
+    for (const auto & db : databases)
+    {
+        if (db->isReadOnly())
+            continue;
+        return db->canReattachTableWithFullDefinition();
+    }
+    return true;
+}
+
 void DatabaseOverlay::checkTableNameLength(const String & table_name) const
 {
     /// The limit belongs to the member createTable writes to, which owns the metadata file.

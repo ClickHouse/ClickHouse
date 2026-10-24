@@ -4,6 +4,7 @@
 
 #include <Interpreters/WindowDescription.h>
 
+#include <Processors/Transforms/Window/Frame.h>
 #include <Processors/Transforms/Window/Partition.h>
 #include <Processors/Transforms/Window/SlidingBlocks.h>
 #include <Processors/Transforms/Window/SlidingIndexes.h>
@@ -72,30 +73,7 @@ public:
      */
     bool arePeers(const RowNumber & x, const RowNumber & y) const;
 
-    void advanceFrameStartRowsOffset();
-    void advanceFrameStartRangeOffset();
-    void advanceFrameStart();
-
-    void advanceFrameEndRowsOffset();
-    void advanceFrameEndCurrentRow();
-    void advanceFrameEndUnbounded();
-    void advanceFrameEnd();
-    void advanceFrameEndRangeOffset();
-    void advanceFrameStartGroupsOffset();
-    void advanceFrameEndGroupsOffset();
-
-    // Returns the exclusive end of the peer group containing `start` -- the first row of the next
-    // peer group, or `partition_end` if the group is the last one in the partition.
-    //
-    // `scan_frontier` makes the scan resumable when the group's end cannot be determined yet: it is the
-    // last row already proven to be a peer of `start`, so a retry after more input arrives continues
-    // from there instead of rescanning the group from its first row (which would make a peer group
-    // spanning many blocks quadratic).
-    RowNumber findPeerGroupEnd(const RowNumber & start, RowNumber & scan_frontier, bool & need_more_data) const;
-
-    // Advances `pointer` forward, peer group by peer group, until it reaches the first row of the
-    // `target_group`-th peer group (1-based) or the partition end.
-    bool advanceGroupBoundary(RowNumber & pointer, Int64 & group_counter, RowNumber & scan_frontier, Int64 target_group) const;
+    void checkInvariants() const;
 
     void updateAggregationState();
     void writeOutCurrentRow();
@@ -134,38 +112,18 @@ public:
     // The start of current peer group.
     RowPoint peer_group_start;
 
-    // Peer group index (1-based) of the row that frame_start / frame_end currently point to. Used
-    // by GROUPS offset frames to count peer groups while advancing the boundaries. Reset together
-    // with the frame boundaries when a new partition starts.
-    Int64 frame_start_group_number = 1;
-    Int64 frame_end_group_number = 1;
+    // The frame of the current row and its search. When we move to the next
+    // row, both bounds may jump forward by an unknown number of blocks, e.g.
+    // under a RANGE frame, so sometimes neither of them is known. We update the
+    // states of the window functions once the frame is fully visible, and can
+    // then immediately output the result for the current row, without waiting
+    // for more data.
+    Frame frame;
 
-    // Resume positions for the peer-group scans of the corresponding boundaries (see
-    // `findPeerGroupEnd`). Unlike the RANGE offset frames, which resume by advancing the boundary
-    // itself, the scan progress must be kept separately: a GROUPS boundary always points at the first
-    // row of a peer group.
-    RowNumber frame_start_group_scan_frontier;
-    RowNumber frame_end_group_scan_frontier;
-
-    // The frame is [frame_start, frame_end) if frame_ended && frame_started,
-    // and unknown otherwise. Note that when we move to the next row, both the
-    // frame_start and the frame_end may jump forward by an unknown amount of
-    // blocks, e.g. if we use a RANGE frame. This means that sometimes we don't
-    // know neither frame_end nor frame_start.
-    // We update the states of the window functions after we find the final frame
-    // boundaries.
-    // After we have found the final boundaries of the frame, we can immediately
-    // output the result for the current row, without waiting for more data.
-    RowNumber frame_start;
-    RowNumber frame_end;
-    bool frame_ended = false;
-    bool frame_started = false;
-
-    // The previous frame boundaries that correspond to the current state of the
-    // aggregate function. We use them to determine how to update the aggregation
+    // The previous frame that corresponds to the current state of the
+    // aggregate function. We use it to determine how to update the aggregation
     // state after we find the new frame.
-    RowNumber prev_frame_start;
-    RowNumber prev_frame_end;
+    FrameBounds prev_frame;
 };
 
 }

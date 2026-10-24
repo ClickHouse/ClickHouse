@@ -133,6 +133,8 @@ struct QueryPlanOptimizationSettings
     bool optimize_projection;
     bool use_query_condition_cache;
     bool use_query_condition_cache_for_top_k;
+    bool use_query_condition_cache_for_time_conditions;
+    double query_condition_cache_time_condition_grid_factor;
     bool read_in_order_through_join;
     bool optimize_aggregation_in_order_limit;
     bool correlated_subqueries_use_in_memory_buffer;
@@ -165,6 +167,7 @@ struct QueryPlanOptimizationSettings
     bool distributed_plan_force_shuffle_aggregation = false; /// Force Shuffle strategy instead of PartialAggregation + Merge for distributed aggregation
     bool distributed_aggregation_memory_efficient = true; /// Is the memory-saving mode of distributed aggregation enabled
     bool distributed_plan_prefer_replicas_over_workers = false; /// Use ReadFromMergeTree with catalog access over ReadFromMergeTreeAtWorker
+    bool distributed_plan_join_runtime_filters = false; /// Send join runtime filters between stages of a distributed query plan
     bool exact_rows_before_limit = false; /// LIMIT must read its input to the end so rows_before_limit_at_least is exact
 
     /// ------------------------------------------------------
@@ -265,6 +268,10 @@ struct QueryPlanOptimizationSettings
     size_t min_bytes_per_task_for_reading;
     size_t automatic_parallel_replicas_min_bytes_per_replica;
     float automatic_parallel_replicas_max_duplicated_read_ratio;
+    bool automatic_parallel_replicas_remember_boundary = true;
+    /// Folded into the key under which automatic parallel replicas remembers the boundary of the single-replica
+    /// plan; see `parallelReplicasBoundarySettingsHash`.
+    UInt64 parallel_replicas_boundary_settings_hash = 0;
 
     bool query_plan_optimize_primary_key = true;
 
@@ -280,7 +287,6 @@ struct QueryPlanOptimizationSettings
     /// of re-running the same subqueries.
     std::function<std::unique_ptr<QueryPlan>(const BuiltSetsByHashPtr &)> query_plan_with_parallel_replicas_builder;
 
-    bool parallel_replicas_filter_pushdown = false;
     bool enable_parallel_replicas = false;
 };
 

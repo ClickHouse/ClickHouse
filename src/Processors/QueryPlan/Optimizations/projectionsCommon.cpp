@@ -427,7 +427,9 @@ bool analyzeProjectionCandidate(
         MergeTreeDataPartPtr projection_part = it != created_projections.end() && !it->second->is_broken ? it->second : nullptr;
         if (!projection_part && hypothetical_projection && candidate.projection == &hypothetical_projection->projection)
             projection_part = hypothetical_projection->findPart(part_with_ranges.data_part->name);
+        /// A projection part returns every matching row of its part, so it cannot replace a read cut by exact counting.
         if (projection_part
+            && !(parent_reading_select_result.exact_ranges_excluded && !part_with_ranges.exact_ranges.empty())
             && projectionPartHasRequiredColumns(
                 *projection_part, *part_with_ranges.data_part, *candidate.projection, parent_metadata, required_column_names)
             && !partHasPendingMetadataMutationsOnColumns(

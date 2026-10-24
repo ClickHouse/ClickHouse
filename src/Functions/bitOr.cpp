@@ -80,6 +80,7 @@ FROM bits;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionBitOr>(documentation);
+    factory.registerAlias("bitwise_or", "bitOr", FunctionFactory::Case::Insensitive);
 }
 
 }

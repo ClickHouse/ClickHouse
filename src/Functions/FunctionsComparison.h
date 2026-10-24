@@ -1829,7 +1829,7 @@ public:
     /// A comparison is cheap, so it is not worth executing it lazily, but it is not free of
     /// exceptions either: comparing a date to a string parses that string. These two properties
     /// have to be answered separately.
-    bool canThrow(const DataTypesWithConstInfo & arguments) const override
+    std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & arguments) const override
     {
         return arguments.size() != 2 || comparisonCanThrow(arguments[0].type, arguments[1].type);
     }

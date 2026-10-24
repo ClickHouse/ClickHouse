@@ -4721,35 +4721,80 @@ void Server::createServers(
             }
         }
 
-        if (server_type.shouldStart(ServerType::Type::ICEBERG_REST_CATALOG) && !config.getString("iceberg_rest_catalog.port", "").empty())
+        bool has_catalog_port = !config.getString("iceberg_rest_catalog.port", "").empty();
+        bool has_catalog_secure_port = !config.getString("iceberg_rest_catalog.secure_port", "").empty();
+        if (server_type.shouldStart(ServerType::Type::ICEBERG_REST_CATALOG)
+            && (has_catalog_port || has_catalog_secure_port))
         {
-            port_name = "iceberg_rest_catalog.port";
+            auto is_listening = [&](const char * name)
+            {
+                return std::any_of(servers.begin(), servers.end(), [&](const auto & server)
+                {
+                    return !server.isStopping() && server.getListenHost() == listen_host && server.getPortName() == name;
+                });
+            };
+
+            /// Both listeners share one handler factory. Create it only if some configured port is not listening yet.
+            const bool already_listening = (!has_catalog_port || is_listening("iceberg_rest_catalog.port"))
+                && (!has_catalog_secure_port || is_listening("iceberg_rest_catalog.secure_port"));
+
             HTTPRequestHandlerFactoryPtr handler_factory;
-            try
+            if (!already_listening)
             {
-                handler_factory = createIcebergRESTCatalogHandlerFactory(*this, config);
-            }
-            catch (...)
-            {
-                LOG_ERROR(&logger(), "Not starting the Iceberg REST catalog server: {}", getCurrentExceptionMessage(/*with_stacktrace*/ false));
+                try
+                {
+                    handler_factory = createIcebergRESTCatalogHandlerFactory(*this, config);
+                }
+                catch (...)
+                {
+                    LOG_ERROR(&logger(), "Not starting the Iceberg REST catalog server: {}", getCurrentExceptionMessage(/*with_stacktrace*/ false));
+                }
             }
 
             if (handler_factory)
             {
-                createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+                if (has_catalog_port)
                 {
-                    Poco::Net::ServerSocket socket;
-                    auto address = socketBindListen(server_settings, socket, listen_host, port);
-                    socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
-                    socket.setSendTimeout(settings[Setting::http_send_timeout]);
-                    return ProtocolServerAdapter(
-                        listen_host,
-                        port_name,
-                        ServerType::Type::ICEBERG_REST_CATALOG,
-                        "Iceberg REST catalog: http://" + address.toString(),
-                        std::make_unique<HTTPServer>(
-                            httpContext(), handler_factory, server_pool, socket, http_params, nullptr, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
-                });
+                    port_name = "iceberg_rest_catalog.port";
+                    createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+                    {
+                        Poco::Net::ServerSocket socket;
+                        auto address = socketBindListen(server_settings, socket, listen_host, port);
+                        socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
+                        socket.setSendTimeout(settings[Setting::http_send_timeout]);
+                        return ProtocolServerAdapter(
+                            listen_host,
+                            port_name,
+                            ServerType::Type::ICEBERG_REST_CATALOG,
+                            "Iceberg REST catalog: http://" + address.toString(),
+                            std::make_unique<HTTPServer>(
+                                httpContext(), handler_factory, server_pool, socket, http_params, nullptr, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
+                    });
+                }
+
+                /// The TLS listener uses the certificate from the <openSSL><server> section.
+                if (has_catalog_secure_port)
+                {
+                    port_name = "iceberg_rest_catalog.secure_port";
+                    createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&]([[maybe_unused]] UInt16 port) -> ProtocolServerAdapter
+                    {
+#if USE_SSL
+                        Poco::Net::SecureServerSocket socket;
+                        auto address = socketBindListen(server_settings, socket, listen_host, port, /* secure = */ true);
+                        socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
+                        socket.setSendTimeout(settings[Setting::http_send_timeout]);
+                        return ProtocolServerAdapter(
+                            listen_host,
+                            port_name,
+                            ServerType::Type::ICEBERG_REST_CATALOG,
+                            "Iceberg REST catalog: https://" + address.toString(),
+                            std::make_unique<HTTPServer>(
+                                httpContext(), handler_factory, server_pool, socket, http_params, nullptr, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
+#else
+                        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "HTTPS for the Iceberg REST catalog is disabled because Poco library was built without NetSSL support.");
+#endif
+                    });
+                }
             }
         }
     }
@@ -5044,7 +5089,8 @@ void Server::updateServers(
             }
             /// The warehouse name is baked into the Iceberg REST catalog handler factory, so if
             /// the section changes, the listener must be restarted.
-            if (port_name == "iceberg_rest_catalog.port" && !isSameConfiguration(previous_config, config, "iceberg_rest_catalog"))
+            if ((port_name == "iceberg_rest_catalog.port" || port_name == "iceberg_rest_catalog.secure_port")
+                && !isSameConfiguration(previous_config, config, "iceberg_rest_catalog"))
             {
                 force_restart = true;
                 LOG_TRACE(log, "<iceberg_rest_catalog> had been changed, will reload {}", server->getDescription());

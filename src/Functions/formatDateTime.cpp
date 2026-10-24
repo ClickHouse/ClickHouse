@@ -2336,6 +2336,7 @@ SELECT formatDateTimeInJodaSyntax(toDateTime('2010-01-04 12:34:56'), 'yyyy-MM-dd
     FunctionDocumentation documentation_formatDateTimeInJodaSyntax = {description_formatDateTimeInJodaSyntax, syntax_formatDateTimeInJodaSyntax, arguments_formatDateTimeInJodaSyntax, {}, returned_value_formatDateTimeInJodaSyntax, examples_formatDateTimeInJodaSyntax, introduced_in_formatDateTimeInJodaSyntax, category_formatDateTimeInJodaSyntax};
 
     factory.registerFunction<FunctionWithLowCardinalityFastPath<FunctionFormatDateTimeInJodaSyntax>>(documentation_formatDateTimeInJodaSyntax);
+    factory.registerAlias("FORMAT_DATETIME", FunctionFormatDateTimeInJodaSyntax::name, FunctionFactory::Case::Insensitive);
 
     FunctionDocumentation::Description description_fromUnixTimestampInJodaSyntax = R"(
 This function converts a Unix timestamp to a calendar date and a time of a day.

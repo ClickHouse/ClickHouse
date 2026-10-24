@@ -112,12 +112,12 @@ struct WindowFunctionLagLeadImpl final : public StatelessWindowFunction
             }
         }
 
-        const auto target_row = transform->blocks.move(
-            transform->current.location, offset * (is_lead ? 1 : -1));
-
-        if (!target_row
-            || *target_row < transform->frame_start
-            || transform->frame_end <= *target_row)
+        const int64_t distance = is_lead ? offset : -offset;
+        const FrameBounds & frame = transform->frame.bounds();
+        const RowPoint & current = transform->current;
+        const bool inside_frame = frame.start.row_index_in_partition - current.row_index_in_partition <= distance
+            && distance < frame.end.row_index_in_partition - current.row_index_in_partition;
+        if (!inside_frame)
         {
             // Offset is outside the frame.
             if (argument_types.size() > 2)
@@ -135,9 +135,10 @@ struct WindowFunctionLagLeadImpl final : public StatelessWindowFunction
         else
         {
             // Offset is inside the frame.
-            to.insertFrom(*transform->blocks.blockAt(target_row->block).materialized_columns[
+            const RowNumber target_row = transform->blocks.move(current.location, distance);
+            to.insertFrom(*transform->blocks.blockAt(target_row.block).materialized_columns[
                     workspace.argument_column_indices[0]],
-                target_row->row);
+                target_row.row);
         }
     }
 };

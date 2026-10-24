@@ -2,18 +2,25 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <future>
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <optional>
+#include <utility>
 #include <gtest/gtest.h>
 
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 
 #include <Common/EventRateMeter.h>
+#include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
+#include <Common/ThreadStatus.h>
+#include <Common/WakeupFd.h>
 #include <Common/Scheduler/CPUSlotsAllocation.h>
 #include <Common/Scheduler/CPULeaseAllocation.h>
 #include <Common/Scheduler/ISpaceSharedNode.h>
@@ -34,6 +41,11 @@
 #include <base/scope_guard.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
+#include <Processors/Executors/Runtime/V1/PipelineExecutor.h>
+#include <Processors/IProcessor.h>
+#include <Processors/SpillableAdapter.h>
+#include <QueryPipeline/ReadProgressCallback.h>
 
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTCreateWorkloadQuery.h>
@@ -1632,12 +1644,12 @@ static auto getPreempted()
     return CurrentMetrics::get(CurrentMetrics::ConcurrencyControlPreempted);
 }
 
-struct EventCounter
+struct ProfileEventCounter
 {
     ProfileEvents::Event event;
     size_t initial_value;
 
-    explicit EventCounter(ProfileEvents::Event event_)
+    explicit ProfileEventCounter(ProfileEvents::Event event_)
         : event(event_)
     {
         initial_value = getValue();
@@ -1886,7 +1898,7 @@ TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingDownscaling)
         queries[0]->waitStartedThreads(8);
         while (getAcquired() < 8) std::this_thread::yield(); // Wait Q0 to upscale to all 8 threads
         DBG_PRINT("--- Q1 ---");
-        EventCounter downscales(ProfileEvents::ConcurrencyControlDownscales);
+        ProfileEventCounter downscales(ProfileEvents::ConcurrencyControlDownscales);
         queries[1]->start(TestQuery::AllocateLease, "B", 8);
         DBG_PRINT("--- Wait downscaling ---");
         // Wait 3 threads of Q0 to became preempted and downscaled.
@@ -1920,7 +1932,7 @@ TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingUpscaling)
     {
         while (getAcquired() < 8) std::this_thread::yield(); // Wait Q0 to upscale to all 8 threads
         DBG_PRINT("--- Q1 ---");
-        EventCounter downscales(ProfileEvents::ConcurrencyControlDownscales);
+        ProfileEventCounter downscales(ProfileEvents::ConcurrencyControlDownscales);
         queries[1]->start(TestQuery::AllocateLease, "B", 8);
         DBG_PRINT("--- Wait downscaling ---");
         // Wait 3 threads of Q0 to became preempted and downscaled.
@@ -1928,7 +1940,7 @@ TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingUpscaling)
         // to run one more thread than slots allocated as long as this thread does not consume too much resources.
         while (downscales.count() < 3) std::this_thread::yield();
         DBG_PRINT("--- Wait upscaling ---");
-        EventCounter upscales(ProfileEvents::ConcurrencyControlUpscales);
+        ProfileEventCounter upscales(ProfileEvents::ConcurrencyControlUpscales);
         queries[1].reset(); // Release all slots of Q1 to allow Q0 to upscale
         while (upscales.count() < 3) std::this_thread::yield();
         queries[1] = std::make_shared<TestQuery>(t); // Recreate Q1 for the next iteration
@@ -2188,12 +2200,51 @@ public:
         ASSERT_EQ(increase_enqueued, true);
     }
 
+    /// Reports the absolute reclaimable total to the scheduler (advisory). Called outside `mutex` to
+    /// respect lock ordering with AllocationQueue::mutex.
+    void reportReclaimable(ResourceCost total)
+    {
+        queue.setReclaimable(*this, total);
+    }
+
+    void finishSpill(ResourceCost settled_bytes, ResourceCost total)
+    {
+        queue.finishSpill(*this, settled_bytes, total);
+    }
+
+    void waitSpilled(size_t n = 1)
+    {
+        std::unique_lock lock(mutex);
+        cv.wait(lock, [&] { return spills >= n; });
+    }
+
+    size_t spillCount()
+    {
+        std::unique_lock lock(mutex);
+        return spills;
+    }
+
+    ResourceCost lastSpillAtLeast()
+    {
+        std::unique_lock lock(mutex);
+        return last_spill_at_least;
+    }
+
 private: // interaction with the scheduler thread
     void killAllocation(const std::exception_ptr & reason) override
     {
         std::unique_lock lock(mutex);
         DBG_PRINT("{}: Kill allocation at size = {}", id, allocated_size);
         kill_reason = reason;
+        cv.notify_all();
+    }
+
+    void spillAllocation(ResourceCost additional_bytes) override
+    {
+        std::unique_lock lock(mutex);
+        EXPECT_GT(additional_bytes, 0);
+        ++spills;
+        last_spill_at_least = additional_bytes;
         cv.notify_all();
     }
 
@@ -2244,6 +2295,8 @@ private: // interaction with the scheduler thread
     bool increase_enqueued = false;
     bool decrease_enqueued = false;
     bool removed = false;
+    size_t spills = 0; // number of spillAllocation() signals received
+    ResourceCost last_spill_at_least = 0; // argument of the last spillAllocation() signal
     ResourceCost allocated_size = 0; // equals ResourceAllocation::allocated, which is private and controlled by the scheduler
     ResourceCost real_size = 0; // real size of the resource used by the allocation
 };
@@ -2581,6 +2634,437 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationSelfKilled)
     }
 }
 
+TEST(SchedulerWorkloadResourceManager, MemoryReservationSpillOnSoftLimit)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    // Hard limit 200, soft (spill) limit 100.
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 200, max_memory_before_spill = 100");
+
+    ClassifierPtr c = t.manager->acquire("all");
+    ResourceLink link = c->get("memory");
+
+    TestAllocation a(link, "spiller", 50);
+    a.setSize(150); // above the soft limit (100), below the hard limit (200)
+    a.waitSync();
+    EXPECT_EQ(a.spillCount(), 0); // nothing reclaimable reported yet -> fail-close, no spill
+
+    a.reportReclaimable(120); // now the scheduler can ask it to spill
+    a.waitSpilled();
+    EXPECT_EQ(a.spillCount(), 1);
+    EXPECT_EQ(a.lastSpillAtLeast(), 50); // need = allocated(150) - soft(100)
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationRetiresUnclaimedSpill)
+{
+    struct SpillableState
+    {
+        SpillableAdapter<SpillableState> spillable{*this};
+
+        ProcessorMemoryStats getMemoryStats() const
+        {
+            return {.spillable_memory_bytes = 100};
+        }
+        size_t spill(size_t)
+        {
+            ADD_FAILURE() << "The request arrives during the final work step and must remain unclaimed";
+            return 0;
+        }
+    };
+
+    struct FinishWithPendingSpill final : IProcessor
+    {
+        std::shared_ptr<SpillableState> state;
+        std::function<void()> before_finish;
+        bool finished = false;
+        ISpillable * const spillable = &state->spillable;
+
+        explicit FinishWithPendingSpill(std::shared_ptr<SpillableState> state_) : state(std::move(state_))
+        {
+        }
+
+        String getName() const override
+        {
+            return "FinishWithPendingSpill";
+        }
+        std::span<ISpillable * const> getSpillables() override
+        {
+            return {&spillable, 1};
+        }
+        Status prepare() override
+        {
+            if (!finished)
+                return Status::Ready;
+            return Status::Finished;
+        }
+        void work() override
+        {
+            before_finish();
+            finished = true;
+        }
+    };
+
+    ResourceTest t;
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 1000");
+    auto classifier = t.manager->acquire("all");
+    auto link = classifier->get("memory");
+    auto status = std::make_shared<QueryStatus>(
+        Context::getGlobalContextInstance(), "", 0, ClientInfo{}, std::nullopt, QueryPriorities::Handle{}, nullptr,
+        std::make_unique<MemoryReservation>(link, "finishing_query", 150, 1), nullptr, IAST::QueryKind::Select, Settings{}, 0, false);
+    auto * reservation = status->getMemoryReservation();
+
+    auto state = std::make_shared<SpillableState>();
+    auto processor = std::make_shared<FinishWithPendingSpill>(state);
+    auto unprepared_processor = std::make_shared<FinishWithPendingSpill>(state);
+    unprepared_processor->finished = true;
+    processor->before_finish = [&]
+    {
+        // The executor already reported 100 spillable bytes and checked for requests before entering `work`.
+        ASSERT_EQ(reservation->getTotalReclaimable(), 100);
+        t.executeFromScheduler("memory", [&]
+        {
+            EXPECT_EQ(reservation->queue.requestSpill(*reservation, 50), 50);
+            EXPECT_EQ(reservation->queue.reclaiming, 50);
+        });
+    };
+    auto processors = std::make_shared<Processors>(Processors{processor});
+    auto progress = std::make_unique<ReadProgressCallback>();
+    progress->setProcessListElement(status);
+    Runtime::V1::PipelineExecutor executor(processors, status);
+    Runtime::V1::PipelineExecutor other_executor(std::make_shared<Processors>(Processors{unprepared_processor}), status);
+    executor.setReadProgressCallback(std::move(progress));
+    executor.execute(1, false);
+
+    // Another registered owner has not been prepared yet, so its shared accounting must remain.
+    ASSERT_EQ(processor->getNumExecutedJobs(), 1);
+    t.executeFromScheduler("memory", [&]
+    {
+        EXPECT_EQ(reservation->queue.reclaimable, 50);
+        EXPECT_EQ(reservation->queue.reclaiming, 50);
+    });
+
+    other_executor.execute(1, false);
+
+    // The last `Finished` retires the request while the reservation survives. Repeated calls are harmless.
+    EXPECT_EQ(processor->prepare(), IProcessor::Status::Finished);
+    EXPECT_EQ(unprepared_processor->prepare(), IProcessor::Status::Finished);
+    t.executeFromScheduler("memory", [&]
+    {
+        EXPECT_EQ(reservation->queue.allocated, 150);
+        EXPECT_EQ(reservation->queue.reclaimable, 0);
+        EXPECT_EQ(reservation->queue.reclaiming, 0);
+    });
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationSpillsIdleProcessors)
+{
+    /// Keeps an async task pending while the spillers are idle, so the executor waits instead of finishing.
+    /// Its file descriptor becomes readable only after both spills, allowing the pipeline to complete.
+    struct AwaitSpills final : IProcessor
+    {
+        WakeupFd completed;
+        std::mutex mutex;
+        std::condition_variable cv;
+        size_t idle = 0;
+        std::atomic<size_t> spills = 0;
+        bool finished = false;
+        bool pause_before_poll = false;
+
+        String getName() const override { return "AwaitSpills"; }
+        Status prepare() override { return finished ? Status::Finished : Status::Async; }
+        int schedule() override { return completed.fd(); }
+        void work() override
+        {
+            completed.drain();
+            EXPECT_EQ(spills.load(), 2);
+            finished = true;
+        }
+    };
+
+    /// Runs normal `work` once, then simulates waiting for input (`NeedData`) or output space (`PortFull`).
+    /// Reports 100 synthetic reclaimable bytes; only `spill` makes it ready to finish.
+    struct IdleSpiller final : IProcessor
+    {
+        AwaitSpills & gate;
+        const Status idle_status;
+        SpillableAdapter<IdleSpiller> spillable{*this};
+        ISpillable * const component = &spillable;
+        bool worked = false;
+        bool announced_idle = false;
+        bool spilled = false;
+
+        IdleSpiller(AwaitSpills & gate_, Status idle_status_) : gate(gate_), idle_status(idle_status_) {}
+        String getName() const override { return "IdleSpiller"; }
+        std::span<ISpillable * const> getSpillables() override { return {&component, 1}; }
+        ProcessorMemoryStats getMemoryStats() const { return {.spillable_memory_bytes = spilled ? 0 : 100}; }
+        Status prepare() override
+        {
+            if (!worked)
+                return Status::Ready;
+            if (spilled)
+                return Status::Finished;
+            if (!std::exchange(announced_idle, true))
+            {
+                std::lock_guard lock(gate.mutex);
+                ++gate.idle;
+                if (gate.idle == 2 && gate.pause_before_poll)
+                    FailPointInjection::enableFailPoint("polling_queue_before_try_poll");
+                gate.cv.notify_all();
+            }
+            return idle_status;
+        }
+        void work() override
+        {
+            EXPECT_FALSE(worked) << "A spill-only wakeup must not execute normal work";
+            worked = true;
+        }
+        size_t spill(size_t bytes)
+        {
+            EXPECT_TRUE(announced_idle);
+            EXPECT_FALSE(spilled);
+            EXPECT_EQ(bytes, 100);
+            spilled = true;
+            if (++gate.spills == 2)
+                gate.completed.notify();
+            return 100;
+        }
+    };
+
+    ResourceTest t;
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 1000");
+    auto classifier = t.manager->acquire("all");
+    /// Cover both single-thread async polling and multi-thread worker wakeups.
+    for (size_t threads : {1, 2})
+    {
+        std::optional<DB::ThreadStatus> thread_status;
+        if (!CurrentThread::isInitialized())
+            thread_status.emplace();
+        auto status = std::make_shared<QueryStatus>(
+            Context::getGlobalContextInstance(), "", 0, ClientInfo{}, std::nullopt, QueryPriorities::Handle{}, nullptr,
+            std::make_unique<MemoryReservation>(classifier->get("memory"), "idle_spillers", 300, 100),
+            std::make_shared<ThreadGroup>(Context::getGlobalContextInstance(), 0),
+            IAST::QueryKind::Select, Settings{}, 0, false);
+        auto * reservation = status->getMemoryReservation();
+        auto gate = std::make_shared<AwaitSpills>();
+        gate->pause_before_poll = threads == 1 && USE_LIBFIU;
+        auto input_waiter = std::make_shared<IdleSpiller>(*gate, IProcessor::Status::NeedData);
+        auto output_waiter = std::make_shared<IdleSpiller>(*gate, IProcessor::Status::PortFull);
+        /// No connected ports: the idle owners must progress through spill-only tasks, without another normal `work` call.
+        Runtime::V1::PipelineExecutor executor(std::make_shared<Processors>(Processors{input_waiter, output_waiter, gate}), status);
+        auto run = std::async(std::launch::async, [&] { executor.execute(threads, false); });
+        std::future<void> paused;
+        SCOPE_EXIT({
+            if (run.valid())
+            {
+                executor.cancel(IProcessor::CancelReason::Exception);
+                if (gate->pause_before_poll)
+                    FailPointInjection::disableFailPoint("polling_queue_before_try_poll");
+                run.wait();
+            }
+            if (gate->pause_before_poll)
+                FailPointInjection::disableFailPoint("polling_queue_before_try_poll");
+        });
+
+        {
+            std::unique_lock lock(gate->mutex);
+            ASSERT_TRUE(gate->cv.wait_for(lock, std::chrono::seconds(10), [&] { return gate->idle == 2; }));
+        }
+        /// Deliver the request after the task mutex is released, so the nonblocking poll consumes its wakeup.
+        /// The executor must recheck the spill notification before entering a blocking poll, or it can block with a request pending.
+        if (gate->pause_before_poll)
+        {
+            paused = std::async(std::launch::async, [] { FailPointInjection::waitForPause("polling_queue_before_try_poll"); });
+            ASSERT_EQ(paused.wait_for(std::chrono::seconds(10)), std::future_status::ready);
+            paused.get();
+        }
+        t.executeFromScheduler("memory", [&]
+        {
+            /// The second spill must target 100 bytes but settle only the remaining 50-byte claim.
+            EXPECT_EQ(reservation->queue.requestSpill(*reservation, 150), 150);
+        });
+        if (gate->pause_before_poll)
+            FailPointInjection::disableFailPoint("polling_queue_before_try_poll");
+        ASSERT_EQ(run.wait_for(std::chrono::seconds(10)), std::future_status::ready);
+        ASSERT_NO_THROW(run.get());
+        EXPECT_EQ(input_waiter->getNumExecutedJobs(), 1);
+        EXPECT_EQ(output_waiter->getNumExecutedJobs(), 1);
+        t.executeFromScheduler("memory", [&]
+        {
+            EXPECT_EQ(reservation->queue.reclaimable, 0);
+            EXPECT_EQ(reservation->queue.reclaiming, 0);
+        });
+        /// A finalized pipeline can release its reservation while the executor object still exists.
+        status->releaseMemoryReservation();
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationSpillRatioSetting)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    // Soft limit derived as a fraction of the hard limit: 0.5 * 200 = 100.
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 200, max_memory_to_spill_ratio = 0.5");
+
+    ClassifierPtr c = t.manager->acquire("all");
+    ResourceLink link = c->get("memory");
+
+    TestAllocation a(link, "spiller", 50);
+    a.setSize(160); // above soft (100), below hard (200)
+    a.waitSync();
+    a.reportReclaimable(100);
+    a.waitSpilled();
+    EXPECT_EQ(a.spillCount(), 1);
+    EXPECT_EQ(a.lastSpillAtLeast(), 60); // need = allocated(160) - soft(100)
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationSpillSmallerSettingWins)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    // Both soft-limit settings set: the smaller resulting threshold wins.
+    // Effective soft limit = min(max_memory_before_spill = 150, 0.5 * max_memory = 100) = 100.
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 200, max_memory_before_spill = 150, max_memory_to_spill_ratio = 0.5");
+
+    ClassifierPtr c = t.manager->acquire("all");
+    ResourceLink link = c->get("memory");
+
+    TestAllocation a(link, "spiller", 50);
+    a.setSize(120); // above the smaller threshold (100), below the larger one (150)
+    a.waitSync();
+    a.reportReclaimable(100);
+    a.waitSpilled();
+    EXPECT_EQ(a.spillCount(), 1);
+    EXPECT_EQ(a.lastSpillAtLeast(), 20); // need = allocated(120) - min(150, 100)
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationSpillOnSoftLimitEnableTransition)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all"); // no limits: the workload has no `AllocationLimit` node at all
+
+    ClassifierPtr c = t.manager->acquire("all");
+    ResourceLink link = c->get("memory");
+
+    TestAllocation a(link, "spiller", 150);
+    a.waitSync();
+    a.reportReclaimable(120); // reported before any soft limit exists — nothing can spill yet
+    EXPECT_EQ(a.spillCount(), 0);
+
+    // Enable transition: this inserts a fresh soft-only `AllocationLimit` above the existing branch
+    // (the Add path of `updateSchedulingSettings`, not the Update path taken when a limit already
+    // exists). The subtree is already over the new threshold with reclaimable memory, so the spill
+    // must fire right away — no later resize or `setReclaimable` happens in this test to trigger it.
+    t.query("CREATE OR REPLACE WORKLOAD all SETTINGS max_memory_before_spill = 100");
+
+    a.waitSpilled();
+    EXPECT_EQ(a.spillCount(), 1);
+    EXPECT_EQ(a.lastSpillAtLeast(), 50); // need = allocated(150) - soft(100)
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationSpillAvailableWorkloadOrder)
+{
+    for (bool precedence : {false, true})
+    {
+        SCOPED_TRACE(precedence);
+        ResourceTest t;
+        t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+        t.query("CREATE WORKLOAD all SETTINGS max_memory = 1000");
+        t.query(fmt::format("CREATE WORKLOAD A IN all SETTINGS weight = {}, precedence = 1", precedence ? 1 : 4));
+        t.query(fmt::format("CREATE WORKLOAD B IN all SETTINGS precedence = {}", precedence ? 2 : 1));
+
+        auto ca = t.manager->acquire("A");
+        auto cb = t.manager->acquire("B");
+        TestAllocation a(ca->get("memory"), "a", 300);
+        TestAllocation b(cb->get("memory"), "b", 200);
+        a.waitSync();
+        b.waitSync();
+        a.reportReclaimable(200);
+        b.reportReclaimable(50);
+        t.executeFromScheduler("memory", [] {});
+
+        t.query("CREATE OR REPLACE WORKLOAD all SETTINGS max_memory = 1000, max_memory_before_spill = 475");
+        EXPECT_EQ(a.spillCount(), 0);
+        EXPECT_EQ(b.spillCount(), 1);
+        EXPECT_EQ(b.lastSpillAtLeast(), 25);
+
+        t.query("CREATE OR REPLACE WORKLOAD all SETTINGS max_memory = 1000, max_memory_before_spill = 400");
+        EXPECT_EQ(a.spillCount(), 1);
+        EXPECT_EQ(a.lastSpillAtLeast(), 50);
+        EXPECT_EQ(b.spillCount(), 2);
+        EXPECT_EQ(b.lastSpillAtLeast(), 25);
+        t.executeFromScheduler("memory", [&]
+        {
+            EXPECT_EQ(a.queue.reclaimable, 150);
+            EXPECT_EQ(a.queue.reclaiming, 50);
+            EXPECT_EQ(b.queue.reclaimable, 0);
+            EXPECT_EQ(b.queue.reclaiming, 50);
+        });
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationSpillCreditsSurviveRestructuring)
+{
+    for (bool precedence : {false, true})
+    {
+        SCOPED_TRACE(precedence);
+        ResourceTest t;
+        t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+        t.query("CREATE WORKLOAD all SETTINGS max_memory = 1000");
+        t.query("CREATE WORKLOAD parent_a IN all");
+        t.query("CREATE WORKLOAD parent_b IN all");
+        t.query("CREATE WORKLOAD leaf1 IN parent_a SETTINGS precedence = 1");
+        t.query(fmt::format("CREATE WORKLOAD leaf2 IN parent_a SETTINGS precedence = {}", precedence ? 2 : 1));
+        t.query(fmt::format("CREATE WORKLOAD leaf3 IN parent_b SETTINGS precedence = {}", precedence ? 2 : 1));
+
+        auto expect_state = [&](ResourceCost reclaimable, ResourceCost reclaiming)
+        {
+            t.manager->forEachNode([&](const String &, const String & path, ISchedulerNode * node)
+            {
+                if (auto * ss = dynamic_cast<ISpaceSharedNode *>(node))
+                {
+                    SCOPED_TRACE(path);
+                    EXPECT_EQ(ss->reclaimable, ss->allocated ? reclaimable : 0);
+                    EXPECT_EQ(ss->reclaiming, ss->allocated ? reclaiming : 0);
+                }
+            });
+        };
+
+        auto c = t.manager->acquire("leaf1");
+        {
+            TestAllocation a(c->get("memory"), "a", 150);
+            a.waitSync();
+            a.reportReclaimable(120);
+            t.executeFromScheduler("memory", [] {});
+            t.query("CREATE OR REPLACE WORKLOAD parent_a IN all SETTINGS max_memory_before_spill = 100");
+            EXPECT_EQ(a.spillCount(), 1);
+            EXPECT_EQ(a.lastSpillAtLeast(), 50);
+            expect_state(70, 50);
+
+            t.query("CREATE OR REPLACE WORKLOAD leaf1 IN parent_b SETTINGS precedence = 1");
+            expect_state(70, 50);
+            t.query("CREATE OR REPLACE WORKLOAD parent_b IN all SETTINGS max_memory_before_spill = 100");
+            expect_state(70, 50);
+            t.query("CREATE OR REPLACE WORKLOAD leaf1 IN parent_b SETTINGS precedence = 3, weight = 2");
+            expect_state(70, 50);
+            EXPECT_EQ(a.spillCount(), 1);
+
+            a.setSize(100);
+            a.waitSync();
+            a.finishSpill(50, 100);
+            expect_state(100, 0);
+            EXPECT_EQ(a.spillCount(), 1);
+        }
+        expect_state(0, 0);
+    }
+}
+
 TEST(SchedulerWorkloadResourceManager, MemoryReservationKillsOther)
 {
     ResourceTest t;
@@ -2801,7 +3285,7 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationDropQueueWhilePending)
         {
             try
             {
-                MemoryReservation r(link_victim, "pending", 50);
+                MemoryReservation r(link_victim, "pending", 50, 1);
                 ADD_FAILURE() << "MemoryReservation should have failed";
             }
             catch (const Exception &)

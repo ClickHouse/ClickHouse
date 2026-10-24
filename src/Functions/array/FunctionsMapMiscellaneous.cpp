@@ -859,6 +859,7 @@ The query `SELECT mapKeys(m) FROM table` is transformed to `SELECT m.keys FROM t
     FunctionDocumentation::Category category_mapKeys = FunctionDocumentation::Category::Map;
     FunctionDocumentation documentation_mapKeys = {description_mapKeys, syntax_mapKeys, arguments_mapKeys, {}, returned_value_mapKeys, examples_mapKeys, introduced_in_mapKeys, category_mapKeys};
     factory.registerFunction<FunctionMapKeys>(documentation_mapKeys);
+    factory.registerAlias("map_keys", "mapKeys", FunctionFactory::Case::Insensitive);
 
     /// mapValues documentation
     FunctionDocumentation::Description description_mapValues = R"(
@@ -883,6 +884,7 @@ The query `SELECT mapValues(m) FROM table` is transformed to `SELECT m.values FR
     FunctionDocumentation::Category category_mapValues = FunctionDocumentation::Category::Map;
     FunctionDocumentation documentation_mapValues = {description_mapValues, syntax_mapValues, arguments_mapValues, {}, returned_value_mapValues, examples_mapValues, introduced_in_mapValues, category_mapValues};
     factory.registerFunction<FunctionMapValues>(documentation_mapValues);
+    factory.registerAlias("map_values", "mapValues", FunctionFactory::Case::Insensitive);
 
     /// mapEntries documentation
     FunctionDocumentation::Description description_mapEntries = R"(

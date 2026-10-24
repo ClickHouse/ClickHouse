@@ -17,6 +17,7 @@
 #include <boost/algorithm/string/join.hpp>
 #include <capnp/schema.h>
 #include <capnp/schema-parser.h>
+#include <kj/parse/char.h>
 #include <fcntl.h>
 
 #include <filesystem>
@@ -80,8 +81,10 @@ void checkCapnProtoSchemaNestingDepth(const String & schema_directory, const Str
         size_t depth = 0;
         /// The last identifier seen before the current position, to recognize `import "..."`.
         String last_word;
-        /// Whether `last_word` has already been terminated by whitespace.
+        /// Whether `last_word` has already been terminated by whitespace, a comment or a byte order mark,
+        /// any of which Cap'n Proto allows between `import` and its path.
         bool last_word_finished = false;
+        static constexpr std::string_view utf8_bom = "\xEF\xBB\xBF";
 
         for (size_t i = 0; i < content.size(); ++i)
         {
@@ -90,20 +93,41 @@ void checkCapnProtoSchemaNestingDepth(const String & schema_directory, const Str
             /// Cap'n Proto has line comments and text literals; brackets inside them are not nesting.
             if (c == '#')
             {
-                last_word.clear();
-                last_word_finished = false;
+                last_word_finished = !last_word.empty();
                 i = content.find('\n', i);
                 if (i == String::npos)
                     break;
             }
-            else if (c == '"')
+            else if (c == '"' || c == '`')
             {
                 String literal;
-                for (++i; i < content.size() && content[i] != '"'; ++i)
+                if (c == '`')
                 {
-                    if (content[i] == '\\' && i + 1 < content.size())
-                        ++i;
-                    literal += content[i];
+                    /// A backtick starts a text literal that runs to the end of the line, the line break included.
+                    for (++i; i < content.size() && content[i] != '\r' && content[i] != '\n'; ++i)
+                        literal += content[i];
+                    literal += '\n';
+                }
+                else
+                {
+                    kj::parse::IteratorInput<char, const char *> input(content.data() + i, content.data() + content.size());
+                    auto parsed = kj::parse::doubleQuotedString(input);
+                    if (const auto * text = kj::_::readMaybe(parsed))
+                    {
+                        /// Lexed as Cap'n Proto does, so the escape sequences are decoded in the same way.
+                        literal.assign(text->begin(), text->size());
+                        i = input.getPosition() - content.data() - 1;
+                    }
+                    else
+                    {
+                        /// Not a text literal, e.g. a `0x"..."` data literal with a line break.
+                        for (++i; i < content.size() && content[i] != '"'; ++i)
+                        {
+                            if (content[i] == '\\' && i + 1 < content.size())
+                                ++i;
+                            literal += content[i];
+                        }
+                    }
                 }
 
                 if (last_word == "import" && !literal.empty())
@@ -126,10 +150,11 @@ void checkCapnProtoSchemaNestingDepth(const String & schema_directory, const Str
                 }
                 last_word += c;
             }
-            else if (isWhitespaceASCII(c))
+            else if (isWhitespaceASCII(c) || content.compare(i, utf8_bom.size(), utf8_bom) == 0)
             {
-                /// Whitespace separates `import` from the path, so it must not forget the keyword.
                 last_word_finished = !last_word.empty();
+                if (!isWhitespaceASCII(c))
+                    i += utf8_bom.size() - 1;
             }
             else
             {
