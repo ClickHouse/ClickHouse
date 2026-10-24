@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/canonicalizeNegativeZero.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NumberTraits.h>
 #include <Common/Exception.h>
@@ -517,6 +518,17 @@ void ColumnLowCardinality::deserializeAndInsertFromArena(ReadBuffer & in, const 
 {
     compactIfSharedDictionary();
     idx.insertIndex(getDictionary().uniqueDeserializeAndInsertFromArena(in, settings));
+}
+
+void ColumnLowCardinality::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
+{
+    /// This hash identifies an inserted block for insert deduplication, so it is persisted and has to be the same
+    /// as in older versions. `updateHashWithValue` hashes `-0.` as `0.`, while the range hash of a floating point
+    /// column, and the hash of a `LowCardinality` value before that, uses the raw bits of the value.
+    const IColumn & dictionary_values = *getDictionary().getNestedColumn();
+    const IColumn & index_column = getIndexes();
+    for (size_t i = begin; i < end; ++i)
+        updateHashWithRawValue(dictionary_values, index_column.getUInt(i), hash);
 }
 
 void ColumnLowCardinality::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const

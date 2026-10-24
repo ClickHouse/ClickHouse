@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
+#include <Columns/canonicalizeNegativeZero.h>
 #include <Columns/validateColumnType.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -416,7 +417,12 @@ void ActionsDAG::Node::updateHash(
         /// plan builds matching without dropping any other constant's value (it still serializes
         /// normally for distributed propagation).
         if (!is_runtime_filter_id && (with_variable_size_constant_values || column->valuesHaveFixedSize()))
+        {
             column->updateHashWithValue(0, hash_state);
+            /// `updateHashWithValue` does not tell `-0.` and `0.` apart, but they are different constants.
+            if (auto value = serializeValueIfContainsNegativeZero(*column, 0))
+                hash_state.update(*value);
+        }
 
         /// A `Const(Set)` needs its identity added rather than its value skipped: `ColumnSet` is a dummy
         /// column, so the call above hashes nothing for it, and in build-independent mode its
@@ -1345,7 +1351,9 @@ bool constColumnsEqual(const ColumnConstPtr & a, const ColumnConstPtr & b)
     const IColumn & b_inner = b->getDataColumn();
     if (typeid(a_inner) != typeid(b_inner))
         return false;
-    return a_inner.compareAt(0, 0, b_inner, /* nan_direction_hint */ 1) == 0;
+    /// `compareAt` treats `-0.` and `0.` as equal, but they are different constants: `1 / -0.` is `-inf`.
+    return a_inner.compareAt(0, 0, b_inner, /* nan_direction_hint */ 1) == 0
+        && serializeValueIfContainsNegativeZero(a_inner, 0) == serializeValueIfContainsNegativeZero(b_inner, 0);
 }
 
 bool isConstant(const ActionsDAG::Node & n)
@@ -1426,6 +1434,9 @@ struct ConstantKeyHash
         SipHash h;
         k.sample->result_type->updateHash(h);
         k.sample->column->updateHashWithValue(0, h);
+        /// See `constColumnsEqual`.
+        if (auto value = serializeValueIfContainsNegativeZero(*k.sample->column, 0))
+            h.update(*value);
         h.update(k.sample->is_masked_secret);
         return h.get64();
     }

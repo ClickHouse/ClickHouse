@@ -1,6 +1,7 @@
 #include <Processors/Transforms/DistinctSortedStreamTransform.h>
 
 #include <Core/SortCursor.h>
+#include <Columns/canonicalizeNegativeZero.h>
 
 namespace DB
 {
@@ -56,8 +57,17 @@ void DistinctSortedStreamTransform::initChunkProcessing(const Columns & input_co
         sorted_columns.emplace_back(input_columns[pos].get());
 
     other_columns.clear();
+    canonicalized_other_columns.clear();
     for (size_t pos : other_columns_pos)
+    {
         other_columns.emplace_back(input_columns[pos].get());
+        /// The hashing state is built per equal-range, so negative zeros are canonicalized once for the whole chunk instead.
+        if (ColumnPtr canonical = canonicalizeNegativeZeroThroughLowCardinality(*other_columns.back()))
+        {
+            canonicalized_other_columns.push_back(std::move(canonical));
+            other_columns.back() = canonicalized_other_columns.back().get();
+        }
+    }
 
     if (!other_columns.empty() && data.type == ClearableSetVariants::Type::EMPTY)
         data.init(ClearableSetVariants::chooseMethod(other_columns, other_columns_sizes));
@@ -80,7 +90,8 @@ size_t DistinctSortedStreamTransform::buildFilterForRange(
 {
     /// The state is built per equal-range of the sorted prefix but the columns span the whole chunk,
     /// so the range it will be asked about has to be passed explicitly.
-    ColumnsHashing::SubRangeState<typename Method::State> state(other_columns, other_columns_sizes, nullptr, {range_begin, range_end});
+    ColumnsHashing::SubRangeState<typename Method::State> state(
+        other_columns, other_columns_sizes, nullptr, {range_begin, range_end, /*negative_zeros_canonicalized=*/true});
 
     size_t count = 0;
     for (size_t i = range_begin; i < range_end; ++i)

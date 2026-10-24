@@ -9,6 +9,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnVariant.h>
+#include <Columns/canonicalizeNegativeZero.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/Settings.h>
 #include <Functions/IFunction.h>
@@ -475,6 +476,9 @@ UInt64 candidateFingerprint(const ColumnPtr & column)
     SipHash hash;
     hash.update(column->getDataType());
     column->updateHashWithValue(0, hash);
+    /// `updateHashWithValue` does not tell `-0.` and `0.` apart, but they are different payloads.
+    if (auto value = serializeValueIfContainsNegativeZero(*column, 0))
+        hash.update(*value);
     return hash.get64();
 }
 
