@@ -86,7 +86,9 @@ public:
 
     /// If part metadata is not equal to storage metadata,
     /// then try to perform conversions of columns.
-    void performRequiredConversions(Columns & res_columns) const;
+    /// A column with a type in `types` has this type instead of its type in the part,
+    /// but its NULLs are replaced by a DEFAULT as if it still had its type in the part.
+    void performRequiredConversions(Columns & res_columns, const DataTypes & types = {}) const;
 
     ALWAYS_INLINE const NamesAndTypesList & getColumns() const { return data_part_info_for_read->isWidePart() ? converted_requested_columns : original_requested_columns; }
     size_t numColumnsInResult() const { return getColumns().size(); }
@@ -95,6 +97,8 @@ public:
     /// when there are pending type-changing mutations). Used to build correct `ColumnsWithTypeAndName`
     /// before `performRequiredConversions` is applied.
     const NamesAndTypes & getColumnsToRead() const { return columns_to_read; }
+
+    DataTypePtr getColumnTypeBeforeConversions(size_t pos, const DataTypePtr & requested_type) const;
 
     /// Columns for which only a part of the streams is read (e.g. only the offsets of an array
     /// whose data is missing from the part). Such columns are not fully populated until

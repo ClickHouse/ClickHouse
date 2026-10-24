@@ -190,6 +190,14 @@ bool IMergeTreeReader::isColumnDroppedByPendingMutation(size_t pos) const
     return alter_conversions && alter_conversions->isColumnDropped(columns_to_read[pos].getNameInStorage(), share_nested);
 }
 
+DataTypePtr IMergeTreeReader::getColumnTypeBeforeConversions(size_t pos, const DataTypePtr & requested_type) const
+{
+    /// A column a pending mutation drops is not read from the part: it is filled from the current metadata in the requested type.
+    if (isColumnDroppedByPendingMutation(pos))
+        return requested_type;
+    return columns_to_read[pos].type;
+}
+
 bool IMergeTreeReader::isSystemColumnInvalidated(size_t pos) const
 {
     return data_part_info_for_read->isSystemColumnInvalidated(columns_to_read[pos].getNameInStorage());
@@ -660,7 +668,7 @@ bool IMergeTreeReader::hasSubcolumnInPart(const String & name_in_part, const IDa
     return type_in_part.hasSubcolumn(subcolumn_name);
 }
 
-void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
+void IMergeTreeReader::performRequiredConversions(Columns & res_columns, const DataTypes & types) const
 {
     try
     {
@@ -676,32 +684,28 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
 
         /// We check types manually while iterating to avoid unnecessary copies
         Block copy_block;
+        NameSet columns_with_nulls_to_default;
         auto name_and_type = getColumns().begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
         {
             if (res_columns[pos] == nullptr)
                 continue;
 
-            /** A column a pending mutation drops is not read from the part: the readers skip it and the
-              * value comes from the current metadata - the column's default, in the requested type - so
-              * the type the part carries says nothing about what is in `res_columns`. Converting from
-              * that type builds the conversion for the part's type and hands it a column of another
-              * one, which raises `Illegal column ... of first argument of function ...`.
-              *
-              * That is reachable whenever the dropped name is taken by a new column of a different type
-              * before the drop's mutation has rewritten the part:
-              *
-              *     ALTER TABLE t DROP COLUMN c;               -- c UInt64 still in the part
-              *     ALTER TABLE t ADD COLUMN c UInt32;         -- new column, absent from the part
-              *     SELECT c FROM t;                           -- read as UInt32, not converted from UInt64
-              */
-            if (isColumnDroppedByPendingMutation(pos))
-                continue;
+            auto type_before_conversions = getColumnTypeBeforeConversions(pos, name_and_type->type);
 
-            const auto & column_in_part = columns_to_read[pos];
-            if (column_in_part.type->equals(*name_and_type->type))
+            /// Inserted even without a conversion, as an input of the `DEFAULT` expressions of other conversions.
+            if (!types.empty() && types[pos])
+            {
+                if (isNullableOrLowCardinalityNullable(type_before_conversions) && !isNullableOrLowCardinalityNullable(types[pos]))
+                    columns_with_nulls_to_default.insert(name_and_type->name);
+
+                copy_block.insert({res_columns[pos], types[pos], name_and_type->name});
                 continue;
-            copy_block.insert({res_columns[pos], column_in_part.type, name_and_type->name});
+            }
+
+            if (type_before_conversions->equals(*name_and_type->type))
+                continue;
+            copy_block.insert({res_columns[pos], type_before_conversions, name_and_type->name});
         }
 
         if (copy_block.empty())
@@ -709,7 +713,9 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
 
         DB::performRequiredConversions(copy_block, getColumns(),
             data_part_info_for_read->getContext(),
-            storage_snapshot->metadata->getColumns().getDefaults());
+            storage_snapshot->metadata->getColumns().getDefaults(),
+            /*forbid_default_defaults=*/ false,
+            columns_with_nulls_to_default);
 
         /// Move columns from block.
         name_and_type = getColumns().begin();

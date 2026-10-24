@@ -170,7 +170,12 @@ ASTPtr defaultRequiredExpressions(const Block & block, const NamesAndTypesList &
     return default_expr_list;
 }
 
-ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & required_columns, const ColumnDefaults & column_defaults, bool forbid_default_defaults)
+ASTPtr convertRequiredExpressions(
+    Block & block,
+    const NamesAndTypesList & required_columns,
+    const ColumnDefaults & column_defaults,
+    bool forbid_default_defaults,
+    const NameSet & columns_with_nulls_to_default)
 {
     ASTPtr conversion_expr_list = make_intrusive<ASTExpressionList>();
     for (const auto & required_column : required_columns)
@@ -179,12 +184,14 @@ ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & requi
             continue;
 
         const auto & column_in_block = block.getByName(required_column.name);
-        if (column_in_block.type->equals(*required_column.type))
+        const bool nulls_to_default = columns_with_nulls_to_default.contains(required_column.name);
+        if (column_in_block.type->equals(*required_column.type) && !nulls_to_default)
             continue;
 
         /// Converting a column from nullable to non-nullable may cause 'Cannot convert column' error when NULL values exist.
         /// Users should specify DEFAULT expression in ALTER MODIFY COLUMN statement to replace NULL values.
-        if (isNullableOrLowCardinalityNullable(column_in_block.type) && !isNullableOrLowCardinalityNullable(required_column.type))
+        if ((nulls_to_default || isNullableOrLowCardinalityNullable(column_in_block.type))
+            && !isNullableOrLowCardinalityNullable(required_column.type))
         {
             /// Before executing ALTER we explicitly check that user provided DEFAULT value to make it a conscious decision.
             /// However, we may still need to use type's default value in some cases
@@ -290,9 +297,16 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
 }
 }
 
-void performRequiredConversions(Block & block, const NamesAndTypesList & required_columns, ContextPtr context, const ColumnDefaults & column_defaults, bool forbid_default_defaults)
+void performRequiredConversions(
+    Block & block,
+    const NamesAndTypesList & required_columns,
+    ContextPtr context,
+    const ColumnDefaults & column_defaults,
+    bool forbid_default_defaults,
+    const NameSet & columns_with_nulls_to_default)
 {
-    ASTPtr conversion_expr_list = convertRequiredExpressions(block, required_columns, column_defaults, forbid_default_defaults);
+    ASTPtr conversion_expr_list
+        = convertRequiredExpressions(block, required_columns, column_defaults, forbid_default_defaults, columns_with_nulls_to_default);
     if (conversion_expr_list->children.empty())
         return;
 

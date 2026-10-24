@@ -32,6 +32,9 @@ public:
     Block getHeader() const { return range_reader.getSampleBlock(); }
     IMergeTreeReader * getReader() const { return reader.get(); }
 
+    /// The type of @column_name in the patch blocks this reader returns, nullptr if it does not read the column.
+    DataTypePtr getColumnTypeInPatch(const String & column_name) const;
+
 protected:
     ReadResult readPatchRanges(MarkRanges ranges);
 
