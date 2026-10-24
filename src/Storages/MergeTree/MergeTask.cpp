@@ -1630,9 +1630,21 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
             {
                 for (const auto & column : projection_columns)
                 {
-                    if (!it->second->tryGetColumn(column.name)
-                        && (part->tryGetColumn(column.name)
+                    if (!it->second->tryGetColumnForTable(column.name, parent_table_columns)
+                        && (part->tryGetColumnForTable(column.name, parent_table_columns)
                             || !parent_table_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column.name)))
+                    {
+                        projection_part_misses_column = true;
+                        break;
+                    }
+                }
+
+                /// A source column named like a subcolumn of another column that the parent part misses (`a.size0` added
+                /// next to an `Array` column `a`): the projection part may be computed from that subcolumn, while the
+                /// parent part now reads the column's default (see `projectionPartHasRequiredColumns`).
+                for (const auto & name : projection.required_columns)
+                {
+                    if (!part->tryGetColumnForTable(name, parent_table_columns) && part->tryGetColumn(name))
                     {
                         projection_part_misses_column = true;
                         break;

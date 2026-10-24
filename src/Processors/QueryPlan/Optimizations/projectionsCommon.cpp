@@ -351,7 +351,7 @@ static bool projectionPartHasRequiredColumns(
     for (const auto & name : required_column_names)
     {
         /// (1) Stored by the projection part.
-        if (projection_part.tryGetColumn(name))
+        if (projection_part.tryGetColumnForTable(name, parent_table_columns))
             continue;
 
         /// (2) Virtual column, provided by the reading step.
@@ -360,11 +360,20 @@ static bool projectionPartHasRequiredColumns(
 
         /// (3) Drift: the parent part still stores the column, or it is not a stored table column,
         /// so the projection part is stale for it and must not be read.
-        if (parent_part.tryGetColumn(name)
+        if (parent_part.tryGetColumnForTable(name, parent_table_columns)
             || !parent_table_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name))
             return false;
 
         /// (4) Legitimate late-added table column, missing from both parts; the default fill matches.
+    }
+
+    /// A source column of the projection named like a subcolumn of another column (`a.size0` added next to an `Array`
+    /// column `a`) that the parent part misses: the projection part may hold states, keys or values computed from that
+    /// subcolumn, while the parent part now reads the column's default. Read the parent part instead.
+    for (const auto & name : projection.required_columns)
+    {
+        if (!parent_part.tryGetColumnForTable(name, parent_table_columns) && parent_part.tryGetColumn(name))
+            return false;
     }
 
     return true;

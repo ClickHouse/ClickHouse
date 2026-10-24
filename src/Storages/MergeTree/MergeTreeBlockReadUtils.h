@@ -52,7 +52,12 @@ MergeTreeReadTaskColumns getReadTaskColumnsForMerge(
 
 struct MergeTreeBlockSizePredictor
 {
-    MergeTreeBlockSizePredictor(const MergeTreeDataPartInfoForReaderPtr & data_part_, const Names & columns, const Block & sample_block, bool allow_subcolumns_sizes_calculation);
+    MergeTreeBlockSizePredictor(
+        const MergeTreeDataPartInfoForReaderPtr & data_part_,
+        const Names & columns,
+        const Block & sample_block,
+        const StorageMetadataPtr & metadata_snapshot_,
+        bool allow_subcolumns_sizes_calculation);
 
     /// Reset some values for correct statistics calculating
     void startBlock();
@@ -108,6 +113,8 @@ struct MergeTreeBlockSizePredictor
 
 protected:
     MergeTreeDataPartInfoForReaderPtr data_part;
+    /// Tells a column of the table from a same-named subcolumn of another column of the part.
+    StorageMetadataPtr metadata_snapshot;
 
     struct ColumnInfo
     {

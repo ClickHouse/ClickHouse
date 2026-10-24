@@ -1,5 +1,6 @@
 #include <Storages/ColumnSize.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
@@ -969,6 +970,45 @@ NameAndTypePair IMergeTreeDataPart::getColumn(const String & column_name) const
 std::optional<NameAndTypePair> IMergeTreeDataPart::tryGetColumn(const String & column_name) const
 {
     return getColumnsDescription().tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
+}
+
+std::optional<NameAndTypePair> tryGetColumnOfPartForTable(
+    const ColumnsDescription & part_columns, const String & column_name, const ColumnsDescription & table_columns)
+{
+    if (table_columns.hasPhysical(column_name))
+        return part_columns.tryGetPhysical(column_name);
+
+    auto column_in_part = part_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
+    if (!column_in_part)
+        return {};
+
+    /// The table can resolve the name through another column than the part only if it has a column, named like a
+    /// prefix of the name, other than the column that holds the name in the part. That is rare, so the lookup in the
+    /// table, which is as costly as the one in the part for a dynamic subcolumn, is done only in that case.
+    const auto & name_in_part_storage = column_in_part->getNameInStorage();
+    bool table_may_resolve_otherwise = false;
+    for (const auto & [prefix, _] : Nested::getAllColumnAndSubcolumnPairs(column_name))
+    {
+        if (prefix != name_in_part_storage && table_columns.hasPhysical(String(prefix)))
+        {
+            table_may_resolve_otherwise = true;
+            break;
+        }
+    }
+
+    if (!table_may_resolve_otherwise)
+        return column_in_part;
+
+    auto column_in_table = table_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
+    if (column_in_table && column_in_table->isSubcolumn() && column_in_table->getNameInStorage() != name_in_part_storage)
+        return {};
+
+    return column_in_part;
+}
+
+std::optional<NameAndTypePair> IMergeTreeDataPart::tryGetColumnForTable(const String & column_name, const ColumnsDescription & table_columns) const
+{
+    return tryGetColumnOfPartForTable(getColumnsDescription(), column_name, table_columns);
 }
 
 SerializationPtr IMergeTreeDataPart::getSerialization(const String & column_name) const

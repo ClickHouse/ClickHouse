@@ -1,0 +1,5 @@
+-- the column a.size0
+status: not_applicable
+reason: Projection does not contain column `a.size0` required by the query, so it could only filter the base table\'s parts, which EXPLAIN WHATIF does not estimate yet
+-- the column a
+status: applicable

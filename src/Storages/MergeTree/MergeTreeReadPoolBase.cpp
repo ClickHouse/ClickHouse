@@ -260,7 +260,8 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
 {
 }
 
-static size_t getSizeOfColumns(const IMergeTreeDataPart & part, const Names & columns_to_read, const Settings & settings)
+static size_t getSizeOfColumns(
+    const IMergeTreeDataPart & part, const Names & columns_to_read, const ColumnsDescription & table_columns, const Settings & settings)
 {
     /// For compact parts we don't know individual column sizes, let's use whole part size as approximation
     if (part.getType() == MergeTreeDataPartType::Compact)
@@ -269,7 +270,7 @@ static size_t getSizeOfColumns(const IMergeTreeDataPart & part, const Names & co
     size_t data_compressed_size = 0;
     for (const auto & col_name : columns_to_read)
     {
-        auto column = part.tryGetColumn(col_name);
+        auto column = part.tryGetColumnForTable(col_name, table_columns);
         if (column)
         {
             if (column->isSubcolumn() && settings[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading])
@@ -301,7 +302,8 @@ static size_t getSizeOfColumns(const IMergeTreeDataPart & part, const Names & co
 /// Returns 0 when nothing is known about the columns (they are absent from the part), so that
 /// such a read is not charged for the whole part. Compact parts never write to the columns
 /// cache, so their size is only a safety net.
-static size_t getUncompressedSizeOfColumns(const IMergeTreeDataPart & part, const Names & columns_to_read, const Settings & settings)
+static size_t getUncompressedSizeOfColumns(
+    const IMergeTreeDataPart & part, const Names & columns_to_read, const ColumnsDescription & table_columns, const Settings & settings)
 {
     if (part.getType() == MergeTreeDataPartType::Compact)
         return part.getBytesUncompressedOnDisk();
@@ -309,7 +311,7 @@ static size_t getUncompressedSizeOfColumns(const IMergeTreeDataPart & part, cons
     size_t data_uncompressed_size = 0;
     for (const auto & col_name : columns_to_read)
     {
-        auto column = part.tryGetColumn(col_name);
+        auto column = part.tryGetColumnForTable(col_name, table_columns);
         if (!column)
             continue;
 
@@ -327,13 +329,14 @@ static size_t getUncompressedSizeOfColumns(const IMergeTreeDataPart & part, cons
 /// but a query that reads a few marks of a large part should not be charged for the entire part:
 /// that would trip the estimate budget on a tiny read and defeat the cache exactly where it
 /// helps. The caller multiplies this rate by the marks the query selected in the part.
-static double estimateUncompressedColumnsSizePerMark(const IMergeTreeDataPart & part, const Names & columns, const Settings & settings)
+static double estimateUncompressedColumnsSizePerMark(
+    const IMergeTreeDataPart & part, const Names & columns, const ColumnsDescription & table_columns, const Settings & settings)
 {
     const size_t total_marks = part.getMarksCount();
     if (total_marks == 0)
         return 0;
 
-    return static_cast<double>(getUncompressedSizeOfColumns(part, columns, settings)) / static_cast<double>(total_marks);
+    return static_cast<double>(getUncompressedSizeOfColumns(part, columns, table_columns, settings)) / static_cast<double>(total_marks);
 }
 
 /// Mirror the cache-write eligibility predicate in `MergeTreeReaderWide::readRows`: only wide parts
@@ -347,13 +350,16 @@ static bool partCanWriteToColumnsCache(const IMergeTreeDataPart & part)
 }
 
 /// Columns from different prewhere steps are read independently, so it makes sense to use the heaviest set of columns among them as an estimation.
-static Names
-getHeaviestSetOfColumnsAmongPrewhereSteps(const IMergeTreeDataPart & part, const NamesAndTypesLists & prewhere_steps_columns, const Settings & settings)
+static Names getHeaviestSetOfColumnsAmongPrewhereSteps(
+    const IMergeTreeDataPart & part,
+    const NamesAndTypesLists & prewhere_steps_columns,
+    const ColumnsDescription & table_columns,
+    const Settings & settings)
 {
     const auto it = std::ranges::max_element(
         prewhere_steps_columns,
         [&](const auto & lhs, const auto & rhs)
-        { return getSizeOfColumns(part, lhs.getNames(), settings) < getSizeOfColumns(part, rhs.getNames(), settings); });
+        { return getSizeOfColumns(part, lhs.getNames(), table_columns, settings) < getSizeOfColumns(part, rhs.getNames(), table_columns, settings); });
     return it->getNames();
 }
 
@@ -362,6 +368,7 @@ calculateMinMarksPerTask(
     const RangesInDataPart & part,
     const Names & columns_to_read,
     const NamesAndTypesLists & prewhere_steps_columns,
+    const ColumnsDescription & table_columns,
     const MergeTreeReadPoolBase::PoolSettings & pool_settings,
     const Settings & settings)
 {
@@ -379,9 +386,9 @@ calculateMinMarksPerTask(
             /// Which means in turn that for most of the rows we will read only the columns from prewhere clause.
             /// So it makes sense to use only them for the estimation.
             const auto & columns = settings[Setting::merge_tree_determine_task_size_by_prewhere_columns] && !prewhere_steps_columns.empty()
-                ? getHeaviestSetOfColumnsAmongPrewhereSteps(*part.data_part, prewhere_steps_columns, settings)
+                ? getHeaviestSetOfColumnsAmongPrewhereSteps(*part.data_part, prewhere_steps_columns, table_columns, settings)
                 : columns_to_read;
-            const size_t part_compressed_bytes = getSizeOfColumns(*part.data_part, columns, settings);
+            const size_t part_compressed_bytes = getSizeOfColumns(*part.data_part, columns, table_columns, settings);
 
             avg_mark_bytes = std::max<size_t>(part_compressed_bytes / part_marks_count, 1);
             const auto & min_bytes_per_task = settings[Setting::merge_tree_min_bytes_per_task_for_remote_reading];
@@ -403,7 +410,7 @@ calculateMinMarksPerTask(
         }
         else
         {
-            avg_mark_bytes = std::max<size_t>(getSizeOfColumns(*part.data_part, columns_to_read, settings) / part_marks_count, 1);
+            avg_mark_bytes = std::max<size_t>(getSizeOfColumns(*part.data_part, columns_to_read, table_columns, settings) / part_marks_count, 1);
         }
     }
 
@@ -540,7 +547,7 @@ MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_rang
         Block sample_block_from_part;
         for (const auto & column_name : all_column_names)
         {
-            if (auto column_in_part = data_part_info->tryGetColumn(column_name))
+            if (auto column_in_part = data_part_info->tryGetColumnForTable(column_name, storage_snapshot->metadata->getColumns()))
                 sample_block_from_part.insert(ColumnWithTypeAndName(column_in_part->type->createColumn(), column_in_part->type, column_in_part->name));
         }
 
@@ -548,13 +555,20 @@ MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_rang
             data_part_info,
             Names(all_column_names.begin(), all_column_names.end()),
             sample_block_from_part,
+            storage_snapshot->metadata,
             settings[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading]);
     }
 
     read_task_info.deserialization_prefixes_cache = std::make_shared<DeserializationPrefixesCache>();
 
     std::tie(read_task_info.min_marks_per_task, read_task_info.approx_size_of_mark)
-        = calculateMinMarksPerTask(part_with_ranges, column_names, read_task_info.task_columns.pre_columns, pool_settings, settings);
+        = calculateMinMarksPerTask(
+            part_with_ranges,
+            column_names,
+            read_task_info.task_columns.pre_columns,
+            storage_snapshot->metadata->getColumns(),
+            pool_settings,
+            settings);
     return read_task_info;
 }
 
@@ -581,6 +595,7 @@ void MergeTreeReadPoolBase::stageColumnsCacheWriteEstimate(
     /// write, and a query is neither allowed to write unaccounted bytes nor charged for
     /// bytes it can never cache.
     double bytes_per_mark = 0;
+    const auto & table_columns = storage_snapshot->metadata->getColumns();
 
     if (partCanWriteToColumnsCache(*part_with_ranges.data_part))
     {
@@ -597,7 +612,7 @@ void MergeTreeReadPoolBase::stageColumnsCacheWriteEstimate(
         if (all_read_columns.empty())
             return;
 
-        bytes_per_mark += estimateUncompressedColumnsSizePerMark(*part_with_ranges.data_part, all_read_columns, settings);
+        bytes_per_mark += estimateUncompressedColumnsSizePerMark(*part_with_ranges.data_part, all_read_columns, table_columns, settings);
     }
 
     /// `getAllColumnNames` covers only the main and prewhere columns, which are read
@@ -637,7 +652,7 @@ void MergeTreeReadPoolBase::stageColumnsCacheWriteEstimate(
 
         if (base_part_marks != 0)
             bytes_per_mark
-                += static_cast<double>(getUncompressedSizeOfColumns(patch_part, patch_column_names, settings))
+                += static_cast<double>(getUncompressedSizeOfColumns(patch_part, patch_column_names, table_columns, settings))
                 / static_cast<double>(base_part_marks);
     }
 

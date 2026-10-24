@@ -253,8 +253,14 @@ NameSet injectRequiredColumns(
 }
 
 MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
-    const MergeTreeDataPartInfoForReaderPtr & data_part_, const Names & columns, const Block & sample_block, bool allow_subcolumns_sizes_calculation_)
-    : data_part(data_part_), allow_subcolumns_sizes_calculation(allow_subcolumns_sizes_calculation_)
+    const MergeTreeDataPartInfoForReaderPtr & data_part_,
+    const Names & columns,
+    const Block & sample_block,
+    const StorageMetadataPtr & metadata_snapshot_,
+    bool allow_subcolumns_sizes_calculation_)
+    : data_part(data_part_)
+    , metadata_snapshot(metadata_snapshot_)
+    , allow_subcolumns_sizes_calculation(allow_subcolumns_sizes_calculation_)
 {
     number_of_rows_in_part = data_part->getRowCount();
     /// Initialize with sample block until update won't called.
@@ -284,7 +290,7 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const C
         if (typeid_cast<const ColumnConst *>(column_data.get()))
             continue;
 
-        auto column_from_part = data_part->tryGetColumn(column_name);
+        auto column_from_part = data_part->tryGetColumnForTable(column_name, metadata_snapshot->getColumns());
         if ((!column_from_part || !column_from_part->isSubcolumn()) && column_data->valuesHaveFixedSize())
         {
             size_t size_of_value = column_data->sizeOfValueIfFixed();

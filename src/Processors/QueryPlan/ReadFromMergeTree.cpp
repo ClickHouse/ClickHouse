@@ -1641,6 +1641,7 @@ static std::optional<size_t> estimateReadBytes(
 
     const bool use_subcolumn_sizes = settings[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading];
     const auto & virtuals = storage_snapshot->metadata->virtuals;
+    const auto & table_columns = storage_snapshot->metadata->getColumns();
 
     /// A metadata-only `ALTER TABLE ... RENAME COLUMN` does not rewrite the part: until the mutation
     /// is applied the part still holds the old name, and the reader resolves the new name through
@@ -1675,7 +1676,7 @@ static std::optional<size_t> estimateReadBytes(
         /// The name of a requested column as it is stored in this particular part.
         auto try_get_column_in_part = [&](const String & col_name) -> std::optional<NameAndTypePair>
         {
-            auto col = data_part.tryGetColumn(col_name);
+            auto col = data_part.tryGetColumnForTable(col_name, table_columns);
 
             if (!alter_conversions)
                 return col;
@@ -1688,9 +1689,9 @@ static std::optional<size_t> estimateReadBytes(
             if (!col && alter_conversions->isColumnRenamed(name_in_part))
             {
                 name_in_part = alter_conversions->getColumnOldName(name_in_part);
-                col = data_part.tryGetColumn(col_in_storage->isSubcolumn()
-                    ? Nested::concatenateName(name_in_part, col_in_storage->getSubcolumnName())
-                    : name_in_part);
+                col = col_in_storage->isSubcolumn()
+                    ? data_part.tryGetColumn(Nested::concatenateName(name_in_part, col_in_storage->getSubcolumnName()))
+                    : data_part.getColumnsDescription().tryGetPhysical(name_in_part);
             }
 
             /// A pending `DROP COLUMN` leaves the data in the part, but it is stale: the reader treats
@@ -6846,12 +6847,16 @@ IStorage::ColumnSizeByName ReadFromMergeTree::getColumnSizesForPrewhere(
     if (parts.size() == parts_before_pruning)
         return data.getColumnSizes(columns, calculate_subcolumn_sizes);
 
+    const auto & table_columns = getStorageMetadata()->getColumns();
     IStorage::ColumnSizeByName result;
+    /// Columns stored by at least one selected `Wide` part, i.e. whose size in `result` was actually measured.
+    NameSet measured_columns;
     for (const auto & part : parts)
     {
+        const bool is_wide = isWidePart(part.data_part);
         for (const auto & column_name : columns)
         {
-            const auto column = part.data_part->tryGetColumn(column_name);
+            const auto column = part.data_part->tryGetColumnForTable(column_name, table_columns);
             if (!column)
                 continue;
 
@@ -6859,15 +6864,41 @@ IStorage::ColumnSizeByName ReadFromMergeTree::getColumnSizesForPrewhere(
                 ? part.data_part->getSubcolumnSize(column_name)
                 : part.data_part->getColumnSize(column->getNameInStorage());
             result[column_name].add(size);
+            if (is_wide)
+                measured_columns.insert(column_name);
         }
     }
 
     /// `Compact` parts do not publish per-column sizes, so a selection made only of them measures nothing,
     /// while the wide parts that were pruned away would still describe the relative column sizes.
     /// Keep the table-wide estimate in that case, exactly as when no parts are pruned.
-    const bool nothing_measured = std::ranges::all_of(result, [](const auto & entry) { return entry.second.data_compressed == 0; });
-    if (!parts.empty() && nothing_measured)
+    /// A selection with a `Wide` part did measure: a column missing from the result is not stored in any
+    /// selected part (for example, it was added after they were written) and is served from its default,
+    /// so it must not be costed by the newer parts that do store it.
+    const bool no_part_publishes_sizes = std::ranges::none_of(parts, [](const auto & part) { return isWidePart(part.data_part); });
+    if (!parts.empty() && no_part_publishes_sizes)
         return data.getColumnSizes(columns, calculate_subcolumn_sizes);
+
+    /// A column stored only by selected `Compact` parts is really read, but measures nothing: for example, a column
+    /// added after the selected `Wide` parts were written. Cost it by the table-wide estimate, not as free.
+    Names unmeasured_columns;
+    for (const auto & column_name : columns)
+        if (result.contains(column_name) && !measured_columns.contains(column_name))
+            unmeasured_columns.push_back(column_name);
+
+    if (!unmeasured_columns.empty())
+    {
+        auto table_wide_sizes = data.getColumnSizes(unmeasured_columns, calculate_subcolumn_sizes);
+        for (const auto & column_name : unmeasured_columns)
+            if (auto it = table_wide_sizes.find(column_name); it != table_wide_sizes.end())
+                result[column_name] = it->second;
+    }
+
+    /// Keep an entry even for a column that no selected part stores, so that an all-default selection
+    /// still reaches `MergeTreeWhereOptimizer`: `optimizePrewhere` gives up on an empty map.
+    if (!parts.empty())
+        for (const auto & column_name : columns)
+            result.try_emplace(column_name);
 
     return result;
 }
