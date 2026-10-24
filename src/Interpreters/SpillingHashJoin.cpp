@@ -98,8 +98,8 @@ void SpillingHashJoin::tryConvertSlots(JoinBuildContext context)
         auto blocks = concurrent_join->releaseSlotBlocks(slot);
         while (!blocks.empty())
         {
-            grace_join->addBlockToJoin(blocks.front(), blocks.front().rows(), context.callerChecksLimits());
-            blocks.pop_front();
+            Block block = blocks.next();
+            grace_join->addBlockToJoin(block, block.rows(), context.callerChecksLimits());
         }
     }
 }
@@ -283,7 +283,7 @@ void SpillingHashJoin::switchToGraceHashJoin(JoinBuildContext context, bool spil
     log_switch(hash_join, "HashJoin");
     /// Single-thread path: extract from HashJoin, feed to GraceHashJoin.
     ProfileEvents::increment(ProfileEvents::JoinSpillingHashJoinSwitchedToGraceJoin);
-    BlocksList right_blocks = hash_join->releaseJoinedBlocks(/*restructure=*/false);
+    auto right_blocks = hash_join->releaseJoinedBlocks(/*restructure=*/false);
 
     grace_join = std::make_shared<GraceHashJoin>(
         num_buckets,
@@ -298,12 +298,13 @@ void SpillingHashJoin::switchToGraceHashJoin(JoinBuildContext context, bool spil
 
     chosen_join->initialize(*left_sample_block);
 
-    /// Drain extracted blocks into GraceHashJoin one by one,
-    /// freeing each after insertion to limit peak memory.
+    /// Drain extracted blocks into GraceHashJoin one by one. Each block is decompressed
+    /// and materialized only here and freed after insertion, so the peak memory overhead
+    /// stays at a single block even when the stored data was compressed in memory.
     while (!right_blocks.empty())
     {
-        chosen_join->addBlockToJoin(right_blocks.front(), right_blocks.front().rows(), context.callerChecksLimits());
-        right_blocks.pop_front();
+        Block right_block = right_blocks.next();
+        chosen_join->addBlockToJoin(right_block, right_block.rows(), context.callerChecksLimits());
     }
 
     QueryExecutionCounters::addUsedJoinAlgorithm(JoinAlgorithm::GRACE_HASH);

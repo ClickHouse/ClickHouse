@@ -883,36 +883,36 @@ void GraceHashJoin::repartitionCurrentBucket(size_t prev_keys_num, Block leftove
     auto right_blocks = released_join->releaseJoinedBlocks(/* restructure */ false);
     released_join.reset();
 
-    {
-        Blocks leftovers;
-        leftovers.reserve(right_blocks.size() + 1);
-
-        if (leftover.rows() > 0)
-        {
-            Blocks blocks = JoinCommon::scatterBlockByHash(right_key_names, leftover, buckets_snapshot.size());
-            flushBlocksToBuckets<JoinTableSide::Right>(blocks, buckets_snapshot, bucket_index);
-            leftovers.emplace_back(std::move(blocks[bucket_index]));
-        }
-
-        for (const auto & right_block : right_blocks)
-        {
-            Blocks blocks = JoinCommon::scatterBlockByHash(right_key_names, right_block, buckets_snapshot.size());
-            flushBlocksToBuckets<JoinTableSide::Right>(blocks, buckets_snapshot, bucket_index);
-            leftovers.emplace_back(std::move(blocks[bucket_index]));
-        }
-
-        leftover = concatenateBlocks(leftovers);
-    }
-
     /// `rehashBuckets` doubles the bucket count from N to 2N. Of the `prev_keys_num` rows that
     /// were in this bucket, about half map to bucket `i` and half to bucket `i + N` under the
     /// new modulus, so ~half stay here and the rest are flushed to disk. Reserving for the
     /// full `prev_keys_num` would allocate a power-of-two buffer for the pre-rehash size and
     /// immediately blow past `max_bytes_before_external_join`.
-    hash_join = makeInMemoryJoin(fmt::format("grace{}", bucket_index), prev_keys_num / 2);
+    /// Filled in a local: a throw must not leave `hash_join` pointing at a partially filled join.
+    auto new_join = makeInMemoryJoin(fmt::format("grace{}", bucket_index), prev_keys_num / 2);
+
+    /// The part of a block that stays in this bucket goes straight into the replacement join instead
+    /// of being collected and concatenated first. With `enable_join_in_memory_compression`, that join
+    /// compresses its stored blocks once they pass `join_in_memory_compression_min_bytes`, so rehashing
+    /// holds at most one decompressed block on top of what the replacement join stores.
+    auto scatter_block = [&](const Block & block)
+    {
+        Blocks blocks = JoinCommon::scatterBlockByHash(right_key_names, block, buckets_snapshot.size());
+        flushBlocksToBuckets<JoinTableSide::Right>(blocks, buckets_snapshot, bucket_index);
+        Block retained = std::move(blocks[bucket_index]);
+        if (retained.rows() > 0)
+            new_join->addBlockToJoin(retained, retained.rows(), context.callerChecksLimits());
+    };
 
     if (leftover.rows() > 0)
-        hash_join->addBlockToJoin(leftover, leftover.rows(), context.callerChecksLimits());
+        scatter_block(leftover);
+
+    /// Consume the released blocks one by one: each is decompressed (if the in-memory bucket
+    /// compressed its stored data) and freed right after scattering.
+    while (!right_blocks.empty())
+        scatter_block(right_blocks.next());
+
+    hash_join = std::move(new_join);
 }
 
 ProcessorMemoryStats GraceHashJoin::getMemoryStats() const

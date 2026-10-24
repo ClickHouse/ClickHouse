@@ -4527,6 +4527,20 @@ Minimal count of rows to compress block in CROSS JOIN, and in the [block nested 
 Minimal size of block to compress in CROSS JOIN, and in the [block nested loop join](/reference/statements/select/join#join-with-an-arbitrary-on-condition), which materializes its right side the same way. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.
 )", 0, \
         {"24.5", 0, 1_GiB, "Minimal size of block to compress in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached."}) \
+    DECLARE(Bool, enable_join_in_memory_compression, false, R"(
+Compress the right-side blocks held in memory by hash-based joins (`hash`, `parallel_hash`, `grace_hash`, and `auto` while it runs as a hash join) once the right side grows past `join_in_memory_compression_min_bytes`.
+
+When the threshold is reached, the blocks stored so far are compressed in one pass, and every block added afterwards is compressed on insertion. A column is kept compressed only when compression makes it at least 10% smaller. Since the stored size shrinks, `max_bytes_in_join` and the automatic switch to an external join (`max_bytes_before_external_join`) see the compressed size, so a larger right side fits in memory before spilling to disk or failing.
+
+This trades probe-time CPU for lower memory: the probe decompresses the stored blocks referenced by each output block and releases them when that output block is built, so decompressed data does not stay in memory. The decompressed data held at once by one output block is bounded by 64 MiB where the order of the copied rows allows it.
+
+It does not affect `CROSS JOIN`, which has its own compression (`cross_join_min_rows_to_compress`, `cross_join_min_bytes_to_compress`).
+)", 0, \
+        {"26.11", false, false, "New setting to compress the right-side blocks of hash-based joins in memory."}) \
+    DECLARE(UInt64, join_in_memory_compression_min_bytes, 128_MiB, R"(
+The size of the right-side blocks stored in memory by a hash-based join after which `enable_join_in_memory_compression` starts compressing them. Zero means compressing from the first block. For `parallel_hash`, the threshold is divided between its internal slots. For `grace_hash`, it applies to each in-memory bucket.
+)", 0, \
+        {"26.11", 0, 128_MiB, "New setting with the size of the right side of a hash join after which `enable_join_in_memory_compression` starts compressing it."}) \
     DECLARE(UInt64, default_max_bytes_in_join, 1000000000, R"(
 Maximum size of right-side table if limit is required but `max_bytes_in_join` is not set.
 )", 0) \

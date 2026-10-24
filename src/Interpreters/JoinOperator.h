@@ -91,6 +91,10 @@ struct JoinSettings
     UInt64 cross_join_min_rows_to_compress;
     UInt64 cross_join_min_bytes_to_compress;
 
+    /* In-memory compression of the right side of hash joins */
+    bool enable_join_in_memory_compression;
+    UInt64 join_in_memory_compression_min_bytes;
+
     /* Partial merge join settings */
     UInt64 partial_merge_join_left_table_buffer_bytes;
     UInt64 partial_merge_join_rows_in_right_blocks;

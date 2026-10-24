@@ -537,6 +537,9 @@
     M(ExternalSetCacheHits, "Number of blocks that lookups in `IN` sets in external memory took from the cache of the set instead of reading them from the temporary file.", ValueType::Number) \
     M(ExternalSetLookupKeys, "Number of keys that lookups searched for in `IN` sets in external memory.", ValueType::Number) \
     M(ExternalSetBloomFilterSkippedKeys, "Number of keys that the Bloom filters of `IN` sets in external memory ruled out during lookups.", ValueType::Number) \
+    M(JoinInMemoryCompressedColumns, "Number of right-side join columns kept compressed in memory by `enable_join_in_memory_compression`.", ValueType::Number) \
+    M(JoinInMemoryDecompressWorkingSetReleases, "Number of times a probe-side output batch of a join with in-memory compressed blocks reached the budget on decompressed data held at once and released the already-consumed decompressed blocks early.", ValueType::Number) \
+    M(JoinInMemoryDecompressWorkingSetPinned, "Number of times a probe-side output batch of a join with in-memory compressed blocks stopped enforcing the decompressed working-set budget for the rest of the batch, because its reference pattern would otherwise re-decompress released blocks on every block switch.", ValueType::Number) \
     \
     M(IcebergPartitionPrunedFiles, "Number of skipped files during Iceberg partition pruning", ValueType::Number) \
     M(IcebergPartitionPrunedManifestFiles, "Number of Iceberg manifest files skipped without being read, using the partition summaries of the manifest list", ValueType::Number) \

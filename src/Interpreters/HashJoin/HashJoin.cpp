@@ -1,7 +1,9 @@
+#include <algorithm>
 #include <any>
 #include <limits>
 #include <memory>
 #include <optional>
+#include <unordered_map>
 #include <vector>
 #include <Columns/ColumnIndex.h>
 #include <Core/Block.h>
@@ -58,6 +60,13 @@ namespace ProfileEvents
 {
     extern const Event JoinNonJoinedHashTableScans;
     extern const Event JoinNonJoinedHashTableScansSkipped;
+}
+
+namespace ProfileEvents
+{
+    extern const Event JoinInMemoryCompressedColumns;
+    extern const Event JoinInMemoryDecompressWorkingSetReleases;
+    extern const Event JoinInMemoryDecompressWorkingSetPinned;
 }
 
 namespace DB
@@ -276,8 +285,18 @@ HashJoin::HashJoin(
     initRightBlockStructure(data->sample_block);
     data->sample_block = prepareRightBlock(data->sample_block);
 
-    if (!table_join->isRowStoreEnabled() || !isRowStoreSupported() || data->sample_block.columns() == 0)
+    /// `enable_join_in_memory_compression` replaces whole stored columns with `ColumnCompressed`
+    /// placeholders that are decompressed only while an output batch is materialized. A row store
+    /// extracts some of those columns into a row-major buffer that the probe reads directly, which
+    /// the compressed placeholders cannot serve, so the two are mutually exclusive: opting into
+    /// compression opts out of the row store.
+    if (!table_join->isRowStoreEnabled() || !isRowStoreSupported() || data->sample_block.columns() == 0
+        || table_join->enableJoinInMemoryCompression())
         data->row_store_state = RowStoreState::Disabled;
+
+    /// `CROSS JOIN` has its own compression (`cross_join_min_rows_to_compress`, `cross_join_min_bytes_to_compress`).
+    if (table_join->enableJoinInMemoryCompression() && kind != JoinKind::Cross)
+        in_memory_compression_min_bytes = table_join->joinInMemoryCompressionMinBytes();
 
     JoinCommon::createMissedColumns(sample_block_with_columns_to_add);
 
@@ -948,6 +967,35 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */,
     return addBlockToJoin(materialized, ScatteredBlock::Selector(materialized.rows()), context.joinChecksLimits());
 }
 
+namespace
+{
+/// Per-column compaction used under memory pressure when `enable_join_in_memory_compression` is on.
+/// A column is kept in compressed form only when compression shrinks its data by at least 10%;
+/// otherwise it is just shrunk to fit. This keeps barely- or in-compressible columns directly readable,
+/// so they incur no probe-time decompression cost (and `have_compressed` stays false if nothing helped).
+/// `stats` accumulates the data size of the columns and their stored footprint, see `HashJoin::InMemoryCompressionStats`.
+ColumnPtr compressColumnIfWorthwhile(const ColumnPtr & column, bool & compressed_any, HashJoin::InMemoryCompressionStats & stats)
+{
+    auto compressed = column->compress(/*force_compression=*/true);
+    /// `byteSize` is the actual data size; comparing the compressed footprint against it (rather than
+    /// against the possibly over-allocated `allocatedBytes`) measures real data compressibility, since
+    /// `cloneResized` already reclaims over-allocation for free.
+    const size_t source_bytes = column->byteSize();
+    ColumnPtr result;
+    if (compressed->allocatedBytes() * 10 <= source_bytes * 9)
+    {
+        compressed_any = true;
+        ProfileEvents::increment(ProfileEvents::JoinInMemoryCompressedColumns);
+        result = std::move(compressed);
+    }
+    else
+        result = column->cloneResized(column->size());
+    stats.source_bytes += source_bytes;
+    stats.stored_bytes += result->allocatedBytes();
+    return result;
+}
+}
+
 bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector selector, bool check_limits, RowDataStorePtr row_store)
 {
     if (!data)
@@ -1019,7 +1067,12 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
     const size_t rows = selector.size();
 
     Block block_to_save = filterColumnsPresentInSampleBlock(block, savedBlockSample());
-    if (shrink_blocks)
+
+    /// Once `enable_join_in_memory_compression` started compressing the stored blocks, new blocks are
+    /// compressed on insertion. It is applied below, after the structure check, since compressed columns
+    /// would not pass it. Otherwise, once the join hits memory pressure, new blocks are shrunk here.
+    const bool compress_on_insert = compress_stored_blocks;
+    if (shrink_blocks && !compress_on_insert)
         block_to_save = block_to_save.shrinkToFit();
 
     const auto maps_kind = getMapsKind();
@@ -1031,6 +1084,16 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
             throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "addBlockToJoin called when HashJoin locked to prevent updates");
 
         assertBlocksHaveEqualStructureAllowReplicated(data->sample_block, block_to_save, "joined block");
+
+        if (compress_on_insert)
+        {
+            /// Compress each column only when it is worthwhile (>= 10% smaller), otherwise shrink it.
+            for (size_t i = 0; i < block_to_save.columns(); ++i)
+            {
+                auto & elem = block_to_save.getByPosition(i);
+                elem.column = compressColumnIfWorthwhile(elem.column, have_compressed, in_memory_compression_stats);
+            }
+        }
 
         Columns columns;
         if (data->row_store_state == RowStoreState::Initialized)
@@ -1176,7 +1239,9 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
             {
                 doDebugAsserts();
                 LOG_TRACE(log, "Skipping inserting block with {} rows", rows);
-                data->allocated_size -= data_allocated_bytes;
+                /// Not `data_allocated_bytes`: with several clauses, the in-memory compression started
+                /// after an earlier clause may have compressed this very block, changing its size.
+                data->allocated_size -= stored_columns->allocatedBytes();
                 /// A set map references no block at all, so every block is dropped here even though its
                 /// rows did take part in the join and must stay counted.
                 if (maps_kind != JoinMapsKind::Set)
@@ -1189,6 +1254,11 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                 data->columns.pop_back();
                 doDebugAsserts();
             }
+
+            /// Independent of `check_limits`: the inserts into a `grace_hash` bucket or a `parallel_hash` slot
+            /// do not check the limits here, but they compress all the same.
+            if (!compress_stored_blocks && in_memory_compression_min_bytes && data->allocated_size >= *in_memory_compression_min_bytes)
+                startInMemoryCompression();
 
             if (!check_limits)
                 return true;
@@ -1206,8 +1276,59 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
     return table_join->sizeLimits().check(total_rows, total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
 
+DecompressedColumnsPtr HashJoin::getDecompressedColumns(const StoredBlock * compressed)
+{
+    Columns decompressed;
+    decompressed.reserve(compressed->columns.size());
+    for (const auto & column : compressed->columns)
+        decompressed.push_back(column->decompress());
+    /// A fresh StoredBlock over the decompressed columns; its `replicated_columns` are rebuilt
+    /// (all null, since decompressed columns are ordinary) so the read paths resolve to a direct
+    /// `IColumn *`. `selector`/`block_no` are unused on this decompressed view.
+    return std::make_shared<StoredBlock>(std::move(decompressed));
+}
+
+void DecompressResolver::release(bool forced_by_budget)
+{
+    if (!active)
+        return;
+    if (forced_by_budget)
+    {
+        /// Remember what a budget-forced release dropped: decompressing one of these again within
+        /// the same batch means the budget is thrashing (see the member comment) and must stop
+        /// being enforced.
+        for (const auto & [stored, _] : resolved)
+            released_over_budget.insert(stored);
+    }
+    else
+    {
+        /// A batch boundary: every consumer copied everything out, references in the next batch
+        /// are legitimate, so thrash tracking restarts.
+        released_over_budget.clear();
+    }
+    if (held.empty())
+        return;
+    if (held_bytes > held_bytes_budget)
+        ProfileEvents::increment(ProfileEvents::JoinInMemoryDecompressWorkingSetReleases);
+    held.clear();
+    resolved.clear();
+    held_bytes = 0;
+}
+
+void DecompressResolver::disableBudget()
+{
+    budget_disabled = true;
+    ProfileEvents::increment(ProfileEvents::JoinInMemoryDecompressWorkingSetPinned);
+}
+
 void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_optimize)
 {
+    /// The stored blocks are already compacted by `enable_join_in_memory_compression`, and its
+    /// `ColumnCompressed` columns cannot be `cloneResized`. This also guards the `force_optimize`
+    /// path (`StorageJoin::optimize`).
+    if (compress_stored_blocks)
+        return;
+
     Int64 current_memory_usage = JoinCommon::getCurrentQueryMemoryUsage();
     Int64 query_memory_usage_delta = current_memory_usage - memory_usage_before_adding_blocks;
     Int64 max_total_bytes_for_query = memory_usage_before_adding_blocks ? table_join->getMaxMemoryUsage() : 0;
@@ -1238,7 +1359,26 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_
         ReadableSize(query_memory_usage_delta),
         max_total_bytes_for_query ? fmt::format("/ {}", ReadableSize(max_total_bytes_for_query)) : "");
 
-    /// Each cloneResized below replaces a stored column object in place, so any emit table built by a
+    compactStoredBlocks(/*compress=*/false);
+
+    auto new_total_bytes_in_join = getTotalByteCount();
+
+    Int64 new_current_memory_usage = JoinCommon::getCurrentQueryMemoryUsage();
+
+    LOG_DEBUG(
+        log,
+        "Shrunk stored blocks {} freed ({} by memory tracker), new memory consumption is {} ({} by memory tracker)",
+        ReadableSize(total_bytes_in_join - new_total_bytes_in_join),
+        ReadableSize(current_memory_usage - new_current_memory_usage),
+        ReadableSize(new_total_bytes_in_join),
+        ReadableSize(new_current_memory_usage));
+
+    total_bytes_in_join = new_total_bytes_in_join;
+}
+
+void HashJoin::compactStoredBlocks(bool compress)
+{
+    /// Each column replaced below replaces a stored column object in place, so any emit table built by a
     /// prior query (a persistent StorageJoin builds one per SELECT, then OPTIMIZE/insert runs this) is
     /// left with dangling `const IColumn *`. Bump the generation on every exit - including the exception
     /// paths, where some columns were already replaced - so the next probe rebuilds it against the new
@@ -1254,15 +1394,15 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_
         try
         {
             for (auto & column : stored_columns.columns)
-                column = column->cloneResized(column->size());
+                column = compress ? compressColumnIfWorthwhile(column, have_compressed, in_memory_compression_stats) : column->cloneResized(column->size());
 
-            /// `cloneResized` replaces each column with a new object.
+            /// `cloneResized` and `compress` replace each column with a new object.
             /// The raw pointers in `replicated_columns` pointed at the old objects and are now dangling.
             stored_columns.rebuildReplicatedColumns();
         }
         catch (...)
         {
-            /// If cloneResized throws (e.g., due to memory allocation failure or fault injection),
+            /// If cloneResized or compress throws (e.g., due to memory allocation failure or fault injection),
             /// some columns may have already been replaced with shrunk copies while
             /// data->allocated_size still reflects the old sizes. Recalculate to stay consistent.
             /// Also rebuild replicated_columns for columns that were already replaced, to avoid dangling pointers.
@@ -1296,20 +1436,30 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_
 
         doDebugAsserts();
     }
+}
 
-    auto new_total_bytes_in_join = getTotalByteCount();
+size_t HashJoin::getAvgJoinedBytesPerRow() const
+{
+    size_t bytes = data->allocated_size;
+    if (in_memory_compression_stats.stored_bytes)
+        bytes = static_cast<size_t>(static_cast<double>(bytes) * static_cast<double>(in_memory_compression_stats.source_bytes)
+            / static_cast<double>(in_memory_compression_stats.stored_bytes));
+    return bytes / std::max<size_t>(1, data->rows_to_join);
+}
 
-    Int64 new_current_memory_usage = JoinCommon::getCurrentQueryMemoryUsage();
+void HashJoin::startInMemoryCompression()
+{
+    compress_stored_blocks = true;
 
+    const size_t bytes_before = getTotalByteCount();
+    compactStoredBlocks(/*compress=*/true);
     LOG_DEBUG(
         log,
-        "Shrunk stored blocks {} freed ({} by memory tracker), new memory consumption is {} ({} by memory tracker)",
-        ReadableSize(total_bytes_in_join - new_total_bytes_in_join),
-        ReadableSize(current_memory_usage - new_current_memory_usage),
-        ReadableSize(new_total_bytes_in_join),
-        ReadableSize(new_current_memory_usage));
-
-    total_bytes_in_join = new_total_bytes_in_join;
+        "{}Compressed stored blocks in memory, {} rows, {} -> {}",
+        instance_log_id,
+        getTotalRowCount(),
+        ReadableSize(bytes_before),
+        ReadableSize(getTotalByteCount()));
 }
 
 DataTypePtr HashJoin::joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const
@@ -1636,14 +1786,16 @@ public:
 
         const Block & saved_block_sample = parent.savedBlockSample();
 
-        NamesAndTypes type_name;
         type_name.reserve(saved_block_sample.columns());
         for (const auto & column : saved_block_sample)
             type_name.emplace_back(column.name, column.type);
 
         std::vector<size_t> positions(saved_block_sample.columns());
         std::iota(positions.begin(), positions.end(), 0);
-        EmitPlan plan = planJoinEmit(*parent.data, positions, type_name, /*with_gather=*/true);
+        /// A compressed join reads its blocks through their decompressed views rather than the emit table
+        /// (see `emitColumnarOutputs`), so the table is not resolved over the `ColumnCompressed` placeholders.
+        EmitPlan plan = planJoinEmit(*parent.data, positions, type_name, /*with_gather=*/!parent.haveCompressed());
+        output_access_indexes = std::move(plan.access_indexes);
         emit_gather = std::move(plan.gather);
         emit_row_store_row_length = plan.row_store_row_length;
     }
@@ -1687,6 +1839,9 @@ private:
     std::optional<HashJoin::NullmapList::const_iterator> nulls_position;
     std::optional<HashJoin::StoredBlocksList::const_iterator> used_position;
 
+    /// Read by the compressed emit only (`emitCompressedColumnarOutputs`).
+    NamesAndTypes type_name;
+    ColumnAccessIndexes output_access_indexes;
     std::vector<GatherColumn> emit_gather;
     std::optional<size_t> emit_row_store_row_length;
 
@@ -1718,6 +1873,18 @@ private:
     {
         const RefWordSelection selection{
             .begin = words.data(), .end = words.data() + words.size(), .rows = words.size(), .shape = RefWordShape::Flat};
+
+        /// The words come in hash-map iteration order, which carries no meaning; the compressed emit groups
+        /// them by stored block, so each distinct block is decompressed once per call and the working set
+        /// stays within the `DecompressResolver` budget.
+        if (parent.haveCompressed())
+        {
+            DecompressResolver resolve(parent);
+            emitCompressedColumnarOutputs(
+                resolve, parent.data->stored_columns_index->blocksData(), columns_right, output_access_indexes, type_name, selection);
+            return;
+        }
+
         gatherJoinOutputColumns(columns_right, emit_gather, selection, emit_row_store_row_length);
     }
 
@@ -1943,7 +2110,107 @@ void HashJoin::reuseJoinedData(const HashJoin & join)
         matched_rows_stats->prepareRightFlagsIfNeeded(data->columns);
 }
 
-BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
+namespace
+{
+
+/// Reconstructs the full column list of one stored block from its compact columns and its row store,
+/// applying the block's selector, and puts each column back at its original position using the join's
+/// access indexes. With `ConcurrentHashJoin` a slot can store full original block columns with a
+/// selector that picks out the rows belonging to that slot, so the selector must be applied here to
+/// avoid duplicating rows across slots.
+/// TODO: make the row store spillable.
+Columns materializeStoredBlock(StoredBlock & stored_block, const ColumnAccessIndexes & access_indexes)
+{
+    const auto & stored_columns = stored_block.columns;
+    const auto & selector = stored_block.selector;
+
+    MutableColumns row_store_columns;
+    if (stored_block.hasRowStore())
+    {
+        if (selector.isContinuousRange())
+        {
+            auto [start, end] = selector.getRange();
+            row_store_columns = stored_block.row_store->scatterRows(start, end - start);
+        }
+        else
+            row_store_columns = stored_block.row_store->scatterRows(selector.getIndexes().getData());
+        stored_block.row_store.reset();
+    }
+
+    Columns columnar_columns;
+    columnar_columns.reserve(stored_columns.size());
+    if (selector.size() == stored_block.blockRows())
+        columnar_columns = stored_columns;
+    else if (selector.isContinuousRange())
+    {
+        auto [start, end] = selector.getRange();
+        for (const auto & c : stored_columns)
+            columnar_columns.push_back(c->cut(start, end - start));
+    }
+    else
+    {
+        const auto & indexes = selector.getIndexes();
+        for (const auto & c : stored_columns)
+            columnar_columns.push_back(c->index(indexes, /*limit*/ 0));
+    }
+
+    if (access_indexes.empty())
+        return columnar_columns;
+
+    Columns result(access_indexes.size());
+    for (size_t i = 0; i < access_indexes.size(); ++i)
+    {
+        const auto & access_index = access_indexes[i];
+        if (access_index.type == ColumnAccessIndex::Type::RowStore)
+            result[i] = std::move(row_store_columns[access_index.index]);
+        else
+            result[i] = std::move(columnar_columns[access_index.index]);
+    }
+    return result;
+}
+
+}
+
+Block HashJoin::ReleasedJoinedBlocks::next()
+{
+    chassert(!columns_list.empty());
+    StoredBlock stored = std::move(columns_list.front());
+    columns_list.pop_front();
+
+    /// Stored columns may be `ColumnCompressed` (when `enable_join_in_memory_compression` triggered).
+    /// The released blocks are handed to another algorithm (grace_hash bucket rehash, switching to
+    /// `GraceHashJoin` or `MergeJoin`, spilling), which reads them as ordinary columns, so decompress here.
+    /// `decompress` is a cheap no-op for columns that were only shrunk (not compressed).
+    /// Compression and the row store are mutually exclusive (see the HashJoin constructor), so a
+    /// compressed block never also has row-store columns to reconstruct below.
+    if (have_compressed)
+        for (auto & column : stored.columns)
+            column = column->decompress();
+
+    Columns all_columns = materializeStoredBlock(stored, column_access_indexes);
+    stored.columns.clear();
+
+    if (!restructure)
+        return sample_block.cloneWithColumns(all_columns);
+
+    Block restored_block;
+    for (size_t i = 0; i < positions.size(); ++i)
+    {
+        auto column = sample_block.getByPosition(positions[i]);
+        /// Copy (not move) the materialized column: `positions` can reference the same position more
+        /// than once when the right-hand side has several columns with the same name (aliases), so a
+        /// single stored position may feed multiple output columns. Moving would leave the second and
+        /// later references with a null column and crash downstream in `materializeBlock`. The stored
+        /// source is still freed promptly because `stored` is destroyed when this method returns, so
+        /// the peak memory overhead stays at one block.
+        column.column = all_columns[positions[i]];
+        correctNullabilityInplace(column, is_nullable[i]);
+        restored_block.insert(std::move(column));
+    }
+    return restored_block;
+}
+
+HashJoin::ReleasedJoinedBlocks HashJoin::releaseJoinedBlocks(bool restructure)
 {
     /// A set map stores the right blocks only for the algorithm that says it may take them. Asking
     /// for them without having said so would hand back an empty list and silently lose the right
@@ -1956,117 +2223,43 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
     LOG_TRACE(
         log, "{}Join data is being released, {} bytes and {} rows in hash table", instance_log_id, getTotalByteCount(), getTotalRowCount());
 
-    const auto column_access_indexes = data->column_access_indexes;
+    ReleasedJoinedBlocks released;
+    released.columns_list = std::move(data->columns);
+    released.sample_block = std::move(data->sample_block);
+    released.have_compressed = have_compressed;
+    released.restructure = restructure;
+    released.column_access_indexes = data->column_access_indexes;
 
-    /// Reconstruct full column list from compact columns and row store
-    /// using the access indexes to place each column back at its original position.
-    /// TODO: make the row store spillable.
-    auto materialize_columns = [&](StoredBlock & stored_block)
+    /// names to positions optimization
+    if (restructure && !released.columns_list.empty())
     {
-        const auto & stored_columns = stored_block.columns;
-        const auto & access_indexes = column_access_indexes;
-        const auto & selector = stored_block.selector;
-
-        MutableColumns row_store_columns;
-        if (stored_block.hasRowStore())
+        released.positions.reserve(right_sample_block.columns());
+        released.is_nullable.reserve(right_sample_block.columns());
+        for (const auto & sample_column : right_sample_block)
         {
-            if (selector.isContinuousRange())
-            {
-                auto [start, end] = selector.getRange();
-                row_store_columns = stored_block.row_store->scatterRows(start, end - start);
-            }
-            else
-                row_store_columns = stored_block.row_store->scatterRows(selector.getIndexes().getData());
-            stored_block.row_store.reset();
+            released.positions.emplace_back(released.sample_block.getPositionByName(sample_column.name));
+            released.is_nullable.emplace_back(isNullableOrLowCardinalityNullable(sample_column.type));
         }
+    }
 
-        Columns columnar_columns;
-        columnar_columns.reserve(stored_block.columns.size());
-        if (selector.size() == stored_block.blockRows())
-            columnar_columns = stored_block.columns;
-        else if (selector.isContinuousRange())
-        {
-            auto [start, end] = selector.getRange();
-            for (const auto & c : stored_columns)
-                columnar_columns.push_back(c->cut(start, end - start));
-        }
-        else
-        {
-            const auto & indexes = selector.getIndexes();
-            for (const auto & c : stored_columns)
-                columnar_columns.push_back(c->index(indexes, /*limit*/ 0));
-        }
-
-        if (access_indexes.empty())
-            return columnar_columns;
-
-        Columns result(access_indexes.size());
-        for (size_t i = 0; i < access_indexes.size(); ++i)
-        {
-            const auto & access_index = access_indexes[i];
-            if (access_index.type == ColumnAccessIndex::Type::RowStore)
-                result[i] = std::move(row_store_columns[access_index.index]);
-            else
-                result[i] = std::move(columnar_columns[access_index.index]);
-        }
-        return result;
-    };
-
-    auto extract_source_blocks = [&](StoredBlocksList && columns_list, const Block & sample_block)
+    if (restructure)
     {
-        BlocksList result;
-        for (auto & columns : columns_list)
-            result.emplace_back(sample_block.cloneWithColumns(materialize_columns(columns)));
-        return result;
-    };
+        data->maps.clear();
+        data->nullmaps.clear();
+    }
 
-    StoredBlocksList right_columns = std::move(data->columns);
+    data.reset();
+
+    /// `ReleasedJoinedBlocks::next` allocates, so the consumer can throw here with `data` already gone.
     if (!restructure)
     {
-        auto sample_block = std::move(data->sample_block);
-        data.reset();
-        /// `extract_source_blocks` allocates, so it can throw here with `data` already gone.
         fiu_do_on(FailPoints::hash_join_throw_after_data_release,
         {
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after the join data was released");
         });
-        return extract_source_blocks(std::move(right_columns), sample_block);
     }
 
-    data->maps.clear();
-    data->nullmaps.clear();
-
-    BlocksList restored_blocks;
-
-    /// names to positions optimization
-    std::vector<size_t> positions;
-    std::vector<bool> is_nullable;
-    if (!right_columns.empty())
-    {
-        positions.reserve(right_sample_block.columns());
-        for (const auto & sample_column : right_sample_block)
-        {
-            positions.emplace_back(data->sample_block.getPositionByName(sample_column.name));
-            is_nullable.emplace_back(isNullableOrLowCardinalityNullable(sample_column.type));
-        }
-    }
-
-    for (auto & saved_columns : right_columns)
-    {
-        Columns all_columns = materialize_columns(saved_columns);
-        Block restored_block;
-        for (size_t i = 0; i < positions.size(); ++i)
-        {
-            auto column = data->sample_block.getByPosition(positions[i]);
-            column.column = all_columns[positions[i]];
-            correctNullabilityInplace(column, is_nullable[i]);
-            restored_block.insert(column);
-        }
-        restored_blocks.emplace_back(std::move(restored_block));
-    }
-
-    data.reset();
-    return restored_blocks;
+    return released;
 }
 
 const ColumnWithTypeAndName & HashJoin::rightAsofKeyColumn() const
@@ -2275,7 +2468,10 @@ bool HashJoin::rightTableCanBeReranged() const
 {
     return isRightTableRerangeEnabled() && !data->columns.empty()
         && data->rows_to_join <= table_join->sortRightMaximumTableRows()
-        && data->avgPerKeyRows() >= table_join->sortRightMinimumPerkeyRows();
+        && data->avgPerKeyRows() >= table_join->sortRightMinimumPerkeyRows()
+        /// Reranging physically rebuilds the stored value columns into ColumnReplicated form, which is
+        /// incompatible with compressed (ColumnCompressed) blocks. Skip it when blocks were compressed.
+        && !have_compressed;
 }
 
 size_t HashJoin::getAndSetRightTableKeys() const
