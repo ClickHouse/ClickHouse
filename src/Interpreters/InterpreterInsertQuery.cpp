@@ -1628,8 +1628,8 @@ BlockIO InterpreterInsertQuery::execute()
             table->getName());
 
     /// The table named is checked and the requirements consumed: the writes it makes on its own, into inner tables
-    /// or views, are its own. A Distributed table forwards them instead, for each shard's insert to check its table.
-    if (table->getName() != "Distributed")
+    /// or views, are its own. Only a Distributed table on the first hop forwards them, for each shard to check its table.
+    if (table->getName() != "Distributed" || context->getClientInfo().distributed_depth > 0)
         consumed_insert_expectations = checkInsertExpectations(table, metadata_snapshot, settings);
     if (!consumed_insert_expectations.empty())
     {

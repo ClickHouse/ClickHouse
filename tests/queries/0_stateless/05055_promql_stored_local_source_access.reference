@@ -1,0 +1,8 @@
+--- no grant on the source
+ACCESS_DENIED
+--- source renamed
+ACCESS_DENIED
+--- source dropped
+ACCESS_DENIED
+--- with the grant
+0

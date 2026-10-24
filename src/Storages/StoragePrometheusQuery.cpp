@@ -225,8 +225,12 @@ void StoragePrometheusQuery::readImpl(
     auto evaluation_settings = config.evaluation_settings;
     /// The shard-local tables' versions are checked by the selector on each shard.
     if (!config.evaluation_settings.distributed)
+    {
+        /// Grant before existence, as in getConfiguration, but for the reader rather than the creator.
+        context->checkAccess(AccessType::SELECT, time_series_storage_id);
         checkTimeSeriesVersionSupportedByPromQL(
             *storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context)));
+    }
     /// Also checked here: a table created AS this function is configured once, not on the reader's context.
     else if (prometheusQueryReadsTimeSeries(*config.promql_query))
     {
