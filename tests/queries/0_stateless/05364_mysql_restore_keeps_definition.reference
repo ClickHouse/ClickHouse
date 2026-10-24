@@ -1,0 +1,5 @@
+--- a new table stores the session value
+SETTINGS mysql_datatypes_support_level = \'decimal\'
+--- a RESTORE in such a session keeps the definition from the backup
+1
+
