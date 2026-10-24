@@ -841,6 +841,7 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     return std::make_shared<DeltaLakePartitionedSink>(
         delta_transaction,
         partition_columns,
+        snapshot->getUtcAdjustedTimestampColumns(partition_columns),
         write_object_storage,
         context,
         sample_block,
