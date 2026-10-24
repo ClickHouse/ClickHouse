@@ -1180,6 +1180,19 @@ Chunk StorageObjectStorageSource::generate()
                             );
                         }
                     }
+
+                    /// Only a read of the whole file tells which row blocks have no match.
+                    auto row_blocks = input_format->getMatchedRowBlocks();
+                    if (row_blocks && query_condition_cache_key && !object_info->file_bucket_info)
+                    {
+                        if (auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache())
+                            query_condition_cache->writeRowBlocks(
+                                query_condition_cache_table_id,
+                                *query_condition_cache_key,
+                                *format_filter_info->condition_hash,
+                                format_filter_info->filter_actions_dag->dumpNames(),
+                                *row_blocks);
+                    }
                 }
             }
             catch (...)
@@ -1346,8 +1359,10 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     if ((format_filter_info && format_filter_info->condition_hash) || top_k_query_condition_cache_key)
         query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
 
+    std::shared_ptr<const std::vector<bool>> row_blocks_to_read;
     while (true)
     {
+        row_blocks_to_read.reset();
         object_info = file_iterator->next(processor);
 
         if (!object_info || object_info->getPath().empty())
@@ -1413,6 +1428,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             /// One logical consultation, so it emits one `QueryConditionCacheHits` / `Misses` event
             /// however many keys are probed.
             std::optional<QueryConditionCache::MatchingMarks> matching_marks;
+            /// The row blocks of the file without a match for the plain predicate (see `QueryConditionCache::writeRowBlocks`).
+            std::optional<QueryConditionCache::MatchingMarks> matching_row_blocks;
             auto merge_matching_marks = [&](std::optional<QueryConditionCache::MatchingMarks> marks)
             {
                 if (!marks)
@@ -1426,8 +1443,12 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             if (query_condition_cache_key)
             {
                 if (consult_plain_condition)
-                    merge_matching_marks(query_condition_cache->read(
-                        query_condition_cache_table_id, *query_condition_cache_key, *format_filter_info->condition_hash, /*increment_profile_events=*/false));
+                {
+                    auto file_marks = query_condition_cache->readFile(
+                        query_condition_cache_table_id, *query_condition_cache_key, *format_filter_info->condition_hash, /*increment_profile_events=*/false);
+                    merge_matching_marks(std::move(file_marks.buckets));
+                    matching_row_blocks = std::move(file_marks.row_blocks);
+                }
                 if (use_top_k_query_condition_cache_key)
                 {
                     auto marks = query_condition_cache->read(
@@ -1442,7 +1463,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     }
                     merge_matching_marks(std::move(marks));
                 }
-                ProfileEvents::increment(matching_marks ? ProfileEvents::QueryConditionCacheHits : ProfileEvents::QueryConditionCacheMisses);
+                ProfileEvents::increment(
+                    matching_marks || matching_row_blocks ? ProfileEvents::QueryConditionCacheHits : ProfileEvents::QueryConditionCacheMisses);
             }
             if (matching_marks.has_value())
             {
@@ -1482,6 +1504,23 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     object_info->file_bucket_info = std::move(filtered);
                     object_info->file_bucket_info_from_query_condition_cache = true;
                 }
+            }
+
+            if (matching_row_blocks.has_value())
+            {
+                size_t num_blocks = matching_row_blocks->size();
+                size_t num_matching = static_cast<size_t>(std::count(matching_row_blocks->begin(), matching_row_blocks->end(), true));
+                LOG_DEBUG(log,
+                    "Query condition cache has dropped {}/{} row blocks for condition {} in file {}.",
+                    num_blocks - num_matching,
+                    num_blocks,
+                    format_filter_info->filter_actions_dag->dumpNames(),
+                    object_info->getFileName());
+
+                if (num_matching == 0)
+                    continue;
+                if (num_matching < num_blocks)
+                    row_blocks_to_read = std::make_shared<const std::vector<bool>>(std::move(*matching_row_blocks));
             }
         }
         break;
@@ -1859,6 +1898,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         }
 
         input_format->setBucketsToRead(object_info->file_bucket_info);
+        if (row_blocks_to_read)
+            input_format->setRowBlocksToRead(row_blocks_to_read);
         input_format->setSerializationHints(read_from_format_info.serialization_hints);
 
         if (need_only_count)

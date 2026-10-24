@@ -1336,6 +1336,15 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         RowGroup & row_group = row_groups.emplace_back();
         row_group.meta = meta;
         row_group.need_to_process = !row_groups_to_read.has_value() || row_groups_to_read->contains(candidate.row_group_idx);
+        if (row_group.need_to_process && row_blocks_to_read)
+        {
+            size_t first_block = candidate.start_global_row_idx / rows_per_row_block;
+            size_t last_block = (candidate.start_global_row_idx + size_t(meta->num_rows) - 1) / rows_per_row_block;
+            bool any_block_matches = false;
+            for (size_t block = first_block; block <= last_block && !any_block_matches; ++block)
+                any_block_matches = (*row_blocks_to_read)[block];
+            row_group.need_to_process = any_block_matches;
+        }
         row_group.requested_rows_slice = candidate.requested_rows_slice;
         row_group.row_group_idx = candidate.row_group_idx;
         row_group.start_global_row_idx = candidate.start_global_row_idx;
@@ -2893,6 +2902,31 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
             num_range_sets += 1;
             events.emplace_back((*rows_to_read)[slice_begin] - row_group.start_global_row_idx, +1);
             events.emplace_back((*rows_to_read)[slice_end - 1] - row_group.start_global_row_idx + 1, -1);
+        }
+
+        if (row_blocks_to_read && row_group.need_to_process)
+        {
+            const size_t group_start = row_group.start_global_row_idx;
+            const size_t group_end = group_start + size_t(row_group.meta->num_rows);
+            const size_t last_block = (group_end - 1) / rows_per_row_block;
+            num_range_sets += 1;
+            size_t num_ranges = 0;
+            for (size_t block = group_start / rows_per_row_block; block <= last_block;)
+            {
+                if (!(*row_blocks_to_read)[block])
+                {
+                    ++block;
+                    continue;
+                }
+                size_t first_matching_block = block;
+                while (block <= last_block && (*row_blocks_to_read)[block])
+                    ++block;
+                events.emplace_back(std::max(group_start, first_matching_block * rows_per_row_block) - group_start, +1);
+                events.emplace_back(std::min(group_end, block * rows_per_row_block) - group_start, -1);
+                ++num_ranges;
+            }
+            if (num_ranges == 0)
+                return; /// No row block may match, leave `subgroups` empty.
         }
 
         for (auto & col : row_group.columns)
@@ -4884,6 +4918,70 @@ void Reader::withdrawColumnsCacheWrites()
                 withdrawColumnsCacheWrite(write);
         row_group.columns_cache_writes.clear();
     }
+}
+
+void Reader::recordMatchedRowBlocks(RowSubgroup & row_subgroup, const RowGroup & row_group) const
+{
+    const RowSet & filter = row_subgroup.filter;
+    chassert(filter.rows_total > 0);
+    const size_t start = row_group.start_global_row_idx + row_subgroup.start_row_idx;
+    const size_t end = start + filter.rows_total;
+    const size_t first_block = start / rows_per_row_block;
+    const size_t last_block = (end - 1) / rows_per_row_block;
+    row_subgroup.matched_row_blocks.assign(last_block - first_block + 1, 0);
+    if (filter.rows_pass > 0)
+    {
+        for (size_t block = first_block; block <= last_block; ++block)
+        {
+            /// The filter is empty if all rows pass.
+            bool matched = filter.filter.empty();
+            if (!matched)
+            {
+                size_t from = std::max(start, block * rows_per_row_block) - start;
+                size_t to = std::min(end, (block + 1) * rows_per_row_block) - start;
+                matched = !memoryIsZero(filter.filter.data(), from, to);
+            }
+            row_subgroup.matched_row_blocks[block - first_block] = matched;
+        }
+    }
+    row_subgroup.matched_row_blocks_recorded = true;
+}
+
+std::vector<bool> Reader::getMatchedRowBlocks() const
+{
+    size_t total_rows = 0;
+    for (const auto & meta : file_metadata().row_groups)
+        total_rows += size_t(std::max<Int64>(meta.num_rows, 0));
+    std::vector<bool> matched((total_rows + rows_per_row_block - 1) / rows_per_row_block, false);
+
+    /// Row groups pruned by statistics, bloom filter or dictionary, and rows excluded by the column
+    /// index, have no subgroup (or a subgroup with rows_pass == 0): no row there matches.
+    for (const auto & row_group : row_groups)
+    {
+        if (!row_group.need_to_process)
+            continue;
+        for (const auto & row_subgroup : row_group.subgroups)
+        {
+            if (row_subgroup.filter.rows_pass == 0)
+                continue;
+            const size_t start = row_group.start_global_row_idx + row_subgroup.start_row_idx;
+            const size_t first_block = start / rows_per_row_block;
+            if (row_subgroup.matched_row_blocks_recorded)
+            {
+                for (size_t i = 0; i < row_subgroup.matched_row_blocks.size(); ++i)
+                    if (row_subgroup.matched_row_blocks[i])
+                        matched[first_block + i] = true;
+            }
+            else
+            {
+                /// The filter of this subgroup wasn't final when the read stopped. Be conservative.
+                const size_t last_block = (start + row_subgroup.filter.rows_total - 1) / rows_per_row_block;
+                for (size_t block = first_block; block <= last_block; ++block)
+                    matched[block] = true;
+            }
+        }
+    }
+    return matched;
 }
 
 Reader::PrimitiveColumnInfo::~PrimitiveColumnInfo() = default;

@@ -475,6 +475,10 @@ struct Reader
 
         std::vector<OutputColumnState> output; // parallel to extended_sample_block
 
+        /// For each row block overlapping this subgroup, from the block of its first row: whether a row passed the filter.
+        std::vector<UInt8> matched_row_blocks;
+        bool matched_row_blocks_recorded = false;
+
         std::atomic<ReadStage> stage {ReadStage::NotStarted};
         std::atomic<size_t> stage_tasks_remaining {0};
     };
@@ -645,6 +649,15 @@ struct Reader
     bool columns_cache_writes_possible = false;
     /// Captured once, before anything is read, see `ColumnsCache::getInvalidationGeneration`.
     UInt64 columns_cache_generation = 0;
+
+    /// Query condition cache row blocks (see IInputFormat::getMatchedRowBlocks): ranges of `rows_per_row_block` rows.
+    std::shared_ptr<const std::vector<bool>> row_blocks_to_read;
+    bool track_matched_row_blocks = false;
+    size_t rows_per_row_block = 8192;
+
+    /// Called when the subgroup's filter is final (all prewhere steps done), before it's freed.
+    void recordMatchedRowBlocks(RowSubgroup & row_subgroup, const RowGroup & row_group) const;
+    std::vector<bool> getMatchedRowBlocks() const;
 
     /// These methods are listed in the order in which they're used, matching ReadStage order.
 
