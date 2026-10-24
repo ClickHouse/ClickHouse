@@ -12,9 +12,14 @@
 # only executes the jobs that were skipped (or newly need to be skipped).
 #
 # GitHub Actions has no supported trigger for review-thread resolution. `PR`
-# workflow completions catch threads resolved while CI is in flight. Label
-# events use `pull_request_target` so they can reconcile fork PRs with a
-# write-capable token. This workflow never checks out or executes PR code.
+# workflow completions catch threads resolved while CI is in flight. Threads
+# resolved after the run has finished are caught by the `poll` job: on a
+# schedule, it looks for open PRs whose recorded verdict is a block while no
+# blocking thread is unresolved any more, and dispatches this workflow for each
+# of them (`workflow_dispatch`, so the reconciliation is serialized with the
+# other events for the same head commit). Label events use
+# `pull_request_target` so they can reconcile fork PRs with a write-capable
+# token. This workflow never checks out or executes PR code.
 
 name: Rerun On Review Threads
 
@@ -24,6 +29,16 @@ on:
     types: [completed]
   pull_request_target:
     types: [labeled, unlabeled]
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'The PR to reconcile'
+        required: true
+      head_sha:
+        description: 'The PR head commit the reconciliation is requested for'
+        required: true
 
 permissions:
   actions: write
@@ -31,29 +46,116 @@ permissions:
   pull-requests: read
   statuses: write
 
-# Key on the head commit, which both event payloads carry, so a label event
-# and a `PR` workflow completion for the same head never reconcile at once
-# (otherwise both could see no active run and dispatch duplicate reruns).
+# Key on the head commit, which all the reconciling event payloads carry, so a
+# label event, a dispatch from the `poll` job and a `PR` workflow completion for
+# the same head never reconcile at once (otherwise several could see no active
+# run and dispatch duplicate reruns). Scheduled `poll` runs key on their run id.
 concurrency:
-  group: rerun-on-review-threads-${{ github.event.pull_request.head.sha || github.event.workflow_run.head_sha || github.run_id }}
+  group: rerun-on-review-threads-${{ github.event.pull_request.head.sha || github.event.workflow_run.head_sha || inputs.head_sha || github.run_id }}
   cancel-in-progress: false
 
 jobs:
+  poll:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch the reconciliation for PRs whose blocking threads were resolved
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          # Keep in sync with REVIEW_THREADS_STATUS_NAME in
+          # ci/jobs/scripts/workflow_hooks/review_threads.py.
+          STATUS_NAME: Review Threads
+        run: |
+          set -euo pipefail
+
+          owner="${GH_REPO%%/*}"
+          name="${GH_REPO##*/}"
+
+          # Open PRs whose head commit carries a failing gate marker. The
+          # marker must have been written for the PR itself (the Praktika
+          # report URL of the PR, or the URL of the PR): another open PR can
+          # share the head commit.
+          candidates=$(gh api graphql --paginate \
+            -f query='query($owner: String!, $name: String!, $context: String!, $endCursor: String) {
+              repository(owner: $owner, name: $name) {
+                pullRequests(states: OPEN, first: 100, after: $endCursor) {
+                  pageInfo { hasNextPage endCursor }
+                  nodes {
+                    number
+                    url
+                    headRefOid
+                    commits(last: 1) {
+                      nodes { commit { oid status { context(name: $context) { state targetUrl } } } }
+                    }
+                  }
+                }
+              }
+            }' \
+            -f owner="$owner" -f name="$name" -f context="$STATUS_NAME" \
+            --jq '.data.repository.pullRequests.nodes[]
+                  | .number as $pr
+                  | (.commits.nodes[0].commit // {}) as $commit
+                  | ($commit.status.context // {}) as $marker
+                  | select($commit.oid == .headRefOid)
+                  | select($marker.state == "FAILURE" or $marker.state == "ERROR")
+                  | select((($marker.targetUrl // "") | contains("?PR=\($pr)&")) or $marker.targetUrl == .url)
+                  | "\(.number) \(.headRefOid)"')
+
+          dispatched=0
+          while read -r pr head_sha; do
+            [ -n "$pr" ] || continue
+            # The live unresolved blocking review thread count. Keep the
+            # pattern in sync with NON_BLOCKING_THREAD_PATTERN in
+            # ci/jobs/scripts/workflow_hooks/review_threads.py.
+            unresolved=$(gh api graphql --paginate \
+              -f query='query($owner: String!, $name: String!, $pr: Int!, $endCursor: String) {
+                repository(owner: $owner, name: $name) {
+                  pullRequest(number: $pr) {
+                    reviewThreads(first: 100, after: $endCursor) {
+                      pageInfo { hasNextPage endCursor }
+                      nodes { isResolved comments(first: 1) { nodes { body } } }
+                    }
+                  }
+                }
+              }' \
+              -f owner="$owner" -f name="$name" -F pr="$pr" \
+              --jq '[.data.repository.pullRequest.reviewThreads.nodes[]
+                     | select(.isResolved | not)
+                     | select((.comments.nodes[0].body // "") | test("^\\s*(\\[(P2|P3|Major|Minor|Nit)\\]|Nit:)"; "i") | not)
+                    ] | length' \
+              | awk '{s+=$1} END {print s+0}')
+            if [ "$unresolved" -gt 0 ]; then
+              continue
+            fi
+            # The `reconcile` job re-checks everything (a run in progress,
+            # shared heads, the attempt cap) and decides between a status
+            # refresh and a re-run.
+            echo "PR #$pr (head $head_sha): no unresolved blocking review threads - dispatching the reconciliation"
+            gh api --method POST "repos/$GH_REPO/actions/workflows/rerun_on_review_threads.yml/dispatches" \
+              -f ref="$GITHUB_REF_NAME" -f "inputs[pr_number]=$pr" -f "inputs[head_sha]=$head_sha" >/dev/null
+            dispatched=$((dispatched + 1))
+          done <<< "$candidates"
+          echo "Dispatched the reconciliation for $dispatched PR(s)."
+
   reconcile:
     # Label events matter only for the gate's override label.
     # Keep the label name in sync with Labels.IGNORE_UNRESOLVED_THREADS in
     # ci/jobs/scripts/workflow_hooks/pr_labels_and_category.py.
-    if: github.event_name != 'pull_request_target' || github.event.label.name == 'ignore-unresolved-threads'
+    if: >-
+      github.event_name != 'schedule' &&
+      (github.event_name != 'pull_request_target' || github.event.label.name == 'ignore-unresolved-threads')
     runs-on: ubuntu-latest
     steps:
       - name: Rerun the PR workflow if the recorded review-threads verdict is stale
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number || '' }}
-          # The head commit a label event was raised for. The concurrency group
-          # is keyed on it, so the event must not act on a newer head.
-          LABEL_HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number || '' }}
+          # The head commit a label event or a dispatch from the `poll` job was
+          # raised for. The concurrency group is keyed on it, so the event must
+          # not act on a newer head.
+          LABEL_HEAD_SHA: ${{ github.event.pull_request.head.sha || inputs.head_sha || '' }}
           WR_PULL_REQUESTS: ${{ toJSON(github.event.workflow_run.pull_requests) }}
           WR_HEAD_SHA: ${{ github.event.workflow_run.head_sha || '' }}
           WR_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch || '' }}

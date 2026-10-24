@@ -20,7 +20,8 @@ The `Review Threads` commit status doubles as the marker that
 `.github/workflows/rerun_on_review_threads.yml` reads to decide whether the
 recorded verdict disagrees with the live thread state and the last `PR`
 workflow run must be re-run (previously succeeded jobs are restored from the
-CI cache, so only the previously skipped jobs actually run).
+CI cache, so only the previously skipped jobs actually run). Its scheduled
+`poll` job finds the PRs whose threads were resolved after the run finished.
 """
 
 import json

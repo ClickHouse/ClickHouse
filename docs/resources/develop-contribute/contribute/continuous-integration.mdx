@@ -34,7 +34,7 @@ When CI starts while your pull request has unresolved review threads, it runs on
 
 Only blocking threads count. A thread is informational, and does not hold the check, when its first comment starts with a non-blocking severity tag: `[Major]`, `[Minor]`, `[Nit]`, `[P2]`, `[P3]`, or `Nit:`. The AI review tags its inline findings this way, so leaving its `[Major]` findings open does not hold the full test suite or the merge. Every other unresolved thread, including untagged ones and the `[Blocker]` findings of the AI review, has to be resolved.
 
-If review threads change after a CI run has completed, re-run CI to refresh the statuses and, when appropriate, run the full suite. If all review threads are resolved while CI is still running, CI re-evaluates the gate and runs the full test suite. If you believe the unresolved threads should not block testing and merging, a repository maintainer can add the `ignore-unresolved-threads` label to the pull request.
+When the last blocking review thread is resolved, CI picks it up automatically: if this happens while CI is still running, CI re-evaluates the gate when it finishes, and otherwise a scheduled check notices it within about ten minutes. Either way, the statuses are refreshed and the skipped part of the test suite is run. If new review threads are added after a CI run has completed, re-run CI to refresh the statuses. If you believe the unresolved threads should not block testing and merging, a repository maintainer can add the `ignore-unresolved-threads` label to the pull request.
 
 ## Docs check (Mintlify) {#docs-check}
 
