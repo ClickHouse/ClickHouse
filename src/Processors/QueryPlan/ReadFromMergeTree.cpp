@@ -82,6 +82,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/CurrentThread.h>
 #include <Common/DateLUT.h>
+#include <Common/FailPoint.h>
 #include <Common/JSONBuilder.h>
 #include <Common/Logger.h>
 #include <Common/SipHash.h>
@@ -380,6 +381,13 @@ namespace ErrorCodes
     extern const int NO_SUCH_DATA_PART;
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNKNOWN_TABLE;
+}
+
+namespace FailPoints
+{
+    /// Simulates a replica whose local parts snapshot became empty (parts merged away or dropped)
+    /// between the coordinator planning a distributed read and this replica deserializing it.
+    extern const char distributed_plan_read_empty_snapshot_on_deserialize[];
 }
 
 static bool checkAllPartsOnRemoteFS(const RangesInDataParts & parts)
@@ -7727,8 +7735,15 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
     StorageSnapshotPtr storage_snapshot = table.getStorageSnapshot(metadata_snapshot, ctx.context);
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
 
+    RangesInDataPartsPtr parts_for_read = snapshot_data.parts;
+    /// Test hook: pretend this replica's snapshot lost its parts after the coordinator planned the read.
+    fiu_do_on(FailPoints::distributed_plan_read_empty_snapshot_on_deserialize,
+    {
+        parts_for_read = std::make_shared<const RangesInDataParts>();
+    });
+
     auto step = executor.readFromParts(
-        snapshot_data.parts,
+        parts_for_read,
         snapshot_data.mutations_snapshot,
         column_names,
         storage_snapshot,
@@ -7743,12 +7758,13 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
         /// replica number from client_info. This path is only reached for a plan that will actually be
         /// executed (see the ctx.skipping short-circuit above), so the callbacks are always present.
         enable_parallel_reading,
-        /*extension*/ nullptr);
+        /*extension*/ nullptr,
+        /*build_empty_step_for_distributed_read*/ distributed_read_bucket_count > 0);
 
     /// `readFromParts` builds no step when the local snapshot has no parts. `MergeTreeDataSelectExecutor::read`
     /// turns that into an empty plan, so rebuild it as an empty read here too: the caller dereferences the step,
-    /// and the `allow_query_condition_cache` bit only matters for a read that exists. A bucketed read keeps
-    /// failing below, because its exchange contract has not been checked against an empty replica.
+    /// and the `allow_query_condition_cache` bit only matters for a read that exists. A bucketed read always
+    /// gets a step, so `initializePipeline` checks its buckets against this replica's empty snapshot.
     if (!step && !distributed_read_bucket_count)
         return std::make_unique<ReadNothingStep>(ctx.output_header);
 
