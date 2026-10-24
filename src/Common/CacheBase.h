@@ -336,6 +336,18 @@ public:
         return true;
     }
 
+    /// Like `removeIfMatches`, but if `update(resident)` returns true, sets the resident again to recompute its weight.
+    /// `update` runs under the cache lock, so no eviction sees a changed resident with its old weight.
+    bool updateIfMatches(const Key & key, std::function<bool(const MappedPtr &)> update)
+    {
+        std::lock_guard lock(mutex);
+        auto value = cache_policy->get(key);
+        if (!value || !update(value))
+            return false;
+        cache_policy->set(key, value);
+        return true;
+    }
+
     size_t sizeInBytes() const
     {
         std::lock_guard lock(mutex);
