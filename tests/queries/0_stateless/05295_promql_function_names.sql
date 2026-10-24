@@ -62,10 +62,10 @@ DESCRIBE prometheusQuery('prometheus', 'range()', 110);
 DESCRIBE prometheusQuery('prometheus', 'step()', 110);
 
 SELECT '-- limit_ratio is an aggregation operator';
-SELECT * FROM prometheusQuery('prometheus', 'limit_ratio(0.5, rate)', 110); -- { serverError NOT_IMPLEMENTED }
-SELECT * FROM prometheusQuery('prometheus', 'limit_ratio by (job) (0.5, rate)', 110); -- { serverError NOT_IMPLEMENTED }
-SELECT * FROM prometheusQuery('prometheus', 'limit_ratio(0.5, rate) by (job)', 110); -- { serverError NOT_IMPLEMENTED }
-SELECT * FROM prometheusQuery('prometheus', 'limit_ratio without (job) (0.5, rate)', 110); -- { serverError NOT_IMPLEMENTED }
+SELECT * FROM prometheusQuery('prometheus', 'limit_ratio(0.5, rate)', 110); -- { serverError CANNOT_EXECUTE_PROMQL_QUERY }
+SELECT * FROM prometheusQuery('prometheus', 'limit_ratio by (job) (0.5, rate)', 110); -- { serverError CANNOT_EXECUTE_PROMQL_QUERY }
+SELECT * FROM prometheusQuery('prometheus', 'limit_ratio(0.5, rate) by (job)', 110); -- { serverError CANNOT_EXECUTE_PROMQL_QUERY }
+SELECT * FROM prometheusQuery('prometheus', 'limit_ratio without (job) (0.5, rate)', 110); -- { serverError CANNOT_EXECUTE_PROMQL_QUERY }
 SELECT * FROM prometheusQuery('prometheus', 'limit_ratio', 110);
 
 DROP TABLE prometheus;
