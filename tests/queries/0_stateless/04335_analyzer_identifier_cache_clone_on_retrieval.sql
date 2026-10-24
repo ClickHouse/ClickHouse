@@ -3,7 +3,6 @@
 -- rewrite_in_to_join, createUniqueAliasesIfNecessary) mutate each instance
 -- independently, so every retrieval must return its own clone.
 
-SET enable_analyzer = 1;
 SET enable_identifier_resolve_cache = 1;
 
 -- Note: the GLOBAL IN + parallel replicas case is deliberately NOT duplicated here;
