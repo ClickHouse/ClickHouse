@@ -38,10 +38,6 @@ ERROR_LOG_DIR=""
 if [ -n "$ERROR_LOG_PATH" ]; then ERROR_LOG_DIR="$(dirname "$ERROR_LOG_PATH")"; fi
 FORMAT_SCHEMA_PATH="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=format_schema_path || true)"
 
-# There could be many disks declared in config
-readarray -t DISKS_PATHS < <(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key='storage_configuration.disks.*.path' || true)
-readarray -t DISKS_METADATA_PATHS < <(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key='storage_configuration.disks.*.metadata_path' || true)
-
 # A `filesystem_caches` entry is not a `storage_configuration` disk, so the paths above do not cover
 # it, and `FileCache::initialize` cannot create one under a directory the server does not own.
 # Absolute entries only: those are used verbatim, while a relative one is resolved by the server
@@ -87,13 +83,19 @@ function create_directory_and_do_chown() {
 }
 
 function manage_clickhouse_directories() {
+    # storage_configuration disk paths are deliberately not touched here: they are
+    # often external mounts, and creating a missing one (as root) would place an
+    # empty directory on the container's ephemeral filesystem, which the server
+    # would then silently fill with data that disappears with the container.
+    # The server creates local disk directories itself when it has permission,
+    # and otherwise fails loudly instead of losing data. filesystem_caches
+    # entries hold re-fillable cache data, not primary data, so preparing them
+    # is safe.
     for dir in "$ERROR_LOG_DIR" \
       "$LOG_DIR" \
       "$TMP_DIR" \
       "$USER_PATH" \
       "$FORMAT_SCHEMA_PATH" \
-      "${DISKS_PATHS[@]}" \
-      "${DISKS_METADATA_PATHS[@]}" \
       "${FILESYSTEM_CACHES_PATHS[@]}"
     do
         create_directory_and_do_chown "$dir"
