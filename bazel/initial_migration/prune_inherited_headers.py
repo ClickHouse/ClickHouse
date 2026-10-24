@@ -326,12 +326,14 @@ class Rewrite:
         return self.source.rewrite(edits)
 
 
-def prune(root, inventories, *, write=False, consumers=(), owners=(), postgres_header_deps=False):
+def prune(root, inventories, *, write=False, consumers=(), owners=(), postgres_header_deps=False, read_only=()):
     """Remove inherited headers using pinned package filenames keyed by contrib owner."""
-    docs = [Document(path, inventories) for path in [root / 'BUILD.bazel', *sorted(
+    docs = [(SourceDocument if path in read_only else Document)(path, inventories)
+            for path in [root / 'BUILD.bazel', *sorted(
         (root / 'bazel/dependencies').glob('*.BUILD.bazel'))]]
     graph = Graph(docs)
     consumers = set(consumers) or {doc.repo for doc in docs}
+    consumers.difference_update(doc.repo for doc in docs if doc.path in read_only)
     if postgres_header_deps:
         graph.add_postgres_header_deps(consumers)
     total = Counter()
@@ -453,24 +455,25 @@ class PublishedRewrite(Rewrite):
         return True
 
 
+class SourceDocument(Document):
+    def glob_strings(self, node):
+        if isinstance(node, ast.Name) and node.id in self.constants:
+            return self.glob_strings(self.constants[node.id])
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            return self.glob_strings(node.left) + self.glob_strings(node.right)
+        if isinstance(node, ast.Call) and getattr(node.func, 'id', '') == 'glob' and len(node.args) == 1:
+            opts = {k.arg: k.value for k in node.keywords}
+            if set(opts) <= {'exclude', 'allow_empty'}:
+                excludes = self.glob_strings(opts['exclude']) if 'exclude' in opts else []
+                return list(self.globs.result(self.glob_strings(node.args[0]), excludes))
+        values = _literal_strings(node)
+        if values is None:
+            raise ValueError('Unsupported source header glob: ' + ast.unparse(node))
+        return values
+
+
 def inherited_source_headers(build, name, inputs, deps, owners):
     """Which private source files do the retained, same-package cc_library owners publish?"""
-    class SourceDocument(Document):
-        def glob_strings(self, node):
-            if isinstance(node, ast.Name) and node.id in self.constants:
-                return self.glob_strings(self.constants[node.id])
-            if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
-                return self.glob_strings(node.left) + self.glob_strings(node.right)
-            if isinstance(node, ast.Call) and getattr(node.func, 'id', '') == 'glob' and len(node.args) == 1:
-                opts = {k.arg: k.value for k in node.keywords}
-                if set(opts) <= {'exclude', 'allow_empty'}:
-                    excludes = self.glob_strings(opts['exclude']) if 'exclude' in opts else []
-                    return list(self.globs.result(self.glob_strings(node.args[0]), excludes))
-            values = _literal_strings(node)
-            if values is None:
-                raise ValueError('Unsupported source header glob: ' + ast.unparse(node))
-            return values
-
     from initial_migration.first_party_packages import canonical_dependency
     prefix = '@clickhouse//' + build.package + ':'
     package = build.path.parent
@@ -488,7 +491,7 @@ def inherited_source_headers(build, name, inputs, deps, owners):
     return {v for v in inputs if check.covered(v, target, ARCHES, 'srcs', providers=retained)}
 
 
-def prune_published(root, inventories, *, consumers, write=False):
+def prune_published(root, inventories, *, consumers, write=False, read_only=()):
     """Remove exact inherited headers after native packages are rendered."""
     from initial_migration.first_party_packages import Build, git_inventory
 
@@ -503,10 +506,10 @@ def prune_published(root, inventories, *, consumers, write=False):
     for path in main_paths:
         build = Build(root, path, files, packages)
         documents.append(Document(path, inventories, package=build.package, files=build.inventory))
-    documents.extend(Document(path, inventories) for path in
-                     sorted((root / 'bazel/dependencies').glob('*.BUILD.bazel')))
+    documents.extend((SourceDocument if path in read_only else Document)(path, inventories)
+                     for path in sorted((root / 'bazel/dependencies').glob('*.BUILD.bazel')))
     graph = PublishedGraph(root, documents)
-    consumers = set(consumers)
+    consumers = set(consumers) - {doc.repo for doc in documents if doc.path in read_only}
     changes, updated, total = {}, [], Counter()
     for doc in documents:
         if doc.repo not in consumers:

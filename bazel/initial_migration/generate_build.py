@@ -20,14 +20,16 @@ from initial_migration.rust_archives import ARCHIVE_TARGETS as RUST_ARCHIVES
 from initial_migration.reference_readers import read_file_api
 from initial_migration.configuration import read_configurations
 from initial_migration import llvm_targets
+from initial_migration.arrow_inputs import foreign_arrow_dependencies
 from initial_migration.external_headers import HeaderLibraries
+from initial_migration.package_codegen import PACKAGES as PACKAGE_CODEGEN_DIRECTORIES
 from initial_migration.format_build_files import format_build_files
 from initial_migration.measured_deps import FUNCTION_REGISTRATION
 from initial_migration.prune_inherited_headers import prune, prune_published
 from initial_migration.prune_unused_exports import prune_native_exports, prune_unused_exports
 from initial_migration.build_file import (
     BuildFile, CMakeCxxCompilerVersion, Glob,
-    SOURCE_HEADER_DIRECTORIES, SOURCE_HEADER_EXCLUDES, SOURCE_HEADER_SUFFIXES, SOURCE_HEADER_TARGETS,
+    SOURCE_HEADER_DIRECTORIES, SOURCE_HEADER_SUFFIXES, SOURCE_HEADER_TARGETS,
     EMBEDDED_SOURCES, dependency_inputs, embedded_indices, relocate_compilation,
     relocate_tools, select, starlark, target_label, target_owner,
 )
@@ -49,7 +51,9 @@ LICENSES_OUTPUT = 'src/Storages/System/StorageSystemLicenses.generated.cpp'
 # Public headers use deps so consumers receive the same CcInfo.
 SYSTEM_TABLE_REGISTRATION = "//src/Storages/System:clickhouse_storages_system__compile_1"
 FIRST_PARTY_HEADER_DEPS = {
-    ("src", "clickhouse_common_io__compile_0", "implementation_deps"): ["//src/Parsers:parser_api"],
+    ("src", "clickhouse_common_io__compile_0", "implementation_deps"): [
+        "//src/Parsers:parser_api", "//src/Parsers:clickhouse_parsers",
+    ],
     ("src", "dbms__compile_0", "deps"): ["@clickhouse_sqlite_amalgamation//:_sqlite"],
     ("src", "unit_tests_dbms", "deps"): [
         "//src/AggregateFunctions:clickhouse_aggregate_functions__compile_0",
@@ -181,6 +185,24 @@ def declare_external_compiler_headers(root):
 
 
 
+def append_header_names(document, node, headers):
+    tail = node.right if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add) else node
+    if isinstance(tail, ast.List):
+        return (*document.source.span(tail), json.dumps([*ast.literal_eval(tail), *headers]))
+    end = document.source.span(node)[1]
+    return end, end, " + " + json.dumps(headers)
+
+
+def exclude_common_headers(document, target, headers):
+    hdrs = next(kw.value for kw in target.keywords if kw.arg == "hdrs")
+    glob, = [n for n in ast.walk(hdrs) if isinstance(n, ast.Call) and getattr(n.func, "id", None) == "glob"]
+    exclude = next((kw.value for kw in glob.keywords if kw.arg == "exclude"), None)
+    if exclude is not None:
+        return append_header_names(document, exclude, headers)
+    end = document.source.span(glob)[1] - 1
+    return end, end, ", exclude = " + json.dumps(headers)
+
+
 def declare_int_exp(root, common, rules):
     """Move the CMake intExp.cpp member together with the two headers that declare its tables."""
     from initial_migration.prune_inherited_headers import Document
@@ -206,19 +228,7 @@ def declare_int_exp(root, common, rules):
     headers = ["exp10_i32.h", "intExp.h"]
     owners = rules(common)
     aggregate = owners.get("Common") or owners["headers"]
-    hdrs = next(kw.value for kw in aggregate.keywords if kw.arg == "hdrs")
-    glob, = [n for n in ast.walk(hdrs) if isinstance(n, ast.Call) and getattr(n.func, "id", None) == "glob"]
-    exclude = next((kw.value for kw in glob.keywords if kw.arg == "exclude"), None)
-    if exclude is None:
-        end = common.source.span(glob)[1] - 1
-        edits.append((end, end, ", exclude = " + json.dumps(headers)))
-    else:
-        tail = exclude.right if isinstance(exclude, ast.BinOp) and isinstance(exclude.op, ast.Add) else exclude
-        if isinstance(tail, ast.List):
-            edits.append((*common.source.span(tail), json.dumps([*ast.literal_eval(tail), *headers])))
-        else:
-            end = common.source.span(exclude)[1]
-            edits.append((end, end, " + " + json.dumps(headers)))
+    edits.append(exclude_common_headers(common, aggregate, headers))
     if parser_headers := common.constants.get("_PARSER_SUPPORT_HEADERS"):
         edits.extend(remove(common.source, n) for n in parser_headers.elts if n.value == "exp10_i32.h")
     for stmt in common.source.module.body:
@@ -244,12 +254,48 @@ ch_cc_library(
 """)
 
 
+def declare_throttler_headers(root, common, rules):
+    """IThrottler.h is public; only dbms translation units include ThrottlerArray.h."""
+    from initial_migration.prune_inherited_headers import Document
+
+    owners = rules(common)
+    common_name = "Common" if "Common" in owners else "headers"
+    if "throttler_interface" not in owners:
+        private = common.constants.get("_PRIVATE_DBMS_HEADERS")
+        headers = ["IThrottler.h"] if private is not None else ["IThrottler.h", "ThrottlerArray.h"]
+        edits = [exclude_common_headers(common, owners[common_name], headers)]
+        extra = ""
+        if private is None:
+            extra = '\nexports_files(["ThrottlerArray.h"], visibility = ["//src:__pkg__"])\n'
+        else:
+            edits.append(append_header_names(common, private, ["ThrottlerArray.h"]))
+        common.path.write_text(common.source.rewrite(edits) + extra + """
+ch_cc_library(
+    name = "throttler_interface",
+    hdrs = ["IThrottler.h"],
+    strip_include_prefix = "/src",
+    deps = [
+        "//base:common",
+        "//base/poco/Net:_poco_net",
+        "@clickhouse_boost//:boost_headers_no_openssl",
+    ],
+)
+""")
+        src = Document(root / "src/BUILD.bazel", package="src")
+        fields = {kw.arg: kw.value for kw in rules(src)["dbms__compile_0"].keywords}
+        private = src.constants.get("_DBMS_0_PRIVATE_SRC_HEADERS", fields["srcs"])
+        src.path.write_text(src.source.rewrite([append_header_names(src, private, ["//src/Common:ThrottlerArray.h"])]))
+    return common_name
+
+
 def declare_common_header_owners(root, rules):
     """Keep Common headers with their memory, parser, and string libraries."""
     from initial_migration.prune_inherited_headers import Document
 
     common = Document(root / "src/Common/BUILD.bazel", package="src/Common")
     declare_int_exp(root, common, rules)
+    common = Document(root / "src/Common/BUILD.bazel", package="src/Common")
+    common_name = declare_throttler_headers(root, common, rules)
     common = Document(root / "src/Common/BUILD.bazel", package="src/Common")
     owners = rules(common)
     # These public headers and translation units include intExp.h or exp10_i32.h directly.
@@ -262,6 +308,14 @@ def declare_common_header_owners(root, rules):
             ("src/Functions", "clickhouse_functions_obj__compile_0", "implementation_deps"),
         )
     }
+    for package, name, field in (
+        ("src/Common", common_name, "deps"),
+        ("src", "headers", "deps"),
+        ("src", "clickhouse_common_io__compile_0", "deps"),
+        ("src", "dbms__compile_0", "implementation_deps"),
+    ):
+        label = ":throttler_interface" if package == "src/Common" else "//src/Common:throttler_interface"
+        edges.setdefault((package, name, field), []).append(label)
     edits = []
 
     def add(source, items, name, anchor, *, before=False):
@@ -526,7 +580,8 @@ def declare_compiled_parser_headers(path):
     from initial_migration.prune_inherited_headers import ARCHES, Document
 
     headers = [
-        "Access/ASTExecuteAsQuery.h", "Access/ParserCreateUserQuery.h", "ParserAttachAccessEntity.h",
+        "ASTSystemQuery.h", "Access/ASTExecuteAsQuery.h", "Access/ParserCreateUserQuery.h",
+        "ParserAttachAccessEntity.h",
         "ParserCreateFunctionQuery.h", "ParserCreateResourceQuery.h", "ParserCreateWorkloadQuery.h",
         "ParserDropResourceQuery.h", "ParserDropWorkloadQuery.h", "ParserOptimizeQuery.h",
         "parseIdentifierOrStringLiteral.h", "registerParsers.h",
@@ -1013,6 +1068,7 @@ class Graph:
             generated_paths.update(s.removeprefix('bazel/gen/' + self.arch + '/')
                                    for s in sources if s.startswith('bazel/gen/'))
             external_deps = set()
+            arrow_deps = None
             native_cxx_includes = []
             for src in sources:
                 if not src.startswith('bazel/'):
@@ -1036,6 +1092,12 @@ class Graph:
                             flag, 'generated' if path.startswith(str(self.build) + '/') else 'source',
                             relative.removeprefix(llvm_targets.PREFIX + '/'),
                         ])
+                    continue
+                if (path in {str(ROOT / 'contrib/arrow/cpp/src'), str(self.build / 'contrib/arrow-cmake/cpp/src')}
+                        and target_owner(target) != 'contrib/arrow'):
+                    if arrow_deps is None:
+                        arrow_deps = foreign_arrow_dependencies(
+                            ROOT, name, index, [ROOT / target['sources'][i]['path'] for i in cg['sourceIndexes']], self.arch)
                     continue
                 module_dependencies = llvm_targets.include_dependencies(relative)
                 if module_dependencies is not None:
@@ -1063,11 +1125,14 @@ class Graph:
                     rel = os.path.relpath(path, self.build)
                     prefix = '' if rel == '.' else rel + '/'
                     directories = []
+                    configured_directory = 'bazel/config/' + self.arch + '/' + rel
                     if any(p.startswith(prefix) for p in self.configured):
-                        directories.append('bazel/config/' + self.arch + '/' + rel)
+                        directories.append(configured_directory)
                     if rel in COPIED_INCLUDE_DIRS:
                         directories.append(COPIED_INCLUDE_DIRS[rel])
-                    if any(p.startswith(prefix) for p in generated_paths):
+                    # Package codegen writes into the same directory as configure_file.
+                    if (any(p.startswith(prefix) for p in generated_paths)
+                            and not (prefix in PACKAGE_CODEGEN_DIRECTORIES and configured_directory in directories)):
                         directories.append('$(GENDIR)/bazel/gen/' + self.arch + '/' + rel)
                     # Only declared inputs populate Bazel's generated tree;
                     # empty CMake include roots have no files to find here.
@@ -1085,6 +1150,10 @@ class Graph:
                         raise ValueError(f'{name}: missing C++ #embed copy or assets for {source}')
                     embedded_inputs[source_label(sources[i])] = inputs
                     additional_inputs.extend(inputs)
+            public_arrow, private_arrow = arrow_deps or ((), ())
+            if target['type'] == 'EXECUTABLE' and index == 0:
+                public_arrow = [*public_arrow, *private_arrow]
+                private_arrow = []
             groups.append({
                 'srcs': [source_label(s) for s in sources],
                 'embedded_inputs': embedded_inputs,
@@ -1098,6 +1167,8 @@ class Graph:
                 'additional_compiler_inputs': sorted(set(additional_inputs), key=input_key),
                 'native_cxx_includes': native_cxx_includes,
                 'deps': sorted(external_deps),
+                **({'header_deps': public_arrow} if public_arrow else {}),
+                **({'implementation_deps': private_arrow} if private_arrow else {}),
                 'language': cg['language'],
             })
         if name in EMBEDDED_SOURCES and sum(bool(g['embedded_inputs']) for g in groups) != 1:
@@ -1284,6 +1355,17 @@ class Graph:
 
 
 def main():
+    # This BUILD file is maintained by hand. Restore it from Git for a fresh
+    # import. It supplies Arrow, Parquet and Flight headers and link targets;
+    # the list of search directories in a CMake compile group cannot do that.
+    arrow = ROOT / 'bazel/dependencies/clickhouse_arrow.BUILD.bazel'
+    if not arrow.is_file():
+        raise FileNotFoundError(f"Restore the maintained Arrow BUILD file before importing CMake: {arrow}")
+    original_arrow = arrow.read_bytes()
+    read_only = {arrow}
+    from initial_migration.compact_build import Source
+    arrow_targets = {kw.value.value for _, rule in Source(original_arrow.decode()).rules()
+                    for kw in rule.keywords if kw.arg == 'name' and isinstance(kw.value, ast.Constant)}
     licenses = subprocess.check_output(
         ['bash', str(ROOT / 'utils/list-licenses/list-licenses.sh'), str(ROOT)],
         cwd=ROOT, text=True,
@@ -1355,10 +1437,20 @@ def main():
               for owner in {None, *owners.values()}}
     for graph in graphs.values():
         graph.declare_configuration(builds, owners)
+    # Preserve the CMake declarations for checking both CPUs and rewriting consumer labels.
+    configuration_inputs = {arrow: '\n'.join(builds['contrib/arrow'].rules)}
     for name, owner in sorted(owners.items()):
+        if owner == 'contrib/arrow':
+            if name not in arrow_targets:
+                raise ValueError(f'{arrow} does not declare CMake target {name}')
+            continue
         builds[owner].target(name, {arch: graph.generated_targets[name]
                                   for arch, graph in graphs.items() if name in graph.generated_targets})
     for (owner, name, input_name), variants in sorted(foreign.items()):
+        if owner == 'contrib/arrow':
+            if name not in arrow_targets:
+                raise ValueError(f'{arrow} does not declare relocated CMake target {name}')
+            continue
         build = builds.setdefault(owner, BuildFile(
             owner, owners, consumers, targets, external_headers=external, native_sources=native_sources))
         build.target(name, variants, input_name=input_name)
@@ -1366,7 +1458,7 @@ def main():
         build = builds.setdefault(owner, BuildFile(owner, owners, consumers, targets))
         patterns = [directory + '/**/*' + suffix for directory in directories
                     for suffix in SOURCE_HEADER_SUFFIXES.get(owner, CC_HEADER_SUFFIXES)]
-        attrs = {'hdrs': Glob(patterns, SOURCE_HEADER_EXCLUDES.get(owner, ()))}
+        attrs = {'hdrs': Glob(patterns)}
         if owner == 'contrib/libpqxx':
             # The pinned include/pqxx extensionless files are the public
             # wrapper headers, e.g. #include <pqxx/connection>.
@@ -1419,10 +1511,10 @@ def main():
                     if path in REPOSITORIES:
                         repository_includes[path].add(bool(include.get('isSystem')))
     system_repositories = {path for path, kinds in repository_includes.items() if kinds == {True}}
-    write_overlays(builds, [codegen_rules, rust_cxx], system_repositories)
+    write_overlays(builds, [codegen_rules, rust_cxx], system_repositories, read_only=read_only)
     repository_files = {owner: package_sources(owner) for owner in builds if owner in REPOSITORIES}
-    prune(ROOT, repository_files, write=True)
-    prune_unused_exports(ROOT, write=True)
+    prune(ROOT, repository_files, write=True, read_only=read_only)
+    prune_unused_exports(ROOT, write=True, read_only=read_only)
     parity_path = ROOT / 'bazel/initial_migration/any2bazel.json'
     parity = json.loads(parity_path.read_text())
     parity['target_map'] = {
@@ -1465,9 +1557,11 @@ def main():
     from initial_migration.configured_external_outputs import Migration as ExternalConfigs
     from initial_migration.configured_codegen_outputs import Migration as ExternalCodegen
     from initial_migration.configured_llvm_outputs import Migration as LlvmOutputs
-    ExternalConfigs(ROOT).run(write=True)
-    ExternalCodegen(ROOT).run(write=True)
-    LlvmOutputs(ROOT).run(write=True)
+    ExternalConfigs(ROOT, source_overrides=configuration_inputs).run(write=True)
+    ExternalCodegen(ROOT).run(write=True, read_only=read_only)
+    from initial_migration.package_codegen import publish_package_codegen
+    publish_package_codegen(ROOT, read_only=read_only)
+    LlvmOutputs(ROOT).run(write=True, read_only=read_only)
     # Capture CMake at repository scope, then render native Bazel packages.
     # Existing native BUILD files must not hide CMake inputs on a second run.
     from initial_migration.first_party_packages import Build, Migration as NativePackages, native_directory
@@ -1482,17 +1576,19 @@ def main():
     from initial_migration.normalize_cpp_builds import drop_defaults, normalize, prove
     for owner, spec in REPOSITORIES.items():
         path = ROOT / 'bazel/dependencies' / (spec['name'] + '.BUILD.bazel')
-        if path.is_file():
+        if path.is_file() and path not in read_only:
             content, _ = compact_external_options(path.read_text(), spec['name'], package_sources(owner))
             path.write_text(normalize(content))
     from initial_migration.configured_native_snapshots import Migration as NativeSnapshots
     for path, content in NativeSnapshots(ROOT).prepare(native_builds).items():
+        if path in read_only:
+            raise ValueError(f'Update native generated filenames in {path} before importing')
         path.write_text(content)
     from initial_migration.configured_native_codegen import Migration as NativeCodegen
-    NativeCodegen(ROOT).run(write=True)
-    prune_published(ROOT, repository_files, write=True, consumers={'@clickhouse'} | {
+    NativeCodegen(ROOT).run(write=True, read_only=read_only)
+    prune_published(ROOT, repository_files, write=True, read_only=read_only, consumers={'@clickhouse'} | {
         '@clickhouse_' + name for name in
-        ('nuraft', 'grpc', 'librdkafka', 'croaring', 'arrow', 'google_cloud_cpp')
+        ('nuraft', 'grpc', 'librdkafka', 'croaring', 'google_cloud_cpp')
     })
     for path in native_builds:
         before = path.read_text()
@@ -1516,7 +1612,7 @@ def main():
                 path.write_text(after)
     for spec in REPOSITORIES.values():
         path = ROOT / 'bazel/dependencies' / (spec['name'] + '.BUILD.bazel')
-        if path.is_file():
+        if path.is_file() and path not in read_only:
             before = path.read_text()
             after = normalize_library_runtime(before, '')
             if after != before:
@@ -1557,10 +1653,10 @@ def main():
             if after != before:
                 path.write_text(format_and_prove(ROOT, before, after, str(path), files, {}, headers=True))
     from initial_migration.native_include_deps import run as prune_native_include_deps
-    prune_native_include_deps(ROOT, write=True)
+    prune_native_include_deps(ROOT, write=True, read_only=read_only)
     from initial_migration.measured_deps import apply as apply_measured_dependencies
     apply_measured_dependencies(ROOT)
-    format_build_files()
+    format_build_files(read_only=read_only)
     # Factor formatted lists last: earlier normalization folds equal CPU
     # branches and would discard required no-match errors.
     from initial_migration.factor_build_selections import run as factor_build_selections
@@ -1573,6 +1669,7 @@ def main():
         ROOT / 'bazel/dependencies' / (spec['name'] + '.BUILD.bazel')
         for spec in REPOSITORIES.values()
     )
+    selection_builds.difference_update(read_only)
     factor_build_selections(ROOT, selection_builds)
     declare_compiled_parser_headers(ROOT / "src/Parsers/BUILD.bazel")
     declare_unit_test_private_hdrs(ROOT / "src/BUILD.bazel")
@@ -1597,7 +1694,9 @@ def main():
         after = remove_unused_constants(Source(after))
         if after != before:
             path.write_text(after)
-    format_build_files()
+    format_build_files(read_only=read_only)
+    if arrow.read_bytes() != original_arrow:
+        raise ValueError(f'The CMake importer modified {arrow}')
     for arch, inventory in inventories.items():
         print(arch, inventory['native_targets'], 'native targets,', inventory['compile_actions'], 'compile actions')
 

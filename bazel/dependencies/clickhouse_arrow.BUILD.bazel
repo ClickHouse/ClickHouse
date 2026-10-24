@@ -470,6 +470,7 @@ ch_cc_library(
         "-g1",
     ],
     implementation_deps = [
+        "@clickhouse_boost//:boost_headers_no_openssl",
         "@clickhouse_brotli//:_brotli",
         "@clickhouse_bzip2//:_bzip2",
         "@clickhouse_libhdfs3//:_hdfs3",
@@ -489,7 +490,6 @@ ch_cc_library(
     deps = [
         "@clickhouse//bazel:arrow_flatbuffer_headers",
         "@clickhouse//contrib/arrow-cmake:arrow_cmake_headers",
-        "@clickhouse_boost//:boost_headers_no_openssl",
         "@clickhouse_flatbuffers//:_flatbuffers",
         "@clickhouse_xsimd//:xsimd",
         "@clickhouse_orc//:_orc",

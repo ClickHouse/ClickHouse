@@ -376,7 +376,7 @@ def write_module():
                 + ['clickhouse_cargo_sources'])) + ')\n')
 
 
-def write_overlays(builds, shared_inputs, system_repositories):
+def write_overlays(builds, shared_inputs, system_repositories, *, read_only=()):
     write_module()
     # A source compiled within its own repository needs an explicit export only
     # when another target or generator consumes that file across the boundary.
@@ -397,7 +397,7 @@ def write_overlays(builds, shared_inputs, system_repositories):
     # Parse complete strings: Bazel source file labels may contain spaces or
     # brackets. An incomplete label stem keeps the affected repo's exports.
     dynamic_repositories = set()
-    for path in (ROOT / 'bazel').rglob('*.bzl'):
+    for path in [*(ROOT / 'bazel').rglob('*.bzl'), *read_only]:
         for node in ast.walk(ast.parse(path.read_text(), filename=str(path))):
             if isinstance(node, ast.Constant) and isinstance(node.value, str):
                 value = node.value
@@ -432,7 +432,8 @@ def write_overlays(builds, shared_inputs, system_repositories):
     EXPORTS['contrib/openssl'].add('include/openssl/ssl.h')
     (directory / 'BUILD.bazel').write_text('exports_files(glob(["*.BUILD.bazel"]))\n')
     for prefix, spec in REPOSITORIES.items():
-        if spec.get('module'):
+        path = directory / (spec['name'] + '.BUILD.bazel')
+        if spec.get('module') or path in read_only:
             continue
         build = builds.get(prefix)
         text = build.load_statements() if build else ''
@@ -443,7 +444,7 @@ def write_overlays(builds, shared_inputs, system_repositories):
             text += 'exports_files(' + json.dumps(sorted(exports), indent=2) + ')\n'
         if build:
             text += '\n' + build.text()
-        (directory / (spec['name'] + '.BUILD.bazel')).write_text(text)
+        path.write_text(text)
     roots = {path: '@' + spec['name'] + '//:BUILD.bazel' for path, spec in REPOSITORIES.items()}
     (ROOT / 'bazel/rules/repository_labels.bzl').write_text(
         'REPOSITORIES = {\n' + ''.join(

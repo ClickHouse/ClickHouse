@@ -519,8 +519,10 @@ class Migration(ExternalCodegen):
         changes[path] = result
         return changes
 
-    def run(self, write=False):
+    def run(self, write=False, *, read_only=()):
         changes = self.prepare()
+        if set(changes).intersection(read_only):
+            raise ValueError('Update native codegen labels in the maintained BUILD file before importing')
         print(json.dumps({'written': write, 'paired_generators': self.facts, 'outputs': len(self.output_paths),
                           'proof': self.counts, 'files': [str(path.relative_to(self.root))
                                                          for path in sorted(changes)]}, indent=2))

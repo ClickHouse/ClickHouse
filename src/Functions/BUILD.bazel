@@ -94,6 +94,21 @@ exports_files([
     "vectorQuantization.cpp",
 ])
 
+_PRIVATE_DBMS_HEADERS = glob([
+    "UserDefined/UserDefinedExecutableFunctionDriver*.h",
+    "UserDefined/UserDefinedSQLObject*.h",
+]) + [
+    "UserDefined/UserDefinedSQLFunctionVisitor.h",
+    "UserDefined/UserDefinedWebAssemblyScriptAbi.h",
+    "UserDefined/UserDefinedWebAssemblyTypeHelpers.h",
+    "UserDefined/createUserDefinedSQLObjectsStorage.h",
+]
+
+exports_files(
+    _PRIVATE_DBMS_HEADERS,
+    visibility = ["//src:__pkg__"],
+)
+
 filegroup(
     name = "runtime_filter_benchmark_sources",
     srcs = [
@@ -1395,7 +1410,7 @@ cc_library(
             "**/*.h",
             "**/*.hpp",
         ],
-        exclude = _PRIVATE_FUNCTIONS_OBJ_0_HEADERS + [
+        exclude = _PRIVATE_FUNCTIONS_OBJ_0_HEADERS + _PRIVATE_DBMS_HEADERS + [
             "CastOverloadResolver.h",
             "registerFunctions.h",
             "PolygonUtils.h",

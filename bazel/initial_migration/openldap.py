@@ -1,4 +1,4 @@
-"""Declare OpenLDAP's installed SDK and each static library's C compiler inputs."""
+"""Declare the OpenLDAP headers used by ClickHouse on liblber and libldap."""
 
 import ast
 import json
@@ -7,18 +7,19 @@ from initial_migration.compact_build import Source
 
 
 CONFIG = ("lber_types", "ldap_features", "ldap_config", "portable")
-SDK = [":lber_types", ":ldap_features", "include/lber.h", "include/ldap.h", "include/ldap_cdefs.h", "include/openldap.h"]
+BER_HEADERS = [":lber_types", ":ldap_features", "include/lber.h", "include/ldap_cdefs.h"]
+LDAP_HEADERS = ["include/ldap.h", "include/openldap.h"]
 PRIVATE = [":ldap_config", ":portable"] + [
     "include/ac/" + name + ".h" for name in
-    ("assert", "bytes", "ctype", "errno", "fdset", "localize", "socket", "stdarg", "stdlib", "string", "time", "unistd")
+    ("assert", "ctype", "errno", "fdset", "localize", "socket", "stdarg", "stdlib", "string", "time", "unistd")
 ] + [
     "include/" + name + ".h" for name in
-    ("lber_pvt", "ldap_defaults", "ldap_log", "ldap_pvt", "ldap_pvt_uc", "ldap_queue", "lutil", "lutil_lockf")
-] + ["libraries/liblber/lber-int.h", "libraries/liblunicode/ucdata/ucdata.h"]
-LDAP_ONLY = ["include/ac/dirent.h", "include/ac/param.h", "include/ac/signal.h"] + [
+    ("lber_pvt", "ldap_defaults", "ldap_log", "ldap_queue", "lutil", "lutil_lockf")
+] + ["libraries/liblber/lber-int.h"]
+LDAP_ONLY = ["include/ac/bytes.h", "include/ac/dirent.h", "include/ac/param.h", "include/ac/signal.h"] + [
     "include/" + name + ".h" for name in
-    ("ldap_avl", "ldap_int_thread", "ldap_pvt_thread", "ldap_rq", "ldap_schema", "ldap_utf8", "ldif")
-]
+    ("ldap_avl", "ldap_int_thread", "ldap_pvt", "ldap_pvt_thread", "ldap_pvt_uc", "ldap_rq", "ldap_schema", "ldap_utf8", "ldif")
+] + ["libraries/liblunicode/ucdata/ucdata.h"]
 
 
 def native_library(target):
@@ -39,7 +40,6 @@ def native_library(target):
 def overlay(targets):
     lines = ['load("@bazel_skylib//rules:copy_file.bzl", "copy_file")',
              'load("@clickhouse//bazel/rules:ch_cc_library.bzl", "ch_cc_library")',
-             'load("@rules_cc//cc:cc_library.bzl", "cc_library")',
              'exports_files(["LICENSE", "build/mkversion"])']
     for name in CONFIG:
         out = "include/" + name + ".h"
@@ -47,9 +47,7 @@ def overlay(targets):
                   "@clickhouse//contrib/openldap-cmake:linux_" + arch + "/" + out for arch in ("x86_64", "aarch64")}
         lines.append(f'copy_file(name = "{name}", src = select({json.dumps(by_cpu)}), out = "{out}", allow_symlink = True)')
     lines.extend([
-        '# liblber/debug.c includes ldap.h through ldap_pvt.h; libldap includes liblber/lber-int.h.',
-        'cc_library(name = "_api", hdrs = ' + json.dumps(SDK) + ', includes = ["include"])',
-        '# liblber and libldap include these implementation headers. portable.h must precede ldap_pvt.h.',
+        '# liblber and libldap both include these implementation headers.',
         '_OPENLDAP_PRIVATE_HEADERS = ' + json.dumps(PRIVATE),
     ])
     for name in ("_lber", "_ldap"):
@@ -60,12 +58,15 @@ def overlay(targets):
         if name == "_ldap":
             sources += ' + glob(["libraries/libldap/**/*.h"])'
         attrs = [
-            f'name = "{name}"', 'srcs = ' + sources, 'copts = ["-w", "-std=gnu11"]',
+            f'name = "{name}"', 'srcs = ' + sources,
+            'hdrs = ' + json.dumps(BER_HEADERS if name == "_lber" else LDAP_HEADERS), 'copts = ["-w", "-std=gnu11"]',
             'language = "C"', 'libcxx_headers = False', 'local_defines = ' + json.dumps(defines),
-            'local_includes = ["libraries/lib' + name[1:] + '"]', 'deps = [":_api"]', 'visibility = ["//visibility:public"]',
+            'local_includes = ["libraries/lib' + name[1:] + '"]', 'visibility = ["//visibility:public"]',
         ]
-        if name == "_ldap":
-            attrs.append('implementation_deps = [":_lber", "@clickhouse_openssl//:crypto", "@clickhouse_openssl//:ssl"]')
+        if name == "_lber":
+            attrs.append('includes = ["include"]')
+        else:
+            attrs.extend(['deps = [":_lber"]', 'implementation_deps = ["@clickhouse_openssl//:crypto", "@clickhouse_openssl//:ssl"]'])
         lines.append("ch_cc_library(" + ", ".join(attrs) + ")")
     return "\n\n".join(lines) + "\n"
 
@@ -78,8 +79,7 @@ def declare_openldap(root, targets):
     ldap = "@clickhouse_openldap//:_ldap"
     lber = "@clickhouse_openldap//:_lber"
     arm = "@platforms//cpu:aarch64"
-    # Visit only declarations that feed dbms__compile_0. Other clients of the
-    # private SDK need their own ownership decision.
+    # Convert header labels from the initial CMake import to the owner of ldap.h.
     scope = {st.targets[0].id: st.value for st in source.module.body
              if isinstance(st, ast.Assign) and isinstance(st.targets[0], ast.Name)}
     def declarations(node):
@@ -108,5 +108,5 @@ def declare_openldap(root, targets):
                                 edits[source.span(branch)] = ast.unparse(ast.List(elts=kept, ctx=ast.Load()))
     text = source.rewrite([(start, end, val) for (start, end), val in edits.items()])
     if api in text:
-        raise ValueError("Review new dependents of OpenLDAP's package-private SDK")
+        raise ValueError("Unexpected reference to the removed OpenLDAP _api target")
     path.write_text(text)

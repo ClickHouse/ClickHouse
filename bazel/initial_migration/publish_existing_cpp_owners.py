@@ -20,13 +20,13 @@ from initial_migration.native_include_deps import (
     PublicIncludes, active_cpus, canonical_dir, expanded_rules, prove_unchanged, CPUS,
 )
 from initial_migration.native_public_includes import list_elements
-from initial_migration.prune_inherited_headers import CC_COMPILERS, CC_PROVIDERS, Document
+from initial_migration.prune_inherited_headers import CC_COMPILERS, CC_PROVIDERS, Document, SourceDocument
 from initial_migration.native_cc_inputs import SPECIAL_REPOS
 from initial_migration.repository_inputs import REPOSITORIES, package_sources
 from initial_migration.simplify_globs import GlobFiles
 
 
-def files_and_documents(root, receipts=None, texts=None, inventories=None):
+def files_and_documents(root, receipts=None, texts=None, inventories=None, *, read_only=()):
     names = subprocess.check_output([
         'git', 'ls-files', '-z', '--cached', '--others', '--exclude-standard', '--', '*.bazel',
         '*.h', '*.hpp', '*.hh', '*.hxx', '*.h++', '*.inc', '*.inl', '*.ipp', '*.tcc', '*.tpp',
@@ -48,7 +48,7 @@ def files_and_documents(root, receipts=None, texts=None, inventories=None):
     documents = []
     for path in paths:
         pkg = path.parent.relative_to(root).as_posix().removeprefix('.') if path.name == 'BUILD.bazel' else ''
-        doc = Document(path, package=pkg, text=(texts or {}).get(path))
+        doc = (SourceDocument if path in read_only else Document)(path, package=pkg, text=(texts or {}).get(path))
         inventory = None
         if doc.repo == '@clickhouse':
             inventory = by_package[pkg]
@@ -154,14 +154,14 @@ def prove_publication(before, after, filename):
                 raise ValueError(f'{filename} {name}: changed {field}')
 
 
-def publish(root, receipts=None, output=None, system_only=False, *, inventories=None, write=False):
-    docs = files_and_documents(root, receipts, inventories=inventories)
+def publish(root, receipts=None, output=None, system_only=False, *, inventories=None, write=False, read_only=()):
+    docs = files_and_documents(root, receipts, inventories=inventories, read_only=read_only)
     graph = Owners(docs)
     additions = defaultdict(lambda: defaultdict(set))
     witnesses = []
     counts = Counter()
     for target, (doc, kind, attrs) in graph.rules.items():
-        if kind not in CC_COMPILERS or doc.repo in SPECIAL_REPOS or 'local_includes' not in attrs:
+        if doc.path in read_only or kind not in CC_COMPILERS or doc.repo in SPECIAL_REPOS or 'local_includes' not in attrs:
             continue
         if system_only and target != '@clickhouse//src/Storages/System:clickhouse_storages_system__compile_1':
             continue
@@ -171,7 +171,8 @@ def publish(root, receipts=None, output=None, system_only=False, *, inventories=
                 directory = canonical_dir(item, doc)
                 if directory is None or directory in already:
                     continue
-                choices = graph.candidates(target, cpu, directory)
+                choices = [choice for choice in graph.candidates(target, cpu, directory)
+                           if graph.rules[choice[-3]][0].path not in read_only]
                 if not choices:
                     counts['no_existing_public_source_owner'] += 1
                     continue
@@ -215,7 +216,7 @@ def publish(root, receipts=None, output=None, system_only=False, *, inventories=
                                input=after, text=True, stdout=subprocess.PIPE, check=True).stdout
         prove_publication(doc.source.bytes.decode(), after, doc.path)
         wanted[doc.path] = after
-    actual = Owners(files_and_documents(root, receipts, wanted, inventories))
+    actual = Owners(files_and_documents(root, receipts, wanted, inventories, read_only=read_only))
     for row in witnesses:
         if actual.available(row['consumer'],row['cpu']).get(row['directory']) is None:
             raise ValueError('Directory not supplied after publication ' + json.dumps(row))

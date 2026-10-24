@@ -498,10 +498,20 @@ exports_files(
 )
 
 _PRIVATE_DBMS_HEADERS = [
+    "BSONCXXHelper.h",
+    "CounterInFile.h",
+    "Increment.h",
+    "LockGuardWithStopWatch.h",
+    "NamedCollections/NamedCollectionConfiguration.h",
+    "PrimeGenerator.h",
     "SQLDefinedHandlers/SQLDefinedHandlerFromAST.h",
     "Scheduler/Workload/WorkloadEntityConfigStorage.h",
     "Scheduler/Workload/WorkloadEntityDiskStorage.h",
     "Scheduler/Workload/WorkloadEntityKeeperStorage.h",
+    "Scheduler/Workload/createWorkloadEntityStorage.h",
+    "SystemAllocatedMemoryHolder.h",
+    "saturatedWaitDuration.h",
+    "ThrottlerArray.h",
 ]
 
 exports_files(
@@ -823,6 +833,7 @@ ch_cc_library(
             "GetPriorityForLoadBalancing.h",
             "exp10_i32.h",
             "intExp.h",
+            "IThrottler.h",
         ],
     ),
     clickhouse_code = True,
@@ -871,6 +882,7 @@ ch_cc_library(
         "//src:with_context",
         "//src/Parsers:parser_api",
         "//src:column_types",
+        ":throttler_interface",
     ],
 )
 
@@ -885,4 +897,15 @@ ch_cc_library(
     local_defines = CLICKHOUSE_COMMON_IO_LOCAL_DEFINES,
     strip_include_prefix = "/src",
     deps = ["//base:common"],
+)
+
+ch_cc_library(
+    name = "throttler_interface",
+    hdrs = ["IThrottler.h"],
+    strip_include_prefix = "/src",
+    deps = [
+        "//base:common",
+        "//base/poco/Net:_poco_net",
+        "@clickhouse_boost//:boost_headers_no_openssl",
+    ],
 )

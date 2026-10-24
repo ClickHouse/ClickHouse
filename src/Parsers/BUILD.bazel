@@ -156,6 +156,7 @@ _PARSERS_API_HEADERS = [
     "ASTShowEngineQuery.h",
     "ASTShowProcesslistQuery.h",
     "ASTShowSettingQuery.h",
+    "ASTSystemQuery.h",
     "Access/ASTCheckGrantQuery.h",
     "Access/ASTCreateMaskingPolicyQuery.h",
     "Access/ASTCreateTokenQuery.h",

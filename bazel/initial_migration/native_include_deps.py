@@ -381,9 +381,9 @@ def prove_unchanged(before,after,path, generated=()):
             if ast_key(fields[field])!=ast_key(nf[field]):
                 raise ValueError(f'changed protected attr {path} {name} {field}')
 
-def run(root, *, write=False, receipts=None):
+def run(root, *, write=False, receipts=None, read_only=()):
     from initial_migration.publish_existing_cpp_owners import publish
-    publication, published = publish(root, receipts=receipts)
+    publication, published = publish(root, receipts=receipts, read_only=read_only)
     paths=subprocess.check_output(
         ['git','ls-files','-z','--cached','--others','--exclude-standard','--','*.bazel'],
         cwd=root).decode().split('\0')
@@ -396,6 +396,8 @@ def run(root, *, write=False, receipts=None):
         docs.append(Document(path,package=package))
     originals={doc.path:doc.source.bytes.decode() for doc in docs}
     for doc in docs:
+        if doc.path in read_only:
+            continue
         before = next((record['before_sha256'] for record in publication['files']
                        if record['path'] == str(doc.path.relative_to(root))), None)
         if before is not None and before != file_hash(originals[doc.path]):
@@ -409,6 +411,9 @@ def run(root, *, write=False, receipts=None):
     generated={}
     prepared=[]
     for doc in docs:
+        if doc.path in read_only:
+            prepared.append(doc)
+            continue
         after, records=clear_include_free_generated(doc, sources)
         names={r['target'].partition(':')[2] for r in records}
         prove_unchanged(doc.source.bytes.decode(), after, doc.path, names)
@@ -424,6 +429,8 @@ def run(root, *, write=False, receipts=None):
     by_repo=Counter()
     protected=Counter()
     for doc in docs:
+        if doc.path in read_only:
+            continue
         path=doc.path
         original=doc.source.bytes.decode()
         rewrite=Rewrite(doc,graph)

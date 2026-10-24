@@ -9,7 +9,7 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def format_build_files(root=ROOT, check=False):
+def format_build_files(root=ROOT, check=False, *, read_only=()):
     """Include new generated overlays, but not submodules or Bazel outputs."""
     listing = subprocess.check_output(
         [
@@ -20,15 +20,11 @@ def format_build_files(root=ROOT, check=False):
         cwd=root,
     ).decode().split("\0")
     files = [name for name in dict.fromkeys(listing) if name and (root / name).is_file()]
-    subprocess.run(
-        [
-            "buildifier", "-config=" + str(root / ".buildifier.json"), "-type=build",
-            "-mode=" + ("check" if check else "fix"),
-            *files,
-        ],
-        cwd=root,
-        check=True,
-    )
+    for mode in ("check", "fix"):
+        names = [f for f in files if (mode == "check") == (check or root / f in read_only)]
+        if names:
+            subprocess.run(["buildifier", "-config=" + str(root / ".buildifier.json"),
+                            "-type=build", "-mode=" + mode, *names], cwd=root, check=True)
 
 
 def main():

@@ -256,7 +256,7 @@ DBMS_PUBLIC_HEADERS = {
         "JoinExpressionActions.h", "JoinOperator.h", "MaterializedCTE.h",
         "NormalizeSelectWithUnionQueryVisitor.h", "SelectIntersectExceptQueryVisitor.h",
         "ServerAsynchronousMetrics.h", "SortedBlocksWriter.h", "TableJoin.h", "convertColumnToType.h",
-        "loadMetadata.h",
+        "loadMetadata.h", "parseColumnsListForTableFunction.h",
     ),
     "Interpreters/ClusterProxy": ("executeQuery.h",),
     "Interpreters/HashJoin": ("HashJoin.h",),
@@ -309,9 +309,9 @@ DBMS_PUBLIC_HEADERS = {
         "HivePartitioningUtils.h", "RedisCommon.h", "StorageArrowFlight.h", "StorageDictionary.h",
         "StorageExecutable.h", "StorageFilesystem.h", "StorageFuzzJSON.h", "StorageFuzzQuery.h",
         "StorageInput.h", "StorageJoin.h", "StorageLoop.h", "StorageMerge.h", "StorageMergeTree*.h",
-        "StorageMySQL.h", "StorageNull.h", "StorageObfuscate.h", "StoragePrometheusQuery.h",
-        "StorageRedis.h", "StorageSQLite.h", "StorageSet.h", "StorageTimeSeries*.h",
-        "StorageValues.h", "StorageXDBC.h",
+        "StorageMySQL.h", "StorageNull.h", "StorageObfuscate.h", "StoragePostgreSQL.h",
+        "StoragePrometheusQuery.h", "StorageRedis.h", "StorageSQLite.h", "StorageSet.h",
+        "StorageTimeSeries*.h", "StorageValues.h", "StorageXDBC.h",
     ),
     "Storages/ArrowFlight": ("ArrowFlightConnection.h",),
     "Storages/BigQuery": (
@@ -398,6 +398,38 @@ def declare_dictionary_private_headers(rows, files):
     ):
         compilers = [f"clickhouse_dictionaries__compile_{index}" for index in groups]
         declare_compiled_headers(rows, files, compilers, list_expr(names), field="srcs")
+
+
+# Headers in these packages are read only by dbms CMake compile group 0.
+DBMS_PRIVATE_PACKAGE_HEADERS = {
+    "src/Common": (
+        "BSONCXXHelper.h", "CounterInFile.h", "Increment.h", "LockGuardWithStopWatch.h",
+        "NamedCollections/NamedCollectionConfiguration.h", "PrimeGenerator.h",
+        "Scheduler/Workload/createWorkloadEntityStorage.h", "SystemAllocatedMemoryHolder.h",
+        "saturatedWaitDuration.h",
+    ),
+    "src/Functions": (
+        "UserDefined/UserDefinedExecutableFunctionDriver*.h", "UserDefined/UserDefinedSQLObject*.h",
+        "UserDefined/UserDefinedSQLFunctionVisitor.h", "UserDefined/UserDefinedWebAssemblyScriptAbi.h",
+        "UserDefined/UserDefinedWebAssemblyTypeHelpers.h", "UserDefined/createUserDefinedSQLObjectsStorage.h",
+    ),
+}
+
+
+def declare_dbms_package_headers(rows, inventory):
+    private = {}
+    labels = []
+    for package, patterns in DBMS_PRIVATE_PACKAGE_HEADERS.items():
+        files = inventory(package)
+        globs = GlobFiles(files)
+        missing = [pattern for pattern in patterns if not globs.matching(pattern)]
+        if missing:
+            raise ValueError(f"{package}: missing private dbms headers: {missing}")
+        private[package] = globs.result(patterns, ())
+        declare_compiled_headers(rows[package], files, [], list_expr(private[package]))
+        labels.extend(relative_label(package, name, "src") for name in private[package])
+    declare_compiled_headers(rows["src"], inventory("src"), "dbms__compile_0", list_expr(labels), field="srcs")
+    return private
 
 
 def declare_dbms_private_headers(rows, files):
@@ -653,6 +685,7 @@ class Migration:
         self.target_packages = {}
         self.aliases = {}
         self.exports = defaultdict(set)
+        self.dbms_private_exports = {}
         self.header_packages = set()
         self.rows = defaultdict(list)
         self.loads = defaultdict(dict)
@@ -997,6 +1030,9 @@ class Migration:
                 declare_compiled_headers(self.rows[package], self.package_inventory(package), compiler, list_expr([header]))
             declare_src_compiled_headers(self.rows["src"], self.package_inventory("src"))
             declare_dbms_private_headers(self.rows["src"], self.package_inventory("src"))
+            self.dbms_private_exports = declare_dbms_package_headers(self.rows, self.package_inventory)
+            for package, names in self.dbms_private_exports.items():
+                self.exports[package].update(names)
         if self.from_generator and "src/Dictionaries" in self.rows:
             declare_dictionary_private_headers(self.rows["src/Dictionaries"], self.package_inventory("src/Dictionaries"))
         data = self.rewrite_consumers()
@@ -1196,7 +1232,10 @@ class Migration:
                 lines.append('load("@rules_cc//cc:cc_library.bzl", "cc_library")')
             lines = list(dict.fromkeys(lines))
             lines.append('package(default_visibility = ["//visibility:public"])')
-            exported = self.exports.get(package)
+            private = self.dbms_private_exports.get(package, ())
+            if private:
+                lines.append('exports_files(' + json.dumps(private) + ', visibility=["//src:__pkg__"])')
+            exported = self.exports[package] - set(private)
             if exported:
                 lines.append('exports_files(' + json.dumps(sorted(exported)) + ')')
             lines += [render(row) for row in self.rows[package]]

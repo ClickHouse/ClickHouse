@@ -145,6 +145,7 @@ def _contrib_impl(module_ctx):
                 "clickhouse_librdkafka": [Label("//bazel/patches:librdkafka-config-include.patch")],
                 "clickhouse_mongo_cxx_driver": [Label("//bazel/patches:mongo-bsoncxx-enum-compatibility.patch")],
                 "clickhouse_msgpack_c": [Label("//bazel/patches:msgpack-version-include.patch")],
+                "clickhouse_openldap": [Label("//bazel/patches:openldap-lber-debug-include.patch")],
             }.get(repository["name"], []),
             patch_args = ["-p1"],
             patch_cmds = commands,

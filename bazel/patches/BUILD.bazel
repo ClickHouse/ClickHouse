@@ -11,6 +11,7 @@ exports_files([
     "librdkafka-config-include.patch",
     "mongo-bsoncxx-enum-compatibility.patch",
     "msgpack-version-include.patch",
+    "openldap-lber-debug-include.patch",
     "lz4-fast-decoder.patch",
     "perfetto-protos-protoc.patch",
     "protobuf-generated-cc-deps.patch",

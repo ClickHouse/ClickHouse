@@ -330,7 +330,7 @@ class Migration:
             data["ignore"][field] = [{"from": path, "to": value} for path, value in result.items()]
         return path, json.dumps(data, indent=2) + "\n"
 
-    def run(self, write=False):
+    def run(self, write=False, *, read_only=()):
         self.collect(Source(self.path.read_text()))
         if not self.families:
             print("No duplicated LLVM gen/<cpu> output paths.")
@@ -354,6 +354,8 @@ class Migration:
         path, result = self.metadata()
         if path.read_text() != result:
             changed[path] = result
+        if set(changed).intersection(read_only):
+            raise ValueError('Update LLVM output labels in the maintained BUILD file before importing')
         if write:
             for path, text in changed.items():
                 path.write_text(text)

@@ -117,9 +117,23 @@ def key_for_cpu(node, cpu, mapper=None):
     return ast_key(ChooseCpu(cpu).visit(result))
 
 
+def configured_rule_key(call, cpu):
+    """Compare expand_template inputs, treating a dict union as one substitution map."""
+    def value(expr):
+        expr = ChooseCpu(cpu).visit(copy.deepcopy(expr))
+        if isinstance(expr, ast.Dict):
+            return dict(zip(map(text_constant, expr.keys), map(ast_key, expr.values), strict=True))
+        if isinstance(expr, ast.BinOp) and isinstance(expr.op, ast.BitOr):
+            return value(expr.left) | value(expr.right)
+        return ast_key(expr)
+
+    return call.func.id, {name: value(expr) for name, expr in attributes(call).items()}
+
+
 class Migration:
-    def __init__(self, root):
+    def __init__(self, root, *, source_overrides=None):
         self.root = root
+        self.source_overrides = source_overrides or {}
         self.families = defaultdict(dict)
         self.owners = {}
         self.directories = set()
@@ -134,7 +148,7 @@ class Migration:
             # graph under gen/<cpu>. This pass migrates CMake configure_file.
             if owner == "clickhouse_llvm_project":
                 continue
-            source = Source(path.read_text())
+            source = Source(self.source_overrides[path] if path in self.source_overrides else path.read_text())
             self.owners[path] = owner
             for statement, call in source.rules():
                 if not isinstance(call.func, ast.Name) or call.func.id not in KINDS:
@@ -173,6 +187,24 @@ class Migration:
             names = [name for (candidate, _), name in self.rule_labels.items() if candidate == owner]
             if len(set(names)) * 2 != len(names):
                 raise ValueError("Colliding shared configuration name in " + owner)
+
+        for path in self.source_overrides:
+            owner = self.owners[path]
+            actual = {}
+            for _, call in Source(path.read_text()).rules():
+                if call.func.id in KINDS and (text_constant(attributes(call)["name"]) or "").startswith("configure_"):
+                    out = output_name(call)
+                    if out in actual:
+                        raise ValueError(f"Duplicate configured output in {path}: {out}")
+                    actual[out] = call
+            families = {shared: family for (repo, shared), family in self.families.items() if repo == owner}
+            if not families or set(families) != actual.keys():
+                raise ValueError("CMake outputs differ from the maintained BUILD file: " + str(path))
+            for shared, family in families.items():
+                expected = ast.parse(self.render(owner, shared, family)).body[0].value
+                for cpu in CPUS:
+                    if configured_rule_key(expected, cpu) != configured_rule_key(actual[shared], cpu):
+                        raise ValueError(f"Update {path} for the CMake configuration of {shared} on {cpu}")
 
     def value(self, value, owner):
         # Change directories only when collect() found declared external outputs
@@ -355,7 +387,7 @@ class Migration:
             if not relative:
                 continue
             path = self.root / relative
-            if not path.is_file():
+            if path in self.source_overrides or not path.is_file():
                 continue
             text = path.read_text()
             if not CONFIG.search(text) and "configure_x86_64_" not in text and "configure_aarch64_" not in text:

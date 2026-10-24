@@ -919,11 +919,11 @@
     ],
     "source_map": [
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.cc",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_arrow/config/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.cc",
         "to": "@build/contrib/arrow-cmake/cpp/src/arrow/flight/Flight.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.cc",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_arrow/config/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.cc",
         "to": "@build/contrib/arrow-cmake/cpp/src/arrow/flight/sql/FlightSql.pb.cc"
       },
       {
@@ -1451,39 +1451,39 @@
         "to": "@build/contrib/google-cloud-cpp-cmake/google/type/timeofday.pb.cc"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/krb5-cmake/include_private/lib/gssapi/generic/gssapi_err_generic.c",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_krb5/config/contrib/krb5-cmake/include_private/lib/gssapi/generic/gssapi_err_generic.c",
         "to": "@build/contrib/krb5-cmake/include_private/lib/gssapi/generic/gssapi_err_generic.c"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/krb5-cmake/include_private/lib/gssapi/krb5/gssapi_err_krb5.c",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_krb5/config/contrib/krb5-cmake/include_private/lib/gssapi/krb5/gssapi_err_krb5.c",
         "to": "@build/contrib/krb5-cmake/include_private/lib/gssapi/krb5/gssapi_err_krb5.c"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/asn1_err.c",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_krb5/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/asn1_err.c",
         "to": "@build/contrib/krb5-cmake/include_private/lib/krb5/error_tables/asn1_err.c"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/k5e1_err.c",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_krb5/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/k5e1_err.c",
         "to": "@build/contrib/krb5-cmake/include_private/lib/krb5/error_tables/k5e1_err.c"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kdb5_err.c",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_krb5/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kdb5_err.c",
         "to": "@build/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kdb5_err.c"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb524_err.c",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_krb5/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb524_err.c",
         "to": "@build/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb524_err.c"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb5_err.c",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_krb5/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb5_err.c",
         "to": "@build/contrib/krb5-cmake/include_private/lib/krb5/error_tables/krb5_err.c"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kv5m_err.c",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_krb5/config/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kv5m_err.c",
         "to": "@build/contrib/krb5-cmake/include_private/lib/krb5/error_tables/kv5m_err.c"
       },
       {
-        "from": "bazel-out/k8-opt/bin/bazel/gen/contrib/krb5-cmake/include_private/util/profile/prof_err.c",
+        "from": "bazel-out/k8-opt/bin/external/+contrib+clickhouse_krb5/config/contrib/krb5-cmake/include_private/util/profile/prof_err.c",
         "to": "@build/contrib/krb5-cmake/include_private/util/profile/prof_err.c"
       },
       {

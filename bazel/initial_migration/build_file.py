@@ -55,7 +55,6 @@ SOURCE_HEADER_DIRECTORIES = {
         'generated/src/aws-cpp-sdk-s3/include',
         'src/aws-cpp-sdk-core/include',
     ),
-    'contrib/arrow': ('cpp/src',),
     'contrib/postgres': ('src/include', 'src/interfaces/libpq'),
     'contrib/libpqxx': ('include',),
     **{owner: ('include',) for owner in REPOSITORIES
@@ -65,27 +64,6 @@ SOURCE_HEADER_DIRECTORIES = {
 SOURCE_HEADER_SUFFIXES = {
     'contrib/postgres': ('.h',),
     'contrib/libpqxx': ('.hxx',),
-}
-# Arrow's checked-in FlatBuffers 24 outputs conflict with FlatBuffers 25.
-# //bazel:arrow_flatbuffer_headers generates the current six outputs.
-# Keep cpp/src/generated/parquet_types.{cpp,h,tcc}, produced by Thrift.
-SOURCE_HEADER_EXCLUDES = {
-    'contrib/arrow': (
-        'cpp/src/generated/*_generated.h',
-        # The migration imports Arrow headers into :arrow_headers; the checked-in
-        # BUILD publishes them through the compiled libraries. Neither SDK uses
-        # these implementation headers from disabled modules and tests.
-        'cpp/src/arrow/compute/kernels/pivot_internal.h',
-        'cpp/src/arrow/csv/*_internal.h',
-        'cpp/src/arrow/filesystem/azurefs_internal.h',
-        'cpp/src/arrow/util/bitset_stack_internal.h',
-        'cpp/src/arrow/util/bpacking_simd512_generated_internal.h',
-        'cpp/src/arrow/util/cache_internal.h',
-        'cpp/src/arrow/util/map_internal.h',
-        'cpp/src/arrow/util/print_internal.h',
-        'cpp/src/arrow/util/rle_bitmap_internal.h',
-        'cpp/src/arrow/util/stopwatch_internal.h',
-    ),
 }
 SOURCE_HEADER_TARGETS = {
     owner: (REPOSITORIES[owner]['name'].removeprefix('clickhouse_') + '_headers')
@@ -607,6 +585,9 @@ class BuildFile:
         for old_field, directories in original.items():
             for directory in directories:
                 owner = repository(directory)
+                if directory == 'contrib/arrow/cpp/src' and owner != self.owner:
+                    # Search directories do not make their entire contents compiler inputs.
+                    continue
                 field = ('srcs' if binary or self.header_consumers.get(directory, set()) <= {name} else 'hdrs')
                 if not custom and owner == 'contrib/boost':
                     if owner != self.owner:
@@ -646,7 +627,7 @@ class BuildFile:
                             fields['deps'].append(':' + SOURCE_HEADER_TARGETS[owner])
                         else:
                             fields[field].append(Glob(
-                                headers, (*excluded, *local, *SOURCE_HEADER_EXCLUDES.get(owner, ()))))
+                                headers, (*excluded, *local)))
                         fields[non_header_field].append(Glob([pattern], (*excluded, *headers)))
                 else:
                     for path in directory_sources(directory):
@@ -1067,7 +1048,8 @@ class BuildFile:
             native_includes = {}
             postgres = self.owner == 'contrib/postgres' and name == '_libpq'
             nuraft = self.owner == 'contrib/NuRaft' and name == '_nuraft'
-            implementation_deps = {}
+            implementation_deps = {'@platforms//cpu:' + arch: list(group['implementation_deps'])
+                                   for arch, group in groups.items() if group.get('implementation_deps')}
             for arch, group in groups.items():
                 if group['language'] in GLOBAL_COMPILE_OPTIONS and not group.get('cmake_runtime'):
                     native_includes[arch] = []
@@ -1088,7 +1070,13 @@ class BuildFile:
                         value = compile_dependencies(value, variants[arch]['deps'])
                         if collapse_single:
                             value = value + variants[arch]['deps']
-                        value = value + group.get('foreign_deps', [])
+                    if field == 'deps' and group.get('header_deps'):
+                        # Preserve CMake's original dependency order, including the executable wrapper.
+                        linked = {self.label(dep) for dep in value}
+                        if binary:
+                            linked.update(self.label(dep) for dep in variants[arch]['deps'])
+                        value += [dep for dep in group['header_deps'] if self.label(dep) not in linked]
+                    value = value + group.get('foreign_deps', [])
                     if field == 'copts':
                         value = compile_options(value, group.get('deps', []))
                         language = group.get('language')

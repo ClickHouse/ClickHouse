@@ -19,8 +19,10 @@ UNIT_TEST_FUNCTION_DEPS = [
 
 # Key: (package or root repository, rule). Values: (unused dependencies, private dependencies, public dependencies).
 DEPENDENCIES = {
+    ('@clickhouse_arrow', '_arrow__compile_0'): ([], ['@clickhouse_boost//:boost_headers_no_openssl'], []),
     ('@clickhouse_azure', '_azure_sdk'): (['@clickhouse//contrib/libxml2-cmake:libxml2_config_headers'], [], []),
     ('@clickhouse_flatbuffers', 'flatc'): (list(LLVM_RUNTIME_HEADERS), [], []),
+    ('@clickhouse_isa_l', '_isal__compile_0'): (list(LLVM_RUNTIME_HEADERS), [], []),
     ('programs', 'clickhouse__compile_0'): (['//base:harmful'], [], []),
     ('src/Dictionaries', 'headers'): ([SPARSEHASH], [], []),
     ('src/Access/Common', 'clickhouse_common_access'): ([TZDATA], [], []),
@@ -46,10 +48,11 @@ DEPENDENCIES = {
     ('src/Functions/TimeSeries', 'clickhouse_functions_time_series'): (['@clickhouse_icu//:_icudata'], [], []),
     ('src/Storages/benchmarks', 'benchmark_statistics_objects'): (['@clickhouse_icu//:_icudata'], ['//src:headers'], []),
     ('src/TableFunctions', 'clickhouse_table_functions'): (['@clickhouse_icu//:_icudata'], [], []),
-    ('src', 'benchmark_runtime_filter_objects'): ([
-        '@clickhouse_icu//:_icudata', '@clickhouse_icudata//:_icudata',
-        '@clickhouse_libcpuid//:_cpuid', '@clickhouse_simdcomp//:_simdcomp',
-    ], [], []),
+    ('src', 'benchmark_runtime_filter_objects'): ([], [
+        '@clickhouse_google_benchmark//:google_benchmark', '//bazel:clickhouse_config_headers',
+        '@clickhouse_fmtlib//:_fmt', '//base:common', ':dbms', ':dbms__compile_1', '//src/Common',
+        '//src/Functions:headers', '//src/Common:parser_support_api', '//src:headers', '//src:column_types',
+    ], []),
     ('src', 'clickhouse_common_io__compile_0'): ([], [
         TZDATA, '//base:pcg_random', '//src/Common:current_metrics', '//src/Common:string_utils',
         '@clickhouse_boost//:boost_headers_no_openssl', '@clickhouse_fmtlib//:_fmt', '@clickhouse_openssl//:crypto',
@@ -249,6 +252,15 @@ def apply(root):
                 continue
             found.add(name)
             unused, private, public = spec
+            llvm_headers = attrs.get('llvm_headers')
+            if (call_name(rule) == 'ch_cc_library' and isinstance(llvm_headers, ast.Constant)
+                    and llvm_headers.value is True and set(LLVM_RUNTIME_HEADERS).issubset(unused)):
+                # ch_cc_library adds all three LLVM dependencies for this keyword.
+                kw = next(k for k in rule.keywords if k.arg == 'llvm_headers')
+                start, end = source.span(kw)
+                if source.bytes[end:end + 1] == b',':
+                    end += 1
+                edits.append((start, end, ''))
             if package == 'src' and name in ('dbms__compile_0', 'clickhouse_common_io__compile_0'):
                 # The CMake import predates some header owners. Only move existing edges.
                 defs = constant_defs(source.module)
@@ -264,6 +276,11 @@ def apply(root):
                     ('implementation_deps', unused + public, private)):
                 original = attrs.get(field)
                 if original is None and not add:
+                    continue
+                if (package, name, field) == ('src', 'benchmark_runtime_filter_objects', 'deps'):
+                    # CMake links dbms to the optional executable. The seven benchmark
+                    # objects have no public headers and consume the private dependencies above.
+                    edits.append((*source.span(original), '[]'))
                     continue
                 node = build.expand(original) if original is not None else ast.List(elts=[], ctx=ast.Load())
                 # factored compile attributes use dict(...)[field].

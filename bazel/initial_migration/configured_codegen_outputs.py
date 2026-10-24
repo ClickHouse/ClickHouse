@@ -258,7 +258,7 @@ class Migration:
         ast.parse(result)
         return path, result
 
-    def run(self, write=False):
+    def run(self, write=False, read_only=()):
         source = Source(self.path.read_text())
         self.collect(source)
         if not self.pairs:
@@ -272,7 +272,7 @@ class Migration:
             if not relative:
                 continue
             path = self.root / relative
-            if path == self.path or not path.is_file():
+            if path == self.path or path in read_only or not path.is_file():
                 continue
             text = path.read_text()
             if not GENERATED.search(text) and not any(name in text for name in self.rename_rules):

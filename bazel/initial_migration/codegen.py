@@ -127,6 +127,8 @@ def render_license(attrs, license_inputs):
 
 def render_rules(rules):
     """Record identical generators once; retain rule and input order for both architectures."""
+    from initial_migration.package_codegen import partition
+    rules, package_rules = partition(rules)
     first_arch, second_arch = ARCHES
     shared = {}
     references = {}
@@ -158,6 +160,7 @@ def render_rules(rules):
         'load("//bazel/rules:repository_paths.bzl", "repository_path")\n\n',
         '_SHARED_CODEGEN = ' + starlark(shared) + '\n\n',
         '_LICENSE_INPUTS = ' + starlark(license_inputs) + '\n\n',
+        *(name + ' = ' + starlark(attrs) + '\n\n' for name, attrs in package_rules.items()),
         'CODEGEN_RULES = {\n',
     ]
     for name, attrs in rules.items():
@@ -177,6 +180,8 @@ class Codegen:
     def __init__(self, graph):
         self.graph = graph
         self.root = graph.build.parent
+        self.cmake, = re.findall(r'^CMAKE_COMMAND:INTERNAL=(.+)$',
+                                 (graph.build / 'CMakeCache.txt').read_text(), re.MULTILINE)
         self.nodes = read_ninja(graph.build / 'build.ninja')
         self.rules = {}
         self.handled = set()
@@ -274,9 +279,9 @@ class Codegen:
             if words[:1] == ['cd']:
                 directory = self.shell_path(words[1])
                 segments += ['mkdir -p ' + directory, 'cd ' + directory]
-            elif words[:3] == ['/usr/bin/cmake', '-E', 'make_directory']:
+            elif words[:3] == [self.cmake, '-E', 'make_directory']:
                 segments.append('mkdir -p ' + ' '.join(self.shell_path(w) for w in words[3:]))
-            elif words[:2] == ['/usr/bin/cmake', '-E'] and words[2] in {'copy', 'copy_if_different', 'create_symlink'}:
+            elif words[:2] == [self.cmake, '-E'] and words[2] in {'copy', 'copy_if_different', 'create_symlink'}:
                 # The build consumes file contents, so a declared copy also
                 # preserves CMake's generated assembly/header symlink inputs.
                 segments.append('cp ' + ' '.join(self.shell_path(w) for w in words[3:]))
@@ -308,7 +313,7 @@ class Codegen:
             elif words[0] == 'cat' and '>' in words:
                 extra_inputs.extend(words[1:words.index('>')])
                 segments.append(' '.join('>' if w == '>' else self.shell_path(w) for w in words))
-            elif words[:5] == ['/usr/bin/cmake', '-E', 'env', 'bash', '-c']:
+            elif words[:5] == [self.cmake, '-E', 'env', 'bash', '-c']:
                 inner = shlex.split(words[5])
                 if not inner[0].endswith('/openldap/build/mkversion'):
                     return

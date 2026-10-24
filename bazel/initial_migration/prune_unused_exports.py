@@ -17,7 +17,7 @@ from initial_migration.compact_build import Source, ast_key
 from initial_migration.repository_inputs import ROOT
 
 
-def prune_unused_exports(root=ROOT, write=False):
+def prune_unused_exports(root=ROOT, write=False, *, read_only=()):
     # Read quoted strings instead of splitting at spaces or brackets. Some
     # actual pinned source labels contain both.
     paths = subprocess.check_output([
@@ -88,6 +88,8 @@ def prune_unused_exports(root=ROOT, write=False):
                 record(node.func.value.value, True)
     stats = Counter()
     for path in sorted((root / 'bazel/dependencies').glob('*.BUILD.bazel')):
+        if path in read_only:
+            continue
         repo = '@' + path.name.removesuffix('.BUILD.bazel')
         src = Source(path.read_text())
         edits = []
