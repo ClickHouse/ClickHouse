@@ -12,6 +12,7 @@ trap 'rm -f "$DATA_FILE" "$EXPECTED_FILE"' EXIT
 
 # A plain `id` column drives partial-page skips in the delta-encoded columns. Cover zero-width
 # miniblocks (constant and arithmetic progressions), nonzero residuals, signed wraparound and nulls.
+# An offset index keeps filtered reads on the row-range path that calls the decoder's `skip`.
 python3 - "$DATA_FILE" "$EXPECTED_FILE" <<'PY'
 import sys
 import pyarrow as pa
@@ -40,6 +41,7 @@ schema = pa.schema([
 ])
 table = pa.Table.from_arrays([pa.array(values, type=field.type) for field, values in zip(schema, zip(*rows))], schema=schema)
 pq.write_table(table, sys.argv[1], use_dictionary=False, compression='NONE', row_group_size=2049,
+               write_page_index=True,
                column_encoding={name: 'PLAIN' if name == 'id' else 'DELTA_BINARY_PACKED' for name in schema.names})
 with open(sys.argv[2], 'w') as out:
     for row in rows:
@@ -47,7 +49,8 @@ with open(sys.argv[2], 'w') as out:
 PY
 
 SCHEMA='id Int32, constant Int32, rising Int64, falling Int32, jitter Int64, wrap32 Int32, wrap64 Int64, nullable Nullable(Int64)'
-for BLOCK_SIZE in 1 33 129 513; do
+# Cover aligned and partial miniblocks without the overhead of thousands of one-row blocks.
+for BLOCK_SIZE in 32 33 129 513; do
     echo "block size ${BLOCK_SIZE}"
     for PREDICATE in \
         'id % 257 IN (0, 31, 32, 127, 128, 256)' \
@@ -59,6 +62,7 @@ for BLOCK_SIZE in 1 33 129 513; do
                 tuple(e.constant, e.rising, e.falling, e.jitter, e.wrap32, e.wrap64, e.nullable)))
             FROM (SELECT * FROM file('$DATA_FILE', Parquet) PREWHERE $PREDICATE) AS a
             INNER JOIN file('$EXPECTED_FILE', TSV, '$SCHEMA') AS e ON a.id = e.id
-            SETTINGS input_format_parquet_max_block_size = $BLOCK_SIZE, max_threads = 1"
+            SETTINGS input_format_parquet_max_block_size = $BLOCK_SIZE,
+                input_format_parquet_use_offset_index = 1, max_threads = 1"
     done
 done
