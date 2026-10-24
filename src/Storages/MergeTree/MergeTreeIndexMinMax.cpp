@@ -214,6 +214,7 @@ MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
 {
     /// The granule bound comes from `getExtremes`, which skips NaN.
     condition.relaxAtomsOverNaNHidingColumns(index_data_types);
+    columns_may_hide_value_above_max = KeyCondition::getColumnsMayHideValueAboveMax(index_data_types);
 }
 
 bool MergeTreeIndexConditionMinMax::alwaysUnknownOrTrue() const
@@ -235,7 +236,12 @@ bool MergeTreeIndexConditionMinMax::alwaysUnknownOrTrue() const
 bool MergeTreeIndexConditionMinMax::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const
 {
     const MergeTreeIndexGranuleMinMax & granule = typeid_cast<const MergeTreeIndexGranuleMinMax &>(*idx_granule);
-    return condition.checkInHyperrectangle(granule.hyperrectangle, index_data_types, {}, update_partial_disjunction_result_fn).can_be_true;
+    std::optional<Hyperrectangle> widened_bounds;
+    if (!columns_may_hide_value_above_max.empty())
+        widened_bounds = KeyCondition::widenBoundsMayHideValues(granule.hyperrectangle, columns_may_hide_value_above_max);
+    const auto & bounds = widened_bounds ? *widened_bounds : granule.hyperrectangle;
+
+    return condition.checkInHyperrectangle(bounds, index_data_types, {}, update_partial_disjunction_result_fn).can_be_true;
 }
 
 std::string MergeTreeIndexConditionMinMax::getDescription() const
