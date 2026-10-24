@@ -34,6 +34,9 @@ namespace
 
 using TagNamesAndValuesPtr = TimeSeriesTagsFunctionHelpers::TagNamesAndValuesPtr;
 
+/// naturalLess is ported from github.com/facette/natsort, Copyright (c) 2015, Vincent Batoufflet and Marc Falzon. All rights reserved.
+/// GoSort is ported from Go's slices package, Copyright 2022 The Go Authors. All rights reserved. Both are under the BSD-3-Clause license.
+
 bool isDigit(char c) { return c >= '0' && c <= '9'; }
 
 /// Go's strconv.Atoi for a run of digits: fails if the value is above the Int64 range.
