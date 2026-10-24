@@ -121,8 +121,8 @@ namespace QueryPlanOptimizations
 PrewhereInfoPtr buildTopKDynamicFilterPrewhere(const PrewhereInfoPtr & existing_prewhere_info, const TopKFilterInfo & top_k_filter_info);
 
 /// True if the actions depend on the block they run on, which the threshold filter shrinks: a stateful
-/// function, or one not deterministic within a query (`blockSize`, `rand`, but not `today`), also inside the
-/// body of a lambda (`arrayMap(x -> rowNumberInBlock(), arr)`).
+/// function, one not deterministic within a query (`blockSize`, `rand`, but not `today`), or one with observable
+/// side effects (`sleepEachRow`), also inside the body of a lambda (`arrayMap(x -> rowNumberInBlock(), arr)`).
 bool dependsOnItsBlock(const ActionsDAG & actions);
 }
 
