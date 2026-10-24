@@ -1,0 +1,7 @@
+-- Alias, RENAME TABLE
+2
+-- Alias, EXCHANGE TABLES
+-- ordinary view, RENAME TABLE
+source is stored unqualified	1
+db1	[]
+db2	['view_own']

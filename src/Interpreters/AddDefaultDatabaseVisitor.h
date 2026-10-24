@@ -150,6 +150,29 @@ public:
             substituteDatabaseInTableFunctions(*child);
     }
 
+    /// The rule of `QueryTreeBuilder`: an element of a `WITH RECURSIVE` list is a recursive common
+    /// table expression when its body is a `UNION`, an `INTERSECT` or an `EXCEPT` of several queries,
+    /// possibly in parentheses. Returns the branches of such a body, the seed first, and null for
+    /// a body of a single select query, which is an ordinary common table expression.
+    static ASTs * getRecursiveBodyBranches(const ASTPtr & subquery)
+    {
+        if (!subquery || subquery->children.empty())
+            return nullptr;
+
+        IAST * body = subquery->children.front().get();
+        while (auto * union_query = body->as<ASTSelectWithUnionQuery>())
+        {
+            auto & selects = union_query->list_of_selects->children;
+            if (selects.size() != 1)
+                return &selects;
+            body = selects.front().get();
+        }
+
+        if (auto * intersect_except = body->as<ASTSelectIntersectExceptQuery>())
+            return &intersect_except->children;
+        return nullptr;
+    }
+
 private:
 
     ContextPtr context;
@@ -495,29 +518,6 @@ private:
             for (size_t i = 1; i < branches->size(); ++i)
                 visit_child((*branches)[i]);
         }
-    }
-
-    /// The rule of `QueryTreeBuilder`: an element of a `WITH RECURSIVE` list is a recursive common
-    /// table expression when its body is a `UNION`, an `INTERSECT` or an `EXCEPT` of several queries,
-    /// possibly in parentheses. Returns the branches of such a body, the seed first, and null for
-    /// a body of a single select query, which is an ordinary common table expression.
-    static ASTs * getRecursiveBodyBranches(const ASTPtr & subquery)
-    {
-        if (!subquery || subquery->children.empty())
-            return nullptr;
-
-        IAST * body = subquery->children.front().get();
-        while (auto * union_query = body->as<ASTSelectWithUnionQuery>())
-        {
-            auto & selects = union_query->list_of_selects->children;
-            if (selects.size() != 1)
-                return &selects;
-            body = selects.front().get();
-        }
-
-        if (auto * intersect_except = body->as<ASTSelectIntersectExceptQuery>())
-            return &intersect_except->children;
-        return nullptr;
     }
 
     /// Collect aliases of expressions in the subtree, skipping nested select queries:

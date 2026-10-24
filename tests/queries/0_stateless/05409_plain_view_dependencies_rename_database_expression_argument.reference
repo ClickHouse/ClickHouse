@@ -1,0 +1,4 @@
+before rename: ['db_before.v']
+after rename: ['db_after.v']
+view reads: kept
+drop of the source: blocked

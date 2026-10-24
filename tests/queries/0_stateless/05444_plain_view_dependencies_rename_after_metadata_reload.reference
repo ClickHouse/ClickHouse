@@ -1,0 +1,4 @@
+source is stored unqualified	1
+view reads	1
+db1	['v']
+db2	[]

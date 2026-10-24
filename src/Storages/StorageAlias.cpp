@@ -40,6 +40,18 @@ namespace ErrorCodes
 namespace
 {
 
+bool isTargetGranted(ContextPtr query_context, AccessType access_type, const StorageID & target_id, const String & column_name)
+{
+    if (!query_context)
+        return false;
+
+    auto access = query_context->getAccess();
+    if (column_name.empty())
+        return access->isGranted(access_type, target_id.database_name, target_id.table_name);
+
+    return access->isGranted(access_type, target_id.database_name, target_id.table_name, column_name);
+}
+
 /// A table of a database with `lazy_load_tables` is kept in the catalog as a stand-in that creates the
 /// real storage on first access, so an engine predicate asked of the catalog pointer describes the stand-in.
 StoragePtr resolveLazyStandIn(const StoragePtr & storage)
@@ -55,11 +67,13 @@ StorageAlias::StorageAlias(
     const StorageID & table_id_,
     ContextPtr context_,
     const String & target_database_,
-    const String & target_table_)
+    const String & target_table_,
+    bool target_database_is_own_database_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , target_database(target_database_)
     , target_table(target_table_)
+    , target_database_is_own_database(target_database_is_own_database_)
 {
 }
 
@@ -71,27 +85,22 @@ bool StorageAlias::isMergeTree() const
 
 StoragePtr StorageAlias::getTargetTable(std::optional<TargetAccess> access_check) const
 {
+    const StorageID target_id = getTargetStorageID();
     if (access_check)
     {
         if (access_check->column_names.empty())
-            access_check->context->checkAccess(access_check->access_type, target_database, target_table);
+            access_check->context->checkAccess(access_check->access_type, target_id.database_name, target_id.table_name);
         else
-            access_check->context->checkAccess(access_check->access_type, target_database, target_table, access_check->column_names);
+            access_check->context->checkAccess(
+                access_check->access_type, target_id.database_name, target_id.table_name, access_check->column_names);
     }
 
-    return DatabaseCatalog::instance().getTable(StorageID(target_database, target_table), getContext());
+    return DatabaseCatalog::instance().getTable(target_id, getContext());
 }
 
 bool StorageAlias::isDeclaredTargetGranted(ContextPtr query_context, AccessType access_type, const String & column_name) const
 {
-    if (!query_context)
-        return false;
-
-    auto access = query_context->getAccess();
-    if (column_name.empty())
-        return access->isGranted(access_type, target_database, target_table);
-
-    return access->isGranted(access_type, target_database, target_table, column_name);
+    return isTargetGranted(query_context, access_type, getTargetStorageID(), column_name);
 }
 
 NameSet StorageAlias::filterColumnsGrantedThroughChain(
@@ -107,25 +116,27 @@ NameSet StorageAlias::filterColumnsGrantedThroughChain(
 
     while (!granted.empty())
     {
+        const StorageID target_id = alias->getTargetStorageID();
+
         /// A table-level grant covers every column of that table, so one table-level question answers
         /// the whole per-column pass. Asking it is only a saving where it replaces more than one check.
         const bool whole_table_granted
-            = granted.size() > 1 && alias->isDeclaredTargetGranted(query_context, access_type, {});
+            = granted.size() > 1 && isTargetGranted(query_context, access_type, target_id, {});
 
         if (!whole_table_granted)
         {
             std::erase_if(granted, [&](const String & column_name)
-            { return !alias->isDeclaredTargetGranted(query_context, access_type, column_name); });
+            { return !isTargetGranted(query_context, access_type, target_id, column_name); });
             if (granted.empty())
                 break;
         }
 
         /// A cyclic chain is loadable state, so a repeated name means there is no final table left to
         /// reach, and every name in the chain is authorized.
-        if (!authorized.emplace(alias->target_database, alias->target_table).second)
+        if (!authorized.emplace(target_id).second)
             break;
 
-        alias_holder = alias->tryGetTargetTable();
+        alias_holder = DatabaseCatalog::instance().tryGetTable(target_id, getContext());
         alias = alias_holder ? alias_holder->as<StorageAlias>() : nullptr;
         if (!alias)
             break;
@@ -548,19 +559,21 @@ bool StorageAlias::supportsTrivialCountOptimization(const StorageSnapshotPtr & s
 /// target and the conjunction of those answers is the whole chain.
 std::optional<UInt64> StorageAlias::totalRows(ContextPtr query_context) const
 {
-    if (!isDeclaredTargetGranted(query_context, AccessType::SHOW_TABLES, {}))
+    const StorageID target_id = getTargetStorageID();
+    if (!isTargetGranted(query_context, AccessType::SHOW_TABLES, target_id, {}))
         return {};
 
-    auto target = tryGetTargetTable();
+    auto target = DatabaseCatalog::instance().tryGetTable(target_id, getContext());
     return target ? target->totalRows(query_context) : std::optional<UInt64>{};
 }
 
 std::optional<UInt64> StorageAlias::totalBytes(ContextPtr query_context) const
 {
-    if (!isDeclaredTargetGranted(query_context, AccessType::SHOW_TABLES, {}))
+    const StorageID target_id = getTargetStorageID();
+    if (!isTargetGranted(query_context, AccessType::SHOW_TABLES, target_id, {}))
         return {};
 
-    auto target = tryGetTargetTable();
+    auto target = DatabaseCatalog::instance().tryGetTable(target_id, getContext());
     return target ? target->totalBytes(query_context) : std::optional<UInt64>{};
 }
 
@@ -597,6 +610,7 @@ void registerStorageAlias(StorageFactory & factory)
 
         String target_database;
         String target_table;
+        bool target_database_is_own_database = false;
 
         if (args.engine_args.empty())
         {
@@ -621,6 +635,7 @@ void registerStorageAlias(StorageFactory & factory)
             {
                 target_table = table_arg;
                 target_database = args.table_id.database_name;
+                target_database_is_own_database = true;
             }
         }
         else if (args.engine_args.size() == 2)
@@ -670,7 +685,8 @@ void registerStorageAlias(StorageFactory & factory)
             args.table_id,
             local_context,
             target_database,
-            target_table);
+            target_table,
+            target_database_is_own_database);
     },
     SecretArgumentsSpec{},
     {

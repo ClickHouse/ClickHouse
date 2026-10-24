@@ -2022,22 +2022,49 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
 namespace
 {
 
+/// A name shadowed by a session temporary table stays unqualified in the stored definition.
+/// Resolve it against the database owning the table, as the metadata loading path and `ALTER` do.
+/// Temporary objects belong to no database, so their names are resolved against the current database.
+/// The arguments of the table engine are not stored as written: the storage factory evaluates them in the context
+/// of the query, so they are resolved against the current database (`getDependenciesFromCreateQuery`,
+/// `getLoadingDependenciesFromCreateQuery`).
+String getDatabaseForUnqualifiedNames(const ASTCreateQuery & create, const ContextPtr & context)
+{
+    return create.isTemporary() ? context->getCurrentDatabase() : create.getDatabase();
+}
+
 void addTableDependencies(const ASTCreateQuery & create, const ASTPtr & query_ptr, const ContextPtr & context)
 {
     QualifiedTableName qualified_name{create.getDatabase(), create.getTable()};
+    String database_for_unqualified_names = getDatabaseForUnqualifiedNames(create, context);
 
-    auto ref_dependencies = getDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase());
-    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase());
+    auto ref_dependencies = getDependenciesFromCreateQuery(
+        context->getGlobalContext(), qualified_name, query_ptr, database_for_unqualified_names, /*can_throw*/false,
+        /*validate_current_database*/true, /*max_expanded_ast_elements*/0, /*engine_arguments_database*/context->getCurrentDatabase());
+    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(
+        context->getGlobalContext(), qualified_name, query_ptr, database_for_unqualified_names, /*can_throw*/false,
+        /*engine_arguments_database*/context->getCurrentDatabase());
     DatabaseCatalog::instance().addDependencies(qualified_name, ref_dependencies.dependencies, loading_dependencies, ref_dependencies.mv_from_dependency ? TableNamesSet{ref_dependencies.mv_from_dependency->getQualifiedName()} : TableNamesSet{});
+
+    /// Temporary views are session-local and must not leak into the global plain-view
+    /// dependency graph, which is exposed via `system.tables.dependencies_*` for all sessions.
+    /// `TemporaryTableHolder` re-keys such a view under `_temporary_and_external_tables._tmp_<uuid>`,
+    /// so registering it would make a permanent source table report a hidden session-local dependent.
+    if (!create.isTemporary() && !ref_dependencies.plain_view_dependencies.empty())
+        DatabaseCatalog::instance().addPlainViewDependencies(qualified_name, ref_dependencies.plain_view_dependencies);
 }
 
 void checkTableCanBeAddedWithNoCyclicDependencies(const ASTCreateQuery & create, const ASTPtr & query_ptr, const ContextPtr & context)
 {
     QualifiedTableName qualified_name{create.getDatabase(), create.getTable()};
+    String database_for_unqualified_names = getDatabaseForUnqualifiedNames(create, context);
     auto ref_dependencies = getDependenciesFromCreateQuery(
-        context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase(), /*can_throw*/true,
-        /*validate_current_database*/true, context->getSettingsRef()[Setting::max_expanded_ast_elements]);
-    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase(), /*can_throw*/true);
+        context->getGlobalContext(), qualified_name, query_ptr, database_for_unqualified_names, /*can_throw*/true,
+        /*validate_current_database*/true, context->getSettingsRef()[Setting::max_expanded_ast_elements],
+        /*engine_arguments_database*/context->getCurrentDatabase());
+    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(
+        context->getGlobalContext(), qualified_name, query_ptr, database_for_unqualified_names, /*can_throw*/true,
+        /*engine_arguments_database*/context->getCurrentDatabase());
     DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(qualified_name, ref_dependencies.dependencies, loading_dependencies);
 }
 
@@ -2621,11 +2648,14 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             return std::move(*result);
     }
 
+    /// If table has dependencies - add them to the graph.
+    /// Done under the DDL guard, so a concurrent `DROP` or `RENAME` of the just-published table cannot
+    /// clean up its dependencies before they are registered under its name.
+    addTableDependencies(create, query_ptr, getContext());
+
     ddl_guard.reset();
     source_ddl_guard.reset();
 
-    /// If table has dependencies - add them to the graph
-    addTableDependencies(create, query_ptr, getContext());
     return fillTableIfNeeded(create);
 }
 

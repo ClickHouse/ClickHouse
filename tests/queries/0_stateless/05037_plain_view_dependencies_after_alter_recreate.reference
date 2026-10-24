@@ -1,0 +1,4 @@
+initial	['plain_view_recreate_v2']
+after alter	['plain_view_recreate_v2']
+after recreate and alter	['plain_view_recreate_v2']
+source	['plain_view_recreate_v1']

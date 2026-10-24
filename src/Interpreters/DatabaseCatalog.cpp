@@ -7,6 +7,8 @@
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <Databases/DDLDependencyVisitor.h>
+#include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/IDatabase.h>
@@ -16,13 +18,16 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/TableNameHints.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Storages/IStorage.h>
 #include <Storages/MemorySettings.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMemory.h>
 #include <Storages/StorageProxy.h>
+#include <Storages/StorageView.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
@@ -450,6 +455,7 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
     referential_dependencies.clear();
     loading_dependencies.clear();
     view_dependencies.clear();
+    plain_view_dependencies.clear();
 }
 
 bool DatabaseCatalog::isPredefinedDatabase(std::string_view database_name)
@@ -843,14 +849,18 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
     return db;
 }
 
-void DatabaseCatalog::updateDatabaseName(const String & old_name, const String & new_name, const Strings & tables_in_database)
+void DatabaseCatalog::updateDatabaseName(
+    const String & old_name,
+    const String & new_name,
+    const Strings & tables_in_database,
+    const RecomputedDependenciesByTable & recomputed_dependencies)
 {
     std::lock_guard lock{databases_mutex};
 
     /// Re-check under the same lock as the rewrite: a concurrent `CREATE TABLE` in another database may
     /// have added an edge to a table under the new name since the preflight check of the caller.
     /// Nothing is modified yet, so the exception leaves the catalog intact.
-    checkDatabaseCanBeRenamedWithNoCyclicDependenciesUnlocked(old_name, new_name, tables_in_database);
+    checkDatabaseCanBeRenamedWithNoCyclicDependenciesUnlocked(old_name, new_name, tables_in_database, recomputed_dependencies);
 
     chassert(!databases.contains(new_name));
     auto it = databases.find(old_name);
@@ -875,10 +885,23 @@ void DatabaseCatalog::updateDatabaseName(const String & old_name, const String &
 
     for (const auto & table_name : tables_in_database)
     {
+        /// A table whose dependencies were recomputed from its stored definition against the new database name
+        /// gets exactly those edges. The other tables keep the edges recorded under the old name, re-keyed.
+        /// Both are done here, in the same critical section that publishes the new name, so that the graphs
+        /// are already correct when the renamed database becomes observable.
+        const auto recomputed = recomputed_dependencies.find(table_name);
         auto removed_ref_deps = referential_dependencies.removeDependencies(StorageID{old_name, table_name}, /* remove_isolated_tables= */ true);
         auto removed_loading_deps = loading_dependencies.removeDependencies(StorageID{old_name, table_name}, /* remove_isolated_tables= */ true);
-        referential_dependencies.addDependencies(StorageID{new_name, table_name}, removed_ref_deps);
-        loading_dependencies.addDependencies(StorageID{new_name, table_name}, removed_loading_deps);
+        if (recomputed != recomputed_dependencies.end())
+        {
+            referential_dependencies.addDependencies(StorageID{new_name, table_name}, recomputed->second.referential_dependencies);
+            loading_dependencies.addDependencies(StorageID{new_name, table_name}, recomputed->second.loading_dependencies);
+        }
+        else
+        {
+            referential_dependencies.addDependencies(StorageID{new_name, table_name}, removed_ref_deps);
+            loading_dependencies.addDependencies(StorageID{new_name, table_name}, removed_loading_deps);
+        }
 
         /// `view_dependencies` is rewired in both directions: the table being renamed
         /// may be a materialized view (incoming edges from its source) and/or a source
@@ -898,7 +921,80 @@ void DatabaseCatalog::updateDatabaseName(const String & old_name, const String &
             view_dependencies.removeDependency(StorageID{old_name, table_name}, view, /* remove_isolated_tables= */ true);
             view_dependencies.addDependency(StorageID{new_name, table_name}, view);
         }
+
+        /// `plain_view_dependencies` is re-keyed on the view side only: the renamed table may be a plain
+        /// view, and it moves into the new database. The source side must stay where it is: a source is
+        /// written in the definition of a view either qualified, and then it keeps naming the old
+        /// database, or without a database, and then it is resolved against the database of the view -
+        /// which is what the recomputed dependencies of the views of the renamed database express.
+        auto plain_view_sources = plain_view_dependencies.getDependents(StorageID{old_name, table_name});
+        for (const auto & source : plain_view_sources)
+            plain_view_dependencies.removeDependency(source, StorageID{old_name, table_name}, /* remove_isolated_tables= */ true);
+        if (recomputed != recomputed_dependencies.end())
+        {
+            for (const auto & source : recomputed->second.plain_view_dependencies)
+                plain_view_dependencies.addDependency(StorageID{source}, StorageID{new_name, table_name});
+        }
+        else
+        {
+            for (const auto & source : plain_view_sources)
+                plain_view_dependencies.addDependency(source, StorageID{new_name, table_name});
+        }
     }
+}
+
+std::optional<DatabaseCatalog::RecomputedDependencies> DatabaseCatalog::getDependenciesRecomputedForNewName(
+    const IDatabase & database,
+    const String & table_name,
+    const StoragePtr & table,
+    const QualifiedTableName & new_name,
+    ContextPtr query_context)
+{
+    bool is_ordinary_view = dynamic_cast<const StorageView *>(table.get()) != nullptr;
+    const auto * alias = dynamic_cast<const StorageAlias *>(table.get());
+    bool is_alias_to_own_database = alias && alias->isTargetDatabaseOwnDatabase();
+    if (!is_ordinary_view && !is_alias_to_own_database)
+        return std::nullopt;
+
+    /// The target of such an alias follows it into the new database, and a target equal to the alias itself
+    /// is erased from the dependencies below, so it would escape the cycle check.
+    if (is_alias_to_own_database && alias->getTargetTableName() == new_name.table)
+        throw Exception(
+            ErrorCodes::INFINITE_LOOP,
+            "Cannot move {}.{} to {}, because the Alias table would refer to itself",
+            backQuoteIfNeed(database.getDatabaseName()),
+            backQuoteIfNeed(table_name),
+            new_name.getFullName());
+
+    auto ast = database.getCreateTableQuery(table_name, query_context);
+    if (is_ordinary_view)
+    {
+        /// The query of the loaded view may be more qualified than the stored definition (see
+        /// `qualifyNamesFromLegacyMetadata`), and it is the one the view reads.
+        auto & create = ast->as<ASTCreateQuery &>();
+        auto metadata = table->getInMemoryMetadataPtr(query_context, false);
+        create.replace(create.select, metadata->getSelectQuery().inner_query->clone());
+    }
+    auto global_context = query_context->getGlobalContext();
+
+    /// The visitor erases the name it is given from the dependencies. For an ordinary view it is given the
+    /// current name, so that a reference to the destination stays visible and is rejected below.
+    QualifiedTableName name_to_erase = is_ordinary_view ? QualifiedTableName{database.getDatabaseName(), table_name} : new_name;
+    auto dependencies = getDependenciesFromCreateQuery(
+        global_context, name_to_erase, ast, new_name.database, /*can_throw*/ false, /*validate_current_database*/ false);
+
+    if (is_ordinary_view && dependencies.dependencies.contains(new_name))
+        throw Exception(
+            ErrorCodes::INFINITE_LOOP,
+            "Cannot move {}.{} to {}, because the view would refer to itself",
+            backQuoteIfNeed(database.getDatabaseName()),
+            backQuoteIfNeed(table_name),
+            new_name.getFullName());
+
+    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(global_context, new_name, ast, new_name.database);
+
+    return RecomputedDependencies{
+        std::move(dependencies.dependencies), std::move(loading_dependencies), std::move(dependencies.plain_view_dependencies)};
 }
 
 void DatabaseCatalog::updateMetadataFile(const String & database_name, const ASTPtr & create_query)
@@ -1143,6 +1239,7 @@ DatabaseCatalog::DatabaseCatalog(ContextMutablePtr global_context_)
     , referential_dependencies{"ReferentialDeps"}
     , loading_dependencies{"LoadingDeps"}
     , view_dependencies{"ViewDeps"}
+    , plain_view_dependencies{"PlainViewDeps"}
     , log(getLogger("DatabaseCatalog"))
     , first_async_drop_in_queue(tables_marked_dropped.end())
 {
@@ -1197,6 +1294,38 @@ std::vector<StorageID> DatabaseCatalog::getDependentViews(const StorageID & sour
 {
     std::lock_guard lock{databases_mutex};
     return view_dependencies.getDependencies(source_table_id);
+}
+
+void DatabaseCatalog::addPlainViewDependencies(const QualifiedTableName & table_name, const TableNamesSet & new_plain_view_dependencies)
+{
+    if (new_plain_view_dependencies.empty())
+        return;
+    std::lock_guard lock{databases_mutex};
+    for (const auto & source_table : new_plain_view_dependencies)
+        plain_view_dependencies.addDependency(StorageID{source_table}, StorageID{table_name});
+}
+
+void DatabaseCatalog::removePlainViewDependencies(const StorageID & view_id)
+{
+    std::lock_guard lock{databases_mutex};
+    StorageID view_by_name{view_id.database_name, view_id.table_name};
+    for (const auto & source : plain_view_dependencies.getDependents(view_by_name))
+        plain_view_dependencies.removeDependency(source, view_by_name, /* remove_isolated_tables= */ true);
+}
+
+std::vector<StorageID> DatabaseCatalog::getAllDependentViews(const StorageID & source_table_id) const
+{
+    std::lock_guard lock{databases_mutex};
+    auto result = view_dependencies.getDependencies(source_table_id);
+    auto plain_views = plain_view_dependencies.getDependencies(source_table_id);
+    result.insert(result.end(), plain_views.begin(), plain_views.end());
+    return result;
+}
+
+std::vector<StorageID> DatabaseCatalog::takePlainViewDependents(const StorageID & source_table_id)
+{
+    std::lock_guard lock{databases_mutex};
+    return plain_view_dependencies.removeDependencies(source_table_id, /* remove_isolated_tables= */ true);
 }
 
 std::vector<StorageID> DatabaseCatalog::takeSourceViewDependencies(const StorageID & source_table_id)
@@ -1967,9 +2096,12 @@ void DatabaseCatalog::addDependencies(
     const StorageID & table_id,
     const std::vector<StorageID> & new_referential_dependencies,
     const std::vector<StorageID> & new_loading_dependencies,
-    const std::vector<StorageID> & new_view_dependencies)
+    const std::vector<StorageID> & new_view_dependencies,
+    const std::vector<StorageID> & new_plain_view_dependencies,
+    const std::vector<StorageID> & new_plain_view_dependents)
 {
-    if (new_referential_dependencies.empty() && new_loading_dependencies.empty() && new_view_dependencies.empty())
+    if (new_referential_dependencies.empty() && new_loading_dependencies.empty() && new_view_dependencies.empty()
+        && new_plain_view_dependencies.empty() && new_plain_view_dependents.empty())
         return;
     std::lock_guard lock{databases_mutex};
     if (!new_referential_dependencies.empty())
@@ -1980,6 +2112,20 @@ void DatabaseCatalog::addDependencies(
     {
         for (const auto & new_view_dependency : new_view_dependencies)
             view_dependencies.addDependency(new_view_dependency, table_id);
+    }
+    /// The plain-view graph is name-bound, so strip the UUIDs before touching it.
+    StorageID table_by_name{table_id.database_name, table_id.table_name};
+    if (!new_plain_view_dependencies.empty())
+    {
+        /// table_id is the view; sources feed into it
+        for (const auto & source_table_id : new_plain_view_dependencies)
+            plain_view_dependencies.addDependency(StorageID{source_table_id.database_name, source_table_id.table_name}, table_by_name);
+    }
+    if (!new_plain_view_dependents.empty())
+    {
+        /// table_id is the source; plain views read from it
+        for (const auto & view_id : new_plain_view_dependents)
+            plain_view_dependencies.addDependency(table_by_name, StorageID{view_id.database_name, view_id.table_name});
     }
 }
 
@@ -2045,34 +2191,42 @@ std::vector<StorageID> DatabaseCatalog::getLoadingDependents(const StorageID & t
     return loading_dependencies.getDependents(table_id);
 }
 
-std::tuple<std::vector<StorageID>, std::vector<StorageID>, std::vector<StorageID>> DatabaseCatalog::removeDependencies(
-    const StorageID & table_id, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database, bool is_mv)
+std::tuple<std::vector<StorageID>, std::vector<StorageID>, std::vector<StorageID>, std::vector<StorageID>> DatabaseCatalog::removeDependencies(
+    const StorageID & table_id, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database, bool is_view)
 {
     std::lock_guard lock{databases_mutex};
     checkTableCanBeRemovedOrRenamedUnlocked(table_id, check_referential_dependencies, check_loading_dependencies, is_drop_database);
     std::vector<StorageID> old_view_dependencies;
+    std::vector<StorageID> old_plain_view_dependencies;
 
-    if (is_mv)
+    /// Remove view from dependency graphs
+    if (is_view)
     {
-        auto tables_from = view_dependencies.getDependents(table_id);
-        for (const auto & the_table_from : tables_from)
-        {
-            view_dependencies.removeDependency(the_table_from, table_id, /* remove_isolated_tables= */ true);
-            old_view_dependencies.push_back(the_table_from);
-        }
+        StorageID view_by_name{table_id.database_name, table_id.table_name};
+        auto view_sources = view_dependencies.getDependents(view_by_name);
+        for (const auto & source_table_id : view_sources)
+            view_dependencies.removeDependency(source_table_id, view_by_name, /* remove_isolated_tables= */ true);
+        old_view_dependencies.insert(old_view_dependencies.end(), view_sources.begin(), view_sources.end());
+
+        auto plain_view_sources = plain_view_dependencies.getDependents(view_by_name);
+        for (const auto & source_table_id : plain_view_sources)
+            plain_view_dependencies.removeDependency(source_table_id, view_by_name, /* remove_isolated_tables= */ true);
+        old_plain_view_dependencies.insert(old_plain_view_dependencies.end(), plain_view_sources.begin(), plain_view_sources.end());
     }
 
     return {
         referential_dependencies.removeDependencies(table_id, /* remove_isolated_tables= */ true),
         loading_dependencies.removeDependencies(table_id, /* remove_isolated_tables= */ true),
-        old_view_dependencies};
+        old_view_dependencies,
+        old_plain_view_dependencies};
 }
 
 void DatabaseCatalog::updateDependencies(
     const StorageID & table_id,
     const TableNamesSet & new_referential_dependencies,
     const TableNamesSet & new_loading_dependencies,
-    const TableNamesSet & new_view_dependencies)
+    const TableNamesSet & new_view_dependencies,
+    const TableNamesSet & new_plain_view_dependencies)
 {
     std::lock_guard lock{databases_mutex};
     referential_dependencies.removeDependencies(table_id, /* remove_isolated_tables= */ true);
@@ -2089,6 +2243,16 @@ void DatabaseCatalog::updateDependencies(
         chassert(new_view_dependencies.size() == 1);
         view_dependencies.addDependency(StorageID{*new_view_dependencies.begin()}, table_id);
     }
+    /// Remove stale plain_view_dependencies edges where this view is a dependent, then add the new ones.
+    /// The plain-view graph is name-bound: an entry must never be re-keyed by UUID here, otherwise a later
+    /// drop and recreate of the same view name makes `TablesDependencyGraph` treat it as a name conflict
+    /// and silently drop the edges of the views depending on it.
+    StorageID view_by_name{table_id.database_name, table_id.table_name};
+    auto old_plain_view_sources = plain_view_dependencies.getDependents(view_by_name);
+    for (const auto & source_table_id : old_plain_view_sources)
+        plain_view_dependencies.removeDependency(source_table_id, view_by_name, /* remove_isolated_tables= */ true);
+    for (const auto & source_table : new_plain_view_dependencies)
+        plain_view_dependencies.addDependency(StorageID{source_table}, view_by_name);
 }
 
 void DatabaseCatalog::checkTableCanBeRemovedOrRenamed(
@@ -2174,14 +2338,20 @@ void DatabaseCatalog::checkTableCanBeAddedWithNoCyclicDependencies(
     check(loading_dependencies, new_loading_dependencies);
 }
 
-void DatabaseCatalog::checkTableCanBeRenamedWithNoCyclicDependencies(const StorageID & from_table_id, const StorageID & to_table_id)
+void DatabaseCatalog::checkTableCanBeRenamedWithNoCyclicDependencies(
+    const StorageID & from_table_id,
+    const StorageID & to_table_id,
+    const std::optional<RecomputedDependencies> & recomputed_dependencies)
 {
     std::lock_guard lock{databases_mutex};
 
-    auto check = [&](TablesDependencyGraph & dependencies)
+    auto check = [&](TablesDependencyGraph & dependencies, const TableNamesSet * new_dependencies)
     {
         auto old_dependencies = dependencies.removeDependencies(from_table_id);
-        dependencies.addDependencies(to_table_id, old_dependencies);
+        if (new_dependencies)
+            dependencies.addDependencies(to_table_id, *new_dependencies);
+        else
+            dependencies.addDependencies(to_table_id, old_dependencies);
         auto restore_dependencies = [&]()
         {
             dependencies.removeDependencies(to_table_id);
@@ -2203,20 +2373,30 @@ void DatabaseCatalog::checkTableCanBeRenamedWithNoCyclicDependencies(const Stora
         restore_dependencies();
     };
 
-    check(referential_dependencies);
-    check(loading_dependencies);
+    check(referential_dependencies, recomputed_dependencies ? &recomputed_dependencies->referential_dependencies : nullptr);
+    check(loading_dependencies, recomputed_dependencies ? &recomputed_dependencies->loading_dependencies : nullptr);
 }
 
-void DatabaseCatalog::checkTablesCanBeExchangedWithNoCyclicDependencies(const StorageID & table_id_1, const StorageID & table_id_2)
+void DatabaseCatalog::checkTablesCanBeExchangedWithNoCyclicDependencies(
+    const StorageID & table_id_1,
+    const StorageID & table_id_2,
+    const std::optional<RecomputedDependencies> & recomputed_dependencies_1,
+    const std::optional<RecomputedDependencies> & recomputed_dependencies_2)
 {
     std::lock_guard lock{databases_mutex};
 
-    auto check = [&](TablesDependencyGraph & dependencies)
+    auto check = [&](TablesDependencyGraph & dependencies, const TableNamesSet * new_dependencies_1, const TableNamesSet * new_dependencies_2)
     {
         auto old_dependencies_1 = dependencies.removeDependencies(table_id_1);
         auto old_dependencies_2 = dependencies.removeDependencies(table_id_2);
-        dependencies.addDependencies(table_id_1, old_dependencies_2);
-        dependencies.addDependencies(table_id_2, old_dependencies_1);
+        if (new_dependencies_2)
+            dependencies.addDependencies(table_id_1, *new_dependencies_2);
+        else
+            dependencies.addDependencies(table_id_1, old_dependencies_2);
+        if (new_dependencies_1)
+            dependencies.addDependencies(table_id_2, *new_dependencies_1);
+        else
+            dependencies.addDependencies(table_id_2, old_dependencies_1);
         auto restore_dependencies = [&]()
         {
             dependencies.removeDependencies(table_id_1);
@@ -2240,8 +2420,14 @@ void DatabaseCatalog::checkTablesCanBeExchangedWithNoCyclicDependencies(const St
         restore_dependencies();
     };
 
-    check(referential_dependencies);
-    check(loading_dependencies);
+    check(
+        referential_dependencies,
+        recomputed_dependencies_1 ? &recomputed_dependencies_1->referential_dependencies : nullptr,
+        recomputed_dependencies_2 ? &recomputed_dependencies_2->referential_dependencies : nullptr);
+    check(
+        loading_dependencies,
+        recomputed_dependencies_1 ? &recomputed_dependencies_1->loading_dependencies : nullptr,
+        recomputed_dependencies_2 ? &recomputed_dependencies_2->loading_dependencies : nullptr);
 }
 
 /// `RENAME DATABASE` re-keys every table of the database under the new name (see `updateDatabaseName`),
@@ -2257,22 +2443,33 @@ void DatabaseCatalog::checkTablesCanBeExchangedWithNoCyclicDependencies(const St
 /// repeats it in the same critical section as the rewrite, because DDL in other databases can add edges
 /// to the dependency graph in between.
 void DatabaseCatalog::checkDatabaseCanBeRenamedWithNoCyclicDependencies(
-    const String & old_database_name, const String & new_database_name, const Strings & tables_in_database)
+    const String & old_database_name,
+    const String & new_database_name,
+    const Strings & tables_in_database,
+    const RecomputedDependenciesByTable & recomputed_dependencies)
 {
     std::lock_guard lock{databases_mutex};
-    checkDatabaseCanBeRenamedWithNoCyclicDependenciesUnlocked(old_database_name, new_database_name, tables_in_database);
+    checkDatabaseCanBeRenamedWithNoCyclicDependenciesUnlocked(old_database_name, new_database_name, tables_in_database, recomputed_dependencies);
 }
 
 void DatabaseCatalog::checkDatabaseCanBeRenamedWithNoCyclicDependenciesUnlocked(
-    const String & old_database_name, const String & new_database_name, const Strings & tables_in_database) const
+    const String & old_database_name,
+    const String & new_database_name,
+    const Strings & tables_in_database,
+    const RecomputedDependenciesByTable & recomputed_dependencies) const
 {
-    auto check = [&](const TablesDependencyGraph & dependencies)
+    /// Applies the rename the way `updateDatabaseName` does: recomputed dependencies replace the re-keyed ones.
+    auto check = [&](const TablesDependencyGraph & dependencies, TableNamesSet RecomputedDependencies::*recomputed_field)
     {
         TablesDependencyGraph after_rename = dependencies;
         for (const auto & table_name : tables_in_database)
         {
             auto old_dependencies = after_rename.removeDependencies(StorageID{old_database_name, table_name}, /* remove_isolated_tables= */ true);
-            after_rename.addDependencies(StorageID{new_database_name, table_name}, old_dependencies);
+            const auto recomputed = recomputed_dependencies.find(table_name);
+            if (recomputed != recomputed_dependencies.end())
+                after_rename.addDependencies(StorageID{new_database_name, table_name}, recomputed->second.*recomputed_field);
+            else
+                after_rename.addDependencies(StorageID{new_database_name, table_name}, old_dependencies);
         }
 
         if (after_rename.hasCyclicDependencies())
@@ -2284,8 +2481,8 @@ void DatabaseCatalog::checkDatabaseCanBeRenamedWithNoCyclicDependenciesUnlocked(
                 after_rename.describeCyclicDependencies());
     };
 
-    check(referential_dependencies);
-    check(loading_dependencies);
+    check(referential_dependencies, &RecomputedDependencies::referential_dependencies);
+    check(loading_dependencies, &RecomputedDependencies::loading_dependencies);
 }
 
 void DatabaseCatalog::cleanupStoreDirectoryTask()

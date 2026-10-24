@@ -28,6 +28,40 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
+std::vector<StorageID> toStorageIDs(const TableNamesSet & table_names)
+{
+    return std::vector<StorageID>(table_names.begin(), table_names.end());
+}
+
+void addRenamedTableDependencies(
+    const StorageID & table_id,
+    const std::optional<DatabaseCatalog::RecomputedDependencies> & recomputed_dependencies,
+    const std::vector<StorageID> & referential_dependencies,
+    const std::vector<StorageID> & loading_dependencies,
+    const std::vector<StorageID> & mv_dependencies,
+    const std::vector<StorageID> & plain_view_dependencies)
+{
+    if (!recomputed_dependencies)
+    {
+        DatabaseCatalog::instance().addDependencies(
+            table_id, referential_dependencies, loading_dependencies, mv_dependencies, plain_view_dependencies, {});
+        return;
+    }
+
+    DatabaseCatalog::instance().addDependencies(
+        table_id,
+        toStorageIDs(recomputed_dependencies->referential_dependencies),
+        toStorageIDs(recomputed_dependencies->loading_dependencies),
+        mv_dependencies,
+        toStorageIDs(recomputed_dependencies->plain_view_dependencies),
+        {});
+}
+
+}
+
 InterpreterRenameQuery::InterpreterRenameQuery(const ASTPtr & query_ptr_, ContextPtr context_)
     : WithContext(context_), query_ptr(query_ptr_)
 {
@@ -143,17 +177,47 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
         std::vector<StorageID> from_ref_dependencies;
         std::vector<StorageID> from_loading_dependencies;
         std::vector<StorageID> from_mv_dependencies;
+        std::vector<StorageID> from_plain_view_dependencies;
+        std::vector<StorageID> from_plain_view_dependents;
         std::vector<StorageID> from_dependent_views;
         std::vector<StorageID> to_ref_dependencies;
         std::vector<StorageID> to_loading_dependencies;
         std::vector<StorageID> to_mv_dependencies;
+        std::vector<StorageID> to_plain_view_dependencies;
+        std::vector<StorageID> to_plain_view_dependents;
         std::vector<StorageID> to_dependent_views;
+
+        std::optional<DatabaseCatalog::RecomputedDependencies> from_recomputed_dependencies;
+        std::optional<DatabaseCatalog::RecomputedDependencies> to_recomputed_dependencies;
+        if (elem.from_database_name != elem.to_database_name)
+        {
+            from_recomputed_dependencies = DatabaseCatalog::getDependenciesRecomputedForNewName(
+                *database,
+                elem.from_table_name,
+                database->tryGetTable(elem.from_table_name, getContext()),
+                to_table_id.getQualifiedName(),
+                getContext());
+
+            if (exchange_tables)
+            {
+                DatabasePtr to_database = database_catalog.getDatabase(elem.to_database_name);
+                to_recomputed_dependencies = DatabaseCatalog::getDependenciesRecomputedForNewName(
+                    *to_database,
+                    elem.to_table_name,
+                    to_database->tryGetTable(elem.to_table_name, getContext()),
+                    from_table_id.getQualifiedName(),
+                    getContext());
+            }
+        }
 
         if (exchange_tables)
         {
-            DatabaseCatalog::instance().checkTablesCanBeExchangedWithNoCyclicDependencies(from_table_id, to_table_id);
-            std::tie(from_ref_dependencies, from_loading_dependencies, from_mv_dependencies) = database_catalog.removeDependencies(from_table_id, false, false, false, /*is_mv*/ true);
-            std::tie(to_ref_dependencies, to_loading_dependencies, to_mv_dependencies) = database_catalog.removeDependencies(to_table_id, false, false, false, /*is_mv*/ true);
+            DatabaseCatalog::instance().checkTablesCanBeExchangedWithNoCyclicDependencies(
+                from_table_id, to_table_id, from_recomputed_dependencies, to_recomputed_dependencies);
+            std::tie(from_ref_dependencies, from_loading_dependencies, from_mv_dependencies, from_plain_view_dependencies) = database_catalog.removeDependencies(from_table_id, false, false, false, /*is_view=*/ true);
+            std::tie(to_ref_dependencies, to_loading_dependencies, to_mv_dependencies, to_plain_view_dependencies) = database_catalog.removeDependencies(to_table_id, false, false, false, /*is_view=*/ true);
+            from_plain_view_dependents = database_catalog.takePlainViewDependents(from_table_id);
+            to_plain_view_dependents = database_catalog.takePlainViewDependents(to_table_id);
             from_dependent_views = database_catalog.takeSourceViewDependencies(from_table_id);
             to_dependent_views = database_catalog.takeSourceViewDependencies(to_table_id);
         }
@@ -164,10 +228,10 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             DatabasePtr to_database = database_catalog.getDatabase(elem.to_database_name);
             to_database->checkTableNameLength(to_table_id.table_name);
 
-            DatabaseCatalog::instance().checkTableCanBeRenamedWithNoCyclicDependencies(from_table_id, to_table_id);
+            DatabaseCatalog::instance().checkTableCanBeRenamedWithNoCyclicDependencies(from_table_id, to_table_id, from_recomputed_dependencies);
             bool check_ref_deps = getContext()->getSettingsRef()[Setting::check_referential_table_dependencies];
             bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];
-            std::tie(from_ref_dependencies, from_loading_dependencies, from_mv_dependencies) = database_catalog.removeDependencies(from_table_id, check_ref_deps, check_loading_deps, false, /*is_mv*/ true);
+            std::tie(from_ref_dependencies, from_loading_dependencies, from_mv_dependencies, from_plain_view_dependencies) = database_catalog.removeDependencies(from_table_id, check_ref_deps, check_loading_deps, false, /*is_view=*/ true);
             if (!keep_source_view_dependencies)
                 from_dependent_views = database_catalog.takeSourceViewDependencies(from_table_id);
         }
@@ -181,25 +245,24 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
                 exchange_tables,
                 rename.dictionary);
 
-            DatabaseCatalog::instance().addDependencies(to_table_id, from_ref_dependencies, from_loading_dependencies, from_mv_dependencies);
-            if (!to_ref_dependencies.empty() || !to_loading_dependencies.empty() || !to_mv_dependencies.empty())
-                DatabaseCatalog::instance().addDependencies(from_table_id, to_ref_dependencies, to_loading_dependencies, to_mv_dependencies);
+            addRenamedTableDependencies(
+                to_table_id, from_recomputed_dependencies, from_ref_dependencies, from_loading_dependencies, from_mv_dependencies, from_plain_view_dependencies);
+            if (exchange_tables)
+                addRenamedTableDependencies(
+                    from_table_id, to_recomputed_dependencies, to_ref_dependencies, to_loading_dependencies, to_mv_dependencies, to_plain_view_dependencies);
 
             if (exchange_tables)
             {
-                /// `EXCHANGE TABLES` (and the synthetic exchange used by
-                /// `CREATE OR REPLACE TABLE` / `REPLACE TABLE`): source-side
-                /// view-dependency edges must follow the name, not the data.
-                /// The `MV`'s stored `select_table_id` is not rewritten by the
-                /// rename, so cross-swapping would orphan the `MV`. See #105021.
+                /// See #105021: source-side edges (MV and plain-view dependents) follow the name, not the storage.
                 DatabaseCatalog::instance().addSourceViewDependencies(from_table_id, from_dependent_views);
                 DatabaseCatalog::instance().addSourceViewDependencies(to_table_id, to_dependent_views);
+                if (!from_plain_view_dependents.empty())
+                    DatabaseCatalog::instance().addDependencies(from_table_id, {}, {}, {}, {}, from_plain_view_dependents);
+                if (!to_plain_view_dependents.empty())
+                    DatabaseCatalog::instance().addDependencies(to_table_id, {}, {}, {}, {}, to_plain_view_dependents);
             }
             else
             {
-                /// Plain `RENAME TABLE a TO c`: re-key source-view edges from
-                /// the old name to the new one (needed when the table is moved
-                /// across databases — see `01155_rename_move_materialized_view`).
                 DatabaseCatalog::instance().addSourceViewDependencies(to_table_id, from_dependent_views);
             }
 
@@ -224,10 +287,10 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
         catch (...)
         {
             /// Restore dependencies if RENAME fails
-            DatabaseCatalog::instance().addDependencies(from_table_id, from_ref_dependencies, from_loading_dependencies, from_mv_dependencies);
+            DatabaseCatalog::instance().addDependencies(from_table_id, from_ref_dependencies, from_loading_dependencies, from_mv_dependencies, from_plain_view_dependencies, from_plain_view_dependents);
             DatabaseCatalog::instance().addSourceViewDependencies(from_table_id, from_dependent_views);
-            if (!to_ref_dependencies.empty() || !to_loading_dependencies.empty() || !to_mv_dependencies.empty())
-                DatabaseCatalog::instance().addDependencies(to_table_id, to_ref_dependencies, to_loading_dependencies, to_mv_dependencies);
+            if (!to_ref_dependencies.empty() || !to_loading_dependencies.empty() || !to_mv_dependencies.empty() || !to_plain_view_dependencies.empty() || !to_plain_view_dependents.empty())
+                DatabaseCatalog::instance().addDependencies(to_table_id, to_ref_dependencies, to_loading_dependencies, to_mv_dependencies, to_plain_view_dependencies, to_plain_view_dependents);
             DatabaseCatalog::instance().addSourceViewDependencies(to_table_id, to_dependent_views);
             throw;
         }
