@@ -104,9 +104,9 @@ select count() from file(currentDatabase() || '_05241_u32.parquet', Parquet, 'x 
     where x = 4464
     settings input_format_parquet_filter_push_down = 0, input_format_parquet_page_filter_push_down = 0;
 
--- A FixedString column read as String: the stored value carries its own padding, which the cast strips
--- and the constant never had.
-select count() from file(currentDatabase() || '_05241_fs4.parquet', Parquet, 'x String') where x = 'ab'
+-- A FixedString column read as String: the stored value carries its own padding, which the cast keeps,
+-- so the matching constant carries the padding as well.
+select count() from file(currentDatabase() || '_05241_fs4.parquet', Parquet, 'x String') where x = 'ab\0\0'
     settings input_format_parquet_filter_push_down = 0, input_format_parquet_page_filter_push_down = 0;
 
 -- A Bool hint over an integer column holding 2: through LowCardinality the cast reads it as true, and the

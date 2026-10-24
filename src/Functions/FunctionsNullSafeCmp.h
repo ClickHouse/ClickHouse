@@ -302,6 +302,18 @@ public:
         auto right_nested_type = removeLowCardinalityAndNullable(arguments[1].type);
         // an aligned string-vs-non-string element cannot take the no-supertype nested path below
         bool has_string_vs_non_string = hasAlignedStringVsNonStringElement(left_nested_type, right_nested_type);
+        // A `FixedString` is compared with a `String` zero-padded, while its cast to `String` keeps the padding.
+        // So compare the non-NULL values with the scalar comparison and combine the null maps separately.
+        if (common_type && common_type->isNullable() && isString(removeLowCardinalityAndNullable(common_type))
+            && (isFixedString(left_nested_type) || isFixedString(right_nested_type)))
+        {
+            ColumnsWithTypeAndName args_without_low_cardinality;
+            for (const auto & argument : arguments)
+                args_without_low_cardinality.emplace_back(
+                    recursiveRemoveLowCardinality(argument.column), recursiveRemoveLowCardinality(argument.type), argument.name);
+            return executeNullableWithoutSupertype(args_without_low_cardinality, input_rows_count);
+        }
+
         if (common_type)
         {
             // To address: Nullable vs Nullable

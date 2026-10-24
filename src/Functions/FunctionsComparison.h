@@ -30,6 +30,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NumberTraits.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/ComparisonOrderDomain.h>
 #include <Functions/FunctionHelpers.h>
@@ -1561,6 +1562,18 @@ private:
     ColumnPtr executeGeneric(const ColumnWithTypeAndName & c0, const ColumnWithTypeAndName & c1) const
     {
         DataTypePtr common_type = getLeastSupertype(DataTypes{c0.type, c1.type});
+
+        /// A `FixedString` is compared with a `String` zero-padded, while its cast to `String` keeps the
+        /// padding. So keep the `FixedString` side as is and compare it with the other side cast to
+        /// `String`, as for a `String` argument, for example an `Enum`.
+        if (isString(common_type) && isFixedString(c0.type) != isFixedString(c1.type))
+        {
+            ColumnPtr c0_converted = isFixedString(c0.type) ? c0.column : castColumn(c0, common_type);
+            ColumnPtr c1_converted = isFixedString(c1.type) ? c1.column : castColumn(c1, common_type);
+            if (auto res = executeString(c0_converted.get(), c1_converted.get()))
+                return res;
+        }
+
         ColumnPtr c0_converted = castColumn(c0, common_type);
         ColumnPtr c1_converted = castColumn(c1, common_type);
 
@@ -1672,33 +1685,122 @@ private:
         return gathered;
     }
 
-    /// Compares the gathered aligned elements with the given scalar comparison; returns its
-    /// full (non-const) `UInt8` result over all gathered element pairs.
-    static ColumnPtr compareGatheredElements(const FunctionOverloadResolverPtr & resolver, const GatheredArrayElements & gathered)
+    static bool containsFixedString(const IDataType & type)
     {
-        /// Recurse over indexes to compare flat columns at element-level
-        auto impl = resolver->build(gathered.element_args);
+        return anyInTypeTree(type, [](const IDataType & t) { return isFixedString(t); });
+    }
 
-        /// A `Nothing` element type has no values, so it cannot be executed and yields a `ColumnNothing`
-        /// the callers cannot consume.
-        if (isNothing(impl->getResultType()))
+    /// Order verdict of a pair of elements: 0 if they are equal, 1 if the left one comes first in the direction of the
+    /// comparison (`order_resolver` returns 1), and -1 otherwise. Without `order_resolver`, only the equality is
+    /// determined: unequal elements get a nonzero verdict. A NULL element (of a `Nullable`, `Dynamic` or `Variant` type,
+    /// including an untyped `NULL`) is equal only to another NULL and sorts after every non-NULL value.
+    static void compareElementsForOrder(
+        const FunctionOverloadResolverPtr & equals_resolver,
+        const FunctionOverloadResolverPtr & order_resolver,
+        const ColumnWithTypeAndName & left,
+        const ColumnWithTypeAndName & right,
+        size_t rows,
+        PaddedPODArray<Int8> & verdict)
+    {
+        static constexpr bool order_is_less = IsOperation<Op>::less || IsOperation<Op>::less_or_equals;
+
+        /// An untyped `NULL` has the type `Nullable(Nothing)`: all its values are NULL and its nested column cannot
+        /// be compared, so the verdict is decided by the NULL handling below alone.
+        auto is_always_null = [](const DataTypePtr & type) { return isNothing(removeNullable(removeLowCardinality(type))); };
+
+        /// Elements without a `FixedString` compared with another type are compared as in the comparison of arrays of
+        /// the same type: by `IColumn::compareAt` of the values cast to their common type. It orders NaN after the other
+        /// numbers and equal to another NaN, and handles the NULLs inside composite values, also in `Dynamic` and `Variant`.
+        if ((left.type->equals(*right.type) || (!containsFixedString(*left.type) && !containsFixedString(*right.type)))
+            && !is_always_null(left.type) && !is_always_null(right.type))
         {
-            auto masked = [&](size_t arg, const NullMap * null_map)
+            if (DataTypePtr common_type = tryGetLeastSupertype(DataTypes{left.type, right.type}))
             {
-                return isNothing(removeLowCardinality(gathered.element_args[arg].type)) && null_map
-                    && std::all_of(null_map->begin(), null_map->begin() + gathered.num_elements,
-                                   [](UInt8 byte) { return byte != 0; });
-            };
-
-            if (masked(0, gathered.null_map0) || masked(1, gathered.null_map1))
-                return ColumnUInt8::create(gathered.num_elements, UInt8(0));
-
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types of arguments ({}, {})"
-                " of function {}", backQuote(gathered.element_args[0].type->getName()),
-                backQuote(gathered.element_args[1].type->getName()), backQuote(name));
+                ColumnPtr left_column = castColumn(left, common_type)->convertToFullColumnIfConst();
+                ColumnPtr right_column = castColumn(right, common_type)->convertToFullColumnIfConst();
+                verdict.resize(rows);
+                for (size_t row = 0; row < rows; ++row)
+                {
+                    int cmp = left_column->compareAt(row, row, *right_column, /*nan_direction_hint=*/ 1);
+                    verdict[row] = cmp == 0 ? 0 : ((order_is_less ? cmp < 0 : cmp > 0) ? 1 : -1);
+                }
+                return;
+            }
         }
 
-        return impl->execute(gathered.element_args, impl->getResultType(), gathered.num_elements, /*dry_run=*/false)->convertToFullColumnIfConst();
+        /// The comparison of tuples may return `Nullable(UInt8)` (when an element is `Nullable` or `Dynamic`), which
+        /// does not tell which element is NULL, so tuples are compared element by element, lexicographically.
+        const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(left.type.get());
+        const auto * right_tuple_type = typeid_cast<const DataTypeTuple *>(right.type.get());
+        if (left_tuple_type && right_tuple_type && left_tuple_type->getElements().size() == right_tuple_type->getElements().size())
+        {
+            ColumnPtr left_column = left.column->convertToFullColumnIfConst();
+            ColumnPtr right_column = right.column->convertToFullColumnIfConst();
+            const auto & left_tuple = assert_cast<const ColumnTuple &>(*left_column);
+            const auto & right_tuple = assert_cast<const ColumnTuple &>(*right_column);
+
+            verdict.assign(rows, Int8(0));
+            PaddedPODArray<Int8> element_verdict;
+            for (size_t i = 0; i < left_tuple_type->getElements().size(); ++i)
+            {
+                compareElementsForOrder(
+                    equals_resolver,
+                    order_resolver,
+                    {left_tuple.getColumnPtr(i), left_tuple_type->getElement(i), ""},
+                    {right_tuple.getColumnPtr(i), right_tuple_type->getElement(i), ""},
+                    rows,
+                    element_verdict);
+                for (size_t row = 0; row < rows; ++row)
+                    if (verdict[row] == 0)
+                        verdict[row] = element_verdict[row];
+            }
+            return;
+        }
+
+        verdict.assign(rows, Int8(0));
+
+        if (!is_always_null(left.type) && !is_always_null(right.type))
+        {
+            /// The result is `Nullable(UInt8)` when one of the elements may be NULL. Its values in the rows where an
+            /// element is NULL are not used.
+            auto get_data = [](const ColumnPtr & column) -> const PaddedPODArray<UInt8> &
+            {
+                if (const auto * nullable = checkAndGetColumn<ColumnNullable>(column.get()))
+                    return assert_cast<const ColumnUInt8 &>(nullable->getNestedColumn()).getData();
+                return assert_cast<const ColumnUInt8 &>(*column).getData();
+            };
+
+            ColumnsWithTypeAndName args{left, right};
+            auto equals_impl = equals_resolver->build(args);
+            ColumnPtr equals_col = equals_impl->execute(args, equals_impl->getResultType(), rows, /*dry_run=*/false)
+                                       ->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
+            const auto & equals_data = get_data(equals_col);
+            if (order_resolver)
+            {
+                auto order_impl = order_resolver->build(args);
+                ColumnPtr order_col = order_impl->execute(args, order_impl->getResultType(), rows, /*dry_run=*/false)
+                                          ->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
+                const auto & order_data = get_data(order_col);
+
+                for (size_t row = 0; row < rows; ++row)
+                    verdict[row] = equals_data[row] ? 0 : (order_data[row] ? 1 : -1);
+            }
+            else
+            {
+                for (size_t row = 0; row < rows; ++row)
+                    verdict[row] = equals_data[row] ? 0 : 1;
+            }
+        }
+
+        for (size_t row = 0; row < rows; ++row)
+        {
+            bool left_is_null = left.column->isNullAt(row);
+            bool right_is_null = right.column->isNullAt(row);
+            if (left_is_null && right_is_null)
+                verdict[row] = 0;
+            else if (left_is_null || right_is_null)
+                verdict[row] = (order_is_less ? right_is_null : left_is_null) ? 1 : -1;
+        }
     }
 
     /// Lexicographic equality of two arrays: they are equal iff their lengths match and all aligned elements are equal
@@ -1714,8 +1816,10 @@ private:
 
         GatheredArrayElements gathered = gatherAlignedArrayElements(column_type_name0, column_type_name1, input_rows_count);
 
-        ColumnPtr equals_col = compareGatheredElements(equals_resolver, gathered);
-        const auto & element_equals = assert_cast<const ColumnUInt8 &>(*equals_col).getData();
+        /// Per element pair: 0 if equal, nonzero otherwise. The order of the elements does not matter here.
+        PaddedPODArray<Int8> element_verdict;
+        compareElementsForOrder(
+            equals_resolver, /*order_resolver=*/ nullptr, gathered.element_args[0], gathered.element_args[1], gathered.num_elements, element_verdict);
 
         /// Fold the unwrapped null maps into element-level equality using array NULL semantics.
         auto elem_is_null = [](const NullMap * null_map, size_t j) -> bool { return null_map && (*null_map)[j]; };
@@ -1727,7 +1831,7 @@ private:
             bool n1 = elem_is_null(gathered.null_map1, j);
             if (n0 || n1)
                 return n0 && n1;
-            return element_equals[j];
+            return element_verdict[j] == 0;
         };
 
         auto result = ColumnUInt8::create(input_rows_count);
@@ -1767,10 +1871,10 @@ private:
 
         GatheredArrayElements gathered = gatherAlignedArrayElements(column_type_name0, column_type_name1, input_rows_count);
 
-        ColumnPtr equals_col = compareGatheredElements(equals_resolver, gathered);
-        const auto & element_equals = assert_cast<const ColumnUInt8 &>(*equals_col).getData();
-        ColumnPtr order_col = compareGatheredElements(order_resolver, gathered);
-        const auto & element_order = assert_cast<const ColumnUInt8 &>(*order_col).getData();
+        /// Per element pair: 0 if equal, 1 if the left element comes first, -1 otherwise.
+        PaddedPODArray<Int8> element_verdict;
+        compareElementsForOrder(
+            equals_resolver, order_resolver, gathered.element_args[0], gathered.element_args[1], gathered.num_elements, element_verdict);
 
         /// Fold the unwrapped null maps into element-level equality/order using array NULL semantics.
         auto elem_is_null = [](const NullMap * null_map, size_t j) -> bool { return null_map && (*null_map)[j]; };
@@ -1782,7 +1886,7 @@ private:
             bool n1 = elem_is_null(gathered.null_map1, j);
             if (n0 || n1)
                 return n0 && n1;
-            return element_equals[j];
+            return element_verdict[j] == 0;
         };
 
         /// Order of the first differing element, with NULL sorting after every non-NULL value.
@@ -1793,7 +1897,7 @@ private:
             /// Exactly one side is NULL here: both-NULL counts as equal and never reaches this point.
             if (n0 || n1)
                 return (order_is_less ? n1 : n0) ? 1 : 0;
-            return element_order[j];
+            return element_verdict[j] == 1 ? 1 : 0;
         };
 
         auto result = ColumnUInt8::create(input_rows_count);
@@ -1840,9 +1944,15 @@ private:
         const ColumnWithTypeAndName & c1,
         size_t input_rows_count) const
     {
-        if (tryGetLeastSupertype(DataTypes{c0.type, c1.type}))
+        /// A `FixedString` element is compared with an element of another type zero-padded, while the cast of
+        /// both arrays to their least supertype keeps the padding, so such arrays are compared element by
+        /// element, like the scalars.
+        const bool fixed_string_against_other_type = !c0.type->equals(*c1.type)
+            && (containsFixedString(*c0.type) || containsFixedString(*c1.type));
+
+        if (!fixed_string_against_other_type && tryGetLeastSupertype(DataTypes{c0.type, c1.type}))
             return executeGeneric(c0, c1);
-        /// when leastSupertype does not exist (e.g. `Array(UInt64)` vs `Array(Int64)`), the arrays are compared lexicographically
+        /// When leastSupertype does not exist (e.g. `Array(UInt64)` vs `Array(Int64)`), the arrays are compared lexicographically
         /// element-by-element with the accurate scalar comparison.
         return executeArrayLexicographic(c0, c1, input_rows_count);
     }

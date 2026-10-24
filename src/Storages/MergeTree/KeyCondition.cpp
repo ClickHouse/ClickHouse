@@ -839,6 +839,19 @@ static const ActionsDAG::Node * tryRewriteCoalesceComparison(
         normalized_args.push_back(child);
     }
 
+    /// The branches are compared with the constant as they are, not converted to the result type of `coalesce`.
+    /// This is wrong when the conversion changes the comparison: a `FixedString` is compared with a `String`
+    /// zero-padded, but its conversion to `String` keeps the padding (unless `cast_fixed_string_to_string_strip_trailing_zeros`),
+    /// so `toFixedString('a', 2) > 'a'` is false while `coalesce(toFixedString('a', 2), 'x') > 'a'` is true.
+    const DataTypePtr result_type = removeNullable(removeLowCardinality(coalesce_node->result_type));
+    auto converts_fixed_string = [&](const ActionsDAG::Node * arg)
+    {
+        const DataTypePtr arg_type = removeNullable(removeLowCardinality(arg->result_type));
+        return !arg_type->equals(*result_type) && anyInTypeTree(*arg_type, [](const IDataType & t) { return isFixedString(t); });
+    };
+    if (std::ranges::any_of(normalized_args, converts_fixed_string) || (trailing_const && converts_fixed_string(trailing_const)))
+        return nullptr;
+
     const size_t m = normalized_args.size();
     const bool has_trailing_const = trailing_const != nullptr;
 
@@ -4337,6 +4350,50 @@ bool KeyCondition::tryMatchKeyColumnThroughMonotonicChain(
     for (auto it = chain_not_tested_for_monotonicity.rbegin(); it != chain_not_tested_for_monotonicity.rend(); ++it)
     {
         const auto & function = *it;
+
+        /// A cast may be created with a conversion mode other than the one from the query context: the join key
+        /// conversion and the runtime filters always remove the trailing zero bytes of a `FixedString` converted
+        /// to `String`. Rebuilding such a cast by name would lose it, so keep the cast of the expression.
+        const auto * dag_node = function.getDAGNode();
+        FunctionBasePtr cast_of_expression;
+        if (dag_node && dag_node->function_base && dag_node->children.size() == 2 && dag_node->children[1]->column
+            && isColumnConst(*dag_node->children[1]->column)
+            && (function.getFunctionName() == "CAST" || function.getFunctionName() == "_CAST"))
+        {
+            const auto & captured_cast = dag_node->function_base;
+            const auto & captured_argument_type = captured_cast->getArgumentTypes()[0];
+            if (captured_argument_type->equals(*key_column_type))
+            {
+                cast_of_expression = captured_cast;
+            }
+            else if (recursiveRemoveLowCardinality(captured_argument_type)->equals(*key_column_type)
+                && anyInTypeTree(*key_column_type, [](const IDataType & t) { return isFixedString(t); }))
+            {
+                /// The key type has `LowCardinality` removed (see above), so create the same cast for it, with the
+                /// conversion mode of the cast of the expression.
+                if (auto strip_trailing_zeros = getCastFixedStringToStringStripTrailingZeros(*captured_cast))
+                    cast_of_expression = createInternalCast(
+                        {nullptr, key_column_type, ""}, captured_cast->getResultType(), CastType::nonAccurate, {},
+                        node.getContext(), strip_trailing_zeros);
+            }
+        }
+
+        if (cast_of_expression)
+        {
+            const auto & func = cast_of_expression;
+            if (!func->isDeterministicInScopeOfQuery() || (!assume_function_monotonicity && !func->hasInformationAboutMonotonicity()))
+                return false;
+
+            if (!assume_function_monotonicity && !isFunctionReallyMonotonic(*func, *key_column_type))
+                return false;
+
+            key_column_type = func->getResultType();
+            ColumnWithTypeAndName const_arg{dag_node->children[1]->column, dag_node->children[1]->result_type, dag_node->children[1]->result_name};
+            out_functions_chain.push_back(
+                std::make_shared<FunctionWithOptionalConstArg>(func, const_arg, FunctionWithOptionalConstArg::Kind::RIGHT_CONST));
+            continue;
+        }
+
         auto func_builder = FunctionFactory::instance().tryGet(function.getFunctionName(), node.getContext());
         if (!func_builder)
             return false;
@@ -5960,6 +6017,31 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
                 DataTypePtr common_type = tryGetLeastSupertype(DataTypes{key_expr_type_not_null, const_type});
                 if (!common_type)
                     return std::nullopt;
+
+                /// A `FixedString` key is compared with a value of another string-like type, such as
+                /// an `Enum`, zero-padded, while the cast of the key to `String` keeps its padding.
+                /// A range over the cast key would prune matching granules. A value that fits into
+                /// the key width compares with the key as the value padded to the key width does,
+                /// both for equality and for the order, so use the padded value instead, as for a
+                /// `String` constant above. The functions that use the constant as a pattern or
+                /// prefix are declined: padding would change the pattern.
+                if (isFixedString(key_expr_type_not_null) && isString(common_type))
+                {
+                    if (func_name == "like" || func_name == "notLike" || func_name == "startsWith"
+                        || func_name == "startsWithUTF8" || func_name == "match")
+                        return std::nullopt;
+
+                    Field as_string = tryConvertFieldToType(const_value, *common_type, const_type.get(), {});
+                    if (as_string.isNull()
+                        || as_string.safeGet<String>().size() > assert_cast<const DataTypeFixedString &>(*key_expr_type_not_null).getN())
+                        return std::nullopt;
+
+                    const_value = convertFieldToType(as_string, *key_expr_type_not_null);
+                    if (const_value.isNull())
+                        return std::nullopt;
+                    common_type = key_expr_type_not_null;
+                    const_type = key_expr_type_not_null;
+                }
 
                 if (!const_type->equals(*common_type))
                 {

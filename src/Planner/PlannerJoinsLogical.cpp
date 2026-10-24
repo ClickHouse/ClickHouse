@@ -239,7 +239,9 @@ buildJoinUsingCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext 
         auto cast_to_super = [&result_type, &changed_types, &builder_context](auto & dag, const auto & nodes)
         {
             auto arg = nodes.at(0);
-            const auto & casted = dag.addCast(*arg, result_type, {}, builder_context.planner_context->getQueryContext());
+            /// The join keys remove the trailing zero bytes of `FixedString` in the conversion to `String`, see `predicateOperandsToCommonType`.
+            const auto & casted = dag.addCast(
+                *arg, result_type, {}, builder_context.planner_context->getQueryContext(), /* fixed_string_to_string_strip_trailing_zeros= */ true);
             changed_types[arg->result_name] = &dag.addAlias(casted, arg->result_name);
             return arg;
         };

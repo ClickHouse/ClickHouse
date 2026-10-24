@@ -3,11 +3,21 @@
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/TypeTree.h>
 #include <Columns/ColumnConst.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
+#include <Common/SipHash.h>
 
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool cast_fixed_string_to_string_strip_trailing_zeros;
+}
 
 namespace ErrorCodes
 {
@@ -38,6 +48,7 @@ public:
         , fun_array(FunctionFactory::instance().get("array", context_))
         , fun_transform(FunctionFactory::instance().get("transform", context_))
         , fun_multi_if(FunctionFactory::instance().get("multiIf", context_))
+        , cast_fixed_string_to_string_strip_trailing_zeros(context_->getSettingsRef()[Setting::cast_fixed_string_to_string_strip_trailing_zeros])
     {
     }
     bool isVariadic() const override { return true; }
@@ -46,6 +57,9 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
     String getName() const override { return name; }
+
+    /// `transform` and `multiIf` created from the context follow this setting for a `FixedString` value converted to `String`.
+    void updateHash(SipHash & hash) const override { hash.update(cast_fixed_string_to_string_strip_trailing_zeros); }
 
     String getSignatureString() const override
     {
@@ -197,10 +211,30 @@ public:
             auto src_supertype = tryGetLeastSupertype(src_array_types);
             auto dst_supertype = tryGetLeastSupertype(dst_array_types);
             auto expr_type = removeNullable(args.front().type);
+
+            /// Also skip `FixedString` mixed with another type. It is compared with that type zero-padded, but the
+            /// conversion to their common type keeps the padding (unless `cast_fixed_string_to_string_strip_trailing_zeros`),
+            /// so the WHEN keys would not match like with `equals`, and the THEN values would bypass the setting.
+            auto mixes_fixed_string = [](const DataTypes & types)
+            {
+                auto unwrap = [](const DataTypePtr & type) { return removeNullable(removeLowCardinality(type)); };
+                /// Also inside composite types, such as `Tuple(FixedString(2))` against `Tuple(String)`.
+                bool has_fixed_string = std::ranges::any_of(types, [](const DataTypePtr & type)
+                {
+                    return anyInTypeTree(*type, [](const IDataType & t) { return isFixedString(t); });
+                });
+                bool all_same = std::ranges::all_of(types, [&](const DataTypePtr & type) { return unwrap(type)->equals(*unwrap(types.front())); });
+                return has_fixed_string && !all_same;
+            };
+            DataTypes expr_and_src_array_types = src_array_types;
+            expr_and_src_array_types.push_back(args.front().type);
+
             bool can_use_transform = src_supertype && dst_supertype
                 && !isNullableOrLowCardinalityNullable(src_supertype)
                 && !isDynamic(expr_type)
-                && !isVariant(expr_type);
+                && !isVariant(expr_type)
+                && !mixes_fixed_string(expr_and_src_array_types)
+                && !mixes_fixed_string(dst_array_types);
 
             if (can_use_transform)
             {
@@ -262,6 +296,7 @@ private:
     FunctionOverloadResolverPtr fun_array;
     FunctionOverloadResolverPtr fun_transform;
     FunctionOverloadResolverPtr fun_multi_if;
+    bool cast_fixed_string_to_string_strip_trailing_zeros = false;
 };
 
 }

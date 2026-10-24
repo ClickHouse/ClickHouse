@@ -698,7 +698,13 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
 }
 
 static const ActionsDAG::Node & addCastImpl(
-    ActionsDAG & dag, const ActionsDAG::Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name, ContextPtr context, CastType cast_kind)
+    ActionsDAG & dag,
+    const ActionsDAG::Node & node_to_cast,
+    const DataTypePtr & cast_type,
+    std::string result_name,
+    ContextPtr context,
+    CastType cast_kind,
+    std::optional<bool> fixed_string_to_string_strip_trailing_zeros = {})
 {
     Field cast_type_constant_value(cast_type->getName());
 
@@ -708,14 +714,32 @@ static const ActionsDAG::Node & addCastImpl(
 
     const auto * cast_type_constant_node = &dag.addColumn(std::move(column), std::move(type), std::move(name));
     ActionsDAG::NodeRawConstPtrs children = {&node_to_cast, cast_type_constant_node};
-    auto func_base_cast = createInternalCast(ColumnWithTypeAndName{node_to_cast.result_type, node_to_cast.result_name}, cast_type, cast_kind, {}, context);
+    auto func_base_cast = createInternalCast(
+        ColumnWithTypeAndName{node_to_cast.result_type, node_to_cast.result_name},
+        cast_type,
+        cast_kind,
+        {},
+        context,
+        fixed_string_to_string_strip_trailing_zeros);
 
     return dag.addFunction(func_base_cast, std::move(children), result_name);
 }
 
-const ActionsDAG::Node & ActionsDAG::addCast(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name, ContextPtr context)
+const ActionsDAG::Node & ActionsDAG::addCast(
+    const Node & node_to_cast,
+    const DataTypePtr & cast_type,
+    std::string result_name,
+    ContextPtr context,
+    std::optional<bool> fixed_string_to_string_strip_trailing_zeros)
 {
-    return addCastImpl(*this, node_to_cast, cast_type, std::move(result_name), std::move(context), CastType::nonAccurate);
+    return addCastImpl(
+        *this,
+        node_to_cast,
+        cast_type,
+        std::move(result_name),
+        std::move(context),
+        CastType::nonAccurate,
+        fixed_string_to_string_strip_trailing_zeros);
 }
 
 const ActionsDAG::Node & ActionsDAG::addBooleanCondition(const Node & node, const DataTypePtr & result_type, ContextPtr context)
@@ -2774,7 +2798,8 @@ ActionsDAG ActionsDAG::makeConvertingActions(
     bool add_cast_columns,
     NameToNameMap * new_names,
     NameSet * columns_contain_compiled_function,
-    bool materialize_constants)
+    bool materialize_constants,
+    std::optional<bool> fixed_string_to_string_strip_trailing_zeros)
 {
     size_t num_input_columns = source.size();
     size_t num_result_columns = result.size();
@@ -2875,7 +2900,13 @@ ActionsDAG ActionsDAG::makeConvertingActions(
 
             CastDiagnostic diagnostic = {dst_node->result_name, res_elem.name};
             ColumnWithTypeAndName left_column{nullptr, dst_node->result_type, {}};
-            auto func_base_cast = createInternalCast(std::move(left_column), res_elem.type, CastType::nonAccurate, std::move(diagnostic), context);
+            auto func_base_cast = createInternalCast(
+                std::move(left_column),
+                res_elem.type,
+                CastType::nonAccurate,
+                std::move(diagnostic),
+                context,
+                fixed_string_to_string_strip_trailing_zeros);
 
             NodeRawConstPtrs children = { left_arg, right_arg };
             dst_node = &actions_dag.addFunction(func_base_cast, std::move(children), {});

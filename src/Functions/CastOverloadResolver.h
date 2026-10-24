@@ -28,7 +28,19 @@ struct CastDiagnostic
     std::string column_to;
 };
 
-FunctionBasePtr createInternalCast(ColumnWithTypeAndName from, DataTypePtr to, CastType cast_type, std::optional<CastDiagnostic> diagnostic, ContextPtr context);
+/// If `fixed_string_to_string_strip_trailing_zeros_override` is set, it takes the place of the setting
+/// `cast_fixed_string_to_string_strip_trailing_zeros`, which is taken from `context` otherwise (and is false without it).
+FunctionBasePtr createInternalCast(
+    ColumnWithTypeAndName from,
+    DataTypePtr to,
+    CastType cast_type,
+    std::optional<CastDiagnostic> diagnostic,
+    ContextPtr context,
+    std::optional<bool> fixed_string_to_string_strip_trailing_zeros_override = {});
+
+/// Whether the cast `function` removes the trailing zero bytes of a `FixedString` converted to `String`,
+/// or nullopt if `function` is not a cast.
+std::optional<bool> getCastFixedStringToStringStripTrailingZeros(const IFunctionBase & function);
 
 /// Whether CastType::accurateOrNull accepts this target. Failure is reported by wrapping the target in
 /// Nullable, so the target itself must be able to be inside Nullable; a nested type is also accepted

@@ -113,8 +113,10 @@ public:
                   /*distinct_keys_hint_matches_filter_key_=*/false))
     {
         if (!filter_column_target_type->equals(*filter_column_original_type))
+            /// Convert the key as the join does, see `predicateOperandsToCommonType`.
             cast_to_target_type = createInternalCast(
-                header->getByPosition(filter_column_position), filter_column_target_type, CastType::nonAccurate, {}, nullptr);
+                header->getByPosition(filter_column_position), filter_column_target_type, CastType::nonAccurate, {}, nullptr,
+                /* fixed_string_to_string_strip_trailing_zeros_override= */ true);
         partial->boundExactSetByKeyBytes();
         /// Index analysis needs the key range, which a bloom filter cannot give back.
         if (query_context && query_context->getSettingsRef()[Setting::enable_join_runtime_filters_index_analysis])

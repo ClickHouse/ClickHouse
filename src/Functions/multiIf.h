@@ -7,6 +7,10 @@ namespace DB
 class IFunctionOverloadResolver;
 using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
 
-FunctionOverloadResolverPtr createInternalMultiIfOverloadResolver(bool allow_execute_multiif_columnar, bool use_variant_as_common_type, bool allow_lossy_numeric_supertype);
+FunctionOverloadResolverPtr createInternalMultiIfOverloadResolver(
+    bool allow_execute_multiif_columnar,
+    bool use_variant_as_common_type,
+    bool allow_lossy_numeric_supertype,
+    bool cast_fixed_string_to_string_strip_trailing_zeros);
 
 }

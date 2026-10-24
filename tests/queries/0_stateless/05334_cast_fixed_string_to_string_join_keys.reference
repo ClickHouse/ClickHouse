@@ -1,0 +1,14 @@
+where	2
+on	2
+on, swapped	2
+on, no runtime filters	2
+on, runtime filters	2
+on, parallel_hash	2
+on, full_sorting_merge	2
+on, old analyzer	2
+on, strip	2
+on, filter	1
+using	a	61
+using	ab	6162
+using, runtime filters	2
+using, old analyzer	2

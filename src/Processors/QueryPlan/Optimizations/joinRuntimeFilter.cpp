@@ -77,8 +77,9 @@ static const ActionsDAG::Node & addTupleOfKeys(
     for (size_t i = 0; i < keys.size(); ++i)
     {
         const auto * key_node = &dag.findInOutputs(keys[i].name);
+        /// Convert the keys as the join does, see `predicateOperandsToCommonType`.
         if (!keys[i].type->equals(*common_types[i]))
-            key_node = &dag.addCast(*key_node, common_types[i], {}, nullptr);
+            key_node = &dag.addCast(*key_node, common_types[i], {}, nullptr, /* fixed_string_to_string_strip_trailing_zeros= */ true);
         key_nodes.push_back(key_node);
     }
     return dag.addFunction(tuple_func, key_nodes, {});
@@ -133,9 +134,10 @@ static const ActionsDAG::Node & createRuntimeFilterCondition(
     const auto & key_column_node = actions_dag.findInOutputs(key_column.name);
     const auto * filter_argument = &key_column_node;
 
-    /// Cast to the type of filter element if needed
+    /// Cast to the type of filter element if needed, as the join converts its keys (see `predicateOperandsToCommonType`).
     if (!key_column.type->equals(*filter_element_type))
-        filter_argument = &actions_dag.addCast(key_column_node, filter_element_type, {}, nullptr);
+        filter_argument = &actions_dag.addCast(
+            key_column_node, filter_element_type, {}, nullptr, /* fixed_string_to_string_strip_trailing_zeros= */ true);
 
     auto filter_function = FunctionFactory::instance().get("__applyFilter", /*context*/ nullptr);
     return actions_dag.addFunction(filter_function, {&filter_label_node, filter_argument}, {});

@@ -131,7 +131,7 @@ DROP TABLE t_text_padded_needle;
 
 SELECT '-- array tokenizer on an Array(String) column';
 
--- `hasAny` and `hasAll` drop only the needle's padding, so the stripped form is the only match.
+-- `hasAny` and `hasAll` keep the needle's padding in the cast to `String`, so the padded element is the only match.
 CREATE TABLE t_text_padded_needle (id UInt32, arr Array(String), INDEX tix arr TYPE text(tokenizer = array))
 ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
 
@@ -192,7 +192,8 @@ DROP TABLE t_text_padded_needle;
 
 SELECT '-- array tokenizer on an Array(FixedString) column';
 
--- A `String` needle keeps its trailing zero bytes and matches nothing; exact direct read must not answer it.
+-- These functions compare the needle with the elements as is, through the cast to `String` for another width,
+-- so only a needle of exactly the element width can match; exact direct read must not answer any other.
 CREATE TABLE t_text_padded_needle (id UInt32, arr Array(FixedString(6)), INDEX tix arr TYPE text(tokenizer = array))
 ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
 
@@ -215,16 +216,18 @@ SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE has(arr, t
 SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE has(arr, toFixedString('hello', 10)) ORDER BY id);
 SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE has(arr, concat('hello', unhex('00'))) ORDER BY id) SETTINGS use_skip_indexes = 0;
 SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE has(arr, concat('hello', unhex('00'))) ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE has(arr, toFixedString('hello', 6)) ORDER BY id) SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE has(arr, toFixedString('hello', 6)) ORDER BY id);
 
-SELECT '---- the needle is looked up at the column width and prunes';
-SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE hasAny(arr, ['world']) ORDER BY id) SETTINGS force_data_skipping_indices = 'tix';
-SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE hasAll(arr, [toFixedString('hello', 10), toFixedString('foo', 10)]) ORDER BY id) SETTINGS force_data_skipping_indices = 'tix';
-SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE has(arr, 'world') ORDER BY id) SETTINGS force_data_skipping_indices = 'tix';
-SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE has(arr, toFixedString('world', 10)) ORDER BY id) SETTINGS force_data_skipping_indices = 'tix';
+SELECT '---- a needle of the element width prunes';
+SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE hasAny(arr, [concat('world', unhex('00'))]) ORDER BY id) SETTINGS force_data_skipping_indices = 'tix';
+SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE hasAll(arr, [toFixedString('hello', 6), toFixedString('foo', 6)]) ORDER BY id) SETTINGS force_data_skipping_indices = 'tix';
+SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE has(arr, concat('world', unhex('00'))) ORDER BY id) SETTINGS force_data_skipping_indices = 'tix';
+SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE has(arr, toFixedString('world', 6)) ORDER BY id) SETTINGS force_data_skipping_indices = 'tix';
 
-SELECT '---- a String needle with a literal trailing zero byte declines the index';
-SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE hasAny(arr, [concat('hello', unhex('00'))]) ORDER BY id) SETTINGS force_data_skipping_indices = 'tix'; -- { serverError INDEX_NOT_USED }
-SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE has(arr, concat('hello', unhex('00'))) ORDER BY id) SETTINGS force_data_skipping_indices = 'tix'; -- { serverError INDEX_NOT_USED }
+SELECT '---- a needle of another width declines the index';
+SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE hasAny(arr, ['world']) ORDER BY id) SETTINGS force_data_skipping_indices = 'tix'; -- { serverError INDEX_NOT_USED }
+SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE has(arr, toFixedString('world', 10)) ORDER BY id) SETTINGS force_data_skipping_indices = 'tix'; -- { serverError INDEX_NOT_USED }
 
 DROP TABLE t_text_padded_needle;
 
@@ -243,12 +246,14 @@ SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE mapContain
 SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE mapContainsKey(m, toFixedString('hello', 10)) ORDER BY id);
 SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE mapContainsKey(m, concat('hello', unhex('00'))) ORDER BY id) SETTINGS use_skip_indexes = 0;
 SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE mapContainsKey(m, concat('hello', unhex('00'))) ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE mapContainsKey(m, toFixedString('hello', 6)) ORDER BY id) SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE mapContainsKey(m, toFixedString('hello', 6)) ORDER BY id);
 
-SELECT '---- the needle is looked up at the column width and prunes';
-SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE mapContainsKey(m, 'world') ORDER BY id) SETTINGS force_data_skipping_indices = 'tix';
+SELECT '---- a needle of the key width prunes';
+SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE mapContainsKey(m, concat('world', unhex('00'))) ORDER BY id) SETTINGS force_data_skipping_indices = 'tix';
 
-SELECT '---- a String needle with a literal trailing zero byte declines the index';
-SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE mapContainsKey(m, concat('hello', unhex('00'))) ORDER BY id) SETTINGS force_data_skipping_indices = 'tix'; -- { serverError INDEX_NOT_USED }
+SELECT '---- a needle of another width declines the index';
+SELECT groupArray(id) FROM (SELECT id FROM t_text_padded_needle WHERE mapContainsKey(m, 'world') ORDER BY id) SETTINGS force_data_skipping_indices = 'tix'; -- { serverError INDEX_NOT_USED }
 
 DROP TABLE t_text_padded_needle;
 DROP TABLE t_text_padded_needles;
