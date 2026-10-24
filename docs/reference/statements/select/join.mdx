@@ -83,9 +83,13 @@ It is experimental and disabled by default; enable it with the
 
 The lateral subquery is not executed once per left row or once per distinct combination. Like other correlated
 subqueries, it is decorrelated into a single query over all left rows: the left-side columns it references are
-added to its `GROUP BY` keys if it aggregates, its `LIMIT` becomes `LIMIT ... BY` these columns, and its result
-is joined to the left rows with a hash join on them. `EXPLAIN` shows this as a `Join` step over a
-`LimitBy (LIMIT BY for decorrelated correlated subquery)` step.
+added to its `GROUP BY` keys if it aggregates, its `LIMIT` (if any) becomes `LIMIT ... BY` these columns, and its
+result is joined to the left rows on them. With the default settings, the left rows are shared with the subquery
+through an in-memory buffer and this join is always a hash join. When the buffer is disabled
+(`correlated_subqueries_use_in_memory_buffer = 0` or `correlated_subqueries_default_join_kind = 'left'`), the
+algorithm is chosen by the `join_algorithm` setting. For example, `EXPLAIN` of a lateral subquery with `LIMIT`
+shows a `Join` step over a `LimitBy (LIMIT BY for decorrelated correlated subquery)` step; a subquery without
+`LIMIT` has no such step.
 
 Only the following subset is supported so far; anything else is rejected with an error:
 
