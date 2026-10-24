@@ -167,6 +167,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/StringUtils.h>
 #include <Common/ThreadFuzzer.h>
+#include <Common/ThreadStatus.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
@@ -574,6 +575,36 @@ static bool hasColumnsWithDynamicSubcolumns(const Block & block)
     }
 
     return false;
+}
+
+static bool isLossyStream(const ISerialization::SubstreamPath & substream_path, const ColumnDescription & column)
+{
+    if (!ISerialization::isSpecialCompressionAllowed(substream_path))
+        return false;
+    auto codec = getSubstreamCodecDescription(substream_path, column);
+    return codec && CompressionCodecFactory::instance().get(codec, substream_path.back().data.type.get())->isLossyCompression();
+}
+
+/// The dictionary stream of `LowCardinality` also stores its version and sizes, which a lossy codec would corrupt.
+void MergeTreeData::checkLossyCodecOnLowCardinality(const ColumnsDescription & columns)
+{
+    for (const auto & column : columns)
+    {
+        if ((!column.codec && column.subcolumn_codecs.empty()) || !columns.hasPhysical(column.name))
+            continue;
+
+        bool is_lossy = false;
+        ISerialization::StreamCallback callback = [&](const auto & substream_path)
+        {
+            if (!is_lossy && ISerialization::isLowCardinalityDictionarySubcolumn(substream_path))
+                is_lossy = isLossyStream(substream_path, column);
+        };
+        column.type->getDefaultSerialization()->enumerateStreams(callback, column.type);
+
+        if (is_lossy)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Column {} contains a LowCardinality type, so it cannot be compressed with a lossy codec", backQuoteIfNeed(column.name));
+    }
 }
 
 namespace
@@ -1310,10 +1341,8 @@ void MergeTreeData::checkProperties(
             bool is_lossy = false;
             ISerialization::StreamCallback callback = [&](const auto & substream_path)
             {
-                if (is_lossy || !ISerialization::isSpecialCompressionAllowed(substream_path))
-                    return;
-                if (auto codec = getSubstreamCodecDescription(substream_path, *column))
-                    is_lossy = CompressionCodecFactory::instance().get(codec, substream_path.back().data.type.get())->isLossyCompression();
+                if (!is_lossy)
+                    is_lossy = isLossyStream(substream_path, *column);
             };
             /// The serialization of a subcolumn enumerates its streams with the full path from the column, as the writer does.
             const auto & type_in_storage = written_column->getTypeInStorage();
@@ -6969,6 +6998,9 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     }
 
     checkProperties(new_metadata, old_metadata, false, false, allow_nullable_key, local_context, alter_effective_settings.get());
+    /// Not in `checkProperties`, which also runs when a replica applies an already committed ALTER.
+    if (!is_secondary_replay)
+        checkLossyCodecOnLowCardinality(new_metadata.columns);
     checkTTLExpressions(new_metadata, old_metadata);
     if (!is_secondary_replay)
         checkColumnTTLsForKeyColumns(new_metadata, old_metadata);
@@ -12659,6 +12691,11 @@ void MergeTreeData::Transaction::rollback(DataPartsLock * acquired_lock)
 {
     if (!isEmpty())
     {
+        /// The rollback of a cancelled merge or mutation must not be interrupted by its own cancellation:
+        /// otherwise reading the version metadata in `setAndStoreCreationCSN` may throw, and the rolled back part
+        /// stays without `RolledBackCSN`, which prevents merges of the neighbouring parts until the part is removed.
+        ThreadStatus::QueryCancellationBlocker cancellation_blocker;
+
         for (const auto & part : precommitted_parts)
             part->version->setAndStoreCreationCSN(Tx::RolledBackCSN);
 

@@ -1189,6 +1189,10 @@ public:
     /// Throws if a column TTL is set on a column that a key reads, directly or through a subcolumn.
     static void checkColumnTTLsForKeyColumns(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata);
 
+    /// Throws if a lossy codec applies to the dictionary stream of a `LowCardinality` column.
+    /// Only for a definition written now: an existing table with such a column must still load and replicate.
+    static void checkLossyCodecOnLowCardinality(const ColumnsDescription & columns);
+
     /// Throw exception if command is some kind of DROP command (drop column, drop index, etc) or rename command
     /// and we have unfinished mutation which need this column to finish.
     void checkDropOrRenameCommandDoesntAffectInProgressMutations(
