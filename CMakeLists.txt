@@ -521,6 +521,21 @@ if (DISABLE_OMIT_FRAME_POINTER)
     set (CMAKE_ASM_FLAGS_ADD "${CMAKE_ASM_FLAGS_ADD} -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer")
 endif()
 
+# Keep `%rbp` out of register allocation on amd64 without building a frame in every function.
+# The x86-64 ABI aligns the stack only to 16 bytes, and to realign it a function needs `%rbp`.
+# Register allocation creates spill slots after `%rbp` has been handed out, so 32- and 64-byte
+# vector spills get 16-byte slots. Depending on where the thread stack happens to start, such a
+# slot can straddle a page: every store to it then takes the slow split-store path and blocks
+# forwarding to its reload, which made e.g. `log10` over a column much slower after
+# an unrelated change to the static TLS size. With `%rbp` reserved, functions that spill vectors
+# realign the stack and get aligned slots; the others build no frame and only lose `%rbp` as a
+# general-purpose register.
+# The driver exposes this mode only for ARM, hence `-Xclang`. It must not override full frame
+# pointers in the builds that keep them, and nasm, the assembler and the linker do not take it.
+if (ARCH_AMD64 AND NOT DISABLE_OMIT_FRAME_POINTER AND NOT SANITIZE AND NOT CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
+    add_compile_options ("$<$<COMPILE_LANGUAGE:C,CXX>:SHELL:-Xclang -mframe-pointer=reserved>")
+endif()
+
 # Before you start hating your debugger because it refuses to show variables ('<optimized out>'), try building with -DDEBUG_O_LEVEL="0"
 # https://stackoverflow.com/questions/63386189/whats-the-difference-between-a-compilers-o0-option-and-og-option/63386263#63386263
 set(DEBUG_O_LEVEL "g" CACHE STRING "The -Ox level used for debug builds")
