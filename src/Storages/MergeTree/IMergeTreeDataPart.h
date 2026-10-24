@@ -266,6 +266,11 @@ public:
     /// before are read. The result may contain the estimates of other columns as well.
     Estimates getEstimates(const NameSet & required_columns = {}) const;
     void setEstimates(const Estimates & new_estimates);
+    /// Whether `loadStatistics(required_columns, cache)` would not read anything from disk,
+    /// because the statistics of these columns are cached or the part has none for them.
+    bool areStatisticsCached(const NameSet & required_columns, const StatisticsCache * cache) const;
+    /// Whether `getEstimates(required_columns)` would not read anything from disk.
+    bool areEstimatesInMemory(const NameSet & required_columns) const;
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load various metadata into memory: checksums from checksums.txt, index if required, etc.

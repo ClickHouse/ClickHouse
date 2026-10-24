@@ -13,8 +13,8 @@ SET min_marks_to_use_statistics = 1000;
 DROP TABLE IF EXISTS statistics_small_reads;
 
 CREATE TABLE statistics_small_reads (key UInt64, value UInt64, flag UInt8)
-ENGINE = MergeTree ORDER BY key
-SETTINGS index_granularity = 16, index_granularity_bytes = '10Mi', auto_statistics_types = 'basic, uniq_v2';
+ENGINE = MergeTree ORDER BY key PARTITION BY intDiv(key, 10000)
+SETTINGS index_granularity = 16, index_granularity_bytes = '10Mi', auto_statistics_types = 'basic, uniq_v2', prewarm_statistics_cache = 0;
 
 SYSTEM STOP MERGES statistics_small_reads;
 
@@ -23,6 +23,12 @@ INSERT INTO statistics_small_reads SELECT number, number, number % 2 FROM number
 INSERT INTO statistics_small_reads SELECT number, number, number % 2 FROM numbers(10000, 10000);
 INSERT INTO statistics_small_reads SELECT number, number, number % 2 FROM numbers(20000, 10000);
 INSERT INTO statistics_small_reads SELECT number, number, number % 2 FROM numbers(30000, 10000);
+
+-- Statistics already in memory are used regardless of the size of the read, and an insert keeps them in
+-- memory. Reattach the table to read them from disk again. The parts are in different partitions, so they
+-- are not merged after the table is attached.
+DETACH TABLE statistics_small_reads;
+ATTACH TABLE statistics_small_reads;
 
 SELECT '-- the primary key leaves two marks of two parts: no statistics';
 SELECT count() FROM statistics_small_reads WHERE key IN (5, 35000) AND value >= 30000 AND flag = 0
@@ -34,6 +40,11 @@ SELECT '-- the same read with the threshold disabled: statistics are used';
 SELECT count() FROM statistics_small_reads WHERE key IN (5, 35000) AND value >= 30000 AND flag = 0
 SETTINGS min_marks_to_use_statistics = 0, log_comment = '05407_query_small_no_threshold';
 SELECT count() FROM (EXPLAIN indexes = 1 SELECT count() FROM statistics_small_reads WHERE key IN (5, 35000) AND value >= 30000 AND flag = 0 SETTINGS min_marks_to_use_statistics = 0)
+WHERE explain LIKE '%Statistics%';
+
+SELECT '-- the small read again: the statistics loaded by the previous query are used';
+SELECT count() FROM statistics_small_reads WHERE key IN (5, 35000) AND value >= 30000 AND flag = 0;
+SELECT count() FROM (EXPLAIN indexes = 1 SELECT count() FROM statistics_small_reads WHERE key IN (5, 35000) AND value >= 30000 AND flag = 0)
 WHERE explain LIKE '%Statistics%';
 
 SELECT '-- a large read: statistics are used';
@@ -69,3 +80,23 @@ SETTINGS optimize_move_to_prewhere = 0, min_marks_to_use_statistics = 0, max_row
 SELECT sum(k) FROM statistics_small_reads_limits WHERE v = 1
 SETTINGS optimize_move_to_prewhere = 0, min_marks_to_use_statistics = 0, max_rows_to_read_leaf = 100;
 DROP TABLE statistics_small_reads_limits;
+
+SELECT '-- parts pruned by statistics in memory do not load the primary index';
+DROP TABLE IF EXISTS statistics_small_reads_cached;
+CREATE TABLE statistics_small_reads_cached (k UInt64, v UInt64)
+ENGINE = MergeTree ORDER BY k
+SETTINGS index_granularity = 16, index_granularity_bytes = '10Mi', auto_statistics_types = 'basic',
+    primary_key_lazy_load = 1, use_primary_key_cache = 0, prewarm_primary_key_cache = 0, prewarm_statistics_cache = 0;
+INSERT INTO statistics_small_reads_cached SELECT number, 0 FROM numbers(10000);
+DETACH TABLE statistics_small_reads_cached;
+ATTACH TABLE statistics_small_reads_cached;
+-- Load the statistics without the primary key analysis.
+SELECT sum(k) FROM statistics_small_reads_cached WHERE k >= 1 AND v = 1
+SETTINGS optimize_move_to_prewhere = 0, use_primary_key = 0, min_marks_to_use_statistics = 0;
+SELECT sum(k) FROM statistics_small_reads_cached WHERE k >= 1 AND v = 1
+SETTINGS optimize_move_to_prewhere = 0, log_comment = '05407_cached_statistics';
+SYSTEM FLUSH LOGS query_log;
+SELECT ProfileEvents['LoadedPrimaryIndexFiles'], ProfileEvents['SelectedParts']
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05407_cached_statistics';
+DROP TABLE statistics_small_reads_cached;

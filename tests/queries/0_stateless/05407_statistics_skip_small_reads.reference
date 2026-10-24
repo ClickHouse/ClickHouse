@@ -4,6 +4,9 @@
 -- the same read with the threshold disabled: statistics are used
 1
 1
+-- the small read again: the statistics loaded by the previous query are used
+1
+1
 -- a large read: statistics are used
 5000
 1
@@ -15,3 +18,7 @@
 -- row limits apply to the parts left after pruning by statistics
 45
 45
+-- parts pruned by statistics in memory do not load the primary index
+0
+0
+0	0

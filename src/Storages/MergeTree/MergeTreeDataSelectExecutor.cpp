@@ -912,7 +912,17 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     if (statistics_pruner.isUseless())
         return parts;
 
-    if (hasFewerMarksToReadThan(parts, metadata_snapshot, key_condition, min_marks_to_use_statistics, settings, log))
+    const NameSet required_columns = statistics_pruner.getRequiredColumns();
+
+    /// Statistics that are already in memory cost nothing, so the read is bounded only if they would be loaded.
+    auto statistics_in_memory = [&]
+    {
+        return std::ranges::all_of(
+            parts, [&](const RangesInDataPart & part) { return part.data_part->areEstimatesInMemory(required_columns); });
+    };
+
+    if (min_marks_to_use_statistics && !statistics_in_memory()
+        && hasFewerMarksToReadThan(parts, metadata_snapshot, key_condition, min_marks_to_use_statistics, settings, log))
     {
         LOG_TRACE(log, "Not pruning parts by statistics, because fewer than {} marks are left to read by the primary key",
             min_marks_to_use_statistics);
@@ -921,7 +931,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
 
     RangesInDataParts res_parts;
     size_t total_parts_before = parts.size();
-    const NameSet required_columns = statistics_pruner.getRequiredColumns();
 
     for (const auto & part : parts)
     {
