@@ -960,8 +960,15 @@ void StorageObjectStorage::read(
 
     configuration->modifyFormatSettings(modified_format_settings.value(), *local_context);
 
+    StorageID read_storage_id = storage_id;
+    if (read_storage_id.uuid == UUIDHelpers::Nil && configuration->isDataLakeConfiguration())
+    {
+        if (auto table_uuid = configuration->getExternalMetadata()->getTableUUID())
+            read_storage_id.uuid = *table_uuid;
+    }
+
     auto read_step = std::make_unique<ReadFromObjectStorageStep>(
-        storage_id,
+        read_storage_id,
         object_storage,
         configuration,
         column_names,

@@ -2,7 +2,15 @@
 import time
 import pytest
 import os
+import socket
+import uuid
+
+import pyarrow as pa
 from helpers.cluster import ClickHouseCluster
+from helpers.config_cluster import minio_secret_key, minio_access_key
+from pyiceberg.catalog import load_catalog
+from pyiceberg.schema import Schema
+from pyiceberg.types import NestedField, StringType, LongType
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -205,3 +213,80 @@ def test_check_database(started_cluster):
     finally:
         node.query("SYSTEM DISABLE FAILPOINT check_database_datalake_negative")
         node.query("DROP DATABASE IF EXISTS test_hms_check_db")
+
+
+def wait_for_hms(started_cluster, timeout=120):
+    hive_ip = started_cluster.get_instance_ip("hive")
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            with socket.create_connection((hive_ip, 9083), timeout=2):
+                return
+        except OSError:
+            time.sleep(1)
+    raise Exception(f"Hive Metastore at {hive_ip}:9083 did not become available within {timeout}s")
+
+
+def test_query_condition_cache(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    wait_for_hms(started_cluster)
+
+    catalog = load_catalog(
+        "hive",
+        **{
+            "uri": f"thrift://{started_cluster.get_instance_ip('hive')}:9083",
+            "type": "hive",
+            "s3.endpoint": f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+            "s3.access-key-id": minio_access_key,
+            "s3.secret-access-key": minio_secret_key,
+        },
+    )
+    namespace = f"qcc_{uuid.uuid4().hex[:8]}"
+    catalog.create_namespace(namespace)
+    table = catalog.create_table(
+        identifier=f"{namespace}.t",
+        schema=Schema(
+            NestedField(field_id=1, name="id", field_type=LongType(), required=False),
+            NestedField(field_id=2, name="name", field_type=StringType(), required=False),
+        ),
+        location=f"s3a://warehouse-hms/data/{namespace}/t",
+        properties={"write.parquet.row-group-limit": "1000"},
+    )
+    table.append(
+        pa.table(
+            {
+                "id": pa.array(range(3000), type=pa.int64()),
+                "name": pa.array([str(i) for i in range(3000)], type=pa.string()),
+            }
+        )
+    )
+
+    node.query(f"""
+        DROP DATABASE IF EXISTS hms_qcc;
+        CREATE DATABASE hms_qcc ENGINE = DataLakeCatalog('thrift://hive:9083', '{minio_access_key}', '{minio_secret_key}')
+        SETTINGS catalog_type = 'hive',
+                 warehouse = 'test_warehouse',
+                 storage_endpoint = 'http://minio1:9001/warehouse-hms'
+    """)
+
+    query = f"SELECT count(), sum(id) FROM hms_qcc.`{namespace}.t` WHERE id BETWEEN 1100 AND 1200"
+    query_ids = [f"hms_qcc_{namespace}_{i}" for i in range(2)]
+    for query_id in query_ids:
+        assert node.query(query, query_id=query_id, settings={"use_query_condition_cache": 1}) == "101\t116150\n"
+
+    node.query("SYSTEM FLUSH LOGS query_log")
+    events = [
+        node.query(
+            f"""
+            SELECT ProfileEvents['QueryConditionCacheMisses'], ProfileEvents['QueryConditionCacheHits']
+            FROM system.query_log
+            WHERE query_id = '{query_id}' AND type = 'QueryFinish'
+            """
+        ).split()
+        for query_id in query_ids
+    ]
+    assert int(events[0][0]) > 0 and int(events[0][1]) == 0, events
+    assert int(events[1][1]) > 0, events
+
+    node.query("DROP DATABASE hms_qcc")

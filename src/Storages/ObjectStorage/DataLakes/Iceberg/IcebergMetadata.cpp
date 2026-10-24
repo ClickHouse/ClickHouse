@@ -553,6 +553,13 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
         metadata_object->has(f_partition_specs) ? metadata_object->get(f_partition_specs).extract<Poco::JSON::Array::Ptr>() : nullptr);
 }
 
+std::optional<UUID> IcebergMetadata::getTableUUID() const
+{
+    if (!persistent_components.table_uuid)
+        return std::nullopt;
+    return parseFromString<UUID>(*persistent_components.table_uuid);
+}
+
 std::optional<String> IcebergMetadata::getRefreshCursor(ContextPtr local_context) const
 {
     auto state = getRelevantState(local_context);
