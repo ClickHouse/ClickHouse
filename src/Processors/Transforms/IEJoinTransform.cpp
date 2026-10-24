@@ -189,7 +189,13 @@ IEJoinAlgorithm::IEJoinAlgorithm(
 
     if (residual)
     {
+        /// `IEJoinAlgorithm` is instantiated per pipeline stream. Do not share adaptive
+        /// profiling state with another algorithm instance created from the same plan step.
+        if (residual->actions->getSettings().enable_adaptive_short_circuit_lazy_execution)
+            residual->actions = residual->actions->clone();
+
         set_spillables.add(residual->actions->getActionsDAG());
+
         const auto & sample = residual->actions->getSampleBlock();
         if (sample.columns() != 1 || !sample.getByPosition(0).type->canBeUsedInBooleanContext())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "IEJoin residual condition must have a single boolean output, got {}",

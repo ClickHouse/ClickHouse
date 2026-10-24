@@ -20,6 +20,8 @@
 #include <stack>
 #include <base/sort.h>
 #include <Common/JSONBuilder.h>
+#include <Common/Stopwatch.h>
+#include <Common/logger_useful.h>
 #include <Functions/FunctionsMiscellaneous.h>
 
 
@@ -35,6 +37,7 @@ namespace ProfileEvents
 {
     extern const Event FunctionExecute;
     extern const Event CompiledFunctionExecute;
+    extern const Event AdaptiveShortCircuitEagerExecutions;
 }
 
 namespace DB
@@ -90,6 +93,9 @@ ExpressionActions::ExpressionActions(ActionsDAG actions_dag_, const ExpressionAc
 
 ExpressionActionsPtr ExpressionActions::clone() const
 {
+    if (settings.enable_adaptive_short_circuit_lazy_execution)
+        return ExpressionActions::create(actions_dag.clone(), settings, project_inputs);
+
     auto copy = std::make_shared<ExpressionActions>(ExpressionActions());
 
     std::unordered_map<const Node *, const Node *> copy_map;
@@ -453,6 +459,15 @@ static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions
     return lazy_executed_nodes;
 }
 
+/// True if the function of the node (if any) is deterministic and cannot throw an exception on invalid input values.
+/// The descendants are checked separately.
+static bool isSafeForEagerExecutionNode(const ActionsDAG::Node * node)
+{
+    if (node->type != ActionsDAG::ActionType::FUNCTION)
+        return true;
+    return node->function_base->isNoExcept() && node->function_base->isDeterministic();
+}
+
 /// Can the node be executed on more rows than it is executed on now, with no difference but the time?
 /// The nodes that are not executed lazily are executed on all rows already. For a lazily executed node,
 /// all functions that are executed lazily must be unable to throw, be stateless, have no observable side effects
@@ -568,6 +583,7 @@ void ExpressionActions::linearizeActions(
     /// Every argument will have fixed position in columns list.
     /// If argument is removed, it's position may be reused by other action.
     std::stack<size_t> free_positions;
+    std::unordered_map<const Node *, size_t> node_to_action_pos;
 
     while (!ready_nodes.empty() || !ready_array_joins.empty())
     {
@@ -607,6 +623,7 @@ void ExpressionActions::linearizeActions(
             ExpressionActions::Argument argument;
             argument.pos = arg.position;
             argument.needed_later = arg_info.used_in_result || arg.num_created_parents != arg_info.parents.size();
+            argument.actions_pos = node_to_action_pos.at(arg.node);
 
             if (!argument.needed_later)
                 free_positions.push(argument.pos);
@@ -624,7 +641,13 @@ void ExpressionActions::linearizeActions(
             //required_columns.push_back({node->result_name, node->result_type});
         }
 
-        auto & action = actions.emplace_back(Action{node, arguments, free_position, lazy_executed_nodes.contains(node)});
+        node_to_action_pos[node] = actions.size();
+        auto & action = actions.emplace_back(Action{node, arguments, free_position, lazy_executed_nodes.contains(node), false, {}});
+        /// `is_no_except` is only used by AdaptiveExpressionActions, so do not pay for it when the adaptive mode is disabled.
+        /// The actions of the arguments are already created (the order is topological), so the result for the
+        /// descendants is taken from them: every node is checked once, even if it is shared by many parents.
+        action.is_no_except = settings.enable_adaptive_short_circuit_lazy_execution && isSafeForEagerExecutionNode(node)
+            && std::ranges::all_of(node->children, [&](const Node * child) { return actions[node_to_action_pos.at(child)].is_no_except; });
         if (reorderable_short_circuit_arguments.contains(node))
             action.short_circuit_argument_statistics = std::make_shared<ShortCircuitArgumentStatistics>();
         if (auto it = short_circuit_eager_arguments.find(node); it != short_circuit_eager_arguments.end())
@@ -665,6 +688,19 @@ void ExpressionActions::linearizeActions(
         actions[cur.position].arguments.front().pos = pos;
         required_columns.push_back({input->result_name, input->result_type});
         input_positions[input->result_name].emplace_back(pos);
+    }
+
+    for (size_t i = 0; i < actions.size(); ++i)
+        for (const auto & argument : actions[i].arguments)
+            actions[argument.actions_pos].parents_actions_pos.push_back(i);
+
+    /// An action can be used more than once by the same parent. Keep only one edge here, because adaptive
+    /// profiling propagates an eagerly executed descendant's cost to every ancestor.
+    for (auto & action : actions)
+    {
+        auto & parents = action.parents_actions_pos;
+        std::sort(parents.begin(), parents.end());
+        parents.erase(std::unique(parents.begin(), parents.end()), parents.end());
     }
 }
 
@@ -793,26 +829,6 @@ void ExpressionActions::checkLimits(const ColumnsWithTypeAndName & columns) cons
     }
 }
 
-namespace
-{
-    /// This struct stores context needed to execute actions.
-    ///
-    /// Execution model is following:
-    ///   * execution is performed over list of columns (with fixed size = ExpressionActions::num_columns)
-    ///   * every argument has fixed position in columns list, every action has fixed position for result
-    ///   * if argument is not needed anymore (Argument::needed_later == false), it is removed from list
-    ///   * argument for INPUT is in inputs[inputs_pos[argument.pos]]
-    ///
-    /// Columns on positions `ExpressionActions::result_positions` are inserted back into block.
-    struct ExecutionContext
-    {
-        ColumnsWithTypeAndName & inputs;
-        ColumnsWithTypeAndName columns = {};
-        std::vector<ssize_t> inputs_pos = {};
-        size_t num_rows = 0;
-    };
-}
-
 static void replicateColumns(ColumnsWithTypeAndName & columns, const IColumn::Offsets & offsets)
 {
     for (auto & column : columns)
@@ -835,8 +851,21 @@ static void replicateColumnsLazily(ColumnsWithTypeAndName & columns, const IColu
 }
 
 
-static void executeAction(const ExpressionActions::Action & action, ExecutionContext & execution_context, bool dry_run, bool allow_duplicates_in_input, bool enable_lazy_columns_replication)
+ColumnPtr ExpressionActions::executeFunction(
+    size_t action_index,
+    ColumnsWithTypeAndName & arguments,
+    const DataTypePtr & result_type,
+    size_t num_rows,
+    bool dry_run) const
 {
+    return actions[action_index].node->function->execute(arguments, result_type, num_rows, dry_run);
+}
+
+void ExpressionActions::executeAction(
+    size_t action_index, ExecutionContext & execution_context, bool dry_run, bool allow_duplicates_in_input) const
+{
+    const auto & action = actions[action_index];
+    const bool enable_lazy_columns_replication = settings.enable_lazy_columns_replication;
     auto & inputs = execution_context.inputs;
     auto & columns = execution_context.columns;
     auto & num_rows = execution_context.num_rows;
@@ -874,7 +903,9 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
                     arguments[i] = columns[action.arguments[i].pos];
             }
 
-            if (action.is_lazy_executed)
+            if (shouldExecuteLazily(action_index))
+            {
+                onLazyExecution(action_index, num_rows, dry_run);
                 res_column.column = ColumnFunction::create(
                     num_rows,
                     action.node->function_base,
@@ -885,13 +916,14 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
                     /*allow_lazy_replicated_captures_=*/ false,
                     action.short_circuit_argument_statistics,
                     action.short_circuit_eager_argument);
+            }
             else
             {
                 ProfileEvents::increment(ProfileEvents::FunctionExecute);
                 if (action.node->is_function_compiled)
                     ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
 
-                res_column.column = action.node->function->execute(arguments, res_column.type, num_rows, dry_run);
+                res_column.column = executeFunction(action_index, arguments, res_column.type, num_rows, dry_run);
                 if (!columnMatchesType(*res_column.column, *res_column.type))
                 {
                     throw Exception(
@@ -1003,6 +1035,10 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
 void ExpressionActions::execute(
     Block & block, size_t & num_rows, bool dry_run, bool allow_duplicates_in_input, const std::atomic<bool> * is_cancelled) const
 {
+    /// Row-multiplying actions (`ARRAY JOIN`) change `execution_context.num_rows` in place, so the final
+    /// value is not the size of the block the actions were executed on. Remember the input size for profiling.
+    const size_t input_num_rows = num_rows;
+
     ExecutionContext execution_context
     {
         .inputs = block.data,
@@ -1031,16 +1067,16 @@ void ExpressionActions::execute(
 
     execution_context.columns.resize(num_columns);
 
-    for (const auto & action : actions)
+    for (size_t action_index = 0; action_index < actions.size(); ++action_index)
     {
         try
         {
-            executeAction(action, execution_context, dry_run, allow_duplicates_in_input, settings.enable_lazy_columns_replication);
+            executeAction(action_index, execution_context, dry_run, allow_duplicates_in_input);
             checkLimits(execution_context.columns);
         }
         catch (Exception & e)
         {
-            e.addMessage(fmt::format("while executing '{}'", action.toString()));
+            e.addMessage(fmt::format("while executing '{}'", actions[action_index].toString()));
             throw;
         }
 
@@ -1090,6 +1126,7 @@ void ExpressionActions::execute(
     block.swap(res);
 
     num_rows = execution_context.num_rows;
+    finalizeBlockExecution(input_num_rows, dry_run);
 }
 
 std::vector<ssize_t> ExpressionActions::getInputPositions(const Block & header) const
@@ -1142,6 +1179,9 @@ Columns ExpressionActions::executeOnColumns(
         inputs.emplace_back(std::move(columns[i]), structure.type, structure.name);
     }
 
+    /// See the note in the `Block`-based `execute` above: keep the pre-`ARRAY JOIN` size for profiling.
+    const size_t input_num_rows = num_rows;
+
     ExecutionContext execution_context
     {
         .inputs = inputs,
@@ -1151,16 +1191,16 @@ Columns ExpressionActions::executeOnColumns(
     execution_context.inputs_pos = input_positions_for_header;
     execution_context.columns.resize(num_columns);
 
-    for (const auto & action : actions)
+    for (size_t action_index = 0; action_index < actions.size(); ++action_index)
     {
         try
         {
-            executeAction(action, execution_context, dry_run, /*allow_duplicates_in_input=*/false, settings.enable_lazy_columns_replication);
+            executeAction(action_index, execution_context, dry_run, /*allow_duplicates_in_input=*/false);
             checkLimits(execution_context.columns);
         }
         catch (Exception & e)
         {
-            e.addMessage(fmt::format("while executing '{}'", action.toString()));
+            e.addMessage(fmt::format("while executing '{}'", actions[action_index].toString()));
             throw;
         }
 
@@ -1194,6 +1234,7 @@ Columns ExpressionActions::executeOnColumns(
     }
 
     num_rows = execution_context.num_rows;
+    finalizeBlockExecution(input_num_rows, dry_run);
     return res;
 }
 
@@ -1338,6 +1379,348 @@ JSONBuilder::ItemPtr ExpressionActions::toTree() const
     map->add("Positions", std::move(positions_array));
 
     return map;
+}
+
+
+ExpressionActionsPtr ExpressionActions::create(
+    ActionsDAG actions_dag_, const ExpressionActionsSettings & settings_, bool project_inputs_)
+{
+    if (settings_.enable_adaptive_short_circuit_lazy_execution)
+        return std::make_shared<AdaptiveExpressionActions>(std::move(actions_dag_), settings_, project_inputs_);
+
+    return std::make_shared<ExpressionActions>(std::move(actions_dag_), settings_, project_inputs_);
+}
+
+
+ExpressionActionsPool::ExpressionActionsPool(ExpressionActionsPtr prototype_)
+    : prototype(std::move(prototype_))
+    , is_adaptive(prototype && prototype->getSettings().enable_adaptive_short_circuit_lazy_execution)
+{
+}
+
+ExpressionActionsPool::Lease ExpressionActionsPool::acquire() const
+{
+    /// A plain instance is stateless, so it can be shared by every caller.
+    if (!is_adaptive)
+        return Lease(nullptr, prototype);
+
+    {
+        std::lock_guard lock(mutex);
+        if (!free_instances.empty())
+        {
+            auto instance = std::move(free_instances.back());
+            free_instances.pop_back();
+            return Lease(this, std::move(instance));
+        }
+    }
+
+    /// All the instances are busy: this execution runs concurrently with them, so it needs its own one.
+    return Lease(this, prototype->clone());
+}
+
+void ExpressionActionsPool::release(ExpressionActionsPtr instance) const
+{
+    std::lock_guard lock(mutex);
+    free_instances.push_back(std::move(instance));
+}
+
+void ExpressionActionsPool::Lease::reset()
+{
+    if (pool)
+        pool->release(std::move(instance));
+
+    pool = nullptr;
+    instance = nullptr;
+}
+
+
+AdaptiveExpressionActions::AdaptiveExpressionActions(
+    ActionsDAG actions_dag_, const ExpressionActionsSettings & settings_, bool project_inputs_)
+    : ExpressionActions(std::move(actions_dag_), settings_, project_inputs_)
+{
+    action_states.resize(actions.size());
+    for (size_t i = 0; i < actions.size(); ++i)
+    {
+        const auto & action = actions[i];
+        IFunctionBase::ShortCircuitSettings short_circuit_settings;
+        action_states[i].is_short_circuit_function
+            = action.node->type == ActionsDAG::ActionType::FUNCTION && !action.node->children.empty()
+            && action.node->function_base->isShortCircuit(short_circuit_settings, action.node->children.size());
+        /// Start from the static decision: an action which may be executed lazily is executed lazily, and a
+        /// short circuit function itself is always "efficient" - it is never wrapped into a ColumnFunction.
+        action_states[i].is_lazy_execution_efficient = action.is_lazy_executed || action_states[i].is_short_circuit_function;
+    }
+}
+
+bool AdaptiveExpressionActions::shouldExecuteLazily(size_t action_index) const
+{
+    return actions[action_index].is_lazy_executed && action_states[action_index].is_lazy_execution_efficient;
+}
+
+ColumnPtr AdaptiveExpressionActions::executeFunction(
+    size_t action_index,
+    ColumnsWithTypeAndName & arguments,
+    const DataTypePtr & result_type,
+    size_t num_rows,
+    bool dry_run) const
+{
+    const auto & action = actions[action_index];
+
+    FunctionExecutionProfile profile;
+    size_t lazy_arguments_elapsed = 0;
+    /// An action which could have been executed lazily, but is executed eagerly now, may still have lazily
+    /// executed arguments. Reduce them here to measure how much they cost.
+    if (action.is_lazy_executed)
+    {
+        /// Reaching this point means the adaptive decision replaced the lazy execution of this action with
+        /// an eager one - the static schedule would have wrapped it into a `ColumnFunction` instead.
+        ProfileEvents::increment(ProfileEvents::AdaptiveShortCircuitEagerExecutions);
+
+        auto reduce_argument = [&](size_t i)
+        {
+            auto & argument = arguments[i];
+            if (const auto * column_function = checkAndGetShortCircuitArgument(argument.column))
+            {
+                profile.argument_profiles.emplace_back(i, FunctionExecutionProfile());
+                auto & argument_profile = profile.argument_profiles.back().second;
+                argument.column = column_function->reduce(dry_run, &argument_profile).column;
+                lazy_arguments_elapsed += argument_profile.execution_elapsed;
+            }
+        };
+
+        /// A nested short circuit function (e.g. `if` inside `and`) handles its lazily executed arguments by itself
+        /// and profiles them, the same as `ColumnFunction::reduce` does. Reducing all of them here would execute
+        /// its branches eagerly on all the rows and break their own adaptive decisions.
+        IFunctionBase::ShortCircuitSettings short_circuit_settings;
+        if (action_states[action_index].is_short_circuit_function
+            && action.node->function_base->isShortCircuit(short_circuit_settings, arguments.size()))
+        {
+            for (size_t i : short_circuit_settings.arguments_with_disabled_lazy_execution)
+                reduce_argument(i);
+        }
+        else
+        {
+            for (size_t i = 0; i < arguments.size(); ++i)
+                reduce_argument(i);
+        }
+    }
+
+    /// `IExecutableFunction::execute` profiles only the implementation, while the lazy path profiles the whole call.
+    /// Time the eager call here as well, so the adaptive decision compares the same end-to-end cost.
+    Stopwatch watch;
+    auto res = action.node->function->execute(arguments, result_type, num_rows, dry_run, &profile);
+    profile.execution_elapsed = watch.elapsed();
+    /// Add the time spent reducing lazy arguments afterwards.
+    profile.execution_elapsed += lazy_arguments_elapsed;
+    /// The timings of a dry run do not reflect the real execution, they must not affect the adaptive decisions.
+    if (!dry_run)
+        accumulateProfile(action_index, profile);
+    return res;
+}
+
+void AdaptiveExpressionActions::accumulateProfile(size_t action_index, const FunctionExecutionProfile & profile) const
+{
+    /// We need to eliminate aliases and access the true function node, taking into account the potential
+    /// presence of nested aliases.
+    while (actions[action_index].node->type == ActionsDAG::ActionType::ALIAS)
+        action_index = actions[action_index].arguments.front().actions_pos;
+
+    const auto & action = actions[action_index];
+    if (action.node->type != ActionsDAG::ActionType::FUNCTION)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Function node is expected, but got\n{}. The actions DAG is\n{}",
+            action.toString(),
+            actions_dag.dumpDAG());
+
+    auto accumulate = [](FunctionExecutionProfile & dst, const FunctionExecutionProfile & src)
+    {
+        dst.executed_rows += src.executed_rows;
+        dst.execution_elapsed += src.execution_elapsed;
+        dst.lazy_executed_additional_elapsed += src.lazy_executed_additional_elapsed;
+    };
+
+    auto & state = action_states[action_index];
+    accumulate(state.current_round_profile, profile);
+    accumulate(state.total_profile, profile);
+
+    /// Update the profiles of the lazily executed arguments.
+    for (const auto & [argument_index, argument_profile] : profile.argument_profiles)
+    {
+        if (argument_index >= action.arguments.size())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Argument index ({}) is out of bounds, the action has {} arguments. Action:\n{}\nThe actions DAG is\n{}",
+                argument_index,
+                action.arguments.size(),
+                action.toString(),
+                actions_dag.dumpDAG());
+
+        accumulateProfile(action.arguments[argument_index].actions_pos, argument_profile);
+    }
+}
+
+void AdaptiveExpressionActions::onLazyExecution(size_t action_index, size_t num_rows, bool dry_run) const
+{
+    if (!dry_run)
+        action_states[action_index].current_round_block_rows += num_rows;
+}
+
+void AdaptiveExpressionActions::finalizeBlockExecution(size_t input_num_rows, bool dry_run) const
+{
+    /// A dry run (e.g. of a lambda body during the analysis) is not a real execution: do not count its rows.
+    if (dry_run)
+        return;
+
+    /// Revisit the decisions only after enough rows were processed, otherwise the measurements are too noisy.
+    static constexpr size_t update_on_every_rows = 20000;
+
+    current_round_input_rows += input_num_rows;
+    if (current_round_input_rows < update_on_every_rows)
+        return;
+
+    updateActionsParentsProfile();
+    identifyNonBeneficialLazyActions();
+
+    for (auto & state : action_states)
+    {
+        state.current_round_profile = FunctionExecutionProfile();
+        state.current_round_block_rows = 0;
+    }
+    current_round_input_rows = 0;
+}
+
+void AdaptiveExpressionActions::updateActionsParentsProfile() const
+{
+    /// The parent should take into account the execution time of the children which it no longer
+    /// executes lazily, otherwise turning the lazy execution off would look free. Take a snapshot of the
+    /// measured costs first: the propagation modifies the profiles of the intermediate actions, and an
+    /// eager intermediate action must propagate only its own measured cost, not the contributions of its
+    /// descendants which were already charged to every ancestor.
+    std::vector<std::pair<size_t, size_t>> eager_actions_elapsed;
+    for (size_t i = 0; i < actions.size(); ++i)
+    {
+        if (actions[i].is_lazy_executed && !shouldExecuteLazily(i))
+            eager_actions_elapsed.emplace_back(i, action_states[i].current_round_profile.execution_elapsed);
+    }
+
+    for (const auto & [action_index, elapsed] : eager_actions_elapsed)
+        updateActionParentProfile(action_index, elapsed);
+}
+
+void AdaptiveExpressionActions::updateActionParentProfile(size_t action_index, size_t extra_elapsed) const
+{
+    if (!extra_elapsed)
+        return;
+
+    /// An action can have several lazy parents that share an ancestor. The action is materialized
+    /// only once, so charge every ancestor only once as well.
+    std::vector<bool> visited(actions.size());
+    visited[action_index] = true;
+
+    auto update_parent_profile = [&] (auto && self, size_t current_action_index) -> void
+    {
+        for (auto parent_action_index : actions[current_action_index].parents_actions_pos)
+        {
+            if (visited[parent_action_index])
+                continue;
+
+            visited[parent_action_index] = true;
+            /// Update the long-term baseline as well: while the descendant was lazy, its cost was a part of
+            /// the parent's own measurements, so the re-enable check must compare the current round against
+            /// a history built on the same cost model.
+            action_states[parent_action_index].current_round_profile.execution_elapsed += extra_elapsed;
+            action_states[parent_action_index].total_profile.execution_elapsed += extra_elapsed;
+            /// `ALIAS` actions and short-circuit functions such as `and`, `or`, `if` and `multiIf` never
+            /// execute lazily themselves, but they are transparent wrappers in the actions DAG: the cost of
+            /// an eager descendant is paid by whoever executes them. Continue through them, otherwise a lazy
+            /// ancestor above such a wrapper keeps comparing against an underestimated eager cost.
+            /// Continue through a statically lazy parent even if it was switched to the eager execution:
+            /// its own cost is propagated from the snapshot, which does not include this descendant.
+            const bool is_transparent_wrapper
+                = actions[parent_action_index].node->type == ActionsDAG::ActionType::ALIAS
+                || action_states[parent_action_index].is_short_circuit_function;
+            if (actions[parent_action_index].is_lazy_executed || is_transparent_wrapper)
+                self(self, parent_action_index);
+        }
+    };
+
+    update_parent_profile(update_parent_profile, action_index);
+}
+
+void AdaptiveExpressionActions::identifyNonBeneficialLazyActions() const
+{
+    for (size_t i = 0; i < actions.size(); ++i)
+    {
+        const auto & action = actions[i];
+        if (!action.is_lazy_executed)
+            continue;
+
+        /// We leave the action unchanged if its function throws an exception for invalid inputs: the rows
+        /// which are filtered out by the short circuit may contain exactly such inputs.
+        if (!action.is_no_except)
+            continue;
+
+        auto & state = action_states[i];
+        const auto & round_profile = state.current_round_profile;
+        if (!round_profile.executed_rows)
+            continue;
+
+        auto round_execution_elapsed = round_profile.execution_elapsed - round_profile.lazy_executed_additional_elapsed;
+        auto round_per_row_elapsed = static_cast<double>(round_execution_elapsed) / static_cast<double>(round_profile.executed_rows);
+
+        if (!state.is_lazy_execution_efficient)
+        {
+            const auto & total_profile = state.total_profile;
+            if (!total_profile.executed_rows)
+                continue;
+
+            auto execution_elapsed = total_profile.execution_elapsed - total_profile.lazy_executed_additional_elapsed;
+            auto per_row_elapsed = static_cast<double>(execution_elapsed) / static_cast<double>(total_profile.executed_rows);
+            /// If the execution time of this action increases significantly during the current round,
+            /// mark it as eligible for lazy evaluation again.
+            if (round_per_row_elapsed > per_row_elapsed * 1.5)
+            {
+                LOG_TRACE(getLogger("AdaptiveExpressionActions"), "Enable lazy execution again: {}", action.node->result_name);
+                state.is_lazy_execution_efficient = true;
+            }
+        }
+        else
+        {
+            /// The eager execution runs on the whole block at the position of the action (after any
+            /// `ARRAY JOIN` before it), regardless of the masks of its lazy ancestors, which are applied
+            /// only afterwards. So cost it over the rows of the blocks it was wrapped into `ColumnFunction`s for.
+            auto input_rows = state.current_round_block_rows;
+            auto estimated_full_execution_elapsed = round_per_row_elapsed * static_cast<double>(input_rows);
+            if (estimated_full_execution_elapsed >= static_cast<double>(round_profile.execution_elapsed))
+            {
+                state.non_beneficial_rounds = 0;
+                continue;
+            }
+
+            /// The time is measured by the wall clock and a round may consist of just a few measurements,
+            /// so a single preemption of the thread can make the lazy execution look expensive. A wrong
+            /// switch to the eager execution is hard to undo: the check above compares the per-row costs,
+            /// which do not reflect the rows saved by the short circuit. Require two rounds in a row.
+            static constexpr size_t non_beneficial_rounds_to_switch = 2;
+            ++state.non_beneficial_rounds;
+            if (state.non_beneficial_rounds >= non_beneficial_rounds_to_switch)
+            {
+                state.non_beneficial_rounds = 0;
+                LOG_TRACE(
+                    getLogger("AdaptiveExpressionActions"),
+                    "Lazy execution is not beneficial for {}: round input rows {}, executed rows {}, "
+                    "round execution elapsed {}, additional elapsed {}, estimated full execution elapsed {}",
+                    action.node->result_name,
+                    input_rows,
+                    round_profile.executed_rows,
+                    round_profile.execution_elapsed,
+                    round_profile.lazy_executed_additional_elapsed,
+                    estimated_full_execution_elapsed);
+                state.is_lazy_execution_efficient = false;
+            }
+        }
+    }
 }
 
 

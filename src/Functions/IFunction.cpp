@@ -22,6 +22,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
 #include <Common/assert_cast.h>
+#include <Common/Stopwatch.h>
 #include <Common/typeid_cast.h>
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -171,7 +172,11 @@ bool IExecutableFunction::isNullPropagating(const DataTypePtr & result_type) con
 }
 
 ColumnPtr IExecutableFunction::defaultImplementationForConstantArguments(
-    const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
+    const ColumnsWithTypeAndName & args,
+    const DataTypePtr & result_type,
+    size_t input_rows_count,
+    bool dry_run,
+    FunctionExecutionProfile * profile) const
 {
     ColumnNumbers arguments_to_remain_constants = getArgumentsThatAreAlwaysConstant();
 
@@ -214,7 +219,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForConstantArguments(
             "Number of arguments for function {} doesn't match: the function requires more arguments",
             getName());
 
-    ColumnPtr result_column = executeWithoutLowCardinalityColumns(temporary_columns, result_type, 1, dry_run);
+    ColumnPtr result_column = executeWithoutLowCardinalityColumns(temporary_columns, result_type, 1, dry_run, profile);
 
     /// extremely rare case, when we have function with completely const arguments
     /// but some of them produced by non isDeterministic function
@@ -302,7 +307,11 @@ void patchNullSlots(
 }
 
 ColumnPtr IExecutableFunction::defaultImplementationForNulls(
-    const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
+    const ColumnsWithTypeAndName & args,
+    const DataTypePtr & result_type,
+    size_t input_rows_count,
+    bool dry_run,
+    FunctionExecutionProfile * profile) const
 {
     if (args.empty() || !useDefaultImplementationForNulls())
         return nullptr;
@@ -339,7 +348,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
                     if (materialized_arg.type->isNullable())
                         materialized_arg.column = materialized_arg.column->convertToFullColumnIfReplicated();
                 }
-                return defaultImplementationForNulls(materialized_args, result_type, input_rows_count, dry_run);
+                return defaultImplementationForNulls(materialized_args, result_type, input_rows_count, dry_run, profile);
             }
         }
 
@@ -358,7 +367,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
             patchNullSlots(args, patched_columns, input_rows_count, /*only_enums=*/ false);
             auto temporary_result_type = removeNullable(result_type);
 
-            return executeWithoutLowCardinalityColumns(patched_columns, temporary_result_type, input_rows_count, dry_run);
+            return executeWithoutLowCardinalityColumns(patched_columns, temporary_result_type, input_rows_count, dry_run, profile);
         }
 
         /// A function that declines execution on default arguments must not be executed on the rows
@@ -409,7 +418,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
             patchNullSlots(args, temporary_columns, input_rows_count, /*only_enums=*/ true);
             auto temporary_result_type = removeNullable(result_type);
 
-            auto res = executeWithoutLowCardinalityColumns(temporary_columns, temporary_result_type, input_rows_count, dry_run);
+            auto res = executeWithoutLowCardinalityColumns(temporary_columns, temporary_result_type, input_rows_count, dry_run, profile);
             return wrapInNullable(res, args, result_type, input_rows_count);
         }
 
@@ -461,7 +470,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
         if (!should_short_circuit)
         {
             /// Each row should be evaluated if there are no nulls or short circuiting is disabled.
-            auto res = executeWithoutLowCardinalityColumns(temporary_columns, temporary_result_type, input_rows_count, dry_run);
+            auto res = executeWithoutLowCardinalityColumns(temporary_columns, temporary_result_type, input_rows_count, dry_run, profile);
             auto new_res = wrapInNullable(res, std::move(result_null_map));
             return new_res;
         }
@@ -479,7 +488,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
             for (auto & col : temporary_columns)
                 col.column = col.column->filter(filter_mask, rows_without_nulls);
 
-            auto res = executeWithoutLowCardinalityColumns(temporary_columns, temporary_result_type, rows_without_nulls, dry_run);
+            auto res = executeWithoutLowCardinalityColumns(temporary_columns, temporary_result_type, rows_without_nulls, dry_run, profile);
             auto mutable_res = IColumn::mutate(std::move(res));
             mutable_res->expand(filter_mask, false);
 
@@ -518,22 +527,26 @@ ColumnPtr IExecutableFunction::defaultImplementationForNothing(
 }
 
 ColumnPtr IExecutableFunction::executeWithoutLowCardinalityColumns(
-    const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
+    const ColumnsWithTypeAndName & args,
+    const DataTypePtr & result_type,
+    size_t input_rows_count,
+    bool dry_run,
+    FunctionExecutionProfile * profile) const
 {
     if (auto res = defaultImplementationForNothing(args, result_type, input_rows_count))
         return res;
 
-    if (auto res = defaultImplementationForConstantArguments(args, result_type, input_rows_count, dry_run))
+    if (auto res = defaultImplementationForConstantArguments(args, result_type, input_rows_count, dry_run, profile))
         return res;
 
-    if (auto res = defaultImplementationForNulls(args, result_type, input_rows_count, dry_run))
+    if (auto res = defaultImplementationForNulls(args, result_type, input_rows_count, dry_run, profile))
         return res;
 
     ColumnPtr res;
     if (dry_run)
         res = executeDryRunImpl(args, result_type, input_rows_count);
     else
-        res = executeImpl(args, result_type, input_rows_count);
+        res = executeImplWithProfile(args, result_type, input_rows_count, profile);
 
     if (!res)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty column was returned by function {}", getName());
@@ -579,7 +592,11 @@ bool IExecutableFunction::isCallDeterministicInScopeOfQuery(const ColumnsWithTyp
 }
 
 ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
-    const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
+    const ColumnsWithTypeAndName & arguments,
+    const DataTypePtr & result_type,
+    size_t input_rows_count,
+    bool dry_run,
+    FunctionExecutionProfile * profile) const
 {
     ColumnPtr result;
     if (useDefaultImplementationForLowCardinalityColumns())
@@ -618,7 +635,7 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
             }
             checkFunctionArgumentSizes(columns_without_low_cardinality, new_input_rows_count);
 
-            auto res = executeWithoutLowCardinalityColumns(columns_without_low_cardinality, dictionary_type, new_input_rows_count, dry_run);
+            auto res = executeWithoutLowCardinalityColumns(columns_without_low_cardinality, dictionary_type, new_input_rows_count, dry_run, profile);
             bool res_is_constant = isColumnConst(*res);
 
             auto keys = res_is_constant ? res->cloneResized(1)->convertToFullColumnIfConst() : res;
@@ -651,21 +668,62 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
             }
 
             if (!has_low_cardinality)
-                return executeWithoutLowCardinalityColumns(arguments, result_type, input_rows_count, dry_run);
+                return executeWithoutLowCardinalityColumns(arguments, result_type, input_rows_count, dry_run, profile);
 
             ColumnsWithTypeAndName columns_without_low_cardinality = arguments;
             convertLowCardinalityColumnsToFull(columns_without_low_cardinality);
-            result = executeWithoutLowCardinalityColumns(columns_without_low_cardinality, result_type, input_rows_count, dry_run);
+            result = executeWithoutLowCardinalityColumns(columns_without_low_cardinality, result_type, input_rows_count, dry_run, profile);
         }
     }
     else
-        result = executeWithoutLowCardinalityColumns(arguments, result_type, input_rows_count, dry_run);
+        result = executeWithoutLowCardinalityColumns(arguments, result_type, input_rows_count, dry_run, profile);
 
     return result;
 }
 
+ColumnPtr IExecutableFunction::executeImplWithProfile(
+    const ColumnsWithTypeAndName & arguments,
+    const DataTypePtr & result_type,
+    size_t input_rows_count,
+    FunctionExecutionProfile * profile) const
+{
+    if (profile)
+    {
+        Stopwatch watch;
+        auto res = executeImpl(arguments, result_type, input_rows_count);
+        profile->executed_rows = input_rows_count;
+        profile->execution_elapsed = watch.elapsed();
+        return res;
+    }
+    else
+    {
+        return executeImpl(arguments, result_type, input_rows_count);
+    }
+}
+
 ColumnPtr IExecutableFunction::execute(
-    const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
+    const ColumnsWithTypeAndName & arguments,
+    const DataTypePtr & result_type,
+    size_t input_rows_count,
+    bool dry_run,
+    FunctionExecutionProfile * profile) const
+{
+    auto res = executeWithoutProfiledRows(arguments, result_type, input_rows_count, dry_run, profile);
+    /// The default implementations execute the function on fewer rows than the caller passed: on the dictionary
+    /// of a `LowCardinality` column, on the values of a sparse column, on the nested column of a replicated column,
+    /// on a single row of constants or on the rows without NULLs. The callers measure the elapsed time of the whole
+    /// call and extrapolate it to the other rows, so record the logical rows of the call here, not the compacted ones.
+    if (profile)
+        profile->executed_rows = input_rows_count;
+    return res;
+}
+
+ColumnPtr IExecutableFunction::executeWithoutProfiledRows(
+    const ColumnsWithTypeAndName & arguments,
+    const DataTypePtr & result_type,
+    size_t input_rows_count,
+    bool dry_run,
+    FunctionExecutionProfile * profile) const
 {
     checkFunctionArgumentSizes(arguments, input_rows_count);
 
@@ -684,7 +742,7 @@ ColumnPtr IExecutableFunction::execute(
         }
 
         if (!has_replicated_column)
-            return executeWithoutReplicatedColumns(arguments, result_type, input_rows_count, dry_run);
+            return executeWithoutReplicatedColumns(arguments, result_type, input_rows_count, dry_run, profile);
 
         /// If we have only constants and replicated columns with the same indexes
         /// we can execute function on nested columns and create replicated column
@@ -718,7 +776,7 @@ ColumnPtr IExecutableFunction::execute(
         if (has_full_columns || !common_replicated_indexes || !isCallDeterministicInScopeOfQuery(arguments))
         {
             convertReplicatedColumnsToFull(arguments_without_replicated);
-            return executeWithoutReplicatedColumns(arguments_without_replicated, result_type, input_rows_count, dry_run);
+            return executeWithoutReplicatedColumns(arguments_without_replicated, result_type, input_rows_count, dry_run, profile);
         }
 
         /// In case the function might throw an exception replicated columns must be compacted
@@ -743,7 +801,7 @@ ColumnPtr IExecutableFunction::execute(
                 argument.column = ColumnConst::create(column_const->getDataColumnPtr(), nested_column_size);
         }
 
-        auto result = executeWithoutReplicatedColumns(arguments_without_replicated, result_type, nested_column_size, dry_run);
+        auto result = executeWithoutReplicatedColumns(arguments_without_replicated, result_type, nested_column_size, dry_run, profile);
 
         if (isLazyReplicationUseful(result))
             return ColumnReplicated::create(result, common_replicated_indexes);
@@ -751,11 +809,15 @@ ColumnPtr IExecutableFunction::execute(
         return result->index(*common_replicated_indexes, 0);
     }
 
-    return executeWithoutReplicatedColumns(arguments, result_type, input_rows_count, dry_run);
+    return executeWithoutReplicatedColumns(arguments, result_type, input_rows_count, dry_run, profile);
 }
 
 ColumnPtr IExecutableFunction::executeWithoutReplicatedColumns(
-    const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
+    const ColumnsWithTypeAndName & arguments,
+    const DataTypePtr & result_type,
+    size_t input_rows_count,
+    bool dry_run,
+    FunctionExecutionProfile * profile) const
 {
     bool use_default_implementation_for_sparse_columns = useDefaultImplementationForSparseColumns();
     /// DataTypeFunction does not support obtaining default (isDefaultAt())
@@ -789,7 +851,7 @@ ColumnPtr IExecutableFunction::executeWithoutReplicatedColumns(
         /// Fast path: with no sparse columns there is nothing to convert, so skip copying the
         /// (potentially very wide) argument list and pass it straight through.
         if (!has_any_sparse_column)
-            return executeWithoutSparseColumns(arguments, result_type, input_rows_count, dry_run);
+            return executeWithoutSparseColumns(arguments, result_type, input_rows_count, dry_run, profile);
 
         auto columns_without_sparse = arguments;
         if (num_sparse_columns == 1 && num_full_columns == 0 && isCallDeterministicInScopeOfQuery(arguments))
@@ -812,7 +874,7 @@ ColumnPtr IExecutableFunction::executeWithoutReplicatedColumns(
                 columns_without_sparse[i].column = columns_without_sparse[i].column->cloneResized(values_size);
             }
 
-            auto res = executeWithoutSparseColumns(columns_without_sparse, result_type, values_size, dry_run);
+            auto res = executeWithoutSparseColumns(columns_without_sparse, result_type, values_size, dry_run, profile);
 
             if (isColumnConst(*res))
                 return res->cloneResized(input_rows_count);
@@ -830,15 +892,26 @@ ColumnPtr IExecutableFunction::executeWithoutReplicatedColumns(
         }
 
         convertSparseColumnsToFull(columns_without_sparse);
-        return executeWithoutSparseColumns(columns_without_sparse, result_type, input_rows_count, dry_run);
+        return executeWithoutSparseColumns(columns_without_sparse, result_type, input_rows_count, dry_run, profile);
     }
     if (use_default_implementation_for_sparse_columns)
     {
         auto columns_without_sparse = arguments;
         convertSparseColumnsToFull(columns_without_sparse);
-        return executeWithoutSparseColumns(columns_without_sparse, result_type, input_rows_count, dry_run);
+        return executeWithoutSparseColumns(columns_without_sparse, result_type, input_rows_count, dry_run, profile);
     }
-    return executeWithoutSparseColumns(arguments, result_type, input_rows_count, dry_run);
+    return executeWithoutSparseColumns(arguments, result_type, input_rows_count, dry_run, profile);
+}
+
+ColumnPtr IFunctionBase::execute(
+    const DB::ColumnsWithTypeAndName& arguments,
+    const DB::DataTypePtr& result_type,
+    size_t input_rows_count,
+    bool dry_run,
+    FunctionExecutionProfile * profile) const
+{
+    checkFunctionArgumentSizes(arguments, input_rows_count);
+    return prepare(arguments)->execute(arguments, result_type, input_rows_count, dry_run, profile);
 }
 
 ColumnPtr IFunctionBase::execute(const DB::ColumnsWithTypeAndName& arguments, const DB::DataTypePtr& result_type,
@@ -988,6 +1061,26 @@ FunctionBasePtr IFunctionOverloadResolver::build(const ColumnsWithTypeAndName & 
         base->setFactoryHandle(factory_handle);
 
     return base;
+}
+
+ColumnPtr IFunction::executeImplWithProfile(
+    const ColumnsWithTypeAndName & arguments,
+    const DataTypePtr & result_type,
+    size_t input_rows_count,
+    FunctionExecutionProfile * profile) const
+{
+    if (profile)
+    {
+        Stopwatch watch;
+        auto res = executeImpl(arguments, result_type, input_rows_count);
+        profile->executed_rows = input_rows_count;
+        profile->execution_elapsed = watch.elapsed();
+        return res;
+    }
+    else
+    {
+        return executeImpl(arguments, result_type, input_rows_count);
+    }
 }
 
 void IFunctionOverloadResolver::getLambdaArgumentTypes(DataTypes & arguments [[maybe_unused]]) const
