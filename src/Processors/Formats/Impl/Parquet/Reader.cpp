@@ -155,7 +155,8 @@ static void checkSchemaElementEnums(const parq::FileMetaData & file_metadata)
         };
         check(element.type, parq::_Type_VALUES_TO_NAMES, "physical type");
         check(element.repetition_type, parq::_FieldRepetitionType_VALUES_TO_NAMES, "repetition type");
-        check(element.converted_type, parq::_ConvertedType_VALUES_TO_NAMES, "converted type");
+        if (thriftEnumToInt(element.converted_type) != LEGACY_NULL_CONVERTED_TYPE)
+            check(element.converted_type, parq::_ConvertedType_VALUES_TO_NAMES, "converted type");
     }
 }
 

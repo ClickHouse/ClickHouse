@@ -16,6 +16,11 @@ namespace DB::Parquet
 /// Namespace with structs generated from parquet.thrift
 namespace parq = parquet::format;
 
+/// Old versions of parquet-cpp wrote their own `NA` converted type, 24, for a column of the Arrow null type. The value
+/// is not in parquet.thrift (but is in the range of the enum). Such a column has only nulls, like one with the `UNKNOWN`
+/// (null) logical type.
+constexpr int LEGACY_NULL_CONVERTED_TYPE = 24;
+
 /// Parquet file footer whose column chunks are parsed on demand, see deserializeColumnChunks.
 struct FileFooter
 {
