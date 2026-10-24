@@ -123,15 +123,15 @@ ColumnPtr ColumnConst::index(const IColumn & indexes, size_t limit) const
     return ColumnConst::create(data, limit);
 }
 
-VectorWithMemoryTracking<MutableColumnPtr> ColumnConst::scatter(size_t num_columns, const Selector & selector) const
+MutableColumns ColumnConst::scatter(size_t num_columns, const Selector & selector) const
 {
     if (s != selector.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector ({}) doesn't match size of column ({})",
             selector.size(), toString(s));
 
-    VectorWithMemoryTracking<size_t> counts = countColumnsSizeInSelector(num_columns, selector);
+    std::vector<size_t> counts = countColumnsSizeInSelector(num_columns, selector);
 
-    VectorWithMemoryTracking<MutableColumnPtr> res(num_columns);
+    MutableColumns res(num_columns);
     for (size_t i = 0; i < num_columns; ++i)
         res[i] = cloneResized(counts[i]);
 

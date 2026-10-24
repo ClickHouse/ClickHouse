@@ -2,8 +2,6 @@
 #include <Access/ContextAccess.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageFactory.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Interpreters/Context.h>
@@ -13,16 +11,13 @@
 #include <Common/Config/ConfigHelper.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
-#include <Core/UUID.h>
 #include <QueryPipeline/Pipe.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTCreateQuery.h>
-#if CLICKHOUSE_CLOUD
-#include <Dictionaries/SystemDictionaryUUIDs.h>
-#endif
 #include <Storages/AlterCommands.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <Core/ServerSettings.h>
 
 
@@ -46,6 +41,7 @@ namespace ErrorCodes
     extern const int DICTIONARY_ALREADY_EXISTS;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -113,21 +109,12 @@ StorageDictionary::StorageDictionary(
     const String & comment,
     Location location_,
     ContextPtr context_)
-    : StorageWithCommonVirtualColumns(table_id_), WithContext(context_->getGlobalContext()), dictionary_name(dictionary_name_), location(location_)
+    : IStorage(table_id_), WithContext(context_->getGlobalContext()), dictionary_name(dictionary_name_), location(location_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setComment(comment);
-    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-}
-
-VirtualColumnsDescription StorageDictionary::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    return desc;
 }
 
 
@@ -160,10 +147,6 @@ StorageDictionary::StorageDictionary(
         Location::SameDatabaseAndNameAsDictionary,
         context_)
 {
-#if CLICKHOUSE_CLOUD
-    if (table_id.database_name == "system")
-        SystemDictionaryUUIDs::instance().add(table_id.uuid);
-#endif
     configuration = dictionary_configuration;
 
     auto repository = std::make_unique<ExternalLoaderDictionaryStorageConfigRepository>(*this);
@@ -172,10 +155,6 @@ StorageDictionary::StorageDictionary(
 
 StorageDictionary::~StorageDictionary()
 {
-#if CLICKHOUSE_CLOUD
-    if (getStorageID().database_name == "system")
-        SystemDictionaryUUIDs::instance().remove(getStorageID().uuid);
-#endif
     removeDictionaryConfigurationFromRepository();
 }
 
@@ -265,7 +244,7 @@ void StorageDictionary::renameInMemory(const StorageID & new_table_id)
     auto old_table_id = getStorageID();
     IStorage::renameInMemory(new_table_id);
 
-    chassert((location == Location::SameDatabaseAndNameAsDictionary) == (getConfiguration().get() != nullptr));
+    assert((location == Location::SameDatabaseAndNameAsDictionary) == (getConfiguration().get() != nullptr));
     if (location != Location::SameDatabaseAndNameAsDictionary)
         return;
 
@@ -273,7 +252,7 @@ void StorageDictionary::renameInMemory(const StorageID & new_table_id)
 
     bool move_to_atomic = old_table_id.uuid == UUIDHelpers::Nil && new_table_id.uuid != UUIDHelpers::Nil;
     bool move_to_ordinary = old_table_id.uuid != UUIDHelpers::Nil && new_table_id.uuid == UUIDHelpers::Nil;
-    chassert(old_table_id.uuid == new_table_id.uuid || move_to_atomic || move_to_ordinary);
+    assert(old_table_id.uuid == new_table_id.uuid || move_to_atomic || move_to_ordinary);
 
     /// It's better not to update an associated `IDictionary` directly here because it can be not loaded yet or
     /// it can be in the process of loading or reloading right now.
@@ -335,7 +314,7 @@ void StorageDictionary::alter(const AlterCommands & params, ContextPtr alter_con
     if (location == Location::Custom)
         return;
 
-    auto new_comment = getInMemoryMetadataPtr(alter_context, false)->comment;
+    auto new_comment = getInMemoryMetadataPtr()->comment;
 
     /// It's better not to update an associated `IDictionary` directly here because it can be not loaded yet or
     /// it can be in the process of loading or reloading right now.
@@ -372,6 +351,20 @@ void registerStorageDictionary(StorageFactory & factory)
 
             /// Create dictionary storage that owns underlying dictionary
             auto abstract_dictionary_configuration = getDictionaryConfigurationFromAST(args.query, local_context, dictionary_id.database_name);
+
+            /// The overrides of stored keys of a named collection need the same privilege as in table engines.
+            /// The dictionary is loaded later with the global context, so the user's privileges are checked here.
+            Poco::Util::AbstractConfiguration::Keys source_keys;
+            abstract_dictionary_configuration->keys("dictionary.source", source_keys);
+            if (source_keys.empty() || source_keys.size() > 2)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Expected one or two child elements in the source of dictionary {}",
+                    dictionary_id.getNameForLogs());
+            /// The source type is chosen as in `DictionarySourceFactory::create`.
+            const auto & source_type = source_keys.front() == "settings" ? source_keys.back() : source_keys.front();
+            checkNamedCollectionOverridesInDictionarySource(
+                *abstract_dictionary_configuration, "dictionary.source." + source_type, local_context);
             auto result_storage = std::make_shared<StorageDictionary>(dictionary_id, abstract_dictionary_configuration, local_context);
 
             bool lazy_load = local_context->getServerSettings()[ServerSetting::dictionaries_lazy_load];

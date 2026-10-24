@@ -1,11 +1,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <Core/ColumnsWithTypeAndName.h>
-#include <DataTypes/DataTypeString.h>
-#include <Core/NamesAndTypes.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/System/StorageSystemGraphite.h>
 
@@ -40,7 +36,7 @@ ColumnsDescription StorageSystemGraphite::getColumnsDescription()
  */
 static StorageSystemGraphite::Configs getConfigs(ContextPtr context)
 {
-    const Databases databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false});
+    const Databases databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
     StorageSystemGraphite::Configs graphite_configs;
 
     for (const auto & db : databases)
@@ -51,11 +47,7 @@ static StorageSystemGraphite::Configs getConfigs(ContextPtr context)
 
         for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
-            const auto & table = iterator->table();
-            if (!table)
-                continue;
-
-            const MergeTreeData * table_data = dynamic_cast<const MergeTreeData *>(table.get());
+            auto table_data = castStorage<MergeTreeData>(iterator->table(), DeferredTable::Skip);
             if (!table_data)
                 continue;
 

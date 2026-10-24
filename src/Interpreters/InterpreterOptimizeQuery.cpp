@@ -1,4 +1,5 @@
 #include <Storages/IStorage.h>
+#include <Storages/StorageProxy.h>
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Interpreters/Context.h>
@@ -39,9 +40,11 @@ BlockIO InterpreterOptimizeQuery::execute()
     getContext()->checkAccess(getRequiredAccess());
 
     auto table_id = getContext()->resolveStorageID(ast);
-    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
+    /// Resolve before reading the metadata, so the checks below and `optimizeDryRun` see the real
+    /// structure rather than the columns-only one a lazily loaded table reports.
+    StoragePtr table = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(table_id, getContext()));
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
-    auto metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);
+    auto metadata_snapshot = table->getInMemoryMetadataPtr();
     auto storage_snapshot = table->getStorageSnapshot(metadata_snapshot, getContext());
 
     // Empty list of names means we deduplicate by all columns, but user can explicitly state which columns to use.
@@ -82,7 +85,7 @@ BlockIO InterpreterOptimizeQuery::execute()
 
     if (ast.dry_run)
     {
-        auto * merge_tree_data = dynamic_cast<MergeTreeData *>(table.get());
+        auto * merge_tree_data = castStorage<MergeTreeData>(table, DeferredTable::Load).get();
         if (!merge_tree_data)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "OPTIMIZE DRY RUN is only supported for MergeTree family tables");
 

@@ -29,6 +29,10 @@ struct ZooKeeperArgs
     /// hosts_string -- comma separated [secure://]host:port list
     ZooKeeperArgs(const String & hosts_string); /// NOLINT(google-explicit-constructor)
     ZooKeeperArgs() = default;
+    /// Memberwise comparison. ZooKeeper::configChanged uses it to compare args parsed from
+    /// config; any field below that is set out-of-band (server settings, runtime session state
+    /// such as last_zxid_seen) must be excluded from the comparison there, otherwise every
+    /// config reload spuriously recreates the session.
     bool operator == (const ZooKeeperArgs &) const = default;
 
     String zookeeper_name = "zookeeper";

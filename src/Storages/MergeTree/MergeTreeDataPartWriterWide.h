@@ -31,6 +31,7 @@ public:
         const MergeTreeSettingsPtr & storage_settings_,
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot,
+        const VirtualsDescriptionPtr & virtual_columns_,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,
@@ -38,7 +39,7 @@ public:
         MergeTreeIndexGranularityPtr index_granularity_,
         WrittenOffsetSubstreams * written_offset_substreams_);
 
-    void write(const Block & block, const IColumnPermutation * permutation, Block * permuted_columns_cache) override;
+    void write(const Block & block, const IColumnPermutation * permutation) override;
 
     void finalizeIndexGranularity() final;
     void fillChecksums(MergeTreeDataPartChecksums & checksums, NameSet & checksums_to_remove) final;

@@ -2,7 +2,6 @@
 
 
 #include <Core/Settings.h>
-#include <Core/UUID.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -28,6 +27,8 @@
 #include <base/getFQDNOrHostName.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/RemoteHostFilter.h>
+#include <Common/StringUtils.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
@@ -36,6 +37,7 @@
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 
+#include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 
@@ -106,7 +108,13 @@ void registerStorageKafka(StorageFactory & factory)
 
         auto kafka_settings = std::make_unique<KafkaSettings>();
         String collection_name;
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext(), true, nullptr, &args.table_id))
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(
+            args.engine_args,
+            args.getLocalContext(),
+            /*throw_unknown_collection=*/ true,
+            /*complex_args=*/ nullptr,
+            &args.table_id,
+            args.storage_def->settings))
         {
             kafka_settings->loadFromNamedCollection(named_collection);
             collection_name = assert_cast<const ASTIdentifier *>(args.engine_args[0].get())->name();
@@ -192,7 +200,13 @@ void registerStorageKafka(StorageFactory & factory)
         auto num_consumers = (*kafka_settings)[KafkaSetting::kafka_num_consumers].value;
         auto max_consumers = std::max<uint32_t>(getNumberOfCPUCoresToUse(), 16);
 
-        if (!args.getLocalContext()->getSettingsRef()[Setting::kafka_disable_num_consumers_limit] && num_consumers > max_consumers)
+        /// The limit depends on the local CPU count, so a definition read back from metadata may have been
+        /// accepted on a bigger server. Validate only a freshly introduced one, so existing tables stay loadable.
+        const bool is_fresh_definition = args.mode <= LoadingStrictnessLevel::CREATE
+            || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
+
+        if (is_fresh_definition
+            && !args.getLocalContext()->getSettingsRef()[Setting::kafka_disable_num_consumers_limit] && num_consumers > max_consumers)
         {
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
@@ -253,7 +267,8 @@ void registerStorageKafka(StorageFactory & factory)
             return std::make_shared<StorageKafka>(
                 args.table_id, args.getContext(), args.columns, args.comment, std::move(kafka_settings), collection_name);
 
-        if (!args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_kafka_offsets_storage_in_keeper] && !args.query.attach)
+        if (args.mode <= LoadingStrictnessLevel::CREATE
+            && !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_kafka_offsets_storage_in_keeper])
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
                 "Storing the Kafka offsets in Keeper is experimental. Set `allow_experimental_kafka_offsets_storage_in_keeper` setting "
@@ -379,6 +394,53 @@ Names parseTopics(String topic_list)
 String getDefaultClientId(const StorageID & table_id)
 {
     return fmt::format("{}-{}-{}-{}", VERSION_NAME, getFQDNOrHostName(), table_id.database_name, table_id.table_name);
+}
+
+String validateBrokerList(const String & broker_list, const ContextPtr & context)
+{
+    /// The remote host filter must see exactly the host and port librdkafka will dial, so the value is
+    /// not passed on as it was written: every entry is parsed here, validated, and the returned list is
+    /// rebuilt from the parsed entries. The rebuilt entries are `[SCHEME://]host:port` with an explicit
+    /// port, a form librdkafka re-parses to the same host and port.
+    ///
+    /// librdkafka reads `metadata.broker.list` as a C string, splits it on `,` and ` `, cuts an entry at
+    /// the first `/` after the `scheme://` prefix, substitutes `localhost` for an empty host, and
+    /// connects to port 9092 when none is given (`rd_kafka_broker_name_parse`). An entry which such a
+    /// re-parse could read differently - a NUL, a `/`, an empty host, a character outside printable
+    /// ASCII - is rejected instead of repaired.
+
+    if (broker_list.contains('\0'))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Kafka broker list must not contain NUL characters");
+
+    Names brokers;
+    boost::split(brokers, broker_list, [](char c) { return c == ',' || c == ' '; });
+
+    Names canonical_brokers;
+    canonical_brokers.reserve(brokers.size());
+
+    for (String & broker : brokers)
+    {
+        boost::trim(broker);
+        if (broker.empty())
+            continue;
+
+        String scheme;
+        if (const auto scheme_end = broker.find("://"); scheme_end != String::npos)
+        {
+            scheme = broker.substr(0, scheme_end + strlen("://"));
+            broker = broker.substr(scheme_end + strlen("://"));
+
+            /// The underscore appears in the librdkafka protocols `sasl_plaintext` and `sasl_ssl`.
+            for (const char c : scheme.substr(0, scheme_end))
+                if (!isAlphaASCII(c) && c != '_')
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid protocol in Kafka broker '{}{}'", scheme, broker);
+        }
+
+        canonical_brokers.push_back(
+            scheme + context->getRemoteHostFilter().checkAndGetCanonicalHostAndPort(broker, 9092, "Kafka broker"));
+    }
+
+    return boost::algorithm::join(canonical_brokers, ",");
 }
 
 void consumerGracefulStop(
@@ -548,72 +610,22 @@ VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_m
 {
     VirtualColumnsDescription desc;
 
-    desc.addEphemeral("_topic", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_key", std::make_shared<DataTypeString>(), "", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_offset", std::make_shared<DataTypeUInt64>(), "", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_partition", std::make_shared<DataTypeUInt64>(), "", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_timestamp", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_timestamp_ms", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(3)), "", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_headers.name", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_headers.value", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_topic", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
+    desc.addEphemeral("_key", std::make_shared<DataTypeString>(), "");
+    desc.addEphemeral("_offset", std::make_shared<DataTypeUInt64>(), "");
+    desc.addEphemeral("_partition", std::make_shared<DataTypeUInt64>(), "");
+    desc.addEphemeral("_timestamp", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "");
+    desc.addEphemeral("_timestamp_ms", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(3)), "");
+    desc.addEphemeral("_headers.name", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "");
+    desc.addEphemeral("_headers.value", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "");
 
     if (handle_error_mode == StreamingHandleErrorMode::STREAM)
     {
-        desc.addEphemeral("_raw_message", std::make_shared<DataTypeString>(), "", VirtualsMaterializationPlace::Reader);
-        desc.addEphemeral("_error", std::make_shared<DataTypeString>(), "", VirtualsMaterializationPlace::Reader);
+        desc.addEphemeral("_raw_message", std::make_shared<DataTypeString>(), "");
+        desc.addEphemeral("_error", std::make_shared<DataTypeString>(), "");
     }
 
     return desc;
-}
-
-PayloadSplit splitPayloadColumns(const Block & header, bool map_virtual_columns_on_write)
-{
-    PayloadSplit split;
-    split.format_column_indices.reserve(header.columns());
-
-    auto is_string_array = [](const DataTypePtr & type)
-    {
-        const auto * array_type = typeid_cast<const DataTypeArray *>(type.get());
-        return array_type && isString(array_type->getNestedType());
-    };
-
-    /// Headers are mapped only when both `_headers.name` and `_headers.value` are present
-    /// with `Array(String)` type — see `KafkaProducer::KafkaProducer`. Excluding them
-    /// independently would silently drop one-sided header columns from the payload.
-    bool map_headers = false;
-    if (map_virtual_columns_on_write
-        && header.has("_headers.name") && header.has("_headers.value"))
-    {
-        map_headers = is_string_array(header.getByName("_headers.name").type)
-            && is_string_array(header.getByName("_headers.value").type);
-    }
-
-    auto is_mapped_to_metadata = [&](const ColumnWithTypeAndName & column)
-    {
-        /// Keep type checks in sync with `KafkaProducer::KafkaProducer`. Columns whose type
-        /// does not match are left in the payload rather than being silently dropped.
-        if (column.name == "_key")
-            return isString(column.type);
-        if (column.name == "_timestamp")
-            return isDateTime(column.type);
-        if (column.name == "_headers.name" || column.name == "_headers.value")
-            return map_headers;
-        return false;
-    };
-
-    for (size_t i = 0; i < header.columns(); ++i)
-    {
-        const auto & column = header.getByPosition(i);
-
-        if (map_virtual_columns_on_write && is_mapped_to_metadata(column))
-            continue;
-
-        split.format_header.insert(column);
-        split.format_column_indices.push_back(i);
-    }
-
-    return split;
 }
 }
 }

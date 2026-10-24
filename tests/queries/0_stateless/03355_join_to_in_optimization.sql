@@ -1,7 +1,5 @@
 SET enable_analyzer = 1;
 SET join_algorithm = 'hash';
-SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
-SET query_plan_merge_filters = 1; -- Filter nodes must be merged for stable EXPLAIN output
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
@@ -14,7 +12,7 @@ EXPLAIN actions = 1, optimize = 1, header = 1
 SELECT t1.id
 FROM t1, t2
 WHERE t1.id = t2.id
-SETTINGS query_plan_convert_join_to_in = true;
+SETTINGS query_plan_use_new_logical_join_step = true, query_plan_convert_join_to_in = true;
 
 SELECT
     t1.key,
@@ -24,7 +22,7 @@ ALL INNER JOIN t2 ON (t1.id = t2.id) AND (t2.key = t2.key2)
 ORDER BY
     t1.key ASC,
     t1.key2 ASC
-SETTINGS query_plan_convert_join_to_in = true;
+SETTINGS query_plan_use_new_logical_join_step = true, query_plan_convert_join_to_in = true;
 
 SYSTEM FLUSH LOGS system.query_log;
 EXPLAIN
@@ -32,7 +30,7 @@ SELECT hostName() AS hostName
 FROM system.query_log AS a
 INNER JOIN system.processes AS b ON (a.query_id = b.query_id) AND (type = 'QueryStart')
 WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
-SETTINGS query_plan_convert_join_to_in = true;
+SETTINGS query_plan_use_new_logical_join_step = true, query_plan_convert_join_to_in = true;
 
 SELECT dummy
 FROM
@@ -50,7 +48,7 @@ INNER JOIN
     SELECT dummy
     FROM system.one
 ) AS c USING (dummy)
-SETTINGS query_plan_convert_join_to_in = true;
+SETTINGS query_plan_use_new_logical_join_step = true, query_plan_convert_join_to_in = true;
 
 -- check type, modified from 02988_join_using_prewhere_pushdown
 SET allow_suspicious_low_cardinality_types = 1;
@@ -71,7 +69,7 @@ INNER JOIN
     FROM numbers(10)
 ) AS t1 USING (u)
 FORMAT Null
-SETTINGS query_plan_convert_join_to_in = true;
+SETTINGS query_plan_use_new_logical_join_step = true, query_plan_convert_join_to_in = true;
 
 -- check filter column remove, modified from 01852_multiple_joins_with_union_join
 DROP TABLE IF EXISTS v1;
@@ -94,4 +92,4 @@ INNER JOIN system.processes AS b
 ON (a.query_id = b.query_id) AND (a.query_id = b.query_id)
 WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
 FORMAT Null
-SETTINGS query_plan_convert_join_to_in = true;
+SETTINGS query_plan_use_new_logical_join_step = true, query_plan_convert_join_to_in = true;

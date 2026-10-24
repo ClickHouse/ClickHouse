@@ -8,9 +8,7 @@ namespace DB
 RefreshSchedule::RefreshSchedule(const ASTRefreshStrategy & strategy)
 {
     kind = strategy.schedule_kind;
-    chassert(kind != RefreshScheduleKind::UNKNOWN);
-    if (strategy.period)
-        period = strategy.period->interval;
+    period = strategy.period->interval;
     if (strategy.offset)
         offset = strategy.offset->interval;
     if (strategy.spread)
@@ -68,9 +66,9 @@ std::chrono::sys_seconds RefreshSchedule::advance(std::chrono::sys_seconds last_
     return advanceEvery(last_completed_timeslot, period, offset);
 }
 
-std::chrono::system_clock::time_point RefreshSchedule::addRandomSpread(std::chrono::system_clock::time_point when, Int64 randomness) const
+std::chrono::system_clock::time_point RefreshSchedule::addRandomSpread(std::chrono::sys_seconds timeslot, Int64 randomness) const
 {
-    return when + std::chrono::milliseconds(Int64(static_cast<double>(spread.minSeconds()) * 1e3 / 2 * static_cast<double>(randomness) / 1e9));
+    return timeslot + std::chrono::milliseconds(Int64(static_cast<double>(spread.minSeconds()) * 1e3 / 2 * static_cast<double>(randomness) / 1e9));
 }
 
 }

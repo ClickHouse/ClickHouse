@@ -61,7 +61,7 @@ void test_read_quoted(const auto & handler, std::string_view input, std::string_
 
 TEST(extractKVPairNoEscapingKeyStateHandler, Wait)
 {
-    auto pair_delimiters = VectorWithMemoryTracking<char>{',', ' ', '$'};
+    auto pair_delimiters = std::vector<char>{',', ' ', '$'};
 
     auto configuration = ConfigurationFactory::createWithEscaping(':', '"', pair_delimiters, Configuration::UnexpectedQuotingCharacterStrategy::PROMOTE);
 
@@ -80,7 +80,7 @@ TEST(extractKVPairNoEscapingKeyStateHandler, Wait)
 
 TEST(extractKVPairNoEscapingKeyStateHandler, Read)
 {
-    auto pair_delimiters = VectorWithMemoryTracking<char>{',', ' '};
+    auto pair_delimiters = std::vector<char>{',', ' '};
 
     auto configuration = ConfigurationFactory::createWithEscaping(':', '"', pair_delimiters, Configuration::UnexpectedQuotingCharacterStrategy::PROMOTE);
 

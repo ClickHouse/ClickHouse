@@ -2,6 +2,7 @@
 
 #include <Databases/DatabaseMetadataDiskSettings.h>
 #include <Databases/DatabaseOnDisk.h>
+#include <Common/ThreadPool.h>
 
 
 namespace DB
@@ -85,6 +86,10 @@ public:
     DiskPtr getDisk() const override { return metadata_disk_ptr; }
 
     static void setMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr context, bool replicated);
+
+    /// Rejects a conversion to a replicated engine whose Keeper path would not be a safe one.
+    /// Contacts nothing and mutates nothing, so a caller can run it before its own side effects.
+    static void checkReplicaPathIsSafe(const ASTCreateQuery & create_query, ContextPtr context);
 
 protected:
     virtual void commitAlterTable(

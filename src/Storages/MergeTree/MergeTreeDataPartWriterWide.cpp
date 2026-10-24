@@ -1,4 +1,3 @@
-#include <algorithm>
 #include <Columns/ColumnSparse.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressionFactory.h>
@@ -10,7 +9,6 @@
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/ParallelSyncFiles.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Common/Logger.h>
 #include <Common/SipHash.h>
@@ -102,6 +100,7 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
     const MergeTreeSettingsPtr & storage_settings_,
     const NamesAndTypesList & columns_list_,
     const StorageMetadataPtr & metadata_snapshot_,
+    const VirtualsDescriptionPtr & virtual_columns_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
@@ -111,7 +110,7 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
     : MergeTreeDataPartWriterOnDisk(
             data_part_name_, logger_name_, serializations_,
             data_part_storage_, index_granularity_info_, storage_settings_,
-            columns_list_, metadata_snapshot_,
+            columns_list_, metadata_snapshot_, virtual_columns_,
             indices_to_recalc_, marks_file_extension_,
             default_codec_, settings_, std::move(index_granularity_),
             written_offset_substreams_)
@@ -143,7 +142,7 @@ void MergeTreeDataPartWriterWide::addStreams(
 {
     ISerialization::StreamCallback callback = [&](const auto & substream_path)
     {
-        chassert(!substream_path.empty());
+        assert(!substream_path.empty());
 
         /// Don't create streams for ephemeral subcolumns that don't store any real data.
         if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
@@ -193,8 +192,6 @@ void MergeTreeDataPartWriterWide::addStreams(
                 max_compress_block_size = value->safeGet<UInt64>();
         if (!max_compress_block_size)
             max_compress_block_size = settings.max_compress_block_size;
-        /// Clamp to prevent absurd memory allocations from fuzzed or misconfigured column settings.
-        max_compress_block_size = std::min<UInt64>(max_compress_block_size, MergeTreeWriterSettings::MAX_COMPRESS_BLOCK_SIZE);
 
         WriteSettings query_write_settings = settings.query_write_settings;
         query_write_settings.use_adaptive_write_buffer =
@@ -307,7 +304,7 @@ void MergeTreeDataPartWriterWide::shiftCurrentMark(const Granules & granules_wri
     }
 }
 
-void MergeTreeDataPartWriterWide::write(const Block & block, const IColumnPermutation * permutation, Block * permuted_columns_cache)
+void MergeTreeDataPartWriterWide::write(const Block & block, const IColumnPermutation * permutation)
 {
     Block block_to_write = block;
 
@@ -357,9 +354,9 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumnPermut
 
     Block primary_key_block;
     if (settings.rewrite_primary_key)
-        primary_key_block = getIndexBlockAndPermute(block, metadata_snapshot->getPrimaryKeyColumns(), permutation, permuted_columns_cache);
+        primary_key_block = getIndexBlockAndPermute(block, metadata_snapshot->getPrimaryKeyColumns(), permutation);
 
-    Block skip_indexes_block = getIndexBlockAndPermute(block, getSkipIndicesColumns(), permutation, permuted_columns_cache);
+    Block skip_indexes_block = getIndexBlockAndPermute(block, getSkipIndicesColumns(), permutation);
 
     auto it = columns_list.begin();
     for (size_t i = 0; i < columns_list.size(); ++i, ++it)
@@ -384,9 +381,6 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumnPermut
             else
             {
                 /// We rearrange the columns that are not included in the primary key here; Then the result is released - to save RAM.
-                /// The permuted columns cache is populated above only with PK and skip-index columns
-                /// (via `getIndexBlockAndPermute`), so by construction it cannot contain this column,
-                /// and there is no point looking it up here.
                 ColumnPtr permuted_column = column.column->permute(*permutation, 0);
                 writeColumn(*it, *permuted_column, offset_substreams, granules_to_write);
             }
@@ -658,15 +652,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
         if (settings.can_use_adaptive_granularity)
             readBinaryLittleEndian(index_granularity_rows, *mrk_in);
         else
-            /// Non-adaptive mark files do not store per-mark row counts. The writer uses the
-            /// in-memory `index_granularity` to determine how many rows belong to each mark,
-            /// and `MergeTreeIndexGranularityConstant` allows the last data mark to have fewer
-            /// rows than `fixed_index_granularity` (e.g. after `fixFromRowsCount` adjusts it
-            /// during part loading). Read back the per-mark row count from the in-memory
-            /// granularity rather than blindly assuming `fixed_index_granularity`, otherwise
-            /// the comparison below would falsely fail for parts whose last mark is incomplete
-            /// (issue #98585).
-            index_granularity_rows = index_granularity->getMarkRows(mark_num);
+            index_granularity_rows = index_granularity_info.fixed_index_granularity;
 
         if (must_be_last)
         {
@@ -818,15 +804,10 @@ void MergeTreeDataPartWriterWide::fillDataChecksums(MergeTreeDataPartChecksums &
 void MergeTreeDataPartWriterWide::finishDataSerialization(bool sync)
 {
     for (auto & stream : column_streams)
-        stream.second->finalize();
-
-    if (sync)
     {
-        std::vector<const MergeTreeWriterStream *> streams_to_sync;
-        streams_to_sync.reserve(column_streams.size());
-        for (const auto & stream : column_streams)
-            streams_to_sync.push_back(stream.second.get());
-        parallelSyncFiles(streams_to_sync);
+        stream.second->finalize();
+        if (sync)
+            stream.second->sync();
     }
 
     column_streams.clear();

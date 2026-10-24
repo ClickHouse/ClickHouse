@@ -129,6 +129,49 @@ TYPED_TEST(CoordinationTest, BufferSerde)
     }
 }
 
+TYPED_TEST(CoordinationTest, CreateRequestDoesNotPreallocateOversizedACLs)
+{
+    /// Invariant: memory must track bytes actually read, not the declared element count.
+    {
+        Coordination::ACLs acls;
+        acls.push_back(Coordination::ACL{Coordination::ACL::All, "world", "anyone"});
+        acls.push_back(Coordination::ACL{Coordination::ACL::Read, "digest", "user:hash"});
+
+        DB::WriteBufferFromNuraftBuffer wbuf;
+        Coordination::write(std::string{"/node"}, wbuf);
+        Coordination::write(std::string{"data"}, wbuf);
+        Coordination::write(acls, wbuf);
+        Coordination::write(static_cast<int32_t>(0), wbuf);
+
+        auto request_read = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Create);
+        DB::ReadBufferFromNuraftBuffer rbuf(wbuf.getBuffer());
+        request_read->readImpl(rbuf);
+        auto & create_read = dynamic_cast<Coordination::ZooKeeperCreateRequest &>(*request_read);
+        ASSERT_EQ(create_read.acls.size(), 2);
+        EXPECT_EQ(create_read.acls[0].permissions, Coordination::ACL::All);
+        EXPECT_EQ(create_read.acls[0].scheme, "world");
+        EXPECT_EQ(create_read.acls[0].id, "anyone");
+        EXPECT_EQ(create_read.acls[1].permissions, Coordination::ACL::Read);
+        EXPECT_EQ(create_read.acls[1].scheme, "digest");
+        EXPECT_EQ(create_read.acls[1].id, "user:hash");
+    }
+
+    {
+        /// Declared ACL count is above the pre-allocation bound, but no element bytes follow.
+        /// The reservation must stay bounded by the cap, not by the declared count.
+        DB::WriteBufferFromNuraftBuffer wbuf;
+        Coordination::write(std::string{"/node"}, wbuf);
+        Coordination::write(std::string{}, wbuf);
+        Coordination::write(static_cast<int32_t>(2 * Coordination::MAX_ARRAY_PREALLOCATION), wbuf);
+
+        auto request_read = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Create);
+        DB::ReadBufferFromNuraftBuffer rbuf(wbuf.getBuffer());
+        EXPECT_THROW(request_read->readImpl(rbuf), DB::Exception);
+        auto & create_read = dynamic_cast<Coordination::ZooKeeperCreateRequest &>(*request_read);
+        EXPECT_LE(create_read.acls.capacity(), static_cast<size_t>(Coordination::MAX_ARRAY_PREALLOCATION));
+    }
+}
+
 template <typename StateMachine>
 struct SimpliestRaftServer
 {
@@ -276,10 +319,11 @@ void testLogAndStateMachine(
         return local_keeper_context;
     };
 
+    ResponsesQueue queue(std::numeric_limits<size_t>::max());
     SnapshotsQueue snapshots_queue{1};
 
     auto keeper_context = get_keeper_context();
-    auto state_machine = std::make_shared<KeeperStateMachine<Storage>>(nullptr, snapshots_queue, keeper_context, nullptr);
+    auto state_machine = std::make_shared<KeeperStateMachine<Storage>>(queue, snapshots_queue, keeper_context, nullptr);
 
     state_machine->init();
     DB::KeeperLogStore changelog(
@@ -326,7 +370,7 @@ void testLogAndStateMachine(
 
     SnapshotsQueue snapshots_queue1{1};
     keeper_context = get_keeper_context();
-    auto restore_machine = std::make_shared<KeeperStateMachine<Storage>>(nullptr, snapshots_queue1, keeper_context, nullptr);
+    auto restore_machine = std::make_shared<KeeperStateMachine<Storage>>(queue, snapshots_queue1, keeper_context, nullptr);
     restore_machine->init();
     EXPECT_EQ(restore_machine->last_commit_index(), total_logs - total_logs % (*settings)[DB::CoordinationSetting::snapshot_distance]);
 
@@ -448,9 +492,10 @@ TYPED_TEST(CoordinationTest, TestEphemeralNodeRemove)
     ChangelogDirTest rocks("./rocksdb");
     this->setRocksDBDirectory("./rocksdb");
 
+    ResponsesQueue queue(std::numeric_limits<size_t>::max());
     SnapshotsQueue snapshots_queue{1};
 
-    auto state_machine = std::make_shared<KeeperStateMachine<Storage>>(nullptr, snapshots_queue, this->keeper_context, nullptr);
+    auto state_machine = std::make_shared<KeeperStateMachine<Storage>>(queue, snapshots_queue, this->keeper_context, nullptr);
     state_machine->init();
 
     std::shared_ptr<ZooKeeperCreateRequest> request_c = std::make_shared<ZooKeeperCreateRequest>();
@@ -486,9 +531,10 @@ TYPED_TEST(CoordinationTest, TestCreateNodeWithAuthSchemeForAclWhenAuthIsPrecomm
     ChangelogDirTest rocks("./rocksdb");
     this->setRocksDBDirectory("./rocksdb");
 
+    ResponsesQueue queue(std::numeric_limits<size_t>::max());
     SnapshotsQueue snapshots_queue{1};
 
-    auto state_machine = std::make_shared<KeeperStateMachine<Storage>>(nullptr, snapshots_queue, this->keeper_context, nullptr);
+    auto state_machine = std::make_shared<KeeperStateMachine<Storage>>(queue, snapshots_queue, this->keeper_context, nullptr);
     state_machine->init();
 
     String user_auth_data = "test_user:test_password";
@@ -540,12 +586,13 @@ TYPED_TEST(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
 
     ChangelogDirTest rocks("./rocksdb");
     this->setRocksDBDirectory("./rocksdb");
+    ResponsesQueue queue(std::numeric_limits<size_t>::max());
     SnapshotsQueue snapshots_queue{1};
     int64_t session_without_auth = 1;
     int64_t session_with_auth = 2;
     size_t term = 0;
 
-    auto state_machine = std::make_shared<KeeperStateMachine<Storage>>(nullptr, snapshots_queue, this->keeper_context, nullptr);
+    auto state_machine = std::make_shared<KeeperStateMachine<Storage>>(queue, snapshots_queue, this->keeper_context, nullptr);
     state_machine->init();
 
     auto & storage = state_machine->getStorageUnsafe();
@@ -724,12 +771,13 @@ TYPED_TEST(CoordinationTest, TestMultiRequestWithNoAuth)
 
     ChangelogDirTest rocks("./rocksdb");
     this->setRocksDBDirectory("./rocksdb");
+    ResponsesQueue queue(std::numeric_limits<size_t>::max());
     SnapshotsQueue snapshots_queue{1};
     int64_t session_without_auth = 1;
     int64_t session_with_auth = 2;
     size_t term = 0;
 
-    auto state_machine = std::make_shared<KeeperStateMachine<Storage>>(nullptr, snapshots_queue, this->keeper_context, nullptr);
+    auto state_machine = std::make_shared<KeeperStateMachine<Storage>>(queue, snapshots_queue, this->keeper_context, nullptr);
     state_machine->init();
 
     auto & storage = state_machine->getStorageUnsafe();
@@ -778,10 +826,11 @@ TYPED_TEST(CoordinationTest, TestSetACLWithAuthSchemeForAclWhenAuthIsPrecommitte
     ChangelogDirTest rocks("./rocksdb");
     this->setRocksDBDirectory("./rocksdb");
 
+    ResponsesQueue queue(std::numeric_limits<size_t>::max());
     SnapshotsQueue snapshots_queue{1};
 
     using Storage = typename TestFixture::Storage;
-    auto state_machine = std::make_shared<KeeperStateMachine<Storage>>(nullptr, snapshots_queue, this->keeper_context, nullptr);
+    auto state_machine = std::make_shared<KeeperStateMachine<Storage>>(queue, snapshots_queue, this->keeper_context, nullptr);
     state_machine->init();
 
     String user_auth_data = "test_user:test_password";
@@ -929,8 +978,7 @@ TYPED_TEST(CoordinationTest, TestFeatureFlags)
     Storage storage{500, "", this->keeper_context};
     auto request = std::make_shared<ZooKeeperGetRequest>();
     request->path = DB::keeper_api_feature_flags_path;
-    KeeperRequestsForSessions requests {KeeperRequestForSession {.session_id = 0, .request = request}};
-    auto responses = storage.processLocalRequests(requests, true);
+    auto responses = storage.processRequest(request, 0, std::nullopt, true, true);
     const auto & get_response = getSingleResponse<ZooKeeperGetResponse>(responses);
     DB::KeeperFeatureFlags feature_flags;
     feature_flags.setFeatureFlags(get_response.data);

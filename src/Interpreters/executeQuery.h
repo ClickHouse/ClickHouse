@@ -23,6 +23,7 @@ class WriteBuffer;
 class IOutputFormat;
 struct QueryStatusInfo;
 struct QueryPlanAndSets;
+struct Settings;
 
 struct QueryResultDetails
 {
@@ -84,7 +85,7 @@ void executeQuery(
 /// Correctly formatting the results (according to INTO OUTFILE and FORMAT sections)
 /// must be done separately.
 std::pair<ASTPtr, BlockIO> executeQuery(
-    const String & query, /// Query text without INSERT data. The latter must be written to BlockIO::out.
+    std::string_view query, /// Query text without INSERT data. The latter must be written to BlockIO::out.
     ContextMutablePtr context,       /// DB, tables, data types, storage engines, functions, aggregate functions...
     QueryFlags flags = {},
     QueryProcessingStage::Enum stage = QueryProcessingStage::Complete    /// To which stage the query must be executed.
@@ -93,6 +94,9 @@ std::pair<ASTPtr, BlockIO> executeQuery(
 /// Executes BlockIO returned from executeQuery(...)
 /// if built pipeline does not require any input and does not produce any output.
 void executeTrivialBlockIO(BlockIO & streams, ContextPtr context, bool with_interactive_cancel = false);
+
+/// Parses the query only to produce text with secrets hidden; returns an empty string if the query does not parse.
+String formatQueryForLogging(const String & query, const Settings & settings);
 
 /// Prepares a QueryLogElement and, if enabled, logs it to system.query_log
 QueryLogElement logQueryStart(

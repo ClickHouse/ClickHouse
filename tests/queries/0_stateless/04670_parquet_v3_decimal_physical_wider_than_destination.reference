@@ -1,0 +1,27 @@
+-- dictionary-encoded INT64, declared precision 9
+300	14083299.5
+-- plain-encoded INT64, declared precision 9
+300	14083299.5
+-- FIXED_LEN_BYTE_ARRAY type_length 8, declared precision 9
+300	14083299.5
+-- FIXED_LEN_BYTE_ARRAY type_length 16, declared precision 9 (skips two width buckets)
+300	14083299.5
+-- a WHERE over the narrowed column still returns the right rows
+140	10224882.45
+-- physical wider than declared: statistics are not usable, so no row group is pruned
+read=10 pruned=0
+99	54499.5
+-- same file well-formed (declared precision 18): pruning still works
+read=2 pruned=8
+99	54499.5
+-- a hint of exactly the decoded width restores pruning
+read=2 pruned=8
+99	54499.5
+-- schema inference still reports the declared precision
+k	Nullable(Decimal(9, 2))					
+-- explicit wider type hint reads without narrowing
+Decimal(18, 2)	300	14083299.5
+-- a value that exceeds the declared precision is an error, not a corrupted read
+DECIMAL_OVERFLOW
+-- ... and reads losslessly with a wide enough hint
+300	10014083299.49

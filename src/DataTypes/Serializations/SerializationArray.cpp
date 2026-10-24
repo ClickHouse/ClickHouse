@@ -1,4 +1,3 @@
-#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationArray.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
@@ -25,24 +24,9 @@ namespace ErrorCodes
 {
     extern const int CANNOT_READ_ALL_DATA;
     extern const int CANNOT_READ_ARRAY_FROM_TEXT;
+    extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_ARRAY_SIZE;
     extern const int INCORRECT_DATA;
-    extern const int LOGICAL_ERROR;
-}
-
-UInt128 SerializationArray::getHash(const SerializationPtr & nested_)
-{
-    SipHash hash;
-    hash.update("Array");
-    hash.update(nested_->getHash());
-    return hash.get128();
-}
-
-SerializationPtr SerializationArray::create(const SerializationPtr & nested_)
-{
-    if (!nested_->supportsPooling())
-        return std::shared_ptr<ISerialization>(new SerializationArray(nested_));
-    return ISerialization::pooled(getHash(nested_), [&] { return new SerializationArray(nested_); });
 }
 
 static constexpr size_t MAX_ARRAY_SIZE = 1ULL << 30;
@@ -262,7 +246,7 @@ DataTypePtr SerializationArray::SubcolumnCreator::create(const DataTypePtr & pre
 
 SerializationPtr SerializationArray::SubcolumnCreator::create(const SerializationPtr & prev, const DataTypePtr &) const
 {
-    return SerializationArray::create(prev);
+    return std::make_shared<SerializationArray>(prev);
 }
 
 ColumnPtr SerializationArray::SubcolumnCreator::create(const ColumnPtr & prev) const
@@ -280,8 +264,8 @@ void SerializationArray::enumerateStreams(
     auto offsets = column_array ? column_array->getOffsetsPtr() : nullptr;
 
     auto subcolumn_name = "size" + std::to_string(settings.array_level);
-    auto offsets_serialization = SerializationNamed::create(
-        SerializationArrayOffsets::create(),
+    auto offsets_serialization = std::make_shared<SerializationNamed>(
+        std::make_shared<SerializationArrayOffsets>(),
         subcolumn_name, SubstreamType::NamedOffsets);
 
     auto offsets_column = offsets && !settings.position_independent_encoding
@@ -355,7 +339,7 @@ void SerializationArray::serializeOffsetsBinaryBulk(
         if (settings.position_independent_encoding)
             serializeArraySizesPositionIndependent(offsets_column, *stream, offset, limit);
         else
-            SerializationNumber<ColumnArray::Offset>::create()->serializeBinaryBulk(offsets_column, *stream, offset, limit);
+            SerializationNumber<ColumnArray::Offset>().serializeBinaryBulk(offsets_column, *stream, offset, limit);
     }
 }
 
@@ -435,13 +419,17 @@ bool SerializationArray::deserializeOffsetsBinaryBulk(
         if (settings.position_independent_encoding)
             deserializeArraySizesPositionIndependent(*offsets_column->assumeMutable(), *stream, limit);
         else
-            SerializationNumber<ColumnArray::Offset>::create()->deserializeBinaryBulk(*offsets_column->assumeMutable(), *stream, 0, limit, 0);
+            SerializationNumber<ColumnArray::Offset>().deserializeBinaryBulk(*offsets_column->assumeMutable(), *stream, 0, limit, 0);
 
-        /// Verify offsets if the data comes over the network
-        if (settings.native_format)
+        /// Verify offsets that were read as absolute values. The other branch accumulates sizes, so it
+        /// is monotonic by construction. Only the values appended by this call are new: everything below
+        /// `prev_size` was verified by the previous call, and starting one element earlier keeps the
+        /// comparison across the range boundary.
+        if (!settings.position_independent_encoding)
         {
             const auto & offsets = assert_cast<const ColumnArray::ColumnOffsets &>(*offsets_column).getData();
-            const auto * const it = std::adjacent_find(offsets.begin(), offsets.end(), std::greater<>());
+            const auto * const scan_begin = offsets.begin() + (prev_size ? prev_size - 1 : 0);
+            const auto * const it = std::adjacent_find(scan_begin, offsets.end(), std::greater<>());
             if (it != offsets.end())
             {
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Arrays offsets are not monotonically increasing (starting at {}, value {})",
@@ -526,10 +514,20 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
     settings.path.pop_back();
 
     /// Check consistency between offsets and elements subcolumns.
-    /// But if elements column is empty - it's ok for columns of Nested types that was added by ALTER.
-    if (!nested_column->empty() && nested_column->size() != last_offset)
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all array values: read just {} of {}",
-            toString(nested_column->size()), toString(last_offset));
+    if (nested_column->size() != last_offset)
+    {
+        if (!nested_column->empty())
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all array values: read just {} of {}",
+                toString(nested_column->size()), toString(last_offset));
+
+        /// An empty elements column is ok for the sizes encoding: it is how a column of a Nested type
+        /// that was added by ALTER reads the parts written before that ALTER. The absolute-offsets
+        /// encoding always writes the elements next to the offsets, so there an empty elements column
+        /// means the data is corrupted and the offsets would index past the end of the elements.
+        if (!settings.position_independent_encoding)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Cannot read array values: elements column is empty while the last offset is {}", toString(last_offset));
+    }
 
     column = std::move(mutable_column);
 }

@@ -43,11 +43,13 @@ class ElOracloDeLeaks:
             client = Client(
                 host=next_node.ip_address, port=9000, command=cluster.client_bin_path
             )
-            metrics_str = client.query("""
+            metrics_str = client.query(
+                """
                 SELECT metric, value
                 FROM system.asynchronous_metrics
                 WHERE metric = 'MemoryResident';
-                """)
+                """
+            )
             if not isinstance(metrics_str, str) or metrics_str == "":
                 self.logger.warning(
                     f"No tables found to fetch on node {next_node.name}"

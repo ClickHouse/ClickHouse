@@ -1,6 +1,4 @@
 #pragma once
-#include <Core/Block_fwd.h>
-#include <Core/Names.h>
 #include <Interpreters/AggregatedData.h>
 #include <Interpreters/AggregationMethod.h>
 
@@ -320,8 +318,6 @@ struct AggregatedDataVariants : private boost::noncopyable
     bool isLowCardinality() const;
     static ColumnsHashing::HashMethodContextPtr createCache(Type type, const ColumnsHashing::HashMethodContextSettings & settings);
 
-    /** Select the aggregation method based on the number and types of keys. */
-    static Type chooseMethod(const Block & header, const Names & keys, Sizes & out_key_sizes);
 };
 
 using AggregatedDataVariantsPtr = std::shared_ptr<AggregatedDataVariants>;

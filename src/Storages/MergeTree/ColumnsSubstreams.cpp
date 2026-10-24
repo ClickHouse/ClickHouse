@@ -9,6 +9,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CORRUPTED_DATA;
     extern const int LOGICAL_ERROR;
 }
 
@@ -71,20 +72,32 @@ size_t ColumnsSubstreams::getSubstreamPosition(
     const ISerialization::SubstreamPath & substream_path,
     const MergeTreeSettingsPtr & storage_settings) const
 {
+    if (auto position = tryGetSubstreamPosition(column_position, name_and_type, substream_path, storage_settings))
+        return *position;
+
+    auto substream = ISerialization::getFileNameForStream(name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get position for substream {}: column {} with position {} doesn't have such substream", substream, name_and_type.name, column_position);
+}
+
+std::optional<size_t> ColumnsSubstreams::tryGetSubstreamPosition(
+    size_t column_position,
+    const NameAndTypePair & name_and_type,
+    const ISerialization::SubstreamPath & substream_path,
+    const MergeTreeSettingsPtr & storage_settings) const
+{
     ISerialization::StreamFileNameSettings stream_file_name_settings(*storage_settings);
     auto substream = ISerialization::getFileNameForStream(name_and_type, substream_path, stream_file_name_settings);
     if (auto position = tryGetSubstreamPosition(column_position, substream))
-        return *position;
+        return position;
 
     /// To be able to read old parts after changes in stream file name settings, try to change settings and try to find it again.
     if (ISerialization::tryToChangeStreamFileNameSettingsForNotFoundStream(substream_path, stream_file_name_settings))
     {
         substream = ISerialization::getFileNameForStream(name_and_type, substream_path, stream_file_name_settings);
-        if (auto position = tryGetSubstreamPosition(column_position, substream))
-            return *position;
+        return tryGetSubstreamPosition(column_position, substream);
     }
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get position for substream {}: column {} with position {} doesn't have such substream", substream, name_and_type.name, column_position);
+    return std::nullopt;
 }
 
 
@@ -128,6 +141,16 @@ const std::vector<String> & ColumnsSubstreams::getColumnSubstreams(size_t column
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get substreams: column position {} is invalid, there are only {} columns", column_position, columns_substreams.size());
 
     return columns_substreams[column_position].second;
+}
+
+const std::vector<String> * ColumnsSubstreams::tryGetColumnSubstreams(const String & column_name) const
+{
+    for (const auto & [name, substreams] : columns_substreams)
+    {
+        if (name == column_name)
+            return &substreams;
+    }
+    return nullptr;
 }
 
 ColumnsSubstreams ColumnsSubstreams::merge(const ColumnsSubstreams & left, const ColumnsSubstreams & right, const std::vector<String> & columns_order)
@@ -190,8 +213,7 @@ void ColumnsSubstreams::readText(ReadBuffer & buf)
     size_t num_columns;
     DB::readText(num_columns, buf);
     assertString(" columns:\n", buf);
-    columns_substreams.reserve(num_columns);
-    column_position_to_substream_positions.resize(num_columns);
+    /// Counts are untrusted file content: containers grow as entries are parsed.
     for (size_t i = 0; i != num_columns; ++i)
     {
         size_t num_substreams;
@@ -201,15 +223,28 @@ void ColumnsSubstreams::readText(ReadBuffer & buf)
         readBackQuotedStringWithSQLStyle(column, buf);
         assertString(":\n", buf);
 
-        std::vector<String> substreams(num_substreams);
+        if (num_substreams == 0)
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid columns substreams: column {} has no substreams", column);
+
+        std::vector<String> substreams;
+        std::unordered_map<String, size_t> substream_positions;
         for (size_t j = 0; j != num_substreams; ++j)
         {
             assertChar('\t', buf);
-            readString(substreams[j], buf);
+            String substream;
+            readString(substream, buf);
             assertChar('\n', buf);
-            column_position_to_substream_positions[i][substreams[j]] = total_substreams++;
+
+            if (substream.empty())
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid columns substreams: column {} has an empty substream", column);
+
+            if (!substream_positions.emplace(substream, total_substreams + substreams.size()).second)
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid columns substreams: column {} has duplicate substream {}", column, substream);
+            substreams.emplace_back(std::move(substream));
         }
 
+        total_substreams += substreams.size();
+        column_position_to_substream_positions.emplace_back(std::move(substream_positions));
         columns_substreams.emplace_back(std::move(column), std::move(substreams));
     }
 }
@@ -221,15 +256,15 @@ String ColumnsSubstreams::toString() const
     return buf.str();
 }
 
-void ColumnsSubstreams::validateColumns(const std::vector<String> & columns) const
+void ColumnsSubstreams::validateColumns(const std::vector<String> & columns, int error_code) const
 {
     if (columns.size() != columns_substreams.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid columns substreams: expected {} columns, got {}", columns.size(), columns_substreams.size());
+        throw Exception(error_code, "Invalid columns substreams: expected {} columns, got {}", columns.size(), columns_substreams.size());
 
     for (size_t i = 0; i != columns_substreams.size(); ++i)
     {
         if (columns_substreams[i].first != columns[i])
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column at position {} in columns substreams: expected {}, got {}", i, columns[i], columns_substreams[i].first);
+            throw Exception(error_code, "Unexpected column at position {} in columns substreams: expected {}, got {}", i, columns[i], columns_substreams[i].first);
     }
 }
 

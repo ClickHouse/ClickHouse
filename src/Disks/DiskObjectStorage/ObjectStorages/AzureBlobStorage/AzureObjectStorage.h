@@ -64,9 +64,7 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
         const ReadSettings & read_settings,
-        std::optional<size_t> read_hint = {},
-        bool use_external_buffer = false,
-        bool restrict_seek = false) const override;
+        std::optional<size_t> read_hint = {}) const override;
 
     SmallObjectDataWithMetadata readSmallObjectAndGetObjectMetadata( /// NOLINT
         const StoredObject & object,
@@ -117,7 +115,6 @@ public:
 
     std::shared_ptr<const AzureBlobStorage::RequestSettings> getSettings() const  { return settings.get(); }
     std::shared_ptr<const AzureBlobStorage::ContainerClient> getAzureBlobStorageClient() const override { return client.get(); }
-    const AzureBlobStorage::ConnectionParams & getAzureBlobStorageConnectionParams() const override { return connection_params; }
 
     bool isReadOnly() const override { return settings.get()->read_only; }
 

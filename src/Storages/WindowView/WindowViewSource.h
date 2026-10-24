@@ -7,7 +7,7 @@
 namespace DB
 {
 
-class WindowViewSource final : public ISource
+class WindowViewSource : public ISource
 {
 public:
     WindowViewSource(

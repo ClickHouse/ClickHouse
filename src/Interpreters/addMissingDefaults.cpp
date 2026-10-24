@@ -19,34 +19,28 @@ ActionsDAG addMissingDefaults(
     const NamesAndTypesList & required_columns,
     const ColumnsDescription & columns,
     ContextPtr context,
-    bool null_as_default,
-    bool share_nested_offsets)
+    bool null_as_default)
 {
     ActionsDAG actions(header.getColumnsWithTypeAndName());
     auto & index = actions.getOutputs();
 
     /// For missing columns of nested structure, you need to create not a column of empty arrays, but a column of arrays of correct lengths.
     /// First, remember the offset columns for all arrays in the block.
-    /// When share_nested_offsets is disabled, sibling Array columns are independent
-    /// and missing ones should be filled with empty arrays, not replicated from siblings.
     std::map<String, ActionsDAG::NodeRawConstPtrs> nested_groups;
 
-    if (share_nested_offsets)
+    for (size_t i = 0, size = header.columns(); i < size; ++i)
     {
-        for (size_t i = 0, size = header.columns(); i < size; ++i)
+        const auto & elem = header.getByPosition(i);
+
+        if (typeid_cast<const ColumnArray *>(&*elem.column))
         {
-            const auto & elem = header.getByPosition(i);
+            String offsets_name = Nested::extractTableName(elem.name);
 
-            if (typeid_cast<const ColumnArray *>(&*elem.column))
-            {
-                String offsets_name = Nested::extractTableName(elem.name);
+            auto & group = nested_groups[offsets_name];
+            if (group.empty())
+                group.push_back(nullptr);
 
-                auto & group = nested_groups[offsets_name];
-                if (group.empty())
-                    group.push_back(nullptr);
-
-                group.push_back(actions.getInputs()[i]);
-            }
+            group.push_back(actions.getInputs()[i]);
         }
     }
 

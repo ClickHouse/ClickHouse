@@ -54,7 +54,7 @@ public:
     /// Forget checkpoint and all data between checkpoint and position
     ALWAYS_INLINE inline void dropCheckpoint()
     {
-        chassert(checkpoint);
+        assert(checkpoint);
 
         if (!recursive_checkpoints_offsets.empty())
         {

@@ -13,7 +13,7 @@ bool DataTypeUUID::equals(const IDataType & rhs) const
 
 SerializationPtr DataTypeUUID::doGetSerialization(const SerializationInfoSettings &) const
 {
-    return SerializationUUID::create();
+    return std::make_shared<SerializationUUID>();
 }
 
 Field DataTypeUUID::getDefault() const

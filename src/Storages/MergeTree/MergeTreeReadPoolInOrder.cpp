@@ -9,8 +9,7 @@ namespace ErrorCodes
 }
 
 MergeTreeReadPoolInOrder::MergeTreeReadPoolInOrder(
-    bool has_hard_limit_below_one_block_,
-    bool has_soft_limit_below_one_block_,
+    bool has_limit_below_one_block_,
     MergeTreeReadType read_type_,
     RangesInDataParts parts_,
     MutationsSnapshotPtr mutations_snapshot_,
@@ -40,8 +39,7 @@ MergeTreeReadPoolInOrder::MergeTreeReadPoolInOrder(
         settings_,
         params_,
         context_)
-    , has_hard_limit_below_one_block(has_hard_limit_below_one_block_)
-    , has_soft_limit_below_one_block(has_soft_limit_below_one_block_)
+    , has_limit_below_one_block(has_limit_below_one_block_)
     , read_type(read_type_)
     , updater(std::move(updater_))
 {
@@ -68,13 +66,9 @@ MergeTreeReadTaskPtr MergeTreeReadPoolInOrder::getTask(size_t task_idx, MergeTre
         mark_ranges_for_task.emplace_back(std::move(all_mark_ranges.back()));
         all_mark_ranges.pop_back();
     }
-    else if (has_hard_limit_below_one_block || (has_soft_limit_below_one_block && !previous_task))
+    else if (has_limit_below_one_block)
     {
         /// If we need to read few rows, set one range per task to reduce number of read data.
-        /// With a hard limit (no filter) reading stops exactly at the limit, so always emit
-        /// single-range tasks. With a soft limit (filter + LIMIT) the estimation may be off,
-        /// so apply this only to the first task: if it didn't reach the limit, the filter is
-        /// likely selective and we should continue with regular block size.
         mark_ranges_for_task.emplace_back(std::move(all_mark_ranges.front()));
         all_mark_ranges.pop_front();
     }

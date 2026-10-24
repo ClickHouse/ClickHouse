@@ -26,7 +26,7 @@ namespace
 {
 
 
-class FunctionS2RectUnion final : public IFunction
+class FunctionS2RectUnion : public IFunction
 {
 public:
     static constexpr auto name = "s2RectUnion";

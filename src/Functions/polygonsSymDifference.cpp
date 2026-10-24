@@ -23,7 +23,7 @@ namespace
 {
 
 template <typename Point>
-class FunctionPolygonsSymDifference final : public IFunction
+class FunctionPolygonsSymDifference : public IFunction
 {
 public:
     static const char * name;

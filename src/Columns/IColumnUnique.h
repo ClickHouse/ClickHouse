@@ -168,7 +168,7 @@ public:
         throwNotImplementedForColumnUnique("updatePermutation");
     }
 
-    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t, const IColumn::Selector &) const override
+    std::vector<MutableColumnPtr> scatter(size_t, const IColumn::Selector &) const override
     {
         throwNotImplementedForColumnUnique("scatter");
     }

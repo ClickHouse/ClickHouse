@@ -26,6 +26,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int TOO_LARGE_ARRAY_SIZE;
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_DATA;
 }
 
 namespace
@@ -130,7 +131,8 @@ struct AggregateFunctionWindowFunnelData
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large size of the state of windowFunnel");
 
         events_list.clear();
-        events_list.reserve(size);
+        /// Reserving is only an optimization here, so it is derived from payload that already arrived.
+        events_list.reserve(std::min(size, buf.available() / (sizeof(T) + sizeof(UInt8))));
 
         T timestamp;
         UInt8 event;
@@ -252,7 +254,8 @@ struct AggregateFunctionWindowFunnelStrictOnceData
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large size of the state of windowFunnel");
 
         events_list.clear();
-        events_list.reserve(events_size);
+        /// Reserving is only an optimization here, so it is derived from payload that already arrived.
+        events_list.reserve(std::min(events_size, buf.available() / (sizeof(T) + sizeof(UInt8) + sizeof(UInt64))));
 
         T timestamp;
         UInt8 event_type;
@@ -577,7 +580,28 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version  */, Arena *) const override
     {
-        this->data(place).deserialize(buf);
+        auto & data = this->data(place);
+        data.deserialize(buf);
+
+        /// Event types come from untrusted serialized state. getEventLevel* uses (event - 1) to index
+        /// events_timestamp / event_sequences, both sized events_size, so an out-of-range event would
+        /// read and write out of bounds. Valid event types are [1, events_size]; 0 is the no-event
+        /// sentinel produced only with strict_order, so it is accepted only in that mode.
+        const UInt8 min_event = strict_order ? 0 : 1;
+        for (const auto & event : data.events_list)
+        {
+            UInt8 event_type = 0;
+            if constexpr (Data::strict_once_enabled)
+                event_type = event.event_type;
+            else
+                event_type = event.second;
+
+            if (event_type < min_event || event_type > events_size)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Invalid event type {} in the state of function {}, must be in range [{}, {}]",
+                    static_cast<UInt16>(event_type), getName(), static_cast<UInt16>(min_event), static_cast<UInt16>(events_size));
+        }
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override

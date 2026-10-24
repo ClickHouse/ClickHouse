@@ -290,8 +290,10 @@ def test_create_table():
         f"AzureQueue('{azure_conn_string}', 'cont', '*', 'CSV') SETTINGS mode = 'unordered', after_processing = 'move', after_processing_move_connection_string = '{azure_sas_conn_string}', after_processing_move_container = 'chprocessed'",
         f"AzureQueue('{azure_storage_account_url}', 'cont', '*', '{azure_account_name}', '{azure_account_key}', 'CSV') SETTINGS mode = 'unordered'",
         f"AzureQueue('{azure_storage_account_url}', 'cont', '*', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none') SETTINGS mode = 'unordered'",
-        f"AzureBlobStorage('BlobEndpoint=https://my-endpoint/;SharedAccessSignature=sp=r&st=2025-09-29T14:58:11Z&se=2025-09-29T00:00:00Z&spr=https&sv=2022-11-02&sr=c&sig=SECRET%SECRET%SECRET%SECRET', 'exampledatasets', 'example.csv')",
-        f"S3('https://my-s3-endpoint/bucket/data.csv', 'myaccess', '{password}', 'CSV')",
+        (
+            f"AzureBlobStorage('BlobEndpoint=https://my-endpoint/;SharedAccessSignature=sp=r&st=2025-09-29T14:58:11Z&se=2025-09-29T00:00:00Z&spr=https&sv=2022-11-02&sr=c&sig=SECRET%SECRET%SECRET%SECRET', 'exampledatasets', 'example.csv')",
+            "STD_EXCEPTION",
+        ),
         f"Kafka() SETTINGS kafka_broker_list = '127.0.0.1', kafka_topic_list = 'topic', kafka_group_name = 'group', kafka_format = 'JSONEachRow', kafka_security_protocol = 'sasl_ssl', kafka_sasl_mechanism = 'PLAIN', kafka_sasl_username = 'user', kafka_sasl_password = '{password}', format_avro_schema_registry_url = 'http://schema_user:{password}@'",
         f"Kafka() SETTINGS kafka_broker_list = '127.0.0.1', kafka_topic_list = 'topic', kafka_group_name = 'group', kafka_format = 'JSONEachRow', kafka_security_protocol = 'sasl_ssl', kafka_sasl_mechanism = 'PLAIN', kafka_sasl_username = 'user', kafka_sasl_password = '{password}', format_avro_schema_registry_url = 'http://schema_user:{password}@domain.com'",
         f"S3('http://minio1:9001/root/data/test5.csv.gz', 'CSV', access_key_id = 'minio', secret_access_key = '{password}', compression_method = 'gzip')",
@@ -396,7 +398,6 @@ def test_create_table():
             generate_create_table_numbered(f"(`x` int) ENGINE = AzureQueue('{azure_storage_account_url}', 'cont', '*', '{azure_account_name}', '[HIDDEN]', 'CSV') SETTINGS mode = 'unordered'"),
             generate_create_table_numbered(f"(`x` int) ENGINE = AzureQueue('{azure_storage_account_url}', 'cont', '*', '{azure_account_name}', '[HIDDEN]', 'CSV', 'none') SETTINGS mode = 'unordered'"),
             generate_create_table_numbered(f"(`x` int) ENGINE = AzureBlobStorage('{masked_sas_conn_string}', 'exampledatasets', 'example.csv')"),
-            generate_create_table_numbered("(`x` int) ENGINE = S3('https://my-s3-endpoint/bucket/data.csv', 'myaccess', '[HIDDEN]', 'CSV')"),
             generate_create_table_numbered("(`x` int) ENGINE = Kafka SETTINGS kafka_broker_list = '127.0.0.1', kafka_topic_list = 'topic', kafka_group_name = 'group', kafka_format = 'JSONEachRow', kafka_security_protocol = 'sasl_ssl', kafka_sasl_mechanism = 'PLAIN', kafka_sasl_username = 'user', kafka_sasl_password = '[HIDDEN]', format_avro_schema_registry_url = 'http://schema_user:[HIDDEN]@'"),
             generate_create_table_numbered("(`x` int) ENGINE = Kafka SETTINGS kafka_broker_list = '127.0.0.1', kafka_topic_list = 'topic', kafka_group_name = 'group', kafka_format = 'JSONEachRow', kafka_security_protocol = 'sasl_ssl', kafka_sasl_mechanism = 'PLAIN', kafka_sasl_username = 'user', kafka_sasl_password = '[HIDDEN]', format_avro_schema_registry_url = 'http://schema_user:[HIDDEN]@domain.com'"),
             generate_create_table_numbered("(`x` int) ENGINE = S3('http://minio1:9001/root/data/test5.csv.gz', 'CSV', access_key_id = 'minio', secret_access_key = '[HIDDEN]', compression_method = 'gzip')"),
@@ -1028,6 +1029,89 @@ def test_backup_table_s3_named_collection():
 
     node.query("DROP TABLE IF EXISTS backup_test_s3_nc")
     node.query("DROP NAMED COLLECTION IF EXISTS s3_backup_nc")
+
+
+def test_database_backup_engine_s3():
+    """Secrets in the nested S3(...) destination of the `Backup` database engine must be masked in logs,
+    both for the explicit-key form and for the named-collection form (including session_token and the
+    Google ADC secrets). The CREATE fails because the backup does not exist, but it is still logged."""
+    password = new_password()
+
+    queries = [
+        f"CREATE DATABASE backup_db_s3_1 ENGINE = Backup('', S3('http://minio1:9001/root/data/db_backup_nonexistent', 'minio', '{password}'))",
+        f"CREATE DATABASE backup_db_s3_2 ENGINE = Backup('', S3(named_collection_6, url = 'http://minio1:9001/root/data/db_backup_nonexistent', access_key_id = 'minio', secret_access_key = '{password}', session_token = '{password}', google_adc_client_secret = '{password}'))",
+    ]
+    for query in queries:
+        node.query_and_get_answer_with_error(query)
+
+    check_logs(
+        must_contain=[
+            "ENGINE = Backup('', S3('http://minio1:9001/root/data/db_backup_nonexistent', 'minio', '[HIDDEN]'))",
+            "session_token = '[HIDDEN]'",
+            "secret_access_key = '[HIDDEN]'",
+            "google_adc_client_secret = '[HIDDEN]'",
+        ],
+        must_not_contain=[password],
+    )
+
+    node.query("DROP DATABASE IF EXISTS backup_db_s3_1")
+    node.query("DROP DATABASE IF EXISTS backup_db_s3_2")
+
+
+def test_database_backup_engine_azure_display_surfaces():
+    """A live `Backup` database over an `AzureBlobStorage` locator: `account_key` must not reach
+    `SHOW CREATE DATABASE` or `system.databases.engine_full`. Only `S3` locators are reconstructed
+    argument by argument, so an Azure one keeps its engine name and arity and hides every argument."""
+    azure_storage_account_url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
+    azure_account_name = "devstoreaccount1"
+    azure_account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+
+    # A backup destination is write-once and the container is emptied only when the cluster starts,
+    # so give every run its own blob path: a repeat inside one session hits BACKUP_ALREADY_EXISTS.
+    blob = "db_backup_azure_surfaces_" + "".join(
+        random.choice(string.ascii_lowercase) for _ in range(8)
+    )
+    locator = (
+        f"AzureBlobStorage('{azure_storage_account_url}', '{cluster.azurite_container}', "
+        f"'{blob}', '{azure_account_name}', '{azure_account_key}')"
+    )
+    masked_locator = (
+        "AzureBlobStorage('[HIDDEN]', '[HIDDEN]', '[HIDDEN]', '[HIDDEN]', '[HIDDEN]')"
+    )
+    surfaces = [
+        "SHOW CREATE DATABASE backup_db_azure_view",
+        "SELECT engine_full FROM system.databases WHERE name = 'backup_db_azure_view'",
+    ]
+
+    node.query("DROP DATABASE IF EXISTS backup_db_azure_src SYNC")
+    node.query("DROP DATABASE IF EXISTS backup_db_azure_view SYNC")
+    node.query("CREATE DATABASE backup_db_azure_src")
+    node.query(
+        "CREATE TABLE backup_db_azure_src.t (x int) ENGINE = MergeTree ORDER BY x"
+    )
+    node.query("INSERT INTO backup_db_azure_src.t SELECT * FROM numbers(10)")
+    node.query(f"BACKUP DATABASE backup_db_azure_src TO {locator} FORMAT Null")
+    node.query(
+        f"CREATE DATABASE backup_db_azure_view ENGINE = Backup('backup_db_azure_src', {locator})"
+    )
+
+    # TSVRaw so the locator is compared as written rather than through TSV escaping.
+    for surface in surfaces:
+        shown = node.query(f"{surface} FORMAT TSVRaw")
+        assert masked_locator in shown, shown
+        assert azure_account_key not in shown, shown
+
+    # The key is in the locator, so its absence above is masking rather than an argument that the
+    # regenerated definition never carried.
+    for surface in surfaces:
+        shown = node.query(f"{surface} {show_secrets}=1 FORMAT TSVRaw")
+        assert azure_account_key in shown, shown
+
+    # The masked surfaces belong to a working database, not to one that failed to open.
+    assert node.query("SELECT count() FROM backup_db_azure_view.t") == "10\n"
+
+    node.query("DROP DATABASE IF EXISTS backup_db_azure_view SYNC")
+    node.query("DROP DATABASE IF EXISTS backup_db_azure_src SYNC")
 
 
 def test_backup_table_azure_named_collection():

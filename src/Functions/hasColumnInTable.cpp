@@ -1,3 +1,5 @@
+#include <Access/Common/AccessFlags.h>
+#include <Access/Common/AccessType.h>
 #include <Core/Settings.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
@@ -27,16 +29,18 @@ namespace
 /** Usage:
  *  hasColumnInTable(['hostname'[, 'username'[, 'password']],] 'database', 'table', 'column')
  */
-class FunctionHasColumnInTable final : public IFunction, WithContext
+class FunctionHasColumnInTable : public IFunction, WithContext
 {
 public:
     static constexpr auto name = "hasColumnInTable";
     static FunctionPtr create(ContextPtr context_)
     {
-        return std::make_shared<FunctionHasColumnInTable>(context_->getGlobalContext());
+        return std::make_shared<FunctionHasColumnInTable>(context_);
     }
 
-    explicit FunctionHasColumnInTable(ContextPtr global_context_) : WithContext(global_context_)
+    /// Holds the query context for the access check in executeImpl. The check must not run
+    /// against the global context, which has full access by construction.
+    explicit FunctionHasColumnInTable(ContextPtr context_) : WithContext(context_)
     {
     }
 
@@ -114,6 +118,11 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
     if (table_name.empty())
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table name is empty");
 
+    /// Check access on the raw names before resolving the table, so denial does not
+    /// depend on the table/database existing (no existence oracle). SHOW_COLUMNS is the
+    /// same grant required by DESCRIBE and SHOW CREATE TABLE.
+    getContext()->checkAccess(AccessType::SHOW_COLUMNS, database_name, table_name);
+
     bool has_column;
     bool has_alias_column;
     if (host_name.empty())
@@ -124,13 +133,13 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
         const StoragePtr & table = DatabaseCatalog::instance().getTable(
             {database_name, table_name},
             const_pointer_cast<Context>(getContext()));
-        auto table_metadata = table->getInMemoryMetadataPtr(getContext(), false);
+        auto table_metadata = table->getInMemoryMetadataPtr();
         has_column = table_metadata->getColumns().hasPhysical(column_name);
         has_alias_column = table_metadata->getColumns().hasAlias(column_name);
     }
     else
     {
-        HostsByShard host_names = {{host_name}};
+        std::vector<std::vector<String>> host_names = {{ host_name }};
 
         bool treat_local_as_remote = false;
         bool treat_local_port_as_remote = getContext()->getApplicationType() == Context::ApplicationType::LOCAL;
@@ -170,6 +179,11 @@ REGISTER_FUNCTION(HasColumnInTable)
 Checks if a specific column exists in a database table.
 For elements in a nested data structure, the function checks for the existence of a column.
 For the nested data structure itself, the function returns `0`.
+
+:::note Privilege `SHOW COLUMNS` is required
+The function requires the `SHOW COLUMNS` privilege on the target table (the same grant needed by `DESCRIBE` and `SHOW CREATE TABLE`).
+Without it the call fails with `ACCESS_DENIED` instead of returning `1` or `0`, so column names cannot be probed without access.
+:::
     )";
     FunctionDocumentation::Syntax syntax = "hasColumnInTable([hostname[, username[, password]],]database, table, column)";
     FunctionDocumentation::Arguments arguments = {

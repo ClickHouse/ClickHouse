@@ -15,7 +15,7 @@ namespace DB
 }
 
 
-int mainEntryExampleLimitReadBuffer2(int, char **)
+int main(int, char **)
 try
 {
     using namespace DB;

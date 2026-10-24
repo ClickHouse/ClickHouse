@@ -12,8 +12,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 
-#include <Common/VectorWithMemoryTracking.h>
-
 
 namespace DB
 {
@@ -23,7 +21,7 @@ namespace Setting
 }
 
 /// array(c1, c2, ...) - create an array.
-class FunctionArray final : public IFunction
+class FunctionArray : public IFunction
 {
 public:
     static constexpr auto name = "array";
@@ -134,7 +132,7 @@ private:
     bool executeNumber(const ColumnRawPtrs & columns, IColumn & out_data, size_t input_rows_count) const
     {
         using Container = ColumnVectorOrDecimal<T>::Container;
-        VectorWithMemoryTracking<const Container *> containers(columns.size(), nullptr);
+        std::vector<const Container *> containers(columns.size(), nullptr);
         for (size_t i = 0; i < columns.size(); ++i)
         {
             const ColumnVectorOrDecimal<T> * concrete_column = checkAndGetColumn<ColumnVectorOrDecimal<T>>(columns[i]);
@@ -160,7 +158,7 @@ private:
     bool executeString(const ColumnRawPtrs & columns, IColumn & out_data, size_t input_rows_count) const
     {
         size_t total_bytes = 0;
-        VectorWithMemoryTracking<const ColumnString *> concrete_columns(columns.size(), nullptr);
+        std::vector<const ColumnString *> concrete_columns(columns.size(), nullptr);
         for (size_t i = 0; i < columns.size(); ++i)
         {
             const ColumnString * concrete_column = checkAndGetColumn<ColumnString>(columns[i]);
@@ -194,7 +192,7 @@ private:
 
     bool executeFixedString(const ColumnRawPtrs & columns, IColumn & out_data, size_t input_rows_count) const
     {
-        VectorWithMemoryTracking<const ColumnFixedString *> concrete_columns(columns.size(), nullptr);
+        std::vector<const ColumnFixedString *> concrete_columns(columns.size(), nullptr);
         for (size_t i = 0; i < columns.size(); ++i)
         {
             const ColumnFixedString * concrete_column = checkAndGetColumn<ColumnFixedString>(columns[i]);

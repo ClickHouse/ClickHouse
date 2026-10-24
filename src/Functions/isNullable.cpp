@@ -17,7 +17,7 @@ namespace
 {
 
 /// Return true if the column is nullable.
-class FunctionIsNullable final : public IFunction
+class FunctionIsNullable : public IFunction
 {
 public:
     static constexpr auto name = "isNullable";

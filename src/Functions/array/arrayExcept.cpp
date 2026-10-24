@@ -220,7 +220,7 @@ void processImpl(ConstColumnInfo<ColumnT> source, ConstColumnInfo<ColumnT> exclu
         result.null_map->resize(current_result_offset);
 }
 
-class FunctionArrayExcept final : public IFunction
+class FunctionArrayExcept : public IFunction
 {
 public:
     static constexpr auto name = "arrayExcept";

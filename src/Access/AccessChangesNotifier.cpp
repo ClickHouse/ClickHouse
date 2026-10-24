@@ -83,6 +83,20 @@ scope_guard AccessChangesNotifier::subscribeForChanges(const std::vector<UUID> &
     return subscriptions;
 }
 
+scope_guard AccessChangesNotifier::subscribeForBatchFinished(const OnBatchFinishedHandler & handler)
+{
+    std::lock_guard lock{handlers->mutex};
+    auto & list = handlers->on_batch_finished;
+    list.push_back(handler);
+    auto handler_it = std::prev(list.end());
+
+    return [my_handlers = handlers, handler_it]
+    {
+        std::lock_guard lock2{my_handlers->mutex};
+        my_handlers->on_batch_finished.erase(handler_it);
+    };
+}
+
 void AccessChangesNotifier::sendNotifications()
 {
     /// Only one thread can send notification at any time.
@@ -117,6 +131,31 @@ void AccessChangesNotifier::sendNotifications()
         }
 
         queue_lock.lock();
+    }
+    queue_lock.unlock();
+
+    /// Run the coalesced per-batch work unconditionally, even when this call drained nothing: a
+    /// per-batch handler whose previous rebuild threw left its work pending, and the per-entity flag
+    /// guarding that rebuild is only cleared on success, so the retry must not depend on a fresh event
+    /// being queued (an up-to-date `SYSTEM RELOAD USERS` diffs to zero and would otherwise never retry).
+    /// Each handler is cheap when nothing is pending (a mutex + a flag check). Copied out so handlers
+    /// run without `handlers->mutex` held.
+    std::vector<OnBatchFinishedHandler> batch_finished_handlers;
+    {
+        std::lock_guard handlers_lock{handlers->mutex};
+        boost::range::copy(handlers->on_batch_finished, std::back_inserter(batch_finished_handlers));
+    }
+
+    for (const auto & handler : batch_finished_handlers)
+    {
+        try
+        {
+            handler();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
     }
 }
 

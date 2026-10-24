@@ -94,7 +94,7 @@ ASTUserNamesWithHost::ASTUserNamesWithHost(const String & name_)
 void ASTUserNamesWithHost::formatImpl(
     WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    chassert(!children.empty());
+    assert(!children.empty());
 
     bool need_comma = false;
     for (const auto & child : children)

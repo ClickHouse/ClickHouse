@@ -7,6 +7,8 @@ title: 'Nullable(T)'
 doc_type: 'reference'
 ---
 
+# Nullable(T)
+
 Allows to store special marker ([NULL](../../sql-reference/syntax.md)) that denotes "missing value" alongside normal values allowed by `T`. For example, a `Nullable(Int8)` type column can store `Int8` type values, and the rows that do not have a value will store `NULL`.
 
 `T` can't be any of the following composite data types:
@@ -38,7 +40,9 @@ It is possible to find `NULL` values in a column by using `null` subcolumn witho
 
 **Example**
 
-```sql title="Query"
+Query:
+
+```sql
 CREATE TABLE nullable (`n` Nullable(UInt32)) ENGINE = MergeTree ORDER BY tuple();
 
 INSERT INTO nullable VALUES (1) (NULL) (2) (NULL);
@@ -46,7 +50,9 @@ INSERT INTO nullable VALUES (1) (NULL) (2) (NULL);
 SELECT n.null FROM nullable;
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌─n.null─┐
 │      0 │
 │      1 │

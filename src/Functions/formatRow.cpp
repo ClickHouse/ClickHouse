@@ -31,7 +31,7 @@ namespace
   * several columns to generate a string per row, such as CSV, TSV, JSONEachRow, etc.
   * formatRowNoNewline(...) trims the newline character of each row.
   */
-class FunctionFormatRow final : public IFunction
+class FunctionFormatRow : public IFunction
 {
 public:
     FunctionFormatRow(const char * name_, bool no_newline_, String format_name_, Names arguments_column_names_, ContextPtr context_)
@@ -93,7 +93,16 @@ public:
             row_output_format->finalize();
             if (no_newline)
             {
-                if (buffer.position() != buffer.buffer().begin() && buffer.position()[-1] == '\n')
+                /// Strip a single trailing newline, but only when this row actually emitted at least one byte.
+                /// `buffer.count()` is the absolute number of bytes written; the current row starts at the
+                /// previous row's end offset (0 for the first row). Comparing against it prevents rewinding into
+                /// the previous row when this row is empty, which would make `offsets` non-monotonic and cause a
+                /// `size_t` underflow in `ColumnString::sizeAt`. The check against `buffer.buffer().begin()`
+                /// additionally keeps the position within the current working buffer so `--buffer.position()`
+                /// never moves the cursor before it.
+                const size_t row_start = i == 0 ? 0 : offsets[i - 1];
+                if (buffer.count() > row_start && buffer.position() > buffer.buffer().begin()
+                    && buffer.position()[-1] == '\n')
                     --buffer.position();
             }
 
@@ -113,15 +122,15 @@ private:
     FormatSettings format_settings;
 };
 
-class FormatRowOverloadResolver final : public IFunctionOverloadResolver, private WithContext
+class FormatRowOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     FormatRowOverloadResolver(const char * name_, bool no_newline_, ContextPtr context_)
-        : WithContext(context_), function_name(name_), no_newline(no_newline_) {}
+        : function_name(name_), no_newline(no_newline_), context(context_) {}
 
-    static FunctionOverloadResolverPtr create(const char * name, bool no_newline, ContextPtr context_)
+    static FunctionOverloadResolverPtr create(const char * name, bool no_newline, ContextPtr context)
     {
-        return std::make_unique<FormatRowOverloadResolver>(name, no_newline, std::move(context_));
+        return std::make_unique<FormatRowOverloadResolver>(name, no_newline, std::move(context));
     }
 
     String getName() const override { return function_name; }
@@ -143,7 +152,7 @@ public:
 
         if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments.at(0).column.get()))
             return std::make_unique<FunctionToFunctionBaseAdaptor>(
-                std::make_shared<FunctionFormatRow>(function_name, no_newline, name_col->getValue<String>(), std::move(arguments_column_names), getContext()),
+                std::make_shared<FunctionFormatRow>(function_name, no_newline, name_col->getValue<String>(), std::move(arguments_column_names), context),
                 DataTypes{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })},
                 return_type);
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument to {} must be a format name", getName());
@@ -154,6 +163,7 @@ public:
 private:
     const char * function_name;
     bool no_newline;
+    ContextPtr context;
 };
 
 }

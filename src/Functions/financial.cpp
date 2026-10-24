@@ -380,7 +380,7 @@ void dispatchCashflowDate(const IColumn * cashflow_data, const IColumn * date_da
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cashflow array must contain Float64/Float32/Int64/Int32/Int16/Int8 values");
 }
 
-class FunctionXirr final : public IFunction
+class FunctionXirr : public IFunction
 {
 public:
     static constexpr auto name = "financialInternalRateOfReturnExtended";
@@ -498,7 +498,7 @@ public:
     }
 };
 
-class FunctionIRR final : public IFunction
+class FunctionIRR : public IFunction
 {
 public:
     static constexpr auto name = "financialInternalRateOfReturn";
@@ -594,7 +594,7 @@ public:
     }
 };
 
-class FunctionXnpv final : public IFunction
+class FunctionXnpv : public IFunction
 {
 public:
     static constexpr auto name = "financialNetPresentValueExtended";
@@ -712,7 +712,7 @@ public:
     }
 };
 
-class FunctionNPV final : public IFunction
+class FunctionNPV : public IFunction
 {
 public:
     static constexpr auto name = "financialNetPresentValue";

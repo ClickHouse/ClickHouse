@@ -4,7 +4,6 @@ DROP TABLE IF EXISTS products;
 DROP TABLE IF EXISTS sales;
 
 SET enable_analyzer = 1;
-SET materialize_statistics_on_insert = 1;
 
 CREATE TABLE sales (
     id Int32,

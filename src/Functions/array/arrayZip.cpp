@@ -7,7 +7,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -22,7 +21,7 @@ extern const int ILLEGAL_COLUMN;
 
 /// arrayZip(['a', 'b', 'c'], ['d', 'e', 'f']) = [('a', 'd'), ('b', 'e'), ('c', 'f')]
 /// arrayZipUnaligned(['a', 'b', 'c'], ['d', 'e']) = [('a', 'd'), ('b', 'e'), ('c', null)]
-class FunctionArrayZip final : public IFunction
+class FunctionArrayZip : public IFunction
 {
 public:
     FunctionArrayZip(const char * name_, bool allow_unaligned_)
@@ -125,7 +124,7 @@ private:
 
     ColumnPtr executeUnaligned(const Columns & holders, Columns & tuple_columns, size_t input_rows_count, bool has_unaligned) const
     {
-        VectorWithMemoryTracking<const ColumnArray *> array_columns(holders.size());
+        std::vector<const ColumnArray *> array_columns(holders.size());
         for (size_t i = 0; i < holders.size(); ++i)
             array_columns[i] = checkAndGetColumn<ColumnArray>(holders[i].get());
 

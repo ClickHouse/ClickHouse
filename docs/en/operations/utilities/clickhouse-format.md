@@ -5,6 +5,8 @@ title: 'clickhouse-format'
 doc_type: 'reference'
 ---
 
+# clickhouse-format utility
+
 Allows formatting input queries.
 
 Keys:
@@ -26,11 +28,13 @@ Keys:
 
 1. Formatting a query:
 
-```bash title="Query"
+```bash
 $ clickhouse-format --query "select number from numbers(10) where number%2 order by number desc;"
 ```
 
-```bash title="Response"
+Result:
+
+```bash
 SELECT number
 FROM numbers(10)
 WHERE number % 2
@@ -39,21 +43,25 @@ ORDER BY number DESC
 
 2. Highlighting and single line:
 
-```bash title="Query"
+```bash
 $ clickhouse-format --oneline --hilite <<< "SELECT sum(number) FROM numbers(5);"
 ```
 
-```sql title="Response"
+Result:
+
+```sql
 SELECT sum(number) FROM numbers(5)
 ```
 
 3. Multiqueries:
 
-```bash title="Query"
+```bash
 $ clickhouse-format -n <<< "SELECT min(number) FROM numbers(5); SELECT max(number) FROM numbers(5);"
 ```
 
-```sql title="Response"
+Result:
+
+```sql
 SELECT min(number)
 FROM numbers(5)
 ;
@@ -66,31 +74,37 @@ FROM numbers(5)
 
 4. Obfuscating:
 
-```bash title="Query"
+```bash
 $ clickhouse-format --seed Hello --obfuscate <<< "SELECT cost_first_screen BETWEEN a AND b, CASE WHEN x >= 123 THEN y ELSE NULL END;"
 ```
 
-```sql title="Response"
+Result:
+
+```sql
 SELECT treasury_mammoth_hazelnut BETWEEN nutmeg AND span, CASE WHEN chive >= 116 THEN switching ELSE ANYTHING END;
 ```
 
 Same query and another seed string:
 
-```bash title="Query"
+```bash
 $ clickhouse-format --seed World --obfuscate <<< "SELECT cost_first_screen BETWEEN a AND b, CASE WHEN x >= 123 THEN y ELSE NULL END;"
 ```
 
-```sql title="Response"
+Result:
+
+```sql
 SELECT horse_tape_summer BETWEEN folklore AND moccasins, CASE WHEN intestine >= 116 THEN nonconformist ELSE FORESTRY END;
 ```
 
 5. Adding backslash:
 
-```bash title="Query"
+```bash
 $ clickhouse-format --backslash <<< "SELECT * FROM (SELECT 1 AS x UNION ALL SELECT 1 UNION DISTINCT SELECT 3);"
 ```
 
-```sql title="Response"
+Result:
+
+```sql
 SELECT * \
 FROM  \
 ( \

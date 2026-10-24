@@ -10,6 +10,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/TransformDateTime64.h>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {

@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Common/VectorWithMemoryTracking.h>
-#include <Common/MapWithMemoryTracking.h>
 #include <Common/PODArray.h>
 #include <IO/PackedFilesIO.h>
 #include <IO/WriteBufferFromVector.h>
@@ -162,10 +160,10 @@ private:
     void applyRemoveFile(MetadataChange & change, Map & index_map);
 
     /// Map from the name of file to its content.
-    MapWithMemoryTracking<String, std::shared_ptr<Data>> written_files;
+    std::map<String, std::shared_ptr<Data>> written_files;
 
     /// Changes of metadata such as file renames or removes.
-    VectorWithMemoryTracking<MetadataChange> metadata_changes;
+    std::vector<MetadataChange> metadata_changes;
 
     /// Settings that are used while flushing archive with data.
     std::optional<WriteSettings> write_settings;

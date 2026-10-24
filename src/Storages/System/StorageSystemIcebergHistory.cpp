@@ -1,3 +1,4 @@
+
 #include <Storages/System/StorageSystemIcebergHistory.h>
 #include <mutex>
 #include <DataTypes/DataTypesNumber.h>
@@ -19,6 +20,7 @@
 #include <Access/ContextAccess.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
+#include <Storages/StorageProxy.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Core/Settings.h>
 
@@ -66,7 +68,8 @@ void StorageSystemIcebergHistory::fillData([[maybe_unused]] MutableColumns & res
         /// to handle properly all possible errors which we can get when attempting to read metadata of iceberg table
         try
         {
-            if (IcebergMetadata * iceberg_metadata = dynamic_cast<IcebergMetadata *>(object_storage->getExternalMetadata(context_copy)); iceberg_metadata)
+            if (auto iceberg_metadata = std::dynamic_pointer_cast<IcebergMetadata>(object_storage->getExternalMetadata(context_copy));
+                iceberg_metadata)
             {
                 IcebergMetadata::IcebergHistory iceberg_history_items = iceberg_metadata->getHistory(context_copy);
 
@@ -93,7 +96,7 @@ void StorageSystemIcebergHistory::fillData([[maybe_unused]] MutableColumns & res
 
     if (show_tables_granted)
     {
-        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = true});
+        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true, .with_remote_databases = true});
         for (const auto & db: databases)
         {
             /// with last flag we are filtering out all non iceberg table
@@ -106,7 +109,7 @@ void StorageSystemIcebergHistory::fillData([[maybe_unused]] MutableColumns & res
                     // Table was dropped while acquiring the lock, skipping table
                     continue;
 
-                if (auto * object_storage_table = dynamic_cast<StorageObjectStorage *>(storage.get()))
+                if (auto * object_storage_table = castStorage<StorageObjectStorage>(storage, DeferredTable::Skip).get())
                 {
                     add_history_record(iterator, object_storage_table);
                 }

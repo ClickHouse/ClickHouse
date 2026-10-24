@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -7,7 +6,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 opts=(
     "--enable_analyzer=1"
-    "--query_plan_optimize_prewhere=1"
 )
 
 function run_query()

@@ -7,6 +7,8 @@ title: 'PARALLEL WITH Clause'
 doc_type: 'reference'
 ---
 
+# PARALLEL WITH Clause
+
 Allows to execute multiple statements in parallel.
 
 ## Syntax {#syntax}

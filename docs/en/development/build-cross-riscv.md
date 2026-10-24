@@ -7,6 +7,8 @@ title: 'How to Build ClickHouse on Linux for RISC-V 64'
 doc_type: 'guide'
 ---
 
+# How to Build ClickHouse on Linux for RISC-V 64
+
 ClickHouse has experimental support for RISC-V. Not all features can be enabled.
 
 ## Build ClickHouse {#build-clickhouse}

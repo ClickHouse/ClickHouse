@@ -158,6 +158,14 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision) const
 }
 
 
+/** The strings of `ClientInfo` come from the peer, and in interserver mode `ClientInfo` is read before
+  * the secret hash of the query is checked, so they are read growing as the bytes arrive instead of
+  * being resized to the declared size first: a declared size does not become an allocation on its
+  * own. Their size keeps the generic bound, because `ClientInfo` is also forwarded from the other
+  * interfaces (an HTTP query id or quota key can be long) to the shards of a `Distributed` table and
+  * persisted in the queue files of an async `Distributed` insert, so a tighter bound would make the
+  * server reject what it wrote itself.
+  */
 void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision)
 {
     if (client_protocol_revision < DBMS_MIN_REVISION_WITH_CLIENT_INFO)
@@ -169,11 +177,11 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision)
     if (empty())
         return;
 
-    readBinary(initial_user, in);
-    readBinary(initial_query_id, in);
+    readStringBinaryGrowing(initial_user, in);
+    readStringBinaryGrowing(initial_query_id, in);
 
     String initial_address_string;
-    readBinary(initial_address_string, in);
+    readStringBinaryGrowing(initial_address_string, in);
     initial_address = std::make_shared<Poco::Net::SocketAddress>(initial_address_string);
 
     if (client_protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INITIAL_QUERY_START_TIME)
@@ -188,9 +196,9 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision)
 
     if (interface == Interface::TCP)
     {
-        readBinary(os_user, in);
-        readBinary(client_hostname, in);
-        readBinary(client_name, in);
+        readStringBinaryGrowing(os_user, in);
+        readStringBinaryGrowing(client_hostname, in);
+        readStringBinaryGrowing(client_name, in);
         readVarUInt(client_version_major, in);
         readVarUInt(client_version_minor, in);
         readVarUInt(client_tcp_protocol_version, in);
@@ -201,17 +209,17 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision)
         readBinary(read_http_method, in);
         http_method = HTTPMethod(read_http_method);
 
-        readBinary(http_user_agent, in);
+        readStringBinaryGrowing(http_user_agent, in);
 
         if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_X_FORWARDED_FOR_IN_CLIENT_INFO)
-            readBinary(forwarded_for, in);
+            readStringBinaryGrowing(forwarded_for, in);
 
         if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_REFERER_IN_CLIENT_INFO)
-            readBinary(http_referer, in);
+            readStringBinaryGrowing(http_referer, in);
     }
 
     if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_QUOTA_KEY_IN_CLIENT_INFO)
-        readBinary(quota_key, in);
+        readStringBinaryGrowing(quota_key, in);
 
     if (client_protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_DISTRIBUTED_DEPTH)
         readVarUInt(distributed_depth, in);
@@ -232,7 +240,7 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision)
         {
             readBinary(client_trace_context.trace_id, in);
             readBinary(client_trace_context.span_id, in);
-            readBinary(client_trace_context.tracestate, in);
+            readStringBinaryGrowing(client_trace_context.tracestate, in);
             readBinary(client_trace_context.trace_flags, in);
         }
     }
@@ -257,7 +265,7 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision)
         UInt8 have_jwt = 0;
         readBinary(have_jwt, in);
         if (have_jwt)
-            readBinary(jwt, in);
+            readStringBinaryGrowing(jwt, in);
     }
 }
 
@@ -347,7 +355,7 @@ void ClientInfo::setFromHTTPRequest(const Poco::Net::HTTPRequest & request)
     {
         /// These headers can contain authentication info and shouldn't be accessible by the user.
         String key_lowercase = Poco::toLower(header.first);
-        if (key_lowercase.starts_with("x-clickhouse") || key_lowercase == "authentication")
+        if (key_lowercase.starts_with("x-clickhouse") || key_lowercase == "authentication" || key_lowercase == "authorization")
             continue;
         http_headers[header.first] = header.second;
     }

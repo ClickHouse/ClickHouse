@@ -4,7 +4,6 @@
 #include <Functions/FunctionsRandom.h>
 #include <Functions/FunctionHelpers.h>
 #include <Core/ServerUUID.h>
-#include <Core/UUID.h>
 #include <Common/ErrorCodes.h>
 #include <Common/logger_useful.h>
 #include <base/types.h>
@@ -155,7 +154,7 @@ uint64_t generateSnowflakeID()
     return fromSnowflakeId(snowflake_id);
 }
 
-class FunctionGenerateSnowflakeID final : public IFunction
+class FunctionGenerateSnowflakeID : public IFunction
 {
 public:
     static constexpr auto name = "generateSnowflakeID";

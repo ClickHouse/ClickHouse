@@ -112,33 +112,6 @@ private:
 
 };
 
-/// Drop the static CHJIT instances used for compiled expressions and compiled aggregate functions.
-/// On the next compile request, fresh instances are constructed (paying the one-time
-/// `TargetMachine`/`Subtarget`/`LLVMContext` initialization cost again, ~few MiB), reclaiming any
-/// LLVMContext-retained type/constant uniquing accumulated by previous compilations.
-///
-/// Concurrency: each in-flight compile and each cache holder retains its own `shared_ptr<CHJIT>`,
-/// so the actual instance survives a reset until every user has released its handle. The reset
-/// only swaps the static slot — no in-flight compile is interrupted, no cache entry can
-/// dangle, and the dropped instance's compiled code stays mapped until its last reference goes away.
-/// The intended trigger is `SYSTEM DROP COMPILED EXPRESSION CACHE`, which clears the cache first
-/// (so every holder's `~deleteCompiledModule` runs against its captured instance) and then resets,
-/// at which point any in-flight compile that completes goes into a fresh instance.
-void resetExpressionJITInstance();
-void resetAggregatorJITInstance();
-void resetSortDescriptionJITInstance();
-
-}
-
-#else
-
-namespace DB
-{
-
-inline void resetExpressionJITInstance() {}
-inline void resetAggregatorJITInstance() {}
-inline void resetSortDescriptionJITInstance() {}
-
 }
 
 #endif

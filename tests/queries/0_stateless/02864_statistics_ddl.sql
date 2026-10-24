@@ -16,6 +16,9 @@ SET allow_statistics = 1;
 -- Error case: Unknown statistics types are rejected
 CREATE TABLE tab (col Float64 STATISTICS(no_statistics_type)) Engine = MergeTree() ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 
+-- Error case: A statistics type written as an expression is rejected as an unknown type
+CREATE TABLE tab (col Float64 STATISTICS(trim(BOTH '' FROM 'x'))) Engine = MergeTree() ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
+
 -- Error case: The same statistics type can't exist more than once on a column
 CREATE TABLE tab (col Float64 STATISTICS(tdigest, tdigest)) Engine = MergeTree() ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 
@@ -172,7 +175,7 @@ ALTER TABLE tab DROP STATISTICS IF EXISTS s; -- no-op
 ALTER TABLE tab CLEAR STATISTICS s; -- { serverError ILLEGAL_STATISTICS }
 ALTER TABLE tab CLEAR STATISTICS IF EXISTS s; -- no-op
 
--- We don't check systematically that statistics can only be created via ALTER ADD STATISTICS on columns of specific data types (the
+-- We don't check systematically that that statistics can only be created via ALTER ADD STATISTICS on columns of specific data types (the
 -- internal type validation code is tested already above, (*)). Only do a rudimentary check for each statistics type with a data type that
 -- works and one that doesn't work.
 --   tdigest

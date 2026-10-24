@@ -15,7 +15,6 @@
 #include <Common/setThreadName.h>
 #include <Common/TerminalSize.h>
 #include <Common/ThreadPool.h>
-#include <Common/ThreadGroupSwitcher.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 
@@ -187,7 +186,7 @@ void PrettyBlockOutputFormat::write(Chunk chunk, PortKind port_kind)
         }
 
         /// Should be written from writeSuffix()
-        chassert(!mono_chunk);
+        assert(!mono_chunk);
     }
 
     writeChunk(chunk, port_kind);

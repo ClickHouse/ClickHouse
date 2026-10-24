@@ -2,7 +2,6 @@
 
 #include <functional>
 #include <Common/QueryScope.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/QueryMetadataCache.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <IO/Progress.h>
@@ -17,7 +16,7 @@ class ProcessListEntry;
 struct QueryPipelineFinalizedInfo
 {
     std::optional<ResultProgress> result_progress;
-    VectorWithMemoryTracking<IProcessor::ProcessorsProfileLogInfo> processors_profile_infos;
+    std::vector<IProcessor::ProcessorsProfileLogInfo> processors_profile_infos;
     String pipeline_dump;
 };
 
@@ -34,7 +33,7 @@ struct BlockIO
 
     /// Needed for internal queries.
     /// Each level calls executeQuery and adds its process list entry.
-    VectorWithMemoryTracking<std::shared_ptr<ProcessListEntry>> process_list_entries;
+    std::vector<std::shared_ptr<ProcessListEntry>> process_list_entries;
 
     /// Query-scoped cache for storage metadata and snapshots.
     ///
@@ -53,9 +52,9 @@ struct BlockIO
     /// The finalize_query_pipeline function is called once to flush the pipeline progress and reset it.
     /// Then all finish callbacks are called with the resulting QueryPipelineFinalizedInfo.
     std::function<QueryPipelineFinalizedInfo(QueryPipeline &&)> finalize_query_pipeline;
-    VectorWithMemoryTracking<std::function<void(const QueryPipelineFinalizedInfo &, std::chrono::system_clock::time_point)>> finish_callbacks;
+    std::vector<std::function<void(const QueryPipelineFinalizedInfo &, std::chrono::system_clock::time_point)>> finish_callbacks;
 
-    VectorWithMemoryTracking<std::function<void(bool)>> exception_callbacks;
+    std::vector<std::function<void(bool)>> exception_callbacks;
 
     /// When it is true, don't bother sending any non-empty blocks to the out stream
     bool null_format = false;

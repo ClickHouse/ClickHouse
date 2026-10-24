@@ -26,8 +26,6 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeString.h>
 #include <Storages/ExecutableSettings.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
@@ -37,6 +35,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_executable_tables;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsSeconds max_execution_time;
 }
@@ -58,6 +57,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int UNSUPPORTED_METHOD;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -98,11 +98,11 @@ StorageExecutable::StorageExecutable(
     const StorageID & table_id_,
     const String & format,
     const ExecutableSettings & settings_,
-    const VectorWithMemoryTracking<ASTPtr> & input_queries_,
+    const std::vector<ASTPtr> & input_queries_,
     const ColumnsDescription & columns,
     const ConstraintsDescription & constraints,
     const String & comment)
-    : StorageWithCommonVirtualColumns(table_id_)
+    : IStorage(table_id_)
     , settings(std::make_unique<ExecutableSettings>(settings_))
     , input_queries(input_queries_)
     , log(settings->is_executable_pool ? getLogger("StorageExecutablePool") : getLogger("StorageExecutable"))
@@ -111,7 +111,6 @@ StorageExecutable::StorageExecutable(
     storage_metadata.setColumns(columns);
     storage_metadata.setConstraints(constraints);
     storage_metadata.setComment(comment);
-    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 
     ShellCommandSourceCoordinator::Configuration configuration
@@ -134,14 +133,6 @@ StorageExecutable::StorageExecutable(
     coordinator = std::make_unique<ShellCommandSourceCoordinator>(std::move(configuration));
 }
 
-VirtualColumnsDescription StorageExecutable::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    return desc;
-}
-
 StorageExecutable::~StorageExecutable() = default;
 
 String StorageExecutable::getName() const
@@ -151,7 +142,7 @@ String StorageExecutable::getName() const
     return "Executable";
 }
 
-void StorageExecutable::readImpl(
+void StorageExecutable::read(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -161,6 +152,12 @@ void StorageExecutable::readImpl(
     size_t max_block_size,
     size_t /*threads*/)
 {
+    if (!context->getSettingsRef()[Setting::allow_executable_tables])
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "The `executable` table function and the `Executable` and `ExecutablePool` table "
+            "engines are disabled. Set `allow_executable_tables` setting to enable them");
+
     auto & script_name = settings->script_name;
 
     auto user_scripts_path = context->getUserScriptsPath();
@@ -240,7 +237,7 @@ void registerStorageExecutable(StorageFactory & factory)
         script_name_with_arguments.erase(script_name_with_arguments.begin());
         auto format = checkAndGetLiteralArgument<String>(args.engine_args[1], "format");
 
-        VectorWithMemoryTracking<ASTPtr> input_queries;
+        std::vector<ASTPtr> input_queries;
         for (size_t i = 2; i < args.engine_args.size(); ++i)
         {
             if (args.engine_args[i]->children.empty())

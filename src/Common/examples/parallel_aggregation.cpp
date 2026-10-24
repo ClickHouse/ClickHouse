@@ -30,16 +30,6 @@
 /// for file in UserID URLHash RefererHash WatchID Title SearchPhrase URLDomain ClientIP RegionID; do echo -e "\n---------------------- $file ----------------------\n"; for method in 22 506 507; do ./src/Common/examples/parallel_aggregation 90000000 64 $method < src/Common/examples/${file}.bin; done; done
 
 
-namespace CurrentMetrics
-{
-    extern const Metric LocalThread;
-    extern const Metric LocalThreadActive;
-    extern const Metric LocalThreadScheduled;
-}
-
-namespace
-{
-
 using ThreadFromGlobalPoolSimple = ThreadFromGlobalPoolImpl</* propagate_opentelemetry_context= */ false, /* global_trace_collector_allowed= */ false>;
 using SimpleThreadPool = ThreadPoolImpl<ThreadFromGlobalPoolSimple>;
 
@@ -50,6 +40,14 @@ using Source = std::vector<Key>;
 
 using Map = HashMap<Key, Value>;
 using MapTwoLevel = TwoLevelHashMap<Key, Value>;
+
+
+namespace CurrentMetrics
+{
+    extern const Metric LocalThread;
+    extern const Metric LocalThreadActive;
+    extern const Metric LocalThreadScheduled;
+}
 
 struct SmallLock
 {
@@ -380,7 +378,7 @@ private:
                 Cell * result = nullptr;
                 bool inserted = false;
                 emplaceNoResize(cell.key, result, inserted);
-                chassert(result != nullptr);
+                assert(result != nullptr);
                 if (inserted)
                     result->value = cell.value;
                 else
@@ -1116,7 +1114,7 @@ void aggregate12(Map & map, Source::const_iterator begin, Source::const_iterator
     {
         if (prev_it != end && *it == *prev_it)
         {
-            chassert(found != nullptr);
+            assert(found != nullptr);
             ++found->getMapped();
             continue;
         }
@@ -1124,7 +1122,7 @@ void aggregate12(Map & map, Source::const_iterator begin, Source::const_iterator
 
         bool inserted;
         map.emplace(*it, found, inserted);
-        chassert(found != nullptr);
+        assert(found != nullptr);
         ++found->getMapped();
     }
 }
@@ -1242,7 +1240,7 @@ void aggregate22(MapTwoLevel & map, Source::const_iterator begin, Source::const_
     {
         if (!first && *it == *prev_it)
         {
-            chassert(found != nullptr);
+            assert(found != nullptr);
             ++found->getMapped();
             continue;
         }
@@ -1251,7 +1249,7 @@ void aggregate22(MapTwoLevel & map, Source::const_iterator begin, Source::const_
 
         bool inserted;
         map.emplace(*it, found, inserted);
-        chassert(found != nullptr);
+        assert(found != nullptr);
         ++found->getMapped();
     }
 }
@@ -1566,9 +1564,8 @@ void mergeTwoLevelSwiss(MapTwoLevelSwiss * maps, size_t num_threads, size_t buck
 }
 #endif
 
-}
 
-int mainEntryExampleParallelAggregation(int argc, char ** argv)
+int main(int argc, char ** argv)
 {
     size_t n = std::stol(argv[1]);
     size_t num_threads = std::stol(argv[2]);

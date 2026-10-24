@@ -14,7 +14,7 @@ bool CompressedReadBuffer::nextImpl()
     auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
 
     /// This is for clang static analyzer.
-    chassert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
+    assert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
 
     memory.resize(size_decompressed + additional_size_at_the_end_of_buffer);
     working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
@@ -55,7 +55,7 @@ size_t CompressedReadBuffer::readBig(char * to, size_t n)
             bytes += offset();
 
             /// This is for clang static analyzer.
-            chassert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
+            assert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
 
             memory.resize(size_decompressed + additional_size_at_the_end_of_buffer);
             working_buffer = Buffer(memory.data(), &memory[size_decompressed]);

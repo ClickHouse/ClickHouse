@@ -16,8 +16,6 @@
 
 #include <IO/WriteHelpers.h>
 
-#include <Common/VectorWithMemoryTracking.h>
-
 /// Include immintrin. Otherwise `simsimd` fails to build: `unknown type name '__bfloat16'`
 #if USE_SIMSIMD
 #    if defined(__x86_64__) || defined(__i386__)
@@ -455,7 +453,7 @@ private:
 
         /// We process 32 rows per iteration. It's a magic number, but gives a good trade-off between memory usage and performance
         constexpr size_t block_size = 32;
-        VectorWithMemoryTracking<CalcT> block(block_size * padded_array_size);
+        std::vector<CalcT> block(block_size * padded_array_size);
         auto block_row = [&](size_t r) -> CalcT * { return block.data() + r * padded_array_size; };
 
         for (size_t base_row = 0; base_row < input_rows_count; base_row += block_size)

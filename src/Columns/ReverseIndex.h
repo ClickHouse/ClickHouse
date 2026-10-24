@@ -190,7 +190,7 @@ public:
         {
             reverseIndexEmplaceNonZero(key, impl_it, inserted, hash_value, object);
         }
-        chassert(impl_it != nullptr);
+        assert(impl_it != nullptr);
         it = iterator(this, impl_it);
     }
 

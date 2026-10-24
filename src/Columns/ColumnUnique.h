@@ -7,6 +7,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnConst.h>
 
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NumberTraits.h>
@@ -178,6 +179,10 @@ public:
     /// This is strange. Please remove this method as soon as possible.
     std::optional<UInt64> getOrFindValueIndex(std::string_view value) const override
     {
+        /// The reserved prefix slots are not in the reverse index, so match the default value here.
+        if (auto index = getNestedTypeDefaultValueIndex(); getRawColumnPtr()->getDataAt(index) == value)
+            return index;
+
         if (std::optional<UInt64> res = reverse_index.getIndex(value); res)
             return res;
 
@@ -636,7 +641,7 @@ static void checkIndexes(const ColumnVector<IndexType> & indexes, size_t max_dic
     {
         if (data[i] >= max_dictionary_size)
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Found index {} at position {} which is greater or equal "
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Found index {} at position {} which is grated or equal "
                             "than dictionary size {}", toString(data[i]), toString(i), toString(max_dictionary_size));
         }
     }
@@ -727,34 +732,6 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
         else
         {
             auto ref = src_column->getDataAt(row);
-
-            // NaN can contain different sign or mantissa bits, but we need to consider all NaNs equal.
-            if constexpr (is_float_vector_v<ColumnType>)
-            {
-                auto value = unalignedLoad<typename ColumnType::ValueType>(ref.data());
-                if (isNaN(value))
-                {
-                    auto nan = NaNOrZero<typename ColumnType::ValueType>();
-                    auto nan_ref = std::string_view(reinterpret_cast<const char *>(&nan), sizeof(nan));
-                    MutableColumnPtr res = nullptr;
-
-                    if (secondary_index && next_position >= max_dictionary_size)
-                    {
-                        auto insertion_point = reverse_index.getInsertionPoint(nan_ref);
-                        if (insertion_point == reverse_index.lastInsertionPoint())
-                            res = insert_key(nan_ref, *secondary_index);
-                        else
-                            positions[num_added_rows] = static_cast<IndexType>(insertion_point);
-                    }
-                    else
-                        res = insert_key(nan_ref, reverse_index);
-
-                    if (res)
-                        return res;
-                    continue;
-                }
-            }
-
             MutableColumnPtr res = nullptr;
 
             if (secondary_index && next_position >= max_dictionary_size)

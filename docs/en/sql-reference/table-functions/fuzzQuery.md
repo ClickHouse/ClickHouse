@@ -7,6 +7,8 @@ title: 'fuzzQuery'
 doc_type: 'reference'
 ---
 
+# fuzzQuery Table Function
+
 Perturbs the given query string with random variations.
 
 ## Syntax {#syntax}

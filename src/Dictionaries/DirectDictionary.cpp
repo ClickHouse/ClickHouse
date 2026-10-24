@@ -57,7 +57,7 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
     DefaultsOrFilter defaults_or_filter) const
 {
     bool is_short_circuit = std::holds_alternative<RefFilter>(defaults_or_filter);
-    chassert(is_short_circuit || std::holds_alternative<RefDefaults>(defaults_or_filter));
+    assert(is_short_circuit || std::holds_alternative<RefDefaults>(defaults_or_filter));
 
     if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
         dict_struct.validateKeyTypes(key_types);
@@ -218,7 +218,7 @@ ColumnPtr DirectDictionary<dictionary_key_type>::getColumn(
     DefaultOrFilter default_or_filter) const
 {
     bool is_short_circuit = std::holds_alternative<RefFilter>(default_or_filter);
-    chassert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
+    assert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
 
     if (is_short_circuit)
     {
@@ -284,7 +284,7 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(
                 auto block_key = block_keys_extractor.extractCurrentKey();
 
                 const auto * it = requested_key_to_index.find(block_key);
-                chassert(it);
+                assert(it);
 
                 auto & result_data_found_indexes = it->getMapped();
                 for (size_t result_data_found_index : result_data_found_indexes)

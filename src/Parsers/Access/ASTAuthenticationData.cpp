@@ -116,7 +116,7 @@ void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings 
             }
             case AuthenticationType::JWT:
             {
-                prefix = jwt_use_authenticator ? "AUTHENTICATOR" : "CLAIMS";
+                prefix = "CLAIMS";
                 parameter = true;
                 break;
             }

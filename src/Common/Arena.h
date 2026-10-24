@@ -6,6 +6,7 @@
 #include <Core/Defines.h>
 #include <boost/noncopyable.hpp>
 #include <Common/Allocator.h>
+#include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/memcpySmall.h>
 #include <base/getPageSize.h>
@@ -23,6 +24,11 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int CANNOT_ALLOCATE_MEMORY;
+}
 
 
 /** Memory pool to append something. For example, short strings.
@@ -141,14 +147,28 @@ private:
                     / linear_growth_threshold) * linear_growth_threshold;
         }
 
-        chassert(size_after_grow >= min_next_size);
+        assert(size_after_grow >= min_next_size);
         return roundUpToPageSize(size_after_grow, page_size);
     }
 
-    /// Add next contiguous MemoryChunk of memory with size not less than specified.
-    void NO_INLINE addMemoryChunk(size_t min_size)
+    /// The size of an allocation can come from the data, so it is rejected instead of wrapping around.
+    [[noreturn]] static void throwTooLargeAllocation(size_t size)
     {
-        size_t next_size = nextSize(min_size + pad_right);
+        throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Too large allocation of {} bytes in Arena", size);
+    }
+
+    /// Add next contiguous MemoryChunk of memory with size not less than specified.
+    void NO_INLINE addMemoryChunk(size_t min_size, size_t alignment = 0)
+    {
+        /// The alignment and the padding added here, and the rounding inside `nextSize`, would wrap
+        /// around for a size close to the maximum of `size_t`, and then a chunk smaller than the
+        /// requested size would be allocated. Sizes that the allocator refuses outright are cut off
+        /// here as well: the size of an allocation can come from the data, so it is a data error
+        /// rather than the logical error the allocator would report.
+        if (min_size > MAX_ALLOCATION_SIZE - alignment - pad_right - linear_growth_threshold - page_size)
+            throwTooLargeAllocation(min_size);
+
+        size_t next_size = nextSize(min_size + alignment + pad_right);
         if (head.empty())
         {
             head = MemoryChunk(next_size);
@@ -193,7 +213,7 @@ public:
     {
         used_bytes += size;
         if (unlikely(head.empty() || size > head.remaining()))
-            addMemoryChunk(size + alignment);
+            addMemoryChunk(size, alignment);
 
         do
         {
@@ -209,7 +229,7 @@ public:
                 return res;
             }
 
-            addMemoryChunk(size + alignment);
+            addMemoryChunk(size, alignment);
         } while (true);
     }
 
@@ -251,7 +271,7 @@ public:
           * range might break the invariant that the range begins at least before
           * the current MemoryChunk end.
           */
-        chassert(additional_bytes > 0);
+        assert(additional_bytes > 0);
 
         if (!range_start)
         {
@@ -269,8 +289,8 @@ public:
         // This method only works for extending the last allocation. For lack of
         // original size, check a weaker condition: that 'begin' is at least in
         // the current MemoryChunk.
-        chassert(range_start >= head.begin);
-        chassert(range_start < head.end);
+        assert(range_start >= head.begin);
+        assert(range_start < head.end);
 
         if (head.pos + additional_bytes <= head.end)
         {

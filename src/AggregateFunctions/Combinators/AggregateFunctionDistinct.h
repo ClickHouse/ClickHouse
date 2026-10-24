@@ -3,6 +3,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
 #include <AggregateFunctions/KeyHolderHelpers.h>
+#include <DataTypes/DataTypeArray.h>
 #include <IO/ReadHelpersArena.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
@@ -190,7 +191,7 @@ private:
         for (size_t i = 0; i < argument_columns.size(); ++i)
             arguments_raw[i] = argument_columns[i].get();
 
-        chassert(!argument_columns.empty());
+        assert(!argument_columns.empty());
         addToNested(0, argument_columns[0]->size(), place, arguments_raw.data(), arena);
     }
 
@@ -236,6 +237,11 @@ public:
     void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
     {
         nested_func->insertMergeResultInto(getNestedPlace(place), to, arena);
+    }
+
+    void rollbackInsertResult(ConstAggregateDataPtr __restrict place, IColumn & to) const noexcept override
+    {
+        nested_func->rollbackInsertResult(getNestedPlace(place), to);
     }
 
     size_t sizeOfData() const override
@@ -299,22 +305,6 @@ public:
     size_t getDefaultVersion() const override
     {
         return nested_func->getDefaultVersion();
-    }
-
-    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
-    {
-        /// Distinct state contains a history of unique values and can be merged across
-        /// variants without reading the nested function state from rhs
-        return this->haveSameDefinition(rhs);
-    }
-
-    void mergeStateFromDifferentVariant(
-        AggregateDataPtr __restrict place,
-        const IAggregateFunction & /*rhs*/,
-        ConstAggregateDataPtr rhs_place,
-        Arena * arena) const override
-    {
-        merge(place, rhs_place, arena);
     }
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }

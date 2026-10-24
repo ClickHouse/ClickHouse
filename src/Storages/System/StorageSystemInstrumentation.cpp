@@ -40,7 +40,7 @@ ColumnsDescription StorageSystemInstrumentation::getColumnsDescription()
         {"handler", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Handler that was patched into instrumentation points of the function."},
         {"entry_type", entry_type_enum, "Entry type for the patch."},
         {"symbol", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Complete and demangled symbol name."},
-        {"arguments", std::make_shared<DataTypeArray>(std::make_shared<DataTypeDynamic>()), "Arguments for the handler call."},
+        {"parameters", std::make_shared<DataTypeArray>(std::make_shared<DataTypeDynamic>()), "Parameters for the handler call."},
     };
 }
 
@@ -56,7 +56,7 @@ void StorageSystemInstrumentation::fillData(MutableColumns & res_columns, Contex
     auto & column_handler_name = assert_cast<ColumnLowCardinality &>(*res_columns[column_index++]);
     auto & column_entry_type = *res_columns[column_index++];
     auto & column_symbol = assert_cast<ColumnLowCardinality &>(*res_columns[column_index++]);
-    auto & column_arguments = assert_cast<ColumnArray &>(*res_columns[column_index++]);
+    auto & column_parameters = assert_cast<ColumnArray &>(*res_columns[column_index++]);
 
     for (const auto & ip : instrumented_points)
     {
@@ -68,19 +68,19 @@ void StorageSystemInstrumentation::fillData(MutableColumns & res_columns, Contex
         column_symbol.insert(ip.symbol);
 
         Array array;
-        for (const auto & arg : ip.arguments)
+        for (const auto & param : ip.parameters)
         {
             Field field = Field();
-            if (std::holds_alternative<std::string>(arg))
-                field = Field(std::get<std::string>(arg));
-            else if (std::holds_alternative<Int64>(arg))
-                field = Field(std::get<Int64>(arg));
-            else if (std::holds_alternative<Float64>(arg))
-                field = Field(std::get<Float64>(arg));
+            if (std::holds_alternative<std::string>(param))
+                field = Field(std::get<std::string>(param));
+            else if (std::holds_alternative<Int64>(param))
+                field = Field(std::get<Int64>(param));
+            else if (std::holds_alternative<Float64>(param))
+                field = Field(std::get<Float64>(param));
 
             array.emplace_back(field);
         }
-        column_arguments.insert(array);
+        column_parameters.insert(array);
     }
 }
 

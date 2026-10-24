@@ -19,7 +19,7 @@ bool DataTypeNothing::equals(const IDataType & rhs) const
 
 SerializationPtr DataTypeNothing::doGetSerialization(const SerializationInfoSettings &) const
 {
-    return SerializationNothing::create();
+    return std::make_shared<SerializationNothing>();
 }
 
 

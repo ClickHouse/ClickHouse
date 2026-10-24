@@ -220,6 +220,15 @@ ASTPtr ASTCreateUserQuery::clone() const
 }
 
 
+/// `settings` and `alter_settings` are held outside `children`.
+bool ASTCreateUserQuery::hasSecretParts() const
+{
+    return (settings && settings->hasSecretParts())
+        || (alter_settings && alter_settings->hasSecretParts())
+        || childrenHaveSecretParts();
+}
+
+
 void ASTCreateUserQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, FormatState &, FormatStateStacked) const
 {
     if (attach)

@@ -22,28 +22,19 @@ struct ChunkInfoWithAllocatedBytes : public ChunkInfoCloneable<ChunkInfoWithAllo
     Int64 allocated_bytes;
 };
 
-class AggregatingInOrderTransform final : public IProcessor
+class AggregatingInOrderTransform : public IProcessor
 {
 public:
-    AggregatingInOrderTransform(
-        SharedHeader header,
-        AggregatingTransformParamsPtr params,
-        const SortDescription & sort_description_for_merging,
-        const SortDescription & group_by_description_,
-        size_t max_block_size_,
-        size_t max_block_bytes_,
-        ManyAggregatedDataPtr many_data,
-        size_t current_variant,
-        RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater_);
+    AggregatingInOrderTransform(SharedHeader header, AggregatingTransformParamsPtr params,
+                                const SortDescription & sort_description_for_merging,
+                                const SortDescription & group_by_description_,
+                                size_t max_block_size_, size_t max_block_bytes_,
+                                ManyAggregatedDataPtr many_data, size_t current_variant);
 
-    AggregatingInOrderTransform(
-        SharedHeader header,
-        AggregatingTransformParamsPtr params,
-        const SortDescription & sort_description_for_merging,
-        const SortDescription & group_by_description_,
-        size_t max_block_size_,
-        size_t max_block_bytes_,
-        RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater_);
+    AggregatingInOrderTransform(SharedHeader header, AggregatingTransformParamsPtr params,
+                                const SortDescription & sort_description_for_merging,
+                                const SortDescription & group_by_description_,
+                                size_t max_block_size_, size_t max_block_bytes_);
 
     ~AggregatingInOrderTransform() override;
 
@@ -98,13 +89,11 @@ private:
 
     RowsBeforeStepCounterPtr rows_before_aggregation;
 
-    RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater;
-
     LoggerPtr log = getLogger("AggregatingInOrderTransform");
 };
 
 
-class FinalizeAggregatedTransform final : public ISimpleTransform
+class FinalizeAggregatedTransform : public ISimpleTransform
 {
 public:
     FinalizeAggregatedTransform(SharedHeader header, const AggregatingTransformParamsPtr & params_);

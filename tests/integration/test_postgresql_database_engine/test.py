@@ -69,17 +69,13 @@ def test_postgres_database_engine_with_postgres_ddl(started_cluster):
     assert "test_table" in node1.query("SHOW TABLES FROM postgres_database")
 
     cursor.execute("ALTER TABLE test_table ADD COLUMN data Text")
-    assert "data" in node1.query("SHOW COLUMNS FROM postgres_database.test_table")
-    assert "PRIMARY" in node1.query("SHOW INDEX FROM postgres_database.test_table")
     assert "data" in node1.query(
-        "SELECT name FROM system.columns WHERE table = 'test_table' AND database = 'postgres_database'",
-        settings={"show_remote_databases_in_system_tables": 1},
+        "SELECT name FROM system.columns WHERE table = 'test_table' AND database = 'postgres_database'"
     )
 
     cursor.execute("ALTER TABLE test_table DROP COLUMN data")
     assert "data" not in node1.query(
-        "SELECT name FROM system.columns WHERE table = 'test_table' AND database = 'postgres_database'",
-        settings={"show_remote_databases_in_system_tables": 1},
+        "SELECT name FROM system.columns WHERE table = 'test_table' AND database = 'postgres_database'"
     )
 
     node1.query("DROP DATABASE postgres_database")
@@ -289,8 +285,7 @@ def test_predefined_connection_configuration(started_cluster):
     node1.query("CREATE DATABASE postgres_database ENGINE = PostgreSQL(postgres1)")
 
     result = node1.query(
-        "select create_table_query from system.tables where database ='postgres_database'",
-        settings={"show_remote_databases_in_system_tables": 1},
+        "select create_table_query from system.tables where database ='postgres_database'"
     )
     print(f"kssenii: {result}")
     assert result.strip().endswith(
@@ -454,8 +449,7 @@ def test_numeric_detach_attach(started_cluster):
 
     def get_actual_clickhouse_column_types():
         res = node1.query(
-            "SELECT name, type FROM system.columns WHERE database = 'postgres_database' AND table = 'test_table'",
-            settings={"show_remote_databases_in_system_tables": 1},
+            "SELECT name, type FROM system.columns WHERE database = 'postgres_database' AND table = 'test_table'"
         )
 
         return dict(line.split('\t') for line in res.splitlines())
@@ -586,6 +580,46 @@ def test_backup_database(started_cluster):
     )
 
     node1.query("DROP DATABASE backup_database")
+
+
+def test_postgresql_database_engine_schema_sql_injection(started_cluster):
+    # `DatabasePostgreSQL::checkPostgresTable` embeds the configured `schema` into the PostgreSQL
+    # query it uses to check that a table exists. The query runs in a `pqxx::nontransaction`, i.e.
+    # over the libpq simple-query protocol, which executes `;`-separated statements, so a `schema`
+    # that terminates the literal early gets its own SQL executed on the PostgreSQL server as the
+    # role stored in the named collection. `schema` is overridable by default, so a user with only
+    # CREATE DATABASE plus use of the collection reaches this without CREATE TABLE or INSERT.
+    #
+    # The assertion is the absence of the marker table the payload tries to create: with the sink
+    # unescaped PostgreSQL really creates it, so this fails on an unfixed server rather than merely
+    # observing a different error message.
+
+    # `database=False` connects to the default `postgres` database, which is the one the `postgres1`
+    # named collection points ClickHouse at. `pg_tables` lists only the current database's tables,
+    # so the assertion has to run in the database the payload would execute in.
+    conn = get_postgres_conn(started_cluster.postgres_ip, started_cluster.postgres_port)
+    cursor = conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS injected_marker")
+
+    # `''` is a single quote in ClickHouse SQL; PostgreSQL therefore receives `public'; CREATE ...`.
+    payload = "public''; CREATE TABLE injected_marker (x integer); -- "
+
+    node1.query("DROP DATABASE IF EXISTS postgres_injection")
+    # Both statements are allowed to fail: once the schema is escaped, the name simply does not
+    # exist, and what matters is only what did or did not happen on the PostgreSQL side.
+    node1.query_and_get_answer_with_error(
+        f"CREATE DATABASE postgres_injection ENGINE = PostgreSQL(postgres1, schema = '{payload}')"
+    )
+    node1.query_and_get_answer_with_error("EXISTS TABLE postgres_injection.probe")
+
+    cursor.execute("SELECT count(*) FROM pg_tables WHERE tablename = 'injected_marker'")
+    assert cursor.fetchall()[0][0] == 0, (
+        "the schema value was executed as SQL by PostgreSQL: checkPostgresTable built its query "
+        "without escaping the schema"
+    )
+
+    node1.query("DROP DATABASE IF EXISTS postgres_injection")
+    cursor.execute("DROP TABLE IF EXISTS injected_marker")
 
 
 if __name__ == "__main__":

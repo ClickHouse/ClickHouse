@@ -16,6 +16,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/SetSerialization.h>
 #include <Storages/StorageSet.h>
+#include <Storages/StorageProxy.h>
 
 namespace DB
 {
@@ -24,6 +25,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
+    extern const int TOO_DEEP_RECURSION;
 }
 
 namespace Setting
@@ -37,6 +39,10 @@ namespace Setting
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
 }
+
+/// The maximum nesting depth of plans for sets from subqueries in a deserialized query plan.
+/// The serialized plan may come from a client, and the deserialization is recursive.
+static constexpr size_t MAX_SUBQUERY_PLAN_NESTING_DEPTH = 1000;
 
 enum class SetSerializationKind : UInt8
 {
@@ -191,7 +197,15 @@ QueryPlanAndSets QueryPlan::deserializeSets(
         }
         else if (kind == UInt8(SetSerializationKind::SubqueryPlan))
         {
-            auto plan_for_set = QueryPlan::deserialize(in, context, flags);
+            auto nested_flags = flags;
+            ++nested_flags.subquery_nesting_depth;
+            if (nested_flags.subquery_nesting_depth > MAX_SUBQUERY_PLAN_NESTING_DEPTH)
+                throw Exception(
+                    ErrorCodes::TOO_DEEP_RECURSION,
+                    "Too deep nesting of subqueries for sets in deserialized query plan (more than {} levels)",
+                    MAX_SUBQUERY_PLAN_NESTING_DEPTH);
+
+            auto plan_for_set = QueryPlan::deserialize(in, context, nested_flags);
 
             res.sets_from_subquery.emplace_back(QueryPlanAndSets::SetFromSubquery{
                 {hash, std::move(columns)},
@@ -211,7 +225,7 @@ static void makeSetsFromStorage(std::list<QueryPlanAndSets::SetFromStorage> sets
     {
         Identifier identifier = parseTableIdentifier(set.storage_name, context);
         auto table_node = resolveTable(identifier, context);
-        const auto * storage_set = typeid_cast<const StorageSet *>(table_node->getStorage().get());
+        const auto * storage_set = castStorage<StorageSet>(table_node->getStorage(), DeferredTable::Load).get();
         if (!storage_set)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Table {} is not a StorageSet", set.storage_name);
 

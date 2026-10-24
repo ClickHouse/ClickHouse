@@ -5,7 +5,6 @@
 
 #include <Common/Arena.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
 #include <Compression/CompressedReadBuffer.h>

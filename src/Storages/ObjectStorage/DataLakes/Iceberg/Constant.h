@@ -19,8 +19,6 @@ DEFINE_ICEBERG_FIELD(data_file);
 DEFINE_ICEBERG_FIELD(element);
 DEFINE_ICEBERG_FIELD(fields);
 DEFINE_ICEBERG_FIELD(float);
-DEFINE_ICEBERG_FIELD(geometry);
-DEFINE_ICEBERG_FIELD(geography);
 DEFINE_ICEBERG_FIELD(key);
 DEFINE_ICEBERG_FIELD(list)
 DEFINE_ICEBERG_FIELD(location);
@@ -42,8 +40,6 @@ DEFINE_ICEBERG_FIELD(summary);
 DEFINE_ICEBERG_FIELD(time);
 DEFINE_ICEBERG_FIELD(timestamp);
 DEFINE_ICEBERG_FIELD(timestamptz);
-DEFINE_ICEBERG_FIELD(timestamp_ns);
-DEFINE_ICEBERG_FIELD(timestamptz_ns);
 DEFINE_ICEBERG_FIELD(type)
 DEFINE_ICEBERG_FIELD(transform);
 DEFINE_ICEBERG_FIELD(direction);
@@ -82,15 +78,17 @@ DEFINE_ICEBERG_FIELD(null_value_counts);
 DEFINE_ICEBERG_FIELD(lower_bounds);
 DEFINE_ICEBERG_FIELD(upper_bounds);
 DEFINE_ICEBERG_FIELD(partitions);
+/// Fields of a manifest-list `partitions` field_summary record.
+DEFINE_ICEBERG_FIELD(contains_null);
+DEFINE_ICEBERG_FIELD(contains_nan);
+DEFINE_ICEBERG_FIELD(lower_bound);
+DEFINE_ICEBERG_FIELD(upper_bound);
 DEFINE_ICEBERG_FIELD(key_metadata);
 
 
 /// These variables replace `-` with underscore `_` to be compatible with c++ code.
 DEFINE_ICEBERG_FIELD_ALIAS(format_version, format-version);
 DEFINE_ICEBERG_FIELD_ALIAS(current_snapshot_id, current-snapshot-id);
-DEFINE_ICEBERG_FIELD_ALIAS(first_row_id, first-row-id);
-DEFINE_ICEBERG_FIELD_ALIAS(added_rows, added-rows);
-DEFINE_ICEBERG_FIELD_ALIAS(next_row_id, next-row-id);
 DEFINE_ICEBERG_FIELD_ALIAS(metadata_snapshot_id, snapshot-id);
 DEFINE_ICEBERG_FIELD_ALIAS(parent_snapshot_id, parent-snapshot-id);
 DEFINE_ICEBERG_FIELD_ALIAS(snapshot_log, snapshot-log);
@@ -117,6 +115,7 @@ DEFINE_ICEBERG_FIELD_ALIAS(partition_transform, transform);
 DEFINE_ICEBERG_FIELD_ALIAS(partition_name, name);
 DEFINE_ICEBERG_FIELD_ALIAS(default_spec_id, default-spec-id);
 DEFINE_ICEBERG_FIELD_ALIAS(partition_spec, partition-spec);
+DEFINE_ICEBERG_FIELD_ALIAS(manifest_partition_spec_id, partition-spec-id);
 DEFINE_ICEBERG_FIELD_ALIAS(partition_specs, partition-specs);
 DEFINE_ICEBERG_FIELD_ALIAS(spec_id, spec-id);
 DEFINE_ICEBERG_FIELD_ALIAS(added_records, added-records);
@@ -134,8 +133,6 @@ DEFINE_ICEBERG_FIELD_ALIAS(field_id, field-id);
 DEFINE_ICEBERG_FIELD_ALIAS(last_sequence_number, last-sequence-number);
 DEFINE_ICEBERG_FIELD_ALIAS(metadata_file, metadata-file);
 DEFINE_ICEBERG_FIELD_ALIAS(metadata_log, metadata-log);
-DEFINE_ICEBERG_FIELD_ALIAS(partition_statistics, partition-statistics);
-DEFINE_ICEBERG_FIELD_ALIAS(statistics_path, statistics-path);
 DEFINE_ICEBERG_FIELD_ALIAS(metadata_sequence_number, sequence-number);
 DEFINE_ICEBERG_FIELD_ALIAS(min_snapshots_to_keep, history.expire.min-snapshots-to-keep);
 DEFINE_ICEBERG_FIELD_ALIAS(max_snapshot_age_ms, history.expire.max-snapshot-age-ms);
@@ -157,8 +154,6 @@ DEFINE_ICEBERG_FIELD_COMPOUND(data_file, lower_bounds);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, upper_bounds);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, referenced_data_file);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, sort_order_id);
-DEFINE_ICEBERG_FIELD_COMPOUND(data_file, record_count);
-DEFINE_ICEBERG_FIELD_COMPOUND(data_file, file_size_in_bytes);
 
 /// Fallback defaults for snapshot retention policy when table properties are absent.
 /// These values follow the Java reference implementation; the Iceberg spec does not

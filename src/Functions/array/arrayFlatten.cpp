@@ -15,7 +15,7 @@ namespace ErrorCodes
 }
 
 /// arrayFlatten([[1, 2, 3], [4, 5]]) = [1, 2, 3, 4, 5] - flatten array.
-class ArrayFlatten final : public IFunction
+class ArrayFlatten : public IFunction
 {
 public:
     static constexpr auto name = "arrayFlatten";

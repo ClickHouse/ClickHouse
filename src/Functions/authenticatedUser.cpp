@@ -10,7 +10,7 @@ namespace DB
 namespace
 {
 
-class FunctionAuthenticatedUser final : public IFunction
+class FunctionAuthenticatedUser : public IFunction
 {
     const String user_name;
 

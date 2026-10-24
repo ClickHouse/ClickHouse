@@ -1,11 +1,10 @@
+#if defined(OS_LINUX)
+
 #include <Server/ClientEmbedded/PtyClientDescriptorSet.h>
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
-#include <Common/logger_useful.h>
 
 #include <base/openpty.h>
-#include <sys/ioctl.h>
-#include <termios.h>
 #include <unistd.h>
 
 namespace DB
@@ -18,30 +17,12 @@ namespace ErrorCodes
 
 void PtyClientDescriptorSet::FileDescriptorWrapper::close()
 {
-    if (fd == -1)
-        return;
-    /// Capture and clear the descriptor before calling `::close`. After `::close` returns
-    /// (success or failure), the kernel-side state of this descriptor is gone and the
-    /// number can be reused by another `open` call in this process. Keeping `fd` set
-    /// after a failed close would invite a double-close from the destructor that hits an
-    /// unrelated descriptor opened in the meantime.
-    int to_close = fd;
+    if (fd != -1)
+    {
+        if (::close(fd) != 0 && errno != EINTR)
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Unexpected error while closing file descriptor");
+    }
     fd = -1;
-    if (::close(to_close) != 0 && errno != EINTR)
-        throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Unexpected error while closing file descriptor");
-}
-
-
-PtyClientDescriptorSet::FileDescriptorWrapper::~FileDescriptorWrapper()
-{
-    try
-    {
-        close();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
 }
 
 
@@ -55,7 +36,7 @@ PtyClientDescriptorSet::PtyClientDescriptorSet(const String & term_name_, int wi
     winsize.ws_ypixel = static_cast<uint16_t>(height_pixels);
     int pty_master_raw = -1;
     int pty_slave_raw = -1;
-    if (openPty(pty_master_raw, pty_slave_raw, winsize) != 0)
+    if (openpty(&pty_master_raw, &pty_slave_raw, nullptr, nullptr, &winsize) != 0)
     {
         throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot open pty");
     }
@@ -99,3 +80,5 @@ void PtyClientDescriptorSet::changeWindowSize(int width, int height, int width_p
 PtyClientDescriptorSet::~PtyClientDescriptorSet() = default;
 
 }
+
+#endif

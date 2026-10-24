@@ -25,7 +25,7 @@ namespace
 /// - if the argument is a nullable column, return its embedded column;
 /// - otherwise return the original argument.
 /// NOTE: assumeNotNull may not be called with the NULL value.
-class FunctionAssumeNotNull final : public IFunction
+class FunctionAssumeNotNull : public IFunction
 {
 public:
     static constexpr auto name = "assumeNotNull";

@@ -7,10 +7,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <Common/MapWithMemoryTracking.h>
 #include <Common/OpenSSLHelpers.h>
-#include <Common/SetWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
@@ -35,20 +32,20 @@ const EVP_MD * getHashAlgorithm(const std::string_view & mode)
     return EVP_MD_fetch(nullptr, std::string{mode}.c_str(), nullptr);
 }
 
-class FunctionHMAC final : public IFunction
+class FunctionHMAC : public IFunction
 {
 private:
     inline static std::once_flag supported_algorithms_flag;
-    inline static MapWithMemoryTracking<std::string, SetWithMemoryTracking<std::string>> grouped_algorithms;
+    inline static std::map<std::string, std::set<std::string>> grouped_algorithms;
 
     static void fetchAndGroupSupportedAlgorithms()
     {
-        MapWithMemoryTracking<std::string, SetWithMemoryTracking<std::string>> algorithms_map;
+        std::map<std::string, std::set<std::string>> algorithms_map;
 
         EVP_MD_do_all_sorted(
             [](const EVP_MD * /* md */, const char * md_name, const char * alias, void * arg)
             {
-                auto * algos_map = static_cast<MapWithMemoryTracking<std::string, SetWithMemoryTracking<std::string>> *>(arg);
+                auto * algos_map = static_cast<std::map<std::string, std::set<std::string>> *>(arg);
                 std::string primary_name = md_name;
                 (*algos_map)[primary_name].insert(primary_name);
                 if (alias)
@@ -56,24 +53,10 @@ private:
             },
             &algorithms_map);
 
-        /// Filter out algorithms that cannot actually be fetched
-        /// (e.g., non-approved algorithms when running in FIPS mode)
-        for (auto it = algorithms_map.begin(); it != algorithms_map.end();)
-        {
-            EVP_MD * md = EVP_MD_fetch(nullptr, it->first.c_str(), nullptr);
-            if (md == nullptr)
-                it = algorithms_map.erase(it);
-            else
-            {
-                EVP_MD_free(md);
-                ++it;
-            }
-        }
-
         grouped_algorithms = std::move(algorithms_map);
     }
 
-    static const MapWithMemoryTracking<std::string, SetWithMemoryTracking<std::string>> & getGroupedAlgorithms()
+    static const std::map<std::string, std::set<std::string>> & getGroupedAlgorithms()
     {
         std::call_once(supported_algorithms_flag, [] { fetchAndGroupSupportedAlgorithms(); });
         return grouped_algorithms;
@@ -170,7 +153,7 @@ public:
     static std::string getSupportedAlgorithmsAsString(bool by_lines = false)
     {
         const auto & algorithms = getGroupedAlgorithms();
-        VectorWithMemoryTracking<std::string> formatted_algorithms;
+        std::vector<std::string> formatted_algorithms;
 
         for (const auto & [primary, aliases] : algorithms)
         {

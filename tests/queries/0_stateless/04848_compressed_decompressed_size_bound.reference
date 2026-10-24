@@ -1,0 +1,11 @@
+-- a valid frame still executes (proves the arms below fail for the intended reason)
+1
+-- a codec that stores data uncompressed must not lie about the uncompressed size
+1
+-- nor may it understate the uncompressed size
+1
+-- engines keep working on ordinary data
+1000	100000
+1000	100000
+1
+1

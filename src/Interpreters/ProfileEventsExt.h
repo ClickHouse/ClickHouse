@@ -1,18 +1,9 @@
 #pragma once
-
-#include <Common/ConcurrentBoundedQueue.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ThreadStatus.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <Columns/IColumn_fwd.h>
-#include <Core/Block.h>
 
-namespace DB
-{
-
-using InternalProfileEventsQueue = ConcurrentBoundedQueue<Block>;
-using InternalProfileEventsQueuePtr = std::shared_ptr<InternalProfileEventsQueue>;
-
-}
 
 namespace ProfileEvents
 {
@@ -26,7 +17,6 @@ struct ProfileEventsSnapshot
     CountersIncrement counters;
     Int64 memory_usage;
     Int64 peak_memory_usage;
-    Int64 temp_data_on_disk_usage;
     time_t current_time;
 };
 

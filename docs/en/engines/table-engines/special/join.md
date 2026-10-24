@@ -7,6 +7,8 @@ title: 'Join table engine'
 doc_type: 'reference'
 ---
 
+# Join table engine
+
 Optional prepared data structure for usage in [JOIN](/sql-reference/statements/select/join) operations.
 
 :::note
@@ -101,6 +103,8 @@ Possible values:
 Default value: `1`.
 
 The `Join`-engine tables can't be used in `GLOBAL JOIN` operations.
+
+A [row policy](/sql-reference/statements/create/row-policy) on a `Join`-engine table filters a plain `SELECT` from it, but a `JOIN` or `joinGet` reads the prepared hash table as is and cannot filter its rows, so while a policy applies to the table such queries fail with `ACCESS_DENIED`.
 
 The `Join`-engine allows to specify [join_use_nulls](/operations/settings/settings.md/#join_use_nulls) setting in the `CREATE TABLE` statement. [SELECT](/sql-reference/statements/select/index.md) query should have the same `join_use_nulls` value.
 

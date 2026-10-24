@@ -146,7 +146,7 @@ void SettingsConstraints::merge(const SettingsConstraints & other)
         }
     }
 
-    for (const auto & [other_alias, other_resolved_name] : other.settings_alias_cache)
+    for (const auto & [other_alias, other_resolved_name] : settings_alias_cache)
         settings_alias_cache.try_emplace(other_alias, other_resolved_name);
 }
 
@@ -193,7 +193,9 @@ void SettingsConstraints::check(const Settings & current_settings, const Setting
         if (element.writability)
             new_value = *element.writability;
 
-        auto setting_name = Settings::resolveName(element.setting_name);
+        /// `set` stores a constraint under the canonical name of the setting, so look it up by that name.
+        /// `Settings::resolveName` would not do: it does not know the `merge_tree_` prefix.
+        auto setting_name = resolveSettingName(element.setting_name);
         auto it = constraints.find(setting_name);
         if (it != constraints.end())
             old_value = it->second.writability;
@@ -219,7 +221,49 @@ void SettingsConstraints::check(const Settings & current_settings, const Setting
 
 void SettingsConstraints::check(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const
 {
-    checkOrClamp(current_settings, changes, THROW_ON_VIOLATION, source);
+    std::erase_if(
+        changes,
+        [&](SettingChange & change) -> bool
+        {
+            return !checkImpl(current_settings, change, THROW_ON_VIOLATION, source);
+        });
+}
+
+void SettingsConstraints::checkResetToDefault(const Settings & current_settings, const std::vector<String> & names, SettingSource source) const
+{
+    /// A reset of a built-in setting is equivalent to assigning its declared default. The regular
+    /// check also deliberately permits a reset that does not change the value.
+    ///
+    /// A `merge_tree_`-prefixed name is not a `Settings` setting, but it names a `MergeTreeSettings` one,
+    /// which has a default too. Without this the reset was checked against the value the setting already
+    /// had, which always passes. So a profile declaring `merge_tree_index_granularity MIN 16384` was
+    /// escaped by `SET merge_tree_index_granularity = DEFAULT`, dropping it to the default of 8192.
+    for (const auto & name : names)
+    {
+        if (settingIsBuiltin(name))
+        {
+            check(current_settings, SettingChange{name, settingDefaultValue(name)}, source);
+            continue;
+        }
+
+        /// Custom settings have no declared default: resetting one removes it. There cannot be a
+        /// value constraint for such a setting, but an existing value must still pass the readonly
+        /// and source checks. Do not check an absent custom setting, preserving its no-op behavior.
+        /// The value may be stored under any name of the setting, so look for all of them.
+        Field current_value;
+        bool has_current_value = current_settings.tryGet(name, current_value);
+        for (const auto & equivalent_name : settingEquivalentNames(name))
+        {
+            if (has_current_value)
+                break;
+            has_current_value = current_settings.tryGet(equivalent_name, current_value);
+        }
+        if (has_current_value)
+        {
+            SettingChange change{name, current_value};
+            getChecker(current_settings, Settings::resolveName(name)).check(change, current_value, THROW_ON_VIOLATION, source);
+        }
+    }
 }
 
 void SettingsConstraints::check(const MergeTreeSettings & current_settings, const SettingChange & change) const
@@ -235,57 +279,95 @@ void SettingsConstraints::check(const MergeTreeSettings & current_settings, cons
 
 void SettingsConstraints::clamp(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const
 {
-    checkOrClamp(current_settings, changes, CLAMP_ON_VIOLATION, source);
+    std::erase_if(
+        changes,
+        [&](SettingChange & change) -> bool
+        {
+            return !checkImpl(current_settings, change, CLAMP_ON_VIOLATION, source);
+        });
 }
 
-void SettingsConstraints::checkOrClamp(const Settings & current_settings, SettingsChanges & changes, ReactionOnViolation reaction, SettingSource source) const
-{
-    /// If we filter out settings that match the current default here, `compatibility` will silently override them.
-    /// So when `compatibility` is present, we keep unchanged settings so they are applied after `compatibility`.
-    bool has_compatibility_setting = changes.tryGet("compatibility") != nullptr;
-    std::erase_if(changes, [&](SettingChange & change)
-    {
-        return !checkImpl(current_settings, change, reaction, source, /*ignore_unchanged_settings=*/has_compatibility_setting);
-    });
-}
-
-/// Casts `change.value` to the setting's declared type and returns the result. Returns Null if we should skip the setting: either because
-/// the value is unchanged (when `ignore_unchanged_settings` is false) or because the cast failed (when `throw_on_failure` is false).
+/// The value a setting holds now.
+///
+/// `Settings` keeps a `merge_tree_`-prefixed name as a custom setting, under the exact name that wrote it.
+/// So a value written as `merge_tree_allow_experimental_block_number_column` is not found by looking up
+/// `merge_tree_enable_block_number_column`, its other name for the same setting. Look under every name.
 template <typename SettingsT>
-Field getNewValueToCheck(const SettingsT & current_settings, const SettingChange & change, bool ignore_unchanged_settings, bool throw_on_failure)
+bool getCurrentValueOfSetting(const SettingsT & current_settings, const String & name, Field & out_value)
+{
+    if (current_settings.tryGet(name, out_value))
+        return true;
+
+    if constexpr (std::is_same_v<SettingsT, Settings>)
+    {
+        for (const auto & equivalent_name : settingEquivalentNames(name))
+        {
+            if (current_settings.tryGet(equivalent_name, out_value))
+                return true;
+        }
+    }
+    return false;
+}
+
+/// The value in the type of the setting. `Settings::castValueUtil` returns a `merge_tree_`-prefixed value
+/// unchanged, because it is a custom setting there, so resolve the real setting and use its type.
+template <typename SettingsT>
+Field castValueOfSetting(const String & name, const Field & value)
+{
+    if constexpr (std::is_same_v<SettingsT, Settings>)
+        return settingCastValueUtil(name, value);
+    else
+        return SettingsT::castValueUtil(name, value);
+}
+
+template <typename SettingsT>
+bool getNewValueToCheck(const SettingsT & current_settings, SettingChange & change, Field & new_value, bool throw_on_failure)
 {
     Field current_value;
-    bool has_current_value = current_settings.tryGet(change.name, current_value);
+    bool has_current_value = getCurrentValueOfSetting(current_settings, change.name, current_value);
 
-    if (!ignore_unchanged_settings && has_current_value && change.value == current_value)
-        return {};
+    /// Setting isn't checked if value has not changed.
+    if (has_current_value && change.value == current_value)
+        return false;
 
-    Field new_value;
-    if (throw_on_failure)
-        new_value = SettingsT::castValueUtil(change.name, change.value);
-    else
+    /// Put the value into the type of the setting. This throws when the value does not fit, as
+    /// `max_threads = 'abc'` does not. Callers that clamp a value instead of failing the query pass
+    /// `throw_on_failure = false`, and for them the change is dropped instead.
+    auto cast_value = [&](const Field & value, Field & out) -> bool
     {
+        if (throw_on_failure)
+        {
+            out = castValueOfSetting<SettingsT>(change.name, value);
+            return true;
+        }
         try
         {
-            new_value = SettingsT::castValueUtil(change.name, change.value);
+            out = castValueOfSetting<SettingsT>(change.name, value);
+            return true;
         }
         catch (const Exception &)
         {
-            return {};
+            return false;
         }
-    }
+    };
 
-    if (!ignore_unchanged_settings && has_current_value && new_value == current_value)
-        return {};
+    if (!cast_value(change.value, new_value))
+        return false;
 
-    return new_value;
+    /// Compare in the type of the setting. A profile with `merge_tree_enable_block_number_column = 1`
+    /// stores a Bool, the same 1 in a query arrives as a UInt64, and comparing them as they are would
+    /// make a change that keeps the value look like a real one.
+    Field cast_current_value;
+    if (has_current_value && cast_value(current_value, cast_current_value) && new_value == cast_current_value)
+        return false;
+
+    return true;
 }
 
 bool SettingsConstraints::checkImpl(const Settings & current_settings,
                                     SettingChange & change,
                                     ReactionOnViolation reaction,
-                                    SettingSource source,
-                                    bool ignore_unchanged_settings) const
+                                    SettingSource source) const
 {
     std::string_view setting_name = Settings::resolveName(change.name);
 
@@ -313,31 +395,26 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings,
     else if (!access_control->isSettingNameAllowed(setting_name))
         return false;
 
-    Field new_value = getNewValueToCheck(current_settings, change, ignore_unchanged_settings, reaction == THROW_ON_VIOLATION);
-    if (new_value.isNull())
+    Field new_value;
+    if (!getNewValueToCheck(current_settings, change, new_value, reaction == THROW_ON_VIOLATION))
         return false;
-
-    if (ignore_unchanged_settings)
-    {
-        Field current_value;
-        if (current_settings.tryGet(change.name, current_value) && new_value == current_value)
-            return true;
-    }
 
     return getChecker(current_settings, setting_name).check(change, new_value, reaction, source);
 }
 
 bool SettingsConstraints::checkImpl(const MergeTreeSettings & current_settings, SettingChange & change, ReactionOnViolation reaction) const
 {
-    /// Resolve aliases upfront, mirroring the Settings overload above. Otherwise a user can
-    /// bypass a constraint declared on the canonical setting name by writing to an alias,
-    /// because the constraint lookup is a plain hashmap lookup on the (still un-resolved) name.
-    std::string_view setting_name = MergeTreeSettings::resolveName(change.name);
-
-    Field new_value = getNewValueToCheck(current_settings, change, /*ignore_unchanged_settings=*/false, reaction == THROW_ON_VIOLATION);
-    if (new_value.isNull())
+    Field new_value;
+    if (!getNewValueToCheck(current_settings, change, new_value, reaction == THROW_ON_VIOLATION))
         return false;
-    return getMergeTreeChecker(setting_name).check(change, new_value, reaction, SettingSource::QUERY);
+
+    if (isAnyTierRestricted())
+    {
+        if (auto tier_checker = getTierChecker(change.name, MergeTreeSettings::tryGetTierOfBuiltin(change.name).value_or(SettingsTierType::PRODUCTION)))
+            return tier_checker->check(change, new_value, reaction, SettingSource::QUERY);
+    }
+
+    return getMergeTreeChecker(change.name).check(change, new_value, reaction, SettingSource::QUERY);
 }
 
 bool SettingsConstraints::Checker::check(SettingChange & change,
@@ -406,12 +483,7 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
         return false;
     }
 
-    /// Track the effective value through clamping so that the disallowed-values loop below
-    /// compares against the post-clamp value. Otherwise an overlap between a clamp target and
-    /// a disallowed entry (e.g. min == disallowed) would let the clamped value through.
-    Field effective_value = new_value;
-
-    if (!min_value.isNull() && less_or_cannot_compare(effective_value, min_value))
+    if (!min_value.isNull() && less_or_cannot_compare(new_value, min_value))
     {
         if (reaction == THROW_ON_VIOLATION)
         {
@@ -419,10 +491,9 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
                 setting_name, applyVisitor(FieldVisitorToString(), min_value));
         }
         change.value = min_value;
-        effective_value = min_value;
     }
 
-    if (!max_value.isNull() && less_or_cannot_compare(max_value, effective_value))
+    if (!max_value.isNull() && less_or_cannot_compare(max_value, new_value))
     {
         if (reaction == THROW_ON_VIOLATION)
         {
@@ -430,22 +501,14 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
                 setting_name, applyVisitor(FieldVisitorToString(), max_value));
         }
         change.value = max_value;
-        effective_value = max_value;
     }
 
     for (const auto & value : disallowed_values)
     {
-        bool equals = equals_or_cannot_compare(value, effective_value);
+        bool equals = equals_or_cannot_compare(value, new_value);
         if (equals)
-        {
-            if (reaction == THROW_ON_VIOLATION)
-                throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} shouldn't be {}",
-                    setting_name, applyVisitor(FieldVisitorToString(), value));
-            /// On clamp paths there is no sensible value to clamp to — disallowed entries are a
-            /// deny-list, not a range. Drop the change and let the caller proceed with the
-            /// existing value rather than failing the query.
-            return false;
-        }
+            throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} shouldn't be {}",
+                setting_name, applyVisitor(FieldVisitorToString(), value));
     }
 
     if (!getSettingSourceRestrictions(setting_name).isSourceAllowed(source))
@@ -467,7 +530,16 @@ std::string_view SettingsConstraints::resolveSettingNameWithCache(std::string_vi
 
 SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & current_settings, std::string_view setting_name) const
 {
+    /// The cache only knows the names constraints were declared with, which need not be the name a query
+    /// uses. The caller has applied `Settings::resolveName` already, and that leaves a `merge_tree_`-prefixed
+    /// name as it is, so resolve such a name here the way `set` resolved it before storing the constraint.
+    String canonical_merge_tree_name;
     auto resolved_name = resolveSettingNameWithCache(setting_name);
+    if (resolved_name.starts_with(MERGE_TREE_SETTINGS_PREFIX))
+    {
+        canonical_merge_tree_name = resolveSettingName(resolved_name);
+        resolved_name = canonical_merge_tree_name;
+    }
     if (!current_settings[Setting::allow_ddl] && resolved_name == "allow_ddl")
         return Checker(PreformattedMessage::create("Cannot modify 'allow_ddl' setting when DDL queries are prohibited for the user"),
                        ErrorCodes::QUERY_IS_PROHIBITED);
@@ -481,26 +553,11 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & cu
     if (current_settings[Setting::readonly] > 1 && resolved_name == "readonly")
         return Checker(PreformattedMessage::create("Cannot modify 'readonly' setting in readonly mode"), ErrorCodes::READONLY);
 
-    if (access_control)
+    /// Not `current_settings.getTier`: a `merge_tree_`-prefixed name is a `MergeTreeSettings` setting.
+    if (isAnyTierRestricted())
     {
-        bool allowed_experimental = access_control->getAllowExperimentalTierSettings();
-        bool allowed_beta = access_control->getAllowBetaTierSettings();
-        if (!allowed_experimental || !allowed_beta)
-        {
-            auto setting_tier = current_settings.getTier(resolved_name);
-            if (setting_tier == SettingsTierType::EXPERIMENTAL && !allowed_experimental)
-                return Checker(
-                    PreformattedMessage::create(
-                        "Cannot modify setting '{}'. Changes to EXPERIMENTAL settings are disabled in the server config ('allow_feature_tier')",
-                        setting_name),
-                    ErrorCodes::READONLY);
-            if (setting_tier == SettingsTierType::BETA && !allowed_beta)
-                return Checker(
-                    PreformattedMessage::create(
-                        "Cannot modify setting '{}'. Changes to BETA settings are disabled in the server config ('allow_feature_tier')",
-                        setting_name),
-                    ErrorCodes::READONLY);
-        }
+        if (auto tier_checker = getTierChecker(setting_name, settingGetTier(resolved_name)))
+            return *tier_checker;
     }
 
     auto it = constraints.find(resolved_name);
@@ -518,10 +575,43 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & cu
     return Checker(it->second, Settings::resolveName);
 }
 
+/// Whether `allow_feature_tier` restricts anything at all. It usually does not, so this is checked before
+/// looking up which tier a setting belongs to.
+bool SettingsConstraints::isAnyTierRestricted() const
+{
+    return access_control
+        && (!access_control->getAllowExperimentalTierSettings() || !access_control->getAllowBetaTierSettings());
+}
+
+/// The one place that enforces `allow_feature_tier`, for every kind of setting. Callers reach it only for
+/// a setting a query really changes, so a value the server itself set is never refused.
+std::optional<SettingsConstraints::Checker> SettingsConstraints::getTierChecker(std::string_view setting_name, SettingsTierType tier) const
+{
+    if (!access_control)
+        return {};
+
+    auto refuse = [&](std::string_view tier_name)
+    {
+        return Checker(
+            PreformattedMessage::create(
+                "Cannot modify setting '{}'. Changes to {} settings are disabled in the server config ('allow_feature_tier')",
+                setting_name,
+                tier_name),
+            ErrorCodes::READONLY);
+    };
+
+    if (tier == SettingsTierType::EXPERIMENTAL && !access_control->getAllowExperimentalTierSettings())
+        return refuse("EXPERIMENTAL");
+    if (tier == SettingsTierType::BETA && !access_control->getAllowBetaTierSettings())
+        return refuse("BETA");
+    return {};
+}
+
 SettingsConstraints::Checker SettingsConstraints::getMergeTreeChecker(std::string_view short_name) const
 {
-    auto full_name = settingFullName<MergeTreeSettings>(short_name);
-    auto it = constraints.find(resolveSettingNameWithCache(full_name));
+    /// The canonical name, because `set` stored the constraint under that one.
+    auto full_name = settingFullName<MergeTreeSettings>(MergeTreeSettings::resolveName(short_name));
+    auto it = constraints.find(full_name);
     if (it == constraints.end())
         return Checker(MergeTreeSettings::resolveName); // Allowed
     return Checker(it->second, MergeTreeSettings::resolveName);

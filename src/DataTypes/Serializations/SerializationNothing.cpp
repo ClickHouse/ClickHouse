@@ -1,4 +1,3 @@
-#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationNothing.h>
 #include <Columns/ColumnNothing.h>
 #include <Common/Exception.h>
@@ -11,18 +10,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int NOT_IMPLEMENTED;
-}
-
-UInt128 SerializationNothing::getHash()
-{
-    SipHash hash;
-    hash.update("Nothing");
-    return hash.get128();
-}
-
-SerializationPtr SerializationNothing::create()
-{
-    return ISerialization::pooled(getHash(), [] { return new SerializationNothing(); });
 }
 
 void SerializationNothing::throwNoSerialization()

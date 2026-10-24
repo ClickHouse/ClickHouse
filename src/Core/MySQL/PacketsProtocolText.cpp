@@ -116,7 +116,7 @@ void ColumnDefinition::readPayloadImpl(ReadBuffer & payload)
 {
     String def;
     readLengthEncodedString(def, payload);
-    chassert(def == "def");
+    assert(def == "def");
     readLengthEncodedString(schema, payload);
     readLengthEncodedString(table, payload);
     readLengthEncodedString(org_table, payload);

@@ -22,7 +22,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3ToString final : public IFunction
+class FunctionH3ToString : public IFunction
 {
 public:
     static constexpr auto name = "h3ToString";

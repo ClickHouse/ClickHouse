@@ -1,12 +1,15 @@
 #pragma once
 
 #include <memory>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <base/sort.h>
 #include <boost/noncopyable.hpp>
 #include <Common/HashTable/SmallTable.h>
 #include <Common/PODArray.h>
 #include <Common/SetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <IO/ReadHelpersArena.h>
 
 // Include this header last, because it is an auto-generated dump of questionable
 // garbage that breaks the build (e.g. it changes _POSIX_C_SOURCE).
@@ -131,10 +134,16 @@ public:
                 throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size in groupBitmap (maximum: {})", max_size);
 
             /// TODO: this is unnecessary copying - it will be better to read and deserialize in one pass.
-            std::unique_ptr<char[]> buf(new char[size]);
-            in.readStrict(buf.get(), size);
+            /// A `String` is counted against the memory tracker but not refused by it, so a large legitimate bitmap still loads.
+            String buf;
+            readStringGrowing(buf, size, in);
 
-            roaring_bitmap = std::make_shared<RoaringBitmap>(RoaringBitmap::readSafe(buf.get(), size));
+            roaring_bitmap = std::make_shared<RoaringBitmap>(RoaringBitmap::readSafe(buf.data(), size));
+
+            /// `readSafe` does not validate structure. Reject malformed bitmaps before any set operation.
+            const char * reason = nullptr;
+            if (!roaring_bitmap->internal_validate(&reason))
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid roaring bitmap in groupBitmap state: {}", reason ? reason : "unknown reason");
         }
         else
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown type of roaring bitmap");
@@ -449,23 +458,11 @@ public:
      */
     UInt8 rb_contains(UInt64 x) const /// NOLINT
     {
+        if (!std::is_same_v<T, UInt64> && x > rb_max())
+            return 0;
+
         if (isSmall())
-        {
-            if constexpr (!std::is_same_v<T, UInt64>)
-            {
-                if (x > static_cast<UInt64>(std::numeric_limits<UnsignedT>::max()))
-                    return 0;
-            }
-
             return small.find(static_cast<T>(x)) != small.end();
-        }
-
-        if constexpr (!std::is_same_v<Value, UInt64>)
-        {
-            if (x > static_cast<UInt64>(std::numeric_limits<Value>::max()))
-                return 0;
-        }
-
         return roaring_bitmap->contains(static_cast<Value>(x));
     }
 

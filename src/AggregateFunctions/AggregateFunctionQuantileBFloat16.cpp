@@ -56,7 +56,7 @@ Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a 
 
 `bfloat16` is a floating-point data type with 1 sign bit, 8 exponent bits and 7 fraction bits.
 The function converts input values to 32-bit floats and takes the most significant 16 bits. Then it calculates `bfloat16` quantile value and converts the result to a 64-bit float by appending zero bits.
-The function is a fast quantile estimator with a maximum relative error of `0.78125%` (and an average relative error of approximately `0.27%`), corresponding to the 7-bit mantissa precision of `bfloat16`.
+The function is a fast quantile estimator with a relative error no more than 0.390625%.
     )";
     FunctionDocumentation::Syntax syntax = R"(
 quantileBFloat16[(level)](expr)

@@ -13,6 +13,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/MutationCommands.h>
+#include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -34,8 +35,6 @@ namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsBool enable_lightweight_update;
-    extern const SettingsUInt64 max_parser_depth;
-    extern const SettingsUInt64 max_parser_backtracks;
 }
 
 namespace ServerSetting
@@ -48,7 +47,7 @@ InterpreterUpdateQuery::InterpreterUpdateQuery(ASTPtr query_ptr_, ContextPtr con
 {
 }
 
-static MutationCommand createMutationCommand(const ASTUpdateQuery & update_query, const Settings & settings)
+static MutationCommand createMutationCommand(const ASTUpdateQuery & update_query)
 {
     auto alter_query = make_intrusive<ASTAlterCommand>();
 
@@ -59,12 +58,7 @@ static MutationCommand createMutationCommand(const ASTUpdateQuery & update_query
     if (update_query.partition)
         alter_query->set(alter_query->partition, update_query.partition);
 
-    auto mutation_command = MutationCommand::parse(
-        *alter_query,
-        /* parse_alter_commands = */ false,
-        /* with_pure_metadata_commands = */ false,
-        settings[Setting::max_parser_depth],
-        settings[Setting::max_parser_backtracks]);
+    auto mutation_command = MutationCommand::parse(*alter_query);
     if (!mutation_command)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Failed to convert query '{}' to mutation command. It's a bug", update_query.formatForErrorMessage());
@@ -115,13 +109,20 @@ BlockIO InterpreterUpdateQuery::execute()
     }
 
     MutationCommands commands;
-    commands.emplace_back(createMutationCommand(update_query, settings));
+    commands.emplace_back(createMutationCommand(update_query));
 
     auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
 
     BlockIO res;
     res.pipeline = table->updateLightweight(commands, getContext());
     res.pipeline.addStorageHolder(table);
+
+    /// The patch part is committed while the pipeline runs, so the share lock must outlive this
+    /// function: otherwise a concurrent DROP can clear the data parts index under the sink.
+    QueryPlanResourceHolder update_resources;
+    update_resources.table_locks.emplace_back(std::move(table_lock));
+    res.pipeline.addResources(std::move(update_resources));
+
     return res;
 }
 

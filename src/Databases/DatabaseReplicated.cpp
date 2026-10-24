@@ -31,7 +31,6 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
-#include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/ReplicatedDatabaseQueryStatusSource.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -46,6 +45,7 @@
 #include <Processors/Sinks/EmptySink.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageKeeperMap.h>
+#include <Storages/StorageProxy.h>
 #include <base/chrono_io.h>
 #include <base/defines.h>
 #include <base/getFQDNOrHostName.h>
@@ -79,8 +79,6 @@ namespace Setting
     extern const SettingsDistributedDDLOutputMode distributed_ddl_output_mode;
     extern const SettingsInt64 distributed_ddl_task_timeout;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
-    extern const SettingsSetOperationMode except_default_mode;
-    extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsSetOperationMode union_default_mode;
 }
 
@@ -129,7 +127,6 @@ namespace FailPoints
     extern const char database_replicated_startup_pause[];
     extern const char database_replicated_drop_before_removing_keeper_failed[];
     extern const char database_replicated_drop_after_removing_keeper_failed[];
-    extern const char database_replicated_force_metadata_digest_check[];
 }
 
 static constexpr const char * REPLICATED_DATABASE_MARK = "DatabaseReplicated";
@@ -447,8 +444,8 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
     LOG_TRACE(log, "Got a list of hosts after {} iterations. All hosts: [{}], filtered: [{}], ids: [{}]", iteration,
               fmt::join(unfiltered_hosts, ", "), fmt::join(hosts, ", "), fmt::join(host_ids, ", "));
 
-    chassert(!hosts.empty());
-    chassert(hosts.size() == host_ids.size());
+    assert(!hosts.empty());
+    assert(hosts.size() == host_ids.size());
     String current_shard;
     std::vector<std::vector<DatabaseReplicaInfo>> shards;
     for (size_t i = 0; i < hosts.size(); ++i)
@@ -1226,10 +1223,8 @@ void DatabaseReplicated::checkTableEngine(const ASTCreateQuery & query, ASTStora
 void DatabaseReplicated::assertDigestWithProbability(const ContextPtr & local_context) const
 {
 #if defined(DEBUG_OR_SANITIZER_BUILD)
-    /// Reduce number of debug checks, unless a failpoint forces the check.
-    bool force_check = false;
-    fiu_do_on(FailPoints::database_replicated_force_metadata_digest_check, { force_check = true; });
-    if (!force_check && thread_local_rng() % 16)
+    /// Reduce number of debug checks
+    if (thread_local_rng() % 16)
         return;
 
     if (!checkDigestValid(local_context))
@@ -1339,7 +1334,7 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
     {
         if (ddl_query->getDatabase() != getDatabaseName())
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database was renamed");
-        ddl_query->reset(ddl_query->database);
+        ddl_query->database.reset();
 
         if (auto * create = query->as<ASTCreateQuery>())
         {
@@ -1463,7 +1458,6 @@ static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context
 
 void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 & max_log_ptr)
 {
-    auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::recoverLostReplica");
     waitDatabaseStarted();
 
     is_recovering = true;
@@ -1558,6 +1552,10 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context->setCurrentDatabase(getDatabaseName());
         query_context->setCurrentQueryId({});
 
+        /// The CREATE queries below come from metadata this database already stored, so they must be
+        /// accepted as they are: they re-derive tables that exist.
+        query_context->setRecoveryFromStoredMetadata(true);
+
         /// We will execute some CREATE queries for recovery (not ATTACH queries),
         /// so we need to allow experimental features that can be used in a CREATE query
         enableAllExperimentalSettings(query_context);
@@ -1642,7 +1640,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             /// Table probably stores some data. Let's move it to another database.
             String to_name = fmt::format("{}_{}_{}", broken_table_name, max_log_ptr, thread_local_rng() % 1000);
             LOG_DEBUG(log, "Will RENAME TABLE {} TO {}.{}", backQuoteIfNeed(broken_table_name), backQuoteIfNeed(to_database_name), backQuoteIfNeed(to_name));
-            chassert(db_name < to_database_name);
+            assert(db_name < to_database_name);
             DDLGuardPtr to_table_guard = DatabaseCatalog::instance().getDDLGuard(to_database_name, to_name, nullptr);
             auto to_db_ptr = DatabaseCatalog::instance().getDatabase(to_database_name);
 
@@ -1774,8 +1772,6 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             /// Same for table_name_to_metadata and make_query_context
             auto task = [this, &table_id, &table_name_to_metadata, &make_query_context]()
             {
-                /// The task might run on a different thread, so we need to set current component for it
-                auto inner_component_guard = Coordination::setCurrentComponent("DatabaseReplicated::recoverLostReplica");
                 auto table_name = table_id.getTableName();
 
                 auto metadata_it = table_name_to_metadata.find(table_name);
@@ -1790,7 +1786,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
                 const auto & create_query_string = metadata_it->second;
                 if (isTableExist(table_name, getContext()))
                 {
-                    chassert(create_query_string == readMetadataFile(table_name) || getTableUUIDIfReplicated(create_query_string, getContext()) != UUIDHelpers::Nil);
+                    assert(create_query_string == readMetadataFile(table_name) || getTableUUIDIfReplicated(create_query_string, getContext()) != UUIDHelpers::Nil);
                     return;
                 }
 
@@ -1802,14 +1798,8 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
                     /*query=*/create_query_string);
                 auto create_query_context = make_query_context();
 
-                {
-                    SelectIntersectExceptQueryVisitor::Data data{create_query_context->getSettingsRef()[Setting::intersect_default_mode], create_query_context->getSettingsRef()[Setting::except_default_mode]};
-                    SelectIntersectExceptQueryVisitor{data}.visit(query_ast);
-                }
-                {
-                    NormalizeSelectWithUnionQueryVisitor::Data data{create_query_context->getSettingsRef()[Setting::union_default_mode]};
-                    NormalizeSelectWithUnionQueryVisitor{data}.visit(query_ast);
-                }
+                NormalizeSelectWithUnionQueryVisitor::Data data{create_query_context->getSettingsRef()[Setting::union_default_mode]};
+                NormalizeSelectWithUnionQueryVisitor{data}.visit(query_ast);
 
                 /// Check larger comment in DatabaseOnDisk::createTableFromAST
                 /// TL;DR applySettingsFromQuery will move the settings from engine to query level
@@ -2013,7 +2003,7 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadata(
         create.attach = true;
 
     if (create.select && create.isView())
-        ApplyWithSubqueryVisitor(context_).visit(*create.select);
+        ApplyWithSubqueryVisitor::visit(*create.select);
 
     return ast;
 }
@@ -2194,7 +2184,7 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
     waitDatabaseStarted();
 
     auto txn = local_context->getZooKeeperMetadataTransaction();
-    chassert(!ddl_worker || !ddl_worker->isCurrentlyActive() || txn || startsWith(table_name, ".inner_id.") || startsWith(table_name, ".tmp.inner_id."));
+    assert(!ddl_worker || !ddl_worker->isCurrentlyActive() || txn || startsWith(table_name, ".inner_id.") || startsWith(table_name, ".tmp.inner_id."));
     if (txn && txn->isInitialQuery() && !txn->isCreateOrReplaceQuery())
     {
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
@@ -2226,7 +2216,7 @@ void DatabaseReplicated::renameTable(ContextPtr local_context, const String & ta
                                      const String & to_table_name, bool exchange, bool dictionary)
 {
     auto txn = local_context->getZooKeeperMetadataTransaction();
-    chassert(txn);
+    assert(txn);
 
     if (this != &to_database)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Moving tables between databases is not supported for Replicated engine");
@@ -2303,19 +2293,10 @@ void DatabaseReplicated::commitCreateTable(const ASTCreateQuery & query, const S
                        ContextPtr query_context)
 {
     auto txn = query_context->getZooKeeperMetadataTransaction();
-    chassert(!ddl_worker->isCurrentlyActive() || txn);
+    assert(!ddl_worker->isCurrentlyActive() || txn);
 
     String statement = getObjectDefinitionFromCreateQuery(query.clone());
-
-    /// For CREATE OR REPLACE, the metadata node for the temporary table is intentionally omitted
-    /// from the transaction because renameTable will create it under the final name atomically.
-    /// However, inner tables (`.inner_id.*`) are NOT renamed during the exchange — they keep
-    /// their UUID-based name — so their metadata nodes must still be created here, as part of
-    /// the rename transaction that commits everything. Without this, an explicit DROP TABLE
-    /// after CREATE OR REPLACE would fail with a ZooKeeper "No node" error when trying to
-    /// remove the inner table's metadata node.
-    const bool is_inner_table = query.getTable().starts_with(".inner_id.");
-    if (txn && txn->isInitialQuery() && (!txn->isCreateOrReplaceQuery() || is_inner_table))
+    if (txn && txn->isInitialQuery() && !txn->isCreateOrReplaceQuery())
     {
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(query.getTable());
         /// zk::multi(...) will throw if `metadata_zk_path` exists
@@ -2340,7 +2321,7 @@ void DatabaseReplicated::commitAlterTable(const StorageID & table_id,
                                           const String & statement, ContextPtr query_context)
 {
     auto txn = query_context->getZooKeeperMetadataTransaction();
-    chassert(!ddl_worker || !ddl_worker->isCurrentlyActive() || txn);
+    assert(!ddl_worker || !ddl_worker->isCurrentlyActive() || txn);
     if (txn && txn->isInitialQuery())
     {
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_id.table_name);
@@ -2380,7 +2361,7 @@ void DatabaseReplicated::detachTablePermanently(ContextPtr local_context, const 
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for DETACH TABLE PERMANENTLY is disabled");
 
     auto txn = local_context->getZooKeeperMetadataTransaction();
-    chassert(!ddl_worker->isCurrentlyActive() || txn);
+    assert(!ddl_worker->isCurrentlyActive() || txn);
     if (txn && txn->isInitialQuery())
     {
         /// We have to remove metadata from zookeeper, because we do not distinguish permanently detached tables
@@ -2405,7 +2386,7 @@ void DatabaseReplicated::removeDetachedPermanentlyFlag(ContextPtr local_context,
     waitDatabaseStarted();
 
     auto txn = local_context->getZooKeeperMetadataTransaction();
-    chassert(!ddl_worker->isCurrentlyActive() || txn);
+    assert(!ddl_worker->isCurrentlyActive() || txn);
     if (txn && txn->isInitialQuery() && attach)
     {
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
@@ -2430,15 +2411,6 @@ void DatabaseReplicated::removeDetachedPermanentlyFlag(ContextPtr local_context,
     {
         assertDigestInTransactionOrInline(local_context, txn);
     }
-}
-
-void DatabaseReplicated::adjustDigestOnTableLostFromRestart(const String & table_name)
-{
-    std::lock_guard lock{metadata_mutex};
-    tables_metadata_digest -= getMetadataHash(table_name);
-    LOG_WARNING(log, "Table {} was lost from in-memory tables map due to failed SYSTEM RESTART REPLICA. "
-                     "Adjusted in-memory digest to {}. The table will be restored on server restart or recovery.",
-                table_name, tables_metadata_digest);
 }
 
 String DatabaseReplicated::readMetadataFile(const String & table_name) const
@@ -2537,7 +2509,7 @@ bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, 
         auto table_id = query_context->resolveStorageID(ast, Context::ResolveOrdinary);
         StoragePtr table = DatabaseCatalog::instance().getTable(table_id, query_context);
 
-        return table->as<StorageKeeperMap>() != nullptr;
+        return castStorage<StorageKeeperMap>(table, DeferredTable::Load) != nullptr;
     };
 
     const auto is_replicated_table = [&](const ASTPtr & ast)

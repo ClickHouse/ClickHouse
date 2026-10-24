@@ -73,11 +73,13 @@ Input table:
 
 Usage of the `ONLY` option:
 
-```sql title="Query"
+```sql
 SELECT * FROM test_fetch ORDER BY a OFFSET 3 ROW FETCH FIRST 3 ROWS ONLY;
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌─a─┬─b─┐
 │ 2 │ 1 │
 │ 3 │ 4 │
@@ -87,11 +89,13 @@ SELECT * FROM test_fetch ORDER BY a OFFSET 3 ROW FETCH FIRST 3 ROWS ONLY;
 
 Usage of the `WITH TIES` option:
 
-```sql title="Query"
+```sql
 SELECT * FROM test_fetch ORDER BY a OFFSET 3 ROW FETCH FIRST 3 ROWS WITH TIES;
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌─a─┬─b─┐
 │ 2 │ 1 │
 │ 3 │ 4 │

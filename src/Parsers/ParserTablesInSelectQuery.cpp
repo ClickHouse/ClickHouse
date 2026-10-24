@@ -10,7 +10,6 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/ParserSampleRatio.h>
-#include <Parsers/ParserStreamSettings.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Core/Joins.h>
 
@@ -115,15 +114,6 @@ bool ParserTableExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         }
     }
 
-    /// STREAM [CURSOR '{...}']
-    if (ParserKeyword(Keyword::STREAM).ignore(pos, expected))
-    {
-        ParserStreamSettings stream_settings_p;
-
-        if (!stream_settings_p.parse(pos, res->stream_settings, expected))
-            return false;
-    }
-
     if (res->database_and_table_name)
         res->children.emplace_back(res->database_and_table_name);
     if (res->table_function)
@@ -134,12 +124,10 @@ bool ParserTableExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         res->children.emplace_back(res->sample_size);
     if (res->sample_offset)
         res->children.emplace_back(res->sample_offset);
-    if (res->stream_settings)
-        res->children.emplace_back(res->stream_settings);
     if (res->column_aliases)
         res->children.emplace_back(res->column_aliases);
 
-    chassert(res->database_and_table_name || res->table_function || res->subquery);
+    assert(res->database_and_table_name || res->table_function || res->subquery);
 
     node = res;
     return true;
@@ -229,8 +217,6 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
             else if (ParserKeyword(Keyword::LOCAL).ignore(pos, expected))
                 table_join->locality = JoinLocality::Local;
 
-            bool is_natural = ParserKeyword(Keyword::NATURAL).ignore(pos, expected);
-
             table_join->strictness = JoinStrictness::Unspecified;
 
             /// Legacy: allow JOIN type before JOIN kind
@@ -281,14 +267,6 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
                 (table_join->kind != JoinKind::Left && table_join->kind != JoinKind::Right))
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "SEMI|ANTI JOIN should be LEFT or RIGHT.");
 
-            if (is_natural && table_join->strictness != JoinStrictness::Unspecified)
-                throw Exception(ErrorCodes::SYNTAX_ERROR, "NATURAL JOIN cannot be combined with ANY/ALL/ASOF/SEMI/ANTI modifiers.");
-
-            if (is_natural && (table_join->kind == JoinKind::Cross || table_join->kind == JoinKind::Paste))
-                throw Exception(ErrorCodes::SYNTAX_ERROR, "NATURAL JOIN cannot be used with CROSS or PASTE join.");
-
-            table_join->is_natural = is_natural;
-
             if (!ParserKeyword(Keyword::JOIN).ignore(pos, expected))
                 return false;
         }
@@ -299,11 +277,7 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
         if (table_join->kind != JoinKind::Comma
             && table_join->kind != JoinKind::Cross && table_join->kind != JoinKind::Paste)
         {
-            if (table_join->is_natural)
-            {
-                /// NATURAL JOIN: the USING columns are derived automatically from common column names during analysis.
-            }
-            else if (ParserKeyword(Keyword::USING).ignore(pos, expected))
+            if (ParserKeyword(Keyword::USING).ignore(pos, expected))
             {
                 /// Expression for USING could be in parentheses or not.
                 bool in_parens = pos->type == TokenType::OpeningRoundBracket;

@@ -21,7 +21,7 @@ namespace ErrorCodes
     extern const int ZERO_ARRAY_OR_TUPLE_INDEX;
 }
 
-class FunctionBitSlice final : public IFunction
+class FunctionBitSlice : public IFunction
 {
     const UInt8 word_size = 8;
 

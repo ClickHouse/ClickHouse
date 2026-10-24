@@ -1,4 +1,3 @@
-#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 
 #include <Columns/ColumnConst.h>
@@ -28,13 +27,7 @@ void SerializationNumber<T>::deserializeText(IColumn & column, ReadBuffer & istr
     T x;
 
     if constexpr (is_integer<T> && is_arithmetic_v<T>)
-    {
-        /// readIntTextUnsafe treats a leading '0' as the complete value zero, but readIntText tolerates it
-        if (settings.allow_number_leading_zeros)
-            readIntText(x, istr);
-        else
-            readIntTextUnsafe(x, istr);
-    }
+        readIntTextUnsafe(x, istr);
     else
         readText(x, istr);
 
@@ -232,20 +225,6 @@ void SerializationNumber<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer 
     if constexpr (std::endian::native == std::endian::big && sizeof(T) >= 2)
         for (size_t i = initial_size; i < x.size(); ++i)
             transformEndianness<std::endian::big, std::endian::little>(x[i]);
-}
-
-template <typename T>
-UInt128 SerializationNumber<T>::getHash()
-{
-    SipHash hash;
-    hash.update(TypeName<T>);
-    return hash.get128();
-}
-
-template <typename T>
-SerializationPtr SerializationNumber<T>::create()
-{
-    return ISerialization::pooled(getHash(), [] { return new SerializationNumber<T>(); });
 }
 
 template class SerializationNumber<UInt8>;

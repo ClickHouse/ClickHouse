@@ -1,4 +1,3 @@
-#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationSubObjectSharedData.h>
 #include <DataTypes/Serializations/SerializationObjectHelpers.h>
 #include <DataTypes/DataTypeObject.h>
@@ -27,38 +26,6 @@ SerializationSubObjectSharedData::SerializationSubObjectSharedData(
     , dynamic_serialization(dynamic_serialization_)
     , serialization_map(DataTypeObject::getTypeOfSharedData()->getDefaultSerialization())
 {
-}
-
-UInt128 SerializationSubObjectSharedData::getHash(
-    SerializationObjectSharedData::SerializationVersion serialization_version_,
-    size_t buckets_,
-    const String & paths_prefix_,
-    const DataTypePtr & dynamic_type_,
-    const SerializationPtr & dynamic_serialization_)
-{
-    SipHash hash;
-    hash.update("SubObjectSharedData");
-    hash.update(static_cast<int>(serialization_version_.value));
-    hash.update(buckets_);
-    hash.update(paths_prefix_.size());
-    hash.update(paths_prefix_);
-    auto dynamic_type_name = dynamic_type_->getName();
-    hash.update(dynamic_type_name.size());
-    hash.update(dynamic_type_name);
-    hash.update(dynamic_serialization_->getHash());
-    return hash.get128();
-}
-
-SerializationPtr SerializationSubObjectSharedData::create(
-    SerializationObjectSharedData::SerializationVersion serialization_version_,
-    size_t buckets_,
-    const String & paths_prefix_,
-    const DataTypePtr & dynamic_type_,
-    const SerializationPtr & dynamic_serialization_)
-{
-    if (!dynamic_serialization_->supportsPooling())
-        return std::shared_ptr<SerializationSubObjectSharedData>(new SerializationSubObjectSharedData(serialization_version_, buckets_, paths_prefix_, dynamic_type_, dynamic_serialization_));
-    return ISerialization::pooled(getHash(serialization_version_, buckets_, paths_prefix_, dynamic_type_, dynamic_serialization_), [&] { return new SerializationSubObjectSharedData(serialization_version_, buckets_, paths_prefix_, dynamic_type_, dynamic_serialization_); });
 }
 
 struct DeserializeBinaryBulkStateSubObjectSharedData : public ISerialization::DeserializeBinaryBulkState
@@ -310,6 +277,7 @@ void SerializationSubObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
         std::vector<std::shared_ptr<SerializationObjectSharedData::PathsDataGranules>> bucket_paths_data_granules(buckets);
         /// We need to remember offset and limit from each granule to know which rows to insert in the result.
         std::vector<std::pair<size_t, size_t>> granules_offset_and_limit;
+        std::shared_ptr<SerializationObjectSharedData::StructureGranules> first_bucket_structure_granules;
         for (size_t bucket = 0; bucket != buckets; ++bucket)
         {
             settings.path.push_back(Substream::Bucket);
@@ -323,10 +291,16 @@ void SerializationSubObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             /// Init offset and limit for each granule
             if (bucket == 0)
             {
+                first_bucket_structure_granules = structure_granules;
                 granules_offset_and_limit.reserve(structure_granules->size());
                 for (size_t granule = 0; granule != structure_granules->size(); ++granule)
                     granules_offset_and_limit.emplace_back((*structure_granules)[granule].offset, (*structure_granules)[granule].limit);
             }
+            else
+            {
+                SerializationObjectSharedData::checkGranulesMatchFirstBucket(*structure_granules, *first_bucket_structure_granules, bucket);
+            }
+
             settings.path.pop_back();
         }
 
@@ -365,11 +339,6 @@ void SerializationSubObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
         /// If we add new serialization version in future and forget to implement something, better to get an exception instead of doing nothing.
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "deserializeBinaryBulkWithMultipleStreams is not implemented for shared data serialization version {}", serialization_version.value);
     }
-}
-
-size_t SerializationSubObjectSharedData::allocatedBytes() const
-{
-    return sizeof(*this) + paths_prefix.capacity();
 }
 
 }

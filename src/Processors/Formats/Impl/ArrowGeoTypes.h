@@ -1,5 +1,9 @@
 #pragma once
 
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
+#include <Core/ColumnsWithTypeAndName.h>
 #include <Common/WKB.h>
 
 #include <Poco/Dynamic/Var.h>

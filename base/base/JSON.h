@@ -1,5 +1,6 @@
 #pragma once
 
+#include <typeinfo>
 #include <Poco/Exception.h>
 #include <base/types.h>
 

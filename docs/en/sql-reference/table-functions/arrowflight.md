@@ -7,6 +7,8 @@ title: 'arrowFlight'
 doc_type: 'reference'
 ---
 
+# arrowFlight Table Function
+
 Allows to perform queries on data exposed via an [Apache Arrow Flight](/interfaces/arrowflight) server.
 
 **Syntax**
@@ -30,11 +32,15 @@ If `username` and `password` are not specified, it means that authentication is 
 
 **Example**
 
-```sql title="Query"
+Query:
+
+```sql
 SELECT * FROM arrowFlight('127.0.0.1:9005', 'sample_dataset') ORDER BY id;
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌─id─┬─name────┬─value─┐
 │  1 │ foo     │ 42.1  │
 │  2 │ bar     │ 13.3  │

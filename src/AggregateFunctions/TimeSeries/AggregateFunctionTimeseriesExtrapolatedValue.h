@@ -3,11 +3,16 @@
 #include <cstddef>
 #include <cstring>
 
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVector.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Common/DequeWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -91,7 +96,10 @@ public:
     {
         size_t sample_count;
         readBinaryLittleEndian(sample_count,buf);
-        bucket.samples.reserve(sample_count);
+        /// The sample count is read from the state and cannot be trusted, so only a bounded amount is reserved
+        /// upfront and `add` grows the map while the samples are read. That way a corrupted count fails with
+        /// an end-of-buffer error instead of allocating memory for the claimed number of samples.
+        bucket.samples.reserve(std::min(sample_count, MAX_SAMPLES_TO_RESERVE));
 
         for (size_t s = 0; s < sample_count; ++s)
         {
@@ -107,6 +115,9 @@ public:
     }
 
 private:
+    /// How many samples `deserializeBucket` reserves before reading the data. Bigger buckets grow while they are read.
+    static constexpr size_t MAX_SAMPLES_TO_RESERVE = 4096;
+
     void fillResultValue(const TimestampType current_timestamp,
         const DequeWithMemoryTracking<std::pair<TimestampType, ValueType>> & samples_in_window,
         Float64 accumulated_resets_in_window,
@@ -234,11 +245,7 @@ public:
         /// Fill the data for missing buckets
         for (UInt32 i = 0; i < Base::bucket_count; ++i)
         {
-            /// Use `Base::timestampAtIndex` to compute the grid timestamp with overflow-safe
-            /// arithmetic. The plain expression `Base::start_timestamp + i * Base::step`
-            /// signed-overflows `TimestampType` when `step` is near `INT64_MAX` and `i >= 2`
-            /// (reachable from adversarial fuzzer inputs), which trips UBSAN.
-            const TimestampType current_timestamp = Base::timestampAtIndex(i);
+            const TimestampType current_timestamp = Base::start_timestamp + i * Base::step;
 
             auto bucket_it = buckets.find(i);
             if (bucket_it != buckets.end())

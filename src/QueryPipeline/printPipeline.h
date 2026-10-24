@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <IO/Operators.h>
 #include <Processors/IProcessor.h>
 
@@ -19,7 +17,7 @@ void printPipeline(const Processors & processors, const Statuses & statuses, Wri
     out << "  rankdir=\"LR\";\n";
     out << "  { node [shape = rect]\n";
 
-    UnorderedMapWithMemoryTracking<const void *, std::size_t> pointer_to_id;
+    std::unordered_map<const void *, std::size_t> pointer_to_id;
     auto get_proc_id = [&pointer_to_id](const IProcessor & proc) -> std::size_t
     {
         auto [it, inserted] = pointer_to_id.try_emplace(&proc, pointer_to_id.size());
@@ -99,7 +97,7 @@ void printPipeline(const Processors & processors, const Statuses & statuses, Wri
 template <typename Processors>
 void printPipeline(const Processors & processors, WriteBuffer & out, bool with_profile = false)
 {
-    printPipeline(processors, VectorWithMemoryTracking<IProcessor::Status>(), out, with_profile);
+    printPipeline(processors, std::vector<IProcessor::Status>(), out, with_profile);
 }
 
 /// Prints pipeline in compact representation.

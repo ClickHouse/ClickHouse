@@ -28,7 +28,7 @@ create materialized view testXC engine=MergeTree order by tuple() as select slee
 {% set count = namespace(value=0) %}
 
 -- { echoOn }
-{% for max_insert_threads in [0, 5] %}
+{% for max_insert_threads in [1, 5] %}
 {% for parallel_view_processing in [0, 1] %}
 {% for optimize_trivial_insert_select in [0, 1] %}
 
@@ -50,9 +50,12 @@ select count() from testXC;
 {% endfor %}
 
 system flush logs system.query_log;
-
+-- Binarize on saturation: did the pipeline saturate `max_threads` (=10) or not?
+-- In 26.3, the executor allocates the full `max_threads` allowance eagerly.
+-- Therefore every `parallel_view_processing=1` variant saturates, while
+-- `parallel_view_processing=0` restricts materialized-view processing to one thread.
 select
-    if(peak_threads_usage >= 10, 1, peak_threads_usage),
+    if(peak_threads_usage >= 10, 1, 0) as saturated_max_threads,
     Settings['max_threads'] as max_threads,
     Settings['max_insert_threads'] as max_insert_threads,
     Settings['parallel_view_processing'] as parallel_view_processing,

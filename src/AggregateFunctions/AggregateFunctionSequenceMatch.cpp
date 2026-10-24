@@ -123,7 +123,8 @@ struct AggregateFunctionSequenceMatchData final
         conditions_met.set();
 
         events_list.clear();
-        events_list.reserve(size);
+        /// Reserving is only an optimization here, so it is derived from payload that already arrived.
+        events_list.reserve(std::min(size, buf.available() / (sizeof(Timestamp) + sizeof(UInt64))));
 
         for (size_t i = 0; i < size; ++i)
         {

@@ -17,13 +17,13 @@ namespace ErrorCodes
 class Arena;
 using ArenaPtr = std::shared_ptr<Arena>;
 using ConstArenaPtr = std::shared_ptr<const Arena>;
-using ConstArenas = VectorWithMemoryTracking<ConstArenaPtr>;
+using ConstArenas = std::vector<ConstArenaPtr>;
 
 class Context;
 using ContextPtr = std::shared_ptr<const Context>;
 
 struct ColumnWithTypeAndName;
-using ColumnsWithTypeAndName = VectorWithMemoryTracking<ColumnWithTypeAndName>;
+using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
 
 
 /** Column of states of aggregate functions.
@@ -131,6 +131,18 @@ public:
         return getData().size();
     }
 
+    /// Real reserve (base IColumn::reserve is a no-op): lets a caller make a run of `push_back`
+    /// non-throwing.
+    void reserve(size_t n) override
+    {
+        data.reserve(n);
+    }
+
+    size_t capacity() const override
+    {
+        return data.capacity();
+    }
+
     MutableColumnPtr cloneEmpty() const override;
 
     Field operator[](size_t n) const override;
@@ -201,6 +213,10 @@ public:
 
     void popBack(size_t n) override;
 
+    /// Removes the last n rows without destroying the states they point to, for rows that alias a state
+    /// owned elsewhere.
+    void popBackWithoutDestroy(size_t n);
+
     ColumnPtr filter(const Filter & filter, ssize_t result_size_hint) const override;
 
     void filter(const Filter & filt) override;
@@ -216,7 +232,7 @@ public:
 
     ColumnPtr replicate(const Offsets & offsets) const override;
 
-    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns, const Selector & selector) const override;
+    MutableColumns scatter(size_t num_columns, const Selector & selector) const override;
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t, size_t, const IColumn &, int) const override

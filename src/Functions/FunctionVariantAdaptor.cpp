@@ -1,7 +1,5 @@
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -162,12 +160,6 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
                 }
                 catch (const Exception & e)
                 {
-                    /// Only wrap type-conversion errors as LOGICAL_ERROR.
-                    /// Other exceptions (e.g. MEMORY_LIMIT_EXCEEDED) should propagate as-is.
-                    if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
-                        && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
-                        throw;
-
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
                         "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",
@@ -190,10 +182,6 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         }
         catch (const Exception & e)
         {
-            if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
-                && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
-                throw;
-
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",
@@ -292,10 +280,6 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
                 }
                 catch (const Exception & e)
                 {
-                    if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
-                        && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
-                        throw;
-
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
                         "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",
@@ -321,10 +305,6 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
             }
             catch (const Exception & e)
             {
-                if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
-                    && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
-                    throw;
-
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",
@@ -344,10 +324,6 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         }
         catch (const Exception & e)
         {
-            if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
-                && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
-                throw;
-
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",
@@ -373,7 +349,7 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
     /// We use an array where index is the global discriminator.
     /// Variants that don't appear in the data will have null column pointers.
     /// Index num_variants is reserved for NULL values.
-    ColumnsWithTypeAndName variants;
+    std::vector<ColumnWithTypeAndName> variants;
     variants.resize(num_variants + 1);
 
     /// Create selector using global discriminators as indexes.
@@ -403,7 +379,7 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
     }
 
     /// Create set of arguments for each variant using selector.
-    VectorWithMemoryTracking<ColumnsWithTypeAndName> variants_arguments;
+    std::vector<ColumnsWithTypeAndName> variants_arguments;
     variants_arguments.resize(variants.size());
     for (size_t i = 0; i != arguments.size(); ++i)
     {
@@ -425,8 +401,8 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
     }
 
     /// Execute function over all created sets of arguments and remember all results.
-    VectorWithMemoryTracking<ColumnPtr> variants_results;
-    VectorWithMemoryTracking<DataTypePtr> variants_result_types;
+    std::vector<ColumnPtr> variants_results;
+    std::vector<DataTypePtr> variants_result_types;
     variants_results.resize(variants.size());
     variants_result_types.resize(variants.size());
     /// Index num_variants is allocated for rows with NULL values, it doesn't have any result,
@@ -473,10 +449,6 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
                 }
                 catch (const Exception & e)
                 {
-                    if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
-                        && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
-                        throw;
-
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
                         "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",
@@ -524,7 +496,7 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
     /// 3. None of the result types should be Nullable or LowCardinality(Nullable)
     ///    (casting handles NULL extraction automatically)
     bool can_use_direct_construction = true;
-    UnorderedSetWithMemoryTracking<String> result_type_names;
+    std::unordered_set<String> result_type_names;
 
     for (size_t i = 0; i < num_variants; ++i)
     {
@@ -557,7 +529,7 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         auto & result_variant = assert_cast<ColumnVariant &>(*result);
 
         /// Map each variant result to its discriminator in the result Variant
-        VectorWithMemoryTracking<std::optional<ColumnVariant::Discriminator>> result_discriminators(variants_results.size());
+        std::vector<std::optional<ColumnVariant::Discriminator>> result_discriminators(variants_results.size());
 
         for (size_t i = 0; i < num_variants; ++i)
         {
@@ -617,7 +589,7 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
     }
     /// General path: cast each result to final Variant type to handle
     /// duplicate result types and nested Variants correctly
-    VectorWithMemoryTracking<ColumnPtr> casted_results(variants_results.size());
+    std::vector<ColumnPtr> casted_results(variants_results.size());
 
     for (size_t i = 0; i < num_variants; ++i)
     {
@@ -633,10 +605,6 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         }
         catch (const Exception & e)
         {
-            if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
-                && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
-                throw;
-
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",

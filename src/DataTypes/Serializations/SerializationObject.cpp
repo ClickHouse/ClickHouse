@@ -8,6 +8,7 @@
 
 
 #include <Columns/ColumnObject.h>
+#include <Core/MergeTreeSerializationEnums.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeArray.h>
 #include <IO/ReadBufferFromString.h>
@@ -16,7 +17,8 @@
 #include <Common/ThreadPool.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
-#include <Common/ThreadGroupSwitcher.h>
+
+#include <unordered_set>
 
 namespace DB
 {
@@ -26,6 +28,20 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_ARRAY_SIZE;
+}
+
+namespace
+{
+
+void throwIfInvalidNumberOfBuckets(size_t num_buckets)
+{
+    if (num_buckets == 0 || num_buckets > MAX_OBJECT_SHARED_DATA_BUCKETS)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "JSON/Object column has an invalid number of shared data buckets: {} (must be in the range [1, {}])",
+            num_buckets, MAX_OBJECT_SHARED_DATA_BUCKETS);
+}
+
 }
 
 SerializationObject::SerializationObject(
@@ -98,6 +114,23 @@ void SerializationObject::SerializationVersion::checkVersion(UInt64 version)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid version for Object structure serialization: {}", version);
 }
 
+void SerializationObject::SerializationVersion::checkVersion(UInt64 version, bool native_format)
+{
+    checkVersion(version);
+
+    if (native_format && version == V3)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Version {} of Object structure serialization is written only into MergeTree data parts and is not allowed in Native format",
+            version);
+
+    if (!native_format && (version == STRING || version == FLATTENED))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Version {} of Object structure serialization is written only in Native format and is not allowed in MergeTree data part",
+            version);
+}
+
 struct SerializeBinaryBulkStateObject: public ISerialization::SerializeBinaryBulkState
 {
     SerializationObject::SerializationVersion serialization_version;
@@ -157,7 +190,6 @@ void SerializationObject::enumerateStreams(EnumerateStreamsSettings & settings, 
     const auto * type_object = data.type ? &assert_cast<const DataTypeObject &>(*data.type) : nullptr;
     const auto * deserialize_state = data.deserialize_state ? checkAndGetState<DeserializeBinaryBulkStateObject>(data.deserialize_state) : nullptr;
     const auto * structure_state = deserialize_state ? checkAndGetState<DeserializeBinaryBulkStateObjectStructure>(deserialize_state->structure_state) : nullptr;
-
     settings.path.push_back(Substream::ObjectData);
 
     /// First, iterate over typed paths in sorted order, we will always serialize them.
@@ -183,7 +215,7 @@ void SerializationObject::enumerateStreams(EnumerateStreamsSettings & settings, 
     {
         /// Enumerate dynamic paths in sorted order for consistency.
         const auto * dynamic_paths = column_object ? &column_object->getDynamicPaths() : nullptr;
-        std::shared_ptr<VectorWithMemoryTracking<String>> sorted_dynamic_paths;
+        std::shared_ptr<std::vector<String>> sorted_dynamic_paths;
         /// If we have deserialize_state we can take sorted dynamic paths list from it.
         if (structure_state)
         {
@@ -191,7 +223,7 @@ void SerializationObject::enumerateStreams(EnumerateStreamsSettings & settings, 
         }
         else
         {
-            sorted_dynamic_paths = std::make_shared<VectorWithMemoryTracking<String>>();
+            sorted_dynamic_paths = std::make_shared<std::vector<String>>();
             sorted_dynamic_paths->reserve(dynamic_paths->size());
             for (const auto & [path, _] : *dynamic_paths)
                 sorted_dynamic_paths->push_back(path);
@@ -232,7 +264,7 @@ void SerializationObject::enumerateStreams(EnumerateStreamsSettings & settings, 
                     num_buckets = settings.object_shared_data_buckets;
             }
 
-            shared_data_serialization = SerializationObjectSharedData::create(shared_data_serialization_version, dynamic_type, dynamic_serialization, num_buckets);
+            shared_data_serialization = std::make_shared<SerializationObjectSharedData>(shared_data_serialization_version, dynamic_type, dynamic_serialization, num_buckets);
         }
 
         auto shared_data_substream_data = SubstreamData(shared_data_serialization)
@@ -425,12 +457,22 @@ void SerializationObject::serializeBinaryBulkStatePrefix(
     }
 
     settings.path.push_back(Substream::ObjectSharedData);
-    object_state->shared_data_serialization = SerializationObjectSharedData::create(shared_data_serialization_version, dynamic_type, dynamic_serialization, shared_data_buckets);
+    object_state->shared_data_serialization = std::make_shared<SerializationObjectSharedData>(shared_data_serialization_version, dynamic_type, dynamic_serialization, shared_data_buckets);
     object_state->shared_data_serialization->serializeBinaryBulkStatePrefix(*shared_data, settings, object_state->shared_data_state);
     settings.path.pop_back();
     settings.path.pop_back();
 
     state = std::move(object_state);
+}
+
+void SerializationObject::checkPathIsNotTyped(const String & path, bool native_format) const
+{
+    /// Such a path would be stored in the column twice, giving the object two values under one key.
+    if (typed_paths_serializations.contains(path))
+        throw Exception(
+            native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR,
+            "Path {} of an Object column is stored as a dynamic path, but it is a typed path in the type of the column",
+            path);
 }
 
 void SerializationObject::deserializeBinaryBulkStatePrefix(
@@ -450,6 +492,18 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
     {
         state = std::move(object_state);
         return;
+    }
+
+    /// Safety check for a corrupted data part or a malformed Native block.
+    if (structure_state_concrete->serialization_version.value == SerializationVersion::FLATTENED)
+    {
+        for (const auto & path : structure_state_concrete->flattened_paths)
+            checkPathIsNotTyped(path, settings.native_format);
+    }
+    else
+    {
+        for (const auto & path : *structure_state_concrete->sorted_dynamic_paths)
+            checkPathIsNotTyped(path, settings.native_format);
     }
 
     settings.path.push_back(Substream::ObjectData);
@@ -552,18 +606,6 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
             settings.release_stream_callback(path);
         };
 
-        auto safe_seek_to_start_callback = [&](const SubstreamPath & path)
-        {
-            std::unique_lock lock(callbacks_mutex);
-            settings.seek_to_start_callback(path);
-        };
-
-        auto safe_has_uniform_marks_callback = [&](const SubstreamPath & path, size_t max_transitions)
-        {
-            std::unique_lock lock(callbacks_mutex);
-            return settings.has_uniform_marks_callback(path, max_transitions);
-        };
-
         size_t task_size = std::max(structure_state_concrete->sorted_dynamic_paths->size() / num_tasks, 1ul);
 
         /// Ensure all already-scheduled tasks are drained on any exit path (including exceptions),
@@ -587,10 +629,6 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
                 settings_copy.dynamic_subcolumns_callback = settings.dynamic_subcolumns_callback ? safe_dynamic_subcolumns_callback : StreamCallback{};
                 settings_copy.prefixes_prefetch_callback = settings.prefixes_prefetch_callback ? safe_prefixes_prefetch_callback : StreamCallback{};
                 settings_copy.release_stream_callback = settings.release_stream_callback ? safe_release_stream_callback : StreamCallback{};
-                settings_copy.seek_to_start_callback = settings.seek_to_start_callback ? safe_seek_to_start_callback : StreamCallback{};
-                settings_copy.has_uniform_marks_callback = settings.has_uniform_marks_callback
-                    ? safe_has_uniform_marks_callback
-                    : decltype(settings.has_uniform_marks_callback){};
                 for (size_t j = batch_start; j != batch_end; ++j)
                 {
                     settings_copy.path.push_back(Substream::ObjectDynamicPath);
@@ -648,7 +686,7 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
     }
 
     settings.path.push_back(Substream::ObjectSharedData);
-    object_state->shared_data_serialization = SerializationObjectSharedData::create(structure_state_concrete->shared_data_serialization_version, dynamic_type, dynamic_serialization, structure_state_concrete->shared_data_buckets);
+    object_state->shared_data_serialization = std::make_shared<SerializationObjectSharedData>(structure_state_concrete->shared_data_serialization_version, dynamic_type, dynamic_serialization, structure_state_concrete->shared_data_buckets);
     object_state->shared_data_serialization->deserializeBinaryBulkStatePrefix(settings, object_state->shared_data_state, cache);
     settings.path.pop_back();
     settings.path.pop_back();
@@ -672,6 +710,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
         /// Read structure serialization version.
         UInt64 serialization_version;
         readBinaryLittleEndian(serialization_version, *structure_stream);
+        SerializationVersion::checkVersion(serialization_version, settings.native_format);
         auto structure_state = std::make_shared<DeserializeBinaryBulkStateObjectStructure>(serialization_version);
         if (structure_state->serialization_version.value == SerializationVersion::FLATTENED)
         {
@@ -681,6 +720,16 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
             structure_state->flattened_paths.resize(paths_size);
             for (size_t i = 0; i != paths_size; ++i)
                 readStringBinary(structure_state->flattened_paths[i], *structure_stream);
+
+            /// The same path twice would be added to the column twice, as a dynamic path and into shared
+            /// data. The views are taken after the list is complete, so they are not invalidated while it is read.
+            std::unordered_set<std::string_view> unique_paths;
+            unique_paths.reserve(structure_state->flattened_paths.size());
+            for (const auto & path : structure_state->flattened_paths)
+            {
+                if (!unique_paths.insert(path).second)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate path {} in the list of paths of a flattened Object column", path);
+            }
         }
         else if (structure_state->serialization_version.value == SerializationVersion::STRING)
         {
@@ -698,11 +747,16 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
             /// Read the sorted list of dynamic paths.
             size_t dynamic_paths_size;
             readVarUInt(dynamic_paths_size, *structure_stream);
-            structure_state->sorted_dynamic_paths = std::make_shared<VectorWithMemoryTracking<String>>();
+            structure_state->sorted_dynamic_paths = std::make_shared<std::vector<String>>();
             structure_state->sorted_dynamic_paths->resize(dynamic_paths_size);
             for (size_t i = 0; i != dynamic_paths_size; ++i)
                 readStringBinary((*structure_state->sorted_dynamic_paths)[i], *structure_stream);
             structure_state->dynamic_paths.insert(structure_state->sorted_dynamic_paths->begin(), structure_state->sorted_dynamic_paths->end());
+            /// A duplicate would leave the column with fewer dynamic paths than the data has.
+            if (structure_state->dynamic_paths.size() != structure_state->sorted_dynamic_paths->size())
+                throw Exception(
+                    settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR,
+                    "Duplicate path in the list of dynamic paths of an Object column");
 
             /// If we have V3 Object serialization, read shared data serialization version.
             if (structure_state->serialization_version.value == SerializationVersion::V3)
@@ -715,11 +769,12 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
                     || structure_state->shared_data_serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED)
                 {
                     readVarUInt(structure_state->shared_data_buckets, *structure_stream);
+                    throwIfInvalidNumberOfBuckets(structure_state->shared_data_buckets);
                 }
             }
 
             /// Read statistics if needed.
-            if (settings.object_and_dynamic_read_statistics)
+            if (settings.read_statistics)
             {
                 bool has_statistics = true;
                 /// In V3 version we have additional flag that indicates if we have statistics or not.
@@ -994,6 +1049,8 @@ void SerializationObject::deserializeBinaryBulkWithMultipleStreams(
 
     if (structure_state->serialization_version.value == SerializationVersion::FLATTENED)
     {
+        const size_t prev_num_rows = column_object.size();
+
         settings.path.push_back(Substream::ObjectData);
         for (const auto & path : sorted_typed_paths)
         {
@@ -1001,6 +1058,14 @@ void SerializationObject::deserializeBinaryBulkWithMultipleStreams(
             settings.path.back().object_path_name = path;
             typed_paths_serializations.at(path)->deserializeBinaryBulkWithMultipleStreams(typed_paths[path], rows_offset, limit, settings, object_state->typed_path_states[path], cache);
             settings.path.pop_back();
+
+            if (typed_paths[path]->size() != prev_num_rows + limit)
+                throw Exception(
+                    settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR,
+                    "Unexpected size of typed path {} in flattened Object column: {}. Expected size {}",
+                    path,
+                    typed_paths[path]->size() - prev_num_rows,
+                    limit);
         }
 
         std::vector<ColumnPtr> flattened_paths_columns;
@@ -1012,6 +1077,14 @@ void SerializationObject::deserializeBinaryBulkWithMultipleStreams(
             flattened_paths_columns.emplace_back(dynamic_type->createColumn());
             dynamic_serialization->deserializeBinaryBulkWithMultipleStreams(flattened_paths_columns.back(), rows_offset, limit, settings, object_state->dynamic_path_states[path], cache);
             settings.path.pop_back();
+
+            if (flattened_paths_columns.back()->size() != limit)
+                throw Exception(
+                    settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR,
+                    "Unexpected size of flattened path {} in flattened Object column: {}. Expected size {}",
+                    path,
+                    flattened_paths_columns.back()->size(),
+                    limit);
         }
 
         settings.path.pop_back();
@@ -1355,17 +1428,22 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
 
 SerializationPtr SerializationObject::TypedPathSubcolumnCreator::create(const DB::SerializationPtr & prev, const DataTypePtr &) const
 {
-    return SerializationObjectTypedPath::create(prev, path);
+    return std::make_shared<SerializationObjectTypedPath>(prev, path);
 }
 
-void SerializationObject::updateMaxDynamicPathsLimitIfNeeded(IColumn & column, const FormatSettings & format_settings) const
+void SerializationObject::updateMaxDynamicPathsLimitIfNeeded(IColumn & column, const FormatSettings & format_settings)
 {
-    if (!format_settings.json.max_dynamic_subcolumns_in_json_type_parsing || !column.empty())
+    if (!format_settings.json.max_dynamic_subcolumns_in_json_type_parsing)
         return;
 
+    /// Not restricted to an empty column: rows inserted before the first parsed object (a default for
+    /// an absent field, a null) must not stop the limit from being applied.
     auto & column_object = assert_cast<ColumnObject &>(column);
-    if (*format_settings.json.max_dynamic_subcolumns_in_json_type_parsing < column_object.getMaxDynamicPaths())
-        column_object.setMaxDynamicPaths(*format_settings.json.max_dynamic_subcolumns_in_json_type_parsing);
+    /// Lower the upper bound and not just max_dynamic_paths, otherwise aggregating the parsed data
+    /// raises the limit back.
+    size_t limit = *format_settings.json.max_dynamic_subcolumns_in_json_type_parsing;
+    if (limit < column_object.getMaxDynamicPathsUpperBound() && limit >= column_object.getDynamicPaths().size())
+        column_object.setMaxDynamicPathsUpperBound(limit);
 }
 
 }

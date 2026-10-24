@@ -1,9 +1,7 @@
 #include <Planner/CollectSets.h>
 
 #include <Storages/StorageSet.h>
-#if CLICKHOUSE_CLOUD
-#include <Storages/StorageSharedSetJoin.h>
-#endif
+#include <Storages/StorageProxy.h>
 
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/ConstantNode.h>
@@ -34,7 +32,6 @@ namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
     extern const int LOGICAL_ERROR;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
@@ -82,13 +79,6 @@ public:
         if (!function_node || !isNameOfInFunction(function_node->getFunctionName()))
             return;
 
-        if (function_node->getArguments().getNodes().size() < 2)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function '{}' is expected to have at least 2 arguments, got {}",
-                function_node->getFunctionName(),
-                function_node->getArguments().getNodes().size());
-
         auto in_first_argument = function_node->getArguments().getNodes().at(0);
         auto in_second_argument = function_node->getArguments().getNodes().at(1);
         auto in_second_argument_node_type = in_second_argument->getNodeType();
@@ -98,7 +88,7 @@ public:
 
         /// Tables and table functions are replaced with subquery at Analysis stage, except special Set table.
         auto * second_argument_table = in_second_argument->as<TableNode>();
-        StorageSet * storage_set = second_argument_table != nullptr ? dynamic_cast<StorageSet *>(second_argument_table->getStorage().get()) : nullptr;
+        StorageSet * storage_set = second_argument_table != nullptr ? castStorage<StorageSet>(second_argument_table->getStorage(), DeferredTable::Load).get() : nullptr;
 
         if (storage_set)
         {
@@ -140,11 +130,6 @@ public:
                 return;
 
             auto ast = in_second_argument->toAST();
-#if CLICKHOUSE_CLOUD
-            if (storage_set->getName() == "SharedSet")
-                sets.addFromStorage(set_key, std::move(ast), static_cast<StorageSharedSet *>(storage_set)->getSet(planner_context.getQueryContext()), second_argument_table->getStorageID());
-            else
-#endif
             sets.addFromTuple(set_key, std::move(ast), std::move(set), settings);
         }
         else if (in_second_argument_node_type == QueryTreeNodeType::QUERY ||

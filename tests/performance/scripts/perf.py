@@ -3,7 +3,6 @@
 import argparse
 import functools
 import itertools
-import json
 import logging
 import math
 import os
@@ -16,7 +15,6 @@ import sys
 import time
 import traceback
 import xml.etree.ElementTree as et
-from concurrent.futures import ThreadPoolExecutor
 from threading import Thread
 
 import clickhouse_driver
@@ -155,21 +153,11 @@ parser.add_argument(
     action="store_true",
     help="Don't create or drop the tables, use the existing ones instead.",
 )
-parser.add_argument(
-    "--jemalloc-purge",
-    choices=["disabled", "after-fill", "before-each-query", "before-each-run"],
-    default="before-each-run",
-    help="When to issue SYSTEM JEMALLOC PURGE on all server connections. "
-    "Purging equalises per-process jemalloc dirty-page state between LEFT and "
-    "RIGHT, which otherwise diverges across the test and causes background "
-    "purges to do asymmetric work during measured queries.",
-)
 args = parser.parse_args()
 
 reportStageEnd("start")
 
 test_name = os.path.splitext(os.path.basename(args.file[0].name))[0]
-xml_dir = os.path.dirname(os.path.abspath(args.file[0].name))
 
 tree = et.parse(args.file[0])
 root = tree.getroot()
@@ -213,140 +201,11 @@ def substitute_parameters(query_templates, other_templates=[]):
         return query_results
 
 
-def split_sql_statements(sql):
-    """Split SQL into statements on semicolons, respecting quoted literals/identifiers, -- and # comments, and /* block comments */."""
-    statements = []
-    current = []
-    quote_char = ""
-    in_line_comment = False
-    in_block_comment = False
-    i = 0
-    while i < len(sql):
-        ch = sql[i]
-        next_ch = sql[i + 1] if i + 1 < len(sql) else ""
-        if in_line_comment:
-            current.append(ch)
-            if ch == "\n":
-                in_line_comment = False
-        elif in_block_comment:
-            current.append(ch)
-            if ch == "*" and next_ch == "/":
-                current.append("/")
-                i += 1
-                in_block_comment = False
-        elif quote_char:
-            current.append(ch)
-            if ch == quote_char and next_ch == quote_char:
-                current.append(quote_char)
-                i += 1
-            elif ch == quote_char:
-                quote_char = ""
-        elif (ch == "-" and next_ch == "-") or (ch == "#"):
-            in_line_comment = True
-            current.append(ch)
-        elif ch == "/" and next_ch == "*":
-            in_block_comment = True
-            current.append(ch)
-        elif ch in ("'", '"', "`"):
-            quote_char = ch
-            current.append(ch)
-        elif ch == ";":
-            stmt = "".join(current).strip()
-            if stmt:
-                statements.append(stmt)
-            current = []
-        else:
-            current.append(ch)
-        i += 1
-    stmt = "".join(current).strip()
-    if stmt:
-        statements.append(stmt)
-    return statements
-
-
-def first_keyword(sql):
-    """Return the first SQL keyword from a statement, skipping --, #, and /* */ comments."""
-    i = 0
-    while i < len(sql):
-        ch = sql[i]
-        next_ch = sql[i + 1] if i + 1 < len(sql) else ""
-        if ch in (" ", "\t", "\n", "\r"):
-            i += 1
-        elif (ch == "-" and next_ch == "-") or ch == "#":
-            nl = sql.find("\n", i)
-            i = nl + 1 if nl != -1 else len(sql)
-        elif ch == "/" and next_ch == "*":
-            end = sql.find("*/", i + 2)
-            i = end + 2 if end != -1 else len(sql)
-        else:
-            # Found start of a token → read until whitespace or special chars
-            j = i
-            while j < len(sql) and sql[j] not in (" ", "\t", "\n", "\r", "(", ";"):
-                j += 1
-            return sql[i:j].upper()
-    return ""
-
-
-def execute_query_group(connection, q_list, query_id, settings):
-    """
-    Execute a group of SQL statements sequentially and return the total server-side elapsed time.
-    Some benchmark queries (e.g. TPC-DS Q14) consist of multiple SELECT statements in one file.
-    We run them together and sum the elapsed time so that they appear as a single entry in the performance report.
-    """
-    total = 0
-    for q in q_list:
-        connection.execute(q, query_id=query_id, settings=settings)
-        total += connection.last_query.elapsed
-    return total
-
-
-def load_settings_file(xml_root, base_dir):
-    """Load settings from a JSON file referenced by <settings file="..."/> attribute."""
-    elem = xml_root.find("settings")
-    if elem is None or "file" not in elem.attrib:
-        return {}
-    path = os.path.join(base_dir, elem.attrib["file"])
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)["settings"]
-
-
-# Build a list of test queries, substituting parameters to query templates.
-# Queries can be specified inline or loaded from external files via the "file" attribute.
-# Multi-statement files (e.g. TPC-H Q15: CREATE VIEW; SELECT; DROP VIEW) are split:
-# CREATE/DROP become global setup/teardown queries, and only the SELECT becomes the timed test query. 
-# This is a simplification: the setup/teardown is shared across all queries, not per-query.
-# This works, but will break if two query files create views with the same name. 
-# Not worth fixing properly unless we have such scenario, the whole perf test suite needs a rewrite.
-extra_create_queries = []
-extra_drop_queries = []
-test_queries = []  # list[list[str]]: each entry is a group of SQL statements to execute and time together
+# Build a list of test queries, substituting parameters to query templates,
+test_queries = []
 for e in root.findall("query"):
-    if "file" in e.attrib:
-        query_path = os.path.join(xml_dir, e.attrib["file"])
-        with open(query_path, "r", encoding="utf-8") as f:
-            full_text = f.read().strip()
-        statements = split_sql_statements(full_text)
-        select_stmts = []
-        for stmt in statements:
-            keyword = first_keyword(stmt)
-            if keyword in ("CREATE", "ALTER"):
-                extra_create_queries.append(stmt)
-            elif keyword in ("DROP", "TRUNCATE"):
-                extra_drop_queries.append(stmt)
-            else:
-                select_stmts.append(stmt)
-        # Some benchmark queries (e.g. TPC-DS Q14) have multiple SELECTs in one file.
-        # They are executed together and timed as a single entry in the report.
-        # Substitution parameters are expanded per-statement and then zipped, so that each group contains statements with same parameters.
-        # Example:
-        #   select_stmts = ["SELECT FROM {t}.x", "SELECT FROM {t}.y"], {t} = [a, b]
-        #   expanded = [["SELECT FROM a.x", "SELECT FROM b.x"], ["SELECT FROM a.y", "SELECT FROM b.y"]]
-        #   zip(*expanded) -> ("SELECT FROM a.x", "SELECT FROM a.y"), ("SELECT FROM b.x", "SELECT FROM b.y")
-        expanded = [substitute_parameters([s]) for s in select_stmts]
-        for group in zip(*expanded):
-            test_queries.append(list(group))
-    else:
-        test_queries += [[s] for s in substitute_parameters([e.text])]
+    new_queries = substitute_parameters([e.text])
+    test_queries += new_queries
 
 # If we're given a list of queries to run, check that it makes sense.
 for i in args.queries_to_run or []:
@@ -359,17 +218,13 @@ for i in args.queries_to_run or []:
 # If we're only asked to print the queries, do that and exit.
 if args.print_queries:
     for i in args.queries_to_run or range(0, len(test_queries)):
-        print(";\n".join(test_queries[i]))
+        print(test_queries[i])
     exit(0)
 
 # If we're only asked to print the settings, do that and exit. These are settings
 # for clickhouse-benchmark, so we print them as command line arguments, e.g.
 # '--max_memory_usage=10000000'.
 if args.print_settings:
-    # Settings from JSON file: <settings file="path/to/settings.json"/>
-    for key, value in load_settings_file(root, xml_dir).items():
-        print(f"--{key}={value}")
-    # Inline settings: <settings><key>value</key></settings> (can override file settings)
     for s in root.findall("settings/*"):
         print(f"--{s.tag}={s.text}")
 
@@ -400,12 +255,6 @@ all_connections = [
     clickhouse_driver.Client(**server, settings_is_important=True) for server in servers
 ]
 
-# Long-lived workers to fan out per-connection commands (SYSTEM JEMALLOC PURGE
-# etc.) in parallel so both servers see the same operation at the same wall
-# clock moment.
-purge_pool = ThreadPoolExecutor(max_workers=max(1, len(all_connections)))
-
-
 for i, s in enumerate(servers):
     ssl_status = "SSL" if s["secure"] else "no-SSL"
     print(f'server\t{i}\t{s["host"]}\t{s["port"]}\t{s["user"]}\t{ssl_status}')
@@ -417,7 +266,6 @@ if not args.use_existing_tables:
     # because clickhouse_driver disconnects on error (this is not configurable),
     # and the new connection loses the changes in settings.
     drop_query_templates = [q.text for q in root.findall("drop_query")]
-    drop_query_templates += extra_drop_queries
     drop_queries = substitute_parameters(drop_query_templates)
     for conn_index, c in enumerate(all_connections):
         for q in drop_queries:
@@ -429,14 +277,12 @@ if not args.use_existing_tables:
 
     reportStageEnd("drop-1")
 
-# First apply JSON settings (<settings file="..."/>), then inline (<settings><key>value</key></settings>).
-# Inline settings override file settings.
-file_settings = load_settings_file(root, xml_dir)
-inline_settings = root.findall("settings/*")
+# Apply settings.
+settings = root.findall("settings/*")
 for conn_index, c in enumerate(all_connections):
-    for key, value in file_settings.items():
-        c.settings[key] = str(value)
-    for s in inline_settings:
+    for s in settings:
+        # requires clickhouse-driver >= 1.1.5 to accept arbitrary new settings
+        # (https://github.com/mymarilyn/clickhouse-driver/pull/142)
         c.settings[s.tag] = s.text
     # We have to perform a query to make sure the settings work. Otherwise an
     # unknown setting will lead to failing precondition check, and we will skip
@@ -453,7 +299,6 @@ if not args.use_existing_tables:
     create_query_templates = [
         q.text for q in root.findall("./*") if q.tag in ("create_query", "fill_query")
     ]
-    create_query_templates += extra_create_queries
     create_queries = substitute_parameters(create_query_templates)
 
     # Disallow temporary tables, because the clickhouse_driver reconnects on
@@ -485,26 +330,6 @@ if not args.use_existing_tables:
 
     reportStageEnd("create")
 
-
-def purge_jemalloc_on_all_connections(reason):
-    def purge_one(indexed_conn):
-        conn_index, c = indexed_conn
-        try:
-            c.execute("SYSTEM JEMALLOC PURGE")
-            return f"purging jemalloc arenas\t{conn_index}\t{c.last_query.elapsed}\t{reason}"
-        except KeyboardInterrupt:
-            raise
-        except:
-            return None
-    for line in purge_pool.map(purge_one, enumerate(all_connections)):
-        if line:
-            print(line)
-
-
-if args.jemalloc_purge != "disabled":
-    purge_jemalloc_on_all_connections("after-fill")
-
-
 # Let's sync the data to avoid writeback affects performance
 os.system("sync")
 reportStageEnd("sync")
@@ -525,20 +350,27 @@ if args.queries_to_run:
 # Run test queries.
 profile_total_seconds = 0
 for query_index in queries_to_run:
-    q_list = test_queries[query_index]
+    q = test_queries[query_index]
     query_prefix = f"{test_name}.query{query_index}"
 
     # We have some crazy long queries (about 100kB), so trim them to a sane
     # length. This means we can't use query text as an identifier and have to
     # use the test name + the test-wide query index.
-    query_display_name = ";\n".join(q_list)
+    query_display_name = q
     if len(query_display_name) > 1000:
         query_display_name = f"{query_display_name[:1000]}...({query_index})"
 
     print(f"display-name\t{query_index}\t{tsv_escape(query_display_name)}")
 
-    if args.jemalloc_purge in ("before-each-query", "before-each-run"):
-        purge_jemalloc_on_all_connections(f"before-query-{query_index}")
+    for conn_index, c in enumerate(all_connections):
+        try:
+            c.execute("SYSTEM JEMALLOC PURGE")
+
+            print(f"purging jemalloc arenas\t{conn_index}\t{c.last_query.elapsed}")
+        except KeyboardInterrupt:
+            raise
+        except:
+            continue
 
     # Prewarm: run once on both servers. Helps to bring the data into memory,
     # precompile the queries, etc.
@@ -557,11 +389,10 @@ for query_index in queries_to_run:
                 # * collect profiler traces, which might be helpful for analyzing
                 #   test coverage. We disable profiler for normal runs because
                 #   it makes the results unstable.
-                prewarm_elapsed = execute_query_group(
-                    c,
-                    q_list,
-                    prewarm_id,
-                    {
+                res = c.execute(
+                    q,
+                    query_id=prewarm_id,
+                    settings={
                         "max_execution_time": args.prewarm_max_query_seconds,
                         "query_profiler_real_time_period_ns": 10000000,
                         "query_profiler_cpu_time_period_ns": 10000000,
@@ -576,7 +407,7 @@ for query_index in queries_to_run:
                 raise
 
             print(
-                f"prewarm\t{query_index}\t{prewarm_id}\t{conn_index}\t{prewarm_elapsed}"
+                f"prewarm\t{query_index}\t{prewarm_id}\t{conn_index}\t{c.last_query.elapsed}"
             )
         except KeyboardInterrupt:
             raise
@@ -621,19 +452,12 @@ for query_index in queries_to_run:
     while True:
         run_id = f"{query_prefix}.run{run}"
 
-        if args.jemalloc_purge == "before-each-run":
-            purge_jemalloc_on_all_connections(f"before-{run_id}")
-
-        # Alternate the server order each measured run (L,R,R,L,L,R,...) so that
-        # the post-query / pre-purge idle time averages out between connections.
-        conn_order = list(enumerate(this_query_connections))
-        if run % 2 == 1:
-            conn_order = list(reversed(conn_order))
-
-        for conn_index, c in conn_order:
+        for conn_index, c in enumerate(this_query_connections):
             try:
-                elapsed = execute_query_group(
-                    c, q_list, run_id, {"max_execution_time": args.max_query_seconds}
+                res = c.execute(
+                    q,
+                    query_id=run_id,
+                    settings={"max_execution_time": args.max_query_seconds},
                 )
             except clickhouse_driver.errors.Error as e:
                 # Add query id to the exception to make debugging easier.
@@ -641,6 +465,7 @@ for query_index in queries_to_run:
                 e.message = run_id + ": " + e.message
                 raise
 
+            elapsed = c.last_query.elapsed
             all_server_times[conn_index].append(elapsed)
 
             server_seconds += elapsed
@@ -701,18 +526,17 @@ for query_index in queries_to_run:
 
         for conn_index, c in enumerate(this_query_connections):
             try:
-                profile_elapsed = execute_query_group(
-                    c,
-                    q_list,
-                    run_id,
-                    {
+                res = c.execute(
+                    q,
+                    query_id=run_id,
+                    settings={
                         "query_profiler_real_time_period_ns": 10000000,
                         "query_profiler_cpu_time_period_ns": 10000000,
                         "metrics_perf_events_enabled": 1,
                     },
                 )
                 print(
-                    f"profile\t{query_index}\t{run_id}\t{conn_index}\t{profile_elapsed}"
+                    f"profile\t{query_index}\t{run_id}\t{conn_index}\t{c.last_query.elapsed}"
                 )
             except clickhouse_driver.errors.Error as e:
                 # Add query id to the exception to make debugging easier.

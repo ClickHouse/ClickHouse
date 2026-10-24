@@ -70,13 +70,16 @@ public:
         /// we use 'not ranges' to estimate condition a != 1 and a != 2 better.
         ColumnRanges column_not_ranges;
         bool finalized = false;
-        Float64 selectivity = 0;
+        Float64 selectivity;
 
         bool tryToMergeClauses(RPNElement & lhs, RPNElement & rhs);
         void finalize(const ColumnEstimators & column_estimators_, const StorageMetadataPtr & metadata);
     };
     using AtomMap = std::unordered_map<std::string, void(*)(RPNElement & out, const String & column, const Field & value)>;
     static const AtomMap atom_map;
+
+    UInt64 getTotalRows() const { return total_rows; }
+
 private:
     friend class ColumnStatistics;
 
@@ -93,10 +96,9 @@ private:
     UInt64 estimateSelectivity(const RPNBuilderTreeNode & node) const;
 
     /// Magic constants for estimating the selectivity of a condition no statistics exists.
-    static constexpr Float64 default_cond_range_factor = 0.33;
+    static constexpr Float64 default_cond_range_factor = 0.5;
     static constexpr Float64 default_cond_equal_factor = 0.01;
-    static constexpr Float64 default_unknown_cond_factor = 0.33;
-    static constexpr Float64 default_like_factor = 0.1;
+    static constexpr Float64 default_unknown_cond_factor = 1;
     static constexpr Float64 default_cardinality_ratio = 0.1;
 
     UInt64 total_rows = 0;

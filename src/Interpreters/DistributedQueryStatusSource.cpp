@@ -185,7 +185,7 @@ Chunk DistributedQueryStatusSource::generate()
     bool all_hosts_finished = num_hosts_finished >= waiting_hosts.size();
 
     /// Seems like num_hosts_finished cannot be strictly greater than waiting_hosts.size()
-    chassert(num_hosts_finished <= waiting_hosts.size());
+    assert(num_hosts_finished <= waiting_hosts.size());
 
     if (all_hosts_finished || timeout_exceeded)
         return {};

@@ -155,13 +155,13 @@ bool DatabasePostgreSQL::checkPostgresTable(const String & table_name) const
     {
         /// Casting table_name::regclass throws pqxx::indefined_table exception if table_name is incorrect.
         pqxx::result result = tx.exec(fmt::format(
-                    "SELECT '{}'::regclass, tablename "
+                    "SELECT {}::regclass, tablename "
                     "FROM pg_catalog.pg_tables "
                     "WHERE schemaname != 'pg_catalog' AND {} "
-                    "AND tablename = '{}'",
-                    formatTableName(table_name),
-                    (configuration.schema.empty() ? "schemaname != 'information_schema'" : "schemaname = " + quoteString(configuration.schema)),
-                    formatTableName(table_name)));
+                    "AND tablename = {}",
+                    quoteStringPostgreSQL(formatTableName(table_name)),
+                    (configuration.schema.empty() ? "schemaname != 'information_schema'" : "schemaname = " + quoteStringPostgreSQL(configuration.schema)),
+                    quoteStringPostgreSQL(formatTableName(table_name))));
     }
     catch (pqxx::undefined_table const &)
     {
@@ -464,7 +464,7 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
     create_table_query->setTable(table_id.table_name);
     create_table_query->setDatabase(table_id.database_name);
 
-    auto metadata_snapshot = storage->getInMemoryMetadataPtr(local_context, false);
+    auto metadata_snapshot = storage->getInMemoryMetadataPtr();
     for (const auto & column_type_and_name : metadata_snapshot->getColumns().getOrdinary())
     {
         const auto column_declaration = make_intrusive<ASTColumnDeclaration>();
@@ -577,11 +577,7 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
             use_table_cache,
             args.uuid);
     };
-    factory.registerDatabase("PostgreSQL", create_fn, {
-        .supports_arguments = true,
-        .is_external = true,
-        .source_access_type = AccessTypeObjects::Source::POSTGRES,
-    });
+    factory.registerDatabase("PostgreSQL", create_fn, {.supports_arguments = true});
 }
 }
 

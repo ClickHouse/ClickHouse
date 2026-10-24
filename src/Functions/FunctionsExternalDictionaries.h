@@ -19,6 +19,7 @@
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnNullable.h>
@@ -1098,7 +1099,7 @@ private:
 
     static void addNullMap(PaddedPODArray<UInt8> & null_map, PaddedPODArray<UInt8> & null_map_to_add)
     {
-        chassert(null_map.size() == null_map_to_add.size());
+        assert(null_map.size() == null_map_to_add.size());
 
         for (size_t i = 0; i < null_map.size(); ++i)
             null_map[i] = null_map[i] || null_map_to_add[i];

@@ -8,7 +8,6 @@
 #include <Server/IServer.h>
 #include <Server/PrometheusMetricsWriter.h>
 #include <base/scope_guard.h>
-#include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
@@ -40,14 +39,10 @@
 namespace DB
 {
 
-namespace Setting
-{
-    extern const SettingsUInt64 http_response_buffer_size;
-}
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_WRITE_TO_OSTREAM;
     extern const int SUPPORT_IS_DISABLED;
     extern const int NOT_IMPLEMENTED;
 }
@@ -125,10 +120,6 @@ public:
 
     virtual void handlingRequestWithContext(HTTPServerRequest & request, HTTPServerResponse & response) = 0;
 
-    /// When true, `handleRequest` parses `application/x-www-form-urlencoded` (and multipart) bodies for POST/PUT.
-    /// Must stay false for RemoteWrite/RemoteRead so the raw body stream stays available for protobuf.
-    virtual bool shouldParseFormFromRequestBody(const HTTPServerRequest & /* request */) const { return false; }
-
 protected:
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override
     {
@@ -139,23 +130,12 @@ protected:
             params.reset();
         });
 
-        const auto & method = request.getMethod();
-        if (shouldParseFormFromRequestBody(request)
-            && (method == Poco::Net::HTTPRequest::HTTP_POST || method == Poco::Net::HTTPRequest::HTTP_PUT))
-            params = std::make_unique<HTMLForm>(default_settings, request, *request.getStream());
-        else
-            params = std::make_unique<HTMLForm>(default_settings, request);
+        params = std::make_unique<HTMLForm>(default_settings, request);
         parent().send_stacktrace = config().is_stacktrace_enabled && params->getParsed<bool>("stacktrace", false);
 
         if (!authenticateUserAndMakeContext(request, response))
             return; /// The user is not authenticated yet, and the HTTP_UNAUTHORIZED response is sent with the "WWW-Authenticate" header,
                     /// and `request_credentials` must be preserved until the next request or until any exception.
-
-        /// Apply `http_response_buffer_size` for the output buffer (0 means use the default).
-        auto buffer_size = context->getSettingsRef()[Setting::http_response_buffer_size].value;
-        if (buffer_size == 0)
-            buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
-        parent().http_response_buffer_size = buffer_size;
 
         /// Initialize query scope.
         QueryScope query_scope;
@@ -342,7 +322,8 @@ public:
         response.set("Content-Encoding", "snappy");
 
         ProtobufZeroCopyOutputStreamFromWriteBuffer zero_copy_output_stream{std::make_unique<SnappyWriteBuffer>(getOutputStream(response))};
-        read_response.SerializeToZeroCopyStream(&zero_copy_output_stream);
+        if (!read_response.SerializeToZeroCopyStream(&zero_copy_output_stream))
+            throw Exception(ErrorCodes::CANNOT_WRITE_TO_OSTREAM, "Failed to serialize the Prometheus ReadResponse");
         zero_copy_output_stream.finalize();
 
 #else
@@ -356,8 +337,6 @@ class PrometheusRequestHandler::QueryAPIImpl : public ImplWithContext
 {
 public:
     using ImplWithContext::ImplWithContext;
-
-    bool shouldParseFormFromRequestBody(const HTTPServerRequest & /* request */) const override { return true; }
 
     void beforeHandlingRequest(HTTPServerRequest & request) override
     {
@@ -382,11 +361,11 @@ public:
         auto table = DatabaseCatalog::instance().getTable(StorageID{config().time_series_table_name}, context);
         PrometheusHTTPProtocolAPI protocol{table, context};
 
+
         const String & uri = request.getURI();
         LOG_DEBUG(log(), "Processing Query API request: method={}, uri={}", request.getMethod(), uri);
 
         response.setContentType("application/json");
-
         try
         {
             if (uri.starts_with("/api/v1/query_range"))
@@ -480,22 +459,12 @@ public:
         }
         catch (const Exception & e)
         {
-            /// Once the response header has been sent we can no longer produce
-            /// a well-formed Prometheus error response. So we let the outer handler
-            /// abort the chunked stream via cancelWithException() instead.
-            if (response.sent())
-                throw;
-
-            /// Drop any partial success body still sitting in the output buffer
-            /// before writing the error response.
-            getOutputStream(response).rejectBufferedDataSave();
-
             response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
             String error_str;
             WriteBufferFromString error_buf(error_str);
-            writeString(R"({"status":"error","errorType":"bad_data","error":)", error_buf);
-            writeJSONString(e.message(), error_buf, FormatSettings{});
-            writeString("}", error_buf);
+            writeString(R"({"status":"error","errorType":"bad_data","error":")", error_buf);
+            writeString(e.message(), error_buf);
+            writeString(R"("})", error_buf);
             error_buf.finalize();
             writeString(error_str, getOutputStream(response));
 
@@ -590,7 +559,7 @@ WriteBufferFromHTTPServerResponse & PrometheusRequestHandler::getOutputStream(HT
         return *write_buffer_from_response;
 
     write_buffer_from_response = std::make_unique<WriteBufferFromHTTPServerResponse>(
-        response, http_method == HTTPRequest::HTTP_HEAD, write_event, http_response_buffer_size);
+        response, http_method == HTTPRequest::HTTP_HEAD, write_event);
 
     return *write_buffer_from_response;
 }

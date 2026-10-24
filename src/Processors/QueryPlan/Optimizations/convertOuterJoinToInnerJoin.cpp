@@ -1,4 +1,3 @@
-#include <stack>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
 #include <Common/typeid_cast.h>

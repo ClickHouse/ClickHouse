@@ -229,16 +229,14 @@ WebObjectStorage::FileDataPtr WebObjectStorage::tryGetFileInfo(const String & pa
 std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
-    std::optional<size_t>,
-    bool use_external_buffer,
-    bool /* restrict_seek */) const
+    std::optional<size_t>) const
 {
     return std::make_unique<ReadBufferFromWebServer>(
         fs::path(url) / object.remote_path,
         getContext(),
         object.bytes_size,
         read_settings,
-        use_external_buffer);
+        read_settings.remote_read_buffer_use_external_buffer);
 }
 
 void WebObjectStorage::throwNotAllowed()

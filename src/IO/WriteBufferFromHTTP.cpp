@@ -1,6 +1,7 @@
 #include <IO/WriteBufferFromHTTP.h>
 
 #include <Common/logger_useful.h>
+#include <Common/maskURIPassword.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
 #include <Interpreters/Context.h>
 
@@ -46,7 +47,10 @@ WriteBufferFromHTTP::WriteBufferFromHTTP(
         request.set("Content-Type", content_type);
     }
 
-    LOG_TRACE((getLogger("WriteBufferToHTTP")), "Sending request to {}", uri.toString());
+    /// Mask credentials before logging: a URL sink would otherwise log them on every INSERT.
+    std::string uri_for_logging = uri.toString();
+    maskURICredentials(uri_for_logging);
+    LOG_TRACE((getLogger("WriteBufferToHTTP")), "Sending request to {}", uri_for_logging);
 
     ProfileEvents::increment(ProfileEvents::WriteBufferFromHTTPRequestsSent);
     ostr = &session->sendRequest(request);

@@ -1,6 +1,4 @@
 #include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/System/StorageSystemJemalloc.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -98,21 +96,12 @@ void fillJemallocBins(MutableColumns &)
 
 
 StorageSystemJemallocBins::StorageSystemJemallocBins(const StorageID & table_id_)
-    : StorageWithCommonVirtualColumns(table_id_)
+    : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
     ColumnsDescription desc;
     storage_metadata.setColumns(getColumnsDescription());
-    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-}
-
-VirtualColumnsDescription StorageSystemJemallocBins::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    return desc;
 }
 
 ColumnsDescription StorageSystemJemallocBins::getColumnsDescription()
@@ -148,7 +137,7 @@ Pipe StorageSystemJemallocBins::read(
 {
     storage_snapshot->check(column_names);
 
-    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader);
+    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtualsList());
     MutableColumns res_columns = header.cloneEmptyColumns();
 
     fillJemallocBins(res_columns);

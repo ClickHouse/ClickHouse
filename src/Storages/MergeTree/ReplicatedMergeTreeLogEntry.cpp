@@ -13,7 +13,6 @@
 
 #include <base/find_symbols.h>
 #include <fmt/ranges.h>
-#include <Core/UUID.h>
 
 namespace DB
 {
@@ -483,7 +482,7 @@ void ReplicatedMergeTreeLogEntryData::ReplaceRangeEntry::readText(ReadBuffer & i
 
 bool ReplicatedMergeTreeLogEntryData::ReplaceRangeEntry::isMovePartitionOrAttachFrom(const MergeTreePartInfo & drop_range_info)
 {
-    chassert(drop_range_info.getBlocksCount() != 0);
+    assert(drop_range_info.getBlocksCount() != 0);
     return drop_range_info.getBlocksCount() == 1;
 }
 

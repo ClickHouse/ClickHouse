@@ -38,32 +38,24 @@
 #include <DataTypes/DataTypesNumber.h>
 
 
-#include <Databases/DataLake/Common.h>
-#include <IO/CompressionMethod.h>
+#include <IO/S3/Credentials.h>
+#include <IO/S3/Client.h>
+#include <IO/S3Settings.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include <IO/S3/Client.h>
-#include <IO/S3/Credentials.h>
-#include <IO/S3Settings.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTFunction.h>
-#include <Common/FailPoint.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
+#include <Common/ProxyConfigurationResolverProvider.h>
+#include <Databases/DataLake/Common.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
-#include <Common/ProxyConfigurationResolverProvider.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
 
 namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int DATALAKE_DATABASE_ERROR;
-    extern const int FAULT_INJECTED;
-}
-
-namespace DB::FailPoints
-{
-    extern const char check_database_datalake_negative[];
 }
 
 namespace DB::Setting
@@ -230,11 +222,6 @@ DB::Names GlueCatalog::getTablesForDatabase(const std::string & db_name, size_t 
     if (limit != 0)
         request.SetMaxResults(static_cast<int>(limit));
 
-    fiu_do_on(DB::FailPoints::check_database_datalake_negative,
-    {
-        throw DB::Exception(DB::ErrorCodes::FAULT_INJECTED, "Injecting fault when checking database");
-    });
-
     std::string next_token;
     do
     {
@@ -381,11 +368,12 @@ bool GlueCatalog::tryGetTableMetadata(
                     continue;
 
                 String column_type = column.GetType();
-                if (column_type == "timestamp" || column_type == "timestamp_nano")
+                if (column_type == "timestamp")
                 {
                     if (!result.requiresDataLakeSpecificProperties())
                         setup_specific_properties();
-                    column_type = getActualTimestampType(column.GetName(), result, column_type);
+                    if (classifyTimestampTZ(column.GetName(), result))
+                        column_type = "timestamptz";
                 }
 
                 schema.push_back({column.GetName(), getType(column_type, can_be_nullable)});
@@ -470,7 +458,7 @@ bool GlueCatalog::empty() const
     return true;
 }
 
-String GlueCatalog::getActualTimestampType(const String & column_name, const TableMetadata & table_metadata, const String & glue_column_type) const
+bool GlueCatalog::classifyTimestampTZ(const String & column_name, const TableMetadata & table_metadata) const
 {
     auto table_specific_properties = table_metadata.getDataLakeSpecificProperties();
     if (!table_specific_properties.has_value())
@@ -481,21 +469,20 @@ String GlueCatalog::getActualTimestampType(const String & column_name, const Tab
     if (!metadata_objects.get(metadata_uri))
     {
         auto [object_storage, bucket_name, metadata_path] = createObjectStorageForEarlyTableAccess(metadata_uri, table_metadata);
-        auto compression_method = DB::Iceberg::getCompressionMethodFromMetadataFile(metadata_uri);
-        auto metadata_object = DB::Iceberg::getMetadataJSONObject(
-            metadata_path, object_storage, nullptr, getContext(), log, compression_method, std::nullopt);
+        const auto & read_settings = getContext()->getReadSettings();
+
+        DB::StoredObject metadata_stored_object(metadata_path);
+        auto read_buf = object_storage->readObject(metadata_stored_object, read_settings);
+        String metadata_file_content;
+        readStringUntilEOF(metadata_file_content, *read_buf);
+
+        Poco::JSON::Parser parser;
+        Poco::Dynamic::Var result = parser.parse(metadata_file_content);
+        auto metadata_object = result.extract<Poco::JSON::Object::Ptr>();
         metadata_objects.set(metadata_uri, std::make_shared<Poco::JSON::Object::Ptr>(metadata_object));
     }
 
     auto metadata_object = *metadata_objects.get(metadata_uri);
-    return resolveTimestampTypeFromMetadata(metadata_object, column_name, glue_column_type);
-}
-
-String GlueCatalog::resolveTimestampTypeFromMetadata(
-    const Poco::JSON::Object::Ptr & metadata_object,
-    const String & column_name,
-    const String & glue_column_type)
-{
     auto current_schema_id = metadata_object->getValue<Int64>("current-schema-id");
     auto schemas = metadata_object->getArray(DB::Iceberg::f_schemas);
     for (size_t i = 0; i < schemas->size(); ++i)
@@ -508,12 +495,12 @@ String GlueCatalog::resolveTimestampTypeFromMetadata(
             {
                 auto field = fields->getObject(static_cast<UInt32>(j));
                 if (field->getValue<String>(DB::Iceberg::f_name) == column_name)
-                    return field->getValue<String>(DB::Iceberg::f_type);
+                    return field->getValue<String>(DB::Iceberg::f_type) == DB::Iceberg::f_timestamptz;
             }
         }
     }
 
-    return glue_column_type == "timestamp_nano" ? "timestamp_ns" : "timestamp";
+    return false;
 }
 
 GlueCatalog::ObjectStorageWithPath GlueCatalog::createObjectStorageForEarlyTableAccess(const String & s3_location, const TableMetadata & table_metadata) const
@@ -578,7 +565,14 @@ String GlueCatalog::resolveMetadataPathFromTableLocation(const String & table_lo
     try
     {
         auto [metadata_version, metadata_path, compression_method] = DB::Iceberg::getLatestOrExplicitMetadataFileAndVersion(
-            object_storage, table_path, *storage_settings, nullptr, getContext(), log.get(), std::nullopt, DB::CompressionMethod::None);
+            object_storage,
+            table_path,
+            *storage_settings,
+            nullptr,
+            getContext(),
+            log.get(),
+            std::nullopt
+        );
 
         LOG_TRACE(log, "Resolved metadata path '{}' (version {}) for table location '{}'", metadata_path, metadata_version, table_location);
 

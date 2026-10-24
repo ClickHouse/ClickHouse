@@ -1,5 +1,4 @@
 #include <base/sleep.h>
-#include <base/defines.h>
 
 #include <ctime>
 #include <cerrno>
@@ -32,19 +31,6 @@ void sleepForNanoseconds(uint64_t nanoseconds)
     uint64_t now = mach_absolute_time();
 
     while (mach_wait_until(now + time_to_wait) != KERN_SUCCESS);
-#elif defined(THREAD_SANITIZER)
-    /// TSan intercepts nanosleep but NOT clock_nanosleep. When a function is intercepted,
-    /// TSan sets in_blocking_func which causes profiling signals (SI_TIMER) to be delivered
-    /// immediately rather than deferred. Without this, TSan defers the signal and delivers
-    /// it later when the ucontext_t's registers point to stale stack memory, producing
-    /// unusable stack traces in the query profiler.
-    /// The downside of nanosleep is that it uses relative timeouts, so repeated signal
-    /// interruptions can cause drift, but this is acceptable under sanitizers.
-    constexpr uint64_t resolution = 1'000'000'000;
-    struct timespec req;
-    req.tv_sec = static_cast<time_t>(nanoseconds / resolution);
-    req.tv_nsec = static_cast<long>(nanoseconds % resolution);
-    while (nanosleep(&req, &req) == -1 && errno == EINTR);
 #else
     constexpr auto clock_type = CLOCK_MONOTONIC;
 

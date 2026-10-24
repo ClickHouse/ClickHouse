@@ -1,6 +1,5 @@
 #include <Formats/ReadSchemaUtils.h>
 
-#include <Core/Block_fwd.h>
 #include <Core/Settings.h>
 
 #include <IO/ReadBufferFromString.h>
@@ -126,7 +125,7 @@ Block TableFunctionFormat::parseData(const ColumnsDescription & columns, const S
     auto pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
     auto reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
-    Blocks blocks;
+    std::vector<Block> blocks;
     while (reader->pull(block))
         blocks.push_back(std::move(block));
 

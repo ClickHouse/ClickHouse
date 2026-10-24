@@ -1,5 +1,8 @@
 #include <DataTypes/Serializations/SerializationInfo.h>
 
+#include <algorithm>
+#include <array>
+
 #include <Columns/ColumnSparse.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
@@ -10,6 +13,7 @@
 
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
+#include <Poco/JSON/Stringifier.h>
 #include <Poco/JSON/Parser.h>
 
 
@@ -19,6 +23,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CORRUPTED_DATA;
+    extern const int INCORRECT_DATA;
 }
 
 namespace
@@ -36,30 +41,6 @@ constexpr auto KEY_STRING_SERIALIZATION_VERSION = "string";
 constexpr auto KEY_NULLABLE_SERIALIZATION_VERSION = "nullable";
 constexpr auto KEY_MAP_SERIALIZATION_VERSION = "map";
 constexpr auto KEY_PROPAGATE_DATA_TYPES_SERIALIZATION_VERSIONS_TO_NESTED_TYPES = "propagate_types_serialization_versions_to_nested_types";
-
-void writeJSONKey(std::string_view key, WriteBuffer & out)
-{
-    writeJSONString(key, out, {});
-    writeChar(':', out);
-}
-
-void writeJSONKeyValue(std::string_view key, std::string_view value, WriteBuffer & out)
-{
-    writeJSONKey(key, out);
-    writeJSONString(value, out, {});
-}
-
-void writeJSONKeyValue(std::string_view key, size_t value, WriteBuffer & out)
-{
-    writeJSONKey(key, out);
-    writeIntText(value, out);
-}
-
-void writeJSONKeyValue(std::string_view key, bool value, WriteBuffer & out)
-{
-    writeJSONKey(key, out);
-    writeString(value ? "true" : "false", out);
-}
 
 }
 
@@ -228,7 +209,46 @@ void SerializationInfo::serialializeKindStackBinary(WriteBuffer & out) const
     }
 }
 
-void SerializationInfo::deserializeFromKindsBinary(ReadBuffer & in)
+/// The order in which the kinds wrap each other, innermost first: `ColumnSparse` can sit inside
+/// `ColumnReplicated` but not the other way round (see `removeSpecialRepresentations`), and nothing
+/// wraps a `ColumnBLOB`. Not the order of the enum, whose values are part of the Native format.
+static constexpr std::array canonical_kind_order
+{
+    ISerialization::Kind::DEFAULT,
+    ISerialization::Kind::SPARSE,
+    ISerialization::Kind::REPLICATED,
+    ISerialization::Kind::DETACHED,
+};
+
+void SerializationInfo::checkKindStack(ISerialization::KindSet allowed_kinds) const
+{
+    if (kind_stack.empty() || kind_stack.front() != ISerialization::Kind::DEFAULT)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Serialization kind stack must start with Default");
+
+    /// A stack describes nested wrappers, so it must be a subsequence of the canonical order — and
+    /// therefore free of repeats. Any other stack is a layout no writer builds and nothing unwraps.
+    auto expected = canonical_kind_order.begin();
+
+    for (auto kind : kind_stack)
+    {
+        if (!allowed_kinds.contains(kind))
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Unexpected serialization kind {} in the received data",
+                ISerialization::kindToString(kind));
+
+        expected = std::find(expected, canonical_kind_order.end(), kind);
+        if (expected == canonical_kind_order.end())
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Serialization kind {} is out of order in a kind stack",
+                ISerialization::kindToString(kind));
+
+        ++expected;
+    }
+}
+
+void SerializationInfo::deserializeFromKindsBinary(ReadBuffer & in, ISerialization::KindSet allowed_kinds)
 {
     UInt8 type;
     readBinary(type, in);
@@ -257,6 +277,12 @@ void SerializationInfo::deserializeFromKindsBinary(ReadBuffer & in)
         {
             size_t num_kinds;
             readVarUInt(num_kinds, in);
+            /// Refuse an impossible peer-declared count before reading that many kinds;
+            /// `checkKindStack` rejects the same stacks afterwards by their shape.
+            if (num_kinds > magic_enum::enum_count<ISerialization::Kind>())
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Too many serialization kinds in a kind stack: {}", num_kinds);
+
+            kind_stack.clear();
             for (size_t i = 0; i != num_kinds; ++i)
             {
                 UInt8 kind;
@@ -270,30 +296,8 @@ void SerializationInfo::deserializeFromKindsBinary(ReadBuffer & in)
             break;
         }
     }
-}
 
-void SerializationInfo::writeJSONFields(WriteBuffer & out, const String * name) const
-{
-    writeJSONKeyValue(KEY_KIND, ISerialization::kindStackToString(kind_stack), out);
-
-    if (name)
-    {
-        writeChar(',', out);
-        writeJSONKeyValue(KEY_NAME, *name, out);
-    }
-
-    writeChar(',', out);
-    writeJSONKeyValue(KEY_NUM_DEFAULTS, data.num_defaults, out);
-
-    writeChar(',', out);
-    writeJSONKeyValue(KEY_NUM_ROWS, data.num_rows, out);
-}
-
-void SerializationInfo::writeJSON(WriteBuffer & out, const String * name) const
-{
-    writeChar('{', out);
-    writeJSONFields(out, name);
-    writeChar('}', out);
+    checkKindStack(allowed_kinds);
 }
 
 void SerializationInfo::toJSON(Poco::JSON::Object & object) const
@@ -424,57 +428,42 @@ bool SerializationInfoByName::needsPersistence() const
 
 void SerializationInfoByName::writeJSON(WriteBuffer & out) const
 {
-    auto version = getVersion();
+    Poco::JSON::Object object;
+    Poco::JSON::Array column_infos;
 
-    writeChar('{', out);
-    writeJSONKey(KEY_COLUMNS, out);
-    writeChar('[', out);
-
-    bool first = true;
     for (const auto & [name, info] : *this)
     {
-        if (!first)
-            writeChar(',', out);
-        first = false;
-
-        info->writeJSON(out, &name);
+        Poco::JSON::Object info_json;
+        info->toJSON(info_json);
+        info_json.set(KEY_NAME, name);
+        column_infos.add(std::move(info_json)); /// NOLINT
     }
-    writeChar(']', out);
 
-    if (version >= MergeTreeSerializationInfoVersion::WITH_TYPES && settings.propagate_types_serialization_versions_to_nested_types)
-    {
-        writeChar(',', out);
-        writeJSONKeyValue(KEY_PROPAGATE_DATA_TYPES_SERIALIZATION_VERSIONS_TO_NESTED_TYPES, settings.propagate_types_serialization_versions_to_nested_types, out);
-    }
+    auto version = getVersion();
+    object.set(KEY_VERSION, static_cast<uint8_t>(version));
+    object.set(KEY_COLUMNS, std::move(column_infos)); /// NOLINT
 
     if (version >= MergeTreeSerializationInfoVersion::WITH_TYPES)
     {
-        writeChar(',', out);
-        writeJSONKey(KEY_TYPES_SERIALIZATION_VERSIONS, out);
-        writeChar('{', out);
-
-        bool first_type_version = true;
-        auto write_type_version = [&](std::string_view key, size_t value)
-        {
-            if (!first_type_version)
-                writeChar(',', out);
-            first_type_version = false;
-
-            writeJSONKeyValue(key, value, out);
-        };
-
-        if (settings.map_serialization_version != MergeTreeMapSerializationVersion::BASIC)
-            write_type_version(KEY_MAP_SERIALIZATION_VERSION, static_cast<size_t>(settings.map_serialization_version));
+        Poco::JSON::Object type_versions_obj;
+        type_versions_obj.set(KEY_STRING_SERIALIZATION_VERSION, static_cast<size_t>(settings.string_serialization_version));
         if (settings.nullable_serialization_version != MergeTreeNullableSerializationVersion::BASIC)
-            write_type_version(KEY_NULLABLE_SERIALIZATION_VERSION, static_cast<size_t>(settings.nullable_serialization_version));
-        write_type_version(KEY_STRING_SERIALIZATION_VERSION, static_cast<size_t>(settings.string_serialization_version));
+            type_versions_obj.set(KEY_NULLABLE_SERIALIZATION_VERSION, static_cast<size_t>(settings.nullable_serialization_version));
+        if (settings.map_serialization_version != MergeTreeMapSerializationVersion::BASIC)
+            type_versions_obj.set(KEY_MAP_SERIALIZATION_VERSION, static_cast<size_t>(settings.map_serialization_version));
+        object.set(KEY_TYPES_SERIALIZATION_VERSIONS, type_versions_obj);
 
-        writeChar('}', out);
+        /// Write flag propagate_types_serialization_versions_to_nested_types only if it's set,
+        /// so old versions can read this info if the flag is disabled.
+        if (settings.propagate_types_serialization_versions_to_nested_types)
+            object.set(KEY_PROPAGATE_DATA_TYPES_SERIALIZATION_VERSIONS_TO_NESTED_TYPES, settings.propagate_types_serialization_versions_to_nested_types);
     }
 
-    writeChar(',', out);
-    writeJSONKeyValue(KEY_VERSION, static_cast<size_t>(version), out);
-    writeChar('}', out);
+    std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    oss.exceptions(std::ios::failbit);
+    Poco::JSON::Stringifier::stringify(object, oss);
+
+    writeString(oss.str(), out);
 }
 
 SerializationInfoByName SerializationInfoByName::clone() const

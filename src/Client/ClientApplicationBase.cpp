@@ -160,15 +160,6 @@ void ClientApplicationBase::init(int argc, char ** argv)
 
     if (argc)
         argv0 = argv[0];
-
-    /// Set application name for help messages based on how the binary was invoked
-    std::string_view argv0_view(argv0 ? argv0 : "");
-    std::string name_with_dash = "clickhouse-" + getName();
-    if (argv0_view.find(name_with_dash) != std::string_view::npos)
-        app_name = name_with_dash;
-    else
-        app_name = "clickhouse " + getName();
-
     readArguments(argc, argv, common_arguments, external_tables_arguments, hosts_and_ports_arguments);
 
     /// Support for Unicode dashes

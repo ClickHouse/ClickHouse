@@ -17,23 +17,6 @@ fi
 
 LIBS_PATH="${ROOT_PATH}/contrib"
 
-# Convert absolute paths under ROOT_PATH to repository-relative paths.
-# Unnested example:
-#   /workspace/clickhouse/contrib/zstd/LICENSE -> /contrib/zstd/LICENSE
-# Nested contrib example:
-#   /workspace/clickhouse/contrib/rapidjson/contrib/natvis/README.md
-#   -> /contrib/rapidjson/contrib/natvis/README.md
-# Keeping the full suffix avoids truncation when a dependency contains its own
-# nested "contrib/" subtree.
-to_relative_path() {
-    local input_path="$1"
-    if [[ "${input_path}" == "${ROOT_PATH}/"* ]]; then
-        echo "${input_path#${ROOT_PATH}}"
-    else
-        echo "${input_path}"
-    fi
-}
-
 # Function to process a single C/C++ library
 process_library() {
     local LIB="$1"
@@ -113,7 +96,7 @@ process_library() {
             exit 1
         fi
 
-        RELATIVE_PATH=$(to_relative_path "$LIB_LICENSE")
+        RELATIVE_PATH=$(echo "$LIB_LICENSE" | sed -r -e 's!^.+/(contrib|base)/!/\1/!')
 
         echo -e "$LIB_NAME\t$LICENSE_TYPE\t$RELATIVE_PATH"
     fi
@@ -202,12 +185,12 @@ process_rust_crate() {
         fi
     fi
 
-    RELATIVE_PATH=$(to_relative_path "$LICENSE_PATH")
+    RELATIVE_PATH=$(echo "$LICENSE_PATH" | sed -r -e 's!^.+/(contrib|base)/!/\1/!')
     echo -e "$NAME\t$LICENSE_TYPE\t$RELATIVE_PATH"
 }
 
 # Export functions and variables for parallel execution
-export -f to_relative_path process_library process_rust_crate
+export -f process_library process_rust_crate
 export GREP_CMD FIND_CMD ROOT_PATH LIBS_PATH
 
 # Process C/C++ libraries in parallel

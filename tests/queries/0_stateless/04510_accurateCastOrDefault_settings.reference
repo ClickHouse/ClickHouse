@@ -1,0 +1,9 @@
+accurateCastOrDefault with input_format_try_infer_dates=0
+{"d":"2020-01-01"}	String
+accurateCastOrDefault with input_format_try_infer_dates=1
+{"d":"2020-01-01"}	Date
+accurateCastOrNull with input_format_try_infer_dates=0
+{"d":"2020-01-01"}	String
+CAST with input_format_try_infer_dates=0
+{"d":"2020-01-01"}	String
+1000

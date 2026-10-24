@@ -31,22 +31,14 @@ ClickHouse requires backslashes in strings [to be quoted as well](../syntax.md#s
 
 For `LIKE` expressions of the form `%needle%`, the function is as fast as the `position` function.
 All other LIKE expressions are internally converted to a regular expression and executed with a performance similar to function `match`.
-
-## ESCAPE clause
-
-The optional `ESCAPE` clause specifies a custom escape character (must be a single ASCII character).
-When provided, the custom escape character replaces the default backslash for escaping `%` and `_` metacharacters.
-The escape character can escape three things: `%` (literal percent), `_` (literal underscore), and itself (literal escape character).
-When a custom escape character is used, the backslash has no special meaning and is treated as a literal character.
    )";
     FunctionDocumentation::Syntax syntax = R"(
-like(haystack, pattern[, escape_character])
--- haystack LIKE pattern [ESCAPE 'escape_character']
+like(haystack, pattern)
+-- haystack LIKE pattern
     )";
     FunctionDocumentation::Arguments arguments = {
         {"haystack", "String in which the search is performed.", {"String", "FixedString"}},
-        {"pattern", "`LIKE` pattern to match against. Can contain `%` (matches any number of characters), `_` (matches single character), and `\\` for escaping.", {"String"}},
-        {"escape_character", "Optional single-character string to use as the escape character instead of `\\`. Default: `\\`.", {"String"}}
+        {"pattern", "`LIKE` pattern to match against. Can contain `%` (matches any number of characters), `_` (matches single character), and `\\` for escaping.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if the string matches the `LIKE` pattern, otherwise `0`.", {"UInt8"}};
     FunctionDocumentation::Examples examples =
@@ -76,15 +68,6 @@ like(haystack, pattern[, escape_character])
 ┌─like('ClickHouse', '%SQL%')─┐
 │                           0 │
 └─────────────────────────────┘
-        )"
-    },
-    {
-        "ESCAPE clause",
-        "SELECT '50%off' LIKE '50#%off' ESCAPE '#';",
-        R"(
-┌─like('50%off', '50#%off', '#')─┐
-│                              1 │
-└────────────────────────────────┘
         )"
     }
     };

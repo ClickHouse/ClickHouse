@@ -62,7 +62,7 @@ struct LemmatizeImpl
 };
 
 
-class FunctionLemmatize final : public IFunction
+class FunctionLemmatize : public IFunction
 {
 public:
     static constexpr auto name = "lemmatize";
@@ -134,13 +134,8 @@ REGISTER_FUNCTION(Lemmatize)
 {
     FunctionDocumentation::Description description = R"(
 Performs lemmatization on a given word.
-This function needs dictionaries to operate, which can be obtained from [github](https://github.com/vpodpecan/lemmagen3/tree/master/src/lemmagen3/models).
-For more details on loading a dictionary from a local file see page ["Defining Dictionaries"](/sql-reference/statements/create/dictionary/sources/local-file).
-
-:::warning
-This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
-Set `allow_experimental_nlp_functions = 1` to enable it.
-:::
+This function needs dictionaries to operate, which can be obtained from [github](https://github.com/vpodpecan/lemmagen3/tree/master/src/lemmagen3/models). For more details on loading a dictionary from a local file see page ["Defining Dictionaries"](/docs/sql-reference/
+     +statements/create/dictionary/sources/local-file).
 )";
     FunctionDocumentation::Syntax syntax = "lemmatize(lang, word)";
     FunctionDocumentation::Arguments arguments = {

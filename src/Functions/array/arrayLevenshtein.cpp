@@ -7,7 +7,6 @@
 #include <Common/levenshteinDistance.h>
 #include <Common/PODArray.h>
 #include <Common/iota.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -32,7 +31,7 @@ namespace ErrorCodes
 /// arrayLevenshteinDistance([1,2,3,4], [1,3,2,4]) = 2
 /// arrayLevenshteinDistanceWeighted([1,2,3,4], [1,3,2,4]) = 2
 template <typename T>
-class FunctionArrayLevenshtein final : public IFunction
+class FunctionArrayLevenshtein : public IFunction
 {
 public:
     static constexpr auto name = T::name;
@@ -55,7 +54,7 @@ public:
             {"to_weights", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
         };
         validateFunctionArguments(*this, arguments, args_descriptors);
-        VectorWithMemoryTracking<DataTypePtr> nested_types;
+        std::vector<DataTypePtr> nested_types;
         nested_types.reserve(2);
         for (size_t index = 2; index < 4; ++index)
         {
@@ -86,7 +85,7 @@ public:
         size_t num_arguments = arguments.size();
 
         Columns holders(num_arguments);
-        VectorWithMemoryTracking<const ColumnArray *> columns(num_arguments);
+        std::vector<const ColumnArray *> columns(num_arguments);
 
         for (size_t i = 0; i < num_arguments; ++i)
         {
@@ -105,7 +104,7 @@ public:
         return execute(columns);
     }
 private:
-    ColumnPtr execute(VectorWithMemoryTracking<const ColumnArray *>) const
+    ColumnPtr execute(std::vector<const ColumnArray *>) const
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -115,7 +114,7 @@ private:
     }
 
     template <typename N, typename Result>
-    bool levenshteinString(VectorWithMemoryTracking<const ColumnArray *> columns, Result::Container & res_values) const
+    bool levenshteinString(std::vector<const ColumnArray *> columns, Result::Container & res_values) const
     {
         const N * from_data = checkAndGetColumn<N>(&columns[0]->getData());
         const N * to_data = checkAndGetColumn<N>(&columns[1]->getData());
@@ -158,7 +157,7 @@ private:
         ColumnArray::Offset prev_to_offset = 0;
         const auto extract_array = [](const N * data, size_t prev_offset, size_t count)
         {
-            VectorWithMemoryTracking<std::string_view> temp;
+            std::vector<std::string_view> temp;
             temp.reserve(count);
             for (size_t j = 0; j < count; ++j) { temp.emplace_back(data->getDataAt(prev_offset + j)); }
             return temp;
@@ -169,8 +168,8 @@ private:
         {
             const size_t m = from_offsets[row] - prev_from_offset;
             const size_t n = to_offsets[row] - prev_to_offset;
-            const VectorWithMemoryTracking<std::string_view> from = extract_array(from_data, prev_from_offset, m);
-            const VectorWithMemoryTracking<std::string_view> to = extract_array(to_data, prev_to_offset, n);
+            const std::vector<std::string_view> from = extract_array(from_data, prev_from_offset, m);
+            const std::vector<std::string_view> to = extract_array(to_data, prev_to_offset, n);
             prev_from_offset = from_offsets[row];
             prev_to_offset = to_offsets[row];
             res_values[row] = static_cast<ElementType>(levenshteinDistance<std::string_view>(from, to));
@@ -179,7 +178,7 @@ private:
     }
 
     template <typename N, typename Result>
-    bool levenshteinNumber(VectorWithMemoryTracking<const ColumnArray *> columns, Result::Container & res_values) const
+    bool levenshteinNumber(std::vector<const ColumnArray *> columns, Result::Container & res_values) const
     {
         const ColumnVectorOrDecimal<N> * column_from = checkAndGetColumn<ColumnVectorOrDecimal<N>>(&columns[0]->getData());
         const ColumnVectorOrDecimal<N> * column_to = checkAndGetColumn<ColumnVectorOrDecimal<N>>(&columns[1]->getData());
@@ -237,7 +236,7 @@ private:
     }
 
     template<typename Result>
-    void levenshteinGeneric(VectorWithMemoryTracking<const ColumnArray *> columns, Result::Container & res_values) const
+    void levenshteinGeneric(std::vector<const ColumnArray *> columns, Result::Container & res_values) const
     {
         if (T::arguments == 4)
         {
@@ -283,7 +282,7 @@ private:
     }
 
     template <typename N, typename W>
-    bool levenshteinWeightedString(VectorWithMemoryTracking<const ColumnArray *> columns, ColumnFloat64::Container & res_values) const
+    bool levenshteinWeightedString(std::vector<const ColumnArray *> columns, ColumnFloat64::Container & res_values) const
     {
         const N * from_data = checkAndGetColumn<N>(&columns[0]->getData());
         const N * to_data = checkAndGetColumn<N>(&columns[1]->getData());
@@ -308,7 +307,7 @@ private:
 
         const auto extract_array = [](const N * data, size_t prev_offset, size_t count)
         {
-            VectorWithMemoryTracking<std::string_view> temp;
+            std::vector<std::string_view> temp;
             temp.reserve(count);
             for (size_t j = 0; j < count; ++j) { temp.emplace_back(data->getDataAt(prev_offset + j)); }
             return temp;
@@ -318,8 +317,8 @@ private:
         {
             const size_t m = from_offsets[row] - prev_from_offset;
             const size_t n = to_offsets[row] - prev_to_offset;
-            const VectorWithMemoryTracking<std::string_view> from = extract_array(from_data, prev_from_offset, m);
-            const VectorWithMemoryTracking<std::string_view> to = extract_array(to_data, prev_to_offset, n);
+            const std::vector<std::string_view> from = extract_array(from_data, prev_from_offset, m);
+            const std::vector<std::string_view> to = extract_array(to_data, prev_to_offset, n);
             prev_from_offset = from_offsets[row];
             prev_to_offset = to_offsets[row];
 
@@ -334,7 +333,7 @@ private:
     }
 
     template <typename N, typename W>
-    bool levenshteinWeightedNumber(VectorWithMemoryTracking<const ColumnArray *> columns, ColumnFloat64::Container & res_values) const
+    bool levenshteinWeightedNumber(std::vector<const ColumnArray *> columns, ColumnFloat64::Container & res_values) const
     {
         const ColumnVectorOrDecimal<N> * column_from = checkAndGetColumn<ColumnVectorOrDecimal<N>>(&columns[0]->getData());
         const ColumnVectorOrDecimal<N> * column_to = checkAndGetColumn<ColumnVectorOrDecimal<N>>(&columns[1]->getData());
@@ -375,7 +374,7 @@ private:
     }
 
     template<typename W>
-    bool levenshteinWeightedGeneric(VectorWithMemoryTracking<const ColumnArray *> columns, ColumnFloat64::Container & res_values) const
+    bool levenshteinWeightedGeneric(std::vector<const ColumnArray *> columns, ColumnFloat64::Container & res_values) const
     {
         const ColumnArray * column_from = columns[0];
         const ColumnArray * column_to = columns[1];
@@ -407,18 +406,18 @@ private:
     }
 
     template <typename ResultColumn, typename... Types>
-    bool tryLevenshteinNumber(VectorWithMemoryTracking<const ColumnArray *> columns, ResultColumn::Container & res_values) const
+    bool tryLevenshteinNumber(std::vector<const ColumnArray *> columns, ResultColumn::Container & res_values) const
     {
         return (levenshteinNumber<Types, ResultColumn>(columns, res_values) || ...);
     }
 
     template <typename ResultColumn, typename... Types>
-    bool tryLevenshteinString(VectorWithMemoryTracking<const ColumnArray *> columns, ResultColumn::Container & res_values) const
+    bool tryLevenshteinString(std::vector<const ColumnArray *> columns, ResultColumn::Container & res_values) const
     {
         return (levenshteinString<Types, ResultColumn>(columns, res_values) || ...);
     }
 
-    ColumnPtr levenshteinImpl(VectorWithMemoryTracking<const ColumnArray *> columns) const
+    ColumnPtr levenshteinImpl(std::vector<const ColumnArray *> columns) const
     {
         auto res = ColumnUInt32::create();
         ColumnUInt32::Container & res_values = res->getData();
@@ -450,7 +449,7 @@ private:
         return res;
     }
 
-    ColumnPtr weightedLevenshteinImpl(VectorWithMemoryTracking<const ColumnArray *> columns) const
+    ColumnPtr weightedLevenshteinImpl(std::vector<const ColumnArray *> columns) const
     {
         for (size_t i = 0; i < 2; i++)
         {
@@ -504,7 +503,7 @@ private:
     }
 
     template <typename W>
-    bool similarity(VectorWithMemoryTracking<const ColumnArray *> columns, ColumnPtr distance, ColumnFloat64::Container & res_values) const
+    bool similarity(std::vector<const ColumnArray *> columns, ColumnPtr distance, ColumnFloat64::Container & res_values) const
     {
         const ColumnVector<W> * column_from_weights = checkAndGetColumn<ColumnVector<W>>(&columns[2]->getData());
         const ColumnVector<W> * column_to_weights = checkAndGetColumn<ColumnVector<W>>(&columns[3]->getData());
@@ -561,7 +560,7 @@ DataTypePtr FunctionArrayLevenshtein<SimpleLevenshtein>::getReturnTypeImpl(const
 
 
 template <>
-ColumnPtr FunctionArrayLevenshtein<SimpleLevenshtein>::execute(VectorWithMemoryTracking<const ColumnArray *> columns) const
+ColumnPtr FunctionArrayLevenshtein<SimpleLevenshtein>::execute(std::vector<const ColumnArray *> columns) const
 {
     return levenshteinImpl(columns);
 }
@@ -573,7 +572,7 @@ struct Weighted
 };
 
 template <>
-ColumnPtr FunctionArrayLevenshtein<Weighted>::execute(VectorWithMemoryTracking<const ColumnArray *> columns) const
+ColumnPtr FunctionArrayLevenshtein<Weighted>::execute(std::vector<const ColumnArray *> columns) const
 {
     return weightedLevenshteinImpl(columns);
 }
@@ -585,7 +584,7 @@ struct Similarity
 };
 
 template <>
-ColumnPtr FunctionArrayLevenshtein<Similarity>::execute(VectorWithMemoryTracking<const ColumnArray *> columns) const
+ColumnPtr FunctionArrayLevenshtein<Similarity>::execute(std::vector<const ColumnArray *> columns) const
 {
     ColumnPtr distance = weightedLevenshteinImpl(columns);
     auto result = ColumnFloat64::create();

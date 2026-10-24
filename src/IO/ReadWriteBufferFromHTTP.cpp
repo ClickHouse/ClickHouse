@@ -3,6 +3,7 @@
 #include <IO/HTTPCommon.h>
 #include <IO/WriteHelpers.h>
 #include <Common/NetException.h>
+#include <Common/maskURIPassword.h>
 #include <Poco/Net/NetException.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
 #include <Interpreters/Context.h>
@@ -47,6 +48,15 @@ Poco::URI getUriAfterRedirect(const Poco::URI & prev_uri, Poco::Net::HTTPRespons
     location_uri = prev_uri;
     location_uri.setPath(path);
     return location_uri;
+}
+
+/// A URI that ends up in a log line or an exception message must never carry credentials. Convenience
+/// overload for a `Poco::URI`: masks the userinfo and presigned-URL parameters via the shared helper.
+std::string maskedURI(const Poco::URI & uri)
+{
+    std::string masked = uri.toString();
+    DB::maskURICredentials(masked);
+    return masked;
 }
 
 class ReadBufferFromSessionResponse : public DB::ReadBufferFromIStream
@@ -171,7 +181,7 @@ bool ReadWriteBufferFromHTTP::checkIfActuallySeekable()
 
 String ReadWriteBufferFromHTTP::getFileName() const
 {
-    return initial_uri.toString();
+    return maskedURI(initial_uri);
 }
 
 void ReadWriteBufferFromHTTP::getHeadResponse(Poco::Net::HTTPResponse & response)
@@ -228,16 +238,16 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     if (current_uri.getPath().empty())
         current_uri.setPath("/");
 
-    if (read_settings.http_settings.max_tries <= 0 || read_settings.http_settings.retry_initial_backoff_ms <= 0
-        || read_settings.http_settings.retry_initial_backoff_ms >= read_settings.http_settings.retry_max_backoff_ms)
+    if (read_settings.http_max_tries <= 0 || read_settings.http_retry_initial_backoff_ms <= 0
+        || read_settings.http_retry_initial_backoff_ms >= read_settings.http_retry_max_backoff_ms)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Invalid setting for http backoff, "
             "must be http_max_tries >= 1 (current is {}) and "
-            "0 < http_retry_initial_backoff_ms < http_retry_max_backoff_ms (now 0 < {} < {})",
-            read_settings.http_settings.max_tries,
-            read_settings.http_settings.retry_initial_backoff_ms,
-            read_settings.http_settings.retry_max_backoff_ms);
+            "0 < http_retry_initial_backoff_ms < settings.http_retry_max_backoff_ms (now 0 < {} < {})",
+            read_settings.http_max_tries,
+            read_settings.http_retry_initial_backoff_ms,
+            read_settings.http_retry_max_backoff_ms);
 
     // Configure User-Agent if it not already set.
     const std::string user_agent = "User-Agent";
@@ -280,7 +290,7 @@ ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callImpl(
 
     auto & resp_stream = session->receiveResponse(response);
 
-    assertResponseIsOk(current_uri.toString(), response, resp_stream, allow_redirects);
+    assertResponseIsOk(maskedURI(current_uri), response, resp_stream, allow_redirects, requestCredentialSecrets(request));
 
     return ReadWriteBufferFromHTTP::CallResult(std::move(session), resp_stream);
 }
@@ -301,7 +311,7 @@ ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callWithRedirects(
                 " You can {} redirects by changing the setting 'max_http_get_redirects'."
                 " Example: `SET max_http_get_redirects = 10`."
                 " Redirects are restricted to prevent possible attack when a malicious server redirects to an internal resource, bypassing the authentication or firewall.",
-                initial_uri.toString(), max_redirects ? "increase the allowed maximum number of" : "allow");
+                maskedURI(initial_uri), max_redirects ? "increase the allowed maximum number of" : "allow");
 
         current_uri = uri_redirect;
         result = callImpl(response, method_, range, true);
@@ -315,14 +325,14 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
                                             std::function<void()> on_retry,
                                             bool mute_logging) const
 {
-    [[maybe_unused]] auto milliseconds_to_wait = read_settings.http_settings.retry_initial_backoff_ms;
+    [[maybe_unused]] auto milliseconds_to_wait = read_settings.http_retry_initial_backoff_ms;
 
     bool is_retriable = true;
     std::exception_ptr exception = nullptr;
 
-    for (size_t attempt = 1; attempt <= read_settings.http_settings.max_tries; ++attempt)
+    for (size_t attempt = 1; attempt <= read_settings.http_max_tries; ++attempt)
     {
-        [[maybe_unused]] bool last_attempt = attempt + 1 > read_settings.http_settings.max_tries;
+        [[maybe_unused]] bool last_attempt = attempt + 1 > read_settings.http_max_tries;
 
         String error_message;
 
@@ -374,9 +384,9 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
                           "Failed to make request to '{}'{}. "
                           "Error: '{}'. "
                           "Failed at try {}/{}.",
-                          initial_uri.toString(), current_uri.toString() == initial_uri.toString() ? String() : fmt::format(" redirect to '{}'", current_uri.toString()),
+                          maskedURI(initial_uri), current_uri.toString() == initial_uri.toString() ? String() : fmt::format(" redirect to '{}'", maskedURI(current_uri)),
                           error_message,
-                          attempt, read_settings.http_settings.max_tries);
+                          attempt, read_settings.http_max_tries);
 
             std::rethrow_exception(exception);
         }
@@ -391,13 +401,13 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
                          "Error: {}. "
                          "Failed at try {}/{}. "
                          "Will retry with current backoff wait is {}/{} ms.",
-                         initial_uri.toString(), current_uri.toString() == initial_uri.toString() ? String() : fmt::format(" redirect to '{}'", current_uri.toString()),
+                         maskedURI(initial_uri), current_uri.toString() == initial_uri.toString() ? String() : fmt::format(" redirect to '{}'", maskedURI(current_uri)),
                          error_message,
-                         attempt + 1, read_settings.http_settings.max_tries,
-                         milliseconds_to_wait, read_settings.http_settings.retry_max_backoff_ms);
+                         attempt + 1, read_settings.http_max_tries,
+                         milliseconds_to_wait, read_settings.http_retry_max_backoff_ms);
 
             sleepForMilliseconds(milliseconds_to_wait);
-            milliseconds_to_wait = std::min(milliseconds_to_wait * 2, read_settings.http_settings.retry_max_backoff_ms);
+            milliseconds_to_wait = std::min(milliseconds_to_wait * 2, read_settings.http_retry_max_backoff_ms);
         }
     }
 }
@@ -429,7 +439,7 @@ std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::initialize()
                 /// it is retriable error
                 throw HTTPException(
                     ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
-                    current_uri.toString(),
+                    maskedURI(current_uri),
                     Poco::Net::HTTPResponse::HTTP_REQUESTED_RANGE_NOT_SATISFIABLE,
                     response.getReason(),
                     explanation);
@@ -549,13 +559,13 @@ size_t ReadWriteBufferFromHTTP::readBigAt(char * to, size_t n, size_t offset, co
                 String explanation = fmt::format(
                     "When reading with readBigAt {}."
                     "Cannot read with range: [{}, {}] (response status: {}, reason: {}), will retry",
-                    initial_uri.toString(),
+                    maskedURI(initial_uri),
                     *range.begin, *range.end,
                     toString(response.getStatus()), response.getReason());
 
                 throw HTTPException(
                     ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
-                    current_uri.toString(),
+                    maskedURI(current_uri),
                     Poco::Net::HTTPResponse::HTTP_REQUESTED_RANGE_NOT_SATISFIABLE,
                     response.getReason(),
                     explanation);
@@ -616,7 +626,7 @@ off_t ReadWriteBufferFromHTTP::seek(off_t offset_, int whence)
         if (offset_ >= position)
         {
             size_t diff = offset_ - position;
-            if (diff < read_settings.remote_fs_settings.min_bytes_for_seek)
+            if (diff < read_settings.remote_read_min_bytes_for_seek)
             {
                 ignore(diff);
                 return offset_;
@@ -747,7 +757,7 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::getFileInfo()
 {
     /// May be disabled in case the user knows in advance that the server doesn't support HEAD requests.
     /// Allows to avoid making unnecessary requests in such cases.
-    if (!read_settings.http_settings.make_head_request)
+    if (!read_settings.http_make_head_request)
         return HTTPFileInfo{};
 
     Poco::Net::HTTPResponse response;

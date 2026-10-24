@@ -34,6 +34,12 @@ public:
         setInMemoryMetadata(cached_metadata);
     }
 
+    StoragePtr tryGetNested() const override
+    {
+        std::lock_guard lock{nested_mutex};
+        return nested;
+    }
+
     StoragePtr getNestedImpl() const
     {
         std::lock_guard lock{nested_mutex};
@@ -51,8 +57,8 @@ public:
     StoragePtr getNested() const override
     {
         StoragePtr nested_storage = getNestedImpl();
-        chassert(!nested_storage->getStoragePolicy());
-        chassert(!nested_storage->storesDataOnDisk());
+        assert(!nested_storage->getStoragePolicy());
+        assert(!nested_storage->storesDataOnDisk());
         return nested_storage;
     }
 
@@ -96,7 +102,7 @@ public:
             size_t num_streams) override
     {
         auto storage = getNested();
-        auto nested_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(context, false), context);
+        auto nested_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
         storage->read(query_plan, column_names, nested_snapshot, query_info, context,
                                   processed_stage, max_block_size, num_streams);
         if (add_conversion)
@@ -128,7 +134,7 @@ public:
     {
         auto storage = getNested();
         auto cached_structure = metadata_snapshot->getSampleBlock();
-        auto actual_structure = storage->getInMemoryMetadataPtr(context, false)->getSampleBlock();
+        auto actual_structure = storage->getInMemoryMetadataPtr()->getSampleBlock();
         if (!blocksHaveEqualStructure(actual_structure, cached_structure) && add_conversion)
         {
             throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "Source storage and table function have different structure");

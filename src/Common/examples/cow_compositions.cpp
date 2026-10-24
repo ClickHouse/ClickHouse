@@ -2,8 +2,6 @@
 #include <iostream>
 #include <base/defines.h>
 
-namespace
-{
 
 class IColumn : public COW<IColumn>
 {
@@ -72,9 +70,7 @@ void print(const ColumnPtr & x, const ColPtr & y)
     std::cerr << "addresses: " << x.get()         << ", " << y.get()        << "\n";
 }
 
-}
-
-int mainEntryExampleCowCompositions(int, char **)
+int main(int, char **)
 {
     ColumnPtr x = ColumnComposition::create(1);
     ColumnPtr y = x;

@@ -17,7 +17,7 @@ namespace ErrorCodes
 }
 
 template <typename Impl, typename Name>
-class FunctionStringReplace final : public IFunction
+class FunctionStringReplace : public IFunction
 {
 public:
     static constexpr auto name = Name::name;

@@ -3,7 +3,7 @@
 
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Cached/CachedObjectStorage.h>
-#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/Cache/FileCache.h>
 #include <IO/CachedInMemoryReadBufferFromFile.h>
 #include <IO/ReadSettings.h>
 #include <IO/SwapHelper.h>
@@ -24,15 +24,16 @@ namespace ErrorCodes
 ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
     ReadBufferCreator && read_buffer_creator_,
     const StoredObjects & blobs_to_read_,
-    size_t min_bytes_for_seek_,
+    const ReadSettings & settings_,
     bool use_external_buffer_,
     size_t buffer_size)
     : ReadBufferFromFileBase(use_external_buffer_ ? 0 : buffer_size, nullptr, 0)
-    , min_bytes_for_seek(min_bytes_for_seek_)
+    , settings(settings_)
     , blobs_to_read(blobs_to_read_)
     , read_buffer_creator(std::move(read_buffer_creator_))
     , query_id(CurrentThread::getQueryId())
     , use_external_buffer(use_external_buffer_)
+    , with_file_cache(settings.enable_filesystem_cache)
     , log(getLogger("ReadBufferFromRemoteFSGather"))
 {
     if (!blobs_to_read.empty())
@@ -195,8 +196,8 @@ off_t ReadBufferFromRemoteFSGather::seek(off_t offset, int whence)
             && static_cast<size_t>(offset) < file_offset_of_buffer_end)
         {
             pos = working_buffer.end() - (file_offset_of_buffer_end - offset);
-            chassert(pos >= working_buffer.begin());
-            chassert(pos < working_buffer.end());
+            assert(pos >= working_buffer.begin());
+            assert(pos < working_buffer.end());
 
             return getPosition();
         }
@@ -205,7 +206,7 @@ off_t ReadBufferFromRemoteFSGather::seek(off_t offset, int whence)
         if (current_buf && offset > position)
         {
             size_t diff = offset - position;
-            if (diff < min_bytes_for_seek)
+            if (diff < settings.remote_read_min_bytes_for_seek)
             {
                 ignore(diff);
                 return offset;

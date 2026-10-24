@@ -331,7 +331,6 @@ ASTPtr UserDefinedSQLObjectsZooKeeperStorage::parseObjectData(const String & obj
     switch (object_type)
     {
         case UserDefinedSQLObjectType::Function: {
-            auto context = getContext();
             ParserCreateFunctionQuery parser;
             ASTPtr ast = parseQuery(
                 parser,
@@ -339,8 +338,8 @@ ASTPtr UserDefinedSQLObjectsZooKeeperStorage::parseObjectData(const String & obj
                 object_data.data() + object_data.size(),
                 "",
                 0,
-                context->getSettingsRef()[Setting::max_parser_depth],
-                context->getSettingsRef()[Setting::max_parser_backtracks]);
+                global_context->getSettingsRef()[Setting::max_parser_depth],
+                global_context->getSettingsRef()[Setting::max_parser_backtracks]);
             return ast;
         }
     }
@@ -439,7 +438,7 @@ void UserDefinedSQLObjectsZooKeeperStorage::refreshObjects(const zkutil::ZooKeep
     static constexpr UInt64 initial_backoff_ms = 200;
     static constexpr UInt64 max_backoff_ms = 5000;
 
-    VectorWithMemoryTracking<std::pair<String, ASTPtr>> function_names_and_asts;
+    std::vector<std::pair<String, ASTPtr>> function_names_and_asts;
     zkutil::ZooKeeperPtr current_zookeeper = zookeeper;
 
     ZooKeeperRetriesControl retries_ctl(

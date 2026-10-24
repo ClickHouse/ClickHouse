@@ -26,10 +26,6 @@
 
 #include <boost/algorithm/string/split.hpp>
 
-#if defined(THREAD_SANITIZER)
-#include <absl/debugging/stacktrace.h>
-#endif
-
 #if defined(OS_DARWIN)
 /// This header contains functions like `backtrace` and `backtrace_symbols`
 /// Which will be used for stack unwinding on Mac.
@@ -335,7 +331,7 @@ void StackTrace::forEachFrame(
     for (size_t i = offset; i < size; ++i)
     {
         StackTrace::Frame current_frame;
-        DB::VectorWithMemoryTracking<DB::Dwarf::SymbolizedFrame> inline_frames;
+        std::vector<DB::Dwarf::SymbolizedFrame> inline_frames;
         current_frame.virtual_addr = frame_pointers[i];
         const auto * object = symbol_index.findObject(current_frame.virtual_addr);
         uintptr_t virtual_offset = object ? uintptr_t(object->address_begin) : 0;
@@ -410,7 +406,7 @@ void StackTrace::forEachFrame(
     for (size_t i = offset; i < size; ++i)
     {
         StackTrace::Frame current_frame;
-        DB::VectorWithMemoryTracking<DB::Dwarf::SymbolizedFrame> inline_frames;
+        std::vector<DB::Dwarf::SymbolizedFrame> inline_frames;
         current_frame.virtual_addr = frame_pointers[i];
         current_frame.physical_addr = frame_pointers[i];
 
@@ -473,63 +469,10 @@ void StackTrace::forEachFrame(
 
 StackTrace::StackTrace(const ucontext_t & signal_context)
 {
+    tryCapture();
+
     /// This variable from signal handler is not instrumented by Memory Sanitizer.
     __msan_unpoison(&signal_context, sizeof(signal_context));
-
-    /// Capture via libunwind directly, NOT via `tryCapture()`. Under TSan
-    /// `tryCapture()` would route through abseil's frame-pointer walker,
-    /// and the rbp chain inside a crash signal handler cannot cross glibc's
-    /// `__restore_rt` signal trampoline. As observed under TSan:
-    ///
-    ///   Stack trace: 0x... 0x... 0x... 0x... 0x...   <-- abseil, 5 frames total
-    ///   0. src/Common/StackTrace.cpp: StackTrace::StackTrace(ucontext_t const&)
-    ///   1. src/Common/SignalHandlers.cpp: signalHandler(int, siginfo_t*, void*)
-    ///   2. __tsan::CallUserSignalHandler(...)
-    ///   3. sighandler(int, __sanitizer::__sanitizer_siginfo*, void*)
-    ///   4. ? @ 0x42520                                <-- __restore_rt, FP walk dies here
-    ///
-    /// Address `0x42520` in glibc 2.35 (Ubuntu) disassembles to exactly two
-    /// instructions:
-    ///   mov $0xf, %rax        ; syscall 15 = rt_sigreturn
-    ///   syscall
-    /// — i.e. `__restore_rt`, the signal trampoline the kernel installs as
-    /// the handler's "return address". It is a hand-written asm stub with no
-    /// frame-pointer prologue, so abseil's `[rbp]`/`[rbp+8]` walk reaches it
-    /// (the kernel preserves `rbp` across signal delivery, and TSan's
-    /// `sighandler`/`CallUserSignalHandler` were compiled with frame
-    /// pointers) but cannot continue past it. `executeQuery` and everything
-    /// below it are missing entirely — exactly the part of the stack the
-    /// `arrayExists(x -> x LIKE '%executeQuery%', trace_full)` predicate in
-    /// `test_crash_log_extra_fields` is asserting against.
-    ///
-    /// Libunwind walks `.eh_frame` CFI rather than the rbp chain, and glibc
-    /// ships a CFI entry for `__restore_rt` that says "the previous frame's
-    /// register state lives in the saved `ucontext_t` on the stack at this
-    /// known offset". With that, libunwind crosses the trampoline and
-    /// continues unwinding from the interrupted PC back through the user
-    /// frames (`raise` → `abort` → `terminate_handler` → throw site →
-    /// `DB::executeQueryImpl` → ... → TCPHandler), giving the full trace
-    /// the crash log is supposed to capture.
-    ///
-    /// Why this doesn't matter for SIGUSR1/SIGUSR2 in `tryCapture()`: the profiler
-    /// timer interrupts user code (ClickHouse, built with
-    /// `-fno-omit-frame-pointer`), so the saved `rbp` at signal time points
-    /// into a frame whose chain abseil can follow without ever needing to
-    /// cross the trampoline. SIGABRT delivered from `abort()` interrupts
-    /// libc's `tgkill` syscall stub — built without frame pointers — so the
-    /// FP chain on the interrupted-code side is already broken by the time
-    /// the handler runs.
-    ///
-    /// And the async-unwinder safety concern that motivated using abseil in
-    /// `tryCapture()` (a SIGUSR1/SIGUSR2 storm fighting TSan over libunwind's
-    /// internal `dl_iterate_phdr` lock) does not apply here: crash signals
-    /// fire synchronously, exactly once, on the thread that crashed.
-#if defined(OS_DARWIN)
-    size = backtrace(frame_pointers.data(), FRAMEPOINTER_CAPACITY);
-#else
-    size = unw_backtrace(frame_pointers.data(), FRAMEPOINTER_CAPACITY);
-#endif
-    __msan_unpoison(frame_pointers.data(), size * sizeof(frame_pointers[0]));
 
     void * caller_address = getCallerAddress(signal_context);
 
@@ -565,13 +508,6 @@ void StackTrace::tryCapture()
 {
 #if defined(OS_DARWIN)
     size = backtrace(frame_pointers.data(), FRAMEPOINTER_CAPACITY);
-#elif defined(THREAD_SANITIZER)
-    /// Under TSan, use abseil's frame-pointer-based unwinding instead of libunwind.
-    /// libunwind's async stack unwinding races with TSan's own concurrent
-    /// frame-pointer walking. ASan/MSan/UBSan don't have this problem and use
-    /// libunwind like a non-sanitizer build.
-    int captured = absl::GetStackTrace(frame_pointers.data(), static_cast<int>(FRAMEPOINTER_CAPACITY), /* skip_count= */ 0);
-    size = captured > 0 ? static_cast<size_t>(captured) : 0;
 #else
     size = unw_backtrace(frame_pointers.data(), FRAMEPOINTER_CAPACITY);
 #endif

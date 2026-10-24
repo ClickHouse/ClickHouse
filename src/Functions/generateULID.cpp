@@ -20,7 +20,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
-class FunctionGenerateULID final : public IFunction
+class FunctionGenerateULID : public IFunction
 {
 public:
     static constexpr size_t ULID_LENGTH = 26;

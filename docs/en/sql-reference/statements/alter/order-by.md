@@ -7,6 +7,8 @@ title: 'Manipulating Key Expressions'
 doc_type: 'reference'
 ---
 
+# Manipulating Key Expressions
+
 ```sql
 ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY ORDER BY new_expression
 ```

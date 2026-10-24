@@ -29,7 +29,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionNested final : public IFunction
+class FunctionNested : public IFunction
 {
 public:
     static constexpr auto name = "nested";

@@ -17,7 +17,6 @@
 namespace BuzzHouse
 {
 
-void AggregateParamToString(String & ret, const AggregateParam &);
 void CreateDatabaseToString(String & ret, const CreateDatabase &);
 void CreateTableToString(String & ret, const CreateTable &);
 void BackupOutToString(String & ret, const BackupOut &);

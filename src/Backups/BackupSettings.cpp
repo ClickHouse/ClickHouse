@@ -96,39 +96,6 @@ bool BackupSettings::isAsync(const ASTBackupQuery & query)
     return false; /// `async` is false by default.
 }
 
-SettingsChanges BackupSettings::extractCoreSettingsFromQuery(const ASTBackupQuery & query)
-{
-    SettingsChanges core;
-
-    if (!query.settings)
-        return core;
-
-    const auto & settings = query.settings->as<const ASTSetQuery &>().changes;
-    for (const auto & setting : settings)
-    {
-        /// These two are handled specially in `fromBackupQuery` and are not
-        /// part of `LIST_OF_BACKUP_SETTINGS`, so list them explicitly.
-        if (setting.name == "compression_level")
-            continue;
-        if (setting.name == "data_file_name_prefix_length")
-            continue;
-
-        bool is_backup_specific = false;
-
-#define CHECK_BACKUP_SETTING_NAME(TYPE, NAME) \
-        if (setting.name == #NAME) \
-            is_backup_specific = true;
-
-        LIST_OF_BACKUP_SETTINGS(CHECK_BACKUP_SETTING_NAME)
-#undef CHECK_BACKUP_SETTING_NAME
-
-        if (!is_backup_specific)
-            core.emplace_back(setting);
-    }
-
-    return core;
-}
-
 void BackupSettings::copySettingsToQuery(ASTBackupQuery & query) const
 {
     auto query_settings = make_intrusive<ASTSetQuery>();

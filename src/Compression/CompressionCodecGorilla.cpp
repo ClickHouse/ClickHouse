@@ -12,6 +12,7 @@
 #include <IO/BitHelpers.h>
 
 #include <cstring>
+#include <limits>
 
 
 namespace DB
@@ -151,7 +152,7 @@ constexpr UInt8 getBitLengthOfLength(UInt8 data_bytes_size)
     // 4-byte         32 bits        =>    6
     // 8-byte         64 bits        =>    7
     const UInt8 bit_lengths[] = {0, 4, 5, 0, 6, 0, 0, 0, 7};
-    chassert(data_bytes_size >= 1 && data_bytes_size < sizeof(bit_lengths) && bit_lengths[data_bytes_size] != 0);
+    assert(data_bytes_size >= 1 && data_bytes_size < sizeof(bit_lengths) && bit_lengths[data_bytes_size] != 0);
     return bit_lengths[data_bytes_size];
 }
 
@@ -162,17 +163,18 @@ UInt32 getCompressedHeaderSize(UInt8 data_bytes_size)
     return items_count_size + data_bytes_size;
 }
 
-UInt32 getCompressedDataSize(UInt8 data_bytes_size, UInt32 uncompressed_size)
+UInt64 getCompressedDataSize(UInt8 data_bytes_size, UInt32 uncompressed_size)
 {
-    const UInt32 items_count = uncompressed_size / data_bytes_size;
+    const UInt64 items_count = uncompressed_size / data_bytes_size;
 
-    static const auto DATA_BIT_LENGTH = getBitLengthOfLength(data_bytes_size);
+    /// Not static: data_bytes_size is an argument, so a static keeps the first caller's width.
+    const auto DATA_BIT_LENGTH = getBitLengthOfLength(data_bytes_size);
     // -1 since there must be at least 1 non-zero bit.
-    static const auto LEADING_ZEROES_BIT_LENGTH = DATA_BIT_LENGTH - 1;
+    const auto LEADING_ZEROES_BIT_LENGTH = DATA_BIT_LENGTH - 1;
 
     // worst case (for 32-bit value):
     // 11 + 5 bits of leading zeroes bit-size + 5 bits of data bit-size + non-zero data bits.
-    const UInt32 max_item_size_bits = 2 + LEADING_ZEROES_BIT_LENGTH + DATA_BIT_LENGTH + data_bytes_size * 8;
+    const UInt64 max_item_size_bits = 2 + LEADING_ZEROES_BIT_LENGTH + DATA_BIT_LENGTH + data_bytes_size * 8;
 
     // + 8 is to round up to next byte.
     return (items_count * max_item_size_bits + 8) / 8;
@@ -381,12 +383,18 @@ void CompressionCodecGorilla::updateHash(SipHash & hash) const
 
 UInt32 CompressionCodecGorilla::getMaxCompressedDataSize(UInt32 uncompressed_size) const
 {
-    const auto result = 2 // common header
+    const UInt64 result = 2 // common header
             + data_bytes_size // max bytes skipped if source is not properly aligned.
             + getCompressedHeaderSize(data_bytes_size) // data-specific header
             + getCompressedDataSize(data_bytes_size, uncompressed_size);
 
-    return result;
+    /// The block header stores the compressed block size as UInt32.
+    if (result > std::numeric_limits<UInt32>::max() - getHeaderSize())
+        throw Exception(ErrorCodes::CANNOT_COMPRESS,
+            "Cannot compress with Gorilla codec, block of {} bytes is too large: worst-case compressed size {} does not fit into 32 bits",
+            uncompressed_size, result);
+
+    return static_cast<UInt32>(result);
 }
 
 UInt32 CompressionCodecGorilla::doCompressData(const char * source, UInt32 source_size, char * dest) const

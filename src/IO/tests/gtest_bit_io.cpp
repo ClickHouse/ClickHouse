@@ -30,7 +30,7 @@ template <typename T>
 std::string bin(const T & value, size_t bits = sizeof(T) * 8)
 {
     static const uint8_t MAX_BITS = sizeof(T)*8;
-    chassert(bits <= MAX_BITS);
+    assert(bits <= MAX_BITS);
 
     return std::bitset<sizeof(T) * 8>(static_cast<uint64_t>(value))
             .to_string().substr(MAX_BITS - bits, bits);

@@ -11,7 +11,7 @@
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Throttler.h>
-#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/Cache/FileCache.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/S3Common.h>
@@ -27,6 +27,7 @@ namespace ProfileEvents
     extern const Event WriteBufferFromS3Bytes;
     extern const Event WriteBufferFromS3Microseconds;
     extern const Event WriteBufferFromS3RequestsErrors;
+    extern const Event S3WriteBytes;
 
     extern const Event S3CreateMultipartUpload;
     extern const Event S3CompleteMultipartUpload;
@@ -105,7 +106,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     size_t buf_size_,
     const S3::S3RequestSettings & request_settings_,
     BlobStorageLogWriterPtr blob_log_,
-    std::optional<ObjectAttributes> object_metadata_,
+    std::optional<std::map<String, String>> object_metadata_,
     ThreadPoolCallbackRunnerUnsafe<void> schedule_,
     const WriteSettings & write_settings_)
     : WriteBufferFromFileBase(std::min(buf_size_, static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE)), nullptr, 0)
@@ -655,6 +656,8 @@ void WriteBufferFromS3::completeMultipartUpload()
     req.SetMultipartUpload(multipart_upload);
 
     size_t max_retry = std::max<UInt64>(request_settings[S3RequestSetting::max_unexpected_write_error_retries].value, 1UL);
+    Aws::S3::S3Errors last_error_type = Aws::S3::S3Errors::NO_SUCH_KEY;
+    String last_error_details;
     for (size_t i = 0; i < max_retry; ++i)
     {
         ProfileEvents::increment(ProfileEvents::S3CompleteMultipartUpload);
@@ -680,25 +683,27 @@ void WriteBufferFromS3::completeMultipartUpload()
 
         ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);
 
-        if (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY)
+        const auto & error = outcome.GetError();
+        if (isTransientCompleteMultipartUploadError(error))
         {
-            /// For unknown reason, at least MinIO can respond with NO_SUCH_KEY for put requests
-            /// BTW, NO_SUCH_UPLOAD is expected error and we shouldn't retry it here, DB::S3::Client take care of it
-            LOG_INFO(log, "Multipart upload failed with NO_SUCH_KEY error, will retry. {}, Parts: {}", getVerboseLogDetails(), multipart_tags.size());
+            last_error_type = error.GetErrorType();
+            last_error_details = error.GetExceptionName().empty() ? error.GetMessage() : error.GetExceptionName();
+            LOG_INFO(log, "Multipart upload failed with a transient error ({}), will retry. {}, Parts: {}",
+                     last_error_details, getVerboseLogDetails(), multipart_tags.size());
         }
         else
         {
             throw S3Exception(
-                outcome.GetError().GetErrorType(),
+                error.GetErrorType(),
                 "Message: {}, Key: {}, Bucket: {}, Tags: {}",
-                outcome.GetError().GetMessage(), key, bucket, fmt::join(multipart_tags.begin(), multipart_tags.end(), " "));
+                error.GetMessage(), key, bucket, fmt::join(multipart_tags.begin(), multipart_tags.end(), " "));
         }
     }
 
     throw S3Exception(
-        Aws::S3::S3Errors::NO_SUCH_KEY,
-        "Message: Multipart upload failed with NO_SUCH_KEY error, retries {}, Key: {}, Bucket: {}",
-        max_retry, key, bucket);
+        last_error_type,
+        "Message: Multipart upload failed with a transient error ({}), retries {}, Key: {}, Bucket: {}",
+        last_error_details, max_retry, key, bucket);
 }
 
 S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
@@ -714,7 +719,7 @@ S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
     if (object_metadata.has_value())
         req.SetMetadata(object_metadata.value());
     if (!request_settings[S3RequestSetting::storage_class_name].value.empty())
-        req.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(request_settings[S3RequestSetting::storage_class_name]));
+        req.SetStorageClass(S3::getStorageClassForName(request_settings[S3RequestSetting::storage_class_name]));
 
     if (!write_settings.object_storage_write_if_none_match.empty())
         req.SetIfNoneMatch(write_settings.object_storage_write_if_none_match);

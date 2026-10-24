@@ -15,7 +15,7 @@ namespace ErrorCodes
 }
 
 /// tupleConcat(tup1, ...) - concatenate tuples.
-class FunctionTupleConcat final : public IFunction
+class FunctionTupleConcat : public IFunction
 {
 public:
     static constexpr auto name = "tupleConcat";

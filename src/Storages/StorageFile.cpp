@@ -8,6 +8,9 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/HivePartitioningUtils.h>
 
+#include <Access/ContextAccess.h>
+#include <Access/Common/AccessFlags.h>
+
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -37,8 +40,6 @@
 
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
-#include <Formats/FormatParserSharedResources.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sinks/SinkToStorage.h>
@@ -51,7 +52,6 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 
-#include <Common/CurrentThread.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <Common/parseGlobs.h>
@@ -263,6 +263,16 @@ std::string getTablePath(const std::string & table_dir_path, const std::string &
     return table_dir_path + "/data." + escapeForFileName(format_name);
 }
 
+/// Every syscall a path is passed to (`stat`, `open`, `opendir`) stops at the first NUL byte, while the
+/// containment checks see the whole value. A path with an embedded NUL therefore addresses a location the
+/// checks never look at, so it is rejected before the first filesystem probe. The path is not echoed in the
+/// message: it would put the NUL byte into the logs.
+void throwIfPathContainsEmbeddedNul(const std::string & path)
+{
+    if (path.contains('\0'))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "File path contains an embedded NUL byte");
+}
+
 /// Both db_dir_path and table_path must be converted to absolute paths (in particular, path cannot contain '..').
 void checkCreationIsAllowed(
     ContextPtr context_global,
@@ -270,6 +280,8 @@ void checkCreationIsAllowed(
     const std::string & table_path,
     bool can_be_directory)
 {
+    throwIfPathContainsEmbeddedNul(table_path);
+
     if (context_global->getApplicationType() != Context::ApplicationType::SERVER)
         return;
 
@@ -317,6 +329,10 @@ std::pair<String, String> splitToArchivePathAndPathInArchive(const String & sour
 /// Finds files matching a specified pattern with globs.
 Strings getPathsList(const String & path_with_globs, const String & user_files_path, const ContextPtr & context, size_t & total_bytes_to_read)
 {
+    /// The listing below stats the path and expands its globs on the filesystem before the matched paths
+    /// are checked for containment in `user_files_path`, so the path must be rejected here, not there.
+    throwIfPathContainsEmbeddedNul(path_with_globs);
+
     fs::path user_files_absolute_path = fs::weakly_canonical(user_files_path);
     fs::path fs_pattern(path_with_globs);
     if (fs_pattern.is_relative())
@@ -419,10 +435,7 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
     if (context->getApplicationType() == Context::ApplicationType::SERVER && read_method == LocalFSReadMethod::mmap)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Using storage_file_read_method=mmap is not safe in server mode. Consider using pread.");
 
-    /// Avoid zero-length mmap: empty regular files still read as empty via `pread`, while
-    /// pseudo-files such as `/proc` and `/sys` may report `st_size == 0` despite readable content.
-    /// See #69070.
-    if (S_ISREG(file_stat.st_mode) && read_method == LocalFSReadMethod::mmap && file_stat.st_size > 0)
+    if (S_ISREG(file_stat.st_mode) && read_method == LocalFSReadMethod::mmap)
     {
         try
         {
@@ -1138,13 +1151,13 @@ std::optional<NameSet> StorageFile::supportedPrewhereColumns() const
 {
     /// Currently don't support prewhere for virtual columns, columns with default expressions,
     /// and columns taken from file path (hive partitioning).
-    return getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
+    return getInMemoryMetadataPtr()->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
 }
 
 IStorage::ColumnSizeByName StorageFile::getColumnSizes() const
 {
     /// Reporting some fake sizes to enable prewhere optimization.
-    return getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getFakeColumnSizes();
+    return getInMemoryMetadataPtr()->getFakeColumnSizes();
 }
 
 bool StorageFile::prefersLargeBlocks() const
@@ -1285,7 +1298,7 @@ void StorageFile::setStorageMetadata(CommonArguments args)
         format_settings,
         args.getContext());
 
-    storage_metadata.setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, args.getContext(), format_settings, PartitionStrategyFactory::StrategyType::NONE, sample_path));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, args.getContext(), format_settings, PartitionStrategyFactory::StrategyType::NONE, sample_path));
     setInMemoryMetadata(storage_metadata);
 
     supports_prewhere = format_name != "Distributed" && FormatFactory::instance().checkIfFormatSupportsPrewhere(format_name, args.getContext(), format_settings);
@@ -1331,6 +1344,10 @@ String StorageFileSource::FilesIterator::next()
         auto task = getContext()->getClusterFunctionReadTaskCallback()();
         if (!task || task->isEmpty())
             return {};
+
+        /// The read task may come from a client impersonating an initiator server, so validate the path.
+        checkCreationIsAllowed(getContext(), getContext()->getUserFilesPath(), task->path, /*can_be_directory=*/ true);
+
         return task->path;
     }
 
@@ -1575,23 +1592,6 @@ Chunk StorageFileSource::generate()
                 current_file_size = file_stat.st_size;
                 current_file_last_modified = Poco::Timestamp::fromEpochTime(file_stat.st_mtime);
 
-                /// Build a sub-second-precision version token for the format metadata cache key.
-                /// `st_mtime` alone is second-resolution, so an in-place rewrite within the same
-                /// second that keeps the file size unchanged would otherwise reuse a stale entry.
-#if defined(OS_DARWIN)
-                const auto mtim_sec = file_stat.st_mtimespec.tv_sec;
-                const auto mtim_nsec = file_stat.st_mtimespec.tv_nsec;
-#else
-                const auto mtim_sec = file_stat.st_mtim.tv_sec;
-                const auto mtim_nsec = file_stat.st_mtim.tv_nsec;
-#endif
-                current_file_cache_version = fmt::format(
-                    "{}.{:09}_{}_{}",
-                    static_cast<Int64>(mtim_sec),
-                    static_cast<Int64>(mtim_nsec),
-                    static_cast<Int64>(file_stat.st_ino),
-                    file_stat.st_size);
-
                 if (getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files] && file_stat.st_size == 0)
                     continue;
 
@@ -1609,60 +1609,18 @@ Chunk StorageFileSource::generate()
 
             chassert(file_num > 0);
 
-            /// For real local files, build a synthetic RelativePathWithMetadata so the
-            /// format-level metadata cache (e.g. Parquet footer cache) is reachable. The
-            /// "etag" is just any version identifier the cache compares for equality —
-            /// for local files we use the precomputed `current_file_cache_version`
-            /// (sub-second mtime + inode + size) so an in-place rewrite invalidates
-            /// the cache even when the new file has the same length and is written
-            /// within the same wall-clock second.
-            std::optional<RelativePathWithMetadata> object_with_metadata;
-            if (!storage->use_table_fd && !storage->archive_info && !current_path.empty()
-                && current_file_size.has_value() && current_file_last_modified.has_value()
-                && current_file_cache_version.has_value())
-            {
-                ObjectMetadata md;
-                md.size_bytes = *current_file_size;
-                md.last_modified = *current_file_last_modified;
-                md.etag = *current_file_cache_version;
-                object_with_metadata.emplace(current_path, std::move(md));
-            }
-
-            if (object_with_metadata.has_value())
-            {
-                input_format = FormatFactory::instance().getInputWithMetadata(
-                    storage->format_name,
-                    *read_buf,
-                    block_for_format,
-                    getContext(),
-                    max_block_size,
-                    object_with_metadata,
-                    storage->format_settings,
-                    parser_shared_resources,
-                    format_filter_info,
-                    /*is_remote_fs=*/false,
-                    CompressionMethod::None,
-                    need_only_count);
-            }
-            else
-            {
-                /// No usable metadata (e.g. archive entries, fd-backed storage, missing
-                /// stat info). Fall back to the regular creator — it doesn't trigger the
-                /// `getInputWithMetadata` chassert and the format-level metadata cache
-                /// just isn't consulted on this read.
-                input_format = FormatFactory::instance().getInput(
-                    storage->format_name,
-                    *read_buf,
-                    block_for_format,
-                    getContext(),
-                    max_block_size,
-                    storage->format_settings,
-                    parser_shared_resources,
-                    format_filter_info,
-                    /*is_remote_fs=*/false,
-                    CompressionMethod::None,
-                    need_only_count);
-            }
+            input_format = FormatFactory::instance().getInput(
+                storage->format_name,
+                *read_buf,
+                block_for_format,
+                getContext(),
+                max_block_size,
+                storage->format_settings,
+                parser_shared_resources,
+                format_filter_info,
+                /*is_remote_fs=*/false,
+                CompressionMethod::None,
+                need_only_count);
 
             input_format->setSerializationHints(serialization_hints);
 
@@ -1710,9 +1668,7 @@ Chunk StorageFileSource::generate()
                 HivePartitioningUtils::addPartitionColumnsToChunk(
                     chunk,
                     hive_partition_columns_to_read_from_file_path,
-                    current_path,
-                    storage->format_settings,
-                    getContext());
+                    current_path);
             }
 
             /// Enrich with virtual columns.
@@ -1720,11 +1676,10 @@ Chunk StorageFileSource::generate()
                 chunk, requested_virtual_columns,
                 {
                     .path = current_path,
-                    .storage_id = storage->getStorageID(),
                     .size = current_file_size,
                     .filename = (filename_override.has_value() ? &filename_override.value() : nullptr),
-                    .last_modified = current_file_last_modified,
-                }, getContext(), storage->format_settings);
+                    .last_modified = current_file_last_modified
+                }, getContext());
 
             return chunk;
         }
@@ -1762,8 +1717,6 @@ Chunk StorageFileSource::generate()
 
     return {};
 }
-
-void StorageFileSource::onFinish() { parser_shared_resources->finishStream(); }
 
 void StorageFileSource::addNumRowsToCache(const String & path, size_t num_rows) const
 {
@@ -1851,6 +1804,13 @@ void StorageFile::read(
     size_t max_block_size,
     size_t num_streams)
 {
+    /// A storage carrying a renaming rule renames the files it read once its readers are destroyed
+    /// (`StorageFileSource::beforeDestroy`), so reading it needs `WRITE` on the source besides `READ`.
+    /// This context is the reading query's, not that of the query which built the storage.
+    if (!file_renamer.isEmpty())
+        context->getAccess()->checkAccessWithFilter(
+            AccessType::WRITE, toStringSource(AccessTypeObjects::Source::FILE), /* filter */ "");
+
     if (distributed_processing && context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
         num_streams = context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions];
 
@@ -1918,7 +1878,7 @@ void ReadFromFile::createIterator(const ActionsDAG::Node * predicate)
         storage->paths,
         storage->archive_info,
         predicate,
-        storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
+        storage->getVirtualsList(),
         info.hive_partition_columns_to_read_from_file_path,
         context,
         storage->distributed_processing);
@@ -2076,6 +2036,15 @@ public:
         /// In case of formats with prefixes if file is not empty we have already written prefix.
         bool do_not_write_prefix = naked_buffer->size();
         const auto & settings = getContext()->getSettingsRef();
+
+        /// The size is re-checked here, per sink: `StorageFile::write` checks it once at query
+        /// start, and not at all when writing through a file descriptor or a partitioned path.
+        if (do_not_write_prefix
+            && !FormatFactory::instance().checkIfFormatSupportAppend(format_name, getContext(), format_settings))
+            throw Exception(
+                ErrorCodes::CANNOT_APPEND_TO_FILE,
+                "Data cannot be appended to {} because the {} format doesn't support appends",
+                use_table_fd ? "the given file descriptor" : ("file " + path), format_name);
         write_buf = wrapWriteBufferWithCompressionMethod(
             std::move(naked_buffer),
             compression_method,

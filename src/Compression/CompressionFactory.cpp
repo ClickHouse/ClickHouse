@@ -191,9 +191,9 @@ void CompressionCodecFactory::registerSimpleCompressionCodec(
 }
 
 
-Strings CompressionCodecFactory::getAllRegisteredNames() const
+std::vector<String> CompressionCodecFactory::getAllRegisteredNames() const
 {
-    Strings result;
+    std::vector<String> result;
     result.reserve(family_name_with_codec.size());
     for (const auto & pair : family_name_with_codec)
         result.push_back(pair.first);

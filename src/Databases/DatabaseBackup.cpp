@@ -6,6 +6,7 @@
 
 #include <Poco/Util/LayeredConfiguration.h>
 
+#include <Common/SipHash.h>
 #include <Common/ThreadPool.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/setThreadName.h>
@@ -13,7 +14,6 @@
 #include <IO/ReadBufferFromFileBase.h>
 
 #include <Core/Settings.h>
-#include <Core/UUID.h>
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -28,7 +28,6 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
-#include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
 
 #include <Backups/BackupFactory.h>
@@ -40,6 +39,7 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/TablesLoader.h>
 #include <Databases/DatabaseOnDisk.h>
+#include <Databases/LoadingStrictnessLevel.h>
 
 
 namespace CurrentMetrics
@@ -57,8 +57,6 @@ namespace Setting
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsSeconds lock_acquire_timeout;
-    extern const SettingsSetOperationMode except_default_mode;
-    extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsSetOperationMode union_default_mode;
 }
 
@@ -68,6 +66,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_FILE_NAME;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int BAD_ARGUMENTS;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
 }
 
@@ -82,12 +81,27 @@ public:
     {}
 };
 
-String buildStoragePolicyName(const DatabaseBackup::Configuration & config)
+/// The name is the cache key of the storage policy, so it must cover every input the policy's disk
+/// depends on, including the local database name. Fields are length-prefixed to keep their
+/// boundaries unambiguous, and the name stays a pure function of them because it has to come out
+/// identical on every open of the same database.
+String buildStoragePolicyName(const String & local_database_name, const DatabaseBackup::Configuration & config)
 {
-    return fmt::format("__database_backup_config_{}_{})", config.database_name, config.backup_info.toString());
+    const auto backup_info_string = config.backup_info.toString();
+
+    SipHash hash;
+    hash.update(local_database_name.size());
+    hash.update(local_database_name);
+    hash.update(config.database_name.size());
+    hash.update(config.database_name);
+    hash.update(backup_info_string.size());
+    hash.update(backup_info_string);
+
+    return fmt::format("__database_backup_config_{}", getSipHash128AsHexString(hash));
 }
 
-void updateCreateQueryWithDatabaseBackupStoragePolicy(ASTCreateQuery * create_query, const DatabaseBackup::Configuration & config, ContextPtr)
+void updateCreateQueryWithDatabaseBackupStoragePolicy(
+    ASTCreateQuery * create_query, const String & local_database_name, const DatabaseBackup::Configuration & config)
 {
     auto * storage = create_query->storage;
 
@@ -148,7 +162,7 @@ void updateCreateQueryWithDatabaseBackupStoragePolicy(ASTCreateQuery * create_qu
         settings = storage->settings;
     }
 
-    auto storage_policy_name = buildStoragePolicyName(config);
+    auto storage_policy_name = buildStoragePolicyName(local_database_name, config);
     settings->changes.setSetting("storage_policy", Field(storage_policy_name));
 }
 
@@ -219,7 +233,7 @@ void DatabaseBackup::beforeLoadingMetadata(ContextMutablePtr local_context, Load
 
     backup = BackupFactory::instance().createBackup(backup_open_params);
 
-    auto storage_policy_name = buildStoragePolicyName(config);
+    auto storage_policy_name = buildStoragePolicyName(getDatabaseName(), config);
 
     getContext()->getOrCreateStoragePolicy(storage_policy_name, [&](const StoragePoliciesMap &)
     {
@@ -330,16 +344,10 @@ void DatabaseBackup::loadTablesMetadata(ContextPtr local_context, ParsedTablesMe
                 return;
             }
 
-            updateCreateQueryWithDatabaseBackupStoragePolicy(create_query, config, local_context);
+            updateCreateQueryWithDatabaseBackupStoragePolicy(create_query, current_database_name, config);
 
-            {
-                SelectIntersectExceptQueryVisitor::Data data{local_context->getSettingsRef()[Setting::intersect_default_mode], local_context->getSettingsRef()[Setting::except_default_mode]};
-                SelectIntersectExceptQueryVisitor{data}.visit(ast);
-            }
-            {
-                NormalizeSelectWithUnionQueryVisitor::Data data{local_context->getSettingsRef()[Setting::union_default_mode]};
-                NormalizeSelectWithUnionQueryVisitor{data}.visit(ast);
-            }
+            NormalizeSelectWithUnionQueryVisitor::Data data{local_context->getSettingsRef()[Setting::union_default_mode]};
+            NormalizeSelectWithUnionQueryVisitor{data}.visit(ast);
 
             QualifiedTableName qualified_name{current_database_name, create_query->getTable()};
 
@@ -421,8 +429,11 @@ ASTPtr DatabaseBackup::getCreateDatabaseQueryImpl() const
 {
     const auto & settings = getContext()->getSettingsRef();
 
+    /// The locator is emitted as the function it is, not as a string literal holding its text: this
+    /// definition is what `ALTER DATABASE ... MODIFY COMMENT` writes back into the metadata file, and
+    /// the load path parses the second argument with `BackupInfo::fromAST`, which takes a function.
     const String query = fmt::format("CREATE DATABASE {} ENGINE = Backup({}, {})",
-        backQuoteIfNeed(database_name), quoteString(config.database_name), quoteString(config.backup_info.toString()));
+        backQuoteIfNeed(database_name), quoteString(config.database_name), config.backup_info.toString());
 
     ParserCreateQuery parser;
     ASTPtr ast = parseQuery(parser,
@@ -450,7 +461,7 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseBackup::getTablesForBackup(co
 namespace
 {
 
-DatabaseBackup::Configuration parseArguments(ASTs engine_args, ContextPtr)
+DatabaseBackup::Configuration parseArguments(ASTs engine_args, ContextPtr, bool allow_locator_in_string_literal)
 {
     if (engine_args.size() != 2)
         throw Exception::createRuntime(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -458,7 +469,43 @@ DatabaseBackup::Configuration parseArguments(ASTs engine_args, ContextPtr)
 
     DatabaseBackup::Configuration result;
 
-    result.database_name = checkAndGetLiteralArgument<String>(engine_args[0], "database_name");
+    /// `checkAndGetLiteralArgument` formats the argument it rejects, and a locator written in this
+    /// position would format its credentials in plaintext.
+    try
+    {
+        result.database_name = checkAndGetLiteralArgument<String>(engine_args[0], "database_name");
+    }
+    catch (const Exception &)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'database_name' must be a string literal");
+    }
+
+    /** A locator held in a string literal (`Backup('db', 'File(\'backup.zip\')')`) is the form that
+      * metadata rewritten by an older server carries, so it has to keep loading - a server that cannot
+      * parse its own metadata does not start at all.
+      *
+      * Only there: in a statement a user writes the locator must be the function it is, because that is
+      * the form `FunctionSecretArgumentsFinder` knows how to redact, and a quoted one would carry its
+      * credentials verbatim into `query_log`, `SHOW PROCESSLIST` and the distributed DDL payload.
+      */
+    if (allow_locator_in_string_literal)
+    {
+        if (const auto * locator = engine_args[1]->as<ASTLiteral>(); locator && locator->value.getType() == Field::Types::String)
+        {
+            result.backup_info = BackupInfo::fromString(locator->value.safeGet<String>());
+            return result;
+        }
+    }
+
+    /// A locator held in a string literal is exactly the text that can carry credentials, and a rejection
+    /// message reaches the error log and the `exception` column of `query_log`, so name the accepted form
+    /// here rather than the text given.
+    if (!engine_args[1]->as<ASTFunction>())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Expected function as the backup destination of a `Backup` database. It must be spelled as the "
+            "function it is, such as `File('backup')` or `S3(...)`. The text given is not shown, because a "
+            "destination held in a string literal cannot be redacted and may carry credentials");
+
     result.backup_info = BackupInfo::fromAST(*engine_args[1]);
 
     return result;
@@ -477,11 +524,29 @@ void registerDatabaseBackup(DatabaseFactory & factory)
         if (engine->arguments)
             engine_args = engine->arguments->children;
 
-        auto config = parseArguments(engine_args, args.context);
+        /** Whether the locator may be held in a string literal. Metadata an older server rewrote carries that
+          * form and has to keep loading, but a statement a user writes must spell the locator as the function it
+          * is, because that is the form `FunctionSecretArgumentsFinder` can redact.
+          *
+          * Metadata is read back on three paths: the short `ATTACH DATABASE db`, a load under `force_restore_data`,
+          * and the replay of the stored full `ATTACH DATABASE db ENGINE = Backup(...)` statement at server start.
+          * The last one runs in plain `ATTACH` mode, so neither of the first two conditions covers it - and it is
+          * exactly the path that has to load metadata an older server rewrote.
+          *
+          * The loader flag, not `internal`, is the discriminator: wrappers such as `PARALLEL WITH` run user
+          * statements as internal ones, and a user's `ATTACH DATABASE ... ENGINE = Backup(...)` must not get its
+          * locator accepted in the form the secret masker cannot redact.
+          */
+        const bool is_internal_metadata_replay = args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH;
+        const bool from_existing_metadata
+            = isLoadingFromExistingMetadata(args.mode) || args.create_query.attach_short_syntax || is_internal_metadata_replay;
+
+        auto config = parseArguments(engine_args, args.context, /*allow_locator_in_string_literal=*/ from_existing_metadata);
+
         return std::make_shared<DatabaseBackup>(args.database_name, args.metadata_path, config, args.context);
     };
 
-    factory.registerDatabase("Backup", create_fn, {.supports_arguments = true, .is_external = true});
+    factory.registerDatabase("Backup", create_fn, {.supports_arguments = true});
 }
 
 }

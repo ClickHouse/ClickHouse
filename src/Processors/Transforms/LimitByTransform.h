@@ -9,7 +9,7 @@ namespace DB
 {
 
 /// Executes LIMIT BY for specified columns.
-class LimitByTransform final : public ISimpleTransform
+class LimitByTransform : public ISimpleTransform
 {
 public:
     LimitByTransform(SharedHeader header, UInt64 group_length_, UInt64 group_offset_, bool in_order_, const Names & columns);

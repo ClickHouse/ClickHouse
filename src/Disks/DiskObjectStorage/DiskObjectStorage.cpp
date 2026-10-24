@@ -3,6 +3,7 @@
 #include <Common/CurrentThread.h>
 
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadBufferFromEmptyFile.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Common/Stopwatch.h>
 #include <Common/checkStackSize.h>
@@ -12,9 +13,6 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/CurrentMetrics.h>
 #include <IO/CachedInMemoryReadBufferFromFile.h>
-#include <IO/ReadPipeline.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/Cached/CachedObjectStorage.h>
-#include <Interpreters/FileCache/FileCache.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorageTransaction.h>
@@ -749,92 +747,138 @@ String DiskObjectStorage::getWriteResourceNameNoLock() const
         return write_resource_name_from_config;
 }
 
-void DiskObjectStorage::prepareRead(
+std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     const String & path,
     const ReadSettings & settings,
-    std::optional<size_t> read_hint,
-    ReadPipeline & pipeline) const
+    std::optional<size_t> read_hint) const
 {
     const auto storage_objects = metadata_storage->getStorageObjects(path);
+    auto global_context = Context::getGlobalContextInstance();
+
+    if (storage_objects.empty())
+        return std::make_unique<ReadBufferFromEmptyFile>();
+
+    /// Matryoshka of read buffers:
+    ///
+    /// [AsynchronousBoundedReadBuffer] (if use_async_buffer)
+    ///   [CachedInMemoryReadBufferFromFile] (if use_page_cache)
+    ///     [ReadBufferFromDistributedCache] (if use_distributed_cache)
+    ///       ReadBufferFromRemoteFSGather
+    ///         [CachedOnDiskReadBufferFromFile] (if fs cache is enabled)
+    ///           ReadBufferFromS3 or similar
+    ///
+    /// Some of them have special requirements:
+    ///  * use_external_buffer = true is required for the buffer nested directly inside
+    ///    AsynchronousBoundedReadBuffer, CachedInMemoryReadBufferFromFile,
+    ///    ReadBufferFromDistributedCache, and ReadBufferFromRemoteFSGather.
+    ///  * The buffer directly inside CachedInMemoryReadBufferFromFile or
+    ///    ReadBufferFromDistributedCache must be freely seekable. I.e. either
+    ///    remote_read_buffer_restrict_seek = false or buffer implementation that ignores this setting.
+    ///    Note: ReadBufferFromRemoteFSGather and ReadBufferFromDistributedCache ignore this setting.
 
     auto read_settings = updateIOSchedulingSettings(settings, getReadResourceName(), getWriteResourceName());
-    auto global_context = Context::getGlobalContextInstance();
-    auto storage = object_storages->takePointingTo(cluster->getLocalLocation());
+    /// We wrap read buffer from object storage (read_buf = object_storage->readObject())
+    /// inside ReadBufferFromRemoteFSGather, so add nested buffer setting.
+    read_settings = read_settings.withNestedBuffer();
 
-    /// Empty objects (zero-blob file) — set an empty source so `ReadPipeline::build`
-    /// returns `ReadBufferFromEmptyFile`. No stages are needed below the source.
-    if (storage_objects.empty())
-    {
-        pipeline.setSource(std::move(storage), StoredObjects{}, settings);
-        return;
-    }
 
-    /// Distributed cache — computed early because prefer_bigger_buffer_size needs to be known.
-#if ENABLE_DISTRIBUTED_CACHE
-    bool use_distributed_cache = enable_distributed_cache
-        && DistributedCache::canUseDistributedCacheForRead(
-            read_settings, *storage);
-#else
     bool use_distributed_cache = false;
-#endif
-
-    const bool file_cache_enabled = storage->supportsCache() && read_settings.enable_filesystem_cache;
-
-    /// Avoid cache fragmentation by choosing a bigger buffer size when filesystem cache is active.
-    /// Must be done before setSource, which stores read_settings in the pipeline.
-    bool prefer_bigger_buffer_size = read_settings.filesystem_cache_settings.prefer_bigger_buffer_size
-        && !read_settings.filesystem_cache_settings.read_if_exists_otherwise_bypass
-        && file_cache_enabled;
 #if ENABLE_DISTRIBUTED_CACHE
-    if (use_distributed_cache && !read_settings.distributed_cache_settings.prefer_bigger_buffer_size)
-        prefer_bigger_buffer_size = false;
+    use_distributed_cache = enable_distributed_cache && DistributedCache::canUseDistributedCacheForRead(read_settings, *object_storages->takePointingTo(cluster->getLocalLocation()));
+#endif
+    const bool use_async_buffer = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
+    const bool file_cache_enabled = object_storages->takePointingTo(cluster->getLocalLocation())->supportsCache() && read_settings.enable_filesystem_cache;
+    const bool use_page_cache =
+        read_settings.page_cache
+        && (use_distributed_cache ? read_settings.use_page_cache_with_distributed_cache
+                                  : (read_settings.use_page_cache_for_disks_without_file_cache && !file_cache_enabled));
+
+    const bool use_external_buffer_for_gather = use_async_buffer || use_page_cache || use_distributed_cache;
+
+    auto read_buffer_creator =
+        [this, read_settings, read_hint]
+        (bool restricted_seek, const StoredObject & object_) mutable -> std::unique_ptr<ReadBufferFromFileBase>
+    {
+        read_settings.remote_read_buffer_restrict_seek = restricted_seek;
+        return object_storages->takePointingTo(cluster->getLocalLocation())->readObject(object_, read_settings, read_hint);
+    };
+
+    /// Avoid cache fragmentation by choosing a bigger buffer size.
+    /// But don't use it if the cache is used passively (only for reading if data is already cached, such as during merges).
+    bool prefer_bigger_buffer_size = read_settings.filesystem_cache_prefer_bigger_buffer_size
+        && !read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache
+        && object_storages->takePointingTo(cluster->getLocalLocation())->supportsCache()
+        && read_settings.enable_filesystem_cache
+        && !use_distributed_cache;
+
+    size_t buffer_size = prefer_bigger_buffer_size
+        ? std::max<size_t>(settings.remote_fs_buffer_size, settings.prefetch_buffer_size)
+        : settings.remote_fs_buffer_size;
+
+    size_t total_objects_size = getTotalSize(storage_objects);
+    if (total_objects_size)
+        buffer_size = std::min(buffer_size, total_objects_size);
+
+    auto read_from_object_storage_gather = [=]() -> std::unique_ptr<ReadBufferFromFileBase>
+    {
+        return std::make_unique<ReadBufferFromRemoteFSGather>(
+            std::move(read_buffer_creator),
+            storage_objects,
+            read_settings,
+            use_external_buffer_for_gather,
+            /* buffer_size */use_external_buffer_for_gather ? 0 : buffer_size);
+    };
+
+    std::unique_ptr<ReadBufferFromFileBase> impl;
+
+#if ENABLE_DISTRIBUTED_CACHE
+    if (use_distributed_cache)
+    {
+        impl = DistributedCache::readWithDistributedCache(
+                    path,
+                    storage_objects,
+                    read_settings,
+                    *object_storages->takePointingTo(cluster->getLocalLocation()),
+                    /*use_external_buffer*/use_page_cache || use_async_buffer,
+                    read_from_object_storage_gather);
+    }
 #endif
 
-    if (prefer_bigger_buffer_size)
-        read_settings.remote_fs_settings.buffer_size = std::max<size_t>(read_settings.remote_fs_settings.buffer_size, read_settings.remote_fs_settings.large_buffer_size);
-
-    /// Object storage files may be split across multiple blobs — gather joins them.
-    pipeline.needGather();
-
-    /// Delegate to the object storage to set source and add cache stage if needed.
-    /// CachedObjectStorage::prepareRead adds needFilesystemCache automatically.
-    storage->prepareRead(storage, storage_objects, read_settings, read_hint, pipeline);
-
-    if (use_distributed_cache)
-        pipeline.needDistributedCache();
-
-    /// Memory cache (page cache).
-    const bool use_page_cache =
-        read_settings.page_cache_settings.cache
-        && (use_distributed_cache
-            ? read_settings.use_page_cache_with_distributed_cache
-            : (read_settings.use_page_cache_for_disks_without_file_cache && !file_cache_enabled));
+    if (!impl)
+        impl = read_from_object_storage_gather();
 
     if (use_page_cache)
     {
-        auto cache_path_prefix = fmt::format("{}:{}:",
-            /*disk*/ name,
-            magic_enum::enum_name(storage->getType()));
-        const auto object_namespace = storage->getObjectsNamespace();
+        /// We identify the file by its first object, with the assumption that an object can't
+        /// belong to more than one file.
+        auto cache_path_prefix = fmt::format("{}:{}:", /*disk*/ name, magic_enum::enum_name(object_storages->takePointingTo(cluster->getLocalLocation())->getType()));
+        const auto object_namespace = object_storages->takePointingTo(cluster->getLocalLocation())->getObjectsNamespace();
         if (!object_namespace.empty())
             cache_path_prefix += object_namespace + "/";
+        const auto cache_key = PageCacheKey { .path = cache_path_prefix + storage_objects.at(0).remote_path };
 
-        pipeline.needMemoryCache(std::move(cache_path_prefix), read_settings.page_cache_settings);
+        impl = std::make_unique<CachedInMemoryReadBufferFromFile>(
+            cache_key, read_settings.page_cache, std::move(impl), read_settings);
     }
 
-    /// Async prefetch.
-    /// When distributed cache is active, `AsynchronousBoundedReadBuffer` is required even without
-    /// prefetching: it maintains the position/seek/setReadUntilPosition contract that upstream
-    /// buffers (e.g. `ReadBufferFromEncryptedFile`) rely on. `ReadBufferFromDistributedCache`
-    /// does not implement this contract on its own.
-    if (read_settings.remote_fs_settings.method == RemoteFSReadMethod::threadpool || use_distributed_cache)
+    if (use_async_buffer)
     {
         auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
-        pipeline.needAsyncPrefetch(
+        const size_t min_bytes_for_seek = use_distributed_cache
+            ? read_settings.distributed_cache_settings.min_bytes_for_seek
+            : read_settings.remote_read_min_bytes_for_seek;
+
+        return std::make_unique<AsynchronousBoundedReadBuffer>(
+            std::move(impl),
             reader,
+            read_settings,
+            buffer_size,
+            min_bytes_for_seek,
             global_context->getAsyncReadCounters(),
             global_context->getFilesystemReadPrefetchesLog());
+
     }
+    return impl;
 }
 
 std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFileIfExists(

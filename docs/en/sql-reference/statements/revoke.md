@@ -7,6 +7,8 @@ title: 'REVOKE Statement'
 doc_type: 'reference'
 ---
 
+# REVOKE Statement
+
 Revokes privileges from users or roles.
 
 ## Syntax {#syntax}

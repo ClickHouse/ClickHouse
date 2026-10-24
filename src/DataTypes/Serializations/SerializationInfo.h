@@ -68,9 +68,10 @@ public:
         const SerializationInfoSettings & new_settings) const;
 
     virtual void serialializeKindStackBinary(WriteBuffer & out) const;
-    virtual void deserializeFromKindsBinary(ReadBuffer & in);
 
-    virtual void writeJSON(WriteBuffer & out, const String * name) const;
+    /// Rejects a kind outside of `allowed_kinds` as invalid data.
+    virtual void deserializeFromKindsBinary(ReadBuffer & in, ISerialization::KindSet allowed_kinds);
+
     virtual void toJSON(Poco::JSON::Object & object) const;
     virtual void fromJSON(const Poco::JSON::Object & object);
 
@@ -83,7 +84,8 @@ public:
     static ISerialization::KindStack chooseKindStack(const Data & data, const SerializationInfoSettings & settings);
 
 protected:
-    virtual void writeJSONFields(WriteBuffer & out, const String * name) const;
+    /// Rejects a kind stack that no writer can produce, or that selects a kind the reader does not accept.
+    void checkKindStack(ISerialization::KindSet allowed_kinds) const;
 
     const SerializationInfoSettings settings;
 

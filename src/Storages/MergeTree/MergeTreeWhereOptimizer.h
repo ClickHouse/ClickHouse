@@ -69,6 +69,10 @@ private:
 
         UInt64 columns_size = 0;
         NameSet table_columns;
+        /// Column names resolved to their physical storage names (subcolumn suffix stripped).
+        /// Used for grouping: conditions on subcolumns of the same storage column
+        /// (e.g. `map.key_k0` and `map.key_k1`) are grouped and moved to PREWHERE together.
+        NameSet table_storage_columns;
 
         /// Can condition be moved to prewhere?
         bool viable = false;
@@ -78,6 +82,12 @@ private:
 
         /// the lower the better
         Float64 estimated_row_count = 0;
+
+        /// Combined I/O cost and selectivity score (lower is better): cost per rejected row,
+        /// columns_size / (total_rows - estimated_row_count). A condition that rejects no rows
+        /// gets +inf (scheduled last), and when per-column sizes are unavailable (columns_size=0,
+        /// e.g. compact parts) it falls back to estimated_row_count so selectivity ordering is kept.
+        double cost_with_selectivity = 0;
 
         /// Does the condition contain primary key column?
         /// If so, it is better to move it further to the end of PREWHERE chain depending on minimal position in PK of any
@@ -89,19 +99,20 @@ private:
         {
             return fmt::format(
                 "Condition(exp:{} viable: {}, good: {}, min_position_in_primary_key: {}, estimated_row_count: {}, "
-                "columns_size: {}, table_columns.size: {})",
+                "columns_size: {}, cost_with_selectivity: {}, table_columns.size: {})",
                 node.getColumnName(),
                 viable,
                 good,
                 min_position_in_primary_key,
                 estimated_row_count,
                 columns_size,
+                cost_with_selectivity,
                 table_columns.size());
         }
 
         auto tuple() const
         {
-            return std::make_tuple(!viable, !good, -min_position_in_primary_key, estimated_row_count, columns_size, table_columns.size());
+            return std::make_tuple(!viable, !good, -min_position_in_primary_key, cost_with_selectivity, table_columns.size());
         }
 
         /// Is condition a better candidate for moving to PREWHERE?
@@ -175,6 +186,7 @@ private:
     LoggerPtr log;
     std::unordered_map<std::string, UInt64> column_sizes;
     UInt64 total_size_of_queried_columns = 0;
+    UInt64 total_rows = 0;
 };
 
 

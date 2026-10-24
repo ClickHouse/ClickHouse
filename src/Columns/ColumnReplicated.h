@@ -2,7 +2,6 @@
 
 #include <Columns/IColumn.h>
 #include <Columns/ColumnIndex.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 
 class Collator;
 
@@ -52,7 +51,7 @@ public:
         return Base::create(std::move(nested_column_), std::move(indexes_));
     }
 
-    static Ptr create(const ColumnPtr & nested_column_, ColumnIndex && indexes_)
+    static Ptr create(ColumnPtr & nested_column_, ColumnIndex && indexes_)
     {
         return Base::create(nested_column_->assumeMutable(), std::move(indexes_));
     }
@@ -185,10 +184,10 @@ public:
 
     bool hasDynamicStructure() const override { return nested_column->hasDynamicStructure(); }
     void takeExactDynamicStructureFrom(const IColumn & source) override;
-    void chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
+    void chooseDynamicStructureForMerge(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
     void fixDynamicStructure() override { nested_column->fixDynamicStructure(); }
     bool hasStatistics() const override { return nested_column->hasStatistics(); }
-    void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns) override;
+    void takeOrCalculateStatisticsFrom(const Columns & source_columns) override;
 
     const ColumnIndex & getIndexes() const { return indexes; }
     ColumnIndex & getIndexes() { return indexes; }
@@ -212,7 +211,7 @@ private:
     /// we create empty ColumnReplicated and do insertFrom/insertRangeFrom/insertManyFrom from
     /// source columns.
     /// Mapping is the following: id -> (source_index -> inserted_index).
-    UnorderedMapWithMemoryTracking<UInt64, UnorderedMapWithMemoryTracking<size_t, size_t>> insertion_cache;
+    std::unordered_map<UInt64, std::unordered_map<size_t, size_t>> insertion_cache;
 
     /// Global counter used to create a unique id for each ColumnReplicated instance.
     static std::atomic<UInt64> global_id_counter;
@@ -223,19 +222,5 @@ ColumnPtr convertOffsetsToIndexes(const IColumn::Offsets & offsets);
 
 /// For some columns like Const/LowCardinality/Int* lazy replication is useless and can lead to worse performance.
 bool isLazyReplicationUseful(const ColumnPtr & column);
-/// Apply transformation on replicated columns with shared index only once.
-void transformColumnsWithSharedIndex(
-    Columns & columns,
-    std::function<ColumnPtr(const ColumnPtr &)> index_transform,
-    std::function<void(ColumnPtr &)> non_replicated_transform,
-    std::span<size_t> positions = {});
-/// Same as above, but apply the same transformation to replicated and non replicated columns.
-void transformColumnsWithSharedIndex(
-    Columns & columns,
-    std::function<ColumnPtr(const ColumnPtr &)> transform,
-    std::span<size_t> positions = {});
-/// Materializes ColumnReplicated where lazy replication is not useful:
-/// - `isLazyReplicationUseful` returns false.
-/// - index size <= nested data size, when size check is enabled.
-ColumnPtr convertToFullColumnIfReplicationNotUseful(const ColumnPtr & column, bool with_size_check = true);
+
 }

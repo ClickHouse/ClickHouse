@@ -128,6 +128,11 @@ public:
     scope_guard subscribeForChanges(const UUID & id, const OnChangedHandler & handler) const;
     scope_guard subscribeForChanges(const std::vector<UUID> & ids, const OnChangedHandler & handler) const;
 
+    using OnBatchFinishedHandler = std::function<void()>;
+
+    /// Subscribes for the end of a notification batch (see AccessChangesNotifier::subscribeForBatchFinished).
+    scope_guard subscribeForBatchFinished(const OnBatchFinishedHandler & handler) const;
+
     AuthResult authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address, const ClientInfo & client_info) const;
 
     /// Makes a backup of access entities.
@@ -212,6 +217,10 @@ public:
 
     void setThrowOnInvalidReplicatedAccessEntities(bool enable) { throw_on_invalid_replicated_access_entities = enable; }
     bool shouldThrowOnInvalidReplicatedAccessEntities() const { return throw_on_invalid_replicated_access_entities; }
+
+    /// Sets whether `SET ROLE` is refused when the session or the query is readonly.
+    void setReadonlyRestrictsSetRole(bool enable) { readonly_restricts_set_role = enable; }
+    bool doesReadonlyRestrictSetRole() const { return readonly_restricts_set_role; }
 
     std::shared_ptr<const ContextAccess> getContextAccess(const ContextAccessParams & params) const;
 
@@ -307,6 +316,7 @@ private:
     std::atomic_bool enable_user_name_access_type = true;
     std::atomic_bool enable_read_write_grants = false;
     std::atomic_bool allow_impersonate_user = false;
+    std::atomic_bool readonly_restricts_set_role = false;
 };
 
 }

@@ -29,7 +29,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionAddressToSymbol final : public IFunction
+class FunctionAddressToSymbol : public IFunction
 {
 public:
     static constexpr auto name = "addressToSymbol";

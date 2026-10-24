@@ -1,7 +1,4 @@
 #include <Columns/IColumn.h>
-#include <Core/ColumnsWithTypeAndName.h>
-#include <DataTypes/DataTypeString.h>
-#include <Core/NamesAndTypes.h>
 #include <Storages/System/StorageSystemTableFunctions.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>

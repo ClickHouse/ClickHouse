@@ -74,6 +74,7 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     , object_storage(object_storage_)
 {
     configuration->initPartitionStrategy(partition_by, columns_in_table_or_function_definition, context_);
+    configuration->check(context_);
     /// We allow exceptions to be thrown on update(),
     /// because Cluster engine can only be used as table function,
     /// so no lazy initialization is allowed.
@@ -82,7 +83,6 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     ColumnsDescription columns{columns_in_table_or_function_definition};
     std::string sample_path;
     resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, {}, sample_path, context_);
-    configuration->check(context_);
 
     if (sample_path.empty()
         && context_->getSettingsRef()[Setting::use_hive_partitioning]
@@ -118,7 +118,8 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     }
 
     metadata.setConstraints(constraints_);
-    metadata.setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
+
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
         metadata.columns,
         context_,
         /* format_settings */std::nullopt,
@@ -219,7 +220,7 @@ void StorageObjectStorageCluster::updateExternalDynamicMetadataIfExists(ContextP
     if (!state)
         return;
 
-    auto new_metadata = *getInMemoryMetadataPtr(query_context, false);
+    auto new_metadata = *getInMemoryMetadataPtr();
     new_metadata.setDataLakeTableState(*state);
 
     if (configuration->shouldReloadSchemaForConsistency(query_context))
@@ -228,11 +229,7 @@ void StorageObjectStorageCluster::updateExternalDynamicMetadataIfExists(ContextP
             new_metadata = *metadata_snapshot;
     }
 
-    setInMemoryMetadata(new_metadata.withVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
-        new_metadata.columns,
-        query_context,
-        /* format_settings */ std::nullopt,
-        configuration->partition_strategy_type)));
+    setInMemoryMetadata(new_metadata);
 }
 
 RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExtension(
@@ -251,7 +248,7 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         local_context,
         predicate,
         filter,
-        storage_metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
+        virtual_columns,
         hive_partition_columns_to_read_from_file_path,
         nullptr,
         local_context->getFileProgressCallback(),

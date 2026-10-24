@@ -14,7 +14,7 @@ namespace Poco
 namespace DB
 {
 
-class KafkaSource final : public ISource
+class KafkaSource : public ISource
 {
 public:
     KafkaSource(
