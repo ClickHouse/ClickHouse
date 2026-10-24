@@ -536,6 +536,9 @@ add_object_library(clickhouse_processors_queryplan_profiling_analysis Processors
 add_object_library(clickhouse_processors_queryplan_streaming Processors/QueryPlan/Streaming)
 add_object_library(clickhouse_processors_queryplan_optimizations_cascades Processors/QueryPlan/Optimizations/Cascades)
 add_object_library(clickhouse_processors_queryplan_optimizations_cascades_rules Processors/QueryPlan/Optimizations/Cascades/Rules)
+if (TARGET ch_contrib::substrait)
+    add_object_library(clickhouse_processors_queryplan_substrait Processors/QueryPlan/Substrait)
+endif()
 
 # Work around LLVM x86 backend bug https://github.com/llvm/llvm-project/issues/191800
 # At -Og with AVX2+ targets, the compiler miscompiles functions that combine
@@ -860,6 +863,10 @@ if (TARGET ch_contrib::protobuf)
     target_link_libraries(dbms PRIVATE ch_contrib::protobuf)
     target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::protobuf)
 endif ()
+
+if (TARGET ch_contrib::substrait)
+    target_link_libraries(dbms PRIVATE ch_contrib::substrait)
+endif()
 
 if (TARGET clickhouse_grpc_protos)
     target_link_libraries(dbms PUBLIC clickhouse_grpc_protos)
