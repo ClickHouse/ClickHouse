@@ -84,3 +84,7 @@ World	5	2.321928094887362
 Foo	2	0.9182958340544896
 Bar	3	1.584962500721156
 ClickHouse	10	3.321928094887362
+SELECT count(), countIf(stringBytesUniq(s) != length(arrayDistinct(arrayMap(i -> substring(s, i, 1), range(1, length(s) + 1)))))
+FROM (SELECT substring(repeat(reinterpretAsString(cityHash64(intDiv(number, 3))), 8), 1 + number % 7, number % 70) AS s FROM numbers(30000))
+SETTINGS max_block_size = 1000;
+30000	0
