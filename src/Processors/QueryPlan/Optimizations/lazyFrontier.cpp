@@ -36,6 +36,16 @@ bool canBeRecomputed(const ActionsDAG::Node * node)
     if (node->type == ActionsDAG::ActionType::ARRAY_JOIN)
         return false;
 
+    /// A lambda a step below hands over as a column, such as one PREWHERE outputs, is an input here: nothing above the
+    /// `LIMIT` has it, so the higher-order function that reads it crosses.
+    if (WhichDataType(node->result_type).isFunction())
+    {
+        if (node->type == ActionsDAG::ActionType::INPUT)
+            return false;
+        if (node->type == ActionsDAG::ActionType::ALIAS)
+            return canBeRecomputed(node->children.front());
+    }
+
     if (node->type == ActionsDAG::ActionType::COLUMN)
     {
         if (!node->is_deterministic_constant)
