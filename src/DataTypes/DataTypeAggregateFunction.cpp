@@ -578,10 +578,10 @@ std::vector<size_t> getAggregateStateVersions(const IDataType & type)
     return versions;
 }
 
-/// The argument types are left to `equals`: one state can be spelled with different ones, e.g. with `LowCardinality`.
-std::vector<String> getAggregateFunctionNames(const IDataType & type)
+/// Of the argument types, only the aggregate functions nested in them are added; the rest is left to `equals`:
+/// one state can be spelled with different argument types, e.g. with `LowCardinality`.
+void addAggregateFunctionNames(const IDataType & type, std::vector<String> & names)
 {
-    std::vector<String> names;
     forEachInTypeTree(type, [&](const IDataType & child)
     {
         if (const auto * aggregate_type = typeid_cast<const DataTypeAggregateFunction *>(&child))
@@ -589,8 +589,16 @@ std::vector<String> getAggregateFunctionNames(const IDataType & type)
             const auto & function = *aggregate_type->getFunction();
             names.push_back(std::to_string(aggregate_type->getVersion()) + ", " + function.getName()
                 + DataTypeAggregateFunction::formatParameters(function.getParameters()));
+            for (const auto & argument_type : function.getArgumentTypes())
+                addAggregateFunctionNames(*argument_type, names);
         }
     });
+}
+
+std::vector<String> getAggregateFunctionNames(const IDataType & type)
+{
+    std::vector<String> names;
+    addAggregateFunctionNames(type, names);
     return names;
 }
 
