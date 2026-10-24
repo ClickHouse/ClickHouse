@@ -256,6 +256,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             [] (RPNElement & out, const Field &)
             {
                 out.function = RPNElement::FUNCTION_IN_SET;
+                out.null_is_ordinary_value = true;
                 return true;
             }
         },
@@ -264,6 +265,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             [] (RPNElement & out, const Field &)
             {
                 out.function = RPNElement::FUNCTION_NOT_IN_SET;
+                out.null_is_ordinary_value = true;
                 return true;
             }
         },
@@ -272,6 +274,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             [] (RPNElement & out, const Field &)
             {
                 out.function = RPNElement::FUNCTION_IN_SET;
+                out.null_is_ordinary_value = true;
                 return true;
             }
         },
@@ -280,6 +283,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             [] (RPNElement & out, const Field &)
             {
                 out.function = RPNElement::FUNCTION_NOT_IN_SET;
+                out.null_is_ordinary_value = true;
                 return true;
             }
         },
@@ -288,6 +292,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             [] (RPNElement & out, const Field &)
             {
                 out.function = RPNElement::FUNCTION_IN_SET;
+                out.null_is_ordinary_value = true;
                 return true;
             }
         },
@@ -296,6 +301,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             [] (RPNElement & out, const Field &)
             {
                 out.function = RPNElement::FUNCTION_NOT_IN_SET;
+                out.null_is_ordinary_value = true;
                 return true;
             }
         },
@@ -7762,9 +7768,15 @@ void pushAtomGroupMask(const KeyCondition::RPNElement & group, const ApplyElemen
 
 /// Whether the atom answers NULL - and hence "not true" to `WHERE` - for a NULL argument, instead of
 /// answering true or false as `IS NULL` and `IS NOT NULL` do.
-bool atomIsNullForNullArgument(KeyCondition::RPNElement::Function function)
+bool atomIsNullForNullArgument(const KeyCondition::RPNElement & element)
 {
-    switch (function)
+    /// Only for a bare key. A monotonic wrapper is not applied to the NULL stand-in bound, so the
+    /// range algebra cannot see that the wrapper redefines the predicate for a NULL row - or refuses
+    /// it, as a `CAST` to a non-Nullable type does.
+    if (element.null_is_ordinary_value && element.set_index && !element.set_index->hasMonotonicFunctionsChain())
+        return false;
+
+    switch (element.function)
     {
         case KeyCondition::RPNElement::FUNCTION_IN_RANGE:
         case KeyCondition::RPNElement::FUNCTION_NOT_IN_RANGE:
@@ -7796,13 +7808,15 @@ bool atomIsNullForNullArgument(KeyCondition::RPNElement::Function function)
 /// analysis is gone as soon as one such atom reads a `Nullable` key column whose range may hold a
 /// NULL, or a composite key column whose values may carry a nested `NULL` or `NaN`, which is the same
 /// "neither true nor false" at row level. `IS NULL` and `IS NOT NULL` are excluded: they answer true or false for a NULL as well, so
-/// the algebra describes them exactly. Only `can_be_false` is affected; `can_be_true`, and with it
-/// every pruning decision, is left alone.
+/// the algebra describes them exactly. A set-membership atom that compares a NULL as an ordinary
+/// element - `nullIn`, `has` and their siblings - answers definitely too, and is excluded for the
+/// same reason even though it shares an RPN function with `in`, but only over a bare key. Only
+/// `can_be_false` is affected; `can_be_true`, and with it every pruning decision, is left alone.
 bool KeyCondition::mayReadNullKeyValue(const Hyperrectangle & hyperrectangle, const DataTypes & key_types) const
 {
     for (const auto & element : expandAtomGroups(rpn))
     {
-        if (!atomIsNullForNullArgument(element.function))
+        if (!atomIsNullForNullArgument(element))
             continue;
 
         for (size_t key_column : element.key_columns)
@@ -7820,7 +7834,7 @@ bool KeyCondition::mayReadNullKeyValue(
 {
     for (const auto & element : expandAtomGroups(rpn))
     {
-        if (!atomIsNullForNullArgument(element.function))
+        if (!atomIsNullForNullArgument(element))
             continue;
 
         for (size_t key_column : element.key_columns)
