@@ -43,16 +43,23 @@ To define LDAP server you must add `ldap_servers` section to the `config.xml`.
             <tls_cipher_suite>ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:AES256-GCM-SHA384</tls_cipher_suite>
         </my_ldap_server>
 
-        <!- Typical Active Directory with configured user DN detection for further role mapping. -->
+        <!- Typical Active Directory: a service account locates the user and performs the role mapping searches,
+             the user's password is verified by binding as the DN that was found (search and bind). -->
         <my_ad_server>
-            <host>localhost</host>
-            <port>389</port>
-            <bind_dn>EXAMPLE\{user_name}</bind_dn>
+            <host>ldap.example.com</host>
+            <port>636</port>
+            <enable_tls>yes</enable_tls>
+            <tls_require_cert>demand</tls_require_cert>
+            <tls_ca_cert_file>/etc/clickhouse-server/ldap_ca.pem</tls_ca_cert_file>
+            <lookup_bind_dn>CN=svc.clickhouse,OU=ServiceAccounts,DC=example,DC=com</lookup_bind_dn>
+            <lookup_password from_env="CLICKHOUSE_LDAP_LOOKUP_PASSWORD" hide_in_preprocessed="true"/>
+            <bind_dn>{user_dn}</bind_dn>
             <user_dn_detection>
-                <base_dn>CN=Users,DC=example,DC=com</base_dn>
+                <base_dn>DC=example,DC=com</base_dn>
+                <scope>subtree</scope>
                 <search_filter>(&amp;(objectClass=user)(sAMAccountName={user_name}))</search_filter>
             </user_dn_detection>
-            <enable_tls>no</enable_tls>
+            <verification_cooldown>300</verification_cooldown>
         </my_ad_server>
     </ldap_servers>
 </clickhouse>
@@ -66,10 +73,10 @@ Note, that you can define multiple LDAP servers inside the `ldap_servers` sectio
 |-----------|---------|-------------|
 | `host` | — | LDAP server hostname or IP. This parameter is mandatory and cannot be empty. |
 | `port` | `636` / `389` | LDAP server port. Defaults to `636` if `enable_tls` is set to `yes`, `389` otherwise. |
-| `bind_dn` | — | Template used to construct the DN to bind to. The resulting DN will be constructed by replacing all `{user_name}` substrings of the template with the actual user name during each authentication attempt. |
+| `bind_dn` | — | Template used to construct the DN to bind to. The resulting DN will be constructed by replacing all `{user_name}` substrings of the template with the actual user name during each authentication attempt. The exact value `{user_dn}` selects [search and bind](#ldap-search-and-bind): the DN to bind to is the one found by `user_dn_detection` under the `lookup_bind_dn` identity. `bind_dn` (or the deprecated `auth_dn_prefix`/`auth_dn_suffix`) is mandatory and cannot be empty; `lookup_bind_dn` does not replace it. |
 | `auth_dn_prefix` | — | **Deprecated.** An alternative to `bind_dn`. Cannot be used together with `bind_dn`. When specified, the bind DN is constructed as `auth_dn_prefix + {user_name} + auth_dn_suffix`. For example, setting `auth_dn_prefix` to `uid=` and `auth_dn_suffix` to `,ou=users,dc=example,dc=com` is equivalent to setting `bind_dn` to `uid={user_name},ou=users,dc=example,dc=com`. |
 | `auth_dn_suffix` | — | **Deprecated.** See `auth_dn_prefix`. |
-| `verification_cooldown` | `0` | A period of time, in seconds, after a successful bind attempt, during which the user will be assumed to be successfully authenticated for all consecutive requests without contacting the LDAP server. Specify `0` to disable caching and force contacting the LDAP server for each authentication request. |
+| `verification_cooldown` | `0` | A period of time, in seconds, after a successful bind attempt, during which the user will be assumed to be successfully authenticated for all consecutive requests without contacting the LDAP server. Cached logins also reuse the roles mapped at the last successful login. Specify `0` to disable caching and force contacting the LDAP server for each authentication request. |
 | `follow_referrals` | `false` | A flag to allow the LDAP client library to automatically chase LDAP referrals returned by the server. Mostly relevant for Microsoft Active Directory environments where subtree searches at a high-level base DN (e.g. `DC=example,DC=com`) can return referrals/search references (e.g. `DC=DomainDnsZones,...`). Set to `true` only when you explicitly need cross-partition searches. |
 | `enable_tls` | `yes` | A flag to trigger the use of the secure connection to the LDAP server. Specify `no` for plain text `ldap://` protocol (not recommended), `yes` for LDAP over SSL/TLS `ldaps://` protocol (recommended), or `starttls` for legacy StartTLS protocol (plain text `ldap://` protocol, upgraded to TLS). |
 | `tls_minimum_protocol_version` | `tls1.2` | The minimum protocol version of SSL/TLS. Accepted values: `ssl2`, `ssl3`, `tls1.0`, `tls1.1`, `tls1.2`. |
@@ -80,22 +87,86 @@ Note, that you can define multiple LDAP servers inside the `ldap_servers` sectio
 | `tls_ca_cert_dir` | — | Path to the directory containing CA certificates. |
 | `tls_cipher_suite` | — | Allowed cipher suite (in OpenSSL notation). |
 | `search_limit` | `256` | Maximum number of entries that can be returned by LDAP search queries performed by this server definition (for user DN detection and role mapping). |
+| `lookup_bind_dn` | — | Optional. DN of a service account. When set, every LDAP search (`user_dn_detection` and `role_mapping`) runs under this identity instead of the user's, `bind_dn` may be `{user_dn}` ([search and bind](#ldap-search-and-bind)), and `EXECUTE AS` can resolve an LDAP-backed user before their first login. Requires `user_dn_detection`, whose query must be target-specific — its `base_dn` or `search_filter` must depend on the requested user, either directly via `{user_name}`, or transitively via `{bind_dn}` / `{user_dn}` when the `bind_dn` template itself contains `{user_name}`. A static `user_dn_detection` query that returns the same DN for every requested user is rejected at parse time with `BAD_ARGUMENTS`. Must not contain `{user_name}` and must be provided together with `lookup_password`. |
+| `lookup_password` | — | Password for `lookup_bind_dn`. Cannot be empty when `lookup_bind_dn` is set; an empty value is rejected with `BAD_ARGUMENTS` to avoid issuing an LDAP unauthenticated (anonymous) simple bind. Supports `from_env`, `from_zk` and `hide_in_preprocessed="true"`. |
 
 **`user_dn_detection` sub-parameters**
 
 Section with LDAP search parameters for detecting the actual user DN of the bound user. This is mainly used in search filters for further role mapping when the server is Active Directory. The resulting user DN will be used when replacing `{user_dn}` substrings wherever they are allowed. By default, user DN is set equal to bind DN, but once search is performed, it will be updated to the actual detected user DN value.
 
+When `user_dn_detection` is used together with `lookup_bind_dn`, the search must be target-specific: `base_dn` or `search_filter` must depend on the requested user via `{user_name}`, or via `{bind_dn}` / `{user_dn}` whose underlying `bind_dn` template contains `{user_name}`. A static query that returns the same single entry for every requested user is rejected at parse time, because it would let the service-bind path resolve `EXECUTE AS some_other_name` to an unrelated entry's DN.
+
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `base_dn` | — | Template used to construct the base DN for the LDAP search. The resulting DN will be constructed by replacing all `{user_name}` and `{bind_dn}` substrings of the template with the actual user name and bind DN during the LDAP search. |
+| `base_dn` | — | Template used to construct the base DN for the LDAP search. The resulting DN will be constructed by replacing all `{user_name}`, `{bind_dn}` and `{user_dn}` substrings of the template with the actual user name, bind DN and user DN during the LDAP search (before the detection has run, `{user_dn}` equals the bind DN). When `bind_dn` is `{user_dn}` (search and bind), only `{user_name}` may be used here. |
 | `scope` | `subtree` | Scope of the LDAP search. Accepted values: `base`, `one_level`, `children`, `subtree`. |
-| `search_filter` | — | Template used to construct the search filter for the LDAP search. The resulting filter will be constructed by replacing all `{user_name}`, `{bind_dn}`, and `{base_dn}` substrings of the template with the actual user name, bind DN, and base DN during the LDAP search. Note that special characters must be escaped properly in XML. |
+| `search_filter` | — | Template used to construct the search filter for the LDAP search. The resulting filter will be constructed by replacing all `{user_name}`, `{bind_dn}`, `{user_dn}` and `{base_dn}` substrings of the template with the actual user name, bind DN, user DN and base DN during the LDAP search (before the detection has run, `{user_dn}` equals the bind DN). When `bind_dn` is `{user_dn}` (search and bind), only `{user_name}` and `{base_dn}` may be used here. Note that special characters must be escaped properly in XML. |
+| `attribute` | `dn` | Attribute whose value becomes the user DN. Must stay `dn` when `bind_dn` is `{user_dn}`, because that value is the DN the user's password is verified against. |
+
+## Search and bind with a service account {#ldap-search-and-bind}
+
+By default ClickHouse verifies a password with a single LDAP "simple bind" as the DN built from the `bind_dn` template, and every LDAP search (`user_dn_detection`, `role_mapping`) runs on that same connection, that is with the user's own permissions. Many directories, in particular Active Directory, do not let ordinary users search for groups or read their own `memberOf`, and the login is frequently not part of any DN (`sAMAccountName`, `userPrincipalName`, `uid` spread over several organizational units). For those, configure a service account with `lookup_bind_dn` and `lookup_password`.
+
+Which of the three modes is used depends only on `bind_dn` and `lookup_bind_dn`:
+
+| `bind_dn` | `lookup_bind_dn` | Behavior |
+|-----------|------------------|----------|
+| template with `{user_name}` | not set | Direct bind. The password is verified by binding as the substituted template; the `user_dn_detection` and `role_mapping` searches run as the user. |
+| template with `{user_name}` | set | Direct bind, searches as the service account. After the user's bind succeeds the same connection is re-bound as `lookup_bind_dn`, and `user_dn_detection` and the `role_mapping` searches run under it. |
+| exactly `{user_dn}` | set (required) | Search and bind. The connection is bound as `lookup_bind_dn`, `user_dn_detection` locates the user, the password is verified by binding as the DN that was found, and the connection is re-bound as `lookup_bind_dn` for the `role_mapping` searches. |
+
+One connection is used per login in every mode. Example of search and bind against Active Directory:
+
+```xml
+<clickhouse>
+    <ldap_servers>
+        <my_ad_server>
+            <host>ldap.example.com</host>
+            <port>636</port>
+            <enable_tls>yes</enable_tls>
+            <tls_require_cert>demand</tls_require_cert>
+            <tls_ca_cert_file>/etc/clickhouse-server/ldap_ca.pem</tls_ca_cert_file>
+            <lookup_bind_dn>CN=svc.clickhouse,OU=ServiceAccounts,DC=example,DC=com</lookup_bind_dn>
+            <lookup_password from_env="CLICKHOUSE_LDAP_LOOKUP_PASSWORD" hide_in_preprocessed="true"/>
+            <bind_dn>{user_dn}</bind_dn>
+            <user_dn_detection>
+                <base_dn>DC=example,DC=com</base_dn>
+                <scope>subtree</scope>
+                <search_filter>(&amp;(objectClass=user)(sAMAccountName={user_name}))</search_filter>
+            </user_dn_detection>
+            <verification_cooldown>300</verification_cooldown>
+        </my_ad_server>
+    </ldap_servers>
+</clickhouse>
+```
+
+The following rules are checked when the configuration is loaded. A violation is logged as `Could not parse LDAP server`, the rest of the configuration is applied, and every authentication against that server then fails with `LDAP server ... is misconfigured` followed by the original message:
+
+- `lookup_bind_dn` and `lookup_password` must be set together, `lookup_password` must not be empty, and `lookup_bind_dn` must not contain `{user_name}`.
+- `lookup_bind_dn` requires `user_dn_detection`, whose `base_dn` or `search_filter` must depend on the login.
+- `bind_dn` (or the deprecated `auth_dn_prefix`/`auth_dn_suffix`) is mandatory and must not be empty. With `lookup_bind_dn` it may be exactly `{user_dn}` (search and bind); `lookup_bind_dn` without `bind_dn` is rejected with `'bind_dn' is required`. A configuration with neither would perform an unauthenticated bind and accept every password; it is rejected with `Either 'bind_dn' or 'lookup_bind_dn' must be specified`.
+- If `bind_dn` contains `{user_dn}` it must be exactly `{user_dn}`. This requires `lookup_bind_dn`, and `user_dn_detection` must reference `{user_name}` in `base_dn` or `search_filter`, must not reference `{bind_dn}` or `{user_dn}` (the user DN is not known before the detection), and its `attribute` must be `dn`.
+
+How failures are reported:
+
+- A wrong password, or in search and bind a login that `user_dn_detection` does not find, is a regular authentication failure: the user is treated as not existing in this directory, so the following user directories still get their chance. Active Directory sub-codes (`data 52e` wrong password, `data 533` disabled account, `data 775` locked out, ...) are logged at debug level; the client only ever sees `Authentication failed`.
+- A `user_dn_detection` search answered with `No such object` is treated as "login not found" only when its `base_dn` depends on the login, that is when it contains `{user_name}`, or `{bind_dn}` / `{user_dn}` while the `bind_dn` template contains `{user_name}`: the substituted base legitimately does not exist for an unknown login. A static `base_dn` that does not exist is a misconfiguration and is logged as `LDAP_ERROR`.
+- More than one entry matching `user_dn_detection`, a rejected service account bind (`LDAP lookup bind as ... failed for server ...: invalid credentials`) and every other LDAP error are logged as `LDAP_ERROR` and the login fails.
+- The login is escaped exactly once for the context it is substituted into: as an RFC 4514 DN component for `{user_name}` in `bind_dn` and `base_dn`, as an RFC 4515 filter value for `{user_name}` in `search_filter`. Logins such as `o'neil,doe` or `a=b` therefore match in filters, and characters like `*`, `(` and `)` cannot alter the filter.
+
+**Protecting the service password**
+
+`lookup_password` grants read access to the directory. Keep it out of the configuration file with `from_env` or `from_zk`, and out of the preprocessed configuration with `hide_in_preprocessed="true"`, as in the example above (see [configuration files](/operations/configuration-files#from_env_zk)). `lookup_bind_dn` and `lookup_password` are part of the key of the `verification_cooldown` cache, so a login verified under rotated service credentials is never reused. Rotating the password in the directory without reloading the ClickHouse configuration makes every uncached login fail with `LDAP lookup bind as ... failed for server ...: invalid credentials` until `SYSTEM RELOAD CONFIG` picks up the new value; cached logins keep working until their cooldown expires.
+
+:::note
+While a login is within `verification_cooldown`, the user is accepted without contacting the LDAP server and the roles mapped at the last successful login are reused, so group membership changes take effect only after the cooldown. Keep it short when group membership changes often.
+:::
 
 ## LDAP external authenticator {#ldap-external-authenticator}
 
 A remote LDAP server can be used as a method for verifying passwords for locally defined users (users defined in `users.xml` or in local access control paths). To achieve this, specify previously defined LDAP server name instead of `password` or similar sections in the user definition.
 
-At each login attempt, ClickHouse tries to "bind" to the specified DN defined by the `bind_dn` parameter in the [LDAP server definition](#ldap-server-definition) using the provided credentials, and if successful, the user is considered authenticated. This is often called a "simple bind" method.
+At each login attempt, ClickHouse verifies the provided password with an LDAP "simple bind": as the DN built from the `bind_dn` template in the [LDAP server definition](#ldap-server-definition), or, when `bind_dn` is `{user_dn}`, as the DN found by `user_dn_detection` under the service account (see [Search and bind with a service account](#ldap-search-and-bind)). If the bind succeeds, the user is considered authenticated.
 
 **Example**
 
@@ -126,7 +197,7 @@ CREATE USER my_user IDENTIFIED WITH ldap SERVER 'my_ldap_server';
 
 In addition to the locally defined users, a remote LDAP server can be used as a source of user definitions. To achieve this, specify previously defined LDAP server name (see [LDAP Server Definition](#ldap-server-definition)) in the `ldap` section inside the `users_directories` section of the `config.xml` file.
 
-At each login attempt, ClickHouse tries to find the user definition locally and authenticate it as usual. If the user is not defined, ClickHouse will assume the definition exists in the external LDAP directory and will try to "bind" to the specified DN at the LDAP server using the provided credentials. If successful, the user will be considered existing and authenticated. The user will be assigned roles from the list specified in the `roles` section. Additionally, LDAP "search" can be performed and results can be transformed and treated as role names and then be assigned to the user if the `role_mapping` section is also configured. All this implies that the SQL-driven [Access Control and Account Management](/concepts/features/security/access-rights#access-control-usage) is enabled and roles are created using the [CREATE ROLE](/reference/statements/create/role) statement.
+At each login attempt, ClickHouse tries to find the user definition locally and authenticate it as usual. If the user is not defined, ClickHouse will assume the definition exists in the external LDAP directory and will verify the provided credentials against the LDAP server as described in [Search and bind with a service account](#ldap-search-and-bind): a "bind" as the DN built from the `bind_dn` template, or a search under the service account followed by a bind as the DN that was found. If successful, the user will be considered existing and authenticated. The user will be assigned roles from the list specified in the `roles` section. Additionally, LDAP "search" can be performed and results can be transformed and treated as role names and then be assigned to the user if the `role_mapping` section is also configured. All this implies that the SQL-driven [Access Control and Account Management](/concepts/features/security/access-rights#access-control-usage) is enabled and roles are created using the [CREATE ROLE](/reference/statements/create/role) statement.
 
 **Example**
 
@@ -178,7 +249,7 @@ Note that `my_ldap_server` referred in the `ldap` section inside the `user_direc
 
 **`role_mapping` sub-parameters**
 
-Section with LDAP search parameters and mapping rules. When a user authenticates, while still bound to LDAP, an LDAP search is performed using `search_filter` and the name of the logged-in user. For each entry found during that search, the value of the specified attribute is extracted. For each attribute value that has the specified prefix, the prefix is removed, and the rest of the value becomes the name of a local role defined in ClickHouse, which is expected to be created beforehand by the [CREATE ROLE](/reference/statements/create/role) statement. There can be multiple `role_mapping` sections defined inside the same `ldap` section. All of them will be applied.
+Section with LDAP search parameters and mapping rules. When a user authenticates, while still connected to LDAP, an LDAP search is performed using `search_filter` and the name of the logged-in user; the search runs as the user, or as the service account when the server defines `lookup_bind_dn` (see [Search and bind with a service account](#ldap-search-and-bind)). For each entry found during that search, the value of the specified attribute is extracted. For each attribute value that has the specified prefix, the prefix is removed, and the rest of the value becomes the name of a local role defined in ClickHouse, which is expected to be created beforehand by the [CREATE ROLE](/reference/statements/create/role) statement. There can be multiple `role_mapping` sections defined inside the same `ldap` section. All of them will be applied.
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
