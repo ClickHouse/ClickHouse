@@ -6,7 +6,6 @@
 -- Disable force_primary_key_reverse_order: the PASTE JOIN depends on the physical row order of the tables
 SET force_primary_key_reverse_order = 0;
 
-SET enable_analyzer = 1;
 SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_max_limit_for_lazy_materialization = 100;
 -- Pinned so that the joins keep the order they are written in, and a comma join stays a cross join.

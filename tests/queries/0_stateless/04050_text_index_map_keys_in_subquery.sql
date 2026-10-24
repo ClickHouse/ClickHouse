@@ -8,7 +8,6 @@ SET explain_query_plan_default = 'legacy';
 
 -- Reversed key changes primary key index pruning, altering EXPLAIN granule counts.
 SET force_primary_key_reverse_order = 0;
-SET enable_analyzer = 1;
 SET optimize_move_to_prewhere = 1;
 SET optimize_functions_to_subcolumns = 1;
 SET optimize_use_projections = 1;

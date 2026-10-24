@@ -1,7 +1,6 @@
 -- Disable force_primary_key_reverse_order: tests LIMIT OFFSET with MergeTree, output row order depends on key direction
 SET force_primary_key_reverse_order = 0;
 
-set enable_analyzer=1;
 
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (i UInt64) Engine = MergeTree() order by i;

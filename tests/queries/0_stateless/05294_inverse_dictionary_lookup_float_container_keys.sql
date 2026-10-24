@@ -5,9 +5,6 @@
 
 -- Disable force_primary_key_reverse_order: the reference pins the order of rows returned without `ORDER BY`, which follows the sorting key direction
 SET force_primary_key_reverse_order = 0;
-
-SET enable_analyzer = 1;
-
 DROP DICTIONARY IF EXISTS dict_array;
 DROP DICTIONARY IF EXISTS dict_array_composite;
 DROP DICTIONARY IF EXISTS dict_map;

@@ -11,7 +11,6 @@ SET force_primary_key_reverse_order = 0;
 -- `Nullable` (adding also as `toNullable`, which `join_use_nulls` emits in pushed-down filters), at any depth of `Array`.
 
 SET explain_query_plan_default = 'legacy';
-SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 1;
 SET use_skip_indexes = 1;
 SET query_plan_direct_read_from_text_index = 1;

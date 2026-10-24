@@ -2,8 +2,6 @@
 
 -- Commit order projection tracks physical insertion order via _block_number/_block_offset which changes under reversed key.
 SET force_primary_key_reverse_order = 0;
-set enable_analyzer = 1;
-
 drop table if exists mt_deferred sync;
 
 CREATE TABLE mt_deferred(

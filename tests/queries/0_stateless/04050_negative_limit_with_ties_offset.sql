@@ -4,7 +4,6 @@ SET force_primary_key_reverse_order = 0;
 
 -- { echo }
 
-SET enable_analyzer=1;
 SELECT 'Analyzer:';
 
 SELECT 'Negative Limit Only';

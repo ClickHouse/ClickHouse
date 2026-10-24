@@ -2,7 +2,6 @@
 -- Disable force_primary_key_reverse_order: Query plan output depends on sort direction
 SET force_primary_key_reverse_order = 0;
 
-SET enable_analyzer = 1;
 CREATE DATABASE IF NOT EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 USE {CLICKHOUSE_DATABASE_1:Identifier};
 

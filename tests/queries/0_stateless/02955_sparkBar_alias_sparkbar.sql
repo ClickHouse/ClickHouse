@@ -1,6 +1,5 @@
 -- sparkBar aggregation result depends on event_date key order
 SET force_primary_key_reverse_order = 0;
-SET enable_analyzer = 1;
 DROP TABLE IF EXISTS spark_bar_test;
 
 CREATE TABLE spark_bar_test (`value` Int64, `event_date` Date) ENGINE = MergeTree ORDER BY event_date;

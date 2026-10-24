@@ -6,7 +6,6 @@
 -- Disable force_primary_key_reverse_order: the reference pins the order of rows returned without `ORDER BY`, which follows the sorting key direction
 SET force_primary_key_reverse_order = 0;
 
-SET enable_analyzer = 1;
 SET optimize_rewrite_like_perfect_affix = 0;
 
 DROP DICTIONARY IF EXISTS dict_float;

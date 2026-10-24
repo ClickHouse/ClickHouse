@@ -4,9 +4,6 @@
 
 -- Disable force_primary_key_reverse_order: the row numbers in the posting lists follow the physical order of the rows, which depends on the sorting key direction
 SET force_primary_key_reverse_order = 0;
-
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS tab_postings;
 DROP TABLE IF EXISTS tab_postings_plain;
 

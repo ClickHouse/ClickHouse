@@ -9,7 +9,6 @@ SET force_primary_key_reverse_order = 0;
 -- tokens by the pattern's mandatory literal changes which rows are returned. Every scenario is compared
 -- against the same query with use_skip_indexes = 0.
 
-SET enable_analyzer = 1;
 SET use_skip_indexes = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET use_text_index_like_evaluation_by_dictionary_scan = 1;

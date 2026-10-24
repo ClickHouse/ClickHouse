@@ -4,7 +4,6 @@
 SET force_primary_key_reverse_order = 0;
 -- no-parallel-replicas: Dictionary is not available on parallel-replica workers.
 
-SET enable_analyzer = 1;
 SET optimize_inverse_dictionary_lookup = 1;
 SET optimize_truncate_order_by_after_group_by_keys = 1; -- CI may inject False; extra ORDER BY keys not truncated → EXPLAIN output differs
 SET optimize_or_like_chain = 0;

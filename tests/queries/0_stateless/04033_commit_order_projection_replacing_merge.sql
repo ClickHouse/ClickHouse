@@ -2,8 +2,6 @@
 -- Commit order projection relies on physical _block_number/_block_offset which change under reversed sorting key.
 SET force_primary_key_reverse_order = 0;
 
-set enable_analyzer = 1;
-
 DROP TABLE IF EXISTS mt_replacing_test SYNC;
 
 CREATE TABLE mt_replacing_test(

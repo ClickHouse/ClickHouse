@@ -7,7 +7,6 @@ SET force_primary_key_reverse_order = 0;
 -- branches and lets the primary key prune extra granules. Skip indexes / partition pruning are
 -- disabled below so the EXPLAIN reflects only the primary key effect.
 
-SET enable_analyzer = 1;
 SET use_statistics_for_part_pruning=0;
 SET explain_query_plan_default = 'legacy';
 

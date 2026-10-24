@@ -2,8 +2,10 @@
 -- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
 SET force_primary_key_reverse_order = 0;
 
+DROP TABLE IF EXISTS tab_array;
+DROP TABLE IF EXISTS tab_split;
+DROP TABLE IF EXISTS tab_fallback;
 SET explain_query_plan_default = 'legacy';
-SET enable_analyzer = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET query_plan_text_index_add_hint = 1;
@@ -13,6 +15,7 @@ SET query_plan_optimize_count_from_text_index = 0;
 
 DROP TABLE IF EXISTS tab_array;
 DROP TABLE IF EXISTS tab_split;
+DROP TABLE IF EXISTS tab_fallback;
 
 -- ---------------------------------------------------------------------------
 SELECT '-- array tokenizer (Exact direct read)';
@@ -99,3 +102,30 @@ SELECT trimLeft(explain) FROM (
 ) WHERE explain LIKE '%Name:%' OR explain LIKE '%Granules:%' OR explain LIKE '%INPUT%\_\_text_index%';
 
 DROP TABLE tab_split;
+
+-- ---------------------------------------------------------------------------
+SELECT '-- needles with an empty-string or a NULL element';
+
+CREATE TABLE tab_fallback
+(
+    id UInt32,
+    arr_array Array(Nullable(String)),
+    arr_split Array(Nullable(String)),
+    INDEX idx_array(arr_array) TYPE text(tokenizer = 'array'),
+    INDEX idx_split(arr_split) TYPE text(tokenizer = 'splitByNonAlpha')
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1;
+
+INSERT INTO tab_fallback VALUES
+    (1, ['foo', ''], ['foo', '']),
+    (2, ['bar', NULL], ['bar', NULL]),
+    (3, ['baz'], ['baz']);
+
+SELECT arraySort(groupArray(id)) FROM tab_fallback WHERE hasAny(arr_array, ['']);
+SELECT arraySort(groupArray(id)) FROM tab_fallback WHERE hasAll(arr_split, ['']);
+SELECT arraySort(groupArray(id)) FROM tab_fallback WHERE hasAny(arr_array, ['baz', NULL]);
+SELECT arraySort(groupArray(id)) FROM tab_fallback WHERE hasAny(arr_split, ['baz', NULL]);
+
+DROP TABLE tab_fallback;

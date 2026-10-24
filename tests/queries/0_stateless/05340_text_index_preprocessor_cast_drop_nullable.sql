@@ -4,7 +4,6 @@
 -- Disable force_primary_key_reverse_order: the reference pins which granules are skipped, which depends on the sorting key direction
 SET force_primary_key_reverse_order = 0;
 
-SET enable_analyzer = 1;
 SET use_skip_indexes = 1;
 SET use_query_condition_cache = 0;
 

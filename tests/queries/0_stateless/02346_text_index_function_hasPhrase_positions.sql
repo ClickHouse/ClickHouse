@@ -2,7 +2,6 @@
 -- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
 SET force_primary_key_reverse_order = 0;
 
-SET enable_analyzer = 1;
 SET use_skip_indexes = 1;
 SET use_query_condition_cache = 0;
 SET explain_query_plan_default = 'legacy';

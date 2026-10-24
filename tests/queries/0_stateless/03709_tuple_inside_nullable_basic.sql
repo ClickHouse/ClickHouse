@@ -226,8 +226,7 @@ SELECT
 FROM tuple_test t1
 JOIN tuple_test t2 ON t1.tup.u = t2.tup.u
 WHERE t1.id < t2.id
-ORDER BY id1, id2
-SETTINGS enable_analyzer = 1; -- t1.tup.u notation is not recognized in old analyzer
+ORDER BY id1, id2; -- t1.tup.u notation is not recognized in old analyzer
 
 SELECT 'LEFT JOIN - With NULL handling';
 SELECT
@@ -236,8 +235,7 @@ SELECT
     t2.tup as tup2
 FROM tuple_test t1
 LEFT JOIN tuple_test t2 ON t1.tup.u = t2.tup.u AND t1.id != t2.id
-ORDER BY t1.id, t2.id NULLS LAST
-SETTINGS enable_analyzer = 1; -- t1.tup.u notation is not recognized in old analyzer
+ORDER BY t1.id, t2.id NULLS LAST; -- t1.tup.u notation is not recognized in old analyzer
 
 SELECT 'INNER JOIN - Exclude NULLs';
 SELECT
@@ -308,8 +306,7 @@ WHERE EXISTS (
     SELECT 1 FROM tuple_test t2
     WHERE t1.tup.u = t2.tup.u AND t1.id != t2.id
 )
-ORDER BY id
-SETTINGS enable_analyzer = 1; -- t1.tup.u notation is not recognized in old analyzer
+ORDER BY id; -- t1.tup.u notation is not recognized in old analyzer
 
 SELECT 'Subquery - Scalar subquery';
 SELECT
@@ -325,8 +322,7 @@ SELECT
     tup.u,
     (SELECT count() FROM tuple_test t2 WHERE t2.tup.u = t1.tup.u) as count_same_u
 FROM tuple_test t1
-ORDER BY id
-SETTINGS enable_analyzer = 1; -- t1.tup.u notation is not recognized in old analyzer
+ORDER BY id; -- t1.tup.u notation is not recognized in old analyzer
 
 SELECT 'CASE - On NULL';
 SELECT
@@ -500,8 +496,7 @@ WITH filtered AS (
 )
 SELECT id, tup.u, tup.s
 FROM filtered
-ORDER BY id
-SETTINGS enable_analyzer = 1; -- CTE tup.u notation is not recognized in old analyzer
+ORDER BY id; -- CTE tup.u notation is not recognized in old analyzer
 
 SELECT 'CTE - Aggregation';
 WITH stats AS (
@@ -535,8 +530,7 @@ FROM tuple_test;
 
 SELECT 'Array operations - arrayMap';
 SELECT arrayMap(x -> x.u, arrayFilter(x -> isNotNull(x), groupArray(tup))) as all_u_values
-FROM tuple_test
-SETTINGS enable_analyzer = 1; -- Lambda tup.u notation is not recognized in old analyzer
+FROM tuple_test; -- Lambda tup.u notation is not recognized in old analyzer
 
 SELECT 'Complex - Multiple operations';
 SELECT
@@ -568,8 +562,7 @@ FROM (
     WHERE tup IS NOT NULL
 )
 GROUP BY category
-ORDER BY category
-SETTINGS enable_analyzer = 1; -- Here, tup.u notation is not recognized in old analyzer
+ORDER BY category; -- Here, tup.u notation is not recognized in old analyzer
 
 DROP TABLE IF EXISTS tuple_test;
 

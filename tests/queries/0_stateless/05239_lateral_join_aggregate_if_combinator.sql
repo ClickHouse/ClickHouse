@@ -4,7 +4,6 @@ SET force_primary_key_reverse_order = 0;
 -- A LATERAL subquery aggregating without GROUP BY restores the empty-set row for an outer row
 -- with an empty input. Aggregates that already have the -If combinator must keep their own filter.
 
-SET enable_analyzer = 1;
 SET allow_experimental_lateral_join = 1;
 
 DROP TABLE IF EXISTS companies;

@@ -4,8 +4,6 @@ SET force_primary_key_reverse_order = 0;
 
 SET explain_query_plan_default = 'legacy';
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS tab;
 
 SELECT '-- Default tokenizer';
