@@ -198,7 +198,7 @@ bool ReadWriteBufferFromHTTP::checkIfActuallySeekable()
 {
     if (!file_info)
         file_info = getFileInfo();
-    return file_info->seekable;
+    return method == Poco::Net::HTTPRequest::HTTP_GET && file_info->seekable;
 }
 
 String ReadWriteBufferFromHTTP::getFileName() const
@@ -654,6 +654,15 @@ std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::initialize()
             /// Retry 200 OK
             if (response.getStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_OK)
             {
+                if (method != Poco::Net::HTTPRequest::HTTP_GET)
+                    throw Exception(
+                        ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
+                        "Server does not support resuming a {} read from offset {} (response status: {}, reason: {})",
+                        method,
+                        getOffset(),
+                        toString(response.getStatus()),
+                        response.getReason());
+
                 String explanation = fmt::format(
                     "Cannot read with range: [{}, {}] (response status: {}, reason: {}), will retry",
                     getOffset(), read_range.end ? toString(*read_range.end) : "-",
@@ -997,6 +1006,13 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::getFileInfo()
 {
     if (file_info)
         return *file_info;
+
+    /// A HEAD cannot describe what a POST returns; a HEAD buffer still asks for its metadata.
+    if (method != Poco::Net::HTTPRequest::HTTP_GET && method != Poco::Net::HTTPRequest::HTTP_HEAD)
+    {
+        file_info = HTTPFileInfo{};
+        return *file_info;
+    }
 
     /// May be disabled in case the user knows in advance that the server doesn't support HEAD requests.
     /// Allows to avoid making unnecessary requests in such cases.

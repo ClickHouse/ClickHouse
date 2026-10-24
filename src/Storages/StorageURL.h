@@ -66,6 +66,7 @@ public:
         const String & uri,
         CompressionMethod compression_method,
         const HTTPHeaderEntries & headers,
+        const String & http_method,
         const std::optional<FormatSettings> & format_settings,
         const ContextPtr & context);
 
@@ -73,6 +74,7 @@ public:
         const String & uri,
         CompressionMethod compression_method,
         const HTTPHeaderEntries & headers,
+        const String & http_method,
         const std::optional<FormatSettings> & format_settings,
         const ContextPtr & context);
 
@@ -82,8 +84,11 @@ public:
     static std::optional<time_t> tryGetLastModificationTime(
         const String & url,
         const HTTPHeaderEntries & headers,
+        const String & read_method,
         const Poco::Net::HTTPBasicCredentials & credentials,
         const ContextPtr & context);
+
+    static std::string chooseReadMethod(const String & http_method);
 
 protected:
     friend class ReadFromURL;
@@ -112,7 +117,7 @@ protected:
     // In this case, format_settings is not set.
     std::optional<FormatSettings> format_settings;
     HTTPHeaderEntries headers;
-    String http_method; /// For insert can choose Put instead of default Post.
+    String http_method;
     ASTPtr partition_by;
     bool distributed_processing;
     bool supports_prewhere = false;
@@ -157,6 +162,7 @@ private:
         const String & uri,
         CompressionMethod compression_method,
         const HTTPHeaderEntries & headers,
+        const String & http_method,
         const std::optional<FormatSettings> & format_settings,
         const ContextPtr & context);
 
@@ -226,7 +232,7 @@ public:
     StorageURLSource(
         const ReadFromFormatInfo & info,
         std::shared_ptr<IteratorWrapper> uri_iterator_,
-        const std::string & http_method,
+        const std::string & http_method_,
         std::function<void(WriteBuffer &)> callback,
         const String & format,
         const std::optional<FormatSettings> & format_settings,
@@ -302,6 +308,7 @@ private:
     FormatParserSharedResourcesPtr parser_shared_resources;
     FormatFilterInfoPtr format_filter_info;
     HTTPHeaderEntries headers;
+    String http_method;
     /// A hash of the request headers of the table, which are a part of the query condition cache key,
     /// see `makeQueryConditionCacheFileKey`. The OpenTelemetry headers added per query are not included.
     UInt128 request_headers_hash;
@@ -424,6 +431,8 @@ public:
     {
         std::string url;
         std::string http_method;
+        /// Set by the inline `http_method = '...'` argument, not by a named collection.
+        bool inline_http_method = false;
         HTTPHeaderEntries headers;
         std::string addresses_expr;
     };
@@ -431,10 +440,14 @@ public:
     static Configuration getConfiguration(
         ASTs & args, const ContextPtr & context, const StorageID * table_id = nullptr, bool is_replayed_definition = false);
 
-    /// Does evaluateConstantExpressionOrIdentifierAsLiteral() on all arguments.
-    /// If `headers(...)` argument is present, parses it and moves it before the key-value arguments (to the array end if there are none).
-    /// Returns number of arguments excluding `headers(...)`.
-    static size_t evalArgsAndCollectHeaders(ASTs & url_function_args, HTTPHeaderEntries & header_entries, const ContextPtr & context, bool evaluate_arguments = true);
+    /// Evaluates all arguments and moves `headers(...)` before the key-value arguments (to the end if there are none).
+    /// With `out_http_method`, also reads `http_method = '...'` and moves it to the end. Returns the count of the other arguments.
+    static size_t evalArgsAndCollectHeaders(
+        ASTs & url_function_args,
+        HTTPHeaderEntries & header_entries,
+        const ContextPtr & context,
+        bool evaluate_arguments = true,
+        String * out_http_method = nullptr);
 
     static void processNamedCollectionResult(Configuration & configuration, const NamedCollection & collection);
 
