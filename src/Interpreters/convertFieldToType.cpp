@@ -582,8 +582,7 @@ DataTypePtr widenIntegerElements(const DataTypePtr & type, WideIntegerCarrier ca
     return which.isUInt256() ? nullptr : std::make_shared<DataTypeUInt256>();
 }
 
-/// `equals` does not tell `Bool` from `UInt8`, so a strict conversion into a type containing `Bool`
-/// keeps the value unchanged only from that same type: the `Bool` branch accepts only 0 and 1.
+/// `equals` does not tell `Bool` from `UInt8`, and the strict `Bool` conversion accepts only 0 and 1.
 bool canReturnUnchanged(const IDataType * from_type_hint, const IDataType & to_type, bool strict)
 {
     if (!from_type_hint || !from_type_hint->equals(to_type))
