@@ -238,6 +238,9 @@ Arguments:
 - `-f`, `--format`, `--output-format` — output format, `TSV` by default.
 - `-d`, `--database` — default database, `_local` by default.
 - `--stacktrace` — whether to dump debug output in case of exception.
+- `--dump-schema[=<db1,db2,...>]` — print the `CREATE` statements of the given databases (all user databases if no value is given) to stdout in dependency order, then exit. Cannot be combined with `--query`, `--queries-file`, `--file`, `--structure`, `--input-format`, or a file, pipe or socket on stdin (redirect stdin from `/dev/null`).
+- `--dump-schema-exclude=<db1,db2,...>` — skip these databases when dumping all of them. Requires `--dump-schema` without an explicit database list.
+- `--dump-schema-dir=<path>` — write the SQL of each dumped database to its own `<database>.sql` file in `<path>` (created if missing), and print the written files to stdout in the order to replay them. Requires `--dump-schema`.
 - `--echo [ <bool> ]` — print each query before execution. Takes an optional boolean value. Enabled by default in interactive mode and disabled in batch mode. Note: because `--echo` now takes an optional value, a positional query placed immediately after a bare `--echo` is consumed as its value; use `--echo --query "..."`, `--echo -q "..."`, `--echo=false`, or piped `stdin` instead.
 - `--echo-formatted [ <bool> ]` — format the echoed queries. Takes an optional boolean value. Enabled by default in interactive mode and disabled in batch mode.
 - `--echo-query-id [ <bool> ]` — print the `query_id` before execution. Takes an optional boolean value. Enabled by default in interactive mode and disabled in batch mode.
