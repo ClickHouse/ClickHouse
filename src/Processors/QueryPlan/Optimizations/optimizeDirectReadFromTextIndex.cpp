@@ -571,14 +571,20 @@ private:
     }
 
     /// All indexes that can serve the function must use the same tokenizer.
-    /// Prefer an index that can scan its dictionary, then the first by name.
+    /// Prefer an index that can be read directly, then one that can scan its dictionary, then the first by name.
     std::optional<String> choosePerTokenPatternFunctionIndex(const ActionsDAG::Node & function_node, const ActionsDAG::Node & canonical_node) const
     {
         const auto function_name = function_node.function_base->getName();
         const auto haystack_name = getNameWithoutAliases(function_node.children[0]);
 
-        std::map<String, String> rewrite_by_index;
-        NameOrderedSet scanning_indexes;
+        struct Candidate
+        {
+            String rewrite;
+            /// Can be read directly, is materialized in every part, can scan its dictionary.
+            std::tuple<bool, bool, bool> rank;
+        };
+
+        std::map<String, Candidate> candidates;
         for (const auto & [index_name, info] : text_index_read_infos)
         {
             const auto & condition = typeid_cast<const MergeTreeIndexConditionText &>(*info.condition);
@@ -589,27 +595,36 @@ private:
             if (!search_query || search_query->getFunctionName() != function_name || !condition.canAnswerFunctionNode(function_node))
                 continue;
 
-            String rewrite = "tokenizer = " + condition.getTokenizer()->getDescription();
-            rewrite_by_index.emplace(index_name, std::move(rewrite));
-            if (!search_query->getPatterns().empty())
-                scanning_indexes.insert(index_name);
+            /// An ignored or not analyzed index has no `info.index` and only lends its tokenizer.
+            const bool scans_dictionary = !search_query->getPatterns().empty();
+            const bool can_read_directly = scans_dictionary && info.index && info.is_materialized;
+            candidates.emplace(index_name, Candidate{
+                .rewrite = "tokenizer = " + condition.getTokenizer()->getDescription(),
+                .rank = {can_read_directly, can_read_directly && info.is_fully_materialized, scans_dictionary},
+            });
         }
 
-        if (rewrite_by_index.empty())
+        if (candidates.empty())
             return {};
 
-        const auto & [chosen_index, chosen_rewrite] = *rewrite_by_index.begin();
-        for (const auto & [index_name, rewrite] : rewrite_by_index)
+        const auto & [first_index, first_candidate] = *candidates.begin();
+        auto chosen = candidates.begin();
+        for (auto it = candidates.begin(); it != candidates.end(); ++it)
         {
-            if (rewrite != chosen_rewrite)
+            const auto & [index_name, candidate] = *it;
+            if (candidate.rewrite != first_candidate.rewrite)
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Text indexes {} and {} on {} define function {} differently ({} vs {}). "
                     "Pass the tokenizer as the third argument",
-                    backQuote(chosen_index), backQuote(index_name), backQuote(haystack_name), function_name, chosen_rewrite, rewrite);
+                    backQuote(first_index), backQuote(index_name), backQuote(haystack_name), function_name,
+                    first_candidate.rewrite, candidate.rewrite);
+
+            if (candidate.rank > chosen->second.rank)
+                chosen = it;
         }
 
-        return scanning_indexes.empty() ? chosen_index : *scanning_indexes.begin();
+        return chosen->first;
     }
 
     std::vector<SelectedCondition> selectConditions(const ActionsDAG::Node & function_node, const ContextPtr & context)
