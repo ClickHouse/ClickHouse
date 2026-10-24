@@ -13,8 +13,8 @@ NOT_IMPLEMENTED
 SUPPORT_IS_DISABLED
 SUPPORT_IS_DISABLED
 1
-BAD_ARGUMENTS
-cannot be combined with http_method='PUT'
+0
+0
 0
 does not support http_method
 0
@@ -34,6 +34,9 @@ ACCESS_DENIED
 9
 2	1
 1
+11
+11
+11
 62352_aliascap	['POST']
 62352_cache	['POST']
 62352_cluster	['POST']
@@ -42,6 +45,7 @@ ACCESS_DENIED
 62352_infer	['POST']
 62352_kvorder	['POST']
 62352_methodalias	['POST']
+62352_ncread	['GET']
 62352_post	['POST']
 62352_put_read	['GET']
 62352_winsert	['POST']

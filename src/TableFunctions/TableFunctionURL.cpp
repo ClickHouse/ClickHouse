@@ -59,6 +59,14 @@ namespace
             "Set `allow_url_wildcard_from_index_pages = 1` to enable it");
     }
 
+    /// Index pages are read with `GET`. A named collection's method turns them off, as before.
+    bool canExpandIndexPages(const StorageURL::Configuration & configuration)
+    {
+        if (configuration.inline_http_method)
+            return IStorageURLBase::chooseReadMethod(configuration.http_method) == Poco::Net::HTTPRequest::HTTP_GET;
+        return configuration.http_method.empty();
+    }
+
     ASTs makeWebObjectStorageEngineArgs(
         const String & source,
         const String & format,
@@ -383,15 +391,13 @@ StoragePtr TableFunctionURL::getStorage(
     const auto parallel_replicas_cluster_name = settings[Setting::cluster_for_parallel_replicas].toString();
 
     if ((!is_insert_query || columns.empty()) && urlPathHasListableGlobs(source)
-        && IStorageURLBase::chooseReadMethod(configuration.http_method) == Poco::Net::HTTPRequest::HTTP_POST)
+        && IStorageURLBase::chooseReadMethod(configuration.storageHTTPMethod()) == Poco::Net::HTTPRequest::HTTP_POST)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "http_method='POST' cannot be used with `*`/`**` wildcards expanded from HTTP index pages (URL '{}')",
             source);
 
-    const bool use_web_wildcard = !is_insert_query
-        && IStorageURLBase::chooseReadMethod(configuration.http_method) == Poco::Net::HTTPRequest::HTTP_GET
-        && urlPathHasListableGlobs(source);
+    const bool use_web_wildcard = !is_insert_query && canExpandIndexPages(configuration) && urlPathHasListableGlobs(source);
 
     const bool can_use_parallel_replicas = context->canReplaceClusterEngineWithClusterVariant()
         && !is_secondary_query
@@ -455,7 +461,7 @@ StoragePtr TableFunctionURL::getStorage(
         context,
         compression_method_,
         configuration.headers,
-        configuration.http_method,
+        configuration.storageHTTPMethod(),
         nullptr,
         /*distributed_processing=*/false);
 }
@@ -471,14 +477,13 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
         String sample_path = filename;
 
         if (urlPathHasListableGlobs(filename)
-            && IStorageURLBase::chooseReadMethod(configuration.http_method) == Poco::Net::HTTPRequest::HTTP_POST)
+            && IStorageURLBase::chooseReadMethod(configuration.storageHTTPMethod()) == Poco::Net::HTTPRequest::HTTP_POST)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "http_method='POST' cannot be used with `*`/`**` wildcards expanded from HTTP index pages (URL '{}')",
                 filename);
 
-        if (IStorageURLBase::chooseReadMethod(configuration.http_method) == Poco::Net::HTTPRequest::HTTP_GET
-            && urlPathHasListableGlobs(filename))
+        if (canExpandIndexPages(configuration) && urlPathHasListableGlobs(filename))
         {
             checkExperimentalURLWildcardFromIndexPages(context);
 
@@ -506,7 +511,7 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
                 filename,
                 chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
                 configuration.headers,
-                configuration.http_method,
+                configuration.storageHTTPMethod(),
                 std::nullopt,
                 context).first;
         }
@@ -516,7 +521,7 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
                 filename,
                 chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
                 configuration.headers,
-                configuration.http_method,
+                configuration.storageHTTPMethod(),
                 std::nullopt,
                 context);
         }
@@ -574,7 +579,7 @@ url(URL [,format] [,structure] [,headers] [,http_method='POST'])
 | `format`    | [Format](/reference/formats/index) of the data. Type: [String](/reference/data-types/string).                                                  |
 | `structure` | Table structure in `'UserID UInt64, Name String'` format. Determines column names and types. Type: [String](/reference/data-types/string).     |
 | `headers`   | Headers in `'headers('key1'='value1', 'key2'='value2')'` format. You can set headers for HTTP call.                                                  |
-| `http_method` | Key-value argument overriding the HTTP method: `http_method='POST'` makes `SELECT` use `POST` instead of the default `GET`; for `INSERT`, `PUT` can be specified instead of `POST`. `PUT` applies to writes only. Also available as the `http_method`/`method` key of a [named collection](/reference/operations/named-collections). |
+| `http_method` | Key-value argument overriding the HTTP method: `http_method='POST'` makes `SELECT` use `POST` instead of the default `GET`; for `INSERT`, `PUT` can be specified instead of `POST`. `PUT` applies to writes only. The `http_method`/`method` key of a [named collection](/reference/operations/named-collections), stored or passed with the call, applies to writes only, as before. |
 
 ## Returned value {#returned-value}
 

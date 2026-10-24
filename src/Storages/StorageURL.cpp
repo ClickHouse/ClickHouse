@@ -1586,6 +1586,13 @@ std::string IStorageURLBase::getReadMethod() const
     return chooseReadMethod(http_method);
 }
 
+String StorageURL::Configuration::storageHTTPMethod() const
+{
+    if (!inline_http_method && http_method == Poco::Net::HTTPRequest::HTTP_POST)
+        return "";
+    return http_method;
+}
+
 std::vector<std::pair<std::string, std::string>> IStorageURLBase::getReadURIParams(
     const Names & /*column_names*/,
     const StorageSnapshotPtr & /*storage_snapshot*/,
@@ -2117,7 +2124,8 @@ void IStorageURLBase::read(
     size_t num_streams)
 {
     /// Tables loaded from metadata skip the create-time check, so check again here.
-    checkIndexPageWildcardsNotCombinedWithHTTPMethod(uri, http_method);
+    if (getReadMethod() == Poco::Net::HTTPRequest::HTTP_POST)
+        checkIndexPageWildcardsNotCombinedWithHTTPMethod(uri, http_method);
 
     if (distributed_processing && local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
         num_streams = clampClusterFunctionNumStreams(
@@ -3630,7 +3638,7 @@ void registerStorageURL(StorageFactory & factory)
             {
                 /// Reached with wildcards only when `http_method` disabled the expansion above; reject that
                 /// combination explicitly instead of silently reading the literal `*` resource.
-                if (is_new_definition)
+                if (is_new_definition && config.inline_http_method)
                     checkIndexPageWildcardsNotCombinedWithHTTPMethod(config.url, config.http_method);
 
                 return std::make_shared<StorageURL>(
@@ -3644,7 +3652,7 @@ void registerStorageURL(StorageFactory & factory)
                     context,
                     config.compression_method,
                     config.headers,
-                    config.http_method,
+                    config.storageHTTPMethod(),
                     partition_by,
                     /* distributed_processing */ false,
                     is_replayed_definition);
@@ -3765,9 +3773,10 @@ CREATE TABLE s3_via_url (a UInt32, b String) ENGINE = URL('s3://bucket/key.csv',
 respectively. For processing `POST` requests, the remote server must support
 [Chunked transfer encoding](https://en.wikipedia.org/wiki/Chunked_transfer_encoding).
 
-The method can be overridden with the `http_method` key-value argument (or the `http_method`/`method` key of a [named collection](/reference/operations/named-collections)):
+The method can be overridden with the `http_method` key-value argument:
 `http_method='POST'` makes `SELECT` use `POST` instead of the default `GET`; for `INSERT`, `PUT` can be specified instead of `POST`.
 `PUT` applies to writes only — a `SELECT` with `http_method='PUT'` still uses `GET`.
+The `http_method`/`method` key of a [named collection](/reference/operations/named-collections), stored or passed with the call, applies to writes only, as before.
 
 ```sql
 CREATE TABLE post_only_source (word String, value UInt64)

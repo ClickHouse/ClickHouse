@@ -44,6 +44,8 @@ TAG_KVORDER="${CLICKHOUSE_DATABASE}_62352_kvorder"
 TAG_METHODALIAS="${CLICKHOUSE_DATABASE}_62352_methodalias"
 TAG_ALIASCAP="${CLICKHOUSE_DATABASE}_62352_aliascap"
 TAG_WINSERT="${CLICKHOUSE_DATABASE}_62352_winsert"
+TAG_NCREAD="${CLICKHOUSE_DATABASE}_62352_ncread"
+NC_READ="nc_read_${CLICKHOUSE_DATABASE}_62352"
 
 # 1. Default: SELECT through url() uses GET.
 # 2. http_method='POST' switches the read to POST.
@@ -93,8 +95,8 @@ $CLICKHOUSE_CLIENT -q "
     CREATE TABLE url_put_62352 (x String) ENGINE = URL('http://localhost:1/plain.csv', CSV, http_method='PUT');
     SHOW CREATE TABLE url_put_62352 FORMAT TSVRaw;
     DROP TABLE url_put_62352" | grep -cE "http_method ?= ?'PUT'"
-# A pre-existing table can carry POST + wildcard (a named collection edited after the table
-# was created): ATTACH keeps loading it, and the read path rejects it at use time.
+# A named collection's method is for writes only, so a table over it with wildcards (here the
+# collection is edited after the table was created) is not rejected for its method when read.
 $CLICKHOUSE_CLIENT -q "
     DROP NAMED COLLECTION IF EXISTS ${NC_MAIN};
     CREATE NAMED COLLECTION ${NC_MAIN} AS url = 'http://localhost:1/plain.csv', format = 'CSV', http_method = 'POST';
@@ -102,9 +104,9 @@ $CLICKHOUSE_CLIENT -q "
     ALTER NAMED COLLECTION ${NC_MAIN} SET url = 'http://localhost:1/files/*.csv';
     DETACH TABLE url_${NC_MAIN};
     ATTACH TABLE url_${NC_MAIN}"
-$CLICKHOUSE_CLIENT -q "SELECT * FROM url_${NC_MAIN}" 2>&1 | grep -o -m1 'BAD_ARGUMENTS'
+$CLICKHOUSE_CLIENT -q "SELECT * FROM url_${NC_MAIN}" 2>&1 | grep -c "cannot be combined with http_method"
 $CLICKHOUSE_CLIENT -q "DROP TABLE url_${NC_MAIN}; DROP NAMED COLLECTION ${NC_MAIN}"
-# The same holds for any explicit http_method, not only POST.
+# The same holds for a collection's PUT.
 $CLICKHOUSE_CLIENT -q "
     DROP NAMED COLLECTION IF EXISTS ${NC_PUT};
     CREATE NAMED COLLECTION ${NC_PUT} AS url = 'http://localhost:1/plain.csv', format = 'CSV', http_method = 'PUT';
@@ -112,7 +114,7 @@ $CLICKHOUSE_CLIENT -q "
     ALTER NAMED COLLECTION ${NC_PUT} SET url = 'http://localhost:1/files/*.csv';
     DETACH TABLE url_${NC_PUT};
     ATTACH TABLE url_${NC_PUT}"
-$CLICKHOUSE_CLIENT -q "SELECT * FROM url_${NC_PUT}" 2>&1 | grep -o -m1 "cannot be combined with http_method='PUT'"
+$CLICKHOUSE_CLIENT -q "SELECT * FROM url_${NC_PUT}" 2>&1 | grep -c "cannot be combined with http_method"
 $CLICKHOUSE_CLIENT -q "DROP TABLE url_${NC_PUT}; DROP NAMED COLLECTION ${NC_PUT}"
 # Non-HTTP scheme dispatch ignores a named collection's http_method, as before, but rejects
 # the inline argument, which is new syntax, like headers(...).
@@ -195,6 +197,18 @@ $CLICKHOUSE_CLIENT -q "SELECT countDistinct(source), countIf(source LIKE 'POST:%
 #     single URL depends on task distribution, so assert only that rows arrived.
 $CLICKHOUSE_CLIENT $SETTINGS_OPT --schema_inference_use_cache_for_url=0 -q "SELECT count() > 0 FROM urlCluster('test_shard_localhost', '${CLICKHOUSE_URL}&query=SELECT+10+AS+x+FORMAT+TSVWithNamesAndTypes&log_comment=${TAG_CLUSTER}', 'TSVWithNamesAndTypes', http_method='POST')" 2>&1 | tail -1
 
+# 16. A named collection's method keeps applying to writes only, as before: reads through it, with
+#     the stored key or a call-time override, and their schema inference all stay GET.
+$CLICKHOUSE_CLIENT -q "
+    DROP NAMED COLLECTION IF EXISTS ${NC_READ};
+    CREATE NAMED COLLECTION ${NC_READ} AS url = '${CLICKHOUSE_URL}&query=SELECT+11+AS+x+FORMAT+TSVWithNamesAndTypes&log_comment=${TAG_NCREAD}', format = 'TSVWithNamesAndTypes', method = 'POST';
+    CREATE TABLE url_${NC_READ} (x UInt8) ENGINE = URL(${NC_READ})"
+$CLICKHOUSE_CLIENT $SETTINGS_OPT --schema_inference_use_cache_for_url=0 -q "
+    SELECT * FROM url(${NC_READ});
+    SELECT * FROM url(${NC_READ}, http_method = 'POST');
+    SELECT * FROM url_${NC_READ}"
+$CLICKHOUSE_CLIENT -q "DROP TABLE url_${NC_READ}; DROP NAMED COLLECTION ${NC_READ}"
+
 # Verify the methods that were actually used, per tag.
 $CLICKHOUSE_CLIENT -q "
     SYSTEM FLUSH LOGS query_log;
@@ -205,6 +219,6 @@ $CLICKHOUSE_CLIENT -q "
     WHERE event_date >= yesterday()
       AND type = 'QueryFinish'
       AND current_database = currentDatabase()
-      AND log_comment IN ('${TAG_GET}', '${TAG_POST}', '${TAG_PUT_READ}', '${TAG_ENGINE}', '${TAG_INFER}', '${TAG_CACHE}', '${TAG_KVORDER}', '${TAG_METHODALIAS}', '${TAG_ALIASCAP}', '${TAG_WINSERT}', '${TAG_CLUSTER}')
+      AND log_comment IN ('${TAG_GET}', '${TAG_POST}', '${TAG_PUT_READ}', '${TAG_ENGINE}', '${TAG_INFER}', '${TAG_CACHE}', '${TAG_KVORDER}', '${TAG_METHODALIAS}', '${TAG_ALIASCAP}', '${TAG_WINSERT}', '${TAG_CLUSTER}', '${TAG_NCREAD}')
     GROUP BY log_comment
     ORDER BY log_comment"
