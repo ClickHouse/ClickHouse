@@ -1,0 +1,50 @@
+-- the real granules of the twin table
+b < 60	60
+b < 60 AND c = 0	32
+b = 42	1
+c = 0	68
+-- a full scan reads every window, so the numbers are exact
+marks: 120
+With idx_b (minmax, hypothetical):
+marks: 60
+skip_ratio: 50.0%
+empirical_status: ok
+sampled_marks: 120 / 120
+With idx_c (minmax, hypothetical):
+marks: 68
+skip_ratio: 43.3%
+empirical_status: ok
+sampled_marks: 120 / 120
+(combined: idx_b, idx_c):
+marks: 32
+skip_ratio: 73.3%
+empirical_status: ok
+sampled_marks: 120 / 120
+-- past the budget each index reads a sample of its windows, and the span holds the real granules
+b < 60	idx_b	30 / 120	['60','40','80']	60	1
+b = 42	idx_b	30 / 120	['0','0','20']	1	1
+c = 0	idx_c	60 / 120	['68','35','94']	68	1
+-- a sample leaves the other windows unknown, so the combined row gets no estimate
+unsupported	The estimate of at least one candidate used a sample of index windows, and the windows out of the sample are unknown, so EXPLAIN WHATIF cannot combine the candidates (see `index_scan_budget_rows`)
+-- max_rows_to_read lowers the budget, and a limit below the smallest sample leaves the estimate unsupported
+marks: 60
+With idx_c (minmax, hypothetical):
+marks: 40
+empirical_status: ok
+sampled_marks: 30 / 120
+With idx_d (minmax, hypothetical):
+marks: 60
+empirical_status: unsupported
+empirical_reason: The estimate would read 12000 rows, over max_rows_to_read = 6000 (a sample keeps at least ~30 index windows and one per part)
+-- the window of a shorter last run stands for fewer windows, so the estimate holds the real granules
+33 / 303	['3','3','53']	3	1
+-- windows with different marks count with their marks, so the estimate holds the real granules
+30	226 / 270	['252','224','268']	240	1
+-- a window joins the sample with a chance in proportion to its baseline marks, so the span holds the real granules
+88 / 960	['48','48','103']	48	1
+-- the sampled windows bound the estimate, so the estimate is in the span
+v != 25	88 / 960	['146','110','146']	146	1	1
+v = 25	88 / 960	['16','16','52']	16	1	1
+-- all parts take draws in proportion to their baseline marks, so the span holds the real granules
+v = 2	104 / 1920	['32','32','100']	32	1
+v >= 1	104 / 1920	['32','32','100']	34	1
