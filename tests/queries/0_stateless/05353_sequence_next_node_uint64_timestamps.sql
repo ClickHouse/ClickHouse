@@ -125,3 +125,10 @@ SELECT sequenceNextNodeMerge('forward', 'head')(s) FROM
         AS AggregateFunction(sequenceNextNode('forward', 'head'), UInt64, String, UInt8, UInt8))
 )
 SETTINGS prefer_localhost_replica = 0;
+
+-- States that differ only in the high 32 bits of a timestamp hash differently, so the second set is not taken for the first.
+SELECT
+    materialize(arrayReduce('sequenceNextNodeState(\'forward\', \'head\')', [4294967297, 2]::Array(UInt64), ['A', 'B'], [1, 0]::Array(UInt8), [1, 0]::Array(UInt8)))
+        IN (arrayReduce('sequenceNextNodeState(\'forward\', \'head\')', [1, 2]::Array(UInt64), ['A', 'B'], [1, 0]::Array(UInt8), [1, 0]::Array(UInt8))),
+    materialize(arrayReduce('sequenceNextNodeState(\'forward\', \'head\')', [4294967297, 2]::Array(UInt64), ['A', 'B'], [1, 0]::Array(UInt8), [1, 0]::Array(UInt8)))
+        IN (arrayReduce('sequenceNextNodeState(\'forward\', \'head\')', [4294967297, 2]::Array(UInt64), ['A', 'B'], [1, 0]::Array(UInt8), [1, 0]::Array(UInt8)));

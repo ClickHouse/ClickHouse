@@ -470,7 +470,7 @@ void ColumnAggregateFunction::updateHashFast(SipHash & hash) const
 {
     WriteBufferFromOwnString wbuf;
     const ColumnAggregateFunction::Container & vec = getData();
-    func->serializeBatch(vec, 0, size(), wbuf);
+    func->serializeBatch(vec, 0, size(), wbuf, version);
     hash.update(wbuf.str().c_str(), wbuf.str().size());
 }
 
