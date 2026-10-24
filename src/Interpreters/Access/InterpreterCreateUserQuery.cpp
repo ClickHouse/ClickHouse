@@ -512,6 +512,9 @@ BlockIO InterpreterCreateUserQuery::execute()
             new_users.emplace_back(std::move(new_user));
         }
 
+        if (query.grantees)
+            RolesOrUsersSet::throwIfAmbiguousNames(*query.grantees, access_control, names);
+
         std::vector<UUID> ids;
         if (query.or_replace)
             getContext()->checkSettingsConstraintsForOverwrite(new_users, query.storage_name);

@@ -916,6 +916,12 @@
              By default this setting is false. -->
         <readonly_restricts_set_role>false</readonly_restricts_set_role>
 
+        <!-- Whether a name in a list that accepts both users and roles (GRANT ... TO, REVOKE ... FROM,
+             CREATE ROW POLICY / QUOTA / SETTINGS PROFILE ... TO, GRANTEES, SHOW GRANTS FOR) throws an exception
+             when both a user and a role with this name exist. If false, such a name refers to the user.
+             By default this setting is false. -->
+        <throw_on_ambiguous_user_or_role_names>false</throw_on_ambiguous_user_or_role_names>
+
         <!-- Number of seconds since last access a role is stored in the Role Cache -->
         <role_cache_expiration_time_seconds>600</role_cache_expiration_time_seconds>
 

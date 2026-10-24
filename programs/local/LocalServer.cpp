@@ -1246,6 +1246,7 @@ void LocalServer::setupUsers()
     access_control.setEnableUserNameAccessType(config.getBool("access_control_improvements.enable_user_name_access_type", true));
     access_control.setThrowOnInvalidReplicatedAccessEntities(config.getBool("access_control_improvements.throw_on_invalid_replicated_access_entities", true));
     access_control.setForbidSQLAccessEntitiesTargetingUsersConfig(config.getBool("access_control_improvements.forbid_sql_access_entities_targeting_users_config", false));
+    access_control.setThrowOnAmbiguousUserOrRoleNames(config.getBool("access_control_improvements.throw_on_ambiguous_user_or_role_names", false));
 
     /// Keep in sync with `AccessControl::setupFromMainConfig` and `attachSystemTables`: `system.user_query_log`
     /// is attached (and thus safe to grant SELECT on implicitly) only when this is enabled.
