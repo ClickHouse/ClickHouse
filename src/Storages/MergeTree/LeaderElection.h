@@ -1,10 +1,17 @@
 #pragma once
 
 #include <filesystem>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <base/sort.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
+
+namespace DB::ErrorCodes
+{
+    extern const int REPLICA_STATUS_CHANGED;
+    extern const int SUPPORT_IS_DISABLED;
+}
 
 namespace fs = std::filesystem;
 
@@ -65,7 +72,10 @@ inline void checkNoOldLeaders(LoggerPtr log, ZooKeeper & zookeeper, const String
             }
 
             if (!identifier.ends_with(suffix))
-                throw Poco::Exception(fmt::format("Found leader replica ({}) with too old version (< 20.6). Stop it before upgrading", identifier));
+                throw DB::Exception(
+                    DB::ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Found leader replica ({}) with too old version (< 20.6). Stop it before upgrading",
+                    identifier);
 
             /// Version does not matter, just check that it still exists.
             /// May fail with ZNONODE
@@ -84,7 +94,7 @@ inline void checkNoOldLeaders(LoggerPtr log, ZooKeeper & zookeeper, const String
             KeeperMultiException::check(code, ops, res);
     }
 
-    throw Poco::Exception("Cannot check that no old leaders exist");
+    throw DB::Exception(DB::ErrorCodes::REPLICA_STATUS_CHANGED, "Cannot check that no old leaders exist");
 }
 
 }
