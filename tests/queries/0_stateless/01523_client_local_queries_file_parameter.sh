@@ -272,3 +272,20 @@ elif [[ "$output" == *'prelude failed'* && "$output" != *'TemporaryTableHolder'*
 else
     echo 'failed prelude did not clean up'
 fi
+
+# Query-file writes must invalidate the positional schema-inference reader.
+# Both trailing reads must see the rewritten file, including the first one.
+printf '1\n2\n3\n' > "$STDIN_DATA_FILE_NAME"
+printf '%s\n' 'CREATE TABLE rewritten_stdin_01523 (c1 UInt8) ENGINE=File(TSV, stdin);' \
+    'TRUNCATE TABLE rewritten_stdin_01523;' \
+    'INSERT INTO rewritten_stdin_01523 SELECT 9 FROM system.one;' > "$TEMP_SQL_FILE_NAME"
+$CLICKHOUSE_LOCAL --async_insert=0 --storage_file_read_method=pread --queries-file="$TEMP_SQL_FILE_NAME" \
+    -q 'SELECT sum(c1); SELECT sum(c1)' 0<>"$STDIN_DATA_FILE_NAME"
+
+# One inferred input with a private or public name uses one temporary-table slot.
+# A second temporary table fits the limit without breaking implicit or explicit reads.
+printf '1\n2\n3\n' > "$STDIN_DATA_FILE_NAME"
+echo 'SELECT 99 FROM system.one;' > "$TEMP_SQL_FILE_NAME"
+$CLICKHOUSE_LOCAL --max_temporary_tables=2 --queries-file="$TEMP_SQL_FILE_NAME" \
+    -q 'CREATE TEMPORARY TABLE limit_01523 (a UInt8); SELECT count() FROM limit_01523; SELECT sum(c1); SELECT sum(c1) FROM table' \
+    < "$STDIN_DATA_FILE_NAME"

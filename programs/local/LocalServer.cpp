@@ -1482,6 +1482,14 @@ void LocalServer::beforeExecutingCommandLineQueries()
     if (!inferred_table)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Deferred stdin table {} is missing", backQuote(private_name));
 
+    /// Query files can truncate or rewrite stdin after schema inference.
+    /// The first command-line query must read the current bytes, not the
+    /// positional buffer that was populated before the query files ran.
+    if (auto * file_storage = inferred_table->getTable()->as<StorageFile>())
+        file_storage->discardInferredFileDescriptorReadBuffer();
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Deferred stdin table is not a File storage");
+
     const String public_name = *implicit_stdin_table_to_activate;
     /// Only expose the public alias when it cannot shadow a table in the query's
     /// effective database. Check per query because SET/USE and query-level
@@ -1523,19 +1531,37 @@ void LocalServer::beforeExecutingCommandLineQueries()
         {
             if (public_alias == inferred_table)
             {
+                /// Keep exactly one alias in the session. When a real table
+                /// shadows the public name, retain the private implicit source.
                 session_context->removeExternalTable(public_name);
                 query_context->removeExternalTable(public_name);
+                session_context->addExternalTable(private_name, inferred_table);
+                query_context->addExternalTable(private_name, inferred_table);
             }
             alias_was_exposed = false;
         }
         else if (!public_alias)
         {
+            /// The public input name replaces, rather than duplicates, its
+            /// private holder. Both aliases refer to the same temporary table;
+            /// counting them separately incorrectly exhausts max_temporary_tables.
+            if (session_context->findExternalTable(private_name) == inferred_table)
+            {
+                session_context->removeExternalTable(private_name);
+                query_context->removeExternalTable(private_name);
+            }
             session_context->addExternalTable(public_name, inferred_table);
             query_context->addExternalTable(public_name, inferred_table);
             alias_was_exposed = true;
         }
         else
             alias_was_exposed = true;
+
+        /// FROM-less queries must resolve to the visible public name whenever
+        /// the inferred input is exposed. An explicit user setting still wins.
+        if (!database_collision
+            && query_context->getSettingsRef()[Setting::implicit_table_at_top_level].value == private_name)
+            query_context->setSetting("implicit_table_at_top_level", public_name);
     });
 
     /// The inferred table stays addressable by its private name for FROM-less

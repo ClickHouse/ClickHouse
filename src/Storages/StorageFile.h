@@ -108,6 +108,10 @@ public:
     /// Used by the unified `URL` engine to persist the delegate's inferred format.
     const String & getFormatName() const { return format_name; }
 
+    /// Drop the schema-inference read buffer before the first clickhouse-local query
+    /// after a query-file prelude, which may have rewritten the backing stdin file.
+    void discardInferredFileDescriptorReadBuffer();
+
     void read(
         QueryPlan & query_plan,
         const Names & column_names,

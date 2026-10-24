@@ -1301,6 +1301,18 @@ StorageFile::FileSource StorageFile::FileSource::parse(const String & source, co
     return res;
 }
 
+void StorageFile::discardInferredFileDescriptorReadBuffer()
+{
+    if (!inferred_fd_reader_is_positional)
+        return;
+
+    /// The deferred table has not been exposed to any query yet. Always open
+    /// a fresh positional reader so writes from the query files are visible.
+    has_peekable_read_buffer_from_fd = false;
+    peekable_read_buffer_from_fd.reset();
+    read_buffer_from_fd.reset();
+}
+
 std::pair<ColumnsDescription, String> StorageFile::getTableStructureAndFormatFromFileDescriptor(std::optional<String> format, const ContextPtr & context)
 {
     /// If we want to read schema from file descriptor we should create
