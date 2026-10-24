@@ -53,6 +53,9 @@ struct PrewhereExprStep
     /// Version of mutation if step is a part of on-fly mutation.
     std::optional<UInt64> mutation_version;
 
+    /// Set for every step `AlterConversions::getMutationSteps` builds; not all of them have a `mutation_version`.
+    bool is_mutation_step = false;
+
     /// The last step of the PREWHERE part covered by `PrewhereInfo::query_condition_cache_attribution`.
     bool query_condition_cache_attribution_boundary = false;
 };
