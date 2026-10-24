@@ -1,0 +1,45 @@
+-- declared type does not depend on variant_throw_on_type_mismatch
+Nullable(Float64)
+Nullable(Float64)
+Nullable(Float64)
+Nullable(Float64)
+Nullable(Float64)
+Nullable(Float64)
+-- rows of an incompatible alternative are NULL, matching the declared type
+Nullable(Float64)	44	0
+Nullable(Float64)	\N	1
+-- a result type that cannot be inside Nullable keeps the Variant wrapper
+Variant(Map(UInt8, String))	{1:'x',2:'y'}	0
+Variant(Map(UInt8, String))	\N	1
+Variant(Array(UInt8))	[1,2,1,2]	0
+Variant(Array(UInt8))	\N	1
+-- an alternative that resolves to Nothing without a type error is kept
+Variant(UInt8)
+Variant(UInt8)
+Variant(UInt8)
+Variant(UInt8)
+Variant(String)
+Variant(String)
+-- every alternative incompatible
+Nullable(Nothing)
+-- Dynamic is unaffected
+Nullable(Float64)	5
+Nullable(Float64)	5
+-- a custom-named result type is unaffected
+Nullable(Point)
+-- INSERT with such an expression in the key writes both part types
+compact	3
+wide	3
+skip index	4
+t_04927_compact	Compact
+t_04927_wide	Wide
+skip index prunes	1
+parts before merge	2
+parts after merge	1
+after merge	4
+after reattach	5
+-- a set index over a kept Nothing alternative survives a reload
+nothing index type	Variant(UInt8)
+nothing index match	1
+nothing index values	[10,30,50]
+nothing index prunes	1
