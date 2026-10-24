@@ -515,7 +515,9 @@ void ContextAccess::calculateAccessRights() const
 
 void ContextAccess::findRowPoliciesOfInitialUser() const
 {
-    row_policies_of_initial_user = params.initial_user_id ? access_control->tryGetDefaultRowPolicies(*params.initial_user_id) : nullptr;
+    row_policies_of_initial_user = params.initial_user_id
+        ? access_control->tryGetRowPoliciesOfInitialUser(*params.initial_user_id, params.initial_user_current_roles.get())
+        : nullptr;
 }
 
 
