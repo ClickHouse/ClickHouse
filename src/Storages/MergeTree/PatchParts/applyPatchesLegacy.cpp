@@ -509,7 +509,8 @@ void applyPatchesToBlockLegacy(
     Block & result_block,
     Block & versions_block,
     const std::vector<PatchReadResultToApply> & patch_read_results,
-    UInt64 source_data_version)
+    UInt64 source_data_version,
+    NameSet * patched_columns)
 {
     /// Combine patches that update the same set of columns, keyed by the hash of the set.
     std::unordered_map<UInt128, PatchesIndices, UInt128TrivialHash> patches_indices;
@@ -557,6 +558,9 @@ void applyPatchesToBlockLegacy(
     {
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ApplyPatchesMicroseconds);
         auto updated_header = getUpdatedHeader(patches);
+
+        if (patched_columns)
+            addPatchedColumns(result_block, patches, *patched_columns);
 
         if (canApplyPatchesRaw(patches))
             applyPatchesIndices(result_block, versions_block, patches, updated_header, source_data_version);

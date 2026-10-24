@@ -1,4 +1,5 @@
 #include <cstddef>
+#include <functional>
 #include <vector>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeReaderTextIndex.h>
@@ -23,6 +24,8 @@
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
+#include <Parsers/IAST.h>
 #include <Databases/enableAllExperimentalSettings.h>
 
 
@@ -362,6 +365,201 @@ ColumnsDescription IMergeTreeReader::buildCombinedColumnsForDefaultExpressions()
                 combined_columns.add(virtual_column);
     }
     return combined_columns;
+}
+
+NameSet IMergeTreeReader::getDefaultsDependingOn(const NameSet & candidates, const NameSet & changed_columns) const
+{
+    NameSet result;
+    if (candidates.empty() || changed_columns.empty())
+        return result;
+
+    auto combined_columns = buildCombinedColumnsForDefaultExpressions();
+    const auto & columns_in_part = data_part_info_for_read->getColumnsDescription();
+    bool share_nested = (*storage_settings)[MergeTreeSetting::share_nested_offsets];
+
+    /// Whether the reader takes the values of the column from the part, by the same rules as reading:
+    /// a pending `RENAME COLUMN` reads it under its old name, and the data of a column a pending
+    /// `DROP COLUMN` invalidates is ignored, even if the name was added again with a new `DEFAULT`.
+    auto is_stored_in_part = [&](const String & name)
+    {
+        String name_in_part = name;
+        if (alter_conversions && alter_conversions->isColumnRenamed(name))
+            name_in_part = alter_conversions->getColumnOldName(name);
+        else if (alter_conversions && alter_conversions->columnHasNewName(name))
+            return false;
+
+        if (!columns_in_part.has(name_in_part))
+            return false;
+
+        /// See `isColumnDroppedByPendingMutation`.
+        if (alter_conversions && !data_part_info_for_read->isProjectionPart()
+            && (alter_conversions->isColumnDropped(name_in_part, share_nested) || alter_conversions->isColumnDropped(name, share_nested)))
+            return false;
+
+        return true;
+    };
+
+    auto get_name_in_storage = [&](const String & name)
+    {
+        if (auto column = combined_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name))
+            return column->getNameInStorage();
+        return name;
+    };
+
+    /// The columns that differ from the values the `DEFAULT` expressions were evaluated with.
+    NameSet changed;
+    for (const auto & name : changed_columns)
+        changed.insert(get_name_in_storage(name));
+
+    /// The columns the part does not store whose `DEFAULT` reads a changed column, directly or through
+    /// another such column. A changed column may be one of them too: a patch may have overwritten only
+    /// some of its rows, and the others still hold the value of its `DEFAULT`.
+    NameSet depending;
+    auto defaults = combined_columns.getDefaults();
+    bool added = true;
+    while (added)
+    {
+        added = false;
+        for (const auto & [name, default_desc] : defaults)
+        {
+            if (!default_desc.expression || depending.contains(name) || is_stored_in_part(name))
+                continue;
+
+            /// Only the source columns the expression reads, not the formals of its lambdas or its aliases.
+            RequiredSourceColumnsVisitor::Data columns_context;
+            auto expression = default_desc.expression->clone();
+            RequiredSourceColumnsVisitor(columns_context).visit(expression);
+            for (const auto & identifier : columns_context.requiredColumns())
+            {
+                auto identifier_in_storage = get_name_in_storage(identifier);
+                if (identifier_in_storage == name)
+                    continue;
+
+                if (changed.contains(identifier) || depending.contains(identifier)
+                    || changed.contains(identifier_in_storage) || depending.contains(identifier_in_storage))
+                {
+                    depending.insert(name);
+                    added = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    for (const auto & name : candidates)
+    {
+        if (depending.contains(get_name_in_storage(name)))
+            result.insert(name);
+    }
+
+    return result;
+}
+
+NamesAndTypesList IMergeTreeReader::getMissingDefaultInputs(const NamesAndTypesList & columns, const Block & block) const
+{
+    NamesAndTypesList result;
+    auto combined_columns = buildCombinedColumnsForDefaultExpressions();
+
+    NameSet visited;
+    for (const auto & column : columns)
+        visited.insert(column.name);
+
+    /// The same columns `evaluateMissingDefaults` would add to the expressions: the ones the expressions read,
+    /// directly or not, that have a `DEFAULT` and are absent in the block. Each goes after the ones it reads.
+    std::function<void(const String &)> add_inputs = [&](const String & name)
+    {
+        auto column_default = combined_columns.getDefault(name);
+        if (!column_default || !column_default->expression)
+            return;
+
+        RequiredSourceColumnsVisitor::Data columns_context;
+        auto expression = column_default->expression->clone();
+        RequiredSourceColumnsVisitor(columns_context).visit(expression);
+        for (const auto & identifier : columns_context.requiredColumns())
+        {
+            if (block.has(identifier) || !combined_columns.getDefault(identifier) || !visited.emplace(identifier).second)
+                continue;
+
+            add_inputs(identifier);
+            result.emplace_back(identifier, combined_columns.get(identifier).type);
+        }
+    };
+
+    for (const auto & column : columns)
+        add_inputs(column.getNameInStorage());
+
+    return result;
+}
+
+void IMergeTreeReader::evaluateDefaults(Block & block, const NamesAndTypesList & columns_to_evaluate) const
+{
+    try
+    {
+        NameSet names_to_evaluate;
+        for (const auto & column : columns_to_evaluate)
+            names_to_evaluate.insert(column.name);
+
+        /// The expressions read every column but the ones they produce.
+        Block inputs;
+        for (const auto & column : block)
+        {
+            if (!names_to_evaluate.contains(column.name))
+                inputs.insert(column);
+        }
+
+        /// For the `DEFAULT` expressions that read no column at all.
+        addDummyColumnWithRowCount(inputs, block.rows());
+
+        /// Defaults are evaluated on full columns to get correct values for subcolumns.
+        NameSet full_requested_columns_set;
+        NamesAndTypesList full_requested_columns;
+        for (const auto & column : columns_to_evaluate)
+        {
+            auto name_in_storage = column.getNameInStorage();
+            if (full_requested_columns_set.emplace(name_in_storage).second)
+                full_requested_columns.emplace_back(name_in_storage, column.getTypeInStorage());
+        }
+
+        auto context_copy = createContextForDefaultExpressions();
+        auto combined_columns = buildCombinedColumnsForDefaultExpressions();
+
+        auto dag = DB::evaluateMissingDefaults(
+            inputs,
+            full_requested_columns,
+            combined_columns,
+            context_copy);
+
+        if (dag)
+        {
+            dag->addMaterializingOutputActions(/*materialize_sparse=*/ false);
+            auto actions = std::make_shared<ExpressionActions>(
+                std::move(*dag),
+                ExpressionActionsSettings(context_copy->getSettingsRef()));
+            actions->execute(inputs);
+        }
+
+        for (const auto & column : columns_to_evaluate)
+        {
+            auto & result = block.getByName(column.name);
+
+            if (inputs.has(column.name))
+                result.column = inputs.getByName(column.name).column;
+            else if (column.isSubcolumn())
+                result.column = tryGetSubcolumnFromBlock(inputs, column.getTypeInStorage(), column);
+            else
+                result.column = inputs.getByName(column.getNameInStorage()).column;
+        }
+    }
+    catch (Exception & e)
+    {
+        /// Better diagnostics.
+        const auto & part_storage = data_part_info_for_read->getDataPartStorage();
+        e.addMessage(
+            "(while evaluating defaults after applying patches for part " + part_storage->getFullPath()
+            + " located on disk " + part_storage->getDiskName()
+            + " of type " + part_storage->getDiskType() + ")");
+        throw;
+    }
 }
 
 void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns & res_columns) const

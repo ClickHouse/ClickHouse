@@ -1,0 +1,11 @@
+patched
+0	5	[1,2]	[6,7]
+1	5	[3,4]	[8,9]
+0	[6,7]
+1	[8,9]
+pending mutation applied on the fly
+0	5	8	[1,2]	[6,7]
+1	10	8	[3,4]	[13,14]
+pending mutation not applied
+0	5	7	[1,2]	[6,7]
+1	10	7	[3,4]	[13,14]

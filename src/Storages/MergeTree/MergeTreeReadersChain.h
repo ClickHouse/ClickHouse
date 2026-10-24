@@ -95,7 +95,31 @@ private:
     void applyPatchesAfterReader(ReadResult & result, size_t reader_index);
     ColumnsForPatches getColumnsForPatches(const Block & header, const Columns & columns) const;
 
-    void applyPatches(
+    /// Removes the columns the step's action recomputes from `result.columns_filled_by_defaults`:
+    /// their value is the action's, not their `DEFAULT`'s, and must not be evaluated again.
+    static void forgetColumnsOverwrittenByStep(ReadResult & result, const MergeTreeRangeReader & range_reader);
+
+    /// Takes the rows of `patched_rows` (see `applyPatches`) out of `result.rows_filled_by_defaults`:
+    /// a patched row keeps its patched value. A column none of whose rows holds its `DEFAULT` any more
+    /// leaves `result.columns_filled_by_defaults`.
+    static void forgetPatchedRows(ReadResult & result, const Block & patched_rows);
+
+    /// Evaluates the `DEFAULT` expressions of `columns_to_evaluate`, present in `block`, once more and replaces
+    /// their values in `block`; the other columns of `block` are the inputs. The expression of a column is executed
+    /// only in its rows of `result.rows_filled_by_defaults` (in every row if it has none there); the patched rows keep
+    /// their values. A column is evaluated after the others of `columns_to_evaluate` its expression reads.
+    static void evaluateDefaultsInRowsFilledByDefaults(
+        const IMergeTreeReader & reader, const ReadResult & result, Block & block, const NamesAndTypesList & columns_to_evaluate);
+
+    /// Evaluates the `DEFAULT` expressions of the columns in `result.columns_filled_by_defaults`
+    /// once more, after patches were applied to `patched_columns` of the result accumulated up to
+    /// the reader `reader_index`. The rows a patch overwrote, already taken out by `forgetPatchedRows`,
+    /// keep their patched value.
+    void reevaluateDefaultsAfterPatches(ReadResult & result, size_t reader_index, const NameSet & patched_columns) const;
+
+    /// Returns the names of the columns to which a patch was applied. For those of them in `columns_to_track`,
+    /// adds to `patched_rows` a `UInt8` column with the same name and 1 in the rows a patch overwrote.
+    NameSet applyPatches(
         const Block & result_header,
         Columns & result_columns,
         Block & versions_block,
@@ -103,7 +127,9 @@ private:
         std::optional<UInt64> max_version,
         const ColumnsForPatches & columns_for_patches,
         const std::set<ColumnForPatch::Order> & suitable_orders,
-        const Block & additional_columns) const;
+        const Block & additional_columns,
+        const NameSet & columns_to_track,
+        Block & patched_rows) const;
 
     RangeReaders range_readers;
     /// The readers of `range_readers` that read columns, not only a filter: see `MergeTreeRangeReader::startReadingChain`.

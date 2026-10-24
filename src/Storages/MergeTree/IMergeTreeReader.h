@@ -84,12 +84,33 @@ public:
     /// Evaluate defaulted columns if necessary.
     void evaluateMissingDefaults(Block additional_columns, Columns & res_columns) const;
 
+    /// Evaluates the `DEFAULT` expressions of `columns_to_evaluate` (a subset of the requested
+    /// columns, present in `block`) once more and replaces their values in `block`. The other
+    /// columns of `block` are the inputs of the expressions. Used after patch parts have
+    /// overwritten a column that such an expression reads.
+    void evaluateDefaults(Block & block, const NamesAndTypesList & columns_to_evaluate) const;
+
+    /// Returns the columns of `candidates`, which the part does not store, whose `DEFAULT` expression
+    /// reads one of `changed_columns`, directly or through another `DEFAULT` column the part does not
+    /// store. Only those have to be evaluated again after `changed_columns` are patched: evaluating
+    /// any other one again would change the value of a non-deterministic `DEFAULT` such as `rand()`.
+    NameSet getDefaultsDependingOn(const NameSet & candidates, const NameSet & changed_columns) const;
+
+    /// Returns the columns absent in `block` whose `DEFAULT` the expressions of `columns` read, directly or
+    /// through another such column, ordered so that a column goes after the ones its expression reads.
+    /// `evaluateDefaults` would evaluate them anew for each column it is called for.
+    NamesAndTypesList getMissingDefaultInputs(const NamesAndTypesList & columns, const Block & block) const;
+
     /// If part metadata is not equal to storage metadata,
     /// then try to perform conversions of columns.
     void performRequiredConversions(Columns & res_columns) const;
 
     ALWAYS_INLINE const NamesAndTypesList & getColumns() const { return data_part_info_for_read->isWidePart() ? converted_requested_columns : original_requested_columns; }
     size_t numColumnsInResult() const { return getColumns().size(); }
+
+    /// The requested columns as they were passed, without converting the flattened fields of `Nested`
+    /// to subcolumns: the `DEFAULT` of a field such as `n.z` is registered under that name.
+    const NamesAndTypesList & getOriginalRequestedColumns() const { return original_requested_columns; }
 
     /// Returns column names and types as they are stored on disk (may differ from requested types
     /// when there are pending type-changing mutations). Used to build correct `ColumnsWithTypeAndName`
