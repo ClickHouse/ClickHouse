@@ -934,10 +934,35 @@ inline bool comparisonCanThrow(const DataTypePtr & left_type, const DataTypePtr 
         left_scaled && left_scaled == scale_and_kind(right, which_right))
         return false;
 
+    /// Tuples are compared element-wise by `executeTuple`. A tuple comparison cannot throw if and
+    /// only if both sides have the same non-zero number of elements and each corresponding element
+    /// comparison cannot throw.
+    if (const auto * left_tuple = checkAndGetDataType<DataTypeTuple>(left.get()))
+    {
+        if (const auto * right_tuple = checkAndGetDataType<DataTypeTuple>(right.get()))
+        {
+            const auto & left_elements = left_tuple->getElements();
+            const auto & right_elements = right_tuple->getElements();
+
+            if (left_elements.empty() || left_elements.size() != right_elements.size())
+                return true;
+
+            for (size_t i = 0; i < left_elements.size(); ++i)
+            {
+                if (comparisonCanThrow(left_elements[i], right_elements[i]))
+                    return true;
+            }
+
+            return false;
+        }
+
+        return true;
+    }
+
     /// Values of exactly the same type are compared by `IColumn::compareAt`, which reads the values
-    /// as they are stored. `Variant`, `Dynamic` and `JSON` are excluded: a comparison of those
-    /// dispatches on the type of every individual row.
-    if (left->equals(*right) && !which_left.isVariant() && !which_left.isDynamic() && !which_left.isObject())
+    /// as they are stored. `Variant`, `Dynamic`, `JSON` and `Tuple` are excluded: a comparison of
+    /// those dispatches on the type of every individual row, or decomposes into element comparisons.
+    if (left->equals(*right) && !which_left.isVariant() && !which_left.isDynamic() && !which_left.isObject() && !which_left.isTuple())
         return false;
 
     return true;
