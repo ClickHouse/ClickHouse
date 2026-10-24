@@ -2470,6 +2470,21 @@ The `minmax` statistics type is deprecated: it is a subset of `basic`, which sho
         {"26.7", "minmax, uniq", "basic, uniq_v2", "Deprecate the `minmax` statistics type and replace it with `basic` (a superset of `minmax`) in the default auto statistics; also replace `uniq` with `uniq_v2` for less overhead on inserts and memory"}, \
         {"26.4", "", "minmax, uniq", "Enable auto statistics by default"}, \
         {"25.10", "", "", "New setting"}) \
+    DECLARE(Bool, auto_statistics_assume_floats_distinct, true, R"(
+When enabled, the implicit statistics from [auto_statistics_types](#auto_statistics_types) don't include `uniq` and
+`uniq_v2` for `Float32` and `Float64` columns (also inside `Nullable`), because the values of such columns are almost
+always distinct and the sketch costs CPU and memory on every insert and merge. Instead, wherever the optimizer needs
+the number of distinct values of such a column and no sketch exists, it assumes that all non-`NULL` values are
+distinct. The assumed value is capped using `basic` statistics: rows equal to the default value (`0`) count as one
+value, and a column with equal minimum and maximum has one value.
+
+- Only implicit statistics are affected: an explicit `STATISTICS(uniq)` or `STATISTICS(uniq_v2)` on a column still
+  builds a sketch, and the optimizer then uses it.
+- `BFloat16` and `LowCardinality(...)` columns are not affected.
+- Existing parts are rebuilt with the new set of statistics on their next merge, or with
+  `ALTER TABLE ... MATERIALIZE STATISTICS`.
+)", 0, \
+        {"26.11", false, true, "Do not build implicit uniq statistics for Float columns; assume distinct values instead"}) \
     DECLARE(UInt64, packed_skip_index_max_bytes, 1024 * 1024, R"(
 Threshold (serialized on-disk bytes, i.e. after the substream's compression and hashing
 chain) below which a skip-index substream is bundled into a single `skp_idx.packed`

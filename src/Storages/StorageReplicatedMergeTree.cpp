@@ -1889,8 +1889,8 @@ void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, c
     /// Implicit statistics (auto_statistics_types) are not serialized to ZooKeeper,
     /// so we need to re-add them after loading metadata from ZK.
     auto settings = getSettings();
-    auto [auto_stats_types, _] = getNewImplicitStatisticsTypes(new_metadata, *settings);
-    addImplicitStatistics(new_metadata.columns, auto_stats_types);
+    auto implicit_statistics = getNewImplicitStatisticsSettings(new_metadata, *settings);
+    addImplicitStatistics(new_metadata.columns, implicit_statistics.types, implicit_statistics.assume_floats_distinct);
 
     /// Even if the primary/sorting/partition keys didn't change we must reinitialize it
     /// because primary/partition key column types might have changed.
@@ -7110,8 +7110,9 @@ void StorageReplicatedMergeTree::alter(
     commands.apply(
         future_metadata, query_context, (*old_settings)[MergeTreeSetting::share_nested_offsets], settings_defaults.get());
 
-    auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(future_metadata, *old_settings);
-    addImplicitStatistics(future_metadata.columns, auto_statistics_types);
+    auto implicit_statistics = getNewImplicitStatisticsSettings(future_metadata, *old_settings);
+    addImplicitStatistics(future_metadata.columns, implicit_statistics.types, implicit_statistics.assume_floats_distinct);
+    const bool statistics_changed = implicit_statistics.changed;
 
     /** Reject turning `table_readonly` on in any incoming `ALTER`, not only in a pure settings alter:
       * a mixed `ALTER TABLE ... MODIFY COLUMN ..., MODIFY SETTING table_readonly = 1` would otherwise

@@ -1218,7 +1218,18 @@ public:
         AlterLockHolder & table_lock_holder,
         bool run_sanity_checks = true);
 
-    std::pair<String, bool> getNewImplicitStatisticsTypes(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings) const;
+    /// The settings that decide the implicit statistics of the columns, see `addImplicitStatistics`.
+    struct ImplicitStatisticsSettings
+    {
+        /// `auto_statistics_types`
+        String types;
+        /// `auto_statistics_assume_floats_distinct`
+        bool assume_floats_distinct = false;
+        /// Whether the implicit statistics may differ from the ones derived from `old_settings`,
+        /// i.e. whether the in-memory metadata has to be updated on a settings `ALTER`.
+        bool changed = false;
+    };
+    ImplicitStatisticsSettings getNewImplicitStatisticsSettings(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings) const;
     static void verifySortingKey(const KeyDescription & sorting_key);
 
     /// True iff the resolved sorting key (column list or data types) differs between two metadata snapshots.

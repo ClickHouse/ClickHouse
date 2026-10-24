@@ -77,6 +77,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool enable_block_number_column;
     extern const MergeTreeSettingsBool enable_block_offset_column;
     extern const MergeTreeSettingsString auto_statistics_types;
+    extern const MergeTreeSettingsBool auto_statistics_assume_floats_distinct;
     extern const MergeTreeSettingsString default_compression_codec;
     extern const MergeTreeSettingsBool escape_index_filenames;
     extern const MergeTreeSettingsString disk;
@@ -1090,7 +1091,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         if (!statistics_types_str.empty() && args.table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE)
         {
-            addImplicitStatistics(metadata.columns, statistics_types_str);
+            addImplicitStatistics(
+                metadata.columns, statistics_types_str, (*storage_settings)[MergeTreeSetting::auto_statistics_assume_floats_distinct]);
         }
 
         if (args.query.columns_list && args.query.columns_list->projections)
@@ -2637,6 +2639,10 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 - `uniq_v2`
 
     Similar to `uniq` but internally uses [`uniqCombined`](/reference/functions/aggregate-functions/uniqCombined)`(12)` (a variant of [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog)). Consumes less memory than `uniq` and can be build faster.
+
+    <Note>
+    Implicit `uniq` and `uniq_v2` statistics (from the MergeTree setting `auto_statistics_types`) are not created for `Float32` and `Float64` columns, also inside `Nullable`, if the MergeTree setting `auto_statistics_assume_floats_distinct` is enabled (the default): the values of such columns are almost always distinct. For such a column without a `uniq` or `uniq_v2` sketch, the optimizer instead assumes that all non-`NULL` values are distinct, capped using `basic` statistics (rows equal to `0` count as one value, and equal minimum and maximum mean one value). An explicitly declared `STATISTICS(uniq)` or `STATISTICS(uniq_v2)` still builds a sketch, which the optimizer then uses. `BFloat16` and `LowCardinality` columns are not affected.
+    </Note>
 
 - `countmin`
 
