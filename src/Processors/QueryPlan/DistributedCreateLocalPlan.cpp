@@ -19,6 +19,7 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     QueryProcessingStage::Enum processed_stage,
     size_t shard_num,
     size_t shard_count,
+    const String & shard_scope_identity,
     bool build_logical_plan,
     const std::string & default_database)
 {
@@ -40,7 +41,7 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     /// can be applied only for non-distributed tables
     /// and we can produce query, inconsistent with remote plans.
     auto select_query_options = SelectQueryOptions(processed_stage)
-        .setShardInfo(static_cast<UInt32>(shard_num), static_cast<UInt32>(shard_count))
+        .setShardInfo(static_cast<UInt32>(shard_num), static_cast<UInt32>(shard_count), shard_scope_identity)
         .ignoreASTOptimizations();
 
     select_query_options.build_logical_plan = build_logical_plan;

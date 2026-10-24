@@ -11,6 +11,7 @@
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/stripQuerySettings.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -78,6 +79,7 @@ void SelectStreamFactory::createForShard(
     std::vector<QueryPlanPtr> & local_plans,
     Shards & remote_shards,
     UInt32 shard_count,
+    const String & shard_scope_identity,
     bool parallel_replicas_enabled,
     AdditionalShardFilterGenerator shard_filter_generator,
     const UnavailableShardTrackerPtr & unavailable_shard_tracker)
@@ -92,6 +94,7 @@ void SelectStreamFactory::createForShard(
         local_plans,
         remote_shards,
         shard_count,
+        shard_scope_identity,
         parallel_replicas_enabled,
         std::move(shard_filter_generator),
         unavailable_shard_tracker);
@@ -107,6 +110,7 @@ void SelectStreamFactory::createForShardImpl(
     std::vector<QueryPlanPtr> & local_plans,
     Shards & remote_shards,
     UInt32 shard_count,
+    const String & shard_scope_identity,
     bool parallel_replicas_enabled,
     AdditionalShardFilterGenerator shard_filter_generator,
     const UnavailableShardTrackerPtr & unavailable_shard_tracker) const
@@ -116,10 +120,10 @@ void SelectStreamFactory::createForShardImpl(
     /// `local_storage` is the table the local plan will read, null when it is not resolved.
     auto emplace_local_stream = [&](const StoragePtr & local_storage)
     {
-        /// A local plan does not go through `ReadFromRemote`, so nothing sets `cluster_for_parallel_replicas`
-        /// to this hop's cluster and the read would be scoped by another one. Keep parallel replicas only
-        /// for a nested `Distributed`, which sets up its own cluster. A `View` over a `Distributed` is left
-        /// out: it reads without parallel replicas, as it did before.
+        /// A local plan does not go through `ReadFromRemote`, so it does not set up a parallel-replicas read
+        /// of its own for this shard. Keep parallel replicas only for a nested `Distributed`, which sets up
+        /// its own cluster. A `View` over a `Distributed` is left out: it reads without parallel replicas,
+        /// as it did before.
         auto local_context = context;
         if (context->canUseTaskBasedParallelReplicas()
             && !castStorage<StorageDistributed>(local_storage, DeferredTable::Load))
@@ -136,7 +140,7 @@ void SelectStreamFactory::createForShardImpl(
         }
 
         local_plans.emplace_back(createLocalPlan(
-            query_ast, *header, local_context, processed_stage, shard_info.shard_num, shard_count));
+            query_ast, *header, local_context, processed_stage, shard_info.shard_num, shard_count, shard_scope_identity));
     };
 
     // If lazy is true, a lazy pipe will be created. It will try to use the local replica and, if not possible, will use DelayedSource for reading from remote replica.
@@ -153,7 +157,7 @@ void SelectStreamFactory::createForShardImpl(
         if (settings[Setting::serialize_query_plan] && !settings[Setting::distributed_group_by_no_merge])
         {
             query_plan = createLocalPlan(
-                query_ast, *header, context, processed_stage, shard_info.shard_num, shard_count, true, shard_info.default_database);
+                query_ast, *header, context, processed_stage, shard_info.shard_num, shard_count, shard_scope_identity, true, shard_info.default_database);
 
             shard_header = query_plan->getCurrentHeader();
         }
@@ -305,6 +309,7 @@ void SelectStreamFactory::createForShard(
     std::vector<QueryPlanPtr> & local_plans,
     Shards & remote_shards,
     UInt32 shard_count,
+    const String & shard_scope_identity,
     bool parallel_replicas_enabled,
     AdditionalShardFilterGenerator shard_filter_generator,
     const UnavailableShardTrackerPtr & unavailable_shard_tracker)
@@ -315,10 +320,21 @@ void SelectStreamFactory::createForShard(
     /// since it is reused later for getSampleBlock / plan building.
     auto query_tree_for_ast = query_tree->clone();
     removeGroupingFunctionSpecializations(query_tree_for_ast);
+    auto query_ast = queryNodeToDistributedSelectQuery(query_tree_for_ast);
+
+    /// `updateSettingsAndClientInfoForCluster` pinned `cluster_for_parallel_replicas` to this dispatch's cluster
+    /// in `context`. The query's own top-level `SETTINGS` clause is re-applied over the context it runs with,
+    /// by the local plan as well as by the shard, so a `SETTINGS cluster_for_parallel_replicas = ...` written
+    /// in the query would undo the pin. Drop it from the query: the pinned value travels with the context.
+    if (context->canUseTaskBasedParallelReplicas())
+    {
+        static constexpr std::string_view pinned_settings[] = {"cluster_for_parallel_replicas"};
+        removeSettingsFromQueryTopLevel(query_ast, pinned_settings);
+    }
 
     createForShardImpl(
         shard_info,
-        queryNodeToDistributedSelectQuery(query_tree_for_ast),
+        query_ast,
         query_tree,
         main_table,
         table_func_ptr,
@@ -326,6 +342,7 @@ void SelectStreamFactory::createForShard(
         local_plans,
         remote_shards,
         shard_count,
+        shard_scope_identity,
         parallel_replicas_enabled,
         std::move(shard_filter_generator),
         unavailable_shard_tracker);

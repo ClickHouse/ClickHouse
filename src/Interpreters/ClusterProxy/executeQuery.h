@@ -117,6 +117,17 @@ getShardFilterGeneratorForCustomKey(const Cluster & cluster, ContextPtr context,
 bool isSuitableForInsertSelectWithParallelReplicas(const ASTPtr & select, const ContextPtr & context);
 bool canUseParallelReplicasOnInitiator(const ContextPtr & context);
 
+/// Number of replicas the parallel replicas reading coordinator is sized with: the active replica count when
+/// liveness is known, otherwise the registered node count. Matches the sizing done in
+/// `executeQueryWithParallelReplicas`, so the mark-segment-size heuristic in `ReadFromMergeTree` uses the same
+/// replica count as the coordinator. See `is_active` in `system.clusters`.
+size_t getActiveReplicasCountForParallelReplicas(const ContextPtr & context, const ClusterPtr & cluster);
+
+/// The scope a coordinator replica count is recorded under (`Context::setParallelReplicasCoordinatorCount`): the
+/// cluster's shard-scope identity (`Cluster::getShardScopeIdentity`), so aliases of the same ordered shards share
+/// it, or the `cluster_for_parallel_replicas` setting for a cluster without one.
+String getParallelReplicasCoordinatorClusterScope(const ContextPtr & context, const Cluster & cluster);
+
 /// Whether 'max_execution_time_leaf' requires all leaf reading of a parallel-replicas query to happen on
 /// remote replicas. The local replica executes inside the initiator's pipeline and shares the initiator's
 /// 'QueryStatus', so it cannot be bounded by the leaf timeout separately - the leaf timeout is substituted

@@ -1665,6 +1665,8 @@ ContextData::ContextData(const ContextData &o) :
     merge_tree_read_task_callback(o.merge_tree_read_task_callback),
     merge_tree_all_ranges_callback(o.merge_tree_all_ranges_callback),
     parallel_replicas_group_uuid(o.parallel_replicas_group_uuid),
+    parallel_replicas_coordinator_count(o.parallel_replicas_coordinator_count),
+    parallel_replicas_coordinator_cluster_scope(o.parallel_replicas_coordinator_cluster_scope),
     block_marshalling_callback(o.block_marshalling_callback),
     is_under_restore(o.is_under_restore),
     client_protocol_version(o.client_protocol_version),
@@ -9653,6 +9655,25 @@ void Context::setParallelReplicasGroupUUID(UUID uuid)
 UUID Context::getParallelReplicasGroupUUID() const
 {
     return parallel_replicas_group_uuid;
+}
+
+void Context::setParallelReplicasCoordinatorCount(size_t count, const String & cluster_scope)
+{
+    parallel_replicas_coordinator_count = count;
+    parallel_replicas_coordinator_cluster_scope = cluster_scope;
+}
+
+void Context::clearParallelReplicasCoordinatorCount()
+{
+    parallel_replicas_coordinator_count.reset();
+    parallel_replicas_coordinator_cluster_scope.clear();
+}
+
+std::optional<size_t> Context::getParallelReplicasCoordinatorCount(const String & cluster_scope) const
+{
+    if (parallel_replicas_coordinator_cluster_scope != cluster_scope)
+        return {};
+    return parallel_replicas_coordinator_count;
 }
 
 AsynchronousInsertQueue * Context::tryGetAsynchronousInsertQueue() const

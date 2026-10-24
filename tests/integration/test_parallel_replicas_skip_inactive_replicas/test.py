@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -16,6 +18,12 @@ nodes = [
     for i in (1, 2, 3)
 ]
 node1, node2, node3 = nodes
+
+
+def query_log_contains(node, query_id, substring):
+    # The cluster is module-scoped, so the server log also holds the lines of the queries of the other tests:
+    # match only the lines tagged with this query's `query_id`.
+    return node.contains_in_log(f"{{{query_id}}}.*{substring}")
 
 
 @pytest.fixture(scope="module")
@@ -75,8 +83,10 @@ def test_inactive_replica_excluded_from_parallel_replicas(start_cluster):
         # online so that the coordinator is sized by what is actually available. Use a data-reading query
         # (not a trivial `count()`, which `optimize_trivial_count_query` answers from metadata and thus never
         # engages parallel replicas, so the coordinator would not be created at all).
+        query_id = f"skip_inactive_{uuid.uuid4().hex}"
         result = node1.query(
             f"SELECT sum(key) FROM {db}.tt",
+            query_id=query_id,
             settings={
                 "enable_parallel_replicas": 1,
                 "max_parallel_replicas": 3,
@@ -86,11 +96,69 @@ def test_inactive_replica_excluded_from_parallel_replicas(start_cluster):
         assert result == "4999950000\n"
 
         # The coordinator must be created for the 2 active replicas, not the 3 registered ones.
-        assert node1.contains_in_log(
-            "Creating parallel replicas coordinator with replicas_count=2"
-        )
-        assert not node1.contains_in_log(
-            "Creating parallel replicas coordinator with replicas_count=3"
-        )
+        assert query_log_contains(node1, query_id, "Creating parallel replicas coordinator with replicas_count=2")
+        assert not query_log_contains(node1, query_id, "Creating parallel replicas coordinator with replicas_count=3")
+
+        # The mark-segment-size heuristic (which derives its work-distribution denominator from the replica
+        # count) must use the same active count as the coordinator: 2, not the 3 registered replicas.
+        assert query_log_contains(node1, query_id, "number_of_replicas=2,")
+        assert not query_log_contains(node1, query_id, "number_of_replicas=3,")
+
+        # `total_query_nodes` (the denominator used by `calculateMinMarksPerTask` on remote-disk reads, which
+        # feeds the other half of the segment-size heuristic) must also use the active count, not the registered
+        # one - otherwise it stays keyed off `getAllNodeCount()` and diverges from the coordinator on S3 reads.
+        assert query_log_contains(node1, query_id, "total_query_nodes=2")
+        assert not query_log_contains(node1, query_id, "total_query_nodes=3")
     finally:
         node3.start_clickhouse()
+
+
+def test_replica_count_capped_by_max_parallel_replicas(start_cluster):
+    # The reading coordinator caps its replica count by `max_parallel_replicas` (see
+    # `prepareConnectionPoolsForParallelReplicas`). The mark-segment-size heuristic must apply the SAME cap, so
+    # its work-distribution denominator matches the coordinator even when all replicas are active. Without the
+    # cap the heuristic would size by the active count (3) while the coordinator is sized by 2, a divergence
+    # that has nothing to do with inactive replicas.
+    db = "pr_db_cap"
+    for i, node in enumerate(nodes, start=1):
+        node.query(
+            f"CREATE DATABASE {db} ENGINE = Replicated('/test/databases/{db}', 'shard1', 'replica{i}')"
+        )
+
+    node1.query(
+        f"CREATE TABLE {db}.tt (key Int64, value String) ENGINE = ReplicatedMergeTree ORDER BY key"
+    )
+    node1.query(
+        f"INSERT INTO {db}.tt SELECT number, toString(number) FROM numbers(100000)"
+    )
+    node2.query(f"SYSTEM SYNC REPLICA {db}.tt")
+    node3.query(f"SYSTEM SYNC REPLICA {db}.tt")
+
+    # All three replicas are registered and active.
+    assert_eq_with_retry(
+        node1,
+        f"SELECT count() FROM system.clusters WHERE cluster = '{db}' AND is_active = 1",
+        "3\n",
+    )
+
+    # Request fewer replicas than are online, so the coordinator caps to 2 of the 3 active replicas.
+    query_id = f"capped_{uuid.uuid4().hex}"
+    result = node1.query(
+        f"SELECT sum(key) FROM {db}.tt",
+        query_id=query_id,
+        settings={
+            "enable_parallel_replicas": 1,
+            "max_parallel_replicas": 2,
+            "cluster_for_parallel_replicas": db,
+        },
+    )
+    assert result == "4999950000\n"
+
+    # The coordinator is sized by the cap (2), not the 3 active replicas.
+    assert query_log_contains(node1, query_id, "Creating parallel replicas coordinator with replicas_count=2")
+
+    # The segment-size heuristic must apply the same cap: 2, not 3.
+    assert query_log_contains(node1, query_id, "number_of_replicas=2,")
+    assert not query_log_contains(node1, query_id, "number_of_replicas=3,")
+    assert query_log_contains(node1, query_id, "total_query_nodes=2")
+    assert not query_log_contains(node1, query_id, "total_query_nodes=3")
