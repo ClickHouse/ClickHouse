@@ -9011,6 +9011,20 @@ void MergeTreeData::throwIfTemporaryTableSizeLimitsExceededForReplacement(
             ReadableSize(total_bytes_uncompressed), ReadableSize(max_bytes_uncompressed));
 }
 
+std::function<void()> MergeTreeData::makeTooManyPartsCheck(const ContextPtr & query_context) const
+{
+    std::weak_ptr<const IStorage> weak_table = shared_from_this();
+    std::weak_ptr<const Context> weak_context = query_context;
+    return [this, weak_table, weak_context]
+    {
+        auto table = weak_table.lock();
+        auto context = weak_context.lock();
+        if (!table || !context)
+            return;
+        delayInsertOrThrowIfNeeded(nullptr, context, /*allow_throw=*/ true, /*allow_delay=*/ false);
+    };
+}
+
 void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context, bool allow_throw, bool allow_delay) const
 {
     const auto settings = getSettings();
@@ -9116,6 +9130,10 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
             /// if parts_count == parts_to_delay_insert -> we're 1 part over threshold
             active_parts_over_threshold = parts_count_in_partition - active_parts_to_delay_insert + 1;
     }
+
+    /// The caller asked only for the throw checks (it applies the backpressure elsewhere).
+    if (!allow_delay)
+        return;
 
     /// no need for delay
     if (!allow_delay || (!active_parts_over_threshold && !outdated_parts_over_threshold && !dead_blobs_over_threshold))

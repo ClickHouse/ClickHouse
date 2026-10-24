@@ -402,6 +402,10 @@ std::unique_ptr<TimeSeriesSink::TargetPipeline> TimeSeriesSink::createTargetPipe
 
     const auto & target_table_id = time_series_storage.getTargetTableID(kind, getContext());
 
+    /// The sinks of the nested INSERT may come too late to take part in the `Too many parts` decision of
+    /// the target table: enforce the checks registered on their behalf while the pipeline was built.
+    runHiddenPreWriteChecks(&target_table_id);
+
     auto insert_query = make_intrusive<ASTInsertQuery>();
     insert_query->table_id = target_table_id;
 
@@ -420,6 +424,9 @@ std::unique_ptr<TimeSeriesSink::TargetPipeline> TimeSeriesSink::createTargetPipe
         /* no_squash= */ false,
         /* no_destination= */ false,
         async_insert);
+    /// Share the outer query's insert start gates with the nested INSERT, so its `Too many parts`
+    /// check is shared with the other branches of the outer query writing into the same inner table.
+    interpreter.setInsertStartGates(insert_start_gates);
 
     pipeline->io = interpreter.execute();
     pipeline->executor = std::make_unique<PushingPipelineExecutor>(pipeline->io.pipeline);
@@ -468,6 +475,21 @@ TimeSeriesSink::TimeSeriesSink(
         || is_insert_column(TimeSeriesColumnNames::Unit)
         || is_insert_column(TimeSeriesColumnNames::Help);
 
+    /// The target pipelines are not created here: they are nested `INSERT`s into the inner tables, and
+    /// they must observe the `InsertStartGates` registry of the outer query, which is only handed to
+    /// this sink after `StorageTimeSeries::write` has returned it. See `onStart`.
+}
+
+
+void TimeSeriesSink::onStart()
+{
+    /// Create the nested pipelines of the inner target tables lazily, at the start of the execution:
+    /// by now `setInsertStartGateRegistry` has run, so the sinks created inside those nested `INSERT`s
+    /// share this query's gates and their `Too many parts` check runs once per query per inner table -
+    /// also across sibling branches (e.g. two materialized views) converging on the same `TimeSeries`
+    /// table. Creating them in the constructor instead would build them with an empty registry, and the
+    /// check would be shared only by the accident of every sink of the query being constructed before
+    /// any of them writes anything.
     if (insert_tags_and_samples)
         initTagsAndSamplesPipelines();
 

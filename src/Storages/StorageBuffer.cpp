@@ -1,5 +1,7 @@
 #include <Storages/StorageBuffer.h>
 
+#include <algorithm>
+
 #include <Access/Common/AccessFlags.h>
 #include <Columns/ColumnConst.h>
 #include <Analyzer/TableNode.h>
@@ -872,6 +874,12 @@ public:
 
     String getName() const override { return "BufferSink"; }
 
+    /// The real pre-write checks run inside the nested `INSERT` into the destination table that the
+    /// direct writes of this sink open (`StorageBuffer::writeBlockToDestination`): keep the query's
+    /// registry to thread it into them, so a later direct write of the query does not count a part an
+    /// earlier one has committed and fail the query with `Too many parts` in the middle.
+    void setInsertStartGateRegistry(InsertStartGatesPtr gates) override { insert_start_gates = std::move(gates); }
+
     void consume(Chunk & chunk) override
     {
         size_t rows = chunk.getNumRows();
@@ -900,7 +908,12 @@ public:
             if (destination)
             {
                 LOG_DEBUG(storage.log, "Writing block with {} rows, {} bytes directly.", rows, bytes);
-                storage.writeBlockToDestination(block, destination);
+                /// The sinks of the nested INSERT may come too late to take part in the `Too many parts`
+                /// decision of the destination: enforce the checks registered on their behalf, with the
+                /// limits of the buffer's context, while the pipeline was built. Rows that are only
+                /// buffered are not subject to them.
+                runHiddenPreWriteChecks();
+                storage.writeBlockToDestination(block, destination, insert_start_gates);
             }
             return;
         }
@@ -947,6 +960,7 @@ public:
 private:
     StorageBuffer & storage;
     StorageMetadataPtr metadata_snapshot;
+    InsertStartGatesPtr insert_start_gates;
 
     void insertIntoBuffer(const Block & block, StorageBuffer::Buffer & buffer, int32_t metadata_version)
     {
@@ -964,6 +978,8 @@ private:
               */
 
             LOG_DEBUG(storage.log, "Flush buffer by threshold");
+            /// The flush writes out what is in the buffer now, which is not this block; the gates it
+            /// shares are decided in `flushBuffer` from the origin of the buffered rows.
             storage.flushBuffer(buffer, false /* check_thresholds */, true /* locked */);
             buffer.metadata_version = metadata_version;
         }
@@ -974,7 +990,25 @@ private:
         size_t old_rows = buffer.data.rows();
         size_t old_bytes = buffer.data.allocatedBytes();
 
+        /// Remember that the buffer now holds rows of this query, so that a later flush of them - by
+        /// this query or by another one - shares the `Too many parts` gates of this query.
+        ///
+        /// The capacity is reserved before the rows are appended: once `appendBlock` has committed them,
+        /// nothing below may throw, or the rows would stay in the buffer without being accounted in
+        /// `total_writes` and without the record of the query they came from.
+        ///
+        /// Only the last contributor is compared, which catches the consecutive blocks of one query
+        /// without a linear search over all of them; a repeated entry is harmless, because the
+        /// registries are deduplicated when the participants of a flush are walked.
+        const bool add_contributor = insert_start_gates
+            && (buffer.contributing_gates.empty() || buffer.contributing_gates.back() != insert_start_gates);
+        if (add_contributor && buffer.contributing_gates.size() == buffer.contributing_gates.capacity())
+            buffer.contributing_gates.reserve(std::max<size_t>(4, buffer.contributing_gates.capacity() * 2));
+
         appendBlock(storage.log, sorted_block, buffer.data);
+
+        if (add_contributor)
+            buffer.contributing_gates.push_back(insert_start_gates);
 
         storage.total_writes.rows += (buffer.data.rows() - old_rows);
         storage.total_writes.bytes += (buffer.data.allocatedBytes() - old_bytes);
@@ -1249,6 +1283,10 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
     buffer.data.swap(block_to_write);
     buffer.first_write_time = 0;
 
+    /// The rows that are being written out were inserted on behalf of these queries.
+    std::vector<InsertStartGatesPtr> flushed_gates;
+    flushed_gates.swap(buffer.contributing_gates);
+
     size_t block_rows = block_to_write.rows();
     size_t block_bytes = block_to_write.bytes();
     size_t block_allocated_bytes_delta = block_to_write.allocatedBytes() - buffer.data.allocatedBytes();
@@ -1274,10 +1312,24 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
         * - this could lead to infinite memory growth.
         */
 
+    /// The block being written carries the rows of every query recorded in `flushed_gates`, so the
+    /// pre-write decision of the nested INSERT below is shared with each of them: a query whose rows
+    /// were flushed on behalf of another query must not re-run the `Too many parts` check later and
+    /// count the parts this write created from its own rows. The query that triggered the flush
+    /// participates only when its own rows are among the flushed ones - when it merely evicts rows
+    /// buffered by earlier queries, the eviction makes no pre-write decision for it, and the query's
+    /// own first write still runs the check.
+    ///
+    /// The registry is constructed inside the `try` block below: when its allocation throws, the rows
+    /// have to return to the buffer as on any other failure of the write.
     Stopwatch watch;
     try
     {
-        writeBlockToDestination(block_to_write, getDestinationTable());
+        InsertStartGatesPtr gates_for_write;
+        if (!flushed_gates.empty())
+            gates_for_write = std::make_shared<InsertStartGates>(flushed_gates);
+
+        writeBlockToDestination(block_to_write, getDestinationTable(), gates_for_write);
     }
     catch (...)
     {
@@ -1289,6 +1341,16 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
         CurrentMetrics::add(CurrentMetrics::StorageBufferBytes, block_to_write.bytes());
 
         buffer.data.swap(block_to_write);
+
+        /// The rows are back in the buffer, and so is the record of the queries they came from. When
+        /// this write was the one rejected by the `Too many parts` check, the gate that rejected it now
+        /// sits in these registries; the next flush of the rows does not inherit that rejection - it
+        /// runs the check anew - see `InsertStartGates::get`.
+        ///
+        /// The buffer is locked during the write, so nothing has been recorded in `contributing_gates`
+        /// since it was taken, and the swap restores the record without allocating.
+        chassert(buffer.contributing_gates.empty());
+        buffer.contributing_gates.swap(flushed_gates);
 
         if (!buffer.first_write_time)
             buffer.first_write_time = current_time;
@@ -1306,7 +1368,7 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
 }
 
 
-void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr table)
+void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr table, const InsertStartGatesPtr & insert_start_gates)
 {
     if (!destination_id || block.empty())
         return;
@@ -1371,6 +1433,9 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
         /* no_squash */ false,
         /* no_destination */ false,
         /* async_isnert */ false);
+    /// Share the INSERT query's gates with the nested INSERT of a direct write, so its
+    /// `Too many parts` check is shared with the other writes of the query into the destination.
+    interpreter.setInsertStartGates(insert_start_gates);
 
     auto block_io = interpreter.execute();
     PushingPipelineExecutor executor(block_io.pipeline);

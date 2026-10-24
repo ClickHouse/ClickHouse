@@ -15,8 +15,10 @@
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageBuffer.h>
 #include <Storages/StorageDistributed.h>
+#include <Storages/StorageTimeSeries.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageProxy.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageValues.h>
 
 #include <DataTypes/DataTypeEnum.h>
@@ -130,6 +132,8 @@ namespace Setting
     extern const SettingsBool materialized_views_ignore_errors;
     extern const SettingsBool materialized_views_squash_parallel_inserts;
     extern const SettingsBool parallel_view_processing;
+    extern const SettingsUInt64Auto insert_quorum;
+    extern const SettingsBool insert_quorum_parallel;
 }
 
 namespace MergeTreeSetting
@@ -751,6 +755,102 @@ private:
 /// below are willing to follow. A longer chain (or a cycle of aliases) fails closed.
 static constexpr size_t max_insert_forwarding_depth = 16;
 
+namespace
+{
+
+/// Registers the deferred pre-write checks of the tables a nested INSERT into `storage` writes into, see
+/// `collectHiddenPreWriteChecks`. `context` is the context the nested INSERT runs with.
+void registerHiddenPreWriteChecks(
+    const StoragePtr & storage,
+    const ContextPtr & context,
+    const InsertStartGatesPtr & gates,
+    const StorageID & forwarded_to,
+    size_t depth,
+    std::vector<SinkToStorage::HiddenPreWriteCheck> & result)
+{
+    if (!storage || depth > max_insert_forwarding_depth)
+        return;
+
+    if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
+    {
+        registerHiddenPreWriteChecks(alias->tryGetTargetTable(), context, gates, forwarded_to, depth + 1, result);
+        return;
+    }
+    if (const auto * buffer = dynamic_cast<const StorageBuffer *>(storage.get()))
+    {
+        registerHiddenPreWriteChecks(
+            buffer->getDestinationTable(), buffer->getDestinationWriteContext(), gates, forwarded_to, depth + 1, result);
+        return;
+    }
+    if (const auto * time_series = dynamic_cast<const StorageTimeSeries *>(storage.get()))
+    {
+        for (auto kind : StorageTimeSeries::getTargetKinds())
+            if (time_series->hasTarget(kind))
+                registerHiddenPreWriteChecks(time_series->tryGetTargetTable(kind, context), context, gates, forwarded_to, depth + 1, result);
+        return;
+    }
+    if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
+    {
+        registerHiddenPreWriteChecks(materialized_view->tryGetTargetTable(), context, gates, forwarded_to, depth + 1, result);
+        return;
+    }
+    if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
+    {
+        registerHiddenPreWriteChecks(proxy->getNested(), context, gates, forwarded_to, depth + 1, result);
+        return;
+    }
+
+    if (const auto * merge_tree = castStorage<MergeTreeData>(storage, DeferredTable::Load).get())
+    {
+        auto outcome = std::make_shared<InsertStartGate::DeferredOutcome>();
+        /// The gate is keyed the same way as the gates of the sinks the nested INSERT creates, see `createSink`.
+        auto gate = gates->get(storage->getStorageID());
+        gate->addCheck({context, merge_tree->makeTooManyPartsCheck(context), outcome});
+        result.push_back({forwarded_to, std::move(gate), std::move(outcome)});
+    }
+}
+
+/// A sink that forwards the write through a nested INSERT - `AliasSink`, `BufferSink` (a direct write) and
+/// `TimeSeriesSink` - creates the sinks of the tables behind it only during the execution, after a sibling
+/// sink of the query writing into the same table may already have made the decision of its gate, so the
+/// checks of these sinks, which may use different limits (e.g. the settings of the `Buffer`), would not
+/// take part in it. Register their checks now, while the pipeline is being built, as deferred checks, and
+/// return them for the forwarding sink to consult before it writes. The dependent views of the tables
+/// behind the forwarding sink are not followed.
+std::vector<SinkToStorage::HiddenPreWriteCheck> collectHiddenPreWriteChecks(
+    const StoragePtr & storage, const ContextPtr & context, const InsertStartGatesPtr & gates)
+{
+    std::vector<SinkToStorage::HiddenPreWriteCheck> result;
+
+    auto add_forwarded_to = [&](const StoragePtr & target, const ContextPtr & target_context)
+    {
+        if (target)
+            registerHiddenPreWriteChecks(target, target_context, gates, target->getStorageID(), 1, result);
+    };
+
+    if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
+        add_forwarded_to(alias->tryGetTargetTable(), context);
+    else if (const auto * buffer = dynamic_cast<const StorageBuffer *>(storage.get()))
+        add_forwarded_to(buffer->getDestinationTable(), buffer->getDestinationWriteContext());
+    else if (const auto * time_series = dynamic_cast<const StorageTimeSeries *>(storage.get()))
+    {
+        for (auto kind : StorageTimeSeries::getTargetKinds())
+            if (time_series->hasTarget(kind))
+                add_forwarded_to(time_series->tryGetTargetTable(kind, context), context);
+    }
+
+    return result;
+}
+
+}
+
+/// A note on `TimeSeries` in the deduplication probes below. `StorageTimeSeries` does not override
+/// `IStorage::supportsParallelInsert`, so today `all_sinks_support_parallel_insert` already collapses
+/// the write fan-out of any insert whose graph reaches a `TimeSeries` table, and the probes cannot
+/// change the outcome for it. They classify it anyway - it forwards the write through nested
+/// `INSERT`s exactly like `Distributed` and `Buffer` do - so that the classification does not become
+/// silently wrong if `StorageTimeSeries` ever starts supporting parallel inserts.
+
 bool InsertDependenciesBuilder::storageDeduplicatesBlocksOnInsert(const StoragePtr & storage, size_t depth)
 {
     if (depth > max_insert_forwarding_depth)
@@ -784,8 +884,13 @@ bool InsertDependenciesBuilder::storageDeduplicatesBlocksOnInsert(const StorageP
 
     /// ... and fail closed where the ultimate target is not cheaply known here: `Distributed` and
     /// `Buffer` forward the write through a separate (remote or background) `INSERT` that may end up
-    /// in a deduplicating `MergeTree`.
-    if (dynamic_cast<const StorageDistributed *>(storage.get()) || dynamic_cast<const StorageBuffer *>(storage.get()))
+    /// in a deduplicating `MergeTree`, and a `TimeSeries` opens nested `INSERT`s into its inner
+    /// `Tags` / `Samples` / `Metrics` tables (which are themselves usually `MergeTree`). A `Buffer`
+    /// over a plain destination is the exception, see `bufferWriteIsInsensitiveToFanOut`.
+    if (bufferWriteIsInsensitiveToFanOut(storage))
+        return false;
+    if (dynamic_cast<const StorageDistributed *>(storage.get()) || dynamic_cast<const StorageBuffer *>(storage.get())
+        || dynamic_cast<const StorageTimeSeries *>(storage.get()))
         return true;
 
     /// Other engines (`Memory`, `Null`, `Log`, object storages, ...) never consult the deduplication
@@ -804,8 +909,16 @@ bool InsertDependenciesBuilder::storageRebuildsDeduplicationIdsOnInsert(const St
     /// `INSERT`. That nested `INSERT` stamps the deduplication info from scratch, so its source block
     /// numbering restarts per sink branch even when this query stamps the numbers globally in the
     /// single-stream head of the pipeline, before the fan-out.
+    ///
+    /// `TimeSeries` does the same: `TimeSeriesSink::TargetPipeline::push` forwards a plain `Block` into
+    /// the nested `INSERT`s of the inner `Tags` / `Samples` / `Metrics` tables, so the outer chunk's
+    /// `ChunkInfos` (and with them the `DeduplicationInfo` stamped before the fan-out) are dropped and
+    /// every nested `INSERT` restamps the source block numbers from scratch, per branch. Unlike for
+    /// `Alias`, the chunk that reaches the inner sinks has not visited any view, so
+    /// `AddDeduplicationInfoTransform` does restamp it.
     if (dynamic_cast<const StorageDistributed *>(storage.get())
-        || dynamic_cast<const StorageBuffer *>(storage.get()))
+        || dynamic_cast<const StorageBuffer *>(storage.get())
+        || dynamic_cast<const StorageTimeSeries *>(storage.get()))
         return true;
 
     /// `Alias` also executes a full nested `INSERT` query per sink (`AliasSink`), but that nested
@@ -839,7 +952,7 @@ bool InsertDependenciesBuilder::storageRebuildsDeduplicationIdsOnInsert(const St
 }
 
 
-bool InsertDependenciesBuilder::forwardedInsertReachesDependentView(const StoragePtr & storage, size_t depth)
+bool InsertDependenciesBuilder::forwardedInsertReachesDependentView(const StoragePtr & storage, ContextPtr context, size_t depth)
 {
     if (depth > max_insert_forwarding_depth)
         return true;
@@ -848,30 +961,35 @@ bool InsertDependenciesBuilder::forwardedInsertReachesDependentView(const Storag
     if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
     {
         auto target = alias->tryGetTargetTable();
-        return !target || forwardedInsertReachesDependentView(target, depth + 1);
+        return !target || forwardedInsertReachesDependentView(target, context, depth + 1);
     }
     if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
     {
         auto target = materialized_view->tryGetTargetTable();
-        return !target || forwardedInsertReachesDependentView(target, depth + 1);
+        return !target || forwardedInsertReachesDependentView(target, context, depth + 1);
     }
     if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
-        return forwardedInsertReachesDependentView(proxy->getNested(), depth + 1);
+        return forwardedInsertReachesDependentView(proxy->getNested(), context, depth + 1);
 
     /// ... and fail closed where the ultimate target is not cheaply known here: `Distributed` and `Buffer`
-    /// forward the write through a separate (remote or background) `INSERT` that may reach a dependent view.
-    if (dynamic_cast<const StorageDistributed *>(storage.get()) || dynamic_cast<const StorageBuffer *>(storage.get()))
+    /// forward the write through a separate (remote or background) `INSERT` that may reach a dependent view,
+    /// and a `TimeSeries` opens nested `INSERT`s into its inner tables, which may have dependent views of
+    /// their own. A `Buffer` over a plain destination without dependent views reaches none.
+    if (bufferWriteIsInsensitiveToFanOut(storage))
+        return false;
+    if (dynamic_cast<const StorageDistributed *>(storage.get()) || dynamic_cast<const StorageBuffer *>(storage.get())
+        || dynamic_cast<const StorageTimeSeries *>(storage.get()))
         return true;
 
     /// A concrete local target: it is a hazard if it has any dependent materialized view. Whether that view
     /// (or a further view down the chain) actually deduplicates is not verified here - the outer parallel
     /// fan-out fails closed on the presence of a dependent view, keeping the write single-stream. A target
     /// with no dependent view can never lose rows to the fan-out, so `max_insert_threads` keeps applying.
-    return !DatabaseCatalog::instance().getDependentViews(storage->getStorageID()).empty();
+    return hasExecutableDependentView(storage, context);
 }
 
 
-bool InsertDependenciesBuilder::forwardedInsertHidesDependentView(const StoragePtr & storage, size_t depth)
+bool InsertDependenciesBuilder::forwardedInsertHidesDependentView(const StoragePtr & storage, ContextPtr context, size_t depth)
 {
     if (depth > max_insert_forwarding_depth)
         return true;
@@ -882,12 +1000,17 @@ bool InsertDependenciesBuilder::forwardedInsertHidesDependentView(const StorageP
     if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
     {
         auto target = alias->tryGetTargetTable();
-        return !target || forwardedInsertReachesDependentView(target, depth + 1);
+        return !target || forwardedInsertReachesDependentView(target, context, depth + 1);
     }
 
     /// `Distributed` and `Buffer` forward the write through a separate (remote or background) `INSERT`
-    /// whose destination is not cheaply known here: fail closed.
-    if (dynamic_cast<const StorageDistributed *>(storage.get()) || dynamic_cast<const StorageBuffer *>(storage.get()))
+    /// whose destination is not cheaply known here, and a `TimeSeries` expands the dependent-view graph
+    /// of its inner tables only inside the nested `INSERT`s `TimeSeriesSink` opens at execution time:
+    /// fail closed. A `Buffer` over a plain destination without dependent views hides none.
+    if (bufferWriteIsInsensitiveToFanOut(storage))
+        return false;
+    if (dynamic_cast<const StorageDistributed *>(storage.get()) || dynamic_cast<const StorageBuffer *>(storage.get())
+        || dynamic_cast<const StorageTimeSeries *>(storage.get()))
         return true;
 
     /// `MaterializedView` and proxies pass the write through within this pipeline, and
@@ -896,10 +1019,10 @@ bool InsertDependenciesBuilder::forwardedInsertHidesDependentView(const StorageP
     if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
     {
         auto target = materialized_view->tryGetTargetTable();
-        return !target || forwardedInsertHidesDependentView(target, depth + 1);
+        return !target || forwardedInsertHidesDependentView(target, context, depth + 1);
     }
     if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
-        return forwardedInsertHidesDependentView(proxy->getNested(), depth + 1);
+        return forwardedInsertHidesDependentView(proxy->getNested(), context, depth + 1);
 
     /// A concrete local target: its dependent views are visible to `collectAllDependencies`, so the
     /// hazard scan over `storages` checks them (and whether their targets actually deduplicate)
@@ -908,6 +1031,76 @@ bool InsertDependenciesBuilder::forwardedInsertHidesDependentView(const StorageP
 }
 
 
+bool InsertDependenciesBuilder::bufferWriteIsInsensitiveToFanOut(const StoragePtr & storage)
+{
+    const auto * buffer = dynamic_cast<const StorageBuffer *>(storage.get());
+    if (!buffer)
+        return false;
+
+    /// A destination that is not configured or cannot be resolved right now may still appear before
+    /// the buffer is flushed: fail closed.
+    auto destination = buffer->getDestinationTable();
+    if (!destination || !castStorage<MergeTreeData>(destination, DeferredTable::Load))
+        return false;
+
+    /// The flush runs in the buffer's own context, so only the properties of the destination table
+    /// itself are considered: its deduplication window, and every dependent view registered for it,
+    /// regardless of the settings that could make the nested `INSERT` skip some of them.
+    return !storageDeduplicatesBlocksOnInsert(destination)
+        && DatabaseCatalog::instance().getDependentViews(destination->getStorageID()).empty();
+}
+
+
+bool InsertDependenciesBuilder::hasExecutableDependentView(const StoragePtr & storage, ContextPtr context)
+{
+    const auto & settings = context->getSettingsRef();
+
+    for (const auto & view_id : DatabaseCatalog::instance().getDependentViews(storage->getStorageID()))
+    {
+        try
+        {
+            auto view = DatabaseCatalog::instance().tryGetTable(view_id, context);
+            auto view_lock = view
+                ? view->tryLockForShare(context->getInitialQueryId(), settings[Setting::lock_acquire_timeout])
+                : nullptr;
+            if (!view_lock)
+                continue;
+
+            const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(view.get());
+            if (!materialized_view)
+                return true;
+
+            const auto metadata = view->getInMemoryMetadataPtr(context, false);
+            if (metadata->getSelectQuery().select_table_id != storage->getStorageID())
+                continue;
+
+            /// Use the current INSERT context rather than the view's creation context. The latter can
+            /// retain a stale target-table entry after `DROP TABLE`, while the dependency builder will
+            /// correctly prune the same view from its executable graph.
+            auto target = DatabaseCatalog::instance().tryGetTable(materialized_view->getTargetTableId(), context);
+            auto target_lock = target
+                ? target->tryLockForShare(context->getInitialQueryId(), settings[Setting::lock_acquire_timeout])
+                : nullptr;
+            if (!target_lock)
+            {
+                if (settings[Setting::ignore_materialized_views_with_dropped_target_table]
+                    || settings[Setting::materialized_views_ignore_errors])
+                    continue;
+
+                return true;
+            }
+
+            return true;
+        }
+        catch (...) // Ok: an error may be ignored by `materialized_views_ignore_errors`.
+        {
+            if (!settings[Setting::materialized_views_ignore_errors])
+                return true;
+        }
+    }
+
+    return false;
+}
 bool InsertDependenciesBuilder::storageForwardsInsertToSeparateContext(const StoragePtr & storage, size_t depth)
 {
     if (depth > max_insert_forwarding_depth)
@@ -919,7 +1112,11 @@ bool InsertDependenciesBuilder::storageForwardsInsertToSeparateContext(const Sto
     /// forwards the write to a remote shard whose table is not cheaply known here and may itself be (or
     /// forward to) such a `Buffer`: this query's settings do travel to the shard, but the shard's `Buffer`
     /// would then flush in its own context. In both cases disabling deduplication for this `INSERT` does
-    /// not make the write fan-out safe, so fail closed.
+    /// not make the write fan-out safe, so fail closed. A `Buffer` over a destination that never
+    /// deduplicates and has no dependent views is the exception: its own context has nothing to apply
+    /// to the flush that the fan-out could break, see `bufferWriteIsInsensitiveToFanOut`.
+    if (bufferWriteIsInsensitiveToFanOut(storage))
+        return false;
     if (dynamic_cast<const StorageBuffer *>(storage.get()) || dynamic_cast<const StorageDistributed *>(storage.get()))
         return true;
 
@@ -953,19 +1150,47 @@ bool InsertDependenciesBuilder::dependentViewForwardsInsertToSeparateContext(
     if (depth > max_insert_forwarding_depth)
         return true;
 
+    const auto & settings = context->getSettingsRef();
+
     for (const auto & view_id : DatabaseCatalog::instance().getDependentViews(storage->getStorageID()))
     {
         auto view = DatabaseCatalog::instance().tryGetTable(view_id, context);
-        /// Fail closed on a dependent view that cannot be resolved or is not a materialized view
-        /// (its write path is not modelled here).
-        if (!view)
-            return true;
+        auto view_lock = view
+            ? view->tryLockForShare(context->getInitialQueryId(), settings[Setting::lock_acquire_timeout])
+            : nullptr;
+        /// A view that cannot be resolved or locked is being dropped concurrently:
+        /// `collectAllDependencies` prunes such a view from the executable graph, so it runs nothing.
+        if (!view_lock)
+            continue;
+
+        /// Fail closed on a dependent view that is not a materialized view (its write path is not
+        /// modelled here).
         const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(view.get());
         if (!materialized_view)
             return true;
-        auto target = materialized_view->tryGetTargetTable();
-        if (!target)
+
+        /// A stale catalog dependency whose view no longer reads from `storage` is pruned from the
+        /// executable graph by `collectAllDependencies` (the `select_table_id` check), so it runs
+        /// nothing - skip it here as well, like the other hidden-view probes do.
+        const auto metadata = view->getInMemoryMetadataPtr(context, false);
+        if (metadata->getSelectQuery().select_table_id != storage->getStorageID())
+            continue;
+
+        /// Resolve the target through the current INSERT context. The view's creation context can
+        /// retain its dropped target, while the executable graph skips the view when requested.
+        auto target = DatabaseCatalog::instance().tryGetTable(materialized_view->getTargetTableId(), context);
+        auto target_lock = target
+            ? target->tryLockForShare(context->getInitialQueryId(), settings[Setting::lock_acquire_timeout])
+            : nullptr;
+        if (!target_lock)
+        {
+            if (settings[Setting::ignore_materialized_views_with_dropped_target_table]
+                || settings[Setting::materialized_views_ignore_errors])
+                continue;
+
             return true;
+        }
+
         /// The view target itself (or a forwarding chain it starts) switches to a separate context ...
         if (storageForwardsInsertToSeparateContext(target, depth + 1))
             return true;
@@ -1005,6 +1230,14 @@ bool InsertDependenciesBuilder::forwardedInsertHidesDependentViewForwardingToSep
     if (dynamic_cast<const StorageDistributed *>(storage.get()) || dynamic_cast<const StorageBuffer *>(storage.get()))
         return false;
 
+    /// A `TimeSeries`, in contrast, runs the nested `INSERT`s of its inner tables in a copy of *this*
+    /// query's context (`TimeSeriesSink::createTargetPipeline`), so it is not caught by
+    /// `storageForwardsInsertToSeparateContext` - yet the graph behind those inner tables is expanded
+    /// only inside those nested `INSERT`s and may contain a `Buffer` that flushes in its own context.
+    /// Fail closed: this query's deduplication settings cannot make such a fan-out safe.
+    if (dynamic_cast<const StorageTimeSeries *>(storage.get()))
+        return true;
+
     /// `MaterializedView` and proxies pass the write through within this pipeline, and
     /// `collectAllDependencies` follows their targets: look through them (failing closed when the
     /// target cannot be resolved).
@@ -1022,10 +1255,258 @@ bool InsertDependenciesBuilder::forwardedInsertHidesDependentViewForwardingToSep
     return false;
 }
 
+bool InsertDependenciesBuilder::isSequentialQuorumInsert(const Settings & settings)
+{
+    return !settings[Setting::insert_quorum_parallel]
+        && (settings[Setting::insert_quorum].is_auto || settings[Setting::insert_quorum].valueOr(0) >= 2);
+}
+
+
+bool InsertDependenciesBuilder::storageMayWriteToReplicatedTable(const StoragePtr & storage, size_t depth) const
+{
+    return storageMayWriteToReplicatedTable(storage, init_context, depth);
+}
+
+
+bool InsertDependenciesBuilder::storageMayWriteToReplicatedTable(const StoragePtr & storage, ContextPtr context, size_t depth)
+{
+    if (depth > max_insert_forwarding_depth)
+        return true;
+
+    if (castStorage<StorageReplicatedMergeTree>(storage, DeferredTable::Load))
+        return true;
+
+    /// A `MaterializedView` and proxies pass the write through to their target within this pipeline:
+    /// follow the chain, failing closed when the target cannot be resolved.
+    if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
+    {
+        auto target = materialized_view->tryGetTargetTable();
+        return !target || storageMayWriteToReplicatedTable(target, context, depth + 1);
+    }
+    if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
+        return storageMayWriteToReplicatedTable(proxy->getNested(), context, depth + 1);
+
+    /// Unlike the other forwarding storages, an `Alias` has a locally resolvable target. Its nested
+    /// `INSERT` expands the target's dependent-view graph only at execution time, so inspect that
+    /// hidden graph here. This keeps the fan-out for `Alias` -> plain `MergeTree` while still
+    /// serializing a quorum write that reaches a replicated target through an alias or its views.
+    if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
+    {
+        auto target = alias->tryGetTargetTable();
+        return !target || storageMayWriteToReplicatedTable(target, context, depth + 1)
+            || dependentViewMayWriteToReplicatedTable(target, context, depth + 1);
+    }
+
+    /// A forwarding storage runs a nested `INSERT` whose destination graph is not visible here: an
+    /// `Distributed` writes to remote shards whose tables are not cheaply known here, a `Buffer`
+    /// flushes to a destination that can forward further, and a `TimeSeries` opens nested `INSERT`s
+    /// into its inner target tables inside `TimeSeriesSink`. Any of them may end on a
+    /// `ReplicatedMergeTree`, so fail closed.
+    if (storageHidesWriteTarget(storage, depth))
+        return true;
+
+    /// A concrete local non-replicated target: its writes are not quorum writes.
+    return false;
+}
+
+
+bool InsertDependenciesBuilder::dependentViewMayWriteToReplicatedTable(const StoragePtr & storage, size_t depth) const
+{
+    return dependentViewMayWriteToReplicatedTable(storage, init_context, depth);
+}
+
+
+bool InsertDependenciesBuilder::dependentViewMayWriteToReplicatedTable(const StoragePtr & storage, ContextPtr context, size_t depth)
+{
+    if (depth > max_insert_forwarding_depth)
+        return true;
+
+    const auto & settings = context->getSettingsRef();
+
+    for (const auto & view_id : DatabaseCatalog::instance().getDependentViews(storage->getStorageID()))
+    {
+        try
+        {
+            auto view = DatabaseCatalog::instance().tryGetTable(view_id, context);
+            auto view_lock = view
+                ? view->tryLockForShare(context->getInitialQueryId(), settings[Setting::lock_acquire_timeout])
+                : nullptr;
+            if (!view_lock)
+                continue;
+
+            const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(view.get());
+            if (!materialized_view)
+                return true;
+
+            const auto metadata = view->getInMemoryMetadataPtr(context, false);
+            if (metadata->getSelectQuery().select_table_id != storage->getStorageID())
+                continue;
+
+            /// Resolve through the current INSERT context for consistency with `observePath`.
+            /// `StorageMaterializedView::tryGetTargetTable` uses the view's context, which can retain
+            /// a stale target-table entry after `DROP TABLE`.
+            auto target = DatabaseCatalog::instance().tryGetTable(materialized_view->getTargetTableId(), context);
+            auto target_lock = target
+                ? target->tryLockForShare(context->getInitialQueryId(), settings[Setting::lock_acquire_timeout])
+                : nullptr;
+            if (!target_lock)
+            {
+                if (settings[Setting::ignore_materialized_views_with_dropped_target_table]
+                    || settings[Setting::materialized_views_ignore_errors])
+                    continue;
+
+                return true;
+            }
+
+            if (storageMayWriteToReplicatedTable(target, context, depth + 1)
+                || dependentViewMayWriteToReplicatedTable(target, context, depth + 1))
+                return true;
+        }
+        catch (...) // Ok: an error may be ignored by `materialized_views_ignore_errors`.
+        {
+            if (!settings[Setting::materialized_views_ignore_errors])
+                return true;
+        }
+    }
+
+    return false;
+}
+
+
+bool InsertDependenciesBuilder::storageHidesQuorumWriteTarget(const StoragePtr & storage, size_t depth) const
+{
+    if (depth > max_insert_forwarding_depth)
+        return true;
+
+    /// An `Alias` resolves to a local target. A direct target can therefore participate in the
+    /// per-target convergence check; only a target's dependent views remain hidden from this graph.
+    if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
+    {
+        auto target = alias->tryGetTargetTable();
+        return !target || dependentViewMayWriteToReplicatedTable(target, depth + 1)
+            || storageHidesQuorumWriteTarget(target, depth + 1);
+    }
+
+    if (dynamic_cast<const StorageDistributed *>(storage.get())
+        || dynamic_cast<const StorageBuffer *>(storage.get())
+        || dynamic_cast<const StorageTimeSeries *>(storage.get()))
+        return true;
+
+    if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
+    {
+        auto target = materialized_view->tryGetTargetTable();
+        return !target || storageHidesQuorumWriteTarget(target, depth + 1);
+    }
+    if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
+        return storageHidesQuorumWriteTarget(proxy->getNested(), depth + 1);
+
+    return false;
+}
+
+
+String InsertDependenciesBuilder::getVisibleQuorumWriteTargetKey(const StoragePtr & storage) const
+{
+    if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
+        return getVisibleQuorumWriteTargetKey(alias->tryGetTargetTable());
+
+    if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
+        return getVisibleQuorumWriteTargetKey(materialized_view->tryGetTargetTable());
+
+    if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
+        return getVisibleQuorumWriteTargetKey(proxy->getNested());
+
+    /// `ReplicatedMergeTreeSink::checkQuorumPrecondition` uses `<zookeeper_path>/quorum/status`.
+    if (auto replicated = castStorage<StorageReplicatedMergeTree>(storage, DeferredTable::Load))
+        return fmt::format("keeper:{}:{}", replicated->getZooKeeperName(), replicated->getZooKeeperPath());
+
+    return "table:" + storage->getStorageID().getFullNameNotQuoted();
+}
+
+
+bool InsertDependenciesBuilder::storageHidesWriteTarget(const StoragePtr & storage, size_t depth)
+{
+    if (depth > max_insert_forwarding_depth)
+        return true;
+
+    if (dynamic_cast<const StorageAlias *>(storage.get())
+        || dynamic_cast<const StorageDistributed *>(storage.get())
+        || dynamic_cast<const StorageBuffer *>(storage.get())
+        || dynamic_cast<const StorageTimeSeries *>(storage.get()))
+        return true;
+
+    if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
+    {
+        auto target = materialized_view->tryGetTargetTable();
+        return !target || storageHidesWriteTarget(target, depth + 1);
+    }
+    if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
+        return storageHidesWriteTarget(proxy->getNested(), depth + 1);
+
+    return false;
+}
+
+
+void InsertDependenciesBuilder::computeQuorumStreamRequirements()
+{
+    if (!sequential_quorum_insert)
+        return;
+
+    /// Every branch of the executable graph - the destination and each dependent view - owns one sink
+    /// writing into its physical target table (`inner_tables` maps the branch to that target). Count
+    /// the writers that may produce a quorum part, per target.
+    ///
+    /// Walk only the branches reachable from `root_view` via `dependent_views`: `collectAllDependencies`
+    /// may leave an orphaned `inner_tables` entry for a view it later pruned from the graph - e.g. a view
+    /// whose dropped target is ignored by `ignore_materialized_views_with_dropped_target_table`, or whose
+    /// expansion failed under `materialized_views_ignore_errors`. Such a branch never creates a sink, so
+    /// it must not be counted as a writer.
+    std::unordered_map<String, size_t> replicated_writers_per_target;
+    size_t replicated_writers = 0;
+    bool any_hidden_writer = false;
+    bool converging_replicated_writers = false;
+
+    std::function<void(const StorageIDMaybeEmpty &)> visit = [&] (const StorageIDMaybeEmpty & branch_id)
+    {
+        if (!skip_destination_table || branch_id != root_view)
+        {
+            const auto & target_id = inner_tables.at(branch_id);
+
+            auto it = storages.find(target_id);
+            const StoragePtr target_storage = it == storages.end() ? nullptr : it->second;
+
+            if (!target_storage || storageMayWriteToReplicatedTable(target_storage))
+            {
+                ++replicated_writers;
+                if (!target_storage || storageHidesQuorumWriteTarget(target_storage))
+                    any_hidden_writer = true;
+                else if (++replicated_writers_per_target[getVisibleQuorumWriteTargetKey(target_storage)] >= 2)
+                    converging_replicated_writers = true;
+            }
+        }
+
+        if (auto children = dependent_views.find(branch_id); children != dependent_views.end())
+            for (const auto & child_id : children->second)
+                visit(child_id);
+    };
+    visit(root_view);
+
+    /// The `max_insert_threads` fan-out duplicates every branch's sink into one sink per stream, all
+    /// writing the same table concurrently - so a single (possibly hidden) replicated writer already
+    /// makes the fan-out unsafe.
+    quorum_single_stream = replicated_writers > 0;
+
+    /// The dependent-view branches of a single stream write to distinct targets: two of them conflict
+    /// only when they produce quorum parts of the same table. Fail closed when a hidden writer makes
+    /// such a convergence impossible to rule out - unless it is the only writer that may reach a
+    /// replicated table at all (whatever its nested `INSERT` runs is serialized by that nested query
+    /// itself, which observes the same settings and derives the same requirements).
+    quorum_sequential_views = converging_replicated_writers || (any_hidden_writer && replicated_writers >= 2);
+}
+
 InsertDependenciesBuilder::InsertDependenciesBuilder(
     StoragePtr table, ASTPtr query, SharedHeader insert_header,
     bool async_insert_, bool skip_destination_table_, size_t max_insert_threads,
-    ContextPtr context)
+    ContextPtr context, InsertStartGatesPtr insert_start_gates_)
     : init_table_id(table->getStorageID())
     , init_storage(table)
     , init_query(query)
@@ -1033,6 +1514,10 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
     , init_context(context)
     , async_insert(async_insert_)
     , skip_destination_table(skip_destination_table_)
+    /// The registry is inherited from the outer INSERT when this builder serves a nested INSERT
+    /// running in the outer query's context (an `AliasSink`), so the gates of the destination
+    /// tables are shared with the sinks of the outer query's other branches.
+    , insert_start_gates(insert_start_gates_ ? std::move(insert_start_gates_) : std::make_shared<InsertStartGates>())
     , views_error_registry(std::make_shared<ViewErrorsRegistry>())
     , logger(getLogger("InsertDependenciesBuilder"))
 {
@@ -1040,6 +1525,8 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
 
     const ASTInsertQuery * as_insert_query = init_query->as<ASTInsertQuery>();
     insert_null_as_default = as_insert_query && as_insert_query->select && settings[Setting::insert_null_as_default];
+
+    sequential_quorum_insert = isSequentialQuorumInsert(settings);
 
     deduplicate_blocks = isDeduplicationEnabledForInsert(async_insert, settings);
     LOG_DEBUG(logger, "deduplicate_blocks : {}", deduplicate_blocks);
@@ -1052,6 +1539,8 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
     ignore_materialized_views_with_dropped_target_table = settings[Setting::ignore_materialized_views_with_dropped_target_table];
 
     collectAllDependencies();
+
+    computeQuorumStreamRequirements();
 
     auto all_sinks_support_parallel_insert = std::ranges::all_of(storages, [&] (auto storage)
         { return isView(storage.first) || storage.second->supportsParallelInsert();});
@@ -1095,7 +1584,7 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
         if ((strict_insert_block_limits || storageRebuildsDeduplicationIdsOnInsert(entry.second))
             && storageDeduplicatesBlocksOnInsert(entry.second))
             return true;
-        return strict_insert_block_limits && forwardedInsertHidesDependentView(entry.second);
+        return strict_insert_block_limits && forwardedInsertHidesDependentView(entry.second, init_context);
     });
     /// A dependent-MV target that forwards its write through a nested `INSERT` in a *separate* context
     /// (`Buffer` flushes in its own context; `Distributed` writes on a remote shard that may itself
@@ -1122,9 +1611,15 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
         && ((deduplicate_blocks_in_dependent_materialized_views && any_dependent_target_dedup_hazard)
             || any_dependent_target_forwards_to_separate_context);
 
+    /// A non-parallel quorum insert permits a single in-flight quorum part per table, so it must not
+    /// produce quorum parts through several sinks running concurrently. Whether this insert can do so
+    /// is derived from the collected sink graph (see `computeQuorumStreamRequirements`): the fan-out
+    /// stays available when no branch of the write may reach a `ReplicatedMergeTree` table. This
+    /// keeps both the plain `INSERT` and the `INSERT SELECT` fan-out single-stream when needed.
     if (all_sinks_support_parallel_insert
         && (settings[Setting::parallel_view_processing] || !isViewsInvolved())
-        && !mv_dedup_single_stream)
+        && !mv_dedup_single_stream
+        && !quorum_single_stream)
         sink_stream_size = max_insert_threads;
 }
 
@@ -1873,6 +2368,14 @@ Chain InsertDependenciesBuilder::createSinkImpl(StorageIDMaybeEmpty view_id) con
         auto sink = inner_storage->write(select_queries.at(view_id), metadata_snapshots.at(inner_table_id), insert_context, async_insert);
         sink->setRuntimeData(thread_groups.at(view_id));
         sink->setHasDependentMaterializedViews(has_dependent_materialized_views);
+        /// The gate is keyed by the physical destination table: different materialized views
+        /// converging on the same target table share one gate. The id of the storage itself carries
+        /// its UUID, which tells a recreated table from the dropped one with the same name.
+        sink->setInsertStartGate(insert_start_gates->get(inner_storage->getStorageID()));
+        /// A forwarding sink (`AliasSink`) threads the registry into the nested INSERT it runs, so
+        /// the sinks created there share this query's gates. A no-op for the other sinks.
+        sink->setInsertStartGateRegistry(insert_start_gates);
+        sink->setHiddenPreWriteChecks(collectHiddenPreWriteChecks(inner_storage, insert_context, insert_start_gates));
         result.addSink(std::move(sink));
     }
 
@@ -2086,6 +2589,16 @@ bool InsertDependenciesBuilder::isViewsInvolved() const
 size_t InsertDependenciesBuilder::getViewProcessingNumThreads() const
 {
     const auto & settings = init_context->getSettingsRef();
+    /// The single sink stream of a non-parallel quorum insert is still duplicated into one branch per
+    /// dependent view, and with `parallel_view_processing` enabled those branches run concurrently -
+    /// so two views converging on one `ReplicatedMergeTree` target would still race two in-flight
+    /// quorum parts of one query against each other. Push the views of such an insert sequentially:
+    /// each branch's sink blocks in `commitPart` until the quorum of its part is satisfied, so the
+    /// next branch starts with the quorum node already gone. Branches that write to distinct
+    /// replicated tables do not conflict and keep running concurrently (see
+    /// `computeQuorumStreamRequirements`).
+    if (quorum_sequential_views && isViewsInvolved())
+        return 1;
     if (settings[Setting::parallel_view_processing] || !isViewsInvolved())
         return static_cast<size_t>(settings[Setting::max_threads]);
     return 1;

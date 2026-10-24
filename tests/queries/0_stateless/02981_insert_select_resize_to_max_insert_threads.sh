@@ -42,7 +42,7 @@ max_insert_threads=8
 # memory-constrained builds. See PR #100383.
 # Also disable lowering of the auto `max_threads` (which caps `max_insert_threads`)
 # to the fair share of CPU slots, which depends on the concurrently running tests.
-NO_MEM_THROTTLE='--max_threads_min_free_memory_per_thread=0 --max_insert_threads_min_free_memory_per_thread=0 --use_concurrency_control_for_max_threads=0'
+NO_MEM_THROTTLE='--max_threads_min_free_memory_per_thread=0 --max_insert_threads_min_free_memory_per_thread=0 --use_concurrency_control_for_max_threads=0 --parallel_view_processing=1'
 
 echo "inserting into a remote table from local with concurrency equal to max_insert_threads"
 ${CLICKHOUSE_CLIENT} --max_insert_threads "$max_insert_threads" $NO_MEM_THROTTLE -q """
