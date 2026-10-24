@@ -13,9 +13,32 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
+/// Whether the `UNION ALL` list `inner_union`, an operand of an enclosing union, can be lifted into it.
+/// Not if its last operand carries a trailing `SETTINGS` clause: the clause belongs to the inner union
+/// (`(SELECT ... UNION ALL SELECT ... SETTINGS x = 1)`), and once lifted it would be indistinguishable
+/// from a clause of the enclosing union - the trailing clause of the last operand is query-level for the
+/// union holding it (see `QueryTreeBuilder::buildSelectWithUnionExpression`), so lifting would either
+/// apply it to the arms of the enclosing union or narrow it down to the last arm of the inner one.
+bool hasTrailingSettings(const ASTSelectWithUnionQuery & inner_union)
+{
+    return ASTSelectIntersectExceptQuery::getTrailingSettings(inner_union.list_of_selects->children.back()) != nullptr;
+}
+
+bool canLiftUnionAll(const ASTSelectWithUnionQuery * inner_union)
+{
+    return inner_union && inner_union->union_mode == SelectUnionMode::UNION_ALL && !hasTrailingSettings(*inner_union);
+}
+
+}
+
 void NormalizeSelectWithUnionQueryMatcher::getSelectsFromUnionListNode(ASTPtr ast_select, ASTs & selects)
 {
-    if (const auto * inner_union = ast_select->as<ASTSelectWithUnionQuery>())
+    /// Same as in `canLiftUnionAll`: a union whose last operand carries a trailing `SETTINGS` clause stays
+    /// a separate operand of the `UNION DISTINCT` list, so that the clause keeps applying to it alone.
+    if (const auto * inner_union = ast_select->as<ASTSelectWithUnionQuery>(); inner_union && !hasTrailingSettings(*inner_union))
     {
         for (const auto & child : inner_union->list_of_selects->children)
             getSelectsFromUnionListNode(child, selects);
@@ -83,8 +106,7 @@ void NormalizeSelectWithUnionQueryMatcher::visit(ASTSelectWithUnionQuery & ast, 
 
         if (union_modes[i] == SelectUnionMode::UNION_ALL)
         {
-            if (auto * inner_union = select_list[i + 1]->as<ASTSelectWithUnionQuery>();
-                inner_union && inner_union->union_mode == SelectUnionMode::UNION_ALL)
+            if (auto * inner_union = select_list[i + 1]->as<ASTSelectWithUnionQuery>(); canLiftUnionAll(inner_union))
             {
                 /// Inner_union is an UNION ALL list, just lift up
                 for (auto child = inner_union->list_of_selects->children.rbegin(); child != inner_union->list_of_selects->children.rend();
@@ -122,8 +144,7 @@ void NormalizeSelectWithUnionQueryMatcher::visit(ASTSelectWithUnionQuery & ast, 
     /// No UNION DISTINCT or only one child in select_list
     if (!distinct_found)
     {
-        if (auto * inner_union = select_list[0]->as<ASTSelectWithUnionQuery>();
-            inner_union && inner_union->union_mode == SelectUnionMode::UNION_ALL)
+        if (auto * inner_union = select_list[0]->as<ASTSelectWithUnionQuery>(); canLiftUnionAll(inner_union))
         {
             /// Inner_union is an UNION ALL list, just lift it up
             for (auto child = inner_union->list_of_selects->children.rbegin(); child != inner_union->list_of_selects->children.rend();

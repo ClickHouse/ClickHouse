@@ -1366,7 +1366,15 @@ public:
     void clampSettingsConstraintsForSettingsReset(std::vector<String> & names, SettingsChanges & clamped_changes, SettingSource source);
     /// For the resets of a statement that also changes `profile`: `changes_applied_first` decides their constraints.
     void checkSettingsConstraintsForSettingsReset(const std::vector<String> & names, const SettingsChanges & changes_applied_first, SettingSource source);
-    void clampToSettingsConstraints(SettingsChanges & changes, SettingSource source);
+    /// `keep_unchanged_settings`: see `SettingsConstraints::clamp`.
+    void clampToSettingsConstraints(SettingsChanges & changes, SettingSource source, bool keep_unchanged_settings = false);
+    /// Applies the `SETTINGS` clause of a nested (sub)query - `changes` and the `SETTINGS name = DEFAULT`
+    /// resets - clamped to the settings constraints instead of throwing, as for other settings crossing
+    /// execution contexts. Changes are applied one at a time, each clamped against the settings the
+    /// preceding ones left, so that the clause reads last-wins; when the clause contains `compatibility`,
+    /// a change that keeps the value is still applied, as the batch check of a top-level clause does,
+    /// so that the explicit assignment is not overridden by `compatibility`.
+    void applyNestedQuerySettingsClamped(const SettingsChanges & changes, const std::vector<String> & default_settings);
     void checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 
     /// Reset settings to the default in effect for them, which under an active `compatibility` is the value of that version.
@@ -2304,7 +2312,7 @@ private:
 
     void checkSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source);
 
-    void clampToSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source);
+    void clampToSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source, bool keep_unchanged_settings = false);
     void checkSettingsConstraintsWithLock(const AlterSettingsProfileElements & profile_elements, SettingSource source) const;
 
     void clampToSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source) const;

@@ -4067,9 +4067,9 @@ void Context::checkSettingsConstraintsWithLock(SettingsChanges & changes, Settin
         doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
 }
 
-void Context::clampToSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source)
+void Context::clampToSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source, bool keep_unchanged_settings)
 {
-    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.clamp(*settings, changes, source);
+    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.clamp(*settings, changes, source, keep_unchanged_settings);
     if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
         doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
 }
@@ -4198,19 +4198,49 @@ void Context::checkSettingsConstraints(SettingsChanges & changes, SettingSource 
     checkSettingsConstraintsWithLock(changes, source);
 }
 
-void Context::clampToSettingsConstraints(SettingsChanges & changes, SettingSource source)
+void Context::clampToSettingsConstraints(SettingsChanges & changes, SettingSource source, bool keep_unchanged_settings)
 {
     if (std::ranges::any_of(changes, isProfileChange))
     {
-        changes = enforceConstraintsAlongProfileChanges(shared_from_this(), changes, [source](Context & context, SettingsChanges & segment)
+        changes = enforceConstraintsAlongProfileChanges(shared_from_this(), changes,
+            [source, keep_unchanged_settings](Context & context, SettingsChanges & segment)
         {
-            context.clampToSettingsConstraints(segment, source);
+            context.clampToSettingsConstraints(segment, source, keep_unchanged_settings);
         });
         return;
     }
 
     SharedLockGuard lock(mutex);
-    clampToSettingsConstraintsWithLock(changes, source);
+    clampToSettingsConstraintsWithLock(changes, source, keep_unchanged_settings);
+}
+
+void Context::applyNestedQuerySettingsClamped(const SettingsChanges & changes, const std::vector<String> & default_settings)
+{
+    /// Clamping the whole clause as a batch would check every change against the settings as they were
+    /// before the clause, and drop a change that does not change that value - so
+    /// `SETTINGS use_query_cache = 1, use_query_cache = 0` would keep `1`. Clamping one change at a time
+    /// loses the batch's `compatibility` marker instead, so pass it explicitly: otherwise
+    /// `SETTINGS use_variant_as_common_type = 1, compatibility = '25.12'` would drop the `1` as unchanged
+    /// and let `compatibility` set the setting to the value of that version.
+    /// `compatibility = DEFAULT` is parsed into `default_settings`, and it changes the values of the settings
+    /// that are not assigned explicitly just like an assignment of `compatibility` does.
+    const bool has_compatibility_setting = changes.tryGet("compatibility") != nullptr
+        || std::ranges::find(default_settings, "compatibility") != default_settings.end();
+    for (const auto & change : changes)
+    {
+        SettingsChanges single_change{change};
+        clampToSettingsConstraints(single_change, SettingSource::QUERY, has_compatibility_setting);
+        applySettingsChanges(single_change);
+    }
+
+    if (!default_settings.empty())
+    {
+        auto allowed_resets = default_settings;
+        SettingsChanges clamped_resets;
+        clampSettingsConstraintsForSettingsReset(allowed_resets, clamped_resets, SettingSource::QUERY);
+        resetSettingsToDefaultValue(allowed_resets);
+        applySettingsChanges(clamped_resets);
+    }
 }
 
 void Context::checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const

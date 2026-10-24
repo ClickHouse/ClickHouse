@@ -42,6 +42,7 @@
 #include <Common/DateLUT.h>
 #include <base/arithmeticOverflow.h>
 #include <base/extended_types.h>
+#include <algorithm>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -587,13 +588,19 @@ public:
             /// time of `new_datetime` keeps it inside the source local day even across DST transitions,
             /// where day lengths differ from 24 hours and a raw "seconds since midnight" offset added to
             /// the source midnight could otherwise spill onto a neighbouring displayed date.
-            res_data[i] = static_cast<UInt32>(date_lut.makeDateTime(
+            const Int64 res_datetime = date_lut.makeDateTime(
                 date_lut.toYear(src_datetime),
                 date_lut.toMonth(src_datetime),
                 date_lut.toDayOfMonth(src_datetime),
                 static_cast<UInt8>(date_lut.toHour(new_datetime)),
                 static_cast<UInt8>(date_lut.toMinute(new_datetime)),
-                static_cast<UInt8>(date_lut.toSecond(new_datetime))));
+                static_cast<UInt8>(date_lut.toSecond(new_datetime)));
+
+            /// The first and the last local day of the `DateTime` range are only partially representable:
+            /// e.g. in UTC the range ends at 2106-02-07 06:28:15, and a later time of day would wrap into
+            /// 1970. Clamp to the range instead. Both bounds belong to the source local day in that case,
+            /// because the source value is in the range and lies on the same day as the reconstructed one.
+            res_data[i] = static_cast<UInt32>(std::clamp<Int64>(res_datetime, 0, std::numeric_limits<UInt32>::max()));
 
             src_prev_value = src_datetime;
             res_prev_value = res_data[i];
