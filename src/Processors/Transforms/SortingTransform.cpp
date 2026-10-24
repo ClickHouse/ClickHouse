@@ -204,6 +204,9 @@ Chunk MergeSorter::mergeBatchImpl(TSortingQueue & queue)
     if (merged_rows == 0 && chunks.empty())
         return {};
 
+    for (auto & column : merged_columns)
+        finishMergedReplicatedColumn(column);
+
     return Chunk(std::move(merged_columns), merged_rows);
 }
 

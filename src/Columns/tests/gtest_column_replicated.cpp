@@ -167,6 +167,24 @@ TEST(ColumnReplicated, RollbackClearsInsertionCache)
     ASSERT_EQ(full->getUInt(0), 12u);
 }
 
+TEST(ColumnReplicated, DeduplicationIsDecidedPerSource)
+{
+    /// A source with small values inserted first must not stop a source with large values from sharing them.
+    auto narrow = createColumn({"a", "b"}, {0, 1, 0, 1});
+    const String wide_a(2000, 'x');
+    const String wide_b(2000, 'y');
+    auto wide = createColumn({wide_a, wide_b}, {0, 1, 0, 1});
+
+    auto dest = ColumnReplicated::create(MutableColumnPtr(ColumnString::create()));
+    for (size_t row = 0; row != narrow->size(); ++row)
+        dest->insertFrom(*narrow, row);
+    for (size_t row = 0; row != wide->size(); ++row)
+        dest->insertFrom(*wide, row);
+
+    /// Small values are copied unless repeated consecutively, large values are stored once.
+    checkColumn(*dest, {"a", "b", "a", "b", wide_a, wide_b}, {0, 1, 2, 3, 4, 5, 4, 5});
+}
+
 TEST(ColumnReplicated, IndicesOfNonDefaultRows)
 {
     auto column = createColumn({"s1", "s2", "", "s3", ""}, {0, 1, 1, 3, 2, 0, 0, 3, 1, 2, 0, 3, 4});
