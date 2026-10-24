@@ -6,8 +6,10 @@
 #if USE_AWS_S3
 
 #include <memory>
+#include <mutex>
 
 #include <IO/HTTPCommon.h>
+#include <IO/IReadBufferMetadataProvider.h>
 #include <IO/S3/ReadBufferFromGetObjectResult.h>
 #include <IO/ReadSettings.h>
 #include <IO/ReadBufferFromFileBase.h>
@@ -24,7 +26,7 @@ using BlobStorageLogWriterPtr = std::shared_ptr<BlobStorageLogWriter>;
 /**
  * Perform S3 HTTP GET request and provide response to read.
  */
-class ReadBufferFromS3 : public ReadBufferFromFileBase
+class ReadBufferFromS3 : public ReadBufferFromFileBase, public IReadBufferMetadataProvider
 {
 private:
     mutable std::shared_ptr<const S3::Client> client_ptr;
@@ -48,6 +50,10 @@ private:
     std::string release_reason;
 
     std::unique_ptr<S3::ReadBufferFromGetObjectResult> impl;
+
+    /// The version of the object in the last successful response, also for `readBigAt`.
+    mutable std::mutex response_version_id_mutex;
+    mutable String response_version_id;
 
     /// Exclusive end of the range requested for the current `impl` when the request was cut to one
     /// buffer fill, or 0 when the request covers the whole range this buffer has to deliver.
@@ -113,6 +119,7 @@ public:
 
     std::optional<RemoteFileMetadata> getRemoteFileMetadata() const override;
 
+    std::optional<Field> getMetadata(const String & name) const override;
     void setIOSchedulingSettings(const IOSchedulingSettings & io_scheduling) override;
 
 private:

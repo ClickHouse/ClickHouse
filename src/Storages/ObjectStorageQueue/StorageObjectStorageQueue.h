@@ -42,7 +42,7 @@ public:
 
     String getName() const override { return engine_name; }
 
-    ObjectStorageType getType() { return type; }
+    ObjectStorageType getType() const { return type; }
 
     void read(
         QueryPlan & query_plan,
@@ -107,7 +107,7 @@ public:
     void rebuildObjectStorageClient(ContextPtr rebuild_context);
 
     /// Can setting be changed via ALTER TABLE MODIFY SETTING query.
-    static bool isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode);
+    static bool isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode, ObjectStorageType storage_type);
 
     /// Generate id for the S3(Azure/etc)Queue commit.
     /// Used for system.s3(azure/etc)_queue_log.
@@ -207,6 +207,7 @@ private:
         ContextPtr local_context,
         bool commit_once_processed,
         bool is_direct_select,
+        ObjectStorageQueueAction after_processing,
         size_t max_processed_files_override = 0);
 
     /// Get number of dependent materialized views.
@@ -221,7 +222,8 @@ private:
     void postProcess(
         const StoredObjects & successful_objects,
         UnorderedSetWithMemoryTracking<String> & post_processing_failed_paths,
-        const ObjectStorageQueueMetadata & metadata) const;
+        const ObjectStorageQueueMetadata & metadata,
+        ObjectStorageQueueAction after_processing) const;
     /// Commit processed files to keeper as either successful or unsuccessful.
     void commit(
         bool insert_succeeded,

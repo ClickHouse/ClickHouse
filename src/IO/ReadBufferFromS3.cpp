@@ -711,6 +711,10 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
                 blob_log_watch.elapsedMicroseconds(),
                 /* error_code */ 0, /* error_message */ {});
         }
+        {
+            std::lock_guard lock(response_version_id_mutex);
+            response_version_id = S3::pinnableVersionId(result.GetVersionId());
+        }
         return result;
     }
 
@@ -746,6 +750,21 @@ ObjectMetadata ReadBufferFromS3::getObjectMetadataFromTheLastRequest() const
         throw Exception(ErrorCodes::NOT_INITIALIZED, "No S3 object metadata available because there were no successful requests");
 
     return impl->getObjectMetadata();
+}
+
+std::optional<Field> ReadBufferFromS3::getMetadata(const String & name) const
+{
+    if (name == "version_id")
+    {
+        if (impl)
+            return impl->getObjectMetadata().version_id;
+        /// `readBigAt` never sets `impl`, so the version comes from its last response.
+        std::lock_guard lock(response_version_id_mutex);
+        if (!response_version_id.empty())
+            return response_version_id;
+        return S3::pinnableVersionId(version_id);
+    }
+    return std::nullopt;
 }
 
 }

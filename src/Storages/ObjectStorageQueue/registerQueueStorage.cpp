@@ -20,6 +20,7 @@
 
 #if USE_AWS_S3
 #include <IO/S3Common.h>
+#include <IO/S3/getObjectInfo.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #endif
 
@@ -60,6 +61,11 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
     /// Parse with the create context so a `SETTINGS s3_allow_server_credentials_in_user_queries = 1` on the
     /// `CREATE` is honored (see `StorageS3Configuration::fromAST`); the processing context stays global below.
     StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, args.getLocalContext(), false, &args.table_id);
+#if USE_AWS_S3
+    /// Every upload made while versioning is suspended is the version `null`, so it pins no generation.
+    if constexpr (std::is_same_v<Configuration, StorageS3Configuration>)
+        configuration->url.version_id = S3::pinnableVersionId(configuration->url.version_id);
+#endif
 
     // Use format settings from global server context + settings from
     // the SETTINGS clause of the create query. Settings from current
@@ -342,6 +348,10 @@ Move from an Azure container to another Azure container requires the Blob Storag
 
 Tagging requires tag key and value provided as `after_processing_tag_key` and `after_processing_tag_value`.
 
+On a versioned S3 bucket, `delete` and `move` remove only the version that was read, so an older version of the same key, if there is one, becomes the current object again. The listing does not report versions, so the read is matched to the listed object by its `ETag` only: if the same bytes are uploaded again between the listing and the read, the new version is read, moved or deleted, and the listed version stays at the key.
+
+Because they name that version, `delete` and `move` on a versioned bucket also need the permissions `s3:GetObjectVersion` and `s3:DeleteObjectVersion` on the source bucket, and `s3:GetObjectVersionTagging` with `after_processing_move_preserve_tags`. Grant them before upgrading a server with such a table: without them these requests fail with `AccessDenied` and the processed files stay at the source. An object uploaded while versioning was off or suspended has the version `null`, which the next such upload reuses, so it is handled like an object of an unversioned bucket.
+
 ### `after_processing_retries` {#after_processing_retries}
 
 Number of retries for the requested after-processing action, before giving up.
@@ -374,7 +384,17 @@ Default value: empty string.
 
 ### `after_processing_move_preserve_path` {#after_processing_move_preserve_path}
 
-If `true`, the full source object path is appended to `after_processing_move_prefix` when moving a successfully processed file, so the source directory structure under the bucket is preserved at the destination. If `false`, only the file name is used and the source directory structure is flattened.
+If `true`, the full source object path is appended to `after_processing_move_prefix` when moving a successfully processed file, so the source directory structure under the bucket is preserved at the destination. If `false`, only the file name is used and the source directory structure is flattened. With flattening, several processed files can map to the same destination path (equal file names under different source prefixes); only the first is moved, and a later file whose destination already holds a different source object is left in place at the source.
+
+Possible values:
+
+- `true` / `false`.
+
+Default value: `false`.
+
+### `after_processing_move_preserve_tags` {#after_processing_move_preserve_tags}
+
+S3 only; setting it on any other object storage is an error. If `true`, a flattening move (`after_processing_move_preserve_path = 0`) restates the source object's tag set on the destination, which requires permission to read those tags (`s3:GetObjectTagging`); a move whose tags cannot be read fails and the file is left in place at the source. If `false`, files are moved without restating tags.
 
 Possible values:
 

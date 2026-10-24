@@ -1,0 +1,8 @@
+<clickhouse>
+    <filesystem_caches>
+        <s3queue_cache>
+            <path>s3queue_cache</path>
+            <max_size>100Mi</max_size>
+        </s3queue_cache>
+    </filesystem_caches>
+</clickhouse>

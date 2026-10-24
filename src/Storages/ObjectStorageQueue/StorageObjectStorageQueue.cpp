@@ -146,6 +146,7 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsString after_processing_move_uri;
     extern const ObjectStorageQueueSettingsString after_processing_move_prefix;
     extern const ObjectStorageQueueSettingsBool after_processing_move_preserve_path;
+    extern const ObjectStorageQueueSettingsBool after_processing_move_preserve_tags;
     extern const ObjectStorageQueueSettingsString after_processing_move_access_key_id;
     extern const ObjectStorageQueueSettingsString after_processing_move_secret_access_key;
     extern const ObjectStorageQueueSettingsString after_processing_move_connection_string;
@@ -179,6 +180,7 @@ namespace
     void validateSettings(
         ObjectStorageQueueSettings & queue_settings,
         bool is_attach,
+        ObjectStorageType type,
         bool is_loading_from_existing_metadata)
     {
         if (!is_attach && !queue_settings[ObjectStorageQueueSetting::mode].changed)
@@ -199,6 +201,14 @@ namespace
                 "Setting `cleanup_interval_min_ms` ({}) must be less or equal to `cleanup_interval_max_ms` ({})",
                 queue_settings[ObjectStorageQueueSetting::cleanup_interval_min_ms].value,
                 queue_settings[ObjectStorageQueueSetting::cleanup_interval_max_ms].value);
+        }
+        /// Only the S3 move path reads and restates tags, so accepting either value elsewhere would be a no-op.
+        if (type != ObjectStorageType::S3 && queue_settings[ObjectStorageQueueSetting::after_processing_move_preserve_tags].changed)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Setting `after_processing_move_preserve_tags` is supported only for S3 object storage, not for {}",
+                type);
         }
         if (queue_settings[ObjectStorageQueueSetting::after_processing] == ObjectStorageQueueAction::MOVE)
         {
@@ -324,6 +334,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         .after_processing_move_uri = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_uri],
         .after_processing_move_prefix = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_prefix],
         .after_processing_move_preserve_path = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_preserve_path],
+        .after_processing_move_preserve_tags = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_preserve_tags],
         .after_processing_move_access_key_id = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_access_key_id],
         .after_processing_move_secret_access_key = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_secret_access_key],
         .after_processing_move_connection_string = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_connection_string],
@@ -359,7 +370,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     }
 
     const bool is_attach = mode > LoadingStrictnessLevel::CREATE;
-    validateSettings(*queue_settings_, is_attach, isLoadingFromExistingMetadata(mode));
+    validateSettings(*queue_settings_, is_attach, type, isLoadingFromExistingMetadata(mode));
 
     /// The object storage S3 client is built once here and reused by background threads, so the effective
     /// per-session credential restriction must be captured now from the CREATE query (its
@@ -387,7 +398,6 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     object_storage_context->setSetting(
         "s3_allow_server_credentials_in_user_queries",
         allow_server_credentials_in_user_queries_);
-
     object_storage = configuration->createObjectStorage(object_storage_context, /* is_readonly */true, std::nullopt);
     FormatFactory::instance().checkFormatName(configuration->format);
     configuration->check(context_);
@@ -770,6 +780,7 @@ void ReadFromObjectStorageQueue::initializePipeline(QueryPipelineBuilder & pipel
     auto parser_shared_resources
         = std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), /*num_streams_=*/processing_threads_num);
     auto progress = std::make_shared<ObjectStorageQueueSource::ProcessingProgress>();
+    const auto after_processing = metadata->getTableMetadata().after_processing.load();
     for (size_t i = 0; i < processing_threads_num; ++i)
         pipes.emplace_back(storage->createSource(
             i /* processor_id */,
@@ -781,7 +792,8 @@ void ReadFromObjectStorageQueue::initializePipeline(QueryPipelineBuilder & pipel
             max_block_size,
             context,
             commit_once_processed,
-            /*is_direct_select=*/true));
+            /*is_direct_select=*/true,
+            after_processing));
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
     if (pipe.empty())
@@ -804,6 +816,7 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
     ContextPtr local_context,
     bool commit_once_processed,
     bool is_direct_select,
+    ObjectStorageQueueAction after_processing,
     size_t max_processed_files_override)
 {
     CommitSettings commit_settings_copy;
@@ -832,6 +845,7 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
         parser_shared_resources,
         commit_settings_copy,
         after_processing_settings_copy,
+        after_processing,
         std::move(metadata),
         local_context,
         max_block_size,
@@ -1078,6 +1092,8 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
             = std::make_shared<FormatParserSharedResources>(queue_context->getSettingsRef(), /*num_streams_=*/threads);
 
         auto processing_progress = std::make_shared<ProcessingProgress>();
+        /// One value for the whole batch, so an `ALTER` applies from the next batch on.
+        const auto after_processing = table_metadata.after_processing.load();
         for (size_t i = 0; i < threads; ++i)
         {
             size_t processor_id = i * (streaming_tasks_index + 1);
@@ -1092,6 +1108,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
                 queue_context,
                 /*commit_once_processed=*/false,
                 /*is_direct_select=*/false,
+                after_processing,
                 effective_max_files);
 
             pipes.emplace_back(source);
@@ -1211,7 +1228,8 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
 void StorageObjectStorageQueue::postProcess(
     const StoredObjects & successful_objects,
     UnorderedSetWithMemoryTracking<String> & post_processing_failed_paths,
-    const ObjectStorageQueueMetadata & metadata) const
+    const ObjectStorageQueueMetadata & metadata,
+    ObjectStorageQueueAction after_processing) const
 {
     std::optional<ObjectStorageQueuePostProcessor> post_processor;
 
@@ -1219,12 +1237,8 @@ void StorageObjectStorageQueue::postProcess(
     {
         std::lock_guard lock(mutex);
         post_processor.emplace(
-            getContext(),
-            type,
-            object_storage,
-            getName(),
-            metadata.getTableMetadata(),
-            after_processing_settings);
+            getContext(), type, object_storage, after_processing, after_processing_settings,
+            metadata.getKeeperIdentity());
     }
 
     if (post_processor)
@@ -1273,12 +1287,32 @@ void StorageObjectStorageQueue::commit(
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueCommitRequests, requests.size());
 
+    /// Post-processing runs before the Keeper requests on purpose: an object that is no longer the
+    /// generation that was ingested throws out of here, so the batch is not committed as processed.
     UnorderedSetWithMemoryTracking<String> post_processing_failed_paths;
 
-    if (!successful_objects.empty()
-        && metadata.getTableMetadata().after_processing != ObjectStorageQueueAction::KEEP)
+    /// The sources share one file iterator, whose `after_processing` decided how their files were read.
+    const auto after_processing = sources.empty() ? ObjectStorageQueueAction::KEEP : sources.front()->getAfterProcessing();
+    if (!successful_objects.empty() && after_processing != ObjectStorageQueueAction::KEEP)
     {
-        postProcess(successful_objects, post_processing_failed_paths, metadata);
+        try
+        {
+            postProcess(successful_objects, post_processing_failed_paths, metadata, after_processing);
+        }
+        catch (...)
+        {
+            /// Exclusive mode keeps no processing nodes in Keeper, so the batch's files are released here.
+            if (mode == ObjectStorageQueueMode::EXCLUSIVE && ObjectStorageQueuePostProcessor::isChangedGeneration(getCurrentExceptionCode()))
+            {
+                const auto message = getCurrentExceptionMessage(false);
+                for (auto & source : sources)
+                    source->releaseAfterChangedGeneration(message);
+            }
+            /// Ordered mode must read the new generation before later keys move the pointer past it.
+            if (mode == ObjectStorageQueueMode::ORDERED && ObjectStorageQueuePostProcessor::isChangedGeneration(getCurrentExceptionCode()))
+                sources.front()->invalidateFileIterator();
+            throw;
+        }
     }
 
     /// In exclusive mode nothing is written to Keeper, but the after_processing action may have
@@ -1455,6 +1489,7 @@ static const std::unordered_set<std::string_view> changeable_settings_unordered_
     "after_processing_move_uri",
     "after_processing_move_prefix",
     "after_processing_move_preserve_path",
+    "after_processing_move_preserve_tags",
     "after_processing_move_access_key_id",
     "after_processing_move_secret_access_key",
     "after_processing_move_connection_string",
@@ -1490,6 +1525,7 @@ static const std::unordered_set<std::string_view> changeable_settings_ordered_mo
     "after_processing_move_uri",
     "after_processing_move_prefix",
     "after_processing_move_preserve_path",
+    "after_processing_move_preserve_tags",
     "after_processing_move_access_key_id",
     "after_processing_move_secret_access_key",
     "after_processing_move_connection_string",
@@ -1522,6 +1558,7 @@ static const std::unordered_set<std::string_view> changeable_settings_exclusive_
     "after_processing_move_uri",
     "after_processing_move_prefix",
     "after_processing_move_preserve_path",
+    "after_processing_move_preserve_tags",
     "after_processing_move_access_key_id",
     "after_processing_move_secret_access_key",
     "after_processing_move_connection_string",
@@ -1547,9 +1584,12 @@ static void checkNormalizedSetting(const std::string & name)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Setting is not normalized: {}", name);
 }
 
-bool StorageObjectStorageQueue::isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode)
+bool StorageObjectStorageQueue::isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode, ObjectStorageType storage_type)
 {
     checkNormalizedSetting(name);
+
+    if (storage_type != ObjectStorageType::S3 && name == "after_processing_move_preserve_tags")
+        return false;
 
     if (mode == ObjectStorageQueueMode::UNORDERED)
         return changeable_settings_unordered_mode.contains(name);
@@ -1656,7 +1696,7 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
         {
             /// `new_settings` contains a full set of settings, changed and non-changed together.
             /// So we check whether setting is allowed to be changed only if it is actually changed.
-            if (!isSettingChangeable(setting.name, mode))
+            if (!isSettingChangeable(setting.name, mode, type))
             {
                 throw Exception(
                     ErrorCodes::SUPPORT_IS_DISABLED,
@@ -1782,7 +1822,7 @@ void StorageObjectStorageQueue::alter(
             if (!setting_changed)
                 continue;
 
-            if (!isSettingChangeable(setting.name, mode))
+            if (!isSettingChangeable(setting.name, mode, type))
             {
                 throw Exception(
                     ErrorCodes::SUPPORT_IS_DISABLED,
@@ -1870,6 +1910,8 @@ void StorageObjectStorageQueue::alter(
                 after_processing_settings.after_processing_move_prefix = change.value.safeGet<String>();
             else if (change.name == "after_processing_move_preserve_path")
                 after_processing_settings.after_processing_move_preserve_path = change.value.safeGet<bool>();
+            else if (change.name == "after_processing_move_preserve_tags")
+                after_processing_settings.after_processing_move_preserve_tags = change.value.safeGet<bool>();
             else if (change.name == "after_processing_move_access_key_id")
                 after_processing_settings.after_processing_move_access_key_id = change.value.safeGet<String>();
             else if (change.name == "after_processing_move_secret_access_key")
@@ -2005,6 +2047,7 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
         settings[ObjectStorageQueueSetting::after_processing_move_uri] = after_processing_settings.after_processing_move_uri;
         settings[ObjectStorageQueueSetting::after_processing_move_prefix] = after_processing_settings.after_processing_move_prefix;
         settings[ObjectStorageQueueSetting::after_processing_move_preserve_path] = after_processing_settings.after_processing_move_preserve_path;
+        settings[ObjectStorageQueueSetting::after_processing_move_preserve_tags] = after_processing_settings.after_processing_move_preserve_tags;
         settings[ObjectStorageQueueSetting::after_processing_move_access_key_id] = after_processing_settings.after_processing_move_access_key_id;
         settings[ObjectStorageQueueSetting::after_processing_move_secret_access_key] = after_processing_settings.after_processing_move_secret_access_key;
         settings[ObjectStorageQueueSetting::after_processing_move_connection_string] = after_processing_settings.after_processing_move_connection_string;

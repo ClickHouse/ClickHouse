@@ -2111,6 +2111,14 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     bool use_page_cache = allow_page_cache && !use_distributed_cache && !use_filesystem_cache
         && effective_read_settings.page_cache_settings.cache && effective_read_settings.use_page_cache_for_object_storage;
 
+    /// A read through a cache does not report the S3 version it read, and the queue acts on that version.
+    if (object_info.require_read_pinned_to_generation && object_storage->getType() == ObjectStorageType::S3)
+    {
+        use_distributed_cache = false;
+        use_filesystem_cache = false;
+        use_page_cache = false;
+    }
+
 
     /// We need object metadata for a few use cases:
     /// 1. object size suggests whether we need to use prefetch
@@ -2177,6 +2185,22 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// User's object may change, don't cache it.
     modified_read_settings.use_page_cache_for_disks_without_file_cache = false;
     modified_read_settings.filesystem_cache_settings.boundary_alignment = settings[Setting::filesystem_cache_boundary_alignment];
+    /// The reader executor does not report the S3 version it read either.
+    if (object_info.require_read_pinned_to_generation && object_storage->getType() == ObjectStorageType::S3)
+        modified_read_settings.reader_executor.enabled = false;
+
+    /// Pin the read to the generation seen in `LIST`/`HEAD`, so an in-place overwrite throws instead of yielding torn data;
+    /// `require_read_pinned_to_generation` forces this regardless of `s3_validate_etag_on_read`/`azure_validate_etag_on_read`.
+    String pinned_generation;
+    if (object_info.metadata.has_value() && (validate_etag_on_read || object_info.require_read_pinned_to_generation))
+        pinned_generation = object_info.metadata->etag;
+
+    if (object_info.require_read_pinned_to_generation && pinned_generation.empty())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot read object {}: its read must be pinned to the generation that is processed "
+            "after it, but that generation is not known",
+            object_info.getPath());
 
     // Create a read buffer that will prefetch the first ~1 MB of the file.
     // When reading lots of tiny files, this prefetching almost doubles the throughput.
@@ -2226,12 +2250,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         ? object_size
         : StoredObject::UnknownSize;
     StoredObject stored_object(object_info.getPath(), object_info.getPath(), stored_object_size, object_info.read_source_index);
-
-    /// Pin the read to the object generation seen here (etag from the LIST/HEAD): a GET with a
-    /// different ETag means an in-place overwrite, reported as S3_OBJECT_CHANGED_DURING_READ or
-    /// AZURE_OBJECT_CHANGED_DURING_READ instead of torn cross-generation data.
-    if (validate_etag_on_read && object_info.metadata.has_value())
-        stored_object.etag = object_info.metadata->etag;
+    stored_object.etag = pinned_generation;
     /// The distributed cache keys on the etag whether or not this read validates it.
     if (use_distributed_cache)
         stored_object.etag_hash = getETagHash(object_info.metadata->etag);
