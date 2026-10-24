@@ -162,7 +162,8 @@ struct StringValuesSkippedByFilter
     size_t rows_to_measure = 0;
     WriteBuffer * values_compressed_size_measurement = nullptr;
     WriteBuffer * sizes_compressed_size_measurement = nullptr;
-    /// The size of the measured values.
+    /// The number of the rows measured, and the size of the measured values.
+    size_t measured_rows = 0;
     size_t measured_bytes = 0;
 
     /// Must be called for every replaced value that is not empty in the rows to measure: an empty value is read as it is.
@@ -173,7 +174,12 @@ struct StringValuesSkippedByFilter
     }
 
     /// Must be called after `rows` rows are read.
-    void rowsRead(size_t rows) { rows_to_measure -= std::min(rows_to_measure, rows); }
+    void rowsRead(size_t rows)
+    {
+        const size_t measured = std::min(rows_to_measure, rows);
+        rows_to_measure -= measured;
+        measured_rows += measured;
+    }
 
 private:
     void writeToCompressedSizeMeasurement(const char * data, size_t size, bool size_is_inline);
@@ -183,9 +189,11 @@ private:
 struct StringValuesSkippedInBlock
 {
     size_t bytes = 0;
-    /// If the values were measured: the size of the measured values, and with their sizes compressed with the codec of the column.
+    /// If the values were measured: the size of the measured values, and with their sizes compressed with the codec of the column,
+    /// in this many first rows of the block.
     std::optional<size_t> measured_bytes;
     size_t measured_compressed_bytes = 0;
+    size_t measured_rows = 0;
 };
 using StringValuesSkippedInBlockByColumn = std::unordered_map<String, StringValuesSkippedInBlock>;
 

@@ -320,13 +320,14 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
             if (const auto * step = range_readers[i].getPrewhereInfo(); step && step->query_condition_cache_attribution_boundary)
                 num_attributed_readers = i + 1;
 
-    /// The compressed size of the string values that are skipped while reading is measured in the rows that are
-    /// sampled, so whether the block is sampled is decided before it is read then.
+    /// The compressed size of the string values that are skipped while reading is measured in the blocks that are
+    /// sampled, so whether the block is sampled is decided before it is read then. A block can have more rows than
+    /// requested, since a compact part is read in whole granules, so the rows actually measured are reported.
     std::optional<bool> should_continue_sampling;
     if (sampling_updater)
         should_continue_sampling = sampling_updater->takeInputBlockReadFromDisk();
-    const size_t rows_to_measure
-        = should_continue_sampling.value_or(false) ? RuntimeDataflowStatisticsCacheUpdater::numRowsToSample(max_rows) : 0;
+    const bool measure = should_continue_sampling.value_or(false);
+    const size_t rows_to_measure = measure ? RuntimeDataflowStatisticsCacheUpdater::maxRowsToSample(max_rows) : 0;
     first_reader.getReader()->measureCompressedSizeOfStringValuesSkippedByFilters(rows_to_measure);
 
     try
@@ -364,7 +365,7 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
     }
     else if (sampling_updater)
     {
-        sampling_updater->giveBackInputBlockReadFromDisk();
+        sampling_updater->giveBackInputBlockReadFromDisk(measure);
     }
 
     for (size_t i = 1; i < range_readers.size(); ++i)

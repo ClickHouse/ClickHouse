@@ -128,6 +128,10 @@ struct RuntimeDataflowStatisticsBlock
     struct Statistics
     {
         std::atomic_size_t counter{0};
+        /// The blocks counted before they were read and given back because they had no rows, by whether they were
+        /// sampled, see `takeInputBlockReadFromDisk`.
+        std::atomic_size_t sampled_blocks_given_back{0};
+        std::atomic_size_t not_sampled_blocks_given_back{0};
 
         std::mutex mutex;
         size_t bytes TSA_GUARDED_BY(mutex) = 0;
@@ -244,14 +248,16 @@ public:
         size_t read_bytes,
         std::optional<bool> & should_continue_sampling);
 
-    /// To avoid spending too much time on serialization, the number of rows of a sampled block to serialize is limited.
-    static size_t numRowsToSample(size_t rows);
+    /// The number of rows to sample at most from a block read with `max_rows` requested: at least as many as are sampled
+    /// from a block of `max_rows`, and from a block of a granule or less.
+    static size_t maxRowsToSample(size_t max_rows);
 
     /// For a read that decides whether to sample a block before reading it, and passes the decision to
     /// `recordInputColumns` as `should_continue_sampling`: counts the next block read from disk and returns whether
-    /// it is sampled. The block is given back if it has no rows, so that it does not use up the blocks to sample.
+    /// it is sampled. The block is given back if it has no rows, so that it does not use up the blocks to sample: the
+    /// next block that is read takes its place, with the same decision, since the counter may be already past it.
     bool takeInputBlockReadFromDisk();
-    void giveBackInputBlockReadFromDisk();
+    void giveBackInputBlockReadFromDisk(bool sampled);
 
     /// Ignored for duplicated reads: they only refine the duplicated-read gate, so a read that cannot be
     /// measured there must not drop the statistics that decide whether parallel replicas are considered at all.

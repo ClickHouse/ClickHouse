@@ -110,8 +110,8 @@ public:
     /// for the column (by its name in the part), see `measureCompressedSizeOfStringValuesSkippedByFilters`.
     void setCodecsToMeasureCompressedSizeOfStringValuesSkippedByFilters(const std::function<CompressionCodecPtr(const String &)> & get_codec);
 
-    /// Measures the compressed size of the values skipped in this many first rows of the block read next, for the columns
-    /// that have a codec.
+    /// Measures the compressed size of the values skipped in at most this many first rows of the block read next, for the
+    /// columns that have a codec.
     void measureCompressedSizeOfStringValuesSkippedByFilters(size_t rows)
     {
         rows_to_measure_compressed_size_of_string_values_skipped_by_filters = rows;

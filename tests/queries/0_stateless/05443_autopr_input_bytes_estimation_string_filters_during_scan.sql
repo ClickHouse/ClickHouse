@@ -38,6 +38,7 @@ DROP TABLE IF EXISTS t_compact_large_values;
 DROP TABLE IF EXISTS t_compact_large_matching_values;
 DROP TABLE IF EXISTS t_compact_skip_index;
 DROP TABLE IF EXISTS t_compact_many_filters;
+DROP TABLE IF EXISTS t_compact_small_blocks;
 
 -- Statistics are disabled so that reading them is not accounted in `ReadCompressedBytes`.
 -- A wide part has per-column sizes, a compact part does not, and the estimate takes the compression ratio differently for the two.
@@ -73,9 +74,10 @@ SELECT count() FROM t_compact_unread_incompressible WHERE s LIKE '%needle%' SETT
 -- blocks in a single thread: how close either is to what is read depends on the blocks that happen to be sampled.
 -- The estimate without the filter takes somewhat more for the sizes of the values, see the cases further below.
 
--- The replaced values are measured in each sampled block: here they compress well in the first block only.
+-- The replaced values are measured in each sampled block: here they compress well in the first block only. The granules
+-- are not adaptive, because the reads with and without the filter make blocks of a different number of granules then.
 CREATE TABLE t_compact_compressibility_changes(id UInt64, s String) ENGINE=MergeTree ORDER BY id
-SETTINGS auto_statistics_types='', index_granularity=8192, min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18;
+SETTINGS auto_statistics_types='', index_granularity=8192, index_granularity_bytes='10Mi', min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18;
 INSERT INTO t_compact_compressibility_changes SELECT number, concat(if(number % 100 = 0, 'needle', ''), if(number < 8192, repeat('abcdefgh', 8),
     concat(reinterpretAsString(cityHash64(number)), reinterpretAsString(cityHash64(number, 1)), reinterpretAsString(cityHash64(number, 2)), reinterpretAsString(cityHash64(number, 3)),
            reinterpretAsString(cityHash64(number, 4)), reinterpretAsString(cityHash64(number, 5)), reinterpretAsString(cityHash64(number, 6)), reinterpretAsString(cityHash64(number, 7)))))
@@ -195,6 +197,24 @@ INSERT INTO t_compact_many_filters SELECT 'x1', 'x2', 'x3', 'x4', 'x5', 'x6', 'x
 SELECT count() FROM t_compact_many_filters WHERE s1 LIKE '%needle%' AND s2 LIKE '%needle%' AND s3 LIKE '%needle%' AND s4 LIKE '%needle%' AND s5 LIKE '%needle%' AND s6 LIKE '%needle%' AND s7 LIKE '%needle%' AND s8 LIKE '%needle%' AND s9 LIKE '%needle%' AND s10 LIKE '%needle%' AND s11 LIKE '%needle%' AND s12 LIKE '%needle%' AND s13 LIKE '%needle%' AND s14 LIKE '%needle%' AND s15 LIKE '%needle%' AND s16 LIKE '%needle%' AND s17 LIKE '%needle%' AND s18 LIKE '%needle%' AND s19 LIKE '%needle%' AND s20 LIKE '%needle%' AND s21 LIKE '%needle%' AND s22 LIKE '%needle%' AND s23 LIKE '%needle%' AND s24 LIKE '%needle%' AND s25 LIKE '%needle%' AND s26 LIKE '%needle%' AND s27 LIKE '%needle%' AND s28 LIKE '%needle%' AND s29 LIKE '%needle%' AND s30 LIKE '%needle%' AND s31 LIKE '%needle%' AND s32 LIKE '%needle%'
 SETTINGS max_threads=1, enable_multiple_prewhere_read_steps=1, max_memory_usage='16Mi', log_comment='many_filters';
 
+-- Without the steps, all the columns are read together, and the compressors of all of them share one budget.
+SELECT count() FROM t_compact_many_filters WHERE s1 LIKE '%needle%' AND s2 LIKE '%needle%' AND s3 LIKE '%needle%' AND s4 LIKE '%needle%' AND s5 LIKE '%needle%' AND s6 LIKE '%needle%' AND s7 LIKE '%needle%' AND s8 LIKE '%needle%' AND s9 LIKE '%needle%' AND s10 LIKE '%needle%' AND s11 LIKE '%needle%' AND s12 LIKE '%needle%' AND s13 LIKE '%needle%' AND s14 LIKE '%needle%' AND s15 LIKE '%needle%' AND s16 LIKE '%needle%' AND s17 LIKE '%needle%' AND s18 LIKE '%needle%' AND s19 LIKE '%needle%' AND s20 LIKE '%needle%' AND s21 LIKE '%needle%' AND s22 LIKE '%needle%' AND s23 LIKE '%needle%' AND s24 LIKE '%needle%' AND s25 LIKE '%needle%' AND s26 LIKE '%needle%' AND s27 LIKE '%needle%' AND s28 LIKE '%needle%' AND s29 LIKE '%needle%' AND s30 LIKE '%needle%' AND s31 LIKE '%needle%' AND s32 LIKE '%needle%'
+SETTINGS max_threads=1, enable_multiple_prewhere_read_steps=0, max_memory_usage='16Mi', log_comment='many_filters_in_one_step';
+
+-- A compact part is read in whole granules, so a block can have many more rows than requested: here a granule of
+-- 8192 rows is read for a block of 1 or 128 rows. The replaced values have to be measured in the same rows as the column
+-- is sampled in. Here only the first row matches, and the replaced values do not compress at all.
+CREATE TABLE t_compact_small_blocks(id UInt64, s String) ENGINE=MergeTree ORDER BY id
+SETTINGS auto_statistics_types='', index_granularity=8192, index_granularity_bytes='10Mi', min_bytes_for_wide_part=1e18, min_rows_for_wide_part=1e18;
+INSERT INTO t_compact_small_blocks SELECT number, if(number = 0, 'needle', concat(
+    reinterpretAsString(cityHash64(number)), reinterpretAsString(cityHash64(number, 1)), reinterpretAsString(cityHash64(number, 2)), reinterpretAsString(cityHash64(number, 3)), reinterpretAsString(cityHash64(number, 4)),
+    reinterpretAsString(cityHash64(number, 5)), reinterpretAsString(cityHash64(number, 6)), reinterpretAsString(cityHash64(number, 7)), reinterpretAsString(cityHash64(number, 8)), reinterpretAsString(cityHash64(number, 9))))
+FROM numbers(8192);
+SELECT count() FROM t_compact_small_blocks WHERE s LIKE '%needle%' SETTINGS max_threads=1, max_block_size=1, log_comment='same_block_of_one_row_1';
+SELECT count() FROM t_compact_small_blocks WHERE s LIKE '%needle%' SETTINGS max_threads=1, max_block_size=1, apply_string_filters_during_scan=0, log_comment='same_block_of_one_row_0';
+SELECT count() FROM t_compact_small_blocks WHERE s LIKE '%needle%' SETTINGS max_threads=1, max_block_size=128, log_comment='same_block_of_128_rows_1';
+SELECT count() FROM t_compact_small_blocks WHERE s LIKE '%needle%' SETTINGS max_threads=1, max_block_size=128, apply_string_filters_during_scan=0, log_comment='same_block_of_128_rows_0';
+
 -- The parts without matches are rejected by the skip index while reading, and a rejected read task must not
 -- use up the blocks to sample, or the part with matches, which comes last, is not measured to estimate the input.
 -- `max_rows_to_read` is checked before reading, and the skip indexes are then applied before reading as well.
@@ -286,3 +306,4 @@ DROP TABLE t_compact_large_values;
 DROP TABLE t_compact_large_matching_values;
 DROP TABLE t_compact_skip_index;
 DROP TABLE t_compact_many_filters;
+DROP TABLE t_compact_small_blocks;
