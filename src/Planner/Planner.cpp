@@ -686,6 +686,8 @@ ALWAYS_INLINE void addExpressionStep(
     NameSet input_columns_set;
     for (const auto & column : query_plan.getCurrentHeader()->getColumnsWithTypeAndName())
         input_columns_set.insert(column.name);
+    /// Every subquery here is validated against this one header, so they can share one referenced root.
+    SharedCorrelatedInputRoot shared_input_root;
     for (const auto & correlated_subquery : correlated_subtrees.subqueries)
     {
         for (const auto & identifier : correlated_subquery.correlated_column_identifiers)
@@ -697,7 +699,8 @@ ALWAYS_INLINE void addExpressionStep(
                     identifier,
                     query_plan.getCurrentHeader()->dumpNames());
         }
-        buildQueryPlanForCorrelatedSubquery(planner_context, query_plan, correlated_subquery, select_query_options);
+        buildQueryPlanForCorrelatedSubquery(
+            planner_context, query_plan, correlated_subquery, select_query_options, &shared_input_root);
     }
 
     auto actions = std::move(expression_actions->dag);
@@ -719,9 +722,12 @@ ALWAYS_INLINE void addFilterStep(
     const char (&step_description)[size],
     UsefulSets & useful_sets)
 {
+    /// Every subquery here is decorrelated against the same input, so they can share one referenced root.
+    SharedCorrelatedInputRoot shared_input_root;
     for (const auto & correlated_subquery : filter_analysis_result.correlated_subtrees.subqueries)
     {
-        buildQueryPlanForCorrelatedSubquery(planner_context, query_plan, correlated_subquery, select_query_options);
+        buildQueryPlanForCorrelatedSubquery(
+            planner_context, query_plan, correlated_subquery, select_query_options, &shared_input_root);
     }
 
     auto actions = std::move(filter_analysis_result.filter_actions->dag);
@@ -1277,8 +1283,10 @@ void addTotalsHavingStep(QueryPlan & query_plan,
             "Correlated subqueries in HAVING are not supported yet with WITH TOTALS, max_rows_to_group_by, "
             "group_by_overflow_mode = 'any' and totals_mode other than 'after_having_exclusive'");
 
+    SharedCorrelatedInputRoot shared_input_root;
     for (const auto & correlated_subquery : having_analysis_result.correlated_subtrees.subqueries)
-        buildQueryPlanForCorrelatedSubquery(planner_context, query_plan, correlated_subquery, select_query_options);
+        buildQueryPlanForCorrelatedSubquery(
+            planner_context, query_plan, correlated_subquery, select_query_options, &shared_input_root);
 
     std::optional<ActionsDAG> actions;
     if (having_analysis_result.filter_actions)
