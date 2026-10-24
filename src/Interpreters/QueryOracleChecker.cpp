@@ -35,6 +35,7 @@
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <IO/BufferWithOwnMemory.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
 #include <Common/QueryFuzzer.h>
@@ -208,8 +209,7 @@ constexpr size_t MAX_ORACLE_QUERY_LENGTH = 10000;
 /// Maximum total output size from an oracle sub-query (bytes).
 constexpr size_t MAX_ORACLE_OUTPUT_SIZE = 10 * 1024 * 1024;
 
-/// Maximum row count for an oracle sub-query result. Caps memory before the
-/// post-execution size check in `executeAndCollect*` triggers.
+/// Maximum row count for an oracle sub-query result.
 constexpr size_t MAX_ORACLE_RESULT_ROWS = 10'000'000;
 
 /// Case-insensitive view of `nonDeterministicFunctions`. ClickHouse resolves
@@ -527,6 +527,32 @@ std::vector<String> splitIntoRows(const String & output)
 
     return rows;
 }
+
+/// Collects the formatted output of a query, throwing `TOO_MANY_BYTES` once it would exceed `limit` bytes.
+class LimitedStringWriteBufferImpl : public BufferWithOwnMemory<WriteBuffer>
+{
+public:
+    explicit LimitedStringWriteBufferImpl(size_t limit_) : limit(limit_) {}
+
+    String & str()
+    {
+        finalize();
+        return value;
+    }
+
+private:
+    void nextImpl() override
+    {
+        if (value.size() + offset() > limit)
+            throw Exception(ErrorCodes::TOO_MANY_BYTES, "The output of an oracle sub-query exceeds {} bytes", limit);
+        value.append(working_buffer.begin(), offset());
+    }
+
+    const size_t limit;
+    String value;
+};
+
+using LimitedStringWriteBuffer = AutoCanceledWriteBuffer<LimitedStringWriteBufferImpl>;
 
 /// ARRAY JOIN multiplies rows (one input → many output), breaking partition identity.
 bool hasArrayJoin(const ASTSelectQuery & select)
@@ -1505,8 +1531,7 @@ ContextMutablePtr QueryOracleChecker::makeOracleContext(const ContextMutablePtr 
     /// Cap result size so oracle sub-queries (especially TLP's UNION ALL of three
     /// partitions) cannot allocate unbounded memory. We use `result_overflow_mode=throw`
     /// — `break` would silently truncate the result before the cap fires, and the
-    /// caller's post-check on `output.size() > MAX_ORACLE_OUTPUT_SIZE` would then never
-    /// trip (the output sits at exactly the cap). The caller catches the resulting
+    /// caller's output cap would then never trip. The caller catches the resulting
     /// `TOO_MANY_ROWS` / `TOO_MANY_BYTES` exception and treats the query as skipped.
     oracle_context->setSetting("max_result_rows", Field(UInt64(MAX_ORACLE_RESULT_ROWS)));
     oracle_context->setSetting("max_result_bytes", Field(UInt64(MAX_ORACLE_OUTPUT_SIZE)));
@@ -1542,11 +1567,12 @@ QueryOracleChecker::executeAndCollectSortedRows(const String & query, const Cont
     /// ClickHouse handles all column serialization within the pipeline internally,
     /// writing formatted text directly to the output buffer.
     ReadBufferFromString istr(query);
-    WriteBufferFromOwnString ostr;
+    LimitedStringWriteBuffer ostr(MAX_ORACLE_OUTPUT_SIZE);
 
     try
     {
         executeQuery(istr, ostr, oracle_context, {}, QueryFlags{.internal = true});
+        ostr.finalize();
     }
     catch (const Exception & e)
     {
@@ -1560,8 +1586,6 @@ QueryOracleChecker::executeAndCollectSortedRows(const String & query, const Cont
     }
 
     String output = ostr.str();
-    if (output.size() > MAX_ORACLE_OUTPUT_SIZE)
-        return std::nullopt; /// Belt-and-braces: still cap the formatted output.
 
     auto rows = splitIntoRows(output);
     std::sort(rows.begin(), rows.end());
@@ -1622,10 +1646,11 @@ QueryOracleChecker::executeWithSettings(
     auto thread_group_switcher = switchToThreadGroupOf(oracle_context);
 
     ReadBufferFromString istr(query);
-    WriteBufferFromOwnString ostr;
+    LimitedStringWriteBuffer ostr(MAX_ORACLE_OUTPUT_SIZE);
     try
     {
         executeQuery(istr, ostr, oracle_context, {}, QueryFlags{.internal = true});
+        ostr.finalize();
     }
     catch (const Exception & e)
     {
@@ -1635,8 +1660,6 @@ QueryOracleChecker::executeWithSettings(
     }
 
     String output = ostr.str();
-    if (output.size() > MAX_ORACLE_OUTPUT_SIZE)
-        return std::nullopt;
 
     auto rows = splitIntoRows(output);
     std::sort(rows.begin(), rows.end());
