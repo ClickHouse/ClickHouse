@@ -496,12 +496,17 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
     /// Place the inputs of every TTL the step builds an algorithm for, not just the deleting ones.
     if (ctx->need_remove_expired_values && canVerticalTTLDelete(*global_ctx))
     {
+        auto add_ttl_input = [&](const NameAndTypePair & col)
+        {
+            key_columns.insert(col.isSubcolumn() ? col.getNameInStorage() : getColumnNameInStorage(col.name, storage_columns, virtual_columns));
+        };
+
         auto add_ttl_expression_columns = [&](const TTLDescription & ttl_descr)
         {
             for (const auto & col : ttl_descr.expression_columns)
-                key_columns.insert(getColumnNameInStorage(col.name, storage_columns, virtual_columns));
+                add_ttl_input(col);
             for (const auto & col : ttl_descr.where_expression_columns)
-                key_columns.insert(getColumnNameInStorage(col.name, storage_columns, virtual_columns));
+                add_ttl_input(col);
         };
 
         if (global_ctx->metadata_snapshot->hasRowsTTL())

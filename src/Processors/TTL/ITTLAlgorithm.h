@@ -44,9 +44,10 @@ public:
 
     /** This function is needed to avoid a conflict between already calculated columns and columns that needed to execute TTL.
       * If result column is absent in block, all required columns are copied to new block and expression is executed on new block.
+      * A required column absent from the block is read as the subcolumn `inputs` lists for it, if any.
       */
     static ColumnPtr executeExpressionAndGetColumn(
-        const ExpressionActionsPtr & expression, const Block & block, const String & result_column);
+        const ExpressionActionsPtr & expression, const Block & block, const String & result_column, const NamesAndTypesList & inputs);
 
 protected:
     bool isTTLExpired(time_t ttl) const;

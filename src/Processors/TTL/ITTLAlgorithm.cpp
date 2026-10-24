@@ -5,6 +5,7 @@
 #include <Common/DateLUTImpl.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/castColumn.h>
+#include <Interpreters/getColumnFromBlock.h>
 
 #include <Columns/ColumnsDateTime.h>
 
@@ -33,7 +34,7 @@ bool ITTLAlgorithm::isTTLExpired(time_t ttl) const
 }
 
 ColumnPtr ITTLAlgorithm::executeExpressionAndGetColumn(
-    const ExpressionActionsPtr & expression, const Block & block, const String & result_column)
+    const ExpressionActionsPtr & expression, const Block & block, const String & result_column, const NamesAndTypesList & inputs)
 {
     if (!expression)
         return nullptr;
@@ -60,7 +61,14 @@ ColumnPtr ITTLAlgorithm::executeExpressionAndGetColumn(
     Block block_copy;
     for (const auto & required : expression->getRequiredColumnsWithTypes())
     {
-        auto block_col = block.getColumnOrSubcolumnByName(required.name);
+        ColumnWithTypeAndName block_col;
+        if (const auto * column = block.findByName(required.name))
+            block_col = *column;
+        else if (auto input = inputs.tryGetByName(required.name); input && input->isSubcolumn())
+            block_col = ColumnWithTypeAndName(getColumnFromBlock(block, *input), input->type, required.name);
+        else
+            block_col = block.getColumnOrSubcolumnByName(required.name);
+
         if (!block_col.type->equals(*required.type))
         {
             block_col.column = castColumn(block_col, required.type);

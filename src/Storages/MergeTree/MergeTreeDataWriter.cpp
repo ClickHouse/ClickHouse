@@ -350,7 +350,7 @@ void updateTTL(
     for (auto & subquery : expr_and_set.sets->getSubqueries())
         subquery->buildSetInplace(context);
 
-    auto ttl_column = ITTLAlgorithm::executeExpressionAndGetColumn(expr_and_set.expression, block, ttl_entry.result_column);
+    auto ttl_column = ITTLAlgorithm::executeExpressionAndGetColumn(expr_and_set.expression, block, ttl_entry.result_column, ttl_entry.expression_columns);
     /// In some cases block can contain Sparse columns (for example, during direct deserialization into Sparse in input formats).
     ttl_column = ttl_column->convertToFullColumnIfSparse();
     ColumnPtr where_column;
@@ -361,7 +361,8 @@ void updateTTL(
         for (auto & subquery : where_expr_and_set.sets->getSubqueries())
             subquery->buildSetInplace(context);
 
-        where_column = ITTLAlgorithm::executeExpressionAndGetColumn(where_expr_and_set.expression, block, ttl_entry.where_result_column);
+        where_column = ITTLAlgorithm::executeExpressionAndGetColumn(
+            where_expr_and_set.expression, block, ttl_entry.where_result_column, ttl_entry.where_expression_columns);
         if (where_column)
             where_column = where_column->convertToFullColumnIfConst();
     }
