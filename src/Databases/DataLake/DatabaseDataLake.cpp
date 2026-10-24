@@ -74,6 +74,7 @@ namespace DatabaseDataLakeSetting
 {
     extern const DatabaseDataLakeSettingsDatabaseDataLakeCatalogType catalog_type;
     extern const DatabaseDataLakeSettingsString warehouse;
+    extern const DatabaseDataLakeSettingsUInt64 hive_metastore_max_connections;
     extern const DatabaseDataLakeSettingsString catalog_credential;
     extern const DatabaseDataLakeSettingsBool use_unity_catalog_v2;
     extern const DatabaseDataLakeSettingsString auth_header;
@@ -423,6 +424,7 @@ void DatabaseDataLake::initialize() const
             catalog_impl = std::make_shared<DataLake::HiveCatalog>(
                 settings[DatabaseDataLakeSetting::warehouse].value,
                 url,
+                settings[DatabaseDataLakeSetting::hive_metastore_max_connections].value,
                 Context::getGlobalContextInstance());
             break;
 #else
