@@ -13,6 +13,7 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/CacheBase.h>
@@ -24,6 +25,7 @@
 #include <Core/Settings.h>
 #include <base/arithmeticOverflow.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteHelpers.h>
@@ -312,7 +314,9 @@ public:
 
             for (auto j : collections::range(0, elements.size()))
             {
-                if (!isNativeNumber(elements[j]))
+                /// Only the point coordinates may be Nullable. Polygon vertices still require native numbers.
+                const auto & element_type = i == 0 ? removeNullable(elements[j]) : elements[j];
+                if (!isNativeNumber(element_type))
                 {
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} must contain numeric tuple at position {}",
                                     getMessagePrefix(i), j + 1);
@@ -322,7 +326,11 @@ public:
 
 
         /// Validate the given first argument point (x, y) tuple.
-        validate_tuple(0, checkAndGetDataType<DataTypeTuple>(arguments[0].get()));
+        const auto * point_type = checkAndGetDataType<DataTypeTuple>(arguments[0].get());
+        validate_tuple(0, point_type);
+        DataTypePtr result_type = std::make_shared<DataTypeUInt8>();
+        if (point_type->getElements()[0]->isNullable() || point_type->getElements()[1]->isNullable())
+            result_type = makeNullable(result_type);
 
         auto getArrayDepthAndInnermostTuple = [this](const IDataType & type, size_t arg_pos) -> std::pair<size_t, const DataTypeTuple *>
         {
@@ -353,7 +361,7 @@ public:
             /// depth 1  -> polygon without holes
             /// depth 2  -> polygon with holes
             /// depth 3  -> multi polygon
-            return std::make_shared<DataTypeUInt8>();
+            return result_type;
         }
 
         if (depth_first_polygon_argument == 3)
@@ -386,7 +394,7 @@ public:
             }
         }
 
-        return std::make_shared<DataTypeUInt8>();
+        return result_type;
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -407,8 +415,34 @@ public:
                             getName());
 
         const auto & tuple_columns = tuple_col->getColumns();
+        const auto * nullable_x = checkAndGetColumn<ColumnNullable>(tuple_columns[0].get());
+        const auto * nullable_y = checkAndGetColumn<ColumnNullable>(tuple_columns[1].get());
+        const IColumn & point_x = nullable_x ? nullable_x->getNestedColumn() : *tuple_columns[0];
+        const IColumn & point_y = nullable_y ? nullable_y->getNestedColumn() : *tuple_columns[1];
 
         bool point_is_const = const_tuple_col != nullptr;
+        auto wrap_result = [&](ColumnPtr values) -> ColumnPtr
+        {
+            if (!nullable_x && !nullable_y)
+                return values;
+
+            auto null_map = ColumnUInt8::create(input_rows_count);
+            auto & null_map_data = null_map->getData();
+            for (size_t row = 0; row < input_rows_count; ++row)
+            {
+                const size_t point_row = point_is_const ? 0 : row;
+                null_map_data[row] = static_cast<UInt8>(
+                    (nullable_x && nullable_x->getNullMapData()[point_row])
+                    || (nullable_y && nullable_y->getNullMapData()[point_row]));
+            }
+            return ColumnNullable::create(values->convertToFullColumnIfConst(), std::move(null_map));
+        };
+        auto make_const_result = [&](bool is_in) -> ColumnPtr
+        {
+            if (!nullable_x && !nullable_y)
+                return result_type->createColumnConst(input_rows_count, is_in);
+            return wrap_result(ColumnUInt8::create(input_rows_count, static_cast<UInt8>(is_in)));
+        };
         bool poly_is_const = true;
 
         for (size_t i = 1; i < arguments.size(); ++i)
@@ -464,11 +498,11 @@ public:
 
                 if (point_is_const)
                 {
-                    bool is_in = impl.contains(tuple_columns[0]->getFloat64(0), tuple_columns[1]->getFloat64(0));
-                    return result_type->createColumnConst(input_rows_count, is_in);
+                    bool is_in = impl.contains(point_x.getFloat64(0), point_y.getFloat64(0));
+                    return make_const_result(is_in);
                 }
 
-                return pointInPolygon(*tuple_columns[0], *tuple_columns[1], impl);
+                return wrap_result(pointInPolygon(point_x, point_y, impl));
             }
             else // Kept for easier readability
             {
@@ -495,11 +529,11 @@ public:
 
                 if (point_is_const)
                 {
-                    bool is_in = impl.contains(tuple_columns[0]->getFloat64(0), tuple_columns[1]->getFloat64(0));
-                    return result_type->createColumnConst(input_rows_count, is_in);
+                    bool is_in = impl.contains(point_x.getFloat64(0), point_y.getFloat64(0));
+                    return make_const_result(is_in);
                 }
 
-                return pointInPolygon(*tuple_columns[0], *tuple_columns[1], impl);
+                return wrap_result(pointInPolygon(point_x, point_y, impl));
             }
         }
 
@@ -532,7 +566,7 @@ public:
             {
                 size_t point_index = point_is_const ? 0 : i;
                 data[i] = isInsideMultiPolygon(
-                    tuple_columns[0]->getFloat64(point_index), tuple_columns[1]->getFloat64(point_index), *multi_polygon_column_float64, i);
+                    point_x.getFloat64(point_index), point_y.getFloat64(point_index), *multi_polygon_column_float64, i);
             }
         }
         else if (isTwoDimensionalArray(*arguments[1].type))
@@ -552,7 +586,7 @@ public:
             {
                 size_t point_index = point_is_const ? 0 : i;
                 data[i] = isInsidePolygonWithHoles(
-                    tuple_columns[0]->getFloat64(point_index), tuple_columns[1]->getFloat64(point_index), *polygon_column_float64, i);
+                    point_x.getFloat64(point_index), point_y.getFloat64(point_index), *polygon_column_float64, i);
             }
         }
         else
@@ -566,11 +600,11 @@ public:
             {
                 size_t point_index = point_is_const ? 0 : i;
                 data[i] = isInsidePolygonWithoutHoles(
-                    tuple_columns[0]->getFloat64(point_index), tuple_columns[1]->getFloat64(point_index), *polygon_column_float64, i);
+                    point_x.getFloat64(point_index), point_y.getFloat64(point_index), *polygon_column_float64, i);
             }
         }
 
-        return res_column;
+        return wrap_result(std::move(res_column));
     }
 
 private:
@@ -993,8 +1027,8 @@ Checks whether the point belongs to the polygon on the plane.
         {"...", "Optional. Additional arguments for polygons with holes (each hole as a separate ring) or multipolygons (each component polygon as a separate argument). A whole `MultiPolygon` can only be passed as the sole polygon argument, not as one of several arguments. These additional arguments must be constant.", {"Array(Tuple(Float64, Float64))", "Ring", "Polygon"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
-        "Returns `1` if the point is inside the polygon, `0` if it is not. If the point is on the polygon boundary, the function may return either `0` or `1`.",
-        {"UInt8"}
+        "Returns `1` if the point is inside the polygon, `0` if it is not. If the point is on the polygon boundary, the function may return either `0` or `1`. When a point coordinate is Nullable, returns NULL for missing coordinates.",
+        {"UInt8", "Nullable(UInt8)"}
     };
     FunctionDocumentation::Examples examples = {
         {
