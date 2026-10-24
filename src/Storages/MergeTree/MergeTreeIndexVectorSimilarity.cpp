@@ -621,6 +621,7 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarity::calculateApproximateN
     const bool has_exact_row_filter = filter != nullptr;
     size_t limit = parameters->limit;
     if (!has_exact_row_filter && (parameters->additional_filters_present || is_rescoring))
+    {
         /// Additional filters mean post-filtering which means that matches may be removed. To compensate, allow to fetch more rows by a factor.
         /// Similarly, if rescoring is on, fetch more neighbours from the index and pass them for the final re-ranking by ORDER BY ... LIMIT.
         /// The product is compared with the cap while it is still a double: a LIMIT close to the maximum of UInt64 multiplied by the

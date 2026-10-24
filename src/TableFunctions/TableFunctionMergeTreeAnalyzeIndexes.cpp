@@ -373,7 +373,7 @@ void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsForOptimizations(const 
             getVectorSearchBoolArgument(vector_search_args, 4),
             getVectorSearchBoolArgument(vector_search_args, 5), /// return distances
             vector_search_args.size() == 7
-                ? getVectorSearchStringArgument(vector_search_args, 6)
+                ? SettingFieldVectorSearchFilterStrategyTraits::fromString(getVectorSearchStringArgument(vector_search_args, 6))
                 : VectorSearchFilterStrategy::AUTO};
     }
     else
