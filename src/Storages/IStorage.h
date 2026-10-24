@@ -569,6 +569,11 @@ public:
     /// Storages without their own data (e.g. View) return false.
     virtual bool supportsTruncate() const { return true; }
 
+    /// Called by `TRUNCATE ALL TABLES FROM db` on every table of the database with the list of the tables it is
+    /// going to truncate, before any of them is truncated, so a table can veto the whole operation (throw), e.g.
+    /// when the truncation of its inner table alone would leave it inconsistent.
+    virtual void checkDatabaseTablesCanBeTruncated(const std::vector<StorageID> & /*tables_to_truncate*/) const {}
+
     /** Clear the table data and leave it empty.
       * Must be called under exclusive lock (lockExclusively).
       */

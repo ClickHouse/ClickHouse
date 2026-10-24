@@ -120,14 +120,6 @@ public:
     /// names into the surviving nested tables and leak the legacy objects.
     void setAdoptLegacyReplicationIdentity(bool value) { adopt_legacy_replication_identity = value; }
 
-    /// Whether the coordination identity (`materialized_postgresql_keeper_path` / `materialized_postgresql_replica_name`)
-    /// of a coordinated setup expands the `{database}` macro. The nested tables record the expanded identity, so
-    /// `RENAME DATABASE` must be refused for such a setup: after the rename the identity would expand differently
-    /// and every startup would be rejected as an identity change. The settings are expanded with the server macros,
-    /// so `{database}` reached through a configuration macro (e.g. `<coord_path>/pg/{database}</coord_path>`) counts too.
-    static bool coordinationIdentityDependsOnDatabaseName(
-        const MaterializedPostgreSQLSettings & replication_settings, const ContextPtr & macros_context, const StorageID & macro_table_id);
-
     /// Coordinated teardown that must run BEFORE the caller deletes this replica's local nested tables (from
     /// DatabaseMaterializedPostgreSQL::beforeDropDatabase for the database engine, and from
     /// StorageMaterializedPostgreSQL::dropInnerTableIfAny for the single-table engine). It makes the fail-close

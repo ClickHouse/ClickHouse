@@ -11,7 +11,9 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <base/defines.h>
 #include <memory>
+#include <mutex>
 
 
 namespace DB
@@ -94,12 +96,17 @@ public:
     void checkTableCanBeDetached() const override;
     void checkTableCanBeDetachedPermanently() const override;
 
-    /// A coordinated single-table engine whose coordination identity expands `{database}` cannot move to another
-    /// database (see `PostgreSQLReplicationHandler::coordinationIdentityDependsOnDatabaseName`).
+    /// The database of a coordinated single-table engine cannot be renamed: the wrapper keeps the ID of its nested
+    /// table, and the coordination identity can expand `{database}`.
     void checkTableCanBeRenamedByDatabaseRename(const String & new_database_name) const override;
     /// A coordinated single-table engine cannot be moved to another database with `RENAME TABLE` or `EXCHANGE TABLES`:
     /// its nested table would stay in the original database.
     void checkTableCanBeRenamed(const StorageID & new_name) const override;
+    /// `TRUNCATE ALL TABLES` must not truncate the nested table of a coordinated single-table engine.
+    void checkDatabaseTablesCanBeTruncated(const std::vector<StorageID> & tables_to_truncate) const override;
+
+    /// Re-arms the replication of a coordinated single-table engine after its drop was refused by the teardown.
+    void recoverAfterRefusedCoordinatedTeardown();
 
     /// Same reasoning for DROP TABLE (and TRUNCATE) of an individual table: dropping the local nested
     /// `ReplicatedReplacingMergeTree` on one replica does not update the shared publication or the
@@ -237,9 +244,6 @@ private:
     /// here because `replication_handler` is reset by DROP.
     bool is_standalone_coordinated = false;
 
-    /// Single-table engine only: the coordination identity expands `{database}`, so `RENAME DATABASE` is refused.
-    bool coordination_identity_depends_on_database_name = false;
-
     std::atomic<bool> database_replication_ready = false;
 
     /// Single-table engine only: the coordinated pre-data teardown has already run successfully for the
@@ -259,8 +263,10 @@ private:
     ContextMutablePtr nested_context;
 
     /// Save nested storageID to be able to fetch it. It is set once nested is created and will be
-    /// updated only when nested is reloaded or renamed.
-    std::optional<StorageID> nested_table_id;
+    /// updated only when nested is reloaded or renamed. A coordinated replica publishes the nested table
+    /// again (`set`) after every replacement snapshot, while queries can be resolving it, hence the mutex.
+    mutable std::mutex nested_table_id_mutex;
+    std::optional<StorageID> nested_table_id TSA_GUARDED_BY(nested_table_id_mutex);
 
     /// Needed only for the case of single MaterializedPostgreSQL storage - in order to make
     /// delayed storage forwarding into replication handler.

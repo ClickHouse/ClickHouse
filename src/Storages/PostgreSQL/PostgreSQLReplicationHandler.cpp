@@ -136,6 +136,14 @@ public:
         task->activateAndSchedule();
     }
 
+    /// Held by an election for the whole time it creates `/leader` (and removes its own leftover node before
+    /// that), and by every release attempt below. A release reads the node, checks that it is still the one of
+    /// the recorded election, and removes it with a version check only, which cannot tell a recreated node
+    /// apart (its version starts from zero again). So a concurrent election of the same replica under the same
+    /// session - after `DETACH` and `ATTACH` - could otherwise remove the leftover node and create a new one
+    /// between the check and the removal, and the queued release would delete the node of the new election.
+    [[nodiscard]] std::unique_lock<std::mutex> lockElections() { return std::unique_lock(election_mutex); }
+
 private:
     struct Entry
     {
@@ -150,6 +158,7 @@ private:
     static constexpr UInt64 retry_ms = 5000;
 
     std::mutex mutex;
+    std::mutex election_mutex;
     std::vector<Entry> pending TSA_GUARDED_BY(mutex);
     std::weak_ptr<const Context> global_context TSA_GUARDED_BY(mutex);
     BackgroundSchedulePoolTaskHolder task TSA_GUARDED_BY(mutex);
@@ -184,6 +193,7 @@ private:
             {
                 try
                 {
+                    auto election_lock = lockElections();
                     if (!release(context, entry))
                         unresolved.push_back(entry);
                 }
@@ -785,30 +795,6 @@ void validateMaterializedPostgreSQLCoordinationSettings(
                 "manually after dropping the leftover replication slot and publication in PostgreSQL",
                 expanded_keeper_path, expanded_keeper_path);
     }
-}
-
-
-bool PostgreSQLReplicationHandler::coordinationIdentityDependsOnDatabaseName(
-    const MaterializedPostgreSQLSettings & replication_settings, const ContextPtr & macros_context, const StorageID & macro_table_id)
-{
-    const String & keeper_path = replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_keeper_path].value;
-    if (keeper_path.empty())
-        return false;
-    const String & replica_name = replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_replica_name].value;
-
-    /// Expand recursively, exactly like the constructor does, because `{database}` can be reached through a
-    /// configuration macro. An unknown macro is not an error here: it does not expand `{database}`, and the
-    /// startup paths refuse an unresolved identity anyway.
-    const auto macros = macros_context->getMacros();
-    auto expands_database = [&](const String & value)
-    {
-        Macros::MacroExpansionInfo info;
-        info.table_id = macro_table_id;
-        info.ignore_unknown = true;
-        macros->expand(value, info);
-        return info.expanded_database;
-    };
-    return expands_database(keeper_path) || expands_database(replica_name);
 }
 
 
@@ -2219,24 +2205,33 @@ void PostgreSQLReplicationHandler::coordinationFunc()
             auto zookeeper = getContext()->getZooKeeper();
             const String leader_path = coordination_keeper_path + "/leader";
             zookeeper->createAncestors(leader_path);
-            leader_node = zkutil::EphemeralNodeHolder::tryCreate(leader_path, *zookeeper, coordination_replica_name);
-
-            /// The node may be a leftover of this replica's own, unconfirmed leadership release (see
-            /// `releaseLeadershipAfterFailedStartup`). Nobody tracks it any more, and it lives under this
-            /// server's still-live Keeper session, so it would block every replica of the setup - including
-            /// this one - until that session expires. Remove it and enter the election again right away.
-            if (!leader_node && removeLeakedOwnLeaderNode(zookeeper, leader_path))
+            {
+                /// Serialized with the background releases of leader nodes that a shutdown could not release (see
+                /// `LeakedLeaderNodeReleaser::lockElections`).
+                auto election_lock = LeakedLeaderNodeReleaser::instance().lockElections();
                 leader_node = zkutil::EphemeralNodeHolder::tryCreate(leader_path, *zookeeper, coordination_replica_name);
+
+                /// The node may be a leftover of this replica's own, unconfirmed leadership release (see
+                /// `releaseLeadershipAfterFailedStartup`). Nobody tracks it any more, and it lives under this
+                /// server's still-live Keeper session, so it would block every replica of the setup - including
+                /// this one - until that session expires. Remove it and enter the election again right away.
+                if (!leader_node && removeLeakedOwnLeaderNode(zookeeper, leader_path))
+                    leader_node = zkutil::EphemeralNodeHolder::tryCreate(leader_path, *zookeeper, coordination_replica_name);
+
+                if (leader_node)
+                {
+                    /// Keep the session that the ephemeral node references alive for as long as the node.
+                    coordination_zookeeper = zookeeper;
+                    /// Remember which node this election created, so that a release of it that has to be finished
+                    /// in the background never removes the node of a later election (see `LeakedLeaderNodeReleaser`).
+                    Coordination::Stat leader_stat;
+                    zookeeper->get(leader_path, &leader_stat);
+                    leader_node_czxid = leader_stat.czxid;
+                }
+            }
 
             if (leader_node)
             {
-                /// Keep the session that the ephemeral node references alive for as long as the node.
-                coordination_zookeeper = zookeeper;
-                /// Remember which node this election created, so that a release of it that has to be finished in
-                /// the background never removes the node of a later election (see `LeakedLeaderNodeReleaser`).
-                Coordination::Stat leader_stat;
-                zookeeper->get(leader_path, &leader_stat);
-                leader_node_czxid = leader_stat.czxid;
                 is_active_worker.store(true);
                 LOG_INFO(log, "Acquired replication leadership as '{}' at {}", coordination_replica_name, leader_path);
                 startSynchronization(/* throw_on_error */ false);
@@ -2306,11 +2301,15 @@ void PostgreSQLReplicationHandler::releaseLeadershipAfterFailedStartup()
         /// coordination rests on. So the leadership claim is dropped in either case, and the ambiguity is
         /// resolved through Keeper on the next election instead: if the node really did survive, this
         /// replica's own leftover is recognized and removed by `removeLeakedOwnLeaderNode` (matched on the
-        /// stored replica name and on the owning Keeper session), and the destructor of `leader_node` below
-        /// makes one more best-effort removal attempt anyway.
+        /// stored replica name and on the owning Keeper session).
+        ///
+        /// The unconditional removal in the destructor of `leader_node` is suppressed for the same reason: the
+        /// failed removal may have been applied, so a peer may already hold a new /leader, and a blind removal
+        /// would delete the node of that peer while it keeps working as the active worker.
         tryLogCurrentException(log,
             "Could not confirm the removal of the replication leader node after a failed startup attempt, "
             "dropping the leadership claim anyway");
+        leader_node->setAlreadyRemoved();
     }
 
     is_active_worker.store(false);

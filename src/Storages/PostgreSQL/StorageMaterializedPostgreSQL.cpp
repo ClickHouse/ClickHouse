@@ -40,6 +40,8 @@
 #include <Interpreters/Context.h>
 
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageProxy.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/ReadFinalForExternalReplicaStorage.h>
 #include <Storages/StoragePostgreSQL.h>
 
@@ -119,11 +121,6 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
             /* table_overrides */ nullptr);
 
     is_standalone_coordinated = replication_handler->isCoordinated();
-    StorageID macro_table_id = StorageID::createEmpty();
-    macro_table_id.database_name = table_id_.database_name;
-    macro_table_id.uuid = table_id_.uuid;
-    coordination_identity_depends_on_database_name
-        = PostgreSQLReplicationHandler::coordinationIdentityDependsOnDatabaseName(*replication_settings, getContext(), macro_table_id);
 
     replication_handler->addStorage(remote_table_name, this);
     replication_handler->startup(/* delayed */is_attach);
@@ -249,8 +246,11 @@ String StorageMaterializedPostgreSQL::getNestedTableName() const
 
 StorageID StorageMaterializedPostgreSQL::getNestedStorageID() const
 {
-    if (nested_table_id.has_value())
-        return nested_table_id.value();
+    {
+        std::lock_guard lock(nested_table_id_mutex);
+        if (nested_table_id.has_value())
+            return nested_table_id.value();
+    }
 
     auto table_id = getStorageID();
     throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -276,6 +276,7 @@ void StorageMaterializedPostgreSQL::createNestedIfNeeded(const NestedTableEngine
 
         auto nested_storage = DatabaseCatalog::instance().getTable(tmp_nested_table_id, nested_context);
         /// Save storage_id with correct uuid.
+        std::lock_guard lock(nested_table_id_mutex);
         nested_table_id = nested_storage->getStorageID();
     }
     catch (...)
@@ -296,7 +297,10 @@ std::shared_ptr<Context> StorageMaterializedPostgreSQL::makeNestedTableContext(C
 
 void StorageMaterializedPostgreSQL::set(StoragePtr nested_storage)
 {
-    nested_table_id = nested_storage->getStorageID();
+    {
+        std::lock_guard lock(nested_table_id_mutex);
+        nested_table_id = nested_storage->getStorageID();
+    }
     auto nested_metadata = nested_storage->getInMemoryMetadataPtr(getContext(), false);
     setInMemoryMetadata(*nested_metadata);
     has_nested.store(true);
@@ -324,8 +328,7 @@ void StorageMaterializedPostgreSQL::shutdown(bool is_drop)
             /// has succeeded - except the last replica's removal of the shared coordination nodes; if it
             /// failed there, re-arm the handler's retrying startup path so the table resumes replicating
             /// once Keeper is reachable again instead of staying mounted but dead.
-            if (replication_handler->isStopped())
-                replication_handler->restartCoordinatedReplicationAfterFailedTeardown();
+            recoverAfterRefusedCoordinatedTeardown();
             throw;
         }
     }
@@ -346,6 +349,36 @@ void StorageMaterializedPostgreSQL::shutdown(bool is_drop)
 }
 
 
+void StorageMaterializedPostgreSQL::recoverAfterRefusedCoordinatedTeardown()
+{
+    /// `DROP DATABASE` of the enclosing database prepares every table for shutdown before it drops any of them, so
+    /// when the teardown is refused before it has stopped the handler, the nested table can already be stopped for
+    /// good (or even dropped, if the drop reached it first) while the handler keeps running. A stopped
+    /// `ReplicatedMergeTree` cannot be restarted in place; only the retrying startup path drops and recreates it
+    /// (see `PostgreSQLReplicationHandler::ensureNestedTablesExist`). So stop the handler and re-arm it in that case.
+    if (!replication_handler->isStopped())
+    {
+        bool nested_is_stopped = true;
+        {
+            /// The reference must not outlive this scope: the restarted startup drops the stopped nested table
+            /// synchronously, which waits until nobody references it.
+            auto nested = tryGetNested();
+            auto replicated = nested ? castStorage<StorageReplicatedMergeTree>(nested, DeferredTable::Load) : nullptr;
+            nested_is_stopped = !nested || (replicated && replicated->isShutdownCalled());
+        }
+
+        if (!nested_is_stopped)
+            return;
+
+        LOG_WARNING(log, "The nested table of {} was stopped by the refused drop, restarting the replication to "
+                         "recreate it", getStorageID().getNameForLogs());
+        replication_handler->shutdown();
+    }
+
+    replication_handler->restartCoordinatedReplicationAfterFailedTeardown();
+}
+
+
 void StorageMaterializedPostgreSQL::checkTableCanBeRenamed(const StorageID & new_name) const
 {
     /// `DatabaseAtomic::renameTable` moves only this wrapper: its `<uuid>_nested` table stays in the old database.
@@ -359,15 +392,39 @@ void StorageMaterializedPostgreSQL::checkTableCanBeRenamed(const StorageID & new
 }
 
 
+void StorageMaterializedPostgreSQL::checkDatabaseTablesCanBeTruncated(const std::vector<StorageID> & tables_to_truncate) const
+{
+    /// A coordinated setup has no consistent truncate path: the nested `ReplicatedReplacingMergeTree` would be
+    /// truncated on every replica, while the replication slot and the `snapshot_completed` marker stay, so the rows
+    /// that do not change in PostgreSQL would never be loaded again. The wrapper itself does not support `TRUNCATE`,
+    /// but `TRUNCATE ALL TABLES` truncates the nested table, which is a separate table of the same database,
+    /// independently of it. Refuse the whole operation before any table is truncated.
+    if (!is_standalone_coordinated)
+        return;
+
+    const auto own_id = getStorageID();
+    const auto nested_id = getNestedStorageID();
+    for (const auto & table_id : tables_to_truncate)
+    {
+        if (table_id == own_id || table_id == nested_id)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "TRUNCATE ALL TABLES is not supported for a database containing the coordinated MaterializedPostgreSQL "
+                "table {}: its nested table would be truncated on every replica without reloading the snapshot",
+                own_id.getNameForLogs());
+    }
+}
+
+
 void StorageMaterializedPostgreSQL::checkTableCanBeRenamedByDatabaseRename(const String & /*new_database_name*/) const
 {
-    /// The nested table keeps the coordination path and the replica name expanded with the old database name, so
-    /// after the rename the next startup would reject every attempt as a change of the coordination identity.
-    if (coordination_identity_depends_on_database_name)
+    /// `DatabaseAtomic::renameDatabase` renames the nested table, but this wrapper and the replication handler keep
+    /// its ID with the old database name, so every lookup of the nested table would fail with `TABLE_UUID_MISMATCH`.
+    /// Besides, when the coordination path or the replica name expands `{database}`, the nested table keeps them
+    /// expanded with the old name, and the next startup would reject every attempt as an identity change.
+    if (is_standalone_coordinated)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "RENAME DATABASE is not supported for a database containing the coordinated MaterializedPostgreSQL table {} "
-            "whose materialized_postgresql_keeper_path or materialized_postgresql_replica_name uses the {{database}} macro: "
-            "the coordination identity of the replica would change",
+            "RENAME DATABASE is not supported for a database containing the coordinated MaterializedPostgreSQL table {}: "
+            "its replication state is bound to the database name",
             getStorageID().getNameForLogs());
 }
 
@@ -493,8 +550,7 @@ void StorageMaterializedPostgreSQL::dropInnerTableIfAny(bool sync, ContextPtr lo
             }
             catch (...)
             {
-                if (replication_handler->isStopped())
-                    replication_handler->restartCoordinatedReplicationAfterFailedTeardown();
+                recoverAfterRefusedCoordinatedTeardown();
                 throw;
             }
         }

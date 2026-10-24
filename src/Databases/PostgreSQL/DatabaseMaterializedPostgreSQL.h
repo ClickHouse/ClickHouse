@@ -77,7 +77,8 @@ public:
     void detachTablePermanently(ContextPtr context, const String & table_name) override;
 
     /// Refuses `DETACH TABLE ... PERMANENTLY` of the last replicated table (see `detachTablePermanently`). Called by
-    /// `StorageMaterializedPostgreSQL::checkTableCanBeDetachedPermanently`, before the table is shut down.
+    /// `StorageMaterializedPostgreSQL::checkTableCanBeDetachedPermanently`, before the table is shut down. A table that
+    /// passes the check is reserved for the current query (see `pending_permanent_detaches`).
     void checkTableCanBeDetachedPermanently(const String & table_name) const;
 
     StoragePtr detachTable(ContextPtr context, const String & table_name) override;
@@ -88,8 +89,7 @@ public:
         ContextPtr local_context, const String & table_name, IDatabase & to_database,
         const String & to_table_name, bool exchange, bool dictionary) override;
 
-    /// Refuses the rename of a coordinated database whose coordination identity expands `{database}`
-    /// (see `PostgreSQLReplicationHandler::coordinationIdentityDependsOnDatabaseName`).
+    /// Refuses the rename of a coordinated database (see the implementation for the reasons).
     void renameDatabase(ContextPtr query_context, const String & new_name) override;
 
     /// Fail-close for DROP DATABASE in coordinated mode: called before the generic DROP path removes any
@@ -213,6 +213,14 @@ private:
     /// tables of every database once per second, so the window was hit routinely.
     /// When both mutexes are needed, `handler_mutex` is taken first.
     std::map<std::string, StoragePtr> materialized_tables TSA_GUARDED_BY(tables_mutex);
+
+    /// Tables that passed `checkTableCanBeDetachedPermanently` and whose `DETACH TABLE ... PERMANENTLY` is still in
+    /// flight, with the query that detaches each of them. Concurrent detaches of different tables take different
+    /// DDL guards, so without the reservation each of the last two tables could pass the last-table check, and both
+    /// queries would shut their nested tables down before one of them is refused by `detachTablePermanently`. The
+    /// refused table would stay mounted with its merges stopped for good. A reservation is removed when
+    /// `detachTablePermanently` finishes, and a reservation of a query that ended before reaching it expires.
+    mutable std::map<String, std::weak_ptr<QueryStatus>> pending_permanent_detaches TSA_GUARDED_BY(tables_mutex);
 
     /// Set after the generic `DROP DATABASE` path successfully removes a nested table. A refused drop
     /// needs a fresh snapshot only in this case; otherwise attach-style recovery preserves the still-live

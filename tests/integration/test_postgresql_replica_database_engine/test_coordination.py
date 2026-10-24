@@ -14,6 +14,7 @@ from helpers.postgres_utility import (
     drop_replication_slot,
     get_postgres_conn,
 )
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -698,10 +699,12 @@ def test_rename_and_exchange_table_are_rejected_in_coordinated_mode(started_clus
     assert int(instance2.query("SELECT count() FROM test_database.test_table")) == 200
 
 
-def test_rename_database_is_rejected_when_keeper_path_uses_database_macro(started_cluster):
-    # The nested tables record the coordination path expanded with the database name, so a coordinated database
-    # whose `materialized_postgresql_keeper_path` uses `{database}` must refuse `RENAME DATABASE`: after the rename
-    # every startup would be rejected as a change of the coordination identity.
+def test_rename_database_and_truncate_all_tables_are_rejected_in_coordinated_mode(started_cluster):
+    # A coordinated setup must refuse `RENAME DATABASE` even when its keeper path does not use `{database}`: the
+    # wrappers keep the IDs of their nested tables with the old database name, so reads of the renamed database
+    # would fail with `TABLE_UUID_MISMATCH`. The same holds for a standalone coordinated table in an `Atomic`
+    # database. `TRUNCATE ALL TABLES` of that `Atomic` database must be refused before the nested table of the
+    # standalone table is truncated.
     pg_manager.create_postgres_table("test_table")
     instance.query(
         "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(10)"
@@ -709,12 +712,8 @@ def test_rename_database_is_rejected_when_keeper_path_uses_database_macro(starte
     pg_manager.create_materialized_db(
         ip=cluster.postgres_ip,
         port=cluster.postgres_port,
-        settings=[
-            "materialized_postgresql_table_engine = 'ReplicatedReplacingMergeTree'",
-            "materialized_postgresql_keeper_path = '/clickhouse/mat_pg/{shard}/{database}'",
-            "materialized_postgresql_replica_name = '{replica}'",
-            "materialized_postgresql_tables_list = 'test_table'",
-        ],
+        settings=COORDINATION_SETTINGS
+        + ["materialized_postgresql_tables_list = 'test_table'"],
     )
     check_tables_are_synchronized(instance, "test_table")
 
@@ -728,6 +727,39 @@ def test_rename_database_is_rejected_when_keeper_path_uses_database_macro(starte
         "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(10, 10)"
     )
     check_tables_are_synchronized(instance, "test_table")
+
+    instance.query("DROP DATABASE IF EXISTS rename_source_database SYNC")
+    instance.query("CREATE DATABASE rename_source_database ENGINE = Atomic")
+    try:
+        instance.query(
+            f"CREATE TABLE rename_source_database.test_single_table (key Int64, value Int64) "
+            f"ENGINE = MaterializedPostgreSQL("
+            f"'{cluster.postgres_ip}:{cluster.postgres_port}', 'postgres_database', 'test_table', 'postgres', '{pg_pass}') "
+            f"PRIMARY KEY key "
+            f"SETTINGS materialized_postgresql_table_engine = 'ReplicatedReplacingMergeTree', "
+            f"materialized_postgresql_keeper_path = '/clickhouse/mat_pg/{{shard}}/rename_single_table', "
+            f"materialized_postgresql_replica_name = '{{replica}}'",
+            settings={"allow_experimental_materialized_postgresql_table": 1},
+        )
+        assert_eq_with_retry(
+            instance, "SELECT count() FROM rename_source_database.test_single_table", "20"
+        )
+
+        error = instance.query_and_get_error(
+            "RENAME DATABASE rename_source_database TO rename_target_database"
+        )
+        assert "RENAME DATABASE is not supported" in error
+        assert "rename_source_database" in instance.query("SHOW DATABASES").split()
+
+        error = instance.query_and_get_error(
+            "TRUNCATE ALL TABLES FROM rename_source_database"
+        )
+        assert "TRUNCATE ALL TABLES is not supported" in error
+        assert_eq_with_retry(
+            instance, "SELECT count() FROM rename_source_database.test_single_table", "20"
+        )
+    finally:
+        instance.query("DROP DATABASE IF EXISTS rename_source_database SYNC")
 
 
 def test_rename_database_is_rejected_when_keeper_path_uses_database_macro_indirectly(started_cluster):

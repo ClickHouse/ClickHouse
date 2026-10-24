@@ -814,12 +814,15 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
         table_context->setInternalQuery(true);
 
         std::vector<StorageID> tables_to_truncate;
+        std::vector<StoragePtr> tables_in_database;
         for (auto it = database->getTablesIterator(table_context); it->isValid(); it->next())
         {
             const auto & table_ptr = it->table();
             /// Storage object could not be resolved (e.g. unresolvable DataLakeCatalog metadata).
             if (!table_ptr)
                 continue;
+
+            tables_in_database.push_back(table_ptr);
 
             /// Skip tables that don't support truncation (e.g. views).
             if (!table_ptr->supportsTruncate())
@@ -838,6 +841,11 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             }
             tables_to_truncate.push_back(storage_id);
         }
+
+        /// Let every table veto the operation before anything is truncated.
+        for (const auto & table_ptr : tables_in_database)
+            table_ptr->checkDatabaseTablesCanBeTruncated(tables_to_truncate);
+        tables_in_database.clear();
 
         /// Pre-cancel merges for all matching tables simultaneously.
         /// This ensures all merges start stopping at time 0, so that by the time

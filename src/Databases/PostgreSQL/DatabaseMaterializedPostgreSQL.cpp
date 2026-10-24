@@ -40,6 +40,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Common/escapeForFileName.h>
+#include <base/scope_guard.h>
 #include <Disks/IDisk.h>
 
 namespace DB
@@ -541,8 +542,35 @@ namespace
 void DatabaseMaterializedPostgreSQL::checkTableCanBeDetachedPermanently(const String & table_name) const
 {
     std::lock_guard tables_lock(tables_mutex);
-    if (materialized_tables.contains(table_name) && getFormattedTablesList(table_name).empty())
-        throwCannotDetachLastTable(table_name);
+    if (!materialized_tables.contains(table_name))
+        return;
+
+    std::erase_if(pending_permanent_detaches, [](const auto & entry) { return entry.second.expired(); });
+
+    bool has_remaining_table = false;
+    for (const auto & [name, _] : materialized_tables)
+    {
+        if (name != table_name && !pending_permanent_detaches.contains(name))
+        {
+            has_remaining_table = true;
+            break;
+        }
+    }
+
+    if (!has_remaining_table)
+    {
+        if (getFormattedTablesList(table_name).empty())
+            throwCannotDetachLastTable(table_name);
+
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Cannot detach table `{}`: all other replicated tables are being detached concurrently, and the last "
+            "replicated table cannot be detached. Retry once the other detaches have finished", table_name);
+    }
+
+    QueryStatusPtr query_status;
+    if (auto query_context = CurrentThread::tryGetQueryContext())
+        query_status = query_context->getProcessListElement();
+    pending_permanent_detaches[table_name] = query_status;
 }
 
 
@@ -874,6 +902,12 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
     if (CurrentThread::isInitialized() && CurrentThread::get().tryGetQueryContext())
     {
         std::lock_guard membership_lock(table_membership_mutex);
+
+        /// The detach is no longer in flight once this returns, whatever the outcome.
+        SCOPE_EXIT({
+            std::lock_guard tables_lock(tables_mutex);
+            pending_permanent_detaches.erase(table_name);
+        });
 
         /// Refuse before mutating anything (the tables-list setting is altered below and would not be
         /// rolled back): see PostgreSQLReplicationHandler::removeTableFromReplication for the reasoning.
@@ -1229,17 +1263,16 @@ void DatabaseMaterializedPostgreSQL::dropTable(ContextPtr local_context, const S
 
 void DatabaseMaterializedPostgreSQL::renameDatabase(ContextPtr query_context, const String & new_name)
 {
-    /// Refuse before any metadata is changed: the nested tables keep the coordination path and the replica name
-    /// expanded with the old database name, so after the rename the next startup would expand them differently
-    /// and reject every attempt as a change of the coordination identity, leaving the replica unavailable.
-    StorageID macro_table_id = StorageID::createEmpty();
-    macro_table_id.database_name = getDatabaseName();
-    macro_table_id.uuid = getUUID();
-    if (PostgreSQLReplicationHandler::coordinationIdentityDependsOnDatabaseName(*settings, query_context, macro_table_id))
+    /// Refuse a coordinated database before any metadata is changed. `DatabaseAtomic::renameDatabase` renames
+    /// the nested tables, but the wrappers in `materialized_tables` and the replication handler keep the nested
+    /// table IDs with the old database name, so every lookup of a nested table would fail with
+    /// `TABLE_UUID_MISMATCH` until a restart. Besides, when `materialized_postgresql_keeper_path` or
+    /// `materialized_postgresql_replica_name` expands `{database}`, the nested tables keep the coordination
+    /// identity expanded with the old name, and the next startup would reject it as an identity change.
+    if (isCoordinated())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "RENAME DATABASE is not supported for a coordinated MaterializedPostgreSQL database whose "
-            "materialized_postgresql_keeper_path or materialized_postgresql_replica_name uses the {{database}} macro: "
-            "the coordination identity of the replica would change");
+            "RENAME DATABASE is not supported for a coordinated MaterializedPostgreSQL database "
+            "(materialized_postgresql_keeper_path is set): the replication state is bound to the database name");
 
     DatabaseAtomic::renameDatabase(query_context, new_name);
 }
