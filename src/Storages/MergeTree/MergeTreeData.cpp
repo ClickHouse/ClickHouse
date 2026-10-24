@@ -1185,7 +1185,7 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
     if (parts.empty())
         return {};
 
-    /// The statistics are cached per part and column, and a query merges the statistics of its parts
+    /// The statistics are cached per part, and a query merges the statistics of its parts
     /// on the fly, which is cheap. So a query over the parts left after partition and primary-key
     /// pruning costs the same as a query over the whole table, and the statistics of a part are read
     /// from disk once, by the first query that needs them.

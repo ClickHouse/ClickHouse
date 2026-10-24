@@ -95,7 +95,6 @@ class IMergeTreeReader;
 class MarkCache;
 class UncompressedCache;
 class MergeTreeTransaction;
-class PackedFilesReader;
 struct IMergeTreeIndex;
 
 struct MergeTreeReadTaskInfo;
@@ -252,19 +251,17 @@ public:
     void remove();
 
     /// The statistics of the part's columns; an empty `required_columns` means all columns.
+    /// The statistics of all columns are read at once, because they are small.
     /// Without a cache, the statistics are read from disk and are private to the caller.
-    /// With a cache, the statistics of a column are read from disk only when they are not cached, and the
+    /// With a cache, the statistics are read from disk only when they are not cached, and the
     /// returned objects are shared with other callers, so they must not be modified.
     ColumnsStatistics loadStatistics(const NameSet & required_columns = {}, StatisticsCache * cache = nullptr) const;
-    /// Loads the statistics of all columns into the cache (prewarming), unless the cache is already filled up to
+    /// Loads the statistics into the cache (prewarming), unless the cache is already filled up to
     /// `statistics_cache_prewarm_ratio`. Best-effort: an error is logged, not thrown.
     void loadStatisticsToCache(StatisticsCache & cache) const;
-    /// Removes the statistics of all columns of the part from the cache.
     void removeStatisticsFromCache(StatisticsCache * cache) const;
-    /// The estimates of the statistics of `required_columns`; an empty `required_columns` means all columns.
-    /// The estimates are memoized per column, so only the statistics of the columns that were not requested
-    /// before are read. The result may contain the estimates of other columns as well.
-    Estimates getEstimates(const NameSet & required_columns = {}) const;
+    /// The estimates of the statistics of all columns, memoized.
+    Estimates getEstimates() const;
     void setEstimates(const Estimates & new_estimates);
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
@@ -889,11 +886,6 @@ private:
     /// The number of subcolumns can be infinite due to dynamic subcolumns in JSON, so we use LRU cache here.
     mutable Poco::LRUCache<String, ColumnSize> subcolumns_sizes_cache = Poco::LRUCache<String, ColumnSize>(1024);
 
-    /// PackedFilesReader for statistics archive.
-    /// Lazily loaded on first access to loadStatistics when packed format is used.
-    mutable std::mutex statistics_reader_mutex;
-    mutable std::unique_ptr<PackedFilesReader> statistics_reader TSA_GUARDED_BY(statistics_reader_mutex);
-
 protected:
     /// Total size on disk, not only columns. May not contain size of
     /// checksums.txt and columns.txt. 0 - if not counted;
@@ -970,13 +962,9 @@ private:
     PartSerializationsPtr serializations = SharedPartColumns::getEmptySerializations();
 
     /// Small state of finalized statistics for suitable statistics types.
-    /// Lazily initialized per column on a first access.
+    /// Lazily initialized on a first access.
     mutable std::mutex estimates_mutex;
-    mutable Estimates estimates TSA_GUARDED_BY(estimates_mutex);
-    /// The columns whose statistics were already looked up, including the columns without statistics.
-    mutable NameSet estimates_loaded_columns TSA_GUARDED_BY(estimates_mutex);
-    /// The estimates of all columns are known.
-    mutable bool estimates_complete TSA_GUARDED_BY(estimates_mutex) = false;
+    mutable std::optional<Estimates> estimates TSA_GUARDED_BY(estimates_mutex);
 
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();
@@ -1022,11 +1010,10 @@ private:
     void loadDefaultCompressionCodec();
     void loadPatchPartIndex();
 
-    /// Reads one statistics file of the part. `packed_reader` is nullptr if the part stores every
-    /// statistics file separately instead of in the packed archive.
-    std::shared_ptr<StatisticsCacheCell> loadStatisticsFile(
-        const PackedFilesReader * packed_reader, const String & filename, const ColumnDescription & column_desc) const;
-    PackedFilesReader * getStatisticsPackedReader() const;
+    /// Reads the statistics of all columns of the part from disk.
+    std::shared_ptr<StatisticsCacheCell> readStatistics() const;
+    /// The statistics of all columns of the part, from the cache if it is not nullptr.
+    std::shared_ptr<const StatisticsCacheCell> getStatistics(StatisticsCache * cache) const;
     /// The path that identifies the part in the caches shared between tables.
     String getPathForCacheKey() const;
 

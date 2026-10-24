@@ -990,11 +990,11 @@ static Block makeBlockWithMinMaxFromStatistics(
     size_t covered_marks = 0;
     size_t covered_ranges = 0;
 
-    /// The columns whose estimates are needed, so that only their statistics are read.
-    NameSet required_columns;
+    /// `count` needs no statistics.
+    bool need_estimates = false;
     for (const auto & stats_aggregate : stats_aggregates)
         if (stats_aggregate.kind != StatisticsMinMaxAggregate::Kind::Count)
-            required_columns.insert(stats_aggregate.column_name);
+            need_estimates = true;
 
     auto part_covered_by_statistics = [&](const RangesInDataPart & part_with_ranges)
     {
@@ -1016,9 +1016,8 @@ static Block makeBlockWithMinMaxFromStatistics(
         Estimates estimates;
         try
         {
-            /// An empty set would mean all columns, but `count` needs no statistics.
-            if (!required_columns.empty())
-                estimates = part->getEstimates(required_columns);
+            if (need_estimates)
+                estimates = part->getEstimates();
         }
         catch (const Exception &)
         {

@@ -1256,7 +1256,7 @@ Its size is configured with the server-level setting [`primary_index_cache_size`
 
 ## SYSTEM CLEAR|DROP STATISTICS CACHE {#drop-statistics-cache}
 
-Clears the statistics cache, which holds the column statistics of the data parts of [`MergeTree`](/reference/engines/table-engines/mergetree-family/mergetree) tables in memory, one entry per data part and column.
+Clears the statistics cache, which holds the column statistics of the data parts of [`MergeTree`](/reference/engines/table-engines/mergetree-family/mergetree) tables in memory, one entry per data part.
 Its size is configured with the server-level setting `statistics_cache_size`.
 
 ## SYSTEM CLEAR|DROP ICEBERG METADATA CACHE {#drop-iceberg-metadata-cache}

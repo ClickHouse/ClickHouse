@@ -46,7 +46,6 @@
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapCache.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/MergeTree/StatisticsCache.h>
-#include <Storages/MergeTree/StatisticsSerialization.h>
 #include <Storages/MergeTree/UniqueKey/SSTIndexWriter.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -75,6 +74,7 @@
 #include <Common/UniqueLock.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
+#include <Common/PODArray.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/thread_local_rng.h>
@@ -1361,190 +1361,134 @@ String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(const NamesAnd
     return *minimum_size_column;
 }
 
-PackedFilesReader * IMergeTreeDataPart::getStatisticsPackedReader() const
-{
-    std::lock_guard lock(statistics_reader_mutex);
-    if (statistics_reader)
-        return statistics_reader.get();
-
-    const String filename = String(ColumnsStatistics::FILENAME);
-    if (!checksums.has(filename))
-        return nullptr;
-
-    const auto & storage_path = getDataPartStorage().getRelativePath();
-    const String packed_file = fs::path(storage_path) / filename;
-    const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&getDataPartStorage());
-
-    if (!disk_storage)
-        return nullptr;
-
-    statistics_reader = std::make_unique<PackedFilesReader>(
-        disk_storage->getDisk(),
-        packed_file,
-        storage.getContext()->getReadSettings());
-
-    return statistics_reader.get();
-}
-
-static const ColumnDescription * getColumnForStatisticsFile(const String & filename, const ColumnsDescription & all_columns)
-{
-    chassert(filename.starts_with(STATS_FILE_PREFIX));
-    chassert(filename.ends_with(STATS_FILE_SUFFIX));
-
-    size_t num_chars_to_truncate = STATS_FILE_PREFIX.size() + STATS_FILE_SUFFIX.size();
-    String column_name = unescapeForFileName(filename.substr(STATS_FILE_PREFIX.size(), filename.size() - num_chars_to_truncate));
-    return all_columns.tryGet(column_name);
-}
-
-std::shared_ptr<StatisticsCacheCell> IMergeTreeDataPart::loadStatisticsFile(
-    const PackedFilesReader * packed_reader, const String & filename, const ColumnDescription & column_desc) const
+std::shared_ptr<StatisticsCacheCell> IMergeTreeDataPart::readStatistics() const
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::LoadedStatisticsMicroseconds);
     auto read_settings = storage.getContext()->getReadSettings();
+    const auto & all_columns = getColumnsDescription();
+    auto cell = std::make_shared<StatisticsCacheCell>();
 
-    std::unique_ptr<ReadBufferFromFileBase> file_buf;
-    if (packed_reader)
+    /// `packed_file` is empty if the part stores every statistics file separately instead of in the packed archive.
+    auto deserialize = [&](ReadBuffer & in, const String & filename, const String & packed_file)
     {
-        /// The reader holds only the index; resolve the archive's current location here so a part
-        /// that has since been renamed or moved still reads from the right place.
-        const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&getDataPartStorage());
-        if (!disk_storage)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistics packed reader requires on-disk part storage");
-        const String packed_file = fs::path(getDataPartStorage().getRelativePath()) / String(ColumnsStatistics::FILENAME);
-        file_buf = packed_reader->readFile(disk_storage->getDisk(), packed_file, filename, read_settings, packed_reader->getFileSize(filename));
+        if (!filename.starts_with(STATS_FILE_PREFIX) || !filename.ends_with(STATS_FILE_SUFFIX))
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "File {} in {} of part {} is not a statistics file", filename, packed_file, name);
+
+        size_t num_chars_to_truncate = STATS_FILE_PREFIX.size() + STATS_FILE_SUFFIX.size();
+        String column_name = unescapeForFileName(filename.substr(STATS_FILE_PREFIX.size(), filename.size() - num_chars_to_truncate));
+        const auto * column_desc = all_columns.tryGet(column_name);
+        if (!column_desc)
+            return;
+
+        try
+        {
+            fiu_do_on(FailPoints::merge_tree_load_statistics_throw,
+            {
+                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Injected failure in loadStatistics");
+            });
+
+            CompressedReadBuffer compressed_buf(in);
+            if (auto stats = ColumnStatistics::deserialize(compressed_buf, column_desc->type))
+            {
+                /// The node of the map (approximately: the value, two child pointers, a parent pointer and the color)
+                /// and the buffer of the column name are retained too.
+                auto [it, inserted] = cell->stats.emplace(column_desc->name, std::move(stats));
+                if (inserted)
+                    cell->memory_bytes += it->second->allocatedBytes() + sizeof(ColumnsStatistics::value_type) + 4 * sizeof(void *)
+                        + (it->first.capacity() > String().capacity() ? it->first.capacity() : 0);
+            }
+        }
+        catch (Exception & e)
+        {
+            if (packed_file.empty())
+                e.addMessage("(while loading statistics for column {} from file {} in part {})", column_desc->name, filename, name);
+            else
+                e.addMessage(
+                    "(while loading statistics for column {} from file {} in packed file {} of part {})",
+                    column_desc->name, filename, packed_file, name);
+            throw;
+        }
+    };
+
+    const String packed_file(ColumnsStatistics::FILENAME);
+    if (auto packed_checksum = checksums.files.find(packed_file); packed_checksum != checksums.files.end())
+    {
+        /// The archive is small, so it is read entirely in one go instead of reading its index and then every file.
+        PODArray<char> data(packed_checksum->second.file_size);
+        getDataPartStorage().readFile(packed_file, read_settings, data.size())->readStrict(data.data(), data.size());
+
+        ReadBufferFromMemory index_buf(data.data(), data.size());
+        for (const auto & [filename, file_offset] : PackedFilesReader::readIndex(index_buf))
+        {
+            if (file_offset.offset > data.size() || file_offset.size > data.size() - file_offset.offset)
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "File {} is out of bounds of {} in part {}", filename, packed_file, name);
+
+            ReadBufferFromMemory file_buf(data.data() + file_offset.offset, file_offset.size);
+            deserialize(file_buf, filename, packed_file);
+        }
     }
     else
     {
-        file_buf = getDataPartStorage().readFile(filename, read_settings, checksums.files.at(filename).file_size);
-    }
-
-    CompressedReadBuffer compressed_buf(*file_buf);
-    try
-    {
-        fiu_do_on(FailPoints::merge_tree_load_statistics_throw,
+        for (const auto & [filename, checksum] : checksums.files)
         {
-            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Injected failure in loadStatistics");
-        });
+            if (filename.starts_with(STATS_FILE_PREFIX) && filename.ends_with(STATS_FILE_SUFFIX))
+                deserialize(*getDataPartStorage().readFile(filename, read_settings, checksum.file_size), filename, "");
+        }
+    }
 
-        auto cell = std::make_shared<StatisticsCacheCell>();
-        cell->stats = ColumnStatistics::deserialize(compressed_buf, column_desc.type);
-        if (cell->stats)
-            cell->memory_bytes = cell->stats->allocatedBytes();
-        return cell;
-    }
-    catch (Exception & e)
-    {
-        if (packed_reader)
-            e.addMessage(
-                "(while loading statistics for column {} from file {} in packed file {} of part {})",
-                column_desc.name,
-                filename,
-                ColumnsStatistics::FILENAME,
-                name);
-        else
-            e.addMessage("(while loading statistics for column {} from file {} in part {})", column_desc.name, filename, name);
-        throw;
-    }
+    return cell;
+}
+
+std::shared_ptr<const StatisticsCacheCell> IMergeTreeDataPart::getStatistics(StatisticsCache * cache) const
+{
+    auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::loadStatistics");
+
+    /// `clearCaches` is one-shot: once it has run, nothing evicts the entry of this part again,
+    /// so a part whose caches are cleared must not fill the cache any more.
+    if (!cache || cleared_data_in_caches)
+        return readStatistics();
+
+    /// The statistics cache is filled on demand by queries, not only by the prewarm, so remember that
+    /// this part may own an entry there: `mayStoreDataInCaches` reports it then, and the entry of an
+    /// outdated part is evicted as soon as the part is no longer used, not when it is finally removed.
+    may_store_data_in_statistics_cache = true;
+
+    /// The loaded statistics and the bookkeeping of the cache outlive the query in the server-wide
+    /// cache, so they are not charged to the query or the user, like the marks and the primary index
+    /// in their caches. The merged statistics of the query are built by the caller and still charged.
+    MemoryTrackerBlockerInThread not_charged_to_the_query;
+    const auto key = StatisticsCache::hash(getPathForCacheKey());
+    auto cell = cache->getOrSet(key, [&] { return readStatistics(); });
+    /// `clearCaches` sets the flag before it removes the entry, so if it ran concurrently
+    /// with the insertion above, either its removal comes after the insertion or the flag is
+    /// already visible here.
+    if (cleared_data_in_caches)
+        cache->remove(key);
+    return cell;
 }
 
 ColumnsStatistics IMergeTreeDataPart::loadStatistics(const NameSet & required_columns, StatisticsCache * cache) const
 {
-    auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::loadStatistics");
+    auto cell = getStatistics(cache);
+    if (required_columns.empty())
+        return cell->stats;
 
-    /// The list of statistics files is known without reading them: it is the index of the packed
-    /// archive, which is read once per part, or the checksums of a part that stores every file separately.
-    const PackedFilesReader * packed_reader = getStatisticsPackedReader();
-    const auto & all_columns = getColumnsDescription();
-
-    /// Pairs of a statistics file and the column it belongs to.
-    std::vector<std::pair<String, const ColumnDescription *>> files_to_load;
-    if (!required_columns.empty())
-    {
-        /// A query usually needs the statistics of a few columns, so probe the files of these columns
-        /// directly instead of scanning the statistics files of every column of the part.
-        NameSet probed_columns;
-        auto probe = [&](const String & column_name)
-        {
-            if (!probed_columns.emplace(column_name).second)
-                return;
-            const auto * column_desc = all_columns.tryGet(column_name);
-            if (!column_desc)
-                return;
-            String filename = getStatisticsFilename(column_name);
-            if (packed_reader ? packed_reader->exists(filename) : checksums.has(filename))
-                files_to_load.emplace_back(std::move(filename), column_desc);
-        };
-
-        for (const auto & required_column : required_columns)
-        {
-            probe(required_column);
-            /// `<col>.null` subcolumn may appear in required_columns when
-            /// `optimize_functions_to_subcolumns=1`, keep stats for the parent column in that case.
-            if (required_column.ends_with(".null"))
-                probe(required_column.substr(0, required_column.size() - std::string_view(".null").size()));
-        }
-    }
-    else
-    {
-        Names filenames;
-        if (packed_reader)
-        {
-            filenames = packed_reader->getFileNames();
-            for (const auto & filename : filenames)
-                if (!filename.ends_with(STATS_FILE_SUFFIX) || !filename.starts_with(STATS_FILE_PREFIX))
-                    throw Exception(ErrorCodes::CORRUPTED_DATA, "File {} is not a statistics file", filename);
-        }
-        else
-        {
-            for (const auto & [filename, _] : checksums.files)
-                if (filename.ends_with(STATS_FILE_SUFFIX) && filename.starts_with(STATS_FILE_PREFIX))
-                    filenames.push_back(filename);
-        }
-
-        for (auto & filename : filenames)
-            if (const auto * column_desc = getColumnForStatisticsFile(filename, all_columns))
-                files_to_load.emplace_back(std::move(filename), column_desc);
-    }
-
-    /// `clearCaches` is one-shot: once it has run, nothing evicts the entries of this part again,
-    /// so a part whose caches are cleared must not fill the cache any more.
-    if (cleared_data_in_caches)
-        cache = nullptr;
-
-    const String part_path = cache ? getPathForCacheKey() : "";
-
-    /// The statistics cache is filled on demand by queries, not only by the prewarm, so remember that
-    /// this part may own entries there: `mayStoreDataInCaches` reports it then, and the entries of an
-    /// outdated part are evicted as soon as the part is no longer used, not when it is finally removed.
-    if (cache && !files_to_load.empty())
-        may_store_data_in_statistics_cache = true;
-
+    /// Probe the required columns rather than scan all columns of the part: it is done for every part on every query.
     ColumnsStatistics result;
-    for (const auto & [filename, column_desc] : files_to_load)
+    for (const auto & required_column : required_columns)
     {
-        auto load = [&] { return loadStatisticsFile(packed_reader, filename, *column_desc); };
-        StatisticsCache::MappedPtr cell;
-        if (cache)
+        /// `<col>.null` subcolumn may appear in required_columns when
+        /// `optimize_functions_to_subcolumns=1`, keep stats for the parent column in that case.
+        static constexpr std::string_view null_suffix = ".null";
+        if (auto it = cell->stats.find(required_column); it != cell->stats.end())
+            result.emplace(it->first, it->second);
+        else if (required_column.ends_with(null_suffix))
         {
-            /// The loaded statistics and the bookkeeping of the cache outlive the query in the server-wide
-            /// cache, so they are not charged to the query or the user, like the marks and the primary index
-            /// in their caches. The merged statistics of the query are built by the caller and still charged.
-            MemoryTrackerBlockerInThread not_charged_to_the_query;
-            const auto key = StatisticsCache::hash(part_path, column_desc->name);
-            cell = cache->getOrSet(key, load);
-            /// `clearCaches` sets the flag before it removes the entries, so if it ran concurrently
-            /// with the insertion above, either its removal comes after the insertion or the flag is
-            /// already visible here.
-            if (cleared_data_in_caches)
-                cache->remove(key);
+            String parent_column = required_column.substr(0, required_column.size() - null_suffix.size());
+            if (auto parent_it = cell->stats.find(parent_column); parent_it != cell->stats.end())
+                result.emplace(parent_it->first, parent_it->second);
         }
-        else
-            cell = load();
-
-        if (cell->stats)
-            result.emplace(column_desc->name, cell->stats);
     }
-
     return result;
 }
 
@@ -1562,7 +1506,7 @@ void IMergeTreeDataPart::loadStatisticsToCache(StatisticsCache & cache) const
     /// duplicate the data. Nothing is cached then, and a query reads the statistics on demand and gets the error.
     try
     {
-        loadStatistics({}, &cache);
+        getStatistics(&cache);
     }
     catch (...)
     {
@@ -1572,15 +1516,8 @@ void IMergeTreeDataPart::loadStatisticsToCache(StatisticsCache & cache) const
 
 void IMergeTreeDataPart::removeStatisticsFromCache(StatisticsCache * cache) const
 {
-    if (!cache)
-        return;
-
-    /// The list of statistics files is not consulted, because that may read the index of the packed
-    /// archive from disk while a part is being removed. Removing an absent key is a no-op, so remove
-    /// the key of every column of the part instead.
-    const String part_path = getPathForCacheKey();
-    for (const auto & column : getColumns())
-        cache->remove(StatisticsCache::hash(part_path, column.name));
+    if (cache)
+        cache->remove(StatisticsCache::hash(getPathForCacheKey()));
 }
 
 String IMergeTreeDataPart::getPathForCacheKey() const
@@ -1588,44 +1525,24 @@ String IMergeTreeDataPart::getPathForCacheKey() const
     return getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart();
 }
 
-Estimates IMergeTreeDataPart::getEstimates(const NameSet & required_columns) const
+Estimates IMergeTreeDataPart::getEstimates() const
 {
     std::lock_guard lock(estimates_mutex);
 
-    if (estimates_complete)
-        return estimates;
-
-    /// Read only the statistics of the columns that were not looked up before, so that a query that
-    /// needs the estimates of a few columns does not read the statistics of every column of a wide part.
-    NameSet columns_to_load;
-    for (const auto & column_name : required_columns)
-        if (!estimates_loaded_columns.contains(column_name))
-            columns_to_load.insert(column_name);
-
-    if (!required_columns.empty() && columns_to_load.empty())
-        return estimates;
-
-    /// The statistics themselves are owned by the statistics cache; only the estimates map is
-    /// kept on the part (until reload), so build it in the dedicated arena, like the rest of the
-    /// part's metadata.
-    auto statistics = loadStatistics(columns_to_load, storage.getContext()->getStatisticsCache().get());
-
+    if (!estimates)
     {
-        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-        for (const auto & [column_name, stats] : statistics)
-            estimates.try_emplace(column_name, stats->getEstimate());
+        /// The statistics themselves are owned by the statistics cache; only the estimates map is
+        /// kept on the part (until reload), so build it in the dedicated arena, like the rest of the
+        /// part's metadata.
+        auto cell = getStatistics(storage.getContext()->getStatisticsCache().get());
 
-        if (columns_to_load.empty())
-        {
-            estimates_complete = true;
-            estimates_loaded_columns.clear();
-        }
-        else
-        {
-            estimates_loaded_columns.insert(columns_to_load.begin(), columns_to_load.end());
-        }
+        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+        Estimates loaded_estimates;
+        for (const auto & [column_name, stats] : cell->stats)
+            loaded_estimates.emplace(column_name, stats->getEstimate());
+        estimates = std::move(loaded_estimates);
     }
-    return estimates;
+    return *estimates;
 }
 
 void IMergeTreeDataPart::setEstimates(const Estimates & new_estimates)
@@ -1642,8 +1559,6 @@ void IMergeTreeDataPart::setEstimates(const Estimates & new_estimates)
 
     std::lock_guard lock(estimates_mutex);
     estimates = std::move(stored_estimates);
-    estimates_loaded_columns.clear();
-    estimates_complete = true;
 }
 
 void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency, bool load_metadata_version)
