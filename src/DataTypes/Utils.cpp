@@ -42,6 +42,10 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
     bool to_type_was_nullable = isNullableOrLowCardinalityNullable(to_type);
     auto to_type_unwrapped = removeNullable(removeLowCardinality(to_type));
 
+    /// `UInt8` equals `Bool`, but `Bool` holds only 0 and 1.
+    if (from_which_type.isUInt8() && !isBool(from_type) && isBool(to_type_unwrapped))
+        return false;
+
     if (from_type->equals(*to_type_unwrapped))
         return true;
 
