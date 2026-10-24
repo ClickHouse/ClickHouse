@@ -1935,9 +1935,12 @@ void StorageDistributed::truncate(const ASTPtr &, const StorageMetadataPtr &, Co
     /// A directory quarantined by initializeDirectoryQueuesForDisk() has no directory queue, so it
     /// is not in `cluster_nodes_data`, but its files are still part of the on-disk spool this
     /// statement drops. Removing them here is the only way to get rid of them from SQL.
+    /// A disk without a host directory namespace has no queue (see `initializeDirectoryQueuesForDisk`),
+    /// and `disk->getPath() + relative_data_path` is not a path of that disk, so nothing is removed there.
     if (!relative_data_path.empty())
         for (const DiskPtr & disk : data_volume->getDisks())
-            removeUnrecognizedDirectoryQueues(disk);
+            if (disk->hasLocalFilesystemDirectoryNamespace())
+                removeUnrecognizedDirectoryQueues(disk);
 }
 
 void StorageDistributed::removeUnrecognizedDirectoryQueues(const DiskPtr & disk) const
