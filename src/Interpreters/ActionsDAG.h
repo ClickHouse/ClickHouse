@@ -473,7 +473,14 @@ public:
 
     /// Merge current nodes with specified dag nodes.
     /// *out_outputs is filled with pointers to the nodes corresponding to second.getOutputs().
-    void mergeNodes(ActionsDAG && second, NodeRawConstPtrs * out_outputs = nullptr);
+    /// If inputs_map is provided, nodes of second in inputs_map are mapped to corresponding nodes in this DAG
+    /// without creating new inputs or moving them from second.
+    /// If bind_by_name is false, nodes of second are not bound to existing nodes by result_name.
+    void mergeNodes(
+        ActionsDAG && second,
+        NodeRawConstPtrs * out_outputs = nullptr,
+        const NodeMapping * inputs_map = nullptr,
+        bool bind_by_name = true);
 
     /// Union current nodes with second dag without any matching of inputs and outputs.
     void unite(ActionsDAG && second);

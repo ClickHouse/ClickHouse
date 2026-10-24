@@ -747,10 +747,16 @@ private:
                 }
                 else
                 {
+                    auto preprocessor_actions = preprocessor->getActionsDAGForColumn(new_children[0]->result_name, new_children[0]->result_type);
+                    chassert(preprocessor_actions.getInputs().size() == 1);
+                    ActionsDAG::NodeMapping inputs_map{{preprocessor_actions.getInputs().front(), new_children[0]}};
+
                     ActionsDAG::NodeRawConstPtrs merged_outputs;
                     actions_dag.mergeNodes(
-                        preprocessor->getActionsDAGForColumn(new_children[0]->result_name, new_children[0]->result_type),
-                        &merged_outputs);
+                        std::move(preprocessor_actions),
+                        &merged_outputs,
+                        &inputs_map,
+                        /*bind_by_name=*/ false);
 
                     chassert(merged_outputs.size() == 1);
                     new_children[0] = merged_outputs.front();
@@ -801,14 +807,21 @@ private:
         /// parts). getOriginalActionsDAG yields an Array(String) of postprocessed tokens.
         if (apply_postprocessor)
         {
-            /// Name the postprocessor's haystack input after the haystack node's actual result_name so
-            /// mergeNodes reuses that node (it matches by result_name). A reconstructed name can diverge for
-            /// an ALIAS/expression haystack (e.g. `ifNull(str, 'default')`), leaving a dangling input.
+            /// Bind the postprocessor's haystack input node directly to the haystack node in the DAG,
+            /// without by-name binding of non-input nodes, so unrelated projection aliases or columns
+            /// cannot hijack the postprocessor's nodes or inputs.
             const auto & haystack_name = new_children[0]->result_name;
+            auto postprocessor_actions = postprocessor->getOriginalActionsDAG(
+                haystack_name, new_children[0]->result_type, tokenizer->getDescription(), preprocessor_source_ast);
+            chassert(postprocessor_actions.getInputs().size() == 1);
+            ActionsDAG::NodeMapping inputs_map{{postprocessor_actions.getInputs().front(), new_children[0]}};
+
             ActionsDAG::NodeRawConstPtrs merged_outputs;
             actions_dag.mergeNodes(
-                postprocessor->getOriginalActionsDAG(haystack_name, new_children[0]->result_type, tokenizer->getDescription(), preprocessor_source_ast),
-                &merged_outputs);
+                std::move(postprocessor_actions),
+                &merged_outputs,
+                &inputs_map,
+                /*bind_by_name=*/ false);
             chassert(merged_outputs.size() == 1);
             new_children[0] = merged_outputs.front();
 
