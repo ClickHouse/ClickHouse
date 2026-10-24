@@ -1586,11 +1586,8 @@ static bool missingColumnReadsPhysicalColumns(
     if (col_in_storage && col_in_storage->isSubcolumn() && try_get_column_in_part(col_in_storage->getNameInStorage()))
         return true;
 
-    auto column_default = storage_snapshot->getDefault(column_name);
-    /// A subcolumn has no default expression of its own: it is extracted from the evaluated default of
-    /// the column in storage (see `IMergeTreeReader::evaluateMissingDefaults`).
-    if (!column_default && col_in_storage && col_in_storage->isSubcolumn())
-        column_default = storage_snapshot->getDefault(col_in_storage->getNameInStorage());
+    /// A subcolumn takes the default of the column it belongs to.
+    auto column_default = storage_snapshot->getDefaultOfColumnOrSubcolumn(column_name);
 
     if (!column_default || !column_default->expression)
         return false;

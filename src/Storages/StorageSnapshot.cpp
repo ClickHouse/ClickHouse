@@ -6,6 +6,7 @@
 #include <Compression/ICompressionCodec.h>
 
 #include <Common/quoteString.h>
+#include <DataTypes/NestedUtils.h>
 
 #include <base/StringViewHash.h>
 #include <sparsehash/dense_hash_set>
@@ -244,6 +245,23 @@ std::optional<ColumnDefault> StorageSnapshot::getDefault(const String & column_n
         return column_default;
 
     return metadata->virtuals.getDefault(column_name);
+}
+
+std::optional<ColumnDefault> StorageSnapshot::getDefaultOfColumnOrSubcolumn(const String & column_name) const
+{
+    /// A subcolumn has no default of its own; it comes from the default of the column it belongs to,
+    /// whatever the kind of that column (`ALIAS` included).
+    if (auto column_default = getDefault(column_name))
+        return column_default;
+
+    for (auto [name_in_storage, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(column_name))
+    {
+        auto column = tryGetColumn(GetColumnsOptions::All, String(name_in_storage));
+        if (column && column->type->tryGetSubcolumnType(subcolumn_name))
+            return getDefault(column->name);
+    }
+
+    return std::nullopt;
 }
 
 }
