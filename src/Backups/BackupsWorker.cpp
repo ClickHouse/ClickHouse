@@ -432,6 +432,11 @@ struct BackupsWorker::BackupStarter
         backup_settings = BackupSettings::fromBackupQuery(*backup_query);
         backup_context->makeQueryContext();
 
+        /// `backup_context` may outlive the connection that submitted the query (`ASYNC`), so it must not keep the
+        /// transport-scoped liveness callback copied from `query_context`: it captures the request / socket of the
+        /// protocol handler by reference. See the same treatment in `executeQueryInBackground`.
+        backup_context->setConnectionAliveCheck({});
+
         /// `makeQueryContext` above resets `backup_context` to a fresh, empty `QueryPrivilegesInfo`. Sharing
         /// the originating one accounts privileges checked on copies of `backup_context` to the BACKUP query,
         /// so they reach the `used_privileges`/`missing_privileges` columns of `system.query_log`.
@@ -957,6 +962,11 @@ struct BackupsWorker::RestoreStarter
     {
         restore_settings = RestoreSettings::fromRestoreQuery(*restore_query);
         restore_context->makeQueryContext();
+
+        /// `restore_context` may outlive the connection that submitted the query (`ASYNC`), so it must not keep the
+        /// transport-scoped liveness callback copied from `query_context`: it captures the request / socket of the
+        /// protocol handler by reference. See the same treatment in `executeQueryInBackground`.
+        restore_context->setConnectionAliveCheck({});
 
         /// `makeQueryContext` above reset `restore_context` to a fresh, empty `QueryPrivilegesInfo`. Account the
         /// privileges checked while restoring (in `RestorerFromBackup::checkAccessForObjectsFoundInBackup` and

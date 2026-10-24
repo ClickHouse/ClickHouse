@@ -40,6 +40,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Server/TCPServer.h>
+#include <Server/SocketAliveCheck.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <base/defines.h>
@@ -973,6 +974,8 @@ void TCPHandler::runImpl()
             if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION)
                 query_state->query_context->setSetting("enable_producing_buckets_out_of_order_in_aggregation", false);
 
+            /// For admission queue disconnect detection.
+            query_state->query_context->setConnectionAliveCheck(makeSocketAliveCheckCallback(socket()));
             /// If `collect_connection_metrics` was `false` after authentication, register the connection now.
             registerConnectionIfNeeded();
             /// Set the connection to idle in `system.connections` at each exit from this scope. This includes exceptions.

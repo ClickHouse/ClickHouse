@@ -7,6 +7,7 @@
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBuffer.h>
+#include <IO/SocketPeerClosed.h>
 #include <Server/HTTP/HTTPServerResponse.h>
 #include <Server/HTTP/ReadHeaders.h>
 
@@ -57,7 +58,7 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
     session.socket().setSendTimeout(send_timeout);
 
     auto socket_in = std::make_unique<ReadBufferFromPocoSocket>(session.socket(), read_event);
-    socket = session.socket().impl();
+    socket = session.socket();
 
     {
         /// Bounds the request line, the URI and the headers. Clearing it restores the body timeouts,
@@ -74,7 +75,7 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
         catch (const NetException & e)
         {
             /// Writing the error response would start the timed-out TLS handshake over, on the body timeouts.
-            if (e.code() != ErrorCodes::SOCKET_TIMEOUT || secureHandshakePending(socket))
+            if (e.code() != ErrorCodes::SOCKET_TIMEOUT || secureHandshakePending(socket.impl()))
                 throw;
             /// `HTTPServerConnection` answers 400 to this; a `DB` exception escapes its handlers.
             throw Poco::Net::MessageException("Timeout exceeded while reading HTTP headers");
@@ -120,7 +121,7 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
 
 bool HTTPServerRequest::checkPeerConnected() const
 {
-    return socket->connectionOpen();
+    return !isSocketPeerClosed(socket);
 }
 
 #if USE_SSL
@@ -129,7 +130,7 @@ bool HTTPServerRequest::havePeerCertificate() const
     if (!secure)
         return false;
 
-    const Poco::Net::SecureStreamSocketImpl * secure_socket = dynamic_cast<const Poco::Net::SecureStreamSocketImpl *>(socket);
+    const Poco::Net::SecureStreamSocketImpl * secure_socket = dynamic_cast<const Poco::Net::SecureStreamSocketImpl *>(socket.impl());
     if (!secure_socket)
         return false;
 
@@ -141,7 +142,7 @@ X509Certificate HTTPServerRequest::peerCertificate() const
     if (!secure)
         throw Poco::Net::SSLException("No certificate available");
 
-    const Poco::Net::SecureStreamSocketImpl * secure_socket = dynamic_cast<const Poco::Net::SecureStreamSocketImpl *>(socket);
+    const Poco::Net::SecureStreamSocketImpl * secure_socket = dynamic_cast<const Poco::Net::SecureStreamSocketImpl *>(socket.impl());
     if (!secure_socket)
         throw Poco::Net::SSLException("No certificate available");
 

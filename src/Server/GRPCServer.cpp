@@ -1,4 +1,5 @@
 #include <Server/GRPCServer.h>
+#include <deque>
 #include <limits>
 #include <memory>
 #include <Poco/Net/SocketAddress.h>
@@ -382,6 +383,40 @@ namespace
 
     using CompletionCallback = std::function<void(bool)>;
 
+    /// A boolean state protected by mutex able to wait until other thread sets it to a specific value.
+    class BoolState
+    {
+    public:
+        explicit BoolState(bool initial_value) : value(initial_value) {}
+
+        bool get() const
+        {
+            std::lock_guard lock{mutex};
+            return value;
+        }
+
+        void set(bool new_value)
+        {
+            std::lock_guard lock{mutex};
+            if (value == new_value)
+                return;
+            value = new_value;
+            changed.notify_all();
+        }
+
+        void wait(bool wanted_value) const
+        {
+            std::unique_lock lock{mutex};
+            changed.wait(lock, [this, wanted_value]() { return value == wanted_value; });
+        }
+
+    private:
+        bool value;
+        mutable std::mutex mutex;
+        mutable std::condition_variable changed;
+    };
+
+
     /// Requests a connection and provides low-level interface for reading and writing.
     class BaseResponder
     {
@@ -440,7 +475,20 @@ namespace
         /// Makes the pending operations of this call complete (with `ok` set to false).
         void cancel() { grpc_context.TryCancel(); }
 
+        /// Whether gRPC has reported the call as done. Before the server sends the final status this
+        /// can only mean the client cancelled the call or went away (or the deadline expired).
+        bool isDone() const { return done.get(); }
+
+        /// The tag passed to `AsyncNotifyWhenDone` is owned by the responder, and gRPC delivers it once
+        /// the started call is finished or cancelled, so a started responder must not be destroyed
+        /// before that. The caller must make sure the call ends: either by finishing it, or by `cancel`.
+        void waitUntilDone() const { done.wait(true); }
+
     protected:
+        /// Must be called by `start` before requesting the call. gRPC delivers the tag only for a call
+        /// which has actually started, so a responder that never got a call is destroyed freely.
+        void notifyWhenDone() { grpc_context.AsyncNotifyWhenDone(&on_done); }
+
         CompletionCallback * getCallbackPtr(const CompletionCallback & callback)
         {
             /// It would be better to pass callbacks to gRPC calls.
@@ -469,6 +517,10 @@ namespace
         std::unordered_map<size_t, CompletionCallback> callbacks;
         size_t next_callback_id = 0;
         std::mutex mutex;
+
+        /// Set on queue_thread when gRPC delivers the `AsyncNotifyWhenDone` tag.
+        BoolState done{false};
+        CompletionCallback on_done = [this](bool) { done.set(true); };
     };
 
     enum CallType
@@ -515,6 +567,7 @@ namespace
                   grpc::ServerCompletionQueue & notification_queue,
                   const CompletionCallback & callback) override
         {
+            notifyWhenDone();
             grpc_service.RequestExecuteQuery(&grpc_context, &query_info.emplace(), &response_writer, &new_call_queue, &notification_queue, getCallbackPtr(callback));
         }
 
@@ -555,6 +608,7 @@ namespace
                   grpc::ServerCompletionQueue & notification_queue,
                   const CompletionCallback & callback) override
         {
+            notifyWhenDone();
             grpc_service.RequestExecuteQueryWithStreamInput(&grpc_context, &reader, &new_call_queue, &notification_queue, getCallbackPtr(callback));
         }
 
@@ -586,6 +640,7 @@ namespace
                   grpc::ServerCompletionQueue & notification_queue,
                   const CompletionCallback & callback) override
         {
+            notifyWhenDone();
             grpc_service.RequestExecuteQueryWithStreamOutput(&grpc_context, &query_info.emplace(), &writer, &new_call_queue, &notification_queue, getCallbackPtr(callback));
         }
 
@@ -626,6 +681,7 @@ namespace
                   grpc::ServerCompletionQueue & notification_queue,
                   const CompletionCallback & callback) override
         {
+            notifyWhenDone();
             grpc_service.RequestExecuteQueryWithStreamIO(&grpc_context, &reader_writer, &new_call_queue, &notification_queue, getCallbackPtr(callback));
         }
 
@@ -685,40 +741,6 @@ namespace
     };
 
 
-    /// A boolean state protected by mutex able to wait until other thread sets it to a specific value.
-    class BoolState
-    {
-    public:
-        explicit BoolState(bool initial_value) : value(initial_value) {}
-
-        bool get() const
-        {
-            std::lock_guard lock{mutex};
-            return value;
-        }
-
-        void set(bool new_value)
-        {
-            std::lock_guard lock{mutex};
-            if (value == new_value)
-                return;
-            value = new_value;
-            changed.notify_all();
-        }
-
-        void wait(bool wanted_value) const
-        {
-            std::unique_lock lock{mutex};
-            changed.wait(lock, [this, wanted_value]() { return value == wanted_value; });
-        }
-
-    private:
-        bool value;
-        mutable std::mutex mutex;
-        mutable std::condition_variable changed;
-    };
-
-
     /// Handles a connection after a responder is started (i.e. after getting a new call).
     class Call // NOLINT(clang-analyzer-optin.performance.Padding)
     {
@@ -747,6 +769,8 @@ namespace
         void close();
 
         void readQueryInfo();
+        void startReadingQueryInfo();
+        void readAheadQueryInfo();
         void throwIfFailedToReadQueryInfo();
         bool isQueryCancelled();
 
@@ -809,6 +833,12 @@ namespace
         bool need_input_data_from_insert_query = true;
         bool need_input_data_from_query_info = true;
         bool need_input_data_delimiter = false;
+
+        /// Extra query infos read ahead by `readAheadQueryInfo` and not consumed by `readQueryInfo` yet,
+        /// in the order they were received. They precede `next_query_info_while_reading`.
+        /// `read_ahead_bytes` is the total size of those messages, see `readAheadCost`.
+        std::deque<GRPCQueryInfo> read_ahead_query_infos;
+        size_t read_ahead_bytes = 0;
 
         Stopwatch query_time;
         UInt64 waited_for_client_reading = 0;
@@ -1091,6 +1121,15 @@ namespace
             while (block.empty() && pipeline_executor->pull(block));
 
             return block;
+        });
+
+        /// For admission queue disconnect detection: the call is done before we send the final status
+        /// only if the client cancelled it or disconnected.
+        /// The callback is called on call_thread by `ProcessList::insert` while the query waits there.
+        query_context->setConnectionAliveCheck([this]() -> bool
+        {
+            readAheadQueryInfo();
+            return !want_to_cancel.load() && !responder->isDone();
         });
 
         /// Start executing the query.
@@ -1540,15 +1579,21 @@ namespace
 
     void Call::close()
     {
-        /// A speculative read started by `readQueryInfo` may still be in flight. Its completion
-        /// handler writes into `next_query_info_while_reading` and is dispatched through a tag
-        /// owned by the responder, so both have to outlive it.
-        if (reading_query_info.get())
+        if (responder)
         {
-            /// If the call has not been finished, nothing would complete that read on its own.
+            /// If the call has not been finished, nothing would complete its pending operations
+            /// (and deliver the `AsyncNotifyWhenDone` tag) on its own.
             if (!responder_finished)
                 responder->cancel();
-            reading_query_info.wait(false);
+
+            /// A speculative read started by `readQueryInfo` may still be in flight. Its completion
+            /// handler writes into `next_query_info_while_reading` and is dispatched through a tag
+            /// owned by the responder, so both have to outlive it.
+            if (reading_query_info.get())
+                reading_query_info.wait(false);
+
+            /// The same applies to the `AsyncNotifyWhenDone` tag.
+            responder->waitUntilDone();
         }
 
         responder.reset();
@@ -1566,38 +1611,56 @@ namespace
         session.reset();
     }
 
+    void Call::startReadingQueryInfo()
+    {
+        reading_query_info.set(true);
+        responder->read(next_query_info_while_reading, [this](bool ok)
+        {
+            /// Called on queue_thread.
+            if (ok)
+            {
+                const auto & nqi = next_query_info_while_reading;
+                if (check_query_info_contains_cancel_only)
+                {
+                    if (!nqi.query().empty() || !nqi.query_id().empty() || !nqi.settings().empty() || !nqi.database().empty()
+                        || !nqi.input_data().empty() || !nqi.input_data_delimiter().empty() || !nqi.output_format().empty()
+                        || !nqi.user_name().empty() || !nqi.password().empty() || !nqi.quota().empty() || !nqi.session_id().empty())
+                    {
+                        LOG_WARNING(log, "Cannot add extra information to a query which is already executing. Only the 'cancel' field can be set");
+                    }
+                }
+                if (nqi.cancel())
+                    want_to_cancel = true;
+            }
+            else
+            {
+                /// We cannot throw an exception right here because this code is executed
+                /// on queue_thread.
+                failed_to_read_query_info = true;
+            }
+            reading_query_info.set(false);
+        });
+    }
+
+    /// The memory held by a query info buffered by `readAheadQueryInfo`. Not only `input_data` counts:
+    /// extra query infos can also carry arbitrarily large `external_tables`, so charge the whole message.
+    /// The fixed per-message part bounds the number of buffered messages even if they are empty.
+    size_t readAheadCost(const GRPCQueryInfo & query_info)
+    {
+        return query_info.ByteSizeLong() + sizeof(GRPCQueryInfo);
+    }
+
     void Call::readQueryInfo()
     {
-        auto start_reading = [&]
+        if (!read_ahead_query_infos.empty())
         {
-            reading_query_info.set(true);
-            responder->read(next_query_info_while_reading, [this](bool ok)
-            {
-                /// Called on queue_thread.
-                if (ok)
-                {
-                    const auto & nqi = next_query_info_while_reading;
-                    if (check_query_info_contains_cancel_only)
-                    {
-                        if (!nqi.query().empty() || !nqi.query_id().empty() || !nqi.settings().empty() || !nqi.database().empty()
-                            || !nqi.input_data().empty() || !nqi.input_data_delimiter().empty() || !nqi.output_format().empty()
-                            || !nqi.user_name().empty() || !nqi.password().empty() || !nqi.quota().empty() || !nqi.session_id().empty())
-                        {
-                            LOG_WARNING(log, "Cannot add extra information to a query which is already executing. Only the 'cancel' field can be set");
-                        }
-                    }
-                    if (nqi.cancel())
-                        want_to_cancel = true;
-                }
-                else
-                {
-                    /// We cannot throw an exception right here because this code is executed
-                    /// on queue_thread.
-                    failed_to_read_query_info = true;
-                }
-                reading_query_info.set(false);
-            });
-        };
+            /// The next query info has already been read by `readAheadQueryInfo`. A read of the following one
+            /// is in flight or finished, so it must not be started here.
+            query_info = std::move(read_ahead_query_infos.front());
+            read_ahead_query_infos.pop_front();
+            read_ahead_bytes -= readAheadCost(query_info);
+            return;
+        }
 
         auto finish_reading = [&]
         {
@@ -1615,7 +1678,7 @@ namespace
         if (!initial_query_info_read)
         {
             /// Initial query info hasn't been read yet, so we're going to read it now.
-            start_reading();
+            startReadingQueryInfo();
         }
 
         /// Maybe it's reading a query info right now. Let it finish.
@@ -1625,8 +1688,32 @@ namespace
         {
             /// Next query info can contain more input data. Now we start reading a next query info,
             /// so another call of readQueryInfo() in the future will probably be able to take it.
-            start_reading();
+            startReadingQueryInfo();
         }
+    }
+
+    void Call::readAheadQueryInfo()
+    {
+        /// While the query waits in `ProcessList::insert` (for an admission slot or for a replaced query),
+        /// nothing consumes the extra query infos of a streaming input, so only a single speculative read
+        /// is in flight. If that read brings input data, a later query info with the `cancel` field would
+        /// stay unread until the query starts. To notice such cancellation, keep reading the stream ahead,
+        /// but buffer a limited amount of data, because a queued query must not hold unbounded memory.
+        static constexpr size_t max_read_ahead_bytes = 1024 * 1024;
+
+        if (!isInputStreaming(call_type) || !initial_query_info_read || want_to_cancel || failed_to_read_query_info)
+            return;
+        if (reading_query_info.get())
+            return;
+        if (!next_query_info_while_reading.next_query_info())
+            return; /// The client is not going to send more.
+        if (read_ahead_bytes >= max_read_ahead_bytes)
+            return;
+
+        read_ahead_bytes += readAheadCost(next_query_info_while_reading);
+        read_ahead_query_infos.push_back(std::move(next_query_info_while_reading));
+        next_query_info_while_reading.Clear();
+        startReadingQueryInfo();
     }
 
     void Call::throwIfFailedToReadQueryInfo()
@@ -1861,13 +1948,27 @@ namespace
         };
 
         Stopwatch client_reading_final_watch;
-        if (send_final_message)
+        try
         {
-            responder_finished = true;
-            responder->writeAndFinish(result, {}, callback);
+            if (send_final_message)
+            {
+                responder_finished = true;
+                responder->writeAndFinish(result, {}, callback);
+            }
+            else
+                responder->write(result, callback);
         }
-        else
-            responder->write(result, callback);
+        catch (...)
+        {
+            /// The operation has not been submitted (e.g. allocating its completion tag failed), so its
+            /// callback will never be called. Nothing else would complete the call either (`close` does
+            /// not cancel a finished responder), so cancel it here to make gRPC deliver the
+            /// `AsyncNotifyWhenDone` tag, which `close` waits for.
+            failed_to_send_result = true;
+            sending_result.set(false);
+            responder->cancel();
+            throw;
+        }
 
         /// gRPC has already retrieved all data from `result`, so we don't have to keep it.
         result.Clear();
@@ -1945,7 +2046,7 @@ public:
         std::lock_guard lock{mutex};
         should_stop = true;
 
-        if (current_calls.empty())
+        if (current_calls.empty() && cancelled_responders.empty())
         {
             /// If there are no current calls then we call shutdownQueue() to signal the queue to stop waiting for next events.
             /// The following line will make CompletionQueue::Next() stop waiting if the queue is empty and return false instead.
@@ -1986,7 +2087,16 @@ private:
         std::lock_guard lock{mutex};
         auto responder = std::move(responders_for_new_calls[call_type]);
         if (should_stop)
+        {
+            /// A call which has started will deliver the `AsyncNotifyWhenDone` tag owned by the
+            /// responder, so keep the responder until then.
+            if (responder_started_ok)
+            {
+                responder->cancel();
+                cancelled_responders.push_back(std::move(responder));
+            }
             return;
+        }
         makeResponderForNewCall(call_type);
         if (responder_started_ok)
         {
@@ -2024,9 +2134,12 @@ private:
 
             std::lock_guard lock{mutex};
             finished_calls.clear(); /// Destroy finished calls.
+            std::erase_if(cancelled_responders, [](const auto & responder) { return responder->isDone(); });
 
             /// If (should_stop == true) we continue processing while there are current calls.
-            if (should_stop && current_calls.empty())
+            /// `grpc::Server::Shutdown` waits for all started calls to be released, so the cancelled responders
+            /// must be destroyed before it, and that happens only when this thread delivers their tags.
+            if (should_stop && current_calls.empty() && cancelled_responders.empty())
                 shutdownQueue();
         }
 
@@ -2057,6 +2170,8 @@ private:
     std::vector<std::unique_ptr<BaseResponder>> responders_for_new_calls;
     std::map<Call *, std::unique_ptr<Call>> current_calls;
     std::vector<std::unique_ptr<Call>> finished_calls;
+    /// Responders of calls which started after `stop`, waiting for gRPC to deliver their `AsyncNotifyWhenDone` tag.
+    std::vector<std::unique_ptr<BaseResponder>> cancelled_responders;
     bool should_stop = false;
     mutable std::mutex mutex;
 };
