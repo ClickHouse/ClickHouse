@@ -2,6 +2,7 @@
 
 #include <Core/Defines.h>
 #include <Core/Names.h>
+#include <Core/ResultColumnOrigin.h>
 #include <base/types.h>
 #include <base/unit.h>
 
@@ -524,6 +525,8 @@ struct FormatSettings
          * By default, use Text ResultSet.
          */
         bool binary_protocol = false;
+        /// The table columns the result columns come from, reported in the column definitions. Not owned; may be null.
+        const ResultColumnOrigins * result_column_origins = nullptr;
     } mysql_wire{};
 
     struct

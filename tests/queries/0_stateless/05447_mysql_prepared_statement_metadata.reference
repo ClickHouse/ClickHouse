@@ -1,0 +1,55 @@
+--- query: SELECT * FROM t
+name=id org_name=id schema=<database> table=t org_table=t type=8 length=20
+name=flag org_name=flag schema=<database> table=t org_table=t type=1 length=3
+name=s org_name=s schema=<database> table=t org_table=t type=254 length=0
+--- query: SELECT * FROM types
+name=i8 org_name=i8 schema=<database> table=types org_table=types type=1 length=4
+name=i16 org_name=i16 schema=<database> table=types org_table=types type=2 length=6
+name=i32 org_name=i32 schema=<database> table=types org_table=types type=3 length=11
+name=i64 org_name=i64 schema=<database> table=types org_table=types type=8 length=20
+name=u16 org_name=u16 schema=<database> table=types org_table=types type=2 length=5
+name=u32 org_name=u32 schema=<database> table=types org_table=types type=3 length=10
+name=f32 org_name=f32 schema=<database> table=types org_table=types type=4 length=12
+name=f64 org_name=f64 schema=<database> table=types org_table=types type=5 length=22
+name=d org_name=d schema=<database> table=types org_table=types type=0 length=12
+name=d0 org_name=d0 schema=<database> table=types org_table=types type=0 length=6
+name=date org_name=date schema=<database> table=types org_table=types type=10 length=10
+name=dt org_name=dt schema=<database> table=types org_table=types type=12 length=19
+name=dt64 org_name=dt64 schema=<database> table=types org_table=types type=12 length=26
+name=fs org_name=fs schema=<database> table=types org_table=types type=254 length=3
+name=n org_name=n schema=<database> table=types org_table=types type=1 length=3
+name=lc org_name=lc schema=<database> table=types org_table=types type=254 length=0
+--- query: SELECT id FROM test_mm.t
+name=id org_name=id schema=<database> table=t org_table=t type=8 length=20
+--- query: SELECT id AS x, a.s, flag + 1 AS expr, 1 AS const FROM t AS a
+name=x org_name=id schema=<database> table=a org_table=t type=8 length=20
+name=s org_name=s schema=<database> table=a org_table=t type=254 length=0
+name=expr org_name=expr schema= table= org_table= type=2 length=5
+name=const org_name=const schema= table= org_table= type=1 length=3
+--- query: SELECT id FROM (SELECT id FROM t)
+name=id org_name=id schema= table= org_table= type=8 length=20
+--- query: SELECT id FROM t UNION ALL SELECT id FROM t
+name=id org_name=id schema= table= org_table= type=8 length=20
+--- prepare: SELECT * FROM t ORDER BY id
+num_columns=3 num_params=0
+name=id org_name=id schema=<database> table=t org_table=t type=8 length=20
+name=flag org_name=flag schema=<database> table=t org_table=t type=1 length=3
+name=s org_name=s schema=<database> table=t org_table=t type=254 length=0
+reset: OK
+execute: 3 rows, column definitions are the same as the prepared ones
+reset: OK
+execute: 3 rows, column definitions are the same as the prepared ones
+--- prepare: SELECT id AS x, a.s, flag + 1 AS expr FROM t AS a ORDER BY id LIMIT 2
+num_columns=3 num_params=0
+name=x org_name=id schema=<database> table=a org_table=t type=8 length=20
+name=s org_name=s schema=<database> table=a org_table=t type=254 length=0
+name=expr org_name=expr schema= table= org_table= type=2 length=5
+reset: OK
+execute: 2 rows, column definitions are the same as the prepared ones
+reset: OK
+execute: 2 rows, column definitions are the same as the prepared ones
+--- prepare: INSERT INTO t VALUES (4, 0, 'd')
+num_columns=0 num_params=0
+--- prepare: SELECT * FROM table_that_does_not_exist
+error: UNKNOWN_TABLE
+reset: error: Unknown prepared statement

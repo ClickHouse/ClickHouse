@@ -75,6 +75,7 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterExplainQuery.h>
+#include <Analyzer/getResultColumnOrigins.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterTransactionControlQuery.h>
@@ -3307,7 +3308,12 @@ static BlockIO executeQueryImpl(
                 // InterpreterSelectQueryAnalyzer does not build QueryPlan in the constructor.
                 // We need to force to build it here to check if we need to ignore quota.
                 if (auto * interpreter_with_analyzer = dynamic_cast<InterpreterSelectQueryAnalyzer *>(interpreter.get()))
+                {
                     interpreter_with_analyzer->getQueryPlan();
+
+                    if (flags.collect_result_column_origins)
+                        result_details.result_column_origins = getResultColumnOrigins(interpreter_with_analyzer->getQueryTree());
+                }
 
                 if (!(interpreter && interpreter->ignoreQuota()) && !quota_checked)
                 {
