@@ -780,6 +780,10 @@ ColumnsForPatches MergeTreeReadersChain::getColumnsForPatches(const Block & head
             if (!patch_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, column_name_in_patch))
                 continue;
 
+            /// A patch does not provide every column it has (see `addPatchPartsColumns`) and updates only those it reads.
+            if (!patch_reader->getReader()->getColumns().contains(column.name))
+                continue;
+
             /// Add requested column name, not the column name in patch, for correct applying patches.
             /// This column name is translated to the column name in patch in MergeTree reader.
             /// If columns is not created at this stage, it will be filled with defaults at the latest stage of reading.

@@ -16,6 +16,7 @@ DROP TABLE IF EXISTS t_remove_default;
 DROP TABLE IF EXISTS t_sorting_key;
 DROP TABLE IF EXISTS t_partition_key;
 DROP TABLE IF EXISTS t_patch;
+DROP TABLE IF EXISTS t_patch_v1;
 
 -- Tuple.
 
@@ -162,6 +163,18 @@ SELECT c0, s, s.size, length(s) FROM t_patch ORDER BY c0 SETTINGS optimize_funct
 SELECT c0, s.size FROM t_patch ORDER BY c0;
 SELECT arraySort(groupArray(c0)) FROM t_patch WHERE length(s) = 7 SETTINGS optimize_functions_to_subcolumns = 1;
 
+CREATE TABLE t_patch_v1 (c0 UInt64, s Nullable(String)) ENGINE = MergeTree ORDER BY c0
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, min_bytes_for_wide_part = 0, patch_parts_version = 'v1';
+INSERT INTO t_patch_v1 VALUES (1, 'a'), (2, 'b');
+SYSTEM STOP MERGES t_patch_v1;
+UPDATE t_patch_v1 SET s = NULL WHERE c0 = 1;
+ALTER TABLE t_patch_v1 MODIFY COLUMN s String DEFAULT 'abc' SETTINGS mutations_sync = 0, alter_sync = 0;
+
+SELECT 'patches v1';
+SELECT c0, s, s.size FROM t_patch_v1 ORDER BY c0;
+SELECT c0, s.size FROM t_patch_v1 ORDER BY c0;
+SELECT groupArray(c0) FROM t_patch_v1 WHERE length(s) = 3 SETTINGS optimize_functions_to_subcolumns = 1;
+
 -- Replacing the NULLs changes the values of key subcolumns, which a mutation does not re-sort or repartition.
 
 CREATE TABLE t_sorting_key (c0 UInt64, x Nullable(Tuple(a Nullable(UInt64), b UInt64)))
@@ -190,3 +203,4 @@ DROP TABLE t_remove_default;
 DROP TABLE t_sorting_key;
 DROP TABLE t_partition_key;
 DROP TABLE t_patch;
+DROP TABLE t_patch_v1;
