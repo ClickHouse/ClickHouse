@@ -483,7 +483,7 @@ GROUP BY g ORDER BY g;
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_timeSeriesQuantilePrometheusHistogram = {26, 10};
+    FunctionDocumentation::IntroducedIn introduced_in_timeSeriesQuantilePrometheusHistogram = {26, 11};
     FunctionDocumentation documentation_timeSeriesQuantilePrometheusHistogram = {description_timeSeriesQuantilePrometheusHistogram, syntax_timeSeriesQuantilePrometheusHistogram, arguments_timeSeriesQuantilePrometheusHistogram, {}, returned_value_quantilePrometheusHistogram, examples_timeSeriesQuantilePrometheusHistogram, introduced_in_timeSeriesQuantilePrometheusHistogram, category_quantilePrometheusHistogram};
 
     factory.registerFunction("timeSeriesQuantilePrometheusHistogram", {createAggregateFunctionTimeSeriesQuantilePrometheusHistogram, documentation_timeSeriesQuantilePrometheusHistogram});
