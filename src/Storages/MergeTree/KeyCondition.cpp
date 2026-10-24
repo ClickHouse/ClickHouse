@@ -2640,7 +2640,7 @@ static bool finalizeTransformedColumn(ColumnPtr & column, DataTypePtr & type)
 /// constant, and a conversion with a cancellation budget can hit `max_execution_time`.
 /// The cancellation exception stored by `checkTimeLimit` may carry `QUERY_WAS_CANCELLED_BY_CLIENT`,
 /// and an allocation failure below the memory tracker surfaces as `CANNOT_ALLOCATE_MEMORY`.
-static bool isQueryOuterGuardError(int code)
+bool isQueryOuterGuardError(int code)
 {
     return code == ErrorCodes::LOGICAL_ERROR
         || code == ErrorCodes::MEMORY_LIMIT_EXCEEDED

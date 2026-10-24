@@ -566,39 +566,49 @@ ProjectionIndexBitmapPtr SingleProjectionIndexReader::read(const RangesInDataPar
 
     /// Start reading chunks from the projection index reader.
     /// Each chunk contains a column of UInt64 offsets that we insert into the bitmap.
-    while (!processor->is_cancelled && !task->isFinished())
+    try
     {
-        auto chunk = processor->readCurrentTask(*task, algorithm);
-        if (chunk.chunk)
+        while (!processor->is_cancelled && !task->isFinished())
         {
-            if (chunk.chunk.getNumRows() > 0)
+            auto chunk = processor->readCurrentTask(*task, algorithm);
+            if (chunk.chunk)
             {
-                chassert(chunk.chunk.getColumns().size() == 1);
-                auto offset_column = chunk.chunk.getColumns()[0]->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
-                const auto & offsets = assert_cast<const ColumnUInt64 &>(*offset_column);
-
-                auto add_offsets = [&]<typename Offset>(Offset)
+                if (chunk.chunk.getNumRows() > 0)
                 {
-                    if (ranges.parent_ranges.isContiguousFullRange())
+                    chassert(chunk.chunk.getColumns().size() == 1);
+                    auto offset_column = chunk.chunk.getColumns()[0]->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
+                    const auto & offsets = assert_cast<const ColumnUInt64 &>(*offset_column);
+
+                    auto add_offsets = [&]<typename Offset>(Offset)
                     {
-                        for (auto offset : offsets.getData())
-                            res->add<Offset>(static_cast<Offset>(offset));
-                    }
-                    else
-                    {
-                        for (auto offset : offsets.getData())
+                        if (ranges.parent_ranges.isContiguousFullRange())
                         {
-                            if (ranges.parent_ranges.contains(offset))
+                            for (auto offset : offsets.getData())
                                 res->add<Offset>(static_cast<Offset>(offset));
                         }
-                    }
-                };
-                if (can_use_32bit_part_offset)
-                    add_offsets(UInt32{});
-                else
-                    add_offsets(UInt64{});
+                        else
+                        {
+                            for (auto offset : offsets.getData())
+                            {
+                                if (ranges.parent_ranges.contains(offset))
+                                    res->add<Offset>(static_cast<Offset>(offset));
+                            }
+                        }
+                    };
+                    if (can_use_32bit_part_offset)
+                        add_offsets(UInt32{});
+                    else
+                        add_offsets(UInt64{});
+                }
             }
         }
+    }
+    catch (const Exception & e)
+    {
+        /// The filter also runs on rows the query does not read, so a failure only disables the projection index for this part.
+        if (isQueryOuterGuardError(e.code()))
+            throw;
+        return nullptr;
     }
 
     /// If the read was cancelled, return nullptr to avoid using an incomplete index bitmap.
@@ -627,7 +637,7 @@ ProjectionIndexBitmapPtr MergeTreeProjectionIndexReader::read(const RangesInData
         auto & reader = projection_index_readers.at(proj_name);
         auto res = reader.read(ranges);
 
-        /// If any bitmap is incomplete (due to cancellation), the projection index becomes invalid.
+        /// If any bitmap is missing (cancellation, or a filter the projection cannot evaluate), the projection index becomes invalid.
         if (!res)
             return nullptr;
 
