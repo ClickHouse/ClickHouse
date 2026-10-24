@@ -2997,14 +2997,17 @@ void Planner::buildPlanForQueryNode()
     /// patch the match (which differs case by case), disable the combination on the analyzer path.
     /// With `serialize_query_plan` the initiator lowers `additional_table_filters` into an explicit
     /// `FilterStep` and ships the serialized plan, so the follower never re-resolves the setting —
-    /// the combination works there and the check is skipped.
+    /// the combination works there and the check is skipped. Plan-based parallel replicas ships the
+    /// plan the same way, whatever `serialize_query_plan` says, so the check is skipped there too.
     if (query_context->canUseParallelReplicasOnInitiator()
         && !settings[Setting::serialize_query_plan]
+        && !settings[Setting::parallel_replicas_plan_based]
         && !settings[Setting::additional_table_filters].value.empty())
     {
         if (settings[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "additional_table_filters is not supported with parallel and without serialize_query_plan=1");
+                "additional_table_filters is not supported with parallel replicas unless the plan is "
+                "shipped (parallel_replicas_plan_based=1 or serialize_query_plan=1)");
 
         auto & mutable_context = planner_context->getMutableQueryContext();
         mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
