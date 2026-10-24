@@ -3055,6 +3055,15 @@ UInt64 StorageMergeTree::getNextMutationVersion(UInt64 data_version, std::unique
     return it->first;
 }
 
+bool StorageMergeTree::areMutationsRegistered(const Strings & mutation_ids) const
+{
+    std::lock_guard lock(currently_processing_in_background_mutex);
+    return std::ranges::all_of(mutation_ids, [&](const String & mutation_id)
+    {
+        return current_mutations_by_version.contains(MergeTreeMutationEntry::parseFileName(mutation_id));
+    });
+}
+
 size_t StorageMergeTree::markFinishedMutations(UInt64 first_just_completed_version)
 {
     auto end_it = current_mutations_by_version.end();
