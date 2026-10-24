@@ -336,6 +336,26 @@ TEST(DateLUTTest, StartOfIntervalPreEpochFloor)
     }
 }
 
+TEST(DateLUTTest, RelativeWeekNumPreEpochFloor)
+{
+    const DateLUTImpl & lut = DateLUT::instance("UTC");
+
+    const auto to_day_num = [](int y, int m, int d)
+    {
+        return ExtendedDayNum{static_cast<Int32>(cctz::civil_day{y, m, d} - cctz::civil_day{1970, 1, 1})};
+    };
+
+    /// dateDiff('week', toDate32('1969-12-28'), toDate32('1969-12-29')) must be 1, not 0.
+    EXPECT_EQ(lut.toRelativeWeekNum(to_day_num(1969, 12, 28)), -1);
+    EXPECT_EQ(lut.toRelativeWeekNum(to_day_num(1969, 12, 29)), 0);
+    EXPECT_EQ(
+        lut.toRelativeWeekNum(to_day_num(1969, 12, 29)) - lut.toRelativeWeekNum(to_day_num(1969, 12, 28)), 1);
+
+    /// dateDiff('week', toDate32('1969-12-01'), toDate32('1970-02-01')) must be 8, not 7.
+    EXPECT_EQ(
+        lut.toRelativeWeekNum(to_day_num(1970, 2, 1)) - lut.toRelativeWeekNum(to_day_num(1969, 12, 1)), 8);
+}
+
 /// Week / ISO computations are timezone-independent and repeat every 400 years. Verify the periodicity holds
 /// across the boundary (year Y vs Y + 400) for the out-of-range escape path.
 TEST(DateLUTTest, WeekFunctionsOutOfRangePeriodicity)
