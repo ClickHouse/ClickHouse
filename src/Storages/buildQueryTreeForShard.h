@@ -48,6 +48,13 @@ void inlineAliasColumns(QueryTreeNodePtr & query_tree_to_modify);
 
 void rewriteJoinToGlobalJoin(QueryTreeNodePtr query_tree_to_modify, ContextPtr context);
 
+/// Finalize `__aliasMarker` nodes immediately before distributed SQL serialization:
+/// materialize each marker's `ColumnNode` `arg2` to a `String` constant `__tableN.col` so
+/// the receiver can read it as a stable action node name. Lambda bodies are skipped
+/// (marker's column there is a per-row lambda variable, not a transport-boundary
+/// column). User-written markers with arbitrary arg2 pass through unchanged.
+void finalizeAliasMarkersForDistributedSerialization(QueryTreeNodePtr & node, const ContextPtr & context);
+
 /** When a Distributed/parallel-replicas query is executed up to `WithMergeableState`, the shard's query tree has its
   * `ALIAS` columns inlined into their defining expressions. The shard header can then differ from the header the
   * initiator expects (which keeps the `ALIAS` columns un-inlined) in three ways: it can have fewer columns, because the
