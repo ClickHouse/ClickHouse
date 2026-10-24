@@ -515,6 +515,9 @@ public:
       */
     virtual void expand(const Filter & /*mask*/, bool /*inverted*/) = 0;
 
+    /// Appends `filter.size()` rows: `src[i]` where `filter[i]` is non-zero (zero if `inverted`), a default value elsewhere.
+    virtual void insertFromOrDefaults(const IColumn & src, const Filter & filter, bool inverted);
+
     /// Permutes elements using specified permutation. Is used in sorting.
     /// limit - if it isn't 0, puts only first limit elements in the result.
     [[nodiscard]] virtual Ptr permute(const Permutation & perm, size_t limit) const = 0;
@@ -1084,6 +1087,9 @@ private:
 
     /// Devirtualize insertFrom and insertRangeFrom.
     void gather(ColumnGathererStream & gatherer) override;
+
+    /// Devirtualize insertFrom, insertDefault, insertRangeFrom and insertManyDefaults.
+    void insertFromOrDefaults(const IColumn & src, const IColumn::Filter & filter, bool inverted) override;
 
     /// Devirtualize compareAt.
     void compareColumn(
