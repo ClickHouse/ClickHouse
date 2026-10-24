@@ -166,6 +166,8 @@ size_t IcebergPositionDeleteTransform::filterChunkToCurrentDataFile(Chunk & chun
     const auto & filename_column = *chunk.getColumns()[filename_column_index];
     const auto iceberg_uri = iceberg_object_info->info.data_object_file_path_key.serialize();
     const auto storage_path = iceberg_object_info->getPath();
+    /// The key of a file in another storage can be equal to the key of a different file in the base storage.
+    const bool is_in_base_storage = iceberg_object_info->getResolvedStorage(object_storage) == object_storage;
 
     IColumn::Filter filter(num_rows, 0);
     size_t num_matched = 0;
@@ -173,7 +175,7 @@ size_t IcebergPositionDeleteTransform::filterChunkToCurrentDataFile(Chunk & chun
     {
         const auto file_to_delete = filename_column.getDataAt(i);
         if (file_to_delete == iceberg_uri || file_to_delete == "/" + iceberg_uri
-            || file_to_delete == storage_path || file_to_delete == "/" + storage_path)
+            || (is_in_base_storage && (file_to_delete == storage_path || file_to_delete == "/" + storage_path)))
         {
             filter[i] = 1;
             ++num_matched;

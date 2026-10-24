@@ -4,6 +4,8 @@ import shutil
 import tempfile
 import time
 import pytest
+import avro.datafile
+import avro.io
 
 from helpers.s3_tools import S3Uploader
 from helpers.iceberg_utils import default_download_directory, default_upload_directory, get_uuid_str
@@ -11,9 +13,11 @@ from .external_paths_utils import (
     ALL_ROWS,
     create_and_upload_table,
     _create_iceberg_s3_table,
+    _delete_file_names,
     _distribute_table_components,
     _download_table_for_relocation,
     _external_delete_files_in_another_bucket,
+    _manifest_lists_delete_files,
     _move_files_to_bucket,
     _rewrite_manifests_and_reupload,
     external_bucket,
@@ -458,3 +462,115 @@ def test_copied_azure_table_reads_external_path_from_its_container(started_clust
 
     args = get_query_args(f"azure:{copy_container}", started_cluster_iceberg_with_spark, base_path)
     assert instance.query(f"SELECT * FROM icebergAzure({args}) ORDER BY id") == ALL_ROWS
+
+
+def test_query_condition_cache_does_not_share_entries_across_buckets(started_cluster_iceberg_with_spark):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    base_bucket = started_cluster_iceberg_with_spark.minio_bucket
+    other_bucket = external_bucket(started_cluster_iceberg_with_spark)
+    minio_url = f"http://{started_cluster_iceberg_with_spark.minio_host}:{started_cluster_iceberg_with_spark.minio_port}"
+
+    TABLE_NAME = f"test_qcc_across_buckets_{get_uuid_str()}"
+    DONOR_NAME = f"test_qcc_across_buckets_donor_{get_uuid_str()}"
+    for name, values in ((TABLE_NAME, "(1, 'a'), (2, 'b')"), (DONOR_NAME, "(42, 'c')")):
+        spark.sql(f"CREATE TABLE {name} (id INT, value STRING) USING iceberg OPTIONS('format-version'='2')")
+        spark.sql(f"INSERT INTO {name} VALUES {values}")
+        default_upload_directory(started_cluster_iceberg_with_spark, "s3", f"/iceberg_data/default/{name}/", f"/iceberg_data/default/{name}/")
+
+    temp_dir, host_path, base_path = _download_table_for_relocation(started_cluster_iceberg_with_spark, TABLE_NAME)
+    donor_temp_dir, donor_host_path, _ = _download_table_for_relocation(started_cluster_iceberg_with_spark, DONOR_NAME)
+
+    data_files = find_files(os.path.join(host_path, "data"), ".parquet")
+    donor_data_files = find_files(os.path.join(donor_host_path, "data"), ".parquet")
+    assert len(data_files) == 1 and len(donor_data_files) == 1, (data_files, donor_data_files)
+
+    donor_manifests = [f for f in find_files(os.path.join(donor_host_path, "metadata"), ".avro") if not os.path.basename(f).startswith("snap-")]
+    assert len(donor_manifests) == 1, donor_manifests
+    with open(donor_manifests[0], "rb") as f:
+        reader = avro.datafile.DataFileReader(f, avro.io.DatumReader())
+        donor_data_file = next(iter(reader))["data_file"]
+        reader.close()
+
+    # The copy in the other bucket has the same manifest paths, which resolve to a file with other rows there.
+    manifests = [f for f in find_files(os.path.join(host_path, "metadata"), ".avro") if not os.path.basename(f).startswith("snap-")]
+    for mf in manifests:
+        modify_avro_file(mf, ["data_file"], lambda d: {**donor_data_file, "file_path": d["file_path"]})
+
+    uploader = S3Uploader(started_cluster_iceberg_with_spark.minio_client, other_bucket)
+    for f in find_files(os.path.join(host_path, "metadata"), ""):
+        uploader.upload_file(f, f"{base_path}/{os.path.relpath(f, host_path)}")
+    uploader.upload_file(donor_data_files[0], f"{base_path}/{os.path.relpath(data_files[0], host_path)}")
+
+    shutil.rmtree(temp_dir)
+    shutil.rmtree(donor_temp_dir)
+
+    # Without pruning by the manifest, the first read prunes the row group by its statistics and caches that verdict.
+    def select(bucket):
+        return instance.query(
+            f"SELECT id FROM icebergS3(s3, filename='{base_path}/', format=Parquet, url='{minio_url}/{bucket}/') WHERE id = 42",
+            settings={"use_query_condition_cache": 1, "use_iceberg_metadata_files_cache": 0, "use_iceberg_partition_pruning": 0})
+
+    assert select(base_bucket) == ""
+    assert select(other_bucket) == "42\n"
+
+
+@pytest.mark.parametrize("use_roaring_bitmap", [0, 1])
+def test_position_delete_does_not_match_external_file_with_same_key(started_cluster_iceberg_with_spark, use_roaring_bitmap):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    base_bucket = started_cluster_iceberg_with_spark.minio_bucket
+    other_bucket = external_bucket(started_cluster_iceberg_with_spark)
+    minio_url = f"http://{started_cluster_iceberg_with_spark.minio_host}:{started_cluster_iceberg_with_spark.minio_port}"
+
+    TABLE_NAME = f"test_external_same_key_delete_{use_roaring_bitmap}_{get_uuid_str()}"
+    spark.sql(
+        f"CREATE TABLE {TABLE_NAME} (id INT, value STRING) USING iceberg "
+        f"TBLPROPERTIES ('format-version'='2', 'write.delete.mode'='merge-on-read')")
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (1, 'alpha'), (2, 'beta'), (3, 'gamma')")
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (4, 'delta'), (5, 'epsilon'), (6, 'zeta')")
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id = 2")
+    default_upload_directory(started_cluster_iceberg_with_spark, "s3", f"/iceberg_data/default/{TABLE_NAME}/", f"/iceberg_data/default/{TABLE_NAME}/")
+
+    temp_dir, host_path, base_path = _download_table_for_relocation(started_cluster_iceberg_with_spark, TABLE_NAME)
+    args = get_query_args("s3", started_cluster_iceberg_with_spark, base_path)
+    path_of = lambda id: instance.query(
+        f"SELECT _path FROM icebergS3({args}) WHERE id = {id}", settings={"use_iceberg_metadata_files_cache": 0}).strip()
+    deleted_file_path, moved_file_path = path_of(1), path_of(4)
+    assert deleted_file_path.startswith("/") and moved_file_path.startswith("/"), (deleted_file_path, moved_file_path)
+
+    # The second data file moves to another bucket under the key of the first one.
+    shared_key = deleted_file_path.lstrip("/")
+    S3Uploader(started_cluster_iceberg_with_spark.minio_client, other_bucket).upload_file(
+        os.path.join(host_path, "data", os.path.basename(moved_file_path)), shared_key)
+
+    # The delete file also names a path that sorts after the moved file, and it has no bloom filter and no dictionary,
+    # so neither the bounds nor the reader exclude it.
+    metadata_dir = os.path.join(host_path, "metadata")
+    delete_names = _delete_file_names(metadata_dir)
+    assert len(delete_names) == 1, delete_names
+    delete_key = f"{base_path}/data/{delete_names.pop()}"
+    instance.query(
+        f"INSERT INTO FUNCTION s3(s3, filename='{delete_key}', format=Parquet, url='{minio_url}/{base_bucket}/', structure='file_path String, pos Int64') "
+        f"SELECT * FROM values('file_path String, pos Int64', ('{deleted_file_path}', 1), ('s3a://zzz/other.parquet', 0)) "
+        "SETTINGS s3_truncate_on_insert = 1, output_format_parquet_write_bloom_filter = 0, output_format_parquet_max_dictionary_size = 0")
+    delete_size = started_cluster_iceberg_with_spark.minio_client.stat_object(base_bucket, delete_key).size
+
+    for mf in find_files(metadata_dir, ".avro"):
+        if os.path.basename(mf).startswith("snap-"):
+            continue
+        if _manifest_lists_delete_files(mf):
+            for field, value in (("lower_bounds", None), ("upper_bounds", None), ("referenced_data_file", None),
+                                 ("record_count", 2), ("file_size_in_bytes", delete_size)):
+                modify_avro_file(mf, ["data_file", field], lambda _, value=value: value)
+        else:
+            modify_avro_file(mf, ["data_file", "file_path"],
+                             lambda p: f"s3a://{other_bucket}/{shared_key}" if p == moved_file_path else p)
+        started_cluster_iceberg_with_spark.default_s3_uploader.upload_file(mf, f"{base_path}/{os.path.relpath(mf, host_path)}")
+
+    shutil.rmtree(temp_dir)
+
+    result = instance.query(
+        f"SELECT id FROM icebergS3({args}) ORDER BY id",
+        settings={"use_roaring_bitmap_iceberg_positional_deletes": use_roaring_bitmap, "use_iceberg_metadata_files_cache": 0})
+    assert result == "1\n3\n4\n5\n6\n"

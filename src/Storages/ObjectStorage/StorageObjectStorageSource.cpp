@@ -487,6 +487,14 @@ std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
     return getUniqueStoragePathIdentifier(configuration, *object_info, include_connection_info);
 }
 
+/// A data lake file is identified by its path in the table metadata: files in different storages can have the same key.
+static String getQueryConditionCacheIdentifier(const ObjectInfo & object_info)
+{
+    if (auto metadata_path = object_info.getPathInDataLakeMetadata())
+        return object_info.getIdentifierForPath(*metadata_path, /*include_file_bucket_info=*/false);
+    return object_info.getIdentifier(/*include_file_bucket_info=*/false);
+}
+
 /// The object identifier already uses the full path, so files that share a base name in
 /// different directories do not collide. For general (non-data-lake) remote objects the path
 /// alone is not a stable identity - an object can be overwritten in place under the same path -
@@ -508,33 +516,32 @@ std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
 /// for readability only, followed by a hash of the complete identifier and the qualified path. The hash
 /// has a fixed length at the end, so the key stays unambiguous.
 std::optional<String> StorageObjectStorageSource::makeQueryConditionCacheKey(
-    const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, const UUID & table_uuid)
+    const StorageObjectStorageConfiguration & configuration,
+    const ObjectInfoPtr & object_info,
+    const ObjectStoragePtr & object_storage,
+    const UUID & table_uuid)
 {
-    String identifier = object_info.getIdentifier(/*include_file_bucket_info=*/false);
+    String identifier = getQueryConditionCacheIdentifier(*object_info);
     if (table_uuid == UUIDHelpers::Nil)
     {
-        const String qualified_path = getUniqueStoragePathIdentifier(configuration, object_info, /*include_connection_info=*/true);
+        const String qualified_path = getUniqueStoragePathIdentifier(configuration, object_info, object_storage, /*include_connection_info=*/true);
         /// NUL cannot occur in a path, so it separates the two unambiguously.
         const String hashed = sipHash128String(identifier + '\0' + qualified_path);
         identifier = identifier.substr(0, identifier.find_first_of("?#")) + "#storage=" + hashed;
     }
-    return makeQueryConditionCacheKey(identifier, object_info, configuration.isDataLakeConfiguration());
+    return makeQueryConditionCacheKey(identifier, *object_info, configuration.isDataLakeConfiguration());
 }
 
 std::optional<String> StorageObjectStorageSource::makeQueryConditionCacheKey(const ObjectInfo & object_info, bool is_data_lake)
 {
-    return makeQueryConditionCacheKey(object_info.getIdentifier(/*include_file_bucket_info=*/false), object_info, is_data_lake);
+    return makeQueryConditionCacheKey(getQueryConditionCacheIdentifier(object_info), object_info, is_data_lake);
 }
 
 std::optional<String> StorageObjectStorageSource::makeQueryConditionCacheKey(
     const String & identifier, const ObjectInfo & object_info, bool is_data_lake)
 {
     if (is_data_lake)
-    {
-        if (auto metadata_path = object_info.getPathInDataLakeMetadata())
-            return object_info.getIdentifierForPath(*metadata_path, /*include_file_bucket_info=*/false);
         return identifier;
-    }
     const auto & metadata = object_info.getObjectMetadata();
     if (!metadata || !metadata->isEtagUsableAsCacheKey())
         return std::nullopt;
@@ -1158,7 +1165,7 @@ Chunk StorageObjectStorageSource::generate()
             && !(reader.getInputFormat() && reader.getInputFormat()->isTopKFilterApplied()))
         {
             const auto & object_info = reader.getObjectInfo();
-            const auto query_condition_cache_key = makeQueryConditionCacheKey(*configuration, *object_info, storage_id.uuid);
+            const auto query_condition_cache_key = makeQueryConditionCacheKey(*configuration, object_info, object_storage, storage_id.uuid);
             try
             {
                 const auto * input_format = reader.getInputFormat();
@@ -1444,7 +1451,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             /// The entries of the plain predicate are kept for a table without a UUID as well, under the key
             /// and the `table_id` for files (see `QueryConditionCache::getTableIdForFileEntries`). The TopK key
             /// is made only for a table with a UUID, for which both are the same as the ones of the TopK entries.
-            const auto query_condition_cache_key = makeQueryConditionCacheKey(*configuration, *object_info, storage_id.uuid);
+            const auto query_condition_cache_key = makeQueryConditionCacheKey(*configuration, object_info, object_storage, storage_id.uuid);
 
             /// One logical consultation, so it emits one `QueryConditionCacheHits` / `Misses` event
             /// however many keys are probed.
