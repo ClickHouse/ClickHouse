@@ -9,7 +9,6 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <boost/algorithm/string/predicate.hpp>
-#include <boost/functional/hash.hpp>
 
 #include <Access/ContextAccess.h>
 #include <Access/Common/AccessFlags.h>
@@ -2863,7 +2862,7 @@ StorageFileSource::TopKQueryConditionCacheKeyPtr ReadFromFile::makeTopKQueryCond
         return {};
 
     auto key = std::make_shared<StorageFileSource::TopKQueryConditionCacheKey>();
-    size_t condition_hash = 0;
+    UInt64 condition_hash = 0;
     if (filter_actions_dag)
     {
         auto filter_condition_hash = FormatFilterInfo::computeConditionHash(*filter_actions_dag, query_info.prewhere_info, getContext());
@@ -2873,7 +2872,7 @@ StorageFileSource::TopKQueryConditionCacheKeyPtr ReadFromFile::makeTopKQueryCond
         key->condition = filter_actions_dag->dumpNames() + ", ";
     }
     else if (!query_info.prewhere_info)
-        condition_hash = queryConditionCacheHash(0, queryConditionCacheSettingsSalt(settings) ^ fileFormatPruningSettingsSalt(settings));
+        condition_hash = queryConditionCacheHashForFiles(0, settings);
     else
         return {};
 
@@ -2884,7 +2883,9 @@ StorageFileSource::TopKQueryConditionCacheKeyPtr ReadFromFile::makeTopKQueryCond
     /// threshold may then hold rows of the result. So the key covers the version tokens of all
     /// files. Only the files the query reads matter, which a `_path` / `_file` filter can narrow down.
     Strings paths = files_iterator->tryGetFiles().value_or(paths_snapshot);
-    SipHash files_hash;
+    SipHash hash;
+    hash.update(condition_hash);
+    hash.update(top_k_filter->plan_hash);
     for (const auto & path : paths)
     {
         struct stat file_stat{};
@@ -2892,10 +2893,10 @@ StorageFileSource::TopKQueryConditionCacheKeyPtr ReadFromFile::makeTopKQueryCond
             return {};
 
         String token = computeFileCacheVersionToken(file_stat);
-        files_hash.update(path.size());
-        files_hash.update(path);
-        files_hash.update(token.size());
-        files_hash.update(token);
+        hash.update(path.size());
+        hash.update(path);
+        hash.update(token.size());
+        hash.update(token);
         key->file_version_tokens.emplace(path, std::move(token));
     }
 
@@ -2903,14 +2904,10 @@ StorageFileSource::TopKQueryConditionCacheKeyPtr ReadFromFile::makeTopKQueryCond
     /// the synthetic `table_id` of their files, and a table with a UUID keeps it on `RENAME`. So the key
     /// covers the name the reader materializes as `_table`.
     const String table_name = storage->getStorageID().getTableName();
-    SipHash table_name_hash;
-    table_name_hash.update(table_name.size());
-    table_name_hash.update(table_name);
+    hash.update(table_name.size());
+    hash.update(table_name);
 
-    boost::hash_combine(condition_hash, top_k_filter->plan_hash);
-    boost::hash_combine(condition_hash, files_hash.get64());
-    boost::hash_combine(condition_hash, table_name_hash.get64());
-    key->condition_hash = condition_hash;
+    key->condition_hash = hash.get64();
     return key;
 }
 
