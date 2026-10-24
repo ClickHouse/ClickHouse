@@ -1055,8 +1055,11 @@ bool DatabaseDataLake::empty() const
 
 bool DatabaseDataLake::isTableExist(const String & name, ContextPtr /* context_ */) const
 {
-    const auto [namespace_name, table_name] = DataLake::parseTableName(name);
-    return getCatalog()->existsTable(namespace_name, table_name);
+    /// an existence probe must not throw on a name without a namespace
+    const auto parsed = DataLake::tryParseTableName(name);
+    if (!parsed)
+        return false;
+    return getCatalog()->existsTable(parsed->first, parsed->second);
 }
 
 StoragePtr DatabaseDataLake::tryGetTable(const String & name, ContextPtr context_)  const
@@ -1081,6 +1084,12 @@ void DatabaseDataLake::evictStatefulTable(const String & name) const
 StoragePtr DatabaseDataLake::tryGetTableImpl(
     const String & name, ContextPtr context_, bool lightweight, bool ignore_if_not_iceberg, bool use_stateful_tables) const
 {
+    auto parsed = DataLake::tryParseTableName(name);
+    if (!parsed)
+        return nullptr;
+
+    auto [namespace_name, table_name] = *parsed;
+
     const auto settings_version = database_settings.get();
     const DatabaseDataLakeSettings & settings = *settings_version;
 
@@ -1111,8 +1120,6 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
     const bool with_vended_credentials = settings[DatabaseDataLakeSetting::vended_credentials].value;
     if (with_vended_credentials)
         table_metadata = table_metadata.withStorageCredentials();
-
-    auto [namespace_name, table_name] = DataLake::parseTableName(name);
 
     if (!catalog->tryGetTableMetadata(namespace_name, table_name, table_metadata))
     {
@@ -1610,6 +1617,15 @@ void DatabaseDataLake::checkDatabase() const
 
 
     LOG_TEST(log, "Database '{}' is OK", getDatabaseName());
+}
+
+void DatabaseDataLake::checkMetadataFilenameAvailability(const String & table_name) const
+{
+    /// runs before storage creation on CREATE, before any object-storage write,
+    /// validate the name so no side effect can target an unrepresentable table
+    if (!DataLake::tryParseTableName(table_name))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Table name {} must be namespace-qualified (namespace.table)", backQuote(table_name));
 }
 
 void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr /*query_context*/)
@@ -2146,6 +2162,61 @@ The following settings are supported:
 | `dlf_access_key_id`     | Access key ID for DLF access                                                            |
 | `dlf_access_key_secret` | Access key Secret for DLF access                                                        |
 | `force_add_bucket`      | When constructing object-storage URLs from the catalog-provided table location and `storage_endpoint`, prepend the bucket/container name even if the endpoint already contains it. Default: `false`. Set to `true` for catalogs that hand back paths without the bucket and require it to be added at the URL-construction step (Polaris-style paths). |
+
+## Referencing tables in namespaces {#referencing-tables-in-namespaces}
+
+:::note
+Namespace-aware name resolution is an experimental feature, disabled by default. Enable it
+with `SET allow_experimental_table_namespaces = 1`. A dotted path such as
+`catalog_name.namespace.table` is shorthand for the quoted form
+`` catalog_name.`namespace.table` `` and works regardless of the setting.
+:::
+
+Data lake catalogs organize tables into namespaces, which can be nested to
+several levels. A table's fully-qualified name inside the catalog is therefore
+`namespace.table` (or `namespace1.namespace2.table` for a nested namespace),
+and it can always be referenced by quoting that name as a single identifier:
+
+```sql
+SELECT * FROM catalog_name.`namespace.table`;
+```
+
+You can also spell out every part with dots:
+
+- `db.ns.table` (three or more parts) is parsed as the table path `ns.table`
+  inside database `db`; with `allow_experimental_table_namespaces` enabled it is
+  then subject to the same two-part rule as `a.b` below, with `a` = `db`.
+- With `allow_experimental_table_namespaces` enabled, a two-part name `a.b` in a
+  table expression is resolved both as table `b` of database `a` and as table
+  `a.b` of the current database. Database `a` must
+  exist; when only one of the two tables exists it is used, and when both exist
+  the query fails with `AMBIGUOUS_IDENTIFIER`. Other statements (`EXISTS`,
+  `DESCRIBE`, `INSERT`, `SHOW CREATE TABLE`, DDL) always read `a.b` as
+  database `a`, table `b`.
+
+```sql
+-- Equivalent to catalog_name.`namespace.table`
+SELECT * FROM catalog_name.namespace.table;
+
+-- Equivalent to catalog_name.`namespace1.namespace2.table`
+SELECT * FROM catalog_name.namespace1.namespace2.table;
+```
+
+The path form is accepted by every statement that parses a table name with the
+common table-name grammar: `SELECT`, `INSERT`, `CREATE TABLE`, `DROP TABLE`,
+`ALTER TABLE`, `RENAME TABLE`, `OPTIMIZE TABLE`, `CHECK TABLE`, `SYSTEM` commands,
+`EXISTS TABLE`, `DESCRIBE`, `SHOW CREATE TABLE`, `SHOW COLUMNS` and `SHOW INDEXES`.
+It is not accepted in `BACKUP` / `RESTORE` table lists, in access-control statements
+(`GRANT`, row and masking policies) or as the table argument of the `remote` table
+function; use the quoted form there. With the setting enabled, a column qualifier may
+spell the table path the same way: `SELECT namespace.table.column FROM catalog_name.namespace.table`.
+
+A back-quoted component containing a dot spells the same path as the separate
+parts, exactly as for column names: `` catalog_name.`a.b`.table ``,
+`catalog_name.a.b.table` and `` catalog_name.`a.b.table` `` denote the same
+table. Catalog objects whose native names contain literal dots cannot be told
+apart from nested paths, because the catalogs themselves spell nested namespaces
+with dots.
 
 ## Examples {#examples}
 

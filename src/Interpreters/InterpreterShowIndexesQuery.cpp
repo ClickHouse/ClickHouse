@@ -128,6 +128,8 @@ BlockIO InterpreterShowIndexesQuery::execute()
     auto query_context = Context::createCopy(getContext());
     query_context->makeQueryContext();
     query_context->setCurrentQueryId("");
+    if (DatabaseCatalog::instance().isDatalakeCatalog(database))
+        query_context->setSetting("show_data_lake_catalogs_in_system_tables", true);
     if (DatabaseCatalog::instance().isRemoteDatabase(database))
         query_context->setSetting("show_remote_databases_in_system_tables", true);
 
