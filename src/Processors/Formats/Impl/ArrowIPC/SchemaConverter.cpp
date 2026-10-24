@@ -1239,10 +1239,30 @@ DataTypePtr fieldToCHType(
             return fieldToCHType(type.children.at(1), settings, make_nullable, allow_null_type);
         }
         case TypeKind::Interval:
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "Native Arrow IPC reader does not support this type yet (field '{}')",
-                field.name);
+            /// YEAR_MONTH is a number of months. DAY_TIME and MONTH_DAY_NANO pack several counts into one value,
+            /// which are kept apart in a `Tuple` of intervals, as they cannot be converted into each other.
+            switch (type.unit)
+            {
+                case flatbuf::IntervalUnit_YEAR_MONTH:
+                    result = std::make_shared<DataTypeInterval>(IntervalKind::Kind::Month);
+                    break;
+                case flatbuf::IntervalUnit_DAY_TIME:
+                    result = std::make_shared<DataTypeTuple>(
+                        DataTypes{
+                            std::make_shared<DataTypeInterval>(IntervalKind::Kind::Day),
+                            std::make_shared<DataTypeInterval>(IntervalKind::Kind::Millisecond)},
+                        Names{"days", "milliseconds"});
+                    break;
+                default:
+                    result = std::make_shared<DataTypeTuple>(
+                        DataTypes{
+                            std::make_shared<DataTypeInterval>(IntervalKind::Kind::Month),
+                            std::make_shared<DataTypeInterval>(IntervalKind::Kind::Day),
+                            std::make_shared<DataTypeInterval>(IntervalKind::Kind::Nanosecond)},
+                        Names{"months", "days", "nanoseconds"});
+                    break;
+            }
+            break;
         case TypeKind::Unsupported:
             /// `UNKNOWN_TYPE` so schema inference can drop the column with
             /// `input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference`.
