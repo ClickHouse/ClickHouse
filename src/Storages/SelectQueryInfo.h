@@ -226,6 +226,7 @@ struct SelectQueryInfo
     /// logical plans set `build_logical_plan` but not this, so view expansion in the
     /// inner interpreter keeps its previous, non-cacheable behavior for those paths.
     bool cacheable_logical_plan = false;
+    bool is_secondary_query_root = false;
     bool is_parameterized_view = false;
     bool optimize_trivial_count = false;
 
