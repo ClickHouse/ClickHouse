@@ -1,4 +1,5 @@
 import csv
+import io
 import logging
 import os
 import shutil
@@ -267,3 +268,90 @@ def test_distributed_insert_select_to_rmt_cte_const(started_cluster):
     node1.query(
         f"""DROP TABLE IF EXISTS {table} ON CLUSTER '{cluster_name}' SYNC;"""
     )
+
+
+@pytest.mark.parametrize(
+    "parallel_mode,distributed_destination",
+    [(0, False), (2, False), (2, True)],
+)
+@pytest.mark.parametrize("defaults_for_omitted_fields", [0, 1])
+def test_auto_structure_now64_default(
+    started_cluster, parallel_mode, distributed_destination, defaults_for_omitted_fields
+):
+    cluster_name = "cluster_1_shard_3_replicas"
+    table = f"t_s3_cluster_now64_{parallel_mode}_{int(distributed_destination)}_{defaults_for_omitted_fields}"
+    distributed_table = f"{table}_distributed"
+    object_name = f"data/defaults/{table}.jsonl"
+    data = (
+        b'{"id":1,"b":99}\n'
+        b'{"id":2,"synced_at":"2024-01-02 03:04:05.123","b":99}\n'
+    )
+    started_cluster.minio_client.put_object(
+        started_cluster.minio_bucket, object_name, io.BytesIO(data), len(data)
+    )
+
+    node1.query(f"DROP TABLE IF EXISTS {distributed_table} ON CLUSTER {cluster_name} SYNC")
+    node1.query(f"DROP TABLE IF EXISTS {table} ON CLUSTER {cluster_name} SYNC")
+    try:
+        node1.query(
+            f"""
+            CREATE TABLE {table} ON CLUSTER {cluster_name}
+            (
+                id UInt32,
+                synced_at DateTime64(3, 'UTC') DEFAULT now64(3),
+                a UInt32,
+                b UInt32 DEFAULT a + 7
+            )
+            ENGINE = ReplicatedMergeTree(
+                '/clickhouse/tables/issue_8987/{table}', '{{replica}}'
+            ) ORDER BY id
+            """
+        )
+        destination = table
+        if distributed_destination:
+            node1.query(
+                f"""
+                CREATE TABLE {distributed_table} ON CLUSTER {cluster_name}
+                AS {table}
+                ENGINE = Distributed('{cluster_name}', 'default', '{table}')
+                """
+            )
+            destination = distributed_table
+
+        before_ms = int(node1.query("SELECT toUnixTimestamp64Milli(now64(3))"))
+        node1.query(
+            f"""
+            INSERT INTO {destination} (id, synced_at, b)
+            SELECT `id` AS `id`, `synced_at` AS `synced_at`, `b` AS `b` FROM s3Cluster(
+                '{cluster_name}',
+                'http://minio1:9001/root/{object_name}',
+                'minio', '{minio_secret_key}', 'JSONEachRow', 'auto'
+            )
+            SETTINGS
+                input_format_defaults_for_omitted_fields = {defaults_for_omitted_fields},
+                use_structure_from_insertion_table_in_table_functions = 2,
+                parallel_distributed_insert_select = {parallel_mode},
+                insert_distributed_sync = 1
+            """
+        )
+        after_ms = int(node1.query("SELECT toUnixTimestamp64Milli(now64(3))"))
+        node1.query(f"SYSTEM SYNC REPLICA ON CLUSTER {cluster_name} {table}")
+
+        for node in (node1, node2, node3):
+            rows = [
+                tuple(map(int, row.split("\t")))
+                for row in node.query(
+                    f"SELECT id, toUnixTimestamp64Milli(synced_at), a, b FROM {table} ORDER BY id"
+                ).splitlines()
+            ]
+            assert len(rows) == 2
+            assert rows[0][0] == 1
+            if defaults_for_omitted_fields:
+                assert before_ms <= rows[0][1] <= after_ms
+            else:
+                assert rows[0][1] == 0
+            assert rows[0][2:] == (0, 99)
+            assert rows[1] == (2, 1704164645123, 0, 99)
+    finally:
+        node1.query(f"DROP TABLE IF EXISTS {distributed_table} ON CLUSTER {cluster_name} SYNC")
+        node1.query(f"DROP TABLE IF EXISTS {table} ON CLUSTER {cluster_name} SYNC")

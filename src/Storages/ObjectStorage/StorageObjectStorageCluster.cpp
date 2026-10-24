@@ -4,7 +4,9 @@
 #include <Common/StringUtils.h>
 #include <Common/parseGlobs.h>
 #include <Disks/DiskType.h>
+#include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Databases/DatabasesCommon.h>
@@ -12,6 +14,7 @@
 #include <Databases/DataLake/ICatalog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/InterpreterCreateQuery.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -366,6 +369,23 @@ std::optional<UInt64> StorageObjectStorageCluster::totalBytes(ContextPtr query_c
     return configuration->totalBytes(query_context);
 }
 
+static bool isNow64MillisecondsDefault(const ColumnDescription & column)
+{
+    if (column.default_desc.kind != ColumnDefaultKind::Default || column.default_desc.ephemeral_default)
+        return false;
+
+    const auto * function = column.default_desc.expression ? column.default_desc.expression->as<ASTFunction>() : nullptr;
+    if (!function || function->name != "now64" || function->parameters)
+        return false;
+
+    const auto * arguments = function->arguments ? function->arguments->as<ASTExpressionList>() : nullptr;
+    if (!arguments || arguments->children.size() != 1)
+        return false;
+
+    const auto * precision = arguments->children.front()->as<ASTLiteral>();
+    return precision && precision->value.getType() == Field::Types::UInt64 && precision->value.safeGet<UInt64>() == 3;
+}
+
 void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     ASTPtr & query,
     const DB::StorageSnapshotPtr & storage_snapshot,
@@ -386,7 +406,31 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     }
 
     ASTs & args = expression_list->children;
-    const String structure = forward_structure ? storage_snapshot->metadata->getColumns().getAll().toNamesAndTypesDescription() : "auto";
+    String structure = "auto";
+    if (forward_structure)
+    {
+        const auto & columns = storage_snapshot->metadata->getColumns();
+        structure = columns.getAll().toNamesAndTypesDescription();
+        for (const auto & column : columns)
+        {
+            if (!isNow64MillisecondsDefault(column))
+                continue;
+
+            auto structure_ast = InterpreterCreateQuery::formatColumns(columns.getAll());
+            for (auto & child : structure_ast->as<ASTExpressionList &>().children)
+            {
+                auto & declaration = child->as<ASTColumnDeclaration &>();
+                const auto & source_column = columns.get(declaration.name);
+                if (isNow64MillisecondsDefault(source_column))
+                {
+                    declaration.default_specifier = ColumnDefaultSpecifier::Default;
+                    declaration.setDefaultExpression(source_column.default_desc.expression->clone());
+                }
+            }
+            structure = structure_ast->formatWithSecretsOneLine();
+            break;
+        }
+    }
     if (args.empty())
     {
         throw Exception(
