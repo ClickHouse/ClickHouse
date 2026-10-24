@@ -22,7 +22,7 @@ CREATE TABLE t_reject_nested (id UInt32, metrics Tuple(a UInt64, inner Nullable(
 ENGINE = SummingMergeTree ORDER BY id
 SETTINGS allow_tuple_element_aggregation = 1; -- { serverError NOT_IMPLEMENTED }
 
-CREATE TABLE t_reject_aggregating (id UInt32, t Nullable(Tuple(v SimpleAggregateFunction(sum, UInt64))))
+CREATE TABLE t_reject_aggregating (id UInt32, t Nullable(Tuple(v UInt64)))
 ENGINE = AggregatingMergeTree ORDER BY id
 SETTINGS allow_tuple_element_aggregation = 1; -- { serverError NOT_IMPLEMENTED }
 

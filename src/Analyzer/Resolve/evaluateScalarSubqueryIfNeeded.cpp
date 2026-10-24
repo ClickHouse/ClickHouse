@@ -18,6 +18,7 @@
 
 #include <Core/Settings.h>
 #include <Columns/ColumnNullable.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -237,7 +238,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                 /// In case of many columns, do not check it cause tuple can't be nullable.
                 if (!column.type->isNullable() && column.type->canBeInsideNullable())
                 {
-                    column.type = makeNullable(column.type);
+                    column.type = makeNullable(removeSimpleAggregateFunction(column.type));
                     column.column = makeNullable(column.column);
                 }
             } else
@@ -345,7 +346,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                                 "Scalar subquery returned empty result of type {} which cannot be Nullable",
                                 type->getName());
 
-                        type = makeNullable(type);
+                        type = makeNullable(removeSimpleAggregateFunction(type));
                     }
                 }
 

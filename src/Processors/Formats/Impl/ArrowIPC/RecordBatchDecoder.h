@@ -124,9 +124,9 @@ MutableColumnPtr deserializeOpaqueBinaryLeaf(
 /// nested field by the same rules, or a leaf the decoder converted comes back to a rewrite that
 /// cannot see it.
 
-/// Strips the outer `Nullable`/`LowCardinality` wrappers off a requested-type hint so the underlying
-/// type (number, Array, Tuple, Map) can be inspected: `removeLowCardinalityAndNullable` accepting an
-/// absent hint.
+/// Strips the outer `Nullable`/`LowCardinality` wrappers and `SimpleAggregateFunction` off a requested-type
+/// hint so the underlying type (number, Array, Tuple, Map) can be inspected; accepts an absent hint. The
+/// result may be a new type that `type` does not own.
 DataTypePtr stripHint(const DataTypePtr & type);
 
 /// The requested type hint for the element of an Array-like field, or null when the hint is not an Array.

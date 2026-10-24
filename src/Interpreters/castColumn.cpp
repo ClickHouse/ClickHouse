@@ -1,6 +1,7 @@
 #include <Interpreters/castColumn.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -61,7 +62,7 @@ ColumnPtr castColumnAccurate(const ColumnWithTypeAndName & arg, const DataTypePt
 
 ColumnPtr castColumnAccurateOrNull(const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache)
 {
-    return castColumn(CastType::accurateOrNull, arg, type, cache);
+    return castColumn(CastType::accurateOrNull, arg, removeSimpleAggregateFunction(type), cache);
 }
 
 }
