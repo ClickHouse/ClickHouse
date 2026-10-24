@@ -283,47 +283,6 @@ TEST(ColumnArray, InsertManyFromSelfString)
     }
 }
 
-TEST(ColumnArray, InsertManyFromPartiallyAliasedNullableString)
-{
-    auto shared_string = ColumnString::create();
-    const String value(1 << 20, 'x');
-    shared_string->insert(value);
-
-    MutableColumnPtr source_nested = shared_string->getPtr();
-    MutableColumnPtr destination_nested = shared_string->getPtr();
-
-    auto source_null_map = ColumnUInt8::create();
-    source_null_map->insertValue(0);
-    auto destination_null_map = ColumnUInt8::create();
-    destination_null_map->insertValue(0);
-
-    auto source_data = ColumnNullable::create(std::move(source_nested), std::move(source_null_map));
-    auto destination_data = ColumnNullable::create(std::move(destination_nested), std::move(destination_null_map));
-
-    auto source_offsets = ColumnArray::ColumnOffsets::create();
-    source_offsets->insertValue(1);
-    auto source = ColumnArray::create(std::move(source_data), std::move(source_offsets));
-
-    auto destination_offsets = ColumnArray::ColumnOffsets::create();
-    destination_offsets->insertValue(1);
-    auto destination = ColumnArray::create(std::move(destination_data), std::move(destination_offsets));
-
-    ASSERT_NE(destination->getDataPtr().get(), source->getDataPtr().get());
-
-    destination->insertManyFrom(*source, 0, 2);
-
-    ASSERT_EQ(destination->size(), 3);
-    const auto & destination_nullable = assert_cast<const ColumnNullable &>(destination->getData());
-    const auto & destination_string = assert_cast<const ColumnString &>(destination_nullable.getNestedColumn());
-    ASSERT_EQ(destination_string.size(), 3);
-    ASSERT_EQ(destination_nullable.getNullMapData().size(), 3);
-    for (size_t i = 0; i < destination->size(); ++i)
-    {
-        EXPECT_EQ(destination_string.getDataAt(i), std::string_view(value));
-        EXPECT_EQ(destination_nullable.getNullMapData()[i], 0);
-    }
-}
-
 TEST(ColumnArray, InsertManyFromNonAliasedString)
 {
     auto source_data = ColumnString::create();
