@@ -3821,10 +3821,14 @@ def test_attach_table_reuses_existing_publication_membership(started_cluster):
     pg_manager.drop_materialized_db(mat_db)
 
 
-def test_attach_table_snapshot_interrupted_by_server_termination(started_cluster):
+@pytest.mark.parametrize("replacement_snapshot_fails", [False, True])
+def test_attach_table_snapshot_interrupted_by_server_termination(
+    started_cluster, replacement_snapshot_fails
+):
     # The server is terminated while `ATTACH TABLE` loads the snapshot of a table discovered from
     # `materialized_postgresql_schema_list`, so its empty nested table and publication entry survive.
     # On attach, the interrupted snapshot is not taken for a completed one: the nested table is loaded again.
+    # If loading it again fails, the table has no nested table anymore and does not count as materialized.
     table_a = "interrupted_snapshot_a"
     table_b = "interrupted_snapshot_b"
     mat_db = "interrupted_snapshot_database"
@@ -3866,7 +3870,25 @@ def test_attach_table_snapshot_interrupted_by_server_termination(started_cluster
     instance.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE")
     instance.stop_clickhouse(kill=True)
     attach_thread.join()
+    if replacement_snapshot_fails:
+        cursor = pg_manager.get_db_cursor()
+        cursor.execute(f'ALTER TABLE {table_b} DROP CONSTRAINT "{table_b}_pkey"')
     instance.start_clickhouse()
+
+    if replacement_snapshot_fails:
+        assert 0 == int(instance.query(f"EXISTS TABLE {mat_db}.`public.{table_b}`"))
+        error = instance.query_and_get_error(
+            f"DETACH TABLE {mat_db}.`public.{table_a}` PERMANENTLY"
+        )
+        assert "it is the only table replicated by" in error
+        instance.query(
+            f"INSERT INTO postgres_database.{table_a} SELECT number, number FROM numbers(10, 10)"
+        )
+        check_tables_are_synchronized(
+            instance, table_a, materialized_database=mat_db, schema_name="public"
+        )
+        pg_manager.drop_materialized_db(mat_db)
+        return
 
     check_tables_are_synchronized(
         instance, table_b, materialized_database=mat_db, schema_name="public"
@@ -3884,10 +3906,14 @@ def test_attach_table_snapshot_interrupted_by_server_termination(started_cluster
     pg_manager.drop_materialized_db(mat_db)
 
 
-def test_attach_table_snapshot_interrupted_with_tables_list(started_cluster):
+@pytest.mark.parametrize("already_published", [False, True])
+def test_attach_table_snapshot_interrupted_with_tables_list(
+    started_cluster, already_published
+):
     # Like `test_attach_table_snapshot_interrupted_by_server_termination`, but with
     # `materialized_postgresql_tables_list`, which does not list the table whose `ATTACH TABLE` did not complete.
-    # Its orphaned nested table is dropped on attach, so that `ATTACH TABLE` can be retried.
+    # Its orphaned nested table is dropped on attach, so that `ATTACH TABLE` can be retried. Its publication
+    # entry is removed only if the interrupted `ATTACH TABLE` created it.
     table_a = "interrupted_list_a"
     table_b = "interrupted_list_b"
     mat_db = "interrupted_list_database"
@@ -3909,6 +3935,18 @@ def test_attach_table_snapshot_interrupted_with_tables_list(started_cluster):
     )
     check_tables_are_synchronized(instance, table_a, materialized_database=mat_db)
 
+    cursor = pg_manager.get_db_cursor()
+    publication = get_single_publication(cursor)
+    if already_published:
+        cursor.execute(f'ALTER PUBLICATION "{publication}" ADD TABLE ONLY {table_b}')
+
+    def is_published(table):
+        cursor.execute(
+            "SELECT count(*) FROM pg_publication_tables WHERE pubname = %s AND tablename = %s",
+            (publication, table),
+        )
+        return cursor.fetchone()[0] == 1
+
     def attach_table():
         try:
             instance.query(f"ATTACH TABLE {mat_db}.{table_b}")
@@ -3928,6 +3966,7 @@ def test_attach_table_snapshot_interrupted_with_tables_list(started_cluster):
     )
     check_tables_are_synchronized(instance, table_a, materialized_database=mat_db)
     assert 0 == int(instance.query(f"EXISTS TABLE {mat_db}.{table_b}"))
+    assert already_published == is_published(table_b)
 
     instance.query(f"ATTACH TABLE {mat_db}.{table_b}")
     instance.query(

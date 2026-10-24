@@ -630,6 +630,13 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
         /// See the comment in attachTable about `materialized_postgresql_schema_list`.
         if ((*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_schema_list].value.empty())
         {
+            /// If the server is terminated after the table list is updated, the next attach finishes the detach, and it
+            /// must remove the publication entry even if the `ATTACH TABLE` of this table reused an existing one.
+            {
+                std::lock_guard lock(handler_mutex);
+                replication_handler->markPublicationEntryOwned(table_name);
+            }
+
             /// tables_to_replicate can be empty if postgres database had no tables when this database was created.
             SettingChange new_setting("materialized_postgresql_tables_list", tables_to_replicate);
             auto alter_query = createAlterSettingsQuery(new_setting);

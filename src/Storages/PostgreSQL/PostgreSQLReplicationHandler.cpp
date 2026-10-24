@@ -462,6 +462,8 @@ PostgreSQLReplicationHandler::SnapshotPositions PostgreSQLReplicationHandler::lo
         readEscapedString(position.start_lsn, in);
         assertChar('\t', in);
         readBoolText(position.completed, in);
+        assertChar('\t', in);
+        readBoolText(position.owns_publication_entry, in);
         assertChar('\n', in);
         positions.emplace(std::move(table_name), std::move(position));
     }
@@ -488,6 +490,8 @@ void PostgreSQLReplicationHandler::saveSnapshotPositions(const SnapshotPositions
         writeEscapedString(position.start_lsn, out);
         writeChar('\t', out);
         writeBoolText(position.completed, out);
+        writeChar('\t', out);
+        writeBoolText(position.owns_publication_entry, out);
         writeChar('\n', out);
     }
 
@@ -509,12 +513,28 @@ void PostgreSQLReplicationHandler::markSnapshotCompleted(const String & table_na
 }
 
 
+void PostgreSQLReplicationHandler::markPublicationEntryOwned(const String & table_name) const
+{
+    auto positions = loadSnapshotPositions();
+    auto it = positions.find(table_name);
+    if (it == positions.end() || it->second.owns_publication_entry)
+        return;
+
+    it->second.owns_publication_entry = true;
+    saveSnapshotPositions(positions);
+}
+
+
 void PostgreSQLReplicationHandler::dropNestedTable(StorageMaterializedPostgreSQL * materialized_storage) const
 {
     if (materialized_storage->tryGetNested())
         InterpreterDropQuery::executeDropQuery(
             ASTDropQuery::Kind::Drop, getContext(), materialized_storage->getNestedTableContext(),
             materialized_storage->getNestedStorageID(), /* sync */ true, /* ignore_sync_setting */ true);
+
+    /// The wrapper may stay without a nested table if its replacement snapshot fails: it must not be counted as
+    /// a materialized table by the last-table check of `DETACH TABLE ... PERMANENTLY` or by a database backup.
+    materialized_storage->resetNested();
 }
 
 
@@ -1010,6 +1030,15 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
                     /* sync */ true, /* ignore_sync_setting */ true);
             }
 
+            /// A publication entry that the interrupted `ATTACH TABLE` reused is kept, as the rollback of a failed
+            /// `ATTACH TABLE` does: other consumers of the publication may rely on it.
+            if (!position.owns_publication_entry)
+            {
+                LOG_INFO(log, "The publication entry of table {}.{} existed before the interrupted `ATTACH TABLE`, it is kept",
+                         postgres_database, table_name);
+                continue;
+            }
+
             if (!published)
                 published = fetchPublishedTablePairs(tx);
             if (published->contains(getNormalizedSchemaAndTableName(table_name)))
@@ -1109,7 +1138,8 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             if (is_materialized_postgresql_database)
             {
                 for (const auto & [table_name, materialized_storage] : tables_without_nested)
-                    snapshot_positions[table_name] = SnapshotPosition{.start_lsn = temporary_start_lsn, .completed = false};
+                    snapshot_positions[table_name] = SnapshotPosition{
+                        .start_lsn = temporary_start_lsn, .completed = false, .owns_publication_entry = false};
                 saveSnapshotPositions(snapshot_positions);
             }
             else
@@ -2144,15 +2174,19 @@ bool PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPost
         /// attach if the table is not replicated then, together with its nested table and publication entry. Otherwise
         /// (it is discovered from `materialized_postgresql_schema_list`), the nested table is loaded again, because its
         /// snapshot is not marked completed.
+        /// Whether this query creates the publication entry is persisted too, so that a restart in between keeps
+        /// a publication entry that existed before, as the rollback below does. It is recorded before
+        /// `ALTER PUBLICATION`, so that a restart right after it still removes the entry that it created.
         auto snapshot_positions = loadSnapshotPositions();
-        snapshot_positions[postgres_table_name] = SnapshotPosition{};
-        saveSnapshotPositions(snapshot_positions);
-
-        /// The table must be in the publication before the snapshot is taken: `pgoutput` decides publication membership
-        /// by the catalog at the LSN of each change, so the changes between the snapshot and `ALTER PUBLICATION`
-        /// would be neither in the snapshot nor in the replication stream.
         {
             pqxx::nontransaction tx(replication_connection.getRef());
+            const bool already_published = fetchPublishedTablePairs(tx).contains(getNormalizedSchemaAndTableName(postgres_table_name));
+            snapshot_positions[postgres_table_name] = SnapshotPosition{.start_lsn = "", .completed = false, .owns_publication_entry = !already_published};
+            saveSnapshotPositions(snapshot_positions);
+
+            /// The table must be in the publication before the snapshot is taken: `pgoutput` decides publication membership
+            /// by the catalog at the LSN of each change, so the changes between the snapshot and `ALTER PUBLICATION`
+            /// would be neither in the snapshot nor in the replication stream.
             publication_added = addTableToPublication(tx, postgres_table_name);
         }
 
@@ -2164,7 +2198,8 @@ bool PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPost
 
             TemporaryReplicationSlot temporary_slot(this, tx, start_lsn, snapshot_name);
 
-            snapshot_positions[postgres_table_name] = SnapshotPosition{.start_lsn = start_lsn, .completed = false};
+            snapshot_positions[postgres_table_name] = SnapshotPosition{
+                .start_lsn = start_lsn, .completed = false, .owns_publication_entry = publication_added};
             saveSnapshotPositions(snapshot_positions);
 
             /// Protect against deadlock.

@@ -135,8 +135,13 @@ public:
 
     /// This method is called only from MateriaizePostgreSQL database engine, because it needs to maintain
     /// an invariant: a table exists only if its nested table exists. This atomic variable is set to _true_
-    /// only once - when nested table is successfully created and is never changed afterwards.
+    /// when nested table is successfully created, and reset to _false_ only when the replication handler drops
+    /// an incomplete nested table to load it from a new snapshot (see `resetNested`).
     bool hasNested() { return has_nested.load(); }
+
+    /// Called after the nested table of this table was dropped, so that `hasNested` does not report a nested table
+    /// that does not exist anymore (for example, if the replacement snapshot fails).
+    void resetNested() { has_nested.store(false); }
 
     void createNestedIfNeeded(PostgreSQLTableStructurePtr table_structure, const ASTTableOverride * table_override);
 

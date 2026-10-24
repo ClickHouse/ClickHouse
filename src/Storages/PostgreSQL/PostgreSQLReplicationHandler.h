@@ -64,6 +64,10 @@ public:
     /// shared replication slot is behind it (see `snapshot_positions_path`). Must be called before startSynchronization.
     void setSnapshotPositionsFile(DiskPtr disk, const String & path);
 
+    /// Called by `DETACH TABLE ... PERMANENTLY` before the table is removed from the persisted table list: if the
+    /// detach is interrupted after that, the publication entry of the table is removed on the next attach.
+    void markPublicationEntryOwned(const String & table_name) const;
+
     ASTPtr getCreateNestedTableQuery(StorageMaterializedPostgreSQL * storage, const String & table_name);
 
     /// Returns true if this call added the table to the publication, and false if the publication already
@@ -161,6 +165,10 @@ private:
         /// False while the snapshot is being loaded. A nested table whose snapshot did not complete (the server
         /// was terminated while loading it) holds only a part of the rows, so it is dropped and loaded again.
         bool completed = false;
+        /// True if the publication entry of the table is removed when the table turns out not to be replicated on
+        /// attach (an interrupted `ATTACH TABLE` or `DETACH TABLE ... PERMANENTLY`). False if `ATTACH TABLE` reused
+        /// a publication entry that existed before it: then it is kept, as the rollback of a failed `ATTACH TABLE` does.
+        bool owns_publication_entry = false;
     };
     /// `table_name` -> its snapshot position.
     using SnapshotPositions = std::map<String, SnapshotPosition>;
