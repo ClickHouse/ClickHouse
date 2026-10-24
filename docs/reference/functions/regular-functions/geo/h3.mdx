@@ -267,6 +267,69 @@ SELECT h3ToGeoBoundary(644325524701193974) AS coordinates;
 └───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+## h3CellToPolygon {#h3celltopolygon}
+
+Returns a closed H3 cell boundary as a [Polygon](/sql-reference/data-types/geo#polygon). The polygon contains one outer ring of `(longitude, latitude)` pairs in degrees, with the first point repeated at the end of the ring.
+
+Unlike [`h3ToGeoBoundary`](#h3togeoboundary), which returns `(latitude, longitude)`, this function returns `(longitude, latitude)`. Neither boundary function is affected by `h3togeo_lon_lat_result_order`, which controls `h3ToGeo`.
+
+**Syntax**
+
+```sql
+h3CellToPolygon(h3Index)
+```
+
+**Arguments**
+
+- `h3Index` - H3 cell index. [UInt64](/reference/data-types/int-uint).
+
+**Returned value**
+
+- A `Polygon` containing one closed ring. Invalid cells throw `INCORRECT_DATA` by default, or return an empty polygon (`[]`) when `functions_h3_default_if_invalid = 1`.
+- `NULL` inputs, including nullable cell indexes and a bare `NULL` literal, produce an empty polygon (`[]`), because `Polygon` cannot be nullable. The WKT function preserves `NULL` instead.
+
+**Example**
+
+```sql
+SELECT
+    toTypeName(h3CellToPolygon(599686042433355775)) AS type,
+    length(h3CellToPolygon(599686042433355775)[1]) AS ring_points;
+```
+
+```text
+Polygon	7
+```
+
+## h3CellToBoundaryWKT {#h3celltoboundarywkt}
+
+Returns the closed H3 cell boundary as a WKT `POLYGON` string with `(longitude, latitude)` coordinates. The alias `h3_cell_to_boundary_wkt` is also available for compatibility with the DuckDB H3 extension. Unlike `wkt(h3CellToPolygon(...))`, the WKT writer emits 17 significant digits for round-trip precision.
+
+**Syntax**
+
+```sql
+h3CellToBoundaryWKT(h3Index)
+h3_cell_to_boundary_wkt(h3Index)
+```
+
+**Arguments**
+
+- `h3Index` - H3 cell index. [UInt64](/reference/data-types/int-uint).
+
+**Returned value**
+
+- A `String` containing a WKT `POLYGON`. Invalid cells throw `INCORRECT_DATA` by default, or return an empty string when `functions_h3_default_if_invalid = 1`.
+- `NULL` inputs return `NULL` (`Nullable(String)`), unlike `h3CellToPolygon`, which returns an empty polygon.
+
+**Example**
+
+```sql
+SELECT startsWith(h3_cell_to_boundary_wkt(599686042433355775), 'POLYGON((');
+```
+
+```text
+1
+```
+
 ## h3kRing {#h3kring}
 
  Lists all the [H3](#h3-index) hexagons in the raduis of `k` from the given hexagon in random order.
