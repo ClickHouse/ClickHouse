@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypeTime.h>
 #include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -584,8 +585,8 @@ DataTypePtr widenIntegerElements(const DataTypePtr & type, WideIntegerCarrier ca
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)
 {
     /// A non-Null constant of `Nullable(T)` / `LowCardinality(T)` is a plain value of `T`, and the caller only unwraps
-    /// the target type. Unwrap a temporal source hint too, so that such a constant takes the typed `Date` / `DateTime`
-    /// / `Time` branches below instead of being reinterpreted as a raw number - otherwise
+    /// the target type. Unwrap a temporal or interval source hint too, so that such a constant takes the typed `Date` /
+    /// `DateTime` / `Time` / `Interval` branches below instead of being rejected or reinterpreted as a raw number - otherwise
     /// `CAST(toDate32('1970-01-02') AS Nullable(Date32))` would become one second past the epoch in a `DateTime64`.
     if (from_type_hint && !src.isNull())
     {
@@ -599,7 +600,8 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             else
                 break;
         }
-        if (WhichDataType(*unwrapped_hint).isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64())
+        const WhichDataType which_unwrapped_hint(*unwrapped_hint);
+        if (which_unwrapped_hint.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64() || which_unwrapped_hint.isInterval())
             from_type_hint = unwrapped_hint;
     }
 
@@ -935,6 +937,20 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         if (!DecimalUtils::tryGetDecimalFromComponentsWithMultiplier<Time64>(value, 0, time64_type.getScaleMultiplier(), result))
             return {};
         return DecimalField<Time64>(result, time64_type.getScale());
+    }
+    if (which_type.isInterval() && which_from_type.isInterval()
+        && (src.getType() == Field::Types::Int64
+            || (src.getType() == Field::Types::UInt64 && src.safeGet<UInt64>() <= static_cast<UInt64>(std::numeric_limits<Int64>::max()))))
+    {
+        /// Comparing two interval kinds casts both sides to the finer one with an unchecked multiplication, so only a coarser
+        /// value of the same family that stays in range converts to that cast's result; other kinds remain a type mismatch.
+        const IntervalKind from_kind = assert_cast<const DataTypeInterval &>(*from_type_hint).getKind();
+        const IntervalKind to_kind = assert_cast<const DataTypeInterval &>(type).getKind();
+        const Int64 value = src.getType() == Field::Types::Int64 ? src.safeGet<Int64>() : static_cast<Int64>(src.safeGet<UInt64>());
+        Int64 result = 0;
+        if (from_kind.isFixedLength() == to_kind.isFixedLength() && from_kind.toAvgNanoseconds() > to_kind.toAvgNanoseconds()
+            && !common::mulOverflow(value, from_kind.toAvgNanoseconds() / to_kind.toAvgNanoseconds(), result))
+            return result;
     }
     if (type.isValueRepresentedByNumber() && src.getType() != Field::Types::String)
     {

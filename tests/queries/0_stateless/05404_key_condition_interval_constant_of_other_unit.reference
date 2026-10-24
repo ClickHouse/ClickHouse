@@ -1,0 +1,55 @@
+ns between minute	301
+Condition: and((time in (-Inf, 30900000000000]), (time in [30600000000000, +Inf)))
+Granules: 1/100
+ns >= hour	2800
+Condition: (time in [97200000000000, +Inf))
+Granules: 3/100
+ns < day	86400
+Condition: (time in (-Inf, 86399999999999])
+Granules: 87/100
+ns >= week	0
+Condition: (time in [604800000000000, +Inf))
+Granules: 1/100
+ns in	2
+ns in value	3600000000000
+ns in value	30600000000000
+Granules: 2/100
+ns not in	99998
+ns not in excludes	0
+ns in array with null	1
+ns in array with null value	30600000000000
+ns prewhere	360
+Condition: and((time in (-Inf, 30959999999999]), (time in [30600000000000, +Inf)))
+Granules: 1/100
+ms between minute	301
+Condition: and((time in (-Inf, 30900000]), (time in [30600000, +Inf)))
+Granules: 1/100
+skip ns	301
+Condition: true
+Granules: 100/100
+Name: mm
+Condition: and((time in (-Inf, 30900000000000]), (time in [30600000000000, +Inf)))
+Granules: 1/100
+skip us	2800
+Condition: true
+Granules: 100/100
+Name: mm_us
+Condition: (us in [97200000000, +Inf))
+Granules: 3/100
+s in	2
+s in value	3600
+s in value	30600
+Condition: true
+Granules: 100/100
+Name: mm_s
+Condition: (s in 2-element set)
+Granules: 2/100
+us in value	3600000000
+us in value	30600000000
+month	3
+Condition: and((m in (-Inf, 26]), (m in [24, +Inf)))
+Granules: 1/100
+month in	2
+month in value	12
+month in value	15
+ns overflow	Condition: true
