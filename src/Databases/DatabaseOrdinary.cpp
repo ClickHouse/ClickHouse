@@ -29,6 +29,9 @@
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/TemporaryReplaceTableName.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/FieldFromAST.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -41,6 +44,7 @@
 #include <Storages/TableZnodeInfo.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/PoolId.h>
+#include <Common/checkStackSize.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/AsyncLoader.h>
@@ -95,6 +99,79 @@ extern const DatabaseMetadataDiskSettingsUInt64 max_tables;
 
 
 static constexpr const char * const CONVERT_TO_REPLICATED_FLAG_NAME = "convert_to_replicated";
+
+namespace
+{
+
+/// Collects the names of the disks defined by the `disk(...)` functions in `ast` (the `name` argument) and the
+/// names of the disks they refer to (a `disk` argument with a name instead of a nested `disk(...)` function, as
+/// the disk wrapped by a `cache` or `encrypted` disk).
+void collectCustomDiskNames(const ASTPtr & ast, NameSet & defined, NameSet & referenced)
+{
+    checkStackSize();
+    for (const auto & child : ast->children)
+        collectCustomDiskNames(child, defined, referenced);
+
+    if (!isDiskFunction(ast))
+        return;
+
+    const auto & function = ast->as<const ASTFunction &>();
+    if (!function.arguments)
+        return;
+
+    for (const auto & argument : function.arguments->children)
+    {
+        const auto * equals = argument->as<ASTFunction>();
+        if (!equals || equals->name != "equals" || !equals->arguments || equals->arguments->children.size() != 2)
+            continue;
+
+        const auto * key = equals->arguments->children[0]->as<ASTIdentifier>();
+        if (!key)
+            continue;
+
+        String value;
+        const auto & value_ast = equals->arguments->children[1];
+        if (const auto * literal = value_ast->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
+            value = literal->value.safeGet<String>();
+        else if (const auto * identifier = value_ast->as<ASTIdentifier>())
+            value = identifier->name();
+        else
+            continue;
+
+        if (key->name() == "name")
+            defined.insert(value);
+        else if (key->name() == "disk")
+            referenced.insert(value);
+    }
+}
+
+/// A table whose inline disk definition refers to other disks by name, see `DatabaseOrdinary::loadTablesMetadata`.
+struct TableWithNamedDiskReferences
+{
+    ASTPtr ast;
+    String file_name;
+    NameSet defined_disks;
+    NameSet referenced_disks;
+};
+
+/// Fills `defined` and `referenced` from the inline `disk(...)` definition of the table, if any.
+void collectCustomDiskNames(const ASTCreateQuery & create_query, NameSet & defined, NameSet & referenced)
+{
+    if (!create_query.storage || !create_query.storage->settings)
+        return;
+
+    const Field * disk_setting = create_query.storage->settings->changes.tryGet("disk");
+    if (!disk_setting)
+        return;
+
+    CustomType custom;
+    if (!disk_setting->tryGet<CustomType>(custom) || 0 != strcmp(custom.getTypeName(), "AST"))
+        return;
+
+    collectCustomDiskNames(dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast, defined, referenced);
+}
+
+}
 
 DatabaseOrdinary::DatabaseOrdinary(
     const String & name_, const String & metadata_path_, ContextPtr context_, DatabaseMetadataDiskSettings database_metadata_disk_settings_)
@@ -236,7 +313,8 @@ void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, Context
     create_query.storage->set(create_query.storage->engine, engine->clone());
 }
 
-StoragePolicyPtr DatabaseOrdinary::getStoragePolicyFromCreateQuery(const ASTCreateQuery & create_query, bool create_custom_disk) const
+StoragePolicyPtr DatabaseOrdinary::getStoragePolicyFromCreateQuery(
+    const ASTCreateQuery & create_query, bool create_custom_disk, CustomDiskRegistrationPtr & custom_disk_registration) const
 {
     /// The `convert_to_replicated` flag is looked up on the first disk of the table's storage policy, and
     /// both phases of the conversion have to resolve it identically. The policy is taken from the CREATE
@@ -264,8 +342,9 @@ StoragePolicyPtr DatabaseOrdinary::getStoragePolicyFromCreateQuery(const ASTCrea
 
                     /// The disk is cached by its definition and reused when the table is loaded, so it has to be
                     /// created exactly as `registerStorageMergeTree` creates it, with the exemption of `system` tables.
+                    /// The registration keeps the disk registered until the caller is done with the policy.
                     SettingChange change{"disk", *disk_setting};
-                    MergeTreeSettings::resolveDiskSetting(
+                    custom_disk_registration = MergeTreeSettings::resolveDiskSetting(
                         change,
                         getContext(),
                         /* is_loading_from_existing_metadata = */ true,
@@ -310,8 +389,16 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
     /// Get table's storage policy
     /// A table on an inline `disk(...)` definition in a database with `lazy_load_tables` is not looked at:
     /// the second phase reports the flag if the table is ever loaded eagerly with it.
+    CustomDiskRegistrationPtr custom_disk_registration;
     auto policy = getStoragePolicyFromCreateQuery(
-        create_query, /* create_custom_disk = */ !database_metadata_disk_settings[DatabaseMetadataDiskSetting::lazy_load_tables]);
+        create_query,
+        /* create_custom_disk = */ !database_metadata_disk_settings[DatabaseMetadataDiskSetting::lazy_load_tables],
+        custom_disk_registration);
+    if (custom_disk_registration)
+    {
+        std::lock_guard lock(mutex);
+        custom_disk_registrations_of_metadata_scan.push_back(std::move(custom_disk_registration));
+    }
     if (!policy)
         return;
 
@@ -395,7 +482,43 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
     size_t prev_total_dictionaries = metadata.total_dictionaries;
     size_t prev_total_materialized_views = metadata.total_materialized_views;
 
-    auto process_metadata = [&metadata, is_startup, local_context, db_disk, this](const String & file_name)
+    std::mutex tables_with_named_disk_references_mutex;
+    std::vector<TableWithNamedDiskReferences> tables_with_named_disk_references;
+
+    auto finish_processing = [&metadata, local_context, this](ASTPtr ast, const String & file_name)
+    {
+        auto * create_query = ast->as<ASTCreateQuery>();
+        fs::path full_path = fs::path(getMetadataPath()) / file_name;
+        QualifiedTableName qualified_name{TSA_SUPPRESS_WARNING_FOR_READ(database_name), create_query->getTable()};
+
+        convertMergeTreeToReplicatedIfNeeded(ast, qualified_name, file_name);
+
+        /// A lazily loaded table has no storage policy until it is materialized, so remember the definition
+        /// of every table that may still have to finish the conversion, for `restoreMetadataAfterConvertingToReplicated`.
+        /// Other tables are skipped there without reading their metadata again.
+        if (database_metadata_disk_settings[DatabaseMetadataDiskSetting::lazy_load_tables] && create_query->storage
+            && create_query->storage->engine && create_query->storage->engine->name.starts_with("Replicated")
+            && create_query->storage->engine->name.ends_with("MergeTree"))
+        {
+            std::lock_guard lock(mutex);
+            lazy_replicated_create_queries[qualified_name.table] = ast;
+        }
+
+        {
+            SelectIntersectExceptQueryVisitor::Data data{local_context->getSettingsRef()[Setting::intersect_default_mode], local_context->getSettingsRef()[Setting::except_default_mode]};
+            SelectIntersectExceptQueryVisitor{data}.visit(ast);
+        }
+        {
+            NormalizeSelectWithUnionQueryVisitor::Data data{local_context->getSettingsRef()[Setting::union_default_mode]};
+            NormalizeSelectWithUnionQueryVisitor{data}.visit(ast);
+        }
+        std::lock_guard lock{metadata.mutex};
+        metadata.parsed_tables[qualified_name] = ParsedTableMetadata{full_path.string(), ast};
+        metadata.total_dictionaries += create_query->is_dictionary;
+        metadata.total_materialized_views += create_query->is_materialized_view;
+    };
+
+    auto process_metadata = [&, is_startup, local_context, db_disk, this](const String & file_name)
     {
         auto component_guard = Coordination::setCurrentComponent("DatabaseOrdinary::loadTablesMetadata");
         fs::path path(getMetadataPath());
@@ -455,39 +578,69 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
                     return;
                 }
 
-                QualifiedTableName qualified_name{TSA_SUPPRESS_WARNING_FOR_READ(database_name), create_query->getTable()};
-
-                convertMergeTreeToReplicatedIfNeeded(ast, qualified_name, file_name);
-
-                /// A lazily loaded table has no storage policy until it is materialized, so remember the definition
-                /// of every table that may still have to finish the conversion, for `restoreMetadataAfterConvertingToReplicated`.
-                /// Other tables are skipped there without reading their metadata again.
-                if (database_metadata_disk_settings[DatabaseMetadataDiskSetting::lazy_load_tables] && create_query->storage
-                    && create_query->storage->engine && create_query->storage->engine->name.starts_with("Replicated")
-                    && create_query->storage->engine->name.ends_with("MergeTree"))
+                /// The disks defined inline with `disk(...)` are created by `convertMergeTreeToReplicatedIfNeeded`, and the
+                /// metadata files are processed in parallel. A table may refer by name to a disk defined by another table
+                /// (as the disk wrapped by a `cache` disk), so such a table is processed after all others, see below.
+                TableWithNamedDiskReferences table_with_references{.ast = ast, .file_name = file_name, .defined_disks = {}, .referenced_disks = {}};
+                collectCustomDiskNames(*create_query, table_with_references.defined_disks, table_with_references.referenced_disks);
+                if (!table_with_references.referenced_disks.empty())
                 {
-                    std::lock_guard lock(mutex);
-                    lazy_replicated_create_queries[qualified_name.table] = ast;
+                    std::lock_guard lock(tables_with_named_disk_references_mutex);
+                    tables_with_named_disk_references.push_back(std::move(table_with_references));
+                    return;
                 }
 
-                {
-                    SelectIntersectExceptQueryVisitor::Data data{local_context->getSettingsRef()[Setting::intersect_default_mode], local_context->getSettingsRef()[Setting::except_default_mode]};
-                    SelectIntersectExceptQueryVisitor{data}.visit(ast);
-                }
-                {
-                    NormalizeSelectWithUnionQueryVisitor::Data data{local_context->getSettingsRef()[Setting::union_default_mode]};
-                    NormalizeSelectWithUnionQueryVisitor{data}.visit(ast);
-                }
-                std::lock_guard lock{metadata.mutex};
-                metadata.parsed_tables[qualified_name] = ParsedTableMetadata{full_path.string(), ast};
-                metadata.total_dictionaries += create_query->is_dictionary;
-                metadata.total_materialized_views += create_query->is_materialized_view;
+                finish_processing(ast, file_name);
             }
         }
         catch (Exception & e)
         {
             e.addMessage("Cannot parse definition from metadata file " + full_path.string());
             throw;
+        }
+    };
+
+    /// Processes the tables with an inline disk definition referring to other disks by name, which were put aside
+    /// by `process_metadata`. All other tables are processed by now, and the disks they defined stay registered until
+    /// the tables are loaded (see `custom_disk_registrations_of_metadata_scan`). A table defining a disk is processed
+    /// before the tables that refer to it, so the result does not depend on the names of the metadata files.
+    auto process_tables_with_named_disk_references = [&]
+    {
+        auto component_guard = Coordination::setCurrentComponent("DatabaseOrdinary::loadTablesMetadata");
+        std::vector<TableWithNamedDiskReferences> pending;
+        {
+            std::lock_guard lock(tables_with_named_disk_references_mutex);
+            pending.swap(tables_with_named_disk_references);
+        }
+
+        std::sort(pending.begin(), pending.end(), [](const auto & lhs, const auto & rhs) { return lhs.file_name < rhs.file_name; });
+
+        while (!pending.empty())
+        {
+            auto it = std::find_if(pending.begin(), pending.end(), [&](const TableWithNamedDiskReferences & table)
+            {
+                return std::none_of(pending.begin(), pending.end(), [&](const TableWithNamedDiskReferences & other)
+                {
+                    return &other != &table
+                        && std::any_of(table.referenced_disks.begin(), table.referenced_disks.end(),
+                                       [&](const String & name) { return other.defined_disks.contains(name); });
+                });
+            });
+
+            /// The references form a cycle, which cannot be resolved in any order: processing the table reports the missing disk.
+            if (it == pending.end())
+                it = pending.begin();
+
+            try
+            {
+                finish_processing(it->ast, it->file_name);
+            }
+            catch (Exception & e)
+            {
+                e.addMessage("Cannot parse definition from metadata file " + (fs::path(getMetadataPath()) / it->file_name).string());
+                throw;
+            }
+            pending.erase(it);
         }
     };
 
@@ -510,6 +663,8 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
         }
         process_metadata(file_name);
     });
+
+    process_tables_with_named_disk_references();
 
     for (const auto & file_name : tmp_replace_files)
     {
@@ -545,6 +700,8 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
         if (!db_disk->isReadOnly())
             db_disk->removeFile(full_path);
     }
+
+    process_tables_with_named_disk_references();
 
     size_t objects_in_database = metadata.parsed_tables.size() - prev_tables_count;
     size_t dictionaries_in_database = metadata.total_dictionaries - prev_total_dictionaries;
@@ -779,7 +936,9 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
 
         /// The first phase does not resolve an inline `disk(...)` definition with `lazy_load_tables`, so it never
         /// converts such a table.
-        storage_policy = getStoragePolicyFromCreateQuery(create_query->as<const ASTCreateQuery &>(), /* create_custom_disk = */ false);
+        CustomDiskRegistrationPtr custom_disk_registration;
+        storage_policy = getStoragePolicyFromCreateQuery(
+            create_query->as<const ASTCreateQuery &>(), /* create_custom_disk = */ false, custom_disk_registration);
         if (!storage_policy)
             return;
     }
@@ -901,11 +1060,14 @@ LoadTaskPtr DatabaseOrdinary::startupDatabaseAsync(
         TablesLoaderBackgroundStartupPoolId,
         fmt::format("startup Ordinary database {}", getDatabaseName()),
         ignoreDependencyFailure,
-        [] (AsyncLoader &, const LoadJobPtr &)
+        [this] (AsyncLoader &, const LoadJobPtr &)
         {
-            // NOTE: this job is no-op, but it is required for correct dependency handling
+            // NOTE: this job is required for correct dependency handling
             // 1) startup should be done after tables loading
             // 2) load or startup errors for tables should not lead to not starting up the whole database
+
+            /// The tables are loaded, so they hold the registrations of their disks themselves.
+            releaseCustomDiskRegistrationsOfMetadataScan();
         });
     std::scoped_lock lock(mutex);
     return startup_database_task = makeLoadTask(async_loader, {job});
@@ -954,6 +1116,19 @@ void DatabaseOrdinary::stopLoading()
     stop_startup_database.reset();
     stop_startup_table.clear();
     stop_load_table.clear();
+
+    releaseCustomDiskRegistrationsOfMetadataScan();
+}
+
+void DatabaseOrdinary::releaseCustomDiskRegistrationsOfMetadataScan()
+{
+    CustomDiskRegistrations registrations;
+    {
+        std::lock_guard lock(mutex);
+        registrations.swap(custom_disk_registrations_of_metadata_scan);
+    }
+    /// Destroying a registration may release a disk, which must not be done under `mutex`.
+    registrations.clear();
 }
 
 DatabaseTablesIteratorPtr DatabaseOrdinary::getTablesIterator(ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const

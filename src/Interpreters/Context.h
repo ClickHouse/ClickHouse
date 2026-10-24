@@ -219,6 +219,9 @@ using StoragePolicyPtr = std::shared_ptr<const IStoragePolicy>;
 using StoragePoliciesMap = std::map<String, StoragePolicyPtr>;
 class StoragePolicySelector;
 using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
+class CustomDiskRegistration;
+using CustomDiskRegistrationPtr = std::shared_ptr<CustomDiskRegistration>;
+using CustomDiskRegistrations = std::vector<CustomDiskRegistrationPtr>;
 class ServerType;
 template <class Queue>
 class MergeTreeBackgroundExecutor;
@@ -1987,7 +1990,27 @@ public:
     /// Provides storage disks
     DiskPtr getDisk(const String & name) const;
     using DiskCreator = std::function<DiskPtr(const DisksMap & disks_map)>;
-    DiskPtr getOrCreateDisk(const String & name, DiskCreator creator) const;
+
+    /// Provides a disk defined inline with `disk(...)` in a table or database definition, creating
+    /// it if it does not exist yet. The returned registration keeps the disk registered: the disk
+    /// is unregistered and shut down once every table and database using it is gone.
+    /// `nested` are the registrations of the disks nested in the definition of this one; a new
+    /// registration takes them over, so that they outlive it. If the disk already has a registration,
+    /// they stay in `nested`, and the caller destroys them.
+    /// `settings_hash` identifies the definition, see `IDisk::markDiskAsCustom`.
+    /// `wrapped_disk_name` is the disk a wrapper disk refers to by name (`disk = '<name>'`), or empty. If it is a
+    /// custom disk not in `nested`, its registration is added to `nested`.
+    std::pair<DiskPtr, CustomDiskRegistrationPtr> getOrCreateCustomDisk(
+        const String & name, UInt128 settings_hash, DiskCreator creator, CustomDiskRegistrations & nested,
+        const String & wrapped_disk_name) const;
+    /// See `CustomDiskRegistry::rememberDefinitionLoadedFromExistingMetadata`.
+    void rememberCustomDiskLoadedFromExistingMetadata(UInt128 settings_hash) const;
+    bool isCustomDiskLoadedFromExistingMetadata(UInt128 settings_hash) const;
+    /// A registration for a custom disk that already exists, or nullptr if `name` is not one.
+    /// Throws if the disk is being unregistered, see `CustomDiskRegistry::tryGet`.
+    CustomDiskRegistrationPtr tryGetCustomDiskRegistration(const String & name) const;
+    /// Unregisters a custom disk. Called by ~CustomDiskRegistration, do not call directly.
+    void releaseCustomDisk(const String & name) const;
 
     StoragePoliciesMap getPoliciesMap() const;
     DisksMap getDisksMap() const;

@@ -15,6 +15,7 @@
 #include <Interpreters/ExpressionActionsSettings.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
+#include <Disks/CustomDiskRegistration.h>
 #include <Disks/StoragePolicy.h>
 #include <Processors/Merges/Algorithms/Graphite.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
@@ -1218,6 +1219,14 @@ public:
         AlterLockHolder & table_lock_holder,
         bool run_sanity_checks = true);
 
+    /// Takes over the registration returned by `MergeTreeSettings::loadFromQuery` for the settings the
+    /// table was created with. Called right after the table is constructed.
+    void setCustomDiskRegistration(CustomDiskRegistrationPtr registration) { custom_disk_registration = std::move(registration); }
+
+    /// Releases the disk kept by `checkAlterEligibility` for an `ALTER` that failed before `changeSettings`
+    /// took the disk over.
+    void discardPendingAlterDiskRegistration() const;
+
     std::pair<String, bool> getNewImplicitStatisticsTypes(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings) const;
     static void verifySortingKey(const KeyDescription & sorting_key);
 
@@ -1855,6 +1864,16 @@ protected:
     /// Storage settings.
     /// Use get and set to receive readonly versions.
     MultiVersion<MergeTreeSettings> storage_settings;
+
+    /// Keeps a disk defined inline with `disk = disk(...)` in the settings registered for as long as
+    /// the table exists, so that it is released on `DROP` or `DETACH TABLE`. Replaced on `ALTER`.
+    CustomDiskRegistrationPtr custom_disk_registration;
+
+    /// The registration of the new disk of an `ALTER TABLE ... MODIFY SETTING disk = ...` that passed
+    /// `checkAlterEligibility`, kept until `changeSettings` takes the disk over. If the `ALTER` fails
+    /// after the check, it is released by `discardPendingAlterDiskRegistration`.
+    mutable std::mutex pending_alter_disk_registration_mutex;
+    mutable CustomDiskRegistrationPtr pending_alter_disk_registration TSA_GUARDED_BY(pending_alter_disk_registration_mutex);
 
     /// Used to determine which UUIDs to send to root query executor for deduplication.
     mutable SharedMutex pinned_part_uuids_mutex;

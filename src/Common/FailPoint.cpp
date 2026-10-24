@@ -56,6 +56,7 @@ static struct InitFiu
     ONCE(remote_query_executor_cancel_in_finish_drain) \
     PAUSEABLE_ONCE(distributed_sink_pause_before_push) \
     PAUSEABLE_ONCE(access_control_pause_after_feature_tier_check) \
+    PAUSEABLE_ONCE(custom_disk_registration_pause_before_release) \
     ONCE(connection_stale_on_establish) \
     REGULAR(cluster_discovery_faults) \
     REGULAR(stripe_log_sink_write_fallpoint) \

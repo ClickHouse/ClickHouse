@@ -1,0 +1,8 @@
+disks after dropping the defining table	2
+rows in the table using the implicit storage policy	5
+rows in the table using the cache disk	6
+disks after dropping the cache table	1
+disks after dropping all tables	0
+disks after the rejected wrapper	2
+rows in the wrapper table	7
+disks after drop	0
