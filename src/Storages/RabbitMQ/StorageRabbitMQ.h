@@ -8,6 +8,7 @@
 #include <atomic>
 #include <Storages/RabbitMQ/RabbitMQConsumer.h>
 #include <Storages/RabbitMQ/RabbitMQConnection.h>
+#include <Storages/RabbitMQ/RabbitMQPublisherPool.h>
 #include <Storages/RabbitMQ/RabbitMQ_fwd.h>
 #include <Storages/IStreamingStorage.h>
 #include <Common/thread_local_rng.h>
@@ -122,6 +123,9 @@ private:
     RabbitMQConnectionPtr connection; /// Connection for all consumers
     RabbitMQConfiguration configuration;
 
+    /// Connections with an open channel for insert queries, reused across them.
+    RabbitMQPublisherPoolPtr publisher_pool;
+
     size_t num_created_consumers = 0;
     Poco::Semaphore semaphore;
     std::mutex consumers_mutex;
@@ -150,9 +154,6 @@ private:
     /**
      * ╰( ͡° ͜ʖ ͡° )つ──☆* Evil atomics:
      */
-    /// Counter for producers, needed for channel id.
-    /// Needed to generate unique producer identifiers.
-    std::atomic<size_t> producer_id = 1;
     /// Allow to remove exchange only once.
     std::atomic<bool> exchange_removed = false;
     /// For select query we must be aware of the end of streaming
