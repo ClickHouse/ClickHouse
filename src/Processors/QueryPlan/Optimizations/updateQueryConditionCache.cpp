@@ -147,16 +147,17 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
                 time(nullptr));
     };
 
-    /// PREWHERE runs before the tagged filter sees a row, so a granule that filter empties may still
-    /// hold rows only PREWHERE removed. Sound while the PREWHERE condition is in `filter_actions_dag`
-    /// (the hash covers it) or is `__topKFilter` (key salted with the TopK plan); a runtime filter is neither.
+    /// Rows PREWHERE drops never reach the tagged filter, so each PREWHERE conjunct must be a conjunct of the
+    /// hashed condition, or `__topKFilter`, whose TopK plan salts the key.
     /// A PREWHERE condition involving the current time (e.g. `time >= today() - 10` moved to PREWHERE
-    /// out of `WHERE time >= today() - 10 AND flag = 1`) is part of `filter_actions_dag` as well, so the
-    /// derived condition covers it.
+    /// out of `WHERE time >= today() - 10 AND flag = 1`) is a conjunct of `filter_actions_dag` as well,
+    /// with the same folded constants, so the derived condition covers it.
     if (const auto & prewhere_info = read_from_merge_tree->getPrewhereInfo())
     {
         const auto * prewhere_node = prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name);
-        if (!prewhere_node || !is_deterministic_or_time_condition(prewhere_node))
+        if (!prewhere_node || !is_deterministic_or_time_condition(prewhere_node)
+            || !VirtualColumnUtils::isCoveredByFilter(
+                *prewhere_node, *filter_actions_dag, /*allow_top_k_filter=*/ true, /*allow_non_deterministic_constants=*/ derived.has_value()))
             return;
     }
 
