@@ -73,10 +73,18 @@ void AllocationQueue::insertAllocation(ResourceAllocation & allocation, Resource
         if (&allocation == &*pending_allocations.begin() && increasing_allocations.empty()) // Only if it should be processed next
             scheduleActivation();
     }
-    else // Zero-cost allocations are not blocked - enqueue into running allocations directly
+    else // Zero-cost allocations are not blocked - they are admitted on the scheduler thread
     {
+        // A zero-size allocation adds no resource cost, so it can never violate a limit and is admitted
+        // unconditionally. The hierarchy `allocations` counters are scheduler-thread-only, so we must not
+        // count it here (this runs on a query thread). Park it in `admitting_allocations` and let
+        // `processActivation` promote it into `running_allocations` and propagate the admission count up the
+        // tree. This preserves the invariant: an allocation is in `running_allocations` only after it has been
+        // counted at the leaf and every ancestor.
         allocation.fair_key = 0;
-        running_allocations.insert(allocation);
+        admitting_allocations.push_back(allocation);
+        if (&allocation == &*admitting_allocations.begin())
+            scheduleActivation();
     }
 }
 
@@ -88,14 +96,15 @@ void AllocationQueue::increaseAllocation(ResourceAllocation & allocation, Resour
     ensureUsable();
 
     chassert(!allocation.increasing_hook.is_linked());
+    // A growing allocation is either already running or still awaiting its zero-size admission (parked in
+    // `admitting_allocations`, not yet promoted by the scheduler thread).
+    chassert(allocation.running_hook.is_linked() || allocation.admitting_hook.is_linked());
 
     updateFairKey(allocation, allocation.allocated + increase_size - allocation.reclaiming);
 
-    // Enqueue increase request. `Kind::Initial` is the first increase that admits the allocation
-    // into the hierarchy (it makes `apply(IncreaseRequest)` increment `allocations`). Use the
-    // sticky `admitted` flag — not `allocated == 0` — because an allocation that has been admitted
-    // and then shrunk back to zero must not be re-admitted on a later grow.
-    allocation.increase.prepare(increase_size, allocation.admitted ? IncreaseRequest::Kind::Regular : IncreaseRequest::Kind::Initial);
+    // Every grow of a running (or soon-to-be-running) allocation is `Regular`; the only non-regular increase is
+    // the first grow of a `Pending` allocation, set in `insertAllocation`.
+    allocation.increase.prepare(increase_size, IncreaseRequest::Kind::Regular);
     increasing_allocations.insert(allocation);
     if (&allocation == &*increasing_allocations.begin())
         scheduleActivation();
@@ -120,12 +129,17 @@ void AllocationQueue::updateFairKey(ResourceAllocation & allocation, ResourceCos
 {
     if (allocation.fair_key == new_key)
         return;
-    running_allocations.erase(running_allocations.iterator_to(allocation));
+    // An admitting allocation is not a member of `running_allocations` yet; its promotion in
+    // `processActivation` inserts it with the already-updated `fair_key`.
+    bool is_running = allocation.running_hook.is_linked();
+    if (is_running)
+        running_allocations.erase(running_allocations.iterator_to(allocation));
     bool is_increasing = allocation.increasing_hook.is_linked();
     if (is_increasing)
         increasing_allocations.erase(increasing_allocations.iterator_to(allocation));
     allocation.fair_key = new_key;
-    running_allocations.insert(allocation);
+    if (is_running)
+        running_allocations.insert(allocation);
     if (is_increasing)
         increasing_allocations.insert(allocation);
 }
@@ -208,6 +222,12 @@ void AllocationQueue::finishSpill(ResourceAllocation & allocation, ResourceCost 
     scheduleActivation();
 }
 
+ResourceCost AllocationQueue::getFairKey(const ResourceAllocation & allocation)
+{
+    std::lock_guard lock(mutex);
+    return allocation.fair_key;
+}
+
 void AllocationQueue::removeAllocation(ResourceAllocation & allocation)
 {
     std::lock_guard lock(mutex);
@@ -215,11 +235,11 @@ void AllocationQueue::removeAllocation(ResourceAllocation & allocation)
         return; // Queue has been purged — `allocationFailed` has already notified the owner.
     // If the allocation has been failed by a concurrent path (e.g. `updateMinMaxAllocated` or
     // `updateQueueLimit` rejected it after the owner's destructor checked `fail_reason` but
-    // before this call), it is no longer in `pending_allocations` or `running_allocations`.
-    // Adding it to `removing_allocations` in this state would leave `removing_hook` linked when
-    // the owner reaches `~ResourceAllocation`, with `processActivation` later dereferencing a
-    // freed object.
-    if (!allocation.pending_hook.is_linked() && !allocation.running_hook.is_linked())
+    // before this call), it is no longer in `pending_allocations`, `admitting_allocations` or
+    // `running_allocations`. Adding it to `removing_allocations` in this state would leave
+    // `removing_hook` linked when the owner reaches `~ResourceAllocation`, with `processActivation`
+    // later dereferencing a freed object.
+    if (!allocation.pending_hook.is_linked() && !allocation.running_hook.is_linked() && !allocation.admitting_hook.is_linked())
         return;
     ResourceCost previous_available = getAvailableReclaimable(allocation);
     allocation.reclaimable = 0;
@@ -251,6 +271,20 @@ void AllocationQueue::purgeQueue()
         allocation.allocationFailed(reason);
     }
 
+    // Fail allocations still awaiting zero-size admission (never counted in the hierarchy)
+    while (!admitting_allocations.empty())
+    {
+        ResourceAllocation & allocation = admitting_allocations.front();
+        admitting_allocations.pop_front();
+        if (allocation.increasing_hook.is_linked())
+            increasing_allocations.erase(increasing_allocations.iterator_to(allocation));
+        if (allocation.removing_hook.is_linked())
+            removing_allocations.erase(removing_allocations.iterator_to(allocation));
+        allocation.reclaimable = 0;
+        allocation.reclaiming = 0;
+        allocation.allocationFailed(reason);
+    }
+
     while (!running_allocations.empty())
     {
         ResourceAllocation & allocation = *running_allocations.begin();
@@ -268,6 +302,7 @@ void AllocationQueue::purgeQueue()
     }
 
     chassert(pending_allocations.empty());
+    chassert(admitting_allocations.empty());
     chassert(running_allocations.empty());
     chassert(increasing_allocations.empty());
     chassert(decreasing_allocations.empty());
@@ -295,7 +330,7 @@ void AllocationQueue::propagateUpdate(ISpaceSharedNode &, Update &&)
 
 void AllocationQueue::updateMinMaxAllocated(ResourceCost new_value)
 {
-    std::lock_guard lock(mutex);
+    std::unique_lock lock(mutex);
     min_max_allocated = new_value;
 
     // Reject pending allocations that can never succeed because they exceed the new limit.
@@ -322,8 +357,21 @@ void AllocationQueue::updateMinMaxAllocated(ResourceCost new_value)
     }
 
     // Update increase pointer in case the removed allocation was the current one
+    Update update;
     if (setIncrease() && parent)
-        propagate(Update().setIncrease(increase));
+        update.setIncrease(increase);
+
+    // A queued decrease may not be published yet (its activation can run after this callback). Publish it with
+    // the increase, so the limit does not evict for a grow that the queued release would satisfy. Only when
+    // propagating: a locally advanced `decrease` would otherwise never be published by `processActivation`.
+    if (update && setDecrease())
+        update.setDecrease(decrease);
+
+    // Propagate after releasing the lock: propagation can re-enter this queue's
+    // `selectAllocationToKill` (which locks `mutex`) and self-deadlock. See `processActivation`.
+    lock.unlock();
+    if (update)
+        propagate(std::move(update));
 }
 
 void AllocationQueue::approveIncrease()
@@ -342,24 +390,24 @@ void AllocationQueue::approveIncrease(IncreaseRequest & request) // TSA_REQUIRES
     SCHED_DBG("{} -- approveIncrease(id={}, size={}, allocated={})", getPath(), allocation.id, request.size, allocated);
     if (allocation.increase.kind == IncreaseRequest::Kind::Pending)
     {
+        // A pending allocation becomes running for the first time: move it into `running_allocations`.
+        // `apply(request)` below counts it (Kind::Pending) in this queue and every ancestor.
         pending_allocations.erase(pending_allocations.iterator_to(allocation));
         pending_allocations_size -= allocation.increase.size;
         allocation.fair_key = request.size;
         running_allocations.insert(allocation);
     }
     else
+    {
+        // Regular grow of an already-running allocation (it is already a member of `running_allocations`,
+        // re-keyed in `increaseAllocation`). It was counted at admission, so `apply` does not recount it.
         increasing_allocations.erase(increasing_allocations.iterator_to(allocation));
+    }
     apply(request);
     ResourceCost previous_available = getAvailableReclaimable(allocation);
     allocation.allocated += request.size;
     if (applyReclaimable(allocation, previous_available))
         scheduleActivation();
-    // `apply` above incremented `allocations` for `Kind::Pending`/`Kind::Initial`. Mark the
-    // allocation as admitted so its eventual removal propagates a matching `removing_allocation`
-    // decrease (instead of underflowing `allocations` in the hierarchy).
-    if (allocation.increase.kind == IncreaseRequest::Kind::Pending
-        || allocation.increase.kind == IncreaseRequest::Kind::Initial)
-        allocation.admitted = true;
 
     // Notify allocation
     allocation.increaseApproved(request);
@@ -367,16 +415,30 @@ void AllocationQueue::approveIncrease(IncreaseRequest & request) // TSA_REQUIRES
 
 void AllocationQueue::approveDecrease()
 {
-    std::lock_guard lock(mutex);
+    std::unique_lock lock(mutex);
 
     chassert(decrease);
-    approveDecrease(*decrease);
+    Update update;
+    if (approveDecrease(*decrease))
+        update.setIncrease(increase);
     decrease = nullptr;
 
     setDecrease();
+
+    // Ancestors cleared their decrease while descending into this approval. A reselected increase must be
+    // published together with the next decrease, so the limit does not evict for a grow that a queued
+    // release would satisfy.
+    if (update)
+        update.setDecrease(decrease);
+
+    // Propagate after releasing the lock: propagation can re-enter this queue's
+    // `selectAllocationToKill` (which locks `mutex`) and self-deadlock. See `processActivation`.
+    lock.unlock();
+    if (update)
+        propagate(std::move(update));
 }
 
-void AllocationQueue::approveDecrease(DecreaseRequest & request) // TSA_REQUIRES(mutex)
+bool AllocationQueue::approveDecrease(DecreaseRequest & request) // TSA_REQUIRES(mutex)
 {
     ResourceAllocation & allocation = request.allocation;
     SCHED_DBG("{} -- approveDecrease(id={}, size={}, allocated={})", getPath(), allocation.id, request.size, allocated);
@@ -405,18 +467,17 @@ void AllocationQueue::approveDecrease(DecreaseRequest & request) // TSA_REQUIRES
             increasing_allocations.insert(allocation);
     }
 
-    // Ordering of increasing allocations is changed - update the next increase request if needed and propagate the update
-    if (is_increasing && setIncrease())
-        propagate(Update().setIncrease(increase));
+    // Ordering of increasing allocations is changed - update the next increase request if needed.
+    // The caller propagates it after releasing `mutex`.
+    bool increase_changed = is_increasing && setIncrease();
 
     // Notify allocation
     allocation.decreaseApproved(request);
+    return increase_changed;
 }
 
 ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & killer, ResourceCost limit, String & details)
 {
-    UNUSED(limit);
-
     // It is important not to kill allocation due to pending allocation in the same queue
     if (killer.kind == IncreaseRequest::Kind::Pending && &killer.allocation.queue == this)
         return nullptr;
@@ -425,18 +486,25 @@ ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & k
     if (running_allocations.empty())
         return nullptr;
 
-    // Kill the largest allocation. It is the last as the set is ordered by size.
+    // The impossible-grow self-kill (the requester's own reservation exceeds the limit, so no eviction can
+    // make it fit) is handled by `AllocationLimit` before it descends to a victim, so it also covers a
+    // cross-workload least common ancestor. Nothing to decide from `limit` at the leaf.
+    UNUSED(limit);
+
+    // The victim is the least important allocation — the greatest by `ByKey` (`rbegin()`): the highest
+    // `eviction_score`, then the largest `fair_key`, then `unique_id`. Pending and admitting allocations are not
+    // members of `running_allocations`, so they are never selected as victims.
     ResourceAllocation & victim = *running_allocations.rbegin();
 
     // If this is the least common ancestor of killer and victim - add details
     if (&killer.allocation.queue == this)
     {
         if (&killer.allocation == &victim)
-            details = fmt::format("Evicting the largest allocation of size {} in workload '{}' to satisfy its own increase for {}.",
-                formatReadableCost(victim.allocated), getWorkloadName(), formatReadableCost(killer.size));
+            details = fmt::format("Evicting reservation of size {} (eviction_score {}) in workload '{}' to satisfy its own increase for {}.",
+                formatReadableCost(victim.fair_key), victim.eviction_score, getWorkloadName(), formatReadableCost(killer.size));
         else
-            details = fmt::format("Evicting the largest allocation of size {} in workload '{}' to satisfy increase of a smaller allocation.",
-                formatReadableCost(victim.allocated), getWorkloadName());
+            details = fmt::format("Evicting reservation of size {} (eviction_score {}) in workload '{}' to satisfy increase of another allocation.",
+                formatReadableCost(victim.fair_key), victim.eviction_score, getWorkloadName());
     }
 
     return &victim;
@@ -466,6 +534,24 @@ void AllocationQueue::processActivation()
     {
         std::lock_guard lock(mutex);
 
+        // Promote zero-size admitting allocations into `running_allocations` and count them in the hierarchy.
+        // Done first so that any removal or request published below sees them as running, and so the invariant
+        // "a member of `running_allocations` has been counted at the leaf and every ancestor" holds before any
+        // victim can be selected against this queue. `apply(update)` below counts them at this leaf and
+        // `propagate` carries the count to every ancestor.
+        size_t admitted_count = 0;
+        while (!admitting_allocations.empty())
+        {
+            ResourceAllocation & allocation = admitting_allocations.front();
+            admitting_allocations.pop_front();
+            chassert(allocation.allocated == 0);
+            chassert(!allocation.pending_hook.is_linked());
+            chassert(!allocation.running_hook.is_linked());
+            running_allocations.insert(allocation);
+            ++admitted_count;
+        }
+        update.setAdmissions(admitted_count);
+
         // Remove allocation if necessary
         while (!removing_allocations.empty())
         {
@@ -489,20 +575,6 @@ void AllocationQueue::processActivation()
                 if (allocation.increasing_hook.is_linked())
                     increasing_allocations.erase(increasing_allocations.iterator_to(allocation));
                 updateFairKey(allocation, allocation.allocated);
-
-                // Never-admitted allocation (inserted with `initial_size == 0` and either never
-                // grew or had its first `Initial` increase cancelled above). The hierarchy's
-                // `allocations` counter was never incremented for it, so propagating a removing
-                // decrease would underflow `allocations` in this queue and every ancestor.
-                // Remove locally and notify the owner directly.
-                if (!allocation.admitted)
-                {
-                    chassert(allocation.allocated == 0);
-                    running_allocations.erase(running_allocations.iterator_to(allocation));
-                    allocation.decrease.prepare(0, /*removing_allocation=*/ true);
-                    allocation.decreaseApproved(allocation.decrease);
-                    continue;
-                }
 
                 // Prepare decrease for the full current amount (accurate because increase is cancelled above,
                 // or was already approved by the scheduler before this processActivation — either way
@@ -556,7 +628,7 @@ std::pair<UInt64, Int64> AllocationQueue::getQueueLengthAndSize()
 
 void AllocationQueue::updateQueueLimit(Int64 value)
 {
-    std::lock_guard lock(mutex);
+    std::unique_lock lock(mutex);
     max_queued = value;
 
     // See `updateMinMaxAllocated` for the rationale on unlinking `removing_hook` before
@@ -576,8 +648,21 @@ void AllocationQueue::updateQueueLimit(Int64 value)
     }
 
     // Update increase pointer in case the removed allocation was the current one
+    Update update;
     if (setIncrease() && parent)
-        propagate(Update().setIncrease(increase));
+        update.setIncrease(increase);
+
+    // A queued decrease may not be published yet (its activation can run after this callback). Publish it with
+    // the increase, so the limit does not evict for a grow that the queued release would satisfy. Only when
+    // propagating: a locally advanced `decrease` would otherwise never be published by `processActivation`.
+    if (update && setDecrease())
+        update.setDecrease(decrease);
+
+    // Propagate after releasing the lock: propagation can re-enter this queue's
+    // `selectAllocationToKill` (which locks `mutex`) and self-deadlock. See `processActivation`.
+    lock.unlock();
+    if (update)
+        propagate(std::move(update));
 }
 
 bool AllocationQueue::setIncrease() // TSA_REQUIRES(mutex)

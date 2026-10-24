@@ -33,6 +33,7 @@ public:
     void setReclaimable(ResourceAllocation & allocation, ResourceCost reclaimable_total) override;
     ResourceCost requestSpill(ResourceAllocation & allocation, ResourceCost max_bytes) override;
     void finishSpill(ResourceAllocation & allocation, ResourceCost settled_bytes, ResourceCost reclaimable_total) override;
+    ResourceCost getFairKey(const ResourceAllocation & allocation) override;
     void removeAllocation(ResourceAllocation & allocation) override;
     void purgeQueue() override;
     void propagateUpdate(ISpaceSharedNode &, Update &&) override;
@@ -55,7 +56,7 @@ private:
     bool setIncrease();
     bool setDecrease();
     void approveIncrease(IncreaseRequest & request);
-    void approveDecrease(DecreaseRequest & request);
+    bool approveDecrease(DecreaseRequest & request); /// Returns true if `increase` changed; the caller propagates it after releasing `mutex`.
     void updateFairKey(ResourceAllocation & allocation, ResourceCost new_key);
     /// Derives uncommitted capacity from the absolute estimate and current reservation. Requires `mutex`.
     static ResourceCost getAvailableReclaimable(const ResourceAllocation & allocation);
@@ -63,7 +64,10 @@ private:
     bool applyReclaimable(const ResourceAllocation & allocation, ResourceCost previous_available);
     void ensureUsable() const;
 
-    /// Protects all the following fields
+    /// Protects all the following fields.
+    /// Never call propagate() while holding it: propagation can re-enter this queue through
+    /// selectAllocationToKill() (a parent limit selecting a victim here), which re-acquires the
+    /// mutex and would self-deadlock. Build the Update under the lock, release, then propagate.
     mutable std::mutex mutex;
 
     Int64 max_queued; /// Limit on the number of pending allocation
@@ -72,6 +76,7 @@ private:
     std::exception_ptr cancel_error; /// preallocated exception for cancelling requests
 
     ResourceAllocation::PendingList pending_allocations; /// Pending new allocations
+    ResourceAllocation::AdmittingList admitting_allocations; /// Zero-size allocations awaiting scheduler-thread admission
     ResourceAllocation::RunningSet running_allocations; /// Currently running (not pending) allocations
     ResourceAllocation::IncreasingSet increasing_allocations; /// Allocations with pending increase request
     ResourceAllocation::DecreasingList decreasing_allocations; /// Allocations with pending decrease request
