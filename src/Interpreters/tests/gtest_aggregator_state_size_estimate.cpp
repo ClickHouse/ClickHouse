@@ -43,6 +43,7 @@ Aggregator::Params makeMergeParams(const Names & keys, const AggregateDescriptio
         /*group_by_two_level_threshold_=*/0,
         /*group_by_two_level_threshold_bytes_=*/0,
         /*max_bytes_before_external_group_by_=*/0,
+        /*min_bytes_before_external_group_by_=*/0,
         /*empty_result_for_aggregation_by_empty_set_=*/false,
         /*tmp_data_scope_=*/nullptr,
         /*max_threads_=*/1,
