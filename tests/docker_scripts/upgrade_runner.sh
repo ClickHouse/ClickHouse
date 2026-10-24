@@ -144,6 +144,30 @@ if [ -z "$default_compression_codec" ]; then
     exit 1
 fi
 
+# The Keeper keeps its data across the upgrade, so it must keep its feature flags too: a flag that
+# turns off is a Keeper downgrade, which stops every coordinated refreshable view on ATTACH.
+function read_keeper_feature_flags()
+{
+    sed -n '/<feature_flags>/,/<\/feature_flags>/s|.*<\([a-z_]*\)>\([01]\)</\1>.*|\1=\2|p' \
+        /etc/clickhouse-server/config.d/keeper_port.xml | paste -sd ' ' -
+}
+
+function restore_keeper_feature_flags()
+{
+    local flag
+    for flag in $1; do
+        sudo sed -i "/<feature_flags>/,/<\/feature_flags>/s|<${flag%=*}>[01]</${flag%=*}>|<${flag%=*}>${flag#*=}</${flag%=*}>|" \
+            /etc/clickhouse-server/config.d/keeper_port.xml
+    done
+}
+
+keeper_feature_flags=$(read_keeper_feature_flags)
+if [ -z "$keeper_feature_flags" ]; then
+    echo -e "Cannot read the Keeper feature flags drawn for the previous-release server$FAIL" >> /test_output/test_results.tsv
+    exit 1
+fi
+echo "Keeper feature flags of the previous-release server: $keeper_feature_flags"
+
 # But we still need default disk because some tables loaded only into it
 sudo sed -i "s|<main><disk>s3</disk></main>|<main><disk>s3</disk></main><default><disk>default</disk></default>|" /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 sudo chown clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
@@ -582,6 +606,12 @@ configure "${configure_opts[@]}" --default-compression-codec "$default_compressi
 upgraded_default_compression_codec=$(read_default_compression_codec)
 if [ "$upgraded_default_compression_codec" != "$default_compression_codec" ]; then
     echo -e "Default compression codec is stable across the upgrade$FAIL previous release: $default_compression_codec, upgraded server: $upgraded_default_compression_codec" >> /test_output/test_results.tsv
+    exit 1
+fi
+restore_keeper_feature_flags "$keeper_feature_flags"
+upgraded_keeper_feature_flags=$(read_keeper_feature_flags)
+if [ "$upgraded_keeper_feature_flags" != "$keeper_feature_flags" ]; then
+    echo -e "Keeper feature flags are stable across the upgrade$FAIL previous release: $keeper_feature_flags, upgraded server: $upgraded_keeper_feature_flags" >> /test_output/test_results.tsv
     exit 1
 fi
 
