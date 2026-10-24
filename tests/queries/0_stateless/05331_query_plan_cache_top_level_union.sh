@@ -2,6 +2,8 @@
 # Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-old-analyzer, no-parallel-replicas
 # A top-level `UNION ALL` / `UNION DISTINCT` query is cacheable: the second run hits the plan cache,
 # a hit still reads current data, and a schema change of either branch's table invalidates the entry.
+# A `UNION DISTINCT` plan cached by a single-threaded run keeps the preliminary DISTINCT for later hits
+# with more threads (`max_threads` is not part of the cache key).
 # The plan cache is a single, server-wide cache inspected via SYSTEM DROP QUERY PLAN CACHE and exact
 # `QueryPlanCacheHits` counts, so the test runs in isolation (see 04489 for the full rationale of the tags).
 
@@ -71,6 +73,30 @@ run_query "$UNION_ALL_QUERY"
 echo "-- hits: $(hits_of_last_run "$UNION_ALL_QUERY")"
 run_query "$UNION_ALL_QUERY"
 echo "-- hits: $(hits_of_last_run "$UNION_ALL_QUERY")"
+
+echo "-- UNION DISTINCT warmed with one thread keeps the preliminary DISTINCT for a hit with more threads"
+$CLICKHOUSE_CLIENT --query "SYSTEM DROP QUERY PLAN CACHE"
+WARM_QUERY_ID="05331_warm_${CLICKHOUSE_DATABASE}_$RANDOM"
+HIT_QUERY_ID="05331_hit_${CLICKHOUSE_DATABASE}_$RANDOM"
+REFERENCE_QUERY_ID="05331_reference_${CLICKHOUSE_DATABASE}_$RANDOM"
+# shellcheck disable=SC2086
+$CLICKHOUSE_CLIENT $SETTINGS --max_threads=1 --query_id="$WARM_QUERY_ID" --query "$UNION_DISTINCT_QUERY" | sort
+# shellcheck disable=SC2086
+$CLICKHOUSE_CLIENT $SETTINGS --max_threads=4 --query_id="$HIT_QUERY_ID" --query "$UNION_DISTINCT_QUERY" | sort
+$CLICKHOUSE_CLIENT --enable_query_plan_cache=0 --max_threads=4 --query_id="$REFERENCE_QUERY_ID" --query "$UNION_DISTINCT_QUERY" > /dev/null
+$CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log, processors_profile_log"
+$CLICKHOUSE_CLIENT --query "
+    SELECT ProfileEvents['QueryPlanCacheHits']
+    FROM system.query_log
+    WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query_id = {id:String}" --param_id="$HIT_QUERY_ID"
+# The hit runs the same DISTINCT processors as a query planned with four threads, including the parallel preliminary ones.
+$CLICKHOUSE_CLIENT --query "
+    SELECT
+        countIf(query_id = {hit:String}) > 0,
+        arraySort(groupArrayIf(name, query_id = {hit:String})) = arraySort(groupArrayIf(name, query_id = {reference:String}))
+    FROM system.processors_profile_log
+    WHERE event_date >= yesterday() AND query_id IN ({hit:String}, {reference:String}) AND name LIKE '%Distinct%'" \
+    --param_hit="$HIT_QUERY_ID" --param_reference="$REFERENCE_QUERY_ID"
 
 $CLICKHOUSE_CLIENT --query "
     DROP TABLE t_union_a;

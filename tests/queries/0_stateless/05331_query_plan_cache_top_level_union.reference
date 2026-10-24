@@ -43,3 +43,16 @@
 4	a4
 5	b5
 -- hits: 1
+-- UNION DISTINCT warmed with one thread keeps the preliminary DISTINCT for a hit with more threads
+1	a1
+2	a2
+3	b3
+4	a4
+5	b5
+1	a1
+2	a2
+3	b3
+4	a4
+5	b5
+1
+1	1
