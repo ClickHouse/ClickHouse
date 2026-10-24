@@ -5060,6 +5060,21 @@ bool hasNaNInside(const Field & field)
 
 }
 
+/// `Array`, `Map` and `Object` values compare with `IColumn::compareAt`, which orders a `NULL` element after
+/// every value, while `Field` order puts it first.
+static bool isContainerHoldingNull(const Field & field)
+{
+    switch (field.getType())
+    {
+        case Field::Types::Array:
+        case Field::Types::Map:
+        case Field::Types::Object:
+            return anyFieldSatisfies(field, [](const Field & element) { return element.isNull(); });
+        default:
+            return false;
+    }
+}
+
 bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, RPNElement & out)
 {
     AtomGroup group;
@@ -5996,8 +6011,9 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
     }
 
     /// The range endpoint must follow SQL comparison semantics, which do not order NaNs
-    /// after finite values as the `Field` total order does.
-    if (anyFieldSatisfies(const_value, isNaNField))
+    /// after finite values as the `Field` total order does, nor a `NULL` nested in an `Array`, a `Map`
+    /// or an `Object` before all values.
+    if (anyFieldSatisfies(const_value, isNaNField) || anyFieldSatisfies(const_value, isContainerHoldingNull))
         return std::nullopt;
 
     /// A transformed constant must weaken the condition, for example `x > 5` becomes `round(x) >= 5`.
