@@ -1,0 +1,13 @@
+VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE
+VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE
+0	1677-09-21 00:12:43.145224192	Nullable(DateTime64(9, \'UTC\'))
+1	1800-01-01 12:30:00.000000000	Nullable(DateTime64(9, \'UTC\'))
+2	2020-05-17 10:20:30.123456000	Nullable(DateTime64(9, \'UTC\'))
+3	2262-04-11 23:47:16.854775807	Nullable(DateTime64(9, \'UTC\'))
+4	\N	Nullable(DateTime64(9, \'UTC\'))
+0	1677-09-21 00:12:43.145225	Nullable(DateTime64(6, \'UTC\'))
+1	1800-01-01 12:30:00.000000	Nullable(DateTime64(6, \'UTC\'))
+2	2020-05-17 10:20:30.123456	Nullable(DateTime64(6, \'UTC\'))
+3	2262-04-11 23:47:16.854775	Nullable(DateTime64(6, \'UTC\'))
+4	\N	Nullable(DateTime64(6, \'UTC\'))
+2
