@@ -5992,6 +5992,8 @@ public:
 
     void updateHash(SipHash & hash) const override { settings.updateHash(hash); }
 
+    const FunctionConvertSettings & getSettings() const { return settings; }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     bool hasInformationAboutMonotonicity() const override

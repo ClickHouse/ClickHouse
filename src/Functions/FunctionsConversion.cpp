@@ -3477,6 +3477,13 @@ FunctionConvertSettingsPtr createFunctionConvertSettings(
         context, date_time_overflow_behavior, fixed_string_to_string_strip_trailing_zeros_override);
 }
 
+std::optional<bool> getCastFixedStringToStringStripTrailingZeros(const IFunctionBase & function)
+{
+    if (const auto * cast = typeid_cast<const detail::FunctionCast *>(&function))
+        return cast->getSettings().cast_fixed_string_to_string_strip_trailing_zeros;
+    return {};
+}
+
 FunctionBasePtr createFunctionBaseCast(
     const FunctionConvertSettingsPtr & settings,
     const char * name,

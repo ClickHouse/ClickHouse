@@ -839,6 +839,19 @@ static const ActionsDAG::Node * tryRewriteCoalesceComparison(
         normalized_args.push_back(child);
     }
 
+    /// The branches are compared with the constant as they are, not converted to the result type of `coalesce`.
+    /// This is wrong when the conversion changes the comparison: a `FixedString` is compared with a `String`
+    /// zero-padded, but its conversion to `String` keeps the padding (unless `cast_fixed_string_to_string_strip_trailing_zeros`),
+    /// so `toFixedString('a', 2) > 'a'` is false while `coalesce(toFixedString('a', 2), 'x') > 'a'` is true.
+    const DataTypePtr result_type = removeNullable(removeLowCardinality(coalesce_node->result_type));
+    auto converts_fixed_string = [&](const ActionsDAG::Node * arg)
+    {
+        const DataTypePtr arg_type = removeNullable(removeLowCardinality(arg->result_type));
+        return !arg_type->equals(*result_type) && anyInTypeTree(*arg_type, [](const IDataType & t) { return isFixedString(t); });
+    };
+    if (std::ranges::any_of(normalized_args, converts_fixed_string) || (trailing_const && converts_fixed_string(trailing_const)))
+        return nullptr;
+
     const size_t m = normalized_args.size();
     const bool has_trailing_const = trailing_const != nullptr;
 
@@ -4342,12 +4355,32 @@ bool KeyCondition::tryMatchKeyColumnThroughMonotonicChain(
         /// conversion and the runtime filters always remove the trailing zero bytes of a `FixedString` converted
         /// to `String`. Rebuilding such a cast by name would lose it, so keep the cast of the expression.
         const auto * dag_node = function.getDAGNode();
+        FunctionBasePtr cast_of_expression;
         if (dag_node && dag_node->function_base && dag_node->children.size() == 2 && dag_node->children[1]->column
             && isColumnConst(*dag_node->children[1]->column)
-            && (function.getFunctionName() == "CAST" || function.getFunctionName() == "_CAST")
-            && dag_node->function_base->getArgumentTypes()[0]->equals(*key_column_type))
+            && (function.getFunctionName() == "CAST" || function.getFunctionName() == "_CAST"))
         {
-            const auto & func = dag_node->function_base;
+            const auto & captured_cast = dag_node->function_base;
+            const auto & captured_argument_type = captured_cast->getArgumentTypes()[0];
+            if (captured_argument_type->equals(*key_column_type))
+            {
+                cast_of_expression = captured_cast;
+            }
+            else if (recursiveRemoveLowCardinality(captured_argument_type)->equals(*key_column_type)
+                && anyInTypeTree(*key_column_type, [](const IDataType & t) { return isFixedString(t); }))
+            {
+                /// The key type has `LowCardinality` removed (see above), so create the same cast for it, with the
+                /// conversion mode of the cast of the expression.
+                if (auto strip_trailing_zeros = getCastFixedStringToStringStripTrailingZeros(*captured_cast))
+                    cast_of_expression = createInternalCast(
+                        {nullptr, key_column_type, ""}, captured_cast->getResultType(), CastType::nonAccurate, {},
+                        node.getContext(), strip_trailing_zeros);
+            }
+        }
+
+        if (cast_of_expression)
+        {
+            const auto & func = cast_of_expression;
             if (!func->isDeterministicInScopeOfQuery() || (!assume_function_monotonicity && !func->hasInformationAboutMonotonicity()))
                 return false;
 
