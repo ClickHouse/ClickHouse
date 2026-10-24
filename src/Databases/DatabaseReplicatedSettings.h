@@ -5,7 +5,6 @@
 
 #include <limits>
 
-
 namespace Poco
 {
 namespace Util
@@ -17,6 +16,7 @@ namespace DB
 {
 class ASTSetQuery;
 class ASTStorage;
+struct SettingChange;
 struct DatabaseReplicatedSettingsImpl;
 
 /// List of available types supported in ReplicatedSettings object
@@ -41,6 +41,7 @@ struct DatabaseReplicatedSettings
 
     void loadFromQuery(ASTStorage & storage_def, bool loading_from_existing_metadata);
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
+    void applyChange(const SettingChange & change);
 
     /// Validates `logs_to_keep` in the `SETTINGS` clause of a `Replicated` database definition against
     /// the 32-bit DDL log counter. An out-of-range value is rejected with `BAD_ARGUMENTS`, or, with
@@ -50,6 +51,8 @@ struct DatabaseReplicatedSettings
     String toString() const;
 
     static bool hasBuiltin(std::string_view name);
+
+    static UInt32 parseLogsToKeepFromKeeper(const String & logs_to_keep_str);
 
     /// Older replicas evaluate `entry_number + logs_to_keep < max_log_ptr` in 32-bit arithmetic,
     /// so using `UInt32::max` would make `entry_number + logs_to_keep` overflow and the replica would
