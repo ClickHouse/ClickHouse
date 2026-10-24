@@ -592,7 +592,7 @@ Search tokens that the postprocessor maps to an empty string are ignored, i.e. t
 | [hasAll](/reference/functions/regular-functions/array-functions#hasAll)                               | yes | `array` | yes |
 
 ¹ `LIKE` and `match` use direct read as a hint for the listed tokenizers, otherwise they fall back to brute-force scan.
-`LIKE` additionally supports evaluation by a dictionary scan (enabled via `use_text_index_like_evaluation_by_dictionary_scan`) for the `splitByNonAlpha` and `array` tokenizers without preprocessor or postprocessor, see section [LIKE/ILIKE queries](#like-ilike-queries-perf) below.
+`LIKE`, and `match` with a pattern of ASCII letters and digits only, additionally support evaluation by a dictionary scan (enabled via `use_text_index_like_evaluation_by_dictionary_scan`) for the `splitByNonAlpha` and `array` tokenizers without preprocessor or postprocessor, see section [LIKE/ILIKE queries](#like-ilike-queries-perf) below.
 
 ² `ILIKE` is only supported via evaluation by a dictionary scan (`use_text_index_like_evaluation_by_dictionary_scan = 1`, `splitByNonAlpha` or `array` tokenizer).
 There is no fallback to using the index as a hint for patterns the dictionary scan does not support: if the setting is disabled or the tokenizer is not in the supported set, the index is not used for `ILIKE`.
@@ -771,7 +771,7 @@ SELECT count() FROM table WHERE comment LIKE ' support %'; -- or `% support %`
 
 The spaces left and right of `support` make sure that the term can be extracted as a token.
 
-Fortunately, there is a special case where ClickHouse can leverage the inverted index to speed up LIKE queries significantly.
+Fortunately, there is a special case where ClickHouse can leverage the inverted index to speed up LIKE queries, and `match` calls whose pattern is a literal of ASCII letters and digits, significantly.
 
 See the [LIKE/ILIKE performance tuning section](#like-ilike-queries-perf) for details.
 
@@ -1517,6 +1517,8 @@ How the result of the dictionary scan is used depends on where the needle is anc
 The same dictionary scan serves `startsWith(col, 'value')` and `endsWith(col, 'value')` when the needle has no complete token to search.
 This is the path most `value%` and `%value` patterns actually take, because the analyzer pass [optimize_rewrite_like_perfect_affix](/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix) (enabled by default) rewrites `col LIKE 'value%'` into `startsWith(col, 'value')` and `col LIKE '%value'` into `endsWith(col, 'value')`.
 Needles that span several tokens keep using the complete tokens of the needle and do not need a dictionary scan.
+It also serves `match(col, 'value')` when `value` consists only of ASCII letters and digits, as `col LIKE '%value%'`.
+Other `match` patterns, for example alternations such as `'a|b'` or patterns with `(?i)`, use the index only as described in [LIKE and match](#functions-example-like-match).
 
 As a special case, if the index tokenizer is `array`, then _any_ pattern qualifies for the optimization: anchors, punctuation, `_` wildcards, several `%`-separated needles and escaped metacharacters.
 
@@ -1531,7 +1533,7 @@ The fallback mechanism is controlled by two settings:
 - [text_index_like_min_pattern_length](/reference/settings/session-settings/text-index#text_index_like_min_pattern_length)
 - [text_index_like_max_postings_to_read](/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
-This optimization supports only functions `like`, `ilike`, `startsWith`, and `endsWith`, and the functions `multiSearchAny`, `multiSearchAnyUTF8`, `multiSearchAnyCaseInsensitive` and `multiSearchAnyCaseInsensitiveUTF8` with one needle.
+This optimization supports only functions `like`, `ilike`, `startsWith`, `endsWith`, and `match` with a literal pattern, and the functions `multiSearchAny`, `multiSearchAnyUTF8`, `multiSearchAnyCaseInsensitive` and `multiSearchAnyCaseInsensitiveUTF8` with one needle.
 It generally requires an index without a preprocessor or postprocessor (`ilike` also accepts the `lower` or `upper` as the preprocessor function).
 
 For `ilike`, the search falls back to full-table scan in one special case, for both the `splitByNonAlpha` and the `array` tokenizer:

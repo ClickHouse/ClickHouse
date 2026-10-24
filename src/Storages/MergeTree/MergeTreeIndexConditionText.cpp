@@ -1742,6 +1742,14 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         }
         return false;
     }
+    if (function_name == "match" && can_search_substrings)
+    {
+        /// A pattern of ASCII letters and digits is a literal, so `match` is `LIKE '%pattern%'`.
+        const auto & pattern = value_field.safeGet<String>();
+        if (!pattern.empty() && std::ranges::all_of(pattern, isAlphaNumericASCII)
+            && try_search_needle_by_infix_pattern(pattern, /*case_insensitive=*/ false))
+            return true;
+    }
     if (function_name == "match" && tokenizer->supportsStringLike())
     {
         /// Compile the pattern as `match` execution does, so an invalid regexp raises exception instead of being silently pruned.
