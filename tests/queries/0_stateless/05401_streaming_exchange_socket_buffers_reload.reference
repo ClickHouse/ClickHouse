@@ -1,0 +1,12 @@
+default
+streaming_exchange_rcvbuf	0	Yes
+streaming_exchange_sndbuf	0	Yes
+1	1
+explicit
+streaming_exchange_rcvbuf	131072	Yes
+streaming_exchange_sndbuf	65536	Yes
+1	1
+restored
+streaming_exchange_rcvbuf	0	Yes
+streaming_exchange_sndbuf	0	Yes
+1	1

@@ -70,6 +70,7 @@
 #include <Common/FailPoint.h>
 #include <Common/CPUID.h>
 #include <Common/HTTPConnectionPool.h>
+#include <Server/DistributedQuery/StreamingExchangeProtocol.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/SQLDefinedHandlers/SQLDefinedHandlersFactory.h>
 #include <Server/ConnectionRegistry.h>
@@ -271,6 +272,8 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 disk_connections_warn_limit;
     extern const ServerSettingsUInt64 disk_connections_rcvbuf;
     extern const ServerSettingsUInt64 disk_connections_sndbuf;
+    extern const ServerSettingsUInt64 streaming_exchange_rcvbuf;
+    extern const ServerSettingsUInt64 streaming_exchange_sndbuf;
     extern const ServerSettingsBool dns_allow_resolve_names_to_ipv4;
     extern const ServerSettingsBool dns_allow_resolve_names_to_ipv6;
     extern const ServerSettingsUInt64 dns_cache_max_entries;
@@ -3116,6 +3119,10 @@ try
                     new_server_settings[ServerSetting::http_connections_rcvbuf],
                     new_server_settings[ServerSetting::http_connections_sndbuf],
                 });
+
+            StreamingExchangeProtocol::setSocketBufferSizes(
+                new_server_settings[ServerSetting::streaming_exchange_sndbuf],
+                new_server_settings[ServerSetting::streaming_exchange_rcvbuf]);
 
             DNSResolver::instance().setFilterSettings(new_server_settings[ServerSetting::dns_allow_resolve_names_to_ipv4], new_server_settings[ServerSetting::dns_allow_resolve_names_to_ipv6]);
 

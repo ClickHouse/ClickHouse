@@ -147,5 +147,26 @@ namespace StreamingExchangeProtocol
     /// timeout: Poco reports it without the errno that would tell the send deadline from the kernel's
     /// connection timeout. `description` labels the call site in the exception message.
     void sendAll(Poco::Net::StreamSocket & socket, const char * buffer, size_t size, const String & description);
+
+    /// Apply the `streaming_exchange_sndbuf`/`streaming_exchange_rcvbuf` server settings to an exchange
+    /// socket. A value of 0 (the default) leaves the buffer to kernel TCP autotuning: an explicit
+    /// setsockopt permanently disables autotuning for the socket and caps the stream at sndbuf/RTT.
+    void applySocketBufferSizes(Poco::Net::StreamSocket & socket);
+
+    /// Set the buffer sizes the server pushes from the settings; called at startup and on config
+    /// reload, because the `ServerSettings` a query context sees is loaded only at startup. A value
+    /// above INT_MAX would wrap in setsockopt, so a configuration with either size out of range is
+    /// rejected and both published values stay unchanged.
+    void setSocketBufferSizes(UInt64 sndbuf, UInt64 rcvbuf);
+
+    /// The sizes published for the next connection. These are what `applySocketBufferSizes` reads,
+    /// so SQL introspection can report the same value a new exchange socket will use. 0 leaves that
+    /// direction to kernel TCP autotuning.
+    struct SocketBufferSizes
+    {
+        UInt64 sndbuf = 0;
+        UInt64 rcvbuf = 0;
+    };
+    SocketBufferSizes getSocketBufferSizes();
 }
 }
