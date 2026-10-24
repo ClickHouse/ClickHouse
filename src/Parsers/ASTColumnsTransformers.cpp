@@ -6,6 +6,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Common/SipHash.h>
+#include <Common/StringUtils.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
@@ -105,6 +106,15 @@ void ASTColumnsApplyTransformer::updateTreeHashImpl(SipHash & hash_state, bool i
 void ASTColumnsExceptTransformer::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     ostr << "EXCEPT" << (is_strict ? " STRICT " : " ");
+
+    /// An unparenthesized lone `STRICT` in this position is consumed as this transformer's own STRICT modifier,
+    /// after which the parser demands a column list, so a column of that name has to stay quoted here.
+    const auto * lone_identifier = children.size() == 1 ? children.front()->as<ASTIdentifier>() : nullptr;
+    if (!is_strict && lone_identifier && equalsCaseInsensitive(lone_identifier->name(), "strict"))
+    {
+        settings.writeIdentifier(ostr, lone_identifier->name(), /*ambiguous=*/true);
+        return;
+    }
 
     if (children.size() > 1)
         ostr << "(";
