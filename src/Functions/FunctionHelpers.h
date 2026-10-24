@@ -226,4 +226,8 @@ bool plusMinusWithConstantsIsInjective(
 bool convertLowCardinalityColumnsToFull(ColumnsWithTypeAndName & args);
 
 void checkFunctionArgumentSizes(const ColumnsWithTypeAndName & arguments, size_t input_rows_count);
+
+/// Casts a `Nullable(Enum)` column to the `Nullable` form of `result_type`. A cast of its nested column instead would also
+/// convert the values under `NULL`, which can be invalid, e.g. `0` for an `Enum` without such an element.
+ColumnWithTypeAndName castNullableEnumToResultType(const ColumnWithTypeAndName & argument, const DataTypePtr & result_type);
 }
