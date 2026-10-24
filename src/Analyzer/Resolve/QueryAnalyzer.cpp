@@ -1139,45 +1139,6 @@ void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & ta
     }
 }
 
-void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodePtr & join_node, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope) const
-{
-    if (!scope.context->getSettingsRef()[Setting::joined_subquery_requires_alias])
-        return;
-
-    bool table_expression_has_alias = table_expression_node->hasAlias();
-    if (table_expression_has_alias)
-        return;
-
-    /// An inlined view is named by the view, the way a table is named, so it needs no alias where a subquery does.
-    if (getInlinedViewName(table_expression_node.get()))
-        return;
-
-    if (const auto * join = join_node->as<const JoinNode>(); join && join->getKind() == JoinKind::Paste)
-        return;
-
-    auto * query_node = table_expression_node->as<QueryNode>();
-    auto * union_node = table_expression_node->as<UnionNode>();
-    if ((query_node && !query_node->getCTEName().empty()) || (union_node && !union_node->getCTEName().empty()))
-        return;
-
-    /// A parameterized view has a name to qualify its columns with, so it is exempt like the plain table below.
-    if (const auto * table_function_node = table_expression_node->as<TableFunctionNode>();
-        table_function_node && table_function_node->isParameterizedView())
-        return;
-
-    auto table_expression_node_type = table_expression_node->getNodeType();
-
-    if (table_expression_node_type == QueryTreeNodeType::TABLE_FUNCTION ||
-        table_expression_node_type == QueryTreeNodeType::QUERY ||
-        table_expression_node_type == QueryTreeNodeType::UNION)
-        throw Exception(ErrorCodes::ALIAS_REQUIRED,
-                        "JOIN {} no alias for subquery or table function {}. "
-                        "In scope {} (set joined_subquery_requires_alias = 0 to disable restriction)",
-                        join_node->formatASTForErrorMessage(),
-                        table_expression_node->formatASTForErrorMessage(),
-                        scope.scope_node->formatASTForErrorMessage());
-}
-
 std::pair<bool, UInt64> QueryAnalyzer::recursivelyCollectMaxOrdinaryExpressions(QueryTreeNodePtr & node, QueryTreeNodes & into)
 {
     checkStackSize();
@@ -2927,6 +2888,107 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
 }
 
 
+/// Whether the join tree `join_tree_node` has `table_expression` somewhere below it.
+static bool joinTreeContainsTableExpression(const QueryTreeNodePtr & join_tree_node, const IQueryTreeNode * table_expression)
+{
+    if (!join_tree_node)
+        return false;
+
+    if (join_tree_node.get() == table_expression)
+        return true;
+
+    switch (join_tree_node->getNodeType())
+    {
+        case QueryTreeNodeType::JOIN:
+        {
+            const auto & join_node = join_tree_node->as<const JoinNode &>();
+            return joinTreeContainsTableExpression(join_node.getLeftTableExpressionNode(), table_expression)
+                || joinTreeContainsTableExpression(join_node.getRightTableExpressionNode(), table_expression);
+        }
+        case QueryTreeNodeType::CROSS_JOIN:
+        {
+            for (const auto & operand : join_tree_node->as<const CrossJoinNode &>().getTableExpressions())
+            {
+                if (joinTreeContainsTableExpression(operand, table_expression))
+                    return true;
+            }
+            return false;
+        }
+        case QueryTreeNodeType::ARRAY_JOIN:
+            return joinTreeContainsTableExpression(join_tree_node->as<const ArrayJoinNode &>().getTableExpressionNode(), table_expression);
+        default:
+            return false;
+    }
+}
+
+/** The innermost join of `join_tree_node` that has the two table expressions in different operands - the join whose kind
+  * decides whether their equally named columns may coexist. Returns nullptr when the join tree does not contain both.
+  */
+static const IQueryTreeNode * findInnermostJoinCombiningTableExpressions(
+    const QueryTreeNodePtr & join_tree_node,
+    const IQueryTreeNode * first_table_expression,
+    const IQueryTreeNode * second_table_expression)
+{
+    if (!joinTreeContainsTableExpression(join_tree_node, first_table_expression)
+        || !joinTreeContainsTableExpression(join_tree_node, second_table_expression))
+        return nullptr;
+
+    QueryTreeNodes operands;
+
+    switch (join_tree_node->getNodeType())
+    {
+        case QueryTreeNodeType::JOIN:
+        {
+            const auto & join_node = join_tree_node->as<const JoinNode &>();
+            operands = {join_node.getLeftTableExpressionNode(), join_node.getRightTableExpressionNode()};
+            break;
+        }
+        case QueryTreeNodeType::CROSS_JOIN:
+            operands = join_tree_node->as<const CrossJoinNode &>().getTableExpressions();
+            break;
+        case QueryTreeNodeType::ARRAY_JOIN:
+            return findInnermostJoinCombiningTableExpressions(
+                join_tree_node->as<const ArrayJoinNode &>().getTableExpressionNode(), first_table_expression, second_table_expression);
+        default:
+            return nullptr;
+    }
+
+    for (const auto & operand : operands)
+    {
+        if (joinTreeContainsTableExpression(operand, first_table_expression)
+            && joinTreeContainsTableExpression(operand, second_table_expression))
+            return findInnermostJoinCombiningTableExpressions(operand, first_table_expression, second_table_expression);
+    }
+
+    return join_tree_node.get();
+}
+
+/// The table expression a matched node originates from. Subcolumns and `Nested` columns are resolved into functions
+/// (`getSubcolumn`, `nested`) over the actual columns, and the column is not necessarily the first argument.
+/// The column source of an array-joined column is the `ArrayJoinNode` itself, while the other columns of the same table
+/// expression keep the wrapped table expression as their source, hence the unwrapping.
+static const IQueryTreeNode * getMatchedColumnSource(const QueryTreeNodePtr & node)
+{
+    if (const auto * column_node = node->as<ColumnNode>())
+    {
+        const IQueryTreeNode * column_source = column_node->getColumnSourceOrNull().get();
+        while (const auto * array_join_node = column_source ? column_source->as<ArrayJoinNode>() : nullptr)
+            column_source = array_join_node->getTableExpressionNode().get();
+        return column_source;
+    }
+
+    if (const auto * function_node = node->as<FunctionNode>())
+    {
+        for (const auto & argument : function_node->getArguments().getNodes())
+        {
+            if (const auto * column_source = getMatchedColumnSource(argument))
+                return column_source;
+        }
+    }
+
+    return nullptr;
+}
+
 /** Nearest scope, up to the enclosing QUERY/UNION scope, whose `member` is not empty.
   * `registered_table_expression_nodes` and `nullable_group_by_keys` are populated only on the scope
   * that owns the join tree, never on a lambda's child scope.
@@ -2944,6 +3006,71 @@ static IdentifierResolveScope * findNearestScopeWithNonEmpty(IdentifierResolveSc
     }
 
     return nullptr;
+}
+
+/** Columns matched from different table expressions of a join that end up with the same projection name can be told apart
+  * only when the matcher qualifies them with the name or alias of their table expression (see qualifyColumnNodesWithProjectionNames).
+  * A subquery, union or table function without an alias has no such name, so with `joined_subquery_requires_alias` enabled
+  * a duplicate projection name coming from it is reported as a missing alias.
+  *
+  * Example: SELECT * FROM test_table, (SELECT 1 AS id);
+  *
+  * `matched_nodes` are the matched columns before the column transformers replaced them: a transformed node no longer
+  * carries the source of the column its projection name is derived from (`SELECT * APPLY (x -> 1 + x)`).
+  */
+void QueryAnalyzer::validateMatchedColumnsFromJoinCanBeQualified(
+    const QueryTreeNodePtr & matcher_node,
+    const QueryTreeNodes & matched_nodes,
+    const ProjectionNames & matched_projection_names,
+    const IdentifierResolveScope & scope)
+{
+    if (matched_nodes.size() < 2 || !scope.context->getSettingsRef()[Setting::joined_subquery_requires_alias])
+        return;
+
+    const auto * nearest_query_scope = scope.getNearestQueryScope();
+    const auto * nearest_query_node = nearest_query_scope ? nearest_query_scope->scope_node->as<QueryNode>() : nullptr;
+    if (!nearest_query_node)
+        return;
+
+    const auto & join_tree_node = nearest_query_node->getJoinTreeNode();
+    if (!join_tree_node)
+        return;
+
+    /// Only equally named columns of different table expressions matter. A single table expression is allowed to expose
+    /// equally named columns (SELECT * FROM (SELECT x, x FROM t)), and they do not need a qualification.
+    std::unordered_map<std::string_view, size_t> projection_name_to_first_node_index;
+    size_t matched_nodes_size = matched_nodes.size();
+    for (size_t i = 0; i < matched_nodes_size; ++i)
+    {
+        auto [it, inserted] = projection_name_to_first_node_index.emplace(matched_projection_names[i], i);
+        if (inserted)
+            continue;
+
+        const auto & first_node = matched_nodes[it->second];
+        const auto * first_column_source = getMatchedColumnSource(first_node);
+        const auto * second_column_source = getMatchedColumnSource(matched_nodes[i]);
+        if (first_column_source == second_column_source)
+            continue;
+
+        /// `PASTE JOIN` concatenates its operands positionally and allows equally named columns of unaliased subqueries (see
+        /// IdentifierResolver::getUnaliasedTableExpressionRequiringAlias). Only the join that actually combines these two
+        /// columns matters: a `PASTE JOIN` elsewhere in the tree says nothing about them.
+        const auto * combining_join = findInnermostJoinCombiningTableExpressions(join_tree_node, first_column_source, second_column_source);
+        const auto * combining_join_node = combining_join ? combining_join->as<JoinNode>() : nullptr;
+
+        auto unaliased_table_expression = IdentifierResolver::getUnaliasedTableExpressionRequiringAlias(
+            first_node, matched_nodes[i], combining_join_node, scope);
+        if (!unaliased_table_expression)
+            continue;
+
+        throw Exception(ErrorCodes::ALIAS_REQUIRED,
+            "Matcher {} produces several columns named '{}' and they cannot be qualified: no alias for subquery or table function {}. "
+            "In scope {} (set joined_subquery_requires_alias = 0 to disable restriction)",
+            matcher_node->formatASTForErrorMessage(),
+            matched_projection_names[i],
+            unaliased_table_expression->formatASTForErrorMessage(),
+            scope.scope_node->formatASTForErrorMessage());
+    }
 }
 
 /// `ExpressionsStack` is per-scope, so an aggregate enclosing a lambda sits on a parent scope's stack.
@@ -3122,6 +3249,13 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
     ProjectionNames result_projection_names;
     ProjectionNames node_projection_names;
 
+    /** The matched columns before the transformers replaced them, in the same order as `result_projection_names`.
+      * A transformer turns the matched column into an arbitrary expression over it (`APPLY`) or into an unrelated
+      * expression (`REPLACE`), but the projection name of the result is still derived from the matched column, so the
+      * table expression that has to be qualified is the source of the matched column, not of the transformed node.
+      */
+    QueryTreeNodes matched_nodes_before_transformers;
+
     for (auto & [node, column_name] : matched_expression_nodes_with_names)
     {
         bool apply_transformer_was_used = false;
@@ -3134,6 +3268,8 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             result_projection_names.push_back(projection_name_it->second);
         else
             result_projection_names.push_back(column_name);
+
+        matched_nodes_before_transformers.push_back(node);
 
         String apply_column_name_prefix;
         /// Prefix the projection name: it carries the qualifier (`f_t2.a`) that tells same-named columns apart.
@@ -3306,7 +3442,11 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                             /// The first element reuses the name slot already pushed for this
                             /// matched column; the rest add new sibling slots.
                             if (i != 0)
+                            {
                                 result_projection_names.push_back({});
+                                /// Every element derives its name from the same matched column.
+                                matched_nodes_before_transformers.push_back(matched_nodes_before_transformers.back());
+                            }
                             result_projection_names.back() = element_projection_name;
 
                             node_to_projection_name.emplace(node_list_nodes[i], element_projection_name);
@@ -3395,10 +3535,17 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         }
 
         if (node)
+        {
             list->getNodes().push_back(node);
+        }
         else
+        {
             result_projection_names.pop_back();
+            matched_nodes_before_transformers.pop_back();
+        }
     }
+
+    validateMatchedColumnsFromJoinCanBeQualified(matcher_node, matched_nodes_before_transformers, result_projection_names, scope);
 
     for (auto & [strict_transformer, used_column_names] : strict_transformer_to_used_column_names)
     {
@@ -6096,11 +6243,15 @@ void QueryAnalyzer::checkDuplicateTableNamesOrAliasForPasteJoin(const JoinNode &
         return;
 
     /// An inlined view is a table by name and takes no part in this check, as it does not without inlining.
+    /// A CTE is named as well: its name qualifies its columns just like an alias.
     auto as_unnamed_subquery = [&](const QueryTreeNodePtr & table_expression_node) -> QueryNode *
     {
         if (getInlinedViewName(table_expression_node.get()))
             return nullptr;
-        return table_expression_node->as<QueryNode>();
+        auto * query_node = table_expression_node->as<QueryNode>();
+        if (query_node && !query_node->getCTEName().empty())
+            return nullptr;
+        return query_node;
     };
 
     auto * left_node = as_unnamed_subquery(join_node.getLeftTableExpressionNode());
@@ -6134,10 +6285,7 @@ void QueryAnalyzer::resolveCrossJoin(QueryTreeNodePtr & cross_join_node, Identif
     auto & expressions = cross_join_node_typed.getTableExpressions();
 
     for (auto & expr : expressions)
-    {
         resolveQueryJoinTreeNode(expr, scope, expressions_visitor);
-        validateJoinTableExpressionWithoutAlias(cross_join_node, expr, scope);
-    }
 }
 
 static bool getColumnsFromTableExpression(
@@ -6320,10 +6468,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
     auto & join_node_typed = join_node->as<JoinNode &>();
 
     resolveQueryJoinTreeNode(join_node_typed.getLeftTableExpressionNode(), scope, expressions_visitor);
-    validateJoinTableExpressionWithoutAlias(join_node, join_node_typed.getLeftTableExpressionNode(), scope);
-
     resolveQueryJoinTreeNode(join_node_typed.getRightTableExpressionNode(), scope, expressions_visitor);
-    validateJoinTableExpressionWithoutAlias(join_node, join_node_typed.getRightTableExpressionNode(), scope);
 
     if (isCorrelatedQueryOrUnionNode(join_node_typed.getLeftTableExpressionNode()))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
