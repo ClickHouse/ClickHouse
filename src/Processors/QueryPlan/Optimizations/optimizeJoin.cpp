@@ -1080,11 +1080,6 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
     query_graph.requires_conflict_detector = query_graph_builder.requires_conflict_detector
         || (query_graph.semi_anti_flattened
             && std::ranges::any_of(query_graph.conflict_ops, [](const auto & op) { return op.strictness != JoinStrictness::All; }));
-    for (size_t i = 0; i < query_graph_builder.inputs.size(); ++i)
-    {
-        if (typeid_cast<const JoinStepLogicalLookup *>(query_graph_builder.inputs[i]->step.get()))
-            query_graph.prepared_storage_relations.set(i);
-    }
 
     LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"), "Optimizing join order for query graph with {} relations", query_graph.relation_stats.size());
 
