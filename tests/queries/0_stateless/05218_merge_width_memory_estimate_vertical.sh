@@ -18,12 +18,16 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # The same table is created twice, with the vertical algorithm disabled and enabled. A background merge may
 # still take some of the parts before `OPTIMIZE` does (see below), so the test checks what every merge of each table did
 # rather than how many parts are left.
+#
+# Four parts are enough to tell a merge capped at two parts from an uncapped one. Every part and every merge writes
+# all 16 columns of a wide part, which takes seconds on remote storage with metadata in Keeper, so the cases use
+# separate tables and run concurrently, and their outputs are printed in order.
 
 MEMORY_LIMIT=$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.server_settings WHERE name = 'max_server_memory_usage'")
 # The same successive integer divisions as the server does: `limit / 16 / columns / estimate`.
 ESTIMATE=$(( MEMORY_LIMIT / 16 / 16 / 2 ))
 
-# `merge_selector_base = 1000` is far above what eight fresh parts reach, so background merges do not take the
+# `merge_selector_base = 1000` is far above what four fresh parts reach, so background merges do not take the
 # parts, and `OPTIMIZE`, which selects with the base of one, merges them synchronously. A background merge
 # appears in `system.merges` only once an executor thread starts it, so the wait below could miss a merge that
 # was selected but not started yet. The wait stays for a background merge that still gets through.
@@ -71,10 +75,6 @@ function run()
     INSERT INTO $table SELECT number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number FROM numbers(1, 1);
     INSERT INTO $table SELECT number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number FROM numbers(2, 1);
     INSERT INTO $table SELECT number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number FROM numbers(3, 1);
-    INSERT INTO $table SELECT number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number FROM numbers(4, 1);
-    INSERT INTO $table SELECT number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number FROM numbers(5, 1);
-    INSERT INTO $table SELECT number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number FROM numbers(6, 1);
-    INSERT INTO $table SELECT number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number FROM numbers(7, 1);
     SELECT 'before', count() FROM system.parts WHERE database = currentDatabase() AND table = '$table' AND active;
     SYSTEM START MERGES $table;
 
@@ -98,20 +98,24 @@ function run()
 }
 
 # Horizontal merges only: the estimate affords two parts, so every merge takes two parts.
-echo 'horizontal capped'
-run t_merge_width_horizontal 0
+(echo 'horizontal capped'; run t_merge_width_horizontal 0) > "${CLICKHOUSE_TMP}/t_merge_width_horizontal.out" 2>&1 &
 
-# Every range merges vertically, and a vertical merge of this table affords all eight parts at once.
-echo 'vertical uncapped'
-run t_merge_width_vertical 1
+# Every range merges vertically, and a vertical merge of this table affords all four parts at once.
+(echo 'vertical uncapped'; run t_merge_width_vertical 1) > "${CLICKHOUSE_TMP}/t_merge_width_vertical.out" 2>&1 &
 
 # TTLs that are far from due do not make a merge remove expired values, so the merge stays vertical - even
 # with a column TTL, which rules out a vertical merge that does remove them - and keeps its width.
-echo 'vertical with TTLs not due'
-run t_merge_width_vertical_ttl 1 "TTL toDateTime(k) + INTERVAL 100 YEAR" "TTL toDateTime(k) + INTERVAL 100 YEAR"
+(echo 'vertical with TTLs not due'; run t_merge_width_vertical_ttl 1 "TTL toDateTime(k) + INTERVAL 100 YEAR" "TTL toDateTime(k) + INTERVAL 100 YEAR") > "${CLICKHOUSE_TMP}/t_merge_width_vertical_ttl.out" 2>&1 &
 
 # A merge that does not remove expired values gathers the columns of the TTL expressions on the vertical
 # stage like the others, so a TTL over every non-key column that is far from due does not make the merge
 # priced by all of them, and the merge keeps its width.
-echo 'vertical with a wide TTL not due'
-run t_merge_width_vertical_wide_ttl 1 "" "TTL toDateTime(c1 + c2 + c3 + c4 + c5 + c6 + c7 + c8 + c9 + c10 + c11 + c12 + c13 + c14 + c15) + INTERVAL 100 YEAR"
+(echo 'vertical with a wide TTL not due'; run t_merge_width_vertical_wide_ttl 1 "" "TTL toDateTime(c1 + c2 + c3 + c4 + c5 + c6 + c7 + c8 + c9 + c10 + c11 + c12 + c13 + c14 + c15) + INTERVAL 100 YEAR") > "${CLICKHOUSE_TMP}/t_merge_width_vertical_wide_ttl.out" 2>&1 &
+
+wait
+
+for table in t_merge_width_horizontal t_merge_width_vertical t_merge_width_vertical_ttl t_merge_width_vertical_wide_ttl
+do
+    cat "${CLICKHOUSE_TMP}/$table.out"
+    rm "${CLICKHOUSE_TMP}/$table.out"
+done

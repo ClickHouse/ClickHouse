@@ -1,16 +1,16 @@
 horizontal capped
-before	8
-28	28	8
+before	4
+6	6	4
 Horizontal	2
 vertical uncapped
-before	8
-28	28	8
-Vertical	8
+before	4
+6	6	4
+Vertical	4
 vertical with TTLs not due
-before	8
-28	28	8
-Vertical	8
+before	4
+6	6	4
+Vertical	4
 vertical with a wide TTL not due
-before	8
-28	28	8
-Vertical	8
+before	4
+6	6	4
+Vertical	4
