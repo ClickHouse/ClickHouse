@@ -78,6 +78,10 @@ public:
 
     Pipe executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context) override;
 
+    void checkTableCanBeDropped(ContextPtr query_context) const override
+    {
+        configuration->checkCanBeDropped(object_storage, query_context, /* catalog_purges_files */ catalog != nullptr);
+    }
     void drop() override;
 
     RemoteQueryExecutor::Extension getTaskIteratorExtension(

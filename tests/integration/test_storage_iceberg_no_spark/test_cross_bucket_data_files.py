@@ -207,8 +207,8 @@ def test_path_filter_matches_cross_bucket_data_files(
     create_clickhouse_iceberg_database(instance, CATALOG_NAME)
     table_expression = f"{CATALOG_NAME}.`{root_namespace}.test_path_filter`"
 
-    own_path = f"{METADATA_BUCKET}/{own_bucket_key}"
-    other_path = f"{DATA_BUCKET}/{other_bucket_key}"
+    own_path = f"s3://{METADATA_BUCKET}/{own_bucket_key}"
+    other_path = f"s3://{DATA_BUCKET}/{other_bucket_key}"
 
     assert sorted(
         instance.query(f"SELECT DISTINCT _path FROM {table_expression}")
@@ -230,13 +230,13 @@ def test_path_filter_matches_cross_bucket_data_files(
     )
     assert (
         instance.query(
-            f"SELECT count() FROM {table_expression} WHERE _path LIKE '{DATA_BUCKET}/%'"
+            f"SELECT count() FROM {table_expression} WHERE _path LIKE 's3://{DATA_BUCKET}/%'"
         ).strip()
         == "50"
     )
     assert (
         instance.query(
-            f"SELECT count() FROM {table_expression} WHERE _path = 's3://{other_path}'"
+            f"SELECT count() FROM {table_expression} WHERE _path = '{DATA_BUCKET}/{other_bucket_key}'"
         ).strip()
         == "0"
     )
@@ -286,11 +286,11 @@ def test_data_files_in_another_bucket_over_disk(
     )
     assert (
         instance.query(f"SELECT DISTINCT _path FROM {table_name}").strip()
-        == f"{DATA_BUCKET}/{data_key}"
+        == f"s3://{DATA_BUCKET}/{data_key}"
     )
     assert (
         instance.query(
-            f"SELECT count() FROM {table_name} WHERE _path = '{DATA_BUCKET}/{data_key}'"
+            f"SELECT count() FROM {table_name} WHERE _path = 's3://{DATA_BUCKET}/{data_key}'"
         ).strip()
         == "100"
     )

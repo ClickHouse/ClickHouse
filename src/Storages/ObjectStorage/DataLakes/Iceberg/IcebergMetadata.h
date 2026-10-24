@@ -15,7 +15,10 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
 
+#include <atomic>
+#include <mutex>
 #include <optional>
+#include <unordered_set>
 #include <base/defines.h>
 
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
@@ -30,6 +33,9 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
+#include <Storages/ObjectStorage/Utils.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ExternalPathResolver.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotFilesTraversal.h>
 
 
 namespace DB
@@ -165,6 +171,8 @@ public:
 
     CompressionMethod getCompressionMethod() const { return persistent_components.metadata_compression_method; }
 
+    std::string getTableLocation() const override { return persistent_components.table_location; }
+
     bool optimize(
         const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context,
@@ -218,6 +226,8 @@ public:
         StorageMetadataPtr storage_metadata,
         ContextPtr local_context) const override;
 
+    static bool deletesDataOnDrop(ContextPtr query_context);
+    void checkCanBeDropped(ContextPtr query_context, bool catalog_purges_files) const override;
     void drop(ContextPtr context) override;
 
     DataLakeMetadataPtr cloneWithNewSettings(StorageObjectStorageConfigurationPtr configuration, ContextPtr context) const override;
@@ -266,8 +276,20 @@ private:
     /// scoped to the queried path reaches beyond this table there.
     void checkTableRootIsQueriedPath(std::string_view operation) const;
 
+    /// Files outside the table directory that `iceberg_delete_data_on_drop` deletes.
+    /// A catalog purge also deletes the files of `DELETED` manifest entries, see `include_deleted_entries`.
+    std::vector<Iceberg::ExternalFile> collectExternalFilesToDeleteOnDrop(ContextPtr context, bool include_deleted_entries) const;
+    /// Same, but returns nothing when the files cannot be enumerated for a reason that retrying does not fix.
+    std::vector<Iceberg::ExternalFile> tryCollectExternalFilesToDeleteOnDrop(ContextPtr context) const;
+
     LoggerPtr log;
     const ObjectStoragePtr object_storage;
+    mutable std::shared_ptr<ExternalStorageCache> external_storages;
+    /// Set by `checkCanBeDropped`: the external files the dropping user is allowed to delete.
+    mutable std::mutex external_files_drop_authorized_mutex;
+    mutable std::unordered_set<String> external_files_drop_authorized TSA_GUARDED_BY(external_files_drop_authorized_mutex);
+    /// The dropping session's `s3_allow_server_credentials_in_user_queries`, applied to the clients that delete those files.
+    mutable bool external_files_drop_allow_server_credentials TSA_GUARDED_BY(external_files_drop_authorized_mutex) = false;
     const DB::Iceberg::PersistentTableComponents persistent_components;
     const DataLakeStorageSettingsPtr data_lake_settings;
     MultiVersion<String> explicit_metadata_file_path;

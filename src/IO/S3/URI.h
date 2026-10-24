@@ -46,7 +46,8 @@ struct URI
         const std::string & uri_,
         bool allow_archive_path_syntax = false,
         bool keep_presigned_query_parameters = true,
-        S3UriStyle uri_style = S3UriStyle::AUTO);
+        S3UriStyle uri_style = S3UriStyle::AUTO,
+        bool enable_url_encoding = true);
     void addRegionToURI(const std::string & region);
 
     /// Allowed by an <s3_bucket> entry for the endpoint and bucket, or by a <host>/<host_regexp> entry for the host.

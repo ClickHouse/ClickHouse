@@ -69,6 +69,8 @@ public:
 
     virtual bool operator==(const IDataLakeMetadata & other) const = 0;
 
+    virtual std::string getTableLocation() const { return {}; }
+
     /// Return iterator to `data files`.
     using FileProgressCallback = std::function<void(FileProgress)>;
     virtual ObjectIterator iterate(
@@ -220,6 +222,11 @@ public:
         throwNotImplemented(fmt::format("EXECUTE {}", command_name));
     }
 
+    /// Whether `drop` deletes the table data.
+    static bool deletesDataOnDrop(ContextPtr /*query_context*/) { return false; }
+    /// Checks with the `DROP` query context what `drop` will do in the background with the global context.
+    /// `catalog_purges_files` means the catalog also deletes the table files, with its own credentials.
+    virtual void checkCanBeDropped(ContextPtr /*query_context*/, bool /*catalog_purges_files*/) const { }
     virtual void drop(ContextPtr) { }
 
     virtual std::unique_ptr<IDataLakeMetadata> cloneWithNewSettings(StorageObjectStorageConfigurationPtr /*configuration*/, ContextPtr /*context*/) const

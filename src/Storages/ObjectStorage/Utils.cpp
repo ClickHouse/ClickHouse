@@ -19,6 +19,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Poco/UUIDGenerator.h>
+#include <filesystem>
 
 #include "config.h"
 #if USE_AZURE_BLOB_STORAGE

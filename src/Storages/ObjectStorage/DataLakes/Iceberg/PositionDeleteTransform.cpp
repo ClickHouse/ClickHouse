@@ -1,4 +1,5 @@
 #include <Storages/ObjectStorage/Utils.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ExternalPathResolver.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <Common/logger_useful.h>
 #include "config.h"
@@ -76,11 +77,12 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
             continue;
         }
 
+        auto [delete_storage_to_use, resolved_key] = iceberg_object_info->resolveDeleteFileStorage(
+            path_resolver.getTableLocation(), position_deletes_object.file_path, object_storage, *external_storages, context,
+            path_resolver);
 
-        auto object_path = position_deletes_object.file_path;
-        auto object_metadata = getObjectMetadataForRead(*object_storage, RelativePathWithMetadata(object_path), /*with_tags=*/ false);
-        auto object_info = RelativePathWithMetadata{object_path, object_metadata};
-
+        auto object_metadata = getObjectMetadataForRead(*delete_storage_to_use, RelativePathWithMetadata(resolved_key), /*with_tags=*/ false);
+        RelativePathWithMetadata object_info(resolved_key, object_metadata);
 
         String format = position_deletes_object.file_format;
         if (boost::to_lower_copy(format) != "parquet")
@@ -93,7 +95,7 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
 
         Block initial_header;
         {
-            std::unique_ptr<ReadBuffer> read_buf_schema = createReadBuffer(object_info, object_storage, context, log, read_settings);
+            std::unique_ptr<ReadBuffer> read_buf_schema = createReadBuffer(object_info, delete_storage_to_use, context, log, read_settings);
             auto schema_reader = FormatFactory::instance().getSchemaReader(format, *read_buf_schema, context);
             auto columns_with_names = schema_reader->readSchema();
             ColumnsWithTypeAndName initial_header_data;
@@ -112,9 +114,9 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
                     position_deletes_object.file_path,
                     column_name);
 
-        CompressionMethod compression_method = chooseCompressionMethod(object_path, "auto");
+        CompressionMethod compression_method = chooseCompressionMethod(resolved_key, "auto");
 
-        delete_read_buffers.push_back(createReadBuffer(object_info, object_storage, context, log, read_settings));
+        delete_read_buffers.push_back(createReadBuffer(object_info, delete_storage_to_use, context, log, read_settings));
 
         auto syntax_result = TreeRewriter(context).analyze(where_ast, initial_header.getNamesAndTypesList());
         ExpressionAnalyzer analyzer(where_ast, syntax_result, context);
@@ -164,6 +166,8 @@ size_t IcebergPositionDeleteTransform::filterChunkToCurrentDataFile(Chunk & chun
     const auto & filename_column = *chunk.getColumns()[filename_column_index];
     const auto iceberg_uri = iceberg_object_info->info.data_object_file_path_key.serialize();
     const auto storage_path = iceberg_object_info->getPath();
+    /// The key of a file in another storage can be equal to the key of a different file in the base storage.
+    const bool is_in_base_storage = iceberg_object_info->getResolvedStorage(object_storage) == object_storage;
 
     IColumn::Filter filter(num_rows, 0);
     size_t num_matched = 0;
@@ -171,7 +175,7 @@ size_t IcebergPositionDeleteTransform::filterChunkToCurrentDataFile(Chunk & chun
     {
         const auto file_to_delete = filename_column.getDataAt(i);
         if (file_to_delete == iceberg_uri || file_to_delete == "/" + iceberg_uri
-            || file_to_delete == storage_path || file_to_delete == "/" + storage_path)
+            || (is_in_base_storage && (file_to_delete == storage_path || file_to_delete == "/" + storage_path)))
         {
             filter[i] = 1;
             ++num_matched;
@@ -203,11 +207,15 @@ void IcebergBitmapPositionDeleteTransform::initialize()
 {
     if (const auto & deletion_vector_object = iceberg_object_info->info.deletion_vector)
     {
+        auto [deletion_vector_storage, resolved_key] = iceberg_object_info->resolveDeleteFileStorage(
+            path_resolver.getTableLocation(), deletion_vector_object->file_path, object_storage, *external_storages, context,
+            path_resolver);
+
         auto deletion_vector = readIcebergDeletionVector(
-            deletion_vector_object->file_path,
+            resolved_key,
             deletion_vector_object->content_offset,
             deletion_vector_object->content_size_in_bytes,
-            object_storage,
+            deletion_vector_storage,
             context,
             log);
         for (const auto position : *deletion_vector)

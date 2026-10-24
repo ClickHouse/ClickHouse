@@ -9,6 +9,8 @@
 #include <Parsers/IAST_fwd.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
+#include <Storages/ObjectStorage/Utils.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ExternalPathResolver.h>
 
 namespace DB::Iceberg
 {
@@ -20,7 +22,8 @@ Pipe executeRemoveOrphanFiles(
     const DataLakeStorageSettings & data_lake_settings,
     const PersistentTableComponents & persistent_components,
     std::shared_ptr<DataLake::ICatalog> catalog,
-    const String & table_name);
+    const String & table_name,
+    ExternalStorageCache & external_storages);
 
 }
 

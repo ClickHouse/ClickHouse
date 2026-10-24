@@ -10,6 +10,7 @@ from datetime import datetime
 
 import avro.schema as avro_schema
 import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 import requests
 import pytz
@@ -1762,6 +1763,176 @@ def test_drop_table_purge(started_cluster):
         assert not catalog.table_exists(f"{root_namespace}.{table_name}")
         assert data_files(table_name) == ([] if purge else files)
         node.wait_for_log_line(rf"tables/{table_name}\?purgeRequested={str(purge).lower()}")
+
+
+def test_drop_table_purge_requires_write_grant_on_external_files(started_cluster):
+    # The catalog purges the files outside the table directory too, so `DROP` must check the `WRITE` grant on them first.
+    # node2 enables `iceberg_delete_data_on_drop` in its profile; node1 disables it there, and the query enables it.
+    catalog = load_catalog_impl(started_cluster)
+
+    for node_name, drop_settings in (("node2", {}), ("node1", {"iceberg_delete_data_on_drop": 1})):
+        node = started_cluster.instances[node_name]
+        test_ref = f"test_drop_purge_external_{uuid.uuid4().hex}"
+        table_name = f"{test_ref}_table"
+        root_namespace = f"{test_ref}_namespace"
+        external_key = f"{test_ref}_external/data.parquet"
+        user = f"{test_ref}_user"
+
+        create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+        create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x Int32)")
+
+        buffer = io.BytesIO()
+        pq.write_table(pa.table({"x": pa.array([7], pa.int32())}, schema=pa.schema([pa.field("x", pa.int32(), nullable=False)])), buffer)
+        _put_s3_object_bytes(started_cluster.minio_client, "warehouse-rest", external_key, buffer.getvalue())
+        catalog.load_table(f"{root_namespace}.{table_name}").add_files([f"s3://warehouse-rest/{external_key}"])
+        assert node.query(f"SELECT x FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "7\n"
+
+        node.query(f"CREATE USER {user}")
+        node.query(f"GRANT DROP TABLE ON {CATALOG_NAME}.* TO {user}")
+        error = node.query_and_get_error(
+            f"DROP TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`", user=user, settings=drop_settings
+        )
+        assert "Not enough privileges to drop the Iceberg table" in error, error
+        assert catalog.table_exists(f"{root_namespace}.{table_name}")
+        assert list_s3_objects(started_cluster.minio_client, "warehouse-rest", f"{test_ref}_external/") == ["data.parquet"]
+
+        node.query(f"DROP USER {user}")
+        drop_clickhouse_iceberg_table(node, root_namespace, table_name)
+
+
+def _rewrite_s3_manifest_entries(minio_client, manifest_path, rewrite_entry):
+    bucket, key = manifest_path[len("s3://") :].split("/", 1)
+    reader = DataFileReader(io.BytesIO(_get_s3_object_bytes(minio_client, bucket, key)), DatumReader())
+    schema = reader.meta["avro.schema"].decode()
+    codec = reader.meta.get("avro.codec", b"null").decode()
+    user_meta = {k: v for k, v in reader.meta.items() if not k.startswith("avro.")}
+    records = list(reader)
+    reader.close()
+
+    out = io.BytesIO()
+    writer = DataFileWriter(out, DatumWriter(), avro_schema.parse(schema), codec=codec)
+    for meta_key, value in user_meta.items():
+        writer.set_meta(meta_key, value)
+    for record in records:
+        rewrite_entry(record)
+        writer.append(record)
+    writer.flush()
+    _put_s3_object_bytes(minio_client, bucket, key, out.getvalue())
+
+
+def test_drop_table_purge_rejects_unresolvable_external_file(started_cluster):
+    # The catalog would purge a file that `DROP` cannot resolve, so its `WRITE` grant check must fail the `DROP`.
+    node = started_cluster.instances["node2"]
+    catalog = load_catalog_impl(started_cluster)
+
+    test_ref = f"test_drop_purge_unresolvable_{uuid.uuid4().hex}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    external_key = f"{test_ref}_external/data.parquet"
+    user = f"{test_ref}_user"
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x Int32)")
+
+    buffer = io.BytesIO()
+    pq.write_table(pa.table({"x": pa.array([7], pa.int32())}, schema=pa.schema([pa.field("x", pa.int32(), nullable=False)])), buffer)
+    _put_s3_object_bytes(started_cluster.minio_client, "warehouse-rest", external_key, buffer.getvalue())
+    table = catalog.load_table(f"{root_namespace}.{table_name}")
+    table.add_files([f"s3://warehouse-rest/{external_key}"])
+
+    # `file://` URIs with a remote host are rejected by ClickHouse.
+    def to_other_host(entry):
+        file_path = entry["data_file"]["file_path"]
+        if file_path.endswith(external_key):
+            entry["data_file"]["file_path"] = file_path.replace("s3://warehouse-rest/", "file://other-host/")
+
+    for manifest in catalog.load_table(f"{root_namespace}.{table_name}").current_snapshot().manifests(table.io):
+        _rewrite_s3_manifest_entries(started_cluster.minio_client, manifest.manifest_path, to_other_host)
+    node.query("SYSTEM DROP ICEBERG METADATA CACHE")
+
+    node.query(f"CREATE USER {user}")
+    node.query(f"GRANT DROP TABLE ON {CATALOG_NAME}.* TO {user}")
+    error = node.query_and_get_error(f"DROP TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`", user=user)
+    assert "refers to host 'other-host'" in error, error
+    assert catalog.table_exists(f"{root_namespace}.{table_name}")
+    assert list_s3_objects(started_cluster.minio_client, "warehouse-rest", f"{test_ref}_external/") == ["data.parquet"]
+
+    node.query(f"DROP USER {user}")
+    catalog.drop_table(f"{root_namespace}.{table_name}")
+
+
+def test_drop_table_purge_requires_write_grant_on_deleted_external_file(started_cluster):
+    # The catalog purges the files of `DELETED` manifest entries too, so `DROP` must check the `WRITE` grant on them.
+    node = started_cluster.instances["node2"]
+    catalog = load_catalog_impl(started_cluster)
+
+    test_ref = f"test_drop_purge_deleted_external_{uuid.uuid4().hex}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    external_key = f"{test_ref}_external/data.parquet"
+    user = f"{test_ref}_user"
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x Int32)")
+
+    buffer = io.BytesIO()
+    pq.write_table(pa.table({"x": pa.array([7], pa.int32())}, schema=pa.schema([pa.field("x", pa.int32(), nullable=False)])), buffer)
+    _put_s3_object_bytes(started_cluster.minio_client, "warehouse-rest", external_key, buffer.getvalue())
+    table = catalog.load_table(f"{root_namespace}.{table_name}")
+    table.add_files([f"s3://warehouse-rest/{external_key}"])
+
+    # The external file remains only in a `DELETED` entry, as after expiring the snapshot that added it.
+    def mark_deleted(entry):
+        if entry["data_file"]["file_path"].endswith(external_key):
+            entry["status"] = 2
+
+    for manifest in catalog.load_table(f"{root_namespace}.{table_name}").current_snapshot().manifests(table.io):
+        _rewrite_s3_manifest_entries(started_cluster.minio_client, manifest.manifest_path, mark_deleted)
+    node.query("SYSTEM DROP ICEBERG METADATA CACHE")
+    assert node.query(f"SELECT x FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == ""
+
+    node.query(f"CREATE USER {user}")
+    node.query(f"GRANT DROP TABLE ON {CATALOG_NAME}.* TO {user}")
+    error = node.query_and_get_error(f"DROP TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`", user=user)
+    assert "Not enough privileges to drop the Iceberg table" in error, error
+    assert catalog.table_exists(f"{root_namespace}.{table_name}")
+    assert list_s3_objects(started_cluster.minio_client, "warehouse-rest", f"{test_ref}_external/") == ["data.parquet"]
+
+    node.query(f"DROP USER {user}")
+    catalog.drop_table(f"{root_namespace}.{table_name}")
+
+
+def test_drop_table_purge_checks_catalog_head_of_cached_table(started_cluster):
+    # A cached table checks the files of the catalog head that the purge deletes, not of the head it was cached at.
+    node = started_cluster.instances["node2"]
+    catalog = load_catalog_impl(started_cluster)
+
+    test_ref = f"test_drop_purge_cached_{uuid.uuid4().hex}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    external_key = f"{test_ref}_external/data.parquet"
+    user = f"{test_ref}_user"
+
+    create_clickhouse_iceberg_database(
+        started_cluster, node, CATALOG_NAME, additional_settings={"allow_experimental_iceberg_compaction": 1}
+    )
+    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x Int32)")
+    assert node.query(f"SELECT x FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == ""
+
+    buffer = io.BytesIO()
+    pq.write_table(pa.table({"x": pa.array([7], pa.int32())}, schema=pa.schema([pa.field("x", pa.int32(), nullable=False)])), buffer)
+    _put_s3_object_bytes(started_cluster.minio_client, "warehouse-rest", external_key, buffer.getvalue())
+    catalog.load_table(f"{root_namespace}.{table_name}").add_files([f"s3://warehouse-rest/{external_key}"])
+
+    node.query(f"CREATE USER {user}")
+    node.query(f"GRANT DROP TABLE ON {CATALOG_NAME}.* TO {user}")
+    error = node.query_and_get_error(f"DROP TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`", user=user)
+    assert "Not enough privileges to drop the Iceberg table" in error, error
+    assert catalog.table_exists(f"{root_namespace}.{table_name}")
+    assert list_s3_objects(started_cluster.minio_client, "warehouse-rest", f"{test_ref}_external/") == ["data.parquet"]
+
+    node.query(f"DROP USER {user}")
+    catalog.drop_table(f"{root_namespace}.{table_name}")
 
 
 def test_drop_table_purge_query_setting(started_cluster):

@@ -14,6 +14,7 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/ErrnoException.h>
+#include <Common/maskSensitiveQueryParameters.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/config_version.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -112,14 +113,18 @@ void insertRowToLogTableImpl(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg metadata log table is not configured");
     }
 
+    String normalized_table_path = table_path;
+    while (normalized_table_path.size() > 1 && normalized_table_path.back() == '/')
+        normalized_table_path.pop_back();
+
     iceberg_metadata_log->add([&](DB::IcebergMetadataLogElement & element)
     {
         element = DB::IcebergMetadataLogElement{
             .current_time = spec.tv_sec,
             .query_id = local_context->getCurrentQueryId(),
             .content_type = row_log_level,
-            .table_path = table_path,
-            .file_path = file_path.serialize(),
+            .table_path = normalized_table_path,
+            .file_path = maskCredentialsInURI(file_path.serialize()),
             .metadata_content = row,
             .row_in_file = row_in_file,
             .pruning_status = pruning_status};

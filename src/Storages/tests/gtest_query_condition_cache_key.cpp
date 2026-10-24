@@ -77,3 +77,42 @@ TEST(QueryConditionCacheKey, DataLakeUsesIdentifierWithoutEtag)
     ASSERT_TRUE(no_meta_key.has_value());
     EXPECT_EQ(*no_meta_key, "lake/data.parquet");
 }
+
+namespace
+{
+
+struct DataLakeObjectInfo : ObjectInfo
+{
+    DataLakeObjectInfo(const String & key, const String & metadata_path_)
+        : ObjectInfo(key), metadata_path(metadata_path_)
+    {
+    }
+
+    std::optional<String> getPathInDataLakeMetadata() const override { return metadata_path; }
+
+    String metadata_path;
+};
+
+}
+
+/// The key of a data lake file comes from its path in the table metadata, and the key is visible in
+/// `system.query_condition_cache` and in the logs, so the userinfo and the query of that path must not be in it.
+TEST(QueryConditionCacheKey, DataLakeMetadataPathSecretsAreHidden)
+{
+    DataLakeObjectInfo signed_url("bucket/p.parquet", "http://minio/bucket/p.parquet?X-Amz-Signature=secret_05402");
+    auto key = StorageObjectStorageSource::makeQueryConditionCacheKey(signed_url, /*is_data_lake=*/ true);
+    ASSERT_TRUE(key.has_value());
+    EXPECT_TRUE(key->starts_with("http://minio/bucket/p.parquet#path="));
+    EXPECT_EQ(key->find("secret_05402"), String::npos);
+
+    DataLakeObjectInfo other_signature("bucket/p.parquet", "http://minio/bucket/p.parquet?X-Amz-Signature=other");
+    EXPECT_NE(*key, *StorageObjectStorageSource::makeQueryConditionCacheKey(other_signature, /*is_data_lake=*/ true));
+
+    DataLakeObjectInfo userinfo("bucket/p.parquet", "s3://user:password_05402@bucket/p.parquet");
+    auto userinfo_key = StorageObjectStorageSource::makeQueryConditionCacheKey(userinfo, /*is_data_lake=*/ true);
+    ASSERT_TRUE(userinfo_key.has_value());
+    EXPECT_EQ(userinfo_key->find("password_05402"), String::npos);
+
+    DataLakeObjectInfo plain("bucket/p.parquet", "s3://bucket/p.parquet");
+    EXPECT_EQ(*StorageObjectStorageSource::makeQueryConditionCacheKey(plain, /*is_data_lake=*/ true), "s3://bucket/p.parquet");
+}

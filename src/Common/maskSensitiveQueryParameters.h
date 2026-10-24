@@ -4,7 +4,6 @@
 #include <string_view>
 #include <vector>
 
-
 namespace DB
 {
 
@@ -22,6 +21,9 @@ namespace DB
 /// Only the query-string part (after the first '?') is processed; the path is left untouched.
 /// If the URI has no query string, the original string is returned unchanged.
 std::string maskSensitiveQueryParametersInURI(const std::string & uri);
+
+/// Also accepts strings containing a URI; the first '?' starts the query string and any suffix belongs to it.
+std::string maskCredentialsInURI(const std::string & uri);
 
 /// Decode a query-string component (a parameter name or value) the same way the server interprets it:
 /// HTMLForm::readQuery turns '+' into a space and percent-decodes ('%XX'). A name is classified on
