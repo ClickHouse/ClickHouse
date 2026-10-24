@@ -2586,6 +2586,9 @@ try
         for (const auto * key : {"certificateFile", "privateKeyFile", "caConfig"})
             watch_path(config().getString("protocols." + protocol + "." + key, ""));
 
+    for (const auto * key : {"grpc.ssl_cert_file", "grpc.ssl_key_file", "grpc.ssl_ca_cert_file"})
+        watch_path(config().getString(key, ""));
+
     DNSResolver::instance().setFilterSettings(server_settings[ServerSetting::dns_allow_resolve_names_to_ipv4], server_settings[ServerSetting::dns_allow_resolve_names_to_ipv6]);
     /// DNSCacheUpdater uses BackgroundSchedulePool which lives in shared context
     /// and thus this object must be created after the SCOPE_EXIT object where shared

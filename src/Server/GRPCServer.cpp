@@ -43,9 +43,10 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Server/IServer.h>
+#if USE_SSL
+#include <Server/CertificateReloader.h>
+#endif
 #include <Storages/IStorage.h>
-#include <Poco/FileStream.h>
-#include <Poco/StreamCopier.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <base/range.h>
 #include <Common/logger_useful.h>
@@ -57,6 +58,8 @@
 
 #include <grpc/support/log.h>
 #include <grpc++/security/server_credentials.h>
+#include <grpcpp/security/tls_certificate_provider.h>
+#include <grpcpp/security/tls_credentials_options.h>
 #include <grpc++/server.h>
 #include <grpc++/server_builder.h>
 
@@ -177,40 +180,6 @@ namespace
                 absl::SetVLogLevel("*grpc*/*", -1);
             }
         });
-    }
-
-    /// Gets file's contents as a string, throws an exception if failed.
-    String readFile(const String & filepath)
-    {
-        Poco::FileInputStream ifs(filepath);
-        String res;
-        Poco::StreamCopier::copyToString(ifs, res);
-        return res;
-    }
-
-    /// Makes credentials based on the server config.
-    std::shared_ptr<grpc::ServerCredentials> makeCredentials(const Poco::Util::AbstractConfiguration & config)
-    {
-        if (config.getBool("grpc.enable_ssl", false))
-        {
-#if USE_SSL
-            grpc::SslServerCredentialsOptions options;
-            grpc::SslServerCredentialsOptions::PemKeyCertPair key_cert_pair;
-            key_cert_pair.private_key = readFile(config.getString("grpc.ssl_key_file"));
-            key_cert_pair.cert_chain = readFile(config.getString("grpc.ssl_cert_file"));
-            options.pem_key_cert_pairs.emplace_back(std::move(key_cert_pair));
-            if (config.getBool("grpc.ssl_require_client_auth", false))
-            {
-                options.client_certificate_request = GRPC_SSL_REQUEST_AND_REQUIRE_CLIENT_CERTIFICATE_AND_VERIFY;
-                if (config.has("grpc.ssl_ca_cert_file"))
-                    options.pem_root_certs = readFile(config.getString("grpc.ssl_ca_cert_file"));
-            }
-            return grpc::SslServerCredentials(options);
-#else
-            throw DB::Exception(DB::ErrorCodes::SUPPORT_IS_DISABLED, "Can't use SSL in grpc, because ClickHouse was built without SSL library");
-#endif
-        }
-        return grpc::InsecureServerCredentials();
     }
 
     /// Transport compression makes gRPC library to compress packed Result messages before sending them through network.
@@ -2071,7 +2040,63 @@ GRPCServer::GRPCServer(IServer & iserver_, const Poco::Net::SocketAddress & addr
 
 GRPCServer::~GRPCServer()
 {
+#if USE_SSL
+    if (pem_consumer_id)
+        CertificateReloader::instance().unregisterPEMConsumer(*pem_consumer_id);
+#endif
     runner.reset();
+}
+
+std::shared_ptr<grpc::ServerCredentials> GRPCServer::makeCredentials(const Poco::Util::AbstractConfiguration & config)
+{
+    if (!config.getBool("grpc.enable_ssl", false))
+        return grpc::InsecureServerCredentials();
+
+#if USE_SSL
+    bool require_client_auth = config.getBool("grpc.ssl_require_client_auth", false);
+    /// CA certificates are used only to verify client certificates.
+    bool use_root_certificates = require_client_auth && !config.getString("grpc.ssl_ca_cert_file", "").empty();
+
+    /// The certificates are reloaded by CertificateReloader when the files change.
+    auto certificate_provider = std::make_shared<grpc::experimental::InMemoryCertificateProvider>();
+    auto update_certificates = [certificate_provider, use_root_certificates](const CertificateReloader::PEMFiles & files)
+    {
+        if (use_root_certificates && files.root_certificates.empty())
+            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Removing 'grpc.ssl_ca_cert_file' requires a restart");
+
+        std::vector<grpc::experimental::IdentityKeyCertPair> key_cert_pairs(1);
+        key_cert_pairs[0].private_key = files.private_key;
+        key_cert_pairs[0].certificate_chain = files.certificate_chain;
+        if (auto status = certificate_provider->UpdateIdentityKeyCertPair(std::move(key_cert_pairs)); !status.ok())
+            throw Exception(ErrorCodes::NETWORK_ERROR, "Cannot update gRPC certificate: {}", status.ToString());
+
+        if (use_root_certificates)
+        {
+            if (auto status = certificate_provider->UpdateRoot(files.root_certificates); !status.ok())
+                throw Exception(ErrorCodes::NETWORK_ERROR, "Cannot update gRPC CA certificates: {}", status.ToString());
+        }
+    };
+
+    CertificateReloader::PEMFileKeys keys{"grpc.ssl_cert_file", "grpc.ssl_key_file", use_root_certificates ? "grpc.ssl_ca_cert_file" : ""};
+    pem_consumer_id = CertificateReloader::instance().registerPEMConsumer(config, std::move(keys), std::move(update_certificates));
+
+    /// Not `TlsServerCredentialsOptions::Create`: its inline error path needs an abseil symbol built with another `SourceLocation`.
+    grpc::experimental::TlsServerCredentialsOptions options(nullptr);
+    options.set_identity_certificate_provider(certificate_provider);
+
+    if (require_client_auth)
+        options.set_cert_request_type(GRPC_SSL_REQUEST_AND_REQUIRE_CLIENT_CERTIFICATE_AND_VERIFY);
+    if (use_root_certificates)
+    {
+        options.set_root_certificate_provider(certificate_provider);
+        /// Like `grpc::SslServerCredentials`, tell clients which CAs are trusted.
+        options.set_send_client_ca_list(true);
+    }
+
+    return grpc::experimental::TlsServerCredentials(options);
+#else
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Can't use SSL in grpc, because ClickHouse was built without SSL library");
+#endif
 }
 
 void GRPCServer::start()

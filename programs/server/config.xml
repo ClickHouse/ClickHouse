@@ -356,7 +356,7 @@
     <grpc>
         <enable_ssl>false</enable_ssl>
 
-        <!-- The following two files are used only if enable_ssl=1 -->
+        <!-- The following two files are used only if enable_ssl=1. They are reloaded when they change -->
         <ssl_cert_file>/path/to/ssl_cert_file</ssl_cert_file>
         <ssl_key_file>/path/to/ssl_key_file</ssl_key_file>
 
