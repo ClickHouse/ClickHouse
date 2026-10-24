@@ -566,13 +566,14 @@ IExecutableFunction::IExecutableFunction()
     }
 }
 
-/// True if any argument is a non-native LowCardinality column, i.e. the dictionary-encoded
+/// True if any argument is or contains a non-native LowCardinality column, i.e. the dictionary-encoded
 /// representation of a column whose data type is not LowCardinality (automatic LowCardinality
-/// serialization). Such columns are never nested, so a top-level check is enough.
+/// serialization). It is checked recursively: a `Native` peer can send such a column as an element
+/// of a `Tuple`, which no type-based dispatch would notice.
 static bool hasNonNativeLowCardinality(const ColumnsWithTypeAndName & arguments)
 {
     for (const auto & column : arguments)
-        if (column.column && column.column->lowCardinality() && !column.column->isNativeLowCardinality())
+        if (column.column && hasNonNativeLowCardinality(*column.column))
             return true;
     return false;
 }

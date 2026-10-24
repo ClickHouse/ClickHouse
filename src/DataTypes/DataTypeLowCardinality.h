@@ -102,6 +102,10 @@ ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column);
 /// (automatic LowCardinality serialization) to full columns, leaving genuine LowCardinality(T) intact.
 ColumnPtr recursiveRemoveNonNativeLowCardinality(const ColumnPtr & column);
 
+/// True if the column or any of its nested columns is a non-native LowCardinality column, i.e. exactly when
+/// recursiveRemoveNonNativeLowCardinality would change it. Cheap: it does not allocate.
+bool hasNonNativeLowCardinality(const IColumn & column);
+
 /// Convert column of type from_type to type to_type by converting nested LowCardinality columns.
 ColumnPtr recursiveLowCardinalityTypeConversion(const ColumnPtr & column, const DataTypePtr & from_type, const DataTypePtr & to_type);
 

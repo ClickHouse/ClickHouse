@@ -277,6 +277,10 @@ Block NativeReader::read()
 
                 if (!header_column.type->equals(*column.type))
                 {
+                    /// The conversions below key on the data types, which do not reflect the dictionary-encoded
+                    /// representation of automatic LowCardinality serialization, so convert to the full column first.
+                    column.column = recursiveRemoveNonNativeLowCardinality(column.column);
+
                     /// In the event of the same aggregate function but of a different variant (e.g. Window vs Aggregate),
                     /// we should try to convert and read, since the difference in `Window` vs `Aggregate` is not a
                     /// user-facing type difference but rather an internal implementation detail.

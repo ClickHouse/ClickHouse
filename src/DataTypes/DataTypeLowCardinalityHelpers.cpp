@@ -202,6 +202,33 @@ ColumnPtr recursiveRemoveNonNativeLowCardinality(const ColumnPtr & column)
     return recursiveRemoveLowCardinalityImpl(column, /*remove_native=*/false);
 }
 
+bool hasNonNativeLowCardinality(const IColumn & column)
+{
+    /// Follows the same traversal as recursiveRemoveLowCardinalityImpl.
+    if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(&column))
+        return hasNonNativeLowCardinality(column_nullable->getNestedColumn());
+    if (const auto * column_array = typeid_cast<const ColumnArray *>(&column))
+        return hasNonNativeLowCardinality(column_array->getData());
+    if (const auto * column_const = typeid_cast<const ColumnConst *>(&column))
+        return hasNonNativeLowCardinality(column_const->getDataColumn());
+    if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(&column))
+    {
+        for (const auto & element : column_tuple->getColumns())
+            if (hasNonNativeLowCardinality(*element))
+                return true;
+        return false;
+    }
+    if (const auto * column_map = typeid_cast<const ColumnMap *>(&column))
+        return hasNonNativeLowCardinality(column_map->getNestedColumn());
+    if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(&column))
+        return !column_low_cardinality->isNativeLowCardinality();
+    if (const auto * column_sparse = typeid_cast<const ColumnSparse *>(&column))
+        return hasNonNativeLowCardinality(column_sparse->getValuesColumn());
+    if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(&column))
+        return hasNonNativeLowCardinality(*column_replicated->getNestedColumn());
+    return false;
+}
+
 ColumnPtr recursiveLowCardinalityTypeConversion(const ColumnPtr & column, const DataTypePtr & from_type, const DataTypePtr & to_type)
 {
     if (!column)

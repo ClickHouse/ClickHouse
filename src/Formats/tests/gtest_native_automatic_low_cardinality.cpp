@@ -246,3 +246,81 @@ TEST(NativeAutomaticLowCardinality, BLOBThroughOlderRevision)
     for (size_t i = 0; i < num_rows; ++i)
         ASSERT_EQ(String(full->getDataAt(i)), "val_" + std::to_string(i % 4)) << "row " << i;
 }
+
+TEST(NativeAutomaticLowCardinality, TupleElementThroughCurrentRevision)
+{
+    /// A peer of the current revision keeps the encoding of a `Tuple` element. The type of the read column is
+    /// still `Tuple(String)`, so only a recursive check of the column notices the encoded element.
+    static constexpr UInt64 revision = DBMS_MIN_REVISION_WITH_AUTOMATIC_LOW_CARDINALITY_SERIALIZATION;
+    static constexpr size_t num_rows = 1000;
+
+    auto tuple_type = DataTypeFactory::instance().get("Tuple(String)");
+
+    Block block;
+    {
+        auto element = makeAutomaticallyEncodedColumn(num_rows);
+        block.insert(ColumnWithTypeAndName(ColumnTuple::create(Columns{element.column}), tuple_type, "t"));
+    }
+
+    String encoded;
+    {
+        WriteBufferFromString out(encoded);
+        NativeWriter writer(out, revision, std::make_shared<const Block>(block.cloneEmpty()));
+        writer.write(block);
+        writer.flush();
+    }
+
+    ReadBufferFromString in(encoded);
+    NativeReader reader(in, revision);
+    auto read_block = reader.read();
+
+    ASSERT_EQ(read_block.rows(), num_rows);
+    const auto & read = read_block.getByName("t");
+    EXPECT_EQ(read.type->getName(), "Tuple(String)");
+    EXPECT_FALSE(read.column->lowCardinality());
+    EXPECT_TRUE(hasNonNativeLowCardinality(*read.column));
+
+    auto full = recursiveRemoveNonNativeLowCardinality(read.column);
+    EXPECT_FALSE(hasNonNativeLowCardinality(*full));
+    const auto & element = typeid_cast<const ColumnTuple &>(*full).getColumn(0);
+    for (size_t i = 0; i < num_rows; ++i)
+        ASSERT_EQ(String(element.getDataAt(i)), "val_" + std::to_string(i % 4)) << "row " << i;
+}
+
+TEST(NativeAutomaticLowCardinality, LowCardinalityHeaderWithoutTypesConversion)
+{
+    /// The reader converts an encoded `String` column to a `LowCardinality(String)` header with the conversion
+    /// for old clients, which expects a full column of the dictionary type.
+    static constexpr UInt64 revision = DBMS_MIN_REVISION_WITH_AUTOMATIC_LOW_CARDINALITY_SERIALIZATION;
+    static constexpr size_t num_rows = 1000;
+
+    Block block;
+    block.insert(makeAutomaticallyEncodedColumn(num_rows));
+
+    String encoded;
+    {
+        WriteBufferFromString out(encoded);
+        NativeWriter writer(out, revision, std::make_shared<const Block>(block.cloneEmpty()));
+        writer.write(block);
+        writer.flush();
+    }
+
+    auto low_cardinality_type = DataTypeFactory::instance().get("LowCardinality(String)");
+    Block header;
+    header.insert(ColumnWithTypeAndName(low_cardinality_type->createColumn(), low_cardinality_type, "s"));
+
+    FormatSettings format_settings;
+    format_settings.native.allow_types_conversion = false;
+
+    ReadBufferFromString in(encoded);
+    NativeReader reader(in, header, revision, format_settings);
+    auto read_block = reader.read();
+
+    ASSERT_EQ(read_block.rows(), num_rows);
+    const auto & read = read_block.getByName("s");
+    EXPECT_EQ(read.type->getName(), "LowCardinality(String)");
+    ASSERT_TRUE(read.column->lowCardinality());
+    EXPECT_TRUE(read.column->isNativeLowCardinality());
+    for (size_t i = 0; i < num_rows; ++i)
+        ASSERT_EQ(String(read.column->getDataAt(i)), "val_" + std::to_string(i % 4)) << "row " << i;
+}
