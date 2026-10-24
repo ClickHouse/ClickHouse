@@ -222,6 +222,8 @@ struct QueryPlanOptimizationSettings
 
     /// If lazy materialization optimisation is enabled
     bool optimize_lazy_materialization = false;
+    /// If lazy materialization may also be applied to `LIMIT ... WITH TIES` (tied rows past the limit are read lazily too)
+    bool optimize_lazy_materialization_with_ties = false;
     bool optimize_lazy_materialization_for_object_storage = false;
     bool optimize_lazy_materialization_for_file = false;
     bool lazy_materialization_for_join = false;
