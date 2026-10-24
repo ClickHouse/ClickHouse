@@ -134,17 +134,18 @@ bool assocHolds(const NormOp & row, const NormOp & col, UInt32 shared)
     return false;
 }
 
-/// l-asscom(row, col); `e1` is row's left (shared) operand, `e3` the operand col brings in.
+/// l-asscom(row, col); `e1` is row's left (shared) operand.
 /// Conditional entries: (LeftOuter, FullOuter) needs row null-rejecting on `e1`; (FullOuter,
-/// LeftOuter) needs col on `e3`; (FullOuter, FullOuter) needs both on `e1`.
-bool lAsscomHolds(const NormOp & row, const NormOp & col, UInt32 e1, UInt32 e3)
+/// LeftOuter) needs col on `e1`, as `(e1 FULL e2) LEFT e3` pads `e1` with nulls before col reads it;
+/// (FullOuter, FullOuter) needs both on `e1`.
+bool lAsscomHolds(const NormOp & row, const NormOp & col, UInt32 e1)
 {
     if (lAsscom(row.category, col.category))
         return true;
     if (row.category == Category::LeftOuter && col.category == Category::FullOuter)
         return (row.nr_rels & e1) != 0;
     if (row.category == Category::FullOuter && col.category == Category::LeftOuter)
-        return (col.nr_rels & e3) != 0;
+        return (col.nr_rels & e1) != 0;
     if (row.category == Category::FullOuter && col.category == Category::FullOuter)
         return (row.nr_rels & e1) != 0 && (col.nr_rels & e1) != 0;
     return false;
@@ -216,7 +217,7 @@ computeConflictOperators(const std::vector<ConflictOpMask> & ops, ConflictDetect
                     if (cdc) rules.push_back({a.right, (a.left & fta) ? (a.left & fta) : a.left});
                     else     tes |= a.left;
                 }
-                if (!lAsscomHolds(a, b, a.left, b.right))
+                if (!lAsscomHolds(a, b, a.left))
                 {
                     if (cdc) rules.push_back({a.left, (a.right & fta) ? (a.right & fta) : a.right});
                     else     tes |= a.right;
@@ -255,6 +256,15 @@ computeConflictOperators(const std::vector<ConflictOpMask> & ops, ConflictDetect
         desc.degenerate = ((nel & b_left) == 0) || ((nel & b_right) == 0);
         desc.freely_reorderable = isFreelyReorderable(b.category);
         desc.rules = std::move(rules);
+
+        /// An inner join's ON clause is split into parts placed independently, so demanding all of
+        /// it here would only lock the join where it sat in the original query. CD-A keeps the
+        /// demand (its conflicts live here), as do outer and semi/anti joins (they need the sides).
+        if (cdc && desc.freely_reorderable && !desc.degenerate)
+        {
+            desc.required_left = 0;
+            desc.required_right = 0;
+        }
 
         LOG_TEST(log, "{} op: relations {} nel {} nrRels {} reqL {} reqR {} rules {} kind {} strictness {} free {}",
                  cdc ? "CD-C" : "CD-A", b_rel, nel, b.nr_rels, desc.required_left, desc.required_right,

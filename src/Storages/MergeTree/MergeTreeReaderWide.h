@@ -286,8 +286,7 @@ private:
     /// can only be positioned at marks, which is why the unit is a granule.
 
     /// Whether this reader can use the cache at all: the cache is on, and the part is a wide part
-    /// of a table with a UUID (the key of the cache) and not a projection part - projection parts
-    /// share the projection name as their part name, which is not unique across parent parts.
+    /// of a table with a UUID (the key of the cache).
     bool columns_cache_reads_possible = false;
     bool columns_cache_writes_possible = false;
 
@@ -295,6 +294,9 @@ private:
     /// for the cache. See `ColumnsCacheKey`.
     ColumnsCacheStripes stripes;
     std::vector<UInt128> column_identities;
+
+    /// The name of the part in the cache, see `getColumnsCachePartName`.
+    String columns_cache_part_name;
 
     /// Invalidation generation captured once when the reader was created, not per mark range.
     /// Passed to ColumnsCache::setMany so a deferred write is dropped if the table was
