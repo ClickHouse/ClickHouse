@@ -144,11 +144,19 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
             auto lhs_source = lhs_column_node->getColumnSourceOrNull();
             auto rhs_source = rhs_column_node->getColumnSourceOrNull();
 
-            if (bool(lhs_source) != bool(rhs_source))
-                return false;
+            if (compare_options.compare_column_sources_by_identity)
+            {
+                if (lhs_source != rhs_source)
+                    return false;
+            }
+            else
+            {
+                if (bool(lhs_source) != bool(rhs_source))
+                    return false;
 
-            if (lhs_source && rhs_source)
-                nodes_to_process.emplace_back(lhs_source.get(), rhs_source.get());
+                if (lhs_source && rhs_source)
+                    nodes_to_process.emplace_back(lhs_source.get(), rhs_source.get());
+            }
         }
 
         equals_pairs.emplace(lhs_node_to_compare, rhs_node_to_compare);

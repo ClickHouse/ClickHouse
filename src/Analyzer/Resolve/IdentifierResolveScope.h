@@ -169,6 +169,9 @@ struct IdentifierResolveScope
     /// scope must not make an alias of another scope look referenced.
     std::unordered_set<std::string> used_alias_names;
 
+    /// Projection names of top-level identifiers resolved from the join tree although a same-named alias exists.
+    std::unordered_set<std::string> projection_names_shadowing_aliases;
+
     /// Valid only during table ALIAS columns resolve.
     AnalysisTableExpressionData * table_expression_data_for_alias_resolution = nullptr;
 
