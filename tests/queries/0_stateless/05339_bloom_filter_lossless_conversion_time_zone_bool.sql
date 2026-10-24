@@ -1,7 +1,6 @@
 -- A skip index is not analyzed through a cast to another time zone or from `UInt8` to `Bool`. These types are
 -- equal by `IDataType::equals`, but the time zone changes how a literal is parsed, and `Bool` converts 2 to 1.
 
-SET enable_analyzer = 1;
 SET use_skip_indexes = 1;
 SET use_skip_indexes_on_data_read = 0;
 SET use_query_condition_cache = 0;

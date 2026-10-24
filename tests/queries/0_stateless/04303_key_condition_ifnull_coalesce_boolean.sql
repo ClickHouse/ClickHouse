@@ -5,7 +5,6 @@ SET explain_query_plan_default = 'legacy';
 
 -- { echo }
 
-SET enable_analyzer = 1;
 SET allow_key_condition_coalesce_rewrite = 1;
 
 DROP TABLE IF EXISTS t_ifnull_keycond;

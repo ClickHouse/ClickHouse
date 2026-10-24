@@ -994,7 +994,7 @@ The cache currently applies to wide parts only: data in compact parts is not rea
 
 An entry holds a contiguous range of granules of one stripe: a granule enters the cache only after it has been read from its first row to its last, a read is served from the cache granule by granule, and ranges written by different reads are merged, so reads that cut a part into different mark ranges share the entries.
 
-The cache also applies to `Parquet` files read from the local filesystem (the `file` table function and the `File` table engine), from object storages (`s3`, `azureBlobStorage` and their table engines), and by data lake tables. There an entry holds a whole column of one row group, keyed by the path of the file, its version (the ETag of an object, or the modification time, inode and size of a local file), the column of the file and the type it is read as. A column of a row group is written to the cache only when all rows of the row group are read, before any filter is applied to them: with `PREWHERE`, that is the case for the columns of the filter, while the other columns are read only for the rows that pass it. A local file is cached only once it has not been modified for a few seconds, so that its version identifies its content.
+The cache also applies to `Parquet` files read from the local filesystem (the `file` table function and the `File` table engine), from object storages (`s3`, `azureBlobStorage` and their table engines), and by data lake tables. There an entry holds a chunk of 65536 rows of a column of one row group (the last chunk of a row group can be shorter), keyed by the path of the file, its version (the ETag of an object, or the modification time, inode and size of a local file), the column of the file and the type it is read as. A row group that uses the cache is read in these chunks, whatever the block size settings. A chunk is written to the cache as it is decoded, without a copy, if all its rows were read before any filter was applied to them: with `PREWHERE`, that is the case for the columns of the filter, while the other columns are read only for the rows that pass it. A column of a row group is served from the cache when all its chunks are there, so the chunks of a column that cannot all be written are taken back out of the cache. A local file is cached only once it has not been modified for a few seconds, so that its version identifies its content.
 )", EXPERIMENTAL, \
         {"26.10", false, false, "New experimental setting to enable columns cache for MergeTree tables, disabled by default."}) \
     DECLARE(Bool, enable_reads_from_columns_cache, true, R"(
@@ -10597,13 +10597,14 @@ Minimum estimated ratio of join output rows to build-side rows to enable transfo
 Timeout in seconds for individual HTTP requests made by AI functions (AI chat completions and embedding API calls). If a request does not complete within this time, it is considered failed and may be retried according to `ai_function_max_retries`.
 )", BETA, \
         {"26.4", 60, 60, "New setting"}) \
-    DECLARE(UInt64, ai_function_max_retries, 1, R"(
-Maximum number of retry attempts for transient errors per individual API request. Each retry uses exponential backoff starting from `ai_function_retry_initial_delay_ms`.
+    DECLARE(UInt64, ai_function_max_retries, 3, R"(
+Maximum number of retry attempts for transient errors per individual API request. Each retry uses exponential backoff starting from `ai_function_retry_initial_delay_ms`. At most 5.
 )", BETA, \
+        {"26.11", 1, 3, "Retry a transient API error up to three times by default, to reduce load on an overloaded rate-limited provider under concurrent requests."}, \
         {"26.9", 0, 1, "Retry a transient API error once by default, so a single 429 or 5xx from the provider does not fail the query."}, \
         {"26.4", 0, 0, "New setting"}) \
     DECLARE(UInt64, ai_function_retry_initial_delay_ms, 1000, R"(
-Initial delay in milliseconds before the first retry of a failed AI function API request. The delay doubles on each subsequent attempt (exponential backoff). For example, with default settings: 1000ms, 2000ms, 4000ms.
+Initial delay in milliseconds before the first retry of a failed AI function API request. The delay doubles on each subsequent attempt (exponential backoff). For example, with default settings: 1000ms, 2000ms, 4000ms. At most 10000.
 )", BETA, \
         {"26.4", 1000, 1000, "New setting"}) \
     DECLARE(Bool, ai_function_throw_on_error, true, R"(
@@ -10638,6 +10639,19 @@ If true (default), exceeding an AI function quota limit (`ai_function_max_input_
 Maximum number of texts to include in a single HTTP request made by the embedding functions (`aiEmbed`, `aiSimilarity`). Texts are grouped into batches of this size to reduce API call overhead. For example, 500 unique texts with a batch size of 100 result in 5 HTTP requests.
 )", BETA, \
         {"26.6", 100, 100, "New setting"}) \
+    DECLARE(NonZeroUInt64, ai_function_max_concurrent_requests_per_thread, 8, R"(
+Maximum number of provider requests one query thread has in flight at the same time. `1` issues requests one at a time.
+
+A query running on several threads (at most `max_threads`) can have up to this many requests in flight per thread. Use a [settings profile constraint](/concepts/features/configuration/settings/constraints-on-settings) (`<constraints><ai_function_max_concurrent_requests_per_thread><max>...</max></...>`) to put a ceiling on it that a query cannot raise. The ceiling is still per thread.
+
+A value above `1` loosens two guarantees:
+
+- A request's token usage is only known once its response arrives, so the token quotas (`ai_function_max_input_tokens_per_query`, `ai_function_max_output_tokens_per_query`) may overshoot by one request's worth per request in flight - that is, by up to this many requests' worth rather than by one.
+- A whole wave of requests is dispatched before any of their errors is seen, so a query that fails on its first row may still have issued, and been billed for, up to this many requests.
+
+`ai_function_max_api_calls_per_query` is unaffected and stays an exact cap, because a slot is reserved before each request is dispatched.
+)", BETA, \
+        {"26.11", 1, 8, "New setting"}) \
     DECLARE(String, ai_function_text_default_credentials, "", R"(
 Name of the named collection used by the text AI functions (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`) when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. A chat-completions endpoint differs from an embeddings one, so this is separate from `ai_function_embedding_default_credentials`.
 )", BETA, \
@@ -11100,10 +11114,6 @@ Used by the rule-based distributed planner. The cost-based optimizer chooses the
 Removes unnecessary exchanges in distributed query plan. Disable it for debugging.
 )", 0, \
         {"25.5", true, true, "New experimental setting."}) \
-    DECLARE(String, distributed_plan_worker_cluster, "", R"(
-Name of the stateless-worker cluster to execute this query's distributed plan on. The empty default selects the pre-configured default cluster; other clusters are configured under `stateless_worker_client.clusters`.
-)", PRIVATE_PREVIEW, \
-        {"26.11", "", "", "New setting to select the stateless worker cluster for distributed plan execution."}) \
     DECLARE(UInt64, distributed_plan_workers_num, 0, R"(
 How many stateless workers will be used to execute this query. Zero disables stateless-worker leasing for distributed plans.
 )", PRIVATE_PREVIEW, \
@@ -11160,6 +11170,10 @@ order. Only shapes where no exchange survives between the read and the sort are 
 Serialize the distributed query plan for execution at replicas.
 )", PRIVATE_PREVIEW, \
         {"26.4", false, false, "New setting to serialize distributed plan for replicas"}) \
+    DECLARE(String, distributed_plan_worker_cluster, "", R"(
+Name of the stateless-worker cluster to execute this query's distributed plan on. The empty default selects the pre-configured default cluster; other clusters are configured under `stateless_worker_client.clusters`.
+)", PRIVATE_PREVIEW, \
+        {"26.11", "", "", "New setting to select the stateless worker cluster for distributed plan execution."}) \
     DECLARE(Bool, distributed_plan_join_runtime_filters, false, R"(
 With `make_distributed_plan`, send join runtime filters built in one stage to the stages that read the probe side, so those stages filter rows before sending them. If a filter does not arrive, rows pass unfiltered. Requires `enable_join_runtime_filters`.
 )", EXPERIMENTAL, \

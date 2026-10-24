@@ -3016,7 +3016,8 @@ bool ReadFromMergeTree::hasThrowingReadRowLimit() const
 {
     const auto & settings = context->getSettingsRef();
     return (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
-        || (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && settings[Setting::max_rows_to_read_leaf]);
+        || (context->getClientInfo().distributed_depth > 0
+            && settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && settings[Setting::max_rows_to_read_leaf]);
 }
 
 std::optional<size_t> ReadFromMergeTree::estimateCompressedBytesToRead() const
@@ -5191,6 +5192,8 @@ bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
     /// `read_overflow_mode_leaf` with `max_rows_to_read_leaf`) are evaluated early during execution,
     /// during initialization of the pipeline based on estimated row counts. Estimation doesn't work properly
     /// if the skip index is evaluated during data read (scan).
+    /// The leaf limit disables it at every `distributed_depth`, unlike `hasThrowingReadRowLimit`:
+    /// automatic parallel replicas give the analysis of a local read to a leaf read.
     if (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
         return false;
     if (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && settings[Setting::max_rows_to_read_leaf])
