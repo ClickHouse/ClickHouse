@@ -9,6 +9,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Functions/DateTimeTransforms.h>
 
+#include <Common/memcpySmall.h>
 #include <arrow/util/bit_stream_utils_internal.h>
 #include <arrow/util/byte_stream_split_internal.h>
 
@@ -22,6 +23,26 @@ namespace DB::ErrorCodes
 
 namespace DB::Parquet
 {
+
+template <typename Get>
+static void appendStringsFromPaddedSource(ColumnString & col, size_t n, size_t total_bytes, Get && get)
+{
+    auto & chars = col.getChars();
+    auto & col_offsets = col.getOffsets();
+
+    size_t pos = chars.size();
+    const size_t old_rows = col_offsets.size();
+    chars.resize(pos + total_bytes);
+    col_offsets.resize(old_rows + n);
+    char * out = reinterpret_cast<char *>(chars.data());
+    for (size_t i = 0; i < n; ++i)
+    {
+        std::string_view s = get(i);
+        memcpySmallAllowReadWriteOverflow15(out + pos, s.data(), s.size());
+        pos += s.size();
+        col_offsets[old_rows + i] = pos;
+    }
+}
 
 /// Used for dictionary indices and repetition/definition levels.
 /// Throws if any decoded value is >= `limit`.
@@ -548,6 +569,44 @@ struct PlainStringDecoder : public PageDecoder
         {
             /// Fast path for directly appending to ColumnString.
             auto & col_str = assert_cast<ColumnString &>(col);
+            if (!value_filter || !value_filter->isEnabled())
+            {
+                auto & chars = col_str.getChars();
+                auto & col_offsets = col_str.getOffsets();
+                size_t pos = chars.size();
+                size_t row = col_offsets.size();
+                chars.resize(chars.capacity());
+                col_offsets.resize(row + num_values);
+                char * out = reinterpret_cast<char *>(chars.data());
+                for (size_t i = 0; i < num_values; ++i)
+                {
+                    UInt32 x = 0;
+                    memcpy(&x, data, 4); /// omitting range check because input is padded
+                    size_t len = 4 + size_t(x);
+                    if (len > size_t(end - data))
+                    {
+                        chars.resize(pos);
+                        col_offsets.resize(row);
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Encoded string is out of bounds");
+                    }
+                    if (!filter || filter[filter_offset + i])
+                    {
+                        if (unlikely(pos + x > chars.size()))
+                        {
+                            chars.resize(std::max(pos + x, chars.size() * 2));
+                            out = reinterpret_cast<char *>(chars.data());
+                        }
+                        memcpySmallAllowReadWriteOverflow15(out + pos, data + 4, x);
+                        pos += x;
+                        col_offsets[row++] = pos;
+                    }
+                    data += len;
+                }
+                chars.resize(pos);
+                col_offsets.resize(row);
+                return;
+            }
+
             size_t to_reserve = filter ? 0 : num_values;
             for (size_t i = 0; filter && i < num_values; ++i)
                 to_reserve += filter[filter_offset + i];
@@ -1844,14 +1903,15 @@ void Dictionary::appendIndexes(const UInt32 * indexes, size_t n, IColumn & out, 
                 string_value_filter->updateStatsWithoutPerValueChecks(n, values_replaced, bytes_skipped);
                 break;
             }
+            size_t total_bytes = 0;
             for (size_t i = 0; i < n; ++i)
+                total_bytes += offsets[indexes[i]] - offsets[ssize_t(indexes[i]) - 1] - 4;
+            appendStringsFromPaddedSource(c, n, total_bytes, [&](size_t i)
             {
                 UInt32 idx = indexes[i];
                 size_t start = offsets[ssize_t(idx) - 1] + 4; // offsets[-1] is ok because of padding
-                size_t len = offsets[idx] - start;
-                /// TODO [parquet]: Try optimizing short memcpy by taking advantage of padding (maybe memcpySmall.h helps). Also in PlainStringDecoder.
-                c.insertData(data.data() + start, len);
-            }
+                return std::string_view(data.data() + start, offsets[idx] - start);
+            });
             break;
         }
         case Mode::Column:
