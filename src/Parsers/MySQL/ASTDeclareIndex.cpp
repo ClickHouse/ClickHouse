@@ -15,7 +15,7 @@ namespace MySQLParser
 struct ParserIndexColumn : public IParserBase
 {
 protected:
-    const char * getName() const override { return "index column"; }
+    [[nodiscard]] const char * getName() const override { return "index column"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
     {

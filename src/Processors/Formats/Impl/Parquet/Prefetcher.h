@@ -140,7 +140,7 @@ private:
         size_t start;
         size_t end;
 
-        size_t length() const { return end - start; }
+        [[nodiscard]] size_t length() const { return end - start; }
     };
 
     /// A range to read from file. May cover multiple request ranges.

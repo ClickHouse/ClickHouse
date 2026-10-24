@@ -60,7 +60,7 @@ public:
 private:
     std::unique_ptr<ReadBuffer> readFile(const String & file_name, size_t expected_file_size) override;
     void removeEmptyDirectoriesImpl(const std::filesystem::path & current_dir);
-    std::optional<std::filesystem::path> getLocalPathToSync(const std::filesystem::path & path) const;
+    [[nodiscard]] std::optional<std::filesystem::path> getLocalPathToSync(const std::filesystem::path & path) const;
 
     const DiskPtr disk;
     const std::filesystem::path root_path;

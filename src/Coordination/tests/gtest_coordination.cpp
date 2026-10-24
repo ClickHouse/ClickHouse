@@ -1420,13 +1420,13 @@ TEST(CoordinationRequestSize, WriteRejectsRequestOverInt32)
     // The guard fires on the computed size before serialization, so a fake sizeImpl needs no real data.
     struct HugeRequest final : Coordination::ZooKeeperRequest
     {
-        String getPath() const override { return {}; }
-        Coordination::OpNum getOpNum() const override { return Coordination::OpNum::Create; }
+        [[nodiscard]] String getPath() const override { return {}; }
+        [[nodiscard]] Coordination::OpNum getOpNum() const override { return Coordination::OpNum::Create; }
         void writeImpl(DB::WriteBuffer &) const override {}
-        size_t sizeImpl() const override { return std::numeric_limits<int32_t>::max(); }
+        [[nodiscard]] size_t sizeImpl() const override { return std::numeric_limits<int32_t>::max(); }
         void readImpl(DB::ReadBuffer &) override {}
-        Coordination::ZooKeeperResponsePtr makeResponse() const override { return nullptr; }
-        bool isReadRequest() const override { return false; }
+        [[nodiscard]] Coordination::ZooKeeperResponsePtr makeResponse() const override { return nullptr; }
+        [[nodiscard]] bool isReadRequest() const override { return false; }
     };
 
     HugeRequest request;

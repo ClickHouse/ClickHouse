@@ -238,7 +238,7 @@ public:
         const Block & header,
         UInt64 max_block_size_);
 
-    String getName() const override { return "ReadFromSystemZooKeeper"; }
+    [[nodiscard]] String getName() const override { return "ReadFromSystemZooKeeper"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 

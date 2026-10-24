@@ -29,11 +29,11 @@ struct CalendarTimeInterval
     explicit CalendarTimeInterval(const Intervals & intervals);
 
     /// E.g. for {36 months, 604801 seconds} returns {3 years, 2 weeks, 1 second}.
-    Intervals toIntervals() const;
+    [[nodiscard]] Intervals toIntervals() const;
 
     /// Approximate shortest and longest duration in seconds. E.g. a month is [28, 31] days.
-    UInt64 minSeconds() const;
-    UInt64 maxSeconds() const;
+    [[nodiscard]] UInt64 minSeconds() const;
+    [[nodiscard]] UInt64 maxSeconds() const;
 
     /// Checks that the interval has only months or only seconds, throws otherwise.
     void assertSingleUnit() const;
@@ -42,7 +42,7 @@ struct CalendarTimeInterval
     /// Add this interval to the timestamp. First months, then seconds.
     /// Gets weird near month boundaries: October 31 + 1 month = December 1.
     /// The returned timestamp is always 28-31 days greater than t.
-    std::chrono::sys_seconds advance(std::chrono::system_clock::time_point t) const;
+    [[nodiscard]] std::chrono::sys_seconds advance(std::chrono::system_clock::time_point t) const;
 
     /// Rounds the timestamp down to the nearest timestamp "aligned" with this interval.
     /// The interval must satisfy assertSingleUnit() and assertPositive().
@@ -56,7 +56,7 @@ struct CalendarTimeInterval
     /// Guarantees:
     ///  * advance(floor(x)) > x
     ///  * floor(advance(floor(x))) = advance(floor(x))
-    std::chrono::sys_seconds floor(std::chrono::system_clock::time_point t) const;
+    [[nodiscard]] std::chrono::sys_seconds floor(std::chrono::system_clock::time_point t) const;
 
     bool operator==(const CalendarTimeInterval & rhs) const;
     bool operator!=(const CalendarTimeInterval & rhs) const;

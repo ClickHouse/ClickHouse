@@ -16,7 +16,7 @@ public:
     explicit QueryTreePassManager(ContextPtr context_);
 
     /// Get registered passes
-    const std::vector<QueryTreePassPtr> & getPasses() const
+    [[nodiscard]] const std::vector<QueryTreePassPtr> & getPasses() const
     {
         return passes;
     }

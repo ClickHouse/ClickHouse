@@ -29,7 +29,7 @@ public:
     void reset(size_t size, size_t alignment);
 
     char * data() { return static_cast<char *>(buf); }
-    const char * data() const { return static_cast<const char *>(buf); }
+    [[nodiscard]] const char * data() const { return static_cast<const char *>(buf); }
 };
 
 }

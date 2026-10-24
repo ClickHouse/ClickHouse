@@ -42,7 +42,7 @@ struct TimeSeriesSettings
     void copyToQuery(ASTStorage & storage_def) const;
 
     /// Returns only the settings that were explicitly changed from their defaults.
-    SettingsChanges changes() const;
+    [[nodiscard]] SettingsChanges changes() const;
 
     /// Applies a list of settings changes, overwriting any existing values.
     void applyChanges(const SettingsChanges & changes);
@@ -50,21 +50,21 @@ struct TimeSeriesSettings
     static bool hasBuiltin(std::string_view name);
 
     /// Whether the setting was explicitly set, even if to its default value.
-    bool isChanged(std::string_view name) const;
+    [[nodiscard]] bool isChanged(std::string_view name) const;
 
     /// Whether the table has the "recent samples" target.
-    bool isRecentSamplesTargetEnabled() const;
+    [[nodiscard]] bool isRecentSamplesTargetEnabled() const;
 
     /// Whether the table has the "time ranges" target.
-    bool isTimeRangesTargetEnabled() const;
+    [[nodiscard]] bool isTimeRangesTargetEnabled() const;
 
     /// Whether the "tags" table stores the columns `min_time` and `max_time`: tables of earlier versions
     /// with the `store_min_time_and_max_time` setting enabled (see TimeSeriesVersion.h).
-    bool hasMinTimeAndMaxTimeInTagsTable() const;
+    [[nodiscard]] bool hasMinTimeAndMaxTimeInTagsTable() const;
 
     /// Whether the generated sorting key of the inner "tags" table contains `min_time` and `max_time`:
     /// they are stored in that table but not aggregated.
-    bool hasMinTimeAndMaxTimeInTagsSortingKey() const;
+    [[nodiscard]] bool hasMinTimeAndMaxTimeInTagsSortingKey() const;
 
 private:
     std::unique_ptr<TimeSeriesSettingsImpl> impl;

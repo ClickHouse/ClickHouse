@@ -55,32 +55,32 @@ public:
 
     StorageWebConfiguration() = default;
 
-    ObjectStorageType getType() const override { return type; }
-    std::string getTypeName() const override { return type_name; }
-    std::string getEngineName() const override { return engine_name; }
-    std::string getNamespaceType() const override { return "host"; }
+    [[nodiscard]] ObjectStorageType getType() const override { return type; }
+    [[nodiscard]] std::string getTypeName() const override { return type_name; }
+    [[nodiscard]] std::string getEngineName() const override { return engine_name; }
+    [[nodiscard]] std::string getNamespaceType() const override { return "host"; }
 
-    Path getRawPath() const override { return path; }
+    [[nodiscard]] Path getRawPath() const override { return path; }
     void setRawPath(const Path & path_) override
     {
         path = path_;
         paths = {path};
         setPathForRead(path);
     }
-    const String & getRawURI() const override { return raw_url; }
+    [[nodiscard]] const String & getRawURI() const override { return raw_url; }
 
-    bool supportsPartialPathPrefix() const override { return false; }
+    [[nodiscard]] bool supportsPartialPathPrefix() const override { return false; }
 
-    const Paths & getPaths() const override { return paths; }
+    [[nodiscard]] const Paths & getPaths() const override { return paths; }
     void setPaths(const Paths & paths_) override { paths = paths_; }
 
-    String getNamespace() const override { return namespace_prefix; }
-    String getDataSourceDescription() const override { return raw_url; }
+    [[nodiscard]] String getNamespace() const override { return namespace_prefix; }
+    [[nodiscard]] String getDataSourceDescription() const override { return raw_url; }
 
-    StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr & context) const override;
+    [[nodiscard]] StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr & context) const override;
 
-    bool isArchive() const override { return archive_pattern.has_value(); }
-    std::string getPathInArchive() const override;
+    [[nodiscard]] bool isArchive() const override { return archive_pattern.has_value(); }
+    [[nodiscard]] std::string getPathInArchive() const override;
 
     void check(ContextPtr context) override;
 

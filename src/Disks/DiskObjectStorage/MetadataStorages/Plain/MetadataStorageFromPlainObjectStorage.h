@@ -92,7 +92,7 @@ public:
     void createMetadataFile(const std::string & /*path*/, const StoredObjects & /* objects */) override {}
     void createDirectory(const std::string & /*path*/) override {}
     void createDirectoryRecursive(const std::string & /*path*/) override {}
-    bool supportsChmod() const override { return false; }
+    [[nodiscard]] bool supportsChmod() const override { return false; }
 
     void unlinkFile(const std::string & path, bool if_exists, bool should_remove_objects) override;
     void removeDirectory(const std::string & path) override;

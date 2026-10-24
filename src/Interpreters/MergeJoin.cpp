@@ -256,8 +256,8 @@ public:
         std::mutex mutex;
         Container bitmap;
 
-        size_t size() const { return bitmap.size(); }
-        bool empty() const { return bitmap.empty(); }
+        [[nodiscard]] size_t size() const { return bitmap.size(); }
+        [[nodiscard]] bool empty() const { return bitmap.empty(); }
 
         void applyOr(Container && addition) noexcept
         {
@@ -285,7 +285,7 @@ public:
             maps.emplace_back(std::make_unique<Bitmap>());
     }
 
-    bool used(size_t bitmap_number) const
+    [[nodiscard]] bool used(size_t bitmap_number) const
     {
         return !maps[bitmap_number]->empty();
     }
@@ -295,7 +295,7 @@ public:
         maps[bitmap_number]->applyOr(std::move(addition));
     }
 
-    IColumn::Filter getNotUsed(size_t bitmap_number) const
+    [[nodiscard]] IColumn::Filter getNotUsed(size_t bitmap_number) const
     {
         const Container & bitmap = maps[bitmap_number]->bitmap;
 
@@ -307,7 +307,7 @@ public:
 
     /// Number of distinct right rows marked as used across all blocks.
     /// Non-used blocks keep an empty bitmap and contribute 0.
-    size_t countUsed() const
+    [[nodiscard]] size_t countUsed() const
     {
         size_t count = 0;
         for (const auto & map : maps)
@@ -327,7 +327,7 @@ struct MergeJoinEqualRange
     size_t left_length = 0;
     size_t right_length = 0;
 
-    bool empty() const { return !left_length && !right_length; }
+    [[nodiscard]] bool empty() const { return !left_length && !right_length; }
 };
 
 
@@ -361,9 +361,9 @@ public:
         key_runs.reset(impl.sort_columns.size());
     }
 
-    size_t position() const { return impl.getPos(); }
-    size_t end() const { return impl.rows; }
-    bool atEnd() const { return impl.getPos() >= impl.rows; }
+    [[nodiscard]] size_t position() const { return impl.getPos(); }
+    [[nodiscard]] size_t end() const { return impl.rows; }
+    [[nodiscard]] bool atEnd() const { return impl.getPos() >= impl.rows; }
     void next() { ++impl.getPosRef(); }
     void nextN(size_t num) { impl.getPosRef() += num; }
 

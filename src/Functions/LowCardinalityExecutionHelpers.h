@@ -89,7 +89,7 @@ struct LowCardinalityArrayView
 
     /// Build arrayElement(Array(LowCardinality), const) by selecting dictionary values through LC indexes,
     /// instead of materializing the whole nested array first.
-    inline ColumnPtr arrayElementConst(const Field & index, const IDataType & result_type) const
+    [[nodiscard]] inline ColumnPtr arrayElementConst(const Field & index, const IDataType & result_type) const
     {
         auto result = result_type.createColumn();
         result->reserve(rows);
@@ -107,7 +107,7 @@ struct LowCardinalityArrayView
     }
 
     /// Given a per-dictionary-entry predicate result, compute whether any element in each array row matches.
-    inline ColumnUInt8::MutablePtr existsByDictionaryMatches(const PaddedPODArray<UInt8> & dictionary_matches) const
+    [[nodiscard]] inline ColumnUInt8::MutablePtr existsByDictionaryMatches(const PaddedPODArray<UInt8> & dictionary_matches) const
     {
         auto result = ColumnUInt8::create();
         auto & result_data = result->getData();
@@ -130,7 +130,7 @@ struct LowCardinalityArrayView
 
     /// Given a per-dictionary-entry match number in [1, matches_count] (0 for no match), compute whether each
     /// array row holds an element of every match number. [matches_count] is in [1, 64].
-    inline ColumnUInt8::MutablePtr allByDictionaryMatches(const PaddedPODArray<UInt8> & dictionary_matches, size_t matches_count) const
+    [[nodiscard]] inline ColumnUInt8::MutablePtr allByDictionaryMatches(const PaddedPODArray<UInt8> & dictionary_matches, size_t matches_count) const
     {
         UInt64 all_matched = matches_count == 64 ? ~UInt64(0) : (UInt64(1) << matches_count) - 1;
 
@@ -160,7 +160,7 @@ struct LowCardinalityArrayView
     }
 
     /// Given a per-dictionary-entry predicate result, build a filter and offsets for matching array elements.
-    inline FilterAndOffsets filterByDictionaryMatches(const PaddedPODArray<UInt8> & dictionary_matches) const
+    [[nodiscard]] inline FilterAndOffsets filterByDictionaryMatches(const PaddedPODArray<UInt8> & dictionary_matches) const
     {
         FilterAndOffsets result{.filter = IColumn::Filter(elements.size()), .offsets = ColumnArray::ColumnOffsets::create()};
         auto & new_offsets = result.offsets->getData();

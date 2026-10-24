@@ -154,7 +154,7 @@ struct SimulationResult
     size_t max_parts = 0;             /// Maximum number of parts observed at any point
     size_t final_parts = 0;           /// Number of parts at end of simulation
 
-    double writeAmplification() const
+    [[nodiscard]] double writeAmplification() const
     {
         return static_cast<double>(total_bytes_written + total_source_bytes) / static_cast<double>(total_source_bytes);
     }

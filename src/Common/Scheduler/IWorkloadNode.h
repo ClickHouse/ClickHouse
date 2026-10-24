@@ -77,19 +77,19 @@ public:
     }
 
     /// Returns the cost units of the resource associated with this node
-    virtual CostUnit getCostUnit() const = 0;
+    [[nodiscard]] virtual CostUnit getCostUnit() const = 0;
 
     /// Returns the name of the workload associated with this node
-    virtual const String & getWorkload() const = 0;
+    [[nodiscard]] virtual const String & getWorkload() const = 0;
 
     /// Returns the name of the resource associated with this node
-    virtual const String & getResource() const = 0;
+    [[nodiscard]] virtual const String & getResource() const = 0;
 
     /// Returns current settings of this workload node
-    virtual const WorkloadSettings & getSettings() const = 0;
+    [[nodiscard]] virtual const WorkloadSettings & getSettings() const = 0;
 
     /// Returns the link to be used to access the queue or `nullptr` if workload is not a leaf workload
-    virtual ResourceLink getLink() const = 0;
+    [[nodiscard]] virtual ResourceLink getLink() const = 0;
 
     /// Collects nodes that could be accessed with raw pointers by resource requests (queue and constraints)
     /// NOTE: This is a building block for classifier. Note that due to possible movement of a queue, set of constraints
@@ -100,7 +100,7 @@ public:
     virtual void addRawPointerNodes(std::vector<SchedulerNodePtr> & nodes) = 0;
 
     /// Returns true if this workload node has workload children
-    virtual bool hasWorkloadChildren() const = 0;
+    [[nodiscard]] virtual bool hasWorkloadChildren() const = 0;
 
     /// Fails the requests and allocations still in the queue of this leaf workload. Called on the scheduler thread when
     /// the workload is dropped, before the node is destroyed: query threads may still reach the queue through older versions.

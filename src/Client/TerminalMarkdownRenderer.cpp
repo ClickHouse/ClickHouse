@@ -633,7 +633,7 @@ private:
     const bool ansi;
     String out;
 
-    std::string_view horizontalRule() const { return "─"; }
+    [[nodiscard]] std::string_view horizontalRule() const { return "─"; }
 
     void appendRepeated(std::string_view unit, size_t count)
     {
@@ -663,7 +663,7 @@ private:
         return result;
     }
 
-    String sgr(Style style) const
+    [[nodiscard]] String sgr(Style style) const
     {
         if (!ansi)
             return {};
@@ -683,7 +683,7 @@ private:
     }
 
     /// Splits a Markdown string into inline tokens, applying inline styling on top of `base`.
-    std::vector<Token> renderInline(std::string_view text, Style base = {}) const
+    [[nodiscard]] std::vector<Token> renderInline(std::string_view text, Style base = {}) const
     {
         std::vector<Token> tokens;
 
@@ -953,7 +953,7 @@ private:
     }
 
     /// Joins tokens into a single line (no wrapping), returning the rendered string and its visible width.
-    std::pair<String, size_t> inlineLine(std::string_view text, Style base = {}) const
+    [[nodiscard]] std::pair<String, size_t> inlineLine(std::string_view text, Style base = {}) const
     {
         auto tokens = renderInline(text, base);
         String result;
@@ -1308,7 +1308,7 @@ private:
         }
     }
 
-    bool startsNewBlock(std::string_view line) const
+    [[nodiscard]] bool startsNewBlock(std::string_view line) const
     {
         std::string_view s = stripCR(line);
         if (isBlank(s))

@@ -25,8 +25,8 @@ public:
         size_t memory_bound_merging_max_block_bytes_,
         bool memory_bound_merging_of_aggregation_results_enabled_);
 
-    String getName() const override { return "MergingAggregated"; }
-    const Aggregator::Params & getParams() const { return params; }
+    [[nodiscard]] String getName() const override { return "MergingAggregated"; }
+    [[nodiscard]] const Aggregator::Params & getParams() const { return params; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
@@ -34,28 +34,28 @@ public:
     void describeActions(FormatSettings & settings) const override;
 
     void applyOrder(SortDescription input_sort_description);
-    const SortDescription & getSortDescription() const override;
-    const SortDescription & getGroupBySortDescription() const { return group_by_sort_description; }
+    [[nodiscard]] const SortDescription & getSortDescription() const override;
+    [[nodiscard]] const SortDescription & getGroupBySortDescription() const { return group_by_sort_description; }
 
-    bool memoryBoundMergingWillBeUsed() const;
+    [[nodiscard]] bool memoryBoundMergingWillBeUsed() const;
 
-    bool isGroupingSets() const { return !grouping_sets_params.empty(); }
-    bool isFinal() const { return final; }
-    bool shouldProduceResultsInBucketOrder() const { return should_produce_results_in_order_of_bucket_number; }
-    const auto & getGroupingSetsParamsList() const { return grouping_sets_params; }
+    [[nodiscard]] bool isGroupingSets() const { return !grouping_sets_params.empty(); }
+    [[nodiscard]] bool isFinal() const { return final; }
+    [[nodiscard]] bool shouldProduceResultsInBucketOrder() const { return should_produce_results_in_order_of_bucket_number; }
+    [[nodiscard]] const auto & getGroupingSetsParamsList() const { return grouping_sets_params; }
 
     void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
     void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return true; }
+    [[nodiscard]] bool isSerializable() const override { return true; }
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
-    QueryPlanStepPtr clone() const override;
+    [[nodiscard]] QueryPlanStepPtr clone() const override;
     /// A copy that merges all input at once instead of bucket by bucket. The memory-efficient mode
     /// needs each input stream in ascending bucket order, which an input split by a shuffle does not keep.
-    QueryPlanStepPtr cloneWithoutMemoryEfficientAggregation() const;
+    [[nodiscard]] QueryPlanStepPtr cloneWithoutMemoryEfficientAggregation() const;
 
 private:
-    std::unique_ptr<MergingAggregatedStep> cloneImpl(bool memory_efficient_aggregation_) const;
+    [[nodiscard]] std::unique_ptr<MergingAggregatedStep> cloneImpl(bool memory_efficient_aggregation_) const;
 
     void updateOutputHeader() override;
 

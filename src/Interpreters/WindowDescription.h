@@ -24,7 +24,7 @@ struct WindowFunctionDescription
     DataTypes argument_types;
     Names argument_names;
 
-    std::string dump() const;
+    [[nodiscard]] std::string dump() const;
 };
 
 struct WindowFrame
@@ -59,7 +59,7 @@ struct WindowFrame
     // the frame start comes later than the frame end.
     void checkValid() const;
 
-    std::string toString() const;
+    [[nodiscard]] std::string toString() const;
     void toString(WriteBuffer & buf) const;
 
     bool operator == (const WindowFrame & other) const
@@ -100,7 +100,7 @@ struct WindowDescription
     // The window functions that are calculated for this window.
     std::vector<WindowFunctionDescription> window_functions;
 
-    std::string dump() const;
+    [[nodiscard]] std::string dump() const;
 
     void checkValid() const;
 };

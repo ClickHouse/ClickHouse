@@ -39,12 +39,12 @@ public:
     DataTypeCustomSimpleAggregateFunction(const AggregateFunctionPtr & function_, const DataTypes & argument_types_, const Array & parameters_)
             : function(function_), argument_types(argument_types_), parameters(parameters_) {}
 
-    AggregateFunctionPtr getFunction() const { return function; }
-    String getFunctionName() const;
-    const DataTypes & getArgumentsDataTypes() const { return argument_types; }
-    const Array & getParameters() const { return parameters; }
-    String getName() const override;
-    DataTypeCustomDescPtr rederiveFor(const DataTypePtr & rebuilt, const RewriteNestedFn & rewrite_nested) const override;
+    [[nodiscard]] AggregateFunctionPtr getFunction() const { return function; }
+    [[nodiscard]] String getFunctionName() const;
+    [[nodiscard]] const DataTypes & getArgumentsDataTypes() const { return argument_types; }
+    [[nodiscard]] const Array & getParameters() const { return parameters; }
+    [[nodiscard]] String getName() const override;
+    [[nodiscard]] DataTypeCustomDescPtr rederiveFor(const DataTypePtr & rebuilt, const RewriteNestedFn & rewrite_nested) const override;
     static void checkSupportedFunctions(const AggregateFunctionPtr & function);
 };
 

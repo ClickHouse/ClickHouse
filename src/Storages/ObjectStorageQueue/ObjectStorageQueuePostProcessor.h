@@ -45,7 +45,7 @@ public:
         UnorderedSetWithMemoryTracking<String> & failed_object_paths) const;
 
 private:
-    String getName() const { return engine_name; }
+    [[nodiscard]] String getName() const { return engine_name; }
 
     void doWithRetries(std::function<void()> action) const;
 

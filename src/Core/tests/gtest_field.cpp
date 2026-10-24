@@ -196,9 +196,9 @@ struct ProbeCountingLeaf : public CustomType::CustomTypeImpl
 
     explicit ProbeCountingLeaf(size_t * probes_) : probes(probes_) { }
 
-    const char * getTypeName() const override { return "ProbeCountingLeaf"; }
-    String toString(bool) const override { return "ProbeCountingLeaf"; }
-    bool isSecret() const override { return false; }
+    [[nodiscard]] const char * getTypeName() const override { return "ProbeCountingLeaf"; }
+    [[nodiscard]] String toString(bool) const override { return "ProbeCountingLeaf"; }
+    [[nodiscard]] bool isSecret() const override { return false; }
 
     bool operator < (const CustomTypeImpl &) const override { ++*probes; return false; }
     bool operator <= (const CustomTypeImpl &) const override { ++*probes; return true; }

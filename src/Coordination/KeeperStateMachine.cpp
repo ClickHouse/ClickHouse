@@ -1993,7 +1993,7 @@ struct ISnapshotLoader
     /// Returns false on any error; the caller is responsible for invalidating the cached loader.
     virtual bool init(uint64_t log_idx, const SnapshotFileInfo & info, LoggerPtr log) = 0;
 
-    virtual uint64_t fileSize() const = 0;
+    [[nodiscard]] virtual uint64_t fileSize() const = 0;
 
     /// Return a stable pointer to bytes [offset, offset+length).
     /// For remote disk: loads data on demand under an internal mutex.
@@ -2001,7 +2001,7 @@ struct ISnapshotLoader
     virtual nuraft::byte * getChunk(uint64_t offset, uint64_t length, LoggerPtr log) = 0;
 
     /// Returns the stored exception if a previous getChunk call failed, nullptr otherwise.
-    virtual std::exception_ptr getLastError() const { return nullptr; }
+    [[nodiscard]] virtual std::exception_ptr getLastError() const { return nullptr; }
 };
 
 /// Remote disk loader: reads the snapshot file from remote storage into a shared in-memory buffer,
@@ -2199,7 +2199,7 @@ struct LocalSnapshotLoader : private boost::noncopyable, public ISnapshotLoader
         return true;
     }
 
-    uint64_t fileSize() const override { return file_size; }
+    [[nodiscard]] uint64_t fileSize() const override { return file_size; }
 
     nuraft::byte * getChunk(uint64_t offset, uint64_t /*length*/, LoggerPtr /*log_*/) override
     {

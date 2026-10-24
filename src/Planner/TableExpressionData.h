@@ -58,7 +58,7 @@ public:
     using ColumnIdentifierToColumnName = std::unordered_map<ColumnIdentifier, std::string>;
 
     /// Return true if column with name exists, false otherwise
-    bool hasColumn(const std::string & column_name) const
+    [[nodiscard]] bool hasColumn(const std::string & column_name) const
     {
         return column_name_to_column.contains(column_name);
     }
@@ -106,13 +106,13 @@ public:
     }
 
     /// Get columns that are not selected, but still require a SELECT privilege check
-    const Names & getAccessCheckedColumnsNames() const
+    [[nodiscard]] const Names & getAccessCheckedColumnsNames() const
     {
         return access_checked_column_names;
     }
 
     /// Get columns that are requested from table expression, including ALIAS columns
-    const Names & getSelectedColumnsNames() const
+    [[nodiscard]] const Names & getSelectedColumnsNames() const
     {
         return selected_column_names;
     }
@@ -123,29 +123,29 @@ public:
         return alias_column_expressions;
     }
 
-    const AliasColumnExpressions & getAliasColumnExpressions() const
+    [[nodiscard]] const AliasColumnExpressions & getAliasColumnExpressions() const
     {
         return alias_column_expressions;
     }
 
-    bool hasAliasColumn(const std::string & column_name) const
+    [[nodiscard]] bool hasAliasColumn(const std::string & column_name) const
     {
         return alias_column_names_set.contains(column_name);
     }
 
     /// Get column name to column map
-    const ColumnNameToColumn & getColumnNameToColumn() const
+    [[nodiscard]] const ColumnNameToColumn & getColumnNameToColumn() const
     {
         return column_name_to_column;
     }
 
     /// Get column names that are read from table expression
-    const Names & getColumnNames() const
+    [[nodiscard]] const Names & getColumnNames() const
     {
         return column_names;
     }
 
-    NamesAndTypes getColumns() const
+    [[nodiscard]] NamesAndTypes getColumns() const
     {
         NamesAndTypes result;
         result.reserve(column_names.size());
@@ -157,7 +157,7 @@ public:
     }
 
     /// Get column identifier to column name map
-    const ColumnNameToColumnIdentifier & getColumnIdentifierToColumnName() const
+    [[nodiscard]] const ColumnNameToColumnIdentifier & getColumnIdentifierToColumnName() const
     {
         return column_identifier_to_column_name;
     }
@@ -165,7 +165,7 @@ public:
     /** Get column for column name.
       * Exception is thrown if there are no column for column name.
       */
-    const NameAndTypePair & getColumnOrThrow(const std::string & column_name) const
+    [[nodiscard]] const NameAndTypePair & getColumnOrThrow(const std::string & column_name) const
     {
         auto it = column_name_to_column.find(column_name);
         if (it == column_name_to_column.end())
@@ -182,7 +182,7 @@ public:
     /** Get column identifier for column name.
       * Exception is thrown if there are no column identifier for column name.
       */
-    const ColumnIdentifier & getColumnIdentifierOrThrow(const std::string & column_name) const
+    [[nodiscard]] const ColumnIdentifier & getColumnIdentifierOrThrow(const std::string & column_name) const
     {
         auto it = column_name_to_column_identifier.find(column_name);
         if (it == column_name_to_column_identifier.end())
@@ -199,7 +199,7 @@ public:
     /** Get column identifier for column name.
       * Null is returned if there are no column identifier for column name.
       */
-    const ColumnIdentifier * getColumnIdentifierOrNull(const std::string & column_name) const
+    [[nodiscard]] const ColumnIdentifier * getColumnIdentifierOrNull(const std::string & column_name) const
     {
         auto it = column_name_to_column_identifier.find(column_name);
         if (it == column_name_to_column_identifier.end())
@@ -211,7 +211,7 @@ public:
     /** Get column name for column identifier.
       * Null is returned if there are no column name for column identifier.
       */
-    const std::string * getColumnNameOrNull(const ColumnIdentifier & column_identifier) const
+    [[nodiscard]] const std::string * getColumnNameOrNull(const ColumnIdentifier & column_identifier) const
     {
         auto it = column_identifier_to_column_name.find(column_identifier);
         if (it == column_identifier_to_column_name.end())
@@ -223,7 +223,7 @@ public:
     /** Identifier of the column synthesized only to learn the row count, set when the query
       * references no column of this table expression. It carries no value the query asked for.
       */
-    const std::optional<ColumnIdentifier> & getRowCountOnlyColumnIdentifier() const
+    [[nodiscard]] const std::optional<ColumnIdentifier> & getRowCountOnlyColumnIdentifier() const
     {
         return row_count_only_column_identifier;
     }
@@ -237,7 +237,7 @@ public:
       *
       * Valid only for table and table function node.
       */
-    bool isRemote() const
+    [[nodiscard]] bool isRemote() const
     {
         return is_remote;
     }
@@ -248,7 +248,7 @@ public:
         is_remote = is_remote_value;
     }
 
-    bool isMergeTree() const
+    [[nodiscard]] bool isMergeTree() const
     {
         return is_merge_tree;
     }
@@ -258,7 +258,7 @@ public:
         is_merge_tree = is_merge_tree_value;
     }
 
-    const std::optional<ActionsDAG> & getPrewhereFilterActions() const
+    [[nodiscard]] const std::optional<ActionsDAG> & getPrewhereFilterActions() const
     {
         return prewhere_filter_actions;
     }
@@ -268,7 +268,7 @@ public:
         row_level_filter_actions = std::move(row_level_filter_actions_value);
     }
 
-    const std::optional<ActionsDAG> & getRowLevelFilterActions() const
+    [[nodiscard]] const std::optional<ActionsDAG> & getRowLevelFilterActions() const
     {
         return row_level_filter_actions;
     }
@@ -284,7 +284,7 @@ public:
         prewhere_filter_actions.reset();
     }
 
-    const std::optional<ActionsDAG> & getFilterActions() const
+    [[nodiscard]] const std::optional<ActionsDAG> & getFilterActions() const
     {
         return filter_actions;
     }
@@ -294,7 +294,7 @@ public:
         filter_actions = std::move(filter_actions_value);
     }
 
-    const PrewhereInfoPtr & getPrewhereInfo() const
+    [[nodiscard]] const PrewhereInfoPtr & getPrewhereInfo() const
     {
         return prewhere_info;
     }

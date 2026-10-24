@@ -45,7 +45,7 @@ public:
     /// Writes raw bytes (e.g. the file magic), advancing the tracked offset.
     void writeRaw(const char * data, size_t size);
 
-    Int64 offset() const { return bytes_written; }
+    [[nodiscard]] Int64 offset() const { return bytes_written; }
 
 private:
     WriteBuffer & out;

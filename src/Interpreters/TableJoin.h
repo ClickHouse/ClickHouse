@@ -80,7 +80,7 @@ public:
                 nullsafe_compare_key_indexes.insert(key_names_left.size() - 1);
         }
 
-        std::pair<String, String> condColumnNames() const
+        [[nodiscard]] std::pair<String, String> condColumnNames() const
         {
             std::pair<String, String> res;
 
@@ -98,13 +98,13 @@ public:
             return res;
         }
 
-        size_t keysCount() const
+        [[nodiscard]] size_t keysCount() const
         {
             chassert(key_names_left.size() == key_names_right.size());
             return key_names_right.size();
         }
 
-        String formatDebug(bool short_format = false) const
+        [[nodiscard]] String formatDebug(bool short_format = false) const
         {
             const auto & [left_cond, right_cond] = condColumnNames();
 
@@ -119,13 +119,13 @@ public:
                  fmt::join(key_names_left, ", "), fmt::join(key_names_right, ", "), left_cond, right_cond);
         }
 
-        bool isEmpty() const
+        [[nodiscard]] bool isEmpty() const
         {
             return key_names_left.empty() && key_names_right.empty() && !on_filter_condition_left && !on_filter_condition_right
                 && analyzer_left_filter_condition_column_name.empty() && analyzer_right_filter_condition_column_name.empty();
         }
 
-        String formatPretty(const ExplainFormatSettings & settings) const;
+        [[nodiscard]] String formatPretty(const ExplainFormatSettings & settings) const;
     };
 
     using Clauses = std::vector<JoinOnClause>;

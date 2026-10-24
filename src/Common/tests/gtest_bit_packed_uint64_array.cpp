@@ -97,11 +97,11 @@ TEST(BitPackedUInt64Array, RandomValues)
 TEST(BitPackedUInt64Array, OutOfRangeThrows)
 {
     BitPackedUInt64Array empty;
-    EXPECT_THROW(empty.get(0), Exception);
+    EXPECT_THROW((void)empty.get(0), Exception);
 
     std::vector<UInt64> values{1, 2, 3};
     BitPackedUInt64Array packed{std::span<const UInt64>(values)};
-    EXPECT_THROW(packed.get(3), Exception);
+    EXPECT_THROW((void)packed.get(3), Exception);
 }
 
 #endif

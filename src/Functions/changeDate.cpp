@@ -54,11 +54,11 @@ public:
         return std::make_shared<FunctionChangeDate>(name, component);
     }
 
-    String getName() const override { return function_name; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] String getName() const override { return function_name; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// When the component is a time-of-day field (Hour/Minute/Second), date-only inputs
         /// are promoted: Date -> DateTime, Date32 -> DateTime64(3). Other inputs keep their type.
@@ -70,7 +70,7 @@ public:
         return "(T : DateOrDateTime, NativeInteger) -> T";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const auto & input_type = arguments[0].type;
         if (isDate(input_type))
@@ -94,7 +94,7 @@ public:
     }
 
     template <typename InputDataType, typename ResultDataType>
-    ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & input_type, const DataTypePtr & result_type, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & input_type, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         typename ResultDataType::ColumnType::MutablePtr result_col;
         if constexpr (std::is_same_v<ResultDataType, DataTypeDateTime64>)
@@ -195,7 +195,7 @@ public:
         return result_col;
     }
 
-    Int64 getChangedDate(Int64 time, Float64 new_value, const DataTypePtr & result_type, const DateLUTImpl & date_lut, Int64 scale = 0, Int64 fraction = 0) const
+    [[nodiscard]] Int64 getChangedDate(Int64 time, Float64 new_value, const DataTypePtr & result_type, const DateLUTImpl & date_lut, Int64 scale = 0, Int64 fraction = 0) const
     {
         auto year = static_cast<UInt16>(time / 10'000'000'000);
         auto month = static_cast<UInt8>((time % 10'000'000'000) / 100'000'000);

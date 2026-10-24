@@ -45,7 +45,7 @@ class MergeTreeReadersChain
 public:
     MergeTreeReadersChain() = default;
     MergeTreeReadersChain(RangeReaders range_readers_, MergeTreePatchReaders patch_readers_);
-    bool isInitialized() const { return is_initialized; }
+    [[nodiscard]] bool isInitialized() const { return is_initialized; }
 
     using ReadResult = MergeTreeRangeReader::ReadResult;
 
@@ -53,13 +53,13 @@ public:
     read(size_t max_rows, MarkRanges & ranges, std::vector<MarkRanges> & patch_ranges, const DataflowCacheUpdateCallback & update_cb = {},
          size_t max_block_size_rows = 0);
 
-    size_t numReadRowsInCurrentGranule() const;
-    size_t numPendingRowsInCurrentGranule() const;
-    size_t numRowsInCurrentGranule() const;
-    size_t currentMark() const;
+    [[nodiscard]] size_t numReadRowsInCurrentGranule() const;
+    [[nodiscard]] size_t numPendingRowsInCurrentGranule() const;
+    [[nodiscard]] size_t numRowsInCurrentGranule() const;
+    [[nodiscard]] size_t currentMark() const;
 
-    const Block & getSampleBlock() const;
-    bool isCurrentRangeFinished() const;
+    [[nodiscard]] const Block & getSampleBlock() const;
+    [[nodiscard]] bool isCurrentRangeFinished() const;
 
 private:
     /// Executes actions required before PREWHERE, such as alter conversions and filling defaults.
@@ -93,7 +93,7 @@ private:
     void addPatchVirtuals(Block & to, const Block & from) const;
     void addPatchVirtuals(ReadResult & result, const Block & header) const;
     void applyPatchesAfterReader(ReadResult & result, size_t reader_index);
-    ColumnsForPatches getColumnsForPatches(const Block & header, const Columns & columns) const;
+    [[nodiscard]] ColumnsForPatches getColumnsForPatches(const Block & header, const Columns & columns) const;
 
     void applyPatches(
         const Block & result_header,

@@ -80,9 +80,9 @@ public:
     void detachSession();
 
     /// Whether the response body has been read to the end.
-    bool isResponseComplete() const { return response_complete; }
+    [[nodiscard]] bool isResponseComplete() const { return response_complete; }
 
-    bool supportsExternalBufferMode() const override { return true; }
+    [[nodiscard]] bool supportsExternalBufferMode() const override { return true; }
 
     /// Reads into the caller's memory directly, so that a large read costs no copy at all.
     size_t readBig(char * to, size_t n) override;

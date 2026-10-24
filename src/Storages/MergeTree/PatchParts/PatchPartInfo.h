@@ -99,7 +99,7 @@ struct PatchPartInfoBase
     /// Columns of the sorting key persisted in the patch part.
     NameSet stored_sorting_key_columns;
 
-    String describe() const;
+    [[nodiscard]] String describe() const;
 };
 
 using PatchPartInfo = PatchPartInfoBase<DataPartPtr>;

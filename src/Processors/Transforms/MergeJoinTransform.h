@@ -40,8 +40,8 @@ struct JoinKeyRow
 
     JoinKeyRow(const FullMergeJoinCursor & cursor, size_t pos);
 
-    bool equals(const FullMergeJoinCursor & cursor) const;
-    bool asofMatch(const FullMergeJoinCursor & cursor, ASOFJoinInequality asof_inequality) const;
+    [[nodiscard]] bool equals(const FullMergeJoinCursor & cursor) const;
+    [[nodiscard]] bool asofMatch(const FullMergeJoinCursor & cursor, ASOFJoinInequality asof_inequality) const;
 
     void reset();
 
@@ -73,7 +73,7 @@ public:
 
     void reset(size_t source_num);
 
-    bool empty() const;
+    [[nodiscard]] bool empty() const;
 
     /// current keys
     JoinKeyRow keys[2];
@@ -139,11 +139,11 @@ public:
         return nextLeft();
     }
 
-    bool finished() const { return lidx >= left.size(); }
+    [[nodiscard]] bool finished() const { return lidx >= left.size(); }
 
-    size_t blocksStored() const { return left.size() + right.size(); }
-    const Range & getLeft() const { return left[lidx]; }
-    const Range & getRight() const { return right[ridx]; }
+    [[nodiscard]] size_t blocksStored() const { return left.size() + right.size(); }
+    [[nodiscard]] const Range & getLeft() const { return left[lidx]; }
+    [[nodiscard]] const Range & getRight() const { return right[ridx]; }
 
     /// Left and right types can be different because of nullable
     JoinKeyRow keys[2];
@@ -186,7 +186,7 @@ public:
     void set(const FullMergeJoinCursor & rcursor, size_t rpos);
     void reset();
 
-    bool hasMatch(const FullMergeJoinCursor & cursor, ASOFJoinInequality asof_inequality) const
+    [[nodiscard]] bool hasMatch(const FullMergeJoinCursor & cursor, ASOFJoinInequality asof_inequality) const
     {
         if (value.empty())
             return false;
@@ -214,9 +214,9 @@ public:
     FullMergeJoinCursor(const FullMergeJoinCursor &) = delete;
     FullMergeJoinCursor & operator=(const FullMergeJoinCursor &) = delete;
 
-    bool fullyCompleted() const;
+    [[nodiscard]] bool fullyCompleted() const;
     void setCompleted() { received_all_blocks = true; }
-    const Chunk & getCurrent() const;
+    [[nodiscard]] const Chunk & getCurrent() const;
     void setChunk(Chunk && chunk);
 
     absl::InlinedVector<ColumnPtr, 4> sort_columns;
@@ -226,14 +226,14 @@ public:
     size_t pos = 0;
     size_t rows = 0;
 
-    bool empty() const { return rows == 0; }
-    size_t getRow() const { return pos; }
-    bool isLast() const { return pos + 1 >= rows; }
-    bool isValid() const { return pos < rows; }
+    [[nodiscard]] bool empty() const { return rows == 0; }
+    [[nodiscard]] size_t getRow() const { return pos; }
+    [[nodiscard]] bool isLast() const { return pos + 1 >= rows; }
+    [[nodiscard]] bool isValid() const { return pos < rows; }
     void next() { ++pos; }
-    size_t rowsLeft() const { return rows - pos; }
+    [[nodiscard]] size_t rowsLeft() const { return rows - pos; }
 
-    const IColumn & getSortColumn(size_t index) const { return *sort_columns[index]; }
+    [[nodiscard]] const IColumn & getSortColumn(size_t index) const { return *sort_columns[index]; }
 
 private:
     Chunk current_chunk;
@@ -259,7 +259,7 @@ public:
 
     MergeJoinAlgorithm(JoinPtr join_ptr, SharedHeaders & input_headers, size_t max_block_size_);
 
-    const char * getName() const override { return "MergeJoinAlgorithm"; }
+    [[nodiscard]] const char * getName() const override { return "MergeJoinAlgorithm"; }
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
     Status merge() override;
@@ -267,10 +267,10 @@ public:
     void setAsofInequality(ASOFJoinInequality asof_inequality_);
 
     void logElapsed(double seconds);
-    MergedStats getMergedStats() const override;
+    [[nodiscard]] MergedStats getMergedStats() const override;
 
     /// Participation counters for EXPLAIN ANALYZE -- total and matched rows per side
-    JoinAnalysisCounters getJoinAnalysisCounters() const;
+    [[nodiscard]] JoinAnalysisCounters getJoinAnalysisCounters() const;
 
 private:
     std::optional<Status> handleAnyJoinState();
@@ -283,14 +283,14 @@ private:
     Status asofJoin();
 
     void getEmptyResultColumns(MutableColumns & result_cols, size_t pos) const;
-    MutableColumns getEmptyResultColumns() const;
-    Columns getEmptyResultColumns(size_t pos) const;
+    [[nodiscard]] MutableColumns getEmptyResultColumns() const;
+    [[nodiscard]] Columns getEmptyResultColumns(size_t pos) const;
     /// Types of the columns produced by getEmptyResultColumns() (left header ++ right header),
     /// used to fill non-joined rows with the proper type default instead of a raw zero.
-    DataTypes getOutputTypes() const;
+    [[nodiscard]] DataTypes getOutputTypes() const;
 
     Chunk createBlockWithDefaults(size_t source_num);
-    Chunk createBlockWithDefaults(size_t source_num, size_t start, size_t num_rows) const;
+    [[nodiscard]] Chunk createBlockWithDefaults(size_t source_num, size_t start, size_t num_rows) const;
 
     SharedHeaders input_headers;
 

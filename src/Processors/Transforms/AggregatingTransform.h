@@ -66,9 +66,9 @@ struct AggregatingTransformParams
     {
     }
 
-    Block getHeader() const { return params.getHeader(header, final); }
+    [[nodiscard]] Block getHeader() const { return params.getHeader(header, final); }
 
-    Block getCustomHeader(bool final_) const { return params.getHeader(header, final_); }
+    [[nodiscard]] Block getCustomHeader(bool final_) const { return params.getHeader(header, final_); }
 };
 
 class AdaptiveAggregationSpillable;

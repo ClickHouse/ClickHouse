@@ -174,7 +174,7 @@ BlockIO createHypotheticalIndex(
 
     /// some argument checks live in the creator, not the validator (tokenizer bounds for
     /// sparse_grams), so construct once here instead of failing later inside EXPLAIN WHATIF
-    MergeTreeIndexFactory::instance().get(metadata, index_desc, *merge_tree.getSettings());
+    (void)MergeTreeIndexFactory::instance().get(metadata, index_desc, *merge_tree.getSettings());
 
     /// Mirror real ADD INDEX: the `auto_minmax_index_` prefix is reserved when
     /// implicit minmax indexes are enabled.

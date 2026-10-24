@@ -105,14 +105,14 @@ struct Token
     const char * begin;
     const char * end;
 
-    size_t size() const { return end - begin; }
+    [[nodiscard]] size_t size() const { return end - begin; }
 
     Token() = default;
     Token(TokenType type_, const char * begin_, const char * end_) : type(type_), begin(begin_), end(end_) {}
 
-    bool isSignificant() const { return type != TokenType::Whitespace && type != TokenType::Comment; }
-    bool isError() const { return type > TokenType::EndOfStream; }
-    bool isEnd() const { return type == TokenType::EndOfStream; }
+    [[nodiscard]] bool isSignificant() const { return type != TokenType::Whitespace && type != TokenType::Comment; }
+    [[nodiscard]] bool isError() const { return type > TokenType::EndOfStream; }
+    [[nodiscard]] bool isEnd() const { return type == TokenType::EndOfStream; }
 };
 
 

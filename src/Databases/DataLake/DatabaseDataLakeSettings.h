@@ -71,7 +71,7 @@ struct DatabaseDataLakeSettings
 
     void applyChanges(const SettingsChanges & changes);
 
-    SettingsChanges allChanged() const;
+    [[nodiscard]] SettingsChanges allChanged() const;
 
     /// Name of the setting referenced by its `DatabaseDataLakeSetting::*` index,
     /// so catalog code can match `SettingsChanges` entries without magic strings.

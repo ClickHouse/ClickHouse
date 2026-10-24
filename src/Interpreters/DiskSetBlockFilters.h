@@ -37,7 +37,7 @@ public:
                 counter.insert(hashKey(key));
         }
 
-        size_t getCount() const { return counter.size(); }
+        [[nodiscard]] size_t getCount() const { return counter.size(); }
 
     private:
         HyperLogLogCounter<20, UInt64, TrivialHash, UInt64> counter;
@@ -55,13 +55,13 @@ public:
     static size_t estimateBytes(size_t expected_keys, size_t min_keys_per_block, size_t max_bytes);
 
     /// Returns the bits of the filters per key: 8, or fewer when they fit a smaller budget.
-    double getBitsPerKey() const { return static_cast<double>(bits_per_1024_keys) / 1024; }
+    [[nodiscard]] double getBitsPerKey() const { return static_cast<double>(bits_per_1024_keys) / 1024; }
 
     /// Adds the filter of the next block of the set, which holds `block_keys`.
     void addBlock(std::span<const Key> block_keys);
 
     /// Returns false when `block` cannot hold `key`, and true when it may.
-    bool mayContain(size_t block, const Key & key) const
+    [[nodiscard]] bool mayContain(size_t block, const Key & key) const
     {
         const size_t range_begin = range_begins[block];
         const size_t range_bits = range_begins[block + 1] - range_begin;
@@ -76,7 +76,7 @@ public:
     }
 
     /// Returns the memory of the bits and of the ranges of the blocks.
-    size_t allocatedBytes() const;
+    [[nodiscard]] size_t allocatedBytes() const;
 
 private:
     /// A key sets the bits at most at this many positions in the range of its block. Each position costs a

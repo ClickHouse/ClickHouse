@@ -48,27 +48,27 @@ public:
                             bool continue_reading, size_t max_rows_to_read,
                             MutableColumns & res_columns, Columns & shared_columns) = 0;
 
-    virtual bool canReadIncompleteGranules() const = 0;
+    [[nodiscard]] virtual bool canReadIncompleteGranules() const = 0;
 
     /// This is a special case for the filter-only reader, when no other filtration is potentially applied.
     /// So we must always apply filter into the RangeReader.
-    virtual bool mustApplyFilter() const { return false; }
+    [[nodiscard]] virtual bool mustApplyFilter() const { return false; }
 
-    virtual size_t getResultColumnCount() const { return getColumns().size(); }
+    [[nodiscard]] virtual size_t getResultColumnCount() const { return getColumns().size(); }
 
     /// The number of granules in a stripe of the columns cache for this part, 0 if the reader does
     /// not use the cache. See `ColumnsCacheStripes`.
-    virtual size_t getColumnsCacheStripeMarks() const { return 0; }
+    [[nodiscard]] virtual size_t getColumnsCacheStripeMarks() const { return 0; }
 
     /// Whether a block of the whole stripe of `mark` takes no memory beyond what the columns cache
     /// holds anyway: the stripe is served from the cache, or is going to be written to it.
     virtual bool canReadWholeColumnsCacheStripe(size_t /*mark*/) { return false; }
 
-    virtual bool producesFilterOnly() const { return false; }
+    [[nodiscard]] virtual bool producesFilterOnly() const { return false; }
 
     virtual ~IMergeTreeReader() = default;
 
-    const ValueSizeMap & getAvgValueSizeHints() const;
+    [[nodiscard]] const ValueSizeMap & getAvgValueSizeHints() const;
 
     /// Add virtual columns that are not present in the block.
     void fillVirtualColumns(Columns & columns, size_t rows) const;
@@ -88,20 +88,20 @@ public:
     /// then try to perform conversions of columns.
     void performRequiredConversions(Columns & res_columns) const;
 
-    ALWAYS_INLINE const NamesAndTypesList & getColumns() const { return data_part_info_for_read->isWidePart() ? converted_requested_columns : original_requested_columns; }
-    size_t numColumnsInResult() const { return getColumns().size(); }
+    [[nodiscard]] ALWAYS_INLINE const NamesAndTypesList & getColumns() const { return data_part_info_for_read->isWidePart() ? converted_requested_columns : original_requested_columns; }
+    [[nodiscard]] size_t numColumnsInResult() const { return getColumns().size(); }
 
     /// Returns column names and types as they are stored on disk (may differ from requested types
     /// when there are pending type-changing mutations). Used to build correct `ColumnsWithTypeAndName`
     /// before `performRequiredConversions` is applied.
-    const NamesAndTypes & getColumnsToRead() const { return columns_to_read; }
+    [[nodiscard]] const NamesAndTypes & getColumnsToRead() const { return columns_to_read; }
 
     /// Columns for which only a part of the streams is read (e.g. only the offsets of an array
     /// whose data is missing from the part). Such columns are not fully populated until
     /// `fillMissingColumns` runs and must not be consumed as regular columns before that.
-    const NameSet & getPartiallyReadColumns() const { return partially_read_columns; }
+    [[nodiscard]] const NameSet & getPartiallyReadColumns() const { return partially_read_columns; }
 
-    size_t getFirstMarkToRead() const { return all_mark_ranges.front().begin; }
+    [[nodiscard]] size_t getFirstMarkToRead() const { return all_mark_ranges.front().begin; }
 
     MergeTreeDataPartInfoForReaderPtr data_part_info_for_read;
 
@@ -115,12 +115,12 @@ public:
     /// Independent of any particular mark index. Used by callers that need to know upfront whether
     /// the reader chain may filter marks before the PREWHERE step runs — for example, to decide
     /// whether `read_mark_ranges` with `row_count == 0` can be attributed to the PREWHERE predicate.
-    virtual bool canSkipAnyMark() const { return false; }
+    [[nodiscard]] virtual bool canSkipAnyMark() const { return false; }
 
     /// Like `canSkipAnyMark`, but leaving out the marks skipped only because every row of the mark lies beyond a
     /// running top-K threshold (by the primary key). The `__topKFilter` in PREWHERE drops the rows of such a mark
     /// anyway, so the mark can still be attributed to a PREWHERE that holds this filter.
-    virtual bool canSkipAnyMarkBesidesTopKPrimaryKey() const { return canSkipAnyMark(); }
+    [[nodiscard]] virtual bool canSkipAnyMarkBesidesTopKPrimaryKey() const { return canSkipAnyMark(); }
 
     virtual void updateAllMarkRanges(const MarkRanges & ranges);
 
@@ -128,7 +128,7 @@ public:
     /// Readers with streams pass it on to them.
     virtual void updateReadRequestMap(MarkRangesPtr request_map);
 
-    StorageSnapshotPtr getStorageSnapshot() const { return storage_snapshot; }
+    [[nodiscard]] StorageSnapshotPtr getStorageSnapshot() const { return storage_snapshot; }
 
     /// Read hints (currently vector-search results) are per-reader state: they are set once after the
     /// reader is created and consumed later by `MergeTreeRangeReader`. They live on the reader rather
@@ -140,29 +140,29 @@ public:
             read_hints = read_hints_;
     }
 
-    const RangesInDataPartReadHints & getReadHints() const { return read_hints; }
+    [[nodiscard]] const RangesInDataPartReadHints & getReadHints() const { return read_hints; }
 
 protected:
     /// Creates a context copy with experimental settings enabled.
     /// Used when compiling default or virtual-column expressions at read time.
-    ContextPtr createContextForDefaultExpressions() const;
+    [[nodiscard]] ContextPtr createContextForDefaultExpressions() const;
 
     /// Builds a ColumnsDescription that includes both the storage metadata columns and any virtual
     /// columns that carry a default expression. Required by evaluateMissingDefaults so that it can
     /// resolve default expressions for virtual columns.
-    ColumnsDescription buildCombinedColumnsForDefaultExpressions() const;
+    [[nodiscard]] ColumnsDescription buildCombinedColumnsForDefaultExpressions() const;
 
     /// Returns true if requested column is a subcolumn with offsets of Array which is part of Nested column.
-    bool isSubcolumnOffsetsOfNested(const String & name_in_storage, const String & subcolumn_name) const;
+    [[nodiscard]] bool isSubcolumnOffsetsOfNested(const String & name_in_storage, const String & subcolumn_name) const;
 
     /// Returns the string value filter to apply during deserialization of the column, or nullptr.
     /// Takes the column as it is named in the part (an element of `columns_to_read`).
     /// See `MergeTreeReaderSettings::string_value_filters`.
-    StringValueFilterPtr getStringValueFilter(const NameAndTypePair & column_in_part) const;
+    [[nodiscard]] StringValueFilterPtr getStringValueFilter(const NameAndTypePair & column_in_part) const;
 
     void checkNumberOfColumns(size_t num_columns_to_read) const;
 
-    String getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read) const;
+    [[nodiscard]] String getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read) const;
 
     /// avg_value_size_hints are used to reduce the number of reallocations when creating columns of variable size.
     ValueSizeMap avg_value_size_hints;
@@ -209,7 +209,7 @@ protected:
     /// In case of part of the nested column does not exist, offsets should be
     /// read, but only the offsets for the current column, that is why it
     /// returns pair of size_t, not just one.
-    std::optional<ColumnForOffsets> findColumnForOffsets(const NameAndTypePair & column) const;
+    [[nodiscard]] std::optional<ColumnForOffsets> findColumnForOffsets(const NameAndTypePair & column) const;
 
     NameSet partially_read_columns;
 
@@ -219,22 +219,22 @@ protected:
     /// Returns true if the column at position @pos in columns_to_read was dropped
     /// by a pending mutation that hasn't been applied to this part yet.
     /// Such columns should not be read from the part; defaults should be used instead.
-    bool isColumnDroppedByPendingMutation(size_t pos) const;
+    [[nodiscard]] bool isColumnDroppedByPendingMutation(size_t pos) const;
 
     /// Returns true if the column at position @pos in columns_to_read is a system column that was invalidated.
-    bool isSystemColumnInvalidated(size_t pos) const;
+    [[nodiscard]] bool isSystemColumnInvalidated(size_t pos) const;
 
     /// Same as `IDataType::hasSubcolumn` for the column @name_in_part of the part, but without
     /// building a serialization of it when the part already holds one.
-    bool hasSubcolumnInPart(const String & name_in_part, const IDataType & type_in_part, const String & subcolumn_name) const;
+    [[nodiscard]] bool hasSubcolumnInPart(const String & name_in_part, const IDataType & type_in_part, const String & subcolumn_name) const;
 
 private:
     friend class MergeTreeReaderIndex;
     friend class MergeTreeReaderTextIndex;
 
     /// Returns actual column name in part, which can differ from table metadata.
-    String getColumnNameInPart(const NameAndTypePair & required_column) const;
-    std::pair<String, String> getStorageAndSubcolumnNameInPart(const NameAndTypePair & required_column) const;
+    [[nodiscard]] String getColumnNameInPart(const NameAndTypePair & required_column) const;
+    [[nodiscard]] std::pair<String, String> getStorageAndSubcolumnNameInPart(const NameAndTypePair & required_column) const;
 
     /// The column and its serialization as they are in the part, both of which can differ from table metadata.
     struct ColumnAndSerializationInPart
@@ -245,20 +245,20 @@ private:
 
     /// Resolves both at once: they share the lookup of the column in the part and, for a subcolumn, the
     /// enumeration of its parent.
-    ColumnAndSerializationInPart getColumnAndSerializationInPart(const NameAndTypePair & required_column) const;
+    [[nodiscard]] ColumnAndSerializationInPart getColumnAndSerializationInPart(const NameAndTypePair & required_column) const;
 
     /// Returns actual column name and type in part, which can differ from table metadata.
-    NameAndTypePair getColumnInPart(const NameAndTypePair & required_column) const;
+    [[nodiscard]] NameAndTypePair getColumnInPart(const NameAndTypePair & required_column) const;
     /// Returns actual serialization in part, which can differ from table metadata.
-    SerializationPtr getSerializationInPart(const NameAndTypePair & required_column) const;
+    [[nodiscard]] SerializationPtr getSerializationInPart(const NameAndTypePair & required_column) const;
 
     /// The column of the part under the given (column name, subcolumn name), or nothing when it has no such
     /// column or subcolumn.
-    std::optional<NameAndTypePair> tryGetColumnInPart(const String & name_in_storage, const String & subcolumn_name) const;
+    [[nodiscard]] std::optional<NameAndTypePair> tryGetColumnInPart(const String & name_in_storage, const String & subcolumn_name) const;
 
     /// The serialization of @column_in_part the part holds (composed for a subcolumn), or null when the part holds
     /// none for it or when it is not safe to share with the other readers.
-    SerializationPtr tryGetSerializationFromPart(const NameAndTypePair & column_in_part) const;
+    [[nodiscard]] SerializationPtr tryGetSerializationFromPart(const NameAndTypePair & column_in_part) const;
 
     /// Columns that are requested to read.
     NamesAndTypesList original_requested_columns;

@@ -62,42 +62,42 @@ private:
     /// Value-to-name lookup, `nullptr` if not found. Returns a pointer rather than filling an out
     /// parameter so that callers keep no address-taken local, which costs a canary under
     /// `-fstack-protector-strong`.
-    const std::string * findNameForValue(T value) const;
+    [[nodiscard]] const std::string * findNameForValue(T value) const;
 
 public:
     explicit EnumValues(const Values & values_, ValidationMode validation_mode = ValidationMode::Normal);
     ~EnumValues() override;
 
-    const Values & getValues() const { return values; }
+    [[nodiscard]] const Values & getValues() const { return values; }
 
     /// Approximate number of heap-allocated bytes owned by this object:
     /// the `values` vector (including each name's string capacity) plus the
     /// `name_sorted_index` and `value_to_index` lookup vectors.
-    size_t allocatedBytes() const;
+    [[nodiscard]] size_t allocatedBytes() const;
 
     /// Check if value exists in enum
-    bool hasValue(T value) const;
+    [[nodiscard]] bool hasValue(T value) const;
 
     /// Get name for value, throws if not found
-    std::string_view getNameForValue(T value) const;
+    [[nodiscard]] std::string_view getNameForValue(T value) const;
 
     /// Get name for value, returns false if not found
     bool getNameForValue(T value, std::string_view & result) const;
 
     /// Get value for name, throws if not found
-    T getValue(std::string_view field_name) const;
+    [[nodiscard]] T getValue(std::string_view field_name) const;
 
     /// Get value for name, returns false if not found
     bool tryGetValue(T & x, std::string_view field_name) const;
 
     template <typename TValues>
-    bool containsAll(const TValues & rhs_values) const;
+    [[nodiscard]] bool containsAll(const TValues & rhs_values) const;
 
-    VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
+    [[nodiscard]] VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
 
-    std::unordered_set<String> getSetOfAllNames(bool to_lower) const;
+    [[nodiscard]] std::unordered_set<String> getSetOfAllNames(bool to_lower) const;
 
-    std::unordered_set<T> getSetOfAllValues() const;
+    [[nodiscard]] std::unordered_set<T> getSetOfAllValues() const;
 };
 
 }

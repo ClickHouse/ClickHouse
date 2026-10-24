@@ -37,7 +37,7 @@ public:
         actual[user_id].num_items -= 1;
     }
 
-    bool approveWrite(const UUID & user_id, size_t entry_size_in_bytes) const override
+    [[nodiscard]] bool approveWrite(const UUID & user_id, size_t entry_size_in_bytes) const override
     {
         auto it_actual = actual.find(user_id);
         Resources actual_for_user{.size_in_bytes = 0, .num_items = 0}; /// if no user is found, the default is no resource consumption
@@ -110,22 +110,22 @@ public:
     }
 
 
-    size_t sizeInBytes() const override
+    [[nodiscard]] size_t sizeInBytes() const override
     {
         return size_in_bytes;
     }
 
-    size_t count() const override
+    [[nodiscard]] size_t count() const override
     {
         return cache.size();
     }
 
-    size_t maxSizeInBytes() const override
+    [[nodiscard]] size_t maxSizeInBytes() const override
     {
         return max_size_in_bytes;
     }
 
-    size_t maxCount() const override
+    [[nodiscard]] size_t maxCount() const override
     {
         return max_count;
     }
@@ -193,7 +193,7 @@ public:
         return it->second;
     }
 
-    bool contains(const Key & key) const override
+    [[nodiscard]] bool contains(const Key & key) const override
     {
         return cache.count(key) != 0;
     }
@@ -274,7 +274,7 @@ public:
         CurrentMetrics::add(count_metric, static_cast<Int64>(cache.size()) - old_size);
     }
 
-    std::vector<KeyMapped> dump() const override
+    [[nodiscard]] std::vector<KeyMapped> dump() const override
     {
         std::vector<KeyMapped> res;
         res.reserve(cache.size());

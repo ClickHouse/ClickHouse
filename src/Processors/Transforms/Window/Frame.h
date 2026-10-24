@@ -22,7 +22,7 @@ public:
     void enterPartition(RowNumber partition_start);
     void advance(const SlidingBlocks & blocks, const RowPoint & current, const PartitionBounds & partition);
 
-    const FrameBounds & bounds() const;
+    [[nodiscard]] const FrameBounds & bounds() const;
 
 private:
     const WindowTransformParams & params;

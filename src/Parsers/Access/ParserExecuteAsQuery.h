@@ -14,9 +14,9 @@ class ParserExecuteAsQuery : public IParserBase
 {
 public:
     explicit ParserExecuteAsQuery(IParser & subquery_parser_);
-    const char * getName() const override { return "EXECUTE AS query"; }
+    [[nodiscard]] const char * getName() const override { return "EXECUTE AS query"; }
 
-    std::map<String, Documentation> getDocumentation() const override;
+    [[nodiscard]] std::map<String, Documentation> getDocumentation() const override;
 
 protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;

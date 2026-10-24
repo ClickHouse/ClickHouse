@@ -49,19 +49,19 @@ public:
     {
     }
 
-    String getName() const override { return "FunctionExpression"; }
+    [[nodiscard]] String getName() const override { return "FunctionExpression"; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         return executeImpl(arguments, result_type, input_rows_count, /*dry_run=*/false);
     }
 
-    ColumnPtr executeDryRunImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeDryRunImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         return executeImpl(arguments, result_type, input_rows_count, /*dry_run=*/true);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
     {
         if (input_rows_count == 0)
             return result_type->createColumn();
@@ -85,15 +85,15 @@ public:
         return expr_columns.getByName(signature->return_name).column;
     }
 
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
     /// It's possible if expression_actions contains function that don't use
     /// default implementation for Nothing.
     /// Example: arrayMap(x -> CAST(x, 'UInt8'), []);
-    bool useDefaultImplementationForNothing() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNothing() const override { return false; }
     /// Example: SELECT arrayMap(x -> (x + (arrayMap(y -> ((x + y) + toLowCardinality(1)), [])[1])), [])
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     /// The mix of full and replicated columns falls back to full materialization.
-    bool useDefaultImplementationForReplicatedColumns() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForReplicatedColumns() const override { return false; }
 
 private:
     ExpressionActionsPtr expression_actions;
@@ -305,20 +305,20 @@ public:
     {
     }
 
-    String getName() const override { return "FunctionCapture"; }
+    [[nodiscard]] String getName() const override { return "FunctionCapture"; }
 
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
     /// It's possible if expression_actions contains function that don't use
     /// default implementation for Nothing and one of captured columns can be Nothing
     /// Example: SELECT arrayMap(x -> [x, arrayElement(y, 0)], []), [] as y
-    bool useDefaultImplementationForNothing() const override { return false; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNothing() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     /// Keep replicated captured columns (e.g. produced by lazy ARRAY JOIN) lazy:
     /// they are stored in ColumnFunction and handled when the lambda is executed.
-    bool useDefaultImplementationForReplicatedColumns() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForReplicatedColumns() const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         Names names;
         DataTypes types;
@@ -366,8 +366,8 @@ public:
         }
     }
 
-    const ExpressionActionsPtr & getActions() const { return expression_actions; }
-    const LambdaCapturePtr & getCapture() const { return capture; }
+    [[nodiscard]] const ExpressionActionsPtr & getActions() const { return expression_actions; }
+    [[nodiscard]] const LambdaCapturePtr & getCapture() const { return capture; }
 
 private:
     ExpressionActionsPtr expression_actions;

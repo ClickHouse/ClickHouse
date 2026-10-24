@@ -58,13 +58,13 @@ public:
     SharedDataBucketsSplitter(const IColumn & shared_data_column_, size_t start_, size_t end_, size_t num_buckets_);
 
     /// Build the shared data column for a single bucket.
-    ColumnPtr extractBucket(size_t bucket) const;
+    [[nodiscard]] ColumnPtr extractBucket(size_t bucket) const;
 
     /// Flatten the paths of a single bucket into separate per-path columns, each densified to one value
     /// per row (the stored value where the path is present, a default where it is absent), sorted by path.
     /// IMPORTANT: returned string_views reference path data inside the shared data column, which must
     /// stay alive while the result is used.
-    std::vector<std::pair<std::string_view, ColumnPtr>> flattenBucket(size_t bucket, const DataTypePtr & dynamic_type) const;
+    [[nodiscard]] std::vector<std::pair<std::string_view, ColumnPtr>> flattenBucket(size_t bucket, const DataTypePtr & dynamic_type) const;
 
 private:
     const IColumn & shared_data_column;

@@ -33,7 +33,7 @@ struct SkipIndexReadResult
     size_t top_k_primary_key_column_position = 0;
 
     /// Whether every row of the granule lies beyond the running top-K threshold according to the primary index.
-    bool isGranuleBeyondTopKThreshold(size_t mark) const;
+    [[nodiscard]] bool isGranuleBeyondTopKThreshold(size_t mark) const;
 
     /// Whether granules may be dropped by something other than the primary-key top-K check above: skip indexes
     /// (the `minmax` top-K one included) or JOIN runtime filters.
@@ -143,8 +143,8 @@ struct ProjectionIndexBitmap
     static ProjectionIndexBitmapPtr create64();
 
     void intersectWith(const ProjectionIndexBitmap & other);
-    size_t cardinality() const;
-    bool empty() const;
+    [[nodiscard]] size_t cardinality() const;
+    [[nodiscard]] bool empty() const;
 
     template <typename Offset>
     bool contains(std::type_identity_t<Offset> value);
@@ -156,7 +156,7 @@ struct ProjectionIndexBitmap
     void addBulk(const std::type_identity_t<Offset> * values, size_t size);
 
     /// Checks whether the bitmap has no bits set in the range [begin, end).
-    bool rangeAllZero(size_t begin, size_t end) const;
+    [[nodiscard]] bool rangeAllZero(size_t begin, size_t end) const;
 
     /// Appends a `PaddedPODArray<UInt8>` in the range [starting_row, starting_row + num_rows)
     /// with `1`s at positions corresponding to values present in the bitmap.
@@ -218,13 +218,13 @@ struct MergeTreeIndexReadResult
     ProjectionIndexBitmapPtr projection_index_read_result;
 
     /// Whether index read result is useful and marks can be skipped.
-    bool canSkipAnyMark() const;
+    [[nodiscard]] bool canSkipAnyMark() const;
 
     /// Like `canSkipAnyMark`, but leaving out the granules skipped by the primary key against a top-K threshold.
-    bool canSkipAnyMarkBesidesTopKPrimaryKey() const;
+    [[nodiscard]] bool canSkipAnyMarkBesidesTopKPrimaryKey() const;
 
     /// Whether all rows of the granule are filtered out by the present index read results.
-    bool canSkipMark(size_t mark, const MergeTreeIndexGranularity & index_granularity) const;
+    [[nodiscard]] bool canSkipMark(size_t mark, const MergeTreeIndexGranularity & index_granularity) const;
 };
 
 using MergeTreeIndexReadResultPtr = std::shared_ptr<MergeTreeIndexReadResult>;

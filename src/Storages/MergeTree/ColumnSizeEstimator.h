@@ -36,12 +36,12 @@ public:
         sum_total = std::max(static_cast<decltype(sum_index_columns)>(1), sum_index_columns + sum_ordinary_columns);
     }
 
-    Float64 columnWeight(const String & column) const
+    [[nodiscard]] Float64 columnWeight(const String & column) const
     {
         return static_cast<Float64>(map.at(column)) / static_cast<Float64>(sum_total);
     }
 
-    Float64 keyColumnsWeight() const
+    [[nodiscard]] Float64 keyColumnsWeight() const
     {
         return static_cast<Float64>(sum_index_columns) / static_cast<Float64>(sum_total);
     }

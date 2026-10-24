@@ -55,7 +55,7 @@ struct AggregateFunctionUniqUpToData
     UInt8 count = 0;
     char data_ptr[0];
 
-    T load(size_t i) const
+    [[nodiscard]] T load(size_t i) const
     {
         return unalignedLoad<T>(data_ptr + i * sizeof(T));
     }
@@ -65,7 +65,7 @@ struct AggregateFunctionUniqUpToData
         unalignedStore<T>(data_ptr + i * sizeof(T), x);
     }
 
-    size_t size() const
+    [[nodiscard]] size_t size() const
     {
         return count;
     }
@@ -204,14 +204,14 @@ public:
     {
     }
 
-    size_t sizeOfData() const override
+    [[nodiscard]] size_t sizeOfData() const override
     {
         return sizeof(AggregateFunctionUniqUpToData<T>) + sizeof(T) * threshold;
     }
 
-    String getName() const override { return "uniqUpTo"; }
+    [[nodiscard]] String getName() const override { return "uniqUpTo"; }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     /// ALWAYS_INLINE is required to have better code layout for uniqUpTo function
     void ALWAYS_INLINE add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
@@ -264,14 +264,14 @@ public:
             num_args = arguments.size();
     }
 
-    size_t sizeOfData() const override
+    [[nodiscard]] size_t sizeOfData() const override
     {
         return sizeof(AggregateFunctionUniqUpToData<UInt64>) + sizeof(UInt64) * threshold;
     }
 
-    String getName() const override { return "uniqUpTo"; }
+    [[nodiscard]] String getName() const override { return "uniqUpTo"; }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {

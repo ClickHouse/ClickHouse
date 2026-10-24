@@ -127,19 +127,19 @@ struct WorkloadResources
         return true;
     }
 
-    bool renewCPULease() const
+    [[nodiscard]] bool renewCPULease() const
     {
         chassert(lease);
         return lease->renew();
     }
 
-    size_t getCPULeaseSlotId() const
+    [[nodiscard]] size_t getCPULeaseSlotId() const
     {
         chassert(lease);
         return lease->slot_id;
     }
 
-    bool isMemorySyncNeeded() const
+    [[nodiscard]] bool isMemorySyncNeeded() const
     {
         return reservation && tracker;
     }

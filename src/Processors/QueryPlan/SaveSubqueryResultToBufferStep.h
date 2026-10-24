@@ -27,7 +27,7 @@ public:
         ColumnIdentifiers columns_to_save_,
         ChunkBufferPtr chunk_buffer_);
 
-    String getName() const override { return "SaveSubqueryResultToBuffer"; }
+    [[nodiscard]] String getName() const override { return "SaveSubqueryResultToBuffer"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 

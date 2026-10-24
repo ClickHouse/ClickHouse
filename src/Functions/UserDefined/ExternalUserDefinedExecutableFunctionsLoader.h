@@ -21,14 +21,14 @@ public:
     /// External user-defined functions will be loaded immediately and then will be updated in separate thread, each 'reload_period' seconds.
     explicit ExternalUserDefinedExecutableFunctionsLoader(ContextPtr global_context_);
 
-    UserDefinedExecutableFunctionPtr getUserDefinedFunction(const std::string & user_defined_function_name) const;
+    [[nodiscard]] UserDefinedExecutableFunctionPtr getUserDefinedFunction(const std::string & user_defined_function_name) const;
 
-    UserDefinedExecutableFunctionPtr tryGetUserDefinedFunction(const std::string & user_defined_function_name) const;
+    [[nodiscard]] UserDefinedExecutableFunctionPtr tryGetUserDefinedFunction(const std::string & user_defined_function_name) const;
 
     void reloadFunction(const std::string & user_defined_function_name) const;
 
 protected:
-    LoadableMutablePtr createObject(const std::string & name,
+    [[nodiscard]] LoadableMutablePtr createObject(const std::string & name,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & key_in_config,
         const std::string & repository_name,

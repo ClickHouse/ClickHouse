@@ -30,16 +30,16 @@ namespace
 
 struct TestHTTPContext : DB::IHTTPContext
 {
-    uint64_t getMaxHstsAge() const override { return 0; }
-    uint64_t getMaxUriSize() const override { return 1 << 20; }
-    uint64_t getMaxFields() const override { return 100; }
-    uint64_t getMaxFieldNameSize() const override { return 1 << 10; }
-    uint64_t getMaxFieldValueSize() const override { return 1 << 10; }
-    uint64_t getMaxRequestHeaderSize() const override { return 1 << 20; }
+    [[nodiscard]] uint64_t getMaxHstsAge() const override { return 0; }
+    [[nodiscard]] uint64_t getMaxUriSize() const override { return 1 << 20; }
+    [[nodiscard]] uint64_t getMaxFields() const override { return 100; }
+    [[nodiscard]] uint64_t getMaxFieldNameSize() const override { return 1 << 10; }
+    [[nodiscard]] uint64_t getMaxFieldValueSize() const override { return 1 << 10; }
+    [[nodiscard]] uint64_t getMaxRequestHeaderSize() const override { return 1 << 20; }
     /// Shorter than the body timeouts, so the header read changes the socket timeouts.
-    Poco::Timespan getHeadersReadTimeout() const override { return Poco::Timespan(5, 0); }
-    Poco::Timespan getReceiveTimeout() const override { return Poco::Timespan(60, 0); }
-    Poco::Timespan getSendTimeout() const override { return Poco::Timespan(45, 0); }
+    [[nodiscard]] Poco::Timespan getHeadersReadTimeout() const override { return Poco::Timespan(5, 0); }
+    [[nodiscard]] Poco::Timespan getReceiveTimeout() const override { return Poco::Timespan(60, 0); }
+    [[nodiscard]] Poco::Timespan getSendTimeout() const override { return Poco::Timespan(45, 0); }
 };
 
 /// With `reset_on_read`, behaves like a macOS socket whose peer has reset the connection:

@@ -52,7 +52,7 @@ public:
         : token(std::move(token_)), expires_on(expires_on_)
     {}
 
-    Azure::Core::Credentials::AccessToken GetToken(
+    [[nodiscard]] Azure::Core::Credentials::AccessToken GetToken(
         Azure::Core::Credentials::TokenRequestContext const &,
         Azure::Core::Context const &) const override
     {
@@ -160,9 +160,9 @@ struct ObjectMetadata
     /// metadata cache) only when it is present and a strong content identifier. A weak
     /// etag (e.g. the second-precision HDFS token) must never key a cache, otherwise a
     /// same-second, same-size rewrite could serve stale data.
-    bool isEtagUsableAsCacheKey() const { return !etag.empty() && etag_is_strong; }
+    [[nodiscard]] bool isEtagUsableAsCacheKey() const { return !etag.empty() && etag_is_strong; }
 
-    std::optional<String> getContentCacheToken() const
+    [[nodiscard]] std::optional<String> getContentCacheToken() const
     {
         if (isEtagUsableAsCacheKey())
             return etag;
@@ -213,7 +213,7 @@ struct RelativePathWithMetadata
 
     ~RelativePathWithMetadata() = default;
 
-    std::string getFileName() const
+    [[nodiscard]] std::string getFileName() const
     {
         if (!derive_file_name_from_url_path)
             return std::filesystem::path(relative_path).filename();
@@ -226,8 +226,8 @@ struct RelativePathWithMetadata
         const std::string path_without_query = pos == std::string::npos ? relative_path : relative_path.substr(0, pos);
         return std::filesystem::path(path_without_query).filename();
     }
-    std::string getPath() const { return relative_path; }
-    std::string getPathForGlobMatching() const { return path_for_glob_matching.value_or(relative_path); }
+    [[nodiscard]] std::string getPath() const { return relative_path; }
+    [[nodiscard]] std::string getPathForGlobMatching() const { return path_for_glob_matching.value_or(relative_path); }
 };
 
 struct ObjectKeyWithMetadata
@@ -264,36 +264,36 @@ class IObjectStorage
 public:
     IObjectStorage() = default;
 
-    virtual std::string getName() const = 0;
+    [[nodiscard]] virtual std::string getName() const = 0;
 
     /// Returns the disk name for logging purposes. Empty if not associated with a disk.
-    virtual std::string getDiskName() const { return {}; }
+    [[nodiscard]] virtual std::string getDiskName() const { return {}; }
 
-    virtual ObjectStorageType getType() const = 0;
+    [[nodiscard]] virtual ObjectStorageType getType() const = 0;
 
     /// The logical root or base path used to group a set of related objects.
-    virtual std::string getRootPrefix() const { return ""; }
+    [[nodiscard]] virtual std::string getRootPrefix() const { return ""; }
 
     /// Common object key prefix relative to the root path.
-    virtual std::string getCommonKeyPrefix() const = 0;
+    [[nodiscard]] virtual std::string getCommonKeyPrefix() const = 0;
 
-    virtual std::string getDescription() const = 0;
+    [[nodiscard]] virtual std::string getDescription() const = 0;
 
     /// Object exists or not
-    virtual bool exists(const StoredObject & object) const = 0;
+    [[nodiscard]] virtual bool exists(const StoredObject & object) const = 0;
 
     /// Object exists or any child on the specified path exists.
     /// We have this method because object storages are flat for example
     /// /a/b/c/d may exist but /a/b/c may not. So this method will return true for
     /// /, /a, /a/b, /a/b/c, /a/b/c/d while exists will return true only for /a/b/c/d
-    virtual bool existsOrHasAnyChild(const std::string & path) const;
+    [[nodiscard]] virtual bool existsOrHasAnyChild(const std::string & path) const;
 
     /// List objects recursively by certain prefix.
     virtual void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const;
 
     /// List objects recursively by certain prefix. Use it instead of listObjects, if you want to list objects lazily.
     /// Optional start_after is supported for storages that can efficiently resume listing from a key.
-    virtual ObjectStorageIteratorPtr iterate(
+    [[nodiscard]] virtual ObjectStorageIteratorPtr iterate(
         const std::string & path_prefix,
         size_t max_keys,
         bool with_tags,
@@ -304,18 +304,18 @@ public:
     /// `prefix/a/b`; `LocalObjectStorage` instead walks a real directory tree and returns nothing unless
     /// the argument names an existing directory, and `AzureObjectStorage` ignores `start_after`. Both are
     /// silent, so a caller that splits one listing into several by key range must check this first.
-    virtual bool supportsPrefixListing() const { return false; }
+    [[nodiscard]] virtual bool supportsPrefixListing() const { return false; }
 
     /// Get object metadata if supported. It should be possible to receive at least size of object
-    virtual ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const = 0;
-    virtual ObjectMetadata getObjectMetadata(const RelativePathWithMetadata & object, bool with_tags) const
+    [[nodiscard]] virtual ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const = 0;
+    [[nodiscard]] virtual ObjectMetadata getObjectMetadata(const RelativePathWithMetadata & object, bool with_tags) const
     {
         return getObjectMetadata(object.getPath(), with_tags);
     }
 
     /// Same as getObjectMetadata(), but ignores if object does not exist.
-    virtual std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path, bool with_tags) const = 0;
-    virtual std::optional<ObjectMetadata> tryGetObjectMetadata(const RelativePathWithMetadata & object, bool with_tags) const
+    [[nodiscard]] virtual std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path, bool with_tags) const = 0;
+    [[nodiscard]] virtual std::optional<ObjectMetadata> tryGetObjectMetadata(const RelativePathWithMetadata & object, bool with_tags) const
     {
         return tryGetObjectMetadata(object.getPath(), with_tags);
     }
@@ -369,7 +369,7 @@ public:
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         const WriteSettings & write_settings = {}) = 0;
 
-    virtual bool isRemote() const = 0;
+    [[nodiscard]] virtual bool isRemote() const = 0;
 
     /// Remove object on path if exists
     virtual void removeObjectIfExists(const StoredObject & object) = 0;
@@ -400,7 +400,7 @@ public:
 
     virtual ~IObjectStorage() = default;
 
-    virtual const std::string & getCacheName() const;
+    [[nodiscard]] virtual const std::string & getCacheName() const;
 
     static ThreadPool & getThreadPoolWriter();
 
@@ -427,24 +427,24 @@ public:
 
     /// Sometimes object storages have something similar to chroot or namespace, for example
     /// buckets in S3. If object storage doesn't have any namepaces return empty string.
-    virtual String getObjectsNamespace() const = 0;
+    [[nodiscard]] virtual String getObjectsNamespace() const = 0;
 
     /// Get unique id for passed absolute path in object storage.
-    virtual std::string getUniqueId(const std::string & path) const { return path; }
+    [[nodiscard]] virtual std::string getUniqueId(const std::string & path) const { return path; }
 
     /// Remove filesystem cache.
     virtual void removeCacheIfExists(const std::string & /* path */) {}
 
-    virtual bool supportsCache() const { return false; }
+    [[nodiscard]] virtual bool supportsCache() const { return false; }
 
-    virtual bool isReadOnly() const { return false; }
+    [[nodiscard]] virtual bool isReadOnly() const { return false; }
 
-    virtual bool supportParallelWrite() const { return false; }
+    [[nodiscard]] virtual bool supportParallelWrite() const { return false; }
 
     /// Whether `writeObject` with `WriteSettings::object_storage_write_atomically` replaces an existing object atomically:
     /// a concurrent reader sees either the previous complete object or the new complete one, and a failed write leaves
     /// the previous object intact. Storages that create or truncate the destination before uploading the data do not.
-    virtual bool supportsAtomicWrite() const { return false; }
+    [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] virtual bool supportsAtomicWrite() const { return false; }
 
     /// Whether a fetched `ObjectMetadata` is guaranteed to carry at least one comparable generation
     /// token — a non-empty `etag`, a known size, or a known modification time — so that two fetches
@@ -452,29 +452,29 @@ public:
     /// legitimately omit all of them (no `ETag`, no `Content-Length`, no `Last-Modified`), so callers
     /// that must reread the same generation of an object (e.g. lazy materialization) have to skip
     /// such storages instead of failing close at read time.
-    virtual bool supportsObjectGenerationComparison() const { return true; }
+    [[nodiscard]] virtual bool supportsObjectGenerationComparison() const { return true; }
 
     void setIOSchedulingResourceNames(const String & read_resource_name_, const String & write_resource_name_);
-    std::pair<String, String> getIOSchedulingResourceNames() const;
+    [[nodiscard]] std::pair<String, String> getIOSchedulingResourceNames() const;
 
-    virtual ReadSettings patchSettings(const ReadSettings & read_settings) const;
-    virtual WriteSettings patchSettings(const WriteSettings & write_settings) const;
+    [[nodiscard]] virtual ReadSettings patchSettings(const ReadSettings & read_settings) const;
+    [[nodiscard]] virtual WriteSettings patchSettings(const WriteSettings & write_settings) const;
 
-    virtual ObjectStorageKeyGeneratorPtr createKeyGenerator() const = 0;
+    [[nodiscard]] virtual ObjectStorageKeyGeneratorPtr createKeyGenerator() const = 0;
 
 #if USE_AZURE_BLOB_STORAGE
-    virtual std::shared_ptr<const AzureBlobStorage::ContainerClient> getAzureBlobStorageClient() const
+    [[nodiscard]] virtual std::shared_ptr<const AzureBlobStorage::ContainerClient> getAzureBlobStorageClient() const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
     }
 
     /// Returns a snapshot: `applyNewSettings` may swap the parameters together with the client.
-    virtual std::shared_ptr<const AzureBlobStorage::ConnectionParams> getAzureBlobStorageConnectionParams() const
+    [[nodiscard]] virtual std::shared_ptr<const AzureBlobStorage::ConnectionParams> getAzureBlobStorageConnectionParams() const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
     }
 
-    virtual AzureBlobStorage::AuthMethod getAzureBlobStorageAuthMethod() const
+    [[nodiscard]] virtual AzureBlobStorage::AuthMethod getAzureBlobStorageAuthMethod() const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
     }
@@ -496,7 +496,7 @@ public:
     /// `ReadBufferFromS3` / `getObjectMetadata` error handlers that normally invoke this.
     virtual bool tryRefreshCredentialsViaCallback() { return false; }
 
-    virtual bool hasCredentialsRefreshCallback() const { return false; }
+    [[nodiscard]] virtual bool hasCredentialsRefreshCallback() const { return false; }
 
 #if USE_AZURE_BLOB_STORAGE || USE_AWS_S3
     /// Assign tag on objects
@@ -523,11 +523,11 @@ public:
     /// The only state shared with the copy on purpose is the IO scheduling resource names: they are a
     /// property of the disk (see `DiskObjectStorage::propagateResourceNamesNoLock`) and change with
     /// `CREATE RESOURCE` / `DROP RESOURCE`, so the copy keeps following the disk's resources.
-    ObjectStoragePtr clone() const;
+    [[nodiscard]] ObjectStoragePtr clone() const;
 
 protected:
     /// Creates the copy itself, see `clone`. The state of the base class is handled by `clone`.
-    virtual ObjectStoragePtr cloneImpl() const
+    [[nodiscard]] virtual ObjectStoragePtr cloneImpl() const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'clone' is not implemented for {}", getName());
     }

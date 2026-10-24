@@ -50,7 +50,7 @@ struct LazyFrontier
     Placement at(const ActionsDAG::Node * node) const;
 
     /// Whether anything is computed above the `LIMIT` at all. When false the caller has nothing to gain.
-    bool defersAnything() const;
+    [[nodiscard]] bool defersAnything() const;
 };
 
 /// `eager_output_positions` are the outputs of `merged` a caller needs below the `LIMIT` anyway, i.e. the

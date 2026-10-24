@@ -230,7 +230,7 @@ struct CrossTabAggregateData : CrossTabCountsState
       * This will be the χ² statistic.
       * This statistic is used as a base for many other statistics.
       */
-    Float64 getPhiSquared() const
+    [[nodiscard]] Float64 getPhiSquared() const
     {
         if (count == 0)
         {
@@ -649,7 +649,7 @@ struct CrossTabPhiSquaredWindowData
         }
     }
 
-    Float64 getPhiSquared() const
+    [[nodiscard]] Float64 getPhiSquared() const
     {
         if (count == 0)
             return 0.0;
@@ -870,9 +870,9 @@ public:
     {
     }
 
-    String getName() const override { return Data::getName(); }
+    [[nodiscard]] String getName() const override { return Data::getName(); }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     static DataTypePtr createResultType() { return std::make_shared<DataTypeNumber<Float64>>(); }
 
@@ -899,7 +899,7 @@ public:
         this->data(place).deserialize(buf);
     }
 
-    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
+    [[nodiscard]] bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
     {
         if (!this->haveSameDefinition(rhs))
             return false;
@@ -947,7 +947,7 @@ public:
         }
     }
 
-    AggregateFunctionStateVariant getStateVariant() const override
+    [[nodiscard]] AggregateFunctionStateVariant getStateVariant() const override
     {
         if constexpr (Data::state_representation == AggregateFunctionStateVariant::Window)
             return AggregateFunctionStateVariant::Window;

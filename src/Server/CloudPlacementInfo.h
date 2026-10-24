@@ -23,8 +23,8 @@ public:
 
     void initialize(const Poco::Util::AbstractConfiguration & config);
 
-    std::string getAvailabilityZone() const;
-    std::string getRegion() const;
+    [[nodiscard]] std::string getAvailabilityZone() const;
+    [[nodiscard]] std::string getRegion() const;
 
 private:
     PlacementInfo() = default;

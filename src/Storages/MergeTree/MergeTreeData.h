@@ -414,15 +414,15 @@ public:
         /// state to temporary. Useful for new parts which not present in table.
         void rollbackPartsToTemporaryState();
 
-        size_t size() const { return precommitted_parts.size(); }
-        bool isEmpty() const { return precommitted_parts.empty(); }
+        [[nodiscard]] size_t size() const { return precommitted_parts.size(); }
+        [[nodiscard]] bool isEmpty() const { return precommitted_parts.empty(); }
 
         ~Transaction();
         void clear();
 
-        TransactionID getTID() const;
+        [[nodiscard]] TransactionID getTID() const;
 
-        MergeTreeTransaction * getMergeTreeTransaction() const { return txn; }
+        [[nodiscard]] MergeTreeTransaction * getMergeTreeTransaction() const { return txn; }
 
     private:
         friend class MergeTreeData;
@@ -515,12 +515,12 @@ public:
         /// checks that would break the loading of already-existing tables are gated on it.
         void check(const MergeTreeSettings & settings, const StorageInMemoryMetadata & metadata, bool sanity_checks) const;
 
-        String getModeName() const;
+        [[nodiscard]] String getModeName() const;
 
         /// True when both tables would merge a part with identical semantics, i.e. every
         /// field that feeds the merge transforms matches. Used to decide whether an adopted
         /// part's merge level may be preserved (see getLevelForAdoptedPart).
-        bool hasSameMergeSemantics(const MergingParams & rhs) const
+        [[nodiscard]] bool hasSameMergeSemantics(const MergingParams & rhs) const
         {
             return mode == rhs.mode
                 && sign_column == rhs.sign_column
@@ -646,17 +646,17 @@ public:
 
         /// Returns mutation commands that are required to be applied to the `part`.
         /// @return list of mutation commands in order: oldest to newest.
-        virtual MutationCommands getOnFlyMutationCommandsForPart(const DataPartPtr & part) const = 0;
-        virtual PatchParts getPatchesForPart(const DataPartPtr & part) const = 0;
-        virtual std::shared_ptr<IMutationsSnapshot> cloneEmpty() const = 0;
+        [[nodiscard]] virtual MutationCommands getOnFlyMutationCommandsForPart(const DataPartPtr & part) const = 0;
+        [[nodiscard]] virtual PatchParts getPatchesForPart(const DataPartPtr & part) const = 0;
+        [[nodiscard]] virtual std::shared_ptr<IMutationsSnapshot> cloneEmpty() const = 0;
         /// Columns changed on the fly by patches, data mutations and alter mutations of the whole snapshot.
-        virtual NameSet getColumnsChangedOnFly() const = 0;
+        [[nodiscard]] virtual NameSet getColumnsChangedOnFly() const = 0;
 
-        virtual bool hasPatchParts() const = 0;
-        virtual bool hasDataMutations() const = 0;
-        virtual bool hasAlterMutations() const = 0;
-        virtual bool hasMetadataMutations() const = 0;
-        virtual bool hasLightweightDeletedMask() const = 0;
+        [[nodiscard]] virtual bool hasPatchParts() const = 0;
+        [[nodiscard]] virtual bool hasDataMutations() const = 0;
+        [[nodiscard]] virtual bool hasAlterMutations() const = 0;
+        [[nodiscard]] virtual bool hasMetadataMutations() const = 0;
+        [[nodiscard]] virtual bool hasLightweightDeletedMask() const = 0;
     };
 
     struct MutationsSnapshotBase : public IMutationsSnapshot
@@ -670,17 +670,17 @@ public:
         MutationsSnapshotBase(Params params_, MutationCounters counters_, DataPartsVector patches_);
 
         void addPatches(DataPartsVector patches_) override;
-        PatchParts getPatchesForPart(const DataPartPtr & part) const final;
+        [[nodiscard]] PatchParts getPatchesForPart(const DataPartPtr & part) const final;
 
-        bool hasPatchParts() const final { return !patches_by_partition.empty(); }
-        bool hasDataMutations() const final { return counters.num_data > 0; }
-        bool hasAlterMutations() const final { return counters.num_alter > 0; }
-        bool hasMetadataMutations() const final { return counters.num_metadata > 0; }
-        bool hasAnyMutations() const { return hasDataMutations() || hasAlterMutations() || hasMetadataMutations(); }
-        bool hasLightweightDeletedMask() const final;
+        [[nodiscard]] bool hasPatchParts() const final { return !patches_by_partition.empty(); }
+        [[nodiscard]] bool hasDataMutations() const final { return counters.num_data > 0; }
+        [[nodiscard]] bool hasAlterMutations() const final { return counters.num_alter > 0; }
+        [[nodiscard]] bool hasMetadataMutations() const final { return counters.num_metadata > 0; }
+        [[nodiscard]] bool hasAnyMutations() const { return hasDataMutations() || hasAlterMutations() || hasMetadataMutations(); }
+        [[nodiscard]] bool hasLightweightDeletedMask() const final;
 
     protected:
-        NameSet getColumnsUpdatedInPatches() const;
+        [[nodiscard]] NameSet getColumnsUpdatedInPatches() const;
         void addSupportedCommands(const MutationCommands & commands, UInt64 mutation_version, MutationCommands & result_commands) const;
         /// Adds the columns changed by the commands that are applied on the fly in this snapshot.
         void addColumnsChangedOnFly(const MutationCommands & commands, NameSet & result) const;
@@ -751,7 +751,7 @@ public:
         PrimaryIndexCachePtr primary_index_cache;
         StatisticsCachePtr statistics_cache;
 
-        bool hasAny() const { return mark_cache || index_mark_cache || primary_index_cache || statistics_cache; }
+        [[nodiscard]] bool hasAny() const { return mark_cache || index_mark_cache || primary_index_cache || statistics_cache; }
     };
 
     /// Returns caches that should be prewarmed for a part of the given size.
@@ -1058,9 +1058,9 @@ public:
         }
 
         /// It's safe to get name of any part
-        const String & getPartName() const { return part->name; }
+        [[nodiscard]] const String & getPartName() const { return part->name; }
 
-        DataPartPtr getPartIfItWasActive() const
+        [[nodiscard]] DataPartPtr getPartIfItWasActive() const
         {
             return was_active ? part : nullptr;
         }

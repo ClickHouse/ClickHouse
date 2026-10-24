@@ -25,7 +25,7 @@ public:
       */
     void executeForCurrentContext(bool ignore_setting_constraints);
 
-    bool supportsTransactions() const override { return true; }
+    [[nodiscard]] bool supportsTransactions() const override { return true; }
 
     /// To apply SETTINGS clauses from query as early as possible
     static void applySettingsFromQuery(const ASTPtr & ast, ContextMutablePtr context_);

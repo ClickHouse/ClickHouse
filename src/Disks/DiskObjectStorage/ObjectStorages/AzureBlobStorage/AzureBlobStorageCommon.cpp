@@ -396,7 +396,7 @@ static bool containerExists(const ContainerClient & client)
 
     try
     {
-        client.GetProperties();
+        (void)client.GetProperties();
         return true;
     }
     catch (const Azure::Storage::StorageException & e)

@@ -225,23 +225,23 @@ public:
     static constexpr auto name = "timeSlots";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTimeSlots>(); }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    bool isVariadic() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {2}; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {2}; }
 
     /// Documentation-only — there are two call shapes:
     ///   `timeSlots(DateTime, UInt32 [, UInt])`     -> `Array(DateTime)`
     ///   `timeSlots(DateTime64(s), Decimal64(d) [, Decimal64])` -> `Array(DateTime64(max(s, d)))`
     /// The DateTime64 result's scale is `max(start_scale, duration_scale)`,
     /// not derivable from the DSL — the override below is authoritative.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(DateTime, UInt32, [const UInt]) -> Array(DateTime)"
                " OR (DateTime64, Decimal64, [const Decimal64]) -> Array(DateTime64)";
@@ -252,7 +252,7 @@ public:
     /// Route the types-only path to it as well, so the base
     /// `IFunction::getReturnTypeImpl(DataTypes)` never applies the documentation string (which
     /// would reject valid calls or evaluate an uncaptured return-type name).
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         ColumnsWithTypeAndName columns;
         columns.reserve(arguments.size());
@@ -261,7 +261,7 @@ public:
         return getReturnTypeImpl(columns);
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         validateNumberOfFunctionArguments(*this, arguments, 2, 3);
 
@@ -308,7 +308,7 @@ public:
             result_scale, extractTimeZoneNameFromFunctionArguments(arguments, 3, 0, false)));
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         if (WhichDataType(arguments[0].type).isDateTime())
         {

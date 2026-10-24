@@ -168,7 +168,7 @@ public:
     }
 
 
-    const std::vector<std::pair<MPU_ID, MPUParts>> & GetCompletedPartUploads() const
+    [[nodiscard]] const std::vector<std::pair<MPU_ID, MPUParts>> & GetCompletedPartUploads() const
     {
         return CompletedPartUploads;
     }
@@ -215,7 +215,7 @@ struct EventCounts
     size_t uploadPartCopy = 0;
     size_t writtenSize = 0;
 
-    size_t totalRequestsCount() const
+    [[nodiscard]] size_t totalRequestsCount() const
     {
         return headObject + getObject + putObject + multiUploadCreate + multiUploadComplete + uploadParts;
     }
@@ -854,8 +854,8 @@ struct BaseSyncPolicy
     virtual void execute(size_t) {}
     virtual void setAutoExecute(bool) {}
 
-    virtual size_t size() const { return 0; }
-    virtual bool empty() const { return size() == 0; }
+    [[nodiscard]] virtual size_t size() const { return 0; }
+    [[nodiscard]] virtual bool empty() const { return size() == 0; }
 };
 
 struct SimpleAsyncTasks : BaseSyncPolicy
@@ -901,7 +901,7 @@ struct SimpleAsyncTasks : BaseSyncPolicy
             execute(0);
     }
 
-    size_t size() const override { return queue.size(); }
+    [[nodiscard]] size_t size() const override { return queue.size(); }
 };
 
 }

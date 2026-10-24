@@ -3269,11 +3269,11 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool backg
     /// instead of accepting it (and even replicating it to other replicas) and then failing later on the first
     /// part write. This mirrors how `TTL ... RECOMPRESS CODEC(...)` is already validated at metadata-creation time.
     if (auto codec = (*this)[MergeTreeSetting::marks_compression_codec].value; !codec.empty())
-        CompressionCodecFactory::instance().get(codec);
+        (void)CompressionCodecFactory::instance().get(codec);
     if (auto codec = (*this)[MergeTreeSetting::primary_key_compression_codec].value; !codec.empty())
-        CompressionCodecFactory::instance().get(codec);
+        (void)CompressionCodecFactory::instance().get(codec);
     if (auto codec = (*this)[MergeTreeSetting::default_compression_codec].value; !codec.empty())
-        CompressionCodecFactory::instance().get(codec);
+        (void)CompressionCodecFactory::instance().get(codec);
 }
 
 void MergeTreeColumnSettings::validate(const SettingsChanges & changes)

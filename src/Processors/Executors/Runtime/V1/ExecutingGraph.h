@@ -84,7 +84,7 @@ class ExecutingGraph
         /// Stable, monotonically-assigned id. Never reused. Used only for diagnostics (logs, system.processors_profile_log).
         uint64_t processors_id = 0;
 
-        IProcessor * processor() const { return processor_iter->get(); }
+        [[nodiscard]] IProcessor * processor() const { return processor_iter->get(); }
 
         /// Direct edges are for output ports, back edges are for input ports.
         Edges direct_edges;
@@ -214,7 +214,7 @@ private:
     {
         VectorWithMemoryTracking<Edge *> back;    // back edges added (inputs side of this node)
         VectorWithMemoryTracking<Edge *> direct;  // direct edges added (outputs side of this node)
-        bool empty() const { return back.empty() && direct.empty(); }
+        [[nodiscard]] bool empty() const { return back.empty() && direct.empty(); }
     };
     NewEdges addEdges(Node & node);
     void removeAffectedEdges(Node & node, const UnorderedSetWithMemoryTracking<Node *> & removed_nodes);

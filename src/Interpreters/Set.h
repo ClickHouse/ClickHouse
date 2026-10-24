@@ -370,26 +370,26 @@ public:
 
     MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_);
 
-    size_t size() const { return ordered_set.at(0)->size(); }
+    [[nodiscard]] size_t size() const { return ordered_set.at(0)->size(); }
 
-    bool hasMonotonicFunctionsChain() const;
+    [[nodiscard]] bool hasMonotonicFunctionsChain() const;
 
-    BoolMask checkInRange(const Ranges & key_ranges, const DataTypes & data_types, size_t first_function_number, bool single_point = false) const;
+    [[nodiscard]] BoolMask checkInRange(const Ranges & key_ranges, const DataTypes & data_types, size_t first_function_number, bool single_point = false) const;
 
     /// Optimized overload. Instead of all/prefix of key columns, any subsequence of key column information (in order) can be given.
     /// `key_col_to_sparse_pos` maps key index to position in `sparse_hyperrectangle`, or -1 if not tracked.
     /// If some key column >= `key_col_to_sparse_pos`.size(), it is considered as not tracked.
     /// See KeyCondition::checkInRange for explanation of relevant parameters.
-    BoolMask checkInRange(
+    [[nodiscard]] BoolMask checkInRange(
         const std::vector<int> & key_col_to_sparse_pos,
         const Ranges & sparse_key_ranges,
         const DataTypes & sparse_data_types,
         size_t first_function_number,
         bool single_point = false) const;
 
-    const Columns & getOrderedSet() const { return ordered_set; }
+    [[nodiscard]] const Columns & getOrderedSet() const { return ordered_set; }
 
-    const std::vector<KeyTuplePositionMapping> & getIndexesMapping() const { return indexes_mapping; }
+    [[nodiscard]] const std::vector<KeyTuplePositionMapping> & getIndexesMapping() const { return indexes_mapping; }
 
 private:
     /** Class that represents single value with possible infinities.
@@ -402,9 +402,9 @@ private:
             : column(std::move(column_)), block_memory_tracker(block_memory_tracker_) {}
         void update(const Field & x);
 
-        bool isNormal() const { return !value.isPositiveInfinity() && !value.isNegativeInfinity(); }
-        bool isPositiveInfinity() const { return value.isPositiveInfinity(); }
-        bool isNegativeInfinity() const { return value.isNegativeInfinity(); }
+        [[nodiscard]] bool isNormal() const { return !value.isPositiveInfinity() && !value.isNegativeInfinity(); }
+        [[nodiscard]] bool isPositiveInfinity() const { return value.isPositiveInfinity(); }
+        [[nodiscard]] bool isNegativeInfinity() const { return value.isNegativeInfinity(); }
 
         Field value; // Null, -Inf, +Inf
 

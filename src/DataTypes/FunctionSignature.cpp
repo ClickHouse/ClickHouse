@@ -41,11 +41,11 @@ struct Key
     std::string name;
     size_t index = 0;
 
-    auto tuple() const { return std::tie(name, index); }
+    [[nodiscard]] auto tuple() const { return std::tie(name, index); }
     bool operator==(const Key & rhs) const { return tuple() == rhs.tuple(); }
     bool operator<(const Key & rhs) const { return tuple() < rhs.tuple(); }
 
-    std::string toString() const { return index ? name + DB::toString(index) : name; }
+    [[nodiscard]] std::string toString() const { return index ? name + DB::toString(index) : name; }
 
     Key() = default;
     Key(std::string str, size_t index_) : name(std::move(str)), index(index_) {}
@@ -77,7 +77,7 @@ struct Key
     /// captured variable becomes `T1`, `T2`, ... — distinct per repetition — which lets a
     /// signature write `(T : Array(Any), ...) -> leastSupertype(T, ...)` instead of having
     /// to introduce a `T1, ..., E` chain by hand.
-    Key incrementIndex(size_t amount) const
+    [[nodiscard]] Key incrementIndex(size_t amount) const
     {
         Key res = *this;
         res.index += amount;
@@ -142,7 +142,7 @@ struct Variables
     /// column does not imply a non-constant argument, so `const` positions are not rejected.
     bool types_only = false;
 
-    bool has(const Key & key) const
+    [[nodiscard]] bool has(const Key & key) const
     {
         return container.contains(key);
     }
@@ -193,7 +193,7 @@ struct Variables
         }
     }
 
-    Value get(const Key & key) const
+    [[nodiscard]] Value get(const Key & key) const
     {
         if (auto it = container.find(key); it != container.end())
             return it->second;
@@ -215,7 +215,7 @@ struct Variables
         const_value_unavailable.clear();
     }
 
-    std::string toString() const
+    [[nodiscard]] std::string toString() const
     {
         WriteBufferFromOwnString out;
         writeList(container, [&](const auto & elem){ out << elem.first.toString() << " = " << elem.second.toString(); }, [&]{ out << ", "; });
@@ -228,9 +228,9 @@ struct Variables
 class AnyTypeMatcher : public ITypeMatcher
 {
 public:
-    std::string toString() const override { return "Any"; }
+    [[nodiscard]] std::string toString() const override { return "Any"; }
     bool match(const DataTypePtr &, Variables &, size_t, size_t, std::string &) const override { return true; }
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 
@@ -243,7 +243,7 @@ private:
 public:
     explicit ExactTypeMatcher(const DataTypePtr & type_) : type(type_) {}
 
-    std::string toString() const override
+    [[nodiscard]] std::string toString() const override
     {
         const String & name = type->getName();
 
@@ -270,7 +270,7 @@ public:
         return type->equals(*what);
     }
 
-    size_t getIndex() const override { return 0; }
+    [[nodiscard]] size_t getIndex() const override { return 0; }
 };
 
 
@@ -284,7 +284,7 @@ private:
 public:
     explicit OrTypeMatcher(TypeMatchers children_) : children(std::move(children_)) {}
 
-    std::string toString() const override
+    [[nodiscard]] std::string toString() const override
     {
         WriteBufferFromOwnString out;
         writeList(children, [&](const auto & c){ out << c->toString(); }, [&]{ out << " | "; });
@@ -314,7 +314,7 @@ public:
         return false;
     }
 
-    size_t getIndex() const override
+    [[nodiscard]] size_t getIndex() const override
     {
         size_t res = 0;
         for (const auto & child : children)
@@ -322,7 +322,7 @@ public:
         return res;
     }
 
-    bool capturesVariables() const override { return anyCapturesVariables(children); }
+    [[nodiscard]] bool capturesVariables() const override { return anyCapturesVariables(children); }
 };
 
 
@@ -336,7 +336,7 @@ private:
 public:
     AssignTypeMatcher(const TypeMatcherPtr & impl_, const Key & var_key_) : impl(impl_), var_key(var_key_) {}
 
-    std::string toString() const override
+    [[nodiscard]] std::string toString() const override
     {
         return impl
             ? var_key.toString() + " : " + impl->toString()
@@ -351,7 +351,7 @@ public:
         return vars.assignOrCheck(var_key.incrementIndex(iteration), what, arg_num, out_reason);
     }
 
-    size_t getIndex() const override
+    [[nodiscard]] size_t getIndex() const override
     {
         /// The variable's own index (e.g. `1` for `K1`) participates in the
         /// ellipsis-grouping walk-back, regardless of whether a type matcher
@@ -361,7 +361,7 @@ public:
         return impl ? getCommonIndex(var_key.index, impl->getIndex()) : var_key.index;
     }
 
-    bool capturesVariables() const override { return true; }
+    [[nodiscard]] bool capturesVariables() const override { return true; }
 };
 
 
@@ -444,12 +444,12 @@ struct ArgumentDescription
     }
 
     /// Extract common index of variables participating in expression.
-    size_t getIndex() const
+    [[nodiscard]] size_t getIndex() const
     {
         return getCommonIndex(argument_name.index, type_matcher->getIndex());
     }
 
-    std::string toString() const
+    [[nodiscard]] std::string toString() const
     {
         WriteBufferFromOwnString out;
         if (is_const)
@@ -506,14 +506,14 @@ struct ArgumentsGroup
         return true;
     }
 
-    std::string repeatBoundsToString() const
+    [[nodiscard]] std::string repeatBoundsToString() const
     {
         if (max_repeats == unbounded_repeats)
             return "range [" + DB::toString(min_repeats) + ", inf)";
         return "range [" + DB::toString(min_repeats) + ", " + DB::toString(max_repeats) + "]";
     }
 
-    std::string toString() const
+    [[nodiscard]] std::string toString() const
     {
         WriteBufferFromOwnString out;
 
@@ -560,7 +560,7 @@ public:
         return matchAt(args, vars, 0, 0, 0, ellipsis_size, out_reason);
     }
 
-    std::string toString() const
+    [[nodiscard]] std::string toString() const
     {
         WriteBufferFromOwnString out;
         writeList(groups, [&](const auto & elem){ out << elem.toString(); }, [&]{ out << ", "; });
@@ -573,7 +573,7 @@ public:
     /// Smallest number of arguments this signature can accept: `Fixed` groups are
     /// mandatory, an `Ellipsis` group contributes its lower repetition bound, and
     /// `Optional` groups can match zero arguments.
-    size_t minArgs() const
+    [[nodiscard]] size_t minArgs() const
     {
         size_t result = 0;
         for (const auto & group : groups)
@@ -589,7 +589,7 @@ public:
     /// Largest number of arguments this signature can accept; `unbounded` when an
     /// `Ellipsis` group with no upper repetition bound is present. `Fixed` and
     /// `Optional` groups both contribute their size.
-    size_t maxArgs() const
+    [[nodiscard]] size_t maxArgs() const
     {
         size_t result = 0;
         for (const auto & group : groups)
@@ -760,12 +760,12 @@ class ITypeExpression
 {
 public:
     virtual ~ITypeExpression() = default;
-    virtual Value apply(const Variables & context, size_t iteration, std::optional<size_t> ellipsis_size) const = 0;
+    [[nodiscard]] virtual Value apply(const Variables & context, size_t iteration, std::optional<size_t> ellipsis_size) const = 0;
 
     /// Extract common index of variables participating in expression.
-    virtual size_t getIndex() const = 0;
+    [[nodiscard]] virtual size_t getIndex() const = 0;
 
-    virtual std::string toString() const = 0;
+    [[nodiscard]] virtual std::string toString() const = 0;
 };
 
 using TypeExpressionPtr = std::shared_ptr<ITypeExpression>;
@@ -779,17 +779,17 @@ private:
 public:
     explicit VariableTypeExpression(const Key & key_) : key(key_) {}
 
-    Value apply(const Variables & context, size_t iteration, std::optional<size_t>) const override
+    [[nodiscard]] Value apply(const Variables & context, size_t iteration, std::optional<size_t>) const override
     {
         return context.get(key.incrementIndex(iteration));
     }
 
-    size_t getIndex() const override
+    [[nodiscard]] size_t getIndex() const override
     {
         return key.index;
     }
 
-    std::string toString() const override
+    [[nodiscard]] std::string toString() const override
     {
         return key.toString();
     }
@@ -803,17 +803,17 @@ private:
 public:
     explicit ConstantTypeExpression(const Value & res_) : res(res_) {}
 
-    Value apply(const Variables &, size_t, std::optional<size_t>) const override
+    [[nodiscard]] Value apply(const Variables &, size_t, std::optional<size_t>) const override
     {
         return res;
     }
 
-    size_t getIndex() const override
+    [[nodiscard]] size_t getIndex() const override
     {
         return 0;
     }
 
-    std::string toString() const override
+    [[nodiscard]] std::string toString() const override
     {
         return res.toString();
     }
@@ -828,7 +828,7 @@ private:
 public:
     TypeExpressionTree(const TypeFunctionPtr & func_, const TypeExpressions & children_) : func(func_), children(children_) {}
 
-    Value apply(const Variables & context, size_t iteration, std::optional<size_t> ellipsis_size) const override
+    [[nodiscard]] Value apply(const Variables & context, size_t iteration, std::optional<size_t> ellipsis_size) const override
     {
         Values args;
 
@@ -870,7 +870,7 @@ public:
         return func->apply(args);
     }
 
-    size_t getIndex() const override
+    [[nodiscard]] size_t getIndex() const override
     {
         /// A subexpression that itself absorbs an ellipsis (a null child) produces a single
         /// value whose size does not depend on `ellipsis_size` — so it is NOT a repeatable unit
@@ -888,7 +888,7 @@ public:
         return res;
     }
 
-    std::string toString() const override
+    [[nodiscard]] std::string toString() const override
     {
         WriteBufferFromOwnString out;
         out << func->name() << "(";
@@ -904,13 +904,13 @@ class IFunctionSignatureImpl
 public:
     virtual ~IFunctionSignatureImpl() = default;
     virtual DataTypePtr check(const ColumnsWithTypeAndName & args, Variables & vars, std::string & out_reason) const = 0;
-    virtual std::string toString() const = 0;
+    [[nodiscard]] virtual std::string toString() const = 0;
 
     /// Smallest / largest argument count the signature can accept; `maxArguments` returns
     /// `VariadicArguments::unbounded` for a variadic position. Used to surface a
     /// `NUMBER_OF_ARGUMENTS_DOESNT_MATCH` error when the call is out of this range.
-    virtual size_t minArguments() const = 0;
-    virtual size_t maxArguments() const = 0;
+    [[nodiscard]] virtual size_t minArguments() const = 0;
+    [[nodiscard]] virtual size_t maxArguments() const = 0;
 };
 
 using FunctionSignatureImplPtr = std::shared_ptr<IFunctionSignatureImpl>;
@@ -946,10 +946,10 @@ struct VariadicFunctionSignatureImpl : public IFunctionSignatureImpl
         return std::get<DataTypePtr>(return_type->apply(vars, 0, ellipsis_size).value);
     }
 
-    size_t minArguments() const override { return arguments_description.minArgs(); }
-    size_t maxArguments() const override { return arguments_description.maxArgs(); }
+    [[nodiscard]] size_t minArguments() const override { return arguments_description.minArgs(); }
+    [[nodiscard]] size_t maxArguments() const override { return arguments_description.maxArgs(); }
 
-    std::string toString() const override
+    [[nodiscard]] std::string toString() const override
     {
         WriteBufferFromOwnString out;
         out << (name.empty() ? "f" : name) << "(" << arguments_description.toString() << ") -> " << return_type->toString();
@@ -1017,7 +1017,7 @@ struct AlternativeFunctionSignatureImpl : public IFunctionSignatureImpl
         return nullptr;
     }
 
-    size_t minArguments() const override
+    [[nodiscard]] size_t minArguments() const override
     {
         size_t result = VariadicArguments::unbounded;
         for (const auto & alternative : alternatives)
@@ -1025,7 +1025,7 @@ struct AlternativeFunctionSignatureImpl : public IFunctionSignatureImpl
         return result;
     }
 
-    size_t maxArguments() const override
+    [[nodiscard]] size_t maxArguments() const override
     {
         size_t result = 0;
         for (const auto & alternative : alternatives)
@@ -1038,7 +1038,7 @@ struct AlternativeFunctionSignatureImpl : public IFunctionSignatureImpl
         return result;
     }
 
-    std::string toString() const override
+    [[nodiscard]] std::string toString() const override
     {
         WriteBufferFromOwnString out;
         writeList(alternatives, [&](const auto & elem){ out << elem->toString(); }, [&]{ out << "\n OR "; });

@@ -158,7 +158,7 @@ public:
     operator bool() const { return impl != nullptr; } /// NOLINT
 
     Holder * getHolder() { return holder.get(); }
-    const Holder * getHolder() const { return holder.get(); }
+    [[nodiscard]] const Holder * getHolder() const { return holder.get(); }
     std::unique_ptr<Holder> releaseHolder()
     {
         impl.reset();
@@ -185,13 +185,13 @@ public:
     explicit TemporaryFileHolder(const TemporaryDataMetrics &);
 
     virtual std::unique_ptr<WriteBuffer> write() = 0;
-    virtual std::unique_ptr<SeekableReadBuffer> read(size_t buffer_size) const = 0;
+    [[nodiscard]] virtual std::unique_ptr<SeekableReadBuffer> read(size_t buffer_size) const = 0;
 
     virtual void releaseWriteBuffer(std::unique_ptr<WriteBuffer> /*write_buffer*/)
     {}
 
     /// Get location for logging
-    virtual String describeFilePath() const = 0;
+    [[nodiscard]] virtual String describeFilePath() const = 0;
 
     virtual ~TemporaryFileHolder() = default;
 
@@ -276,10 +276,10 @@ class TemporaryBlockStreamHolder : public WrapperGuard<NativeWriter, TemporaryDa
 public:
     TemporaryBlockStreamHolder(SharedHeader header_, std::shared_ptr<TemporaryDataOnDiskScope> parent_, size_t reserve_size = 0);
 
-    TemporaryBlockStreamReaderHolder getReadStream() const;
+    [[nodiscard]] TemporaryBlockStreamReaderHolder getReadStream() const;
 
-    TemporaryDataBuffer::Stat finishWriting() const;
-    const Block & getHeader() const { return header; }
+    TemporaryDataBuffer::Stat finishWriting() const; /// NOLINT(modernize-use-nodiscard): often called only for its side effect
+    [[nodiscard]] const Block & getHeader() const { return header; }
 
 private:
     Block header;

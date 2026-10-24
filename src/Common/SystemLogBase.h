@@ -71,7 +71,7 @@ class ISystemLog
 public:
     using Index = int64_t;
 
-    virtual String getName() const = 0;
+    [[nodiscard]] virtual String getName() const = 0;
 
     /// For implementations that buffer data in memory and flush it to the log periodically,
     /// this method forces an immediate write to the log.
@@ -105,7 +105,7 @@ public:
 
     virtual void savingThreadFunction() = 0;
 
-    virtual bool mustBePreparedAtStartup() const { return false; }
+    [[nodiscard]] virtual bool mustBePreparedAtStartup() const { return false; }
 
 protected:
     std::mutex thread_mutex;
@@ -253,7 +253,7 @@ public:
     /// Handles crash, flushes log without blocking if notify_flush_on_crash is set
     void handleCrash() override;
 
-    String getName() const override { return LogElement::name(); }
+    [[nodiscard]] String getName() const override { return LogElement::name(); }
 
     static const char * getDefaultPartitionBy() { return "toYYYYMM(event_date)"; }
     static const char * getDefaultOrderBy() { return "event_date, event_time"; }

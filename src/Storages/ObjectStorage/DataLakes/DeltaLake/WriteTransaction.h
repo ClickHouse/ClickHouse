@@ -18,7 +18,7 @@ public:
         DB::NamesAndTypesList table_schema_,
         std::unordered_set<String> table_timestamp_ntz_paths_);
 
-    const std::string & getDataPath() const;
+    [[nodiscard]] const std::string & getDataPath() const;
 
     /// Create a transaction for the target table using the schema passed at construction; see the
     /// implementation for how partitioned vs unpartitioned tables derive the write context.
@@ -43,9 +43,9 @@ public:
 
     /// The Delta table's write schema (authoritative types and nullability, one entry per
     /// column). Nullable Delta columns are wrapped in `DataTypeNullable`.
-    const DB::NamesAndTypesList & getWriteSchema() const;
+    [[nodiscard]] const DB::NamesAndTypesList & getWriteSchema() const;
 
-    const std::unordered_set<String> & getTimestampNtzPaths() const;
+    [[nodiscard]] const std::unordered_set<String> & getTimestampNtzPaths() const;
 
 private:
     using KernelTransaction = DeltaLake::KernelPointerWrapper<ffi::ExclusiveTransaction, ffi::free_transaction>;

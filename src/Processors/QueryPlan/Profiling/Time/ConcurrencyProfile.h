@@ -25,13 +25,13 @@ public:
     explicit ConcurrencyProfile(const WorkIntervalsPerThread & intervals_per_thread);
 
     /// Time-weighted number of busy threads over the given non-overlapping sequence
-    UInt64 busyTimeIn(const TimeIntervals & intervals) const;
+    [[nodiscard]] UInt64 busyTimeIn(const TimeIntervals & intervals) const;
 
     /// Length of the union of all intervals: the time during which at least one thread was busy.
-    UInt64 activeTime() const { return active_time_ns; }
+    [[nodiscard]] UInt64 activeTime() const { return active_time_ns; }
 
 private:
-    UInt64 integralAt(UInt64 time) const;
+    [[nodiscard]] UInt64 integralAt(UInt64 time) const;
 
     std::vector<UInt64> times;
     std::vector<UInt64> concurrency;

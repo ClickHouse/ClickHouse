@@ -40,7 +40,7 @@ private:
         bool is_literal{}; /// format is literal string without any argument
         ColumnWithTypeAndName input; /// Only used when is_literal is false
 
-        ColumnWithTypeAndName execute() const
+        [[nodiscard]] ColumnWithTypeAndName execute() const
         {
             if (is_literal)
                 return executeLiteral(format);
@@ -50,7 +50,7 @@ private:
         }
 
     private:
-        ColumnWithTypeAndName executeLiteral(std::string_view literal) const
+        [[nodiscard]] ColumnWithTypeAndName executeLiteral(std::string_view literal) const
         {
             ColumnWithTypeAndName res;
             auto str_col = ColumnString::create();
@@ -60,7 +60,7 @@ private:
             return res;
         }
 
-        ColumnWithTypeAndName executeConstant(const ColumnWithTypeAndName & arg) const
+        [[nodiscard]] ColumnWithTypeAndName executeConstant(const ColumnWithTypeAndName & arg) const
         {
             ColumnWithTypeAndName tmp_arg = arg;
             const auto & const_col = static_cast<const ColumnConst &>(*arg.column);
@@ -115,7 +115,7 @@ private:
             return true;
         }
 
-        ColumnWithTypeAndName executeNonconstant(const ColumnWithTypeAndName & arg) const
+        [[nodiscard]] ColumnWithTypeAndName executeNonconstant(const ColumnWithTypeAndName & arg) const
         {
             size_t size = arg.column->size();
             auto res_col = ColumnString::create();
@@ -161,17 +161,17 @@ public:
         : function_concat(FunctionFactory::instance().get("concat", context))
     {}
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isVariadic() const override { return true; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
 
-    bool useDefaultImplementationForConstants() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// format string + 0+ substitution args (numbers or strings).
         return
@@ -179,7 +179,7 @@ public:
             " OR (format String, sub NativeNumber | StringOrFixedString, ...) -> String";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr & c0 = arguments[0].column;
         const ColumnConst * c0_const_string = typeid_cast<const ColumnConst *>(&*c0);
@@ -193,7 +193,7 @@ public:
     }
 
 private:
-    ColumnPtr executeConstFormat(const String & format, const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeConstFormat(const String & format, const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         auto instructions = buildInstructions(format, arguments, input_rows_count);
 
@@ -284,7 +284,7 @@ private:
 
     /// Per-row format string execution: invoke fmt::sprintf directly per segment,
     /// avoiding the buildInstructions/concat pipeline overhead.
-    ColumnPtr executeDynamicFormat(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeDynamicFormat(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         const auto * format_col = checkAndGetColumn<ColumnString>(arguments[0].column.get());
         if (!format_col)
@@ -395,7 +395,7 @@ private:
         return result_col;
     }
 
-    VectorWithMemoryTracking<Instruction>
+    [[nodiscard]] VectorWithMemoryTracking<Instruction>
     buildInstructions(std::string_view format, const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         VectorWithMemoryTracking<Instruction> instructions;

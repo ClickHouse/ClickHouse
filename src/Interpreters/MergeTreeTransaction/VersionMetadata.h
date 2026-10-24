@@ -44,7 +44,7 @@ struct LockFingerprint
     Int32 version = -1;
     int64_t czxid = 0;
 
-    bool hasFingerprint() const { return version >= 0 && czxid != 0; }
+    [[nodiscard]] bool hasFingerprint() const { return version >= 0 && czxid != 0; }
     bool operator==(const LockFingerprint &) const = default;
 };
 

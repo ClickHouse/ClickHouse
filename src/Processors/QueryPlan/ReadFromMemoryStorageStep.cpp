@@ -125,7 +125,7 @@ struct MemorySourceFilter
 
     static constexpr size_t query_condition_cache_granule_rows = 8192;
 
-    String getQueryConditionCachePartName(size_t block_index) const
+    [[nodiscard]] String getQueryConditionCachePartName(size_t block_index) const
     {
         return fmt::format("{}_{:016x}_{}", generation, columns_hash, first_block_number + block_index);
     }

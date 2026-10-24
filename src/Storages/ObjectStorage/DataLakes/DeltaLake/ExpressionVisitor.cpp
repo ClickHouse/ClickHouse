@@ -119,9 +119,9 @@ public:
     {
     }
 
-    bool enableLogging() const { return enable_logging; }
+    [[nodiscard]] bool enableLogging() const { return enable_logging; }
 
-    DB::ContextPtr getContext() const { return context; }
+    [[nodiscard]] DB::ContextPtr getContext() const { return context; }
 
     /// Get result of a parsed scanCallback expression.
     /// Its result is always a Tuple.
@@ -221,10 +221,10 @@ public:
         return result_dag;
     }
 
-    const LoggerPtr & logger() const { return log; }
+    [[nodiscard]] const LoggerPtr & logger() const { return log; }
 
     /// Get (the first) exception, which happened during parsing.
-    std::exception_ptr getException() const { return visitor_exception; }
+    [[nodiscard]] std::exception_ptr getException() const { return visitor_exception; }
 
     /// Set parsing expression.
     void setException(std::exception_ptr exception)

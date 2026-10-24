@@ -39,7 +39,7 @@ struct ClearableHashTableCell : public BaseCell
 
     UInt32 version;
 
-    bool isZero(const State & state) const { return version != state.version; }
+    [[nodiscard]] bool isZero(const State & state) const { return version != state.version; }
     static bool isZero(const Key & /*key*/, const State & /*state*/) { return false; }
 
     /// Set the key value to zero.

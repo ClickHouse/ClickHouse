@@ -611,7 +611,7 @@ public:
         nodes_storage->retireReadView(std::move(view));
     }
 
-    size_t getNodeCount() const override { return view->nodeCount(); }
+    [[nodiscard]] size_t getNodeCount() const override { return view->nodeCount(); }
 
     bool next(std::string_view & out_path, std::string_view & out_data, KeeperNodeStats & out_stats) override;
 

@@ -356,7 +356,7 @@ struct QueryGraphBuilder
         : context(std::make_shared<BuilderContext>(optimization_settings_, root_node, join_settings_, sorting_settings_))
     {}
 
-    bool hasCompatibleSettings(const JoinStepLogical & join_step) const
+    [[nodiscard]] bool hasCompatibleSettings(const JoinStepLogical & join_step) const
     {
         return context && join_step.getJoinSettings() == context->join_settings; // && join_step.getSortingSettings() == context->sorting_settings;
     }

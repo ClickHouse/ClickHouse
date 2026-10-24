@@ -127,7 +127,7 @@ struct Plan
             return partition_value_to_index[row];
         }
 
-        const Row & getPartitionValue(size_t partition_index) const { return partition_values.at(partition_index); }
+        [[nodiscard]] const Row & getPartitionValue(size_t partition_index) const { return partition_values.at(partition_index); }
 
     private:
         struct PartitionValueHasher

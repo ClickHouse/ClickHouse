@@ -114,7 +114,7 @@ public:
         /// Absence of the element goes into the selection itself only when it is a null map and the
         /// extraction did not wrap the element in `Nullable`, where absence is already expressed as `NULL`.
         /// The callers additionally require the selection to still be a bare `UInt8`.
-        bool absenceGoesIntoNullMap() const { return selected_subcolumn_is_null_map && !make_nullable; }
+        [[nodiscard]] bool absenceGoesIntoNullMap() const { return selected_subcolumn_is_null_map && !make_nullable; }
 
     public:
         VariantSubcolumnCreator(
@@ -127,10 +127,10 @@ public:
             size_t num_variants_ = 0,
             bool selected_subcolumn_is_null_map_ = false);
 
-        DataTypePtr create(const DataTypePtr & prev) const override;
-        ColumnPtr create(const ColumnPtr & prev) const override;
-        SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
-        std::shared_ptr<const ISubcolumnCreator> specializeForSelectedSubcolumn(const Substream & selected) const override;
+        [[nodiscard]] DataTypePtr create(const DataTypePtr & prev) const override;
+        [[nodiscard]] ColumnPtr create(const ColumnPtr & prev) const override;
+        [[nodiscard]] SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
+        [[nodiscard]] std::shared_ptr<const ISubcolumnCreator> specializeForSelectedSubcolumn(const Substream & selected) const override;
     };
 private:
     friend SerializationVariant;

@@ -141,7 +141,7 @@ private:
     };
 
     const Subcolumns & subcolumnsOf(const ColumnWithTypeAndName & root);
-    std::optional<ColumnWithTypeAndName>
+    [[nodiscard]] std::optional<ColumnWithTypeAndName>
     resolveSubcolumn(const ColumnWithTypeAndName & root, const String & subcolumn_name, const String & result_name) const;
 
     const Block & block;

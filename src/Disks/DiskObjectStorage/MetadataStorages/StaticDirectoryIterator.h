@@ -15,9 +15,9 @@ public:
     explicit StaticDirectoryIterator(std::vector<std::filesystem::path> && dir_file_paths_);
 
     void next() override;
-    bool isValid() const override;
-    std::string path() const override;
-    std::string name() const override;
+    [[nodiscard]] bool isValid() const override;
+    [[nodiscard]] std::string path() const override;
+    [[nodiscard]] std::string name() const override;
 
 private:
     std::vector<std::filesystem::path> dir_file_paths;

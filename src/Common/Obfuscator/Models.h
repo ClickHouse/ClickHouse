@@ -729,7 +729,7 @@ private:
     UInt64 seed;
     std::optional<Integer> max_abs_value;
 
-    bool isInRange(Integer x) const
+    [[nodiscard]] [[nodiscard]] bool isInRange(Integer x) const
     {
         if constexpr (is_unsigned_v<Integer>)
             return x <= *max_abs_value;
@@ -737,7 +737,7 @@ private:
             return x <= *max_abs_value && x >= -*max_abs_value;
     }
 
-    Integer transformValue(Integer x) const
+    [[nodiscard]] [[nodiscard]] Integer transformValue(Integer x) const
     {
         Integer res = transformInteger(x, seed);
         if (max_abs_value && isInRange(x))
@@ -931,7 +931,7 @@ private:
             ++count_end;
         }
 
-        CodePoint sample(UInt64 random, double end_multiplier) const
+        [[nodiscard]] CodePoint sample(UInt64 random, double end_multiplier) const
         {
             UInt64 range = total + static_cast<UInt64>(static_cast<double>(count_end) * end_multiplier);
             if (range == 0)
@@ -1609,7 +1609,7 @@ private:
     }
 
 public:
-    ModelPtr get(const IDataType & data_type, UInt64 seed, MarkovModelParameters markov_model_params) const
+    [[nodiscard]] ModelPtr get(const IDataType & data_type, UInt64 seed, MarkovModelParameters markov_model_params) const
     {
         WhichDataType which(data_type);
 

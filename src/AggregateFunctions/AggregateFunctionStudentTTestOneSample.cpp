@@ -27,7 +27,7 @@ struct StudentTTestOneSampleData : public OneSampleTTestMoments<Float64>
 {
     static constexpr auto name = "studentTTestOneSample";
 
-    std::tuple<Float64, Float64> getResult() const
+    [[nodiscard]] std::tuple<Float64, Float64> getResult() const
     {
         if (!hasEnoughObservations())
             return {std::numeric_limits<Float64>::quiet_NaN(), std::numeric_limits<Float64>::quiet_NaN()};

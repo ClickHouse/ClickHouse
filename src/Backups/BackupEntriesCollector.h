@@ -46,12 +46,12 @@ public:
     /// Then it calls IStorage::backupData() to build a list of backup entries.
     BackupEntries run();
 
-    const BackupSettings & getBackupSettings() const { return backup_settings; }
-    const String & getBackupId() const { return backup_id; }
-    std::shared_ptr<IBackupCoordination> getBackupCoordination() const { return backup_coordination; }
-    const ReadSettings & getReadSettings() const { return read_settings; }
-    ContextPtr getContext() const { return context; }
-    const ZooKeeperRetriesInfo & getZooKeeperRetriesInfo() const { return zookeeper_retries_info; }
+    [[nodiscard]] const BackupSettings & getBackupSettings() const { return backup_settings; }
+    [[nodiscard]] const String & getBackupId() const { return backup_id; }
+    [[nodiscard]] std::shared_ptr<IBackupCoordination> getBackupCoordination() const { return backup_coordination; }
+    [[nodiscard]] const ReadSettings & getReadSettings() const { return read_settings; }
+    [[nodiscard]] ContextPtr getContext() const { return context; }
+    [[nodiscard]] const ZooKeeperRetriesInfo & getZooKeeperRetriesInfo() const { return zookeeper_retries_info; }
 
     /// Returns all access entities which can be put into a backup.
     std::unordered_map<UUID, AccessEntityPtr> getAllAccessEntities();
@@ -71,7 +71,7 @@ public:
 private:
     /// Returns true if the table's data is excluded via EXCEPT DATA FROM TABLE. Used internally
     /// while gathering metadata, to decide whether a table's data entries should be collected.
-    bool isTableDataExcluded(const QualifiedTableName & table_name) const;
+    [[nodiscard]] bool isTableDataExcluded(const QualifiedTableName & table_name) const;
 
     void calculateRootPathInBackup();
 
@@ -95,7 +95,7 @@ private:
         const std::set<DatabaseAndTableName> & except_data_table_names);
 
     void gatherTablesMetadata();
-    std::vector<std::pair<ASTPtr, StoragePtr>> findTablesInDatabase(const String & database_name) const;
+    [[nodiscard]] std::vector<std::pair<ASTPtr, StoragePtr>> findTablesInDatabase(const String & database_name) const;
     void lockTablesForReading();
     bool compareWithPrevious(String & mismatch_description);
 
@@ -103,7 +103,7 @@ private:
     void makeBackupEntriesForTablesDefs();
     void makeBackupEntriesForTablesData();
     void makeBackupEntriesForTableData(const QualifiedTableName & table_name);
-    bool shouldBackupTableData(
+    [[nodiscard]] bool shouldBackupTableData(
         const QualifiedTableName & table_name,
         const StoragePtr & storage,
         const ASTPtr & create_table_query,
@@ -179,17 +179,17 @@ private:
             /// Whether any element named partitions at all. Asked only to validate the query against table
             /// engines that cannot back up partitions, which is a user error worth reporting even when the
             /// data is excluded anyway.
-            bool anyElementNamedPartitions() const;
+            [[nodiscard]] bool anyElementNamedPartitions() const;
 
             /// The partitions whose data reaches the backup: the union over the elements that ask for data,
             /// or no value (meaning the whole table) as soon as one of those elements named no partitions.
             /// An element asking for the table without EXCEPT DATA FROM TABLE is asking for its data, and
             /// that request wins - we would rather back up data the user meant to exclude than silently drop
             /// data they asked for.
-            std::optional<ASTs> partitionsWithData() const;
+            [[nodiscard]] std::optional<ASTs> partitionsWithData() const;
 
             /// No element naming this table asks for any of its data.
-            bool isDataExcluded() const;
+            [[nodiscard]] bool isDataExcluded() const;
         };
 
         /// Tables named explicitly by single-table elements of the BACKUP query.
@@ -215,7 +215,7 @@ private:
         /// Whether at least one element of the query selects this table. Both the selection of tables in
         /// `findTablesInDatabase` and `isTableDataExcluded` ask this, and they must agree: a table dropped
         /// here is never enumerated, so no later decision about its data can bring it back.
-        bool isTableSelectedByAnyElement(const String & table_name) const;
+        [[nodiscard]] bool isTableSelectedByAnyElement(const String & table_name) const;
 
         /// The partitions of this table whose data reaches the backup, over *every* kind of element naming
         /// it - the single-table elements in `tables` and the wide elements in `all_tables_elements` alike.
@@ -225,7 +225,7 @@ private:
         /// table: whoever makes the data eligible for backup also decides how much of it is written, and
         /// letting them disagree is what backed up a single partition of a table a DATABASE element had
         /// asked for in full.
-        std::optional<ASTs> partitionsWithData(const String & table_name) const;
+        [[nodiscard]] std::optional<ASTs> partitionsWithData(const String & table_name) const;
     };
 
     struct TableInfo

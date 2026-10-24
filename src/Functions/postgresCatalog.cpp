@@ -143,13 +143,13 @@ public:
     static constexpr auto name = "format_type";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFormatType>(); }
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 2; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto is_integer_or_null = [](const DataTypePtr & type)
         {
@@ -174,7 +174,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         /// The values of an argument and its null map; no values at all for an argument that is always `NULL`.
         struct Argument
@@ -183,7 +183,7 @@ public:
             const IColumn * values = nullptr;
             const NullMap * null_map = nullptr;
 
-            bool isNull(size_t row) const { return !values || (null_map && (*null_map)[row]); }
+            [[nodiscard]] bool isNull(size_t row) const { return !values || (null_map && (*null_map)[row]); }
         };
 
         const auto unwrap = [](const ColumnWithTypeAndName & argument)
@@ -289,16 +289,16 @@ public:
     {
     }
 
-    String getName() const override { return name; }
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 1}; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 1}; }
     /// The result depends on the session: the current database (`search_path`) and the effective
     /// timezone (which follows the `session_timezone` setting).
-    bool isDeterministic() const override { return false; }
+    [[nodiscard]] bool isDeterministic() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.empty() || arguments.size() > 2)
             throw Exception(
@@ -313,7 +313,7 @@ public:
         return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>());
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnConst * name_column = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
         if (!name_column)
@@ -403,15 +403,15 @@ public:
 
     explicit FunctionArrayPosition(FunctionOverloadResolverPtr index_of_) : index_of(std::move(index_of_)) {}
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 2; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
     /// The default-null wrapper would short-circuit a `NULL` element to `NULL`, but in PostgreSQL a
     /// `NULL` element searches for the first `NULL` of the array. `indexOf` handles `NULL` arguments
     /// itself; the only `NULL` this function has to produce is for a `NULL` array.
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         /// A literal `NULL` array (`Nullable` cannot wrap `Array`, so `Nullable(Nothing)` is the only
         /// nullable shape the array argument can take) is handled here; the rest of the argument
@@ -423,7 +423,7 @@ public:
         return std::make_shared<DataTypeNullable>(index_of->build(arguments)->getResultType());
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         /// A literal `NULL` array: the result is all-`NULL`.
         if (isNothing(removeNullable(arguments[0].type)))

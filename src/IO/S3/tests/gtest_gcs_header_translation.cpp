@@ -225,7 +225,7 @@ public:
 
     ~MockGCSServer() { server->stop(); }
 
-    UInt16 getPort() const { return server_socket->address().port(); }
+    [[nodiscard]] UInt16 getPort() const { return server_socket->address().port(); }
 
     Poco::Net::MessageHeader getLastRequestHeader()
     {

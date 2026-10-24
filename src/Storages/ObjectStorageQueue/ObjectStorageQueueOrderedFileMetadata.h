@@ -23,7 +23,7 @@ public:
         std::string bucket_lock_path;
         std::string processor_info;
         std::string zookeeper_name;
-        std::string toString() const;
+        [[nodiscard]] std::string toString() const;
     };
     using BucketInfoPtr = std::shared_ptr<const BucketInfo>;
     using LastProcessedFileInfo = ObjectStorageQueueIFileMetadata::LastProcessedFileInfo;
@@ -47,8 +47,8 @@ public:
     struct BucketHolder;
     using BucketHolderPtr = std::shared_ptr<BucketHolder>;
 
-    bool useBucketsForProcessing() const override;
-    size_t getBucket() const override { chassert(useBucketsForProcessing() && bucket_info); return bucket_info->bucket; }
+    [[nodiscard]] bool useBucketsForProcessing() const override;
+    [[nodiscard]] size_t getBucket() const override { chassert(useBucketsForProcessing() && bucket_info); return bucket_info->bucket; }
 
     PathState getPathState(std::string & failure_message) const override;
 
@@ -133,7 +133,7 @@ private:
         LoggerPtr log_,
         const std::string & zookeeper_name_);
 
-    ProcessingStateFromKeeper getProcessingStateFromKeeper(
+    [[nodiscard]] ProcessingStateFromKeeper getProcessingStateFromKeeper(
         bool check_failed = false,
         LoggerPtr log_ = nullptr) const;
 
@@ -176,14 +176,14 @@ struct ObjectStorageQueueOrderedFileMetadata::BucketHolder : private boost::nonc
 
     ~BucketHolder();
 
-    Bucket getBucket() const { return bucket_info->bucket; }
-    BucketInfoPtr getBucketInfo() const { return bucket_info; }
+    [[nodiscard]] Bucket getBucket() const { return bucket_info->bucket; }
+    [[nodiscard]] BucketInfoPtr getBucketInfo() const { return bucket_info; }
 
     void setFinished() { finished = true; }
-    bool isFinished() const { return finished; }
+    [[nodiscard]] bool isFinished() const { return finished; }
 
     /// Time since the bucket lock node was created or last refreshed.
-    double getAgeSeconds() const { return age_watch.elapsedSeconds(); }
+    [[nodiscard]] double getAgeSeconds() const { return age_watch.elapsedSeconds(); }
 
     /// Update mtime of the bucket lock node, so that it is not removed as abandoned by
     /// the TTL cleanup. Throws a logical error on lost ownership, marking the holder released.

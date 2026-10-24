@@ -84,7 +84,7 @@ struct MultiReadResponses
     explicit MultiReadResponses(TResponses responses_) : responses(std::move(responses_))
     {}
 
-    size_t size() const
+    [[nodiscard]] size_t size() const
     {
         return std::visit(
             [&]<typename TResponses>(const TResponses & resp) -> size_t
@@ -168,7 +168,7 @@ private:
             }
         }
 
-        size_t size() const { return future_responses.size(); }
+        [[nodiscard]] size_t size() const { return future_responses.size(); }
     };
 
     std::variant<std::monostate, RegularResponses, ResponsesWithFutures> responses;
@@ -776,12 +776,12 @@ public:
         }
     }
 
-    std::string getPath() const
+    [[nodiscard]] std::string getPath() const
     {
         return path;
     }
 
-    bool isCreated() const
+    [[nodiscard]] bool isCreated() const
     {
         return created;
     }

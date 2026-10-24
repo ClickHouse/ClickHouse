@@ -37,7 +37,7 @@ public:
       * max_blocks_number_to_read - if not nullptr, do not read all the parts whose right border is greater than max_block in partition.
       */
 
-    QueryPlanPtr read(
+    [[nodiscard]] QueryPlanPtr read(
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         const SelectQueryInfo & query_info,
@@ -48,7 +48,7 @@ public:
         bool enable_parallel_reading = false) const;
 
     /// The same as read, but with specified set of parts.
-    QueryPlanStepPtr readFromParts(
+    [[nodiscard]] QueryPlanStepPtr readFromParts(
         RangesInDataPartsPtr parts,
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
         const Names & column_names,
@@ -73,7 +73,7 @@ public:
     /// A caller which cannot know the TopK stamp of the read - because the estimate runs before
     /// `tryOptimizeTopK` - must pass `use_query_condition_cache = false` instead, so that the estimate
     /// neither consults nor populates the cache under the plain condition hash.
-    ReadFromMergeTree::AnalysisResultPtr estimateNumMarksToRead(
+    [[nodiscard]] ReadFromMergeTree::AnalysisResultPtr estimateNumMarksToRead(
         RangesInDataParts parts,
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
         const Names & column_names,

@@ -175,7 +175,7 @@ public:
             available = false;
     }
 
-    std::optional<UInt64> get() const { return available ? std::optional<UInt64>(total) : std::nullopt; }
+    [[nodiscard]] std::optional<UInt64> get() const { return available ? std::optional<UInt64>(total) : std::nullopt; }
 
 private:
     UInt64 total = 0;

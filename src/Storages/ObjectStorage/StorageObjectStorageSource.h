@@ -156,7 +156,7 @@ protected:
         PullingPipelineExecutor * operator->() { return reader.get(); }
         const PullingPipelineExecutor * operator->() const { return reader.get(); }
 
-        ObjectInfoPtr getObjectInfo() const { return object_info; }
+        [[nodiscard]] ObjectInfoPtr getObjectInfo() const { return object_info; }
 
         /// Whether the file is read as a whole (not as a bucket the iterator split it into), so it may
         /// consult and populate `top_k_query_condition_cache_key`.
@@ -164,8 +164,8 @@ protected:
         /// Whether the entries under `top_k_query_condition_cache_key` made the file skip row groups that
         /// the entries of the predicate alone did not.
         bool skipped_row_groups_by_top_k_entry = false;
-        const IInputFormat * getInputFormat() const { return dynamic_cast<const IInputFormat *>(source.get()); }
-        ReadBuffer * readBuffer() const { return read_buf.get(); }
+        [[nodiscard]] const IInputFormat * getInputFormat() const { return dynamic_cast<const IInputFormat *>(source.get()); }
+        [[nodiscard]] ReadBuffer * readBuffer() const { return read_buf.get(); }
 
     private:
         ObjectInfoPtr object_info;
@@ -394,26 +394,26 @@ public:
             IArchiveReader::FileInfo && file_info_,
             std::optional<size_t> archive_entry_index_);
 
-        std::unique_ptr<ReadBufferFromFileBase> readFile() const;
+        [[nodiscard]] std::unique_ptr<ReadBufferFromFileBase> readFile() const;
 
-        std::string getFileName() const override
+        [[nodiscard]] std::string getFileName() const override
         {
             return path_in_archive;
         }
 
-        std::string getPath() const override
+        [[nodiscard]] std::string getPath() const override
         {
             return archive_object->getPath() + "::" + path_in_archive;
         }
 
-        std::string getPathToArchive() const override
+        [[nodiscard]] std::string getPathToArchive() const override
         {
             return archive_object->getPath();
         }
 
-        bool isArchive() const override { return true; }
+        [[nodiscard]] bool isArchive() const override { return true; }
 
-        size_t fileSizeInArchive() const override { return file_info.uncompressed_size; }
+        [[nodiscard]] size_t fileSizeInArchive() const override { return file_info.uncompressed_size; }
 
         const ObjectInfoPtr archive_object;
         const std::string path_in_archive;

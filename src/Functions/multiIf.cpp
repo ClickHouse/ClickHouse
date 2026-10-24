@@ -75,8 +75,8 @@ public:
         , allow_lossy_numeric_supertype(allow_lossy_numeric_supertype_)
     {}
 
-    String getName() const override { return name; }
-    bool isVariadic() const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
     bool isShortCircuit(ShortCircuitSettings & settings, size_t number_of_arguments) const override
     {
         settings.arguments_with_disabled_lazy_execution.insert(0);
@@ -84,13 +84,13 @@ public:
         settings.force_enable_lazy_execution = false;
         return true;
     }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForNothing() const override { return false; }
-    bool canBeExecutedOnLowCardinalityDictionary() const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNothing() const override { return false; }
+    [[nodiscard]] bool canBeExecutedOnLowCardinalityDictionary() const override { return false; }
 
-    ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t number_of_arguments) const override
+    [[nodiscard]] ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t number_of_arguments) const override
     {
         ColumnNumbers args;
         for (size_t i = 0; i + 1 < number_of_arguments; i += 2)
@@ -98,7 +98,7 @@ public:
         return args;
     }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// Arguments: cond1, then1, cond2, then2, ..., else. The existing matcher engine
         /// walks back through the args before `...` and groups them by index coherence:
@@ -116,7 +116,7 @@ public:
     /// type-function always uses the strict mode), so when that setting is enabled, compute the common
     /// type explicitly, mirroring the legacy implementation. Otherwise the signature stays authoritative.
     /// The `ColumnsWithTypeAndName` overload is overridden too so both analysis paths agree.
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (!allow_lossy_numeric_supertype)
             return FunctionIfBase::getReturnTypeImpl(arguments);
@@ -128,7 +128,7 @@ public:
         return getReturnTypeImpl(types);
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & args) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & args) const override
     {
         if (!allow_lossy_numeric_supertype)
             return FunctionIfBase::getReturnTypeImpl(args);
@@ -198,7 +198,7 @@ public:
         bool source_is_constant = false;
     };
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         ColumnsWithTypeAndName arguments = args;
         executeShortCircuitArguments(arguments);

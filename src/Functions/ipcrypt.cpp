@@ -72,13 +72,13 @@ public:
         return std::make_shared<FunctionIPCrypt>();
     }
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 2; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 2; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto & ip_type = arguments[0];
         if (!isIPv4(ip_type) && !isIPv6(ip_type) && !isString(ip_type))
@@ -111,7 +111,7 @@ public:
         }
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         /// Extract constant key
         const auto & key_col = arguments[1];
@@ -176,7 +176,7 @@ private:
     }
 
     template <typename Ctx>
-    ColumnPtr processRows(const ColumnsWithTypeAndName & arguments, const Ctx & ctx, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr processRows(const ColumnsWithTypeAndName & arguments, const Ctx & ctx, size_t input_rows_count) const
     {
         const auto & ip_col = arguments[0];
 
@@ -256,7 +256,7 @@ private:
     }
 
     template <typename Ctx>
-    ColumnPtr processIPv4(const PaddedPODArray<IPv4> & vec_in, const Ctx & ctx, size_t count) const
+    [[nodiscard]] ColumnPtr processIPv4(const PaddedPODArray<IPv4> & vec_in, const Ctx & ctx, size_t count) const
     {
         if constexpr (is_prefix_preserving)
         {
@@ -300,7 +300,7 @@ private:
     }
 
     template <typename Ctx>
-    ColumnPtr processString(const ColumnString & col_str, const Ctx & ctx, size_t count) const
+    [[nodiscard]] ColumnPtr processString(const ColumnString & col_str, const Ctx & ctx, size_t count) const
     {
         auto col_res = ColumnString::create();
 

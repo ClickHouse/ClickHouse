@@ -30,7 +30,7 @@ struct IEJoinCondition
     size_t right_key_position = 0;
 
     /// `side` is 0 for the left input, 1 for the right one.
-    size_t keyPosition(size_t side) const { return side == 0 ? left_key_position : right_key_position; }
+    [[nodiscard]] size_t keyPosition(size_t side) const { return side == 0 ? left_key_position : right_key_position; }
 };
 
 /// The join types the IEJoin operator executes. There are no right-side SEMI/ANTI:
@@ -94,20 +94,20 @@ public:
         size_t max_block_size_,
         size_t max_block_bytes_);
 
-    const char * getName() const override { return "IEJoinAlgorithm"; }
-    std::span<ISpillable * const> getSpillables() const { return set_spillables.get(); }
+    [[nodiscard]] const char * getName() const override { return "IEJoinAlgorithm"; }
+    [[nodiscard]] std::span<ISpillable * const> getSpillables() const { return set_spillables.get(); }
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
     Status merge() override;
 
-    MergedStats getMergedStats() const override;
+    [[nodiscard]] MergedStats getMergedStats() const override;
 
     /// The owning processor's cancellation flag, checked by the residual expression after each action.
     void setCancellationFlag(const std::atomic<bool> * is_cancelled_) { is_cancelled = is_cancelled_; }
     /// Interrupt the functions of the residual expression that may be executing right now.
     void cancelResidual() noexcept;
 
-    bool isCancelled() const { return is_cancelled && is_cancelled->load(std::memory_order_acquire); }
+    [[nodiscard]] bool isCancelled() const { return is_cancelled && is_cancelled->load(std::memory_order_acquire); }
 
 private:
     /// Stages of building the join state (the L1 union, the L2 permutation and the bit array),
@@ -148,7 +148,7 @@ private:
     /// ([left rows..., right rows...]) with the sort direction folded in. An empty array means
     /// the condition's type has no encoding and the generic comparator serves it instead;
     /// the two conditions decide independently.
-    std::array<PaddedPODArray<UInt64>, 2> encodeKeys() const;
+    [[nodiscard]] std::array<PaddedPODArray<UInt64>, 2> encodeKeys() const;
 
     /// Build L1 (`l1_entries`): the union of both sides ordered by the first
     /// condition so that any entry satisfies it with respect to all entries below.
@@ -165,15 +165,15 @@ private:
     /// generic virtual comparator. This is the reference implementation: the encoded fixed-width
     /// fast path must reproduce its order exactly, all debug checks run against it, and it serves
     /// the types that have no encoding.
-    int compareKeysAt(size_t key_index, size_t union_a, size_t union_b) const;
+    [[nodiscard]] int compareKeysAt(size_t key_index, size_t union_a, size_t union_b) const;
 
     /// Which side a union entry comes from (see `l1_entries`); the row within the side is the
     /// entry itself for the left one and `entry - num_side_rows[0]` for the right one.
-    bool entryIsLeft(UInt64 entry) const { return entry < num_side_rows[0]; }
+    [[nodiscard]] bool entryIsLeft(UInt64 entry) const { return entry < num_side_rows[0]; }
 
     /// Whether the frontier should advance past L2 entry `l2_from` while processing L2 entry `l2_current`,
     /// i.e. whether the value of `l2_from` satisfies the second condition with respect to `l2_current`.
-    bool frontierAdvances(size_t l2_from, size_t l2_current) const;
+    [[nodiscard]] bool frontierAdvances(size_t l2_from, size_t l2_current) const;
 
     /// Advance the L2 cursor to the next left-side entry, updating the frontier and the bit array.
     /// Returns false when L2 is exhausted.
@@ -181,7 +181,7 @@ private:
 
     /// Whether the side's unmatched rows are emitted in a post-phase;
     /// exactly these sides get a matched bitmap filled by the pair scan.
-    bool sideNeedsUnmatchedRows(size_t side) const;
+    [[nodiscard]] bool sideNeedsUnmatchedRows(size_t side) const;
 
     /// Emit up to max_block_size rows: the pair scan first, then the unmatched rows of the
     /// sides that need them; sets produce_done when everything is emitted.
@@ -221,7 +221,7 @@ private:
     IColumn::Filter evaluateResidualMask(const ColumnUInt64 & left_rows, const ColumnUInt64 & right_rows);
 
     void setBit(size_t pos);
-    bool testBit(size_t pos) const;
+    [[nodiscard]] bool testBit(size_t pos) const;
     /// Position of the first set bit at or after `scan_pos` (advancing `scan_pos` past it),
     /// or num_union_entries if there is none. Returns nothing when the work budget stops the
     /// scan first; `scan_pos` then points at the first uninspected position, so the next call
@@ -229,7 +229,7 @@ private:
     std::optional<size_t> findNextSetBit();
 
     /// Re-verify an emitted pair against both conditions by direct evaluation (debug builds).
-    bool checkEmittedPair(size_t key_index, size_t left_row, size_t right_row) const;
+    [[nodiscard]] bool checkEmittedPair(size_t key_index, size_t left_row, size_t right_row) const;
     /// Check that the bit array is exactly the set of right-side entries whose L2 key qualifies
     /// against the current left entry (debug builds, small inputs only).
     void checkFrontierInvariant() const;
@@ -306,7 +306,7 @@ private:
         ColumnPtr right;
 
         ColumnPtr & bySide(size_t side) { return side == 0 ? left : right; }
-        const ColumnPtr & bySide(size_t side) const { return side == 0 ? left : right; }
+        [[nodiscard]] const ColumnPtr & bySide(size_t side) const { return side == 0 ? left : right; }
     };
 
     /// Prepared key columns, one entry per condition.

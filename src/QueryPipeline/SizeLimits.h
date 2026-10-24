@@ -38,9 +38,9 @@ struct SizeLimits
     bool check(UInt64 rows, UInt64 bytes, const char * what, int exception_code) const;
 
     /// Check limits. No exceptions.
-    bool softCheck(UInt64 rows, UInt64 bytes) const;
+    [[nodiscard]] bool softCheck(UInt64 rows, UInt64 bytes) const;
 
-    bool hasLimits() const { return max_rows || max_bytes; }
+    [[nodiscard]] bool hasLimits() const { return max_rows || max_bytes; }
 
     void serialize(WriteBuffer & out) const;
     void deserialize(ReadBuffer & in);

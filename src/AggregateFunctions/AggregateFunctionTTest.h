@@ -65,7 +65,7 @@ public:
         }
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return Data::name;
     }
@@ -109,7 +109,7 @@ public:
         return std::make_shared<DataTypeTuple>(std::move(types), std::move(names));
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
+    [[nodiscard]] bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {

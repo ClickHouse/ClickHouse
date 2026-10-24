@@ -122,11 +122,11 @@ public:
     struct Section
     {
         const ElfSectionHeader & header;
-        const char * name() const;
+        [[nodiscard]] const char * name() const;
 
-        const char * begin() const;
-        const char * end() const;
-        size_t size() const;
+        [[nodiscard]] const char * begin() const;
+        [[nodiscard]] const char * end() const;
+        [[nodiscard]] size_t size() const;
 
         Section(const ElfSectionHeader & header_, const Elf & elf_);
 

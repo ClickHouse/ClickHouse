@@ -214,11 +214,11 @@ class ViewErrorsRegistry
             value = value_;
             return true;
         }
-        bool isSet() const
+        [[nodiscard]] bool isSet() const
         {
             return is_set.test();
         }
-        T get() const
+        [[nodiscard]] T get() const
         {
             if (is_set.test())
                 return value;
@@ -258,7 +258,7 @@ public:
         view_errors.try_emplace(view_id);
     }
 
-    const ViewErrors & getErrors(const StorageIDMaybeEmpty & view_id) const
+    [[nodiscard]] const ViewErrors & getErrors(const StorageIDMaybeEmpty & view_id) const
     {
         return view_errors.at(view_id);
     }
@@ -268,7 +268,7 @@ public:
         return view_errors.at(view_id);
     }
 
-    std::exception_ptr getFinalError(const StorageIDMaybeEmpty & view_id, bool ignore_global) const
+    [[nodiscard]] std::exception_ptr getFinalError(const StorageIDMaybeEmpty & view_id, bool ignore_global) const
     {
         const auto & errors = getErrors(view_id);
         if (auto e = errors.current_exception.get())

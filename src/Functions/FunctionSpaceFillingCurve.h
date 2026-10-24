@@ -71,19 +71,19 @@ inline UIntColumnSpan makeUIntColumnSpan(const IColumn & column)
 class FunctionSpaceFillingCurveEncode: public IFunction
 {
 public:
-    bool isVariadic() const override
+    [[nodiscard]] bool isVariadic() const override
     {
         return true;
     }
 
-    size_t getNumberOfArguments() const override
+    [[nodiscard]] size_t getNumberOfArguments() const override
     {
         return 0;
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
     /// Range-mask `Tuple` accessor for the expanded mode of `mortonEncode` / `hilbertEncode`.
     /// `is_const` selects between reading row 0 for every row or reading row `row_idx`.
@@ -92,12 +92,12 @@ public:
         const ColumnTuple * tuple = nullptr;
         bool is_const = false;
 
-        UInt64 read(size_t col_idx, size_t row_idx) const
+        [[nodiscard]] UInt64 read(size_t col_idx, size_t row_idx) const
         {
             return tuple->getColumn(col_idx).getUInt(is_const ? 0 : row_idx);
         }
 
-        size_t tupleSize() const { return tuple->tupleSize(); }
+        [[nodiscard]] size_t tupleSize() const { return tuple->tupleSize(); }
 
         explicit operator bool() const { return tuple != nullptr; }
     };
@@ -121,7 +121,7 @@ public:
     }
 
     /// The largest number of encoded dimensions the implementation supports.
-    virtual size_t getMaxDimensions() const { return 8; }
+    [[nodiscard]] virtual size_t getMaxDimensions() const { return 8; }
 
     /// `mortonEncode`/`hilbertEncode` accept either (a) one to `getMaxDimensions()`
     /// `NativeUInt`s (encoded as a single space-filling-curve key), or (b) a leading
@@ -132,7 +132,7 @@ public:
     /// yet correlate the `Tuple` size with the number of mask arguments (that
     /// would need a shared count variable, e.g.
     /// `(Tuple(NativeUInt...{N}), NativeUInt...{N})`).
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         const size_t max_dimensions = getMaxDimensions();
 
@@ -174,13 +174,13 @@ public:
                             getName(), getMaxDimensions());
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         checkNumberOfDimensions(arguments);
         return IFunction::getReturnTypeImpl(arguments);
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         DataTypes types;
         types.reserve(arguments.size());
@@ -190,7 +190,7 @@ public:
         return IFunction::getReturnTypeImpl(arguments);
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeUInt64>();
     }
@@ -200,20 +200,20 @@ template <UInt8 max_dimensions, UInt8 min_ratio, UInt8 max_ratio>
 class FunctionSpaceFillingCurveDecode: public IFunction
 {
 public:
-    size_t getNumberOfArguments() const override
+    [[nodiscard]] size_t getNumberOfArguments() const override
     {
         return 2;
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
     /// Documentation-only — first arg is a constant `UInt` (the number of
     /// dimensions to decode into) or a constant `Tuple` of bit-shift masks;
     /// the result is a tuple of decoded coordinates (`UInt64` by default,
     /// shrunk per the mask when one is provided).
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// The `const` modifier applies to the whole first argument; it cannot be repeated
         /// inside the `|` alternation (the parser only accepts one `const` per argument).
@@ -225,7 +225,7 @@ public:
     /// Route the types-only path to it too, so the base `IFunction::getReturnTypeImpl(DataTypes)`
     /// fallback never evaluates the bare container return type (which would yield a wrong type or
     /// an internal error).
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         ColumnsWithTypeAndName columns;
         columns.reserve(arguments.size());
@@ -234,7 +234,7 @@ public:
         return getReturnTypeImpl(columns);
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         UInt64 tuple_size = 0;
         const auto * col_const = typeid_cast<const ColumnConst *>(arguments[0].column.get());

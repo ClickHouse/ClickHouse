@@ -48,7 +48,7 @@ struct MetaInKeeperCommitOutcome
     Coordination::Responses responses;
     size_t first_additional_request_idx = 0;
 
-    size_t additionalOpIdx(size_t idx) const { return first_additional_request_idx + idx; }
+    [[nodiscard]] size_t additionalOpIdx(size_t idx) const { return first_additional_request_idx + idx; }
 };
 
 using TransactionCommitOutcomeVariant = std::variant<

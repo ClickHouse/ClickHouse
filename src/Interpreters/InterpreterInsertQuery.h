@@ -41,7 +41,7 @@ public:
       */
     BlockIO execute() override;
 
-    StorageID getDatabaseTable() const;
+    [[nodiscard]] StorageID getDatabaseTable() const;
 
     static void extendQueryLogElemImpl(QueryLogElement & elem, ContextPtr context_);
 
@@ -57,7 +57,7 @@ public:
         bool no_destination = false,
         bool allow_materialized = false);
 
-    bool supportsTransactions() const override { return true; }
+    [[nodiscard]] bool supportsTransactions() const override { return true; }
 
     /// Skip the target-table `INSERT` access check for this query. Used only for the internal populate of
     /// `CREATE TABLE ... AS SELECT` published via `doCreateOrReplaceTable`: the target is a random

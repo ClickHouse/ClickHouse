@@ -57,7 +57,7 @@ public:
     void stopLogging();
 
 protected:
-    virtual bool allowTextLog() const { return true; }
+    [[nodiscard]] virtual bool allowTextLog() const { return true; }
 
 private:
     Poco::AutoPtr<Poco::FileChannel> log_file;

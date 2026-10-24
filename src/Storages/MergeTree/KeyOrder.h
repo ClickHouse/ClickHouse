@@ -21,21 +21,21 @@ public:
     {
     }
 
-    bool hasAnyReversed() const { return has_any_reversed; }
+    [[nodiscard]] bool hasAnyReversed() const { return has_any_reversed; }
 
     /// Positions beyond the stored flags are ascending; an empty vector means the whole key is ascending.
-    bool isReversed(size_t column) const { return column < reverse_flags.size() && reverse_flags[column]; }
+    [[nodiscard]] bool isReversed(size_t column) const { return column < reverse_flags.size() && reverse_flags[column]; }
 
     /// Value-space stand-in for the value at the unknown physical end of a part (the side past the
     /// last mark). Values ascend toward +inf on an ascending column and descend toward -inf on a
     /// descending one.
-    FieldRef physicalEndExtreme(size_t column) const
+    [[nodiscard]] FieldRef physicalEndExtreme(size_t column) const
     {
         return isReversed(column) ? FieldRef(NEGATIVE_INFINITY) : FieldRef(POSITIVE_INFINITY);
     }
 
     /// Mirror of physicalEndExtreme: the stand-in for an unknown value on the physical-start side.
-    FieldRef physicalStartExtreme(size_t column) const
+    [[nodiscard]] FieldRef physicalStartExtreme(size_t column) const
     {
         return isReversed(column) ? FieldRef(POSITIVE_INFINITY) : FieldRef(NEGATIVE_INFINITY);
     }
@@ -43,13 +43,13 @@ public:
     /// Whether NULLs are stored physically last on this column: they are on an ascending column and
     /// physically first on a descending one.
     /// mark range starting with a NULL known to be NULL up to the end of the part.
-    bool nullsAreStoredLast(size_t column) const { return !isReversed(column); }
+    [[nodiscard]] bool nullsAreStoredLast(size_t column) const { return !isReversed(column); }
 
     /// Debug helper for the `checkInRange` contract: boundary tuples must be points of storage order,
     /// left before right.
     int compareTuples(const FieldRef * left, const FieldRef * right, size_t size) const;
 
-    bool matchesPrefix(const std::vector<bool> & flags, size_t num_columns) const
+    [[nodiscard]] bool matchesPrefix(const std::vector<bool> & flags, size_t num_columns) const
     {
         for (size_t i = 0; i < num_columns; ++i)
             if (isReversed(i) != (i < flags.size() && flags[i]))

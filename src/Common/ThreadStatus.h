@@ -254,12 +254,12 @@ protected:
     struct TimePoint
     {
         void setUp();
-        UInt64 nanoseconds() const;
-        UInt64 microseconds() const;
-        UInt64 seconds() const;
+        [[nodiscard]] UInt64 nanoseconds() const;
+        [[nodiscard]] UInt64 microseconds() const;
+        [[nodiscard]] UInt64 seconds() const;
 
-        UInt64 elapsedMilliseconds() const;
-        UInt64 elapsedMilliseconds(const TimePoint & current) const;
+        [[nodiscard]] UInt64 elapsedMilliseconds() const;
+        [[nodiscard]] UInt64 elapsedMilliseconds(const TimePoint & current) const;
 
         std::chrono::time_point<std::chrono::system_clock> point;
     };

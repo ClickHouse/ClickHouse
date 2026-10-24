@@ -25,38 +25,38 @@ public:
         return std::make_shared<FunctionGetSizeOfEnumType>();
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
-    size_t getNumberOfArguments() const override
+    [[nodiscard]] size_t getNumberOfArguments() const override
     {
         return 1;
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Enum8) -> UInt8 OR (Enum16) -> UInt16";
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         return getSizeOfEnumType(arguments[0].type, input_rows_count);
     }
 
-    ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override
+    [[nodiscard]] ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override
     {
         return getSizeOfEnumType(arguments[0].type, 1);
     }
 
 private:
 
-    ColumnPtr getSizeOfEnumType(const DataTypePtr & data_type, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr getSizeOfEnumType(const DataTypePtr & data_type, size_t input_rows_count) const
     {
         if (const auto * type8 = checkAndGetDataType<DataTypeEnum8>(data_type.get()))
             return DataTypeUInt8().createColumnConst(input_rows_count, type8->getValues().size());

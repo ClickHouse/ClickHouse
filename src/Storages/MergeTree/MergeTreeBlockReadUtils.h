@@ -61,13 +61,13 @@ struct MergeTreeBlockSizePredictor
     void update(const Block & sample_block, const Columns & columns, size_t num_rows, double decay = calculateDecay());
 
     /// Return current block size (after update())
-    size_t getBlockSize() const
+    [[nodiscard]] size_t getBlockSize() const
     {
         return block_size_bytes;
     }
 
     /// Predicts what number of rows should be read to exhaust byte quota per column
-    size_t estimateNumRowsForMaxSizeColumn(size_t bytes_quota) const
+    [[nodiscard]] size_t estimateNumRowsForMaxSizeColumn(size_t bytes_quota) const
     {
         /// Below we calculate the following expression: `bytes_quota / max_size_per_row` and then cast its result to size_t.
         /// The problem is that the conversion to double (`max_size_per_row` is double) can overflow size_t if `bytes_quota` is close to `SIZE_MAX`
@@ -84,7 +84,7 @@ struct MergeTreeBlockSizePredictor
     }
 
     /// Predicts what number of rows should be read to exhaust byte quota per block
-    size_t estimateNumRows(size_t bytes_quota) const
+    [[nodiscard]] size_t estimateNumRows(size_t bytes_quota) const
     {
         return (bytes_quota > block_size_bytes)
             ? static_cast<size_t>((bytes_quota - block_size_bytes) / std::max<size_t>(1, static_cast<size_t>(bytes_per_row_current)))

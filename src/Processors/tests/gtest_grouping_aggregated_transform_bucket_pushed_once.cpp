@@ -156,7 +156,7 @@ struct Driver
             step();
     }
 
-    std::map<Int32, int> counts() const
+    [[nodiscard]] std::map<Int32, int> counts() const
     {
         std::map<Int32, int> result;
         for (auto bucket : pushed)

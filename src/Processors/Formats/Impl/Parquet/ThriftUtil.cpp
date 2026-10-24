@@ -437,7 +437,7 @@ private:
     static constexpr int16_t FILE_META_DATA_ROW_GROUPS = 4;
     static constexpr int16_t ROW_GROUP_COLUMNS = 1;
 
-    UInt32 position() const { return UInt32(limit - trans_->available_read()); }
+    [[nodiscard]] UInt32 position() const { return UInt32(limit - trans_->available_read()); }
 
     const size_t limit;
     std::vector<std::vector<UInt32>> & offsets;

@@ -101,13 +101,13 @@ public:
     {
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         /// This is just a wrapper. The function for Nullable arguments is named the same as the nested function itself.
         return nested_function->getName();
     }
 
-    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
+    [[nodiscard]] bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
     {
         if (!this->haveSameDefinition(rhs))
             return false;
@@ -156,17 +156,17 @@ public:
         nested_function->destroyUpToState(nestedPlace(place));
     }
 
-    bool hasTrivialDestructor() const override
+    [[nodiscard]] bool hasTrivialDestructor() const override
     {
         return nested_function->hasTrivialDestructor();
     }
 
-    size_t sizeOfData() const override
+    [[nodiscard]] size_t sizeOfData() const override
     {
         return prefix_size + nested_function->sizeOfData();
     }
 
-    size_t alignOfData() const override
+    [[nodiscard]] size_t alignOfData() const override
     {
         return nested_function->alignOfData();
     }
@@ -180,14 +180,14 @@ public:
         nested_function->merge(nestedPlace(place), nestedPlace(rhs), arena);
     }
 
-    bool isAbleToParallelizeMerge() const override { return nested_function->isAbleToParallelizeMerge(); }
-    bool isParallelizeMergePrepareNeeded() const override { return nested_function->isParallelizeMergePrepareNeeded(); }
+    [[nodiscard]] bool isAbleToParallelizeMerge() const override { return nested_function->isAbleToParallelizeMerge(); }
+    [[nodiscard]] bool isParallelizeMergePrepareNeeded() const override { return nested_function->isParallelizeMergePrepareNeeded(); }
 
-    bool isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const override
+    [[nodiscard]] bool isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const override
     {
         return nested_function->isLargeMergePair(nestedPlace(place), nestedPlace(rhs));
     }
-    bool canOptimizeEqualKeysRanges() const override { return nested_function->canOptimizeEqualKeysRanges(); }
+    [[nodiscard]] bool canOptimizeEqualKeysRanges() const override { return nested_function->canOptimizeEqualKeysRanges(); }
 
     void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const override
     {
@@ -233,7 +233,7 @@ public:
             nested_function->serialize(nestedPlace(place), buf, version);
     }
 
-    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> version) const override
+    [[nodiscard]] std::optional<size_t> getSerializedSizeBound(std::optional<size_t> version) const override
     {
         if (auto nested_bound = nested_function->getSerializedSizeBound(version))
             return (serialize_flag ? sizeof(bool) : 0) + *nested_bound;
@@ -337,43 +337,43 @@ public:
         }
     }
 
-    bool allocatesMemoryInArena() const override
+    [[nodiscard]] bool allocatesMemoryInArena() const override
     {
         return nested_function->allocatesMemoryInArena();
     }
 
-    bool isState() const override
+    [[nodiscard]] bool isState() const override
     {
         return nested_function->isState();
     }
 
-    bool isVersioned() const override
+    [[nodiscard]] bool isVersioned() const override
     {
         return nested_function->isVersioned();
     }
 
-    size_t getVersionFromRevision(size_t revision) const override
+    [[nodiscard]] size_t getVersionFromRevision(size_t revision) const override
     {
         return nested_function->getVersionFromRevision(revision);
     }
 
-    size_t getDefaultVersion() const override
+    [[nodiscard]] size_t getDefaultVersion() const override
     {
         return nested_function->getDefaultVersion();
     }
 
-    DataTypePtr getStateType() const override
+    [[nodiscard]] DataTypePtr getStateType() const override
     {
         return this->getStateTypeWithVersionOf(*nested_function);
     }
 
-    AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
+    [[nodiscard]] AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
 
     /// Only the `Subadditive` bound survives the wrapping: a group whose rows are all NULL has an
     /// untouched nested state, whose value is 0 for the subadditive functions (`count`,
     /// `uniqExact`) - consistent with the bound - but is a bogus default for an extremum. A
     /// nullable result is excluded because its NULLs do not take part in the nested comparison.
-    MergedValueBound getMergedValueBound() const override
+    [[nodiscard]] MergedValueBound getMergedValueBound() const override
     {
         if (!result_is_nullable && nested_function->getMergedValueBound() == MergedValueBound::Subadditive)
             return MergedValueBound::Subadditive;
@@ -382,7 +382,7 @@ public:
 
 #if USE_EMBEDDED_COMPILER
 
-    bool isCompilable() const override
+    [[nodiscard]] bool isCompilable() const override
     {
         return this->nested_function->isCompilable();
     }
@@ -486,7 +486,7 @@ public:
 
     using IAggregateFunction::argument_types;
     using IAggregateFunction::parameters;
-    AggregateFunctionPtr getAggregateFunctionForMergingFinal() const override
+    [[nodiscard]] AggregateFunctionPtr getAggregateFunctionForMergingFinal() const override
     {
         auto nested_function_for_merging_final = this->nested_function->getAggregateFunctionForMergingFinal();
         /// Create new aggregate function for merging final states if the nested function has a different implementation
@@ -653,7 +653,7 @@ public:
 
     using IAggregateFunction::argument_types;
     using IAggregateFunction::parameters;
-    AggregateFunctionPtr getAggregateFunctionForMergingFinal() const override
+    [[nodiscard]] AggregateFunctionPtr getAggregateFunctionForMergingFinal() const override
     {
         auto nested_function_for_merging_final = this->nested_function->getAggregateFunctionForMergingFinal();
         /// Create new aggregate function for merging final states if the nested function has a different implementation

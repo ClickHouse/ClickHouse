@@ -46,7 +46,7 @@ public:
     void finish(bool sync) final;
     void cancel() noexcept override;
 
-    size_t getNumberOfOpenStreams() const override { return column_streams.size(); }
+    [[nodiscard]] size_t getNumberOfOpenStreams() const override { return column_streams.size(); }
 
     static ISerialization::EnumerateStreamsSettings getEnumerateSettings(const MergeTreeWriterSettings & settings);
 
@@ -119,11 +119,11 @@ private:
     /// Also useful to have exact amount of rows in last (non-final) mark.
     void adjustLastMarkIfNeedAndFlushToDisk(size_t new_rows_in_last_mark);
 
-    ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const override;
+    [[nodiscard]] ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const override;
 
-    ISerialization::OutputStreamGetter createStreamGetter(const NameAndTypePair & column,
+    [[nodiscard]] ISerialization::OutputStreamGetter createStreamGetter(const NameAndTypePair & column,
         const WrittenOffsetSubstreams & offset_substreams) const;
-    const String & getStreamName(const NameAndTypePair & column, const ISerialization::SubstreamPath & substream_path) const;
+    [[nodiscard]] const String & getStreamName(const NameAndTypePair & column, const ISerialization::SubstreamPath & substream_path) const;
 
     using SerializationState = ISerialization::SerializeBinaryBulkStatePtr;
     using SerializationStates = std::unordered_map<String, SerializationState>;

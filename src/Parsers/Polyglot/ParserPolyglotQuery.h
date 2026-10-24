@@ -40,11 +40,11 @@ public:
     {
     }
 
-    const char * getName() const override { return "Polyglot SQL Statement"; }
+    [[nodiscard]] const char * getName() const override { return "Polyglot SQL Statement"; }
 
     /// The remaining input is opaque foreign SQL (see the class comment above): the SQL lexer's
     /// tokens are only used to find the end of the statement, so a token it rejects isn't an error.
-    bool consumesRawText() const override { return true; }
+    [[nodiscard]] bool consumesRawText() const override { return true; }
 
 protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;

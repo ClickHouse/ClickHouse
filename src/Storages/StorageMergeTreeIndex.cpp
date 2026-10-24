@@ -344,7 +344,7 @@ VirtualColumnsDescription StorageMergeTreeIndex::createVirtuals()
 class ReadFromMergeTreeIndex : public SourceStepWithFilter
 {
 public:
-    std::string getName() const override { return "ReadFromMergeTreeIndex"; }
+    [[nodiscard]] std::string getName() const override { return "ReadFromMergeTreeIndex"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     ReadFromMergeTreeIndex(

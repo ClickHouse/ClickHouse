@@ -55,15 +55,15 @@ public:
 
     BlockIO loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows) override;
 
-    bool isModified() const override;
+    [[nodiscard]] bool isModified() const override;
 
-    bool supportsSelectiveLoad() const override;
+    [[nodiscard]] bool supportsSelectiveLoad() const override;
 
-    bool hasUpdateField() const override;
+    [[nodiscard]] bool hasUpdateField() const override;
 
-    DictionarySourcePtr clone() const override;
+    [[nodiscard]] DictionarySourcePtr clone() const override;
 
-    std::string toString() const override;
+    [[nodiscard]] std::string toString() const override;
 
 private:
     void getUpdateFieldAndDate(Poco::URI & uri);
@@ -73,7 +73,7 @@ private:
 
     LoggerPtr log;
 
-    LocalDateTime getLastModification() const;
+    [[nodiscard]] LocalDateTime getLastModification() const;
 
     std::chrono::time_point<std::chrono::system_clock> update_time;
     const DictionaryStructure dict_struct;

@@ -35,7 +35,7 @@ protected:
 class ParserDeclareColumn : public IParserBase
 {
 protected:
-    const char * getName() const override { return "index declaration"; }
+    [[nodiscard]] const char * getName() const override { return "index declaration"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };

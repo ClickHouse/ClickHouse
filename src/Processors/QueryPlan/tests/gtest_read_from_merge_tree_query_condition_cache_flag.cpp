@@ -157,7 +157,7 @@ struct TableFixture
 
     /// A read of the (empty) table, built through the same `readFromParts` entry point the
     /// deserializer uses, so both sides of the round-trip are shaped identically.
-    std::unique_ptr<ReadFromMergeTree> makeRead() const
+    [[nodiscard]] std::unique_ptr<ReadFromMergeTree> makeRead() const
     {
         const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
 

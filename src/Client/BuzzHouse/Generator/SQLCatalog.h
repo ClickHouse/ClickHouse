@@ -134,9 +134,9 @@ public:
     }
     ~SQLColumn() = default;
 
-    bool canBeInserted() const;
+    [[nodiscard]] bool canBeInserted() const;
 
-    String getColumnName() const;
+    [[nodiscard]] String getColumnName() const;
 };
 
 struct WithCluster
@@ -145,7 +145,7 @@ public:
     String name;
     std::optional<String> cluster;
 
-    const std::optional<String> & getCluster() const { return cluster; }
+    [[nodiscard]] const std::optional<String> & getCluster() const { return cluster; }
 
     void setName(SQLIdentifier * f) const;
 };
@@ -174,40 +174,40 @@ public:
 
     static void setName(SQLIdentifier * db, const String & name);
 
-    bool isAtomicDatabase() const;
+    [[nodiscard]] bool isAtomicDatabase() const;
 
-    bool isMemoryDatabase() const;
+    [[nodiscard]] bool isMemoryDatabase() const;
 
-    bool isReplicatedDatabase() const;
+    [[nodiscard]] bool isReplicatedDatabase() const;
 
-    bool isSharedDatabase() const;
+    [[nodiscard]] bool isSharedDatabase() const;
 
-    bool isBackupDatabase() const;
+    [[nodiscard]] bool isBackupDatabase() const;
 
-    bool isOrdinaryDatabase() const;
+    [[nodiscard]] bool isOrdinaryDatabase() const;
 
-    bool isDataLakeCatalogDatabase() const;
+    [[nodiscard]] bool isDataLakeCatalogDatabase() const;
 
-    bool isClusterDatabase() const;
+    [[nodiscard]] bool isClusterDatabase() const;
 
-    bool isRemoteDatabase() const;
+    [[nodiscard]] bool isRemoteDatabase() const;
 
-    bool isOverlayDatabase() const;
+    [[nodiscard]] bool isOverlayDatabase() const;
 
     /// Cluster, Remote, RemoteSecure or Overlay: a read-through view of databases elsewhere
-    bool isProxyDatabase() const;
+    [[nodiscard]] bool isProxyDatabase() const;
 
-    bool isReplicatedOrSharedDatabase() const;
+    [[nodiscard]] bool isReplicatedOrSharedDatabase() const;
 
-    bool isAttached() const;
+    [[nodiscard]] bool isAttached() const;
 
-    bool isDettached() const;
+    [[nodiscard]] bool isDettached() const;
 
     void setName(SQLIdentifier * db) const;
 
-    String getName() const;
+    [[nodiscard]] String getName() const;
 
-    String getSparkCatalogName() const;
+    [[nodiscard]] String getSparkCatalogName() const;
 
     void setDatabasePath(RandomGenerator & rg, const FuzzConfig & fc);
 
@@ -228,23 +228,23 @@ struct TableEngineDescriptor
     {
     }
 
-    bool isMergeTreeFamily() const;
+    [[nodiscard]] bool isMergeTreeFamily() const;
 
-    bool isLogFamily() const;
+    [[nodiscard]] bool isLogFamily() const;
 
-    bool isShared() const;
+    [[nodiscard]] bool isShared() const;
 
-    bool isReplicated() const;
+    [[nodiscard]] bool isReplicated() const;
 
-    bool supportsFinal() const;
+    [[nodiscard]] bool supportsFinal() const;
 
-    bool hasSignColumn() const;
+    [[nodiscard]] bool hasSignColumn() const;
 
-    bool hasVersionColumn() const;
+    [[nodiscard]] bool hasVersionColumn() const;
 
-    bool areInsertsAppends() const;
+    [[nodiscard]] bool areInsertsAppends() const;
 
-    bool isDeterministic() const { return is_deterministic; }
+    [[nodiscard]] bool isDeterministic() const { return is_deterministic; }
 };
 
 struct SQLBase : WithCluster
@@ -300,159 +300,159 @@ public:
         subengine->is_deterministic = engine.is_deterministic;
     }
 
-    bool isDeterministic() const;
+    [[nodiscard]] bool isDeterministic() const;
 
-    bool isMergeTreeFamily(bool as_alias = false) const;
+    [[nodiscard]] bool isMergeTreeFamily(bool as_alias = false) const;
 
-    bool isLogFamily(bool as_alias = false) const;
+    [[nodiscard]] bool isLogFamily(bool as_alias = false) const;
 
-    bool isSharedMergeTree(bool as_alias = false) const;
+    [[nodiscard]] bool isSharedMergeTree(bool as_alias = false) const;
 
-    bool isReplicatedMergeTree(bool as_alias = false) const;
+    [[nodiscard]] bool isReplicatedMergeTree(bool as_alias = false) const;
 
-    bool isReplicatedOrSharedMergeTree(bool as_alias = false) const;
+    [[nodiscard]] bool isReplicatedOrSharedMergeTree(bool as_alias = false) const;
 
-    bool isShared(bool as_alias = false) const;
+    [[nodiscard]] bool isShared(bool as_alias = false) const;
 
-    bool isFileEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isFileEngine(bool as_alias = false) const;
 
-    bool isSummingMergeTree(bool as_alias = false) const;
+    [[nodiscard]] bool isSummingMergeTree(bool as_alias = false) const;
 
-    bool isJoinEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isJoinEngine(bool as_alias = false) const;
 
-    bool isNullEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isNullEngine(bool as_alias = false) const;
 
-    bool isSetEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isSetEngine(bool as_alias = false) const;
 
-    bool isBufferEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isBufferEngine(bool as_alias = false) const;
 
-    bool isRocksEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isRocksEngine(bool as_alias = false) const;
 
-    bool isMemoryEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isMemoryEngine(bool as_alias = false) const;
 
-    bool isMySQLEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isMySQLEngine(bool as_alias = false) const;
 
-    bool isPostgreSQLEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isPostgreSQLEngine(bool as_alias = false) const;
 
-    bool isSQLiteEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isSQLiteEngine(bool as_alias = false) const;
 
-    bool isMongoDBEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isMongoDBEngine(bool as_alias = false) const;
 
-    bool isRedisEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isRedisEngine(bool as_alias = false) const;
 
-    bool isS3Engine(bool as_alias = false) const;
+    [[nodiscard]] bool isS3Engine(bool as_alias = false) const;
 
-    bool isS3QueueEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isS3QueueEngine(bool as_alias = false) const;
 
-    bool isAnyS3Engine(bool as_alias = false) const;
+    [[nodiscard]] bool isAnyS3Engine(bool as_alias = false) const;
 
-    bool isAzureEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isAzureEngine(bool as_alias = false) const;
 
-    bool isAzureQueueEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isAzureQueueEngine(bool as_alias = false) const;
 
-    bool isAnyAzureEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isAnyAzureEngine(bool as_alias = false) const;
 
-    bool isAnyQueueEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isAnyQueueEngine(bool as_alias = false) const;
 
-    bool isHudiEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isHudiEngine(bool as_alias = false) const;
 
-    bool isDeltaLakeS3Engine(bool as_alias = false) const;
+    [[nodiscard]] bool isDeltaLakeS3Engine(bool as_alias = false) const;
 
-    bool isDeltaLakeAzureEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isDeltaLakeAzureEngine(bool as_alias = false) const;
 
-    bool isDeltaLakeLocalEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isDeltaLakeLocalEngine(bool as_alias = false) const;
 
-    bool isAnyDeltaLakeEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isAnyDeltaLakeEngine(bool as_alias = false) const;
 
-    bool isIcebergS3Engine(bool as_alias = false) const;
+    [[nodiscard]] bool isIcebergS3Engine(bool as_alias = false) const;
 
-    bool isIcebergAzureEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isIcebergAzureEngine(bool as_alias = false) const;
 
-    bool isIcebergLocalEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isIcebergLocalEngine(bool as_alias = false) const;
 
-    bool isAnyIcebergEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isAnyIcebergEngine(bool as_alias = false) const;
 
-    bool isPaimonS3Engine(bool as_alias = false) const;
+    [[nodiscard]] bool isPaimonS3Engine(bool as_alias = false) const;
 
-    bool isPaimonAzureEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isPaimonAzureEngine(bool as_alias = false) const;
 
-    bool isPaimonLocalEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isPaimonLocalEngine(bool as_alias = false) const;
 
-    bool isAnyPaimonEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isAnyPaimonEngine(bool as_alias = false) const;
 
-    bool isAnyLakeEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isAnyLakeEngine(bool as_alias = false) const;
 
-    bool isOnS3() const;
+    [[nodiscard]] bool isOnS3() const;
 
-    bool isOnAzure() const;
+    [[nodiscard]] bool isOnAzure() const;
 
-    bool isOnLocal() const;
+    [[nodiscard]] bool isOnLocal() const;
 
-    bool isMergeEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isMergeEngine(bool as_alias = false) const;
 
-    bool isDistributedEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isDistributedEngine(bool as_alias = false) const;
 
-    bool isRemoteSecureEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isRemoteSecureEngine(bool as_alias = false) const;
 
-    bool isAnyRemoteEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isAnyRemoteEngine(bool as_alias = false) const;
 
-    bool isDictionaryEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isDictionaryEngine(bool as_alias = false) const;
 
-    bool isGenerateRandomEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isGenerateRandomEngine(bool as_alias = false) const;
 
-    bool isURLEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isURLEngine(bool as_alias = false) const;
 
-    bool isKeeperMapEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isKeeperMapEngine(bool as_alias = false) const;
 
-    bool isExternalDistributedEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isExternalDistributedEngine(bool as_alias = false) const;
 
-    bool isMaterializedPostgreSQLEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isMaterializedPostgreSQLEngine(bool as_alias = false) const;
 
-    bool isArrowFlightEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isArrowFlightEngine(bool as_alias = false) const;
 
-    bool isAliasEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isAliasEngine(bool as_alias = false) const;
 
-    bool isKafkaEngine(bool as_alias = false) const;
+    [[nodiscard]] bool isKafkaEngine(bool as_alias = false) const;
 
-    bool isNotTruncableEngine() const;
+    [[nodiscard]] bool isNotTruncableEngine() const;
 
-    bool isEngineReplaceable() const;
+    [[nodiscard]] bool isEngineReplaceable() const;
 
-    bool isAnotherRelationalDatabaseEngine() const;
+    [[nodiscard]] bool isAnotherRelationalDatabaseEngine() const;
 
-    bool hasDatabasePeer() const;
+    [[nodiscard]] bool hasDatabasePeer() const;
 
-    bool hasMySQLPeer() const;
+    [[nodiscard]] bool hasMySQLPeer() const;
 
-    bool hasPostgreSQLPeer() const;
+    [[nodiscard]] bool hasPostgreSQLPeer() const;
 
-    bool hasSQLitePeer() const;
+    [[nodiscard]] bool hasSQLitePeer() const;
 
-    bool hasClickHousePeer() const;
+    [[nodiscard]] bool hasClickHousePeer() const;
 
-    bool isAttached() const;
+    [[nodiscard]] bool isAttached() const;
 
-    bool isDettached() const;
+    [[nodiscard]] bool isDettached() const;
 
-    String getDatabaseName() const;
+    [[nodiscard]] String getDatabaseName() const;
 
-    String getBaseName(bool full = true) const;
+    [[nodiscard]] String getBaseName(bool full = true) const;
 
-    String getFullName(bool setdbname) const;
+    [[nodiscard]] String getFullName(bool setdbname) const;
 
-    String getSparkCatalogName() const;
+    [[nodiscard]] String getSparkCatalogName() const;
 
     void setTablePath(RandomGenerator & rg, const FuzzConfig & fc, bool has_dolor);
 
-    String getTablePath() const;
+    [[nodiscard]] String getTablePath() const;
 
     String getTablePath(RandomGenerator & rg, bool allow_not_deterministic) const;
 
-    LakeCatalog getLakeCatalog() const;
+    [[nodiscard]] LakeCatalog getLakeCatalog() const;
 
-    LakeStorage getPossibleLakeStorage() const;
+    [[nodiscard]] LakeStorage getPossibleLakeStorage() const;
 
-    LakeFormat getPossibleLakeFormat() const;
+    [[nodiscard]] LakeFormat getPossibleLakeFormat() const;
 
     static void setName(ExprSchemaTable * est, const String & name, bool setdbname, std::shared_ptr<SQLDatabase> database);
 
@@ -483,15 +483,15 @@ public:
     {
     }
 
-    size_t numberOfInsertableColumns(bool all) const;
+    [[nodiscard]] size_t numberOfInsertableColumns(bool all) const;
 
-    bool supportsFinal(bool as_alias = false) const;
+    [[nodiscard]] bool supportsFinal(bool as_alias = false) const;
 
-    bool hasSignColumn(bool as_alias = false) const;
+    [[nodiscard]] bool hasSignColumn(bool as_alias = false) const;
 
-    bool hasVersionColumn(bool as_alias = false) const;
+    [[nodiscard]] bool hasVersionColumn(bool as_alias = false) const;
 
-    bool areInsertsAppends(bool as_alias = false) const;
+    [[nodiscard]] bool areInsertsAppends(bool as_alias = false) const;
 };
 
 struct SQLView : SQLBase
@@ -508,7 +508,7 @@ public:
     {
     }
 
-    bool supportsFinal() const;
+    [[nodiscard]] bool supportsFinal() const;
 };
 
 struct SQLDictionary : SQLBase
@@ -521,7 +521,7 @@ public:
     {
     }
 
-    bool supportsFinal() const;
+    [[nodiscard]] bool supportsFinal() const;
 };
 
 struct SQLFunction : WithCluster
@@ -584,14 +584,14 @@ public:
     {
     }
 
-    const String & getBottomName() const;
+    [[nodiscard]] const String & getBottomName() const;
 
     /// Returns the bottom name as a backtick-quoted SQL identifier: `escaped_name`.
-    String getBottomNameSQL() const;
+    [[nodiscard]] String getBottomNameSQL() const;
 
-    SQLType * getBottomType() const;
+    [[nodiscard]] SQLType * getBottomType() const;
 
-    String columnPathRef(const String & quote = "`") const;
+    [[nodiscard]] String columnPathRef(const String & quote = "`") const;
 };
 
 }

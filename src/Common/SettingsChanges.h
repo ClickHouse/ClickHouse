@@ -35,11 +35,11 @@ public:
     using std::vector<SettingChange>::vector;
 
     bool tryGet(std::string_view name, Field & out_value) const;
-    const Field * tryGet(std::string_view name) const;
+    [[nodiscard]] const Field * tryGet(std::string_view name) const;
     Field * tryGet(std::string_view name);
 
     /// The whole change rather than its value, for consumers that also have to look at `shorthand`.
-    const SettingChange * tryGetChange(std::string_view name) const;
+    [[nodiscard]] const SettingChange * tryGetChange(std::string_view name) const;
     SettingChange * tryGetChange(std::string_view name);
 
     /// Inserts element if doesn't exists and returns true, otherwise just returns false
@@ -58,7 +58,7 @@ public:
     /// Applies `other` on top of these changes with `setSetting`.
     void setSettings(const SettingsChanges & other);
 
-    String namesToString() const;
+    [[nodiscard]] String namesToString() const;
 };
 
 }

@@ -41,19 +41,19 @@ public:
     /// exists in the group (the duplicate is dropped).
     bool addLogicalExpression(GroupExpressionPtr group_expression);
     bool addPhysicalExpression(GroupExpressionPtr group_expression);
-    bool isExplored() const { return is_explored; }
+    [[nodiscard]] bool isExplored() const { return is_explored; }
     void setExplored() { is_explored = true; }
-    bool isOptimizedFor(const ExpressionProperties & required_properties) const;
+    [[nodiscard]] bool isOptimizedFor(const ExpressionProperties & required_properties) const;
     void setOptimizedFor(const ExpressionProperties & required_properties);
-    bool isEnforcedFor(const ExpressionProperties & required_properties) const;
+    [[nodiscard]] bool isEnforcedFor(const ExpressionProperties & required_properties) const;
     void setEnforcedFor(const ExpressionProperties & required_properties);
 
     /// Tracks whether optimization for a given property set is fully complete
     /// (all stages: explore, implement, enforce - have finished).
-    bool isFullyDoneFor(const ExpressionProperties & required_properties) const;
+    [[nodiscard]] bool isFullyDoneFor(const ExpressionProperties & required_properties) const;
     void setFullyDoneFor(const ExpressionProperties & required_properties);
     void updateBestImplementation(GroupExpressionPtr expression, const CostConfig & cost_config);
-    ExpressionWithCost getBestImplementation(const ExpressionProperties & required_properties, const CostConfig & cost_config) const;
+    [[nodiscard]] ExpressionWithCost getBestImplementation(const ExpressionProperties & required_properties, const CostConfig & cost_config) const;
 
     /// Cheapest costed implementation of `required_properties` for an input edge, scanning the
     /// best-implementation cache then `physical_expressions`, skipping anything in `active_path`
@@ -64,7 +64,7 @@ public:
     /// axis (empty sort met by a sorted enforcer, or empty distribution columns met by a keyed
     /// exchange) is rejected, so an enforcer cannot pick itself. Base candidates and productive
     /// compositions (Gather -> Sort, Sort-per-node -> SortedGather) stay eligible.
-    ExpressionWithCost selectInputImplementation(
+    [[nodiscard]] ExpressionWithCost selectInputImplementation(
         const ExpressionProperties & required_properties,
         const CostConfig & cost_config,
         const std::unordered_set<GroupExpression *> & active_path,
@@ -72,10 +72,10 @@ public:
 
     /// Returns the weighted subtree cost of the best implementation satisfying
     /// the given properties, or infinity if none exists.
-    Float64 getBestCostForProperties(const ExpressionProperties & required_properties, const CostConfig & cost_config) const;
+    [[nodiscard]] Float64 getBestCostForProperties(const ExpressionProperties & required_properties, const CostConfig & cost_config) const;
 
     void dump(WriteBuffer & out, const CostConfig & cost_config, String indent = {}) const;
-    String dump(const CostConfig & cost_config) const;
+    [[nodiscard]] String dump(const CostConfig & cost_config) const;
 
     std::vector<GroupExpressionPtr> logical_expressions;
     std::vector<GroupExpressionPtr> physical_expressions;

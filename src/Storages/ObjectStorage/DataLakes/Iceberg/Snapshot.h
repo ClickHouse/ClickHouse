@@ -25,7 +25,7 @@ struct IcebergDataSnapshot
     std::optional<String> refresh_cursor;
     Poco::JSON::Array::Ptr partition_specs;
 
-    std::optional<size_t> getTotalRows() const
+    [[nodiscard]] std::optional<size_t> getTotalRows() const
     {
         if (total_rows.has_value() && total_position_delete_rows == 0 && total_equality_delete_rows == 0)
             return total_rows;

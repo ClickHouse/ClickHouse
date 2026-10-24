@@ -42,11 +42,11 @@ struct SemiAntiJoinSideChecker
         const ContextPtr & context,
         const IQueryTreeNode * resolving_join_on_expression);
 
-    bool shouldSkipSide(JoinTableSide side) const;
+    [[nodiscard]] bool shouldSkipSide(JoinTableSide side) const;
 
     /// The side that stays visible when the compatibility settings hide the other one.
     /// Returns nullopt when both sides remain visible.
-    std::optional<JoinTableSide> preservedSideOrNone() const;
+    [[nodiscard]] std::optional<JoinTableSide> preservedSideOrNone() const;
 
     /// Throw if access to the given side of a SEMI/ANTI JOIN is denied.
     /// The caller is responsible for determining the correct side (e.g. via isFromJoinTree).

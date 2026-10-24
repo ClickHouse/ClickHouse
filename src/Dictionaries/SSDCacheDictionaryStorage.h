@@ -145,13 +145,13 @@ public:
     }
 
     /// Check if it is enough place to write key in block
-    bool enoughtPlaceToWriteKey(const SSDCacheSimpleKey & cache_key) const
+    [[nodiscard]] bool enoughtPlaceToWriteKey(const SSDCacheSimpleKey & cache_key) const
     {
         return (current_block_offset + (sizeof(cache_key.key) + sizeof(cache_key.size) + cache_key.size)) <= block_size;
     }
 
     /// Check if it is enough place to write key in block
-    bool enoughtPlaceToWriteKey(const SSDCacheComplexKey & cache_key) const
+    [[nodiscard]] bool enoughtPlaceToWriteKey(const SSDCacheComplexKey & cache_key) const
     {
         std::string_view key = cache_key.key;
         size_t complex_key_size = sizeof(key.size()) + key.size();
@@ -227,7 +227,7 @@ public:
         return true;
     }
 
-    size_t getKeysSize() const { return keys_size; }
+    [[nodiscard]] size_t getKeysSize() const { return keys_size; }
 
     /// Write keys size into block header
     void writeKeysSize()
@@ -237,10 +237,10 @@ public:
     }
 
     /// Get check sum from block header
-    size_t getCheckSum() const { return unalignedLoad<size_t>(block_data); }
+    [[nodiscard]] size_t getCheckSum() const { return unalignedLoad<size_t>(block_data); }
 
     /// Calculate check sum in block
-    size_t calculateCheckSum() const
+    [[nodiscard]] size_t calculateCheckSum() const
     {
         size_t calculated_check_sum = static_cast<size_t>(CityHash_v1_0_2::CityHash64(block_data + block_header_check_sum_size, block_size - block_header_check_sum_size));
 
@@ -248,7 +248,7 @@ public:
     }
 
     /// Check if check sum from block header matched calculated check sum in block
-    bool checkCheckSum() const
+    [[nodiscard]] bool checkCheckSum() const
     {
         size_t calculated_check_sum = calculateCheckSum();
         size_t check_sum = getCheckSum();
@@ -263,10 +263,10 @@ public:
         std::memcpy(block_data, &check_sum, sizeof(size_t));
     }
 
-    size_t getBlockSize() const { return block_size; }
+    [[nodiscard]] size_t getBlockSize() const { return block_size; }
 
     /// Returns block data
-    char * getBlockData() const { return block_data; }
+    [[nodiscard]] char * getBlockData() const { return block_data; }
 
     /// Read keys that were serialized in block
     /// It is client responsibility to ensure that simple or complex keys were written in block
@@ -409,16 +409,16 @@ public:
         current_write_block.writeCheckSum();
     }
 
-    char * getPlace(SSDCacheIndex index) const
+    [[nodiscard]] char * getPlace(SSDCacheIndex index) const
     {
         return buffer.m_data + index.block_index * block_size + index.offset_in_block;
     }
 
-    size_t getCurrentBlockIndex() const { return current_block_index; }
+    [[nodiscard]] size_t getCurrentBlockIndex() const { return current_block_index; }
 
-    const char * getData() const { return buffer.m_data; }
+    [[nodiscard]] const char * getData() const { return buffer.m_data; }
 
-    size_t getSizeInBytes() const { return block_size * partition_blocks_size; }
+    [[nodiscard]] size_t getSizeInBytes() const { return block_size * partition_blocks_size; }
 
     void readKeys(PaddedPODArray<KeyType> & keys) const
     {
@@ -773,7 +773,7 @@ public:
         }
     }
 
-    size_t getCurrentBlockIndex() const { return current_block_index; }
+    [[nodiscard]] size_t getCurrentBlockIndex() const { return current_block_index; }
 
     void reset()
     {
@@ -891,9 +891,9 @@ public:
         memory_buffer_partitions.emplace_back(configuration.block_size, configuration.write_buffer_blocks_size);
     }
 
-    bool returnsFetchedColumnsInOrderOfRequestedKeys() const override { return false; }
+    [[nodiscard]] bool returnsFetchedColumnsInOrderOfRequestedKeys() const override { return false; }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         if (dictionary_key_type == DictionaryKeyType::Simple)
             return "SSDCache";
@@ -901,7 +901,7 @@ public:
         return "SSDComplexKeyCache";
     }
 
-    bool supportsSimpleKeys() const override { return dictionary_key_type == DictionaryKeyType::Simple; }
+    [[nodiscard]] bool supportsSimpleKeys() const override { return dictionary_key_type == DictionaryKeyType::Simple; }
 
     SimpleKeysStorageFetchResult fetchColumnsForKeys(
         const PaddedPODArray<UInt64> & keys,
@@ -930,7 +930,7 @@ public:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefaultKeys is not supported for complex key storage");
     }
 
-    PaddedPODArray<UInt64> getCachedSimpleKeys() const override
+    [[nodiscard]] PaddedPODArray<UInt64> getCachedSimpleKeys() const override
     {
         if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
             return getCachedKeysImpl();
@@ -938,7 +938,7 @@ public:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getCachedSimpleKeys is not supported for complex key storage");
     }
 
-    bool supportsComplexKeys() const override { return dictionary_key_type == DictionaryKeyType::Complex; }
+    [[nodiscard]] bool supportsComplexKeys() const override { return dictionary_key_type == DictionaryKeyType::Complex; }
 
     ComplexKeysStorageFetchResult fetchColumnsForKeys(
         const PaddedPODArray<std::string_view> & keys,
@@ -967,7 +967,7 @@ public:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefaultKeys is not supported for simple key storage");
     }
 
-    PaddedPODArray<std::string_view> getCachedComplexKeys() const override
+    [[nodiscard]] PaddedPODArray<std::string_view> getCachedComplexKeys() const override
     {
         if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
             return getCachedKeysImpl();
@@ -975,9 +975,9 @@ public:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getCachedSimpleKeys is not supported for simple key storage");
     }
 
-    size_t getSize() const override { return index.size(); }
+    [[nodiscard]] size_t getSize() const override { return index.size(); }
 
-    double getLoadFactor() const override
+    [[nodiscard]] double getLoadFactor() const override
     {
         size_t partitions_size = memory_buffer_partitions.size();
 
@@ -996,7 +996,7 @@ public:
         return load_factor;
     }
 
-    size_t getBytesAllocated() const override
+    [[nodiscard]] size_t getBytesAllocated() const override
     {
         size_t memory_partitions_bytes_size = memory_buffer_partitions.size() * configuration.write_buffer_blocks_size * configuration.block_size;
         size_t file_partitions_bytes_size = memory_buffer_partitions.size() * configuration.file_blocks_size * configuration.block_size;
@@ -1022,9 +1022,9 @@ private:
         size_t in_memory_partition_index{};
         CellState state{};
 
-        bool isInMemory() const { return state == in_memory; }
-        bool isOnDisk() const { return state == on_disk; }
-        bool isDefaultValue() const { return state == default_value; }
+        [[nodiscard]] bool isInMemory() const { return state == in_memory; }
+        [[nodiscard]] bool isOnDisk() const { return state == on_disk; }
+        [[nodiscard]] bool isDefaultValue() const { return state == default_value; }
     };
 
     struct KeyToBlockOffset
@@ -1270,7 +1270,7 @@ private:
         }
     }
 
-    PaddedPODArray<KeyType> getCachedKeysImpl() const
+    [[nodiscard]] PaddedPODArray<KeyType> getCachedKeysImpl() const
     {
         PaddedPODArray<KeyType> result;
         result.reserve(index.size());

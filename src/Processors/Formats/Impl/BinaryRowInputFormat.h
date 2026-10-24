@@ -46,7 +46,7 @@ class BinaryRowInputFormat final : public RowInputFormatWithNamesAndTypes<Binary
 public:
     BinaryRowInputFormat(ReadBuffer & in_, SharedHeader header, IRowInputFormat::Params params_, bool with_names_, bool with_types_, const FormatSettings & format_settings_);
 
-    String getName() const override { return "BinaryRowInputFormat"; }
+    [[nodiscard]] String getName() const override { return "BinaryRowInputFormat"; }
 
     /// RowInputFormatWithNamesAndTypes implements logic with DiagnosticInfo, but
     /// in this format we cannot provide any DiagnosticInfo, because here we have

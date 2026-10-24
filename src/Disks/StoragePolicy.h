@@ -35,63 +35,63 @@ public:
         DiskSelectorPtr disks
     );
 
-    bool isDefaultPolicy() const override;
+    [[nodiscard]] bool isDefaultPolicy() const override;
 
     /// Returns disks ordered by volumes priority
-    Disks getDisks() const override;
+    [[nodiscard]] Disks getDisks() const override;
 
     /// Returns any disk
     /// Used when it's not important, for example for
     /// mutations files
-    DiskPtr getAnyDisk() const override;
+    [[nodiscard]] DiskPtr getAnyDisk() const override;
 
-    DiskPtr tryGetDiskByName(const String & disk_name) const override;
+    [[nodiscard]] DiskPtr tryGetDiskByName(const String & disk_name) const override;
 
     /// Get free space from most free disk
-    UInt64 getMaxUnreservedFreeSpace() const override;
+    [[nodiscard]] UInt64 getMaxUnreservedFreeSpace() const override;
 
     /// Throws if the policy is marked `backup_metadata_only` but one of its volumes is not read-only.
-    bool isBackupMetadataOnly() const override;
+    [[nodiscard]] bool isBackupMetadataOnly() const override;
 
-    const String & getName() const override{ return name; }
+    [[nodiscard]] const String & getName() const override{ return name; }
 
     /// Returns valid reservation or nullptr
-    ReservationPtrOrError reserve(UInt64 bytes) const override;
+    [[nodiscard]] ReservationPtrOrError reserve(UInt64 bytes) const override;
 
     /// Reserves space on any volume or throws
-    ReservationPtr reserveAndCheck(UInt64 bytes) const override;
+    [[nodiscard]] ReservationPtr reserveAndCheck(UInt64 bytes) const override;
 
     /// Reserves space on any volume with index > min_volume_index or returns nullptr
-    ReservationPtrOrError reserve(UInt64 bytes, size_t min_volume_index) const override;
+    [[nodiscard]] ReservationPtrOrError reserve(UInt64 bytes, size_t min_volume_index) const override;
 
     /// Find volume index, which contains disk
-    std::optional<size_t> tryGetVolumeIndexByDiskName(const String & disk_name) const override;
+    [[nodiscard]] std::optional<size_t> tryGetVolumeIndexByDiskName(const String & disk_name) const override;
 
     /// Reserves 0 bytes on disk with max available space
     /// Do not use this function when it is possible to predict size.
-    ReservationPtr makeEmptyReservationOnLargestDisk() const override;
+    [[nodiscard]] ReservationPtr makeEmptyReservationOnLargestDisk() const override;
 
-    const Volumes & getVolumes() const  override{ return volumes; }
+    [[nodiscard]] const Volumes & getVolumes() const  override{ return volumes; }
 
     /// Returns number [0., 1.] -- fraction of free space on disk
     /// which should be kept with help of background moves
-    double getMoveFactor() const  override{ return move_factor; }
+    [[nodiscard]] double getMoveFactor() const  override{ return move_factor; }
 
     /// Get volume by index.
-    VolumePtr getVolume(size_t index) const override;
+    [[nodiscard]] VolumePtr getVolume(size_t index) const override;
 
-    VolumePtr tryGetVolumeByName(const String & volume_name) const override;
+    [[nodiscard]] VolumePtr tryGetVolumeByName(const String & volume_name) const override;
 
     /// Checks if storage policy can be replaced by another one.
     void checkCompatibleWith(const StoragePolicyPtr & new_storage_policy) const override;
 
     /// If the policy allows table partition operations (move, replace) with the other storage policy.
-    bool isCompatibleForPartitionOps(const StoragePolicyPtr & other) const override;
+    [[nodiscard]] bool isCompatibleForPartitionOps(const StoragePolicyPtr & other) const override;
 
     /// Check if we have any volume with stopped merges
-    bool hasAnyVolumeWithDisabledMerges() const override;
+    [[nodiscard]] bool hasAnyVolumeWithDisabledMerges() const override;
 
-    bool containsVolume(const String & volume_name) const override;
+    [[nodiscard]] bool containsVolume(const String & volume_name) const override;
 
 private:
     Volumes volumes;
@@ -129,12 +129,12 @@ public:
     StoragePolicySelectorPtr updateFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, DiskSelectorPtr disks, Strings & new_disks) const;
 
     /// Policy by name
-    StoragePolicyPtr get(const String & name) const;
+    [[nodiscard]] StoragePolicyPtr get(const String & name) const;
 
-    StoragePolicyPtr tryGet(const String & name) const;
+    [[nodiscard]] StoragePolicyPtr tryGet(const String & name) const;
 
     /// All policies
-    const StoragePoliciesMap & getPoliciesMap() const { return policies; }
+    [[nodiscard]] const StoragePoliciesMap & getPoliciesMap() const { return policies; }
 
     /// Add storage policy to StoragePolicySelector.
     /// Used when storage policy needs to be created on the fly, not being present in config file.

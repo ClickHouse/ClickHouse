@@ -268,7 +268,7 @@ std::unordered_set<T> EnumValues<T>::getSetOfAllValues() const
 
 template <typename T>
 template <typename TValues>
-bool EnumValues<T>::containsAll(const TValues & rhs_values) const
+[[nodiscard]] bool EnumValues<T>::containsAll(const TValues & rhs_values) const
 {
     auto check = [&](const auto & value)
     {

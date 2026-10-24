@@ -46,7 +46,7 @@ public:
     }
 
     /// Get bool value.
-    bool getBool() const
+    [[nodiscard]] bool getBool() const
     {
         if (unlikely(isNull()))
             throwException("Value is NULL");
@@ -55,7 +55,7 @@ public:
     }
 
     /// Get unsigned integer.
-    UInt64 getUInt() const
+    [[nodiscard]] UInt64 getUInt() const
     {
         if (unlikely(isNull()))
             throwException("Value is NULL");
@@ -64,13 +64,13 @@ public:
     }
 
     /// Get signed integer or date or date-time (as unix timestamp according to current time zone).
-    Int64 getInt() const
+    [[nodiscard]] Int64 getInt() const
     {
         return getIntOrDateTime();
     }
 
     /// Get floating point number.
-    double getDouble() const
+    [[nodiscard]] double getDouble() const
     {
         if (unlikely(isNull()))
             throwException("Value is NULL");
@@ -79,19 +79,19 @@ public:
     }
 
     /// Get date-time (from value like '2011-01-01 00:00:00').
-    LocalDateTime getDateTime() const
+    [[nodiscard]] LocalDateTime getDateTime() const
     {
         return LocalDateTime(data(), size());
     }
 
     /// Get date (from value like '2011-01-01' or '2011-01-01 00:00:00').
-    LocalDate getDate() const
+    [[nodiscard]] LocalDate getDate() const
     {
         return LocalDate(data(), size());
     }
 
     /// Get string.
-    std::string getString() const
+    [[nodiscard]] std::string getString() const
     {
         if (unlikely(isNull()))
             throwException("Value is NULL");
@@ -100,7 +100,7 @@ public:
     }
 
     /// Is NULL.
-    bool isNull() const
+    [[nodiscard]] bool isNull() const
     {
         return m_data == nullptr;
     }
@@ -116,10 +116,10 @@ public:
     /// For compatibility. Not recommended for use as it's inconvenient (ambiguities often arise).
     template <typename T> operator T() const { return get<T>(); } /// NOLINT
 
-    const char * data() const     { return m_data; }
-    size_t length() const         { return m_length; }
-    size_t size() const         { return m_length; }
-    bool empty() const             { return 0 == m_length; }
+    [[nodiscard]] const char * data() const     { return m_data; }
+    [[nodiscard]] size_t length() const         { return m_length; }
+    [[nodiscard]] size_t size() const         { return m_length; }
+    [[nodiscard]] bool empty() const             { return 0 == m_length; }
 
 private:
     const char * m_data;
@@ -127,24 +127,24 @@ private:
     const ResultBase * res;
 
 
-    bool checkDateTime() const
+    [[nodiscard]] bool checkDateTime() const
     {
         return (m_length == 10 || m_length == 19) && m_data[4] == '-' && m_data[7] == '-';
     }
 
 
-    time_t getDateTimeImpl() const;
+    [[nodiscard]] time_t getDateTimeImpl() const;
 
-    time_t getDateImpl() const;
+    [[nodiscard]] time_t getDateImpl() const;
 
 
-    Int64 getIntImpl() const
+    [[nodiscard]] Int64 getIntImpl() const
     {
         return readIntText(m_data, m_length);
     }
 
 
-    Int64 getIntOrDateTime() const
+    [[nodiscard]] Int64 getIntOrDateTime() const
     {
         if (unlikely(isNull()))
             throwException("Value is NULL");
@@ -155,7 +155,7 @@ private:
     }
 
 
-    Int64 getIntOrDate() const;
+    [[nodiscard]] Int64 getIntOrDate() const;
 
 
     /// Read unsigned integer in simple format from non-0-terminated string.

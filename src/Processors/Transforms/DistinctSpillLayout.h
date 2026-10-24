@@ -23,13 +23,13 @@ public:
         SharedHeader input_header_, const ColumnNumbers & input_key_columns_pos,
         DistinctKeyRepresentation key_representation_, bool preserve_input_order);
 
-    const SharedHeader & getInputRunHeader() const { return input_run_header; }
-    const SharedHeader & getSuppressionRunHeader() const { return suppression_run_header; }
-    const SharedHeader & getMergedHeader() const { return merged_header; }
-    const SortDescription & getKeySortDescription() const { return key_sort_description; }
-    const String & getFlagColumnName() const { return flag_column_name; }
-    const SortDescription & getArrivalNumberSortDescription() const { return arrival_number_sort_description; }
-    bool preservesInputOrder() const { return arrival_number_column_pos.has_value(); }
+    [[nodiscard]] const SharedHeader & getInputRunHeader() const { return input_run_header; }
+    [[nodiscard]] const SharedHeader & getSuppressionRunHeader() const { return suppression_run_header; }
+    [[nodiscard]] const SharedHeader & getMergedHeader() const { return merged_header; }
+    [[nodiscard]] const SortDescription & getKeySortDescription() const { return key_sort_description; }
+    [[nodiscard]] const String & getFlagColumnName() const { return flag_column_name; }
+    [[nodiscard]] const SortDescription & getArrivalNumberSortDescription() const { return arrival_number_sort_description; }
+    [[nodiscard]] bool preservesInputOrder() const { return arrival_number_column_pos.has_value(); }
 
     /// Estimates the dense service columns added to ordinary input: fingerprints and arrival numbers.
     /// Available before constructing the layout so hashing can reserve memory to start spilling.
@@ -37,13 +37,13 @@ public:
         size_t num_rows, DistinctKeyRepresentation key_representation, bool preserve_input_order);
 
     /// Normalizes ordinary rows, adding fingerprints for generic keys and optional arrival numbers.
-    Chunk prepareInputChunk(Chunk chunk, UInt64 first_arrival_number) const;
+    [[nodiscard]] Chunk prepareInputChunk(Chunk chunk, UInt64 first_arrival_number) const;
 
     /// Adds the emitted flag to owning comparison-key columns returned by the set's extractor.
-    Chunk prepareSuppressionChunk(MutableColumns key_columns) const;
+    [[nodiscard]] Chunk prepareSuppressionChunk(MutableColumns key_columns) const;
 
     /// Restores constant columns and removes arrival numbers after merging and optional order restoration.
-    Chunk restoreOutputChunk(Chunk chunk) const;
+    [[nodiscard]] Chunk restoreOutputChunk(Chunk chunk) const;
 
 private:
     const SharedHeader input_header;

@@ -27,9 +27,9 @@ namespace DB
 class DefaultImplementation : public IOptimizationRule
 {
 public:
-    String getName() const override { return "DefaultImplementation"; }
+    [[nodiscard]] String getName() const override { return "DefaultImplementation"; }
 
-    bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const override
+    [[nodiscard]] bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const override
     {
         const auto * step = expression->getQueryPlanStep();
         /// Steps with specialized implementation rules.
@@ -48,8 +48,8 @@ public:
         return true;
     }
 
-    Promise getPromise() const override { return 1; }
-    bool isTransformation() const override { return false; }
+    [[nodiscard]] Promise getPromise() const override { return 1; }
+    [[nodiscard]] bool isTransformation() const override { return false; }
 
 protected:
     std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override

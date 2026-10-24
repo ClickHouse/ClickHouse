@@ -130,11 +130,11 @@ struct StagedChunk
         UInt64 fixed_key_size = 0;
         std::array<UInt32, ADAPTIVE_AGGREGATION_NUM_BUCKETS + 1> bucket_offsets{};
 
-        size_t size() const { return routing_hashes.size(); }
-        size_t recordsForBucket(size_t bucket) const { return bucket_offsets[bucket + 1] - bucket_offsets[bucket]; }
-        UInt64 keyByteOffsetAt(size_t i) const { return fixed_key_size ? i * fixed_key_size : key_offsets[i]; }
-        size_t keySizeAt(size_t i) const { return fixed_key_size ? fixed_key_size : key_offsets[i + 1] - key_offsets[i]; }
-        std::string_view keyBytesAt(size_t i) const { return {key_bytes.data() + keyByteOffsetAt(i), keySizeAt(i)}; }
+        [[nodiscard]] size_t size() const { return routing_hashes.size(); }
+        [[nodiscard]] size_t recordsForBucket(size_t bucket) const { return bucket_offsets[bucket + 1] - bucket_offsets[bucket]; }
+        [[nodiscard]] UInt64 keyByteOffsetAt(size_t i) const { return fixed_key_size ? i * fixed_key_size : key_offsets[i]; }
+        [[nodiscard]] size_t keySizeAt(size_t i) const { return fixed_key_size ? fixed_key_size : key_offsets[i + 1] - key_offsets[i]; }
+        [[nodiscard]] std::string_view keyBytesAt(size_t i) const { return {key_bytes.data() + keyByteOffsetAt(i), keySizeAt(i)}; }
     };
 
     /// Value staging (simple-count aggregation only): the record is the key itself plus a run
@@ -169,13 +169,13 @@ struct StagedChunk
     StagedKeys keys;
     std::variant<CountPayload, AggregatePayload> payload;
 
-    bool countsOnly() const { return std::holds_alternative<CountPayload>(payload); }
+    [[nodiscard]] bool countsOnly() const { return std::holds_alternative<CountPayload>(payload); }
 
     /// The chunk's heap footprint: the key side plus the payload's arrays or columns.
-    size_t allocatedBytes() const;
+    [[nodiscard]] size_t allocatedBytes() const;
 
     /// Debug-only structural invariants, checked at publication.
-    bool wellFormed() const
+    [[nodiscard]] bool wellFormed() const
     {
         const size_t records = keys.size();
         if (keys.bucket_offsets.back() != records)
@@ -476,9 +476,9 @@ struct AdaptiveAggregationProducer
     using Phase = std::variant<LearningState, FrozenState, BaselineState>;
     Phase phase = LearningState{};
 
-    bool isLearning() const { return std::holds_alternative<LearningState>(phase); }
-    bool isFrozen() const { return std::holds_alternative<FrozenState>(phase); }
-    bool isBaseline() const { return std::holds_alternative<BaselineState>(phase); }
+    [[nodiscard]] bool isLearning() const { return std::holds_alternative<LearningState>(phase); }
+    [[nodiscard]] bool isFrozen() const { return std::holds_alternative<FrozenState>(phase); }
+    [[nodiscard]] bool isBaseline() const { return std::holds_alternative<BaselineState>(phase); }
 
     void freeze() { phase = FrozenState{}; }
     void standDown(BaselineState::Reason reason) { phase = BaselineState{.reason = reason}; }

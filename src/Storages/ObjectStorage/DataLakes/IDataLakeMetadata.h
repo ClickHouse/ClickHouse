@@ -80,24 +80,24 @@ public:
         = 0;
 
     /// Table schema from data lake metadata.
-    virtual NamesAndTypesList getTableSchema(ContextPtr local_context) const = 0;
+    [[nodiscard]] virtual NamesAndTypesList getTableSchema(ContextPtr local_context) const = 0;
 
     /// Returns the current table state snapshot (snapshot version, schema id, etc.)
     /// Used to pin the exact state for both analysis and execution phases of a query,
     /// preventing logical races when the datalake is updated mid-query.
-    virtual std::optional<DataLakeTableStateSnapshot> getTableStateSnapshot(ContextPtr) const { return std::nullopt; }
+    [[nodiscard]] virtual std::optional<DataLakeTableStateSnapshot> getTableStateSnapshot(ContextPtr) const { return std::nullopt; }
 
     /// Builds a full StorageInMemoryMetadata (columns, sorting key, etc.) from the
     /// given pinned state. Only called when schema reload for consistency is enabled.
-    virtual std::unique_ptr<StorageInMemoryMetadata> buildStorageMetadataFromState(
+    [[nodiscard]] virtual std::unique_ptr<StorageInMemoryMetadata> buildStorageMetadataFromState(
         const DataLakeTableStateSnapshot &, ContextPtr) const { return nullptr; }
 
     /// Table settings with which another server resolves exactly `state` instead of the latest table version.
-    virtual SettingsChanges getSettingsToResolveState(const DataLakeTableStateSnapshot &) const { return {}; }
+    [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] virtual SettingsChanges getSettingsToResolveState(const DataLakeTableStateSnapshot &) const { return {}; }
 
     /// Whether to reload the schema (columns) from metadata before each query in order
     /// to keep the columns stored in the in-memory metadata in sync with the datalake.
-    virtual bool shouldReloadSchemaForConsistency(ContextPtr) const { return false; }
+    [[nodiscard]] virtual bool shouldReloadSchemaForConsistency(ContextPtr) const { return false; }
 
     /// Read schema is the schema of actual data files,
     /// which can differ from table schema from data lake metadata.
@@ -109,42 +109,42 @@ public:
         bool supports_subset_of_columns,
         bool supports_tuple_elements);
 
-    virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, ObjectInfoPtr) const { return {}; }
-    virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, ObjectInfoPtr) const { return {}; }
+    [[nodiscard]] virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, ObjectInfoPtr) const { return {}; }
+    [[nodiscard]] virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, ObjectInfoPtr) const { return {}; }
 
     /// Whether current metadata object is updateable (instead of recreation from scratch)
     /// to the latest version of table state in data lake.
-    virtual bool supportsUpdate() const { return false; }
+    [[nodiscard]] virtual bool supportsUpdate() const { return false; }
     /// Update metadata to the latest version.
     virtual void update(const ContextPtr &) { }
 
     virtual void setExplicitMetadataFilePath(const String & /*path*/) { }
 
-    virtual bool supportsWrites() const { return false; }
-    virtual bool supportsParallelInsert() const { return false; }
+    [[nodiscard]] virtual bool supportsWrites() const { return false; }
+    [[nodiscard]] virtual bool supportsParallelInsert() const { return false; }
 
     /// Reads the incremental refreshable-MV cursor persisted in the current table snapshot (as stored),
     /// or nullopt if absent/unsupported. The write path commits it atomically with the appended data.
-    virtual std::optional<String> getRefreshCursor(ContextPtr) const { return std::nullopt; }
+    [[nodiscard]] virtual std::optional<String> getRefreshCursor(ContextPtr) const { return std::nullopt; }
 
     virtual void modifyFormatSettings(FormatSettings &, const Context &) const {}
 
     static bool supportsTotalRows(ContextPtr, ObjectStorageType) { return false; }
-    virtual std::optional<size_t> totalRows(ContextPtr, const std::optional<DataLakeTableStateSnapshot> &) const { return {}; }
+    [[nodiscard]] virtual std::optional<size_t> totalRows(ContextPtr, const std::optional<DataLakeTableStateSnapshot> &) const { return {}; }
     static bool supportsTotalBytes(ContextPtr, ObjectStorageType) { return false; }
-    virtual std::optional<size_t> totalBytes(ContextPtr) const { return {}; }
+    [[nodiscard]] virtual std::optional<size_t> totalBytes(ContextPtr) const { return {}; }
 
     /// Data which we are going to read is sorted by sorting key specified in StorageMetadataPtr.
     /// For example in Iceberg it's a valid query to change sort_order for table, but older files will
     /// not be rewritten and will be left unsorted or with previous sort order.
     /// In this case we shouldn't use read in order optimization.
-    virtual bool isDataSortedBySortingKey(StorageMetadataPtr, ContextPtr) const { return false; }
+    [[nodiscard]] virtual bool isDataSortedBySortingKey(StorageMetadataPtr, ContextPtr) const { return false; }
 
     /// Whether LIMIT lazy materialization can be used for the data snapshot pinned in the
     /// storage metadata snapshot (see ReadFromObjectStorageStep::canUseLazyMaterialization).
     /// It requires that every data file can be re-read by physical row numbers with the
     /// deferred columns pruned from the main read.
-    virtual bool supportsLazyMaterialization(StorageMetadataPtr, ContextPtr) const { return false; }
+    [[nodiscard]] virtual bool supportsLazyMaterialization(StorageMetadataPtr, ContextPtr) const { return false; }
 
     /// Estimates from the metadata only the rows a read of the pinned data snapshot returns, with the data files
     /// pruned by `filter` as the read prunes them. std::nullopt if this data lake gives no estimate.
@@ -155,8 +155,8 @@ public:
 
     /// Some data lakes specify information for reading files from disks.
     /// For example, Iceberg has Parquet schema field ids in its metadata for reading files.
-    virtual ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr /**/) const { return nullptr; }
-    virtual ColumnMapperPtr getColumnMapperForCurrentSchema(StorageMetadataPtr, ContextPtr) const { return nullptr; }
+    [[nodiscard]] virtual ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr /**/) const { return nullptr; }
+    [[nodiscard]] virtual ColumnMapperPtr getColumnMapperForCurrentSchema(StorageMetadataPtr, ContextPtr) const { return nullptr; }
 
     virtual SinkToStoragePtr write(
         SharedHeader /*sample_block*/,
@@ -179,7 +179,7 @@ public:
         throwNotImplemented("optimize");
     }
 
-    virtual bool supportsDelete() const { return false; }
+    [[nodiscard]] virtual bool supportsDelete() const { return false; }
     virtual void mutate(
         const MutationCommands & /*commands*/,
         StoragePtr /*storage_ptr*/,
@@ -222,17 +222,17 @@ public:
 
     virtual void drop(ContextPtr) { }
 
-    virtual std::unique_ptr<IDataLakeMetadata> cloneWithNewSettings(StorageObjectStorageConfigurationPtr /*configuration*/, ContextPtr /*context*/) const
+    [[nodiscard]] virtual std::unique_ptr<IDataLakeMetadata> cloneWithNewSettings(StorageObjectStorageConfigurationPtr /*configuration*/, ContextPtr /*context*/) const
     {
         throwNotImplemented("cloneWithNewSettings");
     }
 
-    virtual ObjectStorageType getObjectStorageType() const { return ObjectStorageType::None; }
+    [[nodiscard]] virtual ObjectStorageType getObjectStorageType() const { return ObjectStorageType::None; }
 
     virtual bool scheduleDataProcessingJob(BackgroundJobsAssignee & /*assignee*/, StorageObjectStorage & /*storage_object_storage*/) { return false; }
     virtual void finishAllBackgroundJobs() {}
-    virtual Int32 getBiasBackoffSeconds() const { return 0; }
-    virtual bool isBackgroundExecutable() const { return false; }
+    [[nodiscard]] virtual Int32 getBiasBackoffSeconds() const { return 0; }
+    [[nodiscard]] virtual bool isBackgroundExecutable() const { return false; }
 
 protected:
     virtual ObjectIterator
@@ -249,7 +249,7 @@ protected:
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method `{}` is not implemented for {}", method, getName());
     }
 
-    virtual const char * getName() const = 0;
+    [[nodiscard]] virtual const char * getName() const = 0;
 };
 
 using DataLakeMetadataPtr = std::unique_ptr<IDataLakeMetadata>;

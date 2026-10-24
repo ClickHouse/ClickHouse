@@ -32,7 +32,7 @@ public:
     LogFrequencyLimiterImpl * operator->() { return this; }
     bool is(Poco::Message::Priority priority) { return logger->is(priority); }
     LogFrequencyLimiterImpl * getChannel() { return this; }
-    const String & name() const { return logger->name(); }
+    [[nodiscard]] const String & name() const { return logger->name(); }
 
     void log(Poco::Message && msg);
 
@@ -68,7 +68,7 @@ public:
 
     LogSeriesLimiter * operator->() { return this; }
     bool is(Poco::Message::Priority priority) { return logger->is(priority); }
-    const String & name() const { return logger->name(); }
+    [[nodiscard]] const String & name() const { return logger->name(); }
 
     LogSeriesLimiter * getChannel();
     void log(Poco::Message && message);
@@ -104,7 +104,7 @@ public:
         return true;
     }
     LogToStrImpl * getChannel() { return this; }
-    const String & name() const { return logger->name(); }
+    [[nodiscard]] const String & name() const { return logger->name(); }
 
     void log(Poco::Message && message)
     {

@@ -18,7 +18,7 @@ public:
         , known_time(0)
     {}
 
-    bool isModified() const
+    [[nodiscard]] bool isModified() const
     {
         return getLastModificationTime() > known_time;
     }
@@ -29,7 +29,7 @@ public:
     }
 
 private:
-    Poco::Timestamp getLastModificationTime() const
+    [[nodiscard]] Poco::Timestamp getLastModificationTime() const
     {
         return FS::getModificationTimestamp(path);
     }

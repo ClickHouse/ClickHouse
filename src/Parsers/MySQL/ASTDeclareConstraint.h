@@ -35,7 +35,7 @@ protected:
 class ParserDeclareConstraint : public IParserBase
 {
 protected:
-    const char * getName() const override { return "constraint declaration"; }
+    [[nodiscard]] const char * getName() const override { return "constraint declaration"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };

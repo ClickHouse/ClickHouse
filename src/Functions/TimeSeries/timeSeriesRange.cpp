@@ -56,17 +56,17 @@ public:
     /// memory limit stops it.
     const size_t max_elements;
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return with_values ? 4 : 3; }
-    bool isDeterministic() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return with_values ? 4 : 3; }
+    [[nodiscard]] bool isDeterministic() const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     /// Documentation-only — both variants produce a timestamp array tagged
     /// with the broadest decimal-scale among the inputs (e.g. a `DateTime64(3)`
     /// argument promotes the result), which isn't expressible in the DSL.
     /// `timeSeriesFromGrid` wraps each timestamp with the matching value from
     /// the trailing `Array(Float*)` / `Array(Nullable(Float*))` argument.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if constexpr (with_values)
             return "(DateTime | DateTime64 | UInt32,"
@@ -84,7 +84,7 @@ public:
     /// Route the types-only path to it as well, so the base
     /// `IFunction::getReturnTypeImpl(DataTypes)` never applies the documentation string (which
     /// would reject valid calls or evaluate an uncaptured return-type name).
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         ColumnsWithTypeAndName columns;
         columns.reserve(arguments.size());
@@ -93,7 +93,7 @@ public:
         return getReturnTypeImpl(columns);
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         checkDataTypes(arguments);
 
@@ -163,7 +163,7 @@ public:
         }
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         constexpr size_t expected_num_ars = with_values ? 4 : 3;
         chassert(arguments.size() == expected_num_ars);

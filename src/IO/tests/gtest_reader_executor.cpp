@@ -131,9 +131,9 @@ public:
                           bool bypass_ = false, bool incremental_ = false)
         : block_size(block_size_), state(std::move(state_)), bypass(bypass_), incremental(incremental_) {}
 
-    CacheTier tier() const override { return incremental ? CacheTier::FilesystemCache : CacheTier::PageCache; }
-    bool fillsWholeSegment() const override { return !incremental; }
-    String name() const override { return "MockFileCache"; }
+    [[nodiscard]] CacheTier tier() const override { return incremental ? CacheTier::FilesystemCache : CacheTier::PageCache; }
+    [[nodiscard]] bool fillsWholeSegment() const override { return !incremental; }
+    [[nodiscard]] String name() const override { return "MockFileCache"; }
 
     /// Tile the asked range into file-level blocks: a fully-resident block is a Hit (fresh reader),
     /// else a Miss carrying a Writer (null on a bypass tier, which never populates). Past EOF -> empty.
@@ -176,7 +176,7 @@ private:
     {
     public:
         Reader(ByteRange r_, std::shared_ptr<MockCacheState> s_) : r(r_), state(std::move(s_)) {}
-        ByteRange range() const override { return r; }
+        [[nodiscard]] ByteRange range() const override { return r; }
         ChainedBuffers read(ByteRange sub) override
         {
             const size_t lo = std::max(sub.offset, r.offset);
@@ -199,9 +199,9 @@ private:
     public:
         Writer(ByteRange r_, std::shared_ptr<MockCacheState> s_, bool incremental_)
             : r(r_), state(std::move(s_)), incremental(incremental_) {}
-        ByteRange range() const override { return r; }
-        bool fillsWholeSegment() const override { return !incremental; }
-        size_t committed() const override
+        [[nodiscard]] ByteRange range() const override { return r; }
+        [[nodiscard]] bool fillsWholeSegment() const override { return !incremental; }
+        [[nodiscard]] size_t committed() const override
         {
             if (incremental)
             {
@@ -330,7 +330,7 @@ public:
     {
         return std::make_unique<ExternalBufferReader>(data);
     }
-    String name() const override { return "ExternalBufferSourceReader"; }
+    [[nodiscard]] String name() const override { return "ExternalBufferSourceReader"; }
 
 private:
     std::shared_ptr<const std::string> data;
@@ -390,7 +390,7 @@ public:
     {
         return std::make_unique<FaultBudgetReader>(data, budget);
     }
-    String name() const override { return "FaultBudgetSourceReader"; }
+    [[nodiscard]] String name() const override { return "FaultBudgetSourceReader"; }
 
 private:
     std::shared_ptr<const std::string> data;

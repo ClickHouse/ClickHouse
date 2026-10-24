@@ -74,15 +74,15 @@ private:
         {
         }
 
-        String getName() const override { return name; }
+        [[nodiscard]] String getName() const override { return name; }
 
     protected:
         /// The delegated functions were built over the original argument types, `Nullable` and
         /// all, and each handles its own nulls. Stripping `Nullable` here would hand them columns
         /// that no longer match what they were built for.
-        bool useDefaultImplementationForNulls() const override { return false; }
+        [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
-        ColumnPtr
+        [[nodiscard]] ColumnPtr
         executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
         {
             ColumnsWithTypeAndName columns(slots.size());
@@ -165,7 +165,7 @@ public:
         return slots.size() - 1;
     }
 
-    const DataTypePtr & slotType(size_t slot) const { return slots[slot].type; }
+    [[nodiscard]] const DataTypePtr & slotType(size_t slot) const { return slots[slot].type; }
 
     /// Whether a value of the given type is a datetime that `widenToDateTime64` accepts: a KQL
     /// datetime is a `DateTime64`, but a table queried with KQL may store its timestamps in the

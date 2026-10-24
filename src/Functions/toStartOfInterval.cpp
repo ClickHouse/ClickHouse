@@ -74,25 +74,25 @@ public:
     {
     }
 
-    String getName() const override { return name; }
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3}; }
+    [[nodiscard]] String getName() const override { return name; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3}; }
     /// The Origin overload checks that origin <= time_arg for every row. The LowCardinality
     /// dictionary always contains a default value (epoch/0) which would violate this check.
-    bool canBeExecutedOnDefaultArguments() const override { return overload != ToStartOfIntervalOverload::Origin; }
-    bool hasInformationAboutMonotonicity() const override { return true; }
-    Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override { return { .is_monotonic = true, .is_always_monotonic = true }; }
+    [[nodiscard]] bool canBeExecutedOnDefaultArguments() const override { return overload != ToStartOfIntervalOverload::Origin; }
+    [[nodiscard]] bool hasInformationAboutMonotonicity() const override { return true; }
+    [[nodiscard]] Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override { return { .is_monotonic = true, .is_always_monotonic = true }; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & /*arguments*/) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & /*arguments*/) const override
     {
         /// Not called through the overload resolver path.
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} should only be used through the overload resolver", getName());
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /* input_rows_count */) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /* input_rows_count */) const override
     {
         const auto & time_column = arguments[0];
         const auto & interval_column = arguments[1];
@@ -127,7 +127,7 @@ public:
 
 private:
     template <typename ReturnType>
-    ColumnPtr dispatchForTimeColumn(
+    [[nodiscard]] ColumnPtr dispatchForTimeColumn(
         const ColumnWithTypeAndName & time_column, const ColumnWithTypeAndName & interval_column, const ColumnWithTypeAndName & origin_column, const DataTypePtr & result_type, const DateLUTImpl & time_zone) const
     {
         const auto & time_column_type = *time_column.type.get();
@@ -171,7 +171,7 @@ private:
     }
 
     template <typename ReturnType, typename TimeDataType, typename TimeColumnType>
-    ColumnPtr dispatchForIntervalColumn(
+    [[nodiscard]] ColumnPtr dispatchForIntervalColumn(
         const TimeDataType & time_data_type,
         const TimeColumnType & time_column,
         const ColumnWithTypeAndName & interval_column,
@@ -330,7 +330,7 @@ private:
     }
 
     template <typename ResultDataType, typename TimeDataType, typename TimeColumnType, IntervalKind::Kind unit>
-    ColumnPtr execute(const TimeDataType &, const TimeColumnType & time_column_type, Int64 num_units, const ColumnWithTypeAndName & origin_column, const DataTypePtr & result_type, const DateLUTImpl & time_zone, UInt16 scale) const
+    [[nodiscard]] ColumnPtr execute(const TimeDataType &, const TimeColumnType & time_column_type, Int64 num_units, const ColumnWithTypeAndName & origin_column, const DataTypePtr & result_type, const DateLUTImpl & time_zone, UInt16 scale) const
     {
         using ResultColumnType = typename ResultDataType::ColumnType;
 

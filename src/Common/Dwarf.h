@@ -95,11 +95,11 @@ public:
 
         Path(std::string_view baseDir, std::string_view subDir, std::string_view file);
 
-        std::string_view baseDir() const { return baseDir_; }
-        std::string_view subDir() const { return subDir_; }
-        std::string_view file() const { return file_; }
+        [[nodiscard]] std::string_view baseDir() const { return baseDir_; }
+        [[nodiscard]] std::string_view subDir() const { return subDir_; }
+        [[nodiscard]] std::string_view file() const { return file_; }
 
-        size_t size() const;
+        [[nodiscard]] size_t size() const;
 
         /**
         * Copy the Path to a buffer of size bufSize.
@@ -113,7 +113,7 @@ public:
         size_t toBuffer(char * buf, size_t bufSize) const;
 
         void toString(std::string & dest) const;
-        std::string toString() const
+        [[nodiscard]] std::string toString() const
         {
             std::string s;
             toString(s);
@@ -204,7 +204,7 @@ private:
         bool next(std::string_view & chunk);
 
         // Is the current chunk 64 bit?
-        bool is64Bit() const { return is64_bit; }
+        [[nodiscard]] bool is64Bit() const { return is64_bit; }
 
     private:
         // Yes, 32- and 64- bit sections may coexist.  Yikes!
@@ -290,7 +290,7 @@ private:
     };
 
     /** cu must exist during the life cycle of created Die. */
-    Die getDieAtOffset(const CompilationUnit & cu, uint64_t offset) const;
+    [[nodiscard]] Die getDieAtOffset(const CompilationUnit & cu, uint64_t offset) const;
 
     bool findLocation(
         uintptr_t address,
@@ -320,7 +320,7 @@ private:
         bool findAddress(uintptr_t target, Path & file, uint64_t & line, uint64_t & column);
 
         /** Gets full file name at given index including directory. */
-        Path getFullFileName(uint64_t index) const;
+        [[nodiscard]] Path getFullFileName(uint64_t index) const;
 
     private:
         void init();
@@ -350,10 +350,10 @@ private:
         // Get file name at given index; may be in the initial table
         // (fileNames_) or defined using DW_LNE_define_file (and we reexecute
         // enough of the program to find it, if so)
-        FileName getFileName(uint64_t index) const;
+        [[nodiscard]] FileName getFileName(uint64_t index) const;
 
         // Get include directory at given index
-        std::string_view getIncludeDirectory(uint64_t index) const;
+        [[nodiscard]] std::string_view getIncludeDirectory(uint64_t index) const;
 
         // Execute opcodes until finding a DW_LNE_define_file and return true;
         // return file at the end.
@@ -438,7 +438,7 @@ private:
 
     // Get abbreviation corresponding to a code, in the chunk starting at
     // offset in the .debug_abbrev section
-    DIEAbbreviation getAbbreviation(uint64_t code, uint64_t offset) const;
+    [[nodiscard]] DIEAbbreviation getAbbreviation(uint64_t code, uint64_t offset) const;
 
     /**
      * Iterates over all attributes of a debugging info entry, calling the given
@@ -464,18 +464,18 @@ private:
     // Get an ELF section by name, return true if found
     std::string_view getSection(const char * name) const;
 
-    CompilationUnit getCompilationUnit(uint64_t offset) const;
+    [[nodiscard]] CompilationUnit getCompilationUnit(uint64_t offset) const;
     // Finds the Compilation Unit starting at offset.
-    CompilationUnit findCompilationUnit(uint64_t targetOffset) const;
+    [[nodiscard]] CompilationUnit findCompilationUnit(uint64_t targetOffset) const;
 
     // Parses an attribute of "reference" form class, i.e. a reference to another DIE.
     // Returns the unit containing the target DIE (nullopt if it's in the same unit as the source DIE)
     // and the offset of the target DIE (relative to .debug_info, not to unit).
-    std::optional<std::pair<std::optional<CompilationUnit>, uint64_t>> getReferenceAttribute(
+    [[nodiscard]] std::optional<std::pair<std::optional<CompilationUnit>, uint64_t>> getReferenceAttribute(
         const CompilationUnit & cu, const Die & die, uint64_t attr_name) const;
 
     // Check if the given address is in the range list at the given offset in .debug_ranges.
-    bool isAddrInRangeList(
+    [[nodiscard]] bool isAddrInRangeList(
         const CompilationUnit & cu,
         uint64_t address,
         std::optional<uint64_t> base_addr,

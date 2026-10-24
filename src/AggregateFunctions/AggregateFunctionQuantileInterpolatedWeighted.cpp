@@ -83,7 +83,7 @@ struct QuantileInterpolatedWeighted
         }
     }
 
-    Value get(Float64 level) const
+    [[nodiscard]] Value get(Float64 level) const
     {
         return getImpl<Value>(level);
     }
@@ -94,7 +94,7 @@ struct QuantileInterpolatedWeighted
     }
 
     /// The same, but in the case of an empty state, NaN is returned.
-    Float64 getFloat(Float64) const
+    [[nodiscard]] Float64 getFloat(Float64) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getFloat is not implemented for QuantileInterpolatedWeighted");
     }
@@ -109,7 +109,7 @@ private:
 
     /// Get the value of the `level` quantile. The level must be between 0 and 1.
     template <typename T>
-    T getImpl(Float64 level) const
+    [[nodiscard]] T getImpl(Float64 level) const
     {
         size_t size = map.size();
 
@@ -307,7 +307,7 @@ private:
     }
 
     /// yl + (dy / dx) * (level - xl), computed in `UnderlyingType`.
-    UnderlyingType interpolate(Float64 level, Float64 lower_percentile, Float64 upper_percentile, UnderlyingType lower_value, UnderlyingType upper_value) const
+    [[nodiscard]] UnderlyingType interpolate(Float64 level, Float64 lower_percentile, Float64 upper_percentile, UnderlyingType lower_value, UnderlyingType upper_value) const
     {
         Float64 percentile_diff = upper_percentile - lower_percentile;
         percentile_diff = percentile_diff == 0 ? 1 : percentile_diff; /// to handle NaN behavior that might arise during integer division below.

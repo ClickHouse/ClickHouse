@@ -47,7 +47,7 @@ protected:
 class ParserAlwaysTrue : public IParserBase
 {
 public:
-    const char * getName() const override { return "always true"; }
+    [[nodiscard]] const char * getName() const override { return "always true"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
@@ -55,7 +55,7 @@ public:
 class ParserAlwaysFalse : public IParserBase
 {
 public:
-    const char * getName() const override { return "always false"; }
+    [[nodiscard]] const char * getName() const override { return "always false"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
@@ -64,7 +64,7 @@ public:
 struct ParserCharsetOrCollateName : public IParserBase
 {
 protected:
-    const char * getName() const override { return "charset or collate name"; }
+    [[nodiscard]] const char * getName() const override { return "charset or collate name"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected &) override;
 };
@@ -75,7 +75,7 @@ class ParserDeclareOptionImpl : public IParserBase
 protected:
     std::vector<OptionDescribe> options_collection;
 
-    const char * getName() const override { return "option declaration"; }
+    [[nodiscard]] const char * getName() const override { return "option declaration"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 public:

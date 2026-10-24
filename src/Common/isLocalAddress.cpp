@@ -34,7 +34,7 @@ struct NetworkInterfaces : public boost::noncopyable
             throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot getifaddrs");
     }
 
-    bool hasAddress(const Poco::Net::IPAddress & address) const
+    [[nodiscard]] bool hasAddress(const Poco::Net::IPAddress & address) const
     {
         ifaddrs * iface = nullptr;
         for (iface = ifaddr; iface != nullptr; iface = iface->ifa_next)

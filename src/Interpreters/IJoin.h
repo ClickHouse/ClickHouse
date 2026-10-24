@@ -71,7 +71,7 @@ public:
 
     /// Right table rows matched while producing the result. Only meaningful once the result is exhausted.
     /// Empty when the probe never counted matches, so its zero would be structural rather than measured.
-    virtual std::optional<size_t> getMatchedRightRows() const { return 0; }
+    [[nodiscard]] virtual std::optional<size_t> getMatchedRightRows() const { return 0; }
 
     static JoinResultPtr createFromBlock(Block block);
 };
@@ -112,13 +112,13 @@ public:
 
     /// The same stream, but the join does not check `max_rows_in_join` and `max_bytes_in_join`. For a
     /// caller that checks the limits itself, or that re-inserts blocks the limits already admitted.
-    JoinBuildContext callerChecksLimits() const { return JoinBuildContext(stream, num_streams, /*join_checks_limits_=*/false); }
+    [[nodiscard]] JoinBuildContext callerChecksLimits() const { return JoinBuildContext(stream, num_streams, /*join_checks_limits_=*/false); }
 
-    size_t getStream() const { return stream; }
+    [[nodiscard]] size_t getStream() const { return stream; }
     /// The number of streams the pipeline started; 1 for `serial`. Wrappers forward it, so it is not the
     /// receiver's real concurrency.
-    size_t getNumStreams() const { return num_streams; }
-    bool joinChecksLimits() const { return join_checks_limits; }
+    [[nodiscard]] size_t getNumStreams() const { return num_streams; }
+    [[nodiscard]] bool joinChecksLimits() const { return join_checks_limits; }
 
 private:
     JoinBuildContext(UInt32 stream_, UInt32 num_streams_, bool join_checks_limits_)
@@ -136,26 +136,26 @@ class IJoin
 public:
     virtual ~IJoin() = default;
 
-    virtual std::string getName() const = 0;
+    [[nodiscard]] virtual std::string getName() const = 0;
 
-    virtual std::string getAlgorithm() const = 0;
+    [[nodiscard]] virtual std::string getAlgorithm() const = 0;
 
-    virtual const TableJoin & getTableJoin() const = 0;
+    [[nodiscard]] virtual const TableJoin & getTableJoin() const = 0;
 
     /// The `join_any_take_last_row` setting: for `ANY` joins it selects the last matching right-side
     /// row instead of the first one. It is not part of `TableJoin`, it is baked into the concrete
     /// algorithm, so algorithms that honor it expose it here. Algorithms for which the setting is
     /// meaningless keep the default.
-    virtual bool anyTakeLastRow() const { return false; }
+    [[nodiscard]] virtual bool anyTakeLastRow() const { return false; }
 
     /// Returns true if clone is supported
-    virtual bool isCloneSupported() const
+    [[nodiscard]] virtual bool isCloneSupported() const
     {
         return false;
     }
 
     /// Clone underlying JOIN algorithm using table join, left sample block, right sample block
-    virtual std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_,
+    [[nodiscard]] virtual std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_,
         SharedHeader left_sample_block_,
         SharedHeader right_sample_block_) const
     {
@@ -165,7 +165,7 @@ public:
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Clone method is not supported for {}", getName());
     }
 
-    virtual std::shared_ptr<IJoin> cloneNoParallel(const std::shared_ptr<TableJoin> & table_join_,
+    [[nodiscard]] virtual std::shared_ptr<IJoin> cloneNoParallel(const std::shared_ptr<TableJoin> & table_join_,
         SharedHeader left_sample_block_,
         SharedHeader right_sample_block_) const { return clone(table_join_, left_sample_block_, right_sample_block_); }
 
@@ -192,52 +192,52 @@ public:
       * Keep "totals" (separate part of dataset, see WITH TOTALS) to use later.
       */
     virtual void setTotals(const Block & block) { totals = block; }
-    virtual const Block & getTotals() const { return totals; }
+    [[nodiscard]] virtual const Block & getTotals() const { return totals; }
 
     /// Number of rows/bytes stored in memory
-    virtual size_t getTotalRowCount() const = 0;
-    virtual size_t getTotalByteCount() const = 0;
-    virtual StepAnalysisReport getAnalysisReport() const = 0;
+    [[nodiscard]] virtual size_t getTotalRowCount() const = 0;
+    [[nodiscard]] virtual size_t getTotalByteCount() const = 0;
+    [[nodiscard]] virtual StepAnalysisReport getAnalysisReport() const = 0;
     virtual ISpillable * getSpillable() { return nullptr; }
 
     /// Returns true if no data to join with.
-    virtual bool alwaysReturnsEmptySet() const = 0;
+    [[nodiscard]] virtual bool alwaysReturnsEmptySet() const = 0;
 
     /// StorageJoin/Dictionary is already filled. No need to call addBlockToJoin.
     /// Different query plan is used for such joins.
-    virtual bool isFilled() const { return pipelineType() == JoinPipelineType::FilledRight; }
-    virtual JoinPipelineType pipelineType() const { return JoinPipelineType::FillRightFirst; }
+    [[nodiscard]] virtual bool isFilled() const { return pipelineType() == JoinPipelineType::FilledRight; }
+    [[nodiscard]] virtual JoinPipelineType pipelineType() const { return JoinPipelineType::FillRightFirst; }
 
     // That can run FillingRightJoinSideTransform parallelly
-    virtual bool supportParallelJoin() const { return false; }
+    [[nodiscard]] virtual bool supportParallelJoin() const { return false; }
 
     /// Upper bound on the number of build streams. The pipeline reads it only when `supportParallelJoin`
     /// is true and the right side has no totals. Zero leaves the choice to the pipeline.
-    virtual size_t getMaxBuildThreads() const { return 0; }
+    [[nodiscard]] virtual size_t getMaxBuildThreads() const { return 0; }
 
     /// Peek next stream of delayed joined blocks.
     virtual IBlocksStreamPtr getDelayedBlocks() { return nullptr; }
-    virtual bool hasDelayedBlocks() const { return false; }
+    [[nodiscard]] virtual bool hasDelayedBlocks() const { return false; }
     /// Runtime counterpart of `hasDelayedBlocks`: whether the delayed blocks are processed at all.
     /// Decided at latest in `onBuildPhaseFinish`, after that the returned value should not change.
-    virtual bool isDelayedBlocksProcessingEnabled() const { return hasDelayedBlocks(); }
+    [[nodiscard]] virtual bool isDelayedBlocksProcessingEnabled() const { return hasDelayedBlocks(); }
 
-    virtual IBlocksStreamPtr
+    [[nodiscard]] virtual IBlocksStreamPtr
         getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const = 0;
 
-    virtual bool supportParallelNonJoinedBlocksProcessing() const { return false; }
+    [[nodiscard]] virtual bool supportParallelNonJoinedBlocksProcessing() const { return false; }
     /// This serves as a runtime check in JoiningTransform to decide whether to utilize the parallel processing of
     /// non-joined blocks. Only relevant for joins that support parallel processing of non-joined blocks.
     /// If the join supports parallel processing, it can still decide during build phase whether to utilize it or not.
     /// The decision should be done at latest in onBuildPhaseFinish, after that the returned value should not change.
     /// This is important for SpillingHashJoin, which can change algorithms runtime, and parallel non-joined blocks
     /// processing depends on the algorithm used.
-    virtual bool isParallelNonJoinedProcessingEnabled() const { return supportParallelNonJoinedBlocksProcessing(); }
+    [[nodiscard]] virtual bool isParallelNonJoinedProcessingEnabled() const { return supportParallelNonJoinedBlocksProcessing(); }
 
     /// Get non-joined blocks for a specific stream partition
     /// stream_idx is in [0, num_streams), each stream must produce a disjoint subset of rows
     /// Default: stream 0 returns everything, others return nothing
-    virtual IBlocksStreamPtr getNonJoinedBlocks(
+    [[nodiscard]] virtual IBlocksStreamPtr getNonJoinedBlocks(
         const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size,
         size_t stream_idx, size_t /*num_streams*/) const
     {
@@ -248,7 +248,7 @@ public:
 
     /// Whether the join emits left rows in their original stream order. Read-in-order relies on
     /// this to keep the left sort property, so the default is fail-closed: a join has to opt in.
-    virtual bool preservesLeftBlockOrder() const { return false; }
+    [[nodiscard]] virtual bool preservesLeftBlockOrder() const { return false; }
 
     /// Notify the join that the query plan requires left-side read-in-order preservation.
     /// SpillingHashJoin overrides this to forbid switching to GraceHashJoin at runtime.
@@ -265,7 +265,7 @@ public:
 
     /// Called by `FillingRightJoinSideTransform` after `onBuildPhaseFinish` if the join has
     /// a post build optimization step.
-    virtual bool hasPostBuildPhase() const { return false; }
+    [[nodiscard]] virtual bool hasPostBuildPhase() const { return false; }
     virtual void runPostBuildPhase() { }
 
     /// Enables lazy columns indexing optimization on hash join variants

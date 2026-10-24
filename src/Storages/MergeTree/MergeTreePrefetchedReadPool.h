@@ -72,7 +72,7 @@ private:
 
         void wait();
         MergeTreeReadTask::Readers get();
-        bool valid() const { return is_valid; }
+        [[nodiscard]] bool valid() const { return is_valid; }
 
     private:
         bool is_valid = false;
@@ -93,7 +93,7 @@ private:
                 readers_future->wait();
         }
 
-        bool isValidReadersFuture() const
+        [[nodiscard]] bool isValidReadersFuture() const
         {
             return readers_future && readers_future->valid();
         }

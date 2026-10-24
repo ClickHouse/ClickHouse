@@ -246,7 +246,7 @@ class RequestWithIdempotencyId
 {
 public:
     void setIdempotencyId(Aws::String value) { idempotency_id = std::move(value); }
-    const Aws::String & getIdempotencyId() const { return idempotency_id; }
+    [[nodiscard]] const Aws::String & getIdempotencyId() const { return idempotency_id; }
 
 private:
     Aws::String idempotency_id;

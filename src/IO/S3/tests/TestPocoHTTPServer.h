@@ -97,7 +97,7 @@ public:
         return "http://" + server_socket->address().toString();
     }
 
-    const Poco::Net::MessageHeader & getLastRequestHeader() const
+    [[nodiscard]] const Poco::Net::MessageHeader & getLastRequestHeader() const
     {
         return last_request_header;
     }
@@ -207,17 +207,17 @@ public:
         last_request_info.reset();
     }
 
-    bool hasLastRequest() const
+    [[nodiscard]] bool hasLastRequest() const
     {
         return last_request_info.has_value();
     }
 
-    const Poco::Net::MessageHeader & getLastRequestHeader() const
+    [[nodiscard]] const Poco::Net::MessageHeader & getLastRequestHeader() const
     {
         return last_request_info->headers;
     }
 
-    const auto & getLastQueryParams() const
+    [[nodiscard]] const auto & getLastQueryParams() const
     {
         return last_request_info->query_params;
     }

@@ -61,22 +61,22 @@ public:
 
     static Block appendGroupingColumn(const Block & block, const Names & keys, bool has_grouping, bool use_nulls);
 
-    String getName() const override { return "Aggregating"; }
+    [[nodiscard]] String getName() const override { return "Aggregating"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-    std::vector<size_t> getStepGroups() const override;
-    String getStepGroupName(size_t group) const override;
+    [[nodiscard]] std::vector<size_t> getStepGroups() const override;
+    [[nodiscard]] String getStepGroupName(size_t group) const override;
 
-    StepAnalysisReport getAnalysisReport(StepProcessors step_processors) const override;
+    [[nodiscard]] StepAnalysisReport getAnalysisReport(StepProcessors step_processors) const override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
 
     void describeActions(FormatSettings &) const override;
     void describePipeline(FormatSettings & settings) const override;
 
-    const Aggregator::Params & getParams() const { return params; }
-    bool isFinal() const { return final; }
+    [[nodiscard]] const Aggregator::Params & getParams() const { return params; }
+    [[nodiscard]] bool isFinal() const { return final; }
 
     /// See `Aggregator::Params::threshold_top_k`; called by the plan optimization.
     void enableThresholdTopK(Aggregator::Params::ThresholdTopKParams threshold_top_k)
@@ -88,7 +88,7 @@ public:
 
     /// Whether the radix partitioned `uniqExact` (see `RadixUniqExactTransform.h`) may compute this aggregation.
     /// Shared by the plan optimization that stamps the statistics key and by `transformPipeline`.
-    bool canUseRadixUniqExact() const;
+    [[nodiscard]] bool canUseRadixUniqExact() const;
 
     /// See `Aggregator::Params::bucket_top_k`; called by the plan optimization.
     void enableBucketTopK(size_t n, bool ascending, size_t count_index)
@@ -108,17 +108,17 @@ public:
         params.having_prefilter_count_index = count_index;
     }
 
-    const auto & getGroupingSetsParamsList() const { return grouping_sets_params; }
-    bool isGroupByUseNulls() const { return group_by_use_nulls; }
+    [[nodiscard]] const auto & getGroupingSetsParamsList() const { return grouping_sets_params; }
+    [[nodiscard]] bool isGroupByUseNulls() const { return group_by_use_nulls; }
 
-    bool inOrder() const { return !sort_description_for_merging.empty(); }
-    bool isMergingSkipped() const { return skip_merging; }
-    bool explicitSortingRequired() const { return explicit_sorting_required_for_aggregation_in_order; }
-    bool isGroupingSets() const { return !grouping_sets_params.empty(); }
+    [[nodiscard]] bool inOrder() const { return !sort_description_for_merging.empty(); }
+    [[nodiscard]] bool isMergingSkipped() const { return skip_merging; }
+    [[nodiscard]] bool explicitSortingRequired() const { return explicit_sorting_required_for_aggregation_in_order; }
+    [[nodiscard]] bool isGroupingSets() const { return !grouping_sets_params.empty(); }
     void applyOrder(SortDescription sort_description_for_merging_, SortDescription group_by_sort_description_);
     void applyTopKOptimization(Aggregator::Params::TopKParams top_k);
     void setTopKThresholdTracker(TopKThresholdTrackerPtr threshold_tracker);
-    bool memoryBoundMergingWillBeUsed() const;
+    [[nodiscard]] bool memoryBoundMergingWillBeUsed() const;
     void skipMerging()
     {
         skip_merging = true;
@@ -134,22 +134,22 @@ public:
         limit_hint = limit;
         limit_hint_prefix_columns = prefix_columns;
     }
-    size_t getLimitHint() const { return limit_hint; }
-    const SortDescription & getGroupBySortDescription() const { return group_by_sort_description; }
+    [[nodiscard]] size_t getLimitHint() const { return limit_hint; }
+    [[nodiscard]] const SortDescription & getGroupBySortDescription() const { return group_by_sort_description; }
 
-    const SortDescription & getSortDescription() const override;
+    [[nodiscard]] const SortDescription & getSortDescription() const override;
 
-    bool canUseProjection() const;
+    [[nodiscard]] bool canUseProjection() const;
     /// Returns nullptr when the adaptive aggregator can engage, and otherwise a short reason
     /// for the trace log.
-    const char * adaptiveAggregatorRejectionReason(const QueryPipelineBuilder & pipeline) const;
+    [[nodiscard]] const char * adaptiveAggregatorRejectionReason(const QueryPipelineBuilder & pipeline) const;
     /// When we apply aggregate projection (which is full), this step will only merge data.
     /// Argument input_stream replaces current single input.
     /// Probably we should replace this step to MergingAggregated later? (now, aggregation-in-order will not work)
     void requestOnlyMergeForAggregateProjection(const SharedHeader & input_header);
     /// When we apply aggregate projection (which is partial), this step should be replaced to AggregatingProjection.
     /// Argument input_stream would be the second input (from projection).
-    std::unique_ptr<AggregatingProjectionStep> convertToAggregatingProjection(const SharedHeader & input_header) const;
+    [[nodiscard]] std::unique_ptr<AggregatingProjectionStep> convertToAggregatingProjection(const SharedHeader & input_header) const;
 
     static ActionsDAG makeCreatingMissingKeysForGroupingSetDAG(
         const Block & in_header,
@@ -160,39 +160,39 @@ public:
 
     void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
     void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override
+    [[nodiscard]] bool isSerializable() const override
     {
         return sort_description_for_merging.empty() && !explicit_sorting_required_for_aggregation_in_order;
     }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
-    QueryPlanStepPtr clone() const override;
+    [[nodiscard]] QueryPlanStepPtr clone() const override;
 
     void enableMemoryBoundMerging() { memory_bound_merging_of_aggregation_results_enabled = true; }
 
     /// AggregatingStep does not contain any ActionDAGs.
     /// All the expressions used in the AggregatingStep must be evaluated before that.
-    bool hasCorrelatedExpressions() const override { return false; }
+    [[nodiscard]] bool hasCorrelatedExpressions() const override { return false; }
 
-    Aggregator::Params getAggregatorParameters() const { return params; }
+    [[nodiscard]] Aggregator::Params getAggregatorParameters() const { return params; }
     /// Set during query-plan optimization (see setAggregationHashTableCacheKeys). A non-zero key
     /// enables hash-table-size preallocation; StatsCollectingParams treats key == 0 as disabled.
     void setStatsCacheKey(UInt64 stats_cache_key) { params.stats_collecting_params.setKey(stats_cache_key); }
-    bool getFinal() const noexcept { return final; }
+    [[nodiscard]] bool getFinal() const noexcept { return final; }
     void setFinal(bool new_value);
     void setProduceResultsInBucketOrder(bool new_value) { should_produce_results_in_order_of_bucket_number = new_value; }
     /// Re-bases the aggregation onto a new input with a different key set; aggregates unchanged.
     void rebaseOntoInput(const SharedHeader & new_input_header, Names new_keys);
-    size_t getMaxBlockSize() const noexcept { return max_block_size; }
-    size_t getMaxBlockSizeForAggregationInOrder() const noexcept { return aggregation_in_order_max_block_bytes; }
-    size_t getMergeThreads() const noexcept { return merge_threads; }
-    size_t getTemporaryDataMergeThreads() const noexcept { return temporary_data_merge_threads; }
-    bool shouldProduceResultsInBucketOrder() const noexcept { return should_produce_results_in_order_of_bucket_number; }
+    [[nodiscard]] size_t getMaxBlockSize() const noexcept { return max_block_size; }
+    [[nodiscard]] size_t getMaxBlockSizeForAggregationInOrder() const noexcept { return aggregation_in_order_max_block_bytes; }
+    [[nodiscard]] size_t getMergeThreads() const noexcept { return merge_threads; }
+    [[nodiscard]] size_t getTemporaryDataMergeThreads() const noexcept { return temporary_data_merge_threads; }
+    [[nodiscard]] bool shouldProduceResultsInBucketOrder() const noexcept { return should_produce_results_in_order_of_bucket_number; }
     void setShouldProduceResultsInBucketOrder(bool new_value) { should_produce_results_in_order_of_bucket_number = new_value; }
-    bool usingMemoryBoundMerging() const noexcept { return memory_bound_merging_of_aggregation_results_enabled; }
+    [[nodiscard]] bool usingMemoryBoundMerging() const noexcept { return memory_bound_merging_of_aggregation_results_enabled; }
 
-    bool supportsDataflowStatisticsCollection() const override;
+    [[nodiscard]] bool supportsDataflowStatisticsCollection() const override;
 
 private:
     void updateOutputHeader() override;
@@ -249,15 +249,15 @@ public:
         size_t temporary_data_merge_threads_
     );
 
-    String getName() const override { return "AggregatingProjection"; }
+    [[nodiscard]] String getName() const override { return "AggregatingProjection"; }
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
 
-    std::vector<size_t> getStepGroups() const override;
-    String getStepGroupName(size_t group) const override;
+    [[nodiscard]] std::vector<size_t> getStepGroups() const override;
+    [[nodiscard]] String getStepGroupName(size_t group) const override;
 
-    StepAnalysisReport getAnalysisReport(StepProcessors step_processors) const override;
+    [[nodiscard]] StepAnalysisReport getAnalysisReport(StepProcessors step_processors) const override;
 
-    const Aggregator::Params & getParams() const { return params; }
+    [[nodiscard]] const Aggregator::Params & getParams() const { return params; }
 
 private:
     void updateOutputHeader() override;

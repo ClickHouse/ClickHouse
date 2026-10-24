@@ -87,7 +87,7 @@ public:
     }
 
     /// Get left key nodes
-    const ActionsDAG::NodeRawConstPtrs & getLeftKeyNodes() const
+    [[nodiscard]] const ActionsDAG::NodeRawConstPtrs & getLeftKeyNodes() const
     {
         return left_key_nodes;
     }
@@ -99,7 +99,7 @@ public:
     }
 
     /// Get right key nodes
-    const ActionsDAG::NodeRawConstPtrs & getRightKeyNodes() const
+    [[nodiscard]] const ActionsDAG::NodeRawConstPtrs & getRightKeyNodes() const
     {
         return right_key_nodes;
     }
@@ -110,25 +110,25 @@ public:
         return right_key_nodes;
     }
 
-    bool isNullsafeCompareKey(size_t idx) const
+    [[nodiscard]] bool isNullsafeCompareKey(size_t idx) const
     {
         return nullsafe_compare_key_indexes.contains(idx);
     }
 
     /// Returns true if JOIN clause has ASOF conditions, false otherwise
-    bool hasASOF() const
+    [[nodiscard]] bool hasASOF() const
     {
         return !asof_conditions.empty();
     }
 
     /// Get ASOF conditions
-    const std::vector<ASOFCondition> & getASOFConditions() const
+    [[nodiscard]] const std::vector<ASOFCondition> & getASOFConditions() const
     {
         return asof_conditions;
     }
 
     /// Get left filter condition nodes
-    const ActionsDAG::NodeRawConstPtrs & getLeftFilterConditionNodes() const
+    [[nodiscard]] const ActionsDAG::NodeRawConstPtrs & getLeftFilterConditionNodes() const
     {
         return left_filter_condition_nodes;
     }
@@ -140,7 +140,7 @@ public:
     }
 
     /// Get right filter condition nodes
-    const ActionsDAG::NodeRawConstPtrs & getRightFilterConditionNodes() const
+    [[nodiscard]] const ActionsDAG::NodeRawConstPtrs & getRightFilterConditionNodes() const
     {
         return right_filter_condition_nodes;
     }
@@ -161,7 +161,7 @@ public:
         residual_filter_condition_nodes.push_back(condition_node);
     }
 
-    const ActionsDAG::NodeRawConstPtrs & getResidualFilterConditionNodes() const
+    [[nodiscard]] const ActionsDAG::NodeRawConstPtrs & getResidualFilterConditionNodes() const
     {
         return residual_filter_condition_nodes;
     }
@@ -170,7 +170,7 @@ public:
     void dump(WriteBuffer & buffer) const;
 
     /// Dump clause
-    String dump() const;
+    [[nodiscard]] String dump() const;
 
     /// Combines two join clauses into a single join clause with `AND` logic.
     /// Example:

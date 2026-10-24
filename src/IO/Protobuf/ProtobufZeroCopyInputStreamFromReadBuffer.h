@@ -27,7 +27,7 @@ public:
     bool Skip(int count) override;
 
     // Returns the total number of bytes read since this object was created.
-    int64_t ByteCount() const override;
+    [[nodiscard]] int64_t ByteCount() const override;
 
 private:
     std::unique_ptr<ReadBuffer> in;

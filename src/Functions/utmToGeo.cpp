@@ -60,26 +60,26 @@ public:
     static constexpr auto name = "UTMToGeo";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionUTMToGeo>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 4; }
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 4; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
     /// The default Nullable wrapper would execute the function on the values that Nullable columns hold at NULL
     /// rows (typically defaults such as the empty string), and the band validation would reject them before the
     /// null map is re-applied. Handle Nullable arguments explicitly instead: NULL rows are skipped, not validated.
-    bool useDefaultImplementationForNulls() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return false; }
 
     /// The Dynamic and Variant adaptors default to useDefaultImplementationForNulls, but disabling them here is
     /// unnecessary: the adaptors dispatch on the concrete types held inside the column and handle NULL rows
     /// themselves, and this function accepts Nullable arguments anyway. Keep them enabled so that Dynamic and
     /// Variant arguments still dispatch to the matching alternative.
-    bool useDefaultImplementationForDynamic() const override { return true; }
-    bool useDefaultImplementationForVariant() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForDynamic() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForVariant() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         bool has_nullable = false;
         ColumnsWithTypeAndName nested_arguments = arguments;
@@ -109,7 +109,7 @@ public:
         return has_nullable ? makeNullable(result) : result;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         /// A NULL literal among the arguments makes the whole result NULL.
         if (result_type->onlyNull())

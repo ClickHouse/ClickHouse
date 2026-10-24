@@ -28,17 +28,17 @@ struct StudentTTestData : public TTestMoments<Float64>
 {
     static constexpr auto name = "studentTTest";
 
-    bool hasEnoughObservations() const
+    [[nodiscard]] bool hasEnoughObservations() const
     {
         return nx > 0 && ny > 0 && nx + ny > 2;
     }
 
-    Float64 getDegreesOfFreedom() const
+    [[nodiscard]] Float64 getDegreesOfFreedom() const
     {
         return nx + ny - 2;
     }
 
-    std::tuple<Float64, Float64> getResult() const
+    [[nodiscard]] std::tuple<Float64, Float64> getResult() const
     {
         Float64 mean_x = getMeanX();
         Float64 mean_y = getMeanY();

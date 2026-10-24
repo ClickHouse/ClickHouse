@@ -98,7 +98,7 @@ private:
 class ReadFromCluster : public SourceStepWithFilter
 {
 public:
-    std::string getName() const override { return "ReadFromCluster"; }
+    [[nodiscard]] std::string getName() const override { return "ReadFromCluster"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 

@@ -2907,7 +2907,7 @@ public:
         takeRow(1);
     }
 
-    UInt64 getBytes() const { return bytes; }
+    [[nodiscard]] UInt64 getBytes() const { return bytes; }
 
     /// The retained sample, in key order, or nothing if the meter kept none.
     Columns detachSample()

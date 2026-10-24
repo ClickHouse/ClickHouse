@@ -69,7 +69,7 @@ public:
 
     void add(ColumnPtr keys) override;
     std::unique_ptr<DiskSet> finish() override;
-    bool isTruncated() const override { return truncated; }
+    [[nodiscard]] bool isTruncated() const override { return truncated; }
 
 private:
     /// Checks the size limits, which apply to the distinct keys of the set and to their bytes (see
@@ -80,7 +80,7 @@ private:
     /// Returns the number of keys that the set is expected to write: the distinct keys that the builder
     /// counted, but at most the keys that the set writes before the size limits stop the merge in the `break`
     /// mode or make it throw in the `throw` mode.
-    size_t estimateKeysToWrite() const;
+    [[nodiscard]] size_t estimateKeysToWrite() const;
 
     /// Checks the time limit of the query, which throws in the `throw` overflow mode and when the query is
     /// cancelled. In the `break` mode, the limit stops the query without an exception, as the failpoint does,

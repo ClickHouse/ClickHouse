@@ -232,7 +232,7 @@ TEST(CompressionCodecAdaptive, DirectInvocationThrows)
 #else
     CompressionCodecAdaptive adaptive(type("UInt32"), defaultCodec());
     /// Adaptive never appears on disk, so the public method byte accessor must reject direct use.
-    EXPECT_ANY_THROW(adaptive.getMethodByte());
+    EXPECT_ANY_THROW((void)adaptive.getMethodByte());
 #endif
 }
 

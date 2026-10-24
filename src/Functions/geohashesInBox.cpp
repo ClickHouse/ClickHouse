@@ -33,11 +33,11 @@ public:
     static constexpr auto name = "geohashesInBox";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionGeohashesInBox>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 5; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 5; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// Enforce the same exact native Float type across the 4 coordinate args via a shared
         /// type variable. The matcher is `NativeFloat` (Float32 or Float64), not `Float`, because
@@ -47,9 +47,9 @@ public:
         return "(T : NativeFloat, T : NativeFloat, T : NativeFloat, T : NativeFloat, UInt8) -> Array(String)";
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     template <typename LonAndLatType, typename PrecisionType>
     void execute(
@@ -167,7 +167,7 @@ public:
         result = ColumnArray::create(std::move(res_strings_column), std::move(res_offsets_column));
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const IColumn * lon_min = arguments[0].column.get();
         const IColumn * lat_min = arguments[1].column.get();

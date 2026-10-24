@@ -222,7 +222,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         filled_visit_cache_indexes.clear();
     }
 
-    ALWAYS_INLINE size_t getIndexAt(size_t row) const
+    [[nodiscard]] ALWAYS_INLINE size_t getIndexAt(size_t row) const
     {
         switch (size_of_index_type)
         {

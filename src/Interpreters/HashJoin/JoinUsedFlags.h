@@ -36,7 +36,7 @@ public:
     /// While the probe runs, accessed only through `offsetFlag` (`std::atomic_ref`).
     std::vector<UInt8> per_offset_flags;
 
-    std::atomic_ref<UInt8> offsetFlag(size_t offset) const
+    [[nodiscard]] std::atomic_ref<UInt8> offsetFlag(size_t offset) const
     {
         return std::atomic_ref<UInt8>(const_cast<UInt8 &>(per_offset_flags[offset]));
     }
@@ -112,9 +112,9 @@ public:
         }
     }
 
-    bool getUsedSafe(size_t i) const { return offsetFlag(i).load() != 0; }
+    [[nodiscard]] bool getUsedSafe(size_t i) const { return offsetFlag(i).load() != 0; }
 
-    bool getUsedSafe(UInt32 block_no, size_t row_idx) const
+    [[nodiscard]] bool getUsedSafe(UInt32 block_no, size_t row_idx) const
     {
         if (block_no < per_row_flags.size() && !per_row_flags[block_no].empty())
             return per_row_flags[block_no][row_idx].load();

@@ -53,7 +53,7 @@ public:
     }
 
     /// We want to re-run resolve for function _after_ its arguments are replaced
-    bool shouldTraverseTopToBottom() const { return false; }
+    [[nodiscard]] bool shouldTraverseTopToBottom() const { return false; }
 
     bool needChildVisit(QueryTreeNodePtr & /* parent */, QueryTreeNodePtr & child)
     {

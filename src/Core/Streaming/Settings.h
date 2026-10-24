@@ -17,7 +17,7 @@ struct WatermarkSettings
     std::chrono::milliseconds idle_timeout{0};
 
 public:
-    std::shared_ptr<WatermarkSettings> clone() const;
+    [[nodiscard]] std::shared_ptr<WatermarkSettings> clone() const;
     bool operator==(const WatermarkSettings & rhs) const;
 };
 using WatermarkSettingsPtr = std::shared_ptr<WatermarkSettings>;
@@ -33,7 +33,7 @@ struct StreamSettings
     WatermarkSettingsPtr watermark;
 
 public:
-    std::shared_ptr<StreamSettings> clone() const;
+    [[nodiscard]] std::shared_ptr<StreamSettings> clone() const;
     bool operator==(const StreamSettings & rhs) const;
 };
 using StreamSettingsPtr = std::shared_ptr<StreamSettings>;

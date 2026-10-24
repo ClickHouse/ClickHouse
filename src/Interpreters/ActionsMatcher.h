@@ -67,9 +67,9 @@ struct ScopeStack : WithContext
 
     ActionsDAG popLevel();
 
-    const ActionsDAG & getLastActions() const;
-    const Index & getLastActionsIndex() const;
-    std::string dumpNames() const;
+    [[nodiscard]] const ActionsDAG & getLastActions() const;
+    [[nodiscard]] const Index & getLastActionsIndex() const;
+    [[nodiscard]] std::string dumpNames() const;
 };
 
 class ASTIdentifier;
@@ -153,8 +153,8 @@ public:
             bool is_create_parameterized_view_ = false);
 
         /// Does result of the calculation already exists in the block.
-        bool hasColumn(const String & column_name) const;
-        std::vector<std::string_view> getAllColumnNames() const;
+        [[nodiscard]] bool hasColumn(const String & column_name) const;
+        [[nodiscard]] std::vector<std::string_view> getAllColumnNames() const;
 
         void addColumn(ColumnConstPtr column, DataTypePtr type, std::string name)
         {

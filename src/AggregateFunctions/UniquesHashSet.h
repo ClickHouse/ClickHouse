@@ -137,11 +137,11 @@ private:
         bool has_zero = false;
         UInt64 * buf = nullptr;
 
-        size_t bufSize() const { return 1ULL << size_degree; }
-        size_t maxFill() const { return 1ULL << (size_degree - 1); }
-        size_t mask() const { return bufSize() - 1; }
-        size_t place(UInt64 x) const { return (x >> (64 - UNIQUES_HASH_MAX_SIZE_DEGREE)) & mask(); }
-        bool good(UInt64 hash) const { return hash == ((hash >> skip_degree) << skip_degree); }
+        [[nodiscard]] size_t bufSize() const { return 1ULL << size_degree; }
+        [[nodiscard]] size_t maxFill() const { return 1ULL << (size_degree - 1); }
+        [[nodiscard]] size_t mask() const { return bufSize() - 1; }
+        [[nodiscard]] size_t place(UInt64 x) const { return (x >> (64 - UNIQUES_HASH_MAX_SIZE_DEGREE)) & mask(); }
+        [[nodiscard]] bool good(UInt64 hash) const { return hash == ((hash >> skip_degree) << skip_degree); }
     };
 
     /// Thinning leaves at most 2 ^ (32 - skip_degree) hashes, and `shrinkIfNeed()` raises the
@@ -190,12 +190,12 @@ private:
 
     size_t buf_size() const           { return 1ULL << size_degree; } /// NOLINT
     size_t max_fill() const           { return 1ULL << (size_degree - 1); } /// NOLINT
-    size_t mask() const               { return buf_size() - 1; }
+    [[nodiscard]] size_t mask() const               { return buf_size() - 1; }
 
-    size_t place(HashValue x) const { return (x >> UNIQUES_HASH_BITS_FOR_SKIP) & mask(); }
+    [[nodiscard]] size_t place(HashValue x) const { return (x >> UNIQUES_HASH_BITS_FOR_SKIP) & mask(); }
 
     /// The value is divided by 2 ^ skip_degree
-    bool good(HashValue hash) const { return hash == ((hash >> skip_degree) << skip_degree); }
+    [[nodiscard]] bool good(HashValue hash) const { return hash == ((hash >> skip_degree) << skip_degree); }
 
     /// Delete all values whose hashes do not divide by 2 ^ skip_degree
     void rehash()
@@ -368,7 +368,7 @@ private:
         }
     }
 
-    UInt8 wideSkipDegree() const { return wide ? wide->skip_degree : UNIQUES_HASH_SET_WIDE_INITIAL_SKIP_DEGREE; }
+    [[nodiscard]] UInt8 wideSkipDegree() const { return wide ? wide->skip_degree : UNIQUES_HASH_SET_WIDE_INITIAL_SKIP_DEGREE; }
 
     static WideSet * allocWideSet(UInt8 new_size_degree)
     {
@@ -513,7 +513,7 @@ private:
         }
     }
 
-    UInt64 wideSkipMask() const { return (1ULL << wideSkipDegree()) - 1; }
+    [[nodiscard]] UInt64 wideSkipMask() const { return (1ULL << wideSkipDegree()) - 1; }
 
     /** The wide set samples the full hashes XOR-ed with this constant rather than the hashes themselves.
       * The sample stays just as uniform, but the hash of a frequent value never becomes a candidate
@@ -542,7 +542,7 @@ private:
       * and `wideInsert` checks the full value against the current mask itself - which also makes
       * a stale pre-filter mask harmless.
       */
-    HashValue widePrefilterMask() const { return static_cast<HashValue>(wideSkipMask()); }
+    [[nodiscard]] HashValue widePrefilterMask() const { return static_cast<HashValue>(wideSkipMask()); }
     static constexpr HashValue wide_prefilter_offset = static_cast<HashValue>(wide_hash_offset);
 
     /** With how many different elements, when randomly scattered across 2^32 buckets,
@@ -817,7 +817,7 @@ public:
             insertWideCandidates<SourceType, Transform>(wide_candidates, data, size);
     }
 
-    size_t size() const
+    [[nodiscard]] size_t size() const
     {
         /** The wide set gives a reliable estimate once it has enough values;
           * below that the 32-bit main set is more precise. If the wide sample does not cover
@@ -859,8 +859,8 @@ public:
     }
 
     /// For tests.
-    size_t wideSetSize() const { return wide ? wide->m_size : 0; }
-    bool isWideIncomplete() const { return wide_incomplete; }
+    [[nodiscard]] size_t wideSetSize() const { return wide ? wide->m_size : 0; }
+    [[nodiscard]] bool isWideIncomplete() const { return wide_incomplete; }
 
     void merge(const UniquesHashSet & rhs)
     {

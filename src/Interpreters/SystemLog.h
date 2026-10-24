@@ -1627,7 +1627,7 @@ protected:
 class ParserStorageWithComment : public IParserBase
 {
 protected:
-    const char * getName() const override { return "storage definition with comment"; }
+    [[nodiscard]] const char * getName() const override { return "storage definition with comment"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
     {
@@ -1720,7 +1720,7 @@ public:
 #undef DECLARE_PUBLIC_MEMBERS
 
 private:
-    std::vector<ISystemLog *> getAllLogs() const;
+    [[nodiscard]] std::vector<ISystemLog *> getAllLogs() const;
 
     void flushImpl(const std::vector<std::pair<String, String>>  & names, bool should_prepare_tables_anyway, bool ignore_errors);
 };
@@ -1779,7 +1779,7 @@ public:
       */
     void prepareTable() override;
 
-    const StorageID & getTableID() const { return table_id; }
+    [[nodiscard]] const StorageID & getTableID() const { return table_id; }
 
     ISystemLogFlushPolicy & getFlushPolicy() { return *flush_policy; }
 
@@ -1793,7 +1793,7 @@ protected:
 
     using Base::queue;
 
-    StoragePtr getStorage() const;
+    [[nodiscard]] StoragePtr getStorage() const;
 
     /// Some tables can override settings for internal queries
     virtual void addSettingsForQuery(ContextMutablePtr & mutable_context, IAST::QueryKind query_kind) const;

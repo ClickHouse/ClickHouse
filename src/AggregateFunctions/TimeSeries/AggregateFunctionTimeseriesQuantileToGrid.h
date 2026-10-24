@@ -66,7 +66,7 @@ struct AggregateFunctionTimeseriesQuantileToGridTraits
             sliding_sum.removeBefore(cut_off);
         }
 
-        std::optional<ResultType> getResult(GridScaleTimestampType /*grid_timestamp*/, Float64 phi) const
+        [[nodiscard]] std::optional<ResultType> getResult(GridScaleTimestampType /*grid_timestamp*/, Float64 phi) const
         {
             return sliding_sum.getCurrentSum().quantile(phi);
         }
@@ -92,7 +92,7 @@ public:
     void deserialize(ReadBuffer & buf, size_t grid_size);
 
     /// The level at grid point `grid_index`. It is 0 if no row has been added, then every window is empty anyway.
-    Float64 at(size_t grid_index) const;
+    [[nodiscard]] Float64 at(size_t grid_index) const;
 
 private:
     /// One value if the level is the same at every grid point, `grid_size` values otherwise. Empty until a row is added.

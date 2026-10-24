@@ -21,7 +21,7 @@ public:
         boost::container::flat_set<UUID> current_roles;
         boost::container::flat_set<UUID> current_roles_with_admin_option;
 
-        auto toTuple() const { return std::tie(current_roles, current_roles_with_admin_option); }
+        [[nodiscard]] auto toTuple() const { return std::tie(current_roles, current_roles_with_admin_option); }
         friend bool operator ==(const Params & lhs, const Params & rhs) { return lhs.toTuple() == rhs.toTuple(); }
         friend bool operator !=(const Params & lhs, const Params & rhs) { return !(lhs == rhs); }
         friend bool operator <(const Params & lhs, const Params & rhs) { return lhs.toTuple() < rhs.toTuple(); }

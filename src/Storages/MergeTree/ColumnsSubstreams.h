@@ -50,28 +50,28 @@ public:
     void addSubstreamToLastColumn(const String & substream);
     void addSubstreamsToLastColumn(const std::vector<String> & substreams);
 
-    size_t getSubstreamPosition(size_t column_position, const String & substream) const;
-    std::optional<size_t> tryGetSubstreamPosition(size_t column_position, const String & substream) const;
-    size_t getSubstreamPosition(size_t column_position, const NameAndTypePair & name_and_type, const ISerialization::SubstreamPath & substream_path, const MergeTreeSettingsPtr & storage_settings) const;
-    std::optional<size_t> tryGetSubstreamPosition(size_t column_position, const NameAndTypePair & name_and_type, const ISerialization::SubstreamPath & substream_path, const MergeTreeSettingsPtr & storage_settings) const;
-    std::optional<size_t> tryGetSubstreamPosition(const String & substream) const;
-    size_t getFirstSubstreamPosition(size_t column_position) const;
-    size_t getLastSubstreamPosition(size_t column_position) const;
+    [[nodiscard]] size_t getSubstreamPosition(size_t column_position, const String & substream) const;
+    [[nodiscard]] std::optional<size_t> tryGetSubstreamPosition(size_t column_position, const String & substream) const;
+    [[nodiscard]] size_t getSubstreamPosition(size_t column_position, const NameAndTypePair & name_and_type, const ISerialization::SubstreamPath & substream_path, const MergeTreeSettingsPtr & storage_settings) const;
+    [[nodiscard]] std::optional<size_t> tryGetSubstreamPosition(size_t column_position, const NameAndTypePair & name_and_type, const ISerialization::SubstreamPath & substream_path, const MergeTreeSettingsPtr & storage_settings) const;
+    [[nodiscard]] std::optional<size_t> tryGetSubstreamPosition(const String & substream) const;
+    [[nodiscard]] size_t getFirstSubstreamPosition(size_t column_position) const;
+    [[nodiscard]] size_t getLastSubstreamPosition(size_t column_position) const;
 
-    const std::vector<String> & getColumnSubstreams(size_t column_position) const;
+    [[nodiscard]] const std::vector<String> & getColumnSubstreams(size_t column_position) const;
 
     /// Returns the recorded substreams for a column by name, or nullptr if the column is not present.
-    const std::vector<String> * tryGetColumnSubstreams(const String & column_name) const;
+    [[nodiscard]] const std::vector<String> * tryGetColumnSubstreams(const String & column_name) const;
 
     void writeText(WriteBuffer & buf) const;
     void readText(ReadBuffer & buf);
-    String toString() const;
+    [[nodiscard]] String toString() const;
 
-    size_t getTotalSubstreams() const { return total_substreams; }
-    bool empty() const { return !total_substreams; }
+    [[nodiscard]] size_t getTotalSubstreams() const { return total_substreams; }
+    [[nodiscard]] bool empty() const { return !total_substreams; }
 
     /// Names of the recorded columns, in serialization order.
-    std::vector<String> getColumnNames() const;
+    [[nodiscard]] std::vector<String> getColumnNames() const;
 
     /// Check that we have substreams for all columns and they have the same order as in provided list.
     void validateColumns(const std::vector<String> & columns, int error_code = ErrorCodes::LOGICAL_ERROR) const;
@@ -81,7 +81,7 @@ public:
     /// escapeForFileName(Nested::extractTableName(column_name)) for shared Nested offsets),
     /// followed by '.', '%2E', or end-of-string.
     /// Returns {invalid_substream, column_name} pair, or empty strings if all are valid.
-    std::pair<String, String> findInvalidSubstreamName() const;
+    [[nodiscard]] std::pair<String, String> findInvalidSubstreamName() const;
 
     /// Merge 2 sets of columns substreams with specified columns order.
     /// If some column exists in both left and right we keep only substreams from the left.
@@ -92,7 +92,7 @@ public:
     bool operator==(const ColumnsSubstreams & other) const;
 
     /// Hash of the ordered lists of substreams, consistent with `operator==`.
-    UInt128 getHash() const;
+    [[nodiscard]] UInt128 getHash() const;
 
     /// Hash of one per-column entry (its name and ordered substreams).
     static UInt128 getColumnEntryHash(const ColumnEntry & entry);

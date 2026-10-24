@@ -29,11 +29,11 @@ class PasteJoinAlgorithm final : public IMergingAlgorithm
 public:
     explicit PasteJoinAlgorithm(JoinPtr table_join, const SharedHeaders & input_headers, size_t max_block_size_);
 
-    const char * getName() const override { return "PasteJoinAlgorithm"; }
+    [[nodiscard]] const char * getName() const override { return "PasteJoinAlgorithm"; }
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
     Status merge() override;
-    MergedStats getMergedStats() const override;
+    [[nodiscard]] MergedStats getMergedStats() const override;
 
 private:
     /// For `USING` join key columns should have values from right side instead of defaults

@@ -585,7 +585,7 @@ public:
 
 private:
     /// True if any ancestor LIMIT must read till the end (`exact_rows_before_limit`).
-    bool mustReadTillEnd() const
+    [[nodiscard]] bool mustReadTillEnd() const
     {
         for (const auto & frame : stack)
             if (const auto * limit = typeid_cast<const LimitStep *>(frame.node->step.get()))

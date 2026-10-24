@@ -313,19 +313,19 @@ public:
             max_input_size = context->getSettingsRef()[Setting::function_base58_max_input_size];
         return std::make_shared<FunctionBaseXXConversion>(max_input_size);
     }
-    String getName() const override { return Func::name; }
-    bool isVariadic() const override { return has_size_optimization; }
-    size_t getNumberOfArguments() const override { return has_size_optimization ? 0 : 1; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
+    [[nodiscard]] String getName() const override { return Func::name; }
+    [[nodiscard]] bool isVariadic() const override { return has_size_optimization; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return has_size_optimization ? 0 : 1; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {
         if constexpr (has_size_optimization)
             return {1};
         return {};
     }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if constexpr (has_size_optimization)
             return "(StringOrFixedString, [const NativeUInt]) -> String";
@@ -333,9 +333,9 @@ public:
             return "(StringOrFixedString) -> String";
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeString>(); }
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeString>(); }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         /// The generic (variable-length) Base58 conversion is quadratic in the input length and can run
         /// for a long time on a single large value, ignoring the query's time limit (which is only checked

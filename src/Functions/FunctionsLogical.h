@@ -195,12 +195,12 @@ public:
     static constexpr auto name = Name::name;
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionAnyArityLogical>(); }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    bool isVariadic() const override { return true; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
     bool isShortCircuit(ShortCircuitSettings & settings, size_t /*number_of_arguments*/) const override
     {
         settings.arguments_with_disabled_lazy_execution.insert(0);
@@ -210,14 +210,14 @@ public:
         return name == NameAnd::name || name == NameOr::name;
     }
     ColumnPtr executeShortCircuit(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, bool eager_arguments_reordered) const;
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    bool isNameInsensitive() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool canBeExecutedOnLowCardinalityDictionary() const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isNameInsensitive() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool canBeExecutedOnLowCardinalityDictionary() const override { return false; }
 
-    bool useDefaultImplementationForNulls() const override { return !Impl::specialImplementationForNulls(); }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return !Impl::specialImplementationForNulls(); }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeUInt8>(); }
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeUInt8>(); }
 
     /// `and`/`or` accept 2+ NativeNumber arguments, optionally Nullable or a NULL literal
     /// (they have `specialImplementationForNulls`); `xor` accepts only non-Nullable
@@ -232,7 +232,7 @@ public:
     /// any count, independently typed. (A bare `T, T, ...` would instead force the first two
     /// operands to share a type.) Too-few-arguments now surfaces as
     /// `NUMBER_OF_ARGUMENTS_DOESNT_MATCH`, the code the declarative checker uses for arity.
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         if constexpr (Impl::specialImplementationForNulls())
         {
@@ -244,17 +244,17 @@ public:
 
     /// The signature accepts two or more arguments, so the only possible arity error is a call with
     /// fewer than two - the legacy resolver reported it as `TOO_FEW_ARGUMENTS_FOR_FUNCTION`.
-    int getWrongNumberOfArgumentsErrorCode(size_t /*number_of_arguments*/) const override
+    [[nodiscard]] int getWrongNumberOfArgumentsErrorCode(size_t /*number_of_arguments*/) const override
     {
         return ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override;
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override;
 
-    ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override;
+    [[nodiscard]] ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override;
 
 #if USE_EMBEDDED_COMPILER
-    bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr &) const override
+    [[nodiscard]] bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr &) const override
     {
         for (const auto & arg : arguments)
         {
@@ -312,32 +312,32 @@ public:
     static constexpr auto name = Name::name;
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionUnaryLogical>(); }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 1; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(Bool) -> Bool OR (NativeNumber) -> UInt8";
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeUInt8>(); }
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeUInt8>(); }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    bool isNameInsensitive() const override { return true; }
+    [[nodiscard]] bool isNameInsensitive() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override;
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override;
 
 #if USE_EMBEDDED_COMPILER
-    bool isCompilableImpl(const DataTypes &, const DataTypePtr &) const override { return true; }
+    [[nodiscard]] bool isCompilableImpl(const DataTypes &, const DataTypePtr &) const override { return true; }
 
     llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & values, const DataTypePtr &) const override
     {

@@ -909,7 +909,7 @@ public:
     }
 
     /// The DateTime parsers drop fractional seconds, so the text is read again with the maximum precision.
-    bool isWholeSeconds(std::string_view data, FormatSettings::DateTimeInputFormat date_time_input_format) const
+    [[nodiscard]] bool isWholeSeconds(std::string_view data, FormatSettings::DateTimeInputFormat date_time_input_format) const
     {
         constexpr UInt32 max_scale = 9;
         constexpr Int64 max_scale_multiplier = 1'000'000'000;
@@ -2460,7 +2460,7 @@ private:
     }
 
     /// Build the full path for a child key within the current object.
-    String buildChildPath(const String & current_path, std::string_view key, const JSONExtractInsertSettings & insert_settings, bool is_root) const
+    [[nodiscard]] String buildChildPath(const String & current_path, std::string_view key, const JSONExtractInsertSettings & insert_settings, bool is_root) const
     {
         String path = current_path;
         if (!is_root)
@@ -2472,7 +2472,7 @@ private:
         return path;
     }
 
-    bool shouldSkipPath(const String & path, const JSONExtractInsertSettings & insert_settings) const
+    [[nodiscard]] bool shouldSkipPath(const String & path, const JSONExtractInsertSettings & insert_settings) const
     {
         if (paths_to_skip.contains(path))
             return true;
@@ -2739,13 +2739,13 @@ private:
         variant_column.getLocalDiscriminators().push_back(variant_column.localDiscriminatorByGlobal(global_discr));
     }
 
-    const FormatSettings & getDefaultFormatSettings() const
+    [[nodiscard]] const FormatSettings & getDefaultFormatSettings() const
     {
         static const FormatSettings settings;
         return settings;
     }
 
-    bool hasTypedPathWithPrefix(const String & prefix) const
+    [[nodiscard]] bool hasTypedPathWithPrefix(const String & prefix) const
     {
         for (const auto & [path, _] : typed_paths_types)
         {
@@ -2773,7 +2773,7 @@ private:
         OBJECT = 1,
     };
 
-    JSONElementType getJSONElementType(const typename JSONParser::Element & element) const
+    [[nodiscard]] JSONElementType getJSONElementType(const typename JSONParser::Element & element) const
     {
         switch (element.type())
         {
@@ -2788,7 +2788,7 @@ private:
     /// Types like JSON, Map, Tuple represent structured data and should receive
     /// the object value when there is a literal+object duplicate key.
     /// Scalar types (Int, String, etc.) should receive the literal value instead.
-    bool canParseObjectValue(const DataTypePtr & type) const
+    [[nodiscard]] bool canParseObjectValue(const DataTypePtr & type) const
     {
         auto id = removeNullable(removeLowCardinality(type))->getTypeId();
         return id == TypeIndex::Object || id == TypeIndex::Map || id == TypeIndex::Tuple;

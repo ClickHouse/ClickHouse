@@ -36,9 +36,9 @@ public:
     void registerProviderKind(const String & source_key, ProviderKind kind);
 
     /// The worker sources the cluster at `config_prefix` sets.
-    Strings getWorkerSources(const Poco::Util::AbstractConfiguration & config, const String & config_prefix) const;
+    [[nodiscard]] Strings getWorkerSources(const Poco::Util::AbstractConfiguration & config, const String & config_prefix) const;
 
-    const ProviderKind & get(const String & source_key) const;
+    [[nodiscard]] const ProviderKind & get(const String & source_key) const;
 
 private:
     StatelessWorkersProviderFactory();

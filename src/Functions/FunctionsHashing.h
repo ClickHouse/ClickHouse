@@ -77,14 +77,14 @@ namespace impl
         ColumnPtr key1;
         bool is_const = false;
 
-        size_t size() const
+        [[nodiscard]] size_t size() const
         {
             chassert(key0 && key1);
             chassert(key0->size() == key1->size());
             return key0->size();
         }
 
-        SipHashKey getKey(size_t i) const
+        [[nodiscard]] SipHashKey getKey(size_t i) const
         {
             if (is_const)
                 i = 0;
@@ -95,7 +95,7 @@ namespace impl
         }
 
         /// Replicate key columns so that each array element gets the key of its parent row.
-        SipHashKeyColumns replicateForArray(const ColumnArray::Offsets & offsets) const
+        [[nodiscard]] SipHashKeyColumns replicateForArray(const ColumnArray::Offsets & offsets) const
         {
             if (is_const)
                 return *this;
@@ -945,7 +945,7 @@ public:
         impl = std::make_unique<TargetSpecific::Default::FunctionIntHash<Impl, Name>>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         return impl->executeImpl(arguments, result_type, input_rows_count);
     }
@@ -1750,7 +1750,7 @@ public:
         baseline_impl = makeBaselineImpl();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         if (avx512_impl && wantsAVX512(arguments))
             return avx512_impl->executeImpl(arguments, result_type, input_rows_count);
@@ -1871,29 +1871,29 @@ public:
     static constexpr auto name = "URLHash";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionURLHash>(); }
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    [[nodiscard]] bool isVariadic() const override { return true; }
+    [[nodiscard]] size_t getNumberOfArguments() const override { return 0; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     /// Disable default Variant implementation for compatibility.
     /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
-    bool useDefaultImplementationForVariant() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForVariant() const override { return false; }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         return "(String, [Integer]) -> UInt64";
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    [[nodiscard]] DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeUInt64>();
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const auto arg_count = arguments.size();
 
@@ -1905,7 +1905,7 @@ public:
     }
 
 private:
-    ColumnPtr executeSingleArg(const ColumnsWithTypeAndName & arguments) const
+    [[nodiscard]] ColumnPtr executeSingleArg(const ColumnsWithTypeAndName & arguments) const
     {
         const auto * col_untyped = arguments.front().column.get();
 
@@ -1934,7 +1934,7 @@ private:
             ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
     }
 
-    ColumnPtr executeTwoArgs(const ColumnsWithTypeAndName & arguments) const
+    [[nodiscard]] ColumnPtr executeTwoArgs(const ColumnsWithTypeAndName & arguments) const
     {
         const auto * level_col = arguments.back().column.get();
         const auto * col_untyped = arguments.front().column.get();

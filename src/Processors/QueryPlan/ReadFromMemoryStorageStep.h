@@ -50,29 +50,29 @@ public:
     ReadFromMemoryStorageStep(ReadFromMemoryStorageStep &&) = default;
     ReadFromMemoryStorageStep & operator=(ReadFromMemoryStorageStep &&) = delete;
 
-    String getName() const override { return name; }
+    [[nodiscard]] String getName() const override { return name; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
 
-    bool supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_column) const override;
+    [[nodiscard]] bool supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_column) const override;
     void setTopKFilter(FormatTopKFilterInfoPtr info) override;
 
     void describeActions(FormatSettings & format_settings) const override;
     void describeActions(JSONBuilder::JSONMap & map) const override;
 
-    QueryPlanStepPtr clone() const override;
+    [[nodiscard]] QueryPlanStepPtr clone() const override;
 
-    const StoragePtr & getStorage() const { return storage; }
+    [[nodiscard]] const StoragePtr & getStorage() const { return storage; }
 
     /// The key of the query condition cache for the filter of the query pushed down to this step,
     /// or std::nullopt if the cache cannot be used for it. See `updateQueryConditionCache`.
-    std::optional<UInt64> getFilterConditionHashForQueryConditionCache() const;
+    [[nodiscard]] std::optional<UInt64> getFilterConditionHashForQueryConditionCache() const;
 
     /// Lazy materialization (see `optimizeLazyMaterialization2`).
-    bool canUseLazyMaterialization() const;
+    [[nodiscard]] bool canUseLazyMaterialization() const;
     /// Removes the columns that are not in `required_names` and are not needed by the in-source filters
     /// from the read, makes the read produce the `__global_row_index` column, and returns a step that
     /// reads the removed columns for the given rows. Returns nullptr if there is nothing to remove.
@@ -101,7 +101,7 @@ private:
 
     /// In-source filtering (TopN threshold, row-level security filter, PREWHERE),
     /// or nullptr when there is nothing to apply.
-    MemorySourceFilterPtr makeSourceFilter(const NamesAndTypesList & physical_columns) const;
+    [[nodiscard]] MemorySourceFilterPtr makeSourceFilter(const NamesAndTypesList & physical_columns) const;
 
     Pipe makePipe();
 };
@@ -115,7 +115,7 @@ public:
 
     void setLazyMaterializingRows(MemoryLazyMaterializingRowsPtr lazy_materializing_rows_);
 
-    String getName() const override { return "LazilyReadFromMemoryStorage"; }
+    [[nodiscard]] String getName() const override { return "LazilyReadFromMemoryStorage"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 

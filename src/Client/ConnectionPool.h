@@ -51,10 +51,10 @@ public:
     /// so the returned connection is established and checked anyway.
     virtual Entry getUnchecked(const ConnectionTimeouts & timeouts, const Settings & settings) = 0;
 
-    const std::string & getHost() const { return host; }
-    UInt16 getPort() const { return port; }
-    const String & getAddress() const { return address; }
-    Priority getConfigPriority() const { return config_priority; }
+    [[nodiscard]] const std::string & getHost() const { return host; }
+    [[nodiscard]] UInt16 getPort() const { return port; }
+    [[nodiscard]] const String & getAddress() const { return address; }
+    [[nodiscard]] Priority getConfigPriority() const { return config_priority; }
 
 protected:
     const String host;

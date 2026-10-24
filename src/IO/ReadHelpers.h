@@ -525,7 +525,7 @@ struct NullOutput
     void append(const char *) {}
     void append(const char *, const char *) {}
     void push_back(char) {} /// NOLINT
-    size_t size() const { return 0; }
+    [[nodiscard]] size_t size() const { return 0; }
 };
 
 template <typename ReturnType>

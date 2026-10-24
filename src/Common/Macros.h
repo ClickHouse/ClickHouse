@@ -58,18 +58,18 @@ public:
     String expand(const String & s,
                   MacroExpansionInfo & info) const;
 
-    String expand(const String & s) const;
+    [[nodiscard]] String expand(const String & s) const;
 
 
     /** Apply expand for the list.
       */
-    Names expand(const Names & source_names, size_t level = 0) const;
+    [[nodiscard]] Names expand(const Names & source_names, size_t level = 0) const;
 
     using MacroMap = std::map<String, String, std::less<>>;
-    MacroMap getMacroMap() const { return macros; }
+    [[nodiscard]] MacroMap getMacroMap() const { return macros; }
 
-    String getValue(std::string_view key) const;
-    std::optional<String> tryGetValue(std::string_view key) const;
+    [[nodiscard]] String getValue(std::string_view key) const;
+    [[nodiscard]] std::optional<String> tryGetValue(std::string_view key) const;
 
 private:
     MacroMap macros;

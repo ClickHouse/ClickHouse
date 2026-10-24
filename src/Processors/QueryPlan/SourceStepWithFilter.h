@@ -65,8 +65,8 @@ public:
     }
 
     virtual void applyFilters(ActionDAGNodes added_filter_nodes);
-    virtual FilterDAGInfoPtr getRowLevelFilter() const { return nullptr; }
-    virtual PrewhereInfoPtr getPrewhereInfo() const { return nullptr; }
+    [[nodiscard]] virtual FilterDAGInfoPtr getRowLevelFilter() const { return nullptr; }
+    [[nodiscard]] virtual PrewhereInfoPtr getPrewhereInfo() const { return nullptr; }
 
     /// TopN dynamic filtering (`tryOptimizeTopK`): a source that can filter rows and skip data
     /// using the running threshold of the query's top-K heap (e.g. a Parquet reader) opts in by
@@ -75,17 +75,17 @@ public:
     /// that column with that type - not when it is appended after the read (a virtual column such
     /// as `_path`, or a Hive partition column taken from the file path), since the reader could
     /// not evaluate the threshold against it. `column_name` in the info is that column's name.
-    virtual bool supportsTopKDynamicFilter(const ColumnWithTypeAndName & /*sort_column*/) const { return false; }
+    [[nodiscard]] virtual bool supportsTopKDynamicFilter(const ColumnWithTypeAndName & /*sort_column*/) const { return false; }
     virtual void setTopKFilter(std::shared_ptr<const FormatTopKFilterInfo> /*info*/) {}
 
     /// The whole output is consumed only by `min` / `max` (see `FormatFilterInfo::min_max_from_statistics`).
-    virtual bool supportsMinMaxFromStatistics() const { return false; }
+    [[nodiscard]] virtual bool supportsMinMaxFromStatistics() const { return false; }
     virtual void setMinMaxFromStatistics() {}
 
-    const std::shared_ptr<const ActionsDAG> & getFilterActionsDAG() const { return filter_actions_dag; }
+    [[nodiscard]] const std::shared_ptr<const ActionsDAG> & getFilterActionsDAG() const { return filter_actions_dag; }
     std::shared_ptr<const ActionsDAG> detachFilterActionsDAG() { return std::move(filter_actions_dag); }
 
-    bool hasCorrelatedExpressions() const override
+    [[nodiscard]] bool hasCorrelatedExpressions() const override
     {
         if (filter_actions_dag)
             return filter_actions_dag->hasCorrelatedColumns();
@@ -128,16 +128,16 @@ public:
 
     SourceStepWithFilter(const SourceStepWithFilter &) = default;
 
-    const SelectQueryInfo & getQueryInfo() const { return query_info; }
+    [[nodiscard]] const SelectQueryInfo & getQueryInfo() const { return query_info; }
     void setStorageLimits(std::shared_ptr<const StorageLimitsList> storage_limits) { query_info.storage_limits = std::move(storage_limits); }
-    FilterDAGInfoPtr getRowLevelFilter() const override { return query_info.row_level_filter; }
-    PrewhereInfoPtr getPrewhereInfo() const override { return query_info.prewhere_info; }
-    ContextPtr getContext() const { return context; }
-    const StorageSnapshotPtr & getStorageSnapshot() const { return storage_snapshot; }
+    [[nodiscard]] FilterDAGInfoPtr getRowLevelFilter() const override { return query_info.row_level_filter; }
+    [[nodiscard]] PrewhereInfoPtr getPrewhereInfo() const override { return query_info.prewhere_info; }
+    [[nodiscard]] ContextPtr getContext() const { return context; }
+    [[nodiscard]] const StorageSnapshotPtr & getStorageSnapshot() const { return storage_snapshot; }
 
-    bool isQueryWithFinal() const { return query_info.isFinal(); }
+    [[nodiscard]] bool isQueryWithFinal() const { return query_info.isFinal(); }
 
-    const Names & requiredSourceColumns() const { return required_source_columns; }
+    [[nodiscard]] const Names & requiredSourceColumns() const { return required_source_columns; }
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
@@ -148,7 +148,7 @@ public:
     /// idempotent. Format-based steps (file/url/object storage) shrink their header incrementally
     /// and can only accept a single prewhere update, so they return false to opt out of the
     /// optimize_prewhere_after_pushdown second pass.
-    virtual bool canUpdatePrewhereInfoMultipleTimes() const { return true; }
+    [[nodiscard]] virtual bool canUpdatePrewhereInfoMultipleTimes() const { return true; }
 
     void describeActions(FormatSettings & format_settings) const override;
 

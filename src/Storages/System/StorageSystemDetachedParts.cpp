@@ -319,7 +319,7 @@ public:
         , num_streams(num_streams_)
     {}
 
-    std::string getName() const override { return "ReadFromSystemDetachedParts"; }
+    [[nodiscard]] std::string getName() const override { return "ReadFromSystemDetachedParts"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 

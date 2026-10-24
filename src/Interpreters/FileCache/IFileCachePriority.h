@@ -171,7 +171,7 @@ public:
     public:
         virtual ~Iterator() = default;
 
-        virtual EntryPtr getEntry() const = 0;
+        [[nodiscard]] virtual EntryPtr getEntry() const = 0;
 
         /// Note: IncrementSize unlike decrementSize requires a cache lock, because
         /// it requires more consistency guarantees for eviction.
@@ -180,7 +180,7 @@ public:
 
         virtual void decrementSize(size_t size) = 0;
 
-        virtual bool isValid(const CachePriorityGuard::WriteLock &) const = 0;
+        [[nodiscard]] virtual bool isValid(const CachePriorityGuard::WriteLock &) const = 0;
 
         /// Batch removal: the caller holds the queue's write lock across several removes.
         virtual void remove(const CachePriorityGuard::WriteLock &) = 0;
@@ -196,13 +196,13 @@ public:
         /// would only pin the entry allocation until the cleanup discards it).
         virtual void invalidateBeforeRemove(const CachePriorityGuard::WriteLock &) noexcept { invalidate(); }
 
-        virtual QueueEntryType getType() const = 0;
+        [[nodiscard]] virtual QueueEntryType getType() const = 0;
 
-        virtual const Iterator * getNestedOrThis() const { return this; }
+        [[nodiscard]] virtual const Iterator * getNestedOrThis() const { return this; }
         virtual Iterator * getNestedOrThis() { return this; }
 
         /// The structural guard protecting this iterator's queue entry.
-        virtual CachePriorityGuard & getPriorityGuard() const = 0;
+        [[nodiscard]] virtual CachePriorityGuard & getPriorityGuard() const = 0;
 
         virtual void check(const CacheStateGuard::Lock &) const {}
     };
@@ -402,9 +402,9 @@ public:
             priority.holdImpl(size, elements, lock);
         }
 
-        size_t getSize() const { return size; }
+        [[nodiscard]] size_t getSize() const { return size; }
 
-        size_t getElements() const { return elements; }
+        [[nodiscard]] size_t getElements() const { return elements; }
 
         void release(const CacheStateGuard::Lock &) { releaseUnlocked(); }
 

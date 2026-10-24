@@ -47,7 +47,7 @@ public:
 
     /// How many addresses the pattern generates in total, ignoring `max_addresses`.
     /// `std::nullopt` when that number does not fit into `UInt64`.
-    std::optional<UInt64> totalCount() const { return total_count; }
+    [[nodiscard]] std::optional<UInt64> totalCount() const { return total_count; }
 
     /// Writes the next address into `out` and returns true, or returns false when the pattern is
     /// exhausted. Throws when the pattern generates more than `max_addresses` addresses.
@@ -56,7 +56,7 @@ public:
     /// Whether the last address has already been generated. Lets a caller that generates addresses in
     /// portions tell "the pattern ended" from "the portion ended" without asking for one more address,
     /// which would throw once `max_addresses` of them have been generated.
-    bool isExhausted() const { return finished; }
+    [[nodiscard]] bool isExhausted() const { return finished; }
 
 private:
     /// One position of the direct product: either a set of alternatives, or a numeric interval, which
@@ -69,7 +69,7 @@ private:
         size_t pad_width = 0; /// Left-pad the number with zeroes up to this width, 0 - do not pad.
         bool is_range = false;
 
-        UInt64 size() const;
+        [[nodiscard]] UInt64 size() const;
         void appendElementTo(String & out, UInt64 index) const;
     };
 

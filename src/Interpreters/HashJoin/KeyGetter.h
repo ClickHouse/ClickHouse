@@ -89,9 +89,9 @@ struct LowCardinalityKeyGetterForJoin
     }
 
     /// True when the current column is LowCardinality (dictionary path); false for a plain column.
-    ALWAYS_INLINE bool isLowCardinality() const { return positions != nullptr; }
+    [[nodiscard]] ALWAYS_INLINE bool isLowCardinality() const { return positions != nullptr; }
 
-    ALWAYS_INLINE size_t getIndexAt(size_t row) const
+    [[nodiscard]] ALWAYS_INLINE size_t getIndexAt(size_t row) const
     {
         switch (size_of_index_type)
         {

@@ -135,7 +135,7 @@ struct HashMethodOneNumber : public columns_hashing_impl::HashMethodBase<
     /// Is used for default implementation in HashMethodBase.
     FieldType getKeyHolder(size_t row, Arena &) const { return unalignedLoad<FieldType>(vec + row * sizeof(FieldType)); }
 
-    const FieldType * getKeyData() const { return reinterpret_cast<const FieldType *>(vec); }
+    [[nodiscard]] const FieldType * getKeyData() const { return reinterpret_cast<const FieldType *>(vec); }
 };
 
 
@@ -802,10 +802,10 @@ public:
         usable = true;
     }
 
-    bool isUsable() const { return usable; }
+    [[nodiscard]] bool isUsable() const { return usable; }
 
     /// The comparator must be usable and both rows must be valid.
-    ALWAYS_INLINE bool rowsEqual(size_t row, size_t other_row) const
+    [[nodiscard]] ALWAYS_INLINE bool rowsEqual(size_t row, size_t other_row) const
     {
         for (const auto & [data, size] : slices)
         {

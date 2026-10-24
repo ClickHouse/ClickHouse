@@ -110,8 +110,8 @@ public:
 
         static constexpr KindSet all() { return KindSet(~UInt32(0)); }
 
-        constexpr bool contains(Kind kind) const { return (bits & maskOf(kind)) != 0; }
-        constexpr KindSet without(Kind kind) const { return KindSet(bits & ~maskOf(kind)); }
+        [[nodiscard]] constexpr bool contains(Kind kind) const { return (bits & maskOf(kind)) != 0; }
+        [[nodiscard]] constexpr KindSet without(Kind kind) const { return KindSet(bits & ~maskOf(kind)); }
 
     private:
         explicit constexpr KindSet(UInt32 bits_) : bits(bits_) { }
@@ -164,14 +164,14 @@ public:
 
     struct ISubcolumnCreator
     {
-        virtual DataTypePtr create(const DataTypePtr & prev) const = 0;
-        virtual SerializationPtr create(const SerializationPtr & prev_serialization, const DataTypePtr & prev_type) const = 0;
-        virtual ColumnPtr create(const ColumnPtr & prev) const = 0;
+        [[nodiscard]] virtual DataTypePtr create(const DataTypePtr & prev) const = 0;
+        [[nodiscard]] virtual SerializationPtr create(const SerializationPtr & prev_serialization, const DataTypePtr & prev_type) const = 0;
+        [[nodiscard]] virtual ColumnPtr create(const ColumnPtr & prev) const = 0;
 
         /// A creator wraps whichever subcolumn was selected beneath it, but `create` receives only that
         /// subcolumn's type, column and serialization, which cannot tell a null map from any other `UInt8`.
         /// Returns the creator to use instead of this one, or `nullptr` to keep this one.
-        virtual std::shared_ptr<const ISubcolumnCreator> specializeForSelectedSubcolumn(const Substream &) const
+        [[nodiscard]] virtual std::shared_ptr<const ISubcolumnCreator> specializeForSelectedSubcolumn(const Substream &) const
         {
             return nullptr;
         }
@@ -376,7 +376,7 @@ public:
 
     struct SubstreamPath : public std::vector<Substream>
     {
-        String toString() const;
+        [[nodiscard]] String toString() const;
     };
 
     /// Cache for common substreams of one type, but possible different its subcolumns.

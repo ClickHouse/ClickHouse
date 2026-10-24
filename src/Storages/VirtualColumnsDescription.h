@@ -15,12 +15,12 @@ struct VirtualColumnDescription : public ColumnDescription
     VirtualColumnDescription() = default;
     VirtualColumnDescription(String name_, DataTypePtr type_, ASTPtr codec_, String comment_, VirtualsKind kind_, VirtualsMaterializationPlace place_, bool deterministic_);
 
-    bool isEphemeral() const { return kind == VirtualsKind::Ephemeral; }
-    bool isPersistent() const { return kind == VirtualsKind::Persistent; }
+    [[nodiscard]] bool isEphemeral() const { return kind == VirtualsKind::Ephemeral; }
+    [[nodiscard]] bool isPersistent() const { return kind == VirtualsKind::Persistent; }
 
     /// This method is needed for boost::multi_index because field
     /// of base class cannot be referenced in boost::multi_index::member.
-    const String & getName() const { return name; }
+    [[nodiscard]] const String & getName() const { return name; }
 };
 
 class VirtualColumnsDescription
@@ -34,32 +34,32 @@ public:
 
     using const_iterator = Container::const_iterator;
 
-    const_iterator begin() const { return container.begin(); }
-    const_iterator end() const { return container.end(); }
+    [[nodiscard]] const_iterator begin() const { return container.begin(); }
+    [[nodiscard]] const_iterator end() const { return container.end(); }
 
     VirtualColumnsDescription() = default;
 
     void add(VirtualColumnDescription desc);
     void addEphemeral(String name, DataTypePtr type, String comment, VirtualsMaterializationPlace place, bool deterministic = true);
     void addPersistent(String name, DataTypePtr type, ASTPtr codec, String comment);
-    std::optional<ColumnDefault> getDefault(const String & column_name) const;
+    [[nodiscard]] std::optional<ColumnDefault> getDefault(const String & column_name) const;
 
-    size_t size() const { return container.size(); }
-    bool empty() const { return container.empty(); }
-    bool has(const String & name) const { return container.get<1>().contains(name); }
+    [[nodiscard]] size_t size() const { return container.size(); }
+    [[nodiscard]] bool empty() const { return container.empty(); }
+    [[nodiscard]] bool has(const String & name) const { return container.get<1>().contains(name); }
 
-    std::optional<NameAndTypePair> tryGet(const String & name, VirtualsKind kind, VirtualsMaterializationPlace place) const;
-    NameAndTypePair get(const String & name, VirtualsKind kind, VirtualsMaterializationPlace place) const;
+    [[nodiscard]] std::optional<NameAndTypePair> tryGet(const String & name, VirtualsKind kind, VirtualsMaterializationPlace place) const;
+    [[nodiscard]] NameAndTypePair get(const String & name, VirtualsKind kind, VirtualsMaterializationPlace place) const;
 
-    const VirtualColumnDescription * tryGetDescription(const String & name, VirtualsKind kind, VirtualsMaterializationPlace place) const;
-    const VirtualColumnDescription & getDescription(const String & name, VirtualsKind kind, VirtualsMaterializationPlace place) const;
+    [[nodiscard]] const VirtualColumnDescription * tryGetDescription(const String & name, VirtualsKind kind, VirtualsMaterializationPlace place) const;
+    [[nodiscard]] const VirtualColumnDescription & getDescription(const String & name, VirtualsKind kind, VirtualsMaterializationPlace place) const;
 
-    Block getSampleBlock(VirtualsKind kind, VirtualsMaterializationPlace place) const;
-    ColumnsDescription toColumnsDescription(VirtualsKind kind, VirtualsMaterializationPlace place) const;
+    [[nodiscard]] Block getSampleBlock(VirtualsKind kind, VirtualsMaterializationPlace place) const;
+    [[nodiscard]] ColumnsDescription toColumnsDescription(VirtualsKind kind, VirtualsMaterializationPlace place) const;
 
     /// Like `getSampleBlock`, but skips the per-column `IDataType::createColumn()` allocation
     /// and the `Block` round-trip. Hot in `StorageSnapshot::getColumns`.
-    NamesAndTypesList getNamesAndTypes(VirtualsKind kind, VirtualsMaterializationPlace place) const;
+    [[nodiscard]] NamesAndTypesList getNamesAndTypes(VirtualsKind kind, VirtualsMaterializationPlace place) const;
 
 private:
     Container container;

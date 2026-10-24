@@ -63,11 +63,11 @@ private:
             const ExpressionActionsSettings & actions_settings);
 
         /// Returns the boundary columns and shared intermediates in the output header's order.
-        Columns evaluate(const Columns & columns, size_t num_rows) const;
+        [[nodiscard]] Columns evaluate(const Columns & columns, size_t num_rows) const;
 
-        const Block & getOutputHeader() const;
-        ColumnPtr getStartColumn(const Columns & columns) const { return start_position ? columns[*start_position] : nullptr; }
-        ColumnPtr getEndColumn(const Columns & columns) const { return end_position ? columns[*end_position] : nullptr; }
+        [[nodiscard]] const Block & getOutputHeader() const;
+        [[nodiscard]] ColumnPtr getStartColumn(const Columns & columns) const { return start_position ? columns[*start_position] : nullptr; }
+        [[nodiscard]] ColumnPtr getEndColumn(const Columns & columns) const { return end_position ? columns[*end_position] : nullptr; }
 
     private:
         ExpressionActionsPtr actions;

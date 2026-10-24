@@ -18,9 +18,9 @@ public:
             bool streams_fan_out_,
             const SortingStep::Settings & sort_settings_);
 
-    String getName() const override { return "Window"; }
+    [[nodiscard]] String getName() const override { return "Window"; }
 
-    bool hasCorrelatedExpressions() const override
+    [[nodiscard]] bool hasCorrelatedExpressions() const override
     {
         for (const auto & actions : window_description.partition_by_actions)
             if (actions && actions->hasCorrelatedColumns())
@@ -50,27 +50,27 @@ public:
     /// `output_bytes = 0` (i.e. "shipping all pre-window rows to the initiator is free") into the cost
     /// model. Statistics are collected when a proper boundary exists below the window, e.g. an
     /// aggregation whose result the window function consumes.
-    bool supportsDataflowStatisticsCollection() const override { return true; }
+    [[nodiscard]] bool supportsDataflowStatisticsCollection() const override { return true; }
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
     void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
     void serialize(Serialization & ctx) const override;
-    bool isSerializable() const override { return true; }
+    [[nodiscard]] bool isSerializable() const override { return true; }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
-    const WindowDescription & getWindowDescription() const;
+    [[nodiscard]] const WindowDescription & getWindowDescription() const;
 
-    const std::vector<WindowFunctionDescription> & getWindowFunctions() const { return window_functions; }
+    [[nodiscard]] const std::vector<WindowFunctionDescription> & getWindowFunctions() const { return window_functions; }
 
-    const SortingStep::Settings & getSortSettings() const { return sort_settings; }
+    [[nodiscard]] const SortingStep::Settings & getSortSettings() const { return sort_settings; }
 
     /// After the last window the pipeline is resized back to `max_threads` for downstream parallelism.
-    bool hasStreamsFanOut() const { return streams_fan_out; }
+    [[nodiscard]] bool hasStreamsFanOut() const { return streams_fan_out; }
 
-    QueryPlanStepPtr clone() const override;
+    [[nodiscard]] QueryPlanStepPtr clone() const override;
 
 private:
     void updateOutputHeader() override;

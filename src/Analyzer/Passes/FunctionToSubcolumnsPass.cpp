@@ -165,7 +165,7 @@ struct IdentifiersToOptimize
     /// can be rewritten inside WHERE/PREWHERE.
     ColumnInSourceSet filter_only;
 
-    bool empty() const { return everywhere.empty() && filter_only.empty(); }
+    [[nodiscard]] bool empty() const { return everywhere.empty() && filter_only.empty(); }
 };
 
 /// The correlated columns of every subquery on the way down, one entry per query or union level.
@@ -195,7 +195,7 @@ public:
 
     void leave() { stack.pop_back(); }
 
-    bool contains(const ColumnInSource & column_in_source) const
+    [[nodiscard]] bool contains(const ColumnInSource & column_in_source) const
     {
         for (const auto & columns : stack)
             if (columns.contains(column_in_source))
@@ -1509,7 +1509,7 @@ public:
         return true;
     }
 
-    IdentifiersToOptimize getIdentifiersToOptimize() const
+    [[nodiscard]] IdentifiersToOptimize getIdentifiersToOptimize() const
     {
         if (can_wrap_result_columns_with_nullable)
         {

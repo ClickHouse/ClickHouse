@@ -155,10 +155,10 @@ public:
     virtual void call(const AIChatRequest & ai_request, const ConnectionTimeouts & timeouts, AIResponse & response) = 0;
 
     /// Provider-specific headers (credentials, API version) sent with every request.
-    virtual HTTPHeaderEntries getHeaders() const = 0;
+    [[nodiscard]] virtual HTTPHeaderEntries getHeaders() const = 0;
 
     /// Whether this provider exposes an embeddings endpoint.
-    virtual bool supportsEmbeddings() const { return false; }
+    [[nodiscard]] virtual bool supportsEmbeddings() const { return false; }
 
     /// Send an embedding request. Only valid when `supportsEmbeddings()` is true. Replaces the contents of
     /// `response`, filling `input_tokens` before the payload is validated: so a failed request can still update token counts

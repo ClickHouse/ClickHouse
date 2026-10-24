@@ -35,7 +35,7 @@ public:
         String forwarded_address;
         String client_key;
 
-        auto toTuple() const { return std::tie(user_id, enabled_roles, user_name, client_address, forwarded_address, client_key); }
+        [[nodiscard]] auto toTuple() const { return std::tie(user_id, enabled_roles, user_name, client_address, forwarded_address, client_key); }
         friend bool operator ==(const Params & lhs, const Params & rhs) { return lhs.toTuple() == rhs.toTuple(); }
         friend bool operator !=(const Params & lhs, const Params & rhs) { return !(lhs == rhs); }
         friend bool operator <(const Params & lhs, const Params & rhs) { return lhs.toTuple() < rhs.toTuple(); }
@@ -126,7 +126,7 @@ private:
         String quota_name;
         String quota_key;
 
-        std::optional<QuotaUsage> getUsage(std::chrono::system_clock::time_point current_time) const;
+        [[nodiscard]] std::optional<QuotaUsage> getUsage(std::chrono::system_clock::time_point current_time) const;
     };
 
     /// Callback type for resolving intervals lazily per normalized query hash.

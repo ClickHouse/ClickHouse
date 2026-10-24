@@ -71,7 +71,7 @@ public:
 
     /// Returns the access required to restore the loaded entities.
     /// `loadFromBackup` must be called first.
-    AccessRights getRequiredAccess() const;
+    [[nodiscard]] AccessRights getRequiredAccess() const;
 
     /// Generates random IDs for access entities we're restoring to insert them into an access storage;
     /// and finds IDs of existing access entities which are used as dependencies.
@@ -79,7 +79,7 @@ public:
 
     /// Returns access entities loaded from backup and prepared for insertion into an access storage.
     /// Both functions loadFromBackup() and generateRandomIDsAndResolveDependencies() must be called before that.
-    AccessEntitiesToRestore getEntitiesToRestore(const String & data_path_in_backup) const;
+    [[nodiscard]] AccessEntitiesToRestore getEntitiesToRestore(const String & data_path_in_backup) const;
 
 private:
     const BackupPtr backup;

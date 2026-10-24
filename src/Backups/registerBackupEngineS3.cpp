@@ -142,8 +142,8 @@ namespace
 
         if (backup_info.args.size() == 3)
         {
-            backup_info.args[1].safeGet<String>();
-            backup_info.args[2].safeGet<String>();
+            (void)backup_info.args[1].safeGet<String>();
+            (void)backup_info.args[2].safeGet<String>();
         }
 
         if (backup_info.function_arg)
@@ -172,7 +172,7 @@ namespace
         /// `NAMED_COLLECTION` is enforced.
         if (!backup_info.id_arg.empty())
         {
-            backup_info.getNamedCollection(context);
+            (void)backup_info.getNamedCollection(context);
             return target;
         }
 

@@ -912,7 +912,7 @@ private:
 
     /// Repeats `SerializationObject::shouldSkipPath`: a path that the serialization of the type would
     /// drop must not be generated at all, otherwise its values would silently disappear on insertion.
-    bool shouldSkipPath(const String & path) const
+    [[nodiscard]] bool shouldSkipPath(const String & path) const
     {
         if (object_type.getTypedPaths().contains(path))
             return true;
@@ -932,7 +932,7 @@ private:
         return false;
     }
 
-    bool hasTypedChildren(const String & path) const
+    [[nodiscard]] bool hasTypedChildren(const String & path) const
     {
         const String prefix = path + ".";
         for (const auto & [typed_path, _] : object_type.getTypedPaths())
@@ -974,7 +974,7 @@ public:
         return schemas;
     }
 
-    const DynamicSchema & dynamic(UInt64 seed) const
+    [[nodiscard]] const DynamicSchema & dynamic(UInt64 seed) const
     {
         auto it = dynamic_schemas.find(seed);
         if (it == dynamic_schemas.end())
@@ -982,7 +982,7 @@ public:
         return it->second;
     }
 
-    const JSONSchema & json(UInt64 seed) const
+    [[nodiscard]] const JSONSchema & json(UInt64 seed) const
     {
         auto it = json_schemas.find(seed);
         if (it == json_schemas.end())
@@ -1111,17 +1111,17 @@ struct GenerateRandomContext
     pcg64 & rng;                     /// The value generator of one stream.
     UInt64 schema_seed = 0;          /// Identifies the position in the type tree.
 
-    GenerateRandomContext child(UInt64 salt) const
+    [[nodiscard]] GenerateRandomContext child(UInt64 salt) const
     {
         return GenerateRandomContext{options, schemas, rng, deriveSeed(schema_seed, salt)};
     }
 
-    GenerateRandomContext nestedChild(UInt64 salt) const
+    [[nodiscard]] GenerateRandomContext nestedChild(UInt64 salt) const
     {
         return GenerateRandomContext{nestedOptions(options), schemas, rng, deriveSeed(schema_seed, salt)};
     }
 
-    GenerateRandomContext nestedChild(std::string_view name) const
+    [[nodiscard]] GenerateRandomContext nestedChild(std::string_view name) const
     {
         return GenerateRandomContext{nestedOptions(options), schemas, rng, deriveSeed(schema_seed, name)};
     }

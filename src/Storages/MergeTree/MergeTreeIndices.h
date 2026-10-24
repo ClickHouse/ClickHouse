@@ -118,10 +118,10 @@ struct IMergeTreeIndexGranule
     /// By analogy with ISerialization::deserializeBinaryBulkWithMultipleStreams.
     virtual void deserializeBinaryWithMultipleStreams(MergeTreeIndexInputStreams & streams, MergeTreeIndexDeserializationState & state);
 
-    virtual bool empty() const = 0;
+    [[nodiscard]] virtual bool empty() const = 0;
 
     /// The in-memory size of the granule. Not expected to be 100% accurate.
-    virtual size_t memoryUsageBytes() const = 0;
+    [[nodiscard]] virtual size_t memoryUsageBytes() const = 0;
 };
 
 using MergeTreeIndexGranulePtr = std::shared_ptr<IMergeTreeIndexGranule>;
@@ -143,7 +143,7 @@ struct IMergeTreeIndexAggregator
 {
     virtual ~IMergeTreeIndexAggregator() = default;
 
-    virtual bool empty() const = 0;
+    [[nodiscard]] virtual bool empty() const = 0;
     virtual MergeTreeIndexGranulePtr getGranuleAndReset() = 0;
 
     /// Updates the stored info using rows of the specified block.
@@ -162,13 +162,13 @@ class IMergeTreeIndexCondition
 public:
     virtual ~IMergeTreeIndexCondition() = default;
     /// Checks if this index is useful for query.
-    virtual bool alwaysUnknownOrTrue() const = 0;
+    [[nodiscard]] virtual bool alwaysUnknownOrTrue() const = 0;
 
     using UpdatePartialDisjunctionResultFn = KeyCondition::UpdatePartialDisjunctionResultFn;
-    virtual bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const = 0;
+    [[nodiscard]] virtual bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const = 0;
 
     using FilteredGranules = std::vector<size_t>;
-    virtual FilteredGranules getPossibleGranules(const MergeTreeIndexBulkGranulesPtr &) const
+    [[nodiscard]] virtual FilteredGranules getPossibleGranules(const MergeTreeIndexBulkGranulesPtr &) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Index does not support filtering in bulk");
     }
@@ -177,13 +177,13 @@ public:
     /// Returns the N nearest neighbors of a reference vector in the index granule.
     /// The nearest neighbors are returned as row positions.
     /// If VectorSearchParameters::return_distances = true, then the distances are returned as well.
-    virtual NearestNeighbours calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr /*granule*/) const
+    [[nodiscard]] virtual NearestNeighbours calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr /*granule*/) const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "calculateApproximateNearestNeighbors is not implemented for non-vector-similarity indexes");
     }
 
     template <typename RPNElement>
-    bool rpnEvaluatesAlwaysUnknownOrTrue(
+    [[nodiscard]] bool rpnEvaluatesAlwaysUnknownOrTrue(
         const std::vector<RPNElement> & rpn, const std::unordered_set<typename RPNElement::Function> & matchingFunctions) const
     {
         std::vector<Internal::RPNEvaluationIndexUsefulnessState> rpn_stack;
@@ -237,7 +237,7 @@ public:
         return rpn_stack.front() != Internal::RPNEvaluationIndexUsefulnessState::TRUE;
     }
 
-    virtual std::string getDescription() const = 0;
+    [[nodiscard]] virtual std::string getDescription() const = 0;
 };
 
 using MergeTreeIndexConditionPtr = std::shared_ptr<IMergeTreeIndexCondition>;
@@ -257,8 +257,8 @@ struct IMergeTreeIndex
     virtual ~IMergeTreeIndex() = default;
 
     /// Returns the filename without extension. If escape_filenames is set (default since 26.1), the name is escaped.
-    String getFileName() const;
-    size_t getGranularity() const { return index.granularity; }
+    [[nodiscard]] String getFileName() const;
+    [[nodiscard]] size_t getGranularity() const { return index.granularity; }
 
     /// Returns substreams for serialization.
     /// Reimplement if you want new index format.
@@ -267,7 +267,7 @@ struct IMergeTreeIndex
     /// `getPhysicalFormat` and `getPotentialSubstreams` should be reimplemented too,
     /// and check all previous extensions for substreams too
     /// (to avoid breaking backward compatibility).
-    virtual MergeTreeIndexSubstreams getSubstreams() const { return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}; }
+    [[nodiscard]] virtual MergeTreeIndexSubstreams getSubstreams() const { return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}; }
 
     /// Two distinct questions are asked about a part's copy of an index, and they must not be conflated:
     ///
@@ -287,17 +287,17 @@ struct IMergeTreeIndex
     /// checksums.txt) can still be discovered via the skp_idx.packed overlay.
     ///
     /// The physical question needs only the checksums and the storage, so it is answered without a part.
-    virtual MergeTreeIndexFormat getPhysicalFormat(
+    [[nodiscard]] virtual MergeTreeIndexFormat getPhysicalFormat(
         const MergeTreeDataPartChecksums & checksums,
         const IDataPartStorage & storage,
         const std::string & relative_path_prefix) const;
-    MergeTreeIndexFormat getPhysicalFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const;
-    MergeTreeIndexFormat getPhysicalFormat(const IMergeTreeDataPartInfoForReader & part_info, const std::string & relative_path_prefix) const;
+    [[nodiscard]] MergeTreeIndexFormat getPhysicalFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const;
+    [[nodiscard]] MergeTreeIndexFormat getPhysicalFormat(const IMergeTreeDataPartInfoForReader & part_info, const std::string & relative_path_prefix) const;
 
     /// Deliberately NON-virtual: the usability checks below must not be bypassable by a format
     /// override. Reimplement getPhysicalFormat() instead.
-    MergeTreeIndexFormat getDeserializedFormat(const IMergeTreeDataPartInfoForReader & part_info, const std::string & relative_path_prefix) const;
-    MergeTreeIndexFormat getDeserializedFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const;
+    [[nodiscard]] MergeTreeIndexFormat getDeserializedFormat(const IMergeTreeDataPartInfoForReader & part_info, const std::string & relative_path_prefix) const;
+    [[nodiscard]] MergeTreeIndexFormat getDeserializedFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const;
 
     /// True when @part's recorded physical types for the columns this index requires are
     /// representation-compatible with the types the current metadata snapshot declares, i.e. when
@@ -308,8 +308,8 @@ struct IMergeTreeIndex
     /// IDataType::equals() and therefore erases exactly those attributes. Ask this only about a part
     /// that HAS the index on disk: a required column whose type the part does not record is refused,
     /// because such a part can still carry the index's granules.
-    bool isPartTypeCompatible(const IMergeTreeDataPartInfoForReader & part_info) const;
-    bool isPartTypeCompatible(const IMergeTreeDataPart & part) const;
+    [[nodiscard]] bool isPartTypeCompatible(const IMergeTreeDataPartInfoForReader & part_info) const;
+    [[nodiscard]] bool isPartTypeCompatible(const IMergeTreeDataPart & part) const;
 
     /// Union of every checksummed or packed on-disk version present (unlike
     /// `getDeserializedFormat`, which returns only the preferred readable layout and reports
@@ -323,19 +323,19 @@ struct IMergeTreeIndex
 
     /// Superset: every substream any version of this index could have written, whatever a given
     /// part holds. Takes no part and must do no I/O, so it is safe during part destruction.
-    virtual MergeTreeIndexSubstreams getPotentialSubstreams() const { return getSubstreams(); }
+    [[nodiscard]] virtual MergeTreeIndexSubstreams getPotentialSubstreams() const { return getSubstreams(); }
 
-    virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
+    [[nodiscard]] virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
 
     /// A more optimal filtering method
-    virtual bool supportsBulkFiltering() const { return false; }
+    [[nodiscard]] virtual bool supportsBulkFiltering() const { return false; }
 
-    virtual MergeTreeIndexBulkGranulesPtr createIndexBulkGranules() const
+    [[nodiscard]] virtual MergeTreeIndexBulkGranulesPtr createIndexBulkGranules() const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Index does not support filtering in bulk");
     }
 
-    virtual MergeTreeIndexAggregatorPtr createIndexAggregator() const = 0;
+    [[nodiscard]] virtual MergeTreeIndexAggregatorPtr createIndexAggregator() const = 0;
 
     virtual MergeTreeIndexConditionPtr createIndexCondition(
         const ActionsDAG::Node * predicate, ContextPtr context) const = 0;
@@ -349,23 +349,23 @@ struct IMergeTreeIndex
             "createIndexCondition with vector search parameters is not implemented for index of type {}", index.type);
     }
 
-    virtual bool isVectorSimilarityIndex() const { return false; }
-    virtual bool isTextIndex() const { return false; }
+    [[nodiscard]] virtual bool isVectorSimilarityIndex() const { return false; }
+    [[nodiscard]] virtual bool isTextIndex() const { return false; }
 
     /// An inert index holds no on-disk data and cannot be (re)computed. It exists only so old
     /// tables that still reference a removed index type stay attachable. Merge and mutation must
     /// never schedule it for recalculation, otherwise those operations get wedged.
-    virtual bool isInert() const { return false; }
+    [[nodiscard]] virtual bool isInert() const { return false; }
 
     /// False when the index data usually does not compress (e.g. bloom filter bits), so a generic codec only
     /// slows down reading it. The blocks of such an index that the part's codec does not compress well
     /// are written with codec `NONE`.
-    virtual bool isCompressible() const { return true; }
+    [[nodiscard]] virtual bool isCompressible() const { return true; }
 
-    Names getColumnsRequiredForIndexCalc() const;
-    const NamesAndTypesList & getColumnsWithTypesRequiredForIndexCalc() const;
+    [[nodiscard]] Names getColumnsRequiredForIndexCalc() const;
+    [[nodiscard]] const NamesAndTypesList & getColumnsWithTypesRequiredForIndexCalc() const;
 
-    NameSet getColumnsShadowingMapSubcolumns() const;
+    [[nodiscard]] NameSet getColumnsShadowingMapSubcolumns() const;
 
     StorageMetadataPtr metadata_snapshot;
     const IndexDescription & index;
@@ -400,16 +400,16 @@ public:
     void validate(const IndexDescription & index, bool attach, const MergeTreeSettings & settings) const;
 
     using Creator = std::function<MergeTreeIndexPtr(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings)>;
-    MergeTreeIndexPtr get(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings) const;
-    MergeTreeIndices getMany(StorageMetadataPtr metadata_snapshot, const std::vector<IndexDescription> & indices, const MergeTreeSettings & settings) const;
+    [[nodiscard]] MergeTreeIndexPtr get(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings) const;
+    [[nodiscard]] MergeTreeIndices getMany(StorageMetadataPtr metadata_snapshot, const std::vector<IndexDescription> & indices, const MergeTreeSettings & settings) const;
 
     void registerCreator(const std::string & index_type, Creator creator, Documentation documentation = {});
     void registerValidator(const std::string & index_type, Validator validator);
 
-    std::vector<String> getAllRegisteredNames() const;
+    [[nodiscard]] std::vector<String> getAllRegisteredNames() const;
 
     /// Returns the embedded documentation for a data skipping index type (empty if none was registered).
-    Documentation getDocumentation(const std::string & index_type) const;
+    [[nodiscard]] Documentation getDocumentation(const std::string & index_type) const;
 
 protected:
     MergeTreeIndexFactory();

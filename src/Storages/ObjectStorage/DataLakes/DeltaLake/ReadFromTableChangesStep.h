@@ -26,11 +26,11 @@ public:
         size_t num_streams_,
         ContextPtr context_);
 
-    std::string getName() const override { return STEP_NAME; }
+    [[nodiscard]] std::string getName() const override { return STEP_NAME; }
 
-    QueryPlanStepPtr clone() const override;
+    [[nodiscard]] QueryPlanStepPtr clone() const override;
 
-    StorageMetadataPtr getStorageMetadata() const { return storage_snapshot->metadata; }
+    [[nodiscard]] StorageMetadataPtr getStorageMetadata() const { return storage_snapshot->metadata; }
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 

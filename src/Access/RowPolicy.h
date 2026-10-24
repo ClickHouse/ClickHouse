@@ -21,10 +21,10 @@ struct RowPolicy : public IAccessEntity
     void setFullName(const String & short_name, const String & database, const String & table_name);
     void setFullName(const RowPolicyName & full_name_);
 
-    const String & getDatabase() const { return full_name.database; }
-    const String & getTableName() const { return full_name.table_name; }
-    const String & getShortName() const { return full_name.short_name; }
-    const RowPolicyName & getFullName() const { return full_name; }
+    [[nodiscard]] const String & getDatabase() const { return full_name.database; }
+    [[nodiscard]] const String & getTableName() const { return full_name.table_name; }
+    [[nodiscard]] const String & getShortName() const { return full_name.short_name; }
+    [[nodiscard]] const RowPolicyName & getFullName() const { return full_name; }
 
     /// A SQL conditional expression used to figure out which rows should be visible
     /// for user or available for modification.
@@ -34,30 +34,30 @@ struct RowPolicy : public IAccessEntity
     /// A row is only accessible if at least one of the permissive policies passes,
     /// in addition to all the restrictive policies.
     void setPermissive(bool permissive_ = true) { setRestrictive(!permissive_); }
-    bool isPermissive() const { return !isRestrictive(); }
+    [[nodiscard]] bool isPermissive() const { return !isRestrictive(); }
 
     /// Applied for entire database
-    bool isForDatabase() const { return full_name.table_name == RowPolicyName::ANY_TABLE_MARK; }
+    [[nodiscard]] bool isForDatabase() const { return full_name.table_name == RowPolicyName::ANY_TABLE_MARK; }
 
     /// Sets that the policy is restrictive.
     /// A row is only accessible if at least one of the permissive policies passes,
     /// in addition to all the restrictive policies.
     void setRestrictive(bool restrictive_ = true) { restrictive = restrictive_; }
-    bool isRestrictive() const { return restrictive; }
+    [[nodiscard]] bool isRestrictive() const { return restrictive; }
 
-    bool equal(const IAccessEntity & other) const override;
-    std::shared_ptr<IAccessEntity> clone() const override { return cloneImpl<RowPolicy>(); }
+    [[nodiscard]] bool equal(const IAccessEntity & other) const override;
+    [[nodiscard]] std::shared_ptr<IAccessEntity> clone() const override { return cloneImpl<RowPolicy>(); }
     static constexpr const auto TYPE = AccessEntityType::ROW_POLICY;
-    AccessEntityType getType() const override { return TYPE; }
+    [[nodiscard]] AccessEntityType getType() const override { return TYPE; }
 
-    std::vector<UUID> findDependencies() const override;
-    bool hasDependencies(const std::unordered_set<UUID> & ids) const override;
+    [[nodiscard]] std::vector<UUID> findDependencies() const override;
+    [[nodiscard]] bool hasDependencies(const std::unordered_set<UUID> & ids) const override;
     void replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids) override;
     void copyDependenciesFrom(const IAccessEntity & src, const std::unordered_set<UUID> & ids) override;
     void removeDependencies(const std::unordered_set<UUID> & ids) override;
     void clearAllExceptDependencies() override;
 
-    bool isBackupAllowed() const override { return true; }
+    [[nodiscard]] bool isBackupAllowed() const override { return true; }
 
     /// Which roles or users should use this row policy.
     RolesOrUsersSet to_roles;

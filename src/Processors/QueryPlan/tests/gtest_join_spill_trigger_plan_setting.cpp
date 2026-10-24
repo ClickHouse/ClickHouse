@@ -70,7 +70,7 @@ struct Step
 
     /// `l <op> r` over the `index`-th column of each side. The inputs of the DAG are the left header followed by
     /// the right one.
-    JoinActionRef predicate(JoinConditionOperator op, size_t index) const
+    [[nodiscard]] JoinActionRef predicate(JoinConditionOperator op, size_t index) const
     {
         const auto & inputs = expression_actions.getActionsDAG()->getInputs();
         JoinActionRef left(inputs.at(index), expression_actions);

@@ -118,11 +118,11 @@ public:
         ColumnConstPtr column;
 
         /// If result of this not is deterministic. Checks only this node, not a subtree.
-        bool isDeterministic() const;
+        [[nodiscard]] bool isDeterministic() const;
         /// Follows alias nodes to the expression they name.
-        const Node * getWithoutAlias() const;
+        [[nodiscard]] const Node * getWithoutAlias() const;
         void toTree(JSONBuilder::JSONMap & map) const;
-        UInt64 getHash() const;
+        [[nodiscard]] UInt64 getHash() const;
         /// `build_independent` leaves out what differs between two builds of the same query: the composed
         /// names of derived nodes and prepared-set values, and the index of the analyzer-generated table
         /// qualifier in an INPUT name. See the comment on the definition.
@@ -157,11 +157,11 @@ public:
     explicit ActionsDAG(const NamesAndTypesList & inputs_);
     explicit ActionsDAG(const ColumnsWithTypeAndName & inputs_, bool duplicate_const_columns = true);
 
-    const Nodes & getNodes() const { return nodes; }
-    NodeRawConstPtrs getNodesPointers() const;
+    [[nodiscard]] const Nodes & getNodes() const { return nodes; }
+    [[nodiscard]] NodeRawConstPtrs getNodesPointers() const;
     static Nodes detachNodes(ActionsDAG && dag);
-    const NodeRawConstPtrs & getInputs() const { return inputs; }
-    const NodeRawConstPtrs & getOutputs() const { return outputs; }
+    [[nodiscard]] const NodeRawConstPtrs & getInputs() const { return inputs; }
+    [[nodiscard]] const NodeRawConstPtrs & getOutputs() const { return outputs; }
 
     /// Build-independent identity of the output named `name` - what that output computes, with the
     /// names this plan build composed left out (see `Node::updateHash`). A step that refers to one of
@@ -173,17 +173,17 @@ public:
     /// Output nodes can contain any column returned from DAG. You may manually change it if needed.
     NodeRawConstPtrs & getOutputs() { return outputs; }
 
-    NamesAndTypesList getRequiredColumns() const;
-    Names getRequiredColumnsNames() const;
-    ColumnsWithTypeAndName getResultColumns() const;
-    NamesAndTypesList getNamesAndTypesList() const;
+    [[nodiscard]] NamesAndTypesList getRequiredColumns() const;
+    [[nodiscard]] Names getRequiredColumnsNames() const;
+    [[nodiscard]] ColumnsWithTypeAndName getResultColumns() const;
+    [[nodiscard]] NamesAndTypesList getNamesAndTypesList() const;
 
-    Names getNames() const;
-    std::string dumpNames() const;
-    std::string dumpDAG() const;
+    [[nodiscard]] Names getNames() const;
+    [[nodiscard]] std::string dumpNames() const;
+    [[nodiscard]] std::string dumpDAG() const;
 
-    std::vector<const Node *> getIdToNode() const;
-    std::unordered_map<const Node *, size_t> getNodeToIdMap() const;
+    [[nodiscard]] std::vector<const Node *> getIdToNode() const;
+    [[nodiscard]] std::unordered_map<const Node *, size_t> getNodeToIdMap() const;
 
     void serialize(WriteBuffer & out, SerializedSetsRegistry & registry, const Block * input_header = nullptr) const;
     /// max_type_complexity guards binary type decoding (0 == unlimited). Callers pass the effective
@@ -234,13 +234,13 @@ public:
     const Node & addPlaceholder(std::string name, DataTypePtr type);
 
     /// Find first column by name in output nodes. This search is linear.
-    const Node & findInOutputs(const std::string & name) const;
+    [[nodiscard]] const Node & findInOutputs(const std::string & name) const;
 
     /// Same, but return nullptr if node not found.
-    const Node * tryFindInOutputs(const std::string & name) const;
+    [[nodiscard]] const Node * tryFindInOutputs(const std::string & name) const;
 
     /// Same, but for the list of names.
-    NodeRawConstPtrs findInOutputs(const Names & names) const;
+    [[nodiscard]] NodeRawConstPtrs findInOutputs(const Names & names) const;
 
     /// Find first node with the same name in output nodes and replace it.
     /// If was not found, add node to outputs end.
@@ -342,21 +342,21 @@ public:
         const std::unordered_map<const Node *, const Node *> & new_inputs,
         const NodeRawConstPtrs & required_outputs);
 
-    bool hasCorrelatedColumns() const noexcept;
-    bool hasArrayJoin() const noexcept;
-    bool hasStatefulFunctions() const;
+    [[nodiscard]] bool hasCorrelatedColumns() const noexcept;
+    [[nodiscard]] bool hasArrayJoin() const noexcept;
+    [[nodiscard]] bool hasStatefulFunctions() const;
     /// Returns true for stateful functions or functions non-deterministic within the query,
     /// including functions in lambda bodies.
-    bool hasNonDeterministicOrStatefulFunctions() const;
-    bool trivial() const noexcept; /// If actions has no functions or array join.
+    [[nodiscard]] bool hasNonDeterministicOrStatefulFunctions() const;
+    [[nodiscard]] bool trivial() const noexcept; /// If actions has no functions or array join.
     void assertDeterministic() const; /// Throw if not isDeterministic.
-    bool hasNonDeterministic() const;
+    [[nodiscard]] bool hasNonDeterministic() const;
     /// A lambda keeps its body in an inner DAG that neither `getNodes()` nor a walk over `Node::children`
     /// reaches, while the node holding it reports the `IFunctionBase` determinism defaults whatever the body
     /// does. True when a body hidden below `node`, at any lambda depth, has a function `is_unsafe` accepts.
     static bool hasUnsafeHiddenLambdaBody(const Node & node, const std::function<bool(const IFunctionBase &)> & is_unsafe);
     /// A computed node reuses an input's name (`CAST(x, ...) AS x`). Names then can't identify carriers.
-    bool hasInputNameShadowedByComputedNode() const;
+    [[nodiscard]] bool hasInputNameShadowedByComputedNode() const;
 
 #if USE_EMBEDDED_COMPILER
     void compileExpressions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
@@ -364,7 +364,7 @@ public:
 
     using NodeMapping = std::unordered_map<const Node *, const Node *>;
     ActionsDAG clone(NodeMapping & old_to_new_nodes) const;
-    ActionsDAG clone() const;
+    [[nodiscard]] ActionsDAG clone() const;
 
     static ActionsDAG cloneSubDAG(const NodeRawConstPtrs & outputs, bool remove_aliases);
     static ActionsDAG cloneSubDAG(const NodeRawConstPtrs & outputs, NodeMapping & copy_map, bool remove_aliases);
@@ -390,7 +390,7 @@ public:
     ///
     /// In addition, check that result constants are constants according to DAG.
     /// In case if function return constant, but arguments are not constant, materialize it.
-    Block updateHeader(const Block & header) const;
+    [[nodiscard]] Block updateHeader(const Block & header) const;
 
     /// Match DAG inputs to header columns by name (left-to-right, handling duplicates),
     /// replicating the matching logic from updateHeader.
@@ -402,7 +402,7 @@ public:
         std::vector<size_t> matched;
         std::vector<size_t> passthrough;
     };
-    MatchedInputPositions matchInputPositionsToHeader(const Block & header) const;
+    [[nodiscard]] MatchedInputPositions matchInputPositionsToHeader(const Block & header) const;
 
     /// Same as above, but with an explicit list of input nodes instead of using the DAG's inputs.
     static MatchedInputPositions matchInputNodesToHeader(const NodeRawConstPtrs & input_nodes, const Block & header);
@@ -488,27 +488,27 @@ public:
     ///   initial DAG    : (a, b, c, d, e) -> (w, x, y, z)  | 1 a 2 b 3 c 4 d 5 e 6      ->  1 2 3 4 5 6 w x y z
     ///   split (first)  : (a, c, d) -> (i, j, k, w, y)     | 1 a 2 b 3 c 4 d 5 e 6      ->  1 2 b 3 4 5 e 6 i j k w y
     ///   split (second) : (i, j, k, y, b, e) -> (x, y, z)  | 1 2 b 3 4 5 e 6 i j k w y  ->  1 2 3 4 5 6 w x y z
-    SplitResult split(std::unordered_set<const Node *> split_nodes, bool create_split_nodes_mapping = false, bool avoid_duplicate_inputs = false) const;
+    [[nodiscard]] SplitResult split(std::unordered_set<const Node *> split_nodes, bool create_split_nodes_mapping = false, bool avoid_duplicate_inputs = false) const;
 
     /// Splits actions into two parts. Returned first half may be swapped with ARRAY JOIN.
-    SplitResult splitActionsBeforeArrayJoin(const Names & array_joined_columns) const;
+    [[nodiscard]] SplitResult splitActionsBeforeArrayJoin(const Names & array_joined_columns) const;
 
     struct SplitArrayJoinResult;
 
     /// Split out the first `arrayJoin` so it can become an ArrayJoinStep between `before` and `after`, nullopt if none.
     /// With `nondeterministic_before_expansion`, a non-deterministic node that does not depend on the join
     /// goes to `before` too, so it is drawn once per source row.
-    std::optional<SplitArrayJoinResult> extractFirstArrayJoin(bool nondeterministic_before_expansion = false) const;
+    [[nodiscard]] std::optional<SplitArrayJoinResult> extractFirstArrayJoin(bool nondeterministic_before_expansion = false) const;
 
     /// Splits actions into two parts. First part has minimal size sufficient for calculation of
     /// column_name and additional_split_nodes. Outputs of initial actions must contain column_name.
-    SplitResult splitActionsForFilter(
+    [[nodiscard]] SplitResult splitActionsForFilter(
         const std::string & column_name,
         std::unordered_set<const Node *> additional_split_nodes = {}) const;
 
     /// Splits actions into two parts. The first part contains all the calculations required to calculate sort_columns
     /// and additional_split_nodes. The second contains the rest.
-    SplitResult splitActionsBySortingDescription(
+    [[nodiscard]] SplitResult splitActionsBySortingDescription(
         const NameSet & sort_columns,
         std::unordered_set<const Node *> additional_split_nodes = {}) const;
 
@@ -517,7 +517,7 @@ public:
       * @param filter_name - name of filter node in current DAG.
       * @param input_stream_header - input stream header.
       */
-    bool isFilterAlwaysFalseForDefaultValueInputs(const std::string & filter_name, const Block & input_stream_header) const;
+    [[nodiscard]] bool isFilterAlwaysFalseForDefaultValueInputs(const std::string & filter_name, const Block & input_stream_header) const;
 
     struct ActionsForFilterPushDown;
     /// Create actions which may calculate part of filter using only available_inputs.
@@ -613,7 +613,7 @@ public:
     /// Returns a list of nodes representing atomic predicates.
     static NodeRawConstPtrs extractConjunctionAtoms(const Node * predicate);
 
-    UInt64 getHash() const;
+    [[nodiscard]] UInt64 getHash() const;
     /// `build_independent` leaves out anything that differs between two builds of the same query -
     /// column names and prepared-set values - so the result identifies what the DAG computes rather
     /// than how this particular plan named it. See `Node::updateHash`.

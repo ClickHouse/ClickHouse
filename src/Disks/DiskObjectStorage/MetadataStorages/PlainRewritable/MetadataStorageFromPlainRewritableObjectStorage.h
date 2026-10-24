@@ -312,7 +312,7 @@ protected:
 public:
     explicit MetadataStorageFromPlainRewritableObjectStorageTransaction(MetadataStorageFromPlainRewritableObjectStorage & metadata_storage_);
 
-    bool supportsChmod() const override { return false; }
+    [[nodiscard]] bool supportsChmod() const override { return false; }
     void setLastModified(const String &, const Poco::Timestamp &) override { /* Noop */ }
     void setReadOnly(const std::string & /*path*/) override { /* Noop */ }
 

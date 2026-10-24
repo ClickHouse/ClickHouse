@@ -19,7 +19,7 @@ struct BlockCacheKey
     uint32_t file_id = 0;
     uint32_t block_idx = 0;
 
-    uint64_t pack() const { return (static_cast<uint64_t>(file_id) << 32) | static_cast<uint64_t>(block_idx); }
+    [[nodiscard]] uint64_t pack() const { return (static_cast<uint64_t>(file_id) << 32) | static_cast<uint64_t>(block_idx); }
 };
 
 struct BlockCacheWeightFunction

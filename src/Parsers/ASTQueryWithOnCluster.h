@@ -31,7 +31,7 @@ public:
     virtual ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params = {}) const = 0; /// NOLINT
 
     /// Returns a query prepared for execution on remote server
-    std::string getRewrittenQueryWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params = {}) const;
+    [[nodiscard]] std::string getRewrittenQueryWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params = {}) const;
 
     void formatOnCluster(WriteBuffer & ostr, const IAST::FormatSettings & settings) const;
 

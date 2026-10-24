@@ -29,7 +29,7 @@ struct ConnectionParameterStorage
     const String password;
     const String bind_host;
 
-    ClusterConnectionParameters params(const String & name) const
+    [[nodiscard]] ClusterConnectionParameters params(const String & name) const
     {
         return ClusterConnectionParameters{username, password, 9000, false, false, false, bind_host, Priority{1}, name, ""};
     }

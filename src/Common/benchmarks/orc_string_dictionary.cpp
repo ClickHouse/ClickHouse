@@ -27,10 +27,10 @@ public:
     // get dict entries in insertion order
     void getEntriesInInsertionOrder(std::vector<const DictEntry *> &) const;
 
-    size_t size() const;
+    [[nodiscard]] size_t size() const;
 
     // return total length of strings in the dictionary
-    uint64_t length() const;
+    [[nodiscard]] uint64_t length() const;
 
     void clear();
 

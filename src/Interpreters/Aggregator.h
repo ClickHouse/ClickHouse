@@ -377,7 +377,7 @@ public:
             bool serialize_string_with_zero_byte_,
             bool enable_packed_string_keys_);
 
-        Params cloneWithKeys(const Names & keys_, bool only_merge_ = false) const
+        [[nodiscard]] Params cloneWithKeys(const Names & keys_, bool only_merge_ = false) const
         {
             Params new_params = *this;
             new_params.keys = keys_;
@@ -386,7 +386,7 @@ public:
             return new_params;
         }
 
-        Params cloneWithKeysAndAggregates(const Names & keys_, const AggregateDescriptions & aggregates_, bool only_merge_ = false) const
+        [[nodiscard]] Params cloneWithKeysAndAggregates(const Names & keys_, const AggregateDescriptions & aggregates_, bool only_merge_ = false) const
         {
             Params new_params = cloneWithKeys(keys_, only_merge_);
             new_params.aggregates = aggregates_;
@@ -397,7 +397,7 @@ public:
         static Block
         getHeader(const Block & header, bool only_merge, const Names & keys, const AggregateDescriptions & aggregates, bool final);
 
-        Block getHeader(const Block & header_, bool final) const { return getHeader(header_, only_merge, keys, aggregates, final); }
+        [[nodiscard]] Block getHeader(const Block & header_, bool final) const { return getHeader(header_, only_merge, keys, aggregates, final); }
 
         /// Returns keys and aggregated for EXPLAIN query
         void explain(ExplainFormatSettings & settings) const;

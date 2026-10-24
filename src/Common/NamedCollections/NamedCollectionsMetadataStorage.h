@@ -13,9 +13,9 @@ class NamedCollectionsMetadataStorage : private WithContext
 public:
     static std::unique_ptr<NamedCollectionsMetadataStorage> create(const ContextPtr & context);
 
-    NamedCollectionsMap getAll() const;
+    [[nodiscard]] NamedCollectionsMap getAll() const;
 
-    MutableNamedCollectionPtr get(const std::string & collection_name) const;
+    [[nodiscard]] MutableNamedCollectionPtr get(const std::string & collection_name) const;
 
     MutableNamedCollectionPtr create(const ASTCreateNamedCollectionQuery & query);
 
@@ -32,7 +32,7 @@ public:
     /// Return true if update was made
     bool waitUpdate();
 
-    bool isReplicated() const;
+    [[nodiscard]] bool isReplicated() const;
 
 private:
     class INamedCollectionsStorage;
@@ -45,9 +45,9 @@ private:
 
     NamedCollectionsMetadataStorage(std::shared_ptr<INamedCollectionsStorage> storage_, ContextPtr context_);
 
-    std::vector<std::string> listCollections() const;
+    [[nodiscard]] std::vector<std::string> listCollections() const;
 
-    ASTCreateNamedCollectionQuery readCreateQuery(const std::string & collection_name) const;
+    [[nodiscard]] ASTCreateNamedCollectionQuery readCreateQuery(const std::string & collection_name) const;
 
     void writeCreateQuery(const String & collection_name, const String & create_statement, bool replace = false);
 };

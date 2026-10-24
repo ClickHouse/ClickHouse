@@ -56,7 +56,7 @@ struct Decimal
     constexpr operator T () const { return value; } // NOLINT(google-explicit-constructor)
 
     template <typename U>
-    constexpr U convertTo() const
+    [[nodiscard]] constexpr U convertTo() const
     {
         if constexpr (is_decimal<U>)
             return convertTo<typename U::NativeType>();

@@ -467,7 +467,7 @@ public:
     {
     }
 
-    String getName() const override { return fmt::format("ReadFromPart({})", data_part.data_part->name); }
+    [[nodiscard]] String getName() const override { return fmt::format("ReadFromPart({})", data_part.data_part->name); }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {
@@ -516,7 +516,7 @@ public:
         pipeline.init(Pipe(std::move(source)));
     }
 
-    QueryPlanStepPtr clone() const override
+    [[nodiscard]] QueryPlanStepPtr clone() const override
     {
         return std::make_unique<ReadFromPart>(
             type,

@@ -53,28 +53,28 @@ public:
     virtual ~IExecutableFunction() = default;
 
     /// Get the main function name.
-    virtual String getName() const = 0;
+    [[nodiscard]] virtual String getName() const = 0;
 
-    ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
+    [[nodiscard]] ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
 
     /// True when a NULL argument makes `result_type` NULL. The default implementation for Nulls
     /// guarantees this only when `result_type` can hold a NULL. Functions that handle NULLs
     /// themselves but still propagate them (`CAST`, `toNullable`, ...) override this.
-    virtual bool isNullPropagating(const DataTypePtr & result_type) const;
+    [[nodiscard]] virtual bool isNullPropagating(const DataTypePtr & result_type) const;
 
     /// Cancel current execution if possible
     /// Method `execute` called from another thread should stop after this method is called and throw an exception.
     virtual void cancelExecution() const {}
 
     /// Returns indexes of arguments that must be `ColumnConst`.
-    virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }
+    [[nodiscard]] virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }
 
 protected:
     friend struct ::FunctionsStressTestThread;
 
-    virtual ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const = 0;
+    [[nodiscard]] virtual ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const = 0;
 
-    virtual ColumnPtr executeDryRunImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+    [[nodiscard]] virtual ColumnPtr executeDryRunImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         return executeImpl(arguments, result_type, input_rows_count);
     }
@@ -90,37 +90,37 @@ protected:
       * nested column; typically default values, but that's not guaranteed.
       * So this only makes sense for functions that don't fail and don't have side effects.
       */
-    virtual bool useDefaultImplementationForNulls() const { return true; }
+    [[nodiscard]] virtual bool useDefaultImplementationForNulls() const { return true; }
 
     /** Default implementation in presence of arguments with type Nothing is the following:
       *  If some of arguments have type Nothing then default implementation is to return constant column with type Nothing
       */
-    virtual bool useDefaultImplementationForNothing() const { return true; }
+    [[nodiscard]] virtual bool useDefaultImplementationForNothing() const { return true; }
 
     /** If the function have non-zero number of arguments,
       *  and if all arguments are constant, that we could automatically provide default implementation:
       *  arguments are converted to ordinary columns with single value, then function is executed as usual,
       *  and then the result is converted to constant column.
       */
-    virtual bool useDefaultImplementationForConstants() const { return false; }
+    [[nodiscard]] virtual bool useDefaultImplementationForConstants() const { return false; }
 
     /** If function arguments has single low cardinality column and all other arguments are constants, call function on nested column.
       * Otherwise, convert all low cardinality columns to ordinary columns.
       * Returns ColumnLowCardinality if at least one argument is ColumnLowCardinality.
       */
-    virtual bool useDefaultImplementationForLowCardinalityColumns() const { return true; }
+    [[nodiscard]] virtual bool useDefaultImplementationForLowCardinalityColumns() const { return true; }
 
     /** If function arguments has single sparse column and all other arguments are constants, call function on nested column.
       * Otherwise, convert all sparse columns to ordinary columns.
       * If default value doesn't change after function execution, returns sparse column as a result.
       * Otherwise, result column is converted to full.
       */
-    virtual bool useDefaultImplementationForSparseColumns() const { return true; }
+    [[nodiscard]] virtual bool useDefaultImplementationForSparseColumns() const { return true; }
 
     /** If function arguments have replicated columns with the same indexes and all other arguments are constants, call function on nested columns.
       * Otherwise, convert all replicated columns to ordinary columns.
       */
-    virtual bool useDefaultImplementationForReplicatedColumns() const { return true; }
+    [[nodiscard]] virtual bool useDefaultImplementationForReplicatedColumns() const { return true; }
 
     /** True if function can be called on default arguments and won't throw.
       * Counterexample: modulo(0, 0)
@@ -139,11 +139,11 @@ protected:
       * still holds for `plus` (which accepts the contract), while a declining function such as
       * `modulo` yields the default of its result type there instead.
       */
-    virtual bool canBeExecutedOnDefaultArguments() const { return true; }
+    [[nodiscard]] virtual bool canBeExecutedOnDefaultArguments() const { return true; }
 
     /** True if function might throw an exception during execution.
       */
-    virtual bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const { return true; }
+    [[nodiscard]] virtual bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const { return true; }
 
     /** The default implementations above may execute the function over a representation that stores
       * equal rows once (replicated nested rows, sparse values, a LowCardinality dictionary) and map the
@@ -151,29 +151,29 @@ protected:
       * argument values. A function answering `false` is executed over materialized rows instead.
       * See `IFunction::isDeterministicInScopeOfQuery` for the property itself.
       */
-    virtual bool isDeterministicInScopeOfQuery() const { return true; }
+    [[nodiscard]] virtual bool isDeterministicInScopeOfQuery() const { return true; }
 
 private:
 
-    ColumnPtr defaultImplementationForConstantArguments(
+    [[nodiscard]] ColumnPtr defaultImplementationForConstantArguments(
             const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
 
-    ColumnPtr defaultImplementationForNulls(
+    [[nodiscard]] ColumnPtr defaultImplementationForNulls(
             const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
 
-    ColumnPtr defaultImplementationForNothing(
+    [[nodiscard]] ColumnPtr defaultImplementationForNothing(
             const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const;
 
-    ColumnPtr executeWithoutLowCardinalityColumns(
+    [[nodiscard]] ColumnPtr executeWithoutLowCardinalityColumns(
             const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
 
     /// The function and every lambda passed to it are deterministic in the scope of the query.
-    bool isCallDeterministicInScopeOfQuery(const ColumnsWithTypeAndName & arguments) const;
+    [[nodiscard]] bool isCallDeterministicInScopeOfQuery(const ColumnsWithTypeAndName & arguments) const;
 
-    ColumnPtr executeWithoutSparseColumns(
+    [[nodiscard]] ColumnPtr executeWithoutSparseColumns(
             const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
 
-    ColumnPtr executeWithoutReplicatedColumns(
+    [[nodiscard]] ColumnPtr executeWithoutReplicatedColumns(
          const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
 
     bool short_circuit_function_evaluation_for_nulls = false;
@@ -650,7 +650,7 @@ public:
 
     virtual ~IFunction() = default;
 
-    virtual String getName() const = 0;
+    [[nodiscard]] virtual String getName() const = 0;
 
     /// See the comment for the same method in `IFunctionBase`: the adaptor that wraps this interface
     /// into one forwards to this.
@@ -661,8 +661,8 @@ public:
     ///  getReturnTypeImpl sometimes; I didn't understand it. This only applies to conversion functions,
     ///  not any IFunction. Are there other cases where getReturnTypeImpl result is not passed through?
     ///  I don't know. If you know, consider documenting it here.)
-    virtual ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const = 0;
-    virtual ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+    [[nodiscard]] virtual ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const = 0;
+    [[nodiscard]] virtual ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         return executeImpl(arguments, result_type, input_rows_count);
     }
@@ -676,85 +676,85 @@ public:
       *   where Nullable columns are substituted with nested columns (they have arbitrary values in rows corresponding to NULL value)
       *   and wrap result in Nullable column where NULLs are in all rows where any of arguments are NULL.
       */
-    virtual bool useDefaultImplementationForNulls() const { return true; }
+    [[nodiscard]] virtual bool useDefaultImplementationForNulls() const { return true; }
 
     /** True when a NULL argument makes `result_type` NULL. See `IExecutableFunction::isNullPropagating`:
       * override this when the function handles NULLs itself but still propagates them.
       */
-    virtual bool isNullPropagating(const DataTypePtr & result_type) const;
+    [[nodiscard]] virtual bool isNullPropagating(const DataTypePtr & result_type) const;
 
     /** Default implementation in presence of arguments with type Nothing is the following:
       *  If some of arguments have type Nothing then default implementation is to return constant column with type Nothing
       */
-    virtual bool useDefaultImplementationForNothing() const { return true; }
+    [[nodiscard]] virtual bool useDefaultImplementationForNothing() const { return true; }
 
     /** If the function have non-zero number of arguments,
       *  and if all arguments are constant, that we could automatically provide default implementation:
       *  arguments are converted to ordinary columns with single value, then function is executed as usual,
       *  and then the result is converted to constant column.
       */
-    virtual bool useDefaultImplementationForConstants() const { return false; }
+    [[nodiscard]] virtual bool useDefaultImplementationForConstants() const { return false; }
 
     /** Some arguments could remain constant during this implementation.
       */
-    virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }
+    [[nodiscard]] virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }
 
     /** If function arguments has single low cardinality column and all other arguments are constants, call function on nested column.
       * Otherwise, convert all low cardinality columns to ordinary columns.
       * Returns ColumnLowCardinality if at least one argument is ColumnLowCardinality.
       */
-    virtual bool useDefaultImplementationForLowCardinalityColumns() const { return true; }
+    [[nodiscard]] virtual bool useDefaultImplementationForLowCardinalityColumns() const { return true; }
 
     /** If function arguments has single sparse column and all other arguments are constants, call function on nested column.
       * Otherwise, convert all sparse columns to ordinary columns.
       * If default value doesn't change after function execution, returns sparse column as a result.
       * Otherwise, result column is converted to full.
       */
-    virtual bool useDefaultImplementationForSparseColumns() const { return true; }
+    [[nodiscard]] virtual bool useDefaultImplementationForSparseColumns() const { return true; }
 
     /** If function arguments have replicated columns with the same indexes and all other arguments are constants, call function on nested columns.
       * Otherwise, convert all replicated columns to ordinary columns.
       */
-    virtual bool useDefaultImplementationForReplicatedColumns() const { return true; }
+    [[nodiscard]] virtual bool useDefaultImplementationForReplicatedColumns() const { return true; }
 
     /// If it isn't, will convert all ColumnLowCardinality arguments to full columns.
-    virtual bool canBeExecutedOnLowCardinalityDictionary() const { return true; }
+    [[nodiscard]] virtual bool canBeExecutedOnLowCardinalityDictionary() const { return true; }
 
-    virtual bool useDefaultImplementationForDynamic() const { return useDefaultImplementationForNulls(); }
-    virtual DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const { return nullptr; }
-    virtual DataTypePtr getReturnTypeForDefaultImplementationForDynamic(const DataTypes & /*arguments*/) const
+    [[nodiscard]] virtual bool useDefaultImplementationForDynamic() const { return useDefaultImplementationForNulls(); }
+    [[nodiscard]] virtual DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const { return nullptr; }
+    [[nodiscard]] virtual DataTypePtr getReturnTypeForDefaultImplementationForDynamic(const DataTypes & /*arguments*/) const
     {
         return getReturnTypeForDefaultImplementationForDynamic();
     }
 
-    virtual bool useDefaultImplementationForVariant() const { return useDefaultImplementationForNulls(); }
-    virtual bool useDefaultImplementationForVariantWithCustomName(const DataTypePtr & /*type*/) const { return useDefaultImplementationForVariant(); }
+    [[nodiscard]] virtual bool useDefaultImplementationForVariant() const { return useDefaultImplementationForNulls(); }
+    [[nodiscard]] virtual bool useDefaultImplementationForVariantWithCustomName(const DataTypePtr & /*type*/) const { return useDefaultImplementationForVariant(); }
 
-    virtual bool canBeExecutedOnDefaultArguments() const { return true; }
+    [[nodiscard]] virtual bool canBeExecutedOnDefaultArguments() const { return true; }
 
     /// Properties from IFunctionBase (see IFunction.h)
-    virtual bool isSuitableForConstantFolding() const { return true; }
-    virtual ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr & /*result_type*/) const { return nullptr; }
-    virtual bool isInjective(const ColumnsWithTypeAndName & /*sample_columns*/) const { return false; }
-    virtual ComparisonOrderDomain getComparisonOrderDomain(const DataTypes & /*arguments*/) const
+    [[nodiscard]] virtual bool isSuitableForConstantFolding() const { return true; }
+    [[nodiscard]] virtual ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr & /*result_type*/) const { return nullptr; }
+    [[nodiscard]] virtual bool isInjective(const ColumnsWithTypeAndName & /*sample_columns*/) const { return false; }
+    [[nodiscard]] virtual ComparisonOrderDomain getComparisonOrderDomain(const DataTypes & /*arguments*/) const
     {
         return {};
     }
-    virtual bool isDeterministic() const { return true; }
-    virtual bool isDeterministicInScopeOfQuery() const { return true; }
-    virtual bool isServerConstant() const { return false; }
-    virtual bool isStateful() const { return false; }
+    [[nodiscard]] virtual bool isDeterministic() const { return true; }
+    [[nodiscard]] virtual bool isDeterministicInScopeOfQuery() const { return true; }
+    [[nodiscard]] virtual bool isServerConstant() const { return false; }
+    [[nodiscard]] virtual bool isStateful() const { return false; }
     /// See `IFunctionBase::hasObservableSideEffects`.
-    virtual bool hasObservableSideEffects() const { return false; }
+    [[nodiscard]] virtual bool hasObservableSideEffects() const { return false; }
     /// See `IFunctionBase::isVolumeReducing`.
-    virtual bool isVolumeReducing() const { return false; }
+    [[nodiscard]] virtual bool isVolumeReducing() const { return false; }
     /// See `IFunctionBase::isExpensive`.
-    virtual bool isExpensive() const { return false; }
-    virtual bool isSpatialPredicate() const { return false; }
+    [[nodiscard]] virtual bool isExpensive() const { return false; }
+    [[nodiscard]] virtual bool isSpatialPredicate() const { return false; }
 
     using ShortCircuitSettings = IFunctionBase::ShortCircuitSettings;
     virtual bool isShortCircuit(ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }
-    virtual bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const = 0;
+    [[nodiscard]] virtual bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const = 0;
 
     /** True if the function might throw an exception while it is executed, for these argument types.
       * Examples: `intDiv` throws on division by zero, `repeat` throws when the result is too large,
@@ -779,9 +779,9 @@ public:
       * just loses an optimization), while a function that is cheap and can throw is reported as
       * not throwing (which is not safe). Override `canThrowIfKnown` whenever possible.
       */
-    virtual std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & /*arguments*/) const { return {}; }
+    [[nodiscard]] virtual std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & /*arguments*/) const { return {}; }
 
-    bool canThrow(const DataTypesWithConstInfo & arguments) const
+    [[nodiscard]] bool canThrow(const DataTypesWithConstInfo & arguments) const
     {
         if (auto res = canThrowIfKnown(arguments))
             return *res;
@@ -789,28 +789,28 @@ public:
     }
 
     /// Higher-order functions accept at least one lambda expression as an argument.
-    virtual bool isHigherOrderFunction() const { return false; }
+    [[nodiscard]] virtual bool isHigherOrderFunction() const { return false; }
 
     /// See `IFunctionBase::isNameInsensitive`
-    virtual bool isNameInsensitive() const { return false; }
+    [[nodiscard]] virtual bool isNameInsensitive() const { return false; }
 
-    virtual bool hasInformationAboutMonotonicity() const { return false; }
-    virtual bool hasInformationAboutPreimage() const { return false; }
+    [[nodiscard]] virtual bool hasInformationAboutMonotonicity() const { return false; }
+    [[nodiscard]] virtual bool hasInformationAboutPreimage() const { return false; }
 
     /// Whether this function allows omitting parentheses in SQL (e.g., NOW, CURRENT_TIMESTAMP)
-    virtual bool allowsOmittingParentheses() const { return false; }
+    [[nodiscard]] virtual bool allowsOmittingParentheses() const { return false; }
 
     using Monotonicity = IFunctionBase::Monotonicity;
-    virtual Monotonicity getMonotonicityForRange(const IDataType & /*type*/, const Field & /*left*/, const Field & /*right*/) const;
-    virtual FieldIntervalPtr getPreimage(const IDataType & /*type*/, const Field & /*point*/) const;
+    [[nodiscard]] virtual Monotonicity getMonotonicityForRange(const IDataType & /*type*/, const Field & /*left*/, const Field & /*right*/) const;
+    [[nodiscard]] virtual FieldIntervalPtr getPreimage(const IDataType & /*type*/, const Field & /*point*/) const;
 
     /// For non-variadic functions, return number of arguments; otherwise return zero (that should be ignored).
-    virtual size_t getNumberOfArguments() const = 0;
+    [[nodiscard]] virtual size_t getNumberOfArguments() const = 0;
 
-    virtual DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const;
+    [[nodiscard]] virtual DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const;
 
     /// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
-    virtual DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const;
+    [[nodiscard]] virtual DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const;
 
     /** The error code reported when the number of arguments does not fit the function's signature.
       *
@@ -820,25 +820,25 @@ public:
       * user-visible contract. Overriding this keeps the legacy diagnostic while the argument
       * types are validated declaratively. `number_of_arguments` is the arity of the offending call.
       */
-    virtual int getWrongNumberOfArgumentsErrorCode(size_t number_of_arguments) const;
+    [[nodiscard]] virtual int getWrongNumberOfArgumentsErrorCode(size_t number_of_arguments) const;
 
     /// Declarative signature, see IFunction::getSignatureString. Same opt-in mechanism.
-    virtual String getSignatureString() const { return {}; }
+    [[nodiscard]] virtual String getSignatureString() const { return {}; }
 
     /// See IFunction::signaturePropagatesNullability.
-    virtual bool signaturePropagatesNullability() const { return false; }
+    [[nodiscard]] virtual bool signaturePropagatesNullability() const { return false; }
 
-    virtual bool isVariadic() const { return false; }
+    [[nodiscard]] virtual bool isVariadic() const { return false; }
 
     virtual void getLambdaArgumentTypes(DataTypes & /*arguments*/) const;
 
-    virtual ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const { return {}; }
+    [[nodiscard]] virtual ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const { return {}; }
 
 
 #if USE_EMBEDDED_COMPILER
-    virtual ColumnNumbers getArgumentsThatDontParticipateInCompilation(const DataTypes & /*types*/) const { return {}; }
+    [[nodiscard]] virtual ColumnNumbers getArgumentsThatDontParticipateInCompilation(const DataTypes & /*types*/) const { return {}; }
 
-    bool isCompilable(const DataTypes & arguments, const DataTypePtr & result_type) const;
+    [[nodiscard]] bool isCompilable(const DataTypes & arguments, const DataTypePtr & result_type) const;
 
     llvm::Value * compile(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type) const;
 
@@ -848,7 +848,7 @@ protected:
 
 #if USE_EMBEDDED_COMPILER
 
-    virtual bool isCompilableImpl(const DataTypes & /*arguments*/, const DataTypePtr & /*result_type*/) const { return false; }
+    [[nodiscard]] virtual bool isCompilableImpl(const DataTypes & /*arguments*/, const DataTypePtr & /*result_type*/) const { return false; }
 
     virtual llvm::Value * compileImpl(llvm::IRBuilderBase & /*builder*/, const ValuesWithType & /*arguments*/, const DataTypePtr & /*result_type*/) const;
 

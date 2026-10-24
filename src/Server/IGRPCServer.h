@@ -19,13 +19,13 @@ public:
     virtual void stop() = 0;
 
     /// Returns the port this server is listening to.
-    virtual UInt16 portNumber() const = 0;
+    [[nodiscard]] virtual UInt16 portNumber() const = 0;
 
     /// Returns the number of currently handled connections.
-    virtual size_t currentConnections() const = 0;
+    [[nodiscard]] virtual size_t currentConnections() const = 0;
 
     /// Returns the number of current threads.
-    virtual size_t currentThreads() const = 0;
+    [[nodiscard]] virtual size_t currentThreads() const = 0;
 };
 }
 #endif

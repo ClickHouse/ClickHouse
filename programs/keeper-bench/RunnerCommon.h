@@ -53,9 +53,9 @@ public:
     /// `hosts_strings` (from the command line) takes precedence over the config.
     void initialize(const Strings & hosts_strings, const Poco::Util::AbstractConfiguration * config, bool enable_tracing_);
 
-    const std::vector<ConnectionInfo> & connectionInfos() const { return connection_infos; }
+    [[nodiscard]] const std::vector<ConnectionInfo> & connectionInfos() const { return connection_infos; }
 
-    std::shared_ptr<Coordination::ZooKeeper> getConnection(const ConnectionInfo & connection_info, size_t connection_info_idx) const;
+    [[nodiscard]] std::shared_ptr<Coordination::ZooKeeper> getConnection(const ConnectionInfo & connection_info, size_t connection_info_idx) const;
 
 private:
     void parseHostsFromConfig(const Poco::Util::AbstractConfiguration & config);

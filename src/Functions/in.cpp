@@ -42,21 +42,21 @@ public:
         return std::make_shared<FunctionIn>(std::move(name), negative, null_is_skipped, ignore_set);
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         return function_name;
     }
 
     /// The `IgnoreSet` variants are called with the left operand alone during type analysis, but
     /// `inIgnoreSet(x, set)` written explicitly stays valid, hence the variadic arity.
-    bool isVariadic() const override { return ignore_set; }
+    [[nodiscard]] bool isVariadic() const override { return ignore_set; }
 
-    size_t getNumberOfArguments() const override
+    [[nodiscard]] size_t getNumberOfArguments() const override
     {
         return ignore_set ? 0 : 2;
     }
 
-    String getSignatureString() const override
+    [[nodiscard]] String getSignatureString() const override
     {
         /// The `IgnoreSet` variants are called with the left operand alone during type analysis,
         /// hence the optional second argument there.
@@ -67,7 +67,7 @@ public:
     /// rejection of an argument with a dynamic structure (`Dynamic`, `JSON`/`Object`, and nested
     /// forms), nor the exact arity diagnostic of the `IgnoreSet` variants. Restore both here, then
     /// delegate to the signature.
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    [[nodiscard]] DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (ignore_set && (arguments.empty() || arguments.size() > 2))
             throw Exception(
@@ -87,21 +87,21 @@ public:
     /// would then see a subquery-IN with an unbuilt set as "always false" (the
     /// dry-run path returns 0) and skip the filter entirely. Handle the size-0
     /// ColumnConst arguments produced by `ActionsDAG::addColumn` directly below.
-    bool useDefaultImplementationForConstants() const override { return false; }
+    [[nodiscard]] bool useDefaultImplementationForConstants() const override { return false; }
 
-    bool useDefaultImplementationForDynamic() const override
+    [[nodiscard]] bool useDefaultImplementationForDynamic() const override
     {
         return false;
     }
 
-    bool useDefaultImplementationForNulls() const override { return null_is_skipped; }
+    [[nodiscard]] bool useDefaultImplementationForNulls() const override { return null_is_skipped; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    [[nodiscard]] bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     /// An empty set makes the result independent of the left operand, so the result is constant
     /// even when that operand is not. Reporting it here keeps DAG nodes in agreement with
     /// `executeImpl`, which returns a ColumnConst for the same case.
-    ColumnPtr getConstantResultForNonConstArguments(
+    [[nodiscard]] ColumnPtr getConstantResultForNonConstArguments(
         const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
     {
         /// The -IgnoreSet variants carry no set to inspect: they exist to resolve types without one.
@@ -127,17 +127,17 @@ public:
         return result_type->createColumnConst(1, static_cast<UInt8>(negative));
     }
 
-    ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         return executeImpl(arguments, true, input_rows_count);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         return executeImpl(arguments, false, input_rows_count);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, bool dry_run, size_t input_rows_count) const
+    [[nodiscard]] ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, bool dry_run, size_t input_rows_count) const
     {
         if (ignore_set)
             return ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));

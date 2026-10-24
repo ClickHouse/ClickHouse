@@ -86,7 +86,7 @@ private:
         /// Packets in `data`, one; counted as sent once the whole buffer is written to the socket.
         size_t packets = 0;
 
-        std::string_view bytes() const;
+        [[nodiscard]] std::string_view bytes() const;
     };
 
     /// Append a ready buffer to `send_queue`.

@@ -130,8 +130,8 @@ class ExceptionStatusDetail : public arrow::StatusDetail
 public:
     explicit ExceptionStatusDetail(std::exception_ptr exception_) : exception(std::move(exception_)) {}
 
-    const char * type_id() const override { return "DB::Exception"; }
-    std::string ToString() const override;
+    [[nodiscard]] const char * type_id() const override { return "DB::Exception"; }
+    [[nodiscard]] std::string ToString() const override;
 
     std::exception_ptr exception;
 };

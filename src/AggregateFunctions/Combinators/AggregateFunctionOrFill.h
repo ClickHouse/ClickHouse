@@ -44,7 +44,7 @@ public:
         // nothing
     }
 
-    String getName() const override
+    [[nodiscard]] String getName() const override
     {
         if constexpr (UseNull)
             return nested_function->getName() + "OrNull";
@@ -52,7 +52,7 @@ public:
             return nested_function->getName() + "OrDefault";
     }
 
-    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
+    [[nodiscard]] bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
     {
         if (!this->haveSameDefinition(rhs))
             return false;
@@ -75,48 +75,48 @@ public:
         place[size_of_data] |= rhs_place[rhs_size_of_data];
     }
 
-    bool isVersioned() const override
+    [[nodiscard]] bool isVersioned() const override
     {
         return nested_function->isVersioned();
     }
 
-    size_t getVersionFromRevision(size_t revision) const override
+    [[nodiscard]] size_t getVersionFromRevision(size_t revision) const override
     {
         return nested_function->getVersionFromRevision(revision);
     }
 
-    size_t getDefaultVersion() const override
+    [[nodiscard]] size_t getDefaultVersion() const override
     {
         return nested_function->getDefaultVersion();
     }
 
-    DataTypePtr getStateType() const override
+    [[nodiscard]] DataTypePtr getStateType() const override
     {
         return this->getStateTypeWithVersionOf(*nested_function);
     }
 
-    bool isState() const override
+    [[nodiscard]] bool isState() const override
     {
         return nested_function->isState();
     }
 
-    bool allocatesMemoryInArena() const override
+    [[nodiscard]] bool allocatesMemoryInArena() const override
     {
         return nested_function->allocatesMemoryInArena();
     }
 
-    bool hasTrivialDestructor() const override
+    [[nodiscard]] bool hasTrivialDestructor() const override
     {
         return nested_function->hasTrivialDestructor();
     }
 
-    size_t sizeOfData() const override
+    [[nodiscard]] size_t sizeOfData() const override
     {
         /// Pad to alignment so that arrays of states (e.g. in -ForEach) keep each element aligned.
         return ::Memory::alignUp(size_of_data + sizeof(char), alignOfData());
     }
 
-    size_t alignOfData() const override
+    [[nodiscard]] size_t alignOfData() const override
     {
         return nested_function->alignOfData();
     }
@@ -282,14 +282,14 @@ public:
 
     /// The state is the nested state followed by one presence byte, so the parallel merge is forwarded to the
     /// nested function (with the same places) and the presence byte is folded separately.
-    bool isAbleToParallelizeMerge() const override { return nested_function->isAbleToParallelizeMerge(); }
-    bool isParallelizeMergePrepareNeeded() const override { return nested_function->isParallelizeMergePrepareNeeded(); }
+    [[nodiscard]] bool isAbleToParallelizeMerge() const override { return nested_function->isAbleToParallelizeMerge(); }
+    [[nodiscard]] bool isParallelizeMergePrepareNeeded() const override { return nested_function->isParallelizeMergePrepareNeeded(); }
 
     bool isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const override
     {
         return nested_function->isLargeMergePair(place, rhs);
     }
-    bool canOptimizeEqualKeysRanges() const override { return nested_function->canOptimizeEqualKeysRanges(); }
+    [[nodiscard]] bool canOptimizeEqualKeysRanges() const override { return nested_function->canOptimizeEqualKeysRanges(); }
 
     void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const override
     {
@@ -338,7 +338,7 @@ public:
         writeChar(place[size_of_data], buf);
     }
 
-    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> version) const override
+    [[nodiscard]] std::optional<size_t> getSerializedSizeBound(std::optional<size_t> version) const override
     {
         if (auto nested_bound = nested_function->getSerializedSizeBound(version))
             return *nested_bound + sizeof(char);
@@ -517,7 +517,7 @@ public:
         }
     }
 
-    AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
+    [[nodiscard]] AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
 
     /// After `Nullable(Tuple)` was introduced, Tuple's `canBeInsideNullable` now returns true,
     /// which changed the default null adapter for Tuple-returning functions:
@@ -531,7 +531,7 @@ public:
     /// We hardcode the check for `sumCount` rather than matching all single-arg Tuple-returning
     /// functions, so that future functions with the same shape get the correct new behavior
     /// (`<true, true>`) by default and are not silently forced into the legacy adapter.
-    AggregateFunctionPtr getOwnNullAdapter(
+    [[nodiscard]] AggregateFunctionPtr getOwnNullAdapter(
         const AggregateFunctionPtr & nested_function_,
         const DataTypes & arguments,
         const Array & params,

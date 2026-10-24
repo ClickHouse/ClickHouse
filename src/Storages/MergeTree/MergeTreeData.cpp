@@ -1278,7 +1278,7 @@ static std::exception_ptr tryEvaluateIndexExpression(const IndexDescription & in
 
         /// The same dry run a merge performs: it rebuilds this expression's AST under the storage
         /// context and hands the result to `ExpressionTransform::transformHeader`, which is this call.
-        index.expression->getActionsDAG().updateHeader(header);
+        (void)index.expression->getActionsDAG().updateHeader(header);
     }
     catch (...)
     {

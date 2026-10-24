@@ -16,10 +16,10 @@ public:
     /// Over a flat posting list (embedded or raw), where a document's rank is its index.
     explicit TextIndexPostingsRankCursor(PostingListCursorPtr cursor_);
 
-    bool valid() const { return cursor->valid(); }
-    UInt32 docId() const { return cursor->value(); }
+    [[nodiscard]] bool valid() const { return cursor->valid(); }
+    [[nodiscard]] UInt32 docId() const { return cursor->value(); }
     UInt64 rank();
-    UInt64 numDocuments() const { return num_documents; }
+    [[nodiscard]] UInt64 numDocuments() const { return num_documents; }
 
     void next() { cursor->next(); }
     /// Positions the cursor on the first document >= target, or invalidates it.

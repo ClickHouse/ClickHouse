@@ -31,20 +31,20 @@ public:
         std::string rename_from;
     };
 
-    const std::vector<RenamePair> & getRenameMap() const { return rename_map; }
+    [[nodiscard]] const std::vector<RenamePair> & getRenameMap() const { return rename_map; }
 
     /// Column was renamed (lookup by value in rename_map)
-    bool columnHasNewName(const std::string & old_name) const;
+    [[nodiscard]] bool columnHasNewName(const std::string & old_name) const;
     /// Get new name for column (lookup by value in rename_map)
-    std::string getColumnNewName(const std::string & old_name) const;
+    [[nodiscard]] std::string getColumnNewName(const std::string & old_name) const;
     /// Is this name is new name of column (lookup by key in rename_map)
-    bool isColumnRenamed(const std::string & new_name) const;
+    [[nodiscard]] bool isColumnRenamed(const std::string & new_name) const;
     /// Get column old name before rename (lookup by key in rename_map)
-    std::string getColumnOldName(const std::string & new_name) const;
+    [[nodiscard]] std::string getColumnOldName(const std::string & new_name) const;
 
     /// Column was dropped by a pending mutation (data in part is stale).
     /// `name` is the name the column has in the part, not in the current metadata.
-    bool isColumnDropped(const std::string & name, bool share_nested_offsets = true) const;
+    [[nodiscard]] bool isColumnDropped(const std::string & name, bool share_nested_offsets = true) const;
 
     static bool isSupportedDataMutation(MutationCommand::Type type);
     static bool isSupportedAlterMutation(MutationCommand::Type type);
@@ -53,28 +53,28 @@ public:
     /// Adds the columns changed on the fly by the command.
     static void addUpdatedColumns(const MutationCommand & command, NameSet & updated_columns);
 
-    const NameSet & getAllUpdatedColumns() const { return all_updated_columns; }
-    const NameSet & getColumnsUpdatedInPatches() const { return columns_updated_in_patches; }
+    [[nodiscard]] const NameSet & getAllUpdatedColumns() const { return all_updated_columns; }
+    [[nodiscard]] const NameSet & getColumnsUpdatedInPatches() const { return columns_updated_in_patches; }
 
-    bool hasPatches() const { return !patch_parts.empty(); }
-    bool hasMutations() const { return !mutation_commands.empty(); }
-    bool hasLightweightDelete() const;
+    [[nodiscard]] bool hasPatches() const { return !patch_parts.empty(); }
+    [[nodiscard]] bool hasMutations() const { return !mutation_commands.empty(); }
+    [[nodiscard]] bool hasLightweightDelete() const;
     /// True if a pending ALTER DELETE filters out rows on read without touching any column.
     /// Such a delete is not reflected in all_updated_columns or _row_exists, so callers that
     /// reason about per-part data staleness (e.g. minmax-based top-k granule selection) must
     /// account for it separately.
-    bool hasDeleteMutation() const;
+    [[nodiscard]] bool hasDeleteMutation() const;
 
     /// Returns prewhere expression steps to apply
     /// mutations that affect columns from @read_columns.
-    PrewhereExprSteps getMutationSteps(
+    [[nodiscard]] PrewhereExprSteps getMutationSteps(
         const IMergeTreeDataPartInfoForReader & part_info,
         const NamesAndTypesList & read_columns,
         const StorageMetadataPtr & metadata_snapshot,
         const ContextPtr & context) const;
 
-    PatchPartsForReader getAllPatches() const { return patch_parts; }
-    PatchPartsForReader getPatchesForColumns(const NamesAndTypesList & read_columns, bool apply_deleted_mask) const;
+    [[nodiscard]] PatchPartsForReader getAllPatches() const { return patch_parts; }
+    [[nodiscard]] PatchPartsForReader getPatchesForColumns(const NamesAndTypesList & read_columns, bool apply_deleted_mask) const;
 
 private:
     void addMutationCommand(const MutationCommand & command, const ContextPtr & context);
@@ -87,7 +87,7 @@ private:
         Names read_columns;
     };
 
-    MutationChainForRead buildMutationChainForRead(
+    [[nodiscard]] MutationChainForRead buildMutationChainForRead(
         const NamesAndTypesList & read_columns,
         const StorageMetadataPtr & metadata_snapshot,
         const ContextPtr & context) const;
@@ -95,7 +95,7 @@ private:
     /// Returns a chain of actions that can be
     /// applied to block to execute mutation commands
     /// that affect columns from @read_columns.
-    std::vector<MutationActions> getMutationActions(
+    [[nodiscard]] std::vector<MutationActions> getMutationActions(
         const IMergeTreeDataPartInfoForReader & part_info,
         MutationChainForRead chain,
         const StorageMetadataPtr & metadata_snapshot,

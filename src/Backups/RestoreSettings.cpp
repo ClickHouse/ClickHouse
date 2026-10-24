@@ -84,7 +84,7 @@ namespace
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected value of enum RestoreTableCreationMode: {}", static_cast<int>(value));
         }
 
-        String toString() const
+        [[nodiscard]] String toString() const
         {
             switch (value)
             {
@@ -153,7 +153,7 @@ namespace
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected value of enum RestoreAccessCreationMode: {}", static_cast<int>(value));
         }
 
-        String toString() const
+        [[nodiscard]] String toString() const
         {
             switch (value)
             {
