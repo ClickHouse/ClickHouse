@@ -224,7 +224,7 @@ void WindowTransform::addInputBlock(Chunk chunk)
 
 void WindowTransform::computeReadyRows()
 {
-    /// The cancel check is per row, since one block can take long on quadratic frames; prepare picks up the rest.
+    /// Cancellation is checked per row here; general window functions evaluate each batch without cancellation checks
     while (!isCancelled())
     {
         if (bounds.rows != 0 && peers.current().location.block != batch_start.block)
