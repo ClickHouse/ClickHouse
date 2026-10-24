@@ -7270,11 +7270,14 @@ For example, `avg(if(cond, col, null))` can be rewritten to `avgOrNullIf(cond, c
 Rewrite arrayExists() functions to has() when logically equivalent. For example, arrayExists(x -> x = 1, arr) can be rewritten to has(arr, 1)
 )", 0, \
         {"26.4", false, true, "Enable arrayExists to has rewrite optimization by default, now that type compatibility is checked before rewriting."}) \
-    DECLARE(Bool, optimize_rewrite_array_exists_over_tokens, true, R"(
+    DECLARE(Bool, optimize_rewrite_array_exists_over_tokens, false, R"(
 Rewrite `arrayExists` over `tokens` of a string to `hasTokenLike` or `hasTokenMatch` when logically equivalent, so it can use a text index.
 For example, `arrayExists(x -> startsWith(x, 'err'), tokens(s))` can be rewritten to `hasTokenLike(s, 'err%', 'splitByNonAlpha')`
+
+Disabled by default: when a pattern matches more than `text_index_like_max_matched_tokens` tokens of the index dictionary, such as a one-character prefix,
+the index is abandoned after part of the dictionary scan and the query is slower than without the rewrite.
 )", 0, \
-        {"26.11", false, true, "New setting to rewrite `arrayExists` over `tokens` to `hasTokenLike` or `hasTokenMatch`, which are new in 26.11 and can use a text index."}) \
+        {"26.11", false, false, "New setting to rewrite `arrayExists` over `tokens` to `hasTokenLike` or `hasTokenMatch`, which are new in 26.11 and can use a text index."}) \
     DECLARE(Bool, optimize_rewrite_array_filter_length_to_array_count, true, R"(
 Rewrite `length(arrayFilter(func, arr))` to `arrayCount(func, arr)`. `arrayFilter` builds an array of the matching elements only for `length` to throw it away, while `arrayCount` just counts them.
 )", 0, \

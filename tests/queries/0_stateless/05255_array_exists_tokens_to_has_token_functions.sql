@@ -207,12 +207,11 @@ SELECT 'LIKE ESCAPE', arraySort(groupArray(id)) FROM tab WHERE arrayExists(x -> 
 SELECT 'LIKE ESCAPE', arraySort(groupArray(id)) FROM tab WHERE arrayExists(x -> x LIKE 'a\\b' ESCAPE '#', tokens(msg, 'splitByString([\' \'])'));
 SELECT 'LIKE ESCAPE', arraySort(groupArray(id)) FROM tab WHERE arrayExists(x -> x LIKE 'a\\b' ESCAPE '#', tokens(msg, 'splitByString([\' \'])')) SETTINGS optimize_rewrite_array_exists_over_tokens = 0;
 
-SELECT '-- the rewrite is on by default, and compatibility with 26.9 turns it off';
+SELECT '-- the rewrite is off by default';
 
--- `compatibility` does not change a setting that was set explicitly.
 SET optimize_rewrite_array_exists_over_tokens = DEFAULT;
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM tab WHERE arrayExists(x -> startsWith(x, '50%_'), tokens(msg));
-SET compatibility = '26.9';
+SET optimize_rewrite_array_exists_over_tokens = 1;
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM tab WHERE arrayExists(x -> startsWith(x, '50%_'), tokens(msg));
 
 DROP TABLE tab;

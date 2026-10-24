@@ -1,4 +1,5 @@
 <test>
+  <!-- The rewrite is off by default, so every query enables it. -->
   <settings>
     <use_query_condition_cache>0</use_query_condition_cache>
     <max_threads>4</max_threads>
@@ -44,33 +45,33 @@
   <fill_query>OPTIMIZE TABLE tab_few_tokens FINAL</fill_query>
 
   <!-- Every lambda shape the rewrite handles, over the index on message. -->
-  <query>SELECT count() FROM tab WHERE arrayExists(t -> startsWith(t, 'charg'), tokens(message))</query>
-  <query>SELECT count() FROM tab WHERE arrayExists(t -> endsWith(t, 'rged'), tokens(message))</query>
-  <query>SELECT count() FROM tab WHERE arrayExists(t -> position(t, 'harg') > 0, tokens(message))</query>
-  <query>SELECT count() FROM tab WHERE arrayExists(t -> like(t, 'ch%ed'), tokens(message))</query>
-  <query>SELECT count() FROM tab WHERE arrayExists(t -> match(t, '^charg(ed|ing)$'), tokens(message))</query>
+  <query>SELECT count() FROM tab WHERE arrayExists(t -> startsWith(t, 'charg'), tokens(message)) SETTINGS optimize_rewrite_array_exists_over_tokens = 1</query>
+  <query>SELECT count() FROM tab WHERE arrayExists(t -> endsWith(t, 'rged'), tokens(message)) SETTINGS optimize_rewrite_array_exists_over_tokens = 1</query>
+  <query>SELECT count() FROM tab WHERE arrayExists(t -> position(t, 'harg') > 0, tokens(message)) SETTINGS optimize_rewrite_array_exists_over_tokens = 1</query>
+  <query>SELECT count() FROM tab WHERE arrayExists(t -> like(t, 'ch%ed'), tokens(message)) SETTINGS optimize_rewrite_array_exists_over_tokens = 1</query>
+  <query>SELECT count() FROM tab WHERE arrayExists(t -> match(t, '^charg(ed|ing)$'), tokens(message)) SETTINGS optimize_rewrite_array_exists_over_tokens = 1</query>
 
   <!-- A small dictionary: patterns that are not a prefix are also answered from the dictionary quickly. -->
-  <query>SELECT count() FROM tab_few_tokens WHERE arrayExists(t -> endsWith(t, 'rged'), tokens(message))</query>
-  <query>SELECT count() FROM tab_few_tokens WHERE arrayExists(t -> position(t, 'harg') > 0, tokens(message))</query>
-  <query>SELECT count() FROM tab_few_tokens WHERE arrayExists(t -> like(t, 'ch%ed'), tokens(message))</query>
-  <query>SELECT count() FROM tab_few_tokens WHERE arrayExists(t -> match(t, '^charg(ed|ing)$'), tokens(message))</query>
+  <query>SELECT count() FROM tab_few_tokens WHERE arrayExists(t -> endsWith(t, 'rged'), tokens(message)) SETTINGS optimize_rewrite_array_exists_over_tokens = 1</query>
+  <query>SELECT count() FROM tab_few_tokens WHERE arrayExists(t -> position(t, 'harg') > 0, tokens(message)) SETTINGS optimize_rewrite_array_exists_over_tokens = 1</query>
+  <query>SELECT count() FROM tab_few_tokens WHERE arrayExists(t -> like(t, 'ch%ed'), tokens(message)) SETTINGS optimize_rewrite_array_exists_over_tokens = 1</query>
+  <query>SELECT count() FROM tab_few_tokens WHERE arrayExists(t -> match(t, '^charg(ed|ing)$'), tokens(message)) SETTINGS optimize_rewrite_array_exists_over_tokens = 1</query>
 
   <!-- A query over lower(message), served by the index on that expression. -->
-  <query>SELECT count() FROM tab WHERE arrayExists(t -> startsWith(t, 'charg'), tokens(lower(message), 'splitByNonAlpha'))</query>
-  <query>SELECT count() FROM tab WHERE arrayExists(t -> like(t, 'ch%ed'), tokens(lower(message), 'splitByNonAlpha'))</query>
-  <query>SELECT count() FROM tab WHERE arrayExists(t -> match(t, '^charg(ed|ing)$'), tokens(lower(message), 'splitByNonAlpha'))</query>
+  <query>SELECT count() FROM tab WHERE arrayExists(t -> startsWith(t, 'charg'), tokens(lower(message), 'splitByNonAlpha')) SETTINGS optimize_rewrite_array_exists_over_tokens = 1</query>
+  <query>SELECT count() FROM tab WHERE arrayExists(t -> like(t, 'ch%ed'), tokens(lower(message), 'splitByNonAlpha')) SETTINGS optimize_rewrite_array_exists_over_tokens = 1</query>
+  <query>SELECT count() FROM tab WHERE arrayExists(t -> match(t, '^charg(ed|ing)$'), tokens(lower(message), 'splitByNonAlpha')) SETTINGS optimize_rewrite_array_exists_over_tokens = 1</query>
 
   <!-- A substring prefilter next to the token predicate, as log search queries are often written. -->
-  <query>SELECT count() FROM tab WHERE position(lower(message), 'charg') > 0 AND arrayExists(t -> startsWith(t, 'charg'), tokens(lower(message), 'splitByNonAlpha'))</query>
+  <query>SELECT count() FROM tab WHERE position(lower(message), 'charg') > 0 AND arrayExists(t -> startsWith(t, 'charg'), tokens(lower(message), 'splitByNonAlpha')) SETTINGS optimize_rewrite_array_exists_over_tokens = 1</query>
 
   <!-- The prefix matches too many dictionary tokens, so the predicate is evaluated on the rows. -->
-  <query>SELECT count() FROM tab WHERE arrayExists(t -> startsWith(t, '1'), tokens(message))</query>
+  <query>SELECT count() FROM tab WHERE arrayExists(t -> startsWith(t, '1'), tokens(message)) SETTINGS optimize_rewrite_array_exists_over_tokens = 1</query>
 
   <!-- No text index, and the SELECT list: the rewritten function is evaluated on every row. -->
-  <query>SELECT count() FROM tab_no_index WHERE arrayExists(t -> startsWith(t, 'charg'), tokens(message))</query>
-  <query>SELECT count() FROM tab_no_index WHERE arrayExists(t -> match(t, '^charg(ed|ing)$'), tokens(message))</query>
-  <query>SELECT countIf(arrayExists(t -> like(t, 'ch%ed'), tokens(message))) FROM tab</query>
+  <query>SELECT count() FROM tab_no_index WHERE arrayExists(t -> startsWith(t, 'charg'), tokens(message)) SETTINGS optimize_rewrite_array_exists_over_tokens = 1</query>
+  <query>SELECT count() FROM tab_no_index WHERE arrayExists(t -> match(t, '^charg(ed|ing)$'), tokens(message)) SETTINGS optimize_rewrite_array_exists_over_tokens = 1</query>
+  <query>SELECT countIf(arrayExists(t -> like(t, 'ch%ed'), tokens(message))) FROM tab SETTINGS optimize_rewrite_array_exists_over_tokens = 1</query>
 
   <drop_query>DROP TABLE IF EXISTS tab</drop_query>
   <drop_query>DROP TABLE IF EXISTS tab_no_index</drop_query>

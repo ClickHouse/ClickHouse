@@ -922,6 +922,8 @@ SELECT count() FROM table WHERE hasTokenLike(comment, 'ch%ed');
 SELECT count() FROM table WHERE hasTokenMatch(comment, '^err[0-9]+$');
 ```
 
+With the setting `optimize_rewrite_array_exists_over_tokens` (off by default), such `arrayExists` filters are rewritten to `hasTokenLike` or `hasTokenMatch` automatically.
+
 #### `has` {#functions-example-has}
 
 Array function [has](/reference/functions/regular-functions/array-functions#has) matches against a single token in the array of strings.
