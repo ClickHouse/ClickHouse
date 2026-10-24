@@ -38,6 +38,8 @@ public:
 
     NamesAndTypesList getTableSchema(ContextPtr /*local_context*/) const override { return schema; }
 
+    void modifyFormatSettings(FormatSettings & format_settings, const Context &) const override;
+
     DeltaLakePartitionColumns getPartitionColumns() const { return partition_columns; }
 
     bool operator==(const IDataLakeMetadata & other) const override
