@@ -37,9 +37,34 @@ void AuthMiddleware::SendingHeaders(arrow::flight::AddCallHeaders * outgoing_hea
         outgoing_headers->AddHeader(AUTHORIZATION_HEADER, "Bearer " + token);
 }
 
+void AuthMiddleware::refreshAndReleaseSession()
+{
+    if (calls_data.usesSessionTimeoutForPsLifetime() && session_timeout.count() > 0)
+        calls_data.refreshSessionPreparedStatements(session_id, username, std::chrono::duration_cast<ArrowFlight::Duration>(session_timeout));
+    else if (auto ps_lifetime = calls_data.getPreparedStatementsLifetime())
+        calls_data.refreshSessionPreparedStatements(session_id, username, *ps_lifetime);
+    session->releaseSessionID();
+}
+
+void AuthMiddleware::completeSessionEarly()
+{
+    if (!session || session_id.empty() || session_completed)
+        return;
+    if (session_close)
+    {
+        calls_data.closeSessionPreparedStatements(session_id, username);
+        session->closeSession(session_id);
+    }
+    else
+    {
+        refreshAndReleaseSession();
+    }
+    session_completed = true;
+}
+
 void AuthMiddleware::CallCompleted(const arrow::Status & /*status*/)
 {
-    if (!session)
+    if (!session || session_completed)
         return;
 
     if (!session_id.empty())
@@ -51,11 +76,7 @@ void AuthMiddleware::CallCompleted(const arrow::Status & /*status*/)
         }
         else
         {
-            if (calls_data.usesSessionTimeoutForPsLifetime() && session_timeout.count() > 0)
-                calls_data.refreshSessionPreparedStatements(session_id, username, std::chrono::duration_cast<ArrowFlight::Duration>(session_timeout));
-            else if (auto ps_lifetime = calls_data.getPreparedStatementsLifetime())
-                calls_data.refreshSessionPreparedStatements(session_id, username, *ps_lifetime);
-            session->releaseSessionID();
+            refreshAndReleaseSession();
         }
     }
     else if (auto ps_lifetime = calls_data.getPreparedStatementsLifetime())
