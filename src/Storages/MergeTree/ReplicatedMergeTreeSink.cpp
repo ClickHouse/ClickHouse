@@ -151,6 +151,8 @@ ReplicatedMergeTreeSink::ReplicatedMergeTreeSink(
             ErrorCodes::LOGICAL_ERROR,
             "Should be checked earlier: async inserts with quorum only make sense with enabled insert_quorum_parallel setting");
 
+    defer_fsync = DeferredPartsSync::isEnabled(storage, metadata_snapshot);
+
     LOG_TEST(log, "Create ReplicatedMergeTreeSink {} async_insert={}, deduplicate={}, quorum_size={}, max_parts_per_block={}, quorum_parallel={}, is_attach={}",
         storage.getStorageID().getNameForLogs(),
         is_async_insert,
@@ -447,7 +449,7 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
 
 MergeTreeTemporaryPartPtr ReplicatedMergeTreeSink::writeNewTempPart(BlockWithPartition & block)
 {
-    return storage.writer.writeTempPart(block, metadata_snapshot, context);
+    return storage.writer.writeTempPart(block, metadata_snapshot, context, /*may_have_leftover=*/ true, defer_fsync);
 }
 
 void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr & zookeeper)
@@ -498,9 +500,22 @@ void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr
                 if (conflicts.empty())
                 {
                     // Successfully committed
+                    if (defer_fsync)
+                        parts_to_sync.add(partition.temp_part->part);
+
                     block_ids_for_log = deduplication_blocks_ids;
                     partition.temp_part->prewarmCaches();
                     break;
+                }
+
+                /// The existing local part may be committed by another insert that has not synced it yet.
+                /// This insert relies on it, so it must not be acknowledged before the part is durable.
+                if (defer_fsync)
+                {
+                    for (const auto & hash : conflicts)
+                        if (hash.hasConflictPartName())
+                            if (auto existing_part = storage.getActiveContainingPart(hash.getConflictPartName()))
+                                parts_to_sync.add(existing_part);
                 }
 
                 ++retry_times;
@@ -603,6 +618,8 @@ void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr
     }
 
     delayed_parts.clear();
+
+    parts_to_sync.syncOld();
 }
 
 bool ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPtr & part, bool deduplicate_part)
@@ -1301,6 +1318,7 @@ void ReplicatedMergeTreeSink::onFinish()
     ZooKeeperWithFaultInjectionPtr zookeeper = createKeeper("ReplicatedMergeTreeSink::onFinish");
     auto component_guard = Coordination::setCurrentComponent("ReplicatedMergeTreeSink::onFinish");
     finishDelayed(zookeeper);
+    parts_to_sync.syncAll();
 }
 
 void ReplicatedMergeTreeSink::waitForQuorum(

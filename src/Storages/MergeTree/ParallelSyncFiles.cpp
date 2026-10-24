@@ -5,13 +5,58 @@
 #include <IO/SharedThreadPools.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <Storages/MergeTree/MergeTreeWriterStream.h>
+#include <Common/ErrnoException.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
+
+#include <base/scope_guard.h>
+
+#include <fcntl.h>
+#include <unistd.h>
+
+
+namespace ProfileEvents
+{
+    extern const Event FileSync;
+    extern const Event FileSyncElapsedMicroseconds;
+}
 
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int CANNOT_OPEN_FILE;
+    extern const int CANNOT_FSYNC;
+}
+
 namespace
 {
+
+void syncPath(const std::string & path)
+{
+    int fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
+    if (fd == -1)
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, path, "Cannot open file {} to fsync", path);
+
+    SCOPE_EXIT({
+        /// The file is only read, and the result of the sync is checked below, so a failed `close` loses nothing.
+        [[maybe_unused]] int err = ::close(fd);
+    });
+
+    ProfileEvents::increment(ProfileEvents::FileSync);
+    Stopwatch watch;
+#if defined(OS_DARWIN)
+    int res = ::fsync(fd);
+#else
+    int res = ::fdatasync(fd);
+#endif
+    ProfileEvents::increment(ProfileEvents::FileSyncElapsedMicroseconds, watch.elapsedMicroseconds());
+
+    if (res == -1)
+        ErrnoException::throwFromPath(ErrorCodes::CANNOT_FSYNC, path, "Cannot fsync {}", path);
+}
 
 template <typename Container, typename SyncFn>
 void parallelSyncImpl(const Container & items, SyncFn && sync_fn)
@@ -50,6 +95,34 @@ void parallelSyncFiles(const std::vector<WriteBufferFromFileBase *> & files)
 void parallelSyncFiles(const std::vector<const MergeTreeWriterStream *> & streams)
 {
     parallelSyncImpl(streams, [](const MergeTreeWriterStream * stream) { stream->sync(); });
+}
+
+void parallelSyncPaths(const std::vector<std::string> & paths, const std::function<void(size_t)> & on_failure)
+{
+    /// Group the files into batches, so that the number of tasks does not depend on the number of files.
+    static constexpr size_t batch_size = 64;
+    std::vector<std::pair<size_t, size_t>> batches;
+    for (size_t i = 0; i < paths.size(); i += batch_size)
+        batches.emplace_back(i, std::min(paths.size(), i + batch_size));
+
+    /// The tasks may not capture locals by reference, see `parallelSyncImpl`.
+    const auto * paths_ptr = &paths;
+    const auto * on_failure_ptr = &on_failure;
+    parallelSyncImpl(batches, [paths_ptr, on_failure_ptr](const std::pair<size_t, size_t> & batch)
+    {
+        for (size_t i = batch.first; i < batch.second; ++i)
+        {
+            try
+            {
+                syncPath((*paths_ptr)[i]);
+            }
+            catch (...)
+            {
+                (*on_failure_ptr)(i);
+                throw;
+            }
+        }
+    });
 }
 
 }

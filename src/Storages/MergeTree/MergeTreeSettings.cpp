@@ -768,9 +768,22 @@ Default: 300 (force fetch after 5 minutes).
 )", 0, \
         {"26.4", 300, 300, "New setting"}) \
     DECLARE(Bool, fsync_after_insert, false, R"(
-Do fsync for every inserted part. Significantly decreases performance of
-inserts, not recommended to use with wide parts.
+Do fsync for every inserted part, so the data is durable when the `INSERT` query
+is acknowledged. Decreases performance of inserts, especially with wide parts.
+See also `group_fsync_before_insert_finish`.
 )", 0) \
+    DECLARE(Bool, group_fsync_before_insert_finish, true, R"(
+Takes effect with `fsync_after_insert`, if the table is stored on local disks.
+An `INSERT` writing many parts does not wait for the fsync after every part: the parts
+are committed right after they are written, and the files of all the parts are fsynced
+together before the `INSERT` finishes (the parts committed more than 30 seconds ago are
+fsynced earlier). In the meantime, the OS writes the data back in the background.
+The parts can become visible to queries before they are durable, but the `INSERT`
+is acknowledged only after that.
+
+If disabled, every part is fsynced right after it is written, before it is committed.
+)", 0, \
+        {"26.11", false, true, "New setting"}) \
     DECLARE(Bool, fsync_part_directory, false, R"(
 Do fsync for part directory after all part operations (writes, renames, etc.).
 )", 0) \
