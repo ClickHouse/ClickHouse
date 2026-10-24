@@ -1,0 +1,8 @@
+-- SELECT on every table but the TimeSeries table: the selector is refused
+the grant SELECT ON ts
+the grant SELECT ON ts
+the grant SELECT ON system.no_such_table_05346
+the grant SELECT ON ts
+-- SELECT on the TimeSeries table: the histograms are read
+1
+1
