@@ -145,19 +145,6 @@ static DataTypePtr removeArrayNullableLowCardinality(const DataTypePtr & type)
     return inner_type;
 }
 
-/// Appending zero bytes keeps every term of a value, so `FixedString` padding never hides one.
-static bool tokenizerSplitsAtZeroByte(ITokenizer::Type type)
-{
-    return type == ITokenizer::Type::SplitByNonAlpha
-        || type == ITokenizer::Type::Ngrams
-        || type == ITokenizer::Type::SparseGrams
-        || type == ITokenizer::Type::AsciiCJK
-#if USE_ICU
-        || type == ITokenizer::Type::Icu
-#endif
-        ;
-}
-
 /// The token stream an `Array` column stores differs from the one the row-level function sees, per element.
 static bool isIndexedColumnArray(const Block & header)
 {
@@ -1111,7 +1098,8 @@ struct FixedStringNeedleContext
 {
     FixedStringPaddingSemantics semantics;
     std::optional<size_t> indexed_fixed_string_size;
-    bool padding_never_in_terms;
+    ITokenizer::Type tokenizer_type;
+    bool has_preprocessor;
 };
 
 static std::optional<FixedStringPaddingSemantics> fixedStringPaddingSemantics(const String & function_name)
@@ -1156,7 +1144,8 @@ static bool tryNormalizeNeedlePadding(String & needle, bool needle_is_fixed_stri
         return true;
 
     /// A value with any number of trailing zero bytes matches, so one lookup covers them only if none can end up in a term.
-    if (both_stripped && stripped_size != needle.size() && !context.padding_never_in_terms)
+    if (both_stripped
+        && (context.has_preprocessor || !tokensSurviveTrailingNuls(context.tokenizer_type, withoutTrailingZeros(needle))))
         return false;
 
     needle.resize(stripped_size);
@@ -1278,7 +1267,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         const FixedStringNeedleContext context{
             .semantics = *semantics,
             .indexed_fixed_string_size = indexed_fixed_string_size,
-            .padding_never_in_terms = !has_preprocessor && tokenizerSplitsAtZeroByte(tokenizer->getType()),
+            .tokenizer_type = tokenizer->getType(),
+            .has_preprocessor = has_preprocessor,
         };
         if (!tryNormalizeNeedlePadding(value_field, value_type, context))
             return false;
@@ -2395,7 +2385,8 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     const FixedStringNeedleContext context{
         .semantics = FixedStringPaddingSemantics::BothStripped,
         .indexed_fixed_string_size = indexed_fixed_string_size,
-        .padding_never_in_terms = !has_preprocessor && tokenizerSplitsAtZeroByte(tokenizer->getType()),
+        .tokenizer_type = tokenizer->getType(),
+        .has_preprocessor = has_preprocessor,
     };
     String normalized;
 
