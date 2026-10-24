@@ -1,0 +1,22 @@
+-- unpartitioned sink: each commit carries numRecords at the top level of add.stats
+commit 1:
+10	numRecords
+commit 2:
+3	numRecords
+numRecords matches data file: 10
+numRecords matches data file: 3
+-- the row count is now readable from the log, so count() uses the trivial-count optimization
+1
+13
+-- partitioned sink: every add action of a multi-file commit carries its own row count
+3	numRecords
+7	numRecords
+numRecords matches data file: 3
+numRecords matches data file: 7
+-- a table whose protocol supports the rowTracking writer feature accepts the INSERT
+rows read back: 5
+5	numRecords
+baseRowId=0 defaultRowCommitVersion=1
+delta.rowTracking {"rowIdHighWaterMark":4}
+-- control: the ordinary append path writes no row-tracking columns and no domain metadata
+baseRowId= defaultRowCommitVersion=
