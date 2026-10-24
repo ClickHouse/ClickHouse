@@ -2,11 +2,6 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotSummary.h>
 
 #if USE_AVRO
-/// NOLINTBEGIN(clang-analyzer-core.uninitialized.UndefReturn)
-/// avro uses nasty '*std::any_cast' which triggers clang-tidy, the warning is false positive since
-/// a type and value are consistent in avro::GenericDatum, and even more - all avro manifests in iceberg
-/// consist only of AVRO_RECORDS
-
 #include <Core/Block.h>
 #include <Core/Settings.h>
 #include <Databases/DataLake/Common.h>
@@ -27,6 +22,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
+#include <Storages/ObjectStorage/Utils.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/FieldAccurateComparison.h>
@@ -438,7 +434,7 @@ AlterDropPartitionExecutor::buildDropPlan(const SnapshotState & state, const Tar
         }
     };
 
-    auto process_entries = [&](const auto & entries, size_t & entries_to_keep, size_t & entries_to_remove)
+    auto process_entries = [&](const auto & entries, TargetManifest & target_manifest)
     {
         for (const auto & entry : entries)
         {
@@ -448,14 +444,11 @@ AlterDropPartitionExecutor::buildDropPlan(const SnapshotState & state, const Tar
             const auto & parsed_entry = *entry->parsed_entry;
             const String storage_path = components.path_resolver.resolve(parsed_entry.file_path_key);
             if (!targets.contains(storage_path))
-            {
-                ++entries_to_keep;
                 continue;
-            }
 
             assert_on_ambigious_partition_key(parsed_entry);
 
-            ++entries_to_remove;
+            target_manifest.rows_to_remove.insert(parsed_entry.row_number);
             unprocessed_target_file_paths.erase(storage_path);
             switch (parsed_entry.content_type)
             {
@@ -480,13 +473,11 @@ AlterDropPartitionExecutor::buildDropPlan(const SnapshotState & state, const Tar
     {
         auto handle = getManifestFileEntriesHandle(object_storage, components, context, log, manifest_key, state.schema_id);
 
-        size_t entries_to_keep = 0;
-        size_t entries_to_remove = 0;
+        TargetManifest target_manifest{.manifest_key = manifest_key, .rows_to_remove = {}};
+        process_entries(handle.getFilesWithoutDeleted(FileContentType::DATA), target_manifest);
+        process_entries(handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE), target_manifest);
 
-        process_entries(handle.getFilesWithoutDeleted(FileContentType::DATA), entries_to_keep, entries_to_remove);
-        process_entries(handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE), entries_to_keep, entries_to_remove);
-
-        if (entries_to_remove == 0)
+        if (target_manifest.rows_to_remove.empty())
             continue;
 
         /// Removing a manifest with equality deletes would silently resurrect rows.
@@ -496,11 +487,7 @@ AlterDropPartitionExecutor::buildDropPlan(const SnapshotState & state, const Tar
                 "DROP PARTITION is not supported on Iceberg tables where an affected manifest '{}' contains equality deletes",
                 manifest_key.manifest_file_path);
 
-        TargetManifest target_manifest{.manifest_key = manifest_key};
-        if (entries_to_keep == 0)
-            result.target_manifests.fully_matched.emplace_back(std::move(target_manifest));
-        else
-            result.target_manifests.partially_matched.emplace_back(std::move(target_manifest));
+        result.target_manifests.emplace_back(std::move(target_manifest));
     }
 
     if (!unprocessed_target_file_paths.empty())
@@ -570,8 +557,39 @@ AlterDropPartitionExecutor::ManifestListWriteResult AlterDropPartitionExecutor::
     files_for_cleanup.push_back(storage_manifest_list_path);
 
     std::unordered_set<String> removed_manifest_paths;
-    for (const auto & tm : plan.target_manifests.fully_matched)
-        removed_manifest_paths.insert(tm.manifest_key.manifest_file_path.serialize());
+    std::vector<IcebergPathFromMetadata> replacement_paths;
+    std::vector<Int64> replacement_sizes;
+    std::vector<FileContentType> replacement_content_types;
+    std::vector<ManifestListEntryCounts> replacement_counts;
+    for (const auto & tm : plan.target_manifests)
+    {
+        const auto & key = tm.manifest_key;
+        removed_manifest_paths.insert(key.manifest_file_path.serialize());
+        auto replacement_path = filename_generator.generateManifestEntryName();
+        const auto storage_path = components.path_resolver.resolve(replacement_path);
+        files_for_cleanup.push_back(storage_path);
+        auto output = object_storage->writeObject(
+            StoredObject(storage_path),
+            WriteMode::Rewrite,
+            /*attributes=*/std::nullopt,
+            DBMS_DEFAULT_BUFFER_SIZE,
+            context->getWriteSettings());
+        RelativePathWithMetadata source_object(components.path_resolver.resolve(key.manifest_file_path));
+        auto input = createReadBuffer(source_object, object_storage, context, log);
+        auto counts = rewriteManifestForDelete(
+            *input,
+            *output,
+            key,
+            tm.rows_to_remove,
+            new_snapshot->getValue<Int64>(f_metadata_snapshot_id),
+            new_snapshot->getValue<Int64>(f_metadata_sequence_number));
+        output->finalize();
+        replacement_paths.push_back(std::move(replacement_path));
+        replacement_sizes.push_back(output->count());
+        replacement_content_types.push_back(
+            key.content_type == ManifestFileContentType::DATA ? FileContentType::DATA : FileContentType::POSITION_DELETE);
+        replacement_counts.push_back(counts);
+    }
 
     std::unordered_set<String> carry_forward_manifest_paths;
     for (const auto & manifest_key : state.snapshot->manifest_list_entries)
@@ -595,14 +613,14 @@ AlterDropPartitionExecutor::ManifestListWriteResult AlterDropPartitionExecutor::
         state.metadata_object,
         object_storage,
         context,
-        /*manifest_entry_names=*/{},
+        replacement_paths,
         new_snapshot,
-        /*manifest_entry_sizes=*/{},
+        replacement_sizes,
         *buf,
         FileContentType::DATA,
         /*use_previous_snapshots=*/false,
-        /*per_entry_content_types=*/{},
-        /*entry_counts=*/{},
+        replacement_content_types,
+        replacement_counts,
         carry_forward_manifest_paths);
 
     buf->finalize();
@@ -739,11 +757,6 @@ void AlterDropPartitionExecutor::run()
         }
 
         auto plan = buildDropPlan(state, targets, target_partition);
-        if (!plan.target_manifests.partially_matched.empty())
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "DROP PARTITION would require rewriting a manifest that also contains files from other partitions");
-
         if (tryCommit(state, plan))
             return;
     }
@@ -754,5 +767,4 @@ void AlterDropPartitionExecutor::run()
 }
 }
 
-// NOLINTEND(clang-analyzer-core.uninitialized.UndefReturn)
 #endif

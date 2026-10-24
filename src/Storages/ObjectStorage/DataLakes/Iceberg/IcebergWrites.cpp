@@ -466,6 +466,60 @@ void setVersionedField(avro::GenericRecord & rec, const std::optional<T> & value
         setVersionedFieldNull(rec, field_name);
 }
 
+/// Rewritten entries must store lineage inherited from the source manifest explicitly.
+Int64 inheritManifestField(avro::GenericDatum & field, Int64 inherited)
+{
+    if (field.type() == avro::AVRO_NULL)
+    {
+        field.selectBranch(1);
+        field.value<Int64>() = inherited;
+    }
+    return field.value<Int64>();
+}
+
+PartitionFieldSummaries makePartitionSummaries(const std::vector<std::pair<Field, DataTypePtr>> & partition_values)
+{
+    PartitionFieldSummaries summaries;
+    summaries.reserve(partition_values.size());
+    for (const auto & [value, type] : partition_values)
+    {
+        PartitionFieldSummary summary;
+        summary.contains_null = value.isNull();
+        if (!summary.contains_null)
+        {
+            summary.contains_nan = isNaNPartitionValue(value, type);
+            if (!summary.contains_nan && canDumpIcebergStats(value, type))
+            {
+                const auto bound = dumpFieldToBytes(value, type);
+                summary.lower_bound = String(bound.begin(), bound.end());
+                summary.upper_bound = summary.lower_bound;
+            }
+        }
+        summaries.push_back(std::move(summary));
+    }
+    return summaries;
+}
+
+void writePartitionSummaries(avro::GenericRecord & entry, const PartitionFieldSummaries & summaries)
+{
+    auto & partitions_field = entry.field(f_partitions);
+    partitions_field.selectBranch(1);
+    auto & partitions = partitions_field.value<avro::GenericArray>();
+    for (const auto & summary : summaries)
+    {
+        avro::GenericDatum datum(partitions.schema()->leafAt(0));
+        auto & record = datum.value<avro::GenericRecord>();
+        record.field(f_contains_null) = summary.contains_null;
+        if (summary.contains_nan)
+            setVersionedField(record, true, f_contains_nan);
+        if (summary.lower_bound)
+            setVersionedField(record, std::vector<uint8_t>(summary.lower_bound->begin(), summary.lower_bound->end()), f_lower_bound);
+        if (summary.upper_bound)
+            setVersionedField(record, std::vector<uint8_t>(summary.upper_bound->begin(), summary.upper_bound->end()), f_upper_bound);
+        partitions.value().push_back(std::move(datum));
+    }
+}
+
 }
 
 Poco::JSON::Object::Ptr getCurrentSchema(const Poco::JSON::Object::Ptr & metadata)
@@ -794,6 +848,68 @@ void generateManifestFile(
     writer.close();
 }
 
+ManifestListEntryCounts rewriteManifestForDelete(
+    ReadBuffer & input,
+    WriteBuffer & output,
+    const ManifestFileCacheKey & source,
+    const std::unordered_set<Int64> & rows_to_delete,
+    Int64 snapshot_id,
+    Int64 sequence_number)
+{
+    auto reader_base
+        = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(input), MAX_AVRO_SCHEMA_DEPTH);
+    const auto avro_metadata = reader_base->metadata();
+    avro::DataFileReader<avro::GenericDatum> reader(std::move(reader_base));
+
+    avro::DataFileWriter<avro::GenericDatum> writer(std::make_unique<OutputStreamWriteBufferAdapter>(output), reader.dataSchema());
+    /// Preserve the original schema, including Iceberg field IDs, and all manifest metadata.
+    /// The new container uses the writer's default codec, independently of the source codec.
+    for (const auto & [name, value] : avro_metadata)
+        if (name != "avro.codec")
+            writer.setMetadata(name, String(value.begin(), value.end()));
+
+    ManifestListEntryCounts counts;
+    counts.min_sequence_number = sequence_number;
+    counts.partition_summaries = source.partition_summaries;
+    avro::GenericDatum datum(reader.dataSchema());
+    for (Int64 row_number = 0; reader.read(datum); ++row_number)
+    {
+        auto & entry = datum.value<avro::GenericRecord>();
+        auto & status = entry.field(f_status).value<Int32>();
+        if (status == static_cast<Int32>(ManifestEntryStatus::DELETED))
+            continue;
+
+        inheritManifestField(entry.field(f_snapshot_id), source.added_snapshot_id);
+        const auto sequence = inheritManifestField(entry.field(f_sequence_number), source.added_sequence_number);
+        inheritManifestField(entry.field(f_file_sequence_number), source.added_sequence_number);
+
+        if (rows_to_delete.contains(row_number))
+        {
+            status = static_cast<Int32>(ManifestEntryStatus::DELETED);
+            entry.field(f_snapshot_id).value<Int64>() = snapshot_id;
+        }
+        else if (status == static_cast<Int32>(ManifestEntryStatus::ADDED))
+            status = static_cast<Int32>(ManifestEntryStatus::EXISTING);
+
+        const auto rows = entry.field(f_data_file).value<avro::GenericRecord>().field(f_record_count).value<Int64>();
+        if (status == static_cast<Int32>(ManifestEntryStatus::DELETED))
+        {
+            ++counts.deleted_files_count;
+            counts.deleted_rows_count += rows;
+        }
+        else
+        {
+            ++counts.files_count;
+            counts.rows_count += rows;
+            counts.min_sequence_number = std::min(counts.min_sequence_number, sequence);
+        }
+        writer.write(datum);
+    }
+    /// The Avro destructor closes the writer but suppresses exceptions; propagate write failures here.
+    writer.flush();
+    return counts;
+}
+
 void generateManifestList(
     const Iceberg::IcebergPathResolver & path_resolver,
     Poco::JSON::Object::Ptr metadata,
@@ -860,47 +976,12 @@ void generateManifestList(
     writer.setMetadata(Iceberg::f_avro_schema, schema_representation);
     writer.setMetadata(Iceberg::f_format_version, std::to_string(version));
 
-    /// Writes the `partitions` field summary of one manifest-list entry. Every manifest written here holds
-    /// exactly one partition tuple, so `lower_bound == upper_bound` per partition field; readers use these
-    /// bounds to skip whole manifests. Left null when no summaries are supplied (unpartitioned table).
     auto write_partition_summary = [&](avro::GenericRecord & entry, size_t entry_idx)
     {
-        if (entry_partition_summaries.empty())
-            return;
-
-        auto & partitions_field = entry.field(Iceberg::f_partitions);
-        partitions_field.selectBranch(1);
-        auto & summaries = partitions_field.value<avro::GenericArray>();
-        auto summary_schema = summaries.schema()->leafAt(0);
-        for (const auto & [partition_value, partition_type] : entry_partition_summaries[entry_idx])
-        {
-            avro::GenericDatum summary_datum(summary_schema);
-            auto & summary_record = summary_datum.value<avro::GenericRecord>();
-            const bool is_null = partition_value.isNull();
-            summary_record.field(Iceberg::f_contains_null) = avro::GenericDatum(is_null);
-            if (!is_null)
-            {
-                if (isNaNPartitionValue(partition_value, partition_type))
-                {
-                    /// NaN float/double partition value: record it via `contains_nan` instead of publishing the NaN bytes as ordered bounds.
-                    auto & contains_nan = summary_record.field(Iceberg::f_contains_nan);
-                    contains_nan.selectBranch(1);
-                    contains_nan.value<bool>() = true;
-                }
-                else if (canDumpIcebergStats(partition_value, partition_type))
-                {
-                    auto bound = dumpFieldToBytes(partition_value, partition_type);
-                    auto & lower = summary_record.field(Iceberg::f_lower_bound);
-                    lower.selectBranch(1);
-                    lower.value<std::vector<uint8_t>>() = bound;
-                    auto & upper = summary_record.field(Iceberg::f_upper_bound);
-                    upper.selectBranch(1);
-                    upper.value<std::vector<uint8_t>>() = bound;
-                }
-                /// else: a partition type whose bounds we cannot serialize (e.g. `Float`); leave the bounds null, matching the data-file statistics path.
-            }
-            summaries.value().push_back(summary_datum);
-        }
+        if (manifest_rewrite && !entry_counts[entry_idx].partition_summaries.empty())
+            writePartitionSummaries(entry, entry_counts[entry_idx].partition_summaries);
+        else if (!entry_partition_summaries.empty())
+            writePartitionSummaries(entry, makePartitionSummaries(entry_partition_summaries[entry_idx]));
     };
 
     Int64 snapshot_first_row_id = 0;
@@ -1116,10 +1197,10 @@ void generateManifestList(
             const auto & counts = entry_counts[entry_idx];
             setVersionedField(entry, counts.counts_are_added ? counts.files_count : 0, Iceberg::f_added_files_count);
             setVersionedField(entry, counts.counts_are_added ? 0 : counts.files_count, Iceberg::f_existing_files_count);
-            setVersionedField(entry, 0, Iceberg::f_deleted_files_count);
+            setVersionedField(entry, counts.deleted_files_count, Iceberg::f_deleted_files_count);
             setVersionedField(entry, counts.counts_are_added ? counts.rows_count : 0, Iceberg::f_added_rows_count);
             setVersionedField(entry, counts.counts_are_added ? 0 : counts.rows_count, Iceberg::f_existing_rows_count);
-            setVersionedField(entry, 0, Iceberg::f_deleted_rows_count);
+            setVersionedField(entry, counts.deleted_rows_count, Iceberg::f_deleted_rows_count);
 
             write_partition_summary(entry, entry_idx);
 
