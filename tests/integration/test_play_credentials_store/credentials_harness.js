@@ -126,7 +126,13 @@ function makeContext(storage) {
         /// The page state `checkCredentials` reads and writes besides the connection fields.
         check_credentials_request_num: 0,
         checked_connection: null,
-        document: { getElementById: () => ({ innerText: '' }) },
+        /// `submitDownload` builds a form and submits it; `submitted` records the submissions.
+        document: {
+            getElementById: () => ({ innerText: '' }),
+            createElement: () => ({ style: {}, appendChild() {}, submit() { ctx.submitted.push(this.action); } }),
+            body: { appendChild() {}, removeChild() {} },
+        },
+        submitted: [],
         formatUptime: () => '',
         updateServerInfoVisibility() {},
         openConnectionDropdown() {},
@@ -156,11 +162,13 @@ function makeContext(storage) {
         /// Mirrors the browser: `fetch` refuses a URL with credentials before sending anything.
         if (new URL(url).username) throw new TypeError(`Request cannot be constructed from a URL that includes credentials: ${url}`);
         ctx.fetched.push({ url, options });
-        if (ctx.implicit_user === null) return { ok: false, json: async () => ({}) };
+        const respond = (ok, json) => ({ ok, status: ok ? 200 : 500, headers: { get: () => null },
+            json: async () => json, text: async () => JSON.stringify(json) });
+        if (ctx.implicit_user === null) return respond(false, {});
         const m = url.match(/[?&]user=([^&]*)/);
-        if (ctx.proxy_user !== null && m) return { ok: false, json: async () => ({}) };
+        if (ctx.proxy_user !== null && m) return respond(false, {});
         const u = ctx.proxy_user !== null ? ctx.proxy_user : m ? decodeURIComponent(m[1]) : ctx.implicit_user;
-        return { ok: true, json: async () => ({ v: 'test', t: 0, u }) };
+        return respond(true, { v: 'test', t: 0, u });
     };
     vm.createContext(ctx);
     return ctx;
@@ -172,7 +180,8 @@ const FUNCTIONS = ['effectiveConnectionUser', 'implicitUserStamp', 'implicitUser
     'serverIdentityKey', 'serverAdmissionKey', 'learnedImplicitUser', 'rememberImplicitUser', 'restampPendingImplicitUser',
     'serverAddressWithoutSession', 'storeCredentials', 'getServerStatus', 'buildCompletionUrl',
     'isAutofilled', 'dropAutofilledStalePassword', 'passwordlessLoginKey', 'loadPasswordlessLogins',
-    'rememberLoginPassword', 'rememberAuthenticationOutcome', 'connectionTuple', 'checkCredentials'];
+    'rememberLoginPassword', 'rememberAuthenticationOutcome', 'connectionTuple', 'checkCredentials',
+    'auxiliaryQuery', 'submitDownload'];
 
 function boot(js, { withPasswordCredential = true, storage = makeStorage() } = {}) {
     const ctx = makeContext(storage);
@@ -572,6 +581,38 @@ scenario('probe-after-run-completes', async js => {
         assertEqual(ctx.stored[0].id, 'alice', `remembered under the implicit user (${outcome})`);
         assertEqual(ctx.stored[0].name, 'http://host:8123/', `remembered for the server taken at launch (${outcome})`);
     }
+});
+
+/// A Download and a database-panel query (`auxiliaryQuery`) are queries of the user too, so with
+/// `max_concurrent_queries_for_user = 1` an implicit-user probe in flight would make the server reject
+/// them. Both must be sent only after the probe has settled.
+scenario('download-and-panel-wait-for-probe', async js => {
+    const settle = async () => { for (let i = 0; i < 5; ++i) await new Promise(resolve => setImmediate(resolve)); };
+    const ctx = boot(js);
+    ctx.implicit_user = 'alice';
+    const server = 'http://host:8123/';
+    const fetch = ctx.fetch;
+    let release;
+    const held = new Promise(resolve => { release = resolve; });
+    ctx.fetch = async (url, options) => {
+        if (String(options.body).includes('currentUser()')) await held;
+        return fetch(url, options);
+    };
+    ctx.server = server;
+    const probe = vm.runInContext("learnImplicitUser(server, 'secret')", ctx);
+    await settle();
+    const download = vm.runInContext("submitDownload(server, server + '?default_format=CSV', 'SELECT 1')", ctx);
+    const panel = vm.runInContext("auxiliaryQuery(server, '', 'secret', 'SELECT 1', '', true)", ctx);
+    await settle();
+    assertEqual(ctx.submitted.length, 0, 'no Download while the probe is in flight');
+    assertEqual(ctx.fetched.length, 0, 'no panel query while the probe is in flight');
+    release();
+    assertEqual(await probe, 'alice', 'the probe learns the implicit user');
+    await download;
+    await panel;
+    assertEqual(ctx.submitted.length, 1, 'the Download is submitted once the probe has settled');
+    assertEqual(ctx.fetched.length, 2, 'the probe and then the panel query are sent');
+    if (!String(ctx.fetched[0].options.body).includes('currentUser()')) throw new Error('the probe is not sent first');
 });
 
 /// The login of an empty field is saved under the name of the account (`storeCredentials`), so the

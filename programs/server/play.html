@@ -8918,9 +8918,18 @@ async function auxiliaryQuery(server_address, user, password, query, url_params 
     /// flight; a stale request must not touch the shared result pane.
     const belongs_to_active_connection = () => generation === null || generation === connectionGeneration;
 
-    let response;
+    /// Admitted like the query of a run (`admitRunQuery`), and holding the admission until the body is
+    /// read: a panel query is a query of the user too, so an implicit-user probe must not displace it.
+    /// `payload` is the body being read: the error text, or the result. A failure to read it is not
+    /// a network error, so it is only waited for here and surfaces where the body is used.
+    let response, payload;
     try {
-        response = await fetch(url, { method: "POST", body: query, headers: { 'Authorization': 'never' } });
+        response = await admitRunQuery(server_address, new AbortController().signal, async () => {
+            const response = await fetch(url, { method: "POST", body: query, headers: { 'Authorization': 'never' } });
+            payload = response.ok ? response.json() : response.text();
+            await Promise.allSettled([payload]);
+            return response;
+        });
     } catch (e) {
         if (!quiet && belongs_to_active_connection()) {
             clear();
@@ -8934,7 +8943,7 @@ async function auxiliaryQuery(server_address, user, password, query, url_params 
     /// active connection: the outcome is about these credentials, not the live fields.
     rememberAuthenticationOutcome(response, server_address, user, password);
     if (!response.ok) {
-        let error_text = await response.text();
+        let error_text = await payload;
         if (!quiet && belongs_to_active_connection()) {
             clear();
             resultEl.renderError(error_text);
@@ -8947,7 +8956,7 @@ async function auxiliaryQuery(server_address, user, password, query, url_params 
         resultEl.clearError();
         logoEl.style.display = 'block';
     }
-    return await response.json();
+    return await payload;
 }
 
 /// `signal` (optional) aborts the request; an aborted request reports failure like any other.
@@ -22675,6 +22684,33 @@ const formatExtensions = {
   Markdown: "md"
 };
 
+/// Submit the export of `query` to `url` (a request to `server_address`) as a form, so that the browser
+/// saves the response as a file. The export is a query of the user, so it is admitted like the query of a
+/// run (`admitRunQuery`): it is sent only after an implicit-user probe in flight has settled, or the
+/// probe could take the last query slot of the user (`max_concurrent_queries_for_user`) and the export
+/// would fail with `TOO_MANY_SIMULTANEOUS_QUERIES`. The page cannot see when the browser finishes
+/// receiving the file, so the admission ends with the submission; a probe that starts while the export
+/// still holds the slot is the one the server rejects, which only leaves the login unrecorded.
+async function submitDownload(server_address, url, query) {
+    await admitRunQuery(server_address, new AbortController().signal, async () => {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = url;
+        form.enctype = 'multipart/form-data';
+        form.style.display = 'none';
+
+        const queryInput = document.createElement('input');
+        queryInput.type = 'hidden';
+        queryInput.name = 'query';
+        queryInput.value = query;
+        form.appendChild(queryInput);
+
+        document.body.appendChild(form);
+        form.submit();
+        document.body.removeChild(form);
+    });
+}
+
 // Handle download button click
 document.getElementById('download-button').addEventListener('click', async function() {
     const formatSelect = document.getElementById('download-format');
@@ -22766,22 +22802,7 @@ document.getElementById('download-button').addEventListener('click', async funct
         ? query.slice(0, format_clause.start) + query.slice(format_clause.end)
         : query;
 
-    // Create a form and submit it to trigger download
-    const form = document.createElement('form');
-    form.method = 'POST';
-    form.action = url;
-    form.enctype = 'multipart/form-data';
-    form.style.display = 'none';
-
-    const queryInput = document.createElement('input');
-    queryInput.type = 'hidden';
-    queryInput.name = 'query';
-    queryInput.value = downloadQuery;
-    form.appendChild(queryInput);
-
-    document.body.appendChild(form);
-    form.submit();
-    document.body.removeChild(form);
+    await submitDownload(server_address, url, downloadQuery);
 
     // Close dropdown
     document.getElementById('download-dropdown').classList.remove('show');
