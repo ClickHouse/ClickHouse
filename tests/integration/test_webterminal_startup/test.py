@@ -94,6 +94,7 @@ def test_webterminal_startup(started_cluster, nodejs_container):
         "embedded-idle-takeover",
         "embedded-user-in-url",
         "untrusted-credentials",
+        "proxied-endpoint",
     ):
         assert "PASS [{}]".format(scenario) in out, "scenario {} did not run:\n{}".format(
             scenario, out

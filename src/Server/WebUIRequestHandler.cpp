@@ -3,6 +3,7 @@
 #include <Server/HTTPResponseHeaderWriter.h>
 
 #include <Common/re2.h>
+#include <Common/StringUtils.h>
 #include <Core/ServerSettings.h>
 #include <IO/HTTPCommon.h>
 #include <IO/Operators.h>
@@ -14,6 +15,8 @@
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/URI.h>
 #include <Poco/Util/LayeredConfiguration.h>
+
+#include <algorithm>
 
 
 /// Embedded HTML pages
@@ -94,6 +97,77 @@ constexpr unsigned char resource_katex_css[] =
 namespace DB
 {
 
+String relativeServerRootURL(const HTTPServerRequest & request)
+{
+    std::string_view path = request.getURI();
+    path = path.substr(0, path.find_first_of("?#"));
+
+    /// An absolute-form request target (`GET http://host/docs HTTP/1.1`): skip the scheme and the authority.
+    if (!path.starts_with('/'))
+    {
+        size_t authority = path.find("://");
+        size_t path_start = authority == std::string_view::npos ? std::string_view::npos : path.find('/', authority + 3);
+        path = path_start == std::string_view::npos ? std::string_view("/") : path.substr(path_start);
+    }
+
+    /// Every `/` after the first one is a directory level of the page to climb out of.
+    size_t depth = std::count(path.begin(), path.end(), '/');
+    if (depth <= 1)
+        return "./";
+
+    String url;
+    for (size_t i = 1; i < depth; ++i)
+        url += "../";
+    return url;
+}
+
+String routingQueryOfRequest(const HTTPServerRequest & request)
+{
+    std::string_view query = request.getURI();
+    size_t query_start = query.find('?');
+    if (query_start == std::string_view::npos)
+        return {};
+    query = query.substr(query_start + 1);
+    query = query.substr(0, query.find('#'));
+
+    String result;
+    while (!query.empty())
+    {
+        size_t end = query.find('&');
+        std::string_view parameter = query.substr(0, end);
+        query = end == std::string_view::npos ? std::string_view() : query.substr(end + 1);
+
+        /// The credentials are never routing information, and neither is `query`, which the HTTP interface executes.
+        std::string_view name = parameter.substr(0, parameter.find('='));
+        if (parameter.empty() || name == "user" || name == "password" || name == "query")
+            continue;
+
+        result += result.empty() ? '?' : '&';
+        /// The result is inserted into an HTML attribute and into an `RE2` rewrite string, so every character
+        /// that could end the attribute or start an escape is percent-encoded. Existing escapes are kept as is.
+        for (char c : parameter)
+        {
+            if (isAlphaNumericASCII(c) || std::string_view("-._~%+=:@/?!,*;").contains(c))
+            {
+                result += c;
+            }
+            else
+            {
+                static constexpr char hex[] = "0123456789ABCDEF";
+                result += '%';
+                result += hex[static_cast<unsigned char>(c) >> 4];
+                result += hex[static_cast<unsigned char>(c) & 0xF];
+            }
+        }
+    }
+    return result;
+}
+
+String serverAssetURL(const HTTPServerRequest & request, std::string_view name)
+{
+    return relativeServerRootURL(request) + "js/" + String(name) + routingQueryOfRequest(request);
+}
+
 static void handle(HTTPServerRequest & request, HTTPServerResponse & response, std::string_view html,
                    std::unordered_map<String, String> http_response_headers_override = {})
 {
@@ -157,11 +231,13 @@ void DashboardWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HT
     /// Note: we can embed the JavaScript file inline to the HTML,
     /// but we don't do it to keep the "view-source" perfectly readable.
 
+    /// The links are relative to the page and carry its routing parameters, so that they keep the path prefix
+    /// and the backend selection of a reverse proxy.
     static re2::RE2 uplot_url = R"(https://[^\s"'`]+u[Pp]lot[^\s"'`]*\.js)";
-    RE2::Replace(&html, uplot_url, "/js/uplot.js");
+    RE2::Replace(&html, uplot_url, serverAssetURL(request, "uplot.js"));
 
     static re2::RE2 lz_string_url = R"(https://[^\s"'`]+lz-string[^\s"'`]*\.js)";
-    RE2::Replace(&html, lz_string_url, "/js/lz-string.js");
+    RE2::Replace(&html, lz_string_url, serverAssetURL(request, "lz-string.js"));
 
     handle(request, response, html, http_response_headers_override);
 }
@@ -192,9 +268,13 @@ void JavaScriptWebUIRequestHandler::handleRequest(HTTPServerRequest & request, H
         {"/js/katex.min.css", resource_katex_css, std::size(resource_katex_css), "text/css; charset=UTF-8"},
     };
 
+    /// The page links carry the routing parameters of a reverse proxy (`serverAssetURL`), which are not part of the path.
+    std::string_view path = request.getURI();
+    path = path.substr(0, path.find_first_of("?#"));
+
     for (const auto & resource : resources)
     {
-        if (request.getURI() == resource.path)
+        if (path == resource.path)
         {
             auto headers = http_response_headers_override;
             if (resource.content_type)
@@ -234,14 +314,16 @@ void DocsWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSer
     /// The original CDN links are kept in the source so the page also works when opened as a
     /// local file (file://) against a remote server, mirroring the `dashboard.html` handling.
 
+    /// The links are relative to the page and carry its routing parameters, so that they keep the path prefix
+    /// and the backend selection of a reverse proxy.
     static re2::RE2 marked_url = R"(https://[^\s"'`]+marked[^\s"'`]*\.js)";
-    RE2::Replace(&html, marked_url, "/js/marked.min.js");
+    RE2::Replace(&html, marked_url, serverAssetURL(request, "marked.min.js"));
 
     static re2::RE2 katex_js_url = R"(https://[^\s"'`]+katex[^\s"'`]*\.js)";
-    RE2::Replace(&html, katex_js_url, "/js/katex.min.js");
+    RE2::Replace(&html, katex_js_url, serverAssetURL(request, "katex.min.js"));
 
     static re2::RE2 katex_css_url = R"(https://[^\s"'`]+katex[^\s"'`]*\.css)";
-    RE2::Replace(&html, katex_css_url, "/js/katex.min.css");
+    RE2::Replace(&html, katex_css_url, serverAssetURL(request, "katex.min.css"));
 
     handle(request, response, html, http_response_headers_override);
 }

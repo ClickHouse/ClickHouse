@@ -549,7 +549,46 @@
             if (autoRefreshLabel) autoRefreshLabel.parentElement.style.display = 'none';
         }
 
-        let host = location.protocol != 'file:' ? location.origin : 'http://localhost:8123/';
+        /// The address of the server that served this page: the default connection, also used when a host
+        /// hands a connection over without a `url` (see `applyConnectionFromHost`).
+        ///
+        /// The path of that address belongs to the endpoint rather than being decoration: it is sent
+        /// verbatim with every request, and a reverse proxy can expose the server as
+        /// `https://proxy.example/clickhouse/`, in which case this page is served as
+        /// `https://proxy.example/clickhouse/jemalloc` while `https://proxy.example/` is an unrelated site.
+        /// Defaulting to `location.origin` would aim every query at that unrelated root. The built-in pages
+        /// are attached as non-strict paths (`attachNonStrictPath` in `HTTPHandlerFactory`), so the served
+        /// URL may carry a suffix - `/jemalloc/`, `/jemalloc?user=x` - and the prefix is therefore taken as
+        /// everything up to and including the last `/` before the route name.
+
+        /// The parameters this page reads out of its own URL. Everything ELSE in the query string of the
+        /// served URL is routing information that belongs to the endpoint: a reverse proxy can expose one
+        /// origin as several backends and select between them with `?cluster=a`, and the query string of the
+        /// configured address is treated as part of the endpoint identity everywhere else (it is sent
+        /// verbatim with every request). So the default connection preserves it instead of clearing `search`
+        /// wholesale - otherwise a direct load, or a `clickhouse-credentials` handover that carries no `url`,
+        /// would talk to the proxy's default backend instead of the selected one. The embedded flamegraph
+        /// keeps its view state in the query string too (`x` / `y` for the zoom, written back with
+        /// `history.replaceState`, and the legacy `s` for the search term), so those are page parameters.
+        /// `query` is listed too although this page does not read it: the HTTP interface executes it (the first `query`
+        /// of the URL wins, and a POST body is appended to it), so it is never routing information, and
+        /// inheriting it would let a link such as `?query=DROP TABLE t` replace or prefix the automatic SQL
+        /// this page sends to its default endpoint.
+        const PAGE_URL_PARAMETERS = ['query', 'user', 'password', 'x', 'y', 's'];
+
+        function defaultServerAddress() {
+            if (location.protocol == 'file:') return 'http://localhost:8123/';
+            const url = new URL(location.href);
+            /// The keys are snapshotted: deleting from a live `URLSearchParams` iterator skips entries.
+            for (const name of [...url.searchParams.keys()])
+                if (PAGE_URL_PARAMETERS.includes(name)) url.searchParams.delete(name);
+            url.hash = '';
+            const route = url.pathname.lastIndexOf('/jemalloc');
+            if (route != -1) url.pathname = url.pathname.slice(0, route + 1);
+            return url.href;
+        }
+
+        let host = defaultServerAddress();
         let user = '';
         let password = '';
         let add_http_cors_header = (location.protocol != 'file:');
@@ -563,6 +602,14 @@
         const password_from_url = current_url.searchParams.get('password');
         if (password_from_url) {
             password = password_from_url;
+            /// Strip the password back out of the address bar so it is not left in a shareable URL, in browser
+            /// history or in the `Referer` of later requests (`file:` URLs disallow `history` edits).
+            if (location.protocol != 'file:') {
+                current_url.searchParams.delete('password');
+                window.history.replaceState(history.state, '',
+                    window.location.origin + window.location.pathname + '?'
+                    + current_url.searchParams.toString() + window.location.hash);
+            }
         }
 
         function readConnectionParams() {
@@ -573,7 +620,14 @@
 
         /// Build a query URL with authentication and CORS parameters
         function buildUrl(query, format = 'TabSeparated') {
-            let url = `${host}?default_format=${format}&enable_http_compression=1&query=${encodeURIComponent(query)}`;
+            /// The configured address can already carry a query string - `?database=db`, or a proxy
+            /// route selecting a cluster or a namespace - both when the user types it into the server
+            /// URL field and when a host page hands it over. Start the parameters below with `&` in
+            /// that case instead of a second `?`, exactly like `play.html` and `docs.html`: a second
+            /// `?` is not a separator, so `default_format` would be folded into the value of the last
+            /// existing parameter and the response would not be in the requested format.
+            const separator = host.indexOf('?') >= 0 ? '&' : '?';
+            let url = `${host}${separator}default_format=${format}&enable_http_compression=1&query=${encodeURIComponent(query)}`;
             if (add_http_cors_header) {
                 url += '&add_http_cors_header=1';
             }
@@ -586,7 +640,19 @@
             return url;
         }
 
-        const fetchOptions = { method: 'POST', headers: { 'Authorization': 'never' } };
+        /// Every request to the configured server carries the signal of the current connection. A
+        /// connection handed over by a host page aborts it (see `applyConnectionFromHost`), so a
+        /// multi-step action started on the previous server - a query profile, a fragmentation
+        /// report - fails at the request in flight instead of sending its next steps to the new
+        /// server and rendering the previous server's results under the new connection. The signal
+        /// is a getter, so that both `fetch(url, fetchOptions)` and `{...fetchOptions}` read the
+        /// current one.
+        let connectionAbortController = new AbortController();
+        const fetchOptions = {
+            method: 'POST',
+            headers: { 'Authorization': 'never' },
+            get signal() { return connectionAbortController.signal; },
+        };
 
         function formatBytes(bytes) {
             if (bytes === 0) return '0 B';
@@ -2203,7 +2269,7 @@
         async function checkProfilingEnabled() {
             try {
                 if (isKeeper) {
-                    const response = await fetch(location.origin + '/jemalloc/status');
+                    const response = await fetch(new URL('jemalloc/status', defaultServerAddress()));
                     if (!response.ok) return null;
                     const status = await response.json();
                     if (status.errors && status.errors.length > 0) return null;
@@ -2258,7 +2324,7 @@
                 let result, outputFormat, label, flameGraphOnclick;
 
                 if (isKeeper) {
-                    const response = await fetch(location.origin + '/jemalloc/profile', {
+                    const response = await fetch(new URL('jemalloc/profile', defaultServerAddress()), {
                         signal: profileAbortController.signal
                     });
                     if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -2307,10 +2373,15 @@
                 button.textContent = 'Get Profile';
             }
         }
+        /// `checkProfilingEnabled` swallows its errors, an aborted request included, so a status check
+        /// started on a previous connection is told apart by its generation instead.
+        let profileStatsGeneration = 0;
         async function renderProfileStats() {
+            const generation = ++profileStatsGeneration;
             const container = document.getElementById('profile-stats');
             container.innerHTML = '<p>Checking profiling status...</p>';
             const isEnabled = await checkProfilingEnabled();
+            if (generation != profileStatsGeneration) return;
             if (isEnabled === null) {
                 const unknownHint = isKeeper
                     ? 'Unable to determine profiling status. Make sure the Keeper HTTP server is reachable.'
@@ -2716,7 +2787,7 @@ SETTINGS jemalloc_enable_profiler = 1,
             return `SELECT DISTINCT arena, size_class FROM system.jemalloc_sampled_allocations WHERE age_ns > ${minAgeNs}`;
         }
 
-        async function renderFragmentationSummary(minAgeNs, minWaste, purposeCond) {
+        async function renderFragmentationSummary(minAgeNs, minWaste, purposeCond, options) {
             const summaryDiv = document.getElementById('frag-summary-result');
             /// One scan of the bins table per query so each group of terms comes from one
             /// stats snapshot. The breakdown is process-wide (active - allocated only
@@ -2730,7 +2801,7 @@ SETTINGS jemalloc_enable_profiler = 1,
                 greatest(sumIf(allocations - deallocations, large), 0) AS live_large,
                 minIf(slab_size, NOT large) AS page_size
                 FROM system.jemalloc_arena_bins`;
-            const response = await fetch(buildUrl(breakdownQuery), fetchOptions);
+            const response = await fetch(buildUrl(breakdownQuery), options);
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
@@ -2764,7 +2835,7 @@ SETTINGS jemalloc_enable_profiler = 1,
                     sumIf(waste, ${filterCond}) AS slab_waste_selected,
                     sumIf(waste, ${filterCond} AND (arena, index) IN (${fragmentationCoveredCellsSubquery(minAgeNs)})) AS slab_waste_covered
                     FROM system.jemalloc_arena_bins WHERE NOT large`;
-                const coverageResponse = await fetch(buildUrl(coverageQuery), fetchOptions);
+                const coverageResponse = await fetch(buildUrl(coverageQuery), options);
                 if (!coverageResponse.ok) {
                     throw new Error(`HTTP ${coverageResponse.status}: ${coverageResponse.statusText}`);
                 }
@@ -2778,6 +2849,7 @@ SETTINGS jemalloc_enable_profiler = 1,
                     sampling overhead, which grows with the number of live samples.
                 `;
             } catch (error) {
+                if (error.name === 'AbortError') throw error;
                 console.error('Error computing sampling coverage:', error);
                 coverageP.innerHTML = `<span class="error">Cannot compute sampling coverage: ${escapeHtml(error.message)}</span>`;
             }
@@ -2795,6 +2867,11 @@ SETTINGS jemalloc_enable_profiler = 1,
             const wasteDiv = document.getElementById('frag-waste-result');
             const pinnersDiv = document.getElementById('frag-pinners-result');
             const { minAgeNs, minWaste, excludeDedicated, purposeCond } = fragmentationParams();
+            /// The report is a sequence of requests, and every step catches its own failure so that
+            /// the next one still runs. Bind all of them to the connection the report started on:
+            /// once a handover aborts it, the remaining steps fail before sending anything instead of
+            /// querying the new server with the previous server's filters.
+            const options = { ...fetchOptions, signal: connectionAbortController.signal };
 
             button.disabled = true;
             button.textContent = 'Analyzing...';
@@ -2805,14 +2882,15 @@ SETTINGS jemalloc_enable_profiler = 1,
                 /// A summary failure must not suppress the profiler-independent waste
                 /// table below.
                 try {
-                    await renderFragmentationSummary(minAgeNs, minWaste, purposeCond);
+                    await renderFragmentationSummary(minAgeNs, minWaste, purposeCond, options);
                 } catch (error) {
+                    if (error.name === 'AbortError') throw error;
                     console.error('Error building fragmentation summary:', error);
                     document.getElementById('frag-summary-result').innerHTML = `<div class="error">Error: ${escapeHtml(error.message)}</div>`;
                 }
 
                 const wasteQuery = `SELECT arena, purpose, size, curslabs, curregs, round(util, 3) AS util, waste FROM system.jemalloc_arena_bins WHERE NOT large AND waste >= ${minWaste}${purposeCond} ORDER BY waste DESC LIMIT 100`;
-                const wasteResponse = await fetch(buildUrl(wasteQuery), fetchOptions);
+                const wasteResponse = await fetch(buildUrl(wasteQuery), options);
                 if (!wasteResponse.ok) {
                     throw new Error(`HTTP ${wasteResponse.status}: ${wasteResponse.statusText}`);
                 }
@@ -2859,7 +2937,7 @@ SETTINGS jemalloc_enable_profiler = 1,
                 try {
                     pinnersDiv.innerHTML = '<p>Attributing stacks...</p>';
                     const pinnerQuery = `SELECT b.arena, b.size, b.waste, round(s.est_old_objects) AS est_old_objects, s.stack FROM system.jemalloc_arena_bins AS b INNER JOIN (${fragmentationPinnersSubquery(minAgeNs)}) AS s ON s.size_class = b.index AND s.arena = b.arena WHERE b.large = 0 AND b.waste >= ${minWaste}${purposeCond} ORDER BY b.waste DESC, s.est_old_objects DESC LIMIT 100 SETTINGS allow_introspection_functions = 1`;
-                    const pinnerResponse = await fetch(buildUrl(pinnerQuery), fetchOptions);
+                    const pinnerResponse = await fetch(buildUrl(pinnerQuery), options);
                     if (!pinnerResponse.ok) {
                         throw new Error(`HTTP ${pinnerResponse.status}: ${pinnerResponse.statusText}`);
                     }
@@ -2893,10 +2971,13 @@ SETTINGS jemalloc_enable_profiler = 1,
                         </table>
                     `;
                 } catch (error) {
+                    if (error.name === 'AbortError') throw error;
                     console.error('Error attributing stacks:', error);
                     pinnersDiv.innerHTML = `<div class="error">Error: ${escapeHtml(error.message)}</div>`;
                 }
             } catch (error) {
+                /// The handover has cleared this report's panel already; there is nothing to show.
+                if (error.name === 'AbortError') return;
                 console.error('Error building fragmentation report:', error);
                 wasteDiv.innerHTML = `<div class="error">Error: ${escapeHtml(error.message)}</div>`;
                 pinnersDiv.innerHTML = '';
@@ -2946,7 +3027,11 @@ SETTINGS jemalloc_enable_profiler = 1,
             }
         }
 
+        /// Each load owns a generation, so a response from the connection that preceded a
+        /// `postMessage` handover cannot overwrite the fresh statistics or error state.
+        let statsLoadGeneration = 0;
         async function loadStats(isManualRefresh = false) {
+            const generation = ++statsLoadGeneration;
             if (!isKeeper) readConnectionParams();
             const loading = document.getElementById('loading');
             const content = document.getElementById('content');
@@ -2960,7 +3045,7 @@ SETTINGS jemalloc_enable_profiler = 1,
             try {
                 let statsText;
                 if (isKeeper) {
-                    const response = await fetch(location.origin + '/jemalloc/stats');
+                    const response = await fetch(new URL('jemalloc/stats', defaultServerAddress()));
                     if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                     statsText = await response.text();
                 } else {
@@ -2969,6 +3054,7 @@ SETTINGS jemalloc_enable_profiler = 1,
                     if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                     statsText = await response.text();
                 }
+                if (generation != statsLoadGeneration) return;
                 const stats = parseJemallocStats(statsText);
                 document.getElementById('timestamp').textContent = new Date().toLocaleString();
                 renderOverviewMetrics(stats.overview);
@@ -2990,6 +3076,7 @@ SETTINGS jemalloc_enable_profiler = 1,
                     content.style.display = 'block';
                 }
             } catch (error) {
+                if (generation != statsLoadGeneration) return;
                 console.error('Error loading stats:', error);
                 errorDiv.textContent = `Error: ${error.message}`;
                 errorDiv.style.display = 'block';
@@ -3634,6 +3721,116 @@ function start() {
 }
 
 start();
+
+/// The connection over `postMessage`.
+///
+/// When this page is opened from another built-in web UI page or embedded in an iframe, the host
+/// hands the connection over in a message instead of the query string, because a password in a URL
+/// leaks into browser history, referrer headers, server access logs and proxy logs. This page
+/// announces itself with `clickhouse-hello` and the host answers with `clickhouse-credentials`;
+/// see `play.html`, which documents the protocol and implements the other side of it.
+///
+/// In Keeper mode the page has no connection inputs and reads `jemalloc/stats` from the address it
+/// was served from without credentials, so there is nothing to hand over and the exchange is skipped
+/// entirely.
+
+/// Origins allowed to hand a connection to this page: its own origin - one built-in page opening
+/// another, the way `/play` opens `/docs` - and the ClickHouse Cloud consoles, which embed these
+/// pages in an iframe. The list is exact rather than a domain suffix: every Cloud service endpoint
+/// is a `*.clickhouse.cloud` host serving content of its owner's choosing, and a trusted host can
+/// aim this page at a server of its own through `url`, which the user may then type their
+/// credentials into believing it is still their own service.
+const TRUSTED_HOST_ORIGINS = [
+    'https://console.clickhouse.cloud',
+    'https://console.clickhouse-staging.com',
+    'https://clickhouse.com',
+];
+function isTrustedHostOrigin(origin) {
+    /// A browser-supplied `event.origin` is normalized (lower case, default port omitted), so the
+    /// origins above can be compared literally.
+    return origin === window.location.origin || TRUSTED_HOST_ORIGINS.includes(origin);
+}
+
+/// Whether two server addresses name the same endpoint. The path and the query string are part of the
+/// endpoint: both are sent verbatim with every request, and a path-routed reverse proxy serves
+/// unrelated backends under one origin (`https://proxy.example/a/` and `https://proxy.example/b/`), or
+/// selects one with `?cluster=a`. Only the root path is normalized, where the URL parser already yields
+/// `/` for both `origin` and `origin/`. Relative addresses are resolved against this page.
+function sameServerAddress(a, b) {
+    if (a === b) return true;
+    if (a == null || b == null) return false;
+    try {
+        const ua = new URL(a, location.href);
+        const ub = new URL(b, location.href);
+        const rootNormalized = (p) => (p === '/' || p === '') ? '/' : p;
+        return ua.protocol === ub.protocol
+            && ua.host === ub.host
+            && rootNormalized(ua.pathname) === rootNormalized(ub.pathname)
+            && ua.search === ub.search;
+    } catch (e) {
+        return false;
+    }
+}
+
+/// The server address the last `clickhouse-credentials` handover from the host page left configured,
+/// or `null` if no connection was handed over.
+let host_handed_server = null;
+
+/// Whether a `clickhouse-credentials` message that carries no `url` may be applied.
+///
+/// Leaving out `url` keeps the server already configured, and that server may have been chosen by
+/// whoever linked to this page, through its query string. A trusted host embedding such a page - say,
+/// a Cloud console framing `/play?url=https://attacker.example/` - would then send its credentials to
+/// a server it never named. So the credentials alone are accepted only while the page still points at
+/// the endpoint it was served from, or at the server the host itself handed over earlier; for any
+/// other server the host has to name it in `url`.
+function acceptsHandoverWithoutURL() {
+    const current = document.getElementById('url').value;
+    return sameServerAddress(current, defaultServerAddress())
+        || (host_handed_server !== null && sameServerAddress(current, host_handed_server));
+}
+
+/// Adopt a connection handed over by the host page and reload the statistics from it. The connection
+/// inputs are what `readConnectionParams` reads, so filling them is what switches the connection.
+///
+/// `url` is optional and defaults to the one already configured, as far as
+/// `acceptsHandoverWithoutURL` allows; the credentials are always replaced wholesale, so that none
+/// of them can outlive the connection they belong to.
+///
+/// Everything that belongs to the previous connection goes first: its requests in flight are aborted,
+/// a profile being fetched included, and the panels derived from it - the profiler status and any
+/// profile, query profile or fragmentation report captured from it - are cleared. The reload then
+/// rebuilds them for the new server, like a manual refresh does.
+function applyConnectionFromHost(data) {
+    connectionAbortController.abort();
+    connectionAbortController = new AbortController();
+    if (profileAbortController) profileAbortController.abort();
+    ++profileStatsGeneration;
+    for (const id of ['profile-stats', 'query-profile-stats', 'fragmentation-stats'])
+        document.getElementById(id).innerHTML = '';
+    if (data.url !== undefined) document.getElementById('url').value = data.url;
+    document.getElementById('user').value = data.user || '';
+    document.getElementById('password').value = data.password || '';
+    host_handed_server = document.getElementById('url').value;
+    loadStats(true);
+}
+
+{
+    /// The window that opened this page, or the one embedding it; a page has at most one host.
+    const host_window = window.opener || (window.parent !== window ? window.parent : null);
+    if (host_window && !isKeeper) {
+        window.addEventListener('message', event => {
+            if (event.source !== host_window) return;
+            if (!isTrustedHostOrigin(event.origin)) return;
+            if (!event.data || event.data.type !== 'clickhouse-credentials') return;
+            if (event.data.url === undefined && !acceptsHandoverWithoutURL()) return;
+            applyConnectionFromHost(event.data);
+        });
+        /// Broadcast, because the host's location cannot be read cross-origin. The message carries
+        /// no secrets - only the fact that this page exists, which the host knows already.
+        host_window.postMessage({type: 'clickhouse-hello'}, '*');
+    }
+}
 
 </script>
 </body>

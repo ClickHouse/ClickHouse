@@ -1,0 +1,18 @@
+play announces=yes accepts=yes origins=exact endpoint_query=preserved default_endpoint=prefixed routing_query=preserved sql_query=stripped credentials=replaced implicit_url=gated
+docs announces=yes accepts=yes origins=exact endpoint_query=preserved default_endpoint=prefixed routing_query=preserved sql_query=stripped credentials=replaced implicit_url=gated
+dashboard announces=yes accepts=yes origins=exact endpoint_query=preserved default_endpoint=prefixed routing_query=preserved sql_query=stripped credentials=replaced implicit_url=gated
+merges announces=yes accepts=yes origins=exact endpoint_query=preserved default_endpoint=prefixed routing_query=preserved sql_query=stripped credentials=replaced implicit_url=gated
+schema announces=yes accepts=yes origins=exact endpoint_query=preserved default_endpoint=prefixed routing_query=preserved sql_query=stripped credentials=replaced implicit_url=gated
+jemalloc announces=yes accepts=yes origins=exact endpoint_query=preserved default_endpoint=prefixed routing_query=preserved sql_query=stripped credentials=replaced implicit_url=gated
+processors-profile announces=yes accepts=yes origins=exact endpoint_query=preserved default_endpoint=prefixed routing_query=preserved sql_query=stripped credentials=replaced implicit_url=gated
+binary announces=yes accepts=yes origins=exact endpoint_query=preserved default_endpoint=prefixed routing_query=preserved sql_query=stripped credentials=replaced implicit_url=gated
+webterminal handshake=yes accepts=yes origins=exact ws_route=prefixed ws_query=preserved
+play docs_relay=yes direct_docs_opener=no relay_trust_guard=yes relay_ordering_guard=yes relay_route=preserved
+play terminal_route=prefixed terminal_query=preserved credential_store=endpoint derived_url_userinfo=stripped
+play derived_url_scheme=gated relay_target_guard=validated terminal_probe=live docs_query=preserved terminal_handover=gated
+schema credential_store=endpoint credential_retrieval=endpoint auto_probe=endpoint
+play initial_probe=endpoint
+handover dashboard=invalidated schema=invalidated jemalloc=invalidated processors_profile=invalidated
+jemalloc fragmentation=bound
+dashboard history_save=bound history_password=cleared
+binary history=bound
