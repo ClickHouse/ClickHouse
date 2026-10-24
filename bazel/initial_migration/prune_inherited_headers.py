@@ -23,6 +23,7 @@ from initial_migration.compact_build import Source, ast_key
 from initial_migration.compact_external_options import SOURCE_SUFFIXES
 from initial_migration.repository_inputs import CC_HEADER_SUFFIXES, REPOSITORIES, ROOT
 from initial_migration.simplify_globs import GlobFiles, _literal_strings
+from initial_migration.web_resources import constant_dict_field
 
 ARCHES = ('x86_64', 'aarch64')
 CC_PROVIDERS = {'cc_library', 'ch_cc_library', 'cc_import'}
@@ -71,6 +72,8 @@ class Document:
             return [node.value] if isinstance(node.value, str) else []
         if isinstance(node, ast.Name):
             return self.values(self.constants.get(node.id), arch)
+        if isinstance(node, ast.Subscript):
+            return self.values(constant_dict_field(node, self.constants), arch)
         if isinstance(node, (ast.List, ast.Tuple)):
             return [value for item in node.elts for value in self.values(item, arch)]
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):

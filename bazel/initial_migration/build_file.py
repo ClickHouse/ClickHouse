@@ -910,6 +910,8 @@ class BuildFile:
             self.loads.setdefault('@rules_perl//perl:perl.bzl', set()).add(kind)
         elif kind in {'copy_file', 'expand_template', 'write_file'}:
             self.loads.setdefault('@bazel_skylib//rules:' + kind + '.bzl', set()).add(kind)
+        if self.owner == llvm_targets.PREFIX and kind in ('cc_library', 'ch_cc_library'):
+            llvm_targets.component_headers(name, attrs)
         lines = [kind + '(\n    name = ' + json.dumps(name) + ',\n']
         if kind == 'llvm_runtime_objects':
             lines.append('    arch = _RUNTIME_ARCH,\n')

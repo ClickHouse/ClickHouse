@@ -162,6 +162,83 @@ def native_target(name, value):
     return (name.startswith('LLVM') or name in NATIVE_RUNTIMES) and value.get('type') == 'STATIC_LIBRARY'
 
 
+# CMake builds the TableGen executables separately. Bazel uses the LLVM module's
+# tools; none of these llvm/lib headers belong to a ClickHouse LLVM component.
+_UNBUILT_HEADERS = (
+    'CAS/*.h', 'DWARFLinker/**/*.h', 'DWARFCFIChecker/Registers.h',
+    'CodeGen/MIRParser/MILexer.h', 'ExecutionEngine/IntelJITProfiling/*.h',
+    'ExecutionEngine/Interpreter/Interpreter.h', 'ExecutionEngine/JITLink/*.h',
+    'ExecutionEngine/MCJIT/MCJIT.h', 'ExecutionEngine/Orc/TargetProcess/OrcRTBootstrap.h',
+    'FileCheck/FileCheckImpl.h', 'ObjCopy/**/*.h', 'Support/rpmalloc/*.h', 'TableGen/*.h',
+    'Target/AArch64/Disassembler/*.h', 'Target/X86/AsmParser/*.h',
+    'Target/X86/Disassembler/X86DisassemblerDecoder.h', 'Target/X86/MCA/X86CustomBehaviour.h',
+)
+
+# regex_impl.h declares the C functions in regcomp.c and the C++ calls in Regex.cpp.
+_COMPONENT_HEADERS = {
+    'LLVMAsmPrinter': {'srcs': ('CodeGen/AsmPrinter/*.h',)},
+    'LLVMSupport__compile_0': {'srcs': ('Support/DebugOptions.h', 'Support/regex_impl.h')},
+    'LLVMSupport__compile_1': {'srcs': (
+        'Support/regengine.inc', 'Support/regex2.h', 'Support/regex_impl.h', 'Support/regutils.h',
+    )},
+    'LLVMX86Desc': {
+        'srcs': ('Target/X86/MCTargetDesc/X86IntelInstPrinter.h',),
+        'hdrs': (
+            'Target/X86/MCTargetDesc/X86ATTInstPrinter.h',
+            'Target/X86/MCTargetDesc/X86InstPrinterCommon.h', 'Target/X86/MCTargetDesc/X86MCExpr.h',
+        ),
+    },
+}
+_PLATFORM_HEADERS = {
+    'LLVMSupport__compile_0': (('Support/Unix/*.h', 'Support/Unix/*.inc'), ('Support/Windows/*.inc',)),
+    'LLVMTargetParser': (('TargetParser/Unix/Host.inc',), ('TargetParser/Windows/Host.inc',)),
+}
+
+
+def component_header_exclusions():
+    patterns = set(_UNBUILT_HEADERS)
+    for attrs in _COMPONENT_HEADERS.values():
+        for files in attrs.values():
+            patterns.update(files)
+    for unix, windows in _PLATFORM_HEADERS.values():
+        patterns.update(unix + windows)
+    return tuple('llvm/lib/' + p for p in sorted(patterns))
+
+
+def component_headers(name, attrs):
+    """Declare llvm/lib implementation inputs on their native CMake compile groups."""
+    from initial_migration.build_file import Concat, Glob, Select, select
+
+    def inputs(patterns):
+        paths = ['llvm/lib/' + p for p in patterns]
+        return Glob(paths) if any('*' in p for p in paths) else paths
+
+    def combine(old, value):
+        if not old:
+            return value
+        if not value:
+            return old
+        if isinstance(old, list) and isinstance(value, list):
+            return old + value
+        if isinstance(old, Select) and isinstance(value, Select) and old.values.keys() == value.values.keys():
+            return select({k: combine(v, value.values[k]) for k, v in old.values.items()})
+        if isinstance(old, Concat):
+            return Concat([*old.values[:-1], combine(old.values[-1], value)])
+        return Concat([old, value])
+
+    for field, patterns in _COMPONENT_HEADERS.get(name, {}).items():
+        value = inputs(patterns)
+        if name == 'LLVMX86Desc':
+            value = Select({'@platforms//cpu:x86_64': value, '@platforms//cpu:aarch64': []})
+        attrs[field] = combine(attrs.get(field), value)
+    if name in _PLATFORM_HEADERS:
+        unix, windows = _PLATFORM_HEADERS[name]
+        attrs['srcs'] = combine(attrs.get('srcs'), Select({
+            '@platforms//os:windows': inputs(windows),
+            '//conditions:default': inputs(unix),
+        }))
+
+
 def declare_from_references(root, references):
     """Declare embedded LLVM targets before BUILD files are serialized.
 
@@ -200,7 +277,7 @@ def declare_from_references(root, references):
         for subdir in ('llvm/include', 'llvm/lib', 'third-party/siphash/include')
         for suffix in ('.h', '.hh', '.hpp', '.hxx', '.inc', '.def', '.ipp', '.inl')
     ]
-    build.rule('filegroup', 'llvm_source_headers', {'srcs': Glob(header_patterns)})
+    build.rule('filegroup', 'llvm_source_headers', {'srcs': Glob(header_patterns, component_header_exclusions())})
     build.rule('filegroup', 'llvm_tablegen_inputs', {
         'srcs': Glob(['llvm/include/**/*.td', 'llvm/lib/Target/**/*.td']),
     })

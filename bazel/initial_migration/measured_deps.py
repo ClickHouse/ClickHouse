@@ -7,7 +7,7 @@ import json
 from initial_migration.first_party_packages import Build, CPUS, canonical_dependency
 from initial_migration.library_runtime import HEADERS as LLVM_RUNTIME_HEADERS
 from initial_migration.prune_inherited_headers import inherited_source_headers
-from initial_migration.web_resources import constant_defs, eval_node
+from initial_migration.web_resources import constant_defs, constant_dict_field, eval_node
 
 TZDATA = '@clickhouse_cctz//:tzdata'
 FUNCTION_REGISTRATION = '//src/Functions:clickhouse_functions_obj__compile_0'
@@ -57,7 +57,7 @@ DEPENDENCIES = {
     ], ['//src/Parsers:parser_api', ':column_types', ':core_defines', '//src/Compression:codec_api']),
     ('src/Functions', 'clickhouse_functions_obj__compile_0'): ([], [TZDATA], []),
     ('src/Storages/System', 'clickhouse_storages_system__compile_1'): (
-        [], ['//bazel:clickhouse_config_headers', '//base:common', '//src:headers', '//src/Common', TZDATA], []),
+        [], ['//base:common', '//src:headers', '//src/Common', TZDATA], []),
     ('programs/format', 'clickhouse-format-lib'): ([], [TZDATA], []),
     ('src', 'unit_tests_dbms'): (['@clickhouse_icu//:_icudata', '@clickhouse_libcpuid//:_cpuid'], [], [TZDATA]),
 }
@@ -166,15 +166,15 @@ def editable_dependency_lists(build, node, drop, canonical):
     def visit(n, writable):
         if isinstance(n, ast.Name) and n.id in build.constants:
             return visit(build.constants[n.id], writable and uses[n.id] == 1)
-        if isinstance(n, ast.Subscript) and isinstance(n.value, ast.Name) and isinstance(n.slice, ast.Constant):
-            value = build.constants.get(n.value.id)
-            if not isinstance(value, ast.Call) or getattr(value.func, 'id', '') != 'dict':
+        if isinstance(n, ast.Subscript) and isinstance(n.value, ast.Name):
+            value = constant_dict_field(n, build.constants)
+            if value is None:
                 return False
             refs = [s for s in subscripts if s.value.id == n.value.id]
             single = (len(refs) == uses[n.value.id] and
                       all(isinstance(s.slice, ast.Constant) for s in refs) and
                       sum(s.slice.value == n.slice.value for s in refs) == 1)
-            return visit(next(k.value for k in value.keywords if k.arg == n.slice.value), writable and single)
+            return visit(value, writable and single)
         if isinstance(n, ast.List) and all(isinstance(e, ast.Constant) and isinstance(e.value, str) for e in n.elts):
             keep = [e.value for e in n.elts if canonical(e.value) not in drop]
             if len(keep) != len(n.elts):
@@ -237,8 +237,9 @@ def apply(root):
                 class Field(ast.NodeTransformer):
                     def visit_Subscript(self, sub):
                         sub = self.generic_visit(sub)
-                        if isinstance(sub.value, ast.Call) and isinstance(sub.value.func, ast.Name) and sub.value.func.id == 'dict':
-                            return next(kw.value for kw in sub.value.keywords if kw.arg == sub.slice.value)
+                        field = constant_dict_field(sub, {})
+                        if field is not None:
+                            return field
                         raise ValueError(f'{package}:{name}: unsupported dependency expression {ast.unparse(sub)}')
                 node = Field().visit(node)
                 values = [{canonical(v) for v in build.values(node, cpu)} for cpu in CPUS]

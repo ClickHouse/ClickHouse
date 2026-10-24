@@ -87,6 +87,20 @@ def rule_attrs(call):
     return {kw.arg: kw.value for kw in call.keywords}
 
 
+def constant_dict_field(node, constants):
+    """Return the literal dict keyword selected by constant["field"], or None."""
+    if not (isinstance(node, ast.Subscript) and isinstance(node.slice, ast.Constant)
+            and isinstance(node.slice.value, str)):
+        return None
+    value = constants.get(node.value.id) if isinstance(node.value, ast.Name) else node.value
+    if rule_kind(value) != 'dict' or value.args:
+        return None
+    fields = rule_attrs(value)
+    if None in fields or len(fields) != len(value.keywords):
+        return None
+    return fields.get(node.slice.value)
+
+
 def rule_name(call):
     return getattr(rule_attrs(call).get('name'), 'value', '')
 
@@ -155,9 +169,8 @@ class Configured(ast.NodeTransformer):
 
     def visit_Subscript(self, node):
         node = self.generic_visit(node)
-        if rule_kind(node.value) == 'dict' and isinstance(node.slice, ast.Constant):
-            return rule_attrs(node.value).get(node.slice.value, node)
-        return node
+        field = constant_dict_field(node, {})
+        return node if field is None else field
 
 
 def key(node):

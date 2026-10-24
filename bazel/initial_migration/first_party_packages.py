@@ -191,7 +191,7 @@ def declare_compiled_headers(rows, files, compiler, headers, field="hdrs"):
                  if isinstance(row, ast.Expr) and call_name(row.value) in COMPILERS}
     for rule in compilers.values():
         for kw in rule.keywords:
-            if kw.arg in {"hdrs", "textual_hdrs", field}:
+            if kw.arg in {"srcs", "hdrs", "textual_hdrs", "private_hdrs"}:
                 kw.value = RemoveHeaders().visit(kw.value)
     owner = compilers[compiler]
     attribute = next((kw for kw in owner.keywords if kw.arg == field), None)
@@ -203,6 +203,125 @@ def declare_compiled_headers(rows, files, compiler, headers, field="hdrs"):
         attribute.value = ast.BinOp(left=attribute.value, op=ast.Add(), right=headers)
 
 
+# Public headers read outside dbms__compile_0 and clickhouse_common_io__compile_0.
+# A whole directory or filename family below is public on that compiling target.
+DBMS_PUBLIC_HEADERS = {
+    "Access": ("DiskAccessStorage.h", "UsersConfigParser.h", "ZooKeeperReplicator.h"),
+    "Analyzer": (
+        "ColumnTransformers.h", "Identifier.h", "QueryNode.h", "TableFunctionNode.h", "TableNode.h",
+        "Utils.h",
+    ),
+    "Backups": (
+        "BackupConcurrencyCheck.h", "BackupCoordinationFileInfos.h",
+        "BackupCoordinationKeeperMapTables.h", "BackupCoordinationReplicated*.h",
+        "BackupEntryWithChecksumCalculation.h", "BackupFileInfo.h",
+    ),
+    "Client": ("ClientApplicationBase.h", "ConnectionString.h", "PortsProbe.h"),
+    "Columns": ("ColumnCompressed.h",),
+    "Coordination": ("KeeperAsynchronousMetrics.h", "KeeperMemNodesStorage.h", "ZooKeeperDataReader.h"),
+    "Coordination/Storage": ("BlockCache.h", "Memtable.h", "NodeRefCache.h", "Sorted*.h"),
+    "DataTypes": ("getMostSubtype.h",),
+    "DataTypes/Serializations": ("SerializationObjectHelpers.h", "SerializationObjectSharedData.h"),
+    "Databases": ("DatabaseOverlay.h", "DatabaseURL.h"),
+    "Databases/DataLake": ("HTTPBasedCatalogUtils.h",),
+    "Disks/DiskObjectStorage/MetadataStorages": (
+        "DiskObjectStorageMetadata.h", "InMemoryRemovalQueue.h", "MetadataOperationsHolder.h",
+        "MetadataStorageTransactionState.h", "NormalizedPath.h",
+    ),
+    "Disks/DiskObjectStorage/MetadataStorages/Local": ("*.h",),
+    "Disks/DiskObjectStorage/MetadataStorages/Memory": ("*.h",),
+    "Disks/DiskObjectStorage/MetadataStorages/PlainRewritable": ("PlainRewritable*.h",),
+    "Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata": ("*.h",),
+    "Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Transactions": ("*.h",),
+    "Disks/IO": ("CachedOnDiskWriteBufferFromFile.h",),
+    "Formats": ("FormatParserSharedResources.h", "FormatSchemaInfo.h"),
+    "Interpreters": (
+        "AggregationUtils.h", "ArrayJoinAction.h", "CancellationChecker.h", "DNSCacheUpdater.h",
+        "InterpreterExplainQuery.h", "InterpreterSetQuery.h", "JoinExpressionActions.h",
+        "JoinOperator.h", "MaterializedCTE.h", "NormalizeSelectWithUnionQueryVisitor.h",
+        "SelectIntersectExceptQueryVisitor.h", "ServerAsynchronousMetrics.h", "SortedBlocksWriter.h",
+        "TableJoin.h", "convertColumnToType.h", "loadMetadata.h",
+    ),
+    "Interpreters/ClusterProxy": ("executeQuery.h",),
+    "Planner": ("PlannerContext.h", "PlannerCorrelatedSubqueries.h", "Utils.h"),
+    "Processors": ("IAccumulatingTransform.h", "ResizeProcessor.h"),
+    "Processors/Executors": ("PushingPipelineExecutor.h",),
+    "Processors/Executors/Runtime/V1": ("ExecutionThreadContext.h", "ExecutorTasks.h", "PollingQueue.h"),
+    "Processors/Formats": ("RowInputFormatWith*.h",),
+    "Processors/Formats/Impl/Parquet": ("Write.h",),
+    "Processors/Merges/Algorithms": ("MergingSortedAlgorithm.h", "RowFilterInfo.h"),
+    "Processors/QueryPlan": (
+        "ExpressionStep.h", "JoinEstimation.h", "JoinStep.h", "QueryPlanFormat.h",
+        "QueryPlanStepRegistry.h",
+    ),
+    "Processors/QueryPlan/Optimizations": ("RelationStatistics.h", "RuntimeDataflowStatistics.h", "Utils.h"),
+    "Processors/QueryPlan/Optimizations/Cascades": ("Group*.h", "Properties.h", "Task.h"),
+    "Processors/Sources": ("ObfuscateSource.h",),
+    "Processors/Transforms": (
+        "AddingDefaultsTransform.h", "AggregatingTransform.h", "BlockNestedLoopJoin*.h",
+        "ChunkRowRange.h", "ColumnGathererTransform.h", "Distinct*.h", "JoiningTransform.h",
+        "SortingTransform.h", "getSourceFromASTInsertQuery.h",
+    ),
+    "Server": (
+        "PrometheusRequestHandlerFactory.h", "StartupWarnings.h", "createServer.h",
+        "socketBindListen.h", "stopServers.h", "waitServersToFinish.h",
+    ),
+    "Server/DistributedQuery": ("*.h",),
+    "Server/HTTP": ("HTTPServer.h", "HTTPServerConnectionFactory.h"),
+    "Server/IcebergRESTCatalog": ("IcebergRESTCatalogHandlerFactory.h", "IcebergRESTCatalogWarehouse.h"),
+    "Server/StatelessWorker": ("StatelessWorkerEndpoint.h",),
+    "Storages": (
+        "ExecutableSettings.h", "GenerateRandomSettings.h", "HivePartitioningUtils.h",
+        "StorageDictionary.h", "StorageExecutable.h", "StorageFilesystem.h", "StorageFuzzQuery.h",
+        "StorageInput.h", "StorageLoop.h", "StorageMerge.h", "StorageMergeTree*.h", "StorageNull.h",
+        "StorageObfuscate.h", "StoragePrometheusQuery.h", "StorageRedis.h", "StorageTimeSeries*.h",
+        "StorageValues.h", "StorageXDBC.h",
+    ),
+    "Storages/BigQuery": (
+        "BigQueryClient.h", "BigQueryConfiguration.h", "BigQuerySchema.h", "StorageBigQuery.h",
+    ),
+    "Storages/Distributed": ("DistributedSettings.h", "parseRemoteFunctionArguments.h"),
+    "Storages/FileLog": ("DirectoryWatcherBase.h", "FileLogDirectoryWatcher.h"),
+    "Storages/MergeTree": (
+        "*PlainMergeTreeTask.h", "MergeTreeCleanupThread.h", "MergeTreeDeduplicationLog.h",
+        "MergeTreeIndexConditionText.h", "MergeTreeIndexJSONSubcolumnHelper.h",
+        "MergeTreeIndexText.h", "MergeTreeMutationEntry.h", "PostingListBlockCodec.h",
+        "StorageFromMergeTreeProjection.h", "TextIndexBlockedPositionsCodec.h",
+    ),
+    "Storages/MergeTree/PatchParts": ("PatchPartsLock.h",),
+    "Storages/MergeTree/Streaming/Subscription": ("*.h",),
+    "Storages/MergeTree/UniqueKey": ("DeleteBitmapFileOps.h", "DeleteBitmapStore.h", "UniqueKeyProbe.h"),
+    "Storages/ObjectStorage": ("StorageObjectStorageCluster.h",),
+    "Storages/ObjectStorage/Azure": ("AzureSecretArguments.h",),
+    "Storages/ObjectStorage/S3": ("S3SecretArguments.h",),
+    "Storages/PostgreSQL": ("PostgreSQLSettings.h",),
+    "Storages/TimeSeries/PrometheusQueryToSQL": ("Converter.h",),
+    "WindowFunctions": ("helpers.h",),
+}
+
+COMMON_IO_PUBLIC_HEADERS = {
+    "IO": (
+        "Ask.h", "AsynchronousReadBufferFromFile.h", "BoundedReadBuffer.h",
+        "Expect404ResponseScope.h", "LimitSeekableReadBuffer.h", "LocalSourceReader.h", "MySQL*.h",
+        "PackedFilesWriter.h", "PageCacheProvider.h", "PeekableWriteBuffer.h",
+        "PipelineReadBuffer.h", "ReadBufferFromFileDecorator.h", "ReadBufferFromFileView.h",
+        "ReadPipeline.h", "SynchronousReader.h", "parseHTTPDate.h", "writeValidUTF8.h",
+    ),
+}
+
+
+def declare_src_compiled_headers(rows, files):
+    for compiler, directories in (
+        ("dbms__compile_0", DBMS_PUBLIC_HEADERS),
+        ("clickhouse_common_io__compile_0", COMMON_IO_PUBLIC_HEADERS),
+    ):
+        paths = [directory + "/" + name for directory, names in directories.items() for name in names]
+        patterns = [p for p in paths if "*" in p]
+        literals = list_expr([p for p in paths if "*" not in p])
+        headers = ast.BinOp(left=expr("glob(" + json.dumps(patterns) + ")"), op=ast.Add(), right=literals)
+        declare_compiled_headers(rows, files, compiler, headers)
+
+
 def declare_dbms_private_headers(rows, files):
     hash_join = expr(
         'glob(["Interpreters/HashJoin/*.h"], exclude=['
@@ -211,13 +330,21 @@ def declare_dbms_private_headers(rows, files):
     dbms_headers = ast.BinOp(left=hash_join, op=ast.Add(), right=list_expr([
         "Access/resolveSetting.h",
         "Analyzer/InDepthQueryTreeVisitor.h",
+        "Analyzer/RecursiveCTE.h",
         "Analyzer/Resolve/IdentifierLookup.h",
+        "Analyzer/UnionNode.h",
         "Interpreters/AddDefaultDatabaseVisitor.h",
+        "Interpreters/getHeaderForProcessingStage.h",
         "Interpreters/joinDispatch.h",
+        "Processors/Formats/OutputFormatWithUTF8ValidationAdaptor.h",
+        "Processors/Merges/Algorithms/FixedSizeDequeWithGaps.h",
         "Processors/Merges/Algorithms/IMergingAlgorithmWithDelayedChunk.h",
+        "Processors/Merges/Algorithms/IMergingAlgorithmWithSharedChunks.h",
         "Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h",
         "Processors/QueryPlan/Optimizations/joinOrder.h",
+        "Storages/MergeTree/UniqueKey/BlockAllocation.h",
         "Storages/NATS/NATS_fwd.h",
+        "Storages/ObjectStorage/DataLakes/Iceberg/AvroSchema.h",
         "Storages/StorageTableFunction.h",
         "Storages/StorageTableProxy.h",
     ]))
@@ -786,13 +913,11 @@ class Migration:
         if self.from_generator and 'src/Parsers' in self.rows:
             declare_parser_interface(self.rows['src/Parsers'])
             for package, compiler, header in (
-                ('src', 'dbms__compile_0', 'Client/ClientApplicationBase.h'),
-                ('src', 'dbms__compile_0', 'Coordination/KeeperMemNodesStorage.h'),
-                ('src', 'dbms__compile_0', 'Coordination/ZooKeeperDataReader.h'),
                 ('src/Functions', 'clickhouse_functions_obj__compile_0', 'registerFunctions.h'),
                 ('src/Storages/System', 'clickhouse_storages_system__compile_1', 'attachSystemTables.h'),
             ):
                 declare_compiled_headers(self.rows[package], self.package_inventory(package), compiler, list_expr([header]))
+            declare_src_compiled_headers(self.rows["src"], self.package_inventory("src"))
             declare_dbms_private_headers(self.rows["src"], self.package_inventory("src"))
         data = self.rewrite_consumers()
         builds = self.render_builds()
