@@ -405,7 +405,7 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
     auto check_local_path_inside_user_files = [&](const std::string & local_path)
     {
         /// `clickhouse-local` intentionally leaves `user_files_path` unrestricted.
-        if (access_check || context->getApplicationType() != Context::ApplicationType::SERVER)
+        if (context->getApplicationType() != Context::ApplicationType::SERVER)
             return;
 
         const auto target_path = std::filesystem::path(local_path).lexically_normal();
@@ -447,30 +447,7 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
     const std::string base_scheme_normalized = normalizeScheme(table_location_decomposed.scheme);
     const std::string target_scheme_normalized = normalizeScheme(target_decomposed.scheme);
 
-    if (target_scheme_normalized == "file")
-    {
-        /// RFC 8089 treats `localhost` as an empty authority.
-        std::string remote_authority;
-        if (!target_decomposed.authority.empty() && Poco::toLower(target_decomposed.authority) != "localhost")
-            remote_authority = target_decomposed.authority;
-        target_decomposed.authority.clear();
-
-        if (!remote_authority.empty() && !access_check)
-            throw DB::Exception(
-                DB::ErrorCodes::BAD_ARGUMENTS,
-                "File URI '{}' refers to host '{}', but `file://` paths are always read from the local "
-                "filesystem. Only an empty authority (`file:///path`) or `localhost` is supported",
-                path,
-                remote_authority);
-
-        /// Re-rooted at the queried table directory, where the base storage validates the translated path.
-        if (base_scheme_normalized == "file" && table_location_decomposed.authority == target_decomposed.authority
-            && keyIsInsidePrefix(table_location_decomposed.key, target_decomposed.key, /*is_filesystem_path*/ true))
-            return std::nullopt;
-
-        check_local_path_inside_user_files(target_decomposed.key);
-    }
-
+    /// Runs before any diagnostic that names the external path, host or object version.
     auto check_access = [&]
     {
         const auto source = sourceForScheme(target_scheme_normalized);
@@ -497,10 +474,35 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
                 access_type, AccessTypeObjects::toStringSource(*source), uri_to_check);
     };
 
+    if (target_scheme_normalized == "file")
+    {
+        /// RFC 8089 treats `localhost` as an empty authority.
+        std::string remote_authority;
+        if (!target_decomposed.authority.empty() && Poco::toLower(target_decomposed.authority) != "localhost")
+            remote_authority = target_decomposed.authority;
+        target_decomposed.authority.clear();
+
+        if (!remote_authority.empty() && !access_check)
+        {
+            check_access();
+            throw DB::Exception(
+                DB::ErrorCodes::BAD_ARGUMENTS,
+                "File URI '{}' refers to host '{}', but `file://` paths are always read from the local "
+                "filesystem. Only an empty authority (`file:///path`) or `localhost` is supported",
+                maskCredentialsInURI(path),
+                remote_authority);
+        }
+
+        /// Re-rooted at the queried table directory, where the base storage validates the translated path.
+        if (base_scheme_normalized == "file" && table_location_decomposed.authority == target_decomposed.authority
+            && keyIsInsidePrefix(table_location_decomposed.key, target_decomposed.key, /*is_filesystem_path*/ true))
+            return std::nullopt;
+
+    }
+
     auto check_remote_host = [&](const std::string & url)
     {
-        if (!access_check)
-            context->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI(url));
+        context->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI(url));
     };
 
     #if USE_AWS_S3
@@ -517,10 +519,13 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
 
         /// Storages are shared per bucket and read the latest object version, so a pinned version cannot be honored.
         if (!s3_uri.version_id.empty() && !access_check)
+        {
+            check_access();
             throw DB::Exception(
                 DB::ErrorCodes::NOT_IMPLEMENTED,
                 "Iceberg metadata references a specific version of S3 object '{}', reading S3 object versions is not supported",
                 maskCredentialsInURI(path));
+        }
 
         std::string key_to_use = s3_uri.key;
 
@@ -627,12 +632,11 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
                 endpoint_to_use = make_endpoint_with_bucket();
         }
 
-        if (!access_check)
-            S3::URI(endpoint_to_use, /*allow_archive_path_syntax*/ false, /*keep_presigned_query_parameters*/ true, endpoint_uri_style)
-                .checkRemoteHostFilter(context->getGlobalContext()->getRemoteHostFilter());
         check_access();
         if (access_check != nullptr)
             return std::nullopt;
+        S3::URI(endpoint_to_use, /*allow_archive_path_syntax*/ false, /*keep_presigned_query_parameters*/ true, endpoint_uri_style)
+            .checkRemoteHostFilter(context->getGlobalContext()->getRemoteHostFilter());
 
         /// Include session restrictions in the cache identity to prevent reuse of a privileged client.
         const bool restricts_server_credentials = context->shouldRestrictUserQueryS3Credentials();
@@ -841,10 +845,14 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
             const auto [container_name, account_name] = splitAbfsAuthority(target_decomposed.authority);
             const auto & conn_params = azure_storage->getConnectionParameters();
 
+            check_access();
+            if (access_check != nullptr)
+                return std::nullopt;
+
             const std::string target_account = Poco::toLower(account_name);
             const std::string base_account = azureAccountFromServiceUrl(conn_params.getConnectionURL());
 
-            if (!access_check && !target_account.empty() && !base_account.empty() && target_account != base_account)
+            if (!target_account.empty() && !base_account.empty() && target_account != base_account)
                 throw DB::Exception(
                     DB::ErrorCodes::BAD_ARGUMENTS,
                     "Iceberg metadata references Azure storage account '{}', which differs from the table's "
@@ -855,7 +863,7 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
             /// An authority with a host names the endpoint as well, e.g. of another cloud, which the cloned client would not reach.
             const auto at_pos = target_decomposed.authority.find('@');
             const bool authority_names_host = at_pos != std::string::npos && target_decomposed.authority.find('.', at_pos) != std::string::npos;
-            if (!access_check && authority_names_host)
+            if (authority_names_host)
             {
                 const auto target_endpoint
                     = Poco::toLower(Poco::URI(azureServiceUrlFromAbfsAuthority(target_decomposed.authority)).getAuthority());
@@ -869,9 +877,6 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
             }
 
             check_remote_host(conn_params.getConnectionURL());
-            check_access();
-            if (access_check != nullptr)
-                return std::nullopt;
 
             /// A credential rotation publishes new connection parameters of the base storage; evict clients built from older ones.
             /// The cached clone keeps the credential object alive, so its address cannot be reused by a newer credential.
@@ -917,23 +922,26 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
     }
 #endif
 
+    check_access();
+    if (access_check != nullptr)
+        return std::nullopt;
+
+    if (target_scheme_normalized == "file")
+        check_local_path_inside_user_files(target_decomposed.key);
+
     std::string azure_service_url;
     if (target_scheme_normalized == "abfs")
     {
         azure_service_url = azureServiceUrlFromAbfsAuthority(target_decomposed.authority);
-        if (azure_service_url.empty() && !access_check)
+        if (azure_service_url.empty())
             throw DB::Exception(
-                DB::ErrorCodes::BAD_ARGUMENTS, "Azure path '{}' does not specify a storage account", path);
+                DB::ErrorCodes::BAD_ARGUMENTS, "Azure path '{}' does not specify a storage account", maskCredentialsInURI(path));
     }
 
     if (!azure_service_url.empty())
         check_remote_host(azure_service_url);
     else if (!target_decomposed.authority.empty())
         check_remote_host(target_scheme_normalized + "://" + target_decomposed.authority + "/");
-
-    check_access();
-    if (access_check != nullptr)
-        return std::nullopt;
 
 #if USE_HDFS
     /// `HDFSObjectStorage` keeps a reference to its configuration, so it gets the server configuration rather than a temporary one.

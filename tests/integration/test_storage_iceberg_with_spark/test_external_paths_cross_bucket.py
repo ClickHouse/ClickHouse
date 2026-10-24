@@ -200,6 +200,19 @@ def test_versioned_s3_path_is_rejected(started_cluster_iceberg_with_spark):
     error = instance.query_and_get_error(f"SELECT * FROM icebergS3({args}) ORDER BY id")
     assert "reading S3 object versions is not supported" in error, error
 
+    # A user without the source grant must not learn the external path from the rejection.
+    user = f"user_{TABLE_NAME}"
+    _create_iceberg_s3_table(started_cluster_iceberg_with_spark, TABLE_NAME, base_path)
+    instance.query(f"DROP USER IF EXISTS {user}")
+    instance.query(f"CREATE USER {user}")
+    instance.query(f"GRANT SELECT ON {TABLE_NAME} TO {user}")
+    for query in [f"SELECT * FROM {TABLE_NAME} ORDER BY id", f"SELECT count() FROM {TABLE_NAME}"]:
+        error = instance.query_and_get_error(query, user=user)
+        assert "ACCESS_DENIED" in error, error
+        assert data_bucket not in error, error
+    instance.query(f"DROP USER {user}")
+    instance.query(f"DROP TABLE {TABLE_NAME} SYNC")
+
 
 def test_unsupported_scheme_is_still_reported_by_system_iceberg_files(started_cluster_iceberg_with_spark):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
