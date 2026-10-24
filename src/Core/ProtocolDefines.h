@@ -194,6 +194,9 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ADAPTIVE_AG
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOBS_LIST_PARTS = 10;
 /// First query-plan serialization version that preserves plan-level `max_threads` and `concurrency_control`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS = 11;
+/// Release 26.8 (from 26.8.16) writes the execution limits at version 10, which later releases use for
+/// another layout, so a 26.8 peer and a peer of another release share the plan layout only up to 9.
+static constexpr auto DBMS_MAX_QUERY_PLAN_SERIALIZATION_VERSION_BETWEEN_26_8_AND_LATER = 9;
 /// First query-plan serialization version that carries the ReadInOrder info
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_READ_IN_ORDER = 12;
 /// First query-plan serialization version with the `only_merge` flag (bit 128) on `AggregatingStep`,

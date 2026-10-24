@@ -2519,7 +2519,9 @@ void TCPHandler::sendHello()
 
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_QUERY_PLAN_SERIALIZATION)
     {
-        writeVarUInt(DBMS_QUERY_PLAN_SERIALIZATION_VERSION, *out);
+        writeVarUInt(
+            QueryPlan::limitSerializationVersionForPeer(DBMS_QUERY_PLAN_SERIALIZATION_VERSION, client_version_major, client_version_minor),
+            *out);
     }
 
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_VERSIONED_CLUSTER_FUNCTION_PROTOCOL)

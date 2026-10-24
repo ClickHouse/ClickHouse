@@ -138,6 +138,8 @@ public:
     const SharedHeader & getCurrentHeader() const; /// Checks that (isInitialized() && !isCompleted())
 
     void serialize(WriteBuffer & out, size_t max_supported_version) const;
+    /// Returns `version` lowered to what this build and the given peer read the same way.
+    static UInt64 limitSerializationVersionForPeer(UInt64 version, UInt64 peer_version_major, UInt64 peer_version_minor);
     /// Serialization for a distributed-plan worker task: every subquery set ships as its built
     /// values (a `TupleValues` record bounded by `sets_transfer_limits`), and a set without
     /// complete values is an error, because a `SubqueryPlan` record would make every task re-run
