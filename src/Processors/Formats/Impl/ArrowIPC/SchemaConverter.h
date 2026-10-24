@@ -97,6 +97,11 @@ struct ArrowType
     /// Children (List/LargeList/FixedSizeList element, Struct/Union fields, Map's key_value struct).
     VectorWithMemoryTracking<ArrowField> children;
 
+    /// Struct: the field names are empty or repeated, which Arrow allows but a named `Tuple` cannot have. Such a
+    /// struct is read as an unnamed `Tuple`, and its fields are matched with the requested type and identified by
+    /// position instead of by name.
+    bool positional_fields = false;
+
     /// The Arrow type name for a `TypeKind::Unsupported` placeholder (used in the error message).
     std::string unsupported_type_name;
 };

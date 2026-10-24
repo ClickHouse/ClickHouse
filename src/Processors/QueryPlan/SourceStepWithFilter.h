@@ -129,6 +129,7 @@ public:
     SourceStepWithFilter(const SourceStepWithFilter &) = default;
 
     [[nodiscard]] const SelectQueryInfo & getQueryInfo() const { return query_info; }
+    void setStorageLimits(std::shared_ptr<const StorageLimitsList> storage_limits) { query_info.storage_limits = std::move(storage_limits); }
     [[nodiscard]] FilterDAGInfoPtr getRowLevelFilter() const override { return query_info.row_level_filter; }
     [[nodiscard]] PrewhereInfoPtr getPrewhereInfo() const override { return query_info.prewhere_info; }
     [[nodiscard]] ContextPtr getContext() const { return context; }

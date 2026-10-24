@@ -115,6 +115,10 @@ public:
     /// Whether readBigAtRetainCells is available. Only true when an in-memory page cache is in use.
     [[nodiscard]] virtual bool supportsReadAtRetainCells() const { return false; }
 
+    /// Whether reads go through the userspace page cache, which reads whole cache cells
+    /// (page_cache_block_size) rather than only the requested range. Wrappers forward it.
+    virtual bool readsThroughPageCache() const { return false; }
+
     /// We do some tricks to avoid seek cost. E.g we read more data and than ignore it (see remote_read_min_bytes_for_seek).
     /// Sometimes however seek is basically free because underlying read buffer wasn't yet initialised (or re-initialised after reset).
     virtual bool isSeekCheap() { return false; }

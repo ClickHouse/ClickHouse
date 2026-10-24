@@ -79,9 +79,13 @@ struct ConflictOperator
     [[nodiscard]] bool isAppliedAt(UInt32 left, UInt32 right) const
     {
         const UInt32 joined = left | right;
-        const UInt32 located_by = degenerate ? relations : nel;
+        const UInt32 located_by = locatedBy();
         return (located_by & ~joined) == 0 && (located_by & left) && (located_by & right);
     }
+
+    /// The relations that locate the operator, see `isAppliedAt`: once all of them are present, the
+    /// operator has been applied, at that join or below it.
+    UInt32 locatedBy() const { return degenerate ? relations : nel; }
 
     /// The relations whose rows the operator pads with defaults or `NULL`, or drops: the right side
     /// of an outer, semi or anti join (normalized to `Left`), both sides of a `FULL` join, nothing

@@ -114,6 +114,8 @@ public:
 
     [[nodiscard]] bool supportParallelWrite() const override { return object_storage->supportParallelWrite(); }
 
+    [[nodiscard]] bool supportsAtomicWrite() const override { return object_storage->supportsAtomicWrite(); }
+
     [[nodiscard]] bool supportsObjectGenerationComparison() const override { return object_storage->supportsObjectGenerationComparison(); }
 
     [[nodiscard]] const FileCacheSettings & getCacheSettings() const { return cache_settings; }
