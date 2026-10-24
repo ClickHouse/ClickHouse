@@ -50,3 +50,10 @@ Granules: 0/4
 50
 100
 100
+100
+-- sorting key and skip index on a JSON path whose name starts with another column name, vertical merge
+[0,0,1,1]
+2
+Parts: 1 | Granules: 1
+Granules: 4/4
+Granules: 1/4

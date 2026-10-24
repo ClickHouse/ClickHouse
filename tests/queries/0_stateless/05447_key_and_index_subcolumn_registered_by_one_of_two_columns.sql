@@ -129,3 +129,23 @@ INSERT INTO t_json_path_vertical SELECT number, '{"p":1}', 'v' FROM numbers(100)
 INSERT INTO t_json_path_vertical SELECT number, '{"p":1}', 'v' FROM numbers(100);
 OPTIMIZE TABLE t_json_path_vertical FINAL;
 SELECT count() FROM t_json_path_vertical WHERE j.p.:Int64 = 1;
+CREATE TABLE t_json_path_prefixed_vertical (id UInt64, j UInt8, `j.m` JSON, v String)
+ENGINE = ReplacingMergeTree PARTITION BY j.m.p.:Int64 ORDER BY id
+SETTINGS allow_nullable_key = 1, index_granularity = 64, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
+    enable_vertical_merge_algorithm = 1, vertical_merge_algorithm_min_rows_to_activate = 1, vertical_merge_algorithm_min_columns_to_activate = 1;
+INSERT INTO t_json_path_prefixed_vertical SELECT number, 0, '{"p":1}', 'v' FROM numbers(100);
+INSERT INTO t_json_path_prefixed_vertical SELECT number, 0, '{"p":1}', 'v' FROM numbers(100);
+OPTIMIZE TABLE t_json_path_prefixed_vertical FINAL;
+SELECT count() FROM t_json_path_prefixed_vertical WHERE j.m.p.:Int64 = 1;
+
+SELECT '-- sorting key and skip index on a JSON path whose name starts with another column name, vertical merge';
+CREATE TABLE t_json_path_prefixed_key_vertical (id UInt64, j UInt8, `j.m` JSON, v String, INDEX i j.m.q.:Int64 TYPE minmax GRANULARITY 1)
+ENGINE = MergeTree ORDER BY (j.m.p.:Int64, id)
+SETTINGS allow_nullable_key = 1, index_granularity = 64, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
+    enable_vertical_merge_algorithm = 1, vertical_merge_algorithm_min_rows_to_activate = 1, vertical_merge_algorithm_min_columns_to_activate = 1;
+INSERT INTO t_json_path_prefixed_key_vertical SELECT number, 0, toJSONString(map('p', number, 'q', number)), 'v' FROM numbers(100);
+INSERT INTO t_json_path_prefixed_key_vertical SELECT number, 0, toJSONString(map('p', number, 'q', number)), 'v' FROM numbers(100);
+OPTIMIZE TABLE t_json_path_prefixed_key_vertical FINAL;
+SELECT groupArray(j.m.p.:Int64) FROM (SELECT j.m.p.:Int64 FROM t_json_path_prefixed_key_vertical ORDER BY j.m.p.:Int64 LIMIT 4);
+SELECT count() FROM t_json_path_prefixed_key_vertical WHERE j.m.q.:Int64 = 5;
+SELECT replaceRegexpOne(explain, '^[│└├─ ]+', '') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_json_path_prefixed_key_vertical WHERE j.m.q.:Int64 = 5 SETTINGS use_skip_indexes_on_data_read = 0) WHERE explain ILIKE '%Granules: %';

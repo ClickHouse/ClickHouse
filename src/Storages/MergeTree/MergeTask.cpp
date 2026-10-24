@@ -378,8 +378,8 @@ static String getColumnNameInStorage(
         return column_name;
 
     if (columns_description)
-        if (auto subcolumn = columns_description->tryGetSubcolumn(column_name, GetColumnsOptions::AllPhysical))
-            return subcolumn->getNameInStorage();
+        if (auto column = columns_description->tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name))
+            return column->getNameInStorage();
 
     /// If we don't have this column in storage columns, it must be a subcolumn of one of the storage columns.
     return String(Nested::getColumnFromSubcolumn(column_name, storage_columns));
@@ -431,10 +431,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
         for (const auto & name : global_ctx->minmax_idx_columns.getNames())
         {
             key_columns.insert(name);
-            if (auto subcolumn = columns_description.tryGetSubcolumn(name, GetColumnsOptions::AllPhysical))
-                key_columns.insert(subcolumn->getNameInStorage());
-            else if (auto column_in_storage = Nested::tryGetColumnNameInStorage(name, storage_columns))
-                key_columns.insert(*column_in_storage);
+            if (auto column = columns_description.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name))
+                key_columns.insert(column->getNameInStorage());
         }
     }
 
