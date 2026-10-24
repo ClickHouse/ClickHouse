@@ -16,6 +16,8 @@ IMergeTreeDataPart::Checksums checkDataPart(
 
 bool isNotEnoughMemoryErrorCode(int code);
 bool isRetryableException(std::exception_ptr exception_ptr);
+/// True for an I/O error (`EIO`) of a read, open or stat: the access failed, which does not mean that the data is wrong.
+bool isIOErrorException(std::exception_ptr exception_ptr);
 
 /// True for a cancelled or timed-out query, which says nothing about the part's health.
 bool isQueryCancellation(std::exception_ptr exception_ptr);

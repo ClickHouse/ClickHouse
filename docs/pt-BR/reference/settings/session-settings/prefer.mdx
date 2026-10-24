@@ -80,7 +80,9 @@ Resultado:
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.5"},{"label": "16744704"},{"label": "Prioriza o número máximo de bytes por bloco na ordenação externa, reduzindo o uso de memória durante a mesclagem."}]}]} />
 
-Prioriza o número máximo de bytes por bloco na ordenação externa, reduzindo o uso de memória durante a mesclagem.
+Tamanho de bloco preferencial, em bytes, para os arquivos de spill usados pelo `ORDER BY` e pelo `DISTINCT` externos. Blocos menores reduzem o uso de memória durante a mesclagem dos arquivos de spill.
+
+O tamanho do bloco é estimado com base no tamanho médio das linhas, portanto blocos com linhas excepcionalmente grandes podem ultrapassar esse valor-alvo. Defina como `0` para dimensionar os blocos apenas pelo limite de linhas.
 
 ## prefer_global_in_and_join {#prefer_global_in_and_join}
 

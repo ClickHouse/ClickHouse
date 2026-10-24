@@ -233,8 +233,17 @@ void LocalConnection::sendQuery(
     const UInt64 parse_time_max_ast_depth = parse_time_settings[Setting::max_ast_depth];
     const UInt64 parse_time_max_ast_elements = parse_time_settings[Setting::max_ast_elements];
 
+    /// Apply only what the client changed, like `TCPHandler` does. Replacing the whole `Settings`
+    /// would drop what the session context holds beyond the client's copy, e.g. the settings of
+    /// a `SET profile`, which the client does not track.
+    /// The changes must be checked against the constraints, as the session may belong to a restricted
+    /// user (the embedded client of the web terminal and the SSH interface).
     if (query_settings)
-        query_context->setSettings(*query_settings);
+    {
+        SettingsChanges settings_changes = query_settings->changes();
+        query_context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
+        query_context->applySettingsChanges(settings_changes);
+    }
 
     query_context->setCurrentQueryId(query_id);
     query_context->setClientInterface(ClientInfo::Interface::LOCAL);
@@ -328,8 +337,12 @@ void LocalConnection::sendQuery(
     state->json_ast_max_elements = parse_time_max_ast_elements;
     state->query_scope_holder = QueryScope::create(query_context);
     state->stage = QueryProcessingStage::Enum(stage);
-    state->profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
-    CurrentThread::attachInternalProfileEventsQueue(state->profile_queue);
+    /// Nothing drains the unbounded queue when profile events are not sent.
+    if (send_profile_events)
+    {
+        state->profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
+        CurrentThread::attachInternalProfileEventsQueue(state->profile_queue);
+    }
     state->logs_queue = std::make_shared<InternalTextLogsQueue>();
     const auto client_logs_level = getContext()->getSettingsRef()[Setting::send_logs_level];
     state->logs_queue->max_priority = Poco::Logger::parseLevel(client_logs_level.toString());

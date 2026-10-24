@@ -84,6 +84,8 @@ public:
     {
     }
 
+    ~ResourceSchedulingContext();
+
     /// Immutable per-query config (from query settings at query start).
     const UInt64 start_ns; /// Monotonic query start (`clock_gettime_ns()`), for age
     const Float64 weight; /// Base fair weight (non-positive → 1.0)
@@ -92,6 +94,9 @@ public:
     const Float64 weight_lowering_cpu_seconds; /// Attained CPU-seconds threshold (0 = disabled)
     const Float64 weight_lowering_io_bytes; /// Attained IO-bytes threshold (0 = disabled)
     const Priority priority; /// `priority` scheduler order (`workload_priority`): lower = higher, 0 neutral, negatives outrank it
+
+    /// Filesystem cache readers carrying this context's links, zero on destruction. Counted in debug and sanitizer builds only.
+    std::atomic<size_t> bound_cached_readers{0};
 
     /// Allocate the per-resource slots (one per attached leaf). Called once by the classifier after
     /// attaching to all resources, before any request is enqueued; never resized, so a `resourceState()`
