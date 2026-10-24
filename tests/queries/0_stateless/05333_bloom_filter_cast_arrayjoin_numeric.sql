@@ -98,9 +98,11 @@ INSERT INTO t_bf_enum_shared VALUES
     (15, 'bf_enum_0000000000000023'),
     (16, 'bf_enum_0000000000000024');
 
+-- The scalar subqueries share query progress, including row estimates.
+-- Check complete typed results here; check pruning with the EXPLAIN assertions below.
 WITH
-    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM (SELECT id, CAST(ts AS DateTime64(3, 'UTC')) AS value FROM t_bf_cast_numeric WHERE CAST(ts AS DateTime64(3, 'UTC')) IN (toDateTime64('2020-01-01 00:00:01.001', 3, 'UTC'))) SETTINGS use_skip_indexes = 0, max_rows_to_read = 32) AS full_scan,
-    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM (SELECT id, CAST(ts AS DateTime64(3, 'UTC')) AS value FROM t_bf_cast_numeric WHERE CAST(ts AS DateTime64(3, 'UTC')) IN (toDateTime64('2020-01-01 00:00:01.001', 3, 'UTC'))) SETTINGS use_skip_indexes = 1, max_rows_to_read = 32) AS indexed
+    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM (SELECT id, CAST(ts AS DateTime64(3, 'UTC')) AS value FROM t_bf_cast_numeric WHERE CAST(ts AS DateTime64(3, 'UTC')) IN (toDateTime64('2020-01-01 00:00:01.001', 3, 'UTC'))) SETTINGS use_skip_indexes = 0) AS full_scan,
+    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM (SELECT id, CAST(ts AS DateTime64(3, 'UTC')) AS value FROM t_bf_cast_numeric WHERE CAST(ts AS DateTime64(3, 'UTC')) IN (toDateTime64('2020-01-01 00:00:01.001', 3, 'UTC'))) SETTINGS use_skip_indexes = 1) AS indexed
 SELECT 'DateTime64(3, UTC) CAST preserves typed rows', indexed = full_scan AND indexed = [(toUInt64(1), toDateTime64('2020-01-01 00:00:01.001', 3, 'UTC'))];
 
 WITH
@@ -114,32 +116,32 @@ SELECT 'DateTime64(3, UTC) CAST declines unknown persisted context, reads 16/16'
 FROM (EXPLAIN indexes = 1 SELECT id, CAST(ts AS DateTime64(3, 'UTC')) AS value FROM t_bf_cast_numeric WHERE CAST(ts AS DateTime64(3, 'UTC')) IN (toDateTime64('2020-01-01 00:00:01.001', 3, 'UTC')));
 
 WITH
-    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM (SELECT id, CAST(ts AS DateTime64(6, 'UTC')) AS value FROM t_bf_cast_numeric WHERE CAST(ts AS DateTime64(6, 'UTC')) IN (toDateTime64('2020-01-01 00:00:01.001000', 6, 'UTC'))) SETTINGS use_skip_indexes = 0, max_rows_to_read = 32) AS full_scan,
-    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM (SELECT id, CAST(ts AS DateTime64(6, 'UTC')) AS value FROM t_bf_cast_numeric WHERE CAST(ts AS DateTime64(6, 'UTC')) IN (toDateTime64('2020-01-01 00:00:01.001000', 6, 'UTC'))) SETTINGS use_skip_indexes = 1, max_rows_to_read = 32) AS indexed
+    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM (SELECT id, CAST(ts AS DateTime64(6, 'UTC')) AS value FROM t_bf_cast_numeric WHERE CAST(ts AS DateTime64(6, 'UTC')) IN (toDateTime64('2020-01-01 00:00:01.001000', 6, 'UTC'))) SETTINGS use_skip_indexes = 0) AS full_scan,
+    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM (SELECT id, CAST(ts AS DateTime64(6, 'UTC')) AS value FROM t_bf_cast_numeric WHERE CAST(ts AS DateTime64(6, 'UTC')) IN (toDateTime64('2020-01-01 00:00:01.001000', 6, 'UTC'))) SETTINGS use_skip_indexes = 1) AS indexed
 SELECT 'DateTime64 scale mismatch preserves typed rows', indexed = full_scan AND indexed = [(toUInt64(1), toDateTime64('2020-01-01 00:00:01.001000', 6, 'UTC'))];
 
 SELECT 'DateTime64 scale mismatch declines idx_dt64_cast', max(explain LIKE '%Name: idx_dt64_cast%') = 0
 FROM (EXPLAIN indexes = 1 SELECT id, CAST(ts AS DateTime64(6, 'UTC')) AS value FROM t_bf_cast_numeric WHERE CAST(ts AS DateTime64(6, 'UTC')) IN (toDateTime64('2020-01-01 00:00:01.001000', 6, 'UTC')));
 
 WITH
-    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM (SELECT id, CAST(ts AS DateTime64(3, 'Europe/Berlin')) AS value FROM t_bf_cast_numeric WHERE CAST(ts AS DateTime64(3, 'Europe/Berlin')) IN (toDateTime64('2020-01-01 00:00:01.001', 3, 'Europe/Berlin'))) SETTINGS use_skip_indexes = 0, max_rows_to_read = 32) AS full_scan,
-    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM (SELECT id, CAST(ts AS DateTime64(3, 'Europe/Berlin')) AS value FROM t_bf_cast_numeric WHERE CAST(ts AS DateTime64(3, 'Europe/Berlin')) IN (toDateTime64('2020-01-01 00:00:01.001', 3, 'Europe/Berlin'))) SETTINGS use_skip_indexes = 1, max_rows_to_read = 32) AS indexed
+    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM (SELECT id, CAST(ts AS DateTime64(3, 'Europe/Berlin')) AS value FROM t_bf_cast_numeric WHERE CAST(ts AS DateTime64(3, 'Europe/Berlin')) IN (toDateTime64('2020-01-01 00:00:01.001', 3, 'Europe/Berlin'))) SETTINGS use_skip_indexes = 0) AS full_scan,
+    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM (SELECT id, CAST(ts AS DateTime64(3, 'Europe/Berlin')) AS value FROM t_bf_cast_numeric WHERE CAST(ts AS DateTime64(3, 'Europe/Berlin')) IN (toDateTime64('2020-01-01 00:00:01.001', 3, 'Europe/Berlin'))) SETTINGS use_skip_indexes = 1) AS indexed
 SELECT 'DateTime64 timezone mismatch preserves typed rows', indexed = full_scan AND indexed = [(toUInt64(1), toDateTime64('2020-01-01 00:00:01.001', 3, 'Europe/Berlin'))];
 
 SELECT 'DateTime64 timezone mismatch declines idx_dt64_cast', max(explain LIKE '%Name: idx_dt64_cast%') = 0
 FROM (EXPLAIN indexes = 1 SELECT id, CAST(ts AS DateTime64(3, 'Europe/Berlin')) AS value FROM t_bf_cast_numeric WHERE CAST(ts AS DateTime64(3, 'Europe/Berlin')) IN (toDateTime64('2020-01-01 00:00:01.001', 3, 'Europe/Berlin')));
 
 WITH
-    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM (SELECT id, CAST(ts AS DateTime64(3)) AS value FROM t_bf_cast_numeric WHERE CAST(ts AS DateTime64(3)) IN (toDateTime64('2020-01-01 00:00:01.001', 3))) SETTINGS use_skip_indexes = 0, max_rows_to_read = 32) AS full_scan,
-    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM (SELECT id, CAST(ts AS DateTime64(3)) AS value FROM t_bf_cast_numeric WHERE CAST(ts AS DateTime64(3)) IN (toDateTime64('2020-01-01 00:00:01.001', 3))) SETTINGS use_skip_indexes = 1, max_rows_to_read = 32) AS indexed
+    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM (SELECT id, CAST(ts AS DateTime64(3)) AS value FROM t_bf_cast_numeric WHERE CAST(ts AS DateTime64(3)) IN (toDateTime64('2020-01-01 00:00:01.001', 3))) SETTINGS use_skip_indexes = 0) AS full_scan,
+    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM (SELECT id, CAST(ts AS DateTime64(3)) AS value FROM t_bf_cast_numeric WHERE CAST(ts AS DateTime64(3)) IN (toDateTime64('2020-01-01 00:00:01.001', 3))) SETTINGS use_skip_indexes = 1) AS indexed
 SELECT 'DateTime64 implicit timezone preserves typed rows', indexed = full_scan AND indexed = [(toUInt64(1), toDateTime64('2020-01-01 00:00:01.001', 3))];
 
 SELECT 'DateTime64 implicit timezone declines explicit idx_dt64_cast', max(explain LIKE '%Name: idx_dt64_cast%') = 0
 FROM (EXPLAIN indexes = 1 SELECT id, CAST(ts AS DateTime64(3)) AS value FROM t_bf_cast_numeric WHERE CAST(ts AS DateTime64(3)) IN (toDateTime64('2020-01-01 00:00:01.001', 3)));
 
 WITH
-    (SELECT arraySort(groupArray((toUInt64(id), code))) FROM t_bf_enum_shared WHERE code IN ('bf_enum_0000000000000003') SETTINGS use_skip_indexes = 0, max_rows_to_read = 32) AS full_scan,
-    (SELECT arraySort(groupArray((toUInt64(id), code))) FROM t_bf_enum_shared WHERE code IN ('bf_enum_0000000000000003') SETTINGS use_skip_indexes = 1, max_rows_to_read = 32) AS indexed
+    (SELECT arraySort(groupArray((toUInt64(id), code))) FROM t_bf_enum_shared WHERE code IN ('bf_enum_0000000000000003') SETTINGS use_skip_indexes = 0) AS full_scan,
+    (SELECT arraySort(groupArray((toUInt64(id), code))) FROM t_bf_enum_shared WHERE code IN ('bf_enum_0000000000000003') SETTINGS use_skip_indexes = 1) AS indexed
 SELECT 'Shared Enum16 raw column preserves typed rows', indexed = full_scan AND arrayMap(x -> (x.1, toString(x.2)), indexed) = [(toUInt64(1), 'bf_enum_0000000000000003')] AND position(toTypeName(indexed), 'Enum16(') > 0;
 
 WITH
@@ -152,8 +154,8 @@ SELECT 'Shared Enum16 raw column prunes 1/16', name_row > 0 AND selected = 1 AND
 FROM (EXPLAIN indexes = 1 SELECT id, code FROM t_bf_enum_shared WHERE code IN ('bf_enum_0000000000000003'));
 
 WITH
-    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM (SELECT id, CAST(enum8_code AS Enum8('zero' = 0, 'one' = 1, 'two' = 2)) AS value FROM t_bf_cast_numeric WHERE CAST(enum8_code AS Enum8('zero' = 0, 'one' = 1, 'two' = 2)) IN (CAST('one' AS Enum8('zero' = 0, 'one' = 1, 'two' = 2)))) SETTINGS use_skip_indexes = 0, max_rows_to_read = 32) AS full_scan,
-    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM (SELECT id, CAST(enum8_code AS Enum8('zero' = 0, 'one' = 1, 'two' = 2)) AS value FROM t_bf_cast_numeric WHERE CAST(enum8_code AS Enum8('zero' = 0, 'one' = 1, 'two' = 2)) IN (CAST('one' AS Enum8('zero' = 0, 'one' = 1, 'two' = 2)))) SETTINGS use_skip_indexes = 1, max_rows_to_read = 32) AS indexed
+    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM (SELECT id, CAST(enum8_code AS Enum8('zero' = 0, 'one' = 1, 'two' = 2)) AS value FROM t_bf_cast_numeric WHERE CAST(enum8_code AS Enum8('zero' = 0, 'one' = 1, 'two' = 2)) IN (CAST('one' AS Enum8('zero' = 0, 'one' = 1, 'two' = 2)))) SETTINGS use_skip_indexes = 0) AS full_scan,
+    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM (SELECT id, CAST(enum8_code AS Enum8('zero' = 0, 'one' = 1, 'two' = 2)) AS value FROM t_bf_cast_numeric WHERE CAST(enum8_code AS Enum8('zero' = 0, 'one' = 1, 'two' = 2)) IN (CAST('one' AS Enum8('zero' = 0, 'one' = 1, 'two' = 2)))) SETTINGS use_skip_indexes = 1) AS indexed
 SELECT 'Enum8 CAST preserves typed rows', indexed = full_scan AND indexed = [(toUInt64(1), CAST('one' AS Enum8('zero' = 0, 'one' = 1, 'two' = 2)))];
 
 WITH
@@ -166,8 +168,8 @@ SELECT 'Enum8 CAST prunes 1/16', name_row > 0 AND selected = 1 AND total = 16
 FROM (EXPLAIN indexes = 1 SELECT id, CAST(enum8_code AS Enum8('zero' = 0, 'one' = 1, 'two' = 2)) AS value FROM t_bf_cast_numeric WHERE CAST(enum8_code AS Enum8('zero' = 0, 'one' = 1, 'two' = 2)) IN (CAST('one' AS Enum8('zero' = 0, 'one' = 1, 'two' = 2))));
 
 WITH
-    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM (SELECT id, CAST(enum16_code AS Enum16('zero' = 1000, 'one' = 300, 'two' = -1000)) AS value FROM t_bf_cast_numeric WHERE CAST(enum16_code AS Enum16('zero' = 1000, 'one' = 300, 'two' = -1000)) IN (CAST('one' AS Enum16('zero' = 1000, 'one' = 300, 'two' = -1000)))) SETTINGS use_skip_indexes = 0, max_rows_to_read = 32) AS full_scan,
-    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM (SELECT id, CAST(enum16_code AS Enum16('zero' = 1000, 'one' = 300, 'two' = -1000)) AS value FROM t_bf_cast_numeric WHERE CAST(enum16_code AS Enum16('zero' = 1000, 'one' = 300, 'two' = -1000)) IN (CAST('one' AS Enum16('zero' = 1000, 'one' = 300, 'two' = -1000)))) SETTINGS use_skip_indexes = 1, max_rows_to_read = 32) AS indexed
+    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM (SELECT id, CAST(enum16_code AS Enum16('zero' = 1000, 'one' = 300, 'two' = -1000)) AS value FROM t_bf_cast_numeric WHERE CAST(enum16_code AS Enum16('zero' = 1000, 'one' = 300, 'two' = -1000)) IN (CAST('one' AS Enum16('zero' = 1000, 'one' = 300, 'two' = -1000)))) SETTINGS use_skip_indexes = 0) AS full_scan,
+    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM (SELECT id, CAST(enum16_code AS Enum16('zero' = 1000, 'one' = 300, 'two' = -1000)) AS value FROM t_bf_cast_numeric WHERE CAST(enum16_code AS Enum16('zero' = 1000, 'one' = 300, 'two' = -1000)) IN (CAST('one' AS Enum16('zero' = 1000, 'one' = 300, 'two' = -1000)))) SETTINGS use_skip_indexes = 1) AS indexed
 SELECT 'Enum16 CAST preserves typed rows', indexed = full_scan AND indexed = [(toUInt64(1), CAST('one' AS Enum16('zero' = 1000, 'one' = 300, 'two' = -1000)))];
 
 WITH
@@ -180,16 +182,16 @@ SELECT 'Enum16 CAST prunes 1/16', name_row > 0 AND selected = 1 AND total = 16
 FROM (EXPLAIN indexes = 1 SELECT id, CAST(enum16_code AS Enum16('zero' = 1000, 'one' = 300, 'two' = -1000)) AS value FROM t_bf_cast_numeric WHERE CAST(enum16_code AS Enum16('zero' = 1000, 'one' = 300, 'two' = -1000)) IN (CAST('one' AS Enum16('zero' = 1000, 'one' = 300, 'two' = -1000))));
 
 WITH
-    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM (SELECT id, CAST(enum8_code AS Enum8('zero' = 0, 'one' = 2, 'two' = 1)) AS value FROM t_bf_cast_numeric WHERE CAST(enum8_code AS Enum8('zero' = 0, 'one' = 2, 'two' = 1)) IN (CAST('one' AS Enum8('zero' = 0, 'one' = 2, 'two' = 1)))) SETTINGS use_skip_indexes = 0, max_rows_to_read = 32) AS full_scan,
-    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM (SELECT id, CAST(enum8_code AS Enum8('zero' = 0, 'one' = 2, 'two' = 1)) AS value FROM t_bf_cast_numeric WHERE CAST(enum8_code AS Enum8('zero' = 0, 'one' = 2, 'two' = 1)) IN (CAST('one' AS Enum8('zero' = 0, 'one' = 2, 'two' = 1)))) SETTINGS use_skip_indexes = 1, max_rows_to_read = 32) AS indexed
+    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM (SELECT id, CAST(enum8_code AS Enum8('zero' = 0, 'one' = 2, 'two' = 1)) AS value FROM t_bf_cast_numeric WHERE CAST(enum8_code AS Enum8('zero' = 0, 'one' = 2, 'two' = 1)) IN (CAST('one' AS Enum8('zero' = 0, 'one' = 2, 'two' = 1)))) SETTINGS use_skip_indexes = 0) AS full_scan,
+    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM (SELECT id, CAST(enum8_code AS Enum8('zero' = 0, 'one' = 2, 'two' = 1)) AS value FROM t_bf_cast_numeric WHERE CAST(enum8_code AS Enum8('zero' = 0, 'one' = 2, 'two' = 1)) IN (CAST('one' AS Enum8('zero' = 0, 'one' = 2, 'two' = 1)))) SETTINGS use_skip_indexes = 1) AS indexed
 SELECT 'Enum8 map mismatch preserves typed rows', indexed = full_scan AND indexed = [(toUInt64(1), CAST('one' AS Enum8('zero' = 0, 'one' = 2, 'two' = 1)))];
 
 SELECT 'Enum8 map mismatch declines idx_enum8_cast', max(explain LIKE '%Name: idx_enum8_cast%') = 0
 FROM (EXPLAIN indexes = 1 SELECT id, CAST(enum8_code AS Enum8('zero' = 0, 'one' = 2, 'two' = 1)) AS value FROM t_bf_cast_numeric WHERE CAST(enum8_code AS Enum8('zero' = 0, 'one' = 2, 'two' = 1)) IN (CAST('one' AS Enum8('zero' = 0, 'one' = 2, 'two' = 1))));
 
 WITH
-    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM (SELECT id, CAST(enum8_code AS Enum16('zero' = 0, 'one' = 1, 'two' = 2)) AS value FROM t_bf_cast_numeric WHERE CAST(enum8_code AS Enum16('zero' = 0, 'one' = 1, 'two' = 2)) IN (CAST('one' AS Enum16('zero' = 0, 'one' = 1, 'two' = 2)))) SETTINGS use_skip_indexes = 0, max_rows_to_read = 32) AS full_scan,
-    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM (SELECT id, CAST(enum8_code AS Enum16('zero' = 0, 'one' = 1, 'two' = 2)) AS value FROM t_bf_cast_numeric WHERE CAST(enum8_code AS Enum16('zero' = 0, 'one' = 1, 'two' = 2)) IN (CAST('one' AS Enum16('zero' = 0, 'one' = 1, 'two' = 2)))) SETTINGS use_skip_indexes = 1, max_rows_to_read = 32) AS indexed
+    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM (SELECT id, CAST(enum8_code AS Enum16('zero' = 0, 'one' = 1, 'two' = 2)) AS value FROM t_bf_cast_numeric WHERE CAST(enum8_code AS Enum16('zero' = 0, 'one' = 1, 'two' = 2)) IN (CAST('one' AS Enum16('zero' = 0, 'one' = 1, 'two' = 2)))) SETTINGS use_skip_indexes = 0) AS full_scan,
+    (SELECT arraySort(groupArray((toUInt64(id), value))) FROM (SELECT id, CAST(enum8_code AS Enum16('zero' = 0, 'one' = 1, 'two' = 2)) AS value FROM t_bf_cast_numeric WHERE CAST(enum8_code AS Enum16('zero' = 0, 'one' = 1, 'two' = 2)) IN (CAST('one' AS Enum16('zero' = 0, 'one' = 1, 'two' = 2)))) SETTINGS use_skip_indexes = 1) AS indexed
 SELECT 'Enum8 index to Enum16 query preserves typed rows', indexed = full_scan AND indexed = [(toUInt64(1), CAST('one' AS Enum16('zero' = 0, 'one' = 1, 'two' = 2)))];
 
 SELECT 'Enum8 index to Enum16 query declines idx_enum8_cast', max(explain LIKE '%Name: idx_enum8_cast%') = 0
@@ -322,11 +324,11 @@ WITH
     (SELECT arraySort(groupArray((toUInt64(id), value))) FROM
         (SELECT id, CAST(ts AS DateTime64(3, 'UTC')) AS value FROM t_bf_cast_numeric
          WHERE CAST(ts AS DateTime64(3, 'UTC')) IN (toDateTime64('2020-01-01 00:00:01.001', 3, 'UTC')))
-     SETTINGS input_format_parquet_dictionary_filter_push_down = 0, use_skip_indexes = 0, max_rows_to_read = 32) AS full_scan,
+     SETTINGS input_format_parquet_dictionary_filter_push_down = 0, use_skip_indexes = 0) AS full_scan,
     (SELECT arraySort(groupArray((toUInt64(id), value))) FROM
         (SELECT id, CAST(ts AS DateTime64(3, 'UTC')) AS value FROM t_bf_cast_numeric
          WHERE CAST(ts AS DateTime64(3, 'UTC')) IN (toDateTime64('2020-01-01 00:00:01.001', 3, 'UTC')))
-     SETTINGS input_format_parquet_dictionary_filter_push_down = 0, use_skip_indexes = 1, max_rows_to_read = 32) AS indexed
+     SETTINGS input_format_parquet_dictionary_filter_push_down = 0, use_skip_indexes = 1) AS indexed
 SELECT 'DateTime64 CAST parquet dictionary flag 0 full OFF/ON typed rows',
        indexed = full_scan AND full_scan = [(toUInt64(1), toDateTime64('2020-01-01 00:00:01.001', 3, 'UTC'))];
 
@@ -345,11 +347,11 @@ WITH
     (SELECT arraySort(groupArray((toUInt64(id), value))) FROM
         (SELECT id, CAST(enum8_code AS Enum8('zero' = 0, 'one' = 1, 'two' = 2)) AS value FROM t_bf_cast_numeric
          WHERE CAST(enum8_code AS Enum8('zero' = 0, 'one' = 1, 'two' = 2)) IN (CAST('one' AS Enum8('zero' = 0, 'one' = 1, 'two' = 2))))
-     SETTINGS input_format_parallel_parsing = 0, use_skip_indexes = 0, max_rows_to_read = 32) AS full_scan,
+     SETTINGS input_format_parallel_parsing = 0, use_skip_indexes = 0) AS full_scan,
     (SELECT arraySort(groupArray((toUInt64(id), value))) FROM
         (SELECT id, CAST(enum8_code AS Enum8('zero' = 0, 'one' = 1, 'two' = 2)) AS value FROM t_bf_cast_numeric
          WHERE CAST(enum8_code AS Enum8('zero' = 0, 'one' = 1, 'two' = 2)) IN (CAST('one' AS Enum8('zero' = 0, 'one' = 1, 'two' = 2))))
-     SETTINGS input_format_parallel_parsing = 0, use_skip_indexes = 1, max_rows_to_read = 32) AS indexed
+     SETTINGS input_format_parallel_parsing = 0, use_skip_indexes = 1) AS indexed
 SELECT 'Enum8 CAST parallel-parsing flag 0 full OFF/ON typed rows',
        indexed = full_scan AND full_scan = [(toUInt64(1), CAST('one' AS Enum8('zero' = 0, 'one' = 1, 'two' = 2)))];
 
@@ -384,10 +386,10 @@ INSERT INTO t_bf_dt64_cast_text VALUES
 WITH
     (SELECT arraySort(groupArray((toUInt64(id), CAST(ts AS String)))) FROM t_bf_dt64_cast_text
      WHERE CAST(ts AS String) IN ('2020-01-01 00:00:01.1234567')
-     SETTINGS use_skip_indexes = 0, max_rows_to_read = 32) AS full_scan,
+     SETTINGS use_skip_indexes = 0) AS full_scan,
     (SELECT arraySort(groupArray((toUInt64(id), CAST(ts AS String)))) FROM t_bf_dt64_cast_text
      WHERE CAST(ts AS String) IN ('2020-01-01 00:00:01.1234567')
-     SETTINGS use_skip_indexes = 1, max_rows_to_read = 32) AS indexed
+     SETTINGS use_skip_indexes = 1) AS indexed
 SELECT 'DateTime64(7) CAST-to-String default context preserves typed rows',
        indexed = full_scan AND full_scan = [(toUInt64(1), '2020-01-01 00:00:01.1234567')];
 
@@ -407,10 +409,10 @@ FROM (EXPLAIN indexes = 1 SELECT id, CAST(ts AS String) AS value FROM t_bf_dt64_
 WITH
     (SELECT arraySort(groupArray((toUInt64(id), CAST(ts AS String)))) FROM t_bf_dt64_cast_text
      WHERE CAST(ts AS String) IN ('2020-01-01 00:00:01.1234567')
-     SETTINGS output_format_parallel_formatting = 0, use_skip_indexes = 0, max_rows_to_read = 32) AS full_scan,
+     SETTINGS output_format_parallel_formatting = 0, use_skip_indexes = 0) AS full_scan,
     (SELECT arraySort(groupArray((toUInt64(id), CAST(ts AS String)))) FROM t_bf_dt64_cast_text
      WHERE CAST(ts AS String) IN ('2020-01-01 00:00:01.1234567')
-     SETTINGS output_format_parallel_formatting = 0, use_skip_indexes = 1, max_rows_to_read = 32) AS indexed
+     SETTINGS output_format_parallel_formatting = 0, use_skip_indexes = 1) AS indexed
 SELECT 'DateTime64(7) CAST-to-String format-only mismatch full OFF/ON typed rows',
        indexed = full_scan AND full_scan = [(toUInt64(1), '2020-01-01 00:00:01.1234567')];
 
@@ -421,14 +423,14 @@ WITH
               input_format_parquet_dictionary_filter_push_down = 0,
               output_format_parallel_formatting = 0,
               input_format_parallel_parsing = 0,
-              use_skip_indexes = 0, max_rows_to_read = 32) AS full_scan,
+              use_skip_indexes = 0) AS full_scan,
     (SELECT arraySort(groupArray((toUInt64(id), CAST(ts AS String)))) FROM t_bf_dt64_cast_text
      WHERE CAST(ts AS String) IN ('2020-01-01 00:00:01.1234567')
      SETTINGS allow_special_serialization_kinds_in_output_formats = 0,
               input_format_parquet_dictionary_filter_push_down = 0,
               output_format_parallel_formatting = 0,
               input_format_parallel_parsing = 0,
-              use_skip_indexes = 1, max_rows_to_read = 32) AS indexed
+              use_skip_indexes = 1) AS indexed
 SELECT 'DateTime64(7) CAST-to-String four format flags full OFF/ON typed rows',
        indexed = full_scan AND full_scan = [(toUInt64(1), '2020-01-01 00:00:01.1234567')];
 
@@ -436,11 +438,11 @@ WITH
     (SELECT arraySort(groupArray((toUInt64(id), CAST(ts AS String)))) FROM t_bf_dt64_cast_text
      WHERE CAST(ts AS String) IN ('2020-01-01 00:00:01.123456700')
      SETTINGS date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands = 1,
-              use_skip_indexes = 0, max_rows_to_read = 32) AS full_scan,
+              use_skip_indexes = 0) AS full_scan,
     (SELECT arraySort(groupArray((toUInt64(id), CAST(ts AS String)))) FROM t_bf_dt64_cast_text
      WHERE CAST(ts AS String) IN ('2020-01-01 00:00:01.123456700')
      SETTINGS date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands = 1,
-              use_skip_indexes = 1, max_rows_to_read = 32) AS indexed
+              use_skip_indexes = 1) AS indexed
 SELECT 'DateTime64(7) trailing-zero mismatch full OFF/ON typed rows',
        indexed = full_scan AND full_scan = [(toUInt64(1), '2020-01-01 00:00:01.123456700')];
 
@@ -489,12 +491,12 @@ WITH
      ARRAY JOIN arrayConcat(arrayDistinct(dt_values), [toDateTime64('2020-01-01 00:00:00.999', 3, 'UTC')]) AS value
      WHERE value IN (toDateTime64('2020-01-01 00:00:00.103', 3, 'UTC'))
      SETTINGS query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1,
-              query_plan_fuse_filter_into_array_join = 1, use_skip_indexes = 0, max_rows_to_read = 32) AS full_scan,
+              query_plan_fuse_filter_into_array_join = 1, use_skip_indexes = 0) AS full_scan,
     (SELECT arraySort(groupArray((toUInt64(id), value))) FROM t_bf_fixed_array_wrappers
      ARRAY JOIN arrayConcat(arrayDistinct(dt_values), [toDateTime64('2020-01-01 00:00:00.999', 3, 'UTC')]) AS value
      WHERE value IN (toDateTime64('2020-01-01 00:00:00.103', 3, 'UTC'))
      SETTINGS query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1,
-              query_plan_fuse_filter_into_array_join = 1, use_skip_indexes = 1, max_rows_to_read = 32) AS indexed
+              query_plan_fuse_filter_into_array_join = 1, use_skip_indexes = 1) AS indexed
 SELECT 'DateTime64 array wrapper selective needle preserves typed rows',
        indexed = full_scan AND full_scan = [(toUInt64(3), toDateTime64('2020-01-01 00:00:00.103', 3, 'UTC'))];
 
@@ -550,12 +552,12 @@ WITH
      ARRAY JOIN arrayConcat(arrayDistinct(uuid_values), [toUUID('00000000-0000-0000-0000-000000000999')]) AS value
      WHERE value IN (toUUID('00000000-0000-0000-0000-000000000103'))
      SETTINGS query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1,
-              query_plan_fuse_filter_into_array_join = 1, use_skip_indexes = 0, max_rows_to_read = 32) AS full_scan,
+              query_plan_fuse_filter_into_array_join = 1, use_skip_indexes = 0) AS full_scan,
     (SELECT arraySort(groupArray((toUInt64(id), value))) FROM t_bf_fixed_array_wrappers
      ARRAY JOIN arrayConcat(arrayDistinct(uuid_values), [toUUID('00000000-0000-0000-0000-000000000999')]) AS value
      WHERE value IN (toUUID('00000000-0000-0000-0000-000000000103'))
      SETTINGS query_plan_lower_array_join_function = 1, query_plan_enable_optimizations = 1,
-              query_plan_fuse_filter_into_array_join = 1, use_skip_indexes = 1, max_rows_to_read = 32) AS indexed
+              query_plan_fuse_filter_into_array_join = 1, use_skip_indexes = 1) AS indexed
 SELECT 'UUID array wrapper selective needle preserves typed rows',
        indexed = full_scan AND full_scan = [(toUInt64(3), toUUID('00000000-0000-0000-0000-000000000103'))];
 
