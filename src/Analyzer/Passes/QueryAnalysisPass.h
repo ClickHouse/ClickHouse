@@ -71,13 +71,21 @@ public:
     /** Construct query analysis pass for query or union analysis.
       * Available columns are extracted from query node join tree.
       */
-    explicit QueryAnalysisPass(bool only_analyze_ = false, bool positional_arguments_already_resolved_ = false);
+    explicit QueryAnalysisPass(
+        bool only_analyze_ = false,
+        bool positional_arguments_already_resolved_ = false,
+        bool view_source_substituted_ = false,
+        bool view_source_in_subqueries_ = false);
 
     /** Construct query analysis pass for expression or list of expressions analysis.
       * Available expression columns are extracted from table expression.
       * Table expression node must have query, union, table, table function type.
       */
-    explicit QueryAnalysisPass(TableExpressionNodePtr table_expression_, bool only_analyze_ = false);
+    explicit QueryAnalysisPass(
+        TableExpressionNodePtr table_expression_,
+        bool only_analyze_ = false,
+        bool view_source_substituted_ = false,
+        bool view_source_in_subqueries_ = false);
 
     String getName() override
     {
@@ -95,6 +103,8 @@ private:
     TableExpressionNodePtr table_expression;
     const bool only_analyze;
     const bool positional_arguments_already_resolved = false;
+    const bool view_source_substituted = false;
+    const bool view_source_in_subqueries = false;
 };
 
 }

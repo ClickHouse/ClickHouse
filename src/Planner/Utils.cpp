@@ -698,6 +698,7 @@ static void checkAccessRightsForFilter(const QueryTreeNodePtr & filter_query_tre
 QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,
         const TableExpressionNodePtr & table_expression,
         const ContextPtr & query_context,
+        bool view_source_in_subqueries,
         bool check_access_rights)
 {
     /// If the filter expression is a standalone subquery (e.g. ROW POLICY
@@ -733,14 +734,16 @@ QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,
 
     auto filter_query_tree = buildQueryTree(filter_expression, query_context);
 
-    QueryAnalysisPass query_analysis_pass(table_expression);
+    /// The filter reads the source table only in its subqueries, which read the view source iff `view_source_in_subqueries`.
+    QueryAnalysisPass query_analysis_pass(
+        table_expression, /*only_analyze_=*/ false, /*view_source_substituted_=*/ view_source_in_subqueries, view_source_in_subqueries);
     query_analysis_pass.run(filter_query_tree, query_context);
 
     if (check_access_rights)
         checkAccessRightsForFilter(filter_query_tree, table_expression, query_context);
 
     /// The inner query of an ordinary view reads the table itself, not the inserted block.
-    if (auto view_source = query_context->getViewSource(); view_source && !query_context->isViewInnerQuery())
+    if (auto view_source = getViewSourceIfRead(query_context, view_source_in_subqueries))
         replaceStorageInQueryTree(filter_query_tree, query_context, view_source);
 
     return filter_query_tree;
@@ -753,7 +756,8 @@ FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
         bool check_access_rights)
 {
     const auto & query_context = planner_context->getQueryContext();
-    auto filter_query_tree = buildFilterQueryTree(std::move(filter_expression), table_expression, query_context, check_access_rights);
+    auto filter_query_tree = buildFilterQueryTree(
+        std::move(filter_expression), table_expression, query_context, planner_context->isViewSourceInSubqueries(), check_access_rights);
 
     return buildFilterInfo(
         std::move(filter_query_tree),

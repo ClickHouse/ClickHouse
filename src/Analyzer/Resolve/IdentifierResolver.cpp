@@ -16,6 +16,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/TableNameHints.h>
 
 #include <Analyzer/Utils.h>
@@ -283,7 +284,8 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierAsNestedPrefix(
 /// Resolve identifier functions implementation
 
 /// Try resolve table identifier from database catalog
-std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const Identifier & table_identifier, const ContextPtr & context)
+std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(
+    const Identifier & table_identifier, const ContextPtr & context, bool view_source_substituted)
 {
     size_t parts_size = table_identifier.getPartsSize();
     if (parts_size < 1 || parts_size > 2)
@@ -379,10 +381,9 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     /// converted to; the catalog table may have been altered since. Take the types from it, but
     /// keep the catalog storage so engine checks (FINAL, SAMPLE, `_shard_num`) see the real table.
     /// `replaceStorageInQueryTree` swaps the view source in for execution after the passes.
-    /// The inner query of an ordinary view reads the table itself.
-    if (auto view_source = context->getViewSource();
-        view_source && !context->isViewInnerQuery()
-        && view_source->getStorageID().getFullNameNotQuoted() == storage_id.getFullNameNotQuoted())
+    /// An analysis that does not swap it, like the inner query of an ordinary view, reads the table itself.
+    if (auto view_source = getViewSourceIfRead(context, view_source_substituted);
+        view_source && view_source->getStorageID().getFullNameNotQuoted() == storage_id.getFullNameNotQuoted())
         metadata_snapshot = view_source->getInMemoryMetadataPtr(context, false);
 
     auto storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
@@ -437,9 +438,10 @@ static void checkAccessToTableMetadata(const TableNode & table_node, const Conte
     context->checkAccess(AccessType::SELECT, storage_id);
 }
 
-IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier, const ContextPtr & context)
+IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
+    const Identifier & table_identifier, const ContextPtr & context, bool view_source_substituted)
 {
-    if (auto result = tryResolveTableIdentifier(table_identifier, context))
+    if (auto result = tryResolveTableIdentifier(table_identifier, context, view_source_substituted))
     {
         checkAccessToTableMetadata(*result, context);
         return { .resolved_identifier = std::move(result), .resolve_place = IdentifierResolvePlace::DATABASE_CATALOG };

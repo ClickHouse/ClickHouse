@@ -211,6 +211,9 @@ public:
     /// receiving node cannot resolve it.
     bool mayBeSerializedForRemoteExecution() const { return may_be_serialized_for_remote_execution; }
 
+    /// See `SelectQueryOptions::view_source_in_subqueries`.
+    bool isViewSourceInSubqueries() const { return view_source_in_subqueries; }
+
 private:
 
     RawTableExpressionDataMap & getSharedTableExpressionDataMap() noexcept { return global_planner_context->getTableExpressionDataMap(); }
@@ -226,6 +229,8 @@ private:
     bool is_ast_level_optimization_allowed;
 
     bool may_be_serialized_for_remote_execution = false;
+
+    bool view_source_in_subqueries = false;
 
     /// Column node to column identifier
     std::unordered_map<QueryTreeNodePtr, ColumnIdentifier> column_node_to_column_identifier;

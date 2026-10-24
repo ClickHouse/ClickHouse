@@ -113,4 +113,8 @@ private:
 
 void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr & context, const StoragePtr & storage);
 
+/// The view source of `context` if the analysis reads it (`reads_view_source`), else nullptr.
+/// The inner query of an ordinary view always reads the table itself.
+StoragePtr getViewSourceIfRead(const ContextPtr & context, bool reads_view_source);
+
 }
