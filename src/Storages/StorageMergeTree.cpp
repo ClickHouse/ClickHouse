@@ -1775,6 +1775,9 @@ std::map<std::string, MutationCommands> StorageMergeTree::getUnfinishedMutationC
 {
     std::lock_guard lock(currently_processing_in_background_mutex);
     auto data_parts = getDataPartsVectorForInternalUsage();
+    /// Only parts below a mutation's version can be in its scope, so each entry scans just that prefix.
+    std::stable_sort(data_parts.begin(), data_parts.end(),
+        [](const auto & lhs, const auto & rhs) { return lhs->info.getDataVersion() < rhs->info.getDataVersion(); });
 
     std::map<std::string, MutationCommands> result;
 
@@ -1786,8 +1789,11 @@ std::map<std::string, MutationCommands> StorageMergeTree::getUnfinishedMutationC
         /// Not countable work yet, but this mutation still has to rewrite it once the transaction
         /// commits, so the entry must not be reported as having nothing left.
         bool has_uncommitted_part_in_scope = false;
-        for (const auto & part : data_parts)
+        const auto scope_end = std::partition_point(data_parts.begin(), data_parts.end(),
+            [&](const auto & part) { return part->info.getDataVersion() < static_cast<Int64>(mutation_version); });
+        for (auto part_it = data_parts.begin(); part_it != scope_end; ++part_it)
         {
+            const auto & part = *part_it;
             switch (getPartMutationScope(*part, static_cast<Int64>(mutation_version), entry.tid))
             {
                 case PartMutationScope::Inside: ++parts_to_do; break;
@@ -1830,6 +1836,9 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
             {PartVersionWithName{part->info.getDataVersion(), part->name, part->getBytesOnDisk(), part->info}, part});
         active_parts_by_name.emplace(part->name, part);
     }
+    /// Only parts below a mutation's version can be in its scope, so each entry scans just that prefix.
+    std::stable_sort(all_parts.begin(), all_parts.end(),
+        [](const auto & lhs, const auto & rhs) { return lhs.part.version < rhs.part.version; });
 
     /// The live fraction of the parts currently being rewritten, for byte-weighted progress.
     /// The merge list has its own mutex, no lock ordering issue with the mutex held above.
@@ -1866,8 +1875,11 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
         /// An uncommitted lower-version part - whose committing-block holder `MergeTreeSink::commitPart`
         /// already released - is pending work of unknown size, so nothing-left does not mean done.
         bool has_uncommitted_part_in_scope = false;
-        for (const auto & [part_version, data_part] : all_parts)
+        const auto scope_end = std::partition_point(all_parts.begin(), all_parts.end(),
+            [&](const auto & part) { return part.part.version < mutation_version; });
+        for (auto part_it = all_parts.begin(); part_it != scope_end; ++part_it)
         {
+            const auto & [part_version, data_part] = *part_it;
             const auto scope = getPartMutationScope(*data_part, mutation_version, entry.tid);
             if (scope == PartMutationScope::PendingCommit)
                 has_uncommitted_part_in_scope = true;
@@ -2849,8 +2861,9 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             }
 
             /// Count the part in the denominators now, as no status read may have seen it pending.
+            /// A just-committed part may still read as PendingCommit here, so only Outside is skipped.
             for (auto it = mutations_begin_it; it != std::next(last_mutation_to_apply); ++it)
-                if (getPartMutationScope(*part, static_cast<Int64>(it->first), it->second.tid) == PartMutationScope::Inside)
+                if (getPartMutationScope(*part, static_cast<Int64>(it->first), it->second.tid) != PartMutationScope::Outside)
                     it->second.initial_bytes_to_do.account(part->info, part->getBytesOnDisk());
 
             future_part->parts.push_back(part);
