@@ -4,6 +4,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/Prometheus/stepsInTimeSeriesRange.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applySortFunction.h>
 #include <Common/isValidUTF8.h>
 #include <Common/quoteString.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
@@ -265,8 +266,12 @@ SQLQueryPiece applyLabelManipulationFunction(
 
         case StoreMethod::VECTOR_GRID:
         {
+            /// An order fixed by an inner sort*() call is kept through the series each row comes from.
+            String source_rank_subquery = res.sort_rank_subquery;
+
             /// Step 1:
             /// SELECT f(group, 'arg2', 'arg3', ...) AS new_group, anyForEach(values) AS values
+            ///        [, anyIf(group, isNotNull(values[1])) AS sort_source]
             /// FROM <vector_grid>
             /// GROUP BY new_group
             /// HAVING timeSeriesThrowDuplicateSeriesIf(arrayExists(c -> c > 1, countForEach(<vector_grid>.values)), new_group) = 0
@@ -298,6 +303,14 @@ SQLQueryPiece applyLabelManipulationFunction(
                     SQLSubquery{context.subqueries.size(), std::move(first_argument.select_query), SQLSubqueryType::TABLE});
                 builder.from_table = context.subqueries.back().name;
 
+                if (!source_rank_subquery.empty())
+                {
+                    builder.select_list.push_back(makeSortSourceOfMergedRow(
+                        make_intrusive<ASTIdentifier>(Strings{builder.from_table, ColumnNames::Group}),
+                        make_intrusive<ASTIdentifier>(Strings{builder.from_table, ColumnNames::Values})));
+                    builder.select_list.back()->setAlias(ColumnNames::SortSource);
+                }
+
                 builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
 
                 builder.having = makeNoDuplicateSeriesPerStepCheck(
@@ -308,7 +321,7 @@ SQLQueryPiece applyLabelManipulationFunction(
             }
 
             /// Step 2:
-            /// SELECT new_group AS group, values
+            /// SELECT new_group AS group, values [, sort_source]
             /// FROM step1
             ASTPtr column_renaming_query;
             {
@@ -319,6 +332,9 @@ SQLQueryPiece applyLabelManipulationFunction(
 
                 builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
 
+                if (!source_rank_subquery.empty())
+                    builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::SortSource));
+
                 context.subqueries.emplace_back(
                     SQLSubquery{context.subqueries.size(), std::move(label_replacing_query), SQLSubqueryType::TABLE});
                 builder.from_table = context.subqueries.back().name;
@@ -326,7 +342,10 @@ SQLQueryPiece applyLabelManipulationFunction(
                 column_renaming_query = builder.getSelectQuery();
             }
 
-            res.select_query = std::move(column_renaming_query);
+            if (source_rank_subquery.empty())
+                res.select_query = std::move(column_renaming_query);
+            else
+                setVectorGridRankedBySource(res, std::move(column_renaming_query), source_rank_subquery, context);
 
             if (dest_label == kMetricName)
                 res.metric_name_dropped = false;

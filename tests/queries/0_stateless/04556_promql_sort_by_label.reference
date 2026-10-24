@@ -1,0 +1,161 @@
+-- sort_by_label(up, 'instance'): natural ascending order (host1, host2, host10, host20)
+[('__name__','up'),('instance','host1')]	2023-11-14 22:13:20.000	1
+[('__name__','up'),('instance','host2')]	2023-11-14 22:13:20.000	2
+[('__name__','up'),('instance','host10')]	2023-11-14 22:13:20.000	10
+[('__name__','up'),('instance','host20')]	2023-11-14 22:13:20.000	20
+-- sort_by_label_desc(up, 'instance'): natural descending order (host20, host10, host2, host1)
+[('__name__','up'),('instance','host20')]	2023-11-14 22:13:20.000	20
+[('__name__','up'),('instance','host10')]	2023-11-14 22:13:20.000	10
+[('__name__','up'),('instance','host2')]	2023-11-14 22:13:20.000	2
+[('__name__','up'),('instance','host1')]	2023-11-14 22:13:20.000	1
+-- sort_by_label(mem, 'dc', 'host'): sort by 'dc' then 'host'; as in Prometheus, the series without 'dc' ends up last
+[('__name__','mem'),('dc','eu'),('host','z')]	2023-11-14 22:13:20.000	13
+[('__name__','mem'),('dc','us'),('host','a')]	2023-11-14 22:13:20.000	12
+[('__name__','mem'),('dc','us'),('host','b')]	2023-11-14 22:13:20.000	11
+[('__name__','mem'),('host','only')]	2023-11-14 22:13:20.000	14
+-- sort_by_label_desc(mem, 'dc', 'host'): reverse of the above, the series without 'dc' first
+[('__name__','mem'),('host','only')]	2023-11-14 22:13:20.000	14
+[('__name__','mem'),('dc','us'),('host','b')]	2023-11-14 22:13:20.000	11
+[('__name__','mem'),('dc','us'),('host','a')]	2023-11-14 22:13:20.000	12
+[('__name__','mem'),('dc','eu'),('host','z')]	2023-11-14 22:13:20.000	13
+-- sort_by_label(net, 'instance'): Prometheus order (host2, host10, host-1, host.1, hostA, host_1)
+[('__name__','net'),('instance','host2')]	2023-11-14 22:13:20.000	21
+[('__name__','net'),('instance','host10')]	2023-11-14 22:13:20.000	23
+[('__name__','net'),('instance','host-1')]	2023-11-14 22:13:20.000	22
+[('__name__','net'),('instance','host.1')]	2023-11-14 22:13:20.000	24
+[('__name__','net'),('instance','hostA')]	2023-11-14 22:13:20.000	25
+[('__name__','net'),('instance','host_1')]	2023-11-14 22:13:20.000	26
+-- sort_by_label_desc(net, 'instance'): reverse of the above
+[('__name__','net'),('instance','host_1')]	2023-11-14 22:13:20.000	26
+[('__name__','net'),('instance','hostA')]	2023-11-14 22:13:20.000	25
+[('__name__','net'),('instance','host.1')]	2023-11-14 22:13:20.000	24
+[('__name__','net'),('instance','host-1')]	2023-11-14 22:13:20.000	22
+[('__name__','net'),('instance','host10')]	2023-11-14 22:13:20.000	23
+[('__name__','net'),('instance','host2')]	2023-11-14 22:13:20.000	21
+-- sort_by_label(big, 'instance'): host10000000000000000000 first, as in Prometheus
+[('__name__','big'),('instance','host10000000000000000000')]	2023-11-14 22:13:20.000	32
+[('__name__','big'),('instance','host9999999999999999999')]	2023-11-14 22:13:20.000	31
+-- sort_by_label_desc(big, 'instance'): reverse of the above
+[('__name__','big'),('instance','host9999999999999999999')]	2023-11-14 22:13:20.000	31
+[('__name__','big'),('instance','host10000000000000000000')]	2023-11-14 22:13:20.000	32
+-- sort_by_label(cyc, 'instance'): the order of Prometheus 3.5
+[('__name__','cyc'),('instance','host10000000000000000000')]	2023-11-14 22:13:20.000	45
+[('__name__','cyc'),('instance','host9223372036854775807')]	2023-11-14 22:13:20.000	43
+[('__name__','cyc'),('instance','host9223372036854775808')]	2023-11-14 22:13:20.000	44
+[('__name__','cyc'),('instance','host99')]	2023-11-14 22:13:20.000	41
+[('__name__','cyc'),('instance','host923')]	2023-11-14 22:13:20.000	42
+-- sort_by_label_desc(cyc, 'instance'): the order of Prometheus 3.5
+[('__name__','cyc'),('instance','host9223372036854775808')]	2023-11-14 22:13:20.000	44
+[('__name__','cyc'),('instance','host9223372036854775807')]	2023-11-14 22:13:20.000	43
+[('__name__','cyc'),('instance','host923')]	2023-11-14 22:13:20.000	42
+[('__name__','cyc'),('instance','host99')]	2023-11-14 22:13:20.000	41
+[('__name__','cyc'),('instance','host10000000000000000000')]	2023-11-14 22:13:20.000	45
+-- sort_by_label(lz, 'instance'): the order of Prometheus 3.5
+[('__name__','lz'),('instance','host1')]	2023-11-14 22:13:20.000	52
+[('__name__','lz'),('instance','host01')]	2023-11-14 22:13:20.000	51
+[('__name__','lz'),('instance','host001')]	2023-11-14 22:13:20.000	53
+-- sort_by_label_desc(lz, 'instance'): the order of Prometheus 3.5
+[('__name__','lz'),('instance','host001')]	2023-11-14 22:13:20.000	53
+[('__name__','lz'),('instance','host01')]	2023-11-14 22:13:20.000	51
+[('__name__','lz'),('instance','host1')]	2023-11-14 22:13:20.000	52
+-- sort_by_label(up): no labels sorts by all labels, as in Prometheus
+[('__name__','up'),('instance','host1')]	2023-11-14 22:13:20.000	1
+[('__name__','up'),('instance','host10')]	2023-11-14 22:13:20.000	10
+[('__name__','up'),('instance','host2')]	2023-11-14 22:13:20.000	2
+[('__name__','up'),('instance','host20')]	2023-11-14 22:13:20.000	20
+-- sort_by_label_desc(up): reverse of the above
+[('__name__','up'),('instance','host20')]	2023-11-14 22:13:20.000	20
+[('__name__','up'),('instance','host2')]	2023-11-14 22:13:20.000	2
+[('__name__','up'),('instance','host10')]	2023-11-14 22:13:20.000	10
+[('__name__','up'),('instance','host1')]	2023-11-14 22:13:20.000	1
+-- sort_by_label(mem): the series without 'dc' ends up last
+[('__name__','mem'),('dc','eu'),('host','z')]	2023-11-14 22:13:20.000	13
+[('__name__','mem'),('dc','us'),('host','a')]	2023-11-14 22:13:20.000	12
+[('__name__','mem'),('dc','us'),('host','b')]	2023-11-14 22:13:20.000	11
+[('__name__','mem'),('host','only')]	2023-11-14 22:13:20.000	14
+-- sort_by_label_desc(mem): reverse of the above
+[('__name__','mem'),('host','only')]	2023-11-14 22:13:20.000	14
+[('__name__','mem'),('dc','us'),('host','b')]	2023-11-14 22:13:20.000	11
+[('__name__','mem'),('dc','us'),('host','a')]	2023-11-14 22:13:20.000	12
+[('__name__','mem'),('dc','eu'),('host','z')]	2023-11-14 22:13:20.000	13
+-- sort_by_label_desc(sort_by_label(lz, 'instance'), 'instance'): the outer sort starts from the inner order, as in Prometheus 3.5
+[('__name__','lz'),('instance','host1')]	2023-11-14 22:13:20.000	52
+[('__name__','lz'),('instance','host01')]	2023-11-14 22:13:20.000	51
+[('__name__','lz'),('instance','host001')]	2023-11-14 22:13:20.000	53
+-- sort_by_label(sort_by_label(lz, 'instance'), 'instance'): the order of Prometheus 3.5
+[('__name__','lz'),('instance','host001')]	2023-11-14 22:13:20.000	53
+[('__name__','lz'),('instance','host01')]	2023-11-14 22:13:20.000	51
+[('__name__','lz'),('instance','host1')]	2023-11-14 22:13:20.000	52
+-- sort_by_label(sort_by_label_desc(lz, 'instance'), 'instance'): the order of Prometheus 3.5
+[('__name__','lz'),('instance','host1')]	2023-11-14 22:13:20.000	52
+[('__name__','lz'),('instance','host01')]	2023-11-14 22:13:20.000	51
+[('__name__','lz'),('instance','host001')]	2023-11-14 22:13:20.000	53
+-- sort_by_label(sort(lz), 'instance'): the order of Prometheus 3.5
+[('__name__','lz'),('instance','host001')]	2023-11-14 22:13:20.000	53
+[('__name__','lz'),('instance','host1')]	2023-11-14 22:13:20.000	52
+[('__name__','lz'),('instance','host01')]	2023-11-14 22:13:20.000	51
+-- sort_by_label(abs(sort_desc(lz)), 'instance'): the order of Prometheus 3.5
+[('instance','host01')]	2023-11-14 22:13:20.000	51
+[('instance','host1')]	2023-11-14 22:13:20.000	52
+[('instance','host001')]	2023-11-14 22:13:20.000	53
+-- sort_by_label(cyc < 44, 'instance'): series filtered out do not take part in sorting, as in Prometheus 3.5
+[('__name__','cyc'),('instance','host99')]	2023-11-14 22:13:20.000	41
+[('__name__','cyc'),('instance','host923')]	2023-11-14 22:13:20.000	42
+[('__name__','cyc'),('instance','host9223372036854775807')]	2023-11-14 22:13:20.000	43
+-- sort_by_label_desc(topk(3, lz), 'instance'): the sort starts from the order of topk(), as in Prometheus 3.5
+[('__name__','lz'),('instance','host001')]	2023-11-14 22:13:20.000	53
+[('__name__','lz'),('instance','host1')]	2023-11-14 22:13:20.000	52
+[('__name__','lz'),('instance','host01')]	2023-11-14 22:13:20.000	51
+-- sort_by_label(topk(3, lz), 'instance'): the order of Prometheus 3.5
+[('__name__','lz'),('instance','host01')]	2023-11-14 22:13:20.000	51
+[('__name__','lz'),('instance','host1')]	2023-11-14 22:13:20.000	52
+[('__name__','lz'),('instance','host001')]	2023-11-14 22:13:20.000	53
+-- sort_by_label(bottomk(3, lz), 'instance'): the order of Prometheus 3.5
+[('__name__','lz'),('instance','host001')]	2023-11-14 22:13:20.000	53
+[('__name__','lz'),('instance','host1')]	2023-11-14 22:13:20.000	52
+[('__name__','lz'),('instance','host01')]	2023-11-14 22:13:20.000	51
+-- sort_by_label_desc(bottomk(3, lz), 'instance'): the order of Prometheus 3.5
+[('__name__','lz'),('instance','host01')]	2023-11-14 22:13:20.000	51
+[('__name__','lz'),('instance','host1')]	2023-11-14 22:13:20.000	52
+[('__name__','lz'),('instance','host001')]	2023-11-14 22:13:20.000	53
+-- sort_by_label(up, ''): an empty label name is accepted and sorts by all labels, as in Prometheus
+[('__name__','up'),('instance','host1')]	2023-11-14 22:13:20.000	1
+[('__name__','up'),('instance','host10')]	2023-11-14 22:13:20.000	10
+[('__name__','up'),('instance','host2')]	2023-11-14 22:13:20.000	2
+[('__name__','up'),('instance','host20')]	2023-11-14 22:13:20.000	20
+-- sort_by_label_desc(up, ''): reverse of the above
+[('__name__','up'),('instance','host20')]	2023-11-14 22:13:20.000	20
+[('__name__','up'),('instance','host2')]	2023-11-14 22:13:20.000	2
+[('__name__','up'),('instance','host10')]	2023-11-14 22:13:20.000	10
+[('__name__','up'),('instance','host1')]	2023-11-14 22:13:20.000	1
+-- abs(sort_by_label(mem, 'host')): abs() keeps the order fixed by sort_by_label()
+[('dc','us'),('host','a')]	2023-11-14 22:13:20.000	12
+[('dc','us'),('host','b')]	2023-11-14 22:13:20.000	11
+[('host','only')]	2023-11-14 22:13:20.000	14
+[('dc','eu'),('host','z')]	2023-11-14 22:13:20.000	13
+-- label_replace(sort_by_label_desc(up, 'instance'), ...): label changes keep the order
+[('__name__','up'),('instance','host20'),('zone','z')]	2023-11-14 22:13:20.000	20
+[('__name__','up'),('instance','host10'),('zone','z')]	2023-11-14 22:13:20.000	10
+[('__name__','up'),('instance','host2'),('zone','z')]	2023-11-14 22:13:20.000	2
+[('__name__','up'),('instance','host1'),('zone','z')]	2023-11-14 22:13:20.000	1
+-- sum by (instance) (sort(up)): aggregation after sort() must not reuse sort()'s stale rank map
+[('instance','host1')]	2023-11-14 22:13:20.000	1
+[('instance','host10')]	2023-11-14 22:13:20.000	10
+[('instance','host2')]	2023-11-14 22:13:20.000	2
+[('instance','host20')]	2023-11-14 22:13:20.000	20
+-- quantile(0.5, sort(up)): same for the quantile aggregation operator; median of 1,2,10,20 is 6
+[]	2023-11-14 22:13:20.000	6
+-- vector(scalar(sort(up))): same through scalar(); more than one series makes scalar() nan
+[]	2023-11-14 22:13:20.000	nan
+-- timeSeriesSortGroupsByTags()
+['host1','host9','host10']
+-- error: sort_by_label requires at least 1 argument
+expects at least 1 argument
+-- error: label arguments must be strings
+of type STRING
+-- error: sort_by_label's first argument must be an instant vector
+expects the first argument of type
+-- error: sort takes exactly 1 argument
+expects 1 argument
+-- error: sort's argument must be an instant vector
+expects an argument of type

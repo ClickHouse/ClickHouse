@@ -288,7 +288,24 @@ namespace
         const auto * aggregation = (result.node->node_type == PrometheusQueryTree::NodeType::AggregationOperator)
             ? static_cast<const PrometheusQueryTree::AggregationOperator *>(result.node)
             : nullptr;
-        if (aggregation && (aggregation->operator_name == "topk" || aggregation->operator_name == "bottomk"))
+
+        /// If a sort function was applied, order the output by the ranks fixed at the sort*() call site.
+        if (!result.sort_rank_subquery.empty() && (result.store_method == StoreMethod::VECTOR_GRID))
+        {
+            builder.join_table = result.sort_rank_subquery;
+            builder.join_kind = JoinKind::Inner;
+            /// `sort_group` values are unique in the rank map, so ANY INNER JOIN cannot duplicate series rows.
+            builder.join_strictness = JoinStrictness::Any;
+            builder.join_on = makeASTFunction("equals",
+                make_intrusive<ASTIdentifier>(ColumnNames::Group),
+                make_intrusive<ASTIdentifier>(ColumnNames::SortGroup));
+
+            builder.order_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::SortRank));
+            /// Rows with the same rank, like the unsorted side of `or`, are sorted by tags as other instant vectors are.
+            builder.order_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Tags));
+            builder.order_direction = 1;
+        }
+        else if (aggregation && (aggregation->operator_name == "topk" || aggregation->operator_name == "bottomk"))
         {
             if (result.store_method == StoreMethod::VECTOR_GRID && (aggregation->by || aggregation->without))
             {
