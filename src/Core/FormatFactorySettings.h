@@ -1930,10 +1930,11 @@ Only one frame is kept in memory, and the frames reach the output while the quer
 Default value: `false`.
 )", 0, \
         {"26.8", false, false, "New setting controlling whether image output formats such as `PNG` write each frame of an animation as soon as the next value of `t` is seen, instead of buffering all the frames in memory."}) \
-    DECLARE(UInt64, input_format_max_block_size_bytes, 0, R"(
+    DECLARE(UInt64, input_format_max_block_size_bytes, 128 * 1024 * 1024, R"(
 Limits the size of the blocks formed during data parsing in input formats in bytes. Used in row based input formats when block is formed on ClickHouse side.
 0 means no limit in bytes.
 )", 0, \
+        {"26.11", 0, 128 * 1024 * 1024, "Start a new input block after 128 MiB by default, so that a single file with wide rows is split into several blocks that can be processed in parallel."}, \
         {"25.5", 0, 0, "New setting to limit bytes size if blocks created by input format"}) \
     DECLARE(UInt64, input_format_json_max_string_column_growth_step, 0, R"(
 When building the JSON column's internal String buffers while parsing JSON from string, cap the power-of-two growth at this many bytes: once the reserved size reaches this value, the buffer grows by increments of this size instead of doubling. This bounds over-allocation for large JSON columns. 0 means unlimited (pure doubling).
