@@ -23,7 +23,21 @@ public:
         std::optional<FormatSettings> format_settings_ = std::nullopt,
         std::shared_ptr<DataLake::ICatalog> catalog_ = nullptr);
 
+    /// Reads the existing `table_` with the given metadata. Shares its configuration, which is not initialized again.
+    StorageObjectStorageCluster(
+        const String & cluster_name_,
+        StorageObjectStorageConfigurationPtr configuration_,
+        ObjectStoragePtr object_storage_,
+        const StorageID & table_id_,
+        const StorageMetadataPtr & metadata_,
+        NamesAndTypesList hive_partition_columns_to_read_from_file_path_,
+        std::optional<FormatSettings> format_settings_,
+        std::shared_ptr<DataLake::ICatalog> catalog_,
+        ConstStoragePtr table_);
+
     std::string getName() const override;
+
+    std::optional<QualifiedTableName> getTableReadOnReplicas() const override;
 
     SinkToStoragePtr write(
         const ASTPtr & query,
@@ -82,6 +96,8 @@ public:
     void updateExternalDynamicMetadataIfExists(ContextPtr query_context) override;
 
 private:
+    void updateConfigurationIfNeeded(ContextPtr context) override;
+
     void updateQueryToSendIfNeeded(
         ASTPtr & query,
         const StorageSnapshotPtr & storage_snapshot,
@@ -94,6 +110,7 @@ private:
     const std::optional<FormatSettings> format_settings;
     const std::shared_ptr<DataLake::ICatalog> catalog;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
+    const ConstStoragePtr table;
 };
 
 }
