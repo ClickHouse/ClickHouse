@@ -2681,6 +2681,23 @@ void ReadFromFile::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_valu
     output_header = std::make_shared<const Block>(info.source_header);
 }
 
+bool ReadFromFile::canRemoveUnusedColumns() const
+{
+    return canRemoveUnusedPrewhereInputsFromFormatInfo(info, query_info.row_level_filter);
+}
+
+ReadFromFile::RemoveUnusedColumnsResult
+ReadFromFile::removeUnusedColumns(const std::vector<size_t> & unneeded_output_positions, const std::vector<PrunedInput> & /*inputs*/)
+{
+    auto dropped_output_positions = removeUnusedPrewhereInputsFromFormatInfo(info, query_info.row_level_filter, unneeded_output_positions);
+    if (!dropped_output_positions)
+        return {};
+
+    query_info.prewhere_info = info.prewhere_info;
+    output_header = std::make_shared<const Block>(info.source_header);
+    return {true, std::move(*dropped_output_positions)};
+}
+
 bool ReadFromFile::canUseLazyMaterialization() const
 {
     if (need_only_count)

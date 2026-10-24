@@ -333,6 +333,91 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
     return new_info;
 }
 
+namespace
+{
+
+NameSet getRemovablePrewhereInputs(const ReadFromFormatInfo & info, const FilterDAGInfoPtr & row_level_filter)
+{
+    NameSet removable;
+    /// A row-level filter keeps its inputs in the header, see the comment for `ReadFromFormatInfo::prewhere_info`.
+    if (!info.prewhere_info || row_level_filter || info.columns_description.hasDefaults())
+        return removable;
+
+    const auto & prewhere_info = *info.prewhere_info;
+    for (const auto * output : prewhere_info.prewhere_actions.getOutputs())
+    {
+        if (output->type != ActionsDAG::ActionType::INPUT)
+            continue;
+        /// The PREWHERE column can leave the output only if the format filters by it.
+        if (output->result_name == prewhere_info.prewhere_column_name && !prewhere_info.need_filter)
+            continue;
+        /// Only columns the format reads from the file.
+        if (!info.format_header.has(output->result_name))
+            continue;
+        removable.insert(output->result_name);
+    }
+
+    for (const auto & column : info.hive_partition_columns_to_read_from_file_path)
+        removable.erase(column.name);
+    for (const auto & column : info.requested_virtual_columns)
+        removable.erase(column.name);
+
+    return removable;
+}
+
+}
+
+bool canRemoveUnusedPrewhereInputsFromFormatInfo(const ReadFromFormatInfo & info, const FilterDAGInfoPtr & row_level_filter)
+{
+    return !getRemovablePrewhereInputs(info, row_level_filter).empty();
+}
+
+std::optional<std::vector<size_t>> removeUnusedPrewhereInputsFromFormatInfo(
+    ReadFromFormatInfo & info, const FilterDAGInfoPtr & row_level_filter, const std::vector<size_t> & unneeded_output_positions)
+{
+    const NameSet removable = getRemovablePrewhereInputs(info, row_level_filter);
+    if (removable.empty())
+        return std::nullopt;
+
+    NameSet to_remove;
+    for (size_t position : unneeded_output_positions)
+    {
+        const auto & name = info.source_header.getByPosition(position).name;
+        if (removable.contains(name))
+            to_remove.insert(name);
+    }
+    if (to_remove.empty())
+        return std::nullopt;
+
+    /// The PREWHERE actions may be shared with other users of the old `info`, so change a copy.
+    auto prewhere_info = std::make_shared<PrewhereInfo>(info.prewhere_info->clone());
+    const auto * filter_node = &prewhere_info->prewhere_actions.findInOutputs(prewhere_info->prewhere_column_name);
+    if (to_remove.contains(prewhere_info->prewhere_column_name))
+        prewhere_info->remove_prewhere_column = true;
+    std::erase_if(
+        prewhere_info->prewhere_actions.getOutputs(),
+        [&](const ActionsDAG::Node * node)
+        { return node != filter_node && node->type == ActionsDAG::ActionType::INPUT && to_remove.contains(node->result_name); });
+
+    std::vector<size_t> dropped_output_positions;
+    dropped_output_positions.reserve(to_remove.size());
+    for (size_t position = 0; position < info.source_header.columns(); ++position)
+        if (to_remove.contains(info.source_header.getByPosition(position).name))
+            dropped_output_positions.push_back(position);
+
+    for (const auto & name : to_remove)
+    {
+        info.format_header.erase(name);
+        info.source_header.erase(name);
+        if (info.columns_description.has(name))
+            info.columns_description.remove(name);
+    }
+    std::erase_if(info.requested_columns, [&](const NameAndTypePair & column) { return to_remove.contains(column.name); });
+    info.prewhere_info = std::move(prewhere_info);
+
+    return dropped_output_positions;
+}
+
 SerializationInfoByName getSerializationHintsForFileLikeStorage(const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context)
 {
     if (!context->getSettingsRef()[Setting::enable_parsing_to_custom_serialization])

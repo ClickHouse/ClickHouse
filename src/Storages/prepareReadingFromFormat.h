@@ -108,6 +108,13 @@ namespace DB
 
     ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, const PrewhereInfoPtr & prewhere_info);
 
+    /// Removes from `info` the pass-through PREWHERE inputs at `unneeded_output_positions`; the format still reads them for PREWHERE.
+    /// Removes nothing with a DEFAULT column or a `row_level_filter`, nor a hive or virtual column. Returns dropped positions or nullopt.
+    std::optional<std::vector<size_t>> removeUnusedPrewhereInputsFromFormatInfo(
+        ReadFromFormatInfo & info, const FilterDAGInfoPtr & row_level_filter, const std::vector<size_t> & unneeded_output_positions);
+
+    bool canRemoveUnusedPrewhereInputsFromFormatInfo(const ReadFromFormatInfo & info, const FilterDAGInfoPtr & row_level_filter);
+
     /// Lazy materialization (see optimizeLazyMaterialization2): split `info` into the info for the
     /// main reading pass and the info for the lazy reading pass. The physical columns that the
     /// format reads and nothing needs before the LIMIT (i.e. that are not in `required_names`, not

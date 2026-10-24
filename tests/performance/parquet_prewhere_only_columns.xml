@@ -1,0 +1,16 @@
+<!-- Reading a Parquet file with a PREWHERE whose input columns are used only by the PREWHERE. -->
+<test>
+    <fill_query><![CDATA[
+        INSERT INTO FUNCTION file('test_parquet_prewhere_only_columns.parquet', Parquet)
+        SELECT
+            number AS k,
+            toUInt32(number % 1000) AS w,
+            concat('https://example.com/some/long/path/', toString(cityHash64(number)), '/index.html') AS u,
+            if(number % 7 = 0, concat('search phrase ', toString(number)), '') AS s
+        FROM numbers(50000000)
+    ]]></fill_query>
+
+    <query>SELECT count() FROM file('test_parquet_prewhere_only_columns.parquet', Parquet) PREWHERE u != '' FORMAT Null</query>
+    <query>SELECT sum(w) FROM file('test_parquet_prewhere_only_columns.parquet', Parquet) WHERE u != '' FORMAT Null</query>
+    <query>SELECT k % 1000 AS g, count(), sum(w) FROM file('test_parquet_prewhere_only_columns.parquet', Parquet) WHERE s != '' GROUP BY g FORMAT Null</query>
+</test>
