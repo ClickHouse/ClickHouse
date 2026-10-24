@@ -13,6 +13,8 @@
 #include <Storages/ObjectStorage/Utils.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Common/ProfileEvents.h>
+#include <Common/SipHash.h>
+#include <Common/maskURIPassword.h>
 #include <Common/logger_useful.h>
 
 namespace ProfileEvents
@@ -160,9 +162,7 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
             bool has_cache_entry = false;
             if (query_condition_cache)
             {
-                auto query_condition_cache_key = last_object_info->getIdentifier(/*include_file_bucket_info=*/ false);
-                if (auto metadata_path = last_object_info->getPathInDataLakeMetadata())
-                    query_condition_cache_key = last_object_info->getIdentifierForPath(*metadata_path, /*include_file_bucket_info=*/ false);
+                const auto query_condition_cache_key = last_object_info->getQueryConditionCacheIdentifier();
                 auto matching_marks = query_condition_cache->read(
                     storage_id.uuid,
                     query_condition_cache_key,
@@ -215,6 +215,19 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
 String ObjectInfo::getIdentifier(bool include_file_bucket_info) const
 {
     return getArchiveEntryKey(getIdentifierForPath(getPath(), include_file_bucket_info), archive_entry_index);
+}
+
+String ObjectInfo::getQueryConditionCacheIdentifier() const
+{
+    const auto metadata_path = getPathInDataLakeMetadata();
+    if (!metadata_path)
+        return getIdentifier(/*include_file_bucket_info=*/ false);
+
+    const String identifier = getIdentifierForPath(*metadata_path, /*include_file_bucket_info=*/ false);
+    String redacted_path = metadata_path->substr(0, metadata_path->find_first_of("?#"));
+    if (!maskURIUserinfo(redacted_path) && redacted_path.size() == metadata_path->size())
+        return identifier;
+    return getIdentifierForPath(redacted_path, /*include_file_bucket_info=*/ false) + "#path=" + sipHash128String(identifier);
 }
 
 String ObjectInfo::getIdentifierForPath(const String & path, bool include_file_bucket_info) const

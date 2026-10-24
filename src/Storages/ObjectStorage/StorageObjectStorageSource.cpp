@@ -62,6 +62,7 @@
 #include <Common/assert_cast.h>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
+#include <Common/maskURIPassword.h>
 #include <Common/parseGlobs.h>
 #include <Common/quoteString.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
@@ -487,14 +488,6 @@ std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
     return getUniqueStoragePathIdentifier(configuration, *object_info, include_connection_info);
 }
 
-/// A data lake file is identified by its path in the table metadata: files in different storages can have the same key.
-static String getQueryConditionCacheIdentifier(const ObjectInfo & object_info)
-{
-    if (auto metadata_path = object_info.getPathInDataLakeMetadata())
-        return object_info.getIdentifierForPath(*metadata_path, /*include_file_bucket_info=*/false);
-    return object_info.getIdentifier(/*include_file_bucket_info=*/false);
-}
-
 /// The object identifier already uses the full path, so files that share a base name in
 /// different directories do not collide. For general (non-data-lake) remote objects the path
 /// alone is not a stable identity - an object can be overwritten in place under the same path -
@@ -512,29 +505,31 @@ static String getQueryConditionCacheIdentifier(const ObjectInfo & object_info)
 /// is in (endpoint, bucket, container, ...) instead. The
 /// connection info can carry secrets (a signed URL, userinfo in an HDFS URI), and so can the path itself
 /// (a web index can link to `data.parquet?token=...`), while the `part_name` is visible in
-/// `system.query_condition_cache` and in the logs. So the key is the path without its query and fragment,
-/// for readability only, followed by a hash of the complete identifier and the qualified path. The hash
-/// has a fixed length at the end, so the key stays unambiguous.
+/// `system.query_condition_cache` and in the logs. So the key is the path without its userinfo, query and
+/// fragment, for readability only, followed by a hash of the complete identifier and the qualified path. The
+/// hash has a fixed length at the end, so the key stays unambiguous.
 std::optional<String> StorageObjectStorageSource::makeQueryConditionCacheKey(
     const StorageObjectStorageConfiguration & configuration,
     const ObjectInfoPtr & object_info,
     const ObjectStoragePtr & object_storage,
     const UUID & table_uuid)
 {
-    String identifier = getQueryConditionCacheIdentifier(*object_info);
+    String identifier = object_info->getQueryConditionCacheIdentifier();
     if (table_uuid == UUIDHelpers::Nil)
     {
         const String qualified_path = getUniqueStoragePathIdentifier(configuration, object_info, object_storage, /*include_connection_info=*/true);
         /// NUL cannot occur in a path, so it separates the two unambiguously.
         const String hashed = sipHash128String(identifier + '\0' + qualified_path);
-        identifier = identifier.substr(0, identifier.find_first_of("?#")) + "#storage=" + hashed;
+        identifier = identifier.substr(0, identifier.find_first_of("?#"));
+        maskURIUserinfo(identifier);
+        identifier += "#storage=" + hashed;
     }
     return makeQueryConditionCacheKey(identifier, *object_info, configuration.isDataLakeConfiguration());
 }
 
 std::optional<String> StorageObjectStorageSource::makeQueryConditionCacheKey(const ObjectInfo & object_info, bool is_data_lake)
 {
-    return makeQueryConditionCacheKey(getQueryConditionCacheIdentifier(object_info), object_info, is_data_lake);
+    return makeQueryConditionCacheKey(object_info.getQueryConditionCacheIdentifier(), object_info, is_data_lake);
 }
 
 std::optional<String> StorageObjectStorageSource::makeQueryConditionCacheKey(

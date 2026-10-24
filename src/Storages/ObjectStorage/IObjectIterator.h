@@ -79,6 +79,12 @@ struct ObjectInfo
 
     String getIdentifier(bool include_file_bucket_info = true) const;
     String getIdentifierForPath(const String & path, bool include_file_bucket_info = true) const;
+
+    /// The identifier of the object in the query condition cache. A data lake file is identified by its path in the
+    /// table metadata, since files in different storages can have the same key. That path can carry secrets (the
+    /// userinfo or a signed query of a URI), while the key is visible in `system.query_condition_cache` and in the
+    /// logs, so such a path is replaced by the path without them, followed by a hash of the complete identifier.
+    String getQueryConditionCacheIdentifier() const;
 };
 
 using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
