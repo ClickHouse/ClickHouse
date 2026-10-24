@@ -60,7 +60,9 @@ without_filter=$(bytes_read 0 "${QUERY_ABSENT}")
 with_filter=$(bytes_read 100000000 "${QUERY_ABSENT}")
 
 echo "the bloom filters rule out every row group, so the dictionary filter reads no extra bytes"
-[ "${with_filter}" -le "${without_filter}" ] && echo "OK" || echo "FAIL: ${with_filter} > ${without_filter}"
+# Each measurement must read the file (at least the bloom filters), or the comparison measures nothing.
+[ "${without_filter}" -gt 0 ] && [ "${with_filter}" -gt 0 ] && [ "${with_filter}" -le "${without_filter}" ] \
+    && echo "OK" || echo "FAIL: with_filter=${with_filter} without_filter=${without_filter}"
 
 # Prints the query result and the number of rows read from the file.
 rows_read() {

@@ -65,7 +65,8 @@ bytes_a_or_b=$(bytes_read "${QUERY_A_OR_B}")
 # compression. Reading it would add at least that much; the bloom filter blocks of `a` that the second
 # query also reads are a few hundred bytes.
 echo "the dictionary page of a is not read"
-[ $((bytes_a_or_b - bytes_b)) -lt 100000 ] && echo "OK" || echo "FAIL: ${bytes_a_or_b} vs ${bytes_b}"
+[ "${bytes_b}" -gt 0 ] && [ "${bytes_a_or_b}" -gt 0 ] && [ $((bytes_a_or_b - bytes_b)) -lt 100000 ] \
+    && echo "OK" || echo "FAIL: ${bytes_a_or_b} vs ${bytes_b}"
 
 echo "a value present in a is still found"
 ${CH} --query="select count() from file('${DATA_FILE}', Parquet) where a = concat('a_', hex(sipHash128(toUInt64(5), 1))) or b in (${B_SET})"
