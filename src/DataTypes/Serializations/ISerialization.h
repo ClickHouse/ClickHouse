@@ -57,6 +57,8 @@ struct NameAndTypePair;
 
 struct MergeTreeSettings;
 
+struct ProjectionIndexSerializationContext;
+struct ProjectionIndexDeserializationContext;
 class StringValueFilter;
 
 /** Returns the separator byte that the HiveText output format uses at the given nesting level,
@@ -535,6 +537,10 @@ public:
         /// Type of MergeTree data part we serialize data from if any.
         /// Some serializations may differ from type part for more optimal deserialization.
         MergeTreeDataPartType data_part_type = MergeTreeDataPartType::Unknown;
+
+        /// Optional context for projection index–driven serialization. Provides query- and index-specific information
+        /// required during serialization, such as additional streams for large postings and part–level metadata.
+        const ProjectionIndexSerializationContext * projection_index_context = nullptr;
     };
 
     struct DeserializeBinaryBulkSettings
@@ -616,6 +622,10 @@ public:
         /// Used by `SerializationLowCardinality` as a cheap prefilter before
         /// it verifies a single-dictionary part from the `DictionaryKeys` stream.
         std::function<bool(const SubstreamPath &, size_t max_transitions)> has_uniform_marks_callback;
+
+        /// Optional context for projection index driven deserialization. Contains query- and index-specific information
+        /// (e.g. row id remapping, row range limits) that affects how data is deserialized and filtered.
+        const ProjectionIndexDeserializationContext * projection_index_context = nullptr;
 
         /// If set, string values that do not match the filter may be replaced with empty strings
         /// during deserialization. It is extracted from a substring search condition in PREWHERE

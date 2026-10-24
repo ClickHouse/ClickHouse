@@ -1,0 +1,15 @@
+-- splitByNonAlpha
+1
+Filter column: equals(__table1.s, \'5555\'_String) (removed)
+19
+Filter column: like(__table1.s, \'%5555%\'_String) (removed)
+-- array
+1
+Filter column: equals(__table1.s, \'5555\'_String) (removed)
+19
+Filter column: like(__table1.s, \'%5555%\'_String) (removed)
+-- ngrams(3)
+1
+Filter column: equals(__table1.s, \'5555\'_String) (removed)
+19
+Filter column: like(__table1.s, \'%5555%\'_String) (removed)

@@ -310,10 +310,18 @@ const MergeTreeDataPartChecksums & getChecksums(const IMergeTreeDataPart & part)
 const MergeTreeDataPartChecksums & getChecksums(const IMergeTreeDataPartInfoForReader & part) { return part.getChecksums(); }
 const IDataPartStorage & getStorage(const IMergeTreeDataPart & part) { return part.getDataPartStorage(); }
 const IDataPartStorage & getStorage(const IMergeTreeDataPartInfoForReader & part) { return *part.getDataPartStorage(); }
+const IMergeTreeDataPart & getPart(const IMergeTreeDataPart & part) { return part; } /// NOLINT(bugprone-return-const-ref-from-parameter)
+const IMergeTreeDataPart & getPart(const IMergeTreeDataPartInfoForReader & part) { return *part.getDataPart(); }
 
 template <typename Part>
 bool isPartTypeCompatibleImpl(const IMergeTreeIndex & skip_index, const Part & part)
 {
+    /// A projection index has no storage metadata snapshot: its granules live in its own
+    /// projection part, and ALTER of a column a projection reads is rejected outright, so the
+    /// types the index was built with cannot drift away from the ones declared now.
+    if (skip_index.isProjectionIndex())
+        return true;
+
     const auto & metadata_columns = skip_index.metadata_snapshot->getColumns();
     /// The part's OWN list, for the same reason tryGetPartOwnType uses it rather than the cache.
     const auto & part_columns = part.getColumns();
@@ -404,6 +412,9 @@ MergeTreeIndexFormat getDeserializedFormatImpl(
     /// under the new types reads garbage. Report the index as not materialized in this part; the
     /// query then answers correctly without it.
     if (!isPartTypeCompatibleImpl(skip_index, part))
+        return {0 /*unknown*/, {}};
+
+    if (!skip_index.isUsableInPart(getPart(part)))
         return {0 /*unknown*/, {}};
 
     return format;

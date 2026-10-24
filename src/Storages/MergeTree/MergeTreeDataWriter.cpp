@@ -885,7 +885,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     /// If we need to calculate some columns to sort.
     if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
     {
-        auto expr = data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot, indices, is_computed_before_merge);
+        auto expr = data.getSortingKeyAndIndicesExpression(metadata_snapshot, indices, {}, is_computed_before_merge);
         addSubcolumnsFromSortingKeyAndSkipIndicesExpression(expr, block);
         expr->execute(block);
     }
@@ -1310,7 +1310,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     /// If we need to calculate some columns to sort.
     if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
     {
-        auto expr = data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot, {});
+        auto expr = data.getSortingKeyAndIndicesExpression(metadata_snapshot, {}, {});
         addSubcolumnsFromSortingKeyAndSkipIndicesExpression(expr, block);
         expr->execute(block);
     }

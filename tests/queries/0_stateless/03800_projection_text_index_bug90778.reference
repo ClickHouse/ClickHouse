@@ -1,0 +1,4 @@
+1
+Filter column: equals(__table1.col, \'config\'_String) (removed)
+1
+Filter column: hasToken(__table1.col, \'config\'_String) (removed)
