@@ -90,19 +90,19 @@ void verifySetup(
     size_t profiler_sampling_rate);
 
 /// Each mallctl call consists of string name lookup which can be expensive.
-/// This can be avoided by translating name to "Management Information Base" (MIB)
-/// and using it in mallctlbymib calls.
+/// This can be avoided by translating the name to a numeric path (an array of integers, one per component of the
+/// name) once and using it in `je_mallctl_by_numeric_path` calls.
 ///
-/// The name-to-MIB translation can fail when the mallctl is not compiled into the
+/// The translation of the name can fail when the mallctl is not compiled into the
 /// running jemalloc (e.g. `prof.*` on builds without `JEMALLOC_PROF`). When that
 /// happens, `getValue` asserts; callers that must tolerate the absence (HTTP
 /// status handlers, optional metrics) use `tryGetValue` instead.
 template <typename T>
-struct MibCache
+struct NumericPathCache
 {
-    explicit MibCache(const char * name)
+    explicit NumericPathCache(const char * name)
     {
-        valid = (je_mallctlnametomib(name, mib, &mib_length) == 0);
+        valid = (je_mallctl_name_to_numeric_path(name, numeric_path, &numeric_path_length) == 0);
     }
 
     bool isValid() const { return valid; }
@@ -111,17 +111,17 @@ struct MibCache
     {
         if (!valid)
             return;
-        je_mallctlbymib(mib, mib_length, nullptr, nullptr, reinterpret_cast<void*>(&value), sizeof(T));
+        je_mallctl_by_numeric_path(numeric_path, numeric_path_length, nullptr, nullptr, reinterpret_cast<void*>(&value), sizeof(T));
     }
 
-    /// Read the value via the cached MIB. Returns false if either the name translation failed
+    /// Read the value via the cached numeric path. Returns false if either the name translation failed
     /// at construction or the read itself failed; in both cases `out` is left untouched.
     bool tryGetValue(T & out) const
     {
         if (!valid)
             return false;
         size_t value_size = sizeof(T);
-        return je_mallctlbymib(mib, mib_length, &out, &value_size, nullptr, 0) == 0;
+        return je_mallctl_by_numeric_path(numeric_path, numeric_path_length, &out, &value_size, nullptr, 0) == 0;
     }
 
     /// Strict variant: asserts that the read succeeded. Mirrors `Jemalloc::getValue`.
@@ -130,7 +130,7 @@ struct MibCache
     {
         T value{};
         [[maybe_unused]] const bool ok = tryGetValue(value);
-        chassert(ok, "Failed to read jemalloc value via MIB");
+        chassert(ok, "Failed to read jemalloc value via numeric path");
         return value;
     }
 
@@ -138,18 +138,18 @@ struct MibCache
     {
         if (!valid)
             return;
-        je_mallctlbymib(mib, mib_length, nullptr, nullptr, nullptr, 0);
+        je_mallctl_by_numeric_path(numeric_path, numeric_path_length, nullptr, nullptr, nullptr, 0);
     }
 
 private:
-    static constexpr size_t max_mib_length = 4;
-    size_t mib[max_mib_length]{};
-    size_t mib_length = max_mib_length;
+    static constexpr size_t max_numeric_path_length = 4;
+    size_t numeric_path[max_numeric_path_length]{};
+    size_t numeric_path_length = max_numeric_path_length;
     bool valid = false;
 };
 
-const MibCache<bool> & getThreadProfileActiveMib();
-const MibCache<bool> & getThreadProfileInitMib();
+const NumericPathCache<bool> & getThreadProfileActiveNumericPath();
+const NumericPathCache<bool> & getThreadProfileInitNumericPath();
 
 void setCollectLocalProfileSamplesInTraceLog(bool value);
 

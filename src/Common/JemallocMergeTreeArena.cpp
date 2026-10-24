@@ -200,8 +200,8 @@ void purge()
     Stopwatch watch;
     for (unsigned index : arena_indices)
     {
-        Jemalloc::MibCache<unsigned> purge_mib(fmt::format("arena.{}.purge", index).c_str());
-        purge_mib.run();
+        Jemalloc::NumericPathCache<unsigned> purge_numeric_path(fmt::format("arena.{}.purge", index).c_str());
+        purge_numeric_path.run();
     }
     ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurge);
     ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurgeTimeMicroseconds, watch.elapsedMicroseconds());

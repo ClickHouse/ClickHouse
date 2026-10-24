@@ -90,10 +90,10 @@ void purge()
     if (!enabled.load(std::memory_order_relaxed))
         return;
 
-    static Jemalloc::MibCache<unsigned> purge_mib(fmt::format("arena.{}.purge", getArenaIndex()).c_str());
+    static Jemalloc::NumericPathCache<unsigned> purge_numeric_path(fmt::format("arena.{}.purge", getArenaIndex()).c_str());
 
     Stopwatch watch;
-    purge_mib.run();
+    purge_numeric_path.run();
     ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurge);
     ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurgeTimeMicroseconds, watch.elapsedMicroseconds());
 }

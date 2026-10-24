@@ -359,7 +359,7 @@ MemoryWorker::MemoryWorker(
     , page_cache(page_cache_)
 {
 #if USE_JEMALLOC
-    page_size = pagesize_mib.getValue();
+    page_size = pagesize_numeric_path.getValue();
 #endif
 
     /// Captured once for use in `readAvailableForDynamicLimit` to detect the
@@ -576,9 +576,9 @@ MemoryWorker::MemoryUsage MemoryWorker::getMemoryUsage(bool log_error)
         }
         case MemoryUsageSource::Jemalloc:
 #if USE_JEMALLOC
-            epoch_mib.setValue(0);
+            epoch_numeric_path.setValue(0);
             jemalloc_stats_refreshed = true;
-            usage.resident = resident_mib.getValue();
+            usage.resident = resident_numeric_path.getValue();
             break;
 #else
             [[fallthrough]];
@@ -605,8 +605,8 @@ MemoryWorker::MemoryUsage MemoryWorker::getMemoryUsage(bool log_error)
     /// `stats.allocated` still removes the drift: bytes counted in the tracker without any allocation
     /// behind them.
     if (!jemalloc_stats_refreshed)
-        epoch_mib.setValue(0);
-    usage.allocated = std::max<Int64>(usage.resident, allocated_mib.getValue());
+        epoch_numeric_path.setValue(0);
+    usage.allocated = std::max<Int64>(usage.resident, allocated_numeric_path.getValue());
 #else
     usage.allocated = usage.resident;
 #endif
@@ -975,7 +975,7 @@ void MemoryWorker::updateResidentMemoryThread()
             const bool needs_purge
                 = (purge_total_memory_threshold_ratio > 0 && static_cast<double>(memory_usage.resident) > purge_total_memory_threshold)
                 || (purge_dirty_pages_threshold_ratio > 0
-                    && static_cast<double>(pdirty_mib.getValue() * page_size) > purge_dirty_pages_threshold);
+                    && static_cast<double>(pdirty_numeric_path.getValue() * page_size) > purge_dirty_pages_threshold);
 
             auto current_decay_state = decay_state.load(std::memory_order_relaxed);
             if (needs_purge)
@@ -1212,7 +1212,7 @@ void MemoryWorker::purgeDirtyPagesThread()
 
     std::unique_lock purge_dirty_pages_lock(purge_dirty_pages_mutex);
 
-    uint64_t default_dirty_decay_ms = dirty_decay_ms_mib.getValue();
+    uint64_t default_dirty_decay_ms = dirty_decay_ms_numeric_path.getValue();
     LOG_INFO(log, "Default dirty pages decay period: {}ms", default_dirty_decay_ms);
 
     /// On low-memory systems (< 4 GiB), disable jemalloc dirty page retention
@@ -1279,7 +1279,7 @@ void MemoryWorker::purgeDirtyPagesThread()
                 continue;
 
             Stopwatch purge_watch;
-            purge_mib.run();
+            purge_numeric_path.run();
             ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurge);
             ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurgeTimeMicroseconds, purge_watch.elapsedMicroseconds());
         }

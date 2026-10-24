@@ -339,7 +339,7 @@ JEMALLOC_HELPER_PATTERN = re.compile(
     r"\s*<[^>]+>\s*\([^,]+,\s*\"(?P<name>[^\"]+)\"\s*\)"
 )
 
-# The MIB-name argument (second arg) is usually a string literal but is sometimes
+# The mallctl name argument (second arg) is usually a string literal but is sometimes
 # a `fmt::format(...)` call when the arena index is variable. The metric name
 # (third arg) is always a string literal, so we match the body as a sequence of
 # non-paren chars and optional parenthesized blocks (covering `fmt::format(...)`)
