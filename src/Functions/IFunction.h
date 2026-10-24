@@ -420,8 +420,8 @@ public:
         bool is_always_monotonic = false; /// Is true if function is monotonic on the whole input range I
         bool is_strict = false;      /// true if the function is strictly decreasing or increasing.
         /// Is true if the function is monotonic over the whole subset of the input range on which it
-        /// is defined, while the rest of the range either throws an exception or wraps around (so it
-        /// is weaker than is_always_monotonic, which requires the whole range to be mapped).
+        /// is defined and throws an exception for the rest (weaker than is_always_monotonic). A function
+        /// that wraps around instead does not qualify, because a key expression stores its wrapped results.
         /// It is enough to push a comparison constant through a sorting or partition key expression:
         /// a constant outside of that subset is rejected by the guards in `applyFunctionChainToColumn`.
         /// It is not enough to map a key range through the function, which needs `is_monotonic`.
