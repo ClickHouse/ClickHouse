@@ -82,6 +82,7 @@ namespace CurrentMetrics
 namespace ProfileEvents
 {
     extern const Event DistributedPlanRemoteTasks;
+    extern const Event DistributedPlanStageStartMicroseconds;
     extern const Event DistributedPlanLocalExecution;
     extern const Event DistributedPlanHostsUsed;
     extern const Event RuntimeFilterReceiveBranchFailures;
@@ -121,6 +122,8 @@ namespace FailPoints
 {
     extern const char distributed_plan_status_check_reenqueue_fault[];
     extern const char distributed_plan_record_failure_while_starting_tasks[];
+    extern const char distributed_plan_task_start_fails_after_send[];
+    extern const char distributed_plan_local_start_stage_throws_after_task_start[];
     extern const char distributed_plan_runtime_filter_receive_branch_fails_before_connect[];
 }
 
@@ -946,7 +949,7 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
         output_exchange_streams.push_back(stream_id.toString());
 
     /// Identifies the plan fragment in the span and in the query log alike.
-    const UInt64 query_plan_hash = sipHash64(task_description.serialized_query_plan);
+    const UInt64 query_plan_hash = sipHash64(*task_description.serialized_query_plan);
 
     addTaskSpanAttributes(*query_span, task_description, context, query_plan_hash, execute_locally, input_exchange_streams, output_exchange_streams);
 
@@ -996,7 +999,7 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
     QueryPipeline pipeline;
 
     {
-        QueryPlan query_plan = deserializeQueryPlan(task_description.serialized_query_plan, context);
+        QueryPlan query_plan = deserializeQueryPlan(*task_description.serialized_query_plan, context);
 
         /// A deserialized plan carries neither the thread limit nor the concurrency-control flag,
         /// so both come from the query's settings.
@@ -1159,7 +1162,7 @@ static void executeTask(const UUID & unique_query_id, const DistributedQueryTask
 
     /// A query's log row reports the profile counters of its process-list entry's thread group.
     auto process_list_entry = task_context->getProcessList().insert(
-        task.task.task_id, sipHash64(task.serialized_query_plan), /*ast=*/ nullptr, task_context,
+        task.task.task_id, sipHash64(*task.serialized_query_plan), /*ast=*/ nullptr, task_context,
         clock_gettime_ns(CLOCK_MONOTONIC), /*is_internal=*/ true);
     task_context->setProcessListElement(process_list_entry->getQueryStatus());
 
@@ -1245,7 +1248,7 @@ protected:
     void startStage(const String & stage_name, const DistributedQueryStage & stage) override
     {
         DistributedQueryTaskDescription task_description;
-        task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment, context);
+        task_description.serialized_query_plan = std::make_shared<const String>(serializeQueryPlan(stage.query_plan_fragment, context));
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
 
         /// Owned by the members before the first thread starts, so `cleanup` joins it if anything below throws.
@@ -1258,6 +1261,10 @@ protected:
         {
             task_description.task = task;
             started_tasks.emplace_back(startTask(task_description, started_threads).share());
+            fiu_do_on(FailPoints::distributed_plan_local_start_stage_throws_after_task_start,
+            {
+                throw Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Injected exception while starting the local tasks of a stage");
+            });
         }
     }
 
@@ -2023,9 +2030,10 @@ protected:
 
     void startStage(const String & stage_name, const DistributedQueryStage & stage) override
     {
+        Stopwatch watch;
         DistributedQueryTaskDescription task_description;
         task_description.initial_query_id = logicalQueryId(context->getClientInfo());
-        task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment, context);
+        task_description.serialized_query_plan = std::make_shared<const String>(serializeQueryPlan(stage.query_plan_fragment, context));
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
         task_description.settings_changes = context->getSettingsRef().changes();
 
@@ -2035,6 +2043,13 @@ protected:
         collectors.logs = running_tasks.receivesWorkerLogs();
 
         const String unique_temp_file_path = toString(unique_query_id);
+
+        /// The tasks of a stage are independent, so send them concurrently. Declared after everything the
+        /// jobs use, so that on an exception its destructor waits for them first.
+        const size_t num_threads = std::min(stage.tasks.size(), max_concurrent_task_starts);
+        ThreadPool pool(
+            CurrentMetrics::TaskTrackerThreads, CurrentMetrics::TaskTrackerThreadsActive, CurrentMetrics::TaskTrackerThreadsScheduled,
+            num_threads, num_threads, stage.tasks.size());
 
         for (const auto & task : stage.tasks)
         {
@@ -2056,39 +2071,70 @@ protected:
 
             checkCancelled();
 
-            task_description.task = task;
+            pool.scheduleOrThrow([&, thread_group = CurrentThread::getGroup()]
+            {
+                ThreadGroupSwitcher switcher(thread_group, ThreadName::DISTRIBUTED_QUERY_TASK);
+                try
+                {
+                    /// Skip the start once a start failed or the query was cancelled.
+                    checkCancelled();
 
-            /// Add exchange destinations for output streams
-            task_description.exchange_stream_sources = {};
-            for (const auto & input_stream : task.input_exchange_streams)
-            {
-                String input_stream_name = input_stream.toString();
-                task_description.exchange_stream_sources.stream_hosts[input_stream_name] = task_to_host_map->getExchangeStreamSourceHosts().at(input_stream_name);
-            }
-            /// Send the task before registering it: status polling does not tolerate
-            /// UnknownTaskId, so a tracker poll racing the start would abort the query.
-            /// On send failure clean up directly in case the worker did accept the start;
-            /// cancel/forget tolerate UnknownTaskId.
-            auto task_info = buildTaskInfo(task_description);
-            LOG_DEBUG(logger, "Sending task {} to {}", task_info.task_id, task_info.endpoint_uri);
-            try
-            {
-                sendTask(task_info.endpoint_uri, task_info.task_id, task_description, unique_temp_file_path, collectors, context);
-            }
-            catch (...)
-            {
-                running_tasks.cancelAndForgetUntracked(task_info);
-                throw;
-            }
-            running_tasks.addTask(stage_name, task_info);
-            ProfileEvents::increment(ProfileEvents::DistributedPlanRemoteTasks);
+                    DistributedQueryTaskDescription description = task_description;
+                    description.task = task;
+
+                    /// Add exchange destinations for output streams
+                    for (const auto & input_stream : task.input_exchange_streams)
+                    {
+                        String input_stream_name = input_stream.toString();
+                        description.exchange_stream_sources.stream_hosts[input_stream_name] = task_to_host_map->getExchangeStreamSourceHosts().at(input_stream_name);
+                    }
+                    /// Send the task before registering it: status polling does not tolerate
+                    /// UnknownTaskId, so a tracker poll racing the start would abort the query.
+                    /// On send failure clean up directly in case the worker did accept the start;
+                    /// cancel/forget tolerate UnknownTaskId.
+                    auto task_info = buildTaskInfo(description);
+                    LOG_DEBUG(logger, "Sending task {} to {}", task_info.task_id, task_info.endpoint_uri);
+                    try
+                    {
+                        sendTask(task_info.endpoint_uri, task_info.task_id, description, unique_temp_file_path, collectors, context);
+                        /// A start the worker accepted but whose reply was lost, while other starts of the stage are in flight.
+                        if (stage.tasks.size() > 1)
+                        {
+                            fiu_do_on(FailPoints::distributed_plan_task_start_fails_after_send,
+                            {
+                                throw Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Injected failure after task {} was sent", task_info.task_id);
+                            });
+                        }
+                    }
+                    catch (...)
+                    {
+                        /// Record the failure before the cleanup waits, so the failures it causes rank below it.
+                        cancellation->recordCurrentException();
+                        running_tasks.cancelAndForgetUntracked(task_info);
+                        throw;
+                    }
+                    running_tasks.addTask(stage_name, task_info);
+                    ProfileEvents::increment(ProfileEvents::DistributedPlanRemoteTasks);
+                }
+                catch (...)
+                {
+                    /// The query's failure record keeps the root cause over the failures it causes. Ok.
+                    cancellation->recordCurrentException();
+                }
+            });
         }
+        pool.wait();
+
+        checkCancelled();
+        ProfileEvents::increment(ProfileEvents::DistributedPlanStageStartMicroseconds, watch.elapsedMicroseconds());
     }
 
     bool waitForStage(const String & stage_name, std::optional<UInt64> timeout_ms) override
     {
         return running_tasks.waitForStage(stage_name, timeout_ms);
     }
+
+    static constexpr size_t max_concurrent_task_starts = 16;
 
     TaskToHostMapPtr task_to_host_map;
     TaskTracker running_tasks;
