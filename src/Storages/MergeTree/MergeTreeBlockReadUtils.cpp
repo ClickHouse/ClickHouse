@@ -417,6 +417,7 @@ PrewhereExprStepPtr createLightweightDeleteStep(bool remove_filter_column)
 
 void addPatchPartsColumns(
     MergeTreeReadTaskColumns & result,
+    const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,
     const GetColumnsOptions & options,
     const PatchPartsForReader & patch_parts,
@@ -429,6 +430,23 @@ void addPatchPartsColumns(
     NameSet required_key_columns;
     result.patch_columns.resize(patch_parts.size());
 
+    const NameSet all_columns_to_read_set(all_columns_to_read.begin(), all_columns_to_read.end());
+    const auto part_alter_conversions = data_part_info_for_reader.getAlterConversions();
+
+    /// The part extracts such a subcolumn from its column after the patches are applied to that column.
+    auto is_extracted_from_patched_column = [&](const NameAndTypePair & column)
+    {
+        if (!column.isSubcolumn() || !all_columns_to_read_set.contains(column.getNameInStorage()))
+            return false;
+
+        auto column_name_in_part = column.getNameInStorage();
+        if (part_alter_conversions && part_alter_conversions->isColumnRenamed(column_name_in_part))
+            column_name_in_part = part_alter_conversions->getColumnOldName(column_name_in_part);
+
+        auto column_in_part = data_part_info_for_reader.getColumns().tryGetByName(column_name_in_part);
+        return column_in_part && isSubcolumnReadFromConvertedColumn(storage_snapshot, column, column_in_part->type);
+    };
+
     for (size_t i = 0; i < patch_parts.size(); ++i)
     {
         NameSet patch_columns_to_read_set;
@@ -439,6 +457,9 @@ void addPatchPartsColumns(
         for (const auto & column_name : all_columns_to_read)
         {
             auto column_in_storage = storage_snapshot->getColumn(options, column_name);
+            if (is_extracted_from_patched_column(column_in_storage))
+                continue;
+
             auto column_name_in_patch = column_in_storage.getNameInStorage();
 
             if (alter_conversions && alter_conversions->isColumnRenamed(column_name_in_patch))

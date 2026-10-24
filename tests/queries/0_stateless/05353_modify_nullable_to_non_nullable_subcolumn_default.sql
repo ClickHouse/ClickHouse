@@ -2,6 +2,7 @@
 -- read as the `DEFAULT`; its subcolumns, and the functions rewritten to them, must read the same values.
 
 SET enable_nullable_tuple_type = 1;
+SET enable_lightweight_update = 1;
 
 DROP TABLE IF EXISTS t_tuple_compact;
 DROP TABLE IF EXISTS t_tuple_wide;
@@ -14,6 +15,7 @@ DROP TABLE IF EXISTS t_mutation;
 DROP TABLE IF EXISTS t_remove_default;
 DROP TABLE IF EXISTS t_sorting_key;
 DROP TABLE IF EXISTS t_partition_key;
+DROP TABLE IF EXISTS t_patch;
 
 -- Tuple.
 
@@ -143,6 +145,23 @@ SELECT 'default removed';
 SELECT c0, x, x.a FROM t_remove_default ORDER BY c0;
 SELECT c0, x.a FROM t_remove_default PREWHERE toString(x) != '' ORDER BY c0;
 
+-- A patch written before the ALTER: rows 1, 2 are in a part without the column, rows 3, 4 in a part with it.
+
+CREATE TABLE t_patch (c0 UInt64) ENGINE = MergeTree ORDER BY c0
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, min_bytes_for_wide_part = 0, patch_parts_version = 'v2';
+INSERT INTO t_patch VALUES (1), (2);
+SYSTEM STOP MERGES t_patch;
+ALTER TABLE t_patch ADD COLUMN s Nullable(String);
+INSERT INTO t_patch VALUES (3, NULL), (4, 'x');
+UPDATE t_patch SET s = 'updated' WHERE c0 IN (1, 3);
+UPDATE t_patch SET s = NULL WHERE c0 = 4;
+ALTER TABLE t_patch MODIFY COLUMN s String DEFAULT 'abc' SETTINGS mutations_sync = 0, alter_sync = 0;
+
+SELECT 'patches';
+SELECT c0, s, s.size, length(s) FROM t_patch ORDER BY c0 SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT c0, s.size FROM t_patch ORDER BY c0;
+SELECT arraySort(groupArray(c0)) FROM t_patch WHERE length(s) = 7 SETTINGS optimize_functions_to_subcolumns = 1;
+
 -- Replacing the NULLs changes the values of key subcolumns, which a mutation does not re-sort or repartition.
 
 CREATE TABLE t_sorting_key (c0 UInt64, x Nullable(Tuple(a Nullable(UInt64), b UInt64)))
@@ -170,3 +189,4 @@ DROP TABLE t_mutation;
 DROP TABLE t_remove_default;
 DROP TABLE t_sorting_key;
 DROP TABLE t_partition_key;
+DROP TABLE t_patch;

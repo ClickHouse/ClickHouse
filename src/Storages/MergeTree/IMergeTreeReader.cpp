@@ -90,8 +90,9 @@ IMergeTreeReader::IMergeTreeReader(
         auto column_and_serialization_in_part = getColumnAndSerializationInPart(column);
         const auto & column_to_read = columns_to_read.emplace_back(std::move(column_and_serialization_in_part.column));
 
+        /// A patch part provides a subcolumn as stored, or not at all when the patched part extracts it (see `addPatchPartsColumns`).
         bool replaced_nulls = false;
-        if (column.isSubcolumn())
+        if (column.isSubcolumn() && !data_part_info_for_read->getPartInfo().isPatch())
         {
             auto parent_in_part = data_part_info_for_read->getColumnsDescription().tryGetPhysical(
                 getStorageAndSubcolumnNameInPart(column).first);
