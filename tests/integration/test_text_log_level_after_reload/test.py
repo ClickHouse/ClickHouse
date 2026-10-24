@@ -32,6 +32,18 @@ def now(node):
 
 
 def test_text_log_keeps_trace_after_reload(start_cluster):
+    # Startup: the root level must already include text_log.level when the loggers are
+    # built, before the first configuration reload, so early Trace messages are kept.
+    node.query("SYSTEM FLUSH LOGS")
+    assert (
+        int(
+            node.query(
+                "SELECT count() FROM system.text_log WHERE level = 'Trace' AND logger_name = 'Application' AND message LIKE 'Initialized DateLUT%'"
+            )
+        )
+        > 0
+    )
+
     since = now(node)
     for _ in range(5):
         node.query("SELECT 1")
