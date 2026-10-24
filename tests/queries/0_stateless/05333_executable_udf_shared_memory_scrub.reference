@@ -1,0 +1,22 @@
+--- between users
+clean
+dirty
+0
+clean
+65536
+clean
+--- between roles of one user
+clean
+dirty
+0
+clean
+65536
+dirty
+65536
+--- between users, a tail the server never mapped
+clean
+dirty
+0
+clean
+131072
+clean

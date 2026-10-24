@@ -361,10 +361,23 @@ void UDFProcessSubtreeSampler::recordReleased()
     if (!borrow_acquired)
         return;
 
+    /// Called more than once for a borrow whose worker is discarded: once by the teardown, before
+    /// it does anything that ends the worker, and once by the ordinary end-of-borrow path. Only
+    /// the first call that gets to measure can measure anything - by the second the pid is gone,
+    /// and a walk that finds nothing would leave `peak_memory_byte_seconds` at zero over the value
+    /// already taken. So the latch is set at the end, once the measurement is taken: a call that
+    /// throws on the way (the walk allocates, and the callers catch a memory limit) has taken
+    /// nothing, and the next call measures instead of returning here.
+    if (released_recorded)
+        return;
+
     elapsed_us = borrow_watch.elapsedMicroseconds();
 
     if (root_pid <= 0)
+    {
+        released_recorded = true;
         return;
+    }
 
     /// For peak memory we take the max `VmHWM` observed across the subtree
     /// rather than a sum. We can't claim anything about whether descendants
@@ -463,6 +476,8 @@ void UDFProcessSubtreeSampler::recordReleased()
         peak_memory_byte_seconds = std::numeric_limits<UInt64>::max();
     else
         peak_memory_byte_seconds = product / 1000000ULL;
+
+    released_recorded = true;
 }
 
 
