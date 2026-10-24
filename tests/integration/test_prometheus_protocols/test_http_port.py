@@ -206,6 +206,35 @@ def test_main_http_prefixed_label_values_api():
     assert data["data"] == [label_value]
 
 
+def test_main_http_prefixed_buildinfo_api():
+    # This is the handler configuration the documentation recommends: one prefix-routed
+    # prometheus_api_v1 handler. The endpoint describes the server, so it must answer here
+    # without consulting the TimeSeries table this handler configures.
+    url = (
+        f"http://{node.ip_address}:{MAIN_HTTP_PORT}"
+        f"/prometheus/api/v1/status/buildinfo"
+    )
+    response = get_response_to_http_api(url)
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["status"] == "success"
+    # `version` is the implemented Prometheus API level, not the ClickHouse version.
+    assert data["data"]["version"] == "2.24.0"
+    assert data["data"]["clickhouseVersion"] == node.query("SELECT version()").strip()
+
+
+def test_main_http_prefixed_unserved_endpoint_is_not_found():
+    url = (
+        f"http://{node.ip_address}:{MAIN_HTTP_PORT}"
+        f"/prometheus/api/v1/status/runtimeinfo"
+    )
+    response = get_response_to_http_api(url)
+    assert response.status_code == 404, response.text
+    data = response.json()
+    assert data["status"] == "error"
+    assert data["errorType"] == "not_found"
+
+
 def test_main_http_prefixed_and_bare_share_table():
     timestamp = 1_700_001_600.0
     prefixed_metric = "main_http_coexist_prefixed"

@@ -35,11 +35,14 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Settings.h>
+#include <Common/config_version.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Storages/TimeSeries/PrometheusRemoteReadProtocol.h>
 #include <Storages/TimeSeries/PrometheusRemoteWriteProtocol.h>
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
 
+
+extern const char * GIT_HASH;
 
 namespace DB
 {
@@ -55,7 +58,6 @@ namespace ErrorCodes
     extern const int CANNOT_WRITE_TO_OSTREAM;
     extern const int INCOMPATIBLE_SCHEMA;
     extern const int SUPPORT_IS_DISABLED;
-    extern const int NOT_IMPLEMENTED;
     extern const int SNAPPY_UNCOMPRESS_FAILED;
     extern const int UNSUPPORTED_MEDIA_TYPE;
     extern const int ZSTD_DECODER_FAILED;
@@ -445,8 +447,8 @@ public:
     }
 };
 
-/// Handles the read-only query and metadata endpoints of the Prometheus HTTP API
-/// (/api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values, /api/v1/metadata).
+/// Handles the read-only query, metadata and status endpoints of the Prometheus HTTP API
+/// (/api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values, /api/v1/metadata, /api/v1/status/buildinfo).
 class PrometheusRequestHandler::QueryImpl : public ImplWithContext
 {
 public:
@@ -514,8 +516,26 @@ public:
                 return;
             }
 
-            auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
-            PrometheusHTTPProtocolAPI protocol{table, context};
+            if (uri_path.ends_with("/status/buildinfo"))
+            {
+                /// The buildinfo endpoint describes the server itself, so it doesn't need the TimeSeries table either.
+                writeBuildInfo(getOutputStream(response));
+                return;
+            }
+
+            /// Resolved per endpoint rather than up front, so that the dispatch below decides the response
+            /// before a table is involved. A path this server doesn't serve has no table to speak of, and
+            /// resolving one eagerly made such a request fail on a missing or unconfigured table instead of
+            /// reporting that the endpoint doesn't exist. Every endpoint that does need the table resolves it
+            /// as its first step, which keeps the diagnostic about a table that is missing or not configured
+            /// ahead of the validation of that endpoint's own parameters, as the eager resolution had it.
+            std::optional<PrometheusHTTPProtocolAPI> protocol_holder;
+            auto getProtocol = [&]() -> PrometheusHTTPProtocolAPI &
+            {
+                if (!protocol_holder)
+                    protocol_holder.emplace(DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context), context);
+                return *protocol_holder;
+            };
 
             auto query_finish_callback = [&]()
             {
@@ -524,6 +544,8 @@ public:
 
             if (uri_path.ends_with("/query_range"))
             {
+                auto & protocol = getProtocol();
+
                 String query = params->get("query", "");
                 String start = params->get("start", "");
                 String end = params->get("end", "");
@@ -549,6 +571,8 @@ public:
             }
             else if (uri_path.ends_with("/query"))
             {
+                auto & protocol = getProtocol();
+
                 String query = params->get("query", "");
                 String time = params->get("time", "");
                 String lookback_delta = params->get("lookback_delta", "");
@@ -570,10 +594,15 @@ public:
             }
             else if (uri_path.ends_with("/parse_query"))
             {
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The parse_query endpoint is not implemented");
+                /// Like /format_query, this endpoint would only parse the PromQL expression, so it never needs
+                /// a table. It isn't implemented, and a route the server doesn't serve is "not found" in the
+                /// Prometheus HTTP API rather than a bad request: nothing about the request itself is wrong.
+                writeEndpointNotFound(request, response, "The parse_query endpoint is not implemented");
             }
             else if (uri_path.ends_with("/series"))
             {
+                auto & protocol = getProtocol();
+
                 Strings match = params->getAll("match[]");
                 String start = params->get("start", "");
                 String end = params->get("end", "");
@@ -583,6 +612,8 @@ public:
             }
             else if (uri_path.ends_with("/metadata"))
             {
+                auto & protocol = getProtocol();
+
                 String metric = params->get("metric", "");
                 /// Both limit parameters are optional; negative values are accepted and mean "no limit", like in Prometheus.
                 Int64 limit = getMetadataLimitParam("limit");
@@ -592,6 +623,8 @@ public:
             }
             else if (uri_path.ends_with("/labels"))
             {
+                auto & protocol = getProtocol();
+
                 Strings match = params->getAll("match[]");
                 String start = params->get("start", "");
                 String end = params->get("end", "");
@@ -601,6 +634,8 @@ public:
             }
             else if (auto label_name = extractLabelValuesName(uri_path))
             {
+                auto & protocol = getProtocol();
+
                 Strings match = params->getAll("match[]");
                 String start = params->get("start", "");
                 String end = params->get("end", "");
@@ -610,9 +645,7 @@ public:
             }
             else
             {
-                LOG_ERROR(log(), "No matching endpoint found for URI: {}, method: {}", maskSensitiveQueryParametersInURI(uri), request.getMethod());
-                response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
-                writeString(R"({"status":"error","errorType":"not_found","error":"API endpoint not found"})", getOutputStream(response));
+                writeEndpointNotFound(request, response, "API endpoint not found");
             }
         }
         catch (const Exception & e)
@@ -647,6 +680,26 @@ public:
     }
 
 private:
+    /// Reports a path this server doesn't serve the way the Prometheus HTTP API does: 404 with the "not_found"
+    /// error type. Written here rather than thrown, because the catch block below classifies the failures of an
+    /// endpoint that does exist - and NOT_IMPLEMENTED in particular also comes from PromQL evaluation meeting a
+    /// function or operator it doesn't support, which is a statement about the query, not about the route.
+    void writeEndpointNotFound(const HTTPServerRequest & request, HTTPServerResponse & response, std::string_view error_message)
+    {
+        /// Logged at debug level, because a client probing for an endpoint this server doesn't serve is
+        /// ordinary traffic and not a fault of the server: Prometheus clients discover what a backend
+        /// supports by asking it, so at error level a working setup would keep writing to the error log.
+        LOG_DEBUG(log(), "No matching endpoint found for URI: {}, method: {}",
+            maskSensitiveQueryParametersInURI(request.getURI()), request.getMethod());
+
+        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
+
+        auto & out = getOutputStream(response);
+        writeString(R"({"status":"error","errorType":"not_found","error":)", out);
+        writeJSONString(error_message, out, FormatSettings{});
+        writeChar('}', out);
+    }
+
     /// Handles the format_query endpoint: parses the PromQL expression given in the 'query' parameter
     /// and writes it back serialized from the parsed tree, i.e. with the whitespace normalized,
     /// the comments removed, and the redundant parentheses dropped.
@@ -658,6 +711,36 @@ private:
         writeString(R"({"status":"success","data":)", out);
         writeJSONString(promql_tree.toString(), out, FormatSettings{});
         writeChar('}', out);
+    }
+
+    /// The Prometheus API level this server implements, reported as `version` by the status/buildinfo endpoint.
+    /// Clients read that field as the version of a Prometheus server and gate features on it, so it has to
+    /// describe the API rather than the ClickHouse release: Grafana compares it against 2.24.0 to decide whether
+    /// the label endpoints accept `match[]`, and falls back to the much more expensive /api/v1/series when they
+    /// don't. A ClickHouse version string loses that comparison - it is not a Prometheus version, and with four
+    /// components it is not even valid semantic versioning - so clients would take the slow path against a server
+    /// that does support `match[]`. 2.24.0 is the Prometheus release that added it, and is what other
+    /// Prometheus-compatible backends report for the same reason. Raise this only together with the API surface
+    /// it claims, since each value promises the endpoints and parameters that Prometheus release had.
+    static constexpr std::string_view PROMETHEUS_API_COMPATIBILITY_VERSION = "2.24.0";
+
+    /// Handles the status/buildinfo endpoint, which clients such as Grafana call to identify the backend.
+    /// `version` reports the implemented Prometheus API level rather than the ClickHouse version, because that
+    /// is what clients read the field as - see PROMETHEUS_API_COMPATIBILITY_VERSION. `revision` reports the
+    /// commit this server was built from, which is what the field means in Prometheus too. The ClickHouse
+    /// version is reported alongside them under a name Prometheus does not define, so that whoever reads this
+    /// response can still tell which backend answered; clients ignore fields they don't know. The remaining
+    /// fields describe a Go build and are left empty. For the full build information of this ClickHouse
+    /// instance, query the `system.build_options` table.
+    static void writeBuildInfo(WriteBuffer & out)
+    {
+        writeString(R"({"status":"success","data":{"version":)", out);
+        writeJSONString(PROMETHEUS_API_COMPATIBILITY_VERSION, out, FormatSettings{});
+        writeString(R"(,"revision":)", out);
+        writeJSONString(GIT_HASH, out, FormatSettings{});
+        writeString(R"(,"branch":"","buildUser":"","buildDate":"","goVersion":"","clickhouseVersion":)", out);
+        writeJSONString(VERSION_STRING, out, FormatSettings{});
+        writeString(R"(}})", out);
     }
 
     /// Parses an optional integer parameter of the metadata endpoint; an absent parameter defaults to -1 (no limit).
@@ -753,7 +836,7 @@ private:
         if (path.ends_with("/read"))
             return read_impl;
 
-        /// All other /api/v1/* endpoints (query, query_range, series, labels, label/<name>/values, metadata)
+        /// All other /api/v1/* endpoints (query, query_range, series, labels, label/<name>/values, metadata, status/buildinfo)
         /// are served by the Query implementation, which itself returns 404 for unknown paths.
         return query_impl;
     }
