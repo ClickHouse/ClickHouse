@@ -1,4 +1,5 @@
 #include <Interpreters/Access/InterpreterDropAccessEntityQuery.h>
+#include <Interpreters/Access/resolveHierarchicalNamesForAccess.h>
 #include <Interpreters/InterpreterFactory.h>
 
 #include <Access/AccessControl.h>
@@ -26,6 +27,16 @@ namespace ErrorCodes
 
 BlockIO InterpreterDropAccessEntityQuery::execute()
 {
+    /// The names are bound to the tables they denote (a hierarchical name `a.b.c` may be the table `b.c` of the
+    /// database `a`, see `DatabaseCatalog`) before the required access is built from them, so that the check and
+    /// the drop agree on the table, and the bound query is the one dispatched `ON CLUSTER`.
+    {
+        auto & original_query = query_ptr->as<ASTDropAccessEntityQuery &>();
+        original_query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
+        if (original_query.row_policy_names)
+            resolveHierarchicalNamesForAccess(*original_query.row_policy_names, getContext());
+    }
+
     const auto updated_query_ptr = removeOnClusterClauseIfNeeded(query_ptr, getContext());
     auto & query = updated_query_ptr->as<ASTDropAccessEntityQuery &>();
 
@@ -41,8 +52,6 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
 
     if (!query.cluster.empty())
         return executeDDLQueryOnCluster(updated_query_ptr, getContext());
-
-    query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
 
     auto do_drop = [&](const Strings & names, const String & storage_name)
     {

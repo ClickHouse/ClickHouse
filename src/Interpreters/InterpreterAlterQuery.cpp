@@ -507,6 +507,29 @@ BlockIO InterpreterAlterQuery::execute()
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown alter object type");
 }
 
+void InterpreterAlterQuery::bindHierarchicalNameOfOperand(String & database, String & table) const
+{
+    if (table.empty())
+        return;
+
+    StorageID as_written(database, table);
+    String current_database = getContext()->getCurrentDatabase();
+    if (database.empty())
+    {
+        if (current_database.empty())
+            return;
+        if (getContext()->tryResolveStorageID(as_written, Context::ResolveExternal))
+            return;
+    }
+
+    StorageID resolved = DatabaseCatalog::instance().resolveHierarchicalName(as_written, current_database, getContext());
+    if (resolved.database_name != (database.empty() ? current_database : database) || resolved.table_name != table)
+    {
+        database = resolved.database_name;
+        table = resolved.table_name;
+    }
+}
+
 BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 {
     ASTSelectWithUnionQuery * modify_query = nullptr;
@@ -538,10 +561,26 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
     if (table_id)
     {
+        /// Both parts: a hierarchical name (`ALTER TABLE a.b.c`, `a.b` in `USE a`) may be split differently from
+        /// how it was written, see `DatabaseCatalog::resolveHierarchicalName`.
         query_ptr->as<ASTAlterQuery &>().setDatabase(table_id.database_name);
+        query_ptr->as<ASTAlterQuery &>().setTable(table_id.table_name);
         /// Resolve once here so every branch below validates against the real structure instead of
         /// the columns-only metadata a lazily loaded table reports.
         table = resolveStorageProxyLoading(DatabaseCatalog::instance().tryGetTable(table_id, getContext()));
+    }
+
+    /// The other tables of the commands (`REPLACE/ATTACH PARTITION ... FROM ns.src`, `MOVE PARTITION ... TO TABLE ns.dst`)
+    /// are bound the same way, before the access is checked and before the query is dispatched `ON CLUSTER`, so that
+    /// a grant on the (nonexistent) database `ns` does not authorize reading or writing the table `ns.src` of the
+    /// current database.
+    for (auto & child : alter.command_list->children)
+    {
+        auto & command = child->as<ASTAlterCommand &>();
+        if (command.type == ASTAlterCommand::REPLACE_PARTITION)
+            bindHierarchicalNameOfOperand(command.from_database, command.from_table);
+        else if (command.type == ASTAlterCommand::MOVE_PARTITION && command.move_destination_type == DataDestinationType::TABLE)
+            bindHierarchicalNameOfOperand(command.to_database, command.to_table);
     }
 
     if (!alter.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))

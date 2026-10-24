@@ -2248,9 +2248,26 @@ DatabaseTablesIteratorPtr StorageMerge::DatabaseNameOrRegexp::getDatabaseIterato
         throw Exception(
             ErrorCodes::DATABASE_ACCESS_DENIED, "Direct access to `{}` database is not allowed", DatabaseCatalog::TEMPORARY_DATABASE);
 
-    auto database = DatabaseCatalog::instance().getDatabase(database_name);
+    auto & catalog = DatabaseCatalog::instance();
+    auto database = catalog.tryGetDatabase(database_name);
 
-    auto table_name_match = [this, database_name](const String & table_name_) -> bool
+    /// A hierarchical name of the database (`merge('a.b', 'regexp')`, or `merge('regexp')` inside `USE a.b`) may denote
+    /// the tables `b.*` of the database `a` (see `DatabaseCatalog`). The regexp matches the names of the tables
+    /// relative to that namespace, the same names `SHOW TABLES` reports for it.
+    String table_prefix;
+    if (!database && !database_is_regexp && !source_databases_and_tables)
+    {
+        auto resolved = catalog.resolveHierarchicalDatabase(database_name);
+        if (!resolved.database_name.empty())
+        {
+            database = catalog.getDatabase(resolved.database_name);
+            table_prefix = resolved.table_prefix;
+        }
+    }
+    if (!database)
+        database = catalog.getDatabase(database_name);
+
+    auto table_name_match = [this, database_name, table_prefix](const String & table_name_) -> bool
     {
         if (source_databases_and_tables)
         {
@@ -2258,6 +2275,8 @@ DatabaseTablesIteratorPtr StorageMerge::DatabaseNameOrRegexp::getDatabaseIterato
                 return it->second.contains(table_name_);
             return false;
         }
+        if (!table_prefix.empty())
+            return table_name_.starts_with(table_prefix) && source_table_regexp->match(table_name_.substr(table_prefix.size()));
         return source_table_regexp->match(table_name_);
     };
 

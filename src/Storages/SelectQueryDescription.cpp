@@ -48,6 +48,9 @@ StorageID extractDependentTableFromSelectQuery(ASTSelectQuery & query, ContextPt
     if (add_default_db)
     {
         AddDefaultDatabaseVisitor visitor(context, context->getCurrentDatabase());
+        /// The qualified names of a stored definition are already bound (`InterpreterCreateQuery`), and this also
+        /// runs while the tables are loaded, when the tables they refer to must not be looked up.
+        visitor.doNotBindQualifiedNames();
         visitor.visit(query);
     }
 

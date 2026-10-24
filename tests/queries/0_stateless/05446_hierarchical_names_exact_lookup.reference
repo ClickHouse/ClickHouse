@@ -1,0 +1,12 @@
+--- hasColumnInTable checks the access for the table the name resolves to
+(ACCESS_DENIED)
+1
+1
+--- a computed constant name of joinGet and dictGet in a view is bound to the object it denotes now
+joinGet(\'db.`ns.j`\', \'v\', toUInt64(1)) AS a, dictGet(\'db.`ns.d`\', \'v\', toUInt64(1)) AS b
+original	original
+original	original
+--- a short ATTACH of the last table of a namespace
+ns2.t
+ns2.t
+ns2.t

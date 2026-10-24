@@ -275,9 +275,7 @@ boost::intrusive_ptr<ASTTableIdentifier> ASTIdentifier::createTable() const
     if (isParam())
         return nullptr;
 
-    if (name_parts.size() == 1) return make_intrusive<ASTTableIdentifier>(name_parts[0]);
-    if (name_parts.size() == 2) return make_intrusive<ASTTableIdentifier>(name_parts[0], name_parts[1]);
-    return nullptr;
+    return make_intrusive<ASTTableIdentifier>(std::vector<String>(name_parts));
 }
 
 void ASTIdentifier::resetFullName()
@@ -303,6 +301,11 @@ ASTTableIdentifier::ASTTableIdentifier(const StorageID & table_id, ASTs && name_
 
 ASTTableIdentifier::ASTTableIdentifier(const String & database_name, const String & table_name, ASTs && name_params)
     : ASTIdentifier({database_name, table_name}, true, std::move(name_params))
+{
+}
+
+ASTTableIdentifier::ASTTableIdentifier(std::vector<String> && name_parts_, ASTs && name_params)
+    : ASTIdentifier(std::move(name_parts_), true, std::move(name_params))
 {
 }
 
@@ -361,15 +364,6 @@ void ASTTableIdentifier::readJSON(const Poco::JSON::Object & json)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "ASTTableIdentifier JSON 'name_parts' placeholder child must be an ASTQueryParameter during AST JSON deserialization");
         name_parts = std::move(parts);
-        /// `ASTTableIdentifier` can only represent a one- or two-part table name
-        /// (`table` or `database.table`): `ParserCompoundIdentifier` rejects `parts.size() > 2`
-        /// for table identifiers. `getTableId`/`getDatabaseName` would otherwise mis-resolve a
-        /// longer name (treating `db.tbl.extra` as the single table `db`), formatting a different
-        /// target than execution uses. Reject the parser-impossible shape at the JSON boundary.
-        if (name_parts.size() > 2)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "ASTTableIdentifier JSON 'name_parts' has {} parts, but a table identifier accepts at most 2 during AST JSON deserialization",
-                name_parts.size());
         if (children.empty())
             resetFullName();
         else
@@ -430,45 +424,53 @@ ASTPtr ASTTableIdentifier::clone() const
 
 StorageID ASTTableIdentifier::getTableId() const
 {
-    if (name_parts.size() == 2) return {name_parts[0], name_parts[1], uuid};
-    return {{}, name_parts[0], uuid};
+    if (name_parts.size() == 1) return {{}, name_parts[0], uuid};
+    return {getDatabaseName(), name_parts.back(), uuid};
 }
 
 String ASTTableIdentifier::getDatabaseName() const
 {
-    if (name_parts.size() == 2) return name_parts[0];
-    return {};
+    /// All the parts but the last one, joined with dots (see the class comment).
+    if (name_parts.size() < 2) return {};
+    String res = name_parts[0];
+    for (size_t i = 1; i + 1 < name_parts.size(); ++i)
+        res += '.' + name_parts[i];
+    return res;
+}
+
+ASTPtr ASTTableIdentifier::getPartAsIdentifier(size_t part_index) const
+{
+    if (!name_parts[part_index].empty())
+        return make_intrusive<ASTIdentifier>(name_parts[part_index]);
+
+    /// Empty parts are placeholders for the query parameters (children), in order.
+    size_t param_index = 0;
+    for (size_t i = 0; i < part_index; ++i)
+        if (name_parts[i].empty())
+            ++param_index;
+    return make_intrusive<ASTIdentifier>("", children[param_index]->clone());
 }
 
 ASTPtr ASTTableIdentifier::getTable() const
 {
-    if (name_parts.size() == 2)
-    {
-        if (!name_parts[1].empty())
-            return make_intrusive<ASTIdentifier>(name_parts[1]);
-
-        if (name_parts[0].empty())
-            return make_intrusive<ASTIdentifier>("", children[1]->clone());
-        return make_intrusive<ASTIdentifier>("", children[0]->clone());
-    }
-    if (name_parts.size() == 1)
-    {
-        if (name_parts[0].empty())
-            return make_intrusive<ASTIdentifier>("", children[0]->clone());
-        return make_intrusive<ASTIdentifier>(name_parts[0]);
-    }
-    return {};
+    return getPartAsIdentifier(name_parts.size() - 1);
 }
 
 ASTPtr ASTTableIdentifier::getDatabase() const
 {
+    if (name_parts.size() < 2)
+        return {};
     if (name_parts.size() == 2)
-    {
-        if (name_parts[0].empty())
-            return make_intrusive<ASTIdentifier>("", children[0]->clone());
-        return make_intrusive<ASTIdentifier>(name_parts[0]);
-    }
-    return {};
+        return getPartAsIdentifier(0);
+
+    /// A hierarchical name: the database is a compound identifier of all the parts but the last one.
+    std::vector<String> database_parts(name_parts.begin(), name_parts.end() - 1);
+    ASTs database_params;
+    size_t param_index = 0;
+    for (const auto & part : database_parts)
+        if (part.empty())
+            database_params.push_back(children[param_index++]->clone());
+    return make_intrusive<ASTIdentifier>(std::move(database_parts), false, std::move(database_params));
 }
 
 void ASTTableIdentifier::resetTable(const String & database_name, const String & table_name)

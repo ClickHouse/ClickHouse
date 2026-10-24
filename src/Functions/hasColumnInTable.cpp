@@ -104,23 +104,25 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
     if (table_name.empty())
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table name is empty");
 
-    /// Check access on the raw names before resolving the table, so denial does not
-    /// depend on the table/database existing (no existence oracle). SHOW_COLUMNS is the
-    /// same grant required by DESCRIBE and SHOW CREATE TABLE.
-    getContext()->checkAccess(AccessType::SHOW_COLUMNS, database_name, table_name);
+    /// A hierarchical name (`'db.ns', 't'` for the table `ns.t` of the database `db`) is resolved first, and the access
+    /// is checked for the table it resolves to, which is the table that is read below (the lookup is exact).
+    /// The access is checked before the table is got, so that denial does not depend on the table existing.
+    /// SHOW_COLUMNS is the same grant required by DESCRIBE and SHOW CREATE TABLE.
+    StorageID table_id = DatabaseCatalog::instance().resolveHierarchicalName({database_name, table_name}, getContext());
+    getContext()->checkAccess(AccessType::SHOW_COLUMNS, table_id.database_name, table_id.table_name);
 
     // FIXME this (probably) needs a non-constant access to query context,
     // because it might initialized a storage. Ideally, the tables required
     // by the query should be initialized at an earlier stage.
     const StoragePtr & table = DatabaseCatalog::instance().getTable(
-        {database_name, table_name},
+        table_id,
         const_pointer_cast<Context>(getContext()));
 
     /// An `Alias` reports the columns of its target, so seeing them takes the privilege on the target.
     if (const auto * alias = table->as<StorageAlias>();
         alias && !alias->isTargetTableGranted(getContext(), AccessType::SHOW_COLUMNS, {}))
         throw Exception(ErrorCodes::ACCESS_DENIED, "Not enough privileges to check metadata exposed by {}",
-                        StorageID{database_name, table_name}.getNameForLogs());
+                        table_id.getNameForLogs());
 
     auto table_metadata = table->getInMemoryMetadataPtr(getContext(), false);
     bool has_column = table_metadata->getColumns().hasPhysical(column_name);

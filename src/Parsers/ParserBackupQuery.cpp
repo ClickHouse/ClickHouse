@@ -90,7 +90,7 @@ namespace
             {
                 DatabaseAndTableName table_name;
 
-                if (!parseDatabaseAndTableName(pos, expected, table_name.first, table_name.second))
+                if (!parseSimpleDatabaseAndTableName(pos, expected, table_name.first, table_name.second))
                     return false;
 
                 if (database_name && table_name.first.empty())
@@ -153,7 +153,7 @@ namespace
 
                 DatabaseAndTableName table_name;
 
-                if (!parseDatabaseAndTableName(pos, expected, table_name.first, table_name.second))
+                if (!parseSimpleDatabaseAndTableName(pos, expected, table_name.first, table_name.second))
                     return false;
 
                 if (database_name && table_name.first.empty())
@@ -264,14 +264,14 @@ namespace
                 ParserKeyword(Keyword::VIEW).ignore(pos, expected))
             {
                 element.type = ElementType::TABLE;
-                if (!parseDatabaseAndTableName(pos, expected, element.database_name, element.table_name))
+                if (!parseSimpleDatabaseAndTableName(pos, expected, element.database_name, element.table_name))
                     return false;
 
                 element.new_database_name = element.database_name;
                 element.new_table_name = element.table_name;
                 if (ParserKeyword(Keyword::AS).ignore(pos, expected))
                 {
-                    if (!parseDatabaseAndTableName(pos, expected, element.new_database_name, element.new_table_name))
+                    if (!parseSimpleDatabaseAndTableName(pos, expected, element.new_database_name, element.new_table_name))
                         return false;
                 }
 
