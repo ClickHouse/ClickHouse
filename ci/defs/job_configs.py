@@ -111,6 +111,7 @@ else:
 
 # Submodules with test data only. They do not affect the builds, so a bump of them must not rebuild the binaries.
 test_data_submodules = [
+    "./contrib/arrow-testing",
     "./contrib/parquet-testing",
 ]
 

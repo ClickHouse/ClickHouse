@@ -713,6 +713,12 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
         if (values_per_block == 0 || values_per_block % 128 != 0 || miniblocks_per_block == 0 || values_per_block % miniblocks_per_block != 0 || values_per_block / miniblocks_per_block % 32 != 0)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid DELTA_BINARY_PACKED header");
 
+        /// The number of values in a miniblock is passed to `BitReader::GetBatch` as `int`, and the size of
+        /// a miniblock in bits is computed as the number of values times the bit width (at most 64).
+        /// Bounding the block size keeps both from overflowing on corrupted data.
+        if (values_per_block > UInt64(std::numeric_limits<Int32>::max()))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid DELTA_BINARY_PACKED block size: {}", values_per_block);
+
         /// Sanity-check total_values_remaining to avoid huge memory allocations from corrupted data.
         /// Each block requires at least miniblocks_per_block bytes (for the bit-width array) plus
         /// 1 byte for min_delta varint. Even with 0-bit encoding (all identical deltas), this is
@@ -720,7 +726,9 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
         size_t remaining_bytes = end - data;
         size_t min_bytes_per_block = miniblocks_per_block + 1;
         size_t max_blocks = remaining_bytes / min_bytes_per_block;
-        size_t max_values = max_blocks * values_per_block + 1;
+        size_t max_values = 0;
+        if (common::mulOverflow(max_blocks, size_t(values_per_block), max_values) || common::addOverflow(max_values, size_t(1), max_values))
+            max_values = std::numeric_limits<size_t>::max();
         if (total_values_remaining > max_values)
             throw Exception(ErrorCodes::INCORRECT_DATA, "DELTA_BINARY_PACKED header claims {} values but data can contain at most {}", total_values_remaining, max_values);
     }
@@ -897,6 +905,8 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
             miniblock_values_remaining -= n;
 
             int bits_per_delta = int(miniblock_bit_widths[miniblock_idx]);
+            if (bits_per_delta > int(8 * sizeof(T)))
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid DELTA_BINARY_PACKED miniblock bit width: {}", bits_per_delta);
             int read_count = bit_reader.GetBatch(bits_per_delta, out_values, static_cast<int>(n));
             chassert(read_count == int(n));
 
