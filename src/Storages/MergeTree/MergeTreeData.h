@@ -2046,9 +2046,13 @@ protected:
         bool attach = false,
         ContextPtr local_context = nullptr);
 
-    /// Same as `setProperties`, but publishes the metadata and rebuilds `serialization_hints`
-    /// in one `parts_lock` scope. A committing part reads both under that lock, so publishing
-    /// them separately lets it observe new column types with old-typed hints.
+    /// The part of `setProperties` that runs after `new_metadata` is published.
+    void updateCachesAfterMetadataPublish(
+        const StorageInMemoryMetadata & new_metadata,
+        const StorageInMemoryMetadata & old_metadata);
+
+    /// Same as `setProperties`, but publishes the metadata and rebuilds `serialization_hints` under one `parts_lock`:
+    /// a committing part reads both under that lock and must not see new column types with old-typed hints.
     void setPropertiesAndResetSerializationHints(
         const StorageInMemoryMetadata & new_metadata,
         const StorageInMemoryMetadata & old_metadata,

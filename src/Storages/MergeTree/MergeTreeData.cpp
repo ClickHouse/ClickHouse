@@ -506,9 +506,8 @@ namespace FailPoints
     extern const char restore_part_inject_no_space_error[];
     /// Throws an I/O error (EIO) once while loading the metadata of a part.
     extern const char merge_tree_load_part_io_error[];
-    /// Pauses inside `setPropertiesAndResetSerializationHints`, after the new metadata is
-    /// published and before the hints swap, while `parts_lock` is held. Lets a test observe that
-    /// a concurrent part commit cannot see new column types paired with old-typed hints.
+    /// Pauses `setPropertiesAndResetSerializationHints` between the metadata publish and the hints swap,
+    /// while `parts_lock` is held.
     extern const char mt_alter_pause_after_metadata_publish[];
 }
 
@@ -1788,6 +1787,13 @@ void MergeTreeData::setProperties(
         patch_parts_sorting_keys_cache.clear();
     }
 
+    updateCachesAfterMetadataPublish(new_metadata, old_metadata);
+}
+
+void MergeTreeData::updateCachesAfterMetadataPublish(
+    const StorageInMemoryMetadata & new_metadata,
+    const StorageInMemoryMetadata & old_metadata)
+{
     /// Invalidate the columns cache when column identity changes: cache keys identify
     /// columns by name, so any operation that makes a name refer to a different column
     /// (drop, rename, or single-statement `RENAME a TO b, ADD COLUMN a` where the old
@@ -15153,7 +15159,6 @@ void MergeTreeData::setPropertiesAndResetSerializationHints(
 
     checkProperties(new_metadata, old_metadata, /*attach=*/false, /*allow_empty_sorting_key=*/false, allow_nullable_key, local_context);
 
-    /// Cloned outside `parts_lock`: the copy deep-clones projections, keys and settings changes.
     auto owned_metadata = std::make_unique<const StorageInMemoryMetadata>(new_metadata);
     /// Materialised up front: nothing between the publish and the hints swap may allocate.
     const String pause_after_publish = FailPoints::mt_alter_pause_after_metadata_publish;
@@ -15163,8 +15168,7 @@ void MergeTreeData::setPropertiesAndResetSerializationHints(
         /// Build before publishing so a throw here leaves metadata and hints both unchanged.
         auto new_hints = buildSerializationHints(new_metadata.getColumns(), parts_lock);
         {
-            /// The cache of effective sorting keys is derived from the published metadata, so it
-            /// is cleared under the same lock as the publish.
+            /// Publish the new metadata and clear the cache of effective sorting keys atomically.
             std::lock_guard sorting_keys_lock(patch_parts_sorting_keys_mutex);
             setInMemoryMetadata(std::move(owned_metadata));
             patch_parts_sorting_keys_cache.clear();
@@ -15173,8 +15177,8 @@ void MergeTreeData::setPropertiesAndResetSerializationHints(
         serialization_hints = std::move(new_hints);
     }
 
-    std::lock_guard lock(patch_parts_metadata_mutex);
-    patch_parts_metadata_cache.clear();
+    /// Callers treat an exception as if nothing was published, so nothing may throw after the commit.
+    NOEXCEPT_SCOPE({ updateCachesAfterMetadataPublish(new_metadata, old_metadata); });
 }
 
 template <typename AddedParts, typename RemovedParts>

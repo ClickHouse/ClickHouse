@@ -301,7 +301,6 @@ public:
     }
 
     /// Same as above, but publishes an already built object instead of deep-copying it.
-    /// Lets a caller do the (allocating) clone outside a lock and keep only the store inside.
     void setInMemoryMetadata(std::unique_ptr<const StorageInMemoryMetadata> && metadata_)
     {
         metadata.set(std::move(metadata_));

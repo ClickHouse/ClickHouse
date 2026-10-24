@@ -943,9 +943,8 @@ void StorageMergeTree::alter(
                     /// `held_entry` (its `is_registered` flag stops the destructor from
                     /// removing it) and is only removed once `alterTable(old_metadata)`
                     /// durably succeeds. See #80648.
-                    /// Plain `setProperties`: the new (rejected) settings are still live here,
-                    /// `changeSettings(old_metadata...)` runs only after the durable rollback,
-                    /// so rebuilding hints now would build them from settings about to be undone.
+                    /// Plain `setProperties`: the rejected settings stay live until `changeSettings` after the
+                    /// durable rollback, so hints rebuilt now would come from settings about to be undone.
                     try
                     {
                         setProperties(old_metadata, new_metadata, false, local_context);
