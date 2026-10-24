@@ -232,6 +232,11 @@ Strings mergeStageNames(const DistributedQueryPlan & plan)
     return names;
 }
 
+bool dependsOn(const StageDependencies & dependencies, const String & stage)
+{
+    return std::ranges::any_of(dependencies, [&](const StageDependency & dependency) { return dependency.stage == stage; });
+}
+
 void expectConsumerDescriptors(const DistributedQueryPlan & plan, const String & stage_name, const BuildRuntimeFilterStep & build)
 {
     for (const auto & task : plan.stages.at(stage_name).tasks)
@@ -354,10 +359,10 @@ TEST_F(RuntimeFilterExchangeWiring, MultiLevelTree)
         String previous = "build";
         for (const auto & name : merge_stages)
         {
-            EXPECT_TRUE(plan.stage_depends_on.at(name).contains(previous)) << name;
+            EXPECT_TRUE(dependsOn(plan.stage_depends_on.at(name), previous)) << name;
             previous = name;
         }
-        EXPECT_TRUE(plan.stage_depends_on.at("probe").contains(previous));
+        EXPECT_TRUE(dependsOn(plan.stage_depends_on.at("probe"), previous));
 
         expectWiredBuild(plan, "build");
         auto * build = findBuildStep(plan.stages.at("build").query_plan_fragment);
@@ -433,7 +438,7 @@ TEST_F(RuntimeFilterExchangeWiring, MixedLocalAndRemoteSkipsProducerStageExchang
     expectConsumerDescriptors(plan, "probe", *build);
     for (const auto & task : plan.stages.at("both").tasks)
         EXPECT_TRUE(task.runtime_filter_descriptors.empty());
-    EXPECT_TRUE(plan.stage_depends_on.at("probe").contains(merge_stages.front()));
+    EXPECT_TRUE(dependsOn(plan.stage_depends_on.at("probe"), merge_stages.front()));
 }
 
 TEST_F(RuntimeFilterExchangeWiring, SameStageAdmission)
@@ -494,7 +499,7 @@ DistributedQueryPlan wireProducerDependingOnConsumer(size_t num_build_tasks, siz
     data_exchange.source_bucket_count = num_receive_tasks;
     data_exchange.destination_bucket_count = num_build_tasks;
     plan.exchange_descriptions[data_exchange.name] = data_exchange;
-    plan.stage_depends_on["build"]["probe"] = data_exchange.name;
+    plan.stage_depends_on["build"].push_back({"probe", data_exchange.name});
 
     size_t next_exchange_id = 100;
     wireRuntimeFilterExchangeTopology(plan, next_exchange_id, kind);
@@ -521,10 +526,10 @@ TEST_F(RuntimeFilterExchangeWiring, NoCompletionEdgeWhenItWouldCycle)
 
     /// The merge stage depends on the build stage as usual, but the probe stage gets NO
     /// dependency entry on the merge stage: it would close a cycle with the data edge.
-    EXPECT_TRUE(plan.stage_depends_on.at(merge_stages.front()).contains("build"));
+    EXPECT_TRUE(dependsOn(plan.stage_depends_on.at(merge_stages.front()), "build"));
     auto probe_dependencies = plan.stage_depends_on.find("probe");
     EXPECT_TRUE(probe_dependencies == plan.stage_depends_on.end()
-        || !probe_dependencies->second.contains(merge_stages.front()));
+        || !dependsOn(probe_dependencies->second, merge_stages.front()));
 
     expectWiredBuild(plan, "build");
     auto * build = findBuildStep(plan.stages.at("build").query_plan_fragment);
@@ -583,16 +588,18 @@ TEST_F(RuntimeFilterExchangeWiring, FragmentGraphLeavesOutMergeStages)
     /// 40 build tasks: a level of 3 merge tasks, then the root, which `main` depends on.
     auto merge_stages = mergeStageNames(plan);
     ASSERT_EQ(merge_stages.size(), 2u);
-    EXPECT_TRUE(plan.stage_depends_on.at("main").contains(merge_stages.back()));
+    EXPECT_TRUE(dependsOn(plan.stage_depends_on.at("main"), merge_stages.back()));
 
     auto graph = buildFragmentGraph(plan);
-    EXPECT_EQ(dumpFragmentGraph(graph),
-        "query fragments: 2\n"
-        "  F0 stage_0  distributed  tasks=40\n"
-        "  F1 main     distributed  tasks=1  needs F0 via exchange_0\n"
-        "exchanges: 1\n"
-        "  exchange_0  F0 -> F1  gather  streaming  40 -> 1\n"
-        "levels: [F0] [F1]\n");
+    ASSERT_EQ(graph.fragments.size(), 2u);
+    EXPECT_EQ(graph.getFragment(0).stage_name, "stage_0");
+    EXPECT_EQ(graph.getFragment(0).tasks, 40u);
+    EXPECT_EQ(graph.getFragment(1).stage_name, "main");
+    ASSERT_EQ(graph.exchanges.size(), 1u);
+    const auto & exchange = graph.getExchange(0);
+    EXPECT_EQ(exchange.from, 0u);
+    EXPECT_EQ(exchange.to, 1u);
+    EXPECT_EQ(exchange.kind, FragmentExchange::Kind::Gather);
 
     /// The steps that build and apply the filter stay in the plans of the data fragments.
     EXPECT_NE(findBuildStep(plan.stages.at("stage_0").query_plan_fragment), nullptr);

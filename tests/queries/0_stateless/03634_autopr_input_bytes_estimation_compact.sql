@@ -17,10 +17,11 @@ SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=2, parallel_rep
 set max_threads=4, max_block_size=8192;
 
 -- For runs with the old analyzer
-SET enable_analyzer=1;
--- Pinned to the query-based implementation: for a plain read the plan-based fragment is the reading
--- step itself, so automatic parallel replicas cannot estimate what the replicas would send and
--- collects no statistics. See https://github.com/ClickHouse/ClickHouse/issues/118265.
+
+-- Pinned to the query-based implementation: the `ORDER BY ... LIMIT` query below is read locally
+-- under plan-based, because `applyParallelReplicas` keeps a read selected for top-k filtering local
+-- (`__topKFilter` is not registered and a replica could not deserialize the fragment), so automatic
+-- parallel replicas collects no statistics to estimate from.
 SET parallel_replicas_plan_based = 0;
 
 -- Reading of aggregation states from disk will affect `ReadCompressedBytes`
