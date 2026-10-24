@@ -28,6 +28,7 @@ SET query_plan_optimize_join_order_algorithm = 'greedy';
 SET optimize_move_to_prewhere = 1;
 SET enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0; -- Changes the plan (BuildRuntimeFilter node)
 SET use_statistics = 0; -- auto_statistics_types changes the plan
+SET query_plan_remove_redundant_sorting = 0; -- the ORDER BY in a subquery below is redundant, and a removed one does not stop the subquery from going to the replicas
 
 {% for use_global_in in [0, 1] -%}
 
