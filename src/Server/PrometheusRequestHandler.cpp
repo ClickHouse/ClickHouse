@@ -56,7 +56,9 @@ namespace ErrorCodes
     extern const int INCOMPATIBLE_SCHEMA;
     extern const int SUPPORT_IS_DISABLED;
     extern const int NOT_IMPLEMENTED;
+    extern const int PROMETHEUS_REMOTE_WRITE_TIMEOUT;
     extern const int SNAPPY_UNCOMPRESS_FAILED;
+    extern const int TIMEOUT_EXCEEDED;
     extern const int UNSUPPORTED_MEDIA_TYPE;
     extern const int ZSTD_DECODER_FAILED;
 }
@@ -347,7 +349,17 @@ public:
             }
         }
 
-        protocol.write(write_request.timeseries(), write_request.metadata());
+        try
+        {
+            protocol.write(write_request.timeseries(), write_request.metadata());
+        }
+        catch (const Exception & e)
+        {
+            /// A sender drops a batch answered with 408, so a timed-out write gets a 503, which it retries.
+            if (e.code() == ErrorCodes::TIMEOUT_EXCEEDED)
+                throw Exception(ErrorCodes::PROMETHEUS_REMOTE_WRITE_TIMEOUT, "{}", e.message());
+            throw;
+        }
 
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTPStatus::HTTP_NO_CONTENT, Poco::Net::HTTPResponse::HTTP_REASON_NO_CONTENT);
         response.setChunkedTransferEncoding(false);
