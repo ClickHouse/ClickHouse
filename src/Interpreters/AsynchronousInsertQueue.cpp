@@ -146,7 +146,8 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     const Settings & settings_,
     AsynchronousInsertQueueDataKind data_kind_,
     const String & quota_client_address_,
-    const String & quota_forwarded_address_)
+    const String & quota_forwarded_address_,
+    std::optional<UInt64> quota_normalized_query_hash_)
     : query(query_->clone())
     , query_str_with_secrets(query->formatWithSecretsOneLine())
     , user_id(user_id_)
@@ -160,6 +161,7 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     , quota_key(quota_key_)
     , quota_client_address(quota_client_address_)
     , quota_forwarded_address(quota_forwarded_address_)
+    , quota_normalized_query_hash(quota_normalized_query_hash_)
     , settings(std::make_unique<Settings>(settings_))
     , data_kind(data_kind_)
 {
@@ -207,6 +209,10 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
         siphash.update(identity_field);
     }
 
+    /// Unset (the common case) contributes nothing, so it does not change the hash of existing keys.
+    if (quota_normalized_query_hash)
+        siphash.update(*quota_normalized_query_hash);
+
     setting_changes = settings->changes();
     for (auto it = setting_changes.begin(); it != setting_changes.end();)
     {
@@ -240,6 +246,7 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(const InsertQuery & other)
     quota_key = other.quota_key;
     quota_client_address = other.quota_client_address;
     quota_forwarded_address = other.quota_forwarded_address;
+    quota_normalized_query_hash = other.quota_normalized_query_hash;
     settings = std::make_unique<Settings>(*other.settings);
     data_kind = other.data_kind;
     hash = other.hash;
@@ -264,6 +271,7 @@ AsynchronousInsertQueue::InsertQuery::operator=(const InsertQuery & other)
         quota_key = other.quota_key;
         quota_client_address = other.quota_client_address;
         quota_forwarded_address = other.quota_forwarded_address;
+        quota_normalized_query_hash = other.quota_normalized_query_hash;
         settings = std::make_unique<Settings>(*other.settings);
         data_kind = other.data_kind;
         hash = other.hash;
@@ -737,11 +745,19 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(
     /// The flush runs in a context of its own, which only has the client address restored if a quota needs it.
     String quota_client_address;
     String quota_forwarded_address;
-    if (auto quota = query_context->getQuota(); quota && quota->isKeyedByClientAddress())
+    /// The flush computes the normalized hash of its own (rewritten) statement, which differs from the hash of the
+    /// submitted `INSERT` the quotas keyed by `normalized_query_hash` were checked against, so it is kept as well.
+    std::optional<UInt64> quota_normalized_query_hash;
+    if (auto quota = query_context->getQuota())
     {
-        if (client_info.current_address)
-            quota_client_address = client_info.current_address->host().toString();
-        quota_forwarded_address = client_info.getLastForwardedForHost();
+        if (quota->isKeyedByClientAddress())
+        {
+            if (client_info.current_address)
+                quota_client_address = client_info.current_address->host().toString();
+            quota_forwarded_address = client_info.getLastForwardedForHost();
+        }
+        if (quota->isKeyedByNormalizedQueryHash())
+            quota_normalized_query_hash = query_context->getNormalizedQueryHash();
     }
 
     InsertQuery key{
@@ -758,7 +774,8 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(
         settings,
         data_kind,
         quota_client_address,
-        quota_forwarded_address};
+        quota_forwarded_address,
+        quota_normalized_query_hash};
     InsertDataPtr data_to_process;
     std::future<ResultProgress> progress_future;
 
@@ -1375,7 +1392,9 @@ try
     /// and the `CountingTransform` built from this context. The normal query path does this in `executeQuery`,
     /// but async insert flushes build the interpreter directly, so without this every async insert
     /// pattern would charge `WRITTEN_ROWS`/`WRITTEN_BYTES` to hash `0` and share a single bucket.
-    insert_context->setNormalizedQueryHash(normalized_query_hash);
+    /// For quotas keyed by `normalized_query_hash`, the hash of the submitted `INSERT`s is used instead, so that the flush
+    /// is charged to the bucket they were checked against (see `chargesQuotaProfileEvents` for the quotas over profile events).
+    insert_context->setNormalizedQueryHash(key.quota_normalized_query_hash.value_or(normalized_query_hash));
 
     /// We add it to the process list so
     /// a) it appears in system.processes

@@ -108,6 +108,9 @@ public:
     /// `forwarded_ip_address` or `client_key_or_ip_address`), i.e. whether its bucket depends on the address.
     bool isKeyedByClientAddress() const;
 
+    /// Returns whether any of the governing quotas is keyed by `normalized_query_hash`, i.e. whether its bucket depends on the query.
+    bool isKeyedByNormalizedQueryHash() const;
+
     /// Same as `checkExceeded(quota_type)`, but for `NORMALIZED_QUERY_HASH` quotas the check is
     /// performed against the intervals resolved for `normalized_query_hash`.
     void checkExceededForQuery(UInt64 normalized_query_hash, QuotaType quota_type) const;

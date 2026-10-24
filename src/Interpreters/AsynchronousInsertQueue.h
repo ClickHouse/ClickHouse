@@ -16,6 +16,7 @@
 #include <base/defines.h>
 
 #include <future>
+#include <optional>
 #include <variant>
 
 namespace DB
@@ -124,6 +125,10 @@ public:
         /// and inserts from different clients are coalesced into one flush. Part of the batching key.
         String quota_client_address;
         String quota_forwarded_address;
+        /// The normalized hash of the originating INSERT query, so that quotas keyed by `normalized_query_hash` are checked
+        /// on submission and charged on flush in the same bucket. Unset unless a quota of the inserting user is keyed by it.
+        /// Part of the batching key.
+        std::optional<UInt64> quota_normalized_query_hash;
         std::unique_ptr<Settings> settings;
 
         AsynchronousInsertQueueDataKind data_kind;
@@ -143,7 +148,8 @@ public:
             const Settings & settings_,
             AsynchronousInsertQueueDataKind data_kind_,
             const String & quota_client_address_ = {},
-            const String & quota_forwarded_address_ = {});
+            const String & quota_forwarded_address_ = {},
+            std::optional<UInt64> quota_normalized_query_hash_ = {});
 
         InsertQuery(const InsertQuery & other);
         InsertQuery & operator=(const InsertQuery & other);
@@ -153,7 +159,7 @@ public:
     private:
         /// `authentication_grants` is compared by content in `operator==` (a shared_ptr would compare
         /// identity, which is inconsistent with the content-based hash), so it is not part of this tuple.
-        auto toTupleCmp() const { return std::tie(data_kind, query_str_with_secrets, user_id, current_roles, authentication_valid_until, current_user, initial_user, authenticated_user, quota_key, quota_client_address, quota_forwarded_address, setting_changes); }
+        auto toTupleCmp() const { return std::tie(data_kind, query_str_with_secrets, user_id, current_roles, authentication_valid_until, current_user, initial_user, authenticated_user, quota_key, quota_client_address, quota_forwarded_address, quota_normalized_query_hash, setting_changes); }
 
         std::vector<SettingChange> setting_changes;
     };

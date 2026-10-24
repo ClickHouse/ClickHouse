@@ -617,6 +617,20 @@ bool EnabledQuota::isKeyedByClientAddress() const
 }
 
 
+bool EnabledQuota::isKeyedByNormalizedQueryHash() const
+{
+    if (empty)
+        return false;
+    auto loaded = quotas.load();
+    for (const auto & quota : *loaded)
+    {
+        if (quota->interval_resolver)
+            return true;
+    }
+    return false;
+}
+
+
 void EnabledQuota::checkExceededForQuery(UInt64 normalized_query_hash, QuotaType quota_type) const
 {
     if (empty)
