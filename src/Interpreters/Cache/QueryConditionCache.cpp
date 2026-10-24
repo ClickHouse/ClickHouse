@@ -6,6 +6,8 @@
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <Formats/FormatFilterInfo.h>
+#include <Storages/ColumnsDescription.h>
 #include <IO/WriteHelpers.h>
 
 namespace ProfileEvents
@@ -71,6 +73,7 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
     extern const SettingsUInt64 function_base58_max_input_size;
     extern const SettingsBool validate_polygons;
     extern const SettingsShortCircuitFunctionEvaluation short_circuit_function_evaluation;
+    extern const SettingsBool short_circuit_function_evaluation_reorder_arguments;
     extern const SettingsBool short_circuit_function_evaluation_for_nulls;
     extern const SettingsDouble short_circuit_function_evaluation_for_nulls_threshold;
     extern const SettingsTimezone session_timezone;
@@ -212,6 +215,9 @@ UInt64 queryConditionCacheSettingsSalt(const Settings & settings)
     /// `NULL`; without them, it is evaluated on the values stored behind the `NULL`s and may throw on them. The
     /// DAG and the result type are identical in both modes.
     hash.update(static_cast<UInt64>(settings[Setting::short_circuit_function_evaluation].value));
+    /// Evaluating a cheap argument of `and` / `or` before a heavy one changes nothing but the rows the heavy one is
+    /// evaluated on, so like the setting above it decides whether the heavy one throws on the rows it would skip.
+    hash.update(settings[Setting::short_circuit_function_evaluation_reorder_arguments].value);
     hash.update(settings[Setting::short_circuit_function_evaluation_for_nulls].value);
     hash.update(settings[Setting::short_circuit_function_evaluation_for_nulls_threshold].value);
     /// `session_timezone` is not read by any function when it is built: `DateLUT::instance()` looks it up in the
@@ -239,6 +245,49 @@ QueryConditionCache::Key QueryConditionCache::makeKey(const UUID & table_id, con
     hash.update(part_name);
     hash.update(condition_hash);
     return hash.get128();
+}
+
+UUID QueryConditionCache::getTableIdForFileEntries(
+    const UUID & table_uuid,
+    std::string_view format,
+    std::string_view compression_method,
+    const ColumnsDescription & columns,
+    const ColumnMapper * column_mapper,
+    const FormatSettings * format_settings)
+{
+    if (table_uuid != UUIDHelpers::Nil)
+        return table_uuid;
+    /// Each string is preceded by its length, so the boundaries between them are unambiguous.
+    const String structure = columns.toString(/*include_comments=*/false);
+    SipHash hash;
+    hash.update(format.size());
+    hash.update(format);
+    hash.update(compression_method.size());
+    hash.update(compression_method);
+    hash.update(structure.size());
+    hash.update(structure);
+    if (column_mapper)
+    {
+        /// Sorted, because the order of an `unordered_map` is not stable.
+        const auto & encoding = column_mapper->getStorageColumnEncoding();
+        std::vector<std::pair<std::string_view, Int64>> sorted_encoding(encoding.begin(), encoding.end());
+        std::sort(sorted_encoding.begin(), sorted_encoding.end());
+        hash.update(sorted_encoding.size());
+        for (const auto & [name, field_id] : sorted_encoding)
+        {
+            hash.update(name.size());
+            hash.update(name);
+            hash.update(field_id);
+        }
+    }
+    hash.update(format_settings != nullptr);
+    if (format_settings)
+        hash.update(fileFormatPruningSettingsSalt(*format_settings));
+    UInt128 table_id = hash.get128();
+    /// A `Nil` id would disable the cache.
+    if (table_id == 0)
+        table_id = 1;
+    return UUID(table_id);
 }
 
 String QueryConditionCache::makeFilePartName(const String & path, std::string_view version_token)

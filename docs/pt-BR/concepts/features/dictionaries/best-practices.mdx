@@ -11,9 +11,7 @@ Esta página apresenta orientações práticas para escolher o layout de dicion�
 
 Para uma introdução a dicionários com exemplos práticos, consulte o [guia principal de Dicionários](/pt-BR/concepts/features/dictionaries/index).
 
-<div id="when-to-use-dictionaries-vs-joins">
-  ## Quando usar dicionários vs JOINs
-</div>
+## Quando usar dicionários vs JOINs {#when-to-use-dictionaries-vs-joins}
 
 Os dicionários funcionam melhor quando um dos lados de um JOIN é uma tabela de consulta que cabe em memória. Em um JOIN padrão, o ClickHouse cria uma tabela hash a partir do lado direito antes de consultá-la com o lado esquerdo — mesmo que a maioria das linhas depois seja descartada pelos filtros de `WHERE`. Embora as versões mais recentes (24.12+) apliquem filtros antes de JOINs em muitos casos, isso nem sempre elimina essa sobrecarga. Com um dicionário, você chama `dictGet` inline, então as consultas só acontecem nas linhas que já passaram pela filtragem.
 
@@ -24,9 +22,7 @@ Como regra geral:
 * Use dicionários para substituir JOINs com tabelas de dimensão pequenas, em que a chave de consulta já está disponível.
 * Use colunas comuns e índices ao filtrar pelo valor consultado em muitas linhas.
 
-<div id="choosing-a-layout">
-  ## Escolhendo um layout
-</div>
+## Escolhendo um layout {#choosing-a-layout}
 
 A cláusula `LAYOUT` controla a estrutura de dados interna do dicionário. Todos os layouts disponíveis estão documentados na [referência de layouts](/pt-BR/reference/statements/create/dictionary/layouts/overview#storing-dictionaries-in-memory).
 
@@ -37,12 +33,16 @@ Ao escolher um layout, use as seguintes diretrizes:
 * **`hashed`** — armazena o dicionário completo em uma tabela hash. Pode ser mais rápido que `hashed_array` quando há pouquíssimos atributos, mas consome mais memória à medida que o número de atributos cresce.
 * **`complex_key_hashed` / `complex_key_hashed_array`** — use-os quando as chaves não puderem ser convertidas para `UInt64` (por exemplo, chaves `String`). Eles seguem os mesmos trade-offs de desempenho que as versões sem chave complexa.
 * **`sparse_hashed`** — troca CPU por menor uso de memória em comparação com `hashed`. Raramente é a melhor escolha — só é eficiente quando há um único atributo. Na maioria dos casos, `hashed_array` é mais adequado.
-* **`cache` / `ssd_cache`** — armazenam em cache apenas as chaves acessadas com frequência. São úteis quando o conjunto de dados completo não cabe na memória, mas as consultas podem consultar a fonte em caso de cache miss. Não são recomendados para workloads sensíveis à latência.
+* **`cache` / `ssd_cache`** — armazenam em cache apenas as chaves acessadas com frequência. São úteis quando o conjunto de dados completo não cabe na memória, mas as consultas podem consultar a fonte em caso de cache miss. Não são recomendados para workloads sensíveis à latência nem para enriquecimento confiável no momento do insert; consulte [Dicionários cache em caminhos de ingestão](#cache-dictionaries-in-ingestion-path).
 * **`direct`** — consulta a fonte a cada consulta, sem armazenamento em memória. Use quando os dados mudam com frequência demais para serem armazenados em cache ou quando o dicionário é grande demais para caber na memória.
 
-<div id="monitoring-dictionary-usage">
-  ## Monitoramento do uso de dicionários
-</div>
+## Dicionários de cache em caminhos de ingestão {#cache-dictionaries-in-ingestion-path}
+
+Os layouts baseados em cache — `cache`, `complex_key_cache`, `ssd_cache` e `complex_key_ssd_cache` — mantêm as entradas aquecidas apenas no servidor local. Cada servidor aquece seu cache de forma independente, e, após uma reinicialização ou substituição, o servidor começa com o cache vazio. As consultas com cache frio dependem da fonte do dicionário, o que adiciona latência e pode bloquear ou fazer falhar os inserts caso a fonte não consiga atender à consulta. No ClickHouse Cloud, o autoscaling e a substituição gerenciada de nós tornam essa situação mais provável.
+
+Evite esses layouts para enriquecimento no momento da inserção em [views materializadas incrementais](/pt-BR/concepts/features/materialized-views/incremental-materialized-view) ou em colunas `MATERIALIZED` e `DEFAULT` quando a previsibilidade da latência e a disponibilidade da fonte forem importantes. Em vez disso, use um layout que carregue o dicionário completo em cada servidor: normalmente `hashed` ou `hashed_array` para chaves `UInt64`, e `complex_key_hashed` ou `complex_key_hashed_array` para chaves do tipo string ou compostas. `flat` e outros layouts totalmente carregados também podem ser adequados. Se o dicionário completo não couber na memória, enriqueça os dados antes da inserção ou no momento da consulta, em vez de depender de um cache aquecido no caminho de ingestão.
+
+## Monitoramento do uso de dicionários {#monitoring-dictionary-usage}
 
 Acompanhe o consumo de memória e a saúde por meio da tabela [`system.dictionaries`](/pt-BR/reference/system-tables/dictionaries):
 
