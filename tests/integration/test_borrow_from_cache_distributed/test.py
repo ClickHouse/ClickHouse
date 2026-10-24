@@ -290,13 +290,21 @@ def test_distributed_attach_with_legacy_queue_directory_is_rejected(started_clus
 
     # The table has no queue, so `TRUNCATE` must not clean up the host directory behind the raw
     # `disk->getPath() + relative_data_path` either: it is not in the namespace of the disk.
-    sentinel_dir = f"{disk_path}data/ordinary_legacy_queue/dist_legacy_queue/unrecognized_backup"
+    sentinel_dir = (
+        f"{disk_path}data/ordinary_legacy_queue/dist_legacy_queue/unrecognized_backup"
+    )
     node.exec_in_container(
-        ["bash", "-c", f"mkdir -p '{sentinel_dir}' && echo -n keep > '{sentinel_dir}/important.data'"]
+        [
+            "bash",
+            "-c",
+            f"mkdir -p '{sentinel_dir}' && echo -n keep > '{sentinel_dir}/important.data'",
+        ]
     )
     node.query("TRUNCATE TABLE ordinary_legacy_queue.dist_legacy_queue")
     assert (
-        node.exec_in_container(["bash", "-c", f"cat '{sentinel_dir}/important.data'"]).strip()
+        node.exec_in_container(
+            ["bash", "-c", f"cat '{sentinel_dir}/important.data'"]
+        ).strip()
         == "keep"
     )
 
