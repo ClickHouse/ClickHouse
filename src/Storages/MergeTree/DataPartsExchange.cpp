@@ -400,7 +400,7 @@ MergeTreeData::DataPartPtr Service::findPart(const String & name)
     part = data.getPartIfExists(name, {MergeTreeDataPartState::PreActive, MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
 
     if (!part)
-        throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No part {} in table", name);
+        throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No part {} in table {}", name, data.getStorageID().getNameForLogs());
 
     bool zero_copy_enabled = (*data.getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication];
     if (!zero_copy_enabled)
