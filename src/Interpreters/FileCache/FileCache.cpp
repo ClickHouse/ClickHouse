@@ -545,7 +545,11 @@ void FileCache::initialize()
                                 "The total capacity of the disk containing cache path {} is less than the specified max_size {} bytes",
                                 getBasePath(), std::to_string(size_limit));
 
-            status_file = make_unique<StatusFile>(fs::path(getBasePath()) / "status", StatusFile::write_full_info);
+            /// A retried `initialize` (`callOnce` does not set the flag when the callable
+            /// throws) may still hold the status file from the previous attempt; creating
+            /// a new `StatusFile` would then conflict with our own `flock`.
+            if (!status_file)
+                status_file = make_unique<StatusFile>(fs::path(getBasePath()) / "status", StatusFile::write_full_info);
         }
         catch (const std::filesystem::filesystem_error & e)
         {
@@ -560,13 +564,73 @@ void FileCache::initialize()
             throw;
         }
 
-        if (load_metadata_asynchronously)
+        /// Start the permanent background threads (downloads, delayed cleanup)
+        /// before the (possibly asynchronous) metadata loading: if they do not fit
+        /// into the global thread pool, `CANNOT_SCHEDULE_TASK` must reach the caller
+        /// synchronously instead of being deferred into `init_exception` on the
+        /// loading thread, where it would leave the server running with a registered
+        /// but permanently broken cache. Until the metadata is loaded, the threads
+        /// only sleep on their empty queues.
+        try
         {
-            load_metadata_main_thread = std::make_unique<ThreadFromGlobalPool>([this, need_to_load_metadata] { initializeImpl(need_to_load_metadata); });
+            metadata.startup();
         }
-        else
+        catch (...)
         {
-            initializeImpl(need_to_load_metadata);
+            init_exception = std::current_exception();
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            throw;
+        }
+
+        try
+        {
+            if (load_metadata_asynchronously)
+            {
+                load_metadata_main_thread = std::make_unique<ThreadFromGlobalPool>(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this, need_to_load_metadata]
+                {
+                    try
+                    {
+                        initializeImpl(need_to_load_metadata);
+                    }
+                    catch (...)
+                    {
+                        /// `callOnce` has already latched, so no caller will retry `initialize`
+                        /// and reach the unwind below: without this catch the permanent threads
+                        /// started by `metadata.startup()` would keep running until process
+                        /// shutdown next to a permanently broken cache (`initializeImpl` has
+                        /// already stored `init_exception`). `deactivateBackgroundOperations`
+                        /// joins this thread before `metadata.shutdown()`, so stopping the
+                        /// threads here cannot race it.
+                        metadata.stopThreads();
+                        throw;
+                    }
+                });
+            }
+            else
+            {
+                initializeImpl(need_to_load_metadata);
+            }
+        }
+        catch (...)
+        {
+            /// The cache is published in `FileCacheFactory` before `initialize` is called,
+            /// and `callOnce` does not set the flag when the callable throws, so a later
+            /// caller may retry `initialize`. Stop the permanent background threads started
+            /// above, otherwise the retried `metadata.startup()` would replace still-joinable
+            /// threads and abort the process.
+            init_exception = std::current_exception();
+            metadata.stopThreads();
+
+            /// A failure of the metadata loading sets `stop_loading_metadata` (its workers are
+            /// joined by now); clear it, otherwise the retried loading would skip every key
+            /// directory and the cache would come up without its existing segments. Do not lose
+            /// a concurrent request from `deactivateBackgroundOperations`, which sets `shutdown`
+            /// before `stop_loading_metadata`: if its store happened before ours, the following
+            /// check of `shutdown` observes it and restores the flag.
+            stop_loading_metadata = false;
+            if (shutdown)
+                stop_loading_metadata = true;
+            throw;
         }
     });
 }
@@ -595,8 +659,6 @@ void FileCache::initializeImpl(bool load_metadata)
 
         if (load_metadata)
             loadMetadata();
-
-        metadata.startup();
     }
     catch (...)
     {
@@ -2374,7 +2436,7 @@ void FileCache::loadMetadataImpl()
     {
         try
         {
-            listing_threads.emplace_back([&]
+            listing_threads.emplace_back(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [&]
             {
                 while (!stop_loading_metadata)
                 {
@@ -2446,7 +2508,7 @@ void FileCache::loadMetadataImpl()
     {
         try
         {
-            loading_threads.emplace_back([&] { drain_queue(); });
+            loading_threads.emplace_back(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [&] { drain_queue(); });
         }
         catch (...)
         {
