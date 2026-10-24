@@ -76,8 +76,28 @@ $CLICKHOUSE_CLIENT -q "
     SETTINGS parallel_distributed_insert_select = 2, ${PARALLEL_REPLICAS}"
 check local_05446 "s3 with parallel replicas into Distributed"
 
+# An explicit structure must reach the nodes as written, positional or `key = value`. The `SELECT` list has an
+# expression, so the nodes cannot take the structure from the insertion table: with `'auto'` they would infer
+# `v` as `Float64` and insert '1.5' instead of '1.50'.
+$CLICKHOUSE_CLIENT -q "INSERT INTO FUNCTION s3('${S3_DIR}/typed.jsonl', 'LineAsString', 'l String') VALUES ('{\"id\":1,\"v\":1.50}')"
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS typed_05446 SYNC;
+    CREATE TABLE typed_05446 (id UInt32, v String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/typed_05446', 'r1') ORDER BY id;
+"
+
+$CLICKHOUSE_CLIENT -q "
+    INSERT INTO typed_05446 SELECT id, toString(v) FROM s3Cluster('${CLUSTER}', '${S3_DIR}/typed.jsonl', 'JSONEachRow', 'id UInt32, v String')
+    SETTINGS parallel_distributed_insert_select = 2"
+check typed_05446 "s3Cluster, explicit structure"
+
+$CLICKHOUSE_CLIENT -q "
+    INSERT INTO typed_05446 SELECT id, toString(v) FROM s3Cluster('${CLUSTER}', '${S3_DIR}/typed.jsonl', format = 'JSONEachRow', structure = 'id UInt32, v String')
+    SETTINGS parallel_distributed_insert_select = 2"
+check typed_05446 "s3Cluster, explicit structure as key-value argument"
+
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE dst_05446 SYNC;
     DROP TABLE dist_05446;
     DROP TABLE local_05446;
+    DROP TABLE typed_05446 SYNC;
 "
