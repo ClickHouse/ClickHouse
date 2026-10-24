@@ -70,7 +70,7 @@ struct PaimonSnapshotIdentity
 
     bool operator==(const PaimonSnapshotIdentity &) const = default;
 
-    String toJSON() const;
+    [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] String toJSON() const;
     /// Throws unless `json` is an object with exactly the fields written by `toJSON`.
     static PaimonSnapshotIdentity fromJSON(const String & json);
 };

@@ -73,7 +73,7 @@ public:
         [[nodiscard]] std::optional<Int64> getBytesCountInAllDataFilesExcludingDeleted() const;
 
         /// nullptr if the partition spec has no usable field. Kept in the handle so files can be pruned after the iterator is gone.
-        const DB::KeyDescription * getPartitionKeyDescription() const { return partition_key.get(); }
+        [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] const DB::KeyDescription * getPartitionKeyDescription() const { return partition_key.get(); }
 
     private:
         friend class ManifestFileIterator;

@@ -56,10 +56,10 @@ private:
     void explainLevels(WriteBuffer & buf) const;
 
     /// With `pretty`, the keys and the sort columns are named as in the fragments.
-    String formatKind(const FragmentExchange & exchange) const;
+    [[nodiscard]] [[nodiscard]] String formatKind(const FragmentExchange & exchange) const;
 
     /// Every receive step of a fragment with the plan of the fragment that sends to it.
-    FragmentInputs getFragmentInputs() const;
+    [[nodiscard]] [[nodiscard]] FragmentInputs getFragmentInputs() const;
 
     static std::string_view formatMode(ExchangeDescription::Kind mode);
     static const QueryPlan & getPlan(const QueryFragment & fragment);

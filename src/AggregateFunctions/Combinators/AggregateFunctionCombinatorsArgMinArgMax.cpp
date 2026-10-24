@@ -204,12 +204,12 @@ public:
 
     /// The nested state is at the beginning of the state, so the parallel merge is forwarded to the nested
     /// function with the same places, restricted to the states that have the extremal key.
-    bool isAbleToParallelizeMerge() const override { return nested_function->isAbleToParallelizeMerge(); }
+    [[nodiscard]] bool isAbleToParallelizeMerge() const override { return nested_function->isAbleToParallelizeMerge(); }
 
     /// `parallelizeMergePrepare` is not forwarded: it would prepare (e.g. convert to two-level) the nested states
     /// of all places, including those that are discarded because their key is not extremal. The nested
     /// `parallelizeMergeMulti` handles the unprepared states of the selected places itself.
-    bool isParallelizeMergePrepareNeeded() const override { return false; }
+    [[nodiscard]] bool isParallelizeMergePrepareNeeded() const override { return false; }
 
     bool isLargeMergePair(ConstAggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs) const override
     {

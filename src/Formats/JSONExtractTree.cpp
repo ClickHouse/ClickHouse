@@ -909,7 +909,7 @@ public:
     }
 
     /// The DateTime parsers drop fractional seconds, so the text is read again with the maximum precision.
-    bool isWholeSeconds(std::string_view data, FormatSettings::DateTimeInputFormat date_time_input_format) const
+    [[nodiscard]] bool isWholeSeconds(std::string_view data, FormatSettings::DateTimeInputFormat date_time_input_format) const
     {
         constexpr UInt32 max_scale = 9;
         constexpr Int64 max_scale_multiplier = 1'000'000'000;

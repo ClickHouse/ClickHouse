@@ -729,7 +729,7 @@ private:
     UInt64 seed;
     std::optional<Integer> max_abs_value;
 
-    bool isInRange(Integer x) const
+    [[nodiscard]] [[nodiscard]] bool isInRange(Integer x) const
     {
         if constexpr (is_unsigned_v<Integer>)
             return x <= *max_abs_value;
@@ -737,7 +737,7 @@ private:
             return x <= *max_abs_value && x >= -*max_abs_value;
     }
 
-    Integer transformValue(Integer x) const
+    [[nodiscard]] [[nodiscard]] Integer transformValue(Integer x) const
     {
         Integer res = transformInteger(x, seed);
         if (max_abs_value && isInRange(x))

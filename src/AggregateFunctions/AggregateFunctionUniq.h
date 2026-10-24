@@ -847,7 +847,7 @@ public:
     [[nodiscard]] bool isAbleToParallelizeMerge() const override { return is_able_to_parallelize_merge; }
     [[nodiscard]] bool canOptimizeEqualKeysRanges() const override { return !is_able_to_parallelize_merge; }
 
-    bool isParallelizeMergePrepareNeeded() const override { return is_parallelize_merge_prepare_needed; }
+    [[nodiscard]] bool isParallelizeMergePrepareNeeded() const override { return is_parallelize_merge_prepare_needed; }
 
     constexpr static bool parallelizeMergeWithKey() { return true; }
 

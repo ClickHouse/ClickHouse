@@ -413,7 +413,7 @@ public:
     /// (via `parallelizeMergeMulti`) instead of merging serially in place.
     /// A two-level set is always past the threshold: it converted at `worthConvertingToTwoLevel` size.
     /// Both `size()` calls are O(1) here since they are only reached when the set is single-level.
-    bool worthMergingInParallel(const UniqExactSet & other) const
+    [[nodiscard]] [[nodiscard]] bool worthMergingInParallel(const UniqExactSet & other) const
     {
         /// An empty destination adopts a two-level source by pointer in `merge` (or fills from a small
         /// single-level one), which is cheaper than any parallel merge.

@@ -25,16 +25,16 @@ struct AtomicBitSet
         return (x & mask) != 0;
     }
 
-    bool test(size_t i, std::memory_order memory_order) const
+    [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] bool test(size_t i, std::memory_order memory_order) const
     {
         return (a[i >> 6].load(memory_order) >> (i & 63)) & 1;
     }
 
     /// First set bit at or after `start`.
-    std::optional<size_t> findNext(size_t start) const;
-    std::optional<size_t> findFirst() const { return findNext(0); }
+    [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] std::optional<size_t> findNext(size_t start) const;
+    [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] std::optional<size_t> findFirst() const { return findNext(0); }
     /// First bit at or after `start` that is set here and not in `mask` (of the same size).
-    std::optional<size_t> findNextAndNot(const AtomicBitSet & mask, size_t start) const;
+    [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] std::optional<size_t> findNextAndNot(const AtomicBitSet & mask, size_t start) const;
 };
 
 // I'd like to talk to the manager.

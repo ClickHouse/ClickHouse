@@ -333,7 +333,7 @@ private:
     };
     std::vector<ReplacedTableStorage> replaced_table_storages;
 
-    const ReplacedTableStorage * findReplacedTableStorage(const StoragePtr & replacement) const;
+    [[nodiscard]] [[nodiscard]] [[nodiscard]] const ReplacedTableStorage * findReplacedTableStorage(const StoragePtr & replacement) const;
 
     /** The name of the view a table expression was inlined from, see `inlineViewSubqueryIfNeeded`.
       * An inlined view keeps behaving as a table expression with that name, exactly as it does without
