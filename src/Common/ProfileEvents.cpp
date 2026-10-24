@@ -692,6 +692,7 @@
     M(CommonBackgroundExecutorWaitMicroseconds, "Time spent waiting for completion in Common executor.", ValueType::Microseconds) \
     \
     M(MergeTreeDataWriterSkipIndicesCalculationMicroseconds, "Time spent calculating skip indices", ValueType::Microseconds) \
+    M(MergeHelperThreadUnavailable, "Number of columns that a Vertical merge read in its own thread because all threads of `max_merge_helper_threads` were used", ValueType::Number) \
     M(MergeTreeDataWriterStatisticsCalculationMicroseconds, "Time spent calculating statistics", ValueType::Microseconds) \
     M(MergeTreeDataWriterSortingBlocksMicroseconds, "Time spent sorting blocks", ValueType::Microseconds) \
     M(MergeTreeDataWriterMergingBlocksMicroseconds, "Time spent merging input blocks (for special MergeTree engines)", ValueType::Microseconds) \
