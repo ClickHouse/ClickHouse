@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <unordered_map>
 #include <unordered_set>
 #include <Analyzer/TableNode.h>
@@ -252,7 +253,10 @@ private:
 
     bool expandMatchersInsideWindowDefinition(QueryTreeNodePtr & node, IdentifierResolveScope & scope);
 
-    bool expandProjectionMatchers(QueryNode & query_node, IdentifierResolveScope & scope);
+    bool expandProjectionMatchers(
+        QueryNode & query_node,
+        IdentifierResolveScope & scope,
+        const std::function<bool(size_t, bool)> & defer_transformer_expressions_at_position = {});
 
     ProjectionName resolveWindow(QueryTreeNodePtr & window_node, IdentifierResolveScope & scope);
 
@@ -359,6 +363,7 @@ private:
 
     /** The query whose projection matchers are expanded for the first time under `group_by_use_nulls`
       * while nothing depends on the expressions produced by their `APPLY` and `REPLACE` transformers, see `resolveQuery`.
+      * It is set only for the projection items that no positional argument of GROUP BY may refer to, see `expandProjectionMatchers`.
       * The GROUP BY keys are not known yet, so `resolveMatcher` does not resolve these expressions: they are resolved
       * in the second expansion, against the Nullable keys. Only the `REPLACE` mappings are registered.
       */
