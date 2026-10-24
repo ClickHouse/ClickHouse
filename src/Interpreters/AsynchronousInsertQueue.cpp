@@ -330,6 +330,17 @@ void AsynchronousInsertQueue::InsertData::Entry::finish(ResultProgress result)
         return;
 
     resetChunk();
+    if (on_success)
+    {
+        try
+        {
+            on_success();
+        }
+        catch (...)
+        {
+            tryLogCurrentException("AsynchronousInsertQueue", "Failed to run the callback of a successful asynchronous insert");
+        }
+    }
     promise.set_value(result);
 }
 
@@ -656,11 +667,16 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
 }
 
 AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushQueryWithBlock(
-    ASTPtr query, Block && block, ContextPtr query_context, std::unique_ptr<MemoryTracker> queued_data_tracker)
+    ASTPtr query,
+    Block && block,
+    ContextPtr query_context,
+    std::unique_ptr<MemoryTracker> queued_data_tracker,
+    std::function<void()> on_success)
 {
     query = query->clone();
     preprocessInsertQuery(query, query_context);
-    return pushDataChunk(std::move(query), std::move(block), std::move(query_context), std::move(queued_data_tracker));
+    return pushDataChunk(
+        std::move(query), std::move(block), std::move(query_context), std::move(queued_data_tracker), std::move(on_success));
 }
 
 std::vector<std::string> AsynchronousInsertQueue::getInsertQueryIds(InsertData & data)
@@ -672,7 +688,11 @@ std::vector<std::string> AsynchronousInsertQueue::getInsertQueryIds(InsertData &
 }
 
 AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(
-    ASTPtr query, DataChunk && chunk, ContextPtr query_context, std::unique_ptr<MemoryTracker> queued_data_tracker)
+    ASTPtr query,
+    DataChunk && chunk,
+    ContextPtr query_context,
+    std::unique_ptr<MemoryTracker> queued_data_tracker,
+    std::function<void()> on_success)
 {
     const auto & settings = query_context->getSettingsRef();
     validateSettings(settings, log);
@@ -699,6 +719,7 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(
         settings[Setting::insert_deduplication_token],
         insert_query.format,
         std::move(queued_data_tracker));
+    entry->on_success = std::move(on_success);
 
     /// If data is parsed on client we don't care of format which is written
     /// in INSERT query. Replace it to put all such queries into one bucket in queue.

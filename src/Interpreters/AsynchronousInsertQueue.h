@@ -15,6 +15,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <base/defines.h>
 
+#include <functional>
 #include <future>
 #include <variant>
 
@@ -77,7 +78,13 @@ public:
     void flush(const std::vector<StorageID> & tables);
 
     PushResult pushQueryWithInlinedData(ASTPtr query, ContextPtr query_context);
-    PushResult pushQueryWithBlock(ASTPtr query, Block && block, ContextPtr query_context, std::unique_ptr<MemoryTracker> queued_data_tracker = nullptr);
+    /// `on_success` is called by the flush once the block is stored.
+    PushResult pushQueryWithBlock(
+        ASTPtr query,
+        Block && block,
+        ContextPtr query_context,
+        std::unique_ptr<MemoryTracker> queued_data_tracker = nullptr,
+        std::function<void()> on_success = {});
     size_t getPoolSize() const { return pool_size; }
 
     /// This method should be called manually because it's not flushed automatically in dtor
@@ -201,6 +208,8 @@ private:
             const std::unique_ptr<MemoryTracker> queued_data_tracker;
             const std::chrono::time_point<std::chrono::system_clock> create_time;
             NameToNameMap query_parameters;
+            /// Called once when the flush stores the entry's data.
+            std::function<void()> on_success;
 
             Entry(
                 DataChunk && chunk_,
@@ -343,7 +352,12 @@ private:
 
     LoggerPtr log = getLogger("AsynchronousInsertQueue");
 
-    PushResult pushDataChunk(ASTPtr query, DataChunk && chunk, ContextPtr query_context, std::unique_ptr<MemoryTracker> queued_data_tracker);
+    PushResult pushDataChunk(
+        ASTPtr query,
+        DataChunk && chunk,
+        ContextPtr query_context,
+        std::unique_ptr<MemoryTracker> queued_data_tracker,
+        std::function<void()> on_success = {});
 
     Milliseconds getBusyWaitTimeoutMs(
         const Settings & settings,

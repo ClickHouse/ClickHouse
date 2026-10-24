@@ -8,6 +8,7 @@ from .prometheus_test_utils import (
     execute_query_via_http_api,
     get_response_to_remote_write,
     send_protobuf_to_remote_write,
+    types_pb2,
 )
 
 
@@ -51,6 +52,21 @@ def get_profile_event(event):
             f"SELECT sum(value) FROM system.events WHERE event = '{event}'"
         )
     )
+
+
+def write_request_with_exemplar(metric_name):
+    timestamp = 1724112000
+    write_request = convert_time_series_to_protobuf(
+        [({"__name__": metric_name}, {timestamp: 1.5})]
+    )
+    write_request.timeseries[0].exemplars.append(
+        types_pb2.Exemplar(
+            labels=[types_pb2.Label(name="trace_id", value="abc")],
+            value=1.5,
+            timestamp=timestamp * 1000,
+        )
+    )
+    return write_request
 
 
 def test_async_insert_metric_families_deduplication_cache():
@@ -145,6 +161,40 @@ def test_async_insert_no_acknowledgement_on_failure():
     assert node.query("SELECT count() FROM timeSeriesSamples(prometheus)") == "0\n"
 
 
+def test_async_insert_counts_dropped_exemplars():
+    node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
+
+    before = get_profile_event("PrometheusRemoteWriteDroppedExemplars")
+    send_protobuf_to_remote_write(
+        node.ip_address,
+        9093,
+        "/write?async_insert=1",
+        write_request_with_exemplar("exemplar_async_metric"),
+    )
+
+    # The flush counts the exemplar before the write is acknowledged.
+    assert get_profile_event("PrometheusRemoteWriteDroppedExemplars") - before == 1
+
+
+@pytest.mark.parametrize("async_insert", [0, 1])
+def test_async_insert_failure_counts_no_dropped_exemplars(async_insert):
+    node.query(
+        "CREATE TABLE samples (id UUID, timestamp DateTime64(3), value Float64, "
+        "CONSTRAINT reject_all CHECK value < 0) ENGINE=MergeTree ORDER BY (id, timestamp)"
+    )
+    node.query("CREATE TABLE prometheus ENGINE=TimeSeries DATA samples")
+
+    write_request = write_request_with_exemplar("exemplar_rejected_metric")
+    before = get_profile_event("PrometheusRemoteWriteDroppedExemplars")
+    response = get_response_to_remote_write(
+        node.ip_address, 9093, f"/write?async_insert={async_insert}", write_request
+    )
+
+    # The write is rejected, so its exemplar is not counted as dropped.
+    assert "VIOLATED_CONSTRAINT" in response.text
+    assert get_profile_event("PrometheusRemoteWriteDroppedExemplars") - before == 0
+
+
 def test_async_insert_flush_timeout_returns_503():
     node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
 
@@ -176,6 +226,56 @@ def test_async_insert_flush_timeout_returns_503():
         '{"resultType": "vector", "result": '
         '[{"metric": {"__name__": "timeout_metric"}, "value": [1724112000, "1.5"]}]}'
     )
+
+
+def test_async_insert_flush_timeout_counts_dropped_exemplars():
+    node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
+
+    write_request = write_request_with_exemplar("exemplar_timeout_metric")
+    before = get_profile_event("PrometheusRemoteWriteDroppedExemplars")
+    response = get_response_to_remote_write(
+        node.ip_address,
+        9093,
+        "/write?async_insert=1&wait_for_async_insert_timeout=0"
+        "&async_insert_use_adaptive_busy_timeout=0&async_insert_busy_timeout_max_ms=3000",
+        write_request,
+    )
+    assert response.status_code == 503
+
+    # The sample is flushed later, so its exemplar is counted as dropped too.
+    assert_eq_with_retry(
+        node, "SELECT count() FROM timeSeriesSamples(prometheus)", "1", retry_count=60
+    )
+    assert get_profile_event("PrometheusRemoteWriteDroppedExemplars") - before == 1
+
+
+def test_async_insert_failed_late_flush_counts_no_dropped_exemplars():
+    node.query(
+        "CREATE TABLE samples (id UUID, timestamp DateTime64(3), value Float64, "
+        "CONSTRAINT reject_all CHECK value < 0) ENGINE=MergeTree ORDER BY (id, timestamp)"
+    )
+    node.query("CREATE TABLE prometheus ENGINE=TimeSeries DATA samples")
+
+    write_request = write_request_with_exemplar("exemplar_late_rejected_metric")
+    before = get_profile_event("PrometheusRemoteWriteDroppedExemplars")
+    failed_before = get_profile_event("FailedAsyncInsertQuery")
+    response = get_response_to_remote_write(
+        node.ip_address,
+        9093,
+        "/write?async_insert=1&wait_for_async_insert_timeout=0"
+        "&async_insert_use_adaptive_busy_timeout=0&async_insert_busy_timeout_max_ms=3000",
+        write_request,
+    )
+    assert response.status_code == 503
+
+    # The flush after the timeout is rejected, so the exemplar is not counted as dropped.
+    assert_eq_with_retry(
+        node,
+        f"SELECT sum(value) > {failed_before} FROM system.events WHERE event = 'FailedAsyncInsertQuery'",
+        "1",
+        retry_count=60,
+    )
+    assert get_profile_event("PrometheusRemoteWriteDroppedExemplars") - before == 0
 
 
 def test_async_insert_flush_timeout_is_clamped():
