@@ -12,6 +12,12 @@ SELECT finalizeAggregation(CAST(unhex('03000000000000000000000000002640000000000
 SELECT hex(simpleLinearRegressionIfState(x, y, x > 1))
 FROM values('x Nullable(Float64), y Nullable(Float64)', (1, 3), (2, 5), (NULL, 7), (4, 9), (5, 11));
 
+-- The nullable `-If` state includes an adapter representation and must not be reinterpreted as the bare aggregate state.
+SELECT CAST(
+    simpleLinearRegressionIfState(x, y, x > 1),
+    'AggregateFunction(simpleLinearRegression, Nullable(Float64), Nullable(Float64))')
+FROM values('x Nullable(Float64), y Nullable(Float64)', (1, 3), (2, 5)); -- { serverError CANNOT_CONVERT_TYPE }
+
 -- 2. studentTTestIf(Nullable(Float64), Nullable(UInt8), cond)
 SELECT tuple(roundBankers(res.1, 4), roundBankers(res.2, 4))
 FROM (SELECT finalizeAggregation(CAST(unhex('000000000000004000000000000000400000000000002040000000000000284000000000000041400000000000005A40'), 'AggregateFunction(studentTTestIf, Nullable(Float64), Nullable(UInt8), UInt8)')) AS res);

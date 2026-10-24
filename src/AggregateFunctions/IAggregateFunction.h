@@ -383,6 +383,17 @@ public:
       */
     virtual bool isState() const { return false; }
 
+    /** Throws BAD_ARGUMENTS if this aggregate function has no meaningful finalized scalar result
+      * and can only be used as an intermediate aggregate state.
+      * Override in concrete functions that intentionally have no finalized result.
+      */
+    virtual void throwIfCannotProduceFinalizedResult() const
+    {
+        if (!isState())
+            if (const auto nested = getNestedFunction())
+                nested->throwIfCannotProduceFinalizedResult();
+    }
+
     /** How the finalized value of a merged state relates to the finalized values of the states
       * being merged; see the `MergedValueBound` enum. A function may declare a bound only if the
       * relation holds exactly for any set of states and any data, and its `insertResultInto` does
@@ -568,6 +579,15 @@ public:
       * Otherwise return nullptr.
       */
     virtual AggregateFunctionPtr getNestedFunction() const { return {}; }
+
+    /// Whether a combinator with this name can wrap the aggregate function.
+    /// Wrappers propagate restrictions declared by their nested function by default.
+    virtual bool supportsCombinator(const String & combinator_name) const
+    {
+        if (const auto nested = getNestedFunction())
+            return nested->supportsCombinator(combinator_name);
+        return true;
+    }
 
     /** Whether the function answers the same for the same input. `groupArraySample` without an explicit
       * seed draws from a thread-local generator for every state it creates, so it does not - and an
@@ -1183,6 +1203,12 @@ struct AggregateFunctionProperties
 
     /// Indicates if it's actually window function.
     bool is_window_function = false;
+
+    /// Whether `Nullable` arguments with the `-If` combinator must be rejected.
+    bool rejects_nullable_arguments_with_if = false;
+
+    /// Whether arguments whose type can only contain `NULL` must be rejected instead of replacing the function with `nothingNull`.
+    bool rejects_only_null_arguments = false;
 };
 
 
