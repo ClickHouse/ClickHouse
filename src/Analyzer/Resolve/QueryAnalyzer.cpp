@@ -621,7 +621,6 @@ namespace
 class JoinTreeRanges
 {
 public:
-    /// Indexes the subtree of `root`, unless `root` is already indexed.
     void add(const IQueryTreeNode * root)
     {
         if (ranges.contains(root))
