@@ -434,29 +434,21 @@ def test_rollback_unfinished_on_restart2(start_cluster):
 FAILPOINT = "merge_tree_commit_pause_before_removing_covered_parts"
 
 
-def test_recover_removal_tid_of_part_covered_by_non_txn_part(start_cluster):
+def kill_inside_drop_partition_commit(table, values):
     """
-    A non-transactional DROP PARTITION makes its empty covering part durable before it stores the
-    removal TID of the parts it covers, and the two are separate writes.  Killing the server in
-    between leaves an Outdated part whose creation was committed by a transaction but whose removal
-    was never recorded; before the fix, loading it aborted the server on every subsequent start.
-
-    Refer: https://github.com/ClickHouse/ClickHouse/issues/71136
+    Inserts one row per value, each in its own transaction, then kills the server while
+    `ALTER TABLE <table> DROP PARTITION 0` is between making its empty covering parts durable and
+    storing the removal TID of the parts they cover.
     """
-    node.query("DROP TABLE IF EXISTS mt4 SYNC")
-    node.query(
-        "CREATE TABLE mt4 (n int, m int) ENGINE=MergeTree ORDER BY n PARTITION BY n % 2"
-        " SETTINGS remove_empty_parts = 0, old_parts_lifetime = 3600"
-    )
     # The failpoint is global: any commit that removes covered parts pauses at it, so a merge of any
     # table would satisfy the wait below and the SIGKILL would then capture a different operation.
     node.query("SYSTEM STOP MERGES")
 
     # Each committed transaction leaves one part with a real creation_tid, a committed creation_csn
     # and an empty removal_tid.  Partition 0 (even n) is dropped below, partition 1 is the control.
-    for k in range(1, 5):
+    for k in values:
         tx(k, "BEGIN TRANSACTION")
-        tx(k, f"INSERT INTO mt4 VALUES({k},{k})")
+        tx(k, f"INSERT INTO {table} VALUES({k},{k})")
         tx(k, "COMMIT")
 
     # `SYSTEM STOP MERGES` only installs the merge blockers: a merge already past its last
@@ -481,7 +473,7 @@ def test_recover_removal_tid_of_part_covered_by_non_txn_part(start_cluster):
             == "1"
         ), f"failpoint {FAILPOINT} is not enabled"
 
-        drop_future = pool.submit(node.query, "ALTER TABLE mt4 DROP PARTITION 0")
+        drop_future = pool.submit(node.query, f"ALTER TABLE {table} DROP PARTITION 0")
         wait_future = pool.submit(node.query, f"SYSTEM WAIT FAILPOINT {FAILPOINT} PAUSE")
 
         done, _ = concurrent.futures.wait([wait_future], timeout=60)
@@ -503,8 +495,25 @@ def test_recover_removal_tid_of_part_covered_by_non_txn_part(start_cluster):
         node.query_and_get_answer_with_error(f"SYSTEM DISABLE FAILPOINT {FAILPOINT}")
         node.query_and_get_answer_with_error("SYSTEM START MERGES")
         # The disable above releases the parked commit and the wait, so joining is bounded, and the
-        # module-scoped node must be handed on with no DROP PARTITION still in flight on `mt4`.
+        # module-scoped node must be handed on with no DROP PARTITION still in flight on the table.
         pool.shutdown(wait=True, cancel_futures=True)
+
+
+def test_recover_removal_tid_of_part_covered_by_non_txn_part(start_cluster):
+    """
+    A non-transactional DROP PARTITION makes its empty covering part durable before it stores the
+    removal TID of the parts it covers, and the two are separate writes.  Killing the server in
+    between leaves an Outdated part whose creation was committed by a transaction but whose removal
+    was never recorded; before the fix, loading it aborted the server on every subsequent start.
+
+    Refer: https://github.com/ClickHouse/ClickHouse/issues/71136
+    """
+    node.query("DROP TABLE IF EXISTS mt4 SYNC")
+    node.query(
+        "CREATE TABLE mt4 (n int, m int) ENGINE=MergeTree ORDER BY n PARTITION BY n % 2"
+        " SETTINGS remove_empty_parts = 0, old_parts_lifetime = 3600"
+    )
+    kill_inside_drop_partition_commit("mt4", range(1, 5))
 
     node.query("SYSTEM WAIT LOADING PARTS mt4")
 
@@ -547,6 +556,95 @@ def test_recover_removal_tid_of_part_covered_by_non_txn_part(start_cluster):
     assert control == "1_1_1_0\n1_3_3_0", f"unexpected control parts: {control}"
 
     node.query("DROP TABLE IF EXISTS mt4 SYNC")
+
+
+def test_recover_removal_tid_before_covering_parts_are_merged(start_cluster):
+    """
+    The interrupted removal is completed when the outdated parts are loaded, in the background after
+    startup.  A transactional merge of the covering parts has to wait for it: the merged part is
+    created by a transaction, so after another restart nothing would show the removal was finished.
+    """
+    node.query("DROP TABLE IF EXISTS mt5 SYNC")
+    node.query(
+        "CREATE TABLE mt5 (n int, m int) ENGINE=MergeTree ORDER BY n PARTITION BY n % 2"
+        " SETTINGS remove_empty_parts = 0, old_parts_lifetime = 3600,"
+        " sleep_before_loading_outdated_parts_ms = 20000"
+    )
+    # Six empty covering parts of equal size are merged at once with the default merge settings, and
+    # the partition-1 part keeps the merges transactional after the restart.
+    kill_inside_drop_partition_commit("mt5", [1, 2, 4, 6, 8, 10, 12])
+
+    assert_eq_with_retry(
+        node,
+        "SELECT count() FROM system.parts"
+        " WHERE database='default' AND table='mt5' AND active AND partition_id='0'",
+        "1",
+        retry_count=120,
+        sleep_time=1,
+    )
+
+    non_txn_tid = "(1,1,'00000000-0000-0000-0000-000000000000',0)"
+    merged = node.query(
+        "SELECT name FROM system.parts"
+        " WHERE database='default' AND table='mt5' AND active AND partition_id='0'"
+        f"   AND creation_tid != {non_txn_tid} AND level = 2"
+    ).strip()
+    assert merged == "0_2_7_2", f"unexpected merged part: {merged}"
+
+    recovered = node.query(
+        "SELECT count() FROM system.parts"
+        " WHERE database='default' AND table='mt5' AND partition_id='0' AND level = 0"
+        f"   AND removal_tid = {non_txn_tid} AND removal_csn = 1"
+    ).strip()
+    assert recovered == "6", f"{recovered} of 6 covered parts recovered before the merge"
+
+    node.restart_clickhouse(kill=True)
+    node.query("SYSTEM WAIT LOADING PARTS mt5")
+    assert node.query("SELECT n FROM mt5 ORDER BY n") == "1\n"
+
+    node.query("DROP TABLE IF EXISTS mt5 SYNC")
+
+
+def test_recover_removal_tid_before_covering_parts_are_mutated(start_cluster):
+    """
+    Same for a transactional mutation, which runs in a transaction even when no active part was
+    involved in one.
+    """
+    node.query("DROP TABLE IF EXISTS mt6 SYNC")
+    node.query(
+        "CREATE TABLE mt6 (n int, m int) ENGINE=MergeTree ORDER BY n PARTITION BY n % 2"
+        " SETTINGS remove_empty_parts = 0, old_parts_lifetime = 3600,"
+        " sleep_before_loading_outdated_parts_ms = 20000"
+    )
+    # Only partition 0 has parts, so after the kill every active part is an empty covering part
+    # created without a transaction.
+    kill_inside_drop_partition_commit("mt6", [2, 4])
+
+    tx(20, "BEGIN TRANSACTION")
+    tx(20, "ALTER TABLE mt6 UPDATE m = m + 1 WHERE 1")
+    tx(20, "COMMIT")
+
+    non_txn_tid = "(1,1,'00000000-0000-0000-0000-000000000000',0)"
+    mutated = node.query(
+        "SELECT name FROM system.parts"
+        " WHERE database='default' AND table='mt6' AND active"
+        f"   AND creation_tid != {non_txn_tid}"
+        " ORDER BY name"
+    ).strip()
+    assert mutated == "0_1_1_1_3\n0_2_2_1_3", f"unexpected mutated parts: {mutated}"
+
+    recovered = node.query(
+        "SELECT count() FROM system.parts"
+        " WHERE database='default' AND table='mt6' AND level = 0"
+        f"   AND removal_tid = {non_txn_tid} AND removal_csn = 1"
+    ).strip()
+    assert recovered == "2", f"{recovered} of 2 covered parts recovered before the mutation"
+
+    node.restart_clickhouse(kill=True)
+    node.query("SYSTEM WAIT LOADING PARTS mt6")
+    assert node.query("SELECT count() FROM mt6") == "0\n"
+
+    node.query("DROP TABLE IF EXISTS mt6 SYNC")
 
 
 def test_mutate_transaction_involved_parts(start_cluster):

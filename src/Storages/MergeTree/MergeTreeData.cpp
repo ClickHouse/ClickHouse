@@ -4077,6 +4077,7 @@ try
         {
             outdated_data_parts_loading_finished = true;
             outdated_data_parts_cv.notify_all();
+            triggerBackgroundOperations();
             return;
         }
 
@@ -4292,6 +4293,8 @@ try
 
     outdated_data_parts_loading_finished = true;
     outdated_data_parts_cv.notify_all();
+    /// Transactional merges and mutations wait for the outdated parts to be loaded.
+    triggerBackgroundOperations();
 }
 catch (...)
 {
