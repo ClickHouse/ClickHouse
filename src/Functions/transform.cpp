@@ -777,6 +777,23 @@ namespace
         const bool cast_checked_enum_membership = isEnum(removeNullable(from_type))
             && isStringOrFixedString(removeNullable(from_array_nested_type));
 
+        /// A cast between `UUID` and `UUID2` keeps the value but swaps the halves of its representation, so the cast
+        /// entry never equals the original `Field`, although the conversion is exact.
+        const auto decayed_from_type = removeNullable(removeLowCardinality(from_type));
+        const auto decayed_from_array_nested_type = removeNullable(removeLowCardinality(from_array_nested_type));
+        const bool cast_between_uuid_types = (isUUID(decayed_from_type) && isUUID2(decayed_from_array_nested_type))
+            || (isUUID2(decayed_from_type) && isUUID(decayed_from_array_nested_type));
+
+        const auto entry_converted_exactly = [&](size_t i)
+        {
+            if (cast_checked_enum_membership)
+                return true;
+            const Field original = (*from_column_uncast)[i];
+            if (cast_between_uuid_types && !original.isNull())
+                return true;
+            return accurateEquals((*cache->from_column)[i], original);
+        };
+
         /// Field may be of Float type, but for the purpose of bitwise equality we can treat them as UInt64
         if (isNativeNumber(which) || which.isDecimal32() || which.isDecimal64() || which.isEnum())
         {
@@ -784,7 +801,7 @@ namespace
             auto & table = *cache->table_num_to_idx;
             for (size_t i = 0; i < size; ++i)
             {
-                if (cast_checked_enum_membership || accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
+                if (entry_converted_exactly(i))
                 {
                     UInt64 key = 0;
                     auto * dst = reinterpret_cast<char *>(&key);
@@ -807,7 +824,7 @@ namespace
             auto & table = *cache->table_string_to_idx;
             for (size_t i = 0; i < size; ++i)
             {
-                if (cast_checked_enum_membership || accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
+                if (entry_converted_exactly(i))
                 {
                     std::string_view ref = cache->from_column->getDataAt(i);
                     table.insertIfNotPresent(ref, i);
@@ -820,7 +837,7 @@ namespace
             auto & table = *cache->table_anything_to_idx;
             for (size_t i = 0; i < size; ++i)
             {
-                if (cast_checked_enum_membership || accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
+                if (entry_converted_exactly(i))
                 {
                     SipHash hash;
                     cache->from_column->updateHashWithValue(i, hash);

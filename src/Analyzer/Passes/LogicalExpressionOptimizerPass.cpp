@@ -891,7 +891,15 @@ static AddComparisonFilterResult addComparisonFilter(
     const auto & raw_type = expression->getResultType();
     auto expr_type = removeLowCardinality(raw_type);
 
-    new_filter.converted_value = tryConvertToColumnType(new_filter.constant_node, expr_type);
+    /// A comparison of `UUID` with `UUID2` is evaluated in `UUID2`, which orders the values differently from `UUID`,
+    /// so the constant converted to the column's type would be compared in the wrong order: keep such a filter as is.
+    const auto decayed_constant_type = removeNullable(removeLowCardinality(new_filter.constant_node->getResultType()));
+    const auto decayed_expr_type = removeNullable(expr_type);
+    const bool mixed_uuid_types = (isUUID(decayed_constant_type) && isUUID2(decayed_expr_type))
+        || (isUUID2(decayed_constant_type) && isUUID(decayed_expr_type));
+
+    if (!mixed_uuid_types)
+        new_filter.converted_value = tryConvertToColumnType(new_filter.constant_node, expr_type);
 
     /// Step 2: for integer columns, try boundary folding / float-literal rewriting.
     if (enable_pruning)
