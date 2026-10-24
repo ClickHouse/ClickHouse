@@ -7371,6 +7371,10 @@ For example, `avg(if(cond, col, null))` can be rewritten to `avgOrNullIf(cond, c
 Rewrite arrayExists() functions to has() when logically equivalent. For example, arrayExists(x -> x = 1, arr) can be rewritten to has(arr, 1)
 )", 0, \
         {"26.4", false, true, "Enable arrayExists to has rewrite optimization by default, now that type compatibility is checked before rewriting."}) \
+    DECLARE(Bool, optimize_rewrite_array_exists_like_to_or, false, R"(
+Rewrite `arrayExists(x -> haystack LIKE x, constant_array)` to an `OR` chain of `LIKE` with constant patterns, so that each `LIKE` can use the fast path for a constant pattern. This is the form that `haystack LIKE SOME([...])` and `haystack ILIKE SOME([...])` are parsed into. For example, `s ILIKE SOME(['%a%', '%b%'])` is rewritten to `s ILIKE '%a%' OR s ILIKE '%b%'`
+)", 0, \
+        {"26.10", false, false, "New setting: rewrite `arrayExists(x -> haystack LIKE x, constant_array)`, which is what `LIKE SOME` / `ILIKE SOME` are parsed into, to an `OR` chain of `LIKE` with constant patterns. Disabled by default."}) \
     DECLARE(Bool, optimize_rewrite_array_filter_length_to_array_count, true, R"(
 Rewrite `length(arrayFilter(func, arr))` to `arrayCount(func, arr)`. `arrayFilter` builds an array of the matching elements only for `length` to throw it away, while `arrayCount` just counts them.
 )", 0, \
