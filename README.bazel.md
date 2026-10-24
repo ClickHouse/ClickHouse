@@ -47,18 +47,18 @@ of `//:clickhouse`. The output is a Linux ELF even when the client is macOS.
 
 ## Binary comparison
 
-[93d4235b8](https://github.com/dzbarsky/clickhouse/commit/93d4235b8ae2c096a83af390ad69868b28603c4a) completed the native Bazel targets (x86-64: 60, ARM64: 60). Both normalized ClickHouse hashes and sizes matched native CMake.
+[a38921cb8](https://github.com/dzbarsky/clickhouse/commit/a38921cb8dd22a3f8c942b0e6249d076ad4e2e04) completed the native Bazel targets (x86-64: 60, ARM64: 60). Both normalized ClickHouse hashes and sizes matched native CMake.
 
 | Native Bazel build | ELF | SHA-256 | Bytes |
 | --- | --- | --- | --- |
-| [x86-64](https://app.buildbuddy.io/invocation/7d1bb0b6-8913-4a93-bd56-99ad65359abe) | Normalized ClickHouse | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710,693,736 |
+| [x86-64](https://app.buildbuddy.io/invocation/9036d423-cb65-4737-b0da-09162af52825) | Normalized ClickHouse | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710,693,736 |
 |  | Raw ClickHouse | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929,619,680 |
 |  | `unit_tests_dbms` | `2a6934b1d4523406f0c1e45b68b515914ba14a4167ffb6c05c0668a5ffb11260` | 811,968,280 |
-| [ARM64](https://app.buildbuddy.io/invocation/e57fb26c-484f-4cd1-bcd1-d8fa7eb2b312) | Normalized ClickHouse | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637,316,696 |
+| [ARM64](https://app.buildbuddy.io/invocation/a0be3d16-e7d4-40cf-ad54-b9e8f2e0b630) | Normalized ClickHouse | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637,316,696 |
 |  | Raw ClickHouse | `2363f1ffebe756464876c0e91ca336d77c4d17e6a27afe2fb22b8f337ac2d744` | 907,067,440 |
 |  | `unit_tests_dbms` | `d489d1b0fd52b57389f107e5650cb58c5f6a33689d9c6090a5198cf0bdef2176` | 795,060,896 |
 
-The raw ClickHouse and `unit_tests_dbms` executables matched [e10eaf426](https://github.com/dzbarsky/clickhouse/commit/e10eaf426d559c60ad5be706011e95fe97be5d6f). Each CPU passed 38 GoogleTests, six SQL cases and 16 Decimal boundary checks. The hashes and sizes come from BuildBuddy output metadata. 51 separate public-header translation units produced objects on each CPU. `src/Interpreters/SetSerialization.h` remains on `//src:headers`; the [validation history](bazel/initial_migration/validation-history.md#93d4235b8) records why.
+The raw ClickHouse and `unit_tests_dbms` executables matched [93d4235b8](https://github.com/dzbarsky/clickhouse/commit/93d4235b8ae2c096a83af390ad69868b28603c4a). Each CPU passed 38 GoogleTests, six SQL cases and 16 Decimal boundary checks. The hashes and sizes come from BuildBuddy output metadata. On each CPU, 51 public-header checks and eight SDK checks produced separate objects. `src/Interpreters/SetSerialization.h` remains on `//src:headers`; see the [earlier compiler failure](bazel/initial_migration/validation-history.md#93d4235b8). The first attempt at this commit built 59 of 61 targets on each CPU and skipped GoogleTest, SQL and DWYU. The retry built all 60 requested targets.
 
 To check a change against these references without downloading either ELF, run:
 
@@ -177,4 +177,4 @@ python3 bazel/initial_migration/audit_full_dwyu.py --config cmake_match --out /t
 python3 bazel/initial_migration/audit_full_dwyu.py --config cmake_match_aarch64 --out /tmp/clickhouse-dwyu-arm
 ```
 
-At [93d4235b8](https://github.com/dzbarsky/clickhouse/commit/93d4235b8ae2c096a83af390ad69868b28603c4a), DWYU reported x86-64: 9 clean, 9 with findings, 4 failed (36/782 selected); ARM64: 9 clean, 7 with findings, 4 failed (32/782 selected). Nonselected labels are unverified. See the [validation history](bazel/initial_migration/validation-history.md#93d4235b8) for all outcomes.
+At [a38921cb8](https://github.com/dzbarsky/clickhouse/commit/a38921cb8dd22a3f8c942b0e6249d076ad4e2e04), DWYU reported x86-64: 4 clean, 4 with findings, 3 failed (21/782 selected); ARM64: 4 clean, 3 with findings, 3 failed (19/782 selected). Nonselected labels are unverified. See the [validation history](bazel/initial_migration/validation-history.md#a38921cb8) for all outcomes. Of the 24 optional targets, the ordinary and strict builds requested x86-64: 0, ARM64: 0. Each strict build recorded 486 failed header-preprocessing actions: 484 on `//src:headers`, one on `//src/Parsers:headers` and one on `//src/Functions:headers`.

@@ -1625,3 +1625,57 @@ Each CPU ran the expected negative fixture and reported exactly its unused imple
 DWYU checked the selected declarations in `cmake_match` and `cmake_match_aarch64`. Includes from textual consumer contexts were outside this selection.
 
 The unpublished `a392b4c0f` build failed on `h24_SetSerialization.cpp` on both CPUs ([x86-64](https://app.buildbuddy.io/invocation/deefa67c-7403-471e-af16-6b02d4ab4184), [ARM64](https://app.buildbuddy.io/invocation/980bccf1-e776-4c61-bb99-6008c72f8804)). [src/Interpreters/SetSerialization.h](https://github.com/ClickHouse/ClickHouse/blob/6bb427c9a81459c2b9e7369ef6ed8a6e8680b0da/src/Interpreters/SetSerialization.h) uses `std::list` without including `<list>`. The correction kept `src/Interpreters/SetSerialization.h` on `//src:headers`. The current 51 downstream checks omit that unsolved header. The failed sibling sets the BuildBuddy submission interval; the published [e10eaf426](https://github.com/dzbarsky/clickhouse/commit/e10eaf426d559c60ad5be706011e95fe97be5d6f) supplies all three ELF references on each CPU.
+
+## a38921cb8
+
+[a38921cb8](https://github.com/dzbarsky/clickhouse/commit/a38921cb8dd22a3f8c942b0e6249d076ad4e2e04): `Declare ClickHouse header owners and narrow private dependencies`. The raw ClickHouse and `unit_tests_dbms` executables matched [93d4235b8](https://github.com/dzbarsky/clickhouse/commit/93d4235b8ae2c096a83af390ad69868b28603c4a). Each CPU passed 38 GoogleTests, six SQL cases and 16 Decimal boundary checks. The hashes and sizes come from BuildBuddy output metadata.
+
+| Native Bazel build | ELF | SHA-256 | Bytes |
+| --- | --- | --- | --- |
+| [x86-64](https://app.buildbuddy.io/invocation/9036d423-cb65-4737-b0da-09162af52825) | Normalized ClickHouse | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710,693,736 |
+|  | Raw ClickHouse | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929,619,680 |
+|  | `unit_tests_dbms` | `2a6934b1d4523406f0c1e45b68b515914ba14a4167ffb6c05c0668a5ffb11260` | 811,968,280 |
+| [ARM64](https://app.buildbuddy.io/invocation/a0be3d16-e7d4-40cf-ad54-b9e8f2e0b630) | Normalized ClickHouse | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637,316,696 |
+|  | Raw ClickHouse | `2363f1ffebe756464876c0e91ca336d77c4d17e6a27afe2fb22b8f337ac2d744` | 907,067,440 |
+|  | `unit_tests_dbms` | `d489d1b0fd52b57389f107e5650cb58c5f6a33689d9c6090a5198cf0bdef2176` | 795,060,896 |
+
+Native Bazel targets built: x86-64: 60, ARM64: 60. Both normalized binaries matched native CMake. Both embedded CcInfo comparisons matched all 17 ordered fields and their source constraints. The Boost report matched its 12 fields, and CRoaring passed the 4,096-byte alignment check on each CPU.
+
+x86-64: 51 independent translation units produced objects, one per selected public header. Original compiler action metadata was not collected for these translation units.
+
+ARM64: 51 independent translation units produced objects, one per selected public header. Original compiler action metadata was not collected for these translation units.
+
+| CPU | Ordinary DWYU | Strict DWYU | Selected | Omitted | Production outcomes | Failed preprocessing outputs |
+| --- | --- | --- | --- | --- | --- | --- |
+| x86-64 ([parent Failed](https://app.buildbuddy.io/invocation/dc1fc957-f137-422d-bd06-5cb531a96edc)) | [exit 0](https://app.buildbuddy.io/invocation/2e607c79-4004-4f1f-9365-9f332ba6fe7b) | [exit 1](https://app.buildbuddy.io/invocation/5e29b7cb-ff8c-49db-a06c-b6c437de25b7) | 21 | 761 | 4 `clean`, 3 `failed`, 4 `findings`, 1 `header_pp_not_verified`, 1 `no_cpp`, 8 `unverified_link_deps` | 486 |
+| ARM64 ([parent Failed](https://app.buildbuddy.io/invocation/36949da9-fb22-429e-af36-049e25ee66af)) | [exit 0](https://app.buildbuddy.io/invocation/f2bc3633-9173-46d8-920b-ee2d2c54f2a2) | [exit 1](https://app.buildbuddy.io/invocation/04b401a7-7fe0-4438-bf88-97bb050298a7) | 19 | 763 | 4 `clean`, 3 `failed`, 3 `findings`, 1 `header_pp_not_verified`, 8 `unverified_link_deps` | 486 |
+
+Each CPU ran the expected negative fixture and reported exactly its unused implementation dependency. Nonselected labels are unverified. A configured header declaration alone does not verify a compiler's include resolution.
+
+DWYU checked the selected declarations in `cmake_match` and `cmake_match_aarch64`. Includes from textual consumer contexts were outside this selection.
+
+The eight changes cover public and private DBMS headers, OpenLDAP, benchmark dependencies, the Arrow BUILD file, `IThrottler`, Arrow’s ISA-L dependencies and `ASTSystemQuery.h`. The eight SDK consumers included OpenLDAP C and C++ callers, `StoragePostgreSQL.h`, `parseColumnsListForTableFunction.h`, `IThrottler.h` and `ASTSystemQuery.h` with `USE_XRAY=1`. All eight produced the expected object on both CPUs. BuildBuddy recorded all ten benchmark archive SHA-256 values and sizes, including `//src:benchmark_runtime_filter_objects`; all ten matched [93d4235b8](https://github.com/dzbarsky/clickhouse/commit/93d4235b8ae2c096a83af390ad69868b28603c4a). Individual benchmark object equality was not inferred from an archive.
+
+`src/Interpreters/SetSerialization.h` still belongs to `//src:headers`. The [previous standalone build](bazel/initial_migration/validation-history.md#93d4235b8) found that this upstream header uses `std::list` without including `<list>`. It is outside the 51 current checks.
+
+The 17 ordered CcInfo fields compare equivalent current BUILD expressions. Counts can change from the previous source; these are the measured changes that matched the declared dependencies and named include directories.
+
+| CPU | Embedded target | Field counts: 93d4235b8 → current |
+| --- | --- | --- |
+| x86-64 | `//src:clickhouse_common_io_embedded` | `headers`: 24392 → 24368, `system_includes`: 198 → 199 |
+| x86-64 | `//src:dbms_embedded` | `headers`: 29719 → 29695, `linker_inputs`: 444 → 439, `system_includes`: 312 → 313 |
+| ARM64 | `//src:clickhouse_common_io_embedded` | `headers`: 24389 → 24365, `system_includes`: 198 → 199 |
+| ARM64 | `//src:dbms_embedded` | `headers`: 29716 → 29692, `system_includes`: 312 → 313 |
+
+| CPU | Production labels queried | Mandatory labels requested | Optional selection | Optional labels requested | Production DWYU reports | Requested without a DWYU report | Public-header objects matching 93d4235b8 (of 51) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| x86-64 | 45 | 21 | mandatory_only | 0/24 | 17 | 4 | 51 |
+| ARM64 | 43 | 19 | mandatory_only | 0/24 | 16 | 3 | 51 |
+
+The requested target counts come from the original ordinary and strict invocations. The production DWYU reports contain the original per-target JSON with a verified SHA-256. A requested target without a report has no inferred clean or failed report. Prior failed preprocessing outputs are not assumed fixed.
+
+First attempt at the same commit ([x86-64](https://app.buildbuddy.io/invocation/adb7bdd3-8932-4ebe-aa26-b4e987b0461d), [ARM64](https://app.buildbuddy.io/invocation/b2c7b667-d9c4-48de-b475-db2d149813ae)): both native invocations built 59 of 61 targets. `@clickhouse_openldap//:_api` had been removed, and four OpenLDAP C/C++ tests in `//bazel/fixtures/compiled_sdk_consumers:objects` used `__has_include` to test whether a dependency exported a header. Discoverability includes compiler search directories, so it cannot establish which dependency owns a public header. The three executable hashes matched on each CPU, and the four embedded CcInfo reports matched all 17 fields. Neither invocation passed the native build; GoogleTest, SQL and DWYU did not run.
+
+The retry kept the same source tree. It removed `@clickhouse_openldap//:_api` from the requested targets and required `@clickhouse_openldap//:_lber` to export four public headers and `@clickhouse_openldap//:_ldap` to export two more and provide the four BER headers. Bazel compared their direct public, private and textual headers. The four downstream C and C++ checks used header guards to test what their public includes actually introduced. All eight SDK object files were present on each CPU. Local Bazel controls also rejected a private header promoted to public and a public header hidden from its owner.
+
+The ordinary DWYU invocations passed; both strict invocations failed. On each CPU, the 24 optional targets were withheld because the configured analyzer inputs did not match. DWYU ran on 21 of 782 production targets on x86-64 and 19 on ARM64. Four compiled targets were clean on both: `//base/poco/JSON:_poco_json`, `//src:dbms__compile_1`, `@clickhouse_openldap//:_lber`, `@clickhouse_openldap//:_ldap`. The selected headers produced 486 failed preprocessing actions per CPU. Of the 499 header failures at [93d4235b8](https://github.com/dzbarsky/clickhouse/commit/93d4235b8ae2c096a83af390ad69868b28603c4a), 495 were in the current selection. 466 had identical stderr, 20 had a different first diagnostic, and nine no longer appeared as failures. The last count does not establish nine successful compiles.
