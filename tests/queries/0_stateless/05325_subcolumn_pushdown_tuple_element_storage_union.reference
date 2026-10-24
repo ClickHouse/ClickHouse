@@ -1,0 +1,19 @@
+named tuple element
+2	0
+x
+y
+x
+y
+array sizes, nullable and unnamed tuples are not pushed
+0	0	0
+1	\N	v
+2	p	u
+1	\N	v
+2	p	u
+union source
+x
+y
+x
+y
+x
+y
