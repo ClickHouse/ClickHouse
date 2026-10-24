@@ -368,7 +368,8 @@ bool InterpreterInsertQuery::shouldAddSquashingForStorage(const StoragePtr & tab
     return !(settings[Setting::distributed_foreground_insert] && table->isRemote());
 }
 
-static std::pair<QueryPipelineBuilder, ClusterProxy::LocalPlanParallelReplicasInfo> getLocalSelectPipelineForInserSelectWithParallelReplicas(const ASTPtr & select, const ContextPtr & context)
+static std::optional<std::pair<QueryPipelineBuilder, ClusterProxy::LocalPlanParallelReplicasInfo>>
+getLocalSelectPipelineForInserSelectWithParallelReplicas(const ASTPtr & select, const ContextPtr & context)
 {
     auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, /*subquery_depth_=*/1);
 
@@ -382,7 +383,10 @@ static std::pair<QueryPipelineBuilder, ClusterProxy::LocalPlanParallelReplicasIn
     /// The connection pools and local replica index decided here are returned too, so the remote pass
     /// reuses the exact same replica set rather than recomputing liveness from a fresh snapshot.
     auto parallel_replicas_info = ClusterProxy::dropReadFromRemoteInPlan(plan);
-    return {interpreter.buildQueryPipeline(), std::move(parallel_replicas_info)};
+    if (!parallel_replicas_info)
+        return {};
+
+    return std::make_pair(interpreter.buildQueryPipeline(), std::move(*parallel_replicas_info));
 }
 
 
@@ -802,18 +806,22 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(
 }
 
 
-std::pair<QueryPipeline, ClusterProxy::LocalPlanParallelReplicasInfo> InterpreterInsertQuery::buildLocalInsertSelectPipelineForParallelReplicas(
+std::optional<std::pair<QueryPipeline, ClusterProxy::LocalPlanParallelReplicasInfo>>
+InterpreterInsertQuery::buildLocalInsertSelectPipelineForParallelReplicas(
     ASTInsertQuery & query, const StoragePtr & table, ContextPtr select_context)
 {
     applyTrivialInsertSelectOptimization(query, table->prefersLargeBlocks(), max_insert_threads, select_context);
 
-    auto [pipeline_builder, parallel_replicas_info]
-        = getLocalSelectPipelineForInserSelectWithParallelReplicas(query.select, select_context);
+    auto local_select = getLocalSelectPipelineForInserSelectWithParallelReplicas(query.select, select_context);
+    if (!local_select)
+        return {};
+
+    auto & [pipeline_builder, parallel_replicas_info] = *local_select;
     /// Parallel replicas builds its own local pipeline and never routes through the async insert queue,
     /// so it hands over no lock and the caller keeps it for the whole pipeline.
     auto local_pipeline = addInsertToSelectPipeline(
         query, table, pipeline_builder, /* add_async_insert_queue_transform */ false, /* destination_lock */ nullptr);
-    return {std::move(local_pipeline), std::move(parallel_replicas_info)};
+    return std::make_pair(std::move(local_pipeline), std::move(parallel_replicas_info));
 }
 
 
@@ -918,9 +926,9 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
                 "initiator's: the local pipeline shares the initiator's query status and cannot use the leaf "
                 "timeout separately");
         }
-        else
+        else if (auto local = buildLocalInsertSelectPipelineForParallelReplicas(query, table, context))
         {
-            auto [local_pipeline, parallel_replicas_info] = buildLocalInsertSelectPipelineForParallelReplicas(query, table, context);
+            auto & [local_pipeline, parallel_replicas_info] = *local;
             auto coordinator = parallel_replicas_info.coordinator;
             auto local_replica_index = parallel_replicas_info.local_replica_index;
             return ClusterProxy::executeInsertSelectWithParallelReplicas(
@@ -930,6 +938,10 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
                 std::move(coordinator),
                 std::move(parallel_replicas_info.connection_pools),
                 local_replica_index);
+        }
+        else
+        {
+            LOG_TRACE(logger, "Not using the local insert select pipeline because the SELECT plan has no local part");
         }
     }
 
