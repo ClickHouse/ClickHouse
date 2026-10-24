@@ -589,6 +589,23 @@ static bool isLossyStream(const ISerialization::SubstreamPath & substream_path, 
     return codec && CompressionCodecFactory::instance().get(codec, substream_path.back().data.type.get())->isLossyCompression();
 }
 
+/// Whether a lossy codec applies to any value stream of `column`: through the column codec, or through
+/// the codec declared for one of its subcolumns (`subcolumn_codecs`), which excludes a column codec.
+static bool columnHasLossyStream(const ColumnDescription & column)
+{
+    if (!column.codec && column.subcolumn_codecs.empty())
+        return false;
+
+    bool is_lossy = false;
+    ISerialization::StreamCallback callback = [&](const auto & substream_path)
+    {
+        if (!is_lossy)
+            is_lossy = isLossyStream(substream_path, column);
+    };
+    column.type->getDefaultSerialization()->enumerateStreams(callback, column.type);
+    return is_lossy;
+}
+
 /// The dictionary stream of `LowCardinality` also stores its version and sizes, which a lossy codec would corrupt.
 void MergeTreeData::checkLossyCodecOnLowCardinality(const ColumnsDescription & columns)
 {
@@ -7214,8 +7231,21 @@ void MergeTreeData::checkLossyRecompressionIsPossible(
     /// The column may have been dropped or turned into an ALIAS since the mutation was created;
     /// the rewrite then follows the current metadata and there is no stored stream to guard.
     const auto * column_desc = columns.tryGet(column_name);
-    if (!column_desc || !column_desc->codec || !codecResolvesToLossyCompression(column_desc->codec, column_desc->type))
+    /// A lossy codec may also be declared for a subcolumn only (`MODIFY COLUMN p.v CODEC(SZ3(...))`). The
+    /// dependents are then checked against the whole column, which is conservative for the dependents
+    /// that read only its other subcolumns.
+    if (!column_desc || !columnHasLossyStream(*column_desc))
         return;
+
+    String lossy_codec_description;
+    if (column_desc->codec)
+        lossy_codec_description = column_desc->codec->formatForErrorMessage();
+    for (const auto & [subcolumn_name, subcolumn_codec] : column_desc->subcolumn_codecs)
+    {
+        if (!lossy_codec_description.empty())
+            lossy_codec_description += ", ";
+        lossy_codec_description += fmt::format("{} of the subcolumn `{}.{}`", subcolumn_codec->formatForErrorMessage(), column_name, subcolumn_name);
+    }
 
     /// A dependency list may name a subcolumn (`val.x` of a `Tuple`, `arr.size0`, ...) instead of
     /// the stored column that holds it, and reading a subcolumn reads the very stream that the
@@ -7226,7 +7256,7 @@ void MergeTreeData::checkLossyRecompressionIsPossible(
     /// is only ever applied to the substreams where `ISerialization::isSpecialCompressionAllowed`
     /// holds - for array sizes, null maps and the other structural substreams the part writers and
     /// the raw-block recompression fall back to the generic codecs of the chain, so a lossy
-    /// recompression cannot change their values (`codecResolvesToLossyCompression` skips them for
+    /// recompression cannot change their values (`isLossyStream` skips them for
     /// the same reason). A dependent that reads the recompressed column only through such
     /// subcolumns stays valid and must not block the recompression.
     auto is_structural_subcolumn = [&](std::string_view subcolumn_name)
@@ -7512,7 +7542,7 @@ void MergeTreeData::checkLossyRecompressionIsPossible(
                 "were before the recompression. Drop the projection first (a DROP PROJECTION "
                 "written before the RECOMPRESS COLUMN in the same ALTER works), or rebuild it "
                 "with ALTER TABLE ... MATERIALIZE PROJECTION after the recompression.",
-                column_name, column_desc->codec->formatForErrorMessage(), projection.name);
+                column_name, lossy_codec_description, projection.name);
     }
 
     for (const auto & index : metadata_snapshot->getSecondaryIndices())
@@ -7529,7 +7559,7 @@ void MergeTreeData::checkLossyRecompressionIsPossible(
                 "were before the recompression and could skip granules that do match. Drop the index "
                 "first (a DROP INDEX written before the RECOMPRESS COLUMN in the same ALTER works), "
                 "or rebuild it with ALTER TABLE ... MATERIALIZE INDEX after the recompression.",
-                column_name, column_desc->codec->formatForErrorMessage(), index.name);
+                column_name, lossy_codec_description, index.name);
     }
 
     /// The partition value and the part minmax index are computed from the column values and
@@ -7545,7 +7575,7 @@ void MergeTreeData::checkLossyRecompressionIsPossible(
             "and the partition value and the part minmax index are not recalculated by the recompression, "
             "so they would keep describing the values as they were before the recompression and parts "
             "could be pruned incorrectly. Only a lossless codec can recompress a partition key column.",
-            column_name, column_desc->codec->formatForErrorMessage());
+            column_name, lossy_codec_description);
 
     /// Same for the sorting key: the primary index (`primary.idx`) describes the
     /// pre-recompression values, and the physical order of the rows itself may no longer match
@@ -7558,7 +7588,7 @@ void MergeTreeData::checkLossyRecompressionIsPossible(
             "recompression, so they would keep describing the values as they were before the "
             "recompression and granules could be skipped incorrectly. Only a lossless codec can "
             "recompress a sorting key column.",
-            column_name, column_desc->codec->formatForErrorMessage());
+            column_name, lossy_codec_description);
 
     /// A stored `MATERIALIZED` column is kept in sync with its expression by mutations (an
     /// `UPDATE` of a source column recalculates the dependent `MATERIALIZED` columns), but the
@@ -7586,7 +7616,7 @@ void MergeTreeData::checkLossyRecompressionIsPossible(
                 "property first (a MODIFY COLUMN ... REMOVE MATERIALIZED written before the RECOMPRESS "
                 "COLUMN in the same ALTER works); it can be re-added afterwards and the column rebuilt "
                 "with ALTER TABLE ... MATERIALIZE COLUMN.",
-                column_name, column_desc->codec->formatForErrorMessage(), dependent_column_name);
+                column_name, lossy_codec_description, dependent_column_name);
     }
 
     /// The part stores the min/max of every TTL expression (`ttl.txt`), and the background
@@ -7609,7 +7639,7 @@ void MergeTreeData::checkLossyRecompressionIsPossible(
                 "they would keep describing the values as they were before the recompression and data "
                 "could be expired, kept, moved, or recompressed incorrectly. Remove the TTL first ({}); "
                 "it can be re-added afterwards and the parts rebuilt with ALTER TABLE ... MATERIALIZE TTL.",
-                column_name, column_desc->codec->formatForErrorMessage(), ttl_kind,
+                column_name, lossy_codec_description, ttl_kind,
                 ttl_description.expression_ast->formatForErrorMessage(), removal_hint);
     };
 
