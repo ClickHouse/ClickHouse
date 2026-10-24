@@ -1278,6 +1278,74 @@ bool anyFieldSatisfies(const Field & field, bool (*predicate)(const Field &))
     return false;
 }
 
+bool sameConstantValue(const Field & lhs, const Field & rhs)
+{
+    /// An explicit worklist, like `anyFieldSatisfies`.
+    absl::InlinedVector<std::pair<const Field *, const Field *>, 16> pending{{&lhs, &rhs}};
+
+    auto push_elements = [&](const FieldVector & lhs_elements, const FieldVector & rhs_elements)
+    {
+        if (lhs_elements.size() != rhs_elements.size())
+            return false;
+        for (size_t i = 0; i < lhs_elements.size(); ++i)
+            pending.emplace_back(&lhs_elements[i], &rhs_elements[i]);
+        return true;
+    };
+
+    while (!pending.empty())
+    {
+        auto [lhs_value, rhs_value] = pending.back();
+        pending.pop_back();
+
+        if (lhs_value->getType() != rhs_value->getType())
+            return false;
+
+        switch (lhs_value->getType())
+        {
+            case Field::Types::AggregateFunctionState:
+            {
+                const auto & lhs_state = lhs_value->safeGet<AggregateFunctionStateData>();
+                const auto & rhs_state = rhs_value->safeGet<AggregateFunctionStateData>();
+                if (lhs_state.name != rhs_state.name || lhs_state.data != rhs_state.data)
+                    return false;
+                break;
+            }
+            case Field::Types::Array:
+                if (!push_elements(lhs_value->safeGet<Array>(), rhs_value->safeGet<Array>()))
+                    return false;
+                break;
+            case Field::Types::Tuple:
+                if (!push_elements(lhs_value->safeGet<Tuple>(), rhs_value->safeGet<Tuple>()))
+                    return false;
+                break;
+            case Field::Types::Map:
+                if (!push_elements(lhs_value->safeGet<Map>(), rhs_value->safeGet<Map>()))
+                    return false;
+                break;
+            case Field::Types::Object:
+            {
+                const auto & lhs_object = lhs_value->safeGet<Object>();
+                const auto & rhs_object = rhs_value->safeGet<Object>();
+                if (lhs_object.size() != rhs_object.size())
+                    return false;
+                for (auto lhs_it = lhs_object.begin(), rhs_it = rhs_object.begin(); lhs_it != lhs_object.end(); ++lhs_it, ++rhs_it)
+                {
+                    if (lhs_it->first != rhs_it->first)
+                        return false;
+                    pending.emplace_back(&lhs_it->second, &rhs_it->second);
+                }
+                break;
+            }
+            default:
+                if (*lhs_value != *rhs_value)
+                    return false;
+                break;
+        }
+    }
+
+    return true;
+}
+
 std::string_view fieldTypeToString(Field::Types::Which type)
 {
     switch (type)

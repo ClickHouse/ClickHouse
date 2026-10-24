@@ -3,6 +3,7 @@
 #include <Analyzer/TableQualifiers.h>
 
 #include <Analyzer/FunctionNode.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeFunction.h>
@@ -1427,6 +1428,7 @@ struct ConstantKeyHash
         k.sample->result_type->updateHash(h);
         k.sample->column->updateHashWithValue(0, h);
         h.update(k.sample->is_masked_secret);
+        updateHashWithAggregateFunctionNames(*k.sample->result_type, h);
         return h.get64();
     }
 };
@@ -1435,6 +1437,10 @@ struct ConstantKeyEqual
 {
     bool operator()(const ConstantKey & a, const ConstantKey & b) const
     {
+        /// `constColumnsEqual` cannot tell aggregate function states apart.
+        if (haveDifferentAggregateFunctionStates(*a.sample->result_type, *a.sample->column, *b.sample->result_type, *b.sample->column))
+            return false;
+
         /// a masked secret must not be collapsed onto an equal plain constant: the class
         /// representative would render the value instead of `[HIDDEN]` in plan dumps
         return a.sample->is_masked_secret == b.sample->is_masked_secret

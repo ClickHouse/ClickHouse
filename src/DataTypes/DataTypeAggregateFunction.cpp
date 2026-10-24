@@ -2,12 +2,19 @@
 #include <IO/ReadHelpers.h>
 
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
 #include <Core/ProtocolDefines.h>
 
 #include <Common/SipHash.h>
 #include <Common/AlignedBuffer.h>
+#include <Common/assert_cast.h>
+#include <Common/checkStackSize.h>
 
 #include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -571,11 +578,131 @@ std::vector<size_t> getAggregateStateVersions(const IDataType & type)
     return versions;
 }
 
+/// Of the argument types, only the aggregate functions nested in them are added; the rest is left to `equals`:
+/// one state can be spelled with different argument types, e.g. with `LowCardinality`.
+void addAggregateFunctionNames(const IDataType & type, std::vector<String> & names)
+{
+    forEachInTypeTree(type, [&](const IDataType & child)
+    {
+        if (const auto * aggregate_type = typeid_cast<const DataTypeAggregateFunction *>(&child))
+        {
+            const auto & function = *aggregate_type->getFunction();
+            names.push_back(std::to_string(aggregate_type->getVersion()) + ", " + function.getName()
+                + DataTypeAggregateFunction::formatParameters(function.getParameters()));
+            for (const auto & argument_type : function.getArgumentTypes())
+                addAggregateFunctionNames(*argument_type, names);
+        }
+    });
+}
+
+std::vector<String> getAggregateFunctionNames(const IDataType & type)
+{
+    std::vector<String> names;
+    addAggregateFunctionNames(type, names);
+    return names;
+}
+
+/// Other differences are left to the caller's `compareAt`.
+bool haveDifferentStatesAt(const IColumn & lhs, size_t lhs_row, const IColumn & rhs, size_t rhs_row)
+{
+    checkStackSize();
+
+    const IColumn * lhs_column = &lhs;
+    const IColumn * rhs_column = &rhs;
+    if (const auto * lhs_const = typeid_cast<const ColumnConst *>(lhs_column))
+    {
+        lhs_column = &lhs_const->getDataColumn();
+        lhs_row = 0;
+    }
+    if (const auto * rhs_const = typeid_cast<const ColumnConst *>(rhs_column))
+    {
+        rhs_column = &rhs_const->getDataColumn();
+        rhs_row = 0;
+    }
+
+    if (typeid(*lhs_column) != typeid(*rhs_column))
+        return false;
+
+    if (typeid_cast<const ColumnAggregateFunction *>(lhs_column))
+    {
+        Field lhs_state = (*lhs_column)[lhs_row];
+        Field rhs_state = (*rhs_column)[rhs_row];
+        return lhs_state.safeGet<AggregateFunctionStateData>().data != rhs_state.safeGet<AggregateFunctionStateData>().data;
+    }
+
+    if (const auto * lhs_array = typeid_cast<const ColumnArray *>(lhs_column))
+    {
+        const auto & rhs_array = assert_cast<const ColumnArray &>(*rhs_column);
+        size_t size = lhs_array->getSize(lhs_row);
+        if (size != rhs_array.getSize(rhs_row))
+            return false;
+        size_t lhs_start = lhs_array->getOffsets()[static_cast<ssize_t>(lhs_row) - 1];
+        size_t rhs_start = rhs_array.getOffsets()[static_cast<ssize_t>(rhs_row) - 1];
+        for (size_t i = 0; i < size; ++i)
+            if (haveDifferentStatesAt(lhs_array->getData(), lhs_start + i, rhs_array.getData(), rhs_start + i))
+                return true;
+        return false;
+    }
+
+    if (const auto * lhs_tuple = typeid_cast<const ColumnTuple *>(lhs_column))
+    {
+        const auto & rhs_tuple = assert_cast<const ColumnTuple &>(*rhs_column);
+        if (lhs_tuple->tupleSize() != rhs_tuple.tupleSize())
+            return false;
+        for (size_t i = 0; i < lhs_tuple->tupleSize(); ++i)
+            if (haveDifferentStatesAt(lhs_tuple->getColumn(i), lhs_row, rhs_tuple.getColumn(i), rhs_row))
+                return true;
+        return false;
+    }
+
+    if (const auto * lhs_map = typeid_cast<const ColumnMap *>(lhs_column))
+        return haveDifferentStatesAt(
+            lhs_map->getNestedColumn(), lhs_row, assert_cast<const ColumnMap &>(*rhs_column).getNestedColumn(), rhs_row);
+
+    if (const auto * lhs_nullable = typeid_cast<const ColumnNullable *>(lhs_column))
+    {
+        const auto & rhs_nullable = assert_cast<const ColumnNullable &>(*rhs_column);
+        if (lhs_nullable->isNullAt(lhs_row) || rhs_nullable.isNullAt(rhs_row))
+            return false;
+        return haveDifferentStatesAt(lhs_nullable->getNestedColumn(), lhs_row, rhs_nullable.getNestedColumn(), rhs_row);
+    }
+
+    if (const auto * lhs_variant = typeid_cast<const ColumnVariant *>(lhs_column))
+    {
+        const auto & rhs_variant = assert_cast<const ColumnVariant &>(*rhs_column);
+        auto discriminator = lhs_variant->globalDiscriminatorAt(lhs_row);
+        if (discriminator == ColumnVariant::NULL_DISCRIMINATOR || discriminator != rhs_variant.globalDiscriminatorAt(rhs_row))
+            return false;
+        return haveDifferentStatesAt(
+            lhs_variant->getVariantByGlobalDiscriminator(discriminator), lhs_variant->offsetAt(lhs_row),
+            rhs_variant.getVariantByGlobalDiscriminator(discriminator), rhs_variant.offsetAt(rhs_row));
+    }
+
+    return false;
+}
+
 }
 
 bool haveSameAggregateStateVersions(const IDataType & lhs, const IDataType & rhs)
 {
     return getAggregateStateVersions(lhs) == getAggregateStateVersions(rhs);
+}
+
+bool haveDifferentAggregateFunctionStates(const IDataType & lhs_type, const IColumn & lhs, const IDataType & rhs_type, const IColumn & rhs)
+{
+    auto names = getAggregateFunctionNames(lhs_type);
+    if (names != getAggregateFunctionNames(rhs_type))
+        return true;
+    return !names.empty() && haveDifferentStatesAt(lhs, 0, rhs, 0);
+}
+
+void updateHashWithAggregateFunctionNames(const IDataType & type, SipHash & hash)
+{
+    for (const auto & name : getAggregateFunctionNames(type))
+    {
+        hash.update(name.size());
+        hash.update(name.data(), name.size());
+    }
 }
 
 ColumnPtr relabelAggregateStateVersions(const ColumnPtr & column, const DataTypePtr & type)
