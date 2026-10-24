@@ -1,0 +1,11 @@
+-- query-based
+1	1	1
+-- plan-based
+1	1	1
+-- mixed
+-- without parallel replicas
+200000
+1000
+-- whole query
+200000
+200000
