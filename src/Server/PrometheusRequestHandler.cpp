@@ -202,6 +202,9 @@ protected:
         return !reserved_param_names.contains(name);
     }
 
+    /// Returns the settings which the handler derives from its own parameters.
+    virtual SettingsChanges getSettingsFromParams() const { return {}; }
+
     void makeContext(HTTPServerRequest & request)
     {
         context = session->makeQueryContext();
@@ -225,6 +228,11 @@ protected:
 
         context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
         context->applySettingsChanges(settings_changes);
+
+        /// Applied last and even when unchanged, so neither the request nor a Distributed table's settings override them.
+        const SettingsChanges derived_changes = getSettingsFromParams();
+        context->checkSettingsConstraints(derived_changes, SettingSource::QUERY);
+        context->applySettingsChanges(derived_changes);
 
         /// Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.
         String query_id = params->get("query_id", request.get("X-ClickHouse-Query-Id", ""));
@@ -467,10 +475,25 @@ public:
         if (name.empty())
             return false;
 
+        /// Parameters of other Prometheus-compatible servers; `nocache` and `partial_response=false` are mapped in getSettingsFromParams.
+        static const NameSet ignored_param_names{"nocache", "trace", "round_digits", "partial_response", "dedup"};
+        if (ignored_param_names.contains(name) || unsupported_param_names.contains(name))
+            return false;
+
         /// Some parameters (default_format, everything used in the code above) do not belong to the
         /// Settings class. `limit` is defined by Prometheus on these endpoints, so it must not fall through to the ClickHouse setting.
         static const NameSet reserved_param_names{"user", "password", "query", "time", "start", "end", "step", "match[]", "limit", "limit_per_metric", "metric", "lookback_delta", "database", "table"};
         return !reserved_param_names.contains(name);
+    }
+
+    SettingsChanges getSettingsFromParams() const override
+    {
+        SettingsChanges changes;
+        if (hasParamValue("nocache", true))
+            changes.push_back({"use_query_cache", false});
+        if (hasParamValue("partial_response", false))
+            changes.push_back({"skip_unavailable_shards", false});
+        return changes;
     }
 
     /// Parses the optional `limit` parameter of the metadata endpoints: the maximum number of returned items,
@@ -500,6 +523,16 @@ public:
 
         try
         {
+            for (const auto & name : unsupported_param_names)
+                if (params->has(name))
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The '{}' parameter is not supported", name);
+
+            /// Deduplication and partial responses are not implemented; `dedup=false` and `partial_response=false` ask only for the default.
+            if (hasParamValue("dedup", true))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The 'dedup=true' parameter is not supported");
+            if (hasParamValue("partial_response", true))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The 'partial_response=true' parameter is not supported");
+
             /// Dispatch by the trailing path segment only (e.g. "/query_range", "/query"), so the same
             /// endpoint works both bare ("/api/v1/query") and behind a configured prefix ("/prefix/api/v1/query").
             /// Use the decoded path without the query string (matching APIv1Impl::getImpl) so a
@@ -647,6 +680,30 @@ public:
     }
 
 private:
+    /// These parameters change which series a client gets, so they are rejected and never ignored.
+    static inline const NameSet unsupported_param_names{"extra_label", "extra_filters", "extra_filters[]"};
+
+    /// Checks every value of a boolean parameter, because a client may repeat it.
+    bool hasParamValue(const String & name, bool value) const
+    {
+        bool found = false;
+        for (const auto & param_value : params->getAll(name))
+            found |= (parseBoolParam(name, param_value) == value);
+        return found;
+    }
+
+    /// Accepts the spellings of Go's strconv.ParseBool, which Thanos uses for these parameters.
+    static bool parseBoolParam(const String & name, const String & value)
+    {
+        static const NameSet true_values{"1", "t", "T", "true", "TRUE", "True"};
+        static const NameSet false_values{"0", "f", "F", "false", "FALSE", "False"};
+        if (true_values.contains(value))
+            return true;
+        if (false_values.contains(value))
+            return false;
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid value of the '{}' parameter: '{}', expected a boolean", name, value);
+    }
+
     /// Handles the format_query endpoint: parses the PromQL expression given in the 'query' parameter
     /// and writes it back serialized from the parsed tree, i.e. with the whitespace normalized,
     /// the comments removed, and the redundant parentheses dropped.
