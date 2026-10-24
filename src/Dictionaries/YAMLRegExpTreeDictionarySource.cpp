@@ -59,7 +59,6 @@ namespace ErrorCodes
     extern const int CANNOT_OPEN_FILE;
     extern const int CANNOT_PARSE_YAML;
     extern const int INVALID_CONFIG_PARAMETER;
-    extern const int PATH_ACCESS_DENIED;
 }
 
 void registerDictionarySourceYAMLRegExpTree(DictionarySourceFactory & factory);
@@ -366,12 +365,8 @@ YAMLRegExpTreeDictionarySource::YAMLRegExpTreeDictionarySource(
 {
     key_name = (*structure.key)[0].name;
 
-    const auto user_files_path = context->getUserFilesPath();
-
-    if (created_from_ddl && !fileOrSymlinkPathStartsWith(filepath_, user_files_path))
-    {
-        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File {} is not inside {}", filepath_, user_files_path);
-    }
+    if (created_from_ddl)
+        checkDictionarySourcePathIsInsideUserFiles(filepath_, context->getUserFilesPath());
 }
 
 YAMLRegExpTreeDictionarySource::YAMLRegExpTreeDictionarySource(const YAMLRegExpTreeDictionarySource & other)

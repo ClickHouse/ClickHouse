@@ -4,6 +4,7 @@
 #    include <mntent.h>
 #    include <sys/sysmacros.h>
 #endif
+#include <algorithm>
 #include <cerrno>
 #include <Poco/Timestamp.h>
 #include <filesystem>
@@ -287,6 +288,52 @@ bool fileOrSymlinkPathStartsWith(const String & path, const String & prefix_path
     auto filesystem_prefix_path = std::filesystem::path(prefix_path);
 
     return fileOrSymlinkPathStartsWith(filesystem_path, filesystem_prefix_path);
+}
+
+std::filesystem::path resolveDotDotForContainmentCheck(const std::filesystem::path & path, std::error_code & ec)
+{
+    fs::path head;
+    fs::path tail;
+    for (const auto & component : path)
+    {
+        tail /= component;
+        if (component == "..")
+        {
+            head /= tail;
+            tail.clear();
+        }
+    }
+
+    if (head.empty())
+        return path;
+
+    head = fs::weakly_canonical(head, ec);
+    if (ec)
+        return {};
+    return tail.empty() ? head : head / tail;
+}
+
+bool fileOrSymlinkPathStartsWithResolvingDotDot(const String & path, const String & prefix_path, std::error_code & ec)
+{
+    /// Resolving probes the filesystem, which would see a path truncated at an embedded NUL byte.
+    if (path.contains('\0') || prefix_path.contains('\0'))
+        return false;
+
+    const fs::path filesystem_path(path);
+    if (std::none_of(filesystem_path.begin(), filesystem_path.end(), [](const fs::path & component) { return component == ".."; }))
+        return fileOrSymlinkPathStartsWith(filesystem_path, fs::path(prefix_path));
+
+    const fs::path resolved_path = resolveDotDotForContainmentCheck(filesystem_path, ec);
+    if (ec)
+        return false;
+
+    /// The resolved head is canonical, so the prefix must be too: a symlink in `prefix_path` itself
+    /// (e.g. `user_files_path` on another mount) must not put the paths through it outside.
+    const fs::path canonical_prefix_path = fs::weakly_canonical(prefix_path, ec);
+    if (ec)
+        return false;
+
+    return fileOrSymlinkPathStartsWith(resolved_path, canonical_prefix_path);
 }
 
 size_t getSizeFromFileDescriptor(int fd, const String & file_name)
