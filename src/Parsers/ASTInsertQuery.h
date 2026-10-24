@@ -29,6 +29,8 @@ public:
     ASTPtr settings_ast;
 
     ASTPtr select;
+    /// INSERT ... RETURNING (SELECT ...): a query to run on top of the inserted blocks.
+    ASTPtr returning;
     ASTPtr infile;
     ASTPtr compression;
 
@@ -75,6 +77,7 @@ public:
         if (table) { res->table = table->clone(); res->children.push_back(res->table); }
         if (columns) { res->columns = columns->clone(); res->children.push_back(res->columns); }
         if (select) { res->select = select->clone(); res->children.push_back(res->select); }
+        if (returning) { res->returning = returning->clone(); res->children.push_back(res->returning); }
         if (settings_ast) { res->settings_ast = settings_ast->clone(); res->children.push_back(res->settings_ast); }
 
         return res;

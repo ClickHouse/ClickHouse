@@ -144,6 +144,7 @@
 #include <DistributedCache/Utils.h>
 #endif
 #include <Storages/System/StorageSystemIcebergHistory.h>
+#include <Storages/System/StorageSystemIcebergMetadataLogEntries.h>
 #if USE_ICU
 #   include <Storages/System/StorageSystemUnicode.h>
 #endif
@@ -3388,7 +3389,7 @@ Each entry corresponds to a contiguous range of granules `[row_begin, row_end)` 
 
 The cache identifies entries by table UUID, so it is only active for tables in databases that assign UUIDs, such as `Atomic`, `Replicated`, and `Shared` (the default database engine in ClickHouse Cloud). Tables in legacy `Ordinary` databases have no UUID and are silently excluded from the cache. Only wide parts participate in the cache; compact parts are silently excluded.
 
-An entry of a `Parquet` file (read by the `file`, `s3`, `azureBlobStorage` table functions and table engines, and by data lake tables) holds a whole column of one row group of the file: `part` is the path of the file, and `[row_begin, row_end)` is the range of rows of the row group in the file. An entry of a file read by a table (for example `ENGINE = File`, `S3`, or a data lake table) has the UUID of the table in `table_uuid`, shows its `database` and `table`, and is visible under the same rules as the entries of a `MergeTree` table. An entry of a file read by a table function has the nil UUID in `table_uuid` and empty `database` and `table`; it is visible only to a user holding `SHOW COLUMNS` globally and an unrestricted `READ` grant on the source of the file (`FILE`, `S3`, `AZURE`, `HDFS` or `URL`).
+An entry of a `Parquet` file (read by the `file`, `s3`, `azureBlobStorage` table functions and table engines, and by data lake tables) holds a chunk of up to 65536 rows of a column of one row group of the file: `part` is the path of the file, and `[row_begin, row_end)` is the range of rows of the chunk in the file. An entry of a file read by a table (for example `ENGINE = File`, `S3`, or a data lake table) has the UUID of the table in `table_uuid`, shows its `database` and `table`, and is visible under the same rules as the entries of a `MergeTree` table. An entry of a file read by a table function has the nil UUID in `table_uuid` and empty `database` and `table`; it is visible only to a user holding `SHOW COLUMNS` globally and an unrestricted `READ` grant on the source of the file (`FILE`, `S3`, `AZURE`, `HDFS` or `URL`).
 
 The cache is controlled by the server settings `columns_cache_size` (by default `columns_cache_size_to_ram_ratio` of the memory available to the server) and `columns_cache_size_ratio`, and by the query-level settings `use_columns_cache`, `enable_reads_from_columns_cache`, `enable_writes_to_columns_cache`, `columns_cache_max_estimated_bytes_to_write_to_cache`, and `columns_cache_max_bytes_to_write_to_cache`. It can be dropped manually with [`SYSTEM DROP COLUMNS CACHE`](/reference/statements/system).
 
@@ -3885,6 +3886,10 @@ This system table contains the snapshot history of Iceberg tables existing in Cl
     attachNoDescription<StorageSystemIcebergFiles>(context, system_database, "iceberg_files", R"DOCS_MD(
 .description
 This system table contains per-file metadata for Iceberg tables existing in ClickHouse, with one row per data or delete file referenced by the current snapshot of each table. It will be empty if you don't have any Iceberg tables in ClickHouse.
+)DOCS_MD");
+    attach<StorageSystemIcebergMetadataLogEntries>(context, system_database, "iceberg_metadata_log_entries", R"DOCS_MD(
+.description
+This system table contains the metadata files of Iceberg tables existing in ClickHouse, with one row per metadata file. It will be empty if you don't have any Iceberg tables in ClickHouse.
 )DOCS_MD");
 #if USE_ICU
     attach<StorageSystemUnicode>(context, system_database, "unicode", R"DOCS_MD(

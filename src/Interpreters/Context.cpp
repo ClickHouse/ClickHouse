@@ -73,6 +73,7 @@
 #include <IO/AsynchronousReader.h>
 #include <IO/LongConnectionLimit.h>
 #include <IO/S3Settings.h>
+#include <IO/SharedThreadPools.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
@@ -1110,6 +1111,10 @@ struct ContextSharedPart : boost::noncopyable
                 tryLogCurrentException(__PRETTY_FUNCTION__);
             }
         }
+
+        /// A cancelled query does not wait for its AI requests. Their memory is tracked under the user trackers in
+        /// `process_list`, which is destroyed after this destructor body.
+        getAIRequestThreadPool().shutdown();
     }
 
     void setConfig(const ConfigurationPtr & config_value)
@@ -4723,16 +4728,37 @@ void Context::tryCreateEmbeddedDictionaries() const
         static_cast<void>(getEmbeddedDictionariesImpl(true));
 }
 
+void Context::registerDictionariesBeforeLoadingMetadata(const Poco::Util::AbstractConfiguration & config)
+{
+    std::lock_guard lock(shared->external_dictionaries_mutex);
+
+    /// The tables are attached before the dictionaries are allowed to load, but they can refer to dictionaries
+    /// declared in configuration files: in a projection, in a column default, or in their loading dependencies.
+    /// So the definitions are registered now, while no dictionary starts loading until `loadOrReloadDictionaries`:
+    /// a dictionary may read from a table which is not attached yet, or from this server, which does not listen yet.
+    auto & external_dictionaries_loader = getExternalDictionariesLoaderWithLock(lock);
+    external_dictionaries_loader.enableAutomaticLoading(false);
+    addDictionariesConfigRepository(config, lock);
+}
+
 void Context::loadOrReloadDictionaries(const Poco::Util::AbstractConfiguration & config)
 {
     bool dictionaries_lazy_load = shared->server_settings[ServerSetting::dictionaries_lazy_load];
-    auto patterns_values = getMultipleValuesFromConfig(config, "", "dictionaries_config");
-    std::unordered_set<std::string> patterns(patterns_values.begin(), patterns_values.end());
 
     std::lock_guard lock(shared->external_dictionaries_mutex);
 
     auto & external_dictionaries_loader = getExternalDictionariesLoaderWithLock(lock);
     external_dictionaries_loader.enableAlwaysLoadEverything(!dictionaries_lazy_load);
+    addDictionariesConfigRepository(config, lock);
+    external_dictionaries_loader.enableAutomaticLoading(true);
+}
+
+void Context::addDictionariesConfigRepository(const Poco::Util::AbstractConfiguration & config, const std::lock_guard<std::mutex> & lock) TSA_REQUIRES(shared->external_dictionaries_mutex)
+{
+    auto patterns_values = getMultipleValuesFromConfig(config, "", "dictionaries_config");
+    std::unordered_set<std::string> patterns(patterns_values.begin(), patterns_values.end());
+
+    auto & external_dictionaries_loader = getExternalDictionariesLoaderWithLock(lock);
 
     if (shared->external_dictionaries_config_repository)
     {
@@ -8484,6 +8510,15 @@ StoragePolicyPtr Context::getStoragePolicy(const String & name) const
     return policy_selector->get(name);
 }
 
+StoragePolicyPtr Context::tryGetStoragePolicy(const String & name) const
+{
+    std::lock_guard lock(shared->storage_policies_mutex);
+
+    auto policy_selector = getStoragePolicySelector(lock);
+
+    return policy_selector->tryGet(name);
+}
+
 StoragePolicyPtr Context::getStoragePolicyFromDisk(const String & disk_name) const
 {
     std::lock_guard lock(shared->storage_policies_mutex);
@@ -9129,12 +9164,12 @@ void Context::setInputInitializer(InputInitializer && initializer)
 }
 
 
-void Context::initializeInput(const StoragePtr & input_storage)
+void Context::initializeInput(const ColumnsDescription & columns, const Block & header)
 {
     if (!input_initializer_callback)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Input initializer is not set");
 
-    input_initializer_callback(shared_from_this(), input_storage);
+    input_initializer_callback(shared_from_this(), columns, header);
     /// Reset callback
     input_initializer_callback = {};
 }

@@ -1151,6 +1151,7 @@ static void executeTask(const UUID & unique_query_id, const DistributedQueryTask
         client_info.initial_query_id = logicalQueryId(client_info);
         client_info.current_query_id = toString(unique_query_id) + "::" + task.task.task_id;
         client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+        client_info.distributed_depth += 1;
         task_context->setClientInfo(client_info);
     }
 
