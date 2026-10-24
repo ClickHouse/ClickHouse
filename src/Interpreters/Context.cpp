@@ -50,6 +50,7 @@
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context_fwd.h>
 #include <Server/ServerType.h>
+#include <Storages/FileLog/DirectoryWatchReactor.h>
 #include <Storages/MarkCache.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyIndexCache.h>
 #include <Common/JemallocCacheArena.h>
@@ -824,6 +825,13 @@ struct ContextSharedPart : boost::noncopyable
     OnceFlag streaming_schedule_pool_initialized;
     mutable BackgroundSchedulePoolPtr streaming_schedule_pool TSA_GUARDED_BY(schedule_pools_mutex); /// A thread pool that runs streaming background jobs
 
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+    OnceFlag directory_watch_reactor_initialized;
+    mutable std::mutex directory_watch_reactor_mutex;
+    /// The thread that watches the directories of all `FileLog` tables
+    mutable std::shared_ptr<DirectoryWatchReactor> directory_watch_reactor TSA_GUARDED_BY(directory_watch_reactor_mutex);
+#endif
+
     mutable OnceFlag readers_initialized;
     mutable std::unique_ptr<IAsynchronousReader> asynchronous_remote_fs_reader;
     mutable std::unique_ptr<IAsynchronousReader> asynchronous_local_fs_reader;
@@ -1320,6 +1328,9 @@ struct ContextSharedPart : boost::noncopyable
         BackgroundSchedulePoolPtr delete_message_broker_schedule_pool;
         BackgroundSchedulePoolPtr delete_iceberg_schedule_pool;
         BackgroundSchedulePoolPtr delete_streaming_schedule_pool;
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+        std::shared_ptr<DirectoryWatchReactor> delete_directory_watch_reactor;
+#endif
 
         std::unique_ptr<AccessControl> delete_access_control;
 
@@ -1455,6 +1466,13 @@ struct ContextSharedPart : boost::noncopyable
             delete_streaming_schedule_pool = std::move(streaming_schedule_pool);
         }
 
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+        {
+            std::lock_guard lock(directory_watch_reactor_mutex);
+            delete_directory_watch_reactor = std::move(directory_watch_reactor);
+        }
+#endif
+
         /// Dictionaries may be required:
         /// - for storage shutdown (during final flush of the Buffer engine)
         /// - before storage startup (because of some streaming of, i.e. Kafka, to
@@ -1490,6 +1508,11 @@ struct ContextSharedPart : boost::noncopyable
         join_background_pool(std::move(delete_message_broker_schedule_pool));
         join_background_pool(std::move(delete_iceberg_schedule_pool));
         join_background_pool(std::move(delete_streaming_schedule_pool));
+
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+        /// The tables are shut down by now, so this is normally the last reference and stops the reactor thread.
+        delete_directory_watch_reactor.reset();
+#endif
 
         delete_access_control.reset();
 
@@ -6433,6 +6456,21 @@ BackgroundSchedulePoolPtr Context::getDistributedSchedulePool() const
     SharedLockGuard lock(shared->schedule_pools_mutex);
     return shared->distributed_schedule_pool;
 }
+
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+std::shared_ptr<DirectoryWatchReactor> Context::getDirectoryWatchReactor() const
+{
+    callOnce(shared->directory_watch_reactor_initialized, [&]
+    {
+        auto created_reactor = std::make_shared<DirectoryWatchReactor>();
+        std::lock_guard lock(shared->directory_watch_reactor_mutex);
+        shared->directory_watch_reactor = std::move(created_reactor);
+    });
+
+    std::lock_guard lock(shared->directory_watch_reactor_mutex);
+    return shared->directory_watch_reactor;
+}
+#endif
 
 BackgroundSchedulePoolPtr Context::getMessageBrokerSchedulePool() const
 {

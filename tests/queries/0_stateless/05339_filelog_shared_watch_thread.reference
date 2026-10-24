@@ -1,0 +1,6 @@
+threads grew by less than the number of tables: 1
+table 1: 2
+table 100: 2
+table 200: 2
+shared directory after drop: 1
+server is alive

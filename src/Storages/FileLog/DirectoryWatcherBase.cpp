@@ -1,16 +1,15 @@
 #include <Storages/FileLog/DirectoryWatcherBase.h>
 #include <Storages/FileLog/FileLogDirectoryWatcher.h>
+#include <Storages/FileLog/DirectoryWatchReactor.h>
 #include <Storages/FileLog/FileLogSettings.h>
 #include <Storages/FileLog/StorageFileLog.h>
 #include <base/defines.h>
-#include <base/scope_guard.h>
+
+#include <Interpreters/Context.h>
 
 #include <filesystem>
-#include <unistd.h>
-#include <poll.h>
 #include <Common/ErrnoException.h>
 #include <Common/Exception.h>
-#include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
 
 #if defined(OS_LINUX)
@@ -20,14 +19,15 @@
 #include <chrono>
 #include <unordered_set>
 #elif defined(OS_DARWIN)
+#include <algorithm>
 #include <map>
 #include <set>
-#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 #include <fcntl.h>
 #include <sys/event.h>
+#include <sys/param.h>
 #include <sys/stat.h>
 #endif
 
@@ -38,19 +38,16 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
     extern const int BAD_FILE_TYPE;
     extern const int IO_SETUP_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 
+#if defined(OS_DARWIN)
 namespace FileLogSetting
 {
     extern const FileLogSettingsUInt64 poll_directory_watch_events_backoff_factor;
     extern const FileLogSettingsMilliseconds poll_directory_watch_events_backoff_init;
     extern const FileLogSettingsMilliseconds poll_directory_watch_events_backoff_max;
 }
-
-#if defined(OS_LINUX)
-static constexpr int buffer_size = 4096;
-/// An item moved out of the directory never gets its IN_MOVED_TO, so old cookies are evicted.
-static constexpr size_t max_unpaired_move_cookies = 1024;
 #endif
 
 DirectoryWatcherBase::DirectoryWatcherBase(
@@ -59,7 +56,6 @@ DirectoryWatcherBase::DirectoryWatcherBase(
     , owner(owner_)
     , path(path_)
     , event_mask(event_mask_)
-    , milliseconds_to_wait((*owner.storage.getFileLogSettings())[FileLogSetting::poll_directory_watch_events_backoff_init].totalMilliseconds())
 {
     if (!std::filesystem::exists(path))
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Path {} does not exist", path);
@@ -67,26 +63,41 @@ DirectoryWatcherBase::DirectoryWatcherBase(
     if (!std::filesystem::is_directory(path))
         throw Exception(ErrorCodes::BAD_FILE_TYPE, "Path {} is not a directory", path);
 
-#if defined(OS_LINUX)
-    inotify_fd = inotify_init();
-    if (inotify_fd == -1)
-        throw ErrnoException(ErrorCodes::IO_SETUP_ERROR, "Cannot initialize inotify");
-    /// Only the destructor closes this descriptor, and the destructor does not run if this
-    /// constructor throws.
-    scope_guard close_inotify_fd = [this] { ::close(inotify_fd); };
-#endif
+    reactor = getContext()->getGlobalContext()->getDirectoryWatchReactor();
+    try
+    {
+#if defined(OS_DARWIN)
+        /// macOS has no inotify: events are rebuilt by diffing a name -> inode snapshot, so a rename keeps its offset.
+        /// Directory events trigger a scan, per-file descriptors report `DW_ITEM_MODIFIED` (deferred to the scan while a
+        /// structural change is pending). A timer retries failed scans and, with backoff, catches network FS changes.
+        const auto & settings = owner.storage.getFileLogSettings();
+        watch_state = std::make_unique<DarwinDirectoryWatchState>(
+            (*settings)[FileLogSetting::poll_directory_watch_events_backoff_init].totalMilliseconds());
+        watch_state->followed_files = owner.read_files;
 
-    start();
-
-#if defined(OS_LINUX)
-    close_inotify_fd.release();
+        watch_state->dir_fd = ::open(path.c_str(), O_EVTONLY);
+        if (watch_state->dir_fd == -1)
+            ErrnoException::throwFromPath(ErrorCodes::IO_SETUP_ERROR, path, "Cannot open directory to watch");
 #endif
+        reactor->add(*this);
+        registered = true;
+    }
+    catch (...)
+    {
+        /// The table stays alive without the watcher and reports the error to the reader, as it did when the watch
+        /// thread failed to add the watch.
+        owner.onError(Exception(ErrorCodes::IO_SETUP_ERROR, "Watch directory {} failed: {}", path, getCurrentExceptionMessage(false)));
+    }
 }
 
 #if defined(OS_LINUX)
-void DirectoryWatcherBase::watchFunc()
+
+/// An item moved out of the directory never gets its IN_MOVED_TO, so old cookies are evicted.
+static constexpr size_t max_unpaired_move_cookies = 1024;
+
+uint32_t DirectoryWatcherBase::watchMask() const
 {
-    int mask = 0;
+    uint32_t mask = 0;
     if (eventMask() & DirectoryWatcherBase::DW_ITEM_ADDED)
         mask |= IN_CREATE;
     if (eventMask() & DirectoryWatcherBase::DW_ITEM_REMOVED)
@@ -97,669 +108,593 @@ void DirectoryWatcherBase::watchFunc()
         mask |= IN_MOVED_FROM;
     if (eventMask() & DirectoryWatcherBase::DW_ITEM_MOVED_TO)
         mask |= IN_MOVED_TO;
+    return mask;
+}
 
-    int wd = inotify_add_watch(inotify_fd, path.c_str(), mask);
-    if (wd == -1)
+void DirectoryWatcherBase::onEvent(const inotify_event & event)
+{
+    const inotify_event * p_event = &event;
+    if (p_event->len == 0)
+        return;
+
+    if ((p_event->mask & IN_CREATE) && (eventMask() & DirectoryWatcherBase::DW_ITEM_ADDED))
     {
-        owner.onError(Exception(ErrorCodes::IO_SETUP_ERROR, "Watch directory {} failed", path));
-        ErrnoException::throwFromPath(ErrorCodes::IO_SETUP_ERROR, path, "Watch directory {} failed", path);
+        DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_ADDED);
+        has_uncommitted_events = true;
+        owner.onItemAdded(ev);
+    }
+    if ((p_event->mask & IN_DELETE) && (eventMask() & DirectoryWatcherBase::DW_ITEM_REMOVED))
+    {
+        DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_REMOVED);
+        has_uncommitted_events = true;
+        owner.onItemRemoved(ev);
+    }
+    if ((p_event->mask & IN_MODIFY) && (eventMask() & DirectoryWatcherBase::DW_ITEM_MODIFIED))
+    {
+        DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_MODIFIED);
+        has_uncommitted_events = true;
+        owner.onItemModified(ev);
+    }
+    if ((p_event->mask & IN_MOVED_FROM) && (eventMask() & DirectoryWatcherBase::DW_ITEM_MOVED_FROM))
+    {
+        unpaired_move_cookies.push_back(p_event->cookie);
+        if (unpaired_move_cookies.size() > max_unpaired_move_cookies)
+            unpaired_move_cookies.pop_front();
+
+        /// Started when the watcher begins to wait and not extended by later renames, so that they cannot postpone the
+        /// commit. A late `IN_MOVED_TO` is still paired by `unpaired_move_cookies`.
+        if (unpaired_moves.empty())
+            pairing_deadline = std::chrono::steady_clock::now() + pairing_timeout;
+        unpaired_moves.insert(p_event->cookie);
+
+        DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_MOVED_FROM, p_event->cookie);
+        has_uncommitted_events = true;
+        owner.onItemMovedFrom(ev);
+    }
+    if (p_event->mask & IN_MOVED_TO)
+    {
+        /// Only a rename inside the directory delivers both halves. An item moved in from elsewhere
+        /// is new here, even if it has the inode of a file just deleted from the directory.
+        auto paired = std::find(unpaired_move_cookies.begin(), unpaired_move_cookies.end(), p_event->cookie);
+        if (paired != unpaired_move_cookies.end())
+        {
+            unpaired_move_cookies.erase(paired);
+            if (eventMask() & DirectoryWatcherBase::DW_ITEM_MOVED_TO)
+            {
+                DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_MOVED_TO, p_event->cookie);
+                has_uncommitted_events = true;
+                owner.onItemMovedTo(ev);
+            }
+        }
+        else if (eventMask() & DirectoryWatcherBase::DW_ITEM_ADDED)
+        {
+            DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_ADDED);
+            has_uncommitted_events = true;
+            owner.onItemAdded(ev);
+        }
     }
 
-    std::string buffer;
-    buffer.resize(buffer_size);
-    std::deque<uint32_t> unpaired_move_cookies;
-    pollfd pfds[2];
-    /// inotify descriptor
-    pfds[0].fd = inotify_fd;
-    pfds[0].events = POLLIN;
-    // notifier
-    pfds[1].fd = event_pipe.fds_rw[0];
-    pfds[1].events = POLLIN;
-    while (!stopped)
+    if (p_event->mask & IN_MOVED_TO)
+        unpaired_moves.erase(p_event->cookie);
+}
+
+bool DirectoryWatcherBase::hasUnpairedMoves() const
+{
+    /// The IN_MOVED_FROM and IN_MOVED_TO of one rename can come in two reads (see inotify(7)): the events are held
+    /// back until every IN_MOVED_FROM has its IN_MOVED_TO, or until the reactor gives up waiting for it.
+    return !unpaired_moves.empty();
+}
+
+void DirectoryWatcherBase::onPairingTimeout()
+{
+    unpaired_moves.clear();
+    commitEvents();
+}
+
+void DirectoryWatcherBase::onWatchRemoved()
+{
+    owner.onError(Exception(ErrorCodes::IO_SETUP_ERROR, "Directory {} is not watched anymore: it was deleted or unmounted", path));
+}
+
+#elif defined(OS_DARWIN)
+
+int DirectoryWatcherBase::directoryFd() const
+{
+    return watch_state->dir_fd;
+}
+
+uint32_t DirectoryWatcherBase::directoryWatchFlags() const
+{
+    return NOTE_WRITE | NOTE_DELETE | NOTE_RENAME | NOTE_ATTRIB | NOTE_LINK;
+}
+
+void DirectoryWatcherBase::stopWatching()
+{
+    watch_state.reset();
+}
+
+std::optional<std::chrono::steady_clock::time_point> DirectoryWatcherBase::nextScan() const
+{
+    if (!watch_state)
+        return std::nullopt;
+    return watch_state->next_scan;
+}
+
+void DirectoryWatcherBase::onVnodeEvent(int fd, uint32_t fflags)
+{
+    /// `stopWatching` closes the descriptors, which removes them and their pending events from the kqueue.
+    if (!watch_state)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The directory watcher of {} got an event of descriptor {} after it stopped watching", path, fd);
+
+    const auto now = std::chrono::steady_clock::now();
+
+    if (fd == watch_state->dir_fd)
     {
-        const auto & settings = owner.storage.getFileLogSettings();
-        if (poll(pfds, 2, static_cast<int>(milliseconds_to_wait)) > 0 && pfds[0].revents & POLLIN)
+        /// An entry was added, removed or renamed, and only a scan finds out which: scan at once.
+        if (fflags & (NOTE_WRITE | NOTE_LINK | NOTE_RENAME | NOTE_DELETE))
         {
-            milliseconds_to_wait = (*settings)[FileLogSetting::poll_directory_watch_events_backoff_init].totalMilliseconds();
-            /// The IN_MOVED_FROM and IN_MOVED_TO of one rename can come in two reads (see inotify(7)): read on for a
-            /// moment until every IN_MOVED_FROM has its IN_MOVED_TO, then hand the events over together.
-            std::unordered_set<uint32_t> unpaired_moves;
-            const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(10);
-            while (true)
-            {
-                ssize_t n = read(inotify_fd, buffer.data(), buffer.size());
-                int i = 0;
-                if (n > 0)
-                {
-                    while (n > 0)
-                    {
-                        struct inotify_event * p_event = reinterpret_cast<struct inotify_event *>(buffer.data() + i);
+            watch_state->directory_changed = true;
+            watch_state->structural_change_pending = true;
+            watch_state->next_scan = now;
+        }
+        return;
+    }
 
-                        if (p_event->len > 0)
-                        {
-                            if ((p_event->mask & IN_CREATE) && (eventMask() & DirectoryWatcherBase::DW_ITEM_ADDED))
-                            {
-                                DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_ADDED);
-                                owner.onItemAdded(ev);
-                            }
-                            if ((p_event->mask & IN_DELETE) && (eventMask() & DirectoryWatcherBase::DW_ITEM_REMOVED))
-                            {
-                                DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_REMOVED);
-                                owner.onItemRemoved(ev);
-                            }
-                            if ((p_event->mask & IN_MODIFY) && (eventMask() & DirectoryWatcherBase::DW_ITEM_MODIFIED))
-                            {
-                                DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_MODIFIED);
-                                owner.onItemModified(ev);
-                            }
-                            if ((p_event->mask & IN_MOVED_FROM) && (eventMask() & DirectoryWatcherBase::DW_ITEM_MOVED_FROM))
-                            {
-                                unpaired_move_cookies.push_back(p_event->cookie);
-                                if (unpaired_move_cookies.size() > max_unpaired_move_cookies)
-                                    unpaired_move_cookies.pop_front();
-                                DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_MOVED_FROM, p_event->cookie);
-                                owner.onItemMovedFrom(ev);
-                            }
-                            if (p_event->mask & IN_MOVED_TO)
-                            {
-                                /// Only a rename inside the directory delivers both halves. An item moved in from elsewhere
-                                /// is new here, even if it has the inode of a file just deleted from the directory.
-                                auto paired = std::find(unpaired_move_cookies.begin(), unpaired_move_cookies.end(), p_event->cookie);
-                                if (paired != unpaired_move_cookies.end())
-                                {
-                                    unpaired_move_cookies.erase(paired);
-                                    if (eventMask() & DirectoryWatcherBase::DW_ITEM_MOVED_TO)
-                                    {
-                                        DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_MOVED_TO, p_event->cookie);
-                                        owner.onItemMovedTo(ev);
-                                    }
-                                }
-                                else if (eventMask() & DirectoryWatcherBase::DW_ITEM_ADDED)
-                                {
-                                    DirectoryWatcherBase::DirectoryEvent ev(p_event->name, DirectoryWatcherBase::DW_ITEM_ADDED);
-                                    owner.onItemAdded(ev);
-                                }
-                            }
+    auto name_it = watch_state->watched_names.find(fd);
+    if (name_it == watch_state->watched_names.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The directory watcher of {} got an event of descriptor {}, which it does not watch", path, fd);
 
-                            if (p_event->mask & IN_MOVED_FROM)
-                                unpaired_moves.insert(p_event->cookie);
-                            if (p_event->mask & IN_MOVED_TO)
-                                unpaired_moves.erase(p_event->cookie);
-                        }
+    /// Before the modification below: kqueue merges the flags of the events not read yet, so a rename and a write
+    /// after it can come in one event.
+    if (fflags & (NOTE_RENAME | NOTE_DELETE))
+        watch_state->structural_change_pending = true;
 
-                        i += sizeof(inotify_event) + p_event->len;
-                        n -= sizeof(inotify_event) + p_event->len;
-                    }
-                }
-
-                const auto wait_ms = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now()).count();
-                pollfd more{.fd = inotify_fd, .events = POLLIN, .revents = 0};
-                if (unpaired_moves.empty() || wait_ms <= 0 || poll(&more, 1, static_cast<int>(wait_ms)) <= 0)
-                    break;
-            }
-            owner.commitEvents();
-
-            /// Wake up reader thread
-            owner.storage.wakeUp();
+    /// The descriptor tells which file changed, so a change of its contents is reported at once, as inotify's
+    /// IN_MODIFY is, and needs no scan. Truncation may come as NOTE_ATTRIB only. While a structural change is pending,
+    /// the name of the descriptor may belong to another file now, so the modification is left to the scan.
+    if ((fflags & (NOTE_WRITE | NOTE_EXTEND | NOTE_ATTRIB)) && (eventMask() & DW_ITEM_MODIFIED))
+    {
+        if (watch_state->structural_change_pending)
+        {
+            watch_state->deferred_modifications.insert(watch_state->watched_fds.at(name_it->second).inode);
         }
         else
         {
-            if (milliseconds_to_wait < static_cast<uint64_t>((*settings)[FileLogSetting::poll_directory_watch_events_backoff_max].totalMilliseconds()))
-                milliseconds_to_wait *= (*settings)[FileLogSetting::poll_directory_watch_events_backoff_factor].value;
+            owner.onItemModified(DirectoryEvent(name_it->second, DW_ITEM_MODIFIED));
+            has_uncommitted_events = true;
         }
+    }
+    if (fflags & NOTE_RENAME)
+    {
+        watch_state->directory_changed = true;
+        watch_state->next_scan = now;
+    }
+    if (fflags & NOTE_DELETE)
+    {
+        watch_state->next_scan = now;
+        /// An unlink of any name is reported to every descriptor of the file. While links are left, only a name went
+        /// away and the scan finds which one. The descriptor keeps the vnode, so a recreate reusing the inode sees 0.
+        struct stat st{};
+        if (::fstat(fd, &st) != 0)
+            ErrnoException::throwFromPath(ErrorCodes::IO_SETUP_ERROR, path, "Cannot stat watched file {}", name_it->second);
+        if (st.st_nlink > 0)
+        {
+            watch_state->directory_changed = true;
+            return;
+        }
+        watch_state->deleted_files.insert(name_it->second);
+        /// The name's identity ended; drop its now-stale fd so `syncFileWatches`
+        /// reopens a fresh one if the name is recreated.
+        watch_state->unwatchFile(watch_state->watched_fds.find(name_it->second));
     }
 }
-#elif defined(OS_DARWIN)
-static void closeFileDescriptor(int fd)
+
+
+void DirectoryWatcherBase::scan(std::map<std::string, UInt64> & current_files_inodes)
 {
-    [[maybe_unused]] int err = ::close(fd);
-    chassert(!err || errno == EINTR);
-}
+    const auto & followed_files = watch_state->followed_files;
 
-void DirectoryWatcherBase::watchFunc()
-{
-    /// macOS has no inotify. We reconstruct the same event stream by diffing a filename ->
-    /// (inode, mtime, size) snapshot of the directory. Tracking the inode lets us tell a rename
-    /// (same inode reappearing under a new name) apart from a delete followed by a create, so the
-    /// read offset of a renamed file is preserved just like with inotify's IN_MOVED_FROM/IN_MOVED_TO.
-    ///
-    /// kqueue reports "the directory changed" (an entry added/removed/renamed) but neither names the
-    /// entry nor fires on appends to files already inside it. So we use it only to wake up promptly
-    /// on structural changes (matching inotify's latency, which the no-sleep test sequences rely on),
-    /// and fall back to the timed rescan to pick up appends to existing files.
-    struct FileState
+    current_files_inodes.clear();
+    /// The inode of each followed file that names the globs exclude list, to those names.
+    std::map<UInt64, std::vector<std::string>> followed_aliases;
+    std::unordered_set<UInt64> matching_inodes;
+    for (const auto & entry : std::filesystem::directory_iterator(path))
     {
-        UInt64 inode;
-        Int64 mtime_ns;
-        Int64 size;
-    };
-
-    /// Every watched file holds a descriptor, so only the files the table may read are watched: the names matching
-    /// the globs of the path, and the files watched (or, on the first scan, read) before under any name, e.g. a log
-    /// renamed by rotation to a name the globs exclude, which is read until it is removed. Archives that the globs
-    /// exclude, such as the compressed files of `logrotate`, are new files and are not watched.
-    /// A file created and renamed to a name the globs exclude between two scans is never listed under the matching
-    /// name, so it is not read; this is inherent to comparing listings (the rename is indistinguishable from a new
-    /// excluded file) and is documented for the engine.
-    /// `followed_files` maps the inode of each followed file to the name it was watched (or read) under.
-    std::unordered_map<UInt64, std::string> followed_files = owner.read_files;
-
-    /// A followed file is listed under at most one name the globs exclude, and not at all when a matching name lists
-    /// it. Otherwise a hard link left next to a rotated log would list its inode under two names on both sides of the
-    /// rotation, which is not recognized as a rename, so the table would stop reading the rotated log. The name the
-    /// file was followed under is preferred, so that an unchanged alias is not reported as a rename.
-    auto scan = [this, &followed_files](std::map<std::string, FileState> & out)
-    {
-        out.clear();
-        std::map<UInt64, std::pair<std::string, FileState>> followed_aliases;
-        std::unordered_set<UInt64> matching_inodes;
-        for (const auto & entry : std::filesystem::directory_iterator(path))
+        if (!entry.is_regular_file())
+            continue;
+        struct stat st{};
+        if (::stat(entry.path().c_str(), &st) != 0)
+            //failure is expected in some cases like rename
+            continue;
+        std::string file_name = entry.path().filename().string();
+        const auto inode = static_cast<UInt64>(st.st_ino);
+        if (owner.storage.fileNameMatches(file_name))
         {
-            if (!entry.is_regular_file())
-                continue;
-            struct stat st{};
-            if (::stat(entry.path().c_str(), &st) != 0)
-                continue;
-            std::string name = entry.path().filename().string();
-            const auto inode = static_cast<UInt64>(st.st_ino);
-            const FileState state{
-                inode,
-                static_cast<Int64>(st.st_mtimespec.tv_sec) * 1'000'000'000 + st.st_mtimespec.tv_nsec,
-                static_cast<Int64>(st.st_size)};
-            if (owner.storage.fileNameMatches(name))
-            {
-                matching_inodes.insert(inode);
-                out.emplace(std::move(name), state);
-                continue;
-            }
-            auto followed_it = followed_files.find(inode);
-            if (followed_it == followed_files.end())
-                continue;
-            auto [alias_it, inserted] = followed_aliases.try_emplace(inode, name, state);
-            if (inserted)
-                continue;
-            /// Pick one alias deterministically: the followed name, otherwise the smallest name.
-            const auto & chosen = alias_it->second.first;
-            if (chosen != followed_it->second && (name == followed_it->second || name < chosen))
-                alias_it->second = {std::move(name), state};
-        }
-        for (auto & [inode, alias] : followed_aliases)
-        {
-            if (!matching_inodes.contains(inode))
-                out.emplace(std::move(alias.first), alias.second);
-        }
-    };
-
-    /// A kqueue wakes the loop promptly. The directory fd fires on structural changes (an entry
-    /// added/removed/renamed) but not on appends/truncations to files already inside it, so we also
-    /// watch each file's own fd for content changes and for the NOTE_DELETE that a snapshot diff
-    /// needs to tell a same-inode delete+recreate from a plain modification. Because that per-file
-    /// NOTE_DELETE is load-bearing, kqueue is required: we fail closed on any setup error (mirroring
-    /// the Linux watcher, which throws when inotify_init/inotify_add_watch fail) rather than degrade
-    /// to a polling mode that would silently keep stale read offsets.
-    struct WatchedFd
-    {
-        int fd;
-        UInt64 inode;
-    };
-    std::map<std::string, WatchedFd> watched_fds;
-    int dir_fd = ::open(path.c_str(), O_EVTONLY);
-    int kq = dir_fd == -1 ? -1 : kqueue();
-
-    SCOPE_EXIT({
-        for (const auto & [name, watched] : watched_fds)
-            closeFileDescriptor(watched.fd);
-        if (kq != -1)
-            closeFileDescriptor(kq);
-        if (dir_fd != -1)
-            closeFileDescriptor(dir_fd);
-    });
-
-    auto fail = [&](std::string_view what)
-    {
-        owner.onError(Exception(ErrorCodes::IO_SETUP_ERROR, "{}: {}", what, path));
-        ErrnoException::throwFromPath(ErrorCodes::IO_SETUP_ERROR, path, "{}", what);
-    };
-
-    if (dir_fd == -1)
-        fail("Cannot open directory to watch");
-    if (kq == -1)
-        fail("Cannot create kqueue to watch directory");
-
-    {
-        struct kevent change{};
-        EV_SET(&change, dir_fd, EVFILT_VNODE, EV_ADD | EV_CLEAR,
-               NOTE_WRITE | NOTE_DELETE | NOTE_RENAME | NOTE_ATTRIB | NOTE_LINK, 0, nullptr);
-        if (kevent(kq, &change, 1, nullptr, 0, nullptr) == -1)
-            fail("Cannot register directory watch");
-    }
-
-    /// Keep the per-file kqueue watches in sync with the files currently present. A watch is keyed by
-    /// name but pinned to a specific inode: when a name is reused for a different inode (a rename plus
-    /// recreate of the same name), the stale fd is closed and a fresh one opened, so NOTE_DELETE is
-    /// always attributed to the file that currently owns the name.
-    /// Returns after either watching every file in `files` or throwing; on ENOENT it drops the file
-    /// from `files` (see below). The caller runs this BEFORE emitting any events, so a throw here just
-    /// retries the whole pass with nothing queued - it can never strand events or kill the watcher.
-    auto sync_file_watches = [&](std::map<std::string, FileState> & files)
-    {
-        std::vector<std::string> vanished;
-        for (const auto & [name, state] : files)
-        {
-            if (auto it = watched_fds.find(name); it != watched_fds.end())
-            {
-                if (it->second.inode == state.inode)
-                    continue;
-                /// Name now points to a different inode; drop the stale watch and reopen below.
-                closeFileDescriptor(it->second.fd);
-                watched_fds.erase(it);
-            }
-            int fd = ::open((std::filesystem::path(path) / name).c_str(), O_EVTONLY);
-            if (fd == -1)
-            {
-                /// The file vanished between the scan and here (a delete, or a delete+recreate race
-                /// like 04342). We cannot install a watch, so we must not keep it in the snapshot as a
-                /// trusted same-inode entry - otherwise a same-inode recreate would be invisible and
-                /// StorageFileLog would reuse a stale offset. Drop it: the next scan re-observes it as
-                /// ADDED (re-read from 0), erring toward re-reading rather than silently skipping data.
-                if (errno == ENOENT)
-                {
-                    vanished.push_back(name);
-                    continue;
-                }
-                /// Any other failure (e.g. EMFILE under fd pressure) is transient. Throw so the caller
-                /// retries the whole pass; do NOT surface it via owner.onError, which would leave a
-                /// stale error to be reported once ingestion recovers.
-                ErrnoException::throwFromPath(ErrorCodes::IO_SETUP_ERROR, path, "Cannot open file to watch");
-            }
-            struct kevent change{};
-            EV_SET(&change, fd, EVFILT_VNODE, EV_ADD | EV_CLEAR,
-                   NOTE_WRITE | NOTE_EXTEND | NOTE_ATTRIB | NOTE_DELETE | NOTE_RENAME, 0, nullptr);
-            if (kevent(kq, &change, 1, nullptr, 0, nullptr) == -1)
-            {
-                const int saved_errno = errno;
-                closeFileDescriptor(fd);
-                errno = saved_errno;
-                ErrnoException::throwFromPath(ErrorCodes::IO_SETUP_ERROR, path, "Cannot register file watch");
-            }
-            watched_fds.emplace(name, WatchedFd{fd, state.inode});
-        }
-        for (const auto & name : vanished)
-            files.erase(name);
-        for (auto it = watched_fds.begin(); it != watched_fds.end();)
-        {
-            if (files.contains(it->first))
-            {
-                ++it;
-                continue;
-            }
-            closeFileDescriptor(it->second.fd); /// closing the fd removes it from the kqueue
-            it = watched_fds.erase(it);
-        }
-    };
-
-    /// Names whose watched inode was unlinked (NOTE_DELETE), accumulated across drains. Kept outside
-    /// the loop so a pass that is retried (e.g. a transient scan/watch failure) does not lose the
-    /// deletes it already drained - EV_CLEAR makes the kqueue events edge-triggered, so a dropped
-    /// NOTE_DELETE would never be re-reported and a same-inode recreate would slip through as MODIFIED.
-    std::set<std::string> deleted;
-
-    struct DrainedEvents
-    {
-        bool any = false;
-        bool structural = false;
-    };
-    auto drain_events = [&]
-    {
-        DrainedEvents result;
-        struct kevent evs[16];
-        struct timespec no_wait{0, 0};
-        int drained = 0;
-        while ((drained = kevent(kq, nullptr, 0, evs, 16, &no_wait)) > 0)
-        {
-            result.any = true;
-            for (int i = 0; i < drained; ++i)
-            {
-                const int event_fd = static_cast<int>(evs[i].ident);
-                if (event_fd == dir_fd)
-                {
-                    if (evs[i].fflags & (NOTE_WRITE | NOTE_LINK | NOTE_RENAME | NOTE_DELETE))
-                        result.structural = true;
-                    continue;
-                }
-                if (evs[i].fflags & NOTE_RENAME)
-                    result.structural = true;
-                if (!(evs[i].fflags & NOTE_DELETE))
-                    continue;
-                for (auto it = watched_fds.begin(); it != watched_fds.end(); ++it)
-                {
-                    if (it->second.fd != event_fd)
-                        continue;
-                    deleted.insert(it->first);
-                    /// The name's identity ended; drop its now-stale fd so sync_file_watches
-                    /// reopens a fresh one if the name is recreated.
-                    closeFileDescriptor(it->second.fd);
-                    watched_fds.erase(it);
-                    break;
-                }
-            }
-        }
-        return result;
-    };
-
-    /// Listing, `stat` and opening the watches are not atomic with a rename, which would be diffed as
-    /// REMOVED + ADDED, so the caller discards a pass the directory changed under. The drain before
-    /// `sync_file_watches` keeps the NOTE_DELETE of a departed name, which closing its watch drops.
-    auto scan_and_watch = [&](std::map<std::string, FileState> & out)
-    {
-        scan(out);
-        auto result = drain_events();
-        sync_file_watches(out);
-        const auto after_sync = drain_events();
-        result.any |= after_sync.any;
-        result.structural |= after_sync.structural;
-        return result;
-    };
-
-    /// Pre-existing files are loaded by StorageFileLog's own directory scan; the watcher, like
-    /// inotify, reports only subsequent changes. So seed the snapshot without emitting events. A
-    /// transient failure here (e.g. the directory being briefly recreated) must not permanently kill
-    /// this one-shot task, so we log and retry rather than return - StorageFileLog::loadFiles has
-    /// already captured the initial file set, and retrying keeps the baseline correct (seeding from an
-    /// empty snapshot would re-emit every pre-existing file as ADDED and re-read it from offset 0).
-    std::map<std::string, FileState> snapshot;
-    while (!stopped)
-    {
-        try
-        {
-            if (scan_and_watch(snapshot).structural)
-                continue;
-            break;
-        }
-        catch (const std::exception & e)
-        {
-            LOG_WARNING(getLogger("FileLogDirectoryWatcher"), "Failed to seed watched directory {}, will retry: {}", path, e.what());
-            pollfd stop_wait{.fd = event_pipe.fds_rw[0], .events = POLLIN, .revents = 0};
-            poll(&stop_wait, 1, static_cast<int>(milliseconds_to_wait)); /// interruptible wait before retrying
-        }
-    }
-    if (stopped)
-        return;
-
-    auto follow_snapshot = [&]
-    {
-        followed_files.clear();
-        for (const auto & [name, state] : snapshot)
-            followed_files.emplace(state.inode, name);
-    };
-    follow_snapshot();
-
-    pollfd pfds[2];
-    pfds[0].fd = event_pipe.fds_rw[0];
-    pfds[0].events = POLLIN;
-    pfds[1].fd = kq;
-    pfds[1].events = POLLIN;
-
-    bool rescan_without_waiting = false;
-    while (!stopped)
-    {
-        if (poll(pfds, 2, rescan_without_waiting ? 0 : static_cast<int>(milliseconds_to_wait)) < 0 && errno != EINTR)
-            break;
-        rescan_without_waiting = false;
-        if (stopped)
-            break;
-
-        /// Drain kqueue notifications (level-triggered otherwise) before rescanning, noting which
-        /// watched files were unlinked. A same-name delete+recreate that reuses the inode looks
-        /// identical to a plain modification in a snapshot diff, so we rely on the per-file
-        /// NOTE_DELETE to force an identity reset (REMOVED + ADDED) instead of MODIFIED, which would
-        /// otherwise keep a stale read offset - matching what inotify's IN_DELETE + IN_CREATE gives.
-        if (pfds[1].revents & POLLIN)
-            drain_events();
-
-        const auto & settings = owner.storage.getFileLogSettings();
-
-        std::map<std::string, FileState> current;
-        try
-        {
-            /// Install/refresh the per-file watches for the new set BEFORE emitting any events. A
-            /// transient failure here (e.g. EMFILE) then just retries the whole pass with nothing
-            /// queued and StorageFileLog left untouched, instead of stranding a half-emitted batch
-            /// behind a dead watcher. It also drops any file that vanished mid-scan from `current`.
-            const auto drained = scan_and_watch(current);
-            /// The drain consumed wakeups that the pass may not reflect.
-            rescan_without_waiting = drained.any;
-            if (drained.structural)
-                continue;
-        }
-        catch (const std::exception & e)
-        {
-            /// The directory can be transiently unavailable (e.g. while being recreated) and watch
-            /// installation can transiently fail; neither is expected during normal operation, so log
-            /// it and retry on the next tick. The drained `deleted` set is preserved for that retry.
-            LOG_WARNING(getLogger("FileLogDirectoryWatcher"), "Failed to scan/watch directory {}, will retry: {}", path, e.what());
+            matching_inodes.insert(inode);
+            current_files_inodes.emplace(std::move(file_name), inode);
             continue;
         }
-
-        bool changed = false;
-
-        /// Track identities by inode so a rename is recognized even when the source name is
-        /// recreated in the same scan window (e.g. `a -> b` plus a fresh `a`): the old inode still
-        /// left name `a` for name `b`, which must stay a MOVED pair (preserving the read offset)
-        /// rather than degenerating into two ADDED events. An inode is only trusted for move
-        /// detection when it maps to exactly one name on both sides (guards against hard links).
-        std::map<UInt64, size_t> snapshot_inode_count;
-        std::map<UInt64, size_t> current_inode_count;
-        std::map<UInt64, std::string> snapshot_inode_name;
-        std::map<UInt64, std::string> current_inode_name;
-        for (const auto & [name, state] : snapshot)
-        {
-            ++snapshot_inode_count[state.inode];
-            snapshot_inode_name[state.inode] = name;
-        }
-        for (const auto & [name, state] : current)
-        {
-            ++current_inode_count[state.inode];
-            current_inode_name[state.inode] = name;
-        }
-
-        /// True if `inode` uniquely identifies one name on each side and those names differ, i.e. it
-        /// is a rename of that inode from its old name to its new name.
-        auto is_rename = [&](UInt64 inode)
-        {
-            auto sc = snapshot_inode_count.find(inode);
-            auto cc = current_inode_count.find(inode);
-            if (sc == snapshot_inode_count.end() || cc == current_inode_count.end() || sc->second != 1 || cc->second != 1)
-                return false;
-            /// An unlinked name is not a rename source, even when a hard link brings its inode back.
-            if (deleted.contains(snapshot_inode_name.at(inode)))
-                return false;
-            return snapshot_inode_name.at(inode) != current_inode_name.at(inode);
-        };
-
-        /// A name keeps its identity if it exists on both sides with the same inode and was not
-        /// unlinked in between (a delete+recreate reusing the inode breaks the identity).
-        auto same_identity = [&deleted](const std::map<std::string, FileState> & other, const std::string & name, UInt64 inode)
-        {
-            if (deleted.contains(name))
-                return false;
-            auto it = other.find(name);
-            return it != other.end() && it->second.inode == inode;
-        };
-
-        /// Order the rename targets (MOVED_TO). A target whose OLD inode is itself being moved
-        /// elsewhere must be emitted AFTER the MOVED_TO that relocates that old inode, otherwise
-        /// reusing the name erases the still-live inode's meta and it is re-read from offset 0 (e.g.
-        /// a logrotate chain `a.1 -> a.2`, `a -> a.1`, new `a`). A topological sort over "target T
-        /// follows the target that receives T's old inode" recovers that chronological order.
-        ///
-        /// The only unorderable shape is a rename cycle (e.g. an `a <-> b` swap coalesced into one
-        /// scan): no order preserves every offset, and unlike inotify we cannot observe the
-        /// intermediate temporary-name events that would break it. We cannot do better from a
-        /// directory snapshot, so, like the Linux inotify watcher which applies whatever events it
-        /// receives, we emit the leftovers best-effort; StorageFileLog then re-reads one rotated file.
-        std::vector<std::string> move_targets;
-        for (const auto & [name, state] : current)
-        {
-            if (!same_identity(snapshot, name, state.inode) && is_rename(state.inode))
-                move_targets.push_back(name);
-        }
-
-        std::vector<std::string> ordered_moves;
-        {
-            const std::set<std::string> target_set(move_targets.begin(), move_targets.end());
-            std::map<std::string, std::string> predecessor;
-            for (const auto & name : move_targets)
-            {
-                auto snap_it = snapshot.find(name);
-                if (snap_it == snapshot.end())
-                    continue;
-                const UInt64 old_inode = snap_it->second.inode;
-                auto relocated_it = current_inode_name.find(old_inode);
-                if (is_rename(old_inode) && relocated_it != current_inode_name.end()
-                    && relocated_it->second != name && target_set.contains(relocated_it->second))
-                    predecessor[name] = relocated_it->second;
-            }
-
-            std::set<std::string> ordered_set;
-            bool progress = true;
-            while (ordered_moves.size() < move_targets.size() && progress)
-            {
-                progress = false;
-                for (const auto & name : move_targets)
-                {
-                    if (ordered_set.contains(name))
-                        continue;
-                    auto p = predecessor.find(name);
-                    if (p == predecessor.end() || ordered_set.contains(p->second))
-                    {
-                        ordered_moves.push_back(name);
-                        ordered_set.insert(name);
-                        progress = true;
-                    }
-                }
-            }
-
-            /// Leftovers form a rename cycle; append them in a deterministic order (best effort).
-            for (const auto & name : move_targets)
-            {
-                if (!ordered_set.contains(name))
-                    ordered_moves.push_back(name);
-            }
-        }
-
-        /// Emit in the order StorageFileLog expects: MOVED_FROM/REMOVED, then MOVED_TO, then ADDED,
-        /// then MODIFIED. In particular MOVED_TO precedes the ADDED of a recreated source name so the
-        /// moved inode's meta is renamed before the fresh file resets it.
-
-        /// Departed identities (name gone, or its inode replaced at that name).
-        for (const auto & [name, state] : snapshot)
-        {
-            if (same_identity(current, name, state.inode))
-                continue;
-            changed = true;
-            if (is_rename(state.inode))
-            {
-                if (eventMask() & DW_ITEM_MOVED_FROM)
-                    owner.onItemMovedFrom(DirectoryEvent(name, DW_ITEM_MOVED_FROM, state.inode));
-            }
-            else if (eventMask() & DW_ITEM_REMOVED)
-                owner.onItemRemoved(DirectoryEvent(name, DW_ITEM_REMOVED));
-        }
-
-        /// Arrived rename targets, in the topologically-sorted order computed above.
-        for (const auto & name : ordered_moves)
-        {
-            changed = true;
-            if (eventMask() & DW_ITEM_MOVED_TO)
-                owner.onItemMovedTo(DirectoryEvent(name, DW_ITEM_MOVED_TO, current.at(name).inode));
-        }
-
-        /// Arrived identities that are genuinely new (including a name whose inode was replaced).
-        for (const auto & [name, state] : current)
-        {
-            if (same_identity(snapshot, name, state.inode) || is_rename(state.inode))
-                continue;
-            changed = true;
-            if (eventMask() & DW_ITEM_ADDED)
-                owner.onItemAdded(DirectoryEvent(name, DW_ITEM_ADDED));
-        }
-
-        /// Same name and inode, but the contents changed (an append or truncation). A name that was
-        /// unlinked and recreated is excluded here - it was already emitted as REMOVED + ADDED above.
-        for (const auto & [name, state] : current)
-        {
-            if (deleted.contains(name))
-                continue;
-            auto it = snapshot.find(name);
-            if (it == snapshot.end() || it->second.inode != state.inode)
-                continue;
-            if (it->second.mtime_ns != state.mtime_ns || it->second.size != state.size)
-            {
-                changed = true;
-                if (eventMask() & DW_ITEM_MODIFIED)
-                    owner.onItemModified(DirectoryEvent(name, DW_ITEM_MODIFIED));
-            }
-        }
-
-        owner.commitEvents();
-        snapshot.swap(current);
-        follow_snapshot();
-        /// This pass committed successfully, so its drained deletes have been applied; start the next
-        /// pass with a clean set. (On a retried pass we skip this via `continue`, keeping them.)
-        deleted.clear();
-
-        if (changed)
-        {
-            milliseconds_to_wait = (*settings)[FileLogSetting::poll_directory_watch_events_backoff_init].totalMilliseconds();
-            owner.storage.wakeUp();
-        }
-        else if (milliseconds_to_wait < static_cast<uint64_t>((*settings)[FileLogSetting::poll_directory_watch_events_backoff_max].totalMilliseconds()))
-        {
-            milliseconds_to_wait *= (*settings)[FileLogSetting::poll_directory_watch_events_backoff_factor].value;
-        }
+        if (followed_files.contains(inode))
+            followed_aliases[inode].push_back(std::move(file_name));
+    }
+    for (auto & [inode, aliases] : followed_aliases)
+    {
+        if (!matching_inodes.contains(inode))
+            current_files_inodes.emplace(chooseFollowedAlias(inode, aliases), inode);
     }
 }
+
+/// Pick one alias deterministically: the followed name, otherwise the name the file was renamed to, otherwise the
+/// smallest name.
+std::string DirectoryWatcherBase::chooseFollowedAlias(UInt64 inode, std::vector<std::string> & aliases) const
+{
+    if (aliases.size() == 1)
+        return std::move(aliases.front());
+
+    const auto & followed_name = watch_state->followed_files.at(inode);
+    if (std::ranges::find(aliases, followed_name) != aliases.end())
+        return followed_name;
+
+    /// The kernel renames the vnode with the file, so its descriptor has the name the followed file was renamed to,
+    /// e.g. a rotated log with a hard link left next to it. The name is not known after an unlink of another name.
+    if (auto watched_it = watch_state->watched_fds.find(followed_name);
+        watched_it != watch_state->watched_fds.end() && watched_it->second.inode == inode)
+    {
+        char vnode_path[MAXPATHLEN];
+        if (::fcntl(watched_it->second.fd, F_GETPATH, vnode_path) != -1)
+        {
+            std::string vnode_name = std::filesystem::path(vnode_path).filename().string();
+            if (std::ranges::find(aliases, vnode_name) != aliases.end())
+                return vnode_name;
+        }
+    }
+
+    return std::move(*std::ranges::min_element(aliases));
+}
+
+/// Make the kqueue watch exactly the files in `files` (name -> inode). A name whose inode changed is re-opened.
+/// Files that vanished before they could be opened are removed from `files`. Called before any events are emitted,
+/// so a throw only causes the pass to be retried.
+void DirectoryWatcherBase::syncFileWatches(std::map<std::string, UInt64> & files)
+{
+    auto & watched_fds = watch_state->watched_fds;
+
+    std::vector<std::string> vanished;
+    for (const auto & [name, inode] : files)
+    {
+        if (auto it = watched_fds.find(name); it != watched_fds.end())
+        {
+            if (it->second.inode == inode)
+                continue;
+            /// Name now points to a different inode; drop the stale watch and reopen below.
+            /// the kernel will remove the fd from kqueue's watch automatically when the fd is closed
+            watch_state->unwatchFile(it);
+        }
+        int fd = ::open((std::filesystem::path(path) / name).c_str(), O_EVTONLY);
+        if (fd == -1)
+        {
+            /// The file vanished since the scan. Without a watch a same-inode recreate would be invisible and reuse a
+            /// stale offset, so drop it: the next scan reports it as ADDED, re-reading rather than skipping data.
+            if (errno == ENOENT)
+            {
+                vanished.push_back(name);
+                continue;
+            }
+            /// Any other failure (e.g. EMFILE under fd pressure) is transient. Throw so the caller
+            /// retries the whole pass; do NOT surface it via owner.onError, which would leave a
+            /// stale error to be reported once ingestion recovers.
+            ErrnoException::throwFromPath(ErrorCodes::IO_SETUP_ERROR, path, "Cannot open file to watch");
+        }
+        try
+        {
+            reactor->watchVnode(*this, fd, NOTE_WRITE | NOTE_EXTEND | NOTE_ATTRIB | NOTE_DELETE | NOTE_RENAME);
+            /// Until it is recorded, the descriptor is owned here: closing it removes it from the kqueue, which
+            /// otherwise could return the registration after the watcher is removed.
+            watch_state->watchFile(name, fd, inode);
+        }
+        catch (...)
+        {
+            closeFileDescriptor(fd);
+            throw;
+        }
+    }
+    for (const auto & name : vanished)
+        files.erase(name);
+    for (auto it = watched_fds.begin(); it != watched_fds.end();)
+    {
+        if (files.contains(it->first))
+        {
+            ++it;
+            continue;
+        }
+        it = watch_state->unwatchFile(it);
+    }
+}
+
+/// Returns true if the pass must be discarded and retried: the directory changed under it (a rename would be diffed
+/// as REMOVED + ADDED), or a drain did not take all ready events. Events are drained before `syncFileWatches`
+/// to keep the `NOTE_DELETE` of departed names, which closing their watches drops.
+bool DirectoryWatcherBase::scanFilesAndUpdateWatches(std::map<std::string, UInt64> & current_files_inodes)
+{
+    /// The events that came before are covered by the scan below.
+    watch_state->directory_changed = false;
+    scan(current_files_inodes);
+    /// Learn whether the directory changed during the scan, and take the `NOTE_DELETE` of the departed files
+    /// before `syncFileWatches` closes their descriptors, which drops the events not read yet.
+    if (!reactor->drainReadyEvents())
+        return true;
+    syncFileWatches(current_files_inodes);
+    /// The directory may have changed between the listing and the opens of `syncFileWatches`, which would pin a watch
+    /// to another inode than the listed one. The events of the files whose descriptors it closed are dropped, but the
+    /// directory reports the change too, so discard the pass if it changed.
+    if (!reactor->drainReadyEvents())
+        return true;
+    return std::exchange(watch_state->directory_changed, false);
+}
+
+bool DirectoryWatcherBase::emitDeferredModifications(const std::map<std::string, UInt64> & current_files_inodes)
+{
+    auto & deferred_modifications = watch_state->deferred_modifications;
+    if (deferred_modifications.empty())
+        return false;
+
+    /// A file that is not listed anymore was removed or moved out, which the events of the scan report.
+    bool emitted = false;
+    for (const auto & [name, inode] : current_files_inodes)
+    {
+        if (!deferred_modifications.contains(inode))
+            continue;
+        emitted = true;
+        owner.onItemModified(DirectoryEvent(name, DW_ITEM_MODIFIED));
+    }
+    deferred_modifications.clear();
+    return emitted;
+}
+
+void DirectoryWatcherBase::onTimer()
+{
+    const auto now = std::chrono::steady_clock::now();
+
+    /// Pre-existing files are loaded by `StorageFileLog::loadFiles`, so like inotify the first snapshot emits no events.
+    /// A transient failure is retried: an empty baseline would re-emit every pre-existing file as ADDED.
+    std::map<std::string, UInt64> current_files_inodes;
+    if (!watch_state->has_snapshot)
+    {
+        try
+        {
+            if (scanFilesAndUpdateWatches(current_files_inodes))
+            {
+                watch_state->next_scan = now;
+                return;
+            }
+            /// The baseline emits no events of the listing, but the files it watches may have been modified since.
+            if (emitDeferredModifications(current_files_inodes))
+                has_uncommitted_events = true;
+            watch_state->structural_change_pending = false;
+            watch_state->setSnapshot(std::move(current_files_inodes));
+        }
+        catch (const std::exception & e)
+        {
+            LOG_WARNING(getLogger("FileLogDirectoryWatcher"), "Failed to take the first snapshot of watched directory {}, will retry: {}", path, e.what());
+        }
+        watch_state->next_scan = now + std::chrono::milliseconds(watch_state->milliseconds_to_wait);
+        return;
+    }
+
+    const auto & settings = owner.storage.getFileLogSettings();
+    auto & snapshot = watch_state->snapshot;
+    auto & deleted_files = watch_state->deleted_files;
+
+    try
+    {
+        /// Refresh the per-file watches BEFORE emitting any events, so a transient failure (e.g. `EMFILE`) retries
+        /// the pass with nothing half-emitted. It also drops files that vanished mid-scan from `current_files_inodes`.
+        if (scanFilesAndUpdateWatches(current_files_inodes))
+        {
+            watch_state->next_scan = now;
+            return;
+        }
+    }
+    catch (const std::exception & e)
+    {
+        /// The directory can be transiently unavailable (e.g. while being recreated) and watch
+        /// installation can transiently fail; neither is expected during normal operation, so log
+        /// it and retry on the next tick. The `deleted_files` set collected so far is preserved for that retry.
+        LOG_WARNING(getLogger("FileLogDirectoryWatcher"), "Failed to scan/watch directory {}, will retry: {}", path, e.what());
+        watch_state->next_scan = now + std::chrono::milliseconds(watch_state->milliseconds_to_wait);
+        return;
+    }
+
+    bool changed = false;
+
+    /// Track identities by inode so a rename is recognized even when the source is recreated in the same window
+    /// (`a -> b` plus a fresh `a` stays a MOVED pair, preserving the offset). An inode is trusted for move detection
+    /// only when it maps to exactly one name on both sides (guards against hard links).
+    std::map<UInt64, size_t> snapshot_inode_count;
+    std::map<UInt64, size_t> current_inode_count;
+    std::map<UInt64, std::string> snapshot_inode_name;
+    std::map<UInt64, std::string> current_inode_name;
+    for (const auto & [name, inode] : snapshot)
+    {
+        ++snapshot_inode_count[inode];
+        snapshot_inode_name[inode] = name;
+    }
+    for (const auto & [name, inode] : current_files_inodes)
+    {
+        ++current_inode_count[inode];
+        current_inode_name[inode] = name;
+    }
+
+    /// True if `inode` uniquely identifies one name on each side and those names differ, i.e. it
+    /// is a rename of that inode from its old name to its new name.
+    auto is_rename = [&](UInt64 inode)
+    {
+        auto sc = snapshot_inode_count.find(inode);
+        auto cc = current_inode_count.find(inode);
+        if (sc == snapshot_inode_count.end() || cc == current_inode_count.end() || sc->second != 1 || cc->second != 1)
+            return false;
+        /// An unlinked name is not a rename source, even when a hard link brings its inode back.
+        if (deleted_files.contains(snapshot_inode_name.at(inode)))
+            return false;
+        return snapshot_inode_name.at(inode) != current_inode_name.at(inode);
+    };
+
+    /// A name keeps its identity if it exists on both sides with the same inode and was not
+    /// unlinked in between (a delete+recreate reusing the inode breaks the identity).
+    auto same_identity = [&deleted_files](const std::map<std::string, UInt64> & other, const std::string & name, UInt64 inode)
+    {
+        if (deleted_files.contains(name))
+            return false;
+        auto it = other.find(name);
+        return it != other.end() && it->second == inode;
+    };
+
+    /// Topologically order the MOVED_TO targets so a target follows the move of its old inode, otherwise its meta is
+    /// erased and re-read from 0 (e.g. logrotate `a.1 -> a.2`, `a -> a.1`, new `a`). A rename cycle (an `a <-> b`
+    /// swap in one scan) cannot be ordered from a snapshot, so it is emitted best-effort and one file is re-read.
+    std::vector<std::string> move_targets;
+    for (const auto & [name, inode] : current_files_inodes)
+    {
+        if (!same_identity(snapshot, name, inode) && is_rename(inode))
+            move_targets.push_back(name);
+    }
+
+    std::vector<std::string> ordered_moves;
+    {
+        const std::set<std::string> target_set(move_targets.begin(), move_targets.end());
+        std::map<std::string, std::string> predecessor;
+        for (const auto & name : move_targets)
+        {
+            auto snap_it = snapshot.find(name);
+            if (snap_it == snapshot.end())
+                continue;
+            const UInt64 old_inode = snap_it->second;
+            auto relocated_it = current_inode_name.find(old_inode);
+            if (is_rename(old_inode) && relocated_it != current_inode_name.end()
+                && relocated_it->second != name && target_set.contains(relocated_it->second))
+                predecessor[name] = relocated_it->second;
+        }
+
+        std::set<std::string> ordered_set;
+        bool progress = true;
+        while (ordered_moves.size() < move_targets.size() && progress)
+        {
+            progress = false;
+            for (const auto & name : move_targets)
+            {
+                if (ordered_set.contains(name))
+                    continue;
+                auto p = predecessor.find(name);
+                if (p == predecessor.end() || ordered_set.contains(p->second))
+                {
+                    ordered_moves.push_back(name);
+                    ordered_set.insert(name);
+                    progress = true;
+                }
+            }
+        }
+
+        /// Leftovers form a rename cycle; append them in a deterministic order (best effort).
+        for (const auto & name : move_targets)
+        {
+            if (!ordered_set.contains(name))
+                ordered_moves.push_back(name);
+        }
+    }
+
+    /// Emit in the order StorageFileLog expects: MOVED_FROM/REMOVED, then MOVED_TO, then ADDED.
+    /// In particular MOVED_TO precedes the ADDED of a recreated source name so the
+    /// moved inode's meta is renamed before the fresh file resets it.
+
+    /// Departed identities (name gone, or its inode replaced at that name).
+    for (const auto & [name, inode] : snapshot)
+    {
+        if (same_identity(current_files_inodes, name, inode))
+            continue;
+        changed = true;
+        if (is_rename(inode))
+        {
+            if (eventMask() & DW_ITEM_MOVED_FROM)
+                owner.onItemMovedFrom(DirectoryEvent(name, DW_ITEM_MOVED_FROM, inode));
+        }
+        else if (eventMask() & DW_ITEM_REMOVED)
+        {
+            owner.onItemRemoved(DirectoryEvent(name, DW_ITEM_REMOVED));
+        }
+    }
+
+    /// Arrived rename targets, in the topologically-sorted order computed above.
+    for (const auto & name : ordered_moves)
+    {
+        changed = true;
+        if (eventMask() & DW_ITEM_MOVED_TO)
+            owner.onItemMovedTo(DirectoryEvent(name, DW_ITEM_MOVED_TO, current_files_inodes.at(name)));
+    }
+
+    /// Arrived identities that are genuinely new (including a name whose inode was replaced).
+    for (const auto & [name, inode] : current_files_inodes)
+    {
+        if (same_identity(snapshot, name, inode) || is_rename(inode))
+            continue;
+        changed = true;
+        if (eventMask() & DW_ITEM_ADDED)
+            owner.onItemAdded(DirectoryEvent(name, DW_ITEM_ADDED));
+    }
+
+    /// The modifications deferred while the change was pending, under the names of this listing and after the events
+    /// that renamed or replaced the files, in the same batch.
+    if (emitDeferredModifications(current_files_inodes))
+        changed = true;
+
+    watch_state->setSnapshot(std::move(current_files_inodes));
+    /// This pass committed successfully, so the deletes it collected have been applied; start the next
+    /// pass with a clean set. (On a retried pass we return early, keeping them.)
+    deleted_files.clear();
+    watch_state->structural_change_pending = false;
+
+    if (changed)
+    {
+        /// The reactor commits the events once the due scans are done.
+        has_uncommitted_events = true;
+        watch_state->milliseconds_to_wait = (*settings)[FileLogSetting::poll_directory_watch_events_backoff_init].totalMilliseconds();
+    }
+    else if (watch_state->milliseconds_to_wait < static_cast<uint64_t>((*settings)[FileLogSetting::poll_directory_watch_events_backoff_max].totalMilliseconds()))
+    {
+        watch_state->milliseconds_to_wait *= (*settings)[FileLogSetting::poll_directory_watch_events_backoff_factor].value;
+    }
+
+    watch_state->next_scan = now + std::chrono::milliseconds(watch_state->milliseconds_to_wait);
+}
+
 #endif
+
+void DirectoryWatcherBase::commitEvents()
+{
+    if (!has_uncommitted_events)
+    {
+        return;
+    }
+    owner.commitEvents();
+    has_uncommitted_events = false;
+
+    /// Wake up reader thread
+    owner.storage.wakeUp();
+}
 
 DirectoryWatcherBase::~DirectoryWatcherBase()
 {
-    stop();
-#if defined(OS_LINUX)
-    [[maybe_unused]] int err = ::close(inotify_fd);
-    chassert(!err || errno == EINTR);
-#endif
-}
-
-void DirectoryWatcherBase::start()
-{
-    /// The catch keeps a watch failure contained and logged here, as the schedule pool's execute
-    /// used to do. Letting it escape would instead become the global pool's first_exception and be
-    /// rethrown from an unrelated later scheduleOrThrow.
-    watch_thread = std::make_unique<ThreadFromGlobalPool>([this]
+    if (registered)
     {
+        /// Returns after the reactor thread has stopped using this watcher and closed its descriptors, so the members
+        /// can be destroyed.
         try
         {
-            watchFunc();
+            reactor->remove(*this);
         }
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
-    });
-}
-
-void DirectoryWatcherBase::stop()
-{
-    stopped = true;
-    (void)::write(event_pipe.fds_rw[1], "\0", 1);
-    if (watch_thread)
-    {
-        /// Mandatory: ~ThreadFromGlobalPoolImpl aborts on a still-joinable thread. The write above
-        /// is what makes the blocking poll return, so this cannot hang.
-        if (watch_thread->joinable())
-            watch_thread->join();
-        watch_thread.reset();
     }
 }
 
