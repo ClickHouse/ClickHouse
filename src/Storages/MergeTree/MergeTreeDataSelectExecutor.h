@@ -339,10 +339,25 @@ public:
 
     /// Check if a skip index can be used when there are lightweight updates.
     /// Returns an error message if the index depends on a column that will be updated on the fly.
+    /// Per-part callers pass `AlterConversions::getColumnsInvalidatingIndexes`, which also holds the
+    /// names touched by a pending `DROP COLUMN` / `RENAME COLUMN`.
     static std::expected<void, PreformattedMessage> canUseIndex(
         const MergeTreeIndexPtr & index,
         const StorageMetadataPtr & metadata_snapshot,
         const NameSet & all_updated_columns);
+
+    /// Whether a pending alter mutation (e.g. `MODIFY COLUMN`) or metadata mutation (`DROP COLUMN`,
+    /// `RENAME COLUMN`) applies to the part. The counters of the snapshot (`hasAlterMutations`,
+    /// `hasMetadataMutations`) also include finished mutations kept for `system.mutations`, so only the
+    /// commands newer than the part are checked.
+    static bool partHasPendingAlterOrMetadataMutations(
+        const MergeTreeData::DataPartPtr & part,
+        const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot);
+
+    /// Same as `partHasPendingAlterOrMetadataMutations` for any of the parts.
+    static bool hasPendingAlterOrMetadataMutations(
+        const RangesInDataParts & parts,
+        const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot);
 
 
 };

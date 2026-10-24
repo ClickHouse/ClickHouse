@@ -1,0 +1,10 @@
+-- no pending mutation
+1
+2
+-- pending alter mutation: read is refused
+-- the parent table is still readable
+1
+2
+-- after the mutation is done
+1
+2
