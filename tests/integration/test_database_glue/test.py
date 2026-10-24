@@ -369,6 +369,7 @@ def started_cluster():
             main_configs=[
                 "configs/query_log.xml",
                 "configs/text_log.xml",
+                "configs/url_scheme_mappers.xml",
             ],
             user_configs=[],
             stay_alive=True,
@@ -1385,6 +1386,27 @@ def test_table_without_metadata_location(started_cluster):
     assert "Iceberg" in create_table_result, f"Expected Iceberg engine in: {create_table_result}"
 
     node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_location_not_a_uri(started_cluster):
+    # Without `storage_endpoint` the location itself is the S3 URL; the timestamp column makes Glue read the
+    # metadata early through `createObjectStorageForEarlyTableAccess`.
+    node = started_cluster.instances["node1"]
+    test_ref = f"test_location_not_a_uri_{uuid.uuid4().hex[:8]}"
+    namespace = f"{test_ref}_ns"
+    table_name = f"{test_ref}_table"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    table = create_table(catalog, namespace, table_name, dir=f"{test_ref}/a b é")
+    table.append(generate_arrow_data(5))
+
+    create_clickhouse_glue_database(
+        started_cluster, node, CATALOG_NAME, additional_settings={"storage_endpoint": ""}
+    )
+    assert node.query(
+        f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}` SETTINGS optimize_trivial_count_query = 0"
+    ) == "5\n"
 
 
 def test_check_database(started_cluster):

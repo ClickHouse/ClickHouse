@@ -554,6 +554,40 @@ def test_clickhouse_rest_catalog_client(started_cluster):
         node.query("DROP DATABASE IF EXISTS rest_client_db")
 
 
+def test_clickhouse_rest_catalog_client_location_not_a_uri(started_cluster):
+    # A location is an object key, so it may hold characters that a URI cannot.
+    suffix = uuid.uuid4().hex[:8]
+    directories = {
+        f"client_location_{suffix}": "a b \u00e9#50%",
+        # Readable before with `%41` read literally, so it must stay that way.
+        f"client_location_q_{suffix}": "q?x%41y",
+    }
+    for ns, directory in directories.items():
+        create_namespace([ns], properties={"location": f"s3://{BUCKET}/custom/{ns}/{directory}"})
+        create_table(ns, "events")
+    encoded_ns = f"client_location_e_{suffix}"
+    create_namespace([encoded_ns], properties={"location": f"s3://{BUCKET}/custom/{encoded_ns}/a%20b"})
+    create_table(encoded_ns, "events")
+
+    node.query(f"""
+        DROP DATABASE IF EXISTS rest_client_location_db;
+        SET allow_experimental_database_iceberg = 1;
+        CREATE DATABASE rest_client_location_db
+        ENGINE = DataLakeCatalog('http://localhost:{CATALOG_PORT}/v1', '{minio_access_key}', '{minio_secret_key}')
+        SETTINGS catalog_type = 'rest', warehouse = 'my_warehouse',
+            storage_endpoint = 'http://minio1:9001/{BUCKET}'
+        """)
+    try:
+        for ns in directories:
+            assert node.query(f"SELECT count() FROM rest_client_location_db.`{ns}.events`") == "0\n"
+        # A location the catalog returns already encoded keeps its escape.
+        assert f"/custom/{encoded_ns}/a%20b/events" in node.query(
+            f"SHOW CREATE TABLE rest_client_location_db.`{encoded_ns}.events`"
+        )
+    finally:
+        node.query("DROP DATABASE IF EXISTS rest_client_location_db")
+
+
 def test_keeper_layout(started_cluster):
     ns = f"layout-{uuid.uuid4().hex[:8]}"
     create_namespace([ns, "eu-west"], properties={"owner": "asya"})
