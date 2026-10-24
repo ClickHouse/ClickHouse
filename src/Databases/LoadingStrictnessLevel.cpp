@@ -1,6 +1,12 @@
 #include <Databases/LoadingStrictnessLevel.h>
 
+#include <Interpreters/Context.h>
+#include <Interpreters/DDLTask.h>
 #include <base/defines.h>
+
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
 
 namespace DB
 {
@@ -27,6 +33,22 @@ LoadingStrictnessLevel getLoadingStrictnessLevel(bool attach, bool force_attach,
         return LoadingStrictnessLevel::SECONDARY_CREATE;
 
     return LoadingStrictnessLevel::CREATE;
+}
+
+bool isReplayOfJudgedDefinition(const ContextPtr & context)
+{
+    const auto metadata_txn = context->getZooKeeperMetadataTransaction();
+    if (metadata_txn && !metadata_txn->isInitialQuery())
+        return true;
+
+    if (context->isRecoveryFromStoredMetadata())
+        return true;
+
+#if CLICKHOUSE_CLOUD
+    return context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(context);
+#else
+    return false;
+#endif
 }
 
 }
