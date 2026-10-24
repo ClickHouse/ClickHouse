@@ -172,13 +172,23 @@ struct DAGNodeRef
 using OriginalToNewNodeMap = std::unordered_map<const ActionsDAG::Node *, DAGNodeRef>;
 using NodeNameToLastUsedStepMap = std::unordered_map<const ActionsDAG::Node *, size_t>;
 
+/// Original node -> name of its clones, for the nodes not cloned under their own name.
+using NodeToNewNameMap = std::unordered_map<const ActionsDAG::Node *, String>;
+
+const String & getNewName(const ActionsDAG::Node * original_dag_node, const NodeToNewNameMap & new_names)
+{
+    auto it = new_names.find(original_dag_node);
+    return it == new_names.end() ? original_dag_node->result_name : it->second;
+}
+
 /// Clones the part of original DAG responsible for computing the original_dag_node and adds it to the new DAG.
 const ActionsDAG::Node & addClonedDAGToDAG(
     size_t step,
     const ActionsDAG::Node * original_dag_node,
     const ActionsDAGPtr & new_dag,
     OriginalToNewNodeMap & node_remap,
-    NodeNameToLastUsedStepMap & node_to_step_map)
+    NodeNameToLastUsedStepMap & node_to_step_map,
+    const NodeToNewNameMap & new_names)
 {
     /// Look for the node in the map of already known nodes
     if (node_remap.contains(original_dag_node))
@@ -218,15 +228,15 @@ const ActionsDAG::Node & addClonedDAGToDAG(
     if (original_dag_node->type == ActionsDAG::ActionType::COLUMN)
     {
         const auto & new_node = new_dag->addColumn(
-            original_dag_node->column, original_dag_node->result_type, original_dag_node->result_name);
+            original_dag_node->column, original_dag_node->result_type, getNewName(original_dag_node, new_names));
         node_remap[original_dag_node] = {new_dag.get(), &new_node};
         return new_node;
     }
 
     if (original_dag_node->type == ActionsDAG::ActionType::ALIAS)
     {
-        const auto & alias_child = addClonedDAGToDAG(step, original_dag_node->children[0], new_dag, node_remap, node_to_step_map);
-        const auto & new_node = new_dag->addAlias(alias_child, original_dag_node->result_name);
+        const auto & alias_child = addClonedDAGToDAG(step, original_dag_node->children[0], new_dag, node_remap, node_to_step_map, new_names);
+        const auto & new_node = new_dag->addAlias(alias_child, getNewName(original_dag_node, new_names));
         node_remap[original_dag_node] = {new_dag.get(), &new_node};
         return new_node;
     }
@@ -237,11 +247,11 @@ const ActionsDAG::Node & addClonedDAGToDAG(
         ActionsDAG::NodeRawConstPtrs new_children;
         for (const auto & child : original_dag_node->children)
         {
-            const auto & new_child = addClonedDAGToDAG(step, child, new_dag, node_remap, node_to_step_map);
+            const auto & new_child = addClonedDAGToDAG(step, child, new_dag, node_remap, node_to_step_map, new_names);
             new_children.push_back(&new_child);
         }
 
-        const auto & new_node = new_dag->addFunction(original_dag_node->function_base, new_children, original_dag_node->result_name);
+        const auto & new_node = new_dag->addFunction(original_dag_node->function_base, new_children, getNewName(original_dag_node, new_names));
         node_remap[original_dag_node] = {new_dag.get(), &new_node};
         return new_node;
     }
@@ -402,6 +412,40 @@ bool tryBuildPrewhereSteps(
         }
     }
 
+    /// Steps pass columns to each other by name, so nodes sharing a name (a condition of ON repeated in WHERE
+    /// under `join_use_nulls`) are cloned under new names. The outputs of PREWHERE keep their names.
+    NodeToNewNameMap new_names;
+    NameSet used_names;
+    /// Readers do not read a stored column that a step already produced, so a new name must not be one.
+    auto is_stored_column = [&](const String & name)
+    {
+        return columns && columns->hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
+    };
+    auto make_new_name = [&](const String & name)
+    {
+        String new_name = "__prewhere_" + name;
+        for (size_t suffix = 1; used_names.contains(new_name) || is_stored_column(new_name); ++suffix)
+            new_name = fmt::format("__prewhere_{}_{}", name, suffix);
+        used_names.insert(new_name);
+        return new_name;
+    };
+    {
+        const auto & dag = prewhere_info->prewhere_actions;
+        const std::unordered_set<const ActionsDAG::Node *> output_nodes(dag.getOutputs().begin(), dag.getOutputs().end());
+        std::unordered_map<std::string_view, size_t> name_count;
+        for (const auto & node : dag.getNodes())
+        {
+            ++name_count[node.result_name];
+            used_names.insert(node.result_name);
+        }
+        for (const auto & node : dag.getNodes())
+        {
+            if (node.type == ActionsDAG::ActionType::INPUT || output_nodes.contains(&node) || name_count[node.result_name] < 2)
+                continue;
+            new_names.emplace(&node, make_new_name(node.result_name));
+        }
+    }
+
     /// 5. Build DAGs for each step
     struct Step
     {
@@ -426,13 +470,13 @@ bool tryBuildPrewhereSteps(
         std::vector<const ActionsDAG::Node *> new_condition_nodes;
         for (const auto * node : condition_group)
         {
-            const auto & node_in_new_dag = addClonedDAGToDAG(step_index, node, step_dag, node_remap, node_to_step);
+            const auto & node_in_new_dag = addClonedDAGToDAG(step_index, node, step_dag, node_remap, node_to_step, new_names);
             new_condition_nodes.push_back(&node_in_new_dag);
         }
 
         /// Only added as inputs here: the later step that uses such a column adds it to the outputs of this one.
         for (const auto * input : inputs_read_ahead[step_index])
-            addClonedDAGToDAG(step_index, input, step_dag, node_remap, node_to_step);
+            addClonedDAGToDAG(step_index, input, step_dag, node_remap, node_to_step, new_names);
 
         if (new_condition_nodes.size() > 1)
         {
@@ -440,6 +484,8 @@ bool tryBuildPrewhereSteps(
             FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
             const auto & and_function_node = addFunction(step_dag, func_builder_and, new_condition_nodes);
             result_node = &and_function_node;
+            if (is_stored_column(result_node->result_name))
+                result_node = &step_dag->addAlias(*result_node, make_new_name(result_node->result_name));
         }
         else
         {
@@ -481,7 +527,8 @@ bool tryBuildPrewhereSteps(
         }
         else
         {
-            const auto & node_in_new_dag = addClonedDAGToDAG(steps.size() - 1, output, steps.back().actions, node_remap, node_to_step);
+            const auto & node_in_new_dag
+                = addClonedDAGToDAG(steps.size() - 1, output, steps.back().actions, node_remap, node_to_step, new_names);
             steps.back().actions->getOutputs().push_back(&node_in_new_dag);
         }
     }
