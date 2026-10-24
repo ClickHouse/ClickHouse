@@ -35,6 +35,7 @@ namespace Setting
     extern const SettingsBool optimize_and_compare_chain;
     extern const SettingsUInt64 optimize_and_compare_chain_max_hash_work;
     extern const SettingsBool optimize_redundant_comparisons;
+    extern const SettingsBool group_by_use_nulls;
 }
 
 namespace ErrorCodes
@@ -1795,6 +1796,11 @@ public:
     /// cached result stays valid for the rest of the traversal.
     std::unordered_map<QueryTreeNodePtr, bool> correlated_subquery_cache;
 
+    /// One entry per query level: whether that level's `GROUP BY` keys are wrapped in `Nullable`
+    /// after aggregation. Such a key keeps its declared type, while an expression equal to it
+    /// elsewhere in the same level is a `Nullable`-converted copy of it.
+    std::vector<bool> nullable_group_by_keys_stack;
+
     bool subtreeContainsCorrelatedSubquery(const QueryTreeNodePtr & node)
     {
         if (auto it = correlated_subquery_cache.find(node); it != correlated_subquery_cache.end())
@@ -1902,6 +1908,14 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
+        if (const auto * query_node = node->as<QueryNode>())
+            nullable_group_by_keys_stack.push_back(
+                getSettings()[Setting::group_by_use_nulls]
+                && (query_node->isGroupByWithGroupingSets() || query_node->isGroupByWithRollup()
+                    || query_node->isGroupByWithCube()));
+        else if (node->as<UnionNode>())
+            nullable_group_by_keys_stack.push_back(false);
+
         if (auto * join_node = node->as<JoinNode>())
         {
             /// Operator <=> is not supported outside of JOIN ON section
@@ -1913,10 +1927,15 @@ public:
             return;
         }
 
+        /// Neither `and` optimization can move a `Nullable` copy of an expression, so where the `GROUP BY`
+        /// keys become `Nullable` they must not move the expression such a copy is of.
+        const bool keep_and = !nullable_group_by_keys_stack.empty() && nullable_group_by_keys_stack.back();
+
         if (mode == Mode::JOIN_ON_AND_COMPARE_CHAIN)
         {
             auto * function_node = node->as<FunctionNode>();
-            if (function_node && function_node->getFunctionName() == "and" && getSettings()[Setting::optimize_and_compare_chain])
+            if (function_node && function_node->getFunctionName() == "and" && !keep_and
+                && getSettings()[Setting::optimize_and_compare_chain])
                 tryOptimizeAndCompareChain(node);
             return;
         }
@@ -1934,7 +1953,8 @@ public:
 
         if (function_node->getFunctionName() == "and")
         {
-            tryOptimizeAndCompareNotEqualsChain(node);
+            if (!keep_and)
+                tryOptimizeAndCompareNotEqualsChain(node);
             return;
         }
 
@@ -1947,6 +1967,9 @@ public:
 
     void leaveImpl(QueryTreeNodePtr & node)
     {
+        if (node->as<QueryNode>() || node->as<UnionNode>())
+            nullable_group_by_keys_stack.pop_back();
+
         if (mode == Mode::JOIN_ON_AND_COMPARE_CHAIN)
             return;
 
@@ -2189,9 +2212,12 @@ private:
             /// AND operator can have UInt8 or bool as its type.
             /// bool is used if a bool constant is at least one operand.
 
-            auto operand_type = and_operands[0]->getResultType();
             auto function_type = function_node.getResultType();
             chassert(!function_type->isNullable());
+
+            /// A value of type `Nothing` cannot be constructed, so an AND of that type is left as it is.
+            if (isNothing(function_type))
+                return;
 
             /// The sole remaining operand may be a bare numeric constant (e.g. `256`).
             /// A plain cast to UInt8 would silently truncate (e.g. 256 → 0),
@@ -2217,37 +2243,20 @@ private:
                 }
             }
 
-            if (!function_type->equals(*operand_type))
+            /// An operand standing in for the whole `AND` must yield 0 or 1, because `AND` would have
+            /// evaluated it as a boolean. A boolean function already does; anything else keeps the
+            /// `AND` and gains its identity operand, which booleanizes without a truncating cast.
+            const auto * operand_function = and_operands[0]->as<FunctionNode>();
+            if (operand_function && isBooleanFunction(operand_function->getFunctionName()))
             {
-                if (WhichDataType(removeLowCardinality(operand_type)).isUInt8())
-                {
-                    /// Result of equality operator can be low cardinality, while AND always returns UInt8.
-                    /// In that case we replace `(lc = 1) AND (lc = 1)` with `(lc = 1) AS UInt8`.
-                    node = createCastFunction(std::move(and_operands[0]), function_type, getContext());
-                }
-                else
-                {
-                    /// The sole survivor can be an arbitrary numeric operand (e.g. `x` in
-                    /// `x AND i < 300` after the always-true comparison is pruned). `AND` evaluates
-                    /// operands as booleans, and a plain cast would truncate (`256::UInt32` -> 0),
-                    /// so rewrite to `operand != 0` instead.
-                    auto not_equals_node = std::make_shared<FunctionNode>("notEquals");
-                    not_equals_node->markAsOperator();
-                    not_equals_node->getArguments().getNodes().push_back(std::move(and_operands[0]));
-                    not_equals_node->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(0u));
-                    resolveOrdinaryFunctionNodeByName(*not_equals_node, "notEquals", getContext());
+                auto new_node = std::move(and_operands[0]);
+                if (!function_type->equals(*new_node->getResultType()))
+                    new_node = createCastFunction(std::move(new_node), function_type, getContext());
+                node = std::move(new_node);
+                return;
+            }
 
-                    QueryTreeNodePtr new_node = std::move(not_equals_node);
-                    if (!function_type->equals(*new_node->getResultType()))
-                        new_node = createCastFunction(std::move(new_node), function_type, getContext());
-                    node = std::move(new_node);
-                }
-            }
-            else
-            {
-                node = std::move(and_operands[0]);
-            }
-            return;
+            and_operands.push_back(std::make_shared<ConstantNode>(static_cast<UInt8>(1), function_type));
         }
 
         auto and_function_resolver = FunctionFactory::instance().get("and", getContext());
