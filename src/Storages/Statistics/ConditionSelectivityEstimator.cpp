@@ -46,7 +46,7 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const Sto
 {
     if (filter == nullptr && prewhere == nullptr)
     {
-        return estimateRelationProfile();
+        return estimateRelationProfile(metadata);
     }
     else if (filter == nullptr)
     {
@@ -85,7 +85,7 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(
     const std::vector<RPNBuilderTreeNode> & nodes) const
 {
     if (nodes.empty())
-        return estimateRelationProfile();
+        return estimateRelationProfile(metadata);
 
     /// Build a combined RPN sequence by concatenating per-node RPNs and inserting an
     /// FUNCTION_AND token after every node past the first (standard postfix AND for
@@ -243,12 +243,15 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
     return result;
 }
 
-RelationProfile ConditionSelectivityEstimator::estimateRelationProfile() const
+RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const StorageMetadataPtr & metadata) const
 {
+    /// Unfiltered relation profiles must also reject sketches for an outdated column type.
     RelationProfile result;
     result.rows = total_rows;
     for (const auto & [column_name, estimator] : column_estimators)
     {
+        if (!isCompatibleStatistics(metadata, estimator.stats, column_name))
+            continue;
         result.column_stats.emplace(column_name, makeColumnStats(estimator.estimateCardinality(), estimator.stats));
     }
     return result;
@@ -637,12 +640,24 @@ void ConditionSelectivityEstimatorBuilder::incrementRowCount(UInt64 rows)
     estimator->total_rows += rows;
 }
 
+/// Compare type names as `ColumnStatistics::structureEquals` does: `Bool` and `UInt8` are equal under
+/// `equals` but have different statistics layouts.
+static bool haveSameDataType(const ColumnStatistics & lhs, const ColumnStatistics & rhs)
+{
+    const auto lhs_type = lhs.getDataType();
+    const auto rhs_type = rhs.getDataType();
+    return lhs_type && rhs_type && lhs_type->getName() == rhs_type->getName();
+}
+
 void ConditionSelectivityEstimatorBuilder::addStatistics(const String & column_name, const ColumnStatisticsPtr & column_stats)
 {
     if (column_stats == nullptr)
         return;
 
     has_data = true;
+    if (columns_with_mixed_types.contains(column_name))
+        return;
+
     auto & column_estimator = estimator->column_estimators[column_name];
 
     /// The statistics of a part are shared through the statistics cache, so they are never merged into
@@ -657,9 +672,18 @@ void ConditionSelectivityEstimatorBuilder::addStatistics(const String & column_n
     {
         column_estimator.stats->merge(column_stats);
     }
-    /// else: incompatible statistics (e.g. a concurrent ALTER changed the column type,
-    /// shifting the aggregate-function state layout). Skip this part's statistics so the
-    /// estimator still works with the compatible parts instead of crashing.
+    else if (!haveSameDataType(*column_estimator.stats, *column_stats))
+    {
+        /// The parts disagree on the column type: an `ALTER TABLE ... MODIFY COLUMN` is not materialized in all of
+        /// them yet. Statistics of either type would cover only some of the parts while `total_rows` counts all of
+        /// them, and which type is kept would depend on the part order - a mutation rewrites the leading parts
+        /// first. Drop the column for the whole snapshot instead.
+        estimator->column_estimators.erase(column_name);
+        columns_with_mixed_types.insert(column_name);
+    }
+    /// else: the same type with a different set of statistics, e.g. a `MODIFY STATISTICS` that is not
+    /// materialized in all parts yet. The states cannot be merged, so this part's statistics are skipped and
+    /// the estimator keeps working with the parts that match the first one.
 }
 
 ConditionSelectivityEstimatorPtr ConditionSelectivityEstimatorBuilder::getEstimator() const

@@ -166,6 +166,30 @@ TEST(ColumnStatsDerivation, NullAwareFunctionAddsOneToBound)
     EXPECT_EQ(stats["year"].num_distinct_values, distinct_dates);
 }
 
+/// A zero NDV is unknown: a Cascades read adds an entry for every column it reads to carry the width, with or
+/// without statistics. The +1 of a null-aware hop must not turn it into a known NDV of 1, which would estimate
+/// `GROUP BY assumeNotNull(x)` as a single group. The width still follows the column.
+TEST(ColumnStatsDerivation, NullAwareFunctionKeepsUnknownDistinctValuesUnknown)
+{
+    tryRegisterFunctions();
+
+    auto nullable_int_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>());
+    ActionsDAG dag;
+    const auto & input = dag.addInput("x", nullable_int_type);
+    addOutputFunction(dag, "assumeNotNull", {&input}, "not_null");
+    addOutputFunction(dag, "isNull", {&input}, "is_null");
+
+    std::unordered_map<String, ColumnStats> stats;
+    stats["x"] = ColumnStats{.avg_bytes = 8};
+    remapColumnStats(stats, dag);
+
+    ASSERT_TRUE(stats.contains("not_null"));
+    EXPECT_EQ(stats.at("not_null").num_distinct_values, 0u);
+    EXPECT_EQ(stats.at("not_null").avg_bytes, 8);
+    ASSERT_TRUE(stats.contains("is_null"));
+    EXPECT_EQ(stats.at("is_null").num_distinct_values, 0u);
+}
+
 /// The +1 from a null-aware hop is carried along the rest of the chain, regardless of its position:
 /// a downstream null-preserving function keeps it, and an upstream one does not consume it.
 TEST(ColumnStatsDerivation, NullAwareFunctionInChainCarriesOffset)
@@ -394,6 +418,31 @@ TEST(ColumnStatsDerivation, LineageUsesOutputPositionsWithDuplicateNames)
     ASSERT_TRUE(lineage[1].input);
     EXPECT_EQ(lineage[0].input->input_position, 0u);
     EXPECT_EQ(lineage[1].input->input_position, 1u);
+}
+
+TEST(ColumnStatsDerivation, RemapDropsStatisticsForDuplicateOutputNames)
+{
+    auto int_type = std::make_shared<DataTypeInt64>();
+    ActionsDAG dag;
+    const auto & first = dag.addInput("first", int_type);
+    const auto & second = dag.addInput("second", int_type);
+    const auto & unique = dag.addInput("unique", int_type);
+    const auto & first_output = dag.addAlias(first, "duplicate");
+    const auto & second_output = dag.addAlias(second, "duplicate");
+    const auto & unique_output = dag.addAlias(unique, "kept");
+    dag.getOutputs().push_back(&first_output);
+    dag.getOutputs().push_back(&second_output);
+    dag.getOutputs().push_back(&unique_output);
+
+    std::unordered_map<String, ColumnStats> stats;
+    stats["first"] = ColumnStats{.num_distinct_values = 10};
+    stats["second"] = ColumnStats{.num_distinct_values = 1000};
+    stats["unique"] = ColumnStats{.num_distinct_values = 42};
+    remapColumnStats(stats, dag);
+
+    EXPECT_FALSE(stats.contains("duplicate"));
+    ASSERT_EQ(stats.size(), 1u);
+    EXPECT_EQ(stats.at("kept").num_distinct_values, 42u);
 }
 
 TEST(ColumnStatsDerivation, LineageKeepsDifferentExpressionsWithDuplicateOutputNames)
