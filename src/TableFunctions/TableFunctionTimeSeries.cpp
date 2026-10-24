@@ -1,5 +1,6 @@
 #include <TableFunctions/TableFunctionTimeSeries.h>
 
+#include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -69,6 +70,9 @@ void TableFunctionTimeSeriesTarget<target_kind>::parseArguments(const ASTPtr & a
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Couldn't get a table name from the arguments of the {} table function", name);
 
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
+    /// Checked before the lookup, so the function does not reveal whether the table or its histograms target exists.
+    if constexpr (target_kind == ViewTarget::Histograms)
+        context->checkAccess(AccessType::SHOW_COLUMNS, time_series_storage_id);
     target_table_type_name = getTargetTable(context)->getName();
 }
 
@@ -87,8 +91,11 @@ StoragePtr TableFunctionTimeSeriesTarget<target_kind>::executeImpl(
         ContextPtr context,
         const String & /* table_name */,
         ColumnsDescription /* cached_columns */,
-        bool /* is_insert_query */) const
+        bool is_insert_query) const
 {
+    /// Reading or writing the histograms target needs the same grant as the TimeSeries table itself.
+    if constexpr (target_kind == ViewTarget::Histograms)
+        context->checkAccess(is_insert_query ? AccessType::INSERT : AccessType::SELECT, time_series_storage_id);
     return getTargetTable(context);
 }
 
@@ -198,6 +205,25 @@ The function `timeSeriesMetricFamilies` has an alias `timeSeriesMetrics` which i
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{});
 
     factory.registerAlias("timeSeriesMetrics", "timeSeriesMetricFamilies");
+
+    factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::Histograms>>(
+        {.description = R"DOCS_MD(
+`timeSeriesHistograms(db_name.time_series_table)` - Returns the [histograms](/reference/engines/table-engines/integrations/time-series#histograms-table) table
+used by table `db_name.time_series_table` whose table engine is the [TimeSeries](/reference/engines/table-engines/integrations/time-series) engine
+and which was created with a `HISTOGRAMS` target or the `store_native_histograms` setting:
+
+```sql
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries SETTINGS store_native_histograms = 1
+```
+
+The following queries are equivalent:
+
+```sql
+SELECT * FROM timeSeriesHistograms(db_name.time_series_table);
+SELECT * FROM timeSeriesHistograms('db_name.time_series_table');
+SELECT * FROM timeSeriesHistograms('db_name', 'time_series_table');
+```
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{});
 
     factory.registerFunction<TableFunctionTimeSeriesSelector>(
         {.description = R"DOCS_MD(
