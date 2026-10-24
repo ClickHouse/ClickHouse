@@ -350,6 +350,26 @@ void ActionsDAG::Node::updateHash(
         function_base->updateHash(hash_state);
     }
 
+        /// A lambda's name is only its signature; what it computes is its body and the order in which it binds
+        /// its arguments and captured columns.
+        if (const auto * function_capture = typeid_cast<const FunctionCapture *>(function_base.get()))
+        {
+            const auto & capture = function_capture->getCapture();
+            for (const auto & name : capture.captured_names)
+            {
+                hash_state.update(name.size());
+                hash_state.update(name);
+            }
+            for (const auto & argument : capture.lambda_arguments)
+            {
+                hash_state.update(argument.name.size());
+                hash_state.update(argument.name);
+            }
+            for (const auto * output : function_capture->getAcionsDAG().getOutputs())
+                output->updateHash(hash_state);
+        }
+    }
+
     if (function)
         hash_state.update(function->getName());
 
