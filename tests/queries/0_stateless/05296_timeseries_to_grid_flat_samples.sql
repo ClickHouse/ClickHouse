@@ -76,6 +76,17 @@ SELECT
     (SELECT timeSeriesRateToGridMerge(0, 20000, 100, 300)(s) FROM (SELECT number % 2000 AS c, timeSeriesRateToGridState(0, 20000, 100, 300)(toDateTime64(number, 3, 'UTC'), (number % 1000)::Float64) AS s FROM numbers(20000) GROUP BY c ORDER BY c DESC)) = expected
 SETTINGS max_threads = 1;
 
+-- States that interleave in stretches, states that share every timestamp and states with an unsorted tail must merge like one pass.
+SELECT 'merged runs (1 1 1):';
+WITH
+    (SELECT timeSeriesRateToGrid(0, 20000, 100, 300)(toDateTime64(number, 3, 'UTC'), (number % 1000)::Float64) FROM numbers(20000)) AS expected,
+    (SELECT timeSeriesRateToGrid(0, 20000, 100, 300)(t, m) FROM (SELECT toDateTime64(number % 20000, 3, 'UTC') AS t, max(((number * 7) % 1000)::Float64) AS m FROM numbers(8 * 20000) GROUP BY t ORDER BY t)) AS expected_shared
+SELECT
+    (SELECT timeSeriesRateToGridMerge(0, 20000, 100, 300)(s) FROM (SELECT intDiv(number, 26) % 6 AS c, timeSeriesRateToGridState(0, 20000, 100, 300)(toDateTime64(number, 3, 'UTC'), (number % 1000)::Float64) AS s FROM numbers(20000) GROUP BY c ORDER BY c)) = expected,
+    (SELECT timeSeriesRateToGridMerge(0, 20000, 100, 300)(s) FROM (SELECT intDiv(number, 20000) AS c, timeSeriesRateToGridState(0, 20000, 100, 300)(toDateTime64(number % 20000, 3, 'UTC'), ((number * 7) % 1000)::Float64) AS s FROM numbers(8 * 20000) GROUP BY c ORDER BY c)) = expected_shared,
+    (SELECT timeSeriesRateToGridMerge(0, 20000, 100, 300)(s) FROM (SELECT c, timeSeriesRateToGridState(0, 20000, 100, 300)(t, v) AS s FROM (SELECT number % 5 AS c, toDateTime64(number, 3, 'UTC') AS t, (number % 1000)::Float64 AS v FROM numbers(20000) ORDER BY intDiv(number, 3000), cityHash64(number)) GROUP BY c ORDER BY c DESC)) = expected
+SETTINGS max_threads = 1;
+
 -- One state over 300 series with the same 310 timestamps: every timestamp arrives 300 times and the largest value must win.
 SELECT 'many series in one state (1 1):';
 WITH

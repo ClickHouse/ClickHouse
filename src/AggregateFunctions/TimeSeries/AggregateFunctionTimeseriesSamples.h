@@ -96,24 +96,19 @@ public:
             return;
         }
 
+        /// A whole state appends the samples and sorts them later, when the buffer grows or is read.
+        if constexpr (compacting)
+        {
+            compactIfFull(other.buffer.size());
+            append(other);
+            return;
+        }
+
         if (buffer.empty())
         {
             buffer = other.buffer;
             unsorted_begin = other.unsorted_begin;
             sort();
-            return;
-        }
-
-        /// A whole state merges at once only when the buffer is not much bigger than the incoming samples.
-        /// Smaller inputs are appended and sorted later, so many small merges do not copy the whole buffer each time.
-        if (compacting && buffer.size() > MAX_EAGER_MERGE_RATIO * other.buffer.size())
-        {
-            compactIfFull(other.buffer.size());
-            const size_t old_size = buffer.size();
-            const bool in_order = other.isSorted() && buffer.back().first < other.buffer.front().first;
-            buffer.insert(buffer.end(), other.buffer.begin(), other.buffer.end());
-            if (isSorted() && !in_order)
-                unsorted_begin = old_size;
             return;
         }
 
@@ -124,8 +119,7 @@ public:
         Buffer sorted_other_buffer;
         if (!other.isSorted())
         {
-            sorted_other_buffer = other.buffer;
-            sortBuffer(sorted_other_buffer, other.unsorted_begin);
+            sorted_other_buffer = other.sortedCopy();
             rhs = &sorted_other_buffer;
         }
 
@@ -153,8 +147,7 @@ public:
         /// A rare unsorted state is serialized from a sorted copy, so the state is not mutated behind `const`.
         if (!isSorted()) [[unlikely]]
         {
-            Buffer sorted_buffer = buffer;
-            sortBuffer(sorted_buffer, unsorted_begin);
+            const Buffer sorted_buffer = sortedCopy();
             writeSamples(sorted_buffer, buf);
             return;
         }
@@ -210,8 +203,7 @@ public:
         /// A rare unsorted state is iterated via a sorted copy, so the state is not mutated behind `const`.
         if (!isSorted()) [[unlikely]]
         {
-            Buffer sorted_buffer = buffer;
-            sortBuffer(sorted_buffer, unsorted_begin);
+            const Buffer sorted_buffer = sortedCopy();
             for (const auto & [timestamp, value] : sorted_buffer)
                 f(timestamp, value);
             return;
@@ -229,8 +221,7 @@ public:
         /// A rare unsorted state is passed as a sorted copy, so the state is not mutated behind `const`.
         if (!isSorted()) [[unlikely]]
         {
-            Buffer sorted_buffer = buffer;
-            sortBuffer(sorted_buffer, unsorted_begin);
+            const Buffer sorted_buffer = sortedCopy();
             f(std::span<const Sample>(sorted_buffer.data(), sorted_buffer.size()));
             return;
         }
@@ -240,8 +231,11 @@ public:
 private:
     /// How many samples `deserialize` reserves before reading the data. Bigger buffers grow while they are read.
     static constexpr size_t MAX_SAMPLES_TO_RESERVE = compacting ? 65536 : 4096;
-    /// A whole state merges eagerly while its buffer is at most this many times bigger than the incoming samples.
-    static constexpr size_t MAX_EAGER_MERGE_RATIO = 16;
+    /// A buffer of at most this many sorted runs is sorted by merging them into another buffer, a buffer of more runs in place.
+    static constexpr size_t MAX_RUNS_TO_MERGE_INTO = 16;
+    /// Runs that alternate in stretches shorter than this on average are merged in pairs; checked every `STRETCHES_PER_CHECK` stretches.
+    static constexpr size_t MIN_AVERAGE_STRETCH_LENGTH = 4;
+    static constexpr size_t STRETCHES_PER_CHECK = 64;
     /// An unsorted tail whose sorted runs are shorter than this on average is sorted instead of merged run by run.
     static constexpr size_t MIN_AVERAGE_RUN_LENGTH = 32;
     /// A tail shorter than this is comparison-sorted at once; a longer one is first partitioned into groups of this many samples on average.
@@ -378,6 +372,159 @@ private:
         gallopMerge(data + bounds[0], data + bounds[half], data + bounds[count], tmp);
     }
 
+    struct Run
+    {
+        const Sample * begin;
+        const Sample * end;
+    };
+    using Runs = absl::InlinedVector<Run, MAX_RUNS_TO_MERGE_INTO>;
+
+    /// Collects the sorted part and the sorted runs of the tail of `buf`; returns false if there are more than `MAX_RUNS_TO_MERGE_INTO` runs.
+    static bool findRuns(const Buffer & buf, size_t unsorted_begin, Runs & runs, bool & has_duplicates)
+    {
+        const Sample * data = buf.data();
+        runs.assign({{data, data + unsorted_begin}});
+        has_duplicates = false;
+        size_t run_begin = unsorted_begin;
+        for (size_t i = unsorted_begin + 1; i < buf.size(); ++i)
+        {
+            if (data[i].first > data[i - 1].first)
+                continue;
+            if (data[i].first == data[i - 1].first)
+            {
+                has_duplicates = true;
+                continue;
+            }
+            if (runs.size() == MAX_RUNS_TO_MERGE_INTO)
+                return false;
+            runs.push_back({data + run_begin, data + i});
+            run_begin = i;
+        }
+        runs.push_back({data + run_begin, data + buf.size()});
+        return true;
+    }
+
+    /// Writes the samples of the runs to the empty `dst` sorted and deduplicated. The run with the smallest next timestamp gives its samples
+    /// up to the next timestamp of the other runs at once; runs that alternate in short stretches (e.g. with shared timestamps) are merged in pairs.
+    static void mergeRunsInto(Runs & runs, Buffer & dst, bool has_duplicates)
+    {
+        size_t total = 0;
+        for (const auto & run : runs)
+            total += run.end - run.begin;
+        dst.resize(total);
+        Sample * const out_begin = dst.data();
+        Sample * out = out_begin;
+
+        auto earlier = [](const Run & lhs, const Run & rhs) { return lhs.begin->first < rhs.begin->first; };
+        ::sort(runs.begin(), runs.end(), earlier);
+        size_t stretches = 0;
+        const Sample * window_begin = out;
+        while (runs.size() > 2)
+        {
+            Run run = runs.front();
+            const TimestampType next = runs[1].begin->first;
+            const Sample * stop = run.begin + 1;
+            if (stop != run.end && stop->first <= next)
+                stop = gallop(stop, run.end, [&](const Sample & sample) { return sample.first <= next; });
+            /// The first sample may share its timestamp with the last one written, which comes from another run.
+            if (out != out_begin && run.begin->first == out[-1].first)
+            {
+                out[-1].second = timeseriesMaxValueForDuplicateTimestamp(out[-1].second, run.begin->second);
+                ++run.begin;
+            }
+            out = std::copy(run.begin, stop, out);
+            run.begin = stop;
+            if (run.begin == run.end)
+                runs.erase(runs.begin());
+            else
+            {
+                size_t pos = 0;
+                for (; pos + 1 < runs.size() && !earlier(run, runs[pos + 1]); ++pos)
+                    runs[pos] = runs[pos + 1];
+                runs[pos] = run;
+            }
+            if (++stretches % STRETCHES_PER_CHECK == 0)
+            {
+                if (static_cast<size_t>(out - window_begin) < STRETCHES_PER_CHECK * MIN_AVERAGE_STRETCH_LENGTH)
+                    break;
+                window_begin = out;
+            }
+        }
+
+        /// The rest is merged without looking at the samples written so far, so its first sample may repeat the last one.
+        Sample * const rest_begin = out;
+        out = runs.size() == 1 ? std::copy(runs.front().begin, runs.front().end, out) : mergeInPairs(runs, out);
+        if (rest_begin != out_begin && rest_begin != out && rest_begin[-1].first == rest_begin->first)
+            has_duplicates = true;
+        dst.resize(out - out_begin);
+        if (has_duplicates)
+            deduplicateSorted(dst);
+    }
+
+    /// Writes the samples of the runs to `out` sorted, merging adjacent runs in pairs level by level between `out` and a temporary buffer.
+    /// The last level writes to `out`; returns the end of the written samples.
+    static Sample * mergeInPairs(Runs & runs, Sample * out)
+    {
+        size_t total = 0;
+        for (const auto & run : runs)
+            total += run.end - run.begin;
+        size_t levels = 0;
+        while ((size_t{1} << levels) < runs.size())
+            ++levels;
+        Buffer tmp;
+        if (levels > 1)
+            tmp.resize(total);
+
+        Runs merged_runs;
+        Sample * level_out = out;
+        for (size_t level = 0; level < levels; ++level)
+        {
+            level_out = (levels - 1 - level) % 2 == 0 ? out : tmp.data();
+            merged_runs.clear();
+            for (size_t i = 0; i < runs.size(); i += 2)
+            {
+                Sample * begin = level_out;
+                if (i + 1 < runs.size())
+                    level_out = mergeTwo(runs[i], runs[i + 1], level_out);
+                else
+                    level_out = std::copy(runs[i].begin, runs[i].end, level_out);
+                merged_runs.push_back({begin, level_out});
+            }
+            runs.swap(merged_runs);
+        }
+        return level_out;
+    }
+
+    /// Writes the samples of two sorted runs to `out` in timestamp order; samples of both runs with the same timestamp become one.
+    static Sample * mergeTwo(Run lhs, Run rhs, Sample * out)
+    {
+        while (lhs.begin != lhs.end && rhs.begin != rhs.end)
+        {
+            if (lhs.begin->first < rhs.begin->first)
+            {
+                const TimestampType next = rhs.begin->first;
+                const Sample * stop = gallop(lhs.begin, lhs.end, [&](const Sample & sample) { return sample.first < next; });
+                out = std::copy(lhs.begin, stop, out);
+                lhs.begin = stop;
+            }
+            else if (rhs.begin->first < lhs.begin->first)
+            {
+                const TimestampType next = lhs.begin->first;
+                const Sample * stop = gallop(rhs.begin, rhs.end, [&](const Sample & sample) { return sample.first < next; });
+                out = std::copy(rhs.begin, stop, out);
+                rhs.begin = stop;
+            }
+            else
+            {
+                *out++ = {lhs.begin->first, timeseriesMaxValueForDuplicateTimestamp(lhs.begin->second, rhs.begin->second)};
+                ++lhs.begin;
+                ++rhs.begin;
+            }
+        }
+        out = std::copy(lhs.begin, lhs.end, out);
+        return std::copy(rhs.begin, rhs.end, out);
+    }
+
     /// Merges the sorted ranges [first, middle) and [middle, last), moving each stretch of one side
     /// that comes before the other side's next sample at once. Equal timestamps keep the left side first.
     static void gallopMerge(Sample * first, Sample * middle, Sample * last, Buffer & tmp)
@@ -427,6 +574,26 @@ private:
 
     bool isSorted() const { return unsorted_begin == 0; }
 
+    /// Returns the samples of an unsorted state sorted and deduplicated, leaving the state as is.
+    Buffer sortedCopy() const
+    {
+        Buffer sorted_buffer;
+        if constexpr (compacting)
+        {
+            Runs runs;
+            bool has_duplicates = false;
+            if (findRuns(buffer, unsorted_begin, runs, has_duplicates))
+            {
+                sorted_buffer.reserve(buffer.size());
+                mergeRunsInto(runs, sorted_buffer, has_duplicates);
+                return sorted_buffer;
+            }
+        }
+        sorted_buffer = buffer;
+        sortBuffer(sorted_buffer, unsorted_begin);
+        return sorted_buffer;
+    }
+
     /// Restores the invariant in place after out-of-order `add`s; no-op in the common (already sorted) case.
     void sort()
     {
@@ -441,10 +608,40 @@ private:
     {
         if (isSorted() || buffer.size() + count <= buffer.capacity())
             return;
+        compact(count);
+    }
+
+    void NO_INLINE compact(size_t count)
+    {
+        /// When the sorted part alone needs a bigger buffer, a few runs are merged right into it, which costs about as much as growing.
+        Runs runs;
+        bool has_duplicates = false;
+        if (unsorted_begin + count > buffer.capacity() / 2 && findRuns(buffer, unsorted_begin, runs, has_duplicates))
+        {
+            Buffer merged;
+            merged.reserve(std::max(buffer.capacity() * 2, buffer.size() + count));
+            mergeRunsInto(runs, merged, has_duplicates);
+            buffer = std::move(merged);
+            unsorted_begin = 0;
+            return;
+        }
+
         sort();
         /// Grow when sorting freed less than half of the buffer, so a full sort happens at most once per half-buffer of new samples.
         if (buffer.size() + count > buffer.capacity() / 2)
             buffer.reserve(std::max(buffer.capacity() * 2, buffer.size() + count));
+    }
+
+    /// Appends the samples of another state; its unsorted tail is sorted where it lands, so the buffer's tail stays made of long sorted runs.
+    void append(const AggregateFunctionTimeseriesSamples & other)
+    {
+        const size_t old_size = buffer.size();
+        buffer.insert(buffer.end(), other.buffer.begin(), other.buffer.end());
+        const bool in_order = other.isSorted() && (old_size == 0 || buffer[old_size - 1].first < buffer[old_size].first);
+        if (isSorted() && !in_order)
+            unsorted_begin = old_size ? old_size : other.unsorted_begin;
+        if (!other.isSorted())
+            sortSamples(buffer.data() + old_size + other.unsorted_begin, buffer.data() + buffer.size());
     }
 
     /// The samples: sorted by timestamp and deduplicated, except for an unsorted tail from `unsorted_begin`.
