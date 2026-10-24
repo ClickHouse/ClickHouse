@@ -8,6 +8,7 @@
 
 #include <Common/ThreadPool_fwd.h>
 
+#include <atomic>
 #include <memory>
 
 namespace DB
@@ -38,11 +39,23 @@ protected:
     std::vector<std::function<void(MetadataTransactionPtr tx)>> operations_to_execute;
     std::unordered_map<Location, StoredObjects> written_blobs;
 
+    /// Set from the write buffers of this transaction, which sync on the IO pool, so it is atomic;
+    /// monotonic because a transaction covers one part and one sync intent applies to all of it.
+    std::atomic<bool> sync_metadata = false;
+
     /// Execute the operation right away if the metadata storage applies operations eagerly,
     /// otherwise queue it until commit.
     void addOperation(std::function<void(MetadataTransactionPtr tx)> op);
 
 public:
+    /// Ask for the metadata files this transaction writes to be fsync'ed. Consumed by commit,
+    /// where the queued operations that write them are constructed.
+    void requestMetadataFileSync();
+
+    /// fsync the metadata file for `path`, which must already be committed. For writers that commit
+    /// inside their own finalize callback, where the intent can no longer reach commit.
+    void syncCommittedMetadataFile(const std::string & path);
+
     /// Record locations still missing the blob, for blobs without a per-file metadata node.
     void recordBlobReplication(const StoredObject & object, const Locations & missing_locations);
 
