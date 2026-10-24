@@ -2549,22 +2549,17 @@ def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster, create_query_gen
                 ORDER BY key;
         """)
 
-        # init PartitionManager (it starts container) earlier
-        instance.query(f"""
-            CREATE MATERIALIZED VIEW test.{kafka_table}_consumer TO test.{kafka_table}_view AS
-                SELECT * FROM test.{kafka_table}
-                WHERE NOT sleepEachRow(0.25);
-        """)
-
-        instance.wait_for_log_line(f"{kafka_table}.*Polled batch of 20 messages")
-        # the tricky part here is that disconnect should happen after write prefix, but before write suffix
-        # we have 0.25 (sleepEachRow) * 20 ( Rows ) = 5 sec window after "Polled batch of 20 messages"
-        # while materialized view is working to inject zookeeper failure
         with PartitionManager() as pm:
+            # The consumer starts with the materialized view, so every push writes its part
+            # while Keeper is unreachable and fails at commit.
             pm.drop_instance_zk_connections(instance)
-            # FIXME: we need to make sure that this happens during writing to RMT
+            instance.query(f"""
+                CREATE MATERIALIZED VIEW test.{kafka_table}_consumer TO test.{kafka_table}_view AS
+                    SELECT * FROM test.{kafka_table};
+            """)
             instance.wait_for_log_line(
-                "Error.*(Connection loss|Coordination::Exception|DB::Exception: Coordination error: Operation timeout).*while pushing to view",
+                "Error.*(Connection loss|Coordination::Exception|DB::Exception: Coordination error: Operation timeout|Table is in readonly mode)"
+                f".*while pushing to view test.{kafka_table}_consumer",
                 timeout=60,
             )
 
