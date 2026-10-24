@@ -10,7 +10,6 @@ SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 INSERT INTO t_lm_header_order VALUES (1, 100, 1), (2, 200, 1), (3, 300, 1), (4, 400, 1);
 
 -- The test relies on settings that are randomized by the test runner: pin them.
-SET enable_analyzer = 1;
 SET query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10;
 
 -- Lazy materialization must fire for the local plan, otherwise the queries below assert nothing.
