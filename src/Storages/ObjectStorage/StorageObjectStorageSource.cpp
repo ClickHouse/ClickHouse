@@ -373,6 +373,14 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     , create_reader_scheduler(threadPoolCallbackRunnerUnsafe<ReaderHolder>(*create_reader_pool, ThreadName::READER_POOL))
     , lazy_row_index_registry(std::move(lazy_row_index_registry_))
 {
+    if (format_filter_info && format_filter_info->condition_hash)
+        query_condition_cache_table_id = QueryConditionCache::getTableIdForFileEntries(
+            storage_id.uuid,
+            configuration->format,
+            configuration->compression_method,
+            storage_snapshot->metadata->getColumns(),
+            format_filter_info->column_mapper.get(),
+            format_settings ? &*format_settings : nullptr);
 }
 
 StorageObjectStorageSource::~StorageObjectStorageSource()
@@ -471,9 +479,37 @@ std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
 /// matching the filesystem/page/Parquet-metadata cache checks (fail-close). Data-lake data files
 /// are immutable, so the path is a stable identity on its own and no ETag is required (this also
 /// avoids disabling the cache for data lakes whose object metadata does not carry an ETag).
-std::optional<String> StorageObjectStorageSource::makeQueryConditionCacheKey(const ObjectInfo & object_info, bool is_data_lake)
+/// The path is relative to the storage, which the table UUID identifies. Without a table UUID the
+/// entries of all such tables with the same format, compression and structure share one namespace
+/// (see `QueryConditionCache::getTableIdForFileEntries`), so the path is qualified by the storage it
+/// is in (endpoint, bucket, container, ...) instead. The
+/// connection info can carry secrets (a signed URL, userinfo in an HDFS URI), and so can the path itself
+/// (a web index can link to `data.parquet?token=...`), while the `part_name` is visible in
+/// `system.query_condition_cache` and in the logs. So the key is the path without its query and fragment,
+/// for readability only, followed by a hash of the complete identifier and the qualified path. The hash
+/// has a fixed length at the end, so the key stays unambiguous.
+std::optional<String> StorageObjectStorageSource::makeQueryConditionCacheKey(
+    const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, const UUID & table_uuid)
 {
     String identifier = object_info.getIdentifier(/*include_file_bucket_info=*/false);
+    if (table_uuid == UUIDHelpers::Nil)
+    {
+        const String qualified_path = getUniqueStoragePathIdentifier(configuration, object_info, /*include_connection_info=*/true);
+        /// NUL cannot occur in a path, so it separates the two unambiguously.
+        const String hashed = sipHash128String(identifier + '\0' + qualified_path);
+        identifier = identifier.substr(0, identifier.find_first_of("?#")) + "#storage=" + hashed;
+    }
+    return makeQueryConditionCacheKey(identifier, object_info, configuration.isDataLakeConfiguration());
+}
+
+std::optional<String> StorageObjectStorageSource::makeQueryConditionCacheKey(const ObjectInfo & object_info, bool is_data_lake)
+{
+    return makeQueryConditionCacheKey(object_info.getIdentifier(/*include_file_bucket_info=*/false), object_info, is_data_lake);
+}
+
+std::optional<String> StorageObjectStorageSource::makeQueryConditionCacheKey(
+    const String & identifier, const ObjectInfo & object_info, bool is_data_lake)
+{
     if (is_data_lake)
         return identifier;
     const auto & metadata = object_info.getObjectMetadata();
@@ -1092,7 +1128,7 @@ Chunk StorageObjectStorageSource::generate()
             && !(reader.getInputFormat() && reader.getInputFormat()->isTopKFilterApplied()))
         {
             const auto & object_info = reader.getObjectInfo();
-            const auto query_condition_cache_key = makeQueryConditionCacheKey(*object_info, configuration->isDataLakeConfiguration());
+            const auto query_condition_cache_key = makeQueryConditionCacheKey(*configuration, *object_info, storage_id.uuid);
             try
             {
                 const auto * input_format = reader.getInputFormat();
@@ -1126,11 +1162,15 @@ Chunk StorageObjectStorageSource::generate()
                             format_filter_info->filter_actions_dag->dumpNames(),
                             object_info->getFileName());
 
-                        if (!unmatched_ranges.empty() && query_condition_cache_key)
+                        /// A reader of one bucket of a split file reports the row groups of the other
+                        /// buckets as not matching, although it never read them.
+                        const bool read_whole_file
+                            = !object_info->file_bucket_info || object_info->file_bucket_info_from_query_condition_cache;
+                        if (!unmatched_ranges.empty() && query_condition_cache_key && read_whole_file)
                         {
                             auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
                             query_condition_cache->write(
-                                storage_id.uuid,
+                                query_condition_cache_table_id,
                                 *query_condition_cache_key,
                                 *format_filter_info->condition_hash,
                                 format_filter_info->filter_actions_dag->dumpNames(),
@@ -1221,6 +1261,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     return createReader(
         0,
         storage_id,
+        query_condition_cache_table_id,
         file_iterator,
         configuration,
         object_storage,
@@ -1239,6 +1280,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader(
     size_t processor,
     const StorageID & storage_id,
+    const UUID & query_condition_cache_table_id,
     const std::shared_ptr<IObjectIterator> & file_iterator,
     const StorageObjectStorageConfigurationPtr & configuration,
     const ObjectStoragePtr & object_storage,
@@ -1363,7 +1405,10 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         if (query_condition_cache && !object_info->file_bucket_info && (consult_plain_condition || use_top_k_query_condition_cache_key))
         {
-            const auto query_condition_cache_key = makeQueryConditionCacheKey(*object_info, configuration->isDataLakeConfiguration());
+            /// The entries of the plain predicate are kept for a table without a UUID as well, under the key
+            /// and the `table_id` for files (see `QueryConditionCache::getTableIdForFileEntries`). The TopK key
+            /// is made only for a table with a UUID, for which both are the same as the ones of the TopK entries.
+            const auto query_condition_cache_key = makeQueryConditionCacheKey(*configuration, *object_info, storage_id.uuid);
 
             /// One logical consultation, so it emits one `QueryConditionCacheHits` / `Misses` event
             /// however many keys are probed.
@@ -1378,12 +1423,11 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     for (size_t i = 0; i < marks->size(); ++i)
                         (*matching_marks)[i] = (*matching_marks)[i] && (*marks)[i];
             };
-            /// A table without a UUID (e.g. the one behind a table function) has no cache entries.
-            if (query_condition_cache_key && storage_id.uuid != UUIDHelpers::Nil)
+            if (query_condition_cache_key)
             {
                 if (consult_plain_condition)
                     merge_matching_marks(query_condition_cache->read(
-                        storage_id.uuid, *query_condition_cache_key, *format_filter_info->condition_hash, /*increment_profile_events=*/false));
+                        query_condition_cache_table_id, *query_condition_cache_key, *format_filter_info->condition_hash, /*increment_profile_events=*/false));
                 if (use_top_k_query_condition_cache_key)
                 {
                     auto marks = query_condition_cache->read(
@@ -1436,6 +1480,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                         continue;
                     }
                     object_info->file_bucket_info = std::move(filtered);
+                    object_info->file_bucket_info_from_query_condition_cache = true;
                 }
             }
         }

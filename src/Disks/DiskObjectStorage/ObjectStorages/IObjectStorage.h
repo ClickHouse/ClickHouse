@@ -450,6 +450,11 @@ public:
 
     virtual bool supportParallelWrite() const { return false; }
 
+    /// Whether `writeObject` with `WriteSettings::object_storage_write_atomically` replaces an existing object atomically:
+    /// a concurrent reader sees either the previous complete object or the new complete one, and a failed write leaves
+    /// the previous object intact. Storages that create or truncate the destination before uploading the data do not.
+    virtual bool supportsAtomicWrite() const { return false; }
+
     /// Whether a fetched `ObjectMetadata` is guaranteed to carry at least one comparable generation
     /// token — a non-empty `etag`, a known size, or a known modification time — so that two fetches
     /// of the same path can prove the object was not overwritten in between. Web origins may

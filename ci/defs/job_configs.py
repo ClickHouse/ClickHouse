@@ -12,6 +12,8 @@ from ci.defs.defs import (
     LLVM_FT_S3_DB_REPL_SEQUENTIAL_NUM_BATCHES,
     LLVM_FT_S3_PARALLEL_NUM_BATCHES,
     LLVM_IT_NUM_BATCHES,
+    NIGHTLY_PERF_BATCH_JOBS,
+    NIGHTLY_PERF_PLACEMENT,
     ArtifactNames,
     BuildTypes,
     JobNames,
@@ -2042,7 +2044,10 @@ class JobConfigs:
         timeout=16 * 3600,
         result_name_for_cidb="Tests",
     ).parametrize(
-        *[Job.ParamSet(parameter=f"arm_release, master_head, nightly, {batch}/4") for batch in range(1, 5)]
+        *[
+            Job.ParamSet(parameter=f"arm_release, master_head, nightly, {job}")
+            for job in NIGHTLY_PERF_BATCH_JOBS + sorted(set(NIGHTLY_PERF_PLACEMENT.values()) - {*NIGHTLY_PERF_BATCH_JOBS, "skip"})
+        ]
     )
     docs_job_mintlify = Job.Config(
         name=JobNames.DOCS_MINTLIFY,

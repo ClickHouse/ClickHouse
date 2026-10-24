@@ -1754,8 +1754,8 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     }
     catch (...)
     {
-        /// Don't scare people with broken part error if it's retryable.
-        if (!isRetryableException(std::current_exception()))
+        /// Don't scare people with broken part error if it's retryable or an I/O error.
+        if (!isRetryableException(std::current_exception()) && !isIOErrorException(std::current_exception()))
         {
             if (Exception * e = current_exception_cast<Exception *>())
             {
