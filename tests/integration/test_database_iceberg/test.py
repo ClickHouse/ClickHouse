@@ -1260,6 +1260,45 @@ def test_expire_snapshots_with_catalog(started_cluster):
     assert node.query(f"SELECT x FROM {table_ref} ORDER BY x") == "1\n2\n3\n4\n"
 
 
+def test_expire_snapshots_with_catalog_requires_grant(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_expire_snapshots_grant_{uuid.uuid4().hex}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    user = f"{test_ref}_user"
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x Int)")
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    node.query(
+        f"INSERT INTO {table_ref} VALUES (1);",
+        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+
+    node.query(f"CREATE USER {user}")
+    node.query(f"GRANT SELECT ON {table_ref} TO {user}")
+    try:
+        assert node.query(f"SELECT x FROM {table_ref}", user=user) == "1\n"
+
+        expire_query = f"ALTER TABLE {table_ref} EXECUTE expire_snapshots(dry_run = 1);"
+        settings = {
+            "allow_insert_into_iceberg": 1,
+            "allow_experimental_expire_snapshots": 1,
+            "allow_iceberg_remove_orphan_files": 1,
+        }
+        error = node.query_and_get_error(expire_query, settings=settings, user=user)
+        assert "ACCESS_DENIED" in error, error
+
+        node.query(f"GRANT ALTER TABLE EXECUTE ON {CATALOG_NAME}.* TO {user}")
+        node.query(expire_query, settings=settings, user=user)
+        node.query(f"ALTER TABLE {table_ref} EXECUTE remove_orphan_files(dry_run = 1)", settings=settings, user=user)
+    finally:
+        node.query(f"DROP USER {user}")
+
+    assert node.query(f"SELECT x FROM {table_ref}") == "1\n"
+
+
 @pytest.mark.parametrize(
     "fields_to_remove",
     [

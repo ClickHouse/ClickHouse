@@ -1,6 +1,13 @@
 import glob
 import json
 import os
+import uuid
+from contextlib import contextmanager
+
+from minio.credentials import StaticProvider
+from minio.minioadmin import MinioAdmin
+
+from helpers.config_cluster import minio_access_key, minio_secret_key
 
 
 
@@ -283,3 +290,30 @@ def prepare_s3_bucket(started_cluster):
         minio_client.remove_bucket(started_cluster.minio_restricted_bucket)
 
     minio_client.make_bucket(started_cluster.minio_restricted_bucket)
+
+
+def minio_admin(cluster):
+    return MinioAdmin(
+        endpoint=f"{cluster.minio_ip}:{cluster.minio_port}",
+        credentials=StaticProvider(minio_access_key, minio_secret_key),
+        secure=False,
+    )
+
+
+@contextmanager
+def minio_user(cluster, actions):
+    """A MinIO user allowed only `actions` on every bucket; yields its access and secret keys."""
+    access_key, secret_key = uuid.uuid4().hex[:16], uuid.uuid4().hex
+    policy = {
+        "Version": "2012-10-17",
+        "Statement": [{"Effect": "Allow", "Action": actions, "Resource": ["arn:aws:s3:::*", "arn:aws:s3:::*/*"]}],
+    }
+    admin = minio_admin(cluster)
+    admin.policy_add(access_key, policy=policy)
+    admin.user_add(access_key, secret_key)
+    admin.attach_policy([access_key], user=access_key)
+    try:
+        yield access_key, secret_key
+    finally:
+        admin.user_remove(access_key)
+        admin.policy_remove(access_key)
