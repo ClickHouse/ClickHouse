@@ -708,6 +708,23 @@ ColumnPtr IExecutableFunction::execute(
     bool dry_run,
     FunctionExecutionProfile * profile) const
 {
+    auto res = executeWithoutProfiledRows(arguments, result_type, input_rows_count, dry_run, profile);
+    /// The default implementations execute the function on fewer rows than the caller passed: on the dictionary
+    /// of a `LowCardinality` column, on the values of a sparse column, on the nested column of a replicated column,
+    /// on a single row of constants or on the rows without NULLs. The callers measure the elapsed time of the whole
+    /// call and extrapolate it to the other rows, so record the logical rows of the call here, not the compacted ones.
+    if (profile)
+        profile->executed_rows = input_rows_count;
+    return res;
+}
+
+ColumnPtr IExecutableFunction::executeWithoutProfiledRows(
+    const ColumnsWithTypeAndName & arguments,
+    const DataTypePtr & result_type,
+    size_t input_rows_count,
+    bool dry_run,
+    FunctionExecutionProfile * profile) const
+{
     checkFunctionArgumentSizes(arguments, input_rows_count);
 
     if (useDefaultImplementationForReplicatedColumns())

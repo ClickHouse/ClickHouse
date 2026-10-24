@@ -213,6 +213,14 @@ private:
             bool dry_run,
             FunctionExecutionProfile * profile) const;
 
+    /// `execute` without overriding `FunctionExecutionProfile::executed_rows` with the logical rows of the call.
+    ColumnPtr executeWithoutProfiledRows(
+            const ColumnsWithTypeAndName & arguments,
+            const DataTypePtr & result_type,
+            size_t input_rows_count,
+            bool dry_run,
+            FunctionExecutionProfile * profile) const;
+
     ColumnPtr executeWithoutReplicatedColumns(
             const ColumnsWithTypeAndName & arguments,
             const DataTypePtr & result_type,
