@@ -5,8 +5,15 @@
 #include <Core/Joins.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/JoinOperator.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/LazyReadReplacingFinalStep.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
+#include <Processors/QueryPlan/ReadFromQueryResultCacheStep.h>
+#include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
+#include <Processors/QueryPlan/TotalsHavingStep.h>
+#include <Storages/StorageMerge.h>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -20,6 +27,41 @@ static bool onConditionIsAlwaysFalse(const JoinStepLogical & join)
     {
         if (getFilterResult(conjunct.resolveAliases().getColumn()) == FilterResult::FALSE)
             return true;
+    }
+    return false;
+}
+
+/// True if the subtree can produce totals, also through a remote server, the query result cache or a nested plan.
+static bool canProduceTotals(QueryPlan::Node & root)
+{
+    std::vector<QueryPlan::Node *> stack{&root};
+    while (!stack.empty())
+    {
+        auto * node = stack.back();
+        stack.pop_back();
+        auto * step = node->step.get();
+
+        /// `ReadFromMerge` builds its nested plans when asked, so it is not asked and is assumed to produce totals.
+        if (typeid_cast<const TotalsHavingStep *>(step) || typeid_cast<const ReadFromMerge *>(step))
+            return true;
+        if (const auto * remote = typeid_cast<const ReadFromRemote *>(step); remote && remote->hasTotals())
+            return true;
+        if (const auto * cache = typeid_cast<const ReadFromQueryResultCacheStep *>(step); cache && cache->hasTotals())
+            return true;
+
+        /// An aggregation drops the totals of its input.
+        if (typeid_cast<const AggregatingStep *>(step) || typeid_cast<const MergingAggregatedStep *>(step))
+            continue;
+
+        for (auto * child : node->children)
+            stack.push_back(child);
+
+        /// `LazyReadReplacingFinalStep` builds its nested plan when asked; it reads one source without totals.
+        if (typeid_cast<const LazyReadReplacingFinalStep *>(step))
+            continue;
+        for (auto * child_plan : step->getChildPlans(/*for_explain=*/ false))
+            if (child_plan)
+                stack.push_back(child_plan->getRootNode());
     }
     return false;
 }
@@ -77,6 +119,9 @@ size_t tryShortCircuitConstantFalseJoin(QueryPlan::Node * parent_node, QueryPlan
         if (typeid_cast<const ReadNothingStep *>(side_node->step.get()))
             return 0;
         if (typeid_cast<const JoinStepLogicalLookup *>(side_node->step.get()))
+            return 0;
+        /// The join builds its totals row from the totals of its inputs.
+        if (canProduceTotals(*side_node))
             return 0;
 
         auto & empty_node = nodes.emplace_back();

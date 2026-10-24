@@ -55,6 +55,8 @@ public:
 
     bool hasSerializedPlan() const;
 
+    bool hasTotals() const;
+
 private:
     ClusterProxy::SelectStreamFactory::Shards shards;
     QueryProcessingStage::Enum stage;

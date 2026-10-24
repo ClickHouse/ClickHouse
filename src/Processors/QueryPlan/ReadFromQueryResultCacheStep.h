@@ -11,6 +11,8 @@ public:
     explicit ReadFromQueryResultCacheStep(Pipe pipe_);
 
     String getName() const override { return "ReadFromQueryResultCacheStep"; }
+
+    bool hasTotals() const { return pipe.getTotalsPort() != nullptr; }
 };
 
 }
