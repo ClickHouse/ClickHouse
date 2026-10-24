@@ -50,11 +50,6 @@ bool isThresholdTopKValueType(MergedValueBound bound, const DataTypePtr & type)
 
 size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings & settings)
 {
-    /// `AggregatingStep::serialize` does not write the bucket top-K fields, so a serialized or distributed
-    /// plan would show the optimization without executing it.
-    if (settings.make_distributed_plan || settings.serialize_query_plan)
-        return 0;
-
     /// The shape: Limit over Sorting (with a pushed-down limit, by one plain column) over zero
     /// or more pass-through expressions over a final aggregation, and the sort column is one of
     /// the aggregation's outputs. Serves two optimizations: the top-K threshold merge, for any
@@ -190,6 +185,13 @@ size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan
         /// skips merging the losers' other states - and when it declines (e.g. the groups are
         /// split across the per-thread tables), the bucket is merged as usual and the selection
         /// still trims its conversion.
+        ///
+        /// `AggregatingStep::serialize` does not write the bucket top-K fields, so a serialized or
+        /// distributed plan would show the selection without executing it. The threshold merge above
+        /// stays: the side that runs the aggregation derives it again from its own plan.
+        if (settings.make_distributed_plan || settings.serialize_query_plan)
+            return 0;
+
         aggregating->enableBucketTopK(n, ascending, i);
         return 0;
     }
