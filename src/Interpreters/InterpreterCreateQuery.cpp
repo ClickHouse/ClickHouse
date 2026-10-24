@@ -219,6 +219,30 @@ namespace fs = std::filesystem;
 namespace
 {
 
+/// A new `ReplicatedMergeTree` replica adopts the column comments from ZooKeeper, which may differ
+/// from the ones in its `CREATE` query. Copy them into the query, so the persisted metadata and
+/// `SHOW CREATE TABLE` match the replicated columns.
+void setColumnCommentsFromStorage(ASTCreateQuery & create, const IStorage & storage)
+{
+    if (!create.columns_list || !create.columns_list->columns)
+        return;
+
+    const auto metadata = storage.getInMemoryMetadataPtr(/*context=*/ nullptr, /*bypass_metadata_cache=*/ true);
+    const auto & columns = metadata->getColumns();
+    for (const auto & child : create.columns_list->columns->children)
+    {
+        auto & column_declaration = child->as<ASTColumnDeclaration &>();
+        const auto * column = columns.tryGet(column_declaration.name);
+        if (!column)
+            continue;
+
+        if (column->comment.empty())
+            column_declaration.resetComment();
+        else
+            column_declaration.setComment(make_intrusive<ASTLiteral>(Field(column->comment)));
+    }
+}
+
 /// How many tables a single `CREATE` adds to the database. Usually one, but the engines with
 /// hidden inner tables (`MaterializedView`, `TimeSeries`) issue nested internal `CREATE`s from
 /// their constructors, before the outer object itself is attached. The whole group must be
@@ -3005,6 +3029,9 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
             throw Coordination::Exception(Coordination::Error::ZCONNECTIONLOSS, "Fault injected (during table creation)");
         }
+
+        if (!create.attach)
+            setColumnCommentsFromStorage(query_ptr->as<ASTCreateQuery &>(), *replicated_storage);
     }
 
     /// rename() requires the exclusive lock, and createTable() makes the table visible to other queries.
