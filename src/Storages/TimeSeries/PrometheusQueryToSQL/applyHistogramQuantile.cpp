@@ -84,6 +84,16 @@ SQLQueryPiece applyHistogramQuantile(
             "Function 'histogram_quantile' currently requires a constant phi parameter");
     }
 
+    /// Native histograms are not supported yet. Reject a combined float+histogram grid rather than reduce it to its float arm,
+    /// which would silently drop every native-histogram series.
+    if (expression.store_method == StoreMethod::HISTOGRAM_GRID)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Function 'histogram_quantile' doesn't support native histograms yet, but its argument {} is read "
+            "from a TimeSeries table storing native histograms",
+            getPromQLText(expression, context));
+    }
+
     expression = toVectorGrid(std::move(expression), context);
 
     if (expression.store_method == StoreMethod::EMPTY)

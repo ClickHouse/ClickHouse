@@ -138,7 +138,7 @@ namespace
     String extractInnerEngine(const String & definition, const String & target)
     {
         static const std::vector<String> target_clauses
-            = {" SAMPLES INNER ", " RECENT SAMPLES INNER ", " TAGS INNER ", " TIME RANGES INNER ", " METRIC FAMILIES INNER ", " METRICS INNER "};
+            = {" SAMPLES INNER ", " RECENT SAMPLES INNER ", " HISTOGRAMS INNER ", " TAGS INNER ", " TIME RANGES INNER ", " METRIC FAMILIES INNER ", " METRICS INNER "};
 
         String prefix = target + " INNER ENGINE = ";
         size_t start = definition.find(prefix);
@@ -1122,4 +1122,14 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, ConvertsDefinitionsOfOlderVersions)
     {
         normalizeNewTable("CREATE TABLE db.ts (`id` UInt64, `timestamp` DateTime64(3), `value` Float64) ENGINE = TimeSeries");
     }), ErrorCodes::INCORRECT_QUERY);
+}
+
+
+TEST_F(NormalizeTimeSeriesDefinitionTest, HistogramsSortingKeyIsKeptWithPrimaryKeyOnCopy)
+{
+    /// A copy drops the generated sorting key only when no primary key is declared with it.
+    auto copy = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries",
+        normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries SETTINGS store_native_histograms = 1 "
+                          "HISTOGRAMS ENGINE = MergeTree PRIMARY KEY id ORDER BY (id, timestamp)"));
+    EXPECT_TRUE(extractInnerEngine(copy, "HISTOGRAMS").contains("PRIMARY KEY id ORDER BY (id, timestamp)")) << copy;
 }
