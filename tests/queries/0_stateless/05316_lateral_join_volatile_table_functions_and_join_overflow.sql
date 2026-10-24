@@ -2,7 +2,6 @@
 -- that generate random rows are rejected like non-deterministic functions. The final LATERAL join matches
 -- all evaluations at once, so its size limits are always enforced with THROW, also without a buffer.
 
-SET enable_analyzer = 1;
 SET allow_experimental_lateral_join = 1;
 
 DROP TABLE IF EXISTS outer_t;
