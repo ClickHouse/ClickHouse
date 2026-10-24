@@ -1,0 +1,16 @@
+chain3	a	['Basic']
+chain3	b	['Basic']
+chain3	tmp	['Basic']
+chain3	1
+chain3	1
+chain3	1
+chain2	a	['Basic']
+chain2	tmp	['Basic']
+chain2	1
+chain2	1
+drop_chain	a	['Basic']
+drop_chain	b	['Basic']
+drop_chain	c	['Basic']
+drop_chain	1
+drop_chain	1
+drop_chain	1

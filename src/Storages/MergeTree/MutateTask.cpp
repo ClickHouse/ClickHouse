@@ -2210,6 +2210,10 @@ static void processStatisticsChanges(
         }
         else if (command.type == MutationCommand::Type::RENAME_COLUMN)
         {
+            /// A rename-map entry names the column by its name in the source part, and on a wide part it repeats
+            /// the mutation's own renames: it moves only a source-part entry that no command has taken yet.
+            if (command_index >= num_commands_from_mutation && !all_statistics.contains(command.column_name))
+                continue;
             process_rename(command.column_name, command.rename_to);
         }
         else if (command.type == MutationCommand::Type::READ_COLUMN)
