@@ -11,6 +11,7 @@
 
 #include <Poco/Timespan.h>
 #include <Poco/Net/HTTPClientSession.h>
+#include <Poco/Net/HTTPRequest.h>
 
 #include <cstdint>
 #include <mutex>
@@ -114,9 +115,43 @@ public:
     /// Inodes are cached snapshots updated on connect, reconnect, and keep-alive store.
     PoolSocketInodes getSocketInodes();
 
+    /// A session that is not created by `HTTPConnectionPools` (the native GCS transport keeps its
+    /// own sessions), accounted in one of its connection groups exactly as the group's own
+    /// connections are: it counts towards the group's `hard_limit` for as long as this object lives,
+    /// its idle periods count towards the group's `store_limit`, and it gets the group's socket
+    /// buffer sizes. Destroying the object unregisters the session, so it has to be destroyed exactly
+    /// once per registered session, before the session itself.
+    class ExternalConnection
+    {
+    public:
+        virtual ~ExternalConnection() = default;
+
+        /// To be called once the session is connected (it may have reconnected since the previous
+        /// call): applies the group's `rcvbuf` / `sndbuf` and records the socket inode. Can throw.
+        virtual void onConnected(Poco::Net::HTTPClientSession & session) = 0;
+
+        /// Reserve a slot in the group's `store_limit` for keeping the session idle for reuse.
+        /// Returns false when the limit is reached; the session must then not be kept.
+        virtual bool tryReserveStored() = 0;
+
+        /// Release the slot reserved by a successful `tryReserveStored`. Destroying the object releases
+        /// it as well.
+        virtual void releaseStored() noexcept = 0;
+    };
+
+    /// Registers `session` in the group `type`. Must be called before the session connects. Throws
+    /// `HTTP_CONNECTION_LIMIT_REACHED` when the group's `hard_limit` is reached.
+    std::unique_ptr<ExternalConnection> registerExternalConnection(HTTPConnectionGroupType type, Poco::Net::HTTPClientSession & session);
+
 private:
     class Impl;
     std::unique_ptr<Impl> impl;
 };
+
+/// Installs the IO scheduling hooks of the current thread (`CurrentThread::getReadResourceLink` and
+/// `CurrentThread::getWriteResourceLink`) on a session for `request`, the same ones the connections of
+/// `HTTPConnectionPools` install, or removes the hooks of a previous request when the thread has none.
+/// For sessions that are not created by `HTTPConnectionPools` (the native GCS transport).
+void setIOSchedulingSessionHooks(Poco::Net::HTTPClientSession & session, const Poco::Net::HTTPRequest & request);
 
 }

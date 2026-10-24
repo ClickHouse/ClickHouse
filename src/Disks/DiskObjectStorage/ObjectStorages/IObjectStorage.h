@@ -112,6 +112,13 @@ class Client;
 }
 #endif
 
+#if USE_GOOGLE_CLOUD
+namespace DB
+{
+struct GCSObjectStorageSettings;
+}
+#endif
+
 namespace DB
 {
 
@@ -153,6 +160,10 @@ struct ObjectMetadata
     /// fine to expose via the `_etag` virtual column but is not strong: a same-second,
     /// same-size rewrite would collide and could serve stale cached data.
     bool etag_is_strong = true;
+    /// Where `etag` is unique, when it is unique only within a namespace narrower than the object path: the native GCS
+    /// backend uses the object generation, which another bucket or endpoint can repeat for an object with the same key.
+    /// Prepended to the content-cache token, so the caches cannot mix objects of different namespaces.
+    String content_cache_namespace{};
     ObjectAttributes tags;
     ObjectAttributes attributes;
 
@@ -165,7 +176,7 @@ struct ObjectMetadata
     std::optional<String> getContentCacheToken() const
     {
         if (isEtagUsableAsCacheKey())
-            return etag;
+            return content_cache_namespace.empty() ? etag : content_cache_namespace + '#' + etag;
         if (!immutable_content_id.empty())
             return immutable_content_id;
         return std::nullopt;
@@ -487,6 +498,16 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for S3ObjectStorage");
     }
     virtual std::shared_ptr<const S3::Client> tryGetS3StorageClient() { return nullptr; }
+#endif
+
+#if USE_GOOGLE_CLOUD
+    /// The settings the native GCS client was built from: the bucket, the endpoint and the
+    /// authentication mode. Returned as a shared pointer that owns the snapshot it points into,
+    /// because a configuration reload may replace it under a concurrent reader.
+    virtual std::shared_ptr<const GCSObjectStorageSettings> getGCSObjectStorageSettings() const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for GCSObjectStorage");
+    }
 #endif
 
     /// Invokes the catalog-vended credentials refresh callback (e.g. for Glue / Unity / REST

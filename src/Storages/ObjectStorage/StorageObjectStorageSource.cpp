@@ -2102,10 +2102,13 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     if (!use_distributed_cache)
     {
         filesystem_cache_name = settings[Setting::filesystem_cache_name].value;
+        /// The cache key is `hash(path, etag)`, so any backend with a strong etag can be cached.
+        /// The native GCS one is the object generation, which changes on every overwrite.
         use_filesystem_cache = effective_read_settings.enable_filesystem_cache
             && !filesystem_cache_name.empty()
             && (object_storage->getType() == ObjectStorageType::Azure
-                || object_storage->getType() == ObjectStorageType::S3);
+                || object_storage->getType() == ObjectStorageType::S3
+                || object_storage->getType() == ObjectStorageType::GCS);
     }
 
     bool use_page_cache = allow_page_cache && !use_distributed_cache && !use_filesystem_cache
@@ -2119,9 +2122,11 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// 4. object etag to detect a concurrent in-place overwrite during the read
     /// Whether the read is pinned to the generation of the object seen at listing time. Each backend
     /// that supports it has its own setting, because they are documented per backend and a user may
-    /// want to opt out of the check for one store but not the other.
+    /// want to opt out of the check for one store but not the other. The native GCS backend shares
+    /// `s3_validate_etag_on_read` with S3: its etag is the object generation, and `GCSObjectStorage`
+    /// pins every read request to it with `IfGenerationMatch`.
     bool validate_etag_on_read = false;
-    if (object_storage->getType() == ObjectStorageType::S3)
+    if (object_storage->getType() == ObjectStorageType::S3 || object_storage->getType() == ObjectStorageType::GCS)
         validate_etag_on_read = settings[Setting::s3_validate_etag_on_read];
     else if (object_storage->getType() == ObjectStorageType::Azure)
         validate_etag_on_read = settings[Setting::azure_validate_etag_on_read];
@@ -2228,8 +2233,9 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     StoredObject stored_object(object_info.getPath(), object_info.getPath(), stored_object_size, object_info.read_source_index);
 
     /// Pin the read to the object generation seen here (etag from the LIST/HEAD): a GET with a
-    /// different ETag means an in-place overwrite, reported as S3_OBJECT_CHANGED_DURING_READ or
-    /// AZURE_OBJECT_CHANGED_DURING_READ instead of torn cross-generation data.
+    /// different ETag (or, for native GCS, a failed `IfGenerationMatch`) means an in-place overwrite,
+    /// reported as S3_OBJECT_CHANGED_DURING_READ or AZURE_OBJECT_CHANGED_DURING_READ instead of torn
+    /// cross-generation data.
     if (validate_etag_on_read && object_info.metadata.has_value())
         stored_object.etag = object_info.metadata->etag;
     /// The distributed cache keys on the etag whether or not this read validates it.

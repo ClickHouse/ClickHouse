@@ -63,6 +63,10 @@
 #include <Common/HTTPHeaderFilter.h>
 #include <Common/ProfileEvents.h>
 
+#if USE_AWS_S3 && USE_GOOGLE_CLOUD
+#include <Disks/DiskObjectStorage/ObjectStorages/GCS/gcsSettings.h>
+#endif
+
 namespace ProfileEvents
 {
     extern const Event DatabaseTablesEnumerated;
@@ -130,6 +134,7 @@ namespace DataLakeStorageSetting
     extern const DataLakeStorageSettingsString iceberg_metadata_file_path;
     extern const DataLakeStorageSettingsBool iceberg_use_version_hint;
     extern const DataLakeStorageSettingsBool allow_experimental_iceberg_compaction;
+    extern const DataLakeStorageSettingsString disk;
 }
 
 namespace ServerSetting
@@ -187,6 +192,34 @@ DataLake::TableNameFilter toCatalogTableNameFilter(const TablesFilter & tables_f
     }
     return filter;
 }
+
+#if USE_AWS_S3 && USE_GOOGLE_CLOUD
+/// The catalog reports the absolute location of a table (`gs://bucket/path/to/table`), while a
+/// configuration built from a `disk` takes a path relative to the disk's root, and the native GCS
+/// disk reads every key from its own bucket. Convert the location to that relative path, and reject
+/// a location outside of the disk's bucket and key prefix instead of reading another object.
+String getGCSDiskRelativeTableLocation(const String & table_location, const String & disk_name)
+{
+    const auto disk_settings = Context::getGlobalContextInstance()->getDisk(disk_name)->getObjectStorage()->getGCSObjectStorageSettings();
+
+    String bucket;
+    String key_prefix;
+    String endpoint_override;
+    parseGCSEndpoint(table_location, bucket, key_prefix, endpoint_override);
+
+    /// Both key prefixes are normalized: empty or ending with `/`, so the comparison is component-aligned.
+    if (bucket != disk_settings->bucket || !key_prefix.starts_with(disk_settings->key_prefix)
+        || key_prefix.size() == disk_settings->key_prefix.size())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Table location '{}' reported by the catalog is not inside the root of disk '{}' (bucket '{}', key prefix '{}'), "
+            "so it cannot be read through that disk",
+            table_location, disk_name, disk_settings->bucket, disk_settings->key_prefix);
+
+    String relative_path = key_prefix.substr(disk_settings->key_prefix.size());
+    relative_path.pop_back();
+    return relative_path;
+}
+#endif
 
 }
 
@@ -554,6 +587,19 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
     if (catalog_type == DatabaseDataLakeCatalogType::UNITY && table_format == DataLake::DataLakeTableFormat::ICEBERG)
         catalog_type = DatabaseDataLakeCatalogType::ICEBERG_REST;
 
+#if USE_AWS_S3 && USE_GOOGLE_CLOUD
+    /// Catalogs report a `gs://` location as `S3` storage, but a native GCS disk is not an S3 backend:
+    /// the S3 configuration cannot be built from it, so an Iceberg table on such a disk uses the native
+    /// GCS configuration, like the `Iceberg` table engine does.
+    if (type == DatabaseDataLakeStorageType::S3 && table_format == DataLake::DataLakeTableFormat::ICEBERG
+        && (*storage_settings)[DataLakeStorageSetting::disk].changed)
+    {
+        auto disk = Context::getGlobalContextInstance()->getDisk((*storage_settings)[DataLakeStorageSetting::disk].value);
+        if (disk->getObjectStorage()->getType() == ObjectStorageType::GCS)
+            return std::make_shared<StorageGCSIcebergConfiguration>(storage_settings);
+    }
+#endif
+
     switch (catalog_type)
     {
         case DatabaseDataLakeCatalogType::ICEBERG_ONELAKE:
@@ -827,6 +873,10 @@ static DatabaseDataLakeStorageType toDataLakeStorageType(ObjectStorageType type)
     switch (type)
     {
         case ObjectStorageType::S3:
+            return DatabaseDataLakeStorageType::S3;
+        /// Catalogs report a `gs://` location as `S3` storage (see `ICatalog`), and the native GCS
+        /// backend reaches the same buckets.
+        case ObjectStorageType::GCS:
             return DatabaseDataLakeStorageType::S3;
         case ObjectStorageType::Azure:
             return DatabaseDataLakeStorageType::Azure;
@@ -1192,6 +1242,14 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(
         evictStatefulTable(name);
     }
     const auto configuration = getConfiguration(storage_type, storage_settings, table_metadata.getTableFormat());
+
+#if USE_AWS_S3 && USE_GOOGLE_CLOUD
+    /// The native GCS configuration is only selected for a `disk` (see `getConfiguration`). It takes the
+    /// endpoint and the credentials from the disk, so its only argument is the table path relative to the disk.
+    if (configuration->getType() == ObjectStorageType::GCS)
+        args = ASTs{make_intrusive<ASTLiteral>(
+            getGCSDiskRelativeTableLocation(table_endpoint, (*storage_settings)[DataLakeStorageSetting::disk].value))};
+#endif
 
     /// HACK: Hacky-hack to enable lazy load
     ContextMutablePtr context_copy = Context::createCopy(want_stateful ? Context::getGlobalContextInstance() : context_);

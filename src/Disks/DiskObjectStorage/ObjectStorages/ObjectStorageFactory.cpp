@@ -17,6 +17,11 @@
 #include <Disks/getDiskConfigurationFromAST.h>
 #endif
 
+#if USE_GOOGLE_CLOUD
+#include <Disks/DiskObjectStorage/ObjectStorages/GCS/GCSObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/GCS/gcsSettings.h>
+#endif
+
 #include <Disks/DiskObjectStorage/ObjectStorages/Web/WebObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Disks/loadLocalDiskConfig.h>
@@ -327,6 +332,31 @@ static void registerWebObjectStorage(ObjectStorageFactory & factory)
     });
 }
 
+#if USE_GOOGLE_CLOUD
+static void registerGCSObjectStorage(ObjectStorageFactory & factory)
+{
+    auto creator = [](
+        const std::string & name,
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
+        const ContextPtr & context,
+        bool /* run_access_check */,
+        bool /* run_local_paths_check */,
+        RemoteHostFilterCheck /* remote_host_filter_check */) -> ObjectStoragePtr
+    {
+        /// `getGCSClient` checks the endpoint against `remote_url_allow_hosts` for every disk.
+        auto settings = GCSObjectStorageSettings::loadFromConfig(config, config_prefix, context);
+        auto endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
+        auto client = getGCSClient(settings, context);
+        auto key_generator = getGCSKeyGenerator(settings.key_prefix, config, config_prefix);
+
+        return std::make_shared<GCSObjectStorage>(std::move(client), std::move(settings), endpoint, key_generator, name);
+    };
+
+    factory.registerObjectStorageType("gcs", creator);
+}
+#endif
+
 static void registerLocalObjectStorage(ObjectStorageFactory & factory)
 {
     auto creator = [](
@@ -376,6 +406,10 @@ void registerObjectStorages()
 
 #if USE_AZURE_BLOB_STORAGE
     registerAzureObjectStorage(factory);
+#endif
+
+#if USE_GOOGLE_CLOUD
+    registerGCSObjectStorage(factory);
 #endif
 
     registerWebObjectStorage(factory);

@@ -170,12 +170,12 @@ public:
 protected:
     void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override;
 
+    void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
+
 private:
     void initializeFromParsedArguments(S3StorageParsedArguments && parsed_arguments);
 
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
-
-    void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
 };
 }
 

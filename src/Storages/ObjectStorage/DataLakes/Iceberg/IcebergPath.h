@@ -58,8 +58,9 @@ private:
 
 /// The URI scheme to write for a ClickHouse object storage backend. A local disk is spelled
 /// `file`: `local` is ClickHouse's storage type token, not a filesystem URI scheme, and no
-/// Iceberg implementation resolves it. Every other backend keeps its token, which an external
-/// reader resolves only for `s3`.
+/// Iceberg implementation resolves it. The native GCS backend is spelled `gs`, the scheme of
+/// Google Cloud Storage URIs that Iceberg implementations resolve, rather than its `gcs` token.
+/// Every other backend keeps its token, which an external reader resolves only for `s3`.
 String toIcebergURIScheme(const String & storage_type_name);
 
 /// Build a `<scheme>://<authority><path>` URI for an Iceberg metadata document.
@@ -71,7 +72,13 @@ struct BlobStorageDescription
 {
     String type_name;
     String namespace_name;
+    /// A path in another namespace (bucket) of the same storage is passed through as is, for an
+    /// object storage that addresses fully qualified paths itself.
     bool allow_foreign_namespaces;
+    /// A path in another namespace (bucket) of the same storage is rejected: the object storage can
+    /// only address its own namespace, and stripping the namespace from the path would read an
+    /// object with the same key in the wrong bucket.
+    bool reject_foreign_namespaces;
 
     static BlobStorageDescription fromConfiguration(const DB::StorageObjectStorageConfiguration & configuration);
 };

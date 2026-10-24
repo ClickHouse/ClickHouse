@@ -1280,7 +1280,73 @@ public:
         };
     }
 
+    std::unique_ptr<HTTPConnectionPools::ExternalConnection> registerExternalConnection(
+        HTTPConnectionGroupType type, Poco::Net::HTTPClientSession & session)
+    {
+        /// ConnectionGroup has its own mutex, no need for Impl::mutex here.
+        /// The groups are created once in the constructor and never replaced.
+        return std::make_unique<ExternalConnectionImpl>(getGroup(type), session);
+    }
+
 protected:
+    class ExternalConnectionImpl final : public HTTPConnectionPools::ExternalConnection
+    {
+    public:
+        ExternalConnectionImpl(ConnectionGroup::Ptr group_, Poco::Net::HTTPClientSession & session_)
+            : group(std::move(group_))
+            , session(&session_)
+        {
+            /// Can throw. Then this object is not constructed and its destructor does not run, so the
+            /// metric below is incremented only once the registration has succeeded.
+            group->atConnectionCreate(session, session->getHost(), session->getPort());
+            CurrentMetrics::add(group->getMetrics().active_count);
+        }
+
+        ~ExternalConnectionImpl() override
+        {
+            if (stored)
+                group->releaseStoredConnections(1);
+            group->atConnectionDestroy(session);
+            CurrentMetrics::sub(group->getMetrics().active_count);
+        }
+
+        void onConnected(Poco::Net::HTTPClientSession & connected_session) override
+        {
+            chassert(&connected_session == session);
+            const auto buf_sizes = group->getSocketBufferSizes();
+            if (buf_sizes.rcvbuf > 0)
+                connected_session.socket().setReceiveBufferSize(static_cast<int>(buf_sizes.rcvbuf));
+            if (buf_sizes.sndbuf > 0)
+                connected_session.socket().setSendBufferSize(static_cast<int>(buf_sizes.sndbuf));
+
+            const auto fd = connected_session.socket().impl()->sockfd();
+            struct stat st; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+            if (fd >= 0 && fstat(fd, &st) == 0)
+                group->updateSocketInode(session, st.st_ino);
+        }
+
+        bool tryReserveStored() override
+        {
+            chassert(!stored);
+            stored = group->tryReserveStoredConnection();
+            return stored;
+        }
+
+        void releaseStored() noexcept override
+        {
+            chassert(stored);
+            if (!stored)
+                return;
+            group->releaseStoredConnections(1);
+            stored = false;
+        }
+
+    private:
+        const ConnectionGroup::Ptr group;
+        Poco::Net::HTTPClientSession * const session;
+        bool stored = false;
+    };
+
     ConnectionGroup::Ptr & getGroup(HTTPConnectionGroupType type)
     {
         switch (type)
@@ -1402,6 +1468,25 @@ HTTPConnectionPools::getPool(HTTPConnectionGroupType type, const Poco::URI & uri
 HTTPConnectionPools::PoolSocketInodes HTTPConnectionPools::getSocketInodes()
 {
     return impl->getSocketInodes();
+}
+
+std::unique_ptr<HTTPConnectionPools::ExternalConnection>
+HTTPConnectionPools::registerExternalConnection(HTTPConnectionGroupType type, Poco::Net::HTTPClientSession & session)
+{
+    return impl->registerExternalConnection(type, session);
+}
+
+void setIOSchedulingSessionHooks(Poco::Net::HTTPClientSession & session, const Poco::Net::HTTPRequest & request)
+{
+    static LoggerPtr log = getLogger("HTTPSessionIOScheduling");
+    if (ResourceLink link = CurrentThread::getReadResourceLink())
+        session.setReceiveDataHooks(std::make_shared<ResourceGuardSessionDataHooks>(link, ResourceGuard::Metrics::getIORead(), log, request.getMethod(), request.getURI()));
+    else
+        session.setReceiveDataHooks();
+    if (ResourceLink link = CurrentThread::getWriteResourceLink())
+        session.setSendDataHooks(std::make_shared<ResourceGuardSessionDataHooks>(link, ResourceGuard::Metrics::getIOWrite(), log, request.getMethod(), request.getURI()));
+    else
+        session.setSendDataHooks();
 }
 
 }

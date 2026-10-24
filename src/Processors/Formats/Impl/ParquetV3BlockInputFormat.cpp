@@ -67,7 +67,10 @@ static std::optional<AccessTypeObjects::Source> getColumnsCacheSource(ObjectStor
 {
     switch (storage_type)
     {
-        case ObjectStorageType::S3: return AccessTypeObjects::Source::S3;
+        /// The `GCS` engine and the `gcs` table function are granted through the `S3` source as well.
+        case ObjectStorageType::S3:
+        case ObjectStorageType::GCS:
+            return AccessTypeObjects::Source::S3;
         case ObjectStorageType::Azure: return AccessTypeObjects::Source::AZURE;
         case ObjectStorageType::HDFS: return AccessTypeObjects::Source::HDFS;
         case ObjectStorageType::Web: return AccessTypeObjects::Source::URL;
