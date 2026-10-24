@@ -81,3 +81,28 @@ ip	Nullable(String)
 2001:db8::1
 ip	Nullable(String)					
 2001:db8::1
+22. TSKV escaped IP text in compound values
+ip	Array(Nullable(String))					
+['192.168.1.1']
+ip	Array(Nullable(String))					
+['192.168.1.1']
+ip	Nullable(Tuple(Nullable(String), Nullable(Int64)))					
+('192.168.1.1',1)
+ip	Nullable(Tuple(Nullable(String), Nullable(Int64)))					
+('192.168.1.1',1)
+ip	Map(String, Nullable(String))					
+{'192.168.1.1':'k'}
+ip	Map(String, Nullable(String))					
+{'192.168.1.1':'k'}
+ip	Map(String, Nullable(String))					
+{'k':'192.168.1.1'}
+ip	Map(String, Nullable(String))					
+{'k':'192.168.1.1'}
+ip	Array(Nullable(String))					
+['2001:db8::1']
+ip	Array(Nullable(String))					
+['2001:db8::1']
+ip	Array(Variant(Array(Nullable(Int64)), String))					
+['192.168.1.1',[1]]
+ip	Array(Variant(Array(Nullable(Int64)), String))					
+['192.168.1.1',[1]]

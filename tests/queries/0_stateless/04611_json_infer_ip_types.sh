@@ -174,3 +174,20 @@ for setting in "--input_format_try_infer_ipv6=1" "--input_format_try_infer_ipv6=
     # shellcheck disable=SC2086
     $CLICKHOUSE_CLIENT $setting -q "SELECT ip FROM format(TSKV, 'ip=2001:db8:\\\\x3a1\\n')"
 done
+
+# 22. The same holds for escaped IPs inside TSKV arrays, tuples, maps and variants
+echo '22. TSKV escaped IP text in compound values'
+for value in "[\\'192.168.1.\\\\x31\\']" "(\\'192.168.1.\\\\x31\\', 1)" "{\\'192.168.1.\\\\x31\\':\\'k\\'}" "{\\'k\\':\\'192.168.1.\\\\x31\\'}" "[\\'2001:db8:\\\\x3a1\\']"; do
+    for setting in "--input_format_try_infer_ipv4=1 --input_format_try_infer_ipv6=1" "--input_format_try_infer_ipv4=0 --input_format_try_infer_ipv6=0"; do
+        # shellcheck disable=SC2086
+        $CLICKHOUSE_CLIENT $setting -q "DESCRIBE format(TSKV, 'ip=$value\\n')"
+        # shellcheck disable=SC2086
+        $CLICKHOUSE_CLIENT $setting -q "SELECT ip FROM format(TSKV, 'ip=$value\\n')"
+    done
+done
+for setting in "--input_format_try_infer_ipv4=1" "--input_format_try_infer_ipv4=0"; do
+    # shellcheck disable=SC2086
+    $CLICKHOUSE_CLIENT $setting --input_format_try_infer_variants=1 -q "DESCRIBE format(TSKV, 'ip=[\\'192.168.1.\\\\x31\\', [1]]\\n')"
+    # shellcheck disable=SC2086
+    $CLICKHOUSE_CLIENT $setting --input_format_try_infer_variants=1 -q "SELECT ip FROM format(TSKV, 'ip=[\\'192.168.1.\\\\x31\\', [1]]\\n')"
+done

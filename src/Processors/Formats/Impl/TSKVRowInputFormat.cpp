@@ -7,6 +7,8 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/transformTypesRecursively.h>
 
 
 namespace DB
@@ -242,6 +244,31 @@ TSKVSchemaReader::TSKVSchemaReader(ReadBuffer & in_, const FormatSettings & form
 {
 }
 
+/// IP readers inside arrays, tuples, maps and variants do not decode escapes either, so nested IP types become String.
+static DataTypePtr replaceIPTypesWithString(const DataTypePtr & type)
+{
+    DataTypes types{type};
+    auto to_string = [](DataTypes & leaves, TypeIndexesSet &)
+    {
+        for (auto & leaf : leaves)
+        {
+            if (isIPv4(leaf) || isIPv6(leaf))
+            {
+                leaf = std::make_shared<DataTypeString>();
+            }
+            else if (const auto * variant = typeid_cast<const DataTypeVariant *>(leaf.get()))
+            {
+                DataTypes alternatives;
+                for (const auto & alternative : variant->getVariants())
+                    alternatives.push_back(replaceIPTypesWithString(alternative));
+                leaf = std::make_shared<DataTypeVariant>(alternatives);
+            }
+        }
+    };
+    transformTypesRecursively(types, to_string, nullptr);
+    return types[0];
+}
+
 NamesAndTypesList TSKVSchemaReader::readRowAndGetNamesAndDataTypes(bool & eof)
 {
     if (first_row)
@@ -284,6 +311,8 @@ NamesAndTypesList TSKVSchemaReader::readRowAndGetNamesAndDataTypes(bool & eof)
             const auto inferred = type ? removeNullable(recursiveRemoveLowCardinality(type)) : nullptr;
             if (had_escape && inferred && (isNumber(inferred) || isIPv4(inferred) || isIPv6(inferred)))
                 type = std::make_shared<DataTypeString>();
+            else if (had_escape && type)
+                type = replaceIPTypesWithString(type);
 
             names_and_types.emplace_back(std::move(name), std::move(type));
         }
