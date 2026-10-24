@@ -550,7 +550,7 @@ std::optional<UInt128> getModificationHashWithRefreshedMetadata(const StoragePtr
     /// A column expression evaluated by the read can change the rows without changing the table. Checked
     /// here rather than by each consumer, so that every probe - the query cache, the local and remote shards
     /// of `Distributed` (through `system.tables.modification_hash`) - applies it.
-    if (columnExpressionsMayChangeWithoutTable(*storage, *metadata, context))
+    if (columnExpressionsMayChangeWithoutTable(storage, *metadata, context))
         return {};
 
     auto snapshot = storage->getStorageSnapshotWithoutData(metadata, context);

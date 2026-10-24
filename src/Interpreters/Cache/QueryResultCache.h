@@ -10,6 +10,7 @@
 #include <Processors/Sources/SourceFromChunks.h>
 #include <QueryPipeline/Pipe.h>
 #include <Parsers/IAST_fwd.h>
+#include <Storages/IStorage_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Core/Types.h>
 #include <base/UUID.h>
@@ -94,7 +95,7 @@ std::optional<UInt128> computeTableModificationHashForConsistency(const StorageI
 /// `DEFAULT` / `MATERIALIZED` expression of a column that some data does not store - whose result can
 /// change while the table stays the same: a non-deterministic function, a dictionary, or another table.
 /// The modification hash of such a table cannot vouch for the rows read from it.
-bool columnExpressionsMayChangeWithoutTable(const IStorage & storage, const StorageInMemoryMetadata & metadata, const ContextPtr & context);
+bool columnExpressionsMayChangeWithoutTable(const StoragePtr & storage, const StorageInMemoryMetadata & metadata, const ContextPtr & context);
 
 class QueryResultCacheWriter;
 class QueryResultCacheReader;

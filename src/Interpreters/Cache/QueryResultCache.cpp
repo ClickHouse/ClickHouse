@@ -458,13 +458,13 @@ static bool astContainsSystemTables(ASTPtr ast, ContextPtr context)
 /// `StorageMaterializedView` hashes its target table), so that the same value also appears in
 /// `system.tables.modification_hash` and is seen by wrapper engines (`Merge`, `Distributed`). Engines
 /// that do not override `getModificationHash` (e.g. `WindowView`, `LiveView`) yield nullopt (fail closed).
-bool columnExpressionsMayChangeWithoutTable(const IStorage & storage, const StorageInMemoryMetadata & metadata, const ContextPtr & context)
+bool columnExpressionsMayChangeWithoutTable(const StoragePtr & storage, const StorageInMemoryMetadata & metadata, const ContextPtr & context)
 {
     /// A `DEFAULT` / `MATERIALIZED` expression is evaluated by a read only for the parts that do not store
     /// the column (e.g. after `ALTER TABLE ... ADD COLUMN`). For `MergeTree` the active parts tell whether
     /// any of them lacks it; the parts can change after this check, but that changes the hash of the table
     /// as well. Other storages are assumed to evaluate the expression.
-    const auto * merge_tree = dynamic_cast<const MergeTreeData *>(&storage);
+    const auto merge_tree = castStorage<const MergeTreeData>(storage, DeferredTable::Load);
     std::optional<MergeTreeData::DataPartsVector> parts;
     auto is_stored_in_every_part = [&](const String & column_name)
     {
