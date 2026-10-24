@@ -334,7 +334,8 @@ void parseMatchList(UInt64 parent_id, UInt64 & id, const YAML::Node & node, Resu
 {
     if (!node.IsSequence())
     {
-        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Configuration {} must be a yaml list of match rules", node.as<String>());
+        /// Do not echo the parsed document back to the client: it is file content.
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Configuration must be a yaml list of match rules");
     }
 
     for (const auto & child_node : node)
