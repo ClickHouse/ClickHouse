@@ -1467,7 +1467,8 @@ void InterpreterSystemQuery::restoreReplica()
             settings[Setting::keeper_retry_initial_backoff_ms],
             settings[Setting::keeper_retry_max_backoff_ms],
             getContext()->getProcessListElementSafe()},
-        false);
+        false,
+        getContext());
 }
 
 void InterpreterSystemQuery::restoreDatabaseReplica(ASTSystemQuery & query)

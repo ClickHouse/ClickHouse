@@ -7110,6 +7110,14 @@ void StorageReplicatedMergeTree::alter(
     commands.apply(
         future_metadata, query_context, (*old_settings)[MergeTreeSetting::share_nested_offsets], settings_defaults.get());
 
+    /// Direct replicated ALTERs bypass the database and ON CLUSTER DDL queues. Guard the
+    /// transition that first places a codec declaration in shared table metadata here.
+    for (const auto & command : commands)
+        if (command.type == AlterCommand::ADD_PROJECTION && !command.ignore && command.projection_decl
+            && hasProjectionColumnCodecs(*command.projection_decl)
+            && future_metadata.projections.toString() != metadata_snapshot->projections.toString())
+            checkProjectionColumnCodecPublication(query_context, /*queued_ddl=*/ false);
+
     auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(future_metadata, *old_settings);
     addImplicitStatistics(future_metadata.columns, auto_statistics_types);
 
@@ -7591,7 +7599,7 @@ bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(
 }
 
 void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
-    const ZooKeeperRetriesInfo & zookeeper_retries_info, bool is_called_during_attach)
+    const ZooKeeperRetriesInfo & zookeeper_retries_info, bool is_called_during_attach, ContextPtr publication_context)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::restoreMetadataInZooKeeper");
     LOG_INFO(log, "Restoring replica metadata");
@@ -7617,6 +7625,11 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
     SCOPE_EXIT({ are_restoring_replica.store(false); });
 
     auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+
+    /// A missing Keeper root will be recreated from local metadata. Check before moving parts
+    /// to detached, since older replicas cannot parse a projection column codec declaration.
+    if (hasProjectionColumnCodecs(metadata_snapshot->getProjections()))
+        checkProjectionColumnCodecPublication(publication_context, /*queued_ddl=*/ false);
 
     waitForOutdatedPartsToBeLoaded();
     const DataPartsVector all_parts = getAllDataPartsVector();

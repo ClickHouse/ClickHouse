@@ -5803,7 +5803,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         };
 
         for (const auto & cmd : commands)
-            if (std::ranges::contains(forbidden_commands, cmd.type))
+            if (!cmd.ignore && std::ranges::contains(forbidden_commands, cmd.type))
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Schema-changing ALTER is rejected while a streaming query holds a subscription on this table.");
     }
 
@@ -5861,7 +5861,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     }
 
     /// Block the case of alter table add projection for special merge trees.
-    if (std::any_of(commands.begin(), commands.end(), [](const AlterCommand & c) { return c.type == AlterCommand::ADD_PROJECTION; }))
+    if (std::any_of(commands.begin(), commands.end(), [](const AlterCommand & c) { return c.type == AlterCommand::ADD_PROJECTION && !c.ignore; }))
     {
         if (merging_params.mode != MergingParams::Mode::Ordinary
             && (*settings_from_storage)[MergeTreeSetting::deduplicate_merge_projection_mode] == DeduplicateMergeProjectionMode::THROW)
@@ -6459,6 +6459,9 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     std::optional<NameDependencies> name_deps{};
     for (const AlterCommand & command : commands)
     {
+        if (command.type == AlterCommand::ADD_PROJECTION && command.ignore)
+            continue;
+
         checkDropOrRenameCommandDoesntAffectInProgressMutations(command, unfinished_mutations, local_context);
         /// Just validate partition expression
         if (command.partition)
@@ -6976,7 +6979,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     {
         for (const auto & command : commands)
         {
-            if (command.type == AlterCommand::DROP_PROJECTION)
+            if (command.ignore || command.type == AlterCommand::DROP_PROJECTION)
                 continue;
 
             throw Exception(

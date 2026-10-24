@@ -107,6 +107,44 @@ We recommend using projections when:
 
 ## Examples {#examples}
 
+### Compression codecs for projection columns {#projection-column-codecs}
+
+A projection can override compression for selected output columns. Put a partial
+column list between the projection name and `AS`:
+
+```sql
+CREATE TABLE events
+(
+    user_id UInt64,
+    value UInt64,
+    PROJECTION by_user (total CODEC(ZSTD)) AS
+        (SELECT user_id, sum(value) AS total GROUP BY user_id)
+)
+ENGINE = MergeTree ORDER BY user_id;
+```
+
+The declaration names a column in the projection's `SELECT` result. An explicit
+alias such as `total` can be used for an expression; an existing expression name
+remains valid as well. An `ORDER BY` expression that is absent from `SELECT` is
+not a declarable output. Columns omitted from the list use the table's normal
+part compression setting. `SHOW CREATE TABLE` preserves the declared name and
+codec clause, even if the projection part stores an expression under its older
+physical name.
+
+For a normal projection, a calculated `SELECT` expression that is not stored
+as a projection column cannot receive a codec declaration.
+
+Projection columns accept `NONE`, `LZ4`, `ZSTD`, `Delta`, and `DoubleDelta`,
+including valid chains of these codecs. Codec arguments and compatibility with
+the output type are validated when the definition is created. Lossy codecs and
+`CODEC(Default)` are not supported for projection columns.
+
+For `ReplicatedMergeTree` tables and distributed DDL, upgrade all consumers
+before setting `allow_projection_column_codecs_in_replicated_or_distributed_ddl = 1`.
+This compatibility setting is disabled by default. Distributed DDL also needs
+`distributed_ddl_entry_format_version` 2 or newer; `CREATE TABLE ... AS` that
+copies a codec-bearing projection needs version 3 or newer.
+
 ### Filtering on columns which aren't in the primary key {#filtering-without-using-primary-keys}
 
 In this example, we'll show you how to add a projection to a table.

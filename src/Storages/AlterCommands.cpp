@@ -1226,6 +1226,9 @@ void AlterCommand::apply(
     }
     else if (type == ADD_PROJECTION)
     {
+        if (!metadata.projections.shouldAdd(projection_name, if_not_exists))
+            return;
+
         auto projection = ProjectionDescription::getProjectionFromAST(
             projection_decl, metadata.columns, &metadata.partition_key, context, LoadingStrictnessLevel::CREATE);
         metadata.projections.add(std::move(projection), after_projection_name, first, if_not_exists);
@@ -1250,22 +1253,31 @@ void AlterCommand::apply(
             projection_decl, metadata.columns, &metadata.partition_key, context, LoadingStrictnessLevel::CREATE);
 
         /// Existing parts store projection data built from the query body, so only the `WITH SETTINGS` clause may change
-        auto definition_without_settings = [](const IAST & definition_ast)
+        auto without_settings = [](const ProjectionDescription & projection)
         {
-            auto cloned = definition_ast.clone();
-            auto & decl = cloned->as<ASTProjectionDeclaration &>();
-            cloned->reset(decl.with_settings);
-            return cloned->formatWithSecretsOneLine();
+            auto cloned = projection.clone();
+            auto & decl = cloned.definition_ast->as<ASTProjectionDeclaration &>();
+            cloned.definition_ast->reset(decl.with_settings);
+            return cloned;
         };
 
         const auto & old_projection = metadata.projections.get(projection_name);
-        if (definition_without_settings(*old_projection.definition_ast) != definition_without_settings(*new_projection.definition_ast))
+        if (without_settings(old_projection) != without_settings(new_projection))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Cannot modify projection {}: only the WITH SETTINGS clause may be changed, "
                 "but the projection query differs from the existing one. "
                 "Use DROP PROJECTION and ADD PROJECTION to change the query",
                 projection_name);
+
+        /// Keep the original declaration order while changing only the settings.
+        auto preserved_definition = old_projection.definition_ast->clone();
+        auto & preserved_decl = preserved_definition->as<ASTProjectionDeclaration &>();
+        const auto & new_decl = new_projection.definition_ast->as<const ASTProjectionDeclaration &>();
+        preserved_definition->reset(preserved_decl.with_settings);
+        if (new_decl.with_settings)
+            preserved_definition->set(preserved_decl.with_settings, new_decl.with_settings->clone());
+        new_projection.definition_ast = std::move(preserved_definition);
 
         /// Intentionally not a mutation: the new settings apply lazily, to projection parts written
         /// by future inserts and merges. `MATERIALIZE PROJECTION` does not rebuild a projection that
@@ -2006,6 +2018,11 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
 {
     auto columns = metadata.columns;
     std::unordered_set<String> columns_with_full_type_modify;
+    NameSet projection_names;
+    for (const auto & projection : metadata.projections)
+        projection_names.insert(projection.name);
+    for (const auto & name : metadata.projections.getUnavailableNames())
+        projection_names.insert(name);
 
     /// Used to tell whether a command restates the definition the table already has, so it must not
     /// depend on whether the redundant parentheses were written on one side and not on the other.
@@ -2148,6 +2165,17 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
         {
             if (has_column && command.if_not_exists)
                 command.ignore = true;
+        }
+        else if (command.type == AlterCommand::ADD_PROJECTION)
+        {
+            /// Follow the names after preceding commands so a repeated `ADD PROJECTION IF NOT EXISTS`
+            /// is inert even when the first `ADD PROJECTION` is in this statement.
+            if (!projection_names.insert(command.projection_name).second && command.if_not_exists)
+                command.ignore = true;
+        }
+        else if (command.type == AlterCommand::DROP_PROJECTION && !command.clear && !command.partition)
+        {
+            projection_names.erase(command.projection_name);
         }
         else if (command.type == AlterCommand::DROP_COLUMN
                 || command.type == AlterCommand::COMMENT_COLUMN
