@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <QueryPipeline/SizeLimits.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/SetVariants.h>
@@ -13,6 +14,10 @@
 #include <Common/ProcessorMemoryStats.h>
 #include <Interpreters/castColumn.h>
 
+namespace roaring
+{
+class Roaring64Map;
+}
 
 namespace DB
 {
@@ -369,6 +374,7 @@ public:
     };
 
     MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_);
+    ~MergeTreeSetIndex();
 
     size_t size() const { return ordered_set.at(0)->size(); }
 
@@ -436,6 +442,8 @@ private:
     /// thread-local storage after the query ends, so for them the given query-scoped scratch
     /// buffer is filled and returned instead.
     FieldValueRanges & getFieldValueRangesBuffer(FieldValueRanges & scratch) const;
+    /// Evaluates mark feasibility against prepared field value ranges; nullopt if the binary search ends inverted.
+    std::optional<BoolMask> checkInFieldValueRanges(const FieldValueRanges & ranges) const;
 
     // If all arguments in tuple are key columns, we can optimize NOT IN when there is only one element.
     bool has_all_keys;
@@ -444,6 +452,15 @@ private:
     const UInt64 instance_id;
     /// Whether all key columns have fixed-width values, making the ranges buffer cacheable.
     bool cache_ranges = false;
+    /// Returns the bitmap once enough checks were made to pay for building it, else nullptr.
+    const roaring::Roaring64Map * getRoaringBitmap() const;
+
+    /// Accelerated 64-bit Roaring Bitmap index for single integer key column, built on demand.
+    static constexpr size_t no_roaring = std::numeric_limits<size_t>::max();
+    size_t checks_before_roaring = no_roaring;
+    mutable std::atomic<size_t> checks_without_roaring{0};
+    mutable std::unique_ptr<roaring::Roaring64Map> roaring_bitmap;
+    mutable std::atomic<const roaring::Roaring64Map *> roaring_bitmap_ready{nullptr};
 };
 
 }
