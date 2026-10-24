@@ -460,19 +460,50 @@ static IQueryPlanStep * findReadingStep(QueryPlan::Node & node, StepStack & back
     return nullptr;
 }
 
-/// A computed node can carry the same name as one of the DAG's inputs, e.g. a storage-level
+/// `ActionsDAG::split` renames a computed node that reuses an input's name (`CAST(x, ...) AS x`)
+/// when the node crosses into the lazy half, and the main half's output then no longer matches the
+/// next main-branch step, which binds its inputs by name. Such a node crosses only if it is an
+/// output or feeds a node that may land in the lazy half. An ALIAS lands in the same half as a
+/// non-constant child, so such a node read only through aliases stays put: e.g. the `id -> __table2.id
+/// -> id -> __table1.id` chain that merged projections build over `SELECT * FROM (SELECT * FROM t)`.
+static bool hasShadowedInputNameCrossingSplit(const ActionsDAG & dag)
+{
+    std::unordered_set<std::string_view> input_names;
+    for (const auto * input : dag.getInputs())
+        input_names.insert(input->result_name);
+
+    std::unordered_set<const ActionsDAG::Node *> shadowing_nodes;
+    for (const auto & node : dag.getNodes())
+        if (node.type != ActionsDAG::ActionType::INPUT && input_names.contains(node.result_name))
+            shadowing_nodes.insert(&node);
+
+    if (shadowing_nodes.empty())
+        return false;
+
+    for (const auto * output : dag.getOutputs())
+        if (shadowing_nodes.contains(output))
+            return true;
+
+    for (const auto & node : dag.getNodes())
+        for (const auto * child : node.children)
+            if (shadowing_nodes.contains(child) && (node.type != ActionsDAG::ActionType::ALIAS || child->column))
+                return true;
+
+    return false;
+}
+
 static bool allExpressionsSuitableForLazyMaterialization(const QueryPlan::Node * node)
 {
     while (!node->children.empty())
     {
         if (const auto * expr_step = typeid_cast<ExpressionStep *>(node->step.get()))
         {
-            if (expr_step->getExpression().hasArrayJoin() || expr_step->getExpression().hasInputNameShadowedByComputedNode())
+            if (expr_step->getExpression().hasArrayJoin() || hasShadowedInputNameCrossingSplit(expr_step->getExpression()))
                 return false;
         }
         else if (const auto * filter_step = typeid_cast<FilterStep *>(node->step.get()))
         {
-            if (filter_step->getExpression().hasArrayJoin() || filter_step->getExpression().hasInputNameShadowedByComputedNode())
+            if (filter_step->getExpression().hasArrayJoin() || hasShadowedInputNameCrossingSplit(filter_step->getExpression()))
                 return false;
         }
         else
