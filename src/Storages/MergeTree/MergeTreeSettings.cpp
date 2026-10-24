@@ -372,7 +372,15 @@ Possible values:
 - basic — Use the standard serialization for `Nullable(T)`.
 
 - allow_sparse — Permit `Nullable(T)` to use sparse encoding.
+
+- compact_null_map — The same as `allow_sparse`, and the null map is written in the compact form:
+  a granule without NULLs (or with only NULLs) takes a few bytes in the null map stream instead of a byte per row,
+  and it is read without creating the null map in memory. The parts written with this version cannot be read by
+  older versions of ClickHouse.
+
+This setting is only effective when `serialization_info_version` is set to "with_types" or newer.
 )", 0, \
+        {"26.11", "basic", "basic", "New value `compact_null_map`"}, \
         {"25.12", "basic", "basic", "New setting"}) \
     DECLARE(MergeTreeObjectSerializationVersion, object_serialization_version, "v3", R"(
 Serialization version for JSON data type. Required for compatibility.

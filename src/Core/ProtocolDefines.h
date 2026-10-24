@@ -359,6 +359,10 @@ static constexpr auto DBMS_MIN_REVISION_WITH_MERGE_COMBINATOR_STATE_VERSION = 54
 /// while it sends the data of the INSERT, and before `EndOfStream`.
 static constexpr auto DBMS_MIN_REVISION_WITH_INSERT_RETURNING = 54495;
 
+/// Send the null maps of Nullable columns in the native protocol in the compact form,
+/// in which a column without NULLs has no null map data (see `SerializationCompactNullMap`).
+static constexpr auto DBMS_MIN_REVISION_WITH_COMPACT_NULL_MAP_SERIALIZATION = 54496;
+
 
 /// Version of ClickHouse TCP protocol.
 ///
@@ -367,5 +371,5 @@ static constexpr auto DBMS_MIN_REVISION_WITH_INSERT_RETURNING = 54495;
 /// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
 /// later is just a number for server version (one number instead of commit SHA)
 /// for simplicity (sometimes it may be more convenient in some use cases).
-static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54495;
+static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54496;
 }

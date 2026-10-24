@@ -470,7 +470,8 @@ IMPLEMENT_SETTING_ENUM(
     MergeTreeNullableSerializationVersion,
     ErrorCodes::BAD_ARGUMENTS,
     {{"basic", MergeTreeNullableSerializationVersion::BASIC},
-     {"allow_sparse", MergeTreeNullableSerializationVersion::ALLOW_SPARSE}})
+     {"allow_sparse", MergeTreeNullableSerializationVersion::ALLOW_SPARSE},
+     {"compact_null_map", MergeTreeNullableSerializationVersion::COMPACT_NULL_MAP}})
 
 IMPLEMENT_SETTING_ENUM(
     MergeTreeObjectSerializationVersion,

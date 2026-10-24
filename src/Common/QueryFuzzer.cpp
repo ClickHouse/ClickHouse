@@ -1988,7 +1988,10 @@ void QueryFuzzer::fuzzTableStorage(ASTStorage & storage, ASTColumns * columns_li
     if (fuzz_rand() % 20 == 0)
         fuzz_setting("min_rows_for_wide_part", UInt64(fuzz_rand() % 2));
     if (fuzz_rand() % 20 == 0)
-        fuzz_setting("nullable_serialization_version", String(fuzz_rand() % 2 == 0 ? "basic" : "allow_sparse"));
+    {
+        static constexpr const char * nullable_serialization_versions[] = {"basic", "allow_sparse", "compact_null_map"};
+        fuzz_setting("nullable_serialization_version", String(nullable_serialization_versions[fuzz_rand() % 3]));
+    }
     if (fuzz_rand() % 20 == 0)
         fuzz_setting("number_of_partitions_to_consider_for_merge", UInt64(fuzz_rand() % 50 + 1));
     if (fuzz_rand() % 20 == 0)
