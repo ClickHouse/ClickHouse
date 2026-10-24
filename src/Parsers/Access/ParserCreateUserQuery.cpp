@@ -1228,7 +1228,33 @@ ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [ADD PROFILES 'profile_name' [,...] ]
 ```
 
-To use `ALTER USER` you must have the [ALTER USER](/reference/statements/grant#access-management) privilege.
+To use `ALTER USER` you must have the [ALTER USER](/reference/statements/grant#access-management) privilege on every target. Authentication-only changes to your own account can instead use [ALTER USER SELF AUTHENTICATION](/reference/statements/grant#self-service-authentication):
+
+```sql
+GRANT ALTER USER SELF AUTHENTICATION TO alice;
+-- Alice can execute these statements through an authenticated connection.
+ALTER USER alice IDENTIFIED WITH sha256_password BY 'replacement_password';
+ALTER USER alice ADD IDENTIFIED WITH sha256_password BY 'additional_password';
+ALTER USER alice RESET AUTHENTICATION METHODS TO NEW;
+```
+
+Granting or revoking `ALTER USER SELF AUTHENTICATION` requires the experimental server setting `experimental_self_service_password_change`
+(default `false`, restart required). Existing grants continue to authorize changes while the setting is disabled.
+
+An authentication change authorized by `ALTER USER SELF AUTHENTICATION` must target only the current user and omit `IN <storage>`.
+This privilege alone does not authorize `VALID UNTIL` or `VALID FOR`. `CREATE TOKEN` independently permits adding authentication methods with
+method-local expiry. Changing user-level expiry or other account properties requires `ALTER USER`, including statements that also change authentication.
+
+All authentication methods supported by `ALTER USER` are available, including `no_password`. Replacing a method without an expiry clause removes
+its existing expiration date. The usual authentication validation and read-only restrictions still apply. Changing credentials does not
+require the old password and does not disconnect existing sessions.
+
+Self-service changes can run locally or with `ON CLUSTER`. Distributed execution uses the usual `CLUSTER` privilege check and distributed DDL restrictions,
+subject to server configuration. Read-only sessions and sessions restricted by an authentication method's `GRANTS` clause cannot dispatch credential changes.
+By default, DDL workers execute in their own context. With `distributed_ddl_use_initial_user_and_roles` enabled and a supporting DDL entry format,
+they execute as the initiating user with the initiating roles. Remote accounts are resolved by name; their UUIDs need not match across servers.
+Local UUID checks do not protect against replacement of a remote account under the same name. Changes across servers are not atomic;
+the usual distributed DDL completion, error, and retry behavior applies.
 
 `SET variable = value` is an alias for `MODIFY SETTING variable = value`: it changes a single setting in place while keeping the rest. Prefer it (or `MODIFY SETTING`) over the bare `SETTINGS` clause, which replaces the whole settings list and also removes all inherited (parent) profiles.
 

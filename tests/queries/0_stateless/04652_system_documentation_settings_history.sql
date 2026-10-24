@@ -79,8 +79,10 @@ WITH changed AS (SELECT DISTINCT arrayJoin(tupleElement(changes, 'name')) AS nam
 SELECT count() FROM system.documentation
 WHERE type = 'MergeTree Setting' AND (name IN (SELECT name FROM changed)) != (position(description, '**History**') > 0);
 
--- Server settings are not covered by the `compatibility` setting, so no history of their changes is recorded.
-SELECT count() FROM system.documentation WHERE type = 'Server Setting' AND position(description, '**History**') > 0;
+-- Server history is documented independently of session `compatibility`.
+WITH changed AS (SELECT DISTINCT arrayJoin(tupleElement(changes, 'name')) AS name FROM system.settings_changes WHERE type = 'Server')
+SELECT count() FROM system.documentation
+WHERE type = 'Server Setting' AND (name IN (SELECT name FROM changed)) != (position(description, '**History**') > 0);
 
 -- The history lists exactly one item per recorded change of the setting. A change recorded both for a setting and
 -- for the obsolete name it was renamed from is listed once — so the identity of a change is the version and the

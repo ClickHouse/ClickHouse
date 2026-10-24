@@ -227,6 +227,9 @@ ln -sf $SRC_PATH/config.d/custom_settings_prefixes.xml $DEST_SERVER_PATH/config.
 ln -sf $SRC_PATH/config.d/collect_connection_metrics.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/database_catalog_drop_table_concurrency.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/enable_access_control_improvements.xml $DEST_SERVER_PATH/config.d/
+if check_clickhouse_version 26.10; then
+    ln -sf $SRC_PATH/config.d/self_service_password_change.xml $DEST_SERVER_PATH/config.d/
+fi
 ln -sf $SRC_PATH/config.d/macros.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/secure_ports.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/clusters.xml $DEST_SERVER_PATH/config.d/

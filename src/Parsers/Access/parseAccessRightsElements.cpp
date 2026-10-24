@@ -128,6 +128,15 @@ bool parseAccessRightsElementsWithoutOptions(IParser::Pos & pos, Expected & expe
             if (!parseAccessFlagsWithColumns(pos, expected, access_and_columns))
                 return false;
 
+            const AccessFlags self_authentication = AccessType::ALTER_USER_SELF_AUTHENTICATION;
+            if (access_and_columns.size() == 1 && access_and_columns.front().first == self_authentication
+                && access_and_columns.front().second.empty())
+            {
+                /// Leave `ON CLUSTER` to the enclosing parser; an object-target `ON` is invalid here.
+                res_elements.emplace_back(self_authentication);
+                return true;
+            }
+
             String database_name;
             String table_name;
             String parameter;
@@ -198,6 +207,9 @@ bool parseAccessRightsElementsWithoutOptions(IParser::Pos & pos, Expected & expe
 
                 element.wildcard = wildcard;
                 element.default_database = default_database;
+                /// Explicit self-service entries in mixed groups must not be silently filtered by scope.
+                if (access_flags == self_authentication)
+                    element.throwIfNotGrantable();
                 res_elements.emplace_back(std::move(element));
             }
 

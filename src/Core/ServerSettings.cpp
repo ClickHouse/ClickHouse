@@ -1,4 +1,5 @@
 #include <Core/ProtocolDefines.h>
+#include <Core/SettingsChangesHistory.h>
 #include <Access/AccessControl.h>
 #include <Columns/IColumn.h>
 #include <Common/Jemalloc.h>
@@ -1302,6 +1303,19 @@ Only directly dependent views are considered here, and the creation of one view 
     DECLARE(Bool, database_replicated_allow_detach_permanently, true, R"(Allow detaching tables permanently in Replicated databases)", 0) \
     DECLARE(Bool, database_replicated_drop_broken_tables, false, R"(Drop unexpected tables from Replicated databases instead of moving them to a separate local database)", 0) \
     DECLARE(Bool, distributed_ddl_use_initial_user_and_roles, false, R"(If enabled, ON CLUSTER queries will preserve and use the initiator's user and roles for execution on remote shards. This ensures consistent access control across the cluster but requires that the user and roles exist on all nodes.)", 0) \
+    DECLARE(Bool, experimental_self_service_password_change, false, R"(
+Allow explicitly granting and revoking `ALTER USER SELF AUTHENTICATION`, including grant-option changes and explicit current-grants selections.
+When disabled, `ALL`, `ACCESS MANAGEMENT`, and broad current-grants copying exclude this privilege from their requests;
+group revokes preserve any existing self-service grant and its grant option. When enabled, groups include it normally.
+Privilege `WITH REPLACE OPTION` clears all direct privileges, including this bit and its grant option, regardless of this setting.
+The subsequent grant follows the setting. Replacement does not remove role memberships or privileges inherited through them.
+The full implicit revoke is authorized normally: local replacement can require this bit's grant option when a target holds it;
+distributed replacement requires that grant option even when remote targets do not hold it. Full `ALTER USER` does not supply it.
+Disabled by default. Changing this server setting requires a restart. Existing grants remain effective while disabled;
+loading, restoring, replicating, and displaying grants are unaffected. Enable the setting on each executor of distributed grant/revoke statements.
+Disabling this setting does not make persisted grants compatible with older versions. Before downgrade, enable it for cleanup,
+remove the privilege from users, roles, and configuration, and verify that persisted definitions contain no new privilege keyword.
+)", EXPERIMENTAL, {"26.10", false, false, "Added an experimental opt-in for granting and revoking ALTER USER SELF AUTHENTICATION."}) \
     DECLARE(String, default_replica_path, "/clickhouse/tables/{uuid}/{shard}", R"(
 The path to the table in ZooKeeper.
 
@@ -2157,6 +2171,24 @@ Configured as `named_collections_storage.type` (`<named_collections_storage><typ
 
 DECLARE_SETTINGS_TRAITS_WITH_PATH(ServerSettingsTraits, LIST_OF_SERVER_SETTINGS_WITHOUT_PATH, LIST_OF_SERVER_SETTINGS_WITH_PATH, SERVER_SETTINGS_SUPPORTED_TYPES)
 
+const VersionToSettingsChangesMap & getServerSettingsChangesHistory()
+{
+    static const VersionToSettingsChangesMap history = []
+    {
+        VersionToSettingsChangesMap result;
+#define SERVER_SETTING_HISTORY_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
+    __VA_OPT__([&]() __attribute__((noinline)) { addSettingChangesHistory(result, #NAME, {__VA_ARGS__}); }();)
+#define SERVER_SETTING_HISTORY_WITH_EXTRA_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, EXTRA, ...) \
+    __VA_OPT__([&]() __attribute__((noinline)) { addSettingChangesHistory(result, #NAME, {__VA_ARGS__}); }();)
+        LIST_OF_SERVER_SETTINGS_WITHOUT_PATH(SERVER_SETTING_HISTORY_, SERVER_SETTING_HISTORY_WITH_EXTRA_)
+        LIST_OF_SERVER_SETTINGS_WITH_PATH(SERVER_SETTING_HISTORY_WITH_EXTRA_, SERVER_SETTING_HISTORY_WITH_EXTRA_)
+#undef SERVER_SETTING_HISTORY_
+#undef SERVER_SETTING_HISTORY_WITH_EXTRA_
+        return result;
+    }();
+    return history;
+}
+
 struct ServerSettingsImpl : public BaseSettings<ServerSettingsTraits>
 {
     void loadSettingsFromConfig(const Poco::Util::AbstractConfiguration & config);
@@ -2268,6 +2300,20 @@ std::vector<std::string_view> ServerSettings::getAllRegisteredNames() const
     for (const auto & setting : impl->all())
         setting_names.emplace_back(setting.getName());
     return setting_names;
+}
+
+std::vector<std::string_view> ServerSettings::getAllAliasNames()
+{
+    std::vector<std::string_view> alias_names;
+    const auto & settings_to_aliases = ServerSettingsImpl::Traits::settingsToAliases();
+    for (const auto & [_, aliases] : settings_to_aliases)
+        alias_names.insert(alias_names.end(), aliases.begin(), aliases.end());
+    return alias_names;
+}
+
+std::string_view ServerSettings::resolveName(std::string_view name)
+{
+    return ServerSettingsImpl::Traits::resolveName(name);
 }
 
 std::string_view ServerSettings::getDescription(std::string_view name) const
