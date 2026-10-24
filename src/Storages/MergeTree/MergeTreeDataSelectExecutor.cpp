@@ -558,14 +558,14 @@ ConditionTemplate<KeyCondition>::Ptr MergeTreeDataSelectExecutor::buildKeyCondit
     if (std::find(required_columns.begin(), required_columns.end(), "_part_offset") == required_columns.end())
         return nullptr;
 
-    auto factory = [sample, context](const ActionsDAG *, const ActionsDAG::Node * predicate) -> KeyCondition
+    auto factory = [sample, context](const ActionsDAG *, const ActionsDAG::Node * predicate, bool require_ready_sets) -> KeyCondition
     {
         return KeyCondition{
             ActionsDAGWithInversionPushDown(predicate, context, /* boolean_context */ false),
             context,
             sample.getNames(),
             std::make_shared<ExpressionActions>(ActionsDAG(sample.getColumnsWithTypeAndName()), ExpressionActionsSettings{}),
-            {}};
+            /* single_point_ */ false, /* skip_analysis_ */ false, require_ready_sets};
     };
 
     auto sub_filter_dag = std::make_shared<ActionsDAGWithInversionPushDown>(dag->getOutputs().front(), context, /* boolean_context */ true);
@@ -613,7 +613,7 @@ ConditionTemplate<KeyCondition>::Ptr MergeTreeDataSelectExecutor::buildKeyCondit
     if (dag->getInputs().size() != 1)
         return nullptr;
 
-    auto factory = [context](const ActionsDAG * specialized_dag, const ActionsDAG::Node * predicate) -> KeyCondition
+    auto factory = [context](const ActionsDAG * specialized_dag, const ActionsDAG::Node * predicate, bool require_ready_sets) -> KeyCondition
     {
         chassert(specialized_dag);
         auto required_columns = specialized_dag->getRequiredColumns();
@@ -622,7 +622,7 @@ ConditionTemplate<KeyCondition>::Ptr MergeTreeDataSelectExecutor::buildKeyCondit
             context,
             required_columns.getNames(),
             std::make_shared<ExpressionActions>(ActionsDAG(required_columns), ExpressionActionsSettings{}),
-            {}};
+            /* single_point_ */ false, /* skip_analysis_ */ false, require_ready_sets};
     };
 
     auto sub_filter_dag = std::make_shared<ActionsDAGWithInversionPushDown>(dag->getOutputs().front(), context, /* boolean_context */ true);

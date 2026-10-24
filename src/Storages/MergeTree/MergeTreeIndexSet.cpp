@@ -372,20 +372,24 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorSet::getGranuleAndReset()
     return granule;
 }
 
-static KeyCondition buildCondition(const IndexDescription & index, const ActionsDAGWithInversionPushDown & filter_dag, ContextPtr context)
+static KeyCondition buildCondition(
+    const IndexDescription & index, const ActionsDAGWithInversionPushDown & filter_dag, ContextPtr context, bool require_ready_sets)
 {
-    return KeyCondition{filter_dag, context, index.column_names, index.expression};
+    return KeyCondition{
+        filter_dag, context, index.column_names, index.expression,
+        /* single_point_ */ false, /* skip_analysis_ */ false, require_ready_sets};
 }
 
 MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
     size_t max_rows_,
     const ActionsDAGWithInversionPushDown & filter_dag,
     ContextPtr context,
-    const IndexDescription & index_description)
+    const IndexDescription & index_description,
+    bool require_ready_sets)
     : index_name(index_description.name)
     , max_rows(max_rows_)
     , index_data_types(index_description.data_types)
-    , condition(buildCondition(index_description, filter_dag, context))
+    , condition(buildCondition(index_description, filter_dag, context, require_ready_sets))
 {
     /// `set_hyperrectangle` comes from `getExtremes`/`getExtremesNullLast`, which skip NaN, and
     /// `mayBeTrueOnGranule` uses it as a pre-check before the exact per-value evaluation.
@@ -402,7 +406,7 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
         return;
     /// Try to run subqueries, don't use index if failed (e.g. if use_index_for_in_with_subqueries is disabled).
     for (auto & set : sets_to_prepare)
-        if (!set->buildOrderedSetInplace(context))
+        if (!(require_ready_sets ? set->getOrderedSetIfAlreadyBuilt(context) : set->buildOrderedSetInplace(context)))
             return;
 
     auto filter_actions_dag = filter_dag.dag->clone();
@@ -887,10 +891,10 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexSet::createIndexAggregator() const
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexSet::createIndexCondition(
-    const ActionsDAG::Node * predicate, ContextPtr context) const
+    const ActionsDAG::Node * predicate, ContextPtr context, bool require_ready_sets) const
 {
     ActionsDAGWithInversionPushDown filter_dag(predicate, context, /* boolean_context */ true);
-    return std::make_shared<MergeTreeIndexConditionSet>(max_rows, filter_dag, context, index);
+    return std::make_shared<MergeTreeIndexConditionSet>(max_rows, filter_dag, context, index, require_ready_sets);
 }
 
 MergeTreeIndexPtr setIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & /*settings*/)

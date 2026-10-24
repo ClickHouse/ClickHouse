@@ -13082,14 +13082,15 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         {
             minmax_columns_types = minmax_columns.getTypes();
 
-            auto key_condition_factory = [query_context, metadata_snapshot, minmax_columns, data_settings](const ActionsDAG *, const ActionsDAG::Node * predicate)
+            auto key_condition_factory = [query_context, metadata_snapshot, minmax_columns, data_settings](const ActionsDAG *, const ActionsDAG::Node * predicate, bool require_ready_sets)
             {
                 ActionsDAGWithInversionPushDown wrapped(predicate, query_context, /* boolean_context */ false);
                 return KeyCondition{
                     wrapped, query_context, minmax_columns.getNames(),
                     MergeTreeData::getMinMaxExpr(metadata_snapshot->getPartitionKey(), data_settings, ExpressionActionsSettings(query_context)),
                     /*single_point=*/false,
-                    /*skip_analysis=*/!query_context->getSettingsRef()[Setting::use_partition_pruning]};
+                    /*skip_analysis=*/!query_context->getSettingsRef()[Setting::use_partition_pruning],
+                    require_ready_sets};
             };
             auto inverted_dag = std::make_shared<ActionsDAGWithInversionPushDown>(filter_dag->getOutputs().front(), query_context, /* boolean_context */ true);
             minmax_idx_condition = std::make_shared<ConditionTemplate<KeyCondition>>(inverted_dag, std::move(key_condition_factory), metadata_snapshot, query_context, /*skip_folding_=*/!query_context->getSettingsRef()[Setting::use_constant_folding_in_index_analysis]);

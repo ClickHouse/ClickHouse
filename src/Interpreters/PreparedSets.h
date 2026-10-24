@@ -76,8 +76,7 @@ public:
     virtual SetPtr buildOrderedSetInplace(const ContextPtr & context) = 0;
 
     /// The same, but never runs the subquery that fills the set: returns null if it is not built yet.
-    /// Its only caller is `ConditionSelectivityEstimator`, which wants a single selectivity number;
-    /// every other caller consumes the elements to prune or read data and so is entitled to build.
+    /// Used by index analyses that run on several threads at once: only the planning thread may build a shared set.
     /// A cost model that executes a subquery gives planning a side effect of unbounded cost, for a
     /// result the plan may end up not needing at all, so any further consult-only caller belongs here.
     SetPtr getOrderedSetIfAlreadyBuilt(const ContextPtr & context);
@@ -266,9 +265,6 @@ private:
     /// The set can never be built once that happened, so `build` rethrows this instead of returning a null
     /// plan, which its callers would silently take for "nothing left to build".
     std::exception_ptr in_place_build_failure;
-
-    /// Serializes `buildOrderedSetInplace`; see the rationale at its lock site.
-    std::mutex inplace_build_mutex;
 };
 
 using FutureSetFromSubqueryPtr = std::shared_ptr<FutureSetFromSubquery>;

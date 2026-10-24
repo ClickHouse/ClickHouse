@@ -338,7 +338,7 @@ struct IMergeTreeIndex
     virtual MergeTreeIndexAggregatorPtr createIndexAggregator() const = 0;
 
     virtual MergeTreeIndexConditionPtr createIndexCondition(
-        const ActionsDAG::Node * predicate, ContextPtr context) const = 0;
+        const ActionsDAG::Node * predicate, ContextPtr context, bool require_ready_sets) const = 0;
 
     /// The vector similarity index overrides this method
     virtual MergeTreeIndexConditionPtr createIndexCondition(

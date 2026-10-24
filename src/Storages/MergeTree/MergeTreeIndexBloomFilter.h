@@ -79,7 +79,8 @@ public:
         const Block & header_,
         size_t hash_functions_,
         NameSet columns_shadowing_map_subcolumns_,
-        JSONIndexArgumentTypes json_argument_types_);
+        JSONIndexArgumentTypes json_argument_types_,
+        bool require_ready_sets_);
 
     bool alwaysUnknownOrTrue() const override;
 
@@ -100,6 +101,7 @@ private:
     /// Argument types of the JSON index functions of this index, by position in `header`.
     const JSONIndexArgumentTypes json_argument_types;
     const bool validate_enum_literals_in_operators;
+    const bool require_ready_sets;
     std::vector<RPNElement> rpn;
 
     bool mayBeTrueOnGranule(const MergeTreeIndexGranuleBloomFilter * granule, const UpdatePartialDisjunctionResultFn & update_partial_result_disjuntion_fn) const;
@@ -159,7 +161,7 @@ public:
 
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 
-    MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
+    MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context, bool require_ready_sets) const override;
 
     /// The filter is sized by the number of distinct values, so about half of its bits are set.
     /// It still compresses when adjacent granules have the same values, or, with several columns,

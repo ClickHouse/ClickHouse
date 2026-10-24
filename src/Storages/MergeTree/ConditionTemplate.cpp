@@ -111,9 +111,9 @@ ActionsDAG substituteConstantInputs(
 }
 
 template <typename Cond>
-Cond ConditionTemplate<Cond>::generate(const ActionsDAG * substituted_dag, const ActionsDAG::Node * root) const
+Cond ConditionTemplate<Cond>::generate(const ActionsDAG * substituted_dag, const ActionsDAG::Node * root, bool require_ready_sets) const
 {
-    Cond condition = factory(substituted_dag, root);
+    Cond condition = factory(substituted_dag, root, require_ready_sets);
 
     for (const auto & transform : transformers)
         transform(condition);
@@ -177,7 +177,9 @@ ConditionTemplate<Cond>::ConditionTemplate(
     , context(std::move(context_))
     , skip_folding(skip_folding_)
 {
-    generateUnsubstituted();
+    const ActionsDAG * unsubstituted_dag = dag && dag->dag.has_value() ? &dag->dag.value() : nullptr;
+    const ActionsDAG::Node * predicate = dag ? dag->predicate : nullptr;
+    setUnsubstituted(generate(unsubstituted_dag, predicate, /*require_ready_sets=*/ false));
 }
 
 template <typename Cond>
@@ -188,7 +190,7 @@ const Cond & ConditionTemplate<Cond>::generateUnsubstituted() const
 
     const ActionsDAG * unsubsituted = dag && dag->dag.has_value() ? &dag->dag.value() : nullptr;
     const ActionsDAG::Node * predicate = dag ? dag->predicate : nullptr;
-    Cond produced = generate(unsubsituted, predicate);
+    Cond produced = generate(unsubsituted, predicate, /*require_ready_sets=*/ true);
     return setUnsubstituted(std::move(produced));
 }
 
@@ -219,7 +221,7 @@ const Cond & ConditionTemplate<Cond>::generateForPartition(
         auto specialized = substituteConstantInputs(dag->predicate, partition, partition_id, metadata_snapshot, context);
         chassert(!specialized.getOutputs().empty());
 
-        Cond produced = generate(&specialized, specialized.getOutputs().front());
+        Cond produced = generate(&specialized, specialized.getOutputs().front(), /*require_ready_sets=*/ true);
         return setSubstituted(partition_id, std::move(produced));
     }
     catch (const Exception &)

@@ -198,7 +198,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
                 if (auto can_use = MergeTreeDataSelectExecutor::canUseIndex(index_helper, metadata_snapshot, all_updated_columns); !can_use)
                     continue;
 
-                auto condition = index_helper->createIndexCondition(filter_dag.predicate, context);
+                auto condition = index_helper->createIndexCondition(filter_dag.predicate, context, /*require_ready_sets=*/ true);
                 if (!condition || condition->alwaysUnknownOrTrue())
                     continue;
 

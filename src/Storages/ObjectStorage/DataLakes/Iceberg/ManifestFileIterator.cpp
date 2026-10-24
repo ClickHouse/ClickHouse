@@ -683,8 +683,10 @@ const ManifestFilesPruner * ManifestFileIterator::getOrCreatePruner(Int32 schema
     if (it != pruners_by_schema_id.end())
         return it->second.get();
 
+    /// Pruners are built on manifest decode threads; the iterator prepares the sets beforehand.
     auto pruner = std::make_unique<ManifestFilesPruner>(
-        *schema_processor_ptr, table_snapshot_schema_id, schema_id, filter_dag.get(), partition_key_description.get(), context);
+        *schema_processor_ptr, table_snapshot_schema_id, schema_id, filter_dag.get(), partition_key_description.get(), context,
+        /* require_ready_sets */ true);
     return pruners_by_schema_id.emplace(schema_id, std::move(pruner)).first->second.get();
 }
 

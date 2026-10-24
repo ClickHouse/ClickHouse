@@ -23,7 +23,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexLegacyHypothesis::createIndexAggregato
     throw Exception(ErrorCodes::ILLEGAL_INDEX, "Index of type 'hypothesis' is no longer supported. Please drop the index");
 }
 
-MergeTreeIndexConditionPtr MergeTreeIndexLegacyHypothesis::createIndexCondition(const ActionsDAG::Node *, ContextPtr) const
+MergeTreeIndexConditionPtr MergeTreeIndexLegacyHypothesis::createIndexCondition(const ActionsDAG::Node *, ContextPtr, bool /*require_ready_sets*/) const
 {
     throw Exception(ErrorCodes::ILLEGAL_INDEX, "Index of type 'hypothesis' is no longer supported. Please drop the index");
 }
