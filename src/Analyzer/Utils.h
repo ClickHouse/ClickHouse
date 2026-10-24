@@ -25,6 +25,7 @@ class TableNode;
 using TableNodePtr = std::shared_ptr<TableNode>;
 
 class JoinNode;
+class QueryNode;
 struct Settings;
 
 struct IdentifierResolveScope;
@@ -78,6 +79,9 @@ bool isCorrelatedQueryOrUnionNode(const QueryTreeNodePtr & node);
 /// A correlated subquery must be evaluated exactly once, so optimizations that clone or
 /// distribute an expression must not do so when the expression contains one.
 bool containsCorrelatedSubquery(const QueryTreeNodePtr & node);
+
+/// Returns true if an ORDER BY element of the query has WITH FILL. INTERPOLATE is allowed only then.
+bool hasWithFill(const QueryNode & query_node);
 
 /* Checks, if column source is not registered in scopes that appear
  * before nearest query scope.

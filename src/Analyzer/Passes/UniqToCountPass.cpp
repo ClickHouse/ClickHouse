@@ -136,9 +136,21 @@ public:
         if (!query_node)
             return;
 
+        /// A row that WITH FILL adds has values only in the ORDER BY and INTERPOLATE copies of the projection expression.
+        if (hasWithFill(*query_node))
+            return;
+
         /// Check that query has only single table expression which is subquery
         auto * subquery_node = query_node->getJoinTreeNode()->as<QueryNode>();
         if (!subquery_node)
+            return;
+
+        /// WITH FILL and `arrayJoin` can add rows to the subquery result after its GROUP BY or DISTINCT, so its rows are not distinct.
+        if (hasWithFill(*subquery_node) || hasFunctionNode(query_node->getJoinTreeNode(), "arrayJoin"))
+            return;
+
+        /// `arrayJoin` in this query repeats rows of the subquery before the aggregation.
+        if (hasFunctionNode(node, "arrayJoin"))
             return;
 
         /// Check that query has only single node in projection
