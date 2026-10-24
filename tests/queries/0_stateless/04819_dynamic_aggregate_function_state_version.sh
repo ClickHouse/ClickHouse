@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-parallel-replicas
+# Tag no-parallel-replicas: `output_format_native_encode_types_in_binary_format` breaks the interserver Native stream for `Dynamic`, https://github.com/ClickHouse/ClickHouse/issues/123991
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -117,7 +119,7 @@ rm -f "$blob"
 $CLICKHOUSE_CLIENT -m -q "
 SELECT 'remote: ' || toString(medianDeterministicMerge(d.\`AggregateFunction(1, quantileDeterministic, UInt64, UInt64)\`))
 FROM (SELECT d FROM remote('127.0.0.2', currentDatabase(), dynamic_qd))
-SETTINGS prefer_localhost_replica = 0, enable_analyzer = 1;
+SETTINGS prefer_localhost_replica = 0;
 "
 
 # Because the version travels with the type, the skip degree survives the `Dynamic` serialization
