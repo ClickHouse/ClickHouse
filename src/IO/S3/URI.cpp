@@ -4,6 +4,7 @@
 #include <Interpreters/Context.h>
 #include <Common/Macros.h>
 #include <Common/Exception.h>
+#include <Common/encodeSpacesInURI.h>
 #include <Common/maskSensitiveQueryParameters.h>
 #include <Common/maskURIPassword.h>
 #include <Common/quoteString.h>
@@ -80,9 +81,9 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax, bool keep_pre
     else
         uri_str = uri_;
 
-    uri = Poco::URI(uri_str);
+    uri = Poco::URI(encodeSpacesInURI(uri_str));
     /// Keep a copy of how Poco parsed the original string before any mapping
-    Poco::URI original_uri(uri_str);
+    Poco::URI original_uri(encodeSpacesInURI(uri_str));
     bool looks_like_presigned = false;
     for (const auto & [qk, qv] : original_uri.getQueryParameters())
     {
