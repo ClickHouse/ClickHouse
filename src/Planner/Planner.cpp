@@ -2978,7 +2978,11 @@ void Planner::buildPlanForQueryNode()
     /// It runs after `collectSets` so that the prepared sets it has to reach are already collected.
     disableParallelReplicasForMultipleTablesQueryIfNeeded(query_tree, planner_context);
 
-    if (query_context->canUseTaskBasedParallelReplicas())
+    /// `parallel_replicas_allow_in_with_subquery` guards against every follower executing the `IN`
+    /// subquery, which is how the query-based implementation runs it. Plan-based parallel replicas
+    /// creates the set on the initiator, before the main query, and the fragment the followers read
+    /// only refers to the finished set - so there is nothing for the setting to protect against.
+    if (query_context->canUseTaskBasedParallelReplicas() && !settings[Setting::parallel_replicas_plan_based])
     {
         if (!settings[Setting::parallel_replicas_allow_in_with_subquery] && planner_context->getPreparedSets().hasSubqueries())
         {
