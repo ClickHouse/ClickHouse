@@ -40,13 +40,19 @@ def run_s3_mocks(started_cluster, args=[]):
     start_mock_servers(
         started_cluster,
         script_dir,
-        [("mock_sts.py", "sts.us-east-1.amazonaws.com", "80", args)],
+        [
+            ("mock_sts.py", "sts.us-east-1.amazonaws.com", "80", args),
+            ("glue_fault_proxy.py", "sts.us-east-1.amazonaws.com", "8081"),
+        ],
     )
 
 
 CATALOG_NAME = "test"
 
 BASE_URL = "http://glue:3000"
+
+# `s3_mocks/glue_fault_proxy.py`, which forwards to `BASE_URL`.
+GLUE_FAULT_PROXY_URL = "http://sts.us-east-1.amazonaws.com:8081"
 
 
 def get_glue_local_url(cluster):
@@ -197,7 +203,7 @@ def generate_arrow_data(num_rows=5):
     return table
 
 def create_clickhouse_glue_database(
-    started_cluster, node, name, additional_settings={}, query_settings={}, with_credentials=True
+    started_cluster, node, name, additional_settings={}, query_settings={}, with_credentials=True, url=BASE_URL
 ):
     settings = {
         "catalog_type": "glue",
@@ -220,7 +226,7 @@ def create_clickhouse_glue_database(
     node.query(
         f"""
 DROP DATABASE IF EXISTS {name};
-CREATE DATABASE {name} ENGINE = DataLakeCatalog('{BASE_URL}'{credential_args})
+CREATE DATABASE {name} ENGINE = DataLakeCatalog('{url}'{credential_args})
 SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     """,
         settings={
@@ -2066,6 +2072,49 @@ def test_exists_table_answers_only_from_not_found(started_cluster):
         assert (
             f"Exception calling GetTable for table {namespace}.{table_name}" in error
         ), error
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_glue_retries_transient_server_error(started_cluster):
+    # Glue maps `InternalServiceException` (HTTP 500) to a non-retryable error, so a transient Glue failure
+    # must be retried by its HTTP status. The proxy fails the first two `GetTables` calls for a `transient_*`
+    # database and every call for a `denied_*` database.
+    node = started_cluster.instances["node1"]
+    proxy = started_cluster.get_container_id("sts.us-east-1.amazonaws.com")
+
+    def injected(database):
+        return int(
+            started_cluster.exec_in_container(
+                proxy, ["curl", "-s", f"http://localhost:8081/injected/{database}"]
+            )
+        )
+
+    test_ref = uuid.uuid4().hex
+    transient_namespace = f"transient_{test_ref}"
+    denied_namespace = f"denied_{test_ref}"
+    table_name = "t"
+    db_name = f"glue_fault_{test_ref}"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(transient_namespace)
+    create_table(catalog, transient_namespace, table_name)
+
+    create_clickhouse_glue_database(started_cluster, node, db_name, url=GLUE_FAULT_PROXY_URL)
+    try:
+        # T1: the listing survives two transient failures. The count proves both were served.
+        assert f"{transient_namespace}.{table_name}" in node.query(f"SHOW TABLES FROM {db_name}")
+        assert injected(transient_namespace) == 2
+
+        # T2: a non-transient error is not retried and still fails the query.
+        error = node.query_and_get_error(
+            f"SELECT name FROM system.tables WHERE database = '{db_name}' "
+            f"AND name = '{denied_namespace}.{table_name}' "
+            f"SETTINGS show_data_lake_catalogs_in_system_tables = true"
+        )
+        assert "DATALAKE_DATABASE_ERROR" in error, error
+        assert "Injected access denied" in error, error
+        assert injected(denied_namespace) == 1
     finally:
         node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
 
