@@ -47,14 +47,20 @@ of `//:clickhouse`. The output is a Linux ELF even when the client is macOS.
 
 ## Binary comparison
 
-[ab0569eff](https://github.com/dzbarsky/clickhouse/commit/ab0569eff320a3f4676bc2c6645f4e845e2d60b0) completed 59 native Bazel targets on each architecture. The normalized ClickHouse SHA-256 and byte count matched native CMake.
+[e10eaf426](https://github.com/dzbarsky/clickhouse/commit/e10eaf426d559c60ad5be706011e95fe97be5d6f) completed all 59 native Bazel targets on x86-64 and ARM64. Both normalized ClickHouse hashes and byte counts matched native CMake. Both raw ClickHouse executables matched [ab0569eff](https://github.com/dzbarsky/clickhouse/commit/ab0569eff320a3f4676bc2c6645f4e845e2d60b0).
 
-| Native Bazel build | Normalized SHA-256 | Bytes |
-| --- | --- | --- |
-| [x86-64](https://app.buildbuddy.io/invocation/2cc9151c-2416-4150-a2f3-fe1070dad84b) | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710,693,736 |
-| [ARM64](https://app.buildbuddy.io/invocation/13f1da26-75a7-417a-9d98-2781c93a86d3) | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637,316,696 |
+| Native Bazel build | ELF | SHA-256 | Bytes |
+| --- | --- | --- | --- |
+| [x86-64](https://app.buildbuddy.io/invocation/18572b65-8f54-42aa-89e0-1f200cadc4b6) | Normalized ClickHouse | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710,693,736 |
+|  | Raw ClickHouse | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929,619,680 |
+|  | `unit_tests_dbms` | `2a6934b1d4523406f0c1e45b68b515914ba14a4167ffb6c05c0668a5ffb11260` | 811,968,280 |
+|  | `unit_tests_dbms` at [ab0569eff](https://github.com/dzbarsky/clickhouse/commit/ab0569eff320a3f4676bc2c6645f4e845e2d60b0) | `bc523ef4436f034fe89df4a85f84b6056aa61b54825fe405bc51f7a9f5683398` | 811,968,280 |
+| [ARM64](https://app.buildbuddy.io/invocation/f1a0f860-b020-4631-89cd-43e746bbd81e) | Normalized ClickHouse | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637,316,696 |
+|  | Raw ClickHouse | `2363f1ffebe756464876c0e91ca336d77c4d17e6a27afe2fb22b8f337ac2d744` | 907,067,440 |
+|  | `unit_tests_dbms` | `d489d1b0fd52b57389f107e5650cb58c5f6a33689d9c6090a5198cf0bdef2176` | 795,060,896 |
+|  | `unit_tests_dbms` at [ab0569eff](https://github.com/dzbarsky/clickhouse/commit/ab0569eff320a3f4676bc2c6645f4e845e2d60b0) | `24603ddfc53c3eae1efbcea14eaab78ead22de00f2195aa345c9ec1b9df2f4a8` | 795,060,896 |
 
-The raw ClickHouse and unit-test executables also matched [698fea052](https://github.com/dzbarsky/clickhouse/commit/698fea052686835908931fce25669b703b220b84). Each CPU passed 38 GoogleTests and six SQL cases. The SHA-256 and byte counts come from BuildBuddy output metadata; the executables were not downloaded.
+The unit-test ELF changed on x86-64 and ARM64. The original compiler and linker records verified that the same `intExp.pic.o` moved in the unit-test link. Each CPU passed 38 GoogleTests, six SQL cases and a Decimal query with 16 boundary checks. The original unit and CcInfo comparisons failed; the [validation history](bazel/initial_migration/validation-history.md#e10eaf426) explains the differences. BuildBuddy supplied the hashes and sizes without downloading the executables.
 
 To check a change against these references without downloading either ELF, run:
 
@@ -173,4 +179,4 @@ python3 bazel/initial_migration/audit_full_dwyu.py --config cmake_match --out /t
 python3 bazel/initial_migration/audit_full_dwyu.py --config cmake_match_aarch64 --out /tmp/clickhouse-dwyu-arm
 ```
 
-At `ab0569eff`, DWYU reported x86-64: 4 compiled targets clean, 13 with findings, 4 failed (23 of 781 selected); ARM64: 4 compiled targets clean, 11 with findings, 4 failed (19 of 781 selected). The full repository has not passed DWYU. The [validation history](bazel/initial_migration/validation-history.md#ab0569eff) lists all outcome counts and links the builds.
+At `e10eaf426`, DWYU reported x86-64: 2 compiled targets clean, 9 with findings, 4 failed (28 of 782 selected); ARM64: 2 compiled targets clean, 7 with findings, 4 failed (26 of 782 selected). Nonselected targets are unverified. See the [validation history](bazel/initial_migration/validation-history.md#e10eaf426) for all outcomes and the BuildBuddy invocations.

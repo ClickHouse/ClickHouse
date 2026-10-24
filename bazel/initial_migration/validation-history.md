@@ -1526,3 +1526,72 @@ x86-64 other outcomes: 1 `unchecked_link_inputs`, 1 `unentered_owned_files`. Poc
 ARM64 other outcomes: none. Poco JSON passed; the intentionally negative fixture reported its unused implementation dependency.
 
 An omitted target has no DWYU result for this source. Only the compiled clean column counts a successful compile and strict dependency report.
+
+## e10eaf426
+
+Source: [e10eaf426](https://github.com/dzbarsky/clickhouse/commit/e10eaf426d559c60ad5be706011e95fe97be5d6f). All seven changes are in the BUILD files and migration scripts. No application source changed.
+
+- OpenLDAP keeps 24 internal header inputs in the two libraries that compile them. `@clickhouse_openldap//:_lber` and `@clickhouse_openldap//:_ldap` each expose six public headers.
+- `//programs/keeper-client:clickhouse-keeper-client-lib` declares its implementation dependency on `//src:dbms__compile_0`.
+- `//src:benchmark_runtime_filter_objects` removes unused direct ICU data, libcpuid and simdcomp dependencies.
+- `//src:dbms__compile_0` owns `StorageSet.h`, `StorageJoin.h`, `StorageSQLite.h`; the declarations also expose the SQLite headers used by `StorageSQLite.h`.
+- `//src:dbms__compile_0` owns four PostgreSQL headers under `src/Core/PostgreSQL` and `src/Processors/Sources/PostgreSQLSource.h`. The dictionary implementation depends on that owner.
+- `src/Dictionaries/BUILD.bazel` moves eight implementation dependencies out of public `deps` and removes the unused sparsehash dependency from `//src/Dictionaries:headers`.
+- `//src/Common:int_exp` compiles `intExp.cpp` and publishes `intExp.h` and `exp10_i32.h`. The CMake link plan keeps the object at member 218 (zero-based) of `src/libclickhouse_common_io.a`.
+
+| Native Bazel build | ELF | SHA-256 | Bytes |
+| --- | --- | --- | --- |
+| [x86-64](https://app.buildbuddy.io/invocation/18572b65-8f54-42aa-89e0-1f200cadc4b6) | Normalized ClickHouse | `ccf17074f256c8cbc48d64d0aea0cf7b6a178b7412f16f337ba240aa130f1585` | 710,693,736 |
+|  | Raw ClickHouse | `0991da4fda873fdc3f7d5523b2a235734d4ad984ff586e51b2ab09147f724372` | 929,619,680 |
+|  | `unit_tests_dbms` | `2a6934b1d4523406f0c1e45b68b515914ba14a4167ffb6c05c0668a5ffb11260` | 811,968,280 |
+|  | `unit_tests_dbms` at [ab0569eff](https://github.com/dzbarsky/clickhouse/commit/ab0569eff320a3f4676bc2c6645f4e845e2d60b0) | `bc523ef4436f034fe89df4a85f84b6056aa61b54825fe405bc51f7a9f5683398` | 811,968,280 |
+| [ARM64](https://app.buildbuddy.io/invocation/f1a0f860-b020-4631-89cd-43e746bbd81e) | Normalized ClickHouse | `a29d49408309ba5719e5ab5d7c3eac2334584f91e2bcbc30d9df7feb55284d03` | 637,316,696 |
+|  | Raw ClickHouse | `2363f1ffebe756464876c0e91ca336d77c4d17e6a27afe2fb22b8f337ac2d744` | 907,067,440 |
+|  | `unit_tests_dbms` | `d489d1b0fd52b57389f107e5650cb58c5f6a33689d9c6090a5198cf0bdef2176` | 795,060,896 |
+|  | `unit_tests_dbms` at [ab0569eff](https://github.com/dzbarsky/clickhouse/commit/ab0569eff320a3f4676bc2c6645f4e845e2d60b0) | `24603ddfc53c3eae1efbcea14eaab78ead22de00f2195aa345c9ec1b9df2f4a8` | 795,060,896 |
+
+Each native build completed the same 52 build targets, three measurement targets and four verification targets as [ab0569eff](https://github.com/dzbarsky/clickhouse/commit/ab0569eff320a3f4676bc2c6645f4e845e2d60b0). The normalized ClickHouse executable matched the native CMake build on each CPU; the raw ClickHouse executable matched the previous Bazel build. The unit-test ELF changed on x86-64 and ARM64. The original compiler and linker records verified that the same `intExp.pic.o` moved in the unit-test link.
+
+x86-64 `unit_tests_dbms` changed from `bc523ef4436f034fe89df4a85f84b6056aa61b54825fe405bc51f7a9f5683398` (811,968,280 bytes) to `2a6934b1d4523406f0c1e45b68b515914ba14a4167ffb6c05c0668a5ffb11260` (811,968,280 bytes). The original `CppCompile` actions produced the same `intExp.pic.o` (`90e7e8b2cfdc8910f00023141c089be71cafc3e48e590b551bef0f8d229eb346`, 12,248 bytes). Its zero-based position in the `CppLink` response changed from 7610 to 9998 among 16,293 objects. The other ordered response arguments and other linker inputs matched.
+
+ARM64 `unit_tests_dbms` changed from `24603ddfc53c3eae1efbcea14eaab78ead22de00f2195aa345c9ec1b9df2f4a8` (795,060,896 bytes) to `d489d1b0fd52b57389f107e5650cb58c5f6a33689d9c6090a5198cf0bdef2176` (795,060,896 bytes). The original `CppCompile` actions produced the same `intExp.pic.o` (`cc3fe719d6681a5491378635ad9e70e6ac118c39fe65e75007604fbb8b9937c9`, 4,376 bytes). Its zero-based position in the `CppLink` response changed from 7591 to 9967 among 16,221 objects. The other ordered response arguments and other linker inputs matched.
+
+Each CPU passed 26 selected GoogleTests, seven MergeTree GoogleTests and five header-ownership GoogleTests. The six SQL cases were `gather_arrays`, `table_format`, `time_series_range`, `time_series_tags`, `transposed_distance`, `vector_array`. A separate SELECT in the same SQL action checked the positive and negative overflow boundary for Decimal32, Decimal64, Decimal128 and Decimal256 (16 assertions, one result row).
+
+The original unit comparison rejected the removed compiler argument `-Ibazel-out/k8-opt/bin/bazel/_virtual_includes/clickhouse_config_headers`. A separate check compared the original and current compile commands, action results, complete linker response files and linker input directories on both CPUs. The removed include option did not change the object bytes. The database unit-test executable was compared with the previous Bazel executable; CMake supplied the reference for normalized ClickHouse.
+
+| CPU | CcInfo target | Direct dependency counts compared |
+| --- | --- | --- |
+| x86-64 | `//src:clickhouse_common_io_embedded` | 44 → 39 |
+| x86-64 | `//src:dbms_embedded` | 134 → 113; 113 → 109 |
+| ARM64 | `//src:clickhouse_common_io_embedded` | 44 → 39 |
+| ARM64 | `//src:dbms_embedded` | 134 → 113; 113 → 109 |
+
+The two CcInfo reports on each CPU found all 17 ordered fields equal between the dependency lists tested at `e10eaf426`. Their separate comparison to `ab0569eff` returned `other_difference`: it predicted one new system include directory and measured three. For `//src:clickhouse_common_io_embedded` the count was 195 → 198 (196 expected); for `//src:dbms_embedded` it was 309 → 312 (310 expected). Both original classifications remain recorded. The Boost report matched all 12 fields, and CRoaring passed the 4,096-byte alignment check on both CPUs.
+
+The CcInfo reports explicitly name the virtual include directory for `//src/Common:int_exp`. The OpenLDAP BUILD file and the pinned `rules_cc` rule account for the other two entries: `external/+contrib+clickhouse_openldap/include` and its generated counterpart under `bazel-out/k8-opt/bin`. The original aggregate reports recorded counts, not those two directory names. The actual compiler commands for the unchanged `programs/packed-io/PackedIO.cpp` used both directories on both CPUs. On x86-64 its system include count changed from 301 to 304, adding just those two directories and the int_exp virtual directory. On ARM64 it already had both OpenLDAP directories and changed from 316 to 317.
+
+DWYU ran for the following selection. A compiled target counts as clean only when its ordinary compile and strict dependency report succeeded.
+
+| CPU | Native build | Ordinary DWYU | Strict DWYU | Parent exit | Selected | Declared | Unverified outside selection |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| x86-64 | [Native](https://app.buildbuddy.io/invocation/18572b65-8f54-42aa-89e0-1f200cadc4b6) | [Ordinary](https://app.buildbuddy.io/invocation/170dde4d-1113-4ccd-bd11-9ebc0fa83d3e) | [Strict](https://app.buildbuddy.io/invocation/aab77ae1-eac9-4c3b-84a7-c9cd24b47b0d) | [Failed](https://app.buildbuddy.io/invocation/d9569984-351b-4afd-8af2-f3a3f52de0b9) | 28 | 782 | 754 |
+| ARM64 | [Native](https://app.buildbuddy.io/invocation/f1a0f860-b020-4631-89cd-43e746bbd81e) | [Ordinary](https://app.buildbuddy.io/invocation/fce10d96-2952-4f65-a48b-330a7f15f82b) | [Strict](https://app.buildbuddy.io/invocation/6b3d7d6b-c194-446b-886c-e887b169feab) | [Failed](https://app.buildbuddy.io/invocation/e9e9f309-9330-4c39-bfef-60a0f7ac3bd1) | 26 | 782 | 756 |
+
+| CPU | Production class | Selected | `clean` | `failed` | `findings` | `header_pp_not_verified` | `no_cpp` | `unverified_link_deps` |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| x86-64 | `compiled_native` | 20 | 2 | 0 | 9 | 0 | 0 | 9 |
+| x86-64 | `header_only_native` | 7 | 0 | 4 | 0 | 2 | 0 | 1 |
+| x86-64 | `native_forwarder_no_sources` | 1 | 0 | 0 | 0 | 0 | 1 | 0 |
+| ARM64 | `compiled_native` | 18 | 2 | 0 | 7 | 0 | 0 | 9 |
+| ARM64 | `header_only_native` | 7 | 0 | 4 | 0 | 2 | 0 | 1 |
+| ARM64 | `native_forwarder_no_sources` | 1 | 0 | 0 | 0 | 0 | 1 | 0 |
+
+| CPU | Fixture | Class | Outcome |
+| --- | --- | --- | --- |
+| x86-64 | `//bazel/initial_migration/dwyu_regressions/guarded_toolchain:negative_duplicate_i_system` | `compiled_native` | `findings` |
+| ARM64 | `//bazel/initial_migration/dwyu_regressions/guarded_toolchain:negative_duplicate_i_system` | `compiled_native` | `findings` |
+
+`negative_duplicate_i_system` reported exactly one unused implementation dependency, `@@//bazel/initial_migration/dwyu_regressions/guarded_toolchain:shadow`.
+
+Distinct failed `DwyuCompilerPreprocess` outputs in each selected strict run: x86-64: 545 (previous selection: 602); ARM64: 545 (previous selection: 602). The configured PostgreSQL report identified all five public headers; it did not execute a separate compiler action per header. The two commits select different targets. These counts do not measure the entire repository. Nonselected labels remain unverified.
