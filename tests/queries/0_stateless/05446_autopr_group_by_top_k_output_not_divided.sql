@@ -17,6 +17,9 @@ SET max_threads = 4, max_threads_min_free_memory_per_thread = 0;
 -- The top-K boundary of the first run can leave an entry in the query condition cache, so that the index analysis of
 -- the second run selects fewer rows, which looks like changed data and recollects the statistics instead of pricing.
 SET use_query_condition_cache = 0;
+-- A parallel run records empty hash table statistics, which turn off the local heap of the next ordered query, so that
+-- its plan does not match the remembered one and the second ordered run only collects statistics.
+SET collect_hash_table_stats_during_aggregation = 0;
 
 -- Twice each: the first run only collects statistics, the second is priced.
 SELECT k, count() FROM t_05446 GROUP BY k LIMIT 10 FORMAT Null SETTINGS log_comment = '05446_no_order_by';
