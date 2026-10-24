@@ -116,7 +116,8 @@ private:
     size_t max_single_read_retries;
     size_t max_single_download_retries;
     ReadSettings read_settings;
-    std::vector<char> tmp_buffer;
+    /// `Memory` keeps the padding that the inherited `isPadded()` promises.
+    Memory<> tmp_buffer;
     size_t tmp_buffer_size;
     bool use_external_buffer;
 
