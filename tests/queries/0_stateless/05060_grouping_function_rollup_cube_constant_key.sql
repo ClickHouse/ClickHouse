@@ -1,8 +1,6 @@
 -- A constant GROUP BY key participates in ROLLUP and CUBE like any other key,
 -- so it adds its own grouping levels and its own bit to the GROUPING mask.
 
-SET enable_analyzer = 1;
-
 SELECT 'GROUPING SETS with a constant key';
 
 SELECT
