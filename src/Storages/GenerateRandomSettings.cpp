@@ -3,6 +3,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/GenerateRandomSettings.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Common/Exception.h>
 
 
@@ -86,4 +87,6 @@ bool GenerateRandomSettings::hasBuiltin(std::string_view name)
 {
     return GenerateRandomSettingsImpl::hasBuiltin(name);
 }
+
+IMPLEMENT_SETTINGS_ENUMERATION(GenerateRandomSettings)
 }

@@ -5,6 +5,7 @@
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Storages/SettingDescription.h>
 namespace Poco::Util
 {
     class AbstractConfiguration;
@@ -42,6 +43,10 @@ struct YTsaurusSettings
     static YTsaurusSettings createFromQuery(ASTStorage & storage_def);
     static YTsaurusSettings createFromQuery(const ASTSetQuery & settings_def);
     static bool hasBuiltin(std::string_view name);
+    /// Whether the setting applies only to YTsaurus dictionary sources: the table engine and the `ytsaurus` table function
+    /// reject it.
+    static bool isDictionaryOnlySetting(std::string_view name);
+    SettingDescriptions enumerateSettings() const;
 
 private:
     std::unique_ptr<YTsaurusSettingsImpl> impl;

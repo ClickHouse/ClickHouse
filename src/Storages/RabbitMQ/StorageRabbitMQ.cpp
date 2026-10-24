@@ -1595,6 +1595,15 @@ bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch, bool drive_loop_on_worke
 }
 
 
+/// The settings of `RabbitMQ`, with the format settings the engine sets itself when a table does not state them
+/// (`addSettings`) and the header detection it always disables.
+static SettingDescriptions enumerateRabbitMQSettings(ContextPtr context)
+{
+    auto settings = enumerateStreamingEngineDefaults<RabbitMQSettings>(context);
+    setStreamingErrorHandlingDefaults(settings, "rabbitmq_skip_broken_messages");
+    return settings;
+}
+
 void registerStorageRabbitMQ(StorageFactory & factory);
 void registerStorageRabbitMQ(StorageFactory & factory)
 {
@@ -1640,6 +1649,15 @@ void registerStorageRabbitMQ(StorageFactory & factory)
             .supports_settings = true,
             .source_access_type = AccessTypeObjects::Source::RABBITMQ,
             .has_builtin_setting_fn = RabbitMQSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = enumerateRabbitMQSettings,
+            /// A table that leaves the credentials empty takes them from the `rabbitmq` section of the server
+            /// configuration, whose `vhost` replaces the table's `rabbitmq_vhost`; one that does not state the others
+            /// takes the server's `max_insert_block_size` and `stream_flush_interval_ms`.
+            .is_inherited_setting_fn = [](std::string_view name)
+            {
+                return name == "rabbitmq_username" || name == "rabbitmq_password" || name == "rabbitmq_vhost"
+                    || name == "rabbitmq_max_block_size" || name == "rabbitmq_flush_interval_ms";
+            },
         },
         Documentation{
             .description = R"DOCS_MD(

@@ -6,6 +6,8 @@
 #include <Core/SettingsFields.h>
 #include <Core/Defines.h>
 
+#include <string_view>
+
 // clang-format off
 #if defined(__CLION_IDE__)
 /// CLion freezes for a minute every time it processes this
@@ -2055,3 +2057,11 @@ Supported modes:
 #define LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS) \
     FORMAT_FACTORY_SETTINGS(M, ALIAS) \
     OBSOLETE_FORMAT_SETTINGS(M, ALIAS)
+
+namespace DB
+{
+
+/// Whether `name` is one of the format settings above, or an alias of one.
+bool isFormatFactorySetting(std::string_view name);
+
+}
