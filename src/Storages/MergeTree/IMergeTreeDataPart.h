@@ -775,7 +775,11 @@ public:
     bool hasLightweightDelete() const;
 
     /// Read existing rows count from _row_exists column
-    UInt64 readExistingRowsCount();
+    UInt64 readExistingRowsCount() const;
+
+    /// True if at least one row is not hidden by a lightweight delete. Reads `_row_exists` up to the
+    /// first live row rather than trusting `existing_rows_count`, which a mutation may copy unchanged.
+    bool hasExistingRows() const;
 
     void writeChecksums(const MergeTreeDataPartChecksums & checksums_, const WriteSettings & settings);
 
@@ -1007,6 +1011,9 @@ private:
     /// Load existing rows count from _row_exists column
     /// if load_existing_rows_count_for_old_parts and exclude_deleted_rows_for_part_size_in_merge are both enabled.
     void loadExistingRowsCount();
+
+    /// Count the rows `_row_exists` keeps, or stop at the first one when `stop_at_first` is set.
+    UInt64 countExistingRows(bool stop_at_first) const;
 
     /// Loads ttl infos in json format from file ttl.txt. If file doesn't exists assigns ttl infos with all zeros
     void loadTTLInfos();

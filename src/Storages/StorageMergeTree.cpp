@@ -4165,11 +4165,13 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     /// `allow_replace_partition_from_empty_source` setting, or use `DROP PARTITION` instead.
     /// The check is skipped for `is_all` because `REPLACE PARTITION ALL` is already rejected
     /// above with `SUPPORT_IS_DISABLED`.
-    if (replace && !is_all && src_parts.empty()
-        && !local_context->getSettingsRef()[Setting::allow_replace_partition_from_empty_source])
+    /// Parts whose rows are all gone count as no parts: `MOVE PARTITION`, a mutation that deletes every row
+    /// and a lightweight `DELETE` of every row leave such a part active (#124118).
+    if (replace && !is_all && !local_context->getSettingsRef()[Setting::allow_replace_partition_from_empty_source]
+        && std::ranges::none_of(src_parts, [](const auto & part) { return part->hasExistingRows(); }))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Source table {} has no parts in partition {}: refusing `REPLACE PARTITION` because it would "
+            "Source table {} has no rows in partition {}: refusing `REPLACE PARTITION` because it would "
             "silently drop the destination partition's data. "
             "Set `allow_replace_partition_from_empty_source = 1` to restore the previous behavior, "
             "or use `ALTER TABLE ... DROP PARTITION` if you intend to drop the destination data.",
