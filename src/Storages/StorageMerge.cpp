@@ -16,6 +16,7 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
+#include <Analyzer/traverseQueryTree.h>
 #include <Common/Logger.h>
 #include <Common/NaNUtils.h>
 #include <Common/logger_useful.h>
@@ -48,7 +49,6 @@
 #include <Interpreters/addMissingDefaults.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -1032,10 +1032,62 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
     pipeline.addResources(resources);
 }
 
+/// Whether the query tree references the given column of the given table expression anywhere - in
+/// the projection, in a filter, inside an alias expression, or in any subquery.
+/// `ReadFromMerge::getModifiedQueryInfo` replaces every such reference with a constant carrying the
+/// child's own name, so a query that references the column must never reuse another child's cached
+/// rewritten query tree, even when the column is not among the columns the plan reads. A column of
+/// the same name that comes from another table expression (e.g. another `Merge` table in a
+/// subquery or a `JOIN`) is not rewritten, so it does not count.
+static bool queryTreeReferencesColumn(const QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression, const String & column_name)
+{
+    if (!node || !table_expression)
+        return false;
+
+    bool found = false;
+    traverseQueryTree(node, Everything{},
+        [&](const QueryTreeNodePtr & current_node)
+        {
+            if (const auto * column_node = current_node->as<ColumnNode>())
+                found |= column_node->getColumnName() == column_name
+                    && column_node->getColumnSourceOrNull() == table_expression;
+        });
+
+    return found;
+}
+
 void ReadFromMerge::filterTablesAndCreateChildrenPlans()
 {
     if (child_plans)
         return;
+
+    /// The Merge-level `_database`/`_table` virtual columns identify the child table a row came
+    /// from, and `getSelectedTables` prunes children by evaluating a filter on them against the
+    /// child's own name. So the Merge produces them itself with that same name, and never requests
+    /// them from the child: a child that delegates its read (`Distributed`, a nested `Merge`,
+    /// `Buffer`) would stamp the name of whatever storage eventually reads the rows, and the values
+    /// would contradict the pruning, silently dropping rows (see `00717_merge_and_distributed`).
+    has_database_virtual_column = false;
+    has_table_virtual_column = false;
+    column_names.clear();
+    column_names.reserve(all_column_names.size());
+
+    for (const auto & column_name : all_column_names)
+    {
+        if (column_name == "_database" && merge_storage_snapshot->metadata->isVirtualColumn(column_name))
+            has_database_virtual_column = true;
+        else if (column_name == "_table" && merge_storage_snapshot->metadata->isVirtualColumn(column_name))
+            has_table_virtual_column = true;
+        else
+            column_names.push_back(column_name);
+    }
+
+    /// The `_table` substitution in `getModifiedQueryInfo` is not conditioned on the column being
+    /// requested, so the query-info cache must look at every reference to it, not only at
+    /// `has_table_virtual_column`.
+    query_references_table_virtual_column = has_table_virtual_column
+        || (merge_storage_snapshot->metadata->isVirtualColumn("_table")
+            && queryTreeReferencesColumn(query_info.query_tree, query_info.table_expression, "_table"));
 
     selected_tables = getSelectedTables(context);
     child_plans = createChildrenPlans(query_info);
@@ -1265,7 +1317,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             auto nested_storage_snapshot = storage->getStorageSnapshot(storage_metadata_snapshot, modified_context);
 
             Names column_names_as_aliases;
-            Names real_column_names = all_column_names;
+            Names real_column_names = column_names;
 
             /// If there are no real columns requested from this table, we will read the smallest column.
             /// We should remember it to not include this column in the result.
@@ -1281,6 +1333,30 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
                 row_policy_data_opt = RowPolicyData(row_policy_filter_ptr, storage_metadata_snapshot, modified_context);
                 row_policy_data_opt->extendNames(real_column_names);
+            }
+
+            /// A name the child declares neither as a column nor as a subcolumn is not read from it and
+            /// is filled with the default value by `convertAndFilterSourceStream`. The exception is a
+            /// subcolumn of a column the child does have under a different type: that one is read
+            /// through the whole column - see `getColumnToReadInsteadOfSubcolumn`.
+            const auto child_columns = nested_storage_snapshot->getAllColumnsDescription();
+            const auto & merge_columns = merge_storage_snapshot->metadata->getColumns();
+            const auto resolve_column_in_child = [&](const String & column_name) -> std::optional<String>
+            {
+                if (child_columns.has(column_name) || child_columns.hasSubcolumn(GetColumnsOptions::All, column_name))
+                    return column_name;
+                return getColumnToReadInsteadOfSubcolumn(column_name, child_columns, merge_columns);
+            };
+
+            /// Query-tree rewriting turns the Merge virtual columns into constants. Request a
+            /// physical column before constructing a plan as well, otherwise a delegating child
+            /// can receive `SELECT` with an empty projection after that rewriting. The same holds
+            /// when none of the requested columns exists in the child: the substitute has to be
+            /// known here to become part of the child's projection, e.g. of a joined read.
+            if (std::ranges::none_of(real_column_names, [&](const String & column_name) { return resolve_column_in_child(column_name).has_value(); }))
+            {
+                real_column_names.push_back(ExpressionActions::getSmallestColumn(storage_metadata_snapshot->getColumns().getAllPhysical()).name);
+                is_smallest_column_requested = true;
             }
 
             SelectQueryInfo modified_query_info;
@@ -1300,8 +1376,15 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             /// The cache key includes the database name because getModifiedQueryInfo injects
             /// a _database constant into the query tree (analyzer path), so tables in
             /// different databases must not share cached entries.
+            /// `query_references_table_virtual_column` also blocks caching: getModifiedQueryInfo
+            /// then injects a `_table` constant carrying the table's own name into the query tree,
+            /// and that name differs between the tables of one structure bucket. The flag covers
+            /// every reference, not only the columns the plan reads, because the substitution is
+            /// not conditioned on the column being requested. `_database` needs no such guard only
+            /// because the cache key includes the database name.
             bool can_cache = query_info.table_expression
                 && !row_policy_data_opt
+                && !query_references_table_virtual_column
                 && common_processed_stage == QueryProcessingStage::FetchColumns
                 && !std::dynamic_pointer_cast<StorageMerge>(storage)
                 && !std::dynamic_pointer_cast<StorageDistributed>(storage)
@@ -1383,31 +1466,20 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
             Names column_names_to_read = column_names_as_aliases.empty() ? std::move(real_column_names) : std::move(column_names_as_aliases);
 
-            /// A name the child declares neither as a column nor as a subcolumn is dropped here and
-            /// filled with the default value by `convertAndFilterSourceStream`. The exception is a
-            /// subcolumn of a column the child does have under a different type: that one is read
-            /// through the whole column - see `getColumnToReadInsteadOfSubcolumn`.
+            /// Drop the names the child does not have, see `resolve_column_in_child`.
             {
-                const auto child_columns = nested_storage_snapshot->getAllColumnsDescription();
-                const auto & merge_columns = merge_storage_snapshot->metadata->getColumns();
-
                 Names resolved_column_names;
                 NameSet resolved_column_names_set;
                 resolved_column_names.reserve(column_names_to_read.size());
 
-                for (auto & column_name : column_names_to_read)
+                for (const auto & column_name : column_names_to_read)
                 {
-                    String name_to_read = std::move(column_name);
-                    if (!child_columns.has(name_to_read) && !child_columns.hasSubcolumn(GetColumnsOptions::All, name_to_read))
-                    {
-                        auto column_to_read = getColumnToReadInsteadOfSubcolumn(name_to_read, child_columns, merge_columns);
-                        if (!column_to_read)
-                            continue;
-                        name_to_read = std::move(*column_to_read);
-                    }
+                    auto name_to_read = resolve_column_in_child(column_name);
+                    if (!name_to_read)
+                        continue;
 
-                    if (resolved_column_names_set.emplace(name_to_read).second)
-                        resolved_column_names.push_back(std::move(name_to_read));
+                    if (resolved_column_names_set.emplace(*name_to_read).second)
+                        resolved_column_names.push_back(std::move(*name_to_read));
                 }
 
                 column_names_to_read = std::move(resolved_column_names);
@@ -1435,11 +1507,14 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             {
                 /// Source tables could have different but convertible types, like numeric types of different width.
                 /// We must return streams with structure equals to structure of Merge table.
+                /// This also produces the Merge-level `_database`/`_table` virtual columns, in the middle of the
+                /// chain - see `addVirtualColumns` for why their place in it is fixed.
                 convertAndFilterSourceStream(
                     *common_header,
                     query_info,
                     modified_query_info,
                     nested_storage_snapshot,
+                    table,
                     merge_storage_snapshot->metadata->getColumns(),
                     aliases,
                     row_policy_data_opt,
@@ -1515,20 +1590,105 @@ private:
     TableExpressionNodePtr replacement_table_expression;
 };
 
+/// Replaces every reference to the given columns of the child table expression by a fixed node,
+/// including the references inside subqueries.
+///
+/// `replaceColumns` deliberately stops at `QUERY`/`UNION` boundaries, so a correlated reference to
+/// a Merge virtual column - which has to be qualified, e.g.
+/// `WHERE EXISTS (SELECT 1 FROM numbers(1) WHERE m._table = 'child')` - would keep its
+/// `ColumnNode` and be evaluated by the child itself. A delegating child evaluates it against the
+/// storage that eventually reads the rows, which is exactly the name the Merge virtual columns must
+/// not report.
+class ReplaceColumnsEverywhereVisitor : public InDepthQueryTreeVisitor<ReplaceColumnsEverywhereVisitor>
+{
+public:
+    ReplaceColumnsEverywhereVisitor(
+        QueryTreeNodePtr table_expression_node_,
+        std::unordered_map<std::string, QueryTreeNodePtr> column_name_to_node_)
+        : table_expression_node(std::move(table_expression_node_))
+        , column_name_to_node(std::move(column_name_to_node_))
+    {}
+
+    void visitImpl(QueryTreeNodePtr & node)
+    {
+        const auto * column_node = node->as<ColumnNode>();
+        if (!column_node)
+            return;
+
+        if (column_node->getColumnSourceOrNull() != table_expression_node)
+            return;
+
+        auto node_it = column_name_to_node.find(column_node->getColumnName());
+        if (node_it == column_name_to_node.end())
+            return;
+
+        node = node_it->second;
+    }
+
+private:
+    QueryTreeNodePtr table_expression_node;
+    std::unordered_map<std::string, QueryTreeNodePtr> column_name_to_node;
+};
+
+/// The action name the outer plan gives the `Merge` virtual column.
+String outerActionNameOfVirtualColumn(const String & column_name)
+{
+    return "__table1." + column_name;
+}
+
+/// The action name the constant replacing the `Merge` virtual column carries in a child that executes
+/// the query above `FetchColumns`. It must differ from the column identifier the child's own planner
+/// gives a physical column of the same name.
+String childActionNameOfVirtualColumn(const String & column_name)
+{
+    return "__merge_virtual_column." + column_name;
+}
+
+/// The name the replacement of the `Merge` virtual column has in the output of such a child: the pinned
+/// `String` constant is wrapped into `toLowCardinality`, see `getModifiedQueryInfo`.
+String childOutputNameOfVirtualColumn(const String & column_name)
+{
+    return "toLowCardinality(" + childActionNameOfVirtualColumn(column_name) + ")";
+}
+
 QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
     QueryTreeNodePtr query,
     TableExpressionNodePtr original_table_expression,
     TableExpressionNodePtr replacement_table_expression,
     const ContextPtr & context,
-    const Names & required_column_names)
+    const Names & required_column_names,
+    const NamesAndTypesList & child_only_columns,
+    bool is_fetch_columns_stage,
+    std::vector<std::pair<size_t, QueryTreeNodePtr>> & child_only_projection)
 {
     auto * query_node = query->as<QueryNode>();
     auto join_tree_type = query_node->getJoinTreeNode()->getNodeType();
     auto modified_query = query_node->cloneAndReplace(original_table_expression, replacement_table_expression);
 
-    // For the case when join tree is just a table or a table function we don't need to do anything more.
+    // For the case when join tree is just a table or a table function we don't need to do anything more,
+    // except for making the substitute read part of the projection at `FetchColumns`, as below for a JOIN:
+    // a child that analyzes the query itself (`Distributed`) would otherwise pick the smallest column of
+    // its own, while the shards pick theirs. This is the case of a `Merge` nested in another one, which
+    // removed the JOIN already.
     if (join_tree_type == QueryTreeNodeType::TABLE || join_tree_type == QueryTreeNodeType::TABLE_FUNCTION)
+    {
+        if (is_fetch_columns_stage && !child_only_columns.empty())
+        {
+            auto & modified_query_node = modified_query->as<QueryNode &>();
+            auto & projection = modified_query_node.getProjection().getNodes();
+            auto projection_columns = modified_query_node.getProjectionColumns();
+            for (const auto & child_column : child_only_columns)
+            {
+                if (std::ranges::any_of(projection_columns, [&](const auto & column) { return column.name == child_column.name; }))
+                    continue;
+                child_only_projection.emplace_back(projection.size(), std::make_shared<ColumnNode>(child_column, replacement_table_expression));
+                projection.push_back(child_only_projection.back().second);
+                projection_columns.push_back(child_column);
+            }
+            modified_query_node.resolveProjectionColumns(std::move(projection_columns));
+        }
         return modified_query;
+    }
 
     // JOIN needs to be removed because StorageMerge should produce not joined data.
     // GROUP BY should be removed as well.
@@ -1614,36 +1774,54 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
     // which is quadratic in the number of columns. As this function is called once per source table,
     // the total cost becomes cubic, and a query joining `merge` over many wide tables (for example,
     // `merge('system', '')`) spends minutes in query planning.
+    //
+    // A column in `child_only_columns` is a physical column of the child that the `Merge` does not
+    // declare (the substitute read for a query over nothing but the `Merge` virtual columns), so it
+    // cannot be resolved against the `Merge` and is bound to the child table expression directly.
     if (!required_column_names.empty())
     {
         auto identifiers_list = std::make_shared<ListNode>();
         identifiers_list->getNodes().reserve(required_column_names.size());
         for (const auto & column_name : required_column_names)
-            identifiers_list->getNodes().push_back(std::make_shared<IdentifierNode>(Identifier{column_name}));
+            if (!child_only_columns.contains(column_name))
+                identifiers_list->getNodes().push_back(std::make_shared<IdentifierNode>(Identifier{column_name}));
 
+        const size_t expected_resolved_nodes = identifiers_list->getNodes().size();
         QueryTreeNodePtr resolved_identifiers = std::move(identifiers_list);
 
-        QueryAnalysisPass query_analysis_pass(original_table_expression);
-        query_analysis_pass.run(resolved_identifiers, context);
+        if (expected_resolved_nodes != 0)
+        {
+            QueryAnalysisPass query_analysis_pass(original_table_expression);
+            query_analysis_pass.run(resolved_identifiers, context);
+        }
 
         auto & resolved_nodes = resolved_identifiers->as<ListNode &>().getNodes();
-        if (resolved_nodes.size() != required_column_names.size())
+        if (resolved_nodes.size() != expected_resolved_nodes)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Expected {} resolved columns, got {}",
-                required_column_names.size(),
+                expected_resolved_nodes,
                 resolved_nodes.size());
 
         projection.reserve(required_column_names.size());
         projection_columns.reserve(required_column_names.size());
 
-        for (size_t i = 0; i < required_column_names.size(); ++i)
+        size_t next_resolved_node = 0;
+        for (const auto & column_name : required_column_names)
         {
-            auto & fake_node = resolved_nodes[i];
+            if (auto child_column = child_only_columns.tryGetByName(column_name))
+            {
+                child_only_projection.emplace_back(projection.size(), std::make_shared<ColumnNode>(*child_column, replacement_table_expression));
+                projection.push_back(child_only_projection.back().second);
+                projection_columns.push_back(*child_column);
+                continue;
+            }
+
+            auto & fake_node = resolved_nodes[next_resolved_node++];
 
             auto * resolved_column = fake_node->as<ColumnNode>();
             if (!resolved_column)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Required column '{}' is not resolved", required_column_names[i]);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Required column '{}' is not resolved", column_name);
             auto fake_column = resolved_column->getColumn();
 
             // Identifier is resolved to ColumnNode, but we need to get rid of ALIAS columns
@@ -1688,22 +1866,141 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
         if (query_info.table_expression_modifiers)
             replacement_table_expression->setTableExpressionModifiers(*query_info.table_expression_modifiers);
 
-        modified_query_info.query_tree = replaceTableExpressionAndRemoveJoin(modified_query_info.query_tree, modified_query_info.table_expression, replacement_table_expression, modified_context, required_column_names);
+        /// A physical column of the child that the `Merge` does not declare can be requested only as the
+        /// substitute read of a query over nothing but the `Merge` virtual columns. A substitute named like
+        /// a `Merge` virtual column replaced by a constant below (`_database`, `_table`) is the child's
+        /// column as well: the `Merge` never requests those virtual columns from a child.
+        NamesAndTypesList child_only_columns;
+        if (is_smallest_column_requested)
+        {
+            const auto merge_column_options = GetColumnsOptions(GetColumnsOptions::All)
+                .withSubcolumns(merge_storage_snapshot->storage.supportsSubcolumns())
+                .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
+            for (const auto & column_name : required_column_names)
+            {
+                const bool is_merge_name_column = (column_name == "_database" || column_name == "_table")
+                    && merge_storage_snapshot->metadata->isVirtualColumn(column_name);
+                if (!is_merge_name_column && merge_storage_snapshot->tryGetColumn(merge_column_options, column_name))
+                    continue;
+                if (auto child_column = storage_snapshot_->metadata->getColumns().tryGetPhysical(column_name))
+                    child_only_columns.push_back(*child_column);
+            }
+        }
+
+        /// A `Distributed` child resolves the query tree against `initial_storage_snapshot`, the `Merge`
+        /// columns, so a child-only column has to be declared there as well.
+        if (!child_only_columns.empty())
+        {
+            auto metadata_with_child_only_columns = std::make_shared<StorageInMemoryMetadata>(*merge_storage_snapshot->metadata);
+            ColumnsDescription columns = metadata_with_child_only_columns->getColumns();
+            for (const auto & child_column : child_only_columns)
+                if (!columns.has(child_column.name))
+                    columns.add(ColumnDescription(child_column.name, child_column.type));
+            metadata_with_child_only_columns->setColumns(std::move(columns));
+            modified_query_info.initial_storage_snapshot
+                = std::make_shared<StorageSnapshot>(merge_storage_snapshot->storage, std::move(metadata_with_child_only_columns));
+        }
+
+        std::vector<std::pair<size_t, QueryTreeNodePtr>> child_only_projection;
+        modified_query_info.query_tree = replaceTableExpressionAndRemoveJoin(modified_query_info.query_tree, modified_query_info.table_expression, replacement_table_expression, modified_context, required_column_names, child_only_columns,
+            common_processed_stage == QueryProcessingStage::FetchColumns, child_only_projection);
         modified_query_info.table_expression = replacement_table_expression;
         modified_query_info.planner_context->getOrCreateTableExpressionData(replacement_table_expression);
 
         auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(storage_snapshot_->storage.supportsSubcolumns()).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
 
+        const auto & storage_columns = storage_snapshot_->metadata->getColumns();
+
+        std::unordered_map<std::string, QueryTreeNodePtr> column_name_to_node;
+
+        /// The Merge-level `_database`/`_table` virtual columns carry the child's own name - the
+        /// name the child-pruning filter in `getSelectedTables` matches - so their references are
+        /// replaced with constants right in the child query tree, and never left for the child to
+        /// resolve: a child that delegates its read would stamp the name of whatever storage
+        /// eventually reads the rows (a `Distributed` child stamps the remote table's name). At
+        /// `FetchColumns` the constant-column step in `addVirtualColumns` covers the plan header,
+        /// but at later stages the child executes the whole query - a `Distributed` child runs it
+        /// on the shards - so any expression over these columns must already see the constant.
+        /// `__actionName` pins the action name of this column in the child's plan. Above
+        /// `FetchColumns` that name is not the one the outer plan expects (`__table1._table`):
+        /// it is the column identifier the child's own planner gives a physical column of the
+        /// same name, and a child that executes the query itself (`Distributed`) may read such a
+        /// physical column - as the smallest column, or for one of its `ALIAS` columns - which would
+        /// then shadow the constant. So a name of its own is pinned instead, and `addVirtualColumns`
+        /// renames it back in the child's output.
+        ///
+        /// The substitution is not conditioned on the column being among the requested ones: a
+        /// column referenced only by a filter is not requested at stages above `FetchColumns`,
+        /// yet its references in the query tree are exactly the ones that must see the constant.
+        /// `replaceColumns` does nothing when the query does not reference the column.
+        ///
+        /// A correlated reference from inside a subquery is replaced too, by a bare constant: it is
+        /// not part of the child plan header, so it needs no pinned action name.
+        ///
+        /// The replacement runs right here, before the child's `ALIAS` columns are expanded below:
+        /// an alias expression of the child is the child's own, so a `_database`/`_table` it reads
+        /// is the child's column (e.g. a physical one), not the Merge virtual column, and once it is
+        /// rebound to the child table expression it can no longer be told apart by name.
+        std::unordered_map<std::string, QueryTreeNodePtr> virtual_column_name_to_node;
+        std::unordered_map<std::string, QueryTreeNodePtr> virtual_column_name_to_constant;
+
+        /// The constant keeps the type of the virtual column: a child that executes the query itself
+        /// re-analyzes it, and an expression requiring `LowCardinality` must see that type there too.
+        auto lc_string_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+
+        auto add_child_name_constant = [&](const String & column_name, const String & value)
+        {
+            if (!merge_storage_snapshot->metadata->isVirtualColumn(column_name))
+                return;
+
+            auto action_name_node = std::make_shared<ConstantNode>(common_processed_stage > QueryProcessingStage::FetchColumns
+                ? childActionNameOfVirtualColumn(column_name)
+                : outerActionNameOfVirtualColumn(column_name));
+
+            /// `__actionName` gets a `String` value, and `toLowCardinality` restores the type outside of it:
+            /// a child that executes the query itself sends this expression to the shards, and older
+            /// servers reject an argument of `__actionName` of any type other than `String`.
+            auto action_name_function_node = std::make_shared<FunctionNode>("__actionName");
+            action_name_function_node->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(value, std::make_shared<DataTypeString>()));
+            action_name_function_node->getArguments().getNodes().push_back(std::move(action_name_node));
+            action_name_function_node->resolveAsFunction(FunctionFactory::instance().get("__actionName", modified_context));
+
+            auto function_node = std::make_shared<FunctionNode>("toLowCardinality");
+            function_node->getArguments().getNodes().push_back(std::move(action_name_function_node));
+            function_node->resolveAsFunction(FunctionFactory::instance().get("toLowCardinality", modified_context));
+
+            virtual_column_name_to_node.emplace(column_name, std::move(function_node));
+            virtual_column_name_to_constant.emplace(column_name, std::make_shared<ConstantNode>(value, lc_string_type));
+        };
+
+        add_child_name_constant("_database", database_name);
+        add_child_name_constant("_table", table_name);
+
+        if (!virtual_column_name_to_node.empty())
+        {
+            replaceColumns(modified_query_info.query_tree,
+                replacement_table_expression,
+                virtual_column_name_to_node);
+
+            /// `replaceColumns` does not descend into subqueries, and a correlated reference to a
+            /// Merge virtual column must see the child's name as well.
+            ReplaceColumnsEverywhereVisitor visitor(replacement_table_expression, std::move(virtual_column_name_to_constant));
+            visitor.visit(modified_query_info.query_tree);
+
+            /// The substitute read of the child is the child's physical column even when it is named
+            /// `_database` or `_table`, so it is not a reference to the Merge virtual column: restore it.
+            auto & projection = modified_query_info.query_tree->as<QueryNode &>().getProjection().getNodes();
+            for (const auto & [position, node] : child_only_projection)
+                projection[position] = node;
+        }
+
         /// Replace references to columns that don't exist in this child table with default values.
         /// This happens when merge() is used over tables with different schemas and the processing
         /// stage is above FetchColumns (e.g., for distributed/remote tables where the full query
         /// is sent to the child for processing).
-        const auto & storage_columns = storage_snapshot_->metadata->getColumns();
-
-        std::unordered_map<std::string, QueryTreeNodePtr> column_name_to_node;
         for (const auto & column_name : required_column_names)
         {
-            if (column_name_to_node.contains(column_name))
+            if (column_name_to_node.contains(column_name) || virtual_column_name_to_node.contains(column_name))
                 continue;
 
             if (storage_snapshot_->tryGetColumn(get_column_options, column_name))
@@ -1901,6 +2198,105 @@ static bool recursivelyApplyToReadingSteps(QueryPlan::Node * node, const std::fu
         return false; /// Only a `ReadFromMergeTree` can be asked to read in order; any other read does not promise it.
 
     return ok;
+}
+
+void ReadFromMerge::addVirtualColumns(
+    ChildPlan & child,
+    QueryProcessingStage::Enum processed_stage,
+    const StorageWithLockAndName & storage_with_lock) const
+{
+    /// At stages above `FetchColumns` the child executed the whole query, and the constants
+    /// injected by `getModifiedQueryInfo` are already part of its output, under the action names
+    /// of their own pinned there. Give them back the names the outer plan expects.
+    if (processed_stage > QueryProcessingStage::FetchColumns)
+    {
+        const auto & header = child.plan.getCurrentHeader();
+        ActionsDAG renaming_dag(header->getColumnsWithTypeAndName());
+        bool renamed = false;
+        for (auto & output : renaming_dag.getOutputs())
+        {
+            for (const auto * column_name : {"_database", "_table"})
+            {
+                if (output->result_name == childOutputNameOfVirtualColumn(column_name))
+                {
+                    output = &renaming_dag.addAlias(*output, outerActionNameOfVirtualColumn(column_name));
+                    renamed = true;
+                }
+            }
+        }
+
+        if (renamed)
+        {
+            auto renaming_step = std::make_unique<ExpressionStep>(header, std::move(renaming_dag));
+            renaming_step->setStepDescription("Rename the _database and _table virtual columns for Merge", 100);
+            child.plan.addStep(std::move(renaming_step));
+        }
+        return;
+    }
+
+    if (!has_database_virtual_column && !has_table_virtual_column)
+        return;
+
+    const auto & database_name = std::get<0>(storage_with_lock);
+    const auto & table_name = std::get<3>(storage_with_lock);
+
+    /// The names are the ones the child was selected by, matching the pruning in
+    /// `getSelectedTables`.
+    ///
+    /// A child column of the same name never reaches the result. The Merge never requests
+    /// `_database`/`_table` from a child (see `filterTablesAndCreateChildrenPlans`), so a child
+    /// column of that name is in the stream only because some other path asked for it:
+    ///  - the substitute for a read of nothing but virtual columns, which
+    ///    `ExpressionActions::getSmallestColumn` can pick a physical `_table` for;
+    ///  - a column a row policy filter needs (`RowPolicyData::extendNames`);
+    ///  - the child's own `_table` behind one of its `ALIAS` columns.
+    /// All three are transient, and none of them holds the value the Merge must report, so the
+    /// constant replaces such a column instead of yielding to it. This is why this step runs after
+    /// the child's `ALIAS` expressions and its row policy filter - both are evaluated against the
+    /// child's own columns, so the child's value has to survive until they have run - and before the
+    /// conversion to the common header, which is where the value becomes visible.
+    ///
+    /// Each constant is inserted at the position its column has in `all_column_names`, not
+    /// appended: a child column whose execution name differs from the common header (e.g. the
+    /// analyzer-qualified names a `Distributed` child produces) is matched by POSITION in
+    /// `convertAndFilterSourceStream`, so the other columns must keep the slots they have in
+    /// the common header.
+    const auto & header = child.plan.getCurrentHeader();
+    ActionsDAG adding_columns_dag(header->getColumnsWithTypeAndName());
+    const auto inputs = adding_columns_dag.getOutputs(); /// the inputs, in the header's order
+    ActionsDAG::NodeRawConstPtrs new_outputs;
+    new_outputs.reserve(inputs.size() + 2);
+
+    size_t next_input = 0;
+    /// The next column of the child that keeps its own name in the result.
+    const auto take_child_column = [&]() -> const ActionsDAG::Node *
+    {
+        while (next_input < inputs.size() && producedByMerge(inputs[next_input]->result_name))
+            ++next_input;
+        return next_input < inputs.size() ? inputs[next_input++] : nullptr;
+    };
+
+    auto lc_string_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+    for (const auto & column_name : all_column_names)
+    {
+        if (producedByMerge(column_name))
+        {
+            const auto & value = column_name == "_database" ? database_name : table_name;
+            new_outputs.push_back(&adding_columns_dag.addColumn(lc_string_type->createColumnConst(0, value), lc_string_type, column_name));
+        }
+        else if (const auto * child_column = take_child_column())
+            new_outputs.push_back(child_column);
+    }
+    /// Anything beyond `all_column_names` (the substitute for an all-virtual read, the columns a
+    /// row policy filter needs) stays behind the common columns, where the name-based matching
+    /// handles it.
+    while (const auto * child_column = take_child_column())
+        new_outputs.push_back(child_column);
+    adding_columns_dag.getOutputs() = std::move(new_outputs);
+
+    auto expression_step = std::make_unique<ExpressionStep>(header, std::move(adding_columns_dag));
+    expression_step->setStepDescription("Add the _database and _table virtual columns for Merge", 100);
+    child.plan.addStep(std::move(expression_step));
 }
 
 /// Whether both keys start with the same `prefix_size` columns, sorted in the same directions.
@@ -2215,13 +2611,11 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
                 continue;
             }
 
-            /// The `_table` and `_database` values of the rows are stamped by the table that
-            /// actually produces the rows. If the child table reads from other tables, its rows
-            /// carry those tables' names, not the child's own name, so pruning the child by its
-            /// name could incorrectly discard the rows the predicate selects. Such children are
-            /// always read, and the predicate is applied to the rows.
+            /// The `_table` and `_database` values of the rows always carry the name of the child
+            /// (the `Merge` engine produces these columns itself, even if the child reads from
+            /// other tables), so the child can be pruned by its own name.
             if (storage.get() != storage_merge.get())
-                if (!table_filter || storage->readsFromOtherTables() || table_filter(iterator->databaseName(), iterator->name()))
+                if (!table_filter || table_filter(iterator->databaseName(), iterator->name()))
                     if (granted_show_on_all_tables || access->isGranted(AccessType::SHOW_TABLES, iterator->databaseName(), iterator->name()))
                     {
                         if  (!granted_select_on_all_tables)
@@ -2347,18 +2741,25 @@ void ReadFromMerge::convertAndFilterSourceStream(
     const SelectQueryInfo & outer_query_info,
     SelectQueryInfo & modified_query_info,
     const StorageSnapshotPtr & snapshot,
+    const StorageWithLockAndName & storage_with_lock,
     const ColumnsDescription & merge_columns,
     const Aliases & aliases,
     const RowPolicyDataOpt & row_policy_data_opt,
     ContextPtr local_context,
     ChildPlan & child,
     bool is_smallest_column_requested,
-    const Names & column_names_read)
+    const Names & column_names_read) const
 {
     auto before_block_header = child.plan.getCurrentHeader();
 
     auto pipe_columns = before_block_header->getNamesAndTypesList();
 
+    /// Above `FetchColumns` the child executed the query tree in which `getModifiedQueryInfo` had
+    /// already replaced the `ALIAS` columns by their expressions, so its output needs no alias
+    /// evaluation, and it does not even carry the columns those expressions read. Evaluating them
+    /// here would compute them over the child's output instead, e.g. over the constant that took the
+    /// place of a `_database`/`_table` column of the child.
+    if (common_processed_stage == QueryProcessingStage::FetchColumns)
     {
         for (const auto & alias : aliases)
         {
@@ -2389,6 +2790,10 @@ void ReadFromMerge::convertAndFilterSourceStream(
     /// This is the filter for the individual source table, that's why filtering has to be done before all structure adaptations.
     if (row_policy_data_opt && !child.applies_row_policy)
         row_policy_data_opt->addFilterTransform(child.plan, local_context);
+
+    /// Everything that reads the child's own columns has run by now, so the Merge-level
+    /// `_database`/`_table` virtual columns can take over a child column of the same name.
+    addVirtualColumns(child, common_processed_stage, storage_with_lock);
 
     /** Output headers may differ from what StorageMerge expects in some cases.
       * When the child table engine produces a query plan for the stage after FetchColumns,
@@ -2509,6 +2914,12 @@ void ReadFromMerge::convertAndFilterSourceStream(
 
     String smallest_column_name = ExpressionActions::getSmallestColumn(snapshot->metadata->getColumns().getAllPhysical()).name;
 
+    /// A child read at `FetchColumns` through a substitute has none of the requested columns, so a column of
+    /// it that is not in the common header is the substitute, even under another name: a `Distributed` child
+    /// names it by its column identifier (`__table1.y`). It must not be matched by position to a column of
+    /// the common header, which the child does not have and which is filled with the default value instead.
+    const bool child_has_no_requested_columns = is_smallest_column_requested && common_processed_stage == QueryProcessingStage::FetchColumns;
+
     /// A column the child reads only for itself (its row policy or ALIAS columns) makes this a by-name read.
     const NameSet column_names_read_set(column_names_read.begin(), column_names_read.end());
     const bool has_columns_read_only_for_child = std::ranges::any_of(current_step_columns, [&](const auto & column)
@@ -2521,7 +2932,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
         {
             converted_columns.push_back(materializeIfSourceIsNotConst(header.getByName(source_elem.name), source_elem));
         }
-        else if (is_smallest_column_requested && smallest_column_name == source_elem.name)
+        else if (child_has_no_requested_columns || (is_smallest_column_requested && smallest_column_name == source_elem.name))
         {
             /// This column is unneeded in the result.
             converted_columns.push_back(source_elem);
@@ -3084,11 +3495,13 @@ SELECT * FROM WatchLog;
 
 ## Virtual columns {#virtual-columns}
 
-- `_table` — The name of the table from which data was read. Type: [String](/reference/data-types/string).
+- `_table` — The name of the table the `Merge` table read the row from, i.e. one of the tables matched by `tables_regexp`. Type: [String](/reference/data-types/string).
 
-    If you filter on `_table`, (for example `WHERE _table='xyz'`) only tables which satisfy the filter condition are read. A table that itself reads from other tables (`Distributed`, `Merge`, `Buffer`, `Alias`) returns rows carrying the name of the table that actually produced them, so such tables are always read and the filter is applied to their rows.
+    If you filter on `_table`, (for example `WHERE _table='xyz'`) only tables which satisfy the filter condition are read.
 
-- `_database` — Contains the name of the database from which data was read. Type: [String](/reference/data-types/string).
+    When the matched table reads its data through another table (`Distributed`, `Merge`, `Buffer`, `Alias`), `_table` still contains the matched table's name, not the name of the underlying table, so such tables are pruned by the filter on `_table` the same way as any other matched table.
+
+- `_database` — Contains the name of the database the matched table belongs to. Type: [String](/reference/data-types/string).
 
 **See Also**
 
