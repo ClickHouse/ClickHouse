@@ -405,6 +405,80 @@ bool removeNullMembersFromINSet(ASTFunction & function)
     return true;
 }
 
+/// Position in the filter: only whether a predicate is TRUE (`Positive`) or FALSE (`Negative`, under `NOT`) matters; `Exact`: its value.
+enum class Polarity
+{
+    Positive,
+    Negative,
+    Exact,
+};
+
+/// Appends the elements of the row value `node` that can be `NULL` (a nested row value contributes its own elements).
+void collectNullableRowValueElements(const ASTPtr & node, const NamesAndTypesList & columns, ASTs & result)
+{
+    checkStackSize();
+
+    if (const auto * function = node->as<ASTFunction>();
+        function && (function->name == "tuple" || function->name.empty()) && function->arguments)
+    {
+        for (const auto & element : function->arguments->children)
+            collectNullableRowValueElements(element, columns, result);
+        return;
+    }
+
+    if (const auto * literal = node->as<ASTLiteral>())
+    {
+        if (fieldContainsNull(literal->value))
+            result.push_back(make_intrusive<ASTLiteral>(Field()));
+        return;
+    }
+
+    if (const auto * identifier = node->as<ASTIdentifier>())
+        if (auto column = columns.tryGetByName(identifier->name()); column && !isNullableOrLowCardinalityNullable(column->type))
+            return;
+
+    result.push_back(node->clone());
+}
+
+/// ClickHouse's `in` / `notIn` of a row value with a `NULL` element is false / true, SQL's is UNKNOWN: test such elements.
+void addNullTestsToRowValueIN(ASTPtr & node, Polarity polarity, const NamesAndTypesList & columns)
+{
+    checkStackSize();
+
+    auto * function = node->as<ASTFunction>();
+    if (!function || !function->arguments)
+        return;
+
+    const String name = function->name;
+    Polarity arguments_polarity = Polarity::Exact;
+    if (name == "and" || name == "or")
+        arguments_polarity = polarity;
+    else if (name == "not" && polarity != Polarity::Exact)
+        arguments_polarity = polarity == Polarity::Positive ? Polarity::Negative : Polarity::Positive;
+    for (auto & argument : function->arguments->children)
+        addNullTestsToRowValueIN(argument, arguments_polarity, columns);
+
+    const bool is_in = name == "in";
+    if (!((is_in && polarity != Polarity::Positive) || (name == "notIn" && polarity != Polarity::Negative)))
+        return;
+
+    const auto & lhs = function->arguments->children.at(0);
+    const auto * lhs_function = lhs->as<ASTFunction>();
+    if (!lhs_function || !(lhs_function->name == "tuple" || lhs_function->name.empty()))
+        return;
+
+    ASTs elements;
+    collectNullableRowValueElements(lhs, columns, elements);
+    if (elements.empty())
+        return;
+
+    auto tests = makeASTOperator(is_in ? "and" : "or");
+    for (auto & element : elements)
+        tests->arguments->children.push_back(makeASTOperator(is_in ? "isNotNull" : "isNull", std::move(element)));
+    tests->arguments->children.push_back(node);
+    node = std::move(tests);
+}
+
 /// Returns true if the field can only be written back in ClickHouse-specific syntax that an
 /// external database cannot parse: an `Array` / `Map` at any depth, or a tuple with fewer than
 /// two elements (which has no plain parenthesized form and can only be written as `tuple(...)`).
@@ -1158,6 +1232,12 @@ String transformQueryForExternalDatabaseImpl(
         else
             original_where = makeASTOperator("equals", make_intrusive<ASTLiteral>(1), make_intrusive<ASTLiteral>(0));
         select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(original_where));
+    }
+
+    if (auto where = select->where())
+    {
+        addNullTestsToRowValueIN(where, Polarity::Positive, pushdown_columns);
+        select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where));
     }
 
     auto limit_len_expr = original_select.limitLength();
