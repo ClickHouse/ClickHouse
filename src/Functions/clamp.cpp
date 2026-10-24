@@ -8,6 +8,9 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
+#include <Columns/ColumnConst.h>
+
+#include <array>
 
 namespace DB
 {
@@ -20,6 +23,13 @@ namespace ErrorCodes
 
 class FunctionClamp final : public IFunction
 {
+    struct ConvertedColumn
+    {
+        ColumnPtr column = nullptr;
+        bool is_const = false;
+    };
+
+    using ConvertedColumns = std::array<ConvertedColumn, 3>;
 
 public:
     static constexpr auto name = "clamp";
@@ -37,27 +47,67 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        size_t arg_size = arguments.size();
-        Columns converted_columns(arg_size);
-        for (size_t arg = 0; arg < arg_size; ++arg)
-            converted_columns[arg] = castColumn(arguments[arg], result_type)->convertToFullColumnIfConst();
+        ConvertedColumns converted_columns;
+        bool has_const_column = false;
+        for (size_t arg = 0; arg < arguments.size(); ++arg)
+        {
+            auto converted_col = castColumn(arguments[arg], result_type);
+            if (const auto * const_column = checkAndGetColumn<ColumnConst>(converted_col.get()))
+            {
+                converted_columns[arg] = {const_column->getDataColumnPtr(), true};
+                has_const_column = true;
+            }
+            else
+            {
+                converted_columns[arg] = {converted_col->convertToFullColumnIfConst(), false};
+            }
+        }
 
         if (ColumnPtr res = executeNumeric(converted_columns, result_type, input_rows_count))
             return res;
 
         auto result_column = result_type->createColumn();
+
+        if (!has_const_column)
+        {
+            for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
+            {
+                if (converted_columns[1].column->compareAt(row_num, row_num, *converted_columns[2].column, 1) > 0)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "The minimum value cannot be greater than the maximum value for function {}", getName());
+
+                size_t best_arg = 0;
+                if (converted_columns[1].column->compareAt(row_num, row_num, *converted_columns[best_arg].column, 1) > 0)
+                    best_arg = 1;
+                else if (converted_columns[2].column->compareAt(row_num, row_num, *converted_columns[best_arg].column, 1) < 0)
+                    best_arg = 2;
+
+                result_column->insertFrom(*converted_columns[best_arg].column, row_num);
+            }
+
+            return result_column;
+        }
+
         for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
         {
-            if (converted_columns[1]->compareAt(row_num, row_num, *converted_columns[2], 1) > 0)
+            const size_t min_row = converted_columns[1].is_const ? 0 : row_num;
+            const size_t max_row = converted_columns[2].is_const ? 0 : row_num;
+            if (converted_columns[1].column->compareAt(min_row, max_row, *converted_columns[2].column, 1) > 0)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "The minimum value cannot be greater than the maximum value for function {}", getName());
 
             size_t best_arg = 0;
-            if (converted_columns[1]->compareAt(row_num, row_num, *converted_columns[best_arg], 1) > 0)
+            size_t best_row = converted_columns[0].is_const ? 0 : row_num;
+            if (converted_columns[1].column->compareAt(min_row, best_row, *converted_columns[best_arg].column, 1) > 0)
+            {
                 best_arg = 1;
-            else if (converted_columns[2]->compareAt(row_num, row_num, *converted_columns[best_arg], 1) < 0)
+                best_row = min_row;
+            }
+            else if (converted_columns[2].column->compareAt(max_row, best_row, *converted_columns[best_arg].column, 1) < 0)
+            {
                 best_arg = 2;
+                best_row = max_row;
+            }
 
-            result_column->insertFrom(*converted_columns[best_arg], row_num);
+            result_column->insertFrom(*converted_columns[best_arg].column, best_row);
         }
 
         return result_column;
@@ -81,7 +131,7 @@ private:
     /// Vectorized clamp for numeric arguments. NULLs are handled by the default implementation,
     /// so only plain ColumnVector columns can appear here.
     /// Returns nullptr if the result type is not a plain number.
-    static ColumnPtr executeNumeric(const Columns & columns, const DataTypePtr & result_type, size_t input_rows_count)
+    static ColumnPtr executeNumeric(const ConvertedColumns & columns, const DataTypePtr & result_type, size_t input_rows_count)
     {
         ColumnPtr res;
         castTypeToEither<
@@ -99,11 +149,11 @@ private:
     }
 
     template <typename T>
-    static ColumnPtr executeNumericImpl(const Columns & columns, size_t input_rows_count)
+    static ColumnPtr executeNumericImpl(const ConvertedColumns & columns, size_t input_rows_count)
     {
-        const auto * value_column = checkAndGetColumn<ColumnVector<T>>(columns[0].get());
-        const auto * min_column = checkAndGetColumn<ColumnVector<T>>(columns[1].get());
-        const auto * max_column = checkAndGetColumn<ColumnVector<T>>(columns[2].get());
+        const auto * value_column = checkAndGetColumn<ColumnVector<T>>(columns[0].column.get());
+        const auto * min_column = checkAndGetColumn<ColumnVector<T>>(columns[1].column.get());
+        const auto * max_column = checkAndGetColumn<ColumnVector<T>>(columns[2].column.get());
         if (!value_column || !min_column || !max_column)
             return nullptr;
 
@@ -111,17 +161,42 @@ private:
         const T * mins = min_column->getData().data();
         const T * maxs = max_column->getData().data();
 
-        /// The bounds check is hoisted out of the main loop so the latter stays branch-free.
+        if (!columns[0].is_const && !columns[1].is_const && !columns[2].is_const)
+        {
+            /// The bounds check is hoisted out of the main loop so the latter stays branch-free.
+            bool have_invalid_bounds = false;
+            for (size_t i = 0; i < input_rows_count; ++i)
+                have_invalid_bounds |= greaterAt(mins[i], maxs[i]);
+            if (have_invalid_bounds)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The minimum value cannot be greater than the maximum value for function {}", name);
+
+            auto res = ColumnVector<T>::create(input_rows_count);
+            T * out = res->getData().data();
+            for (size_t i = 0; i < input_rows_count; ++i)
+                out[i] = greaterAt(mins[i], values[i]) ? mins[i] : (greaterAt(values[i], maxs[i]) ? maxs[i] : values[i]);
+
+            return res;
+        }
+
         bool have_invalid_bounds = false;
         for (size_t i = 0; i < input_rows_count; ++i)
-            have_invalid_bounds |= greaterAt(mins[i], maxs[i]);
+        {
+            const size_t min_row = columns[1].is_const ? 0 : i;
+            const size_t max_row = columns[2].is_const ? 0 : i;
+            have_invalid_bounds |= greaterAt(mins[min_row], maxs[max_row]);
+        }
         if (have_invalid_bounds)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The minimum value cannot be greater than the maximum value for function {}", name);
 
         auto res = ColumnVector<T>::create(input_rows_count);
         T * out = res->getData().data();
         for (size_t i = 0; i < input_rows_count; ++i)
-            out[i] = greaterAt(mins[i], values[i]) ? mins[i] : (greaterAt(values[i], maxs[i]) ? maxs[i] : values[i]);
+        {
+            const T value = values[columns[0].is_const ? 0 : i];
+            const T min = mins[columns[1].is_const ? 0 : i];
+            const T max = maxs[columns[2].is_const ? 0 : i];
+            out[i] = greaterAt(min, value) ? min : (greaterAt(value, max) ? max : value);
+        }
 
         return res;
     }
