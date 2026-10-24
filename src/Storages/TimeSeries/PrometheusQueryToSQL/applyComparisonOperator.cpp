@@ -66,17 +66,18 @@ namespace
     struct ImplInfo
     {
         std::string_view ch_function_name;
+        bool (*compare_scalars)(Float64, Float64);
     };
 
     const ImplInfo * getImplInfo(std::string_view function_name)
     {
         static const std::unordered_map<std::string_view, ImplInfo> impl_map = {
-            {"==", {"equals"}},
-            {"!=", {"notEquals"}},
-            {">",  {"greater"}},
-            {"<",  {"less"}},
-            {">=", {"greaterOrEquals"}},
-            {"<=", {"lessOrEquals"}},
+            {"==", {"equals", [](Float64 x, Float64 y) { return x == y; }}},
+            {"!=", {"notEquals", [](Float64 x, Float64 y) { return x != y; }}},
+            {">",  {"greater", [](Float64 x, Float64 y) { return x > y; }}},
+            {"<",  {"less", [](Float64 x, Float64 y) { return x < y; }}},
+            {">=", {"greaterOrEquals", [](Float64 x, Float64 y) { return x >= y; }}},
+            {"<=", {"lessOrEquals", [](Float64 x, Float64 y) { return x <= y; }}},
         };
 
         auto it = impl_map.find(function_name);
@@ -110,6 +111,17 @@ SQLQueryPiece applyComparisonOperator(
     /// in terms of label handling.
     if (operator_node->bool_modifier)
     {
+        /// A comparison of two constant scalars is computed here, so the result is a constant too.
+        /// Vector matching is left to applySimpleBinaryOperator(), which rejects it for scalars.
+        if ((left_argument.store_method == StoreMethod::CONST_SCALAR) && (right_argument.store_method == StoreMethod::CONST_SCALAR)
+            && (operator_node->result_type == ResultType::SCALAR) && operator_node->labels.empty())
+        {
+            auto res = left_argument;
+            res.node = operator_node;
+            res.scalar_value = impl_info->compare_scalars(left_argument.scalar_value, right_argument.scalar_value) ? 1.0 : 0.0;
+            return res;
+        }
+
         auto apply_function_to_ast = [&](ASTPtr x, ASTPtr y) -> ASTPtr
         {
             return timeSeriesScalarASTCast(makeASTFunction(impl_info->ch_function_name, std::move(x), std::move(y)));

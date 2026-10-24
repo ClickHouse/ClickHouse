@@ -1,8 +1,10 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyMathBinaryOperator.h>
 
 #include <Common/Exception.h>
+#include <Functions/DivisionUtils.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applySimpleBinaryOperator.h>
+#include <cmath>
 #include <unordered_map>
 
 
@@ -59,21 +61,30 @@ namespace
         }
     }
 
+    /// Computes `x % y` the same way as the SQL expression built by applyMathBinaryOperatorToAST().
+    Float64 moduloOfScalars(Float64 x, Float64 y)
+    {
+        if (std::isinf(y) && std::isfinite(x))
+            return x;
+        return ModuloImpl<Float64, Float64>::apply(x, y);
+    }
+
     struct ImplInfo
     {
         std::string_view ch_function_name;
+        Float64 (*apply_to_scalars)(Float64, Float64);
     };
 
     const ImplInfo * getImplInfo(std::string_view function_name)
     {
         static const std::unordered_map<std::string_view, ImplInfo> impl_map = {
-            {"+",     {"plus"}},
-            {"-",     {"minus"}},
-            {"*",     {"multiply"}},
-            {"/",     {"divide"}},
-            {"%",     {"modulo"}},
-            {"^",     {"pow"}},
-            {"atan2", {"atan2"}},
+            {"+",     {"plus", [](Float64 x, Float64 y) { return x + y; }}},
+            {"-",     {"minus", [](Float64 x, Float64 y) { return x - y; }}},
+            {"*",     {"multiply", [](Float64 x, Float64 y) { return x * y; }}},
+            {"/",     {"divide", [](Float64 x, Float64 y) { return x / y; }}},
+            {"%",     {"modulo", moduloOfScalars}},
+            {"^",     {"pow", [](Float64 x, Float64 y) { return std::pow(x, y); }}},
+            {"atan2", {"atan2", [](Float64 x, Float64 y) { return std::atan2(x, y); }}},
         };
 
         auto it = impl_map.find(function_name);
@@ -120,6 +131,17 @@ SQLQueryPiece applyMathBinaryOperator(
     checkArgumentTypes(operator_node, left_argument, right_argument, context);
 
     const auto & operator_name = operator_node->operator_name;
+
+    /// An operator on two constant scalars is computed here, so the result is a constant too.
+    /// Vector matching is left to applySimpleBinaryOperator(), which rejects it for scalars.
+    if ((left_argument.store_method == StoreMethod::CONST_SCALAR) && (right_argument.store_method == StoreMethod::CONST_SCALAR)
+        && (operator_node->result_type == ResultType::SCALAR) && operator_node->labels.empty())
+    {
+        auto res = left_argument;
+        res.node = operator_node;
+        res.scalar_value = getImplInfo(operator_name)->apply_to_scalars(left_argument.scalar_value, right_argument.scalar_value);
+        return res;
+    }
 
     auto apply_function_to_ast = [&](ASTPtr x, ASTPtr y) -> ASTPtr
     {
