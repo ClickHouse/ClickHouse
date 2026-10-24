@@ -17,6 +17,7 @@
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Databases/DataLake/Common.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -767,6 +768,14 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
             ErrorCodes::SUPPORT_IS_DISABLED,
             "Delta Lake writes are a Beta feature disabled by default. "
             "To enable them, set allow_delta_lake_writes = 1");
+    }
+
+    /// `catalog` is set only for a table reached through a catalog database, whose name always
+    /// carries its namespace, so `parseTableName` cannot throw here.
+    if (catalog)
+    {
+        const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
+        catalog->checkDirectCommitIsAllowed(namespace_name, table_name, table_id.uuid);
     }
 
     const auto snapshot_version = getSnapshotVersion(context->getSettingsRef());

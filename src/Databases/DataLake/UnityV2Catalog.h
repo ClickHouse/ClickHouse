@@ -87,6 +87,8 @@ public:
     /// Without this, a write would leave metadata files in the table location before failing.
     bool isTransactional() const override { return true; }
 
+    void checkDirectCommitIsAllowed(const std::string & schema_name, const std::string & table_name, const DB::UUID & table_uuid) const override;
+
     /// Iceberg commits are forwarded to the Iceberg REST endpoint. Delta writes commit through `_delta_log` and never get here.
     bool updateMetadata(
         const String & namespace_name,

@@ -21,6 +21,13 @@ Poco::JSON::Object::Ptr buildUnityCreateTableBody(
     const String & storage_location,
     Poco::JSON::Array::Ptr columns);
 
+/// Throws unless Unity reports this table, by its `table_id`, as the table `table_uuid` and, by its
+/// `table_type`, as external, i.e. one whose log may be committed directly. Managed tables are owned by the catalog.
+void checkUnityDirectCommitIsAllowed(const Poco::JSON::Object::Ptr & table_json, const String & full_table_name, const DB::UUID & table_uuid);
+
+/// Percent-encodes a dot-separated Unity full name (`catalog.schema[.table]`) as one URL path segment.
+String encodeUnityFullName(const String & full_name);
+
 }
 
 #endif
