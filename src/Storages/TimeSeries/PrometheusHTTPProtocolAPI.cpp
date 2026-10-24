@@ -1,5 +1,6 @@
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
 
+#include <Common/FailPoint.h>
 #include <Common/Hex.h>
 #include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
@@ -33,6 +34,7 @@
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Core/Settings.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <QueryPipeline/ExecutionSpeedLimits.h>
@@ -58,6 +60,11 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char prometheus_range_query_pause_before_merge[];
 }
 
 namespace Setting
@@ -531,20 +538,39 @@ void PrometheusHTTPProtocolAPI::executeRangeQueryInChunks(
             throw;
         }
 
+        if (!next_chunk_start)
+        {
+            /// The last chunk stays in the process list while the chunks are merged, so `KILL QUERY` can stop the merge.
+            const auto query_status = query_context->getProcessListElementSafe();
+            auto check_limits = [&]
+            {
+                limits.checkTimeLimit(watch.elapsedNanoseconds(), OverflowMode::THROW);
+                if (query_status)
+                    query_status->throwIfKilled();
+            };
+            try
+            {
+                FailPointInjection::pauseFailPoint(FailPoints::prometheus_range_query_pause_before_merge);
+                check_limits();
+                writeQueryResponseHeader(response, PrometheusQueryResultType::RANGE_VECTOR);
+                writeQueryResponseRangeVectorChunks(response, chunks, check_limits);
+                check_limits();
+                writeQueryResponseFooter(response);
+            }
+            catch (...)
+            {
+                io.onException();
+                throw;
+            }
+            finishExecutedQuery(io, query_finish_callback);
+            return;
+        }
+
         finishExecutedQuery(io, {});
 
         limits.checkTimeLimit(watch.elapsedNanoseconds(), OverflowMode::THROW);
         chunk_start = next_chunk_start;
     }
-
-    writeQueryResponseHeader(response, PrometheusQueryResultType::RANGE_VECTOR);
-    auto check_time_limit = [&] { limits.checkTimeLimit(watch.elapsedNanoseconds(), OverflowMode::THROW); };
-    writeQueryResponseRangeVectorChunks(response, chunks, check_time_limit);
-    check_time_limit();
-    writeQueryResponseFooter(response);
-
-    if (query_finish_callback)
-        query_finish_callback();
 }
 
 void PrometheusHTTPProtocolAPI::writeQueryResponseRangeVectorChunks(

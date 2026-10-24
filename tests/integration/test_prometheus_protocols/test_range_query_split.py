@@ -1,6 +1,7 @@
 import time
 import urllib.parse
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 import requests
@@ -318,6 +319,25 @@ def test_time_limit_with_break_disables_splitting(timeout_overflow_mode, num_chu
     split_params = {**params, "promql_range_query_split_interval": INTERVAL}
     assert query_range(query, H, H + 6 * 3600, 60, split_params, query_id) == expected
     assert_executed_queries(query_id, num_chunks)
+
+
+def test_kill_query_during_merge():
+    # The request stays in system.processes while its chunks are merged, and KILL QUERY stops the merge.
+    failpoint = "prometheus_range_query_pause_before_merge"
+    query_id = f"range-split-{uuid.uuid4()}"
+    params = {"promql_range_query_split_interval": INTERVAL}
+    node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(send_query_range, "rate(node_cpu_seconds_total[5m])", H, H + 6 * 3600, 60, params, query_id)
+        try:
+            node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE")
+            assert node.query(f"SELECT count() FROM system.processes WHERE query_id = '{query_id}'") == "1\n"
+            node.query(f"KILL QUERY WHERE query_id = '{query_id}' ASYNC")
+        finally:
+            node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        response = future.result(timeout=60)
+    assert response.status_code == 400, response.text
+    assert "Query was cancelled" in response.text, response.text
 
 
 @pytest.mark.parametrize(
