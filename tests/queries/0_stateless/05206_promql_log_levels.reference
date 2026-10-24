@@ -1,0 +1,9 @@
+send_logs_level=information
+send_logs_level=debug
+<Debug> StoragePrometheusQuery: Building SQL to evaluate promql
+<Debug> StoragePrometheusQuery: Will execute query
+send_logs_level=trace
+<Debug> StoragePrometheusQuery: Building SQL to evaluate promql
+<Debug> StoragePrometheusQuery: Will execute query
+metrics request
+Debug
