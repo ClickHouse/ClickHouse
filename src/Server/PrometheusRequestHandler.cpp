@@ -27,6 +27,7 @@
 #include <IO/Protobuf/ProtobufZeroCopyOutputStreamFromWriteBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/Session.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/authenticateUserByHTTP.h>
@@ -46,7 +47,9 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool cancel_http_readonly_queries_on_client_close;
     extern const SettingsUInt64 http_response_buffer_size;
+    extern const SettingsBool run_query_in_background;
 }
 
 namespace ErrorCodes
@@ -234,6 +237,28 @@ protected:
         std::erase_if(query_id, [](unsigned char c) { return isControlASCII(c) || c == 0x7F; });
 
         context->setCurrentQueryId(query_id);
+    }
+
+    /// The PromQL SQL runs on a copy of `context`, so cancel the process list entry by query id.
+    void cancelQueryOnClientClose(HTTPServerRequest & request)
+    {
+        const auto & settings = context->getSettingsRef();
+        if (settings[Setting::run_query_in_background] || !settings[Setting::cancel_http_readonly_queries_on_client_close])
+            return;
+
+        auto prev = context->getProgressCallback();
+        ProcessList & process_list = context->getProcessList();
+        const String query_id = context->getCurrentQueryId();
+        const String user = context->getClientInfo().current_user;
+        context->setProgressCallback([prev, &request, &process_list, query_id, user](const Progress & progress)
+        {
+            if (prev)
+                prev(progress);
+
+            /// Assume that at the point this method is called no one is reading data from the socket any more.
+            if (!request.checkPeerConnected())
+                process_list.sendCancelToQuery(query_id, user);
+        });
     }
 
     /// Resolves the time series table for the current request. Each of the database and table names comes
@@ -497,6 +522,7 @@ public:
         LOG_DEBUG(log(), "Processing Prometheus HTTP API query request: method={}, uri={}", request.getMethod(), maskSensitiveQueryParametersInURI(uri));
 
         response.setContentType("application/json");
+        cancelQueryOnClientClose(request);
 
         try
         {
