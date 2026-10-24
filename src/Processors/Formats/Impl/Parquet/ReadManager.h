@@ -180,6 +180,8 @@ private:
     void addTasksToReadColumns(size_t row_group_idx, size_t row_subgroup_idx, ReadStage stage, size_t step_idx, MemoryUsageDiff & diff);
     void advanceDeliveryPtrIfNeeded(size_t row_group_idx, MemoryUsageDiff & diff);
     void admitTopKRowGroups(MemoryUsageDiff & diff);
+    /// Drops the task's row subgroup if the top-K threshold now excludes its row group.
+    void skipIfExcludedByTopK(const Task & task);
     /// Called when the row group is fully read or skipped; no-op if it wasn't admitted by admitTopKRowGroups.
     void releaseTopKAdmission(size_t row_group_idx, MemoryUsageDiff & diff);
     void flushMemoryUsageDiff(MemoryUsageDiff && diff);

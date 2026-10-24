@@ -1,7 +1,8 @@
 <!--
     ORDER BY ... LIMIT over a single Parquet file with 200 row groups. The ranges of `k` are disjoint and
     not in file order, `v` is pseudo-random, and every row group holds every value of `m`, so the top-K
-    threshold can skip row groups for `k` and `v`, and none for `m`.
+    threshold can skip row groups for `k` and `v`, and none for `m`. With 4 parsing threads, admitted row
+    groups wait for a decoding thread while the threshold tightens.
 -->
 <test>
     <fill_query>
@@ -16,4 +17,6 @@
     <query>SELECT k, s FROM file('test_parquet_top_k_row_group_order.parquet') ORDER BY k DESC LIMIT 10 SETTINGS max_threads = 8, max_parsing_threads = 8 FORMAT Null</query>
     <query>SELECT k, s FROM file('test_parquet_top_k_row_group_order.parquet') ORDER BY v LIMIT 10 SETTINGS max_threads = 8, max_parsing_threads = 8 FORMAT Null</query>
     <query>SELECT m, s FROM file('test_parquet_top_k_row_group_order.parquet') ORDER BY m LIMIT 10 SETTINGS max_threads = 8, max_parsing_threads = 8 FORMAT Null</query>
+    <query>SELECT k FROM file('test_parquet_top_k_row_group_order.parquet') ORDER BY k LIMIT 10 SETTINGS max_threads = 4, max_parsing_threads = 4 FORMAT Null</query>
+    <query>SELECT k FROM file('test_parquet_top_k_row_group_order.parquet') ORDER BY k DESC LIMIT 10 SETTINGS max_threads = 4, max_parsing_threads = 4 FORMAT Null</query>
 </test>

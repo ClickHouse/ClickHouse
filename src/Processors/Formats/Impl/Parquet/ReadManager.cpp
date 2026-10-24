@@ -196,6 +196,18 @@ void ReadManager::admitTopKRowGroups(MemoryUsageDiff & diff)
     }
 }
 
+void ReadManager::skipIfExcludedByTopK(const Task & task)
+{
+    RowGroup & row_group = reader.row_groups[task.row_group_idx];
+    RowSubgroup & row_subgroup = row_group.subgroups.at(task.row_subgroup_idx);
+    if (row_subgroup.filter.rows_pass == 0 || !reader.topKShouldSkipRowGroup(row_group))
+        return;
+    row_subgroup.filter.rows_pass = 0;
+    const size_t first_step = reader.steps.empty() ? 0 : 1;
+    if (task.row_subgroup_idx == 0 && task.step_idx == first_step)
+        ProfileEvents::increment(ProfileEvents::ParquetTopKSkippedRowGroups);
+}
+
 void ReadManager::releaseTopKAdmission(size_t row_group_idx, MemoryUsageDiff & diff)
 {
     if (!reader.row_groups[row_group_idx].holds_top_k_admission.exchange(false))
@@ -1118,6 +1130,11 @@ void ReadManager::scheduleTask(Task task, bool is_first_in_group, MemoryUsageDif
     std::vector<PrefetchHandle *> prefetches;
     RowGroup & row_group = reader.row_groups[task.row_group_idx];
     ssize_t memory_before = diff.by_stage[size_t(diff.cur_stage)];
+
+    /// The top-K threshold may have tightened while this batch waited to be scheduled.
+    if (task.stage == ReadStage::ColumnData && is_first_in_group)
+        skipIfExcludedByTopK(task);
+
     if (task.column_idx != UINT64_MAX)
     {
         ColumnChunk & column = row_group.columns.at(task.column_idx);
@@ -1324,6 +1341,9 @@ void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
             case ReadStage::ColumnData:
             {
                 RowSubgroup & row_subgroup = row_group.subgroups.at(task.row_subgroup_idx);
+                /// The other tasks of this step have finished, so no other thread reads the filter.
+                if (row_subgroup.stage_tasks_remaining.load() == 1)
+                    skipIfExcludedByTopK(task);
                 if (row_subgroup.filter.rows_pass == 0)
                     break;
                 if (!column.dictionary.isInitialized() && column.dictionary_page_prefetch)
