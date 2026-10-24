@@ -312,6 +312,93 @@ VALUES (1, (SELECT array_to_string(ARRAY(SELECT chr((100 + round(random() * 25))
     )
 
 
+def test_replica_identity_full(started_cluster):
+    table = "test_replica_identity_full"
+    pg_manager.create_postgres_table(
+        table,
+        "",
+        """CREATE TABLE "{}" (id integer PRIMARY KEY, txt text, other text)""",
+    )
+    # `EXTERNAL` disables compression, so `txt` is stored out of line and an update
+    # that leaves it alone sends it as an unchanged TOAST value.
+    pg_manager.execute(f"ALTER TABLE {table} ALTER COLUMN txt SET STORAGE EXTERNAL")
+    pg_manager.execute(f"ALTER TABLE {table} REPLICA IDENTITY FULL")
+    pg_manager.execute(
+        f"INSERT INTO {table} SELECT i, repeat(i::text, 10000), 'initial' FROM generate_series(1, 5) AS i"
+    )
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=pg_manager.get_default_database(),
+        order_by="id",
+    )
+
+    # With REPLICA IDENTITY FULL every column is flagged as part of the replica
+    # identity, and an update sends the whole old row. Rows must still be
+    # identified by the primary key, and an unchanged TOAST value must be kept.
+    pg_manager.execute(
+        f"INSERT INTO {table} VALUES (6, repeat('6', 10000), 'inserted')"
+    )
+    pg_manager.execute(f"UPDATE {table} SET other = 'updated' WHERE id = 1")
+    pg_manager.execute(f"UPDATE {table} SET txt = repeat('x', 20000) WHERE id = 2")
+    pg_manager.execute(f"DELETE FROM {table} WHERE id = 3")
+    pg_manager.execute(f"UPDATE {table} SET id = 40, other = 'new key' WHERE id = 4")
+
+    conn = get_postgres_conn(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        database=True,
+        auto_commit=False,
+    )
+    cursor = conn.cursor()
+    for i in range(10):
+        cursor.execute(f"UPDATE {table} SET other = 'update {i}' WHERE id = 5")
+    conn.commit()
+    conn.close()
+
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=pg_manager.get_default_database(),
+        order_by="id",
+    )
+    assert instance.query(
+        f"SELECT id, length(txt), other FROM test_database.{table} ORDER BY id"
+    ) == (
+        "1\t10000\tupdated\n"
+        "2\t20000\tinitial\n"
+        "5\t10000\tupdate 9\n"
+        "6\t10000\tinserted\n"
+        "40\t10000\tnew key\n"
+    )
+
+    # The replica identity can also change after the table is replicated.
+    pg_manager.execute(f"ALTER TABLE {table} REPLICA IDENTITY DEFAULT")
+    pg_manager.execute(f"UPDATE {table} SET other = 'default' WHERE id = 1")
+    pg_manager.execute(f"ALTER TABLE {table} REPLICA IDENTITY FULL")
+    pg_manager.execute(f"UPDATE {table} SET other = 'full again' WHERE id = 6")
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=pg_manager.get_default_database(),
+        order_by="id",
+    )
+
+    assert not instance.contains_in_log("Table has replica identity f - not supported")
+    assert not instance.contains_in_log(f"Table {table} is skipped from replication stream")
+
+    pg_manager.drop_materialized_db()
+
+
 def test_toast_in_replica_identity(started_cluster):
     table = "test_toast_in_replica_identity"
     other_table = "test_toast_in_replica_identity_other"

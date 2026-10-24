@@ -370,7 +370,8 @@ size_t MaterializedPostgreSQLConsumer::readTupleData(
     size_t size,
     PostgreSQLQuery type,
     bool old_value,
-    std::optional<size_t> key_source_row_idx)
+    std::optional<size_t> key_source_row_idx,
+    bool key_source_is_full_row)
 {
     Int16 num_columns = readInt16(message, pos, size);
     auto & buffer = storage_data.getLastBuffer();
@@ -418,6 +419,14 @@ size_t MaterializedPostgreSQLConsumer::readTupleData(
                         "so the row cannot be identified. Use a replica identity over columns that are not stored out of line",
                         buffer.sample_block.getByPosition(column_idx).name,
                         storage_data.storage->getStorageID().getNameForLogs());
+                }
+
+                /// With REPLICA IDENTITY FULL the old row ('O') carries the actual value of every column,
+                /// so an unchanged TOAST value can be copied from it instead of read back from the nested table.
+                if (type == PostgreSQLQuery::UPDATE && !old_value && key_source_row_idx && key_source_is_full_row)
+                {
+                    buffer.columns[column_idx]->insertFrom(*buffer.columns[column_idx], *key_source_row_idx);
+                    break;
                 }
 
                 insertDefaultValue(storage_data, column_idx);
@@ -831,6 +840,7 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
 
             auto & storage_data = storages.find(table_name)->second;
             std::optional<size_t> old_row_idx;
+            bool old_row_is_full = false;
 
             auto process_identifier = [&](Int8 identifier) -> bool
             {
@@ -845,6 +855,7 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
                     /// it is much more efficient to use replica identity index, but support all possible cases.
                     case 'O':
                     {
+                        old_row_is_full = (identifier == 'O');
                         old_row_idx = readTupleData(storage_data, replication_message, pos, size, PostgreSQLQuery::UPDATE, true);
                         break;
                     }
@@ -860,7 +871,8 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
                                 size,
                                 PostgreSQLQuery::UPDATE,
                                 false,
-                                old_row_idx);
+                                old_row_idx,
+                                old_row_is_full);
                         }
                         catch (const Exception & e)
                         {
@@ -964,12 +976,15 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
             /// 'n' - nothing
             /// 'f' - all columns (set replica identity full)
             /// 'i' - user defined index with indisreplident set
-            /// Only 'd' and 'i' - are supported.
+            /// 'd', 'i' and 'f' are supported. With 'f' every column is flagged as part of the replica identity,
+            /// so rows are identified by the sorting key of the nested table instead (see below).
+            /// 'n' is not supported: UPDATE and DELETE messages would carry no old row at all.
             char replica_identity = readInt8(replication_message, pos, size);
-            if (replica_identity != 'd' && replica_identity != 'i')
+            if (replica_identity != 'd' && replica_identity != 'i' && replica_identity != 'f')
             {
                 LOG_WARNING(log,
-                    "Table has replica identity {} - not supported. A table must have a primary key or a replica identity index",
+                    "Table has replica identity {} - not supported. "
+                    "A table must have a primary key or a replica identity index, and its replica identity must not be NOTHING",
                     replica_identity);
                 markTableAsSkipped(relation_id, table_name);
                 return;
@@ -1008,7 +1023,7 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
             {
                 String column_name;
                 const auto flags = readInt8(replication_message, pos, size);
-                if (flags & 1) /// Marks the column as part of the replica identity.
+                if ((flags & 1) && replica_identity != 'f') /// Marks the column as part of the replica identity.
                     key_column_indices.push_back(i);
                 readString(replication_message, pos, size, column_name);
 
@@ -1060,6 +1075,31 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
                         continue;
 
                     log_table_structure_changed(fmt::format("column {} was not found", name));
+                    markTableAsSkipped(relation_id, table_name);
+                    return;
+                }
+            }
+
+            if (replica_identity == 'f')
+            {
+                /// With REPLICA IDENTITY FULL PostgreSQL flags every column, which does not identify a row.
+                /// Use the sorting key of the nested table: it is built from the primary key or the replica
+                /// identity index when the nested table is created, and a table without either is rejected there.
+                for (const auto & key_column : storage_data.metadata_snapshot->getSortingKeyColumns())
+                {
+                    auto it = std::find_if(columns.begin(), columns.end(), [&](const auto & column) { return column.name == key_column; });
+                    if (it == columns.end())
+                    {
+                        log_table_structure_changed(fmt::format("sorting key column {} was not received", key_column));
+                        markTableAsSkipped(relation_id, table_name);
+                        return;
+                    }
+                    key_column_indices.push_back(static_cast<size_t>(std::distance(columns.begin(), it)));
+                }
+
+                if (key_column_indices.empty())
+                {
+                    log_table_structure_changed("replica identity is FULL and the nested table has no sorting key");
                     markTableAsSkipped(relation_id, table_name);
                     return;
                 }
