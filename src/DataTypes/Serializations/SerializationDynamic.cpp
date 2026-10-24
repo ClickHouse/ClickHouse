@@ -914,6 +914,13 @@ static void deserializeTextImpl(
     const auto & variant_info = dynamic_column.getVariantInfo();
     const auto & variant_types = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
     String field = read_field(istr);
+    /// readQuotedField preserves string quotes and normalizes bare NULL tokens to uppercase.
+    if (escaping_rule == FormatSettings::EscapingRule::Quoted && field == "NULL")
+    {
+        dynamic_column.insertDefault();
+        return;
+    }
+
     JSONInferenceInfo json_info;
     auto variant_type = tryInferDataTypeByEscapingRule(field, settings, escaping_rule, &json_info);
     if (escaping_rule == FormatSettings::EscapingRule::JSON)
