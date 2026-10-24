@@ -11469,8 +11469,13 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
         /// Resolve against the real storage, so that its columns (including `ALIAS` and
         /// `EPHEMERAL`), subcolumns and virtual columns (e.g. `_part`, `_partition_id`)
         /// are visible, just like during the mutation execution.
+        /// The snapshot carries no parts: the analysis reads the active parts itself below.
+        auto storage = std::const_pointer_cast<IStorage>(shared_from_this());
+        auto table_lock = storage->lockForShare(
+            execution_context->getInitialQueryId(), execution_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+        const auto table_metadata = getInMemoryMetadataPtr(execution_context, /*bypass_metadata_cache=*/ false);
         auto table_expression = std::make_shared<TableNode>(
-            std::const_pointer_cast<IStorage>(shared_from_this()), execution_context);
+            std::move(storage), std::move(table_lock), getStorageSnapshotWithoutData(table_metadata, execution_context));
 
         QueryAnalyzer analyzer(false);
         analyzer.resolveConstantExpression(expression, table_expression, execution_context);
