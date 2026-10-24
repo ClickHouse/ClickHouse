@@ -11,6 +11,8 @@
 #include <Interpreters/Context_fwd.h>
 #include <base/defines.h>
 #include <base/types.h>
+#include <Common/CurrentMemoryTracker.h>
+#include <Common/MemoryTracker.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -70,6 +72,25 @@ inline const char * toString(AggregateFunctionStateVariant variant)
 
     UNREACHABLE();
 }
+
+/// The memory tracker to watch while states of `function` are deserialized, or nullptr if they cannot own memory outside the
+/// arena. Such memory may be allocated with `operator new`, which the tracker counts but does not refuse.
+const MemoryTracker * getMemoryTrackerToWatchForStates(const IAggregateFunction & function);
+
+inline void checkMemoryLimitIfChanged(const MemoryTracker * memory_tracker, Int64 & memory_at_last_check)
+{
+    if (!memory_tracker)
+        return;
+    Int64 memory = memory_tracker->get();
+    if (memory == memory_at_last_check)
+        return;
+    memory_at_last_check = memory;
+    CurrentMemoryTracker::check();
+}
+
+/// For a reader of one state at a time, after the state: checks the memory limit if the watched tracker moved since its last
+/// passing check in this thread, because callers may buffer the state's bytes before the reader is called.
+void checkMemoryLimitAfterReadingState(const IAggregateFunction & function);
 
 /** Aggregate functions interface.
   * Instances of classes with this interface do not contain the data itself for aggregation,
@@ -339,7 +360,8 @@ public:
     virtual void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version = std::nullopt, Arena * arena = nullptr) const = 0; /// NOLINT
 
     /// Devirtualize create and deserialize calls. Used in deserialization of ColumnAggregateFunction.
-    virtual void createAndDeserializeBatch(PaddedPODArray<AggregateDataPtr> & data, AggregateDataPtr __restrict place, size_t total_size_of_state, size_t limit, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const = 0;
+    /// If `memory_tracker` is set, checks the memory limit after each state that changed the memory it tracks.
+    virtual void createAndDeserializeBatch(PaddedPODArray<AggregateDataPtr> & data, AggregateDataPtr __restrict place, size_t total_size_of_state, size_t limit, ReadBuffer & buf, std::optional<size_t> version, Arena * arena, const MemoryTracker * memory_tracker) const = 0;
 
     /// Returns true if a function requires Arena to handle own states (see add(), merge(), deserialize()).
     virtual bool allocatesMemoryInArena() const = 0;
@@ -773,8 +795,11 @@ public:
         size_t limit,
         ReadBuffer & buf,
         std::optional<size_t> version,
-        Arena * arena) const final
+        Arena * arena,
+        const MemoryTracker * memory_tracker) const final
     {
+        Int64 memory_at_last_check = memory_tracker ? memory_tracker->get() : 0;
+
         for (size_t i = 0; i < limit; ++i)
         {
             if (buf.eof())
@@ -785,6 +810,7 @@ public:
             try
             {
                 static_cast<const Derived *>(this)->deserialize(place, buf, version, arena);
+                checkMemoryLimitIfChanged(memory_tracker, memory_at_last_check);
 
                 /// Appending the pointer allocates, so it can throw as well, and then the state
                 /// would be neither destroyed here nor owned by the column.
