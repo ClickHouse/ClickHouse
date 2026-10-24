@@ -393,7 +393,6 @@ bool traverseDAGFilter(
             // from: without it a date-family literal is reinterpreted in the key's unit space.
             const auto value_type = removeNullable(recursiveRemoveLowCardinality(right->result_type));
             const auto * value_tuple_type = typeid_cast<const DataTypeTuple *>(value_type.get());
-            const auto * declared_tuple_type = typeid_cast<const DataTypeTuple *>(right->result_type.get());
 
             const IColumn * value_column = right->column.get();
             if (const auto * column_const = typeid_cast<const ColumnConst *>(value_column))
@@ -407,9 +406,7 @@ bool traverseDAGFilter(
             for (size_t i = 0; i < tuple_value.size(); ++i)
             {
                 DataTypePtr element_type;
-                if (declared_tuple_type && i < declared_tuple_type->getElements().size())
-                    element_type = declared_tuple_type->getElement(i);
-                else if (value_tuple_type && i < value_tuple_type->getElements().size())
+                if (value_tuple_type && i < value_tuple_type->getElements().size())
                     element_type = value_tuple_type->getElement(i);
 
                 const IColumn * element_column = nullptr;

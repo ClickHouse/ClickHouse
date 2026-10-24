@@ -19,6 +19,9 @@ SELECT count() FROM t_kv_str WHERE key = CAST(toFixedString('V0', 3) AS Dynamic(
 -- A `FixedString` constant is not a lookup; a `Dynamic` holding a `String` still is.
 SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM t_kv_str WHERE key = toFixedString('V0', 3)) WHERE explain ILIKE '%ReadType%';
 SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM t_kv_str WHERE key = CAST('V0' AS Dynamic)) WHERE explain ILIKE '%ReadType%';
+SELECT count() FROM t_kv_str WHERE key = CAST('V0' AS Variant(Int64, String));
+SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM t_kv_str WHERE key = CAST('V0' AS Variant(Int64, String))) WHERE explain ILIKE '%ReadType%';
+SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM t_kv_str WHERE key = CAST('V0' AS Dynamic(max_types = 0))) WHERE explain ILIKE '%ReadType%';
 
 DROP TABLE t_kv_str;
 
@@ -52,6 +55,15 @@ SELECT count() FROM t_kv_pair WHERE (a, b) = (SELECT ('x', toFixedString('V0', 3
 
 DROP TABLE t_kv_pair;
 
+DROP TABLE IF EXISTS t_kv_pair_date;
+CREATE TABLE t_kv_pair_date (d DateTime('UTC'), x UInt64, id UInt64) ENGINE = EmbeddedRocksDB PRIMARY KEY (d, x);
+INSERT INTO t_kv_pair_date VALUES ('2020-01-01 00:00:00', 1, 0), ('2020-01-02 00:00:00', 1, 1);
+
+SELECT count() FROM t_kv_pair_date WHERE (d, x) = (SELECT (CAST(toDate('2020-01-01') AS Dynamic), 1));
+SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM t_kv_pair_date WHERE (d, x) = (SELECT (CAST(toDate('2020-01-01') AS Dynamic), 1))) WHERE explain ILIKE '%ReadType%';
+
+DROP TABLE t_kv_pair_date;
+
 -- A key column of a composite type.
 DROP TABLE IF EXISTS t_kv_tuple;
 CREATE TABLE t_kv_tuple (key Tuple(String, UInt32), id UInt64) ENGINE = EmbeddedRocksDB PRIMARY KEY key;
@@ -75,6 +87,7 @@ CREATE TABLE t_kv_array (key Array(String), id UInt64) ENGINE = EmbeddedRocksDB 
 INSERT INTO t_kv_array VALUES (['V0'], 0), (['V0\0'], 1);
 
 SELECT count() FROM t_kv_array WHERE key = [toFixedString('V0', 3)];
+SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM t_kv_array WHERE key = ['V0']) WHERE explain ILIKE '%ReadType%';
 
 DROP TABLE t_kv_array;
 
