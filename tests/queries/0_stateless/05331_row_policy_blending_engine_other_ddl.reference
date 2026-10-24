@@ -1,0 +1,27 @@
+policy on a table which reads a merging table
+reads a table with the SummingMergeTree engine
+table which reads a merging table, created under a policy
+reads a table with the SummingMergeTree engine
+IF NOT EXISTS and IF EXISTS which change nothing
+has the SummingMergeTree engine
+has the SummingMergeTree engine
+p_keep	secret < 100
+ATTACH with a full definition
+has the SummingMergeTree engine
+CREATE OR REPLACE and REPLACE
+has the SummingMergeTree engine
+has the SummingMergeTree engine
+t_plain	MergeTree
+t_replaced	SummingMergeTree
+t_summing	SummingMergeTree
+RENAME and EXCHANGE
+has the SummingMergeTree engine
+has the SummingMergeTree engine
+t_plain	MergeTree
+t_renamed	SummingMergeTree
+t_replaced	SummingMergeTree
+t_summing_2	SummingMergeTree
+lazy table which is not loaded yet
+TableProxy
+has the SummingMergeTree engine
+SummingMergeTree

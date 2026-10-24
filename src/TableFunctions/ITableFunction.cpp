@@ -95,7 +95,7 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr conte
     /// It will request actual table structure and create underlying storage lazily
     return std::make_shared<StorageTableFunctionProxy>(StorageID(getDatabaseName(), table_name), std::move(get_storage),
                                                        std::move(cached_columns), needStructureConversion(),
-                                                       hasUnreplicatedTableDataOnDisk());
+                                                       hasUnreplicatedTableDataOnDisk(), getSourceAccessObject().has_value());
 }
 
 String ITableFunction::getFunctionURINormalized() const

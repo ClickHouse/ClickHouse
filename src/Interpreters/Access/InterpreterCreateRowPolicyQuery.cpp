@@ -5,21 +5,33 @@
 #include <Access/Common/AccessFlags.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Access/RowPolicy.h>
+#include <Common/quoteString.h>
+#include <Core/Settings.h>
+#include <Databases/IDatabase.h>
+#include <Interpreters/Access/checkRowPolicyForBlendingEngine.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
 #include <Parsers/Access/ASTCreateRowPolicyQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
+#include <Storages/IStorage.h>
 #include <boost/range/algorithm/sort.hpp>
 
 
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsBool allow_suspicious_row_policies_with_blending_engines;
+}
+
 namespace ErrorCodes
 {
     extern const int ACCESS_ENTITY_ALREADY_EXISTS;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -47,6 +59,68 @@ namespace
             policy.to_roles = *override_to_roles;
         else if (query.roles)
             policy.to_roles = *query.roles;
+    }
+
+    void checkStorageIsNotBlendingEngine(const String & subject, const IStorage & storage, const ContextPtr & context)
+    {
+        auto blending = findBlendingEngine(storage, context);
+        if (!blending)
+            return;
+
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "{} {} the {} engine, which merges rows with the same sorting key into one row "
+            "taking the values of all of them, so a row policy on this table does not hide the values of "
+            "the rows it filters out - they end up in the row it shows. Define the row policy on the table "
+            "which stores the raw rows instead. "
+            "See https://clickhouse.com/docs/sql-reference/statements/create/row-policy, or set "
+            "allow_suspicious_row_policies_with_blending_engines = 1 to create the policy anyway",
+            subject,
+            blending.get() == &storage ? "has" : "reads a table with",
+            blending->getName());
+    }
+
+    /// A policy for the whole database is used for every table in it which has no policy of its own
+    void checkDatabaseHasNoBlendingEngines(const String & database, const ContextPtr & context)
+    {
+        auto db = DatabaseCatalog::instance().tryGetDatabase(database);
+        if (!db)
+            return;
+
+        for (auto it = db->getTablesIterator(context, {}, /*skip_not_loaded=*/ true); it->isValid(); it->next())
+        {
+            const auto & table = it->table();
+            if (table)
+                checkStorageIsNotBlendingEngine(
+                    fmt::format("Table {}.{}, which a policy on {}.* is used for,",
+                        backQuoteIfNeed(database), backQuoteIfNeed(it->name()), backQuoteIfNeed(database)),
+                    *table, context);
+        }
+    }
+
+    /// A merge mixes the hidden rows into the visible one, so the policy only looks like a boundary here
+    void checkTablesAreNotBlendingEngines(const std::vector<RowPolicyName> & full_names, const ContextPtr & context)
+    {
+        if (context->getSettingsRef()[Setting::allow_suspicious_row_policies_with_blending_engines])
+            return;
+
+        for (const auto & full_name : full_names)
+        {
+            if (full_name.database.empty())
+                continue;
+
+            if (full_name.table_name == RowPolicyName::ANY_TABLE_MARK)
+            {
+                checkDatabaseHasNoBlendingEngines(full_name.database, context);
+                continue;
+            }
+
+            auto storage = DatabaseCatalog::instance().tryGetTable(StorageID{full_name.database, full_name.table_name}, context);
+            if (storage)
+                checkStorageIsNotBlendingEngine(
+                    fmt::format("Table {}.{}", backQuoteIfNeed(full_name.database), backQuoteIfNeed(full_name.table_name)),
+                    *storage, context);
+        }
     }
 }
 
@@ -93,6 +167,17 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
         storage_ptr = access_control.getStorageByName(query.storage_name);
         storage = storage_ptr.get();
     }
+
+    /// IF EXISTS and IF NOT EXISTS leave some policies as they are, and those need no opt-in
+    std::vector<RowPolicyName> changed_names;
+    for (const auto & full_name : query.names->full_names)
+    {
+        bool exists = storage->find<RowPolicy>(full_name.toString()).has_value();
+        if (query.alter ? (query.if_exists && !exists) : (query.if_not_exists && exists))
+            continue;
+        changed_names.push_back(full_name);
+    }
+    checkTablesAreNotBlendingEngines(changed_names, getContext());
 
     Strings names = query.names->toStrings();
     if (query.alter)
