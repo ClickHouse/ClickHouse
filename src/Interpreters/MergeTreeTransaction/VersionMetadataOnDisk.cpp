@@ -28,6 +28,12 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 extern const int CANNOT_OPEN_FILE;
 extern const int NOT_IMPLEMENTED;
+extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+extern const char version_metadata_on_disk_store_fail[];
 }
 
 namespace FailPoints
@@ -282,6 +288,10 @@ std::expected<Int32, StaleVersion> VersionMetadataOnDisk::storeInfoUnlocked(Vers
     // Increase storing version
     ++new_info.storing_version;
 
+    fiu_do_on(FailPoints::version_metadata_on_disk_store_fail,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure of storing version metadata of {}", getObjectName());
+    });
     storeInfoToDataPartStorage(merge_tree_data_part->storage, merge_tree_data_part->getDataPartStorage(), new_info);
     LOG_DEBUG(log, "Object {}, stored metadata content:\n{}", getObjectName(), new_info.toString(/*one_line=*/true));
 
