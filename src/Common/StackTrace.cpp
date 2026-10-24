@@ -550,7 +550,10 @@ void StackTrace::forEachFrame(
         }
 
         if (const auto * symbol = symbol_index.findSymbol(current_frame.physical_addr))
-            current_frame.symbol = demangle(symbol->name);
+        {
+            if (const char * symbol_name = symbol_index.getSymbolNameCString(*symbol); *symbol_name)
+                current_frame.symbol = demangle(symbol_name);
+        }
 
         for (const auto & frame : inline_frames)
         {
@@ -609,7 +612,10 @@ void StackTrace::forEachFrame(
         }
 
         if (const auto * symbol = symbol_index.findSymbol(current_frame.virtual_addr))
-            current_frame.symbol = demangle(symbol->name);
+        {
+            if (const char * symbol_name = symbol_index.getSymbolNameCString(*symbol); *symbol_name)
+                current_frame.symbol = demangle(symbol_name);
+        }
 
         for (const auto & frame : inline_frames)
         {

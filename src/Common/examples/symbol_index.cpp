@@ -1,4 +1,5 @@
 #include <iostream>
+#include <string_view>
 #include <dlfcn.h>
 #include <Core/Defines.h>
 #include <base/demangle.h>
@@ -26,15 +27,19 @@ int mainEntryExampleSymbolIndex(int argc, char ** argv)
 
     const SymbolIndex & symbol_index = SymbolIndex::instance();
 
-    for (const auto & elem : symbol_index.symbols())
-        std::cout << elem.name << ": " << elem.offset_begin << " ... " << elem.offset_end << "\n";
+    auto iterator = symbol_index.iterateSymbols();
+    const SymbolIndex::Symbol * elem = nullptr;
+    std::string_view name;
+    while (iterator.next(elem, name))
+        std::cout << name << ": " << elem->offset_begin << " ... " << elem->offset_end << "\n";
     std::cout << "\n";
 
     const void * address = reinterpret_cast<void*>(std::stoull(argv[1], nullptr, 16));
 
     const auto * symbol = symbol_index.findSymbol(address);
-    if (symbol)
-        std::cerr << symbol->name << ": " << symbol->offset_begin << " ... " << symbol->offset_end << "\n";
+    std::string_view symbol_name = symbol ? symbol_index.getSymbolName(*symbol) : std::string_view("");
+    if (!symbol_name.empty())
+        std::cerr << symbol_name << ": " << symbol->offset_begin << " ... " << symbol->offset_end << "\n";
     else
         std::cerr << "SymbolIndex: Not found\n";
 
