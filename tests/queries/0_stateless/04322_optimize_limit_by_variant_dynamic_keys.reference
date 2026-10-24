@@ -5,7 +5,6 @@
 -- toString is not injective there. The suspicious-type guard keeps such wrappers rather than
 -- unwrapping them, which would change the partitioning and the result.
 
-SET enable_analyzer = 1;
 SET optimize_limit_by_function_keys = 0;
 SET optimize_injective_functions_in_limit_by = 1;
 SET allow_experimental_variant_type = 1;

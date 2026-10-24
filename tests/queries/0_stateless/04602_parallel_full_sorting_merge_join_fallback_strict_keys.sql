@@ -17,8 +17,6 @@
 
 SET join_use_nulls = 0;
 
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS pfsmj_fb_left_str;
 DROP TABLE IF EXISTS pfsmj_fb_right_nullable;
 DROP TABLE IF EXISTS pfsmj_fb_left_lc;
