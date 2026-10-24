@@ -209,7 +209,13 @@ char utmLatitudeBand(Float64 latitude)
     if (latitude >= 72.0 && latitude <= 84.0)
         return 'X';
     if (latitude >= -80.0 && latitude < 72.0)
-        return BAND_LETTERS[static_cast<size_t>(std::floor((latitude + 80.0) / 8.0))];
+    {
+        /// Compute in long double so a latitude just below an 8-degree boundary is not rounded up
+        /// into the band above it. Subnormal negatives still evaluate to band 'N' (the equator
+        /// band) here, which is what keeps `geoToMGRS` consistent at the 10,000,000 m boundary.
+        long double index = std::floor((static_cast<long double>(latitude) + 80.0L) / 8.0L);
+        return BAND_LETTERS[static_cast<size_t>(index)];
+    }
     return 0;
 }
 
@@ -280,7 +286,10 @@ UTMCoordinate wgs84ToUTM(Float64 longitude, Float64 latitude, UInt8 forced_zone)
                * (a * a / 2.0 + (5.0 - t + 9.0 * c + 4.0 * c * c) * a * a * a * a / 24.0
                   + (61.0 - 58.0 * t + t * t + 600.0 * c - 330.0 * ecc_prime_sq) * a * a * a * a * a * a / 720.0));
 
-    if (latitude < 0.0)
+    /// Decide the false northing from the band letter, so it can never disagree with the band that
+    /// `UTMToGeo` turns back into a hemisphere. Bands 'C'..'M' are the southern hemisphere; 'N'
+    /// and above are northern. (Equivalent to `result.band < 'N'`, written explicitly for clarity.)
+    if (result.band <= 'M')
         result.northing += FALSE_NORTHING;
 
     return result;
@@ -336,7 +345,10 @@ std::string mgrsEncode(Float64 longitude, Float64 latitude, UInt8 precision)
     const UTMCoordinate utm = wgs84ToUTM(longitude, latitude);
 
     const Int64 easting_int = static_cast<Int64>(std::floor(utm.easting));
-    const Int64 northing_int = static_cast<Int64>(std::floor(utm.northing));
+    Int64 northing_int = static_cast<Int64>(std::floor(utm.northing));
+
+    if (latitude < 0.0 && northing_int == static_cast<Int64>(FALSE_NORTHING))
+        --northing_int;
 
     std::string result = std::to_string(utm.zone);
     result += utm.band;
