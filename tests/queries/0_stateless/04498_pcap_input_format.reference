@@ -1,0 +1,219 @@
+--- schema ---
+number	UInt64
+timestamp	DateTime64(9)
+capture_length	UInt32
+original_length	UInt32
+link_type	LowCardinality(String)
+protocols	Array(LowCardinality(String))
+eth_src	Nullable(String)
+eth_dst	Nullable(String)
+eth_type	LowCardinality(String)
+vlan_id	Nullable(UInt16)
+ip_version	Nullable(UInt8)
+src_addr	Nullable(IPv6)
+dst_addr	Nullable(IPv6)
+ip_protocol	LowCardinality(String)
+ip_ttl	Nullable(UInt16)
+src_port	Nullable(UInt16)
+dst_port	Nullable(UInt16)
+tcp_flags	Nullable(String)
+tcp_seq	Nullable(UInt32)
+tcp_ack	Nullable(UInt32)
+payload_length	UInt32
+payload	String
+raw	String
+--- classic pcap (HTTP over TCP) ---
+1	ETHERNET_II	['ETHERNET_II','IP','TCP','RAW']	4	::ffff:192.0.2.1	::ffff:192.0.2.2	TCP	12345	80	ACK,PSH
+2	ETHERNET_II	['ETHERNET_II','IP','UDP']	4	::ffff:192.0.2.1	::ffff:192.0.2.2	UDP	68	67	\N
+3	ETHERNET_II	['ETHERNET_II','IP','ICMP']	4	::ffff:192.0.2.1	::ffff:192.0.2.2	ICMP	\N	\N	\N
+4	ETHERNET_II	['ETHERNET_II','DOT1Q','IP','TCP','RAW']	4	::ffff:192.0.2.1	::ffff:192.0.2.2	TCP	12345	80	ACK,PSH
+5	ETHERNET_II	['ETHERNET_II','IP','RAW']	4	::ffff:192.0.2.1	::ffff:192.0.2.2	TCP	\N	\N	\N
+6	ETHERNET_II	['ETHERNET_II','IPv6','TCP','RAW']	6	2001:db8::1	2001:db8::2	TCP	12345	80	ACK,PSH
+7	ETHERNET_II	['ETHERNET_II','IPv6','UDP']	6	2001:db8::1	2001:db8::2	UDP	68	67	\N
+8	ETHERNET_II	['ETHERNET_II','IPv6','HOPOPT','IPv6-Route','TCP','RAW']	6	2001:db8::1	2001:db8::2	TCP	12345	80	ACK,PSH
+9	ETHERNET_II	['ETHERNET_II','IPv6','IPv6-Frag','RAW']	6	2001:db8::1	2001:db8::2	UDP	\N	\N	\N
+10	ETHERNET_II	['ETHERNET_II','IPv6','AH','TCP','RAW']	6	2001:db8::1	2001:db8::2	TCP	12345	80	ACK,PSH
+11	ETHERNET_II	['ETHERNET_II','IPv6','Shim6','UDP']	6	2001:db8::1	2001:db8::2	UDP	68	67	\N
+--- UDP ---
+2	['ETHERNET_II','IP','UDP']	UDP	68	67
+7	['ETHERNET_II','IPv6','UDP']	UDP	68	67
+9	['ETHERNET_II','IPv6','IPv6-Frag','RAW']	UDP	\N	\N
+11	['ETHERNET_II','IPv6','Shim6','UDP']	UDP	68	67
+--- ICMP protocol/count ---
+ICMP	1
+--- all Ethernet/IPv4/TCP ---
+11	11	5	6
+--- pcapng reads identically to the classic pcap ---
+1	ETHERNET_II	['ETHERNET_II','IP','TCP','RAW']	4	::ffff:192.0.2.1	::ffff:192.0.2.2	TCP	12345	80	ACK,PSH
+2	ETHERNET_II	['ETHERNET_II','IP','UDP']	4	::ffff:192.0.2.1	::ffff:192.0.2.2	UDP	68	67	\N
+3	ETHERNET_II	['ETHERNET_II','IP','ICMP']	4	::ffff:192.0.2.1	::ffff:192.0.2.2	ICMP	\N	\N	\N
+4	ETHERNET_II	['ETHERNET_II','DOT1Q','IP','TCP','RAW']	4	::ffff:192.0.2.1	::ffff:192.0.2.2	TCP	12345	80	ACK,PSH
+5	ETHERNET_II	['ETHERNET_II','IP','RAW']	4	::ffff:192.0.2.1	::ffff:192.0.2.2	TCP	\N	\N	\N
+6	ETHERNET_II	['ETHERNET_II','IPv6','TCP','RAW']	6	2001:db8::1	2001:db8::2	TCP	12345	80	ACK,PSH
+7	ETHERNET_II	['ETHERNET_II','IPv6','UDP']	6	2001:db8::1	2001:db8::2	UDP	68	67	\N
+8	ETHERNET_II	['ETHERNET_II','IPv6','HOPOPT','IPv6-Route','TCP','RAW']	6	2001:db8::1	2001:db8::2	TCP	12345	80	ACK,PSH
+9	ETHERNET_II	['ETHERNET_II','IPv6','IPv6-Frag','RAW']	6	2001:db8::1	2001:db8::2	UDP	\N	\N	\N
+10	ETHERNET_II	['ETHERNET_II','IPv6','AH','TCP','RAW']	6	2001:db8::1	2001:db8::2	TCP	12345	80	ACK,PSH
+11	ETHERNET_II	['ETHERNET_II','IPv6','Shim6','UDP']	6	2001:db8::1	2001:db8::2	UDP	68	67	\N
+--- pcapng and pcap agree on every column ---
+1
+--- VLAN-tagged frame: eth_type unwraps the 802.1Q tag ---
+4	['ETHERNET_II','DOT1Q','IP','TCP','RAW']	IP	42	TCP	12345	80
+--- non-first IPv4 fragment: ip_protocol comes from the IPv4 header ---
+5	['ETHERNET_II','IP','RAW']	TCP	\N	\N	\N
+--- native IPv6: addresses, next header and ports ---
+6	['ETHERNET_II','IPv6','TCP','RAW']	IPv6	6	2001:db8::1	2001:db8::2	TCP	64	12345	80	ACK,PSH
+7	['ETHERNET_II','IPv6','UDP']	IPv6	6	2001:db8::1	2001:db8::2	UDP	64	68	67	\N
+8	['ETHERNET_II','IPv6','HOPOPT','IPv6-Route','TCP','RAW']	IPv6	6	2001:db8::1	2001:db8::2	TCP	64	12345	80	ACK,PSH
+9	['ETHERNET_II','IPv6','IPv6-Frag','RAW']	IPv6	6	2001:db8::1	2001:db8::2	UDP	64	\N	\N	\N
+10	['ETHERNET_II','IPv6','AH','TCP','RAW']	IPv6	6	2001:db8::1	2001:db8::2	TCP	64	12345	80	ACK,PSH
+11	['ETHERNET_II','IPv6','Shim6','UDP']	IPv6	6	2001:db8::1	2001:db8::2	UDP	64	68	67	\N
+--- IPv6 extension headers: ip_protocol is the protocol after the chain ---
+8	['ETHERNET_II','IPv6','HOPOPT','IPv6-Route','TCP','RAW']	TCP	12345	80	ACK,PSH
+9	['ETHERNET_II','IPv6','IPv6-Frag','RAW']	UDP	\N	\N	\N
+10	['ETHERNET_II','IPv6','AH','TCP','RAW']	TCP	12345	80	ACK,PSH
+11	['ETHERNET_II','IPv6','Shim6','UDP']	UDP	68	67	\N
+--- protocol filters see extension-header traffic ---
+TCP	6	1
+UDP	4	1
+--- block size limits: rows, query rows, bytes, and both default ---
+3	11
+3	11
+11	11	851
+6	11	851
+1	11	851
+7	11	851
+8	11	851	110
+2	11	110
+1	11	851
+--- truncated capture (snaplen 34: original_length > capture_length) ---
+1	34	76	['ETHERNET_II','IP']	TCP	34
+2	34	42	['ETHERNET_II','IP']	UDP	34
+3	34	42	['ETHERNET_II','IP']	ICMP	34
+--- headers cut by the snapshot length: dissected up to the last complete header ---
+1	58	112	['ETHERNET_II','IPv6','HOPOPT']	6	HOPOPT	\N
+2	66	112	['ETHERNET_II','IPv6','HOPOPT','IPv6-Route']	6	IPv6-Route	\N
+3	74	112	['ETHERNET_II','IPv6','HOPOPT','IPv6-Route']	6	TCP	\N
+4	38	76	['ETHERNET_II','IP']	4	TCP	\N
+--- headers cut by the snapshot length before the end of the IP header: the rest is raw, the outer protocols are kept ---
+1	18	76	ETHERNET_II	['ETHERNET_II','RAW']	66:77:88:99:aa:bb	IP	\N	4	18
+2	34	112	ETHERNET_II	['ETHERNET_II','RAW']	66:77:88:99:aa:bb	IPv6	\N	6	34
+3	16	80	ETHERNET_II	['ETHERNET_II','RAW']	66:77:88:99:aa:bb	RAW	\N	\N	16
+4	28	80	ETHERNET_II	['ETHERNET_II','DOT1Q','RAW']	66:77:88:99:aa:bb	IP	7	4	28
+5	14	76	ETHERNET_II	['ETHERNET_II']	66:77:88:99:aa:bb	IP	\N	\N	14
+1	10	62	IP	['RAW']	\N		\N	4	10
+2	20	48	IPv6	['RAW']	\N		\N	6	20
+1	22	50	IEEE802_3	['IEEE802_3','SNAP']	00:11:22:33:44:aa	IP	\N	\N	22
+2	32	50	IEEE802_3	['IEEE802_3','SNAP','RAW']	00:11:22:33:44:aa	IP	\N	4	32
+--- IP headers cut by the snapshot length: the captured IP fields are still filled ---
+truncated_ip.pcap	1	18	4	\N		\N	\N	\N
+truncated_ip.pcap	2	34	6	64	HOPOPT	\N	\N	\N
+truncated_ip.pcap	3	16	\N	\N		\N	\N	\N
+truncated_ip.pcap	4	28	4	64	TCP	\N	\N	\N
+truncated_ip.pcap	5	14	\N	\N		\N	\N	\N
+truncated_raw_ip.pcap	1	10	4	64	TCP	\N	\N	\N
+truncated_raw_ip.pcap	2	20	6	64	UDP	\N	\N	\N
+truncated_null.pcap	1	14	4	64	TCP	\N	\N	\N
+truncated_sll.pcap	1	26	4	64	UDP	\N	\N	\N
+truncated_dot3.pcap	1	22	\N	\N		\N	\N	\N
+truncated_dot3.pcap	2	32	4	64	UDP	\N	\N	\N
+ppi.pcap	1	84	4	64	TCP	::ffff:192.0.2.1	::ffff:192.0.2.2	12345
+ppi.pcap	2	26	4	\N		\N	\N	\N
+truncated_ip_options.pcap	1	22	4	64	UDP	::ffff:192.0.2.1	::ffff:192.0.2.2	\N
+--- length invariants hold across all fixtures ---
+packets.pcap	0	0	0
+packets.pcapng	0	0	0
+truncated.pcap	0	0	0
+truncated_headers.pcap	0	0	0
+truncated_ip.pcap	0	0	0
+truncated_raw_ip.pcap	0	0	0
+raw_ip.pcap	0	0	0
+ipv4.pcap	0	0	0
+ipv6.pcap	0	0	0
+null.pcap	0	0	0
+sll.pcap	0	0	0
+truncated_null.pcap	0	0	0
+truncated_sll.pcap	0	0	0
+ppi.pcap	0	0	0
+sll2.pcap	0	0	0
+dot3.pcap	0	0	0
+truncated_dot3.pcap	0	0	0
+options.pcap	0	0	0
+truncated_ip_options.pcap	0	0	0
+--- padded short frame: payload excludes the Ethernet padding ---
+60	4	ping	0	42
+--- tunnels: IP columns describe the outer header ---
+1	['ETHERNET_II','IPv6','IP','TCP','RAW']	IPv6	6	2001:db8::1	2001:db8::2	IPv4	64	\N	\N
+2	['ETHERNET_II','IP','IPv6','UDP']	IP	4	::ffff:192.0.2.1	::ffff:192.0.2.2	IPv6	64	\N	\N
+--- tunneled Ethernet: Ethernet columns describe the outer link layer ---
+1	ETHERNET_II	66:77:88:99:aa:bb	00:11:22:33:44:55	IP	\N	UDP	4789
+--- subset of columns (only number, dst_port) ---
+1	80
+2	67
+3	\N
+4	80
+5	\N
+6	80
+7	67
+8	80
+9	\N
+10	80
+11	67
+--- from a stream: standard input ---
+11	6
+--- from a stream: compressed file ---
+11	6
+--- from a stream: an error of the input buffer is reported as is ---
+CANNOT_DECOMPRESS
+--- schema inference via file() extension is PCAP-explicit only (count) ---
+11
+--- format is inferred from the .pcap and .pcapng extensions ---
+packets.pcap	11	6
+packets.pcapng	11	6
+number
+timestamp
+--- payload covers only TCP and UDP: an ICMP packet has an empty payload ---
+3	ICMP	0	
+--- raw IP link types: the IP header is the outermost layer ---
+raw_ip.pcap	1	IP	['IP','TCP','RAW']	\N		4	::ffff:192.0.2.1	::ffff:192.0.2.2	TCP	12345	80	22
+raw_ip.pcap	2	IPv6	['IPv6','UDP']	\N		6	2001:db8::1	2001:db8::2	UDP	68	67	0
+raw_ip.pcap	3	IP	['IP','ICMP']	\N		4	::ffff:192.0.2.1	::ffff:192.0.2.2	ICMP	\N	\N	0
+ipv4.pcap	1	IP	['IP','UDP']	\N		4	::ffff:192.0.2.1	::ffff:192.0.2.2	UDP	68	67	0
+ipv6.pcap	1	IPv6	['IPv6','TCP','RAW']	\N		6	2001:db8::1	2001:db8::2	TCP	12345	80	22
+--- BSD loopback and Linux cooked capture link types are dissected ---
+null.pcap	1	LOOPBACK	['LOOPBACK','IP','TCP','RAW']	\N		4	::ffff:192.0.2.1	::ffff:192.0.2.2	TCP	12345	80	22
+sll.pcap	1	SLL	['SLL','IP','UDP']	\N		4	::ffff:192.0.2.1	::ffff:192.0.2.2	UDP	68	67	0
+--- BSD loopback, Linux cooked capture and PPI frames cut inside the IP header keep their outer headers ---
+truncated_null.pcap	1	14	66	LOOPBACK	['LOOPBACK','RAW']	\N		4	TCP	14
+truncated_sll.pcap	1	26	44	SLL	['SLL','RAW']	\N		4	UDP	26
+ppi.pcap	1	84	84	PPI	['PPI','ETHERNET_II','IP','TCP','RAW']	\N		4	TCP	84
+ppi.pcap	2	26	84	PPI	['PPI','ETHERNET_II','RAW']	\N		4		26
+--- a link type that is not dissected yields rows with the capture metadata only ---
+1	RAW	['RAW']	48	48	\N		\N
+--- IEEE 802.3 frames: LLC, and IP behind SNAP ---
+1	IEEE802_3	['IEEE802_3','SNAP','IP','UDP']	00:11:22:33:44:aa	01:80:c2:00:00:00	IP	4	::ffff:192.0.2.1	::ffff:192.0.2.2	UDP	68	67
+2	IEEE802_3	['IEEE802_3','LLC','STP']	00:11:22:33:44:aa	01:80:c2:00:00:00	LLC	\N	\N	\N		\N	\N
+3	ETHERNET_II	['ETHERNET_II','IP','UDP']	66:77:88:99:aa:bb	00:11:22:33:44:55	IP	4	::ffff:192.0.2.1	::ffff:192.0.2.2	UDP	68	67
+--- end-of-options padding: the headers are dissected, the payload starts after the padding ---
+1	['ETHERNET_II','IP','UDP','RAW']	4	::ffff:192.0.2.1	::ffff:192.0.2.2	UDP	5353	5353	4	ping
+2	['ETHERNET_II','IP','TCP','RAW']	4	::ffff:192.0.2.1	::ffff:192.0.2.2	TCP	12345	80	4	ping
+3	['ETHERNET_II','IP','TCP','RAW']	4	::ffff:192.0.2.1	::ffff:192.0.2.2	TCP	12345	80	4	ping
+--- non-first IPv6 fragment: the extension-header chain stops at the Fragment header ---
+4	['ETHERNET_II','IPv6','IPv6-Frag','RAW']	IPv6-Opts	\N	\N	0
+--- first IPv4 and IPv6 fragments: the transport header is decoded ---
+1	['ETHERNET_II','IP','TCP','RAW']	4	TCP	12345	80	ACK,PSH	1	22	GET / HTTP/1.0\\r\\n\\r\\n
+2	['ETHERNET_II','IPv6','IPv6-Frag','UDP','RAW']	6	UDP	5353	5353	\N	\N	5	first
+--- explicit structure: the columns are converted to the requested types ---
+1	UInt32	80	Nullable(String)
+2	UInt32	67	Nullable(String)
+3	UInt32	\N	Nullable(String)
+4	UInt32	80	Nullable(String)
+5	UInt32	\N	Nullable(String)
+6	UInt32	80	Nullable(String)
+7	UInt32	67	Nullable(String)
+8	UInt32	80	Nullable(String)
+9	UInt32	\N	Nullable(String)
+10	UInt32	80	Nullable(String)
+11	UInt32	67	Nullable(String)
+THERE_IS_NO_COLUMN
+while converting column `src_addr` from type Nullable(IPv6) to type UInt8
