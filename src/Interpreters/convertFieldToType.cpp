@@ -22,6 +22,7 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeQBit.h>
+#include <DataTypes/Utils.h>
 #include <DataTypes/Serializations/SerializationQBit.h>
 
 #include <Core/AccurateComparison.h>
@@ -581,6 +582,16 @@ DataTypePtr widenIntegerElements(const DataTypePtr & type, WideIntegerCarrier ca
     return which.isUInt256() ? nullptr : std::make_shared<DataTypeUInt256>();
 }
 
+/// `equals` does not tell `Bool` from `UInt8`, and the strict `Bool` conversion accepts only 0 and 1.
+bool canReturnUnchanged(const IDataType * from_type_hint, const IDataType & to_type, bool strict)
+{
+    if (!from_type_hint || !from_type_hint->equals(to_type))
+        return false;
+    if (!strict)
+        return true;
+    return !typeTreeContainsBool(to_type) || from_type_hint->getName() == to_type.getName();
+}
+
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)
 {
     /// A non-Null constant of `Nullable(T)` / `LowCardinality(T)` is a plain value of `T`, and the caller only unwraps
@@ -603,7 +614,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             from_type_hint = unwrapped_hint;
     }
 
-    if (from_type_hint && from_type_hint->equals(type))
+    if (canReturnUnchanged(from_type_hint, type, strict))
     {
         return src;
     }
@@ -1660,7 +1671,7 @@ Field convertFieldToType(const Field & from_value, const IDataType & to_type, co
     if (from_value.isNull())
         return from_value;
 
-    if (from_type_hint && from_type_hint->equals(to_type))
+    if (canReturnUnchanged(from_type_hint, to_type, strict))
         return from_value;
 
     if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(&to_type))
@@ -1673,7 +1684,7 @@ Field convertFieldToType(const Field & from_value, const IDataType & to_type, co
         if (WhichDataType(nested_type).isNothing())
             return {};
 
-        if (from_type_hint && from_type_hint->equals(nested_type))
+        if (canReturnUnchanged(from_type_hint, nested_type, strict))
             return from_value;
         return convertFieldToTypeImpl(from_value, nested_type, from_type_hint, format_settings, strict, convert_inexact_floats);
     }
