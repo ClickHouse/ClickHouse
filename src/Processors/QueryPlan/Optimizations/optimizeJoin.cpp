@@ -1070,6 +1070,10 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
     query_graph.relation_stats = std::move(query_graph_builder.relation_stats);
     query_graph.edges = std::move(query_graph_builder.join_edges);
     query_graph.edge_conflict_ops = std::move(query_graph_builder.join_edge_ops);
+    BitSet null_supplying_relations;
+    for (const auto & [relation, restriction] : query_graph_builder.join_kinds)
+        if (restriction.second != JoinKind::Inner)
+            null_supplying_relations.set(relation);
     query_graph.join_kinds = std::move(query_graph_builder.join_kinds);
     query_graph.outer_join_conditions = std::move(query_graph_builder.outer_join_conditions);
     query_graph.conflict_ops = std::move(query_graph_builder.conflict_ops);
@@ -1309,11 +1313,13 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             /// input pos -> new input node
             std::unordered_map<size_t, const ActionsDAG::Node *> current_step_type_changes;
 
-            for (auto rel_id : {left_rels.getSingleBit(), right_rels.getSingleBit()})
+            /// NULL padding applies where the relation is joined alone; other type changes only after all predicates on original columns.
+            const bool is_last_step = entry_idx + 1 == sequence.size();
+            for (const auto & [relation, new_inputs] : query_graph_builder.type_changes)
             {
-                if (!rel_id.has_value())
+                const bool joined_alone = left_rels.getSingleBit() == relation || right_rels.getSingleBit() == relation;
+                if (!(null_supplying_relations.test(relation) ? joined_alone : is_last_step))
                     continue;
-                const auto & new_inputs = query_graph_builder.type_changes[rel_id.value()];
                 for (const auto * new_input : new_inputs)
                 {
                     const auto * input_node = trackInputColumn(new_input);
