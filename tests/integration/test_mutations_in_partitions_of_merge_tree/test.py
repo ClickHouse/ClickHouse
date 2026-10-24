@@ -448,3 +448,79 @@ def test_legacy_finished_mutation_file_key_change(started_cluster, with_obsolete
         )
     finally:
         node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
+
+
+def test_legacy_pending_mutation_file_key_change(started_cluster):
+    """
+    Upgrade regression: an older server version kept the original `IN PARTITION <value>` literal
+    in `mutation_*.txt`, and a key-safe partition key type change (`Enum8 -> Int8`) was made
+    while the mutation was still pending, before the first load with the current version. The
+    literal is undecodable now, but the table must still load, and the mutation must stay
+    visible and cancellable, as it was before the partition scope was resolved at load.
+    """
+    name = "test_legacy_pending_mutation_file_key_change"
+
+    try:
+        node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
+        node1.query(
+            f"CREATE TABLE {name} (p Enum8('a' = 1, 'b' = 2), n Int64) "
+            "ENGINE = MergeTree PARTITION BY p ORDER BY tuple()"
+        )
+        node1.query(f"INSERT INTO {name} VALUES ('a', 1), ('b', 2)")
+        node1.query(f"SYSTEM STOP MERGES {name}")
+        node1.query(f"ALTER TABLE {name} UPDATE n = n + 100 IN PARTITION 'a' WHERE 1")
+        node1.query(
+            f"ALTER TABLE {name} MODIFY COLUMN p Int8", settings={"alter_sync": "2"}
+        )
+
+        data_dir = node1.query(
+            "SELECT data_paths[1] FROM system.tables "
+            f"WHERE database = currentDatabase() AND name = '{name}'"
+        ).strip()
+        mutation_id = node1.query(
+            "SELECT mutation_id FROM system.mutations "
+            f"WHERE database = currentDatabase() AND table = '{name}' AND NOT is_done"
+        ).strip()
+        mutation_file = data_dir + mutation_id
+
+        node1.query(f"DETACH TABLE {name}")
+
+        # Fabricate the legacy format: put the original literal back instead of the pinned
+        # partition id.
+        sed_program = r"s|IN PARTITION ID \\'1\\'|IN PARTITION \\'a\\'|"
+        node1.exec_in_container(["sed", "-i", sed_program, mutation_file])
+        assert (
+            node1.exec_in_container(
+                ["bash", "-c", f"grep -c -F \"IN PARTITION \\\\'a\\\\'\" {mutation_file} || true"]
+            ).strip()
+            == "1"
+        )
+
+        node1.query(f"ATTACH TABLE {name}")
+
+        assert node1.query(
+            "SELECT command, is_done FROM system.mutations "
+            f"WHERE database = currentDatabase() AND table = '{name}'"
+        ) == "(UPDATE n = n + 100 IN PARTITION \\'a\\' WHERE 1)\t0\n"
+
+        node1.query(
+            f"KILL MUTATION WHERE database = currentDatabase() AND table = '{name}' "
+            f"AND mutation_id = '{mutation_id}'"
+        )
+        assert (
+            node1.query(
+                "SELECT count() FROM system.mutations "
+                f"WHERE database = currentDatabase() AND table = '{name}'"
+            )
+            == "0\n"
+        )
+        assert node1.query(f"SELECT p, n FROM {name} ORDER BY p") == "1\t1\n2\t2\n"
+
+        # The table stays usable: new mutations of the converted partition key work.
+        node1.query(
+            f"ALTER TABLE {name} UPDATE n = n + 1000 IN PARTITION 2 WHERE 1",
+            settings={"mutations_sync": "2"},
+        )
+        assert node1.query(f"SELECT p, n FROM {name} ORDER BY p") == "1\t1\n2\t1002\n"
+    finally:
+        node1.query(f"DROP TABLE IF EXISTS {name} SYNC")

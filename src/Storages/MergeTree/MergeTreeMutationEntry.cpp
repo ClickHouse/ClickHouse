@@ -187,9 +187,35 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(
     if (has_unresolved_partition_scope && storage_->areAllPartsMutatedTo(static_cast<Int64>(block_number)))
         return;
 
-    partition_ids = storage_->rewritePartitionScopeToIds(*commands, context_);
+    if (!has_unresolved_partition_scope)
+    {
+        partition_ids = storage_->rewritePartitionScopeToIds(*commands, context_);
+        return;
+    }
 
-    needs_file_upgrade = has_unresolved_partition_scope;
+    /// A pending legacy mutation may have become undecodable already, if the partition key type
+    /// was changed by the previous binary (e.g. `MODIFY COLUMN p Int8` of an `Enum8` key while the
+    /// mutation was pending). Failing here would make the whole table unloadable, so the mutation
+    /// could not even be killed. Instead, the entry is loaded in the state it had before this
+    /// migration existed: global and with the original literals, so its execution fails with the
+    /// same error as before, and it is visible in `system.mutations` and can be killed. The scope
+    /// is resolved on a copy, so a failure in the middle does not leave the commands half rewritten.
+    MutationCommands resolved_commands = *commands;
+    try
+    {
+        partition_ids = storage_->rewritePartitionScopeToIds(resolved_commands, context_);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(getLogger("MergeTreeMutationEntry"), fmt::format(
+            "Cannot resolve the partition scope of the legacy mutation {}{}; "
+            "it is loaded with the original literals, and if its execution fails, it has to be killed",
+            path_prefix, file_name));
+        return;
+    }
+
+    *commands = std::move(resolved_commands);
+    needs_file_upgrade = true;
 }
 
 void MergeTreeMutationEntry::upgradeFileWithResolvedPartitionScope(const WriteSettings & settings)
