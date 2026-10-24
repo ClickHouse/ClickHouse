@@ -14,30 +14,48 @@ namespace DB
         extern const int BAD_ARGUMENTS;
     }
 
+    namespace
+    {
+        /// Returns the reason why `ast` cannot be a part of a key expression, or nullptr.
+        const char * findSubqueryInExpression(const IAST & ast)
+        {
+            checkStackSize();
+
+            if (ast.as<ASTSubquery>())
+                return "Key expressions cannot contain subqueries";
+
+            /// An `IN` operator whose right-hand side is a table reference (e.g. `x IN table`) builds a
+            /// FutureSet that nobody fills outside of a SELECT pipeline, so evaluating the key during INSERT
+            /// aborts with a "Not-ready Set" LOGICAL_ERROR. The subquery form above is already rejected;
+            /// the table-identifier form has the same defect and no practical use case, so forbid it too.
+            if (const auto * func = ast.as<ASTFunction>(); func && functionIsInOrGlobalInOperator(func->name))
+            {
+                const auto * args = func->arguments ? func->arguments->as<ASTExpressionList>() : nullptr;
+                if (args && args->children.size() == 2)
+                {
+                    const auto & rhs = args->children[1];
+                    if (rhs->as<ASTIdentifier>() || rhs->as<ASTTableIdentifier>())
+                        return "Key expressions cannot contain a table in the 'IN' operator";
+                }
+            }
+
+            for (const auto & child : ast.children)
+                if (const char * reason = findSubqueryInExpression(*child))
+                    return reason;
+
+            return nullptr;
+        }
+    }
+
     void checkExpressionDoesntContainSubqueries(const IAST & ast)
     {
-        checkStackSize();
+        if (const char * reason = findSubqueryInExpression(ast))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", reason);
+    }
 
-        if (ast.as<ASTSubquery>())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Key expressions cannot contain subqueries");
-
-        /// An `IN` operator whose right-hand side is a table reference (e.g. `x IN table`) builds a
-        /// FutureSet that nobody fills outside of a SELECT pipeline, so evaluating the key during INSERT
-        /// aborts with a "Not-ready Set" LOGICAL_ERROR. The subquery form above is already rejected;
-        /// the table-identifier form has the same defect and no practical use case, so forbid it too.
-        if (const auto * func = ast.as<ASTFunction>(); func && functionIsInOrGlobalInOperator(func->name))
-        {
-            const auto * args = func->arguments ? func->arguments->as<ASTExpressionList>() : nullptr;
-            if (args && args->children.size() == 2)
-            {
-                const auto & rhs = args->children[1];
-                if (rhs->as<ASTIdentifier>() || rhs->as<ASTTableIdentifier>())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Key expressions cannot contain a table in the 'IN' operator");
-            }
-        }
-
-        for (const auto & child : ast.children)
-            checkExpressionDoesntContainSubqueries(*child);
+    bool expressionContainsSubqueries(const IAST & ast)
+    {
+        return findSubqueryInExpression(ast) != nullptr;
     }
 
     ASTPtr extractKeyExpressionList(const ASTPtr & node)

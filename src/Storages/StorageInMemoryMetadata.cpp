@@ -21,6 +21,8 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/ReplaceAliasByExpressionVisitor.h>
+#include <Storages/extractKeyExpressionList.h>
 #include <Storages/VirtualColumnsDescription.h>
 
 
@@ -1001,6 +1003,14 @@ void StorageInMemoryMetadata::addImplicitIndicesForColumn(const ColumnDescriptio
         // If the expression is just a simple identifier (column reference), skip creating implicit index
         // because the underlying column will already have its own implicit index if needed.
         if (column.default_desc.expression->as<ASTIdentifier>())
+            return;
+
+        /// A skip index cannot contain `x IN table` (see `checkExpressionDoesntContainSubqueries`),
+        /// including the one that comes from the ALIAS expression, so there is no implicit index for such a column.
+        ASTPtr expanded_expression = column.default_desc.expression->clone();
+        ReplaceAliasByExpressionMatcher::Data replace_data{columns, {}};
+        ReplaceAliasByExpressionMatcher::Visitor(replace_data).visit(expanded_expression);
+        if (expressionContainsSubqueries(*expanded_expression))
             return;
     }
 

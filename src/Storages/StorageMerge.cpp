@@ -107,10 +107,13 @@ namespace Setting
 {
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsUInt64 max_bytes_to_transfer;
+    extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsFloat max_streams_multiplier_for_merge_tables;
     extern const SettingsUInt64 merge_table_max_tables_to_look_for_schema_inference;
     extern const SettingsBool parallel_replicas_allow_merge_tables;
     extern const SettingsBool parallel_replicas_plan_based;
+    extern const SettingsOverflowMode transfer_overflow_mode;
 }
 
 namespace MergeTreeSetting
@@ -2360,6 +2363,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
     auto pipe_columns = before_block_header->getNamesAndTypesList();
 
     {
+        UsefulSets useful_sets;
         for (const auto & alias : aliases)
         {
             ActionsDAG actions_dag(pipe_columns);
@@ -2381,8 +2385,38 @@ void ReadFromMerge::convertAndFilterSourceStream(
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected to have 1 output but got {}", nodes.size());
 
             actions_dag.addOrReplaceInOutputs(actions_dag.addAlias(*nodes.front(), alias.name));
+            appendSetsFromActionsDAG(actions_dag, useful_sets);
             auto expression_step = std::make_unique<ExpressionStep>(child.plan.getCurrentHeader(), std::move(actions_dag));
             child.plan.addStep(std::move(expression_step));
+        }
+
+        /// An ALIAS expression may contain `x IN table`, whose set `collectSets` registered above in the
+        /// planner context of this child. No outer `CreatingSet` step knows about it, so the child plan has
+        /// to build it itself, otherwise `IN` reports "Not-ready Set is passed as the second argument".
+        /// The sets are planned only now, after the actions are built: planning renames the table
+        /// expressions of the set subquery, which the actions look the set up by.
+        PreparedSets::Subqueries subqueries;
+        if (!useful_sets.empty())
+        {
+            subqueries = modified_query_info.planner_context->getPreparedSets().getSubqueries();
+            std::erase_if(subqueries, [&](const auto & subquery) { return !useful_sets.contains(subquery); });
+        }
+
+        if (!subqueries.empty())
+        {
+            planPreparedSetSubqueries(subqueries, local_context);
+
+            /// The plan of a set is destroyed once the set is built, while functions created with its
+            /// contexts may still be executed, so the child plan keeps those contexts alive.
+            for (const auto & subquery : subqueries)
+                if (const auto * subquery_plan = subquery->getQueryPlan())
+                    child.plan.takeContextsFrom(*subquery_plan);
+
+            const auto & settings = local_context->getSettingsRef();
+            SizeLimits network_transfer_limits(
+                settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
+            child.plan.addStep(std::make_unique<DelayedCreatingSetsStep>(
+                child.plan.getCurrentHeader(), std::move(subqueries), network_transfer_limits, local_context->getPreparedSetsCache()));
         }
     }
 
