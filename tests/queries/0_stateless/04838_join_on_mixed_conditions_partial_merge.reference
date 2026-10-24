@@ -1,0 +1,7 @@
+-- { echoOn }
+SELECT join_type, countDistinct((cnt, digest)) = 1 AS identical, anyIf(cnt, algorithm = 'hash') > 0 AS non_empty
+FROM digests GROUP BY join_type ORDER BY join_type;
+FULL	1	1
+INNER	1	1
+LEFT	1	1
+RIGHT	1	1
