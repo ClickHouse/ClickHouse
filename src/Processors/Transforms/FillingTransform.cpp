@@ -11,12 +11,17 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionDateOrDateTimeAddInterval.h>
 #include <Functions/IFunction.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Common/FieldVisitorScale.h>
 #include <Common/FieldVisitorSum.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/logger_useful.h>
 #include <IO/Operators.h>
 #include <base/arithmeticOverflow.h>
+#include <algorithm>
+#include <limits>
+#include <optional>
+#include <tuple>
 
 
 namespace DB
@@ -59,11 +64,123 @@ Block FillingTransform::transformHeader(Block header, const SortDescription & so
     return header;
 }
 
-/// Multiply through UInt64 so the result wraps by construction (FillingRow::doLongJump relies on
-/// well-defined wraparound to detect the overflowed jump). A signed Int64 multiply is UB on overflow.
-static Int64 mulStepWrapping(Int64 step, Int64 jumps_count)
+/** Returns `value + step * jumps_count * unit_length`, computed exactly in Int128, so that an intermediate product
+  * that does not fit Int64 is not mistaken for a result that does not fit it: an opposite-signed `value` can bring the
+  * sum back into range. Past 2^65 units the number of units is clamped, which keeps the result out of the range of
+  * Int64 in the direction of the step whatever `value` is, and keeps the product with `unit_length` within Int128.
+  * `unit_length` is positive and below 2^42 (an hour in nanoseconds is 3.6 * 10^12).
+  */
+static Int128 addStepExact(Int64 value, Int64 step, Int64 jumps_count, Int64 unit_length)
 {
-    return static_cast<Int64>(static_cast<UInt64>(step) * static_cast<UInt64>(jumps_count));
+    static constexpr Int128 max_units = static_cast<Int128>(1) << 65;
+    const Int128 units = std::clamp(static_cast<Int128>(step) * jumps_count, -max_units, max_units);
+    return value + units * unit_length;
+}
+
+/// `addStepExact` saturated to the range of Int64. A saturated result lies past the range of the column in the
+/// direction of the step, which holds for every column type using it (`Date`, `Date32`, `DateTime`): none of them
+/// can hold the boundaries of Int64.
+static Int64 addStepSaturating(Int64 value, Int64 step, Int64 jumps_count, Int64 unit_length)
+{
+    const Int128 res = addStepExact(value, step, jumps_count, unit_length);
+    if (res > std::numeric_limits<Int64>::max())
+        return std::numeric_limits<Int64>::max();
+    if (res < std::numeric_limits<Int64>::min())
+        return std::numeric_limits<Int64>::min();
+    return static_cast<Int64>(res);
+}
+
+/** Wraps the ticks a step over DateTime64 lands on into a field. A result past the Int64 storage of the column is
+  * kept exactly in a wider `Decimal128` of the same scale instead of being saturated to the boundary of Int64: at
+  * scale 9 that boundary (`2262-04-11 23:47:16.854775807`) is itself a valid value of the column, so a saturated
+  * exclusive bound (e.g. of `STALENESS`) would exclude it, and a saturated step would land on it. Such a field only
+  * takes part in comparisons: `FillingRow` stops the filling at it or rejects it as a value the column cannot hold.
+  */
+static Field dateTime64StepResult(Int128 ticks, UInt32 scale)
+{
+    if (ticks >= std::numeric_limits<Int64>::min() && ticks <= std::numeric_limits<Int64>::max())
+        return DecimalField<DateTime64>(DateTime64(static_cast<Int64>(ticks)), scale);
+    return DecimalField<Decimal128>(Decimal128(ticks), scale);
+}
+
+/** The calendar arithmetic of `Date` and `DateTime` returns the column's own storage type (`UInt16` / `UInt32`), so a
+  * step whose result does not fit it wraps around: `toDateTime('2100-01-01', 'UTC') + INTERVAL 10 YEAR` lands in
+  * 1973, and a step longer than the span of the type (`INTERVAL 150 YEAR` over `DateTime`) even wraps forward, to a
+  * value that is still ahead of the current one. Redo such a step in the wider calendar of `Date32` (day numbers)
+  * or `DateTime64(0)` (whole seconds), which agrees with the narrow one wherever the result fits, and return the
+  * result when it does not fit the storage type, so that the sequence stays monotonic: a border within the range of
+  * the type stops the filling there, and `FillingRow` rejects a value the column cannot hold instead of writing a
+  * wrapped-around one. Kinds whose result is not of the storage type (e.g. an hour step over `Date`) are left as is.
+  */
+template <typename Impl, typename T>
+static std::optional<Int64> calendarStepOutOfStorageType(T value, Int64 delta, const DateLUTImpl & date_lut, const DateLUTImpl & utc_time_zone)
+{
+    using NativeResult = decltype(Impl::execute(value, delta, date_lut, utc_time_zone, UInt16{}));
+
+    Int64 result = 0;
+    if constexpr (std::is_same_v<T, UInt16> && std::is_same_v<NativeResult, UInt16>)
+        result = Impl::execute(static_cast<Int32>(value), delta, date_lut, utc_time_zone, 0);
+    else if constexpr (std::is_same_v<T, UInt32> && std::is_same_v<NativeResult, UInt32>)
+        result = Impl::execute(DateTime64(static_cast<Int64>(value)), delta, date_lut, utc_time_zone, 0).value;
+    else
+        return {};
+
+    if (result < 0 || result > static_cast<Int64>(std::numeric_limits<T>::max()))
+        return result;
+    return {};
+}
+
+/** A step of a fixed-length kind over DateTime64 is a fixed number of ticks of the column. Returns the step as a
+  * number of units and the number of ticks per unit, or nothing for the kinds that are not of fixed length.
+  *
+  * A unit finer than the scale of the column (e.g. `MILLISECOND` over `DateTime64(2)`) is not a whole number of
+  * ticks. The generic functions adding such a unit return the result in the finer scale of the unit
+  * (`toDateTime64(..., 2) + INTERVAL 1 MILLISECOND` is a `DateTime64(3)`), which the filling would store back with
+  * the scale of the column, so such a step is converted to whole ticks of the column instead, and a step that is
+  * not a whole number of ticks is rejected: the column cannot hold the values it would generate.
+  */
+static std::optional<std::pair<Int64, Int64>> fixedLengthStep(IntervalKind::Kind kind, Int64 step, UInt32 scale)
+{
+    auto ticks = [kind, step, scale](Int64 seconds_per_unit, UInt32 unit_scale) -> std::pair<Int64, Int64>
+    {
+        if (unit_scale <= scale)
+            return {step, seconds_per_unit * DecimalUtils::scaleMultiplier<Int64>(scale - unit_scale)};
+
+        const Int64 units_per_tick = DecimalUtils::scaleMultiplier<Int64>(unit_scale - scale);
+        if (step % units_per_tick != 0)
+            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                "WITH FILL STEP INTERVAL {} {} is not a whole number of ticks of the ORDER BY column type DateTime64({})",
+                step, IntervalKind(kind).toKeyword(), scale);
+        return {step / units_per_tick, 1};
+    };
+
+    switch (kind)
+    {
+        case IntervalKind::Kind::Nanosecond: return ticks(1, 9);
+        case IntervalKind::Kind::Microsecond: return ticks(1, 6);
+        case IntervalKind::Kind::Millisecond: return ticks(1, 3);
+        case IntervalKind::Kind::Second: return ticks(1, 0);
+        case IntervalKind::Kind::Minute: return ticks(60, 0);
+        case IntervalKind::Kind::Hour: return ticks(3600, 0);
+        default: return {};
+    }
+}
+
+/** Computes the number of units a calendar step of `jumps_count` steps adds, and returns true when it (or, for a
+  * week or quarter step, the number of days or months in it, which `DateLUTImpl::addWeeks` and
+  * `DateLUTImpl::addQuarters` compute with wraparound) does not fit Int64: the functions adding interval kinds would
+  * wrap it around, possibly to a step that is still ahead of the current value but shorter than the real one.
+  */
+static bool stepDeltaOverflows(IntervalKind::Kind kind, Int64 step, Int64 jumps_count, Int64 & delta)
+{
+    if (common::mulOverflow(step, jumps_count, delta))
+        return true;
+    Int64 finer_units = 0;
+    if (kind == IntervalKind::Kind::Week)
+        return common::mulOverflow(delta, Int64{7}, finer_units);
+    if (kind == IntervalKind::Kind::Quarter)
+        return common::mulOverflow(delta, Int64{3}, finer_units);
+    return false;
 }
 
 template <typename T>
@@ -71,13 +188,42 @@ static FillColumnDescription::StepFunction getStepFunction(
     IntervalKind::Kind kind, Int64 step, const DateLUTImpl & date_lut, UInt16 scale = DataTypeDateTime64::default_scale)
 {
     static const DateLUTImpl & utc_time_zone = DateLUT::instance("UTC");
+
+    /// A day or week step over Date and Date32 is a plain addition of days, which the generic functions do in the
+    /// storage type with wraparound (`INTERVAL 4294967297 DAY` over Date32 adds one day). Add the days exactly
+    /// with saturation instead: a result out of the range of the storage type is returned as is, so that
+    /// `FillingRow` stops the filling at its border or rejects a value the column cannot hold.
+    if constexpr (std::is_same_v<T, UInt16> || std::is_same_v<T, Int32>)
+    {
+        if (kind == IntervalKind::Kind::Day || kind == IntervalKind::Kind::Week)
+        {
+            return [step, days_per_unit = Int64{kind == IntervalKind::Kind::Week ? 7 : 1}](Field & field, Int64 jumps_count)
+            {
+                const Int64 res = addStepSaturating(static_cast<T>(field.safeGet<T>()), step, jumps_count, days_per_unit);
+                if (res < std::numeric_limits<T>::min() || res > std::numeric_limits<T>::max())
+                    field = res;
+                else
+                    field = static_cast<T>(res);
+            };
+        }
+    }
+
     switch (kind) // NOLINT(bugprone-switch-missing-default-case)
     {
 #define DECLARE_CASE(NAME) \
         case IntervalKind::Kind::NAME: \
             return [step, scale, &date_lut](Field & field, Int64 jumps_count) { \
-                field = Add##NAME##sImpl::execute(static_cast<T>(\
-                    field.safeGet<T>()), mulStepWrapping(step, jumps_count), date_lut, utc_time_zone, scale); };
+                const auto value = static_cast<T>(field.safeGet<T>()); \
+                Int64 delta = 0; \
+                if (stepDeltaOverflows(IntervalKind::Kind::NAME, step, jumps_count, delta)) \
+                { \
+                    field = addStepSaturating(value, step, jumps_count, 1); \
+                    return; \
+                } \
+                if (const auto out_of_storage_type = calendarStepOutOfStorageType<Add##NAME##sImpl>(value, delta, date_lut, utc_time_zone)) \
+                    field = *out_of_storage_type; \
+                else \
+                    field = Add##NAME##sImpl::execute(value, delta, date_lut, utc_time_zone, scale); };
 
         FOR_EACH_INTERVAL_KIND(DECLARE_CASE)
 #undef DECLARE_CASE
@@ -107,13 +253,68 @@ static FillColumnDescription::StepFunction getStepFunction(const Field & step, c
         else if (which.isDate32())
             return getStepFunction<Int32>(step_kind.value(), step.safeGet<Int64>(), DateLUT::instance());
         else if (const auto * date_time = checkAndGetDataType<DataTypeDateTime>(type.get()))
-            return getStepFunction<UInt32>(step_kind.value(), step.safeGet<Int64>(), date_time->getTimeZone());
+        {
+            /// The functions adding seconds, minutes and hours multiply the step by the length of the unit with
+            /// wraparound even in the wider `DateTime64(0)` calendar, so a long enough step (e.g. `INTERVAL
+            /// 5124095576030432 HOUR`, whose length in seconds wraps to 3584) lands on a value that is still in
+            /// the range of the column and ahead of the current one. Add the seconds of these kinds with saturation
+            /// instead, as for DateTime64: a result out of the range of the column is returned as is, so that
+            /// `FillingRow` stops the filling at its border or rejects a value the column cannot hold.
+            const Int64 step_value = step.safeGet<Int64>();
+            Int64 seconds_per_unit = 0;
+            switch (step_kind->getKind())
+            {
+                case IntervalKind::Kind::Second: seconds_per_unit = 1; break;
+                case IntervalKind::Kind::Minute: seconds_per_unit = 60; break;
+                case IntervalKind::Kind::Hour: seconds_per_unit = 3600; break;
+                default: break;
+            }
+
+            if (seconds_per_unit)
+            {
+                return [step_value, seconds_per_unit](Field & field, Int64 jumps_count)
+                {
+                    const Int64 res = addStepSaturating(static_cast<UInt32>(field.safeGet<UInt32>()), step_value, jumps_count, seconds_per_unit);
+
+                    if (res < 0 || res > static_cast<Int64>(std::numeric_limits<UInt32>::max()))
+                        field = res;
+                    else
+                        field = static_cast<UInt32>(res);
+                };
+            }
+
+            return getStepFunction<UInt32>(step_kind.value(), step_value, date_time->getTimeZone());
+        }
         else if (const auto * date_time64 = checkAndGetDataType<DataTypeDateTime64>(type.get()))
         {
             const auto & step_dec = step.safeGet<DecimalField<Decimal64>>();
             Int64 converted_step = DecimalUtils::convertTo<Int64>(step_dec.getValue(), step_dec.getScale());
             static const DateLUTImpl & utc_time_zone = DateLUT::instance("UTC");
 
+            /// `FillingRow::doLongJump` multiplies the step by exponentially growing jump counts. The functions adding
+            /// seconds and finer kinds to DateTime64 throw `DECIMAL_OVERFLOW` when the ticks do not fit Int64, and the
+            /// ones adding minutes and hours wrap around, which may land ahead of the current value. Add the ticks
+            /// of a fixed-length step exactly instead (see `dateTime64StepResult`): a value past the range of the
+            /// column shortens the jump, and a single such step is rejected as a value the column cannot hold or
+            /// stops the filling at its border.
+            if (const auto fixed_length_step = fixedLengthStep(step_kind->getKind(), converted_step, date_time64->getScale()))
+            {
+                return [step_units = fixed_length_step->first, step_ticks = fixed_length_step->second](Field & field, Int64 jumps_count)
+                {
+                    auto field_decimal = field.safeGet<DecimalField<DateTime64>>();
+                    field = dateTime64StepResult(
+                        addStepExact(field_decimal.getValue().value, step_units, jumps_count, step_ticks), field_decimal.getScale());
+                };
+            }
+
+            /// The remaining kinds are calendar ones (days and longer). The functions adding them to DateTime64 compute
+            /// the result in whole seconds and multiply it back by the scale with wraparound, so a result that is in
+            /// the calendar but out of the range of the column (year 2350 at scale 9) wraps to an unrelated value,
+            /// possibly still ahead of the current one. Compute the whole seconds in the `DateTime64(0)` calendar
+            /// and convert them to ticks exactly instead, as for the fixed-length kinds above. A number of units that
+            /// does not fit Int64 lies far past the calendar, so it is replaced by a value far past the range of the
+            /// column in the direction of the step.
+            static constexpr Int128 calendar_step_overflow = static_cast<Int128>(1) << 100;
             switch (step_kind.value()) // NOLINT(bugprone-switch-missing-default-case)
             {
 #define DECLARE_CASE(NAME) \
@@ -121,8 +322,19 @@ static FillColumnDescription::StepFunction getStepFunction(const Field & step, c
                     return [converted_step, &time_zone = date_time64->getTimeZone()](Field & field, Int64 jumps_count) \
                     { \
                         auto field_decimal = field.safeGet<DecimalField<DateTime64>>(); \
-                        auto res = Add##NAME##sImpl::execute(field_decimal.getValue(), mulStepWrapping(converted_step, jumps_count), time_zone, utc_time_zone, static_cast<UInt16>(field_decimal.getScale())); \
-                        field = DecimalField<decltype(res)>(res, field_decimal.getScale()); \
+                        const Int64 value = field_decimal.getValue().value; \
+                        Int128 res = 0; \
+                        Int64 delta = 0; \
+                        if (stepDeltaOverflows(IntervalKind::Kind::NAME, converted_step, jumps_count, delta)) \
+                            res = (static_cast<Int128>(converted_step) * jumps_count > 0) ? calendar_step_overflow : -calendar_step_overflow; \
+                        else \
+                        { \
+                            const Int64 multiplier = DecimalUtils::scaleMultiplier<Int64>(field_decimal.getScale()); \
+                            const auto whole = std::div(value, multiplier); \
+                            const Int64 whole_res = Add##NAME##sImpl::execute(DateTime64(whole.quot), delta, time_zone, utc_time_zone, 0).value; \
+                            res = static_cast<Int128>(whole_res) * multiplier + whole.rem; \
+                        } \
+                        field = dateTime64StepResult(res, field_decimal.getScale()); \
                     }; \
                     break;
 
@@ -149,6 +361,9 @@ static FillColumnDescription::StepFunction getStepFunction(const Field & step, c
 
 static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & type)
 {
+    descr.fill_column_type = type;
+    std::tie(descr.fill_representable_min, descr.fill_representable_max) = fillRepresentableRangeOfColumnType(*type);
+
     auto max_type = Field::Types::Null;
     WhichDataType which(type);
     DataTypePtr to_type;
@@ -220,6 +435,219 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
     descr.staleness_step_func = getStepFunction(descr.fill_staleness, descr.staleness_kind, type);
 
     return true;
+}
+
+/** A value that must be representable in the column type for filling under the given TO bound to behave - either
+  * a value the filling generates, or a bound it must be able to reach - or nullopt when no such value can be
+  * derived up front and the bound has to be accepted.
+  *
+  * Only a fill with FROM is judged here: it generates the same sequence regardless of the data (even for an empty
+  * input), so a wraparound is certain and rejecting it up front is exact. It also matters in practice: the per-value
+  * check in `FillingRow::next` would reject the query too, but only after generating every value up to the boundary
+  * of the column type - `WITH FILL FROM 0 TO 4294967297` over a DateTime column would first generate 2^32 rows.
+  *
+  * Filling starts at FROM and advances by STEP while it stays strictly before TO, so with a plain numeric step the
+  * last generated value is known up front and can be far below TO: `WITH FILL FROM 0 TO 257 STEP 3` stops at 255.
+  *
+  * Without FROM the sequence is anchored at a data value, so which values are generated is known only at execution
+  * time: `WITH FILL TO 257 STEP 3` over a UInt8 column stops at 254 when the data ends at 11 but reaches 256 when
+  * it ends at 13, and an empty input generates nothing at all. Such a fill is left to the per-value check in
+  * `FillingRow::next`, which rejects it exactly when it generates a value the column cannot hold.
+  *
+  * Over Date and DateTime an INTERVAL step does not wrap around the storage type but continues in the wider
+  * calendar of Date32 / DateTime64 (see `calendarStepOutOfStorageType`), so the first step past the boundary of the
+  * storage type may land at or beyond an out-of-range TO, which ends the filling without generating anything the
+  * column cannot hold: `WITH FILL FROM toDate('2149-06-01') TO 65540 STEP INTERVAL 1 MONTH` generates only
+  * 2149-06-01, since the next value 2149-07-01 (day 65560) is not before TO. So the filling is walked from FROM up
+  * to the boundary of the storage type (see `walkIntervalFillToStorageTypeBoundary`), and the value required to fit
+  * is the first one past the boundary when it is still before TO, or the last value within the boundary otherwise:
+  * `WITH FILL FROM toDate(0) TO 80000 STEP INTERVAL 100 YEAR` generates 1970-01-01, 2070-01-01 and then 2170-01-01
+  * (day 73049), which a Date column cannot hold. (A TO on the other side - out of range against the fill direction - cannot reach
+  * this check: the FROM would lie even further out of range and is rejected first.)
+  *
+  * For Date32 and DateTime64 the calendar arithmetic clamps at the boundaries of the representable calendar instead
+  * - the window [0000-01-01, 9999-12-31] of DateLUTImpl, which lies strictly inside the range of their storage type:
+  * adding an interval whose result would leave the calendar returns the value unchanged (see e.g.
+  * DateLUTImpl::addYearsOutOfRange). A step that no longer advances the value ends the filling (see
+  * `FillingRow::next`), so a TO beyond the calendar boundary simply lets the filling run up to the last value it can
+  * reach, and nothing is required to fit there.
+  */
+/** Walks a fill with an INTERVAL step over Date or DateTime from FROM towards the boundary of the storage type in
+  * the fill direction, and returns the last value the filling generates within the boundary. The fill is anchored
+  * at FROM, so the walk does not depend on the data. A step of a fixed length (a day or week over Date, a second,
+  * minute or hour over DateTime) advances by many steps at once, as `FillingRow::doLongJump` does, which is exact
+  * for such a step; any other step is a calendar step of at least a day, so the boundary is at most tens of
+  * thousands of steps away and the walk takes them one at a time. Returns nothing for the kinds finer than a
+  * second over DateTime, whose results are not of the storage type.
+  */
+static std::optional<Field> walkIntervalFillToStorageTypeBoundary(const FillColumnDescription & descr, int direction)
+{
+    const WhichDataType which(descr.fill_column_type);
+    const auto kind = descr.step_kind->getKind();
+    if (which.isDateTime() && kind < IntervalKind::Kind::Second)
+        return {};
+
+    const bool fixed_length = which.isDate()
+        ? kind == IntervalKind::Kind::Day || kind == IntervalKind::Kind::Week
+        : kind <= IntervalKind::Kind::Hour;
+
+    const Field & boundary = direction > 0 ? descr.fill_representable_max : descr.fill_representable_min;
+
+    /// Whether `next` is a step of the filling from `value` that stays within the boundary. A step that does not
+    /// advance the value ends the filling.
+    const auto advances_within_boundary = [&](const Field & value, const Field & next)
+    {
+        return less(value, next, direction) && !less(boundary, next, direction);
+    };
+
+    Field value = descr.fill_from;
+    if (fixed_length)
+    {
+        Int64 jumps_count = 1;
+        for (size_t i = 0; i < 500 && jumps_count > 0; ++i)
+        {
+            Field next = value;
+            descr.step_func(next, jumps_count);
+            if (advances_within_boundary(value, next))
+            {
+                value = std::move(next);
+                jumps_count = jumps_count <= INT64_MAX / 2 ? jumps_count * 2 : jumps_count;
+            }
+            else
+                jumps_count /= 2;
+        }
+    }
+    else
+    {
+        while (true)
+        {
+            Field next = value;
+            descr.step_func(next, 1);
+            if (!advances_within_boundary(value, next))
+                break;
+            value = std::move(next);
+        }
+    }
+    return value;
+}
+
+static std::optional<Field> fillValueRequiredToFitColumnType(const FillColumnDescription & descr, int direction)
+{
+    /// Every column type reaching this point is filled either through Int64 or, for DateTime64, through a Decimal64
+    /// of the column's scale, whose raw value is the Int64 tick count that the filling arithmetic advances. The
+    /// wider Int128/Int256 columns are filled through their own type, so their bounds have already been accepted
+    /// by the representability check. All the bounds share one carrier: `tryConvertFields` converts them to the
+    /// same type up front.
+    const auto raw_value = [](const Field & field) -> std::optional<Int64>
+    {
+        if (field.getType() == Field::Types::Int64)
+            return field.safeGet<Int64>();
+        if (field.getType() == Field::Types::Decimal64)
+            return field.safeGet<DecimalField<Decimal64>>().getValue().value;
+        return {};
+    };
+
+    /// The result is wrapped back into the carrier of the bounds, so that the representability check sees a field
+    /// of the same kind as the bounds themselves (for DateTime64 a Decimal64 of the same scale, checked against
+    /// the calendar window in raw ticks).
+    const auto as_bound_field = [&](Int64 value) -> Field
+    {
+        if (descr.fill_to.getType() == Field::Types::Decimal64)
+            return DecimalField<Decimal64>(Decimal64(value), descr.fill_to.safeGet<DecimalField<Decimal64>>().getScale());
+        return value;
+    };
+
+    const auto to_raw = raw_value(descr.fill_to);
+    const auto from_raw = raw_value(descr.fill_from);
+    if (!to_raw || !from_raw)
+        return {};
+
+    const Int64 to = *to_raw;
+    const Int64 from = *from_raw;
+
+    if (descr.step_kind)
+    {
+        const WhichDataType which(descr.fill_column_type);
+        if (which.isDate32() || which.isDateTime64())
+            return {};
+
+        const auto last_value = walkIntervalFillToStorageTypeBoundary(descr, direction);
+        if (!last_value)
+            return descr.fill_to;
+
+        Field next_value = *last_value;
+        descr.step_func(next_value, 1);
+        if (less(*last_value, next_value, direction) && less(next_value, descr.fill_to, direction))
+            return next_value;
+        return last_value;
+    }
+
+    const auto step_raw = raw_value(descr.fill_step);
+    if (!step_raw)
+        return {};
+
+    const Int64 step = *step_raw;
+
+    /// A numeric step can be truncated to zero when converted to the ticks of the column (`STEP 0.001` over
+    /// `DateTime64(2)`). Such a step does not advance, so filling generates nothing after FROM.
+    if (step == 0)
+        return as_bound_field(from);
+
+    /// The step is directed towards TO, and TO is not on the wrong side of FROM: both are already checked when
+    /// the fill description is built.
+    const Int128 span = direction > 0 ? static_cast<Int128>(to) - from : static_cast<Int128>(from) - to;
+    if (span <= 0)
+        return as_bound_field(from); /// TO admits no filled value at all
+
+    const Int128 jumps = (span - 1) / (step > 0 ? static_cast<Int128>(step) : -static_cast<Int128>(step));
+    /// The result lies between FROM and TO, so it fits into Int64.
+    return as_bound_field(static_cast<Int64>(from + jumps * step));
+}
+
+/** The WITH FILL bound values are kept in a type wide enough for the arithmetic - Int64 for every integer column
+  * type - while the generated values are written into a column of the column's own type, which truncates whatever
+  * does not fit its range. A truncated value wraps around, so the generated sequence stops being monotonic, while
+  * the query plan keeps assuming that the stream is still sorted by the fill columns after WITH FILL. Downstream
+  * steps relying on that property then return wrong results: DISTINCT in order, for example, reads the stream as a
+  * sequence of sorted runs, so it deduplicates within wrong ranges (and hits the
+  * `Equal values are not contiguous within the range assumed to be sorted` assertion in a debug build).
+  * For the calendar-backed Date32 and DateTime64 the values between the calendar boundary and the boundary of
+  * the storage type do not wrap, but they are equally invalid: no conversion produces them (they all clamp at
+  * the calendar boundary), yet a FROM bound in that gap is materialized into the column as is and serialized
+  * as the clamped boundary date, indistinguishable from the genuine boundary value next to it.
+  * Reject such bounds instead of filling with wrapped-around or out-of-calendar values.
+  */
+static void checkFillBoundsFitColumnType(const FillColumnDescription & descr, const DataTypePtr & type, int direction)
+{
+    /// `fillValueFitsColumnType` tests the range of the storage type and, for Date32 and DateTime64, the calendar
+    /// window; types that saturate instead of wrapping around (Float, Decimal) are not checked by it at all.
+    auto is_representable = [&](const Field & value) { return fillValueFitsColumnType(value, *type); };
+
+    if (!descr.fill_from.isNull() && !is_representable(descr.fill_from))
+        throw Exception(
+            ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+            "WITH FILL FROM value {} is out of range of the ORDER BY column type {}",
+            applyVisitor(FieldVisitorToString(), descr.fill_from),
+            type->getName());
+
+    /// TO is an exclusive bound, so it is enough that the last value filling can generate under it is
+    /// representable: `WITH FILL FROM 0 TO 256` over a UInt8 column generates 0..255, and so does
+    /// `WITH FILL FROM 0 TO 257 STEP 3`, which stops at 255 - all of which fit. When the generated values depend
+    /// on the data (no FROM), the bound is accepted and the generated values are checked in `FillingRow::next`.
+    /// An INTERVAL step over Date or DateTime with FROM is walked up to the boundary of the column type, and the
+    /// bound is rejected only when the first step past it is still before TO; over Date32 and DateTime64 it stops
+    /// at the calendar boundary, so any TO is accepted.
+    if (!descr.fill_to.isNull() && !is_representable(descr.fill_to))
+    {
+        const auto required_value = fillValueRequiredToFitColumnType(descr, direction);
+
+        if (required_value && !is_representable(*required_value))
+            throw Exception(
+                ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                "WITH FILL TO value {} is out of range of the ORDER BY column type {}",
+                applyVisitor(FieldVisitorToString(), descr.fill_to),
+                type->getName());
+    }
 }
 
 static SortDescription deduplicateSortDescription(const SortDescription & sort_description, const Block & header)
@@ -297,6 +725,8 @@ FillingTransform::FillingTransform(
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                 "WITH FILL bound values cannot be negative for unsigned type {}", type->getName());
         }
+
+        checkFillBoundsFitColumnType(descr, type, fill_description[i].direction);
     }
     logDebug("fill description", dumpSortDescription(fill_description));
 
@@ -635,6 +1065,8 @@ bool FillingTransform::generateSuffixIfNeeded(
         logDebug("generateSuffixIfNeeded", "will not generate suffix");
         return false;
     }
+
+    filling_row.checkFillingTowardsConstraintsFitsColumnTypes();
 
     Block interpolate_block;
     if (should_insert_first)

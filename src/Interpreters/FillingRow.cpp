@@ -1,15 +1,26 @@
+#include <algorithm>
 #include <cstddef>
+#include <limits>
+#include <optional>
 
 #include <Columns/IColumn.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <IO/Operators.h>
 #include <Interpreters/FillingRow.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int INVALID_WITH_FILL_EXPRESSION;
+}
 
 constexpr static bool debug_logging_enabled = false;
 
@@ -37,11 +48,102 @@ bool equals(const Field & lhs, const Field & rhs)
     return accurateEquals(lhs, rhs);
 }
 
+bool fillValueFitsColumnType(const Field & value, const IDataType & type)
+{
+    const auto [min, max] = fillRepresentableRangeOfColumnType(type);
+
+    /// Null bounds - a type whose every value is representable (or saturates instead of wrapping around,
+    /// like Float and Decimal), nothing to check.
+    if (min.isNull())
+        return true;
+
+    return !accurateLess(value, min) && !accurateLess(max, value);
+}
+
+std::pair<Field, Field> fillRepresentableRangeOfColumnType(const IDataType & type)
+{
+    WhichDataType which(type);
+
+    if (which.isDate())
+        return {Field(static_cast<UInt64>(0)), Field(static_cast<UInt64>(std::numeric_limits<UInt16>::max()))};
+
+    if (which.isDateTime())
+        return {Field(static_cast<UInt64>(0)), Field(static_cast<UInt64>(std::numeric_limits<UInt32>::max()))};
+
+    if (which.isDate32())
+        return {Field(static_cast<Int64>(DATE_LUT_MIN_EXTEND_DAY_NUM)), Field(static_cast<Int64>(DATE_LUT_MAX_EXTEND_DAY_NUM))};
+
+    if (which.isDateTime64())
+    {
+        /// For Date32 and DateTime64 the boundaries of the representable calendar lie strictly inside the range of
+        /// the storage type, and the values between the two are invalid: nothing else produces them (conversions
+        /// clamp at the calendar boundary) and the serializers render them as the clamped boundary date.
+        /// The calendar clamps in the local civil calendar of the column's time zone (the local year is clamped to
+        /// [0000, 9999], see e.g. DateLUTImpl::addYearsOutOfRange), so the boundary expressed in raw ticks is
+        /// shifted by the UTC offset of the time zone, and the last representable time point has all its
+        /// sub-second digits set. For a high enough scale the calendar window in ticks is wider than the Int64
+        /// storage of the column, so the window is clamped to the storage range.
+        const auto & date_time_type = static_cast<const DataTypeDateTime64 &>(type);
+        const auto & time_zone = date_time_type.getTimeZone();
+        const UInt32 scale = date_time_type.getScale();
+        const Int64 max_seconds = time_zone.makeDateTime(DATE_LUT_MAX_REPRESENTABLE_YEAR, 12, 31, 23, 59, 59);
+        const Int64 min_seconds = time_zone.makeDateTime(DATE_LUT_MIN_REPRESENTABLE_YEAR, 1, 1, 0, 0, 0);
+        const Int128 scale_multiplier = DecimalUtils::scaleMultiplier<Int128>(scale);
+        const Int128 max_ticks = std::min(
+            static_cast<Int128>(max_seconds) * scale_multiplier + (scale_multiplier - 1),
+            static_cast<Int128>(std::numeric_limits<Int64>::max()));
+        const Int128 min_ticks = std::max(
+            static_cast<Int128>(min_seconds) * scale_multiplier,
+            static_cast<Int128>(std::numeric_limits<Int64>::min()));
+        return {
+            Field(DecimalField<Decimal64>(static_cast<Int64>(min_ticks), scale)),
+            Field(DecimalField<Decimal64>(static_cast<Int64>(max_ticks), scale))};
+    }
+
+    if (isInteger(type))
+    {
+        switch (which.idx)
+        {
+            case TypeIndex::UInt8:
+                return {Field(static_cast<UInt64>(0)), Field(static_cast<UInt64>(std::numeric_limits<UInt8>::max()))};
+            case TypeIndex::UInt16:
+                return {Field(static_cast<UInt64>(0)), Field(static_cast<UInt64>(std::numeric_limits<UInt16>::max()))};
+            case TypeIndex::UInt32:
+                return {Field(static_cast<UInt64>(0)), Field(static_cast<UInt64>(std::numeric_limits<UInt32>::max()))};
+            case TypeIndex::UInt64:
+                return {Field(static_cast<UInt64>(0)), Field(std::numeric_limits<UInt64>::max())};
+            case TypeIndex::UInt128:
+                return {Field(static_cast<UInt128>(0)), Field(std::numeric_limits<UInt128>::max())};
+            case TypeIndex::UInt256:
+                return {Field(static_cast<UInt256>(0)), Field(std::numeric_limits<UInt256>::max())};
+            case TypeIndex::Int8:
+                return {Field(static_cast<Int64>(std::numeric_limits<Int8>::min())), Field(static_cast<Int64>(std::numeric_limits<Int8>::max()))};
+            case TypeIndex::Int16:
+                return {Field(static_cast<Int64>(std::numeric_limits<Int16>::min())), Field(static_cast<Int64>(std::numeric_limits<Int16>::max()))};
+            case TypeIndex::Int32:
+                return {Field(static_cast<Int64>(std::numeric_limits<Int32>::min())), Field(static_cast<Int64>(std::numeric_limits<Int32>::max()))};
+            case TypeIndex::Int64:
+                return {Field(std::numeric_limits<Int64>::min()), Field(std::numeric_limits<Int64>::max())};
+            case TypeIndex::Int128:
+                return {Field(std::numeric_limits<Int128>::min()), Field(std::numeric_limits<Int128>::max())};
+            case TypeIndex::Int256:
+                return {Field(std::numeric_limits<Int256>::min()), Field(std::numeric_limits<Int256>::max())};
+            default:
+                break;
+        }
+    }
+
+    /// Types that saturate instead of wrapping around (Float, Decimal) and everything else are not checked.
+    return {Field(), Field()};
+}
+
 
 FillingRow::FillingRow(const SortDescription & sort_description_)
     : sort_description(sort_description_)
 {
     row.resize(sort_description.size());
+    checked_walk_cursor.resize(sort_description.size());
+    checked_walk_constraint.resize(sort_description.size());
 
     constraints.reserve(sort_description.size());
     for (size_t i = 0; i < size(); ++i)
@@ -140,6 +242,66 @@ static const Field & findBorder(const Field & constraint, const Field & next_ori
     return next_original; /// NOLINT(bugprone-return-const-ref-from-parameter)
 }
 
+/** The arithmetic of filling is performed in a carrier type wide enough for it - Int64 for every integer column
+  * type - while the generated values are written into a column of the column's own type, which silently truncates
+  * whatever does not fit. Bounds known up front are checked when the transform is constructed, but a fill anchored
+  * at a data value only becomes known here: `WITH FILL TO 257 STEP 3` over a UInt8 column stops at 254 when the
+  * data ends at 11 and reaches 256 - which the column would store as 0 - when it ends at 13. Check every value
+  * that is about to be generated, so that no value the column cannot hold ever reaches it.
+  */
+void FillingRow::checkGeneratedValueFitsColumnType(const Field & value, size_t column_ind) const
+{
+    const auto & descr = getFillDescription(column_ind);
+
+    /// Null bounds - a type whose every value is representable, nothing to check.
+    if (descr.fill_representable_min.isNull())
+        return;
+
+    if (accurateLess(value, descr.fill_representable_min) || accurateLess(descr.fill_representable_max, value))
+        throw Exception(
+            ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+            "WITH FILL generates the value {} which is out of range of the ORDER BY column {} of type {}",
+            applyVisitor(FieldVisitorToString(), value),
+            sort_description[column_ind].column_name,
+            descr.fill_column_type->getName());
+}
+
+void FillingRow::checkFillingTowardsConstraintsFitsColumnTypes()
+{
+    for (size_t i = 0; i < size(); ++i)
+        checkFillingTowardsConstraintFitsColumnType(i);
+}
+
+void FillingRow::checkFillingTowardsConstraintFitsColumnType(size_t i)
+{
+    const auto & descr = getFillDescription(i);
+
+    if (row[i].isNull() || constraints[i].isNull() || descr.fill_representable_min.isNull())
+        return;
+
+    /// `doLongJump` advances by many steps at once, which lands exactly where the filling would get one step
+    /// at a time only for a step of a fixed length: a calendar step over months or years saturates the day
+    /// of the month, and a day step over `DateTime` follows the time zone. These are at least a day long, so
+    /// they reach the boundary of the type in at most tens of thousands of steps (about 50000 day steps over
+    /// `DateTime`, 65536 over `Date`) anyway, and are left to the per-value check.
+    if (descr.step_kind && descr.step_kind->getKind() > IntervalKind::Kind::Hour)
+        return;
+
+    const int direction = getDirection(i);
+    const Field & type_boundary = direction > 0 ? descr.fill_representable_max : descr.fill_representable_min;
+
+    /// A constraint within the range of the column type stops the filling before it could leave the range.
+    if (!less(type_boundary, constraints[i], direction))
+        return;
+
+    Field last_value = doLongJump(descr, i, type_boundary);
+    Field next_value = last_value;
+    descr.step_func(next_value, 1);
+
+    if (less(last_value, next_value, direction) && less(next_value, constraints[i], direction))
+        checkGeneratedValueFitsColumnType(next_value, i);
+}
+
 bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
 {
 
@@ -176,6 +338,12 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
     if (!constraints[pos].isNull() && !less(row[pos], constraints[pos], getDirection(pos)))
         return false;
 
+    /// A NaN border (a NaN `fill_to` or a staleness border derived from a NaN row) generates nothing: `accurateLess`
+    /// orders NaN greatest, so the comparison above cannot stop an ascending fill towards it, and the sequence would
+    /// run until the step stagnates in the float precision.
+    if (constraints[pos].isNaN())
+        return false;
+
     /// If we have any 'fill_to' value at position greater than 'pos' or configured staleness,
     /// we need to generate rows up to one of this borders.
     for (size_t i = row_size - 1; i > pos; --i)
@@ -188,6 +356,10 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
         if (constraints[i].isNull())
             continue;
 
+        /// A NaN border generates nothing, see the comment at the same check above.
+        if (constraints[i].isNaN())
+            continue;
+
         Field next_value = row[i];
         fill_column_desc.step_func(next_value, 1);
 
@@ -198,6 +370,26 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
 
         if (!less(next_value, constraints[i], getDirection(i)))
             continue;
+
+        /// A step that turns back overflowed the arithmetic of the fill (the `Int64` carrier of the integer types,
+        /// or the `Decimal64` ticks of `DateTime64`): the value it overflowed from lies past any constraint, so the
+        /// filling of this column has passed its constraint and stops here, like it does at any other overshoot.
+        if (!less(row[i], next_value, getDirection(i)))
+            continue;
+
+        /// The column is walked towards its constraint one step at a time, independently of the data, so a
+        /// constraint past the range of the column type is checked once when the walk starts - otherwise it
+        /// would be rejected only after generating every value up to the boundary of the type. The walk from
+        /// a value depends only on that value and the constraint, so a step continuing an already checked
+        /// walk is not checked again.
+        if (!equals(row[i], checked_walk_cursor[i]) || !equals(constraints[i], checked_walk_constraint[i]))
+        {
+            checkFillingTowardsConstraintFitsColumnType(i);
+            checked_walk_constraint[i] = constraints[i];
+        }
+        checked_walk_cursor[i] = next_value;
+
+        checkGeneratedValueFitsColumnType(next_value, i);
 
         row[i] = next_value;
         initUsingFrom(i + 1);
@@ -220,6 +412,13 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
 
     if (!constraints[pos].isNull() && !less(next_value, constraints[pos], getDirection(pos)))
         return false;
+
+    /// A step that turns back overflowed the arithmetic of the fill (see the same check above): the filling has
+    /// passed its border and stops here.
+    if (!less(row[pos], next_value, getDirection(pos)))
+        return false;
+
+    checkGeneratedValueFitsColumnType(next_value, pos);
 
     row[pos] = next_value;
     if (equals(row[pos], next_original_row[pos]))
@@ -333,6 +532,58 @@ void FillingRow::initUsingTo(size_t from_pos)
         row[i] = getFillDescription(i).fill_to;
 }
 
+/// The exact sum of a value and a numeric step, in a type wide enough to hold it, or Null for the types without a
+/// wider one (`Int256`, `UInt256`, `Decimal256`, and `Float64`, which saturates instead of wrapping around).
+static Field exactNumericSum(const Field & value, const Field & step)
+{
+    /// The value of an integer or a decimal field as a number of units, with the scale of the decimal.
+    struct Units
+    {
+        Int256 units;
+        std::optional<UInt32> scale;
+    };
+
+    auto to_units = [](const Field & field) -> std::optional<Units>
+    {
+        switch (field.getType())
+        {
+            case Field::Types::Int64: return Units{Int256(field.safeGet<Int64>()), {}};
+            case Field::Types::UInt64: return Units{Int256(field.safeGet<UInt64>()), {}};
+            case Field::Types::Int128: return Units{Int256(field.safeGet<Int128>()), {}};
+            case Field::Types::UInt128: return Units{Int256(field.safeGet<UInt128>()), {}};
+            case Field::Types::Decimal32:
+            {
+                const auto & decimal = field.safeGet<DecimalField<Decimal32>>();
+                return Units{Int256(decimal.getValue().value), decimal.getScale()};
+            }
+            case Field::Types::Decimal64:
+            {
+                const auto & decimal = field.safeGet<DecimalField<Decimal64>>();
+                return Units{Int256(decimal.getValue().value), decimal.getScale()};
+            }
+            case Field::Types::Decimal128:
+            {
+                const auto & decimal = field.safeGet<DecimalField<Decimal128>>();
+                return Units{Int256(decimal.getValue().value), decimal.getScale()};
+            }
+            default:
+                return std::nullopt;
+        }
+    };
+
+    const auto lhs = to_units(value);
+    const auto rhs = to_units(step);
+
+    /// The step is converted to the type of the column, so a decimal step has the scale of the value.
+    if (!lhs || !rhs || lhs->scale != rhs->scale)
+        return {};
+
+    if (!lhs->scale)
+        return Field(lhs->units + rhs->units);
+
+    return Field(DecimalField<Decimal256>(Decimal256(lhs->units + rhs->units), *lhs->scale));
+}
+
 void FillingRow::updateConstraintsWithStalenessRow(const Columns& base_row, size_t row_ind)
 {
     for (size_t i = 0; i < size(); ++i)
@@ -341,9 +592,26 @@ void FillingRow::updateConstraintsWithStalenessRow(const Columns& base_row, size
 
         if (!descr.fill_staleness.isNull())
         {
-            Field staleness_border = (*base_row[i])[row_ind];
+            /// The border itself needs no validation here: `findBorder` may discard it for a closer TO,
+            /// a border that does not advance the base value (a stagnated step, or NaN, which `accurateLess`
+            /// orders greatest so a NaN border is handled in `next`) simply generates nothing, and a border
+            /// past the range of the column type only matters if the sequence actually reaches values the
+            /// column cannot hold - which `checkGeneratedValueFitsColumnType` rejects per generated value.
+            const Field base_value = (*base_row[i])[row_ind];
+            Field staleness_border = base_value;
             descr.staleness_step_func(staleness_border, 1);
-            constraints[i] = findBorder(descr.fill_to, staleness_border, getDirection(i));
+
+            /// A numeric step wraps around in its carrier (`Int64`, `UInt64`, the `Decimal64` ticks of `DateTime64`),
+            /// so a border past the end of the carrier lands behind the base value and would stop the filling before
+            /// the values in between that the column can hold. Recompute such a border exactly in a wider type.
+            const int direction = getDirection(i);
+            if (!staleness_border.isNaN() && !base_value.isNaN() && less(staleness_border, base_value, direction))
+            {
+                if (auto exact_border = exactNumericSum(base_value, descr.fill_staleness); !exact_border.isNull())
+                    staleness_border = std::move(exact_border);
+            }
+
+            constraints[i] = findBorder(descr.fill_to, staleness_border, direction);
         }
     }
 }
