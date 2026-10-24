@@ -18,6 +18,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <boost/algorithm/hex.hpp>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/ThreadStatus.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
@@ -27,12 +28,22 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
+
+#include <map>
+#include <mutex>
+
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
+}
+
+namespace FailPoints
+{
+    extern const char format_schema_cache_pause_before_publish[];
+    extern const char format_schema_cache_pause_before_read[];
 }
 
 
@@ -46,6 +57,54 @@ namespace
             return "capnp";
         return "";
     }
+
+    /// The schema cache directory is process-wide, so the file name identifies the file.
+    std::mutex cached_schema_files_mutex;
+    std::map<String, size_t> cached_schema_files_in_use TSA_GUARDED_BY(cached_schema_files_mutex);
+}
+
+
+FormatSchemaInfo::CachedSchemaFileInUse::CachedSchemaFileInUse(const String & file_name_) : file_name(file_name_)
+{
+    std::lock_guard lock(cached_schema_files_mutex);
+    ++cached_schema_files_in_use[file_name];
+}
+
+FormatSchemaInfo::CachedSchemaFileInUse::~CachedSchemaFileInUse()
+{
+    std::lock_guard lock(cached_schema_files_mutex);
+    auto it = cached_schema_files_in_use.find(file_name);
+    if (it != cached_schema_files_in_use.end() && --it->second == 0)
+        cached_schema_files_in_use.erase(it);
+}
+
+std::pair<size_t, size_t> FormatSchemaInfo::removeCachedSchemaFiles(const fs::path & cache_directory)
+{
+    if (!fs::exists(cache_directory))
+        return {0, 0};
+
+    size_t removed = 0;
+    size_t kept = 0;
+    std::lock_guard lock(cached_schema_files_mutex);
+    for (const auto & entry : fs::directory_iterator(cache_directory))
+    {
+        if (!entry.is_regular_file())
+            continue;
+        if (cached_schema_files_in_use.contains(entry.path().filename().string()))
+        {
+            ++kept;
+            continue;
+        }
+        fs::remove(entry.path());
+        ++removed;
+    }
+    return {removed, kept};
+}
+
+bool FormatSchemaInfo::useCachedSchemaFile(const fs::path & file_path)
+{
+    cache_file_in_use.emplace(file_path.filename().string());
+    return !fs::exists(file_path);
 }
 
 
@@ -175,13 +234,13 @@ void FormatSchemaInfo::handleSchemaContent(const String & content, const String 
     auto file_name = generateSchemaFileName(content, default_file_extension);
     auto cached_file_path = fs::path(CACHE_DIR_NAME) / file_name;
     auto file_path = fs::path(format_schema_path) / cached_file_path;
-    if (fs::exists(file_path))
+    if (useCachedSchemaFile(file_path))
     {
-        LOG_DEBUG(log, "Cached file exists '{}', skip storing schema file", file_path.string());
+        storeSchemaOnDisk(/*file_path=*/file_path, /*content=*/content);
     }
     else
     {
-        storeSchemaOnDisk(/*file_path=*/file_path, /*content=*/content);
+        LOG_DEBUG(log, "Cached file exists '{}', skip storing schema file", file_path.string());
     }
     processSchemaFile(cached_file_path, default_file_extension, is_server, format_schema_path);
 }
@@ -209,14 +268,14 @@ void FormatSchemaInfo::handleSchemaSourceQuery(
     auto file_name = generateSchemaFileName(format_schema, default_file_extension, toString(*user_id));
     auto cached_file_path = fs::path(CACHE_DIR_NAME) / file_name;
     auto file_path = fs::path(format_schema_path) / cached_file_path;
-    if (fs::exists(file_path))
-    {
-        LOG_DEBUG(log, "Cached file exists '{}' for query '{}', skip querying schema", file_path.string(), format_schema);
-    }
-    else
+    if (useCachedSchemaFile(file_path))
     {
         auto content = querySchema(format_schema, query_context);
         storeSchemaOnDisk(/*file_path=*/file_path, /*content=*/content);
+    }
+    else
+    {
+        LOG_DEBUG(log, "Cached file exists '{}' for query '{}', skip querying schema", file_path.string(), format_schema);
     }
     processSchemaFile(cached_file_path, default_file_extension, is_server, format_schema_path);
 }
@@ -293,6 +352,8 @@ void FormatSchemaInfo::storeSchemaOnDisk(const fs::path & file_path, const Strin
     /// the same path; a shared temporary name would let them overwrite and delete each other's files.
     auto temp_path = fs::path(file_path.string() + "." + getRandomASCIIString(8) + ".tmp");
 
+    CachedSchemaFileInUse temp_file_in_use(temp_path.filename().string());
+
     try
     {
         WriteBufferFromFile out(temp_path, content.size(), O_WRONLY | O_CREAT | O_EXCL);
@@ -300,6 +361,8 @@ void FormatSchemaInfo::storeSchemaOnDisk(const fs::path & file_path, const Strin
         out.next();
         out.sync();
         out.close();
+
+        FailPointInjection::pauseFailPoint(FailPoints::format_schema_cache_pause_before_publish);
 
         if (fs::exists(file_path))
             DB::renameExchange(temp_path, file_path);
@@ -351,6 +414,11 @@ void FormatSchemaInfo::processSchemaFile(
         schema_path = path;
         schema_directory = format_schema_path;
     }
+
+    /// The pause is gated on a cached schema, the only kind that lives in the directory
+    /// `removeCachedSchemaFiles` empties.
+    if (cache_file_in_use)
+        FailPointInjection::pauseFailPoint(FailPoints::format_schema_cache_pause_before_read);
 }
 
 String FormatSchemaInfo::generateSchemaFileName(const String & hashing_content, const String & file_extention, const String & key_salt)
