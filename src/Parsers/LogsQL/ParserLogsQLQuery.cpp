@@ -8,6 +8,7 @@
 #include <Common/StringUtils.h>
 
 #include <algorithm>
+#include <optional>
 
 namespace DB
 {
@@ -16,6 +17,43 @@ namespace ErrorCodes
 {
     extern const int INVALID_SETTING_VALUE;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int SYNTAX_ERROR;
+}
+
+bool ParserLogsQLQuery::isIncompleteAtEOF(
+    const char * begin,
+    const char * end,
+    String database,
+    String table,
+    String time_column,
+    String msg_column,
+    size_t max_parser_depth)
+{
+    LogsQLParser::Context context;
+    context.database = std::move(database);
+    context.table = std::move(table);
+    context.time_column = std::move(time_column);
+    context.msg_column = std::move(msg_column);
+    context.max_depth = max_parser_depth;
+
+    /// The lexer reads the first token in the constructor, which can throw too.
+    std::optional<LogsQLParser> parser;
+    try
+    {
+        parser.emplace(begin, end, std::move(context));
+        parser->parse();
+        return false;
+    }
+    catch (const Exception & e)
+    {
+        /// Other errors, e.g. `NOT_IMPLEMENTED` for a valid query, are not about missing input.
+        /// `parse` stops at a `;`, so a failure at the end of input means no `;` follows.
+        return e.code() == ErrorCodes::SYNTAX_ERROR && parser && parser->isAtEnd();
+    }
+    catch (...) /// Ok: any other failure is not an unfinished query.
+    {
+        return false;
+    }
 }
 
 bool ParserLogsQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
