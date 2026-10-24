@@ -1,0 +1,14 @@
+neg	min	only	LowCardinality(String)
+zero	a	only	LowCardinality(String)
+pos	b	only	LowCardinality(String)
+neg	max	only	LowCardinality(String)
+1000	1000
+1000	1000	['v197','v198','v199']
+100	['','a']
+	1
+{'a':1,'b':2}	Map(LowCardinality(String), Int64)
+['x','y','x']	Array(LowCardinality(String))
+[]	Array(LowCardinality(String))
+\N
+\N
+01
