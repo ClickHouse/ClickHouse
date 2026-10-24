@@ -23,7 +23,7 @@ for exact in 0 1; do
         '* | stats count() as c, count() if (a:>0) as errors | math errors / c as result | fields result' \
         '* | math a / b as result | sort by (a) | fields result'; do
         $CLICKHOUSE_CLIENT --enable_logsql_dialect 1 --logsql_table logs_exact_division_math --dialect logsql \
-            --exact_division_for_integers "$exact" --use_variant_as_common_type 1 \
+            --sql_compatible_division_for_integers "$exact" --use_variant_as_common_type 1 \
             --format TabSeparatedWithNamesAndTypes --query "$query"
     done
 done

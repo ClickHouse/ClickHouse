@@ -5049,7 +5049,7 @@ Possible values:
 - 1 — Creating several dictionaries for the data part is prohibited.
 - 0 — Creating several dictionaries for the data part is not prohibited.
 )", 0) \
-    DECLARE(Bool, exact_division_for_integers, false, R"(
+    DECLARE(Bool, sql_compatible_division_for_integers, false, R"(
 Makes `/` and `divide` return an integer when both operands are integer types, including `Int128`, `UInt128`, `Int256`, and `UInt256`.
 The quotient is truncated toward zero. The result has the width of the first operand and is signed if either operand is signed.
 Division by zero or a quotient outside the result type's range throws an exception. `Nullable` operands propagate `NULL`.
@@ -5060,6 +5060,7 @@ or the explicit functions `intDiv`, `divideDecimal`, and `divideOrNull`.
 The choice is recorded in newly submitted SQL before expressions are stored in table metadata, views, SQL functions, or mutations.
 Existing definitions and `ATTACH` queries retain their original division semantics, independently of this setting.
 )", 0, \
+        {"26.11", false, false, "Use the SQL-compatible name for the integer division setting."}, \
         {"26.10", false, false, "New setting to enable exact integer division for `/` and `divide`."}) \
     DECLARE(Bool, decimal_check_overflow, true, R"(
 Check overflow of decimal arithmetic/comparison operations

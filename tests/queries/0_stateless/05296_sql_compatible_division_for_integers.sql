@@ -1,7 +1,7 @@
-SET exact_division_for_integers = 0;
+SET sql_compatible_division_for_integers = 0;
 SELECT toTypeName(7 / 2), divide(7, 2), isInfinite(1 / 0), isNaN(0 / 0);
 
-SET exact_division_for_integers = 1;
+SET sql_compatible_division_for_integers = 1;
 SELECT 13 / 15 * 7, divide(7, 2), -7 / 2, 7 / -2, -7 / -2;
 SELECT
     toTypeName(toUInt8(7) / toUInt256(2)),
@@ -42,6 +42,6 @@ SELECT if(number = 0, 0, 7 / number) FROM numbers(3) SETTINGS short_circuit_func
 
 SELECT toDecimal32('7.5', 1) / 2, 7 / toDecimal32('2.0', 1), toDecimal64('7.50', 2) / toDecimal32('2.0', 1);
 SELECT 7.0 / 2, 7 / 2.0, toTypeName(7 / 2.0), divideOrNull(7, 2), intDiv(7, 2);
-SET exact_division_for_integers = 0;
-SELECT 7 / 2, toTypeName(7 / 2) SETTINGS exact_division_for_integers = 1;
+SET sql_compatible_division_for_integers = 0;
+SELECT 7 / 2, toTypeName(7 / 2) SETTINGS sql_compatible_division_for_integers = 1;
 SELECT 7 / 2, toTypeName(7 / 2);
