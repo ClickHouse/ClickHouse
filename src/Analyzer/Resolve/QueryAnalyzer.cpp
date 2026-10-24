@@ -2346,8 +2346,9 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
 
                 matched_column_node->as<ColumnNode &>().setColumnType(using_column_type);
                 correctColumnExpressionType(matched_column_node->as<ColumnNode &>(), scope.context);
+                /// The PREWHERE rollback reads the query scope's map, while a lambda body resolves in a child scope.
                 if (!matched_column_node->isEqual(*join_using_column_nodes.at(0)))
-                    scope.join_columns_with_changed_types[matched_column_node] = join_using_column_nodes.at(0);
+                    nearest_query_scope->join_columns_with_changed_types[matched_column_node] = join_using_column_nodes.at(0);
             }
         }
     }
@@ -2794,7 +2795,8 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
               *
               * Example: SELECT id FROM test_table_1 AS t1 INNER JOIN test_table_2 AS t2 USING (id);
               */
-            if (scope.allow_resolve_from_using && !table_expression_in_resolve_process && join_node->isUsingJoinExpression())
+            /// A lambda body resolves in a child scope that does not inherit the flag, so read it from the query scope.
+            if (nearest_query_scope->allow_resolve_from_using && !table_expression_in_resolve_process && join_node->isUsingJoinExpression())
             {
                 auto & join_using_list = join_node->getJoinExpression()->as<ListNode &>();
 
@@ -7677,8 +7679,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         scope.allow_resolve_from_using = false;
         bool in_prewhere = scope.in_prewhere;
         scope.in_prewhere = true;
-        /// PREWHERE columns keep their pre-join types: the rollback below cannot descend into a
-        /// lambda body, so promoting here would leave types the storage cannot supply.
+        /// PREWHERE columns keep their pre-join types, so they are not promoted to Nullable here.
         bool join_use_nulls = scope.join_use_nulls;
         scope.join_use_nulls = false;
         resolveExpressionNode(prewhere_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);

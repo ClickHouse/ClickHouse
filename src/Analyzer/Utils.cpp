@@ -1308,8 +1308,7 @@ public:
     {
         const auto child_type = child_node->getNodeType();
         return child_type != QueryTreeNodeType::QUERY
-            && child_type != QueryTreeNodeType::UNION
-            && child_type != QueryTreeNodeType::LAMBDA;
+            && child_type != QueryTreeNodeType::UNION;
     }
 
 private:

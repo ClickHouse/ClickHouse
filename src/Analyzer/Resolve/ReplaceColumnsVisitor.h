@@ -1,8 +1,15 @@
 #pragma once
 
+#include <Analyzer/ColumnNode.h>
+#include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/LambdaNode.h>
 #include <Analyzer/Utils.h>
+#include <DataTypes/DataTypeFunction.h>
+#include <Functions/FunctionFactory.h>
+#include <Common/assert_cast.h>
 #include <fmt/ranges.h>
+#include <algorithm>
 
 namespace DB
 {
@@ -49,7 +56,23 @@ public:
             node = replacement_node;
 
         if (auto * function_node = node->as<FunctionNode>(); function_node && function_node->isResolved())
+        {
+            visitLambdaArguments(*function_node);
             rerunFunctionResolve(function_node, context);
+        }
+        else if (auto * column_node = node->as<ColumnNode>())
+        {
+            /// A lambda parameter has the type its lambda is bound with.
+            auto column_source = column_node->getColumnSourceOrNull();
+            if (const auto * lambda_arguments = column_source ? column_source->as<LambdaArgumentsNode>() : nullptr)
+            {
+                const auto & names = lambda_arguments->getNames();
+                const auto & types = lambda_arguments->getTypes();
+                auto it = std::ranges::find(names, column_node->getColumnName());
+                if (it != names.end() && types.size() == names.size())
+                    column_node->setColumnType(types[it - names.begin()]);
+            }
+        }
     }
 
     /// We want to re-run resolve for function _after_ its arguments are replaced
@@ -57,7 +80,7 @@ public:
 
     bool needChildVisit(QueryTreeNodePtr & /* parent */, QueryTreeNodePtr & child)
     {
-        /// Visit only expressions, but not subqueries
+        /// Visit only expressions, but not subqueries. A lambda is visited by its function.
         return child->getNodeType() == QueryTreeNodeType::IDENTIFIER
             || child->getNodeType() == QueryTreeNodeType::LIST
             || child->getNodeType() == QueryTreeNodeType::FUNCTION
@@ -65,6 +88,40 @@ public:
     }
 
 private:
+    /// A higher-order function derives the parameter types of its lambdas from its other arguments,
+    /// so the lambdas are bound again before their bodies are visited.
+    void visitLambdaArguments(FunctionNode & function_node)
+    {
+        auto & arguments = function_node.getArguments().getNodes();
+        if (!function_node.isOrdinaryFunction()
+            || std::ranges::none_of(arguments, [](const auto & argument) { return argument->getNodeType() == QueryTreeNodeType::LAMBDA; }))
+            return;
+
+        DataTypes argument_types;
+        argument_types.reserve(arguments.size());
+        for (const auto & argument : arguments)
+        {
+            if (const auto * lambda_node = argument->as<LambdaNode>())
+                argument_types.push_back(std::make_shared<DataTypeFunction>(DataTypes(lambda_node->getArguments().getNames().size(), nullptr), nullptr));
+            else
+                argument_types.push_back(argument->getResultType());
+        }
+
+        FunctionFactory::instance().get(function_node.getFunctionName(), context)->getLambdaArgumentTypes(argument_types);
+
+        for (size_t i = 0; i < arguments.size(); ++i)
+        {
+            auto * lambda_node = arguments[i]->as<LambdaNode>();
+            if (!lambda_node)
+                continue;
+
+            const auto & lambda_argument_types = assert_cast<const DataTypeFunction &>(*argument_types[i]).getArgumentTypes();
+            lambda_node->getArguments().resolve(lambda_argument_types);
+            visit(arguments[i]);
+            lambda_node->resolve(std::make_shared<DataTypeFunction>(lambda_argument_types, lambda_node->getExpression()->getResultType()));
+        }
+    }
+
     const QueryTreeNodePtrWithHashMap<QueryTreeNodePtr> & replacement_map;
     const ContextPtr & context;
 };
