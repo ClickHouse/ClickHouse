@@ -4,6 +4,8 @@
 #include <Common/formatIPv6.h>
 #include <Common/NaNUtils.h>
 
+#include <cmath>
+
 #include <zmij.h>
 
 namespace DB
@@ -52,17 +54,17 @@ std::array<char, 36> formatUUID(const UUID & uuid)
 
 void writeIPv4Text(const IPv4 & ip, WriteBuffer & buf)
 {
-    size_t idx = (ip >> 24);
-    buf.write(one_byte_to_string_lookup_table[idx].first, one_byte_to_string_lookup_table[idx].second);
+    std::string_view text = oneByteToString(static_cast<UInt8>(ip >> 24));
+    buf.write(text.data(), text.size());
     buf.write('.');
-    idx = (ip >> 16) & 0xFF;
-    buf.write(one_byte_to_string_lookup_table[idx].first, one_byte_to_string_lookup_table[idx].second);
+    text = oneByteToString(static_cast<UInt8>(ip >> 16));
+    buf.write(text.data(), text.size());
     buf.write('.');
-    idx = (ip >> 8) & 0xFF;
-    buf.write(one_byte_to_string_lookup_table[idx].first, one_byte_to_string_lookup_table[idx].second);
+    text = oneByteToString(static_cast<UInt8>(ip >> 8));
+    buf.write(text.data(), text.size());
     buf.write('.');
-    idx = ip & 0xFF;
-    buf.write(one_byte_to_string_lookup_table[idx].first, one_byte_to_string_lookup_table[idx].second);
+    text = oneByteToString(static_cast<UInt8>(ip));
+    buf.write(text.data(), text.size());
 }
 
 void writeIPv6Text(const IPv6 & ip, WriteBuffer & buf)
@@ -276,16 +278,12 @@ NO_INLINE size_t writeFloatTextFastPathFloat32Rounded(Float32 f32, int16_t exp, 
     UInt32 lo = half_ulp_lower - adj;
     UInt32 hi = half_ulp - adj;
 
-    /// Handle negative floats (e.g. BFloat16) by writing the sign, then
-    /// rounding the absolute value.
-    Int32 raw = Int32(f32);
+    /// Write the sign and round the absolute value. The sign comes from the sign bit, without a branch,
+    /// so mixed-sign data does not mispredict; the '-' is overwritten by the first digit when positive.
     char * start = buffer;
-    if (raw < 0)
-    {
-        *buffer++ = '-';
-        raw = -raw;
-    }
-    UInt32 v = static_cast<UInt32>(raw);
+    *buffer = '-';
+    buffer += bits >> 31;
+    UInt32 v = static_cast<UInt32>(std::fabs(f32));
 
     chassert(shift >= 2 && shift <= 7);
 
@@ -324,15 +322,12 @@ NO_INLINE size_t writeFloatTextFastPathFloat64Rounded(Float64 f64, int16_t exp, 
     UInt64 lo = half_ulp_lower - adj;
     UInt64 hi = half_ulp - adj;
 
-    /// Handle negative values: write sign, then round the absolute value.
-    Int64 raw = Int64(f64);
+    /// Branchless sign, as in the Float32 variant. The value is below 2^63, so converting through `Int64`
+    /// is exact and avoids the slow double to `UInt64` conversion of x86-64 without AVX-512.
     char * start = buffer;
-    if (raw < 0)
-    {
-        *buffer++ = '-';
-        raw = -raw;
-    }
-    UInt64 v = static_cast<UInt64>(raw);
+    *buffer = '-';
+    buffer += bits >> 63;
+    UInt64 v = static_cast<UInt64>(static_cast<Int64>(std::fabs(f64)));
 
     chassert(shift >= 2 && shift <= 10);
 
@@ -365,7 +360,11 @@ size_t writeFloatTextFastPath(T x, char * buffer, bool force_decimal_point)
         ///   exp < 0:    |value| < 1, not an integer.
         ///   exp > 62:   |value| >= 2^63, overflows Int64.
         if (decomposed.isIntegerInRepresentableRange() || exp == 53)
-            result = itoa(Int64(x), buffer) - buffer;
+        {
+            /// Branchless sign, as in `writeFloatTextFastPathFloat64Rounded`.
+            *buffer = '-';
+            result = itoa(static_cast<UInt64>(static_cast<Int64>(std::fabs(x))), buffer + decomposed.isNegative()) - buffer;
+        }
         else if (exp > 53 && exp <= 62)
             result = writeFloatTextFastPathFloat64Rounded(x, exp, buffer);
         else
@@ -401,7 +400,10 @@ size_t writeFloatTextFastPath(T x, char * buffer, bool force_decimal_point)
 
         /// Most common fast path first: exp 0..24, exact integers.
         if (decomposed.isIntegerInRepresentableRange() || exp == 24)
-            result = itoa(Int32(f32), buffer) - buffer;
+        {
+            *buffer = '-';
+            result = itoa(static_cast<UInt32>(std::fabs(f32)), buffer + decomposed.isNegative()) - buffer;
+        }
         /// Extended fast path: exp 25..30, round to "roundest" decimal then itoa.
         else if (exp > 24 && exp <= 30)
             result = writeFloatTextFastPathFloat32Rounded(f32, exp, buffer);
