@@ -8,6 +8,8 @@
 namespace DB
 {
 
+class DataTypeArray;
+
 /// Parameters of the `Quantized` column codec.
 struct QuantizedCodecParams
 {
@@ -54,5 +56,8 @@ private:
 };
 
 std::optional<QuantizedCodecParams> tryExtractQuantizedCodecParams(const ASTPtr & codec_desc);
+
+/// Payload size in the ArrayElements stream for one full-precision vector (used with one-block-per-row layout).
+std::optional<size_t> getFullPrecisionVectorBytesPerRow(const DataTypeArray & array_type, const QuantizedCodecParams & params);
 
 }

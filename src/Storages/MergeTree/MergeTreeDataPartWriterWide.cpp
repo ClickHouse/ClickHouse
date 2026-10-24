@@ -2,7 +2,10 @@
 #include <Columns/ColumnSparse.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressionFactory.h>
+#include <Compression/CompressionCodecQuantized.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/Serializations/ISerialization.h>
+#include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <Interpreters/Context.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MarkCache.h>
@@ -23,6 +26,11 @@
 
 namespace DB
 {
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool quantized_vector_one_block_per_row;
+}
 
 namespace ErrorCodes
 {
@@ -237,6 +245,24 @@ void MergeTreeDataPartWriterWide::addStreams(const NameAndTypePair & name_and_ty
         /// Clamp to prevent absurd memory allocations from fuzzed or misconfigured column settings.
         max_compress_block_size = std::min<UInt64>(max_compress_block_size, MergeTreeWriterSettings::MAX_COMPRESS_BLOCK_SIZE);
 
+        /// Special handling for Quantized vector columns: one full-precision vector per compressed block.
+        bool one_vector_per_block = false;
+        if ((*storage_settings)[MergeTreeSetting::quantized_vector_one_block_per_row]
+            && SerializationQuantizedVector::isVectorElementsSubstream(substream_path))
+        {
+            if (auto quantized_params = tryExtractQuantizedCodecParams(effective_codec_desc))
+            {
+                if (const auto * array_type = typeid_cast<const DataTypeArray *>(name_and_type.type.get()))
+                {
+                    if (auto payload_bytes = getFullPrecisionVectorBytesPerRow(*array_type, *quantized_params))
+                    {
+                        max_compress_block_size = *payload_bytes;
+                        one_vector_per_block = true;
+                    }
+                }
+            }
+        }
+
         /// A write buffer is allocated per stream below, and a single column can own thousands of
         /// streams (a Map with many buckets, a deeply nested Array or Tuple), so the threshold is
         /// compared against streams rather than columns.
@@ -253,6 +279,14 @@ void MergeTreeDataPartWriterWide::addStreams(const NameAndTypePair & name_and_ty
             max_compress_block_size = roundCompressBlockSizeToWholeValues(max_compress_block_size, *type);
             query_write_settings.adaptive_write_buffer_initial_size
                 = roundCompressBlockSizeToWholeValues(query_write_settings.adaptive_write_buffer_initial_size, *type);
+        }
+
+        /// An adaptive buffer starts below the maximum, so the first block would hold less than one vector
+        /// and shift every row boundary after it, leaving a layout the point read cannot address.
+        if (one_vector_per_block)
+        {
+            query_write_settings.use_adaptive_write_buffer = false;
+            query_write_settings.adaptive_write_buffer_initial_size = max_compress_block_size;
         }
 
         fiu_do_on(FailPoints::wide_part_writer_fail_in_add_streams,

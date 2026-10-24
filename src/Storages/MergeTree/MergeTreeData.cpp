@@ -308,6 +308,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool allow_nullable_key;
     extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
     extern const MergeTreeSettingsBool allow_suspicious_indices;
+    extern const MergeTreeSettingsBool quantized_vector_one_block_per_row;
     extern const MergeTreeSettingsBool allow_minmax_index_for_json;
     extern const MergeTreeSettingsBool allow_summing_columns_in_partition_or_order_key;
     extern const MergeTreeSettingsBool allow_coalescing_columns_in_partition_or_order_key;
@@ -6324,6 +6325,29 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             if (!codec.empty())
                 CompressionCodecFactory::instance().validateCodecString(codec, CodecValidationSettings(settings));
         }
+
+        /// Whether a part stores one full-precision vector per compressed block is fixed when the part is
+        /// written and hence setting to ON is only allowed during table CREATE.
+        /// Turning it off stops reads from using the layout and is always allowed.
+        bool enables_one_block_per_row = false;
+        if (command.type == AlterCommand::MODIFY_SETTING)
+        {
+            Field value;
+            if (command.settings_changes.tryGet("quantized_vector_one_block_per_row", value))
+                enables_one_block_per_row = value.safeGet<UInt64>() != 0;
+        }
+        else if (command.settings_resets.contains("quantized_vector_one_block_per_row"))
+        {
+            if (!default_settings)
+                default_settings = getDefaultSettings();
+            enables_one_block_per_row = (*default_settings)[MergeTreeSetting::quantized_vector_one_block_per_row];
+        }
+
+        if (enables_one_block_per_row && !(*settings_from_storage)[MergeTreeSetting::quantized_vector_one_block_per_row])
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Setting quantized_vector_one_block_per_row can only be enabled at CREATE TABLE, because the parts "
+                "already written do not use the one-vector-per-block layout and nothing on disk records that. "
+                "Create a new table with the setting and INSERT ... SELECT into it. Disabling it by ALTER is allowed.");
     }
 
     auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(new_metadata, *settings_from_storage);
