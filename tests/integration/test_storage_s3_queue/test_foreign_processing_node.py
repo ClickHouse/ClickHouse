@@ -1119,6 +1119,9 @@ def test_evicted_statuses_do_not_starve_the_listing(started_cluster):
     make the recheck due immediately: the failed claim records a fresh observation, which
     evicts the statuses of the other pending files again, and the rechecks would then fill
     every batch, so the listing would never reach the available files of the next batch.
+
+    The deadline of a recheck whose status was evicted must still follow the current TTL:
+    after the foreign holds are released, lowering the TTL makes the files retried at once.
     """
     node = started_cluster.instances["instance"]
 
@@ -1162,6 +1165,16 @@ def test_evicted_statuses_do_not_starve_the_listing(started_cluster):
 
         # The available files are processed while the foreign holds remain.
         run_with_retry(lambda x: x == files_to_generate - held_files, get_count, retries=60)
+
+        # The foreign owners release the files without committing them. The evicted statuses
+        # were observed with a TTL of 300 seconds; the lowered TTL applies to them as well.
+        for i in range(held_files):
+            conflict_node = node.query(f"SELECT sipHash64('{files_path}/test_{i}.csv')").strip()
+            zk.delete(f"{keeper_path}/processing/{conflict_node}")
+        node.query(
+            f"ALTER TABLE {table_name} MODIFY SETTING s3queue_processing_state_cache_ttl_seconds = 0"
+        )
+        run_with_retry(lambda x: x == files_to_generate, get_count, retries=60)
     finally:
         node.query(
             f"""

@@ -130,14 +130,19 @@ public:
         /// (`processing_state_cache_ttl_seconds`), so the recheck does not wait
         /// for the current listing pass to end. Entries left when the listing is
         /// exhausted are taken over by the next iterator, see `inheritForeignProcessingRechecks`.
-        /// Each entry keeps its own recheck deadline: the file status cache may evict the status
-        /// of a pending file, and an evicted status must not make the file due immediately -
+        /// Each entry keeps the time of its own observation: the file status cache may evict the
+        /// status of a pending file, and an evicted status must not make the file due immediately -
         /// a failed claim refreshes the observation, which can evict the statuses of the other
         /// pending files again, and the rechecks would then starve the listing.
         struct PendingRecheck
         {
             ObjectInfoPtr object;
-            /// When the recheck is due if the status of the file is not cached any more.
+            /// When the foreign `processing` node was observed, used if the status of the file is
+            /// not cached any more. The deadline is derived from it with the current
+            /// `processing_state_cache_ttl_seconds`, so that changing the setting applies to the
+            /// pending rechecks of evicted statuses as well.
+            time_t observed_time = 0;
+            /// A fixed deadline of a replay, which is not tied to a foreign observation.
             time_t due_time = 0;
             /// Ordered mode only. The file was not foreign-held itself: it is replayed after the
             /// blocker of its ordering domain resolved (or it is queued behind such a replay),
@@ -178,7 +183,8 @@ public:
         size_t blocked_files_count TSA_GUARDED_BY(next_mutex) = 0;
         bool blocked_files_replay_capped TSA_GUARDED_BY(next_mutex) = false;
 
-        /// Ordered mode only. The smallest path of a domain dropped by the cap above.
+        /// Ordered mode only. The smallest path of a domain dropped by the cap above (blocked files,
+        /// or files deferred behind a pending replay, see `pending_replays_count`).
         /// Dropping a blocked file is only safe while the whole range above the blocker stays
         /// unprocessed. The blocker can resolve in the middle of the listing pass (a foreign
         /// observation expires and is rechecked at a batch boundary, or the foreign processor
@@ -200,6 +206,11 @@ public:
         /// advancing the `processed` pointer past it: a later file found behind a pending replay is
         /// queued as a replay as well, and the recheck batch hands both out in path order.
         std::map<OrderingDomain, std::multiset<std::string>> pending_replays_per_domain TSA_GUARDED_BY(next_mutex);
+        /// The total number of paths in `pending_replays_per_domain`. The files deferred behind
+        /// a pending replay are capped by `max_blocked_files_to_replay` like the blocked files:
+        /// a replay whose outcome stays unknown (e.g. the file is processed by another table
+        /// sharing the keeper path) would otherwise defer the whole rest of its domain into memory.
+        size_t pending_replays_count TSA_GUARDED_BY(next_mutex) = 0;
 
         /// Ordered mode only. The replayed files taken from `foreign_processing_files_to_recheck`
         /// which are not handed out to a processing thread yet. With buckets, a replay can wait in
@@ -220,6 +231,13 @@ public:
         void recordForeignHeldFile(const std::string & path) TSA_REQUIRES(next_mutex);
         void resolveForeignHeldFile(const std::string & path) TSA_REQUIRES(next_mutex);
         void rememberBlockedFile(ObjectInfoPtr object) TSA_REQUIRES(next_mutex);
+        /// Drops a file of a blocked or deferred range beyond the replay cap, keeping its domain
+        /// blocked from its path on until a fresh listing pass lists it again.
+        void dropFileUntilRelisted(const OrderingDomain & domain, const std::string & path) TSA_REQUIRES(next_mutex);
+        /// Queues a replay of a file found behind a pending or in-flight replay of its domain,
+        /// or drops it beyond the replay cap.
+        void deferBehindReplay(ObjectInfoPtr object) TSA_REQUIRES(next_mutex);
+        void clearPendingReplays() TSA_REQUIRES(next_mutex);
         void recheckBlockedFilesForDomain(const OrderingDomain & domain, const std::optional<std::string> & smallest_remaining_blocker) TSA_REQUIRES(next_mutex);
         bool isBlockedByForeignHeldFile(const std::string & path) TSA_REQUIRES(next_mutex);
         /// `due_time` delays the replay, see `PendingRecheck::due_time`.
