@@ -10912,6 +10912,10 @@ Using the text index postings cache can significantly reduce latency and increas
 )", 0, \
         {"26.10", false, true, "Enabled the text index posting lists cache globally. Previously each query used a small private cache, which caused posting lists and phrase search results to be recomputed within a single query on large tables."}, \
         {"25.11", false, false, "New setting"}) \
+    DECLARE(Bool, use_page_cache_lookahead_for_text_index, false, R"(
+Text index files that are read out of file order (dictionary, postings, positions) are, by default, read through the userspace page cache with a lookahead of one block, so that the remote connection can be reused after each read. Enable this setting to make those files use `page_cache_lookahead_blocks` like other files instead.
+)", 0, \
+        {"26.11", false, false, "New setting"}) \
     DECLARE(TextIndexPostingListApplyMode, text_index_posting_list_apply_mode, TextIndexPostingListApplyMode::Lazy, R"(
 Controls how posting lists are applied during text index queries.
 'materialize' eagerly decodes posting lists into Roaring Bitmaps.

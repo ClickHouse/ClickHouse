@@ -683,12 +683,14 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
     const auto dictionary_substream = getSubstream(state.index, MergeTreeIndexSubstream::Type::TextIndexDictionary);
     constexpr size_t dictionary_buffer_size = 16 * 1024;
 
+    /// use_page_cache_lookahead: blocks are read by token and by pattern range, not in file order.
     auto dictionary_stream = makeTextIndexInputStream(
         state.part_info,
         state.index.getFileName(),
         dictionary_substream,
         state.reader_settings,
-        dictionary_buffer_size);
+        dictionary_buffer_size,
+        /*use_page_cache_lookahead=*/ false);
 
     analyzeDictionaryForTokens(text_index_header->sparse_index, *dictionary_stream, state);
     analyzeDictionaryForPatterns(text_index_header->sparse_index, *dictionary_stream, state);
@@ -997,12 +999,14 @@ void MergeTreeIndexGranuleText::analyzePostings(PostingsSerialization & postings
     });
 
     const auto postings_substream = getSubstream(state.index, MergeTreeIndexSubstream::Type::TextIndexPostings);
+    /// use_page_cache_lookahead: tokens are read rarest-first, not in file order.
     auto stream = makeTextIndexInputStream(
         state.part_info,
         state.index.getFileName(),
         postings_substream,
         state.reader_settings,
-        largest_segment_bytes);
+        largest_segment_bytes,
+        /*use_page_cache_lookahead=*/ false);
 
     for (const auto & [token, token_info] : tokens_to_read)
     {
