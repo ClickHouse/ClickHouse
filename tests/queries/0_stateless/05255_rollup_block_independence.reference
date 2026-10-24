@@ -1,0 +1,42 @@
+rollup, three keys	1086	4964698689111688565
+rollup, two keys, small result	0	0	5840835	390	0	390
+rollup, two keys, small result	0	0	11673501	779	0	779
+rollup, two keys, small result	0	0	23364141	1559	0	1559
+rollup, two keys, small result	0	1	5832666	389	0	389
+rollup, two keys, small result	1	0	5849415	390	1	390
+rollup, two keys, small result	1	0	11690640	780	1	780
+rollup, two keys, small result	1	1	5841225	390	1	390
+many blocks = one block, three keys	1
+many blocks = one block, no aggregate functions	1
+many blocks = one block, null keys for sub-totals	1
+many blocks = one block, condition and low cardinality arguments	1
+many blocks = one block, a key repeated in the group by list	1
+many blocks = one block, array and map keys	1
+many blocks = one block, independently aggregated partitions	1
+many blocks = one block, adaptive aggregation	1
+rollup with totals, two keys	0	0	5840835
+rollup with totals, two keys	0	0	11673501
+rollup with totals, two keys	0	0	23364141
+rollup with totals, two keys	0	1	5832666
+rollup with totals, two keys	1	0	5849415
+rollup with totals, two keys	1	0	11690640
+rollup with totals, two keys	1	1	5841225
+
+rollup with totals, two keys	0	0	23364141
+cube, two keys	0	0	5840835	390
+cube, two keys	0	0	11673501	779
+cube, two keys	0	0	11690250	780
+cube, two keys	0	0	23364141	1559
+cube, two keys	0	1	5832666	389
+cube, two keys	0	1	11673891	779
+cube, two keys	1	0	5849415	390
+cube, two keys	1	0	11690640	780
+cube, two keys	1	1	5841225	390
+05255-skip-1-sum-int64-many-blocks	sum	1	1	0	0
+05255-skip-2-argmax-many-blocks	argMax	0	1	0	0
+05255-skip-3-sum-float-many-blocks	sum	0	1	0	0
+05255-skip-4-sum-int64-one-block	sum	0	0	0	0
+05255-skip-5-sum-int64-independent-partitions	sum	1	1	0	0
+05255-skip-6-sum-int64-adaptive	sum	1	1	1	0
+skip merging engaged	Skip merging: 1
+skip merging disabled	Skip merging: 0
