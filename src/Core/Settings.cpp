@@ -10821,6 +10821,14 @@ at plan-build time. This is the umbrella gate for the streaming-queries
 feature; additional capabilities may be gated by their own settings.
 )", EXPERIMENTAL, \
         {"26.6", false, false, "New setting"}) \
+    DECLARE(UInt64, stream_max_rows_per_round, 0, R"(
+Approximate maximum number of rows that one read round of a `STREAM` query over `MergeTree` reads (one refresh of an incremental refreshable materialized view); 0 means no limit.
+)", EXPERIMENTAL, \
+        {"26.11", 0, 0, "New setting"}) \
+    DECLARE(UInt64, stream_max_bytes_per_round, 0, R"(
+Like `stream_max_rows_per_round`, but limits the uncompressed size of the source parts that one read round reads. 0 means no limit.
+)", EXPERIMENTAL, \
+        {"26.11", 0, 0, "New setting"}) \
      \
     DECLARE_WITH_ALIAS(Bool, allow_statistics_optimize, true, R"(
 Allows using statistics to optimize queries
