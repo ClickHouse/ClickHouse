@@ -778,15 +778,10 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
 
     void skip(size_t num_values) override
     {
-        /// Temporary buffer for decoding deltas (needed for updating current_value, can't skip).
-        size_t num_u64s = converter->input_size == 4 ? (num_values + 1) / 2 : num_values;
-        temp_values.resize(num_u64s);
-        char * to = reinterpret_cast<char *>(temp_values.data());
-
         switch (converter->input_size)
         {
-            case 4: decodeImpl<UInt32>(num_values, to, identity<UInt32>); break;
-            case 8: decodeImpl<UInt64>(num_values, to, identity<UInt64>); break;
+            case 4: decodeImpl<UInt32, true>(num_values, nullptr, identity<UInt32>); break;
+            case 8: decodeImpl<UInt64, true>(num_values, nullptr, identity<UInt64>); break;
             default: chassert(false);
         }
     }
@@ -865,7 +860,7 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
             converter->convertColumn(std::span(to, num_values * converter->input_size), num_values, col);
     }
 
-    template <typename T, typename F>
+    template <typename T, bool skip_values = false, typename F>
     void decodeImpl(size_t num_values, char * out_bytes, F func)
     {
         if (total_values_remaining < num_values)
@@ -881,8 +876,11 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
         /// The very first value needs special treatment because it has no corresponding delta.
         if (!miniblock_bit_widths && miniblock_values_remaining)
         {
-            *out_values = func(T(current_value));
-            ++out_values;
+            if constexpr (!skip_values)
+            {
+                *out_values = func(T(current_value));
+                ++out_values;
+            }
             num_values -= 1;
             miniblock_values_remaining -= 1;
         }
@@ -897,19 +895,45 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
             miniblock_values_remaining -= n;
 
             int bits_per_delta = int(miniblock_bit_widths[miniblock_idx]);
-            int read_count = bit_reader.GetBatch(bits_per_delta, out_values, static_cast<int>(n));
-            chassert(read_count == int(n));
-
-            /// Locals, because `out_values` may alias the members.
-            UInt64 value = current_value;
-            const UInt64 delta_base = min_delta;
-            for (size_t i = 0; i < n; ++i)
+            if constexpr (skip_values)
             {
-                value += delta_base + UInt64(*out_values);
-                *out_values = func(T(value));
-                ++out_values;
+                /// Only the final value is needed: sum residuals instead of reconstructing every value.
+                /// Unsigned arithmetic preserves the wrapping semantics of `DELTA_BINARY_PACKED`.
+                current_value += UInt64(n) * min_delta;
+                if (bits_per_delta != 0)
+                {
+                    /// Bound scratch space even when the file uses unusually large miniblocks.
+                    T residuals[128];
+                    while (n)
+                    {
+                        size_t batch_size = std::min(n, std::size(residuals));
+                        int read_count = bit_reader.GetBatch(bits_per_delta, residuals, static_cast<int>(batch_size));
+                        chassert(read_count == int(batch_size));
+
+                        UInt64 residual_sum = 0;
+                        for (size_t i = 0; i < batch_size; ++i)
+                            residual_sum += UInt64(residuals[i]);
+                        current_value += residual_sum;
+                        n -= batch_size;
+                    }
+                }
             }
-            current_value = value;
+            else
+            {
+                int read_count = bit_reader.GetBatch(bits_per_delta, out_values, static_cast<int>(n));
+                chassert(read_count == int(n));
+
+                /// Locals, because `out_values` may alias the members.
+                UInt64 value = current_value;
+                const UInt64 delta_base = min_delta;
+                for (size_t i = 0; i < n; ++i)
+                {
+                    value += delta_base + UInt64(*out_values);
+                    *out_values = func(T(value));
+                    ++out_values;
+                }
+                current_value = value;
+            }
         }
     }
 };
