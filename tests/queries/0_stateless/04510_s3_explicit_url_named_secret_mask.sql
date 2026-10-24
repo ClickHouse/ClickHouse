@@ -115,8 +115,7 @@ SELECT * FROM s3('url_dup', 'ak', 'sk',
                  structure = 'x UInt8'); -- { serverError BAD_ARGUMENTS }
 
 -- A nested map with a malformed child (not `key = value`) must fail closed in formatting.
--- The analyzer rejects `extra_credentials` as an unknown function; with `enable_analyzer = 0`
--- the S3 URI validation is reached first.
+-- The analyzer rejects `extra_credentials` as an unknown function.
 SELECT * FROM s3('url_badmap', 'ak', 'SEKRIT_SAK',
                  extra_credentials('SEKRIT_RAWCRED'),
                  format = 'TSV', structure = 'x UInt8'); -- { serverError UNKNOWN_FUNCTION, BAD_ARGUMENTS }
@@ -500,7 +499,6 @@ DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 -- run_passes = 0 keeps the table function unresolved: the masking visitor runs before the passes
 -- either way, and resolution would touch the storage (URI validation, credential checks), which
 -- varies across test configurations.
-SET enable_analyzer = 1;
 EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM s3('https://user:SEKRIT_PW@localhost:11111/test/04510qt?X-Amz-Signature=SEKRIT_SIG', 'ak', 'SEKRIT_SAK', 'TSV', 'x UInt8');
 EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM s3('http://localhost:11111/test/04510qt', NOSIGN, 'TSV', 'x UInt8', headers('Authorization' = 'SEKRIT_HDR'));
 EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM s3('http://localhost:11111/test/04510qt', 'ak', 'SEKRIT_SAK', 'TSV', 'x UInt8', extra_credentials(external_id = 'SEKRIT_EID'));
