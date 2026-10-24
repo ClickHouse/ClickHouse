@@ -22,6 +22,8 @@
 
 #include <fmt/ranges.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -322,6 +324,29 @@ void DatabaseOverlay::alterTable(ContextPtr local_context, const StorageID & tab
     throw Exception(
         ErrorCodes::LOGICAL_ERROR,
         "There are no databases for ALTER TABLE `{}` query in database `{}` (engine {})",
+        table_id.table_name,
+        getDatabaseName(),
+        getEngineName());
+}
+
+bool DatabaseOverlay::canAlterTableDefinition() const
+{
+    return std::ranges::any_of(databases, [](const DatabasePtr & db) { return !db->isReadOnly() && db->canAlterTableDefinition(); });
+}
+
+void DatabaseOverlay::alterTableDefinition(ContextPtr local_context, const StorageID & table_id, const CreateQueryModifier & modifier)
+{
+    for (auto & db : databases)
+    {
+        if (!db->isReadOnly() && db->isTableExist(table_id.table_name, local_context))
+        {
+            db->alterTableDefinition(local_context, table_id, modifier);
+            return;
+        }
+    }
+    throw Exception(
+        ErrorCodes::LOGICAL_ERROR,
+        "There are no databases for rewriting the definition of `{}` in database `{}` (engine {})",
         table_id.table_name,
         getDatabaseName(),
         getEngineName());

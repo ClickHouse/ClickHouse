@@ -178,6 +178,20 @@ void DatabaseMemory::drop(ContextPtr local_context)
 
 void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata, const bool validate_new_create_query)
 {
+    auto modifier = [&](const ASTPtr & create_query)
+    {
+        applyMetadataChangesToCreateQuery(create_query, metadata, local_context, validate_new_create_query);
+    };
+    alterTableImpl(local_context, table_id, modifier);
+}
+
+void DatabaseMemory::alterTableDefinition(ContextPtr local_context, const StorageID & table_id, const CreateQueryModifier & modifier)
+{
+    alterTableImpl(local_context, table_id, modifier);
+}
+
+void DatabaseMemory::alterTableImpl(ContextPtr local_context, const StorageID & table_id, const CreateQueryModifier & modifier)
+{
     ensurePopulated();
     ASTPtr create_query;
     {
@@ -195,7 +209,7 @@ void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & tabl
 
     /// Apply metadata changes to the cloned AST without holding a lock to avoid possible deadlock
     /// (i.e. when ALTER contains IN (table)).
-    applyMetadataChangesToCreateQuery(create_query, metadata, local_context, validate_new_create_query);
+    modifier(create_query);
 
     /// The create query of the table has been just changed, we need to update dependencies too.
     auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), create_query, local_context->getCurrentDatabase());

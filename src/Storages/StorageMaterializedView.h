@@ -91,6 +91,8 @@ public:
 
     void renameInMemory(const StorageID & new_table_id) override;
 
+    void updateReferencedTables(const ASTCreateQuery & create, ContextPtr local_context) override;
+
     void startup() override;
     void flushAndPrepareForShutdown() override;
     void shutdown(bool is_drop) override;

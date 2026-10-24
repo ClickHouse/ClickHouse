@@ -1116,6 +1116,25 @@ void DatabaseOrdinary::waitDetachedTableByNameNotInUse(const String & table_name
 
 void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata, const bool validate_new_create_query)
 {
+    auto modifier = [&](const ASTPtr & create_query)
+    {
+        applyMetadataChangesToCreateQuery(create_query, metadata, local_context, validate_new_create_query);
+    };
+    alterTableImpl(local_context, table_id, modifier, validate_new_create_query, /*rewrite_definition=*/ false);
+}
+
+void DatabaseOrdinary::alterTableDefinition(ContextPtr local_context, const StorageID & table_id, const CreateQueryModifier & modifier)
+{
+    alterTableImpl(local_context, table_id, modifier, /*validate_new_create_query=*/ true, /*rewrite_definition=*/ true);
+}
+
+void DatabaseOrdinary::alterTableImpl(
+    ContextPtr local_context,
+    const StorageID & table_id,
+    const CreateQueryModifier & modifier,
+    bool validate_new_create_query,
+    bool rewrite_definition)
+{
     auto component_guard = Coordination::setCurrentComponent("DatabaseOrdinary::alterTable");
     auto db_disk = getDisk();
     waitDatabaseStarted();
@@ -1141,7 +1160,7 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
     if (table_id.uuid != UUIDHelpers::Nil && create_query.uuid != table_id.uuid)
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot alter table {}: metadata file {} has different UUID", table_id.getNameForLogs(), table_metadata_path);
 
-    applyMetadataChangesToCreateQuery(ast, metadata, local_context, validate_new_create_query);
+    modifier(ast);
 
     statement = getObjectDefinitionFromCreateQuery(ast);
 
@@ -1170,7 +1189,16 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
     /// The create query of the table has been just changed, we need to update dependencies too.
     DatabaseCatalog::instance().updateDependencies(table_id, ref_dependencies.dependencies, loading_dependencies, ref_dependencies.mv_from_dependency ? TableNamesSet{ref_dependencies.mv_from_dependency->getQualifiedName()} : TableNamesSet{});
 
-    commitAlterTable(table_id, table_metadata_tmp_path, table_metadata_path, statement, local_context);
+    if (rewrite_definition)
+        commitAlterTableDefinition(table_id, table_metadata_tmp_path, table_metadata_path, statement, local_context);
+    else
+        commitAlterTable(table_id, table_metadata_tmp_path, table_metadata_path, statement, local_context);
+}
+
+void DatabaseOrdinary::commitAlterTableDefinition(
+    const StorageID & table_id, const String & table_metadata_tmp_path, const String & table_metadata_path, const String & statement, ContextPtr query_context)
+{
+    commitAlterTable(table_id, table_metadata_tmp_path, table_metadata_path, statement, query_context);
 }
 
 void DatabaseOrdinary::commitAlterTable(const StorageID &, const String & table_metadata_tmp_path, const String & table_metadata_path, const String & /*statement*/, ContextPtr /*query_context*/)
