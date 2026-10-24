@@ -387,8 +387,8 @@
     M(AsyncInsertCacheSize, "Number of async insert hash id in cache") \
     M(IcebergMetadataFilesCacheBytes, "Size of the Iceberg metadata cache in bytes") \
     M(IcebergMetadataFilesCacheFiles, "Number of cached files in the Iceberg metadata cache") \
-    M(GlueCatalogSchemaCacheBytes, "Size of the cache of current Iceberg schema field types in Glue catalogs in bytes") \
-    M(GlueCatalogSchemaCacheEntries, "Number of entries in the cache of current Iceberg schema field types in Glue catalogs") \
+    M(GlueCatalogSchemaCacheBytes, "Size of the current Iceberg schema cache in Glue catalogs in bytes") \
+    M(GlueCatalogSchemaCacheEntries, "Number of entries in the current Iceberg schema cache in Glue catalogs") \
     M(PaimonMetadataFilesCacheBytes, "Size of the Paimon metadata cache in bytes") \
     M(PaimonMetadataFilesCacheFiles, "Number of cached files in the Paimon metadata cache") \
     M(ParquetMetadataCacheBytes, "Size of the Parquet metadata cache in bytes") \

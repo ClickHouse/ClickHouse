@@ -892,11 +892,115 @@ def test_create(started_cluster):
     test_ref = f"test_list_tables_{uuid.uuid4()}"
     table_name = f"{test_ref}_table"
     root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
 
     create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
     create_clickhouse_glue_table(started_cluster, node, root_namespace, table_name, "(x String)")
-    node.query(f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES ('AAPL');", settings={"allow_insert_into_iceberg": 1, 'write_full_path_in_iceberg_metadata': 1})
-    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
+    before = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+    columns = before["StorageDescriptor"]["Columns"]
+    assert [(col["Name"], col["Type"]) for col in columns] == [("x", "string")]
+    for name, value in {
+        "iceberg.field.id": "1",
+        "iceberg.field.optional": "false",
+        "iceberg.field.current": "true",
+    }.items():
+        assert columns[0]["Parameters"][name] == value
+
+    # Preserve other Glue clients' columns and attributes on metadata commits.
+    glue_client.update_table(
+        DatabaseName=root_namespace,
+        TableInput={
+            "Name": table_name,
+            "TableType": before["TableType"],
+            "Description": "Keep this Glue description",
+            "StorageDescriptor": {
+                "Location": before["StorageDescriptor"]["Location"],
+                "Columns": columns,
+            },
+            "Parameters": {**before["Parameters"], "external_parameter": "keep-me"},
+        },
+    )
+
+    node.query(f"INSERT INTO {table_ref} VALUES ('AAPL');", settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1})
+    after = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+    assert after["StorageDescriptor"]["Columns"] == columns
+    assert after["Description"] == "Keep this Glue description"
+    assert after["Parameters"]["external_parameter"] == "keep-me"
+    assert after["Parameters"]["previous_metadata_location"] == before["Parameters"]["metadata_location"]
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    assert "`x` String" in node.query(f"SHOW CREATE TABLE {table_ref}")
+    assert node.query(f"SELECT * FROM {table_ref}") == "AAPL\n"
+
+
+def test_create_preserves_nested_names_and_uuid_on_reopen(started_cluster):
+    node = started_cluster.instances["node1"]
+    test_ref = f"test_glue_schema_roundtrip_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_glue_table(
+        started_cluster, node, root_namespace, table_name,
+        "(id UUID, details Tuple(`a:b` Int32, `c,d` Nullable(String)))",
+    )
+
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+    columns = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]["StorageDescriptor"]["Columns"]
+    assert [(col["Name"], col["Type"]) for col in columns] == [
+        ("id", "string"),
+        ("details", "struct<a:b:int,c,d:string>"),
+    ]
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    description = {line.split("\t")[0]: line.split("\t")[1] for line in node.query(f"DESCRIBE TABLE {table_ref}").splitlines()}
+    assert description["id"] == "UUID"
+    assert "a:b" in description["details"]
+    assert "c,d" in description["details"]
+    assert "Nullable(String)" in description["details"]
+    assert node.query(f"SELECT * FROM {table_ref}") == ""
+
+
+def test_insert_repairs_empty_glue_columns(started_cluster):
+    node = started_cluster.instances["node1"]
+    test_ref = f"test_glue_legacy_columns_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_glue_table(started_cluster, node, root_namespace, table_name, "(x String)")
+
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+    before = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+    glue_client.update_table(
+        DatabaseName=root_namespace,
+        TableInput={
+            "Name": table_name,
+            "TableType": before["TableType"],
+            "StorageDescriptor": {
+                "Location": before["StorageDescriptor"]["Location"],
+                "Columns": [],
+            },
+            "Parameters": before["Parameters"],
+        },
+    )
+    assert not glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]["StorageDescriptor"]["Columns"]
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    node.query(f"INSERT INTO {table_ref} VALUES ('repaired')", settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1})
+    after = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+    assert [(col["Name"], col["Type"]) for col in after["StorageDescriptor"]["Columns"]] == [("x", "string")]
+    assert after["Parameters"]["previous_metadata_location"] == before["Parameters"]["metadata_location"]
+    assert node.query(f"SELECT * FROM {table_ref}") == "repaired\n"
 
 
 @pytest.mark.parametrize("engine_clause", [" ENGINE = IcebergS3", ""])
@@ -1053,25 +1157,39 @@ def test_schema_evolution(started_cluster):
 
     create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
     create_clickhouse_glue_table(started_cluster, node, root_namespace, table_name, "(x String, y Int32)")
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
 
     node.query(f"INSERT INTO {table_ref} VALUES ('123', 1);", settings=write_settings)
 
     node.query(f"ALTER TABLE {table_ref} ADD COLUMN z Nullable(String);", settings=write_settings)
+    added_columns = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]["StorageDescriptor"]["Columns"]
+    assert [(col["Name"], col["Type"]) for col in added_columns] == [("x", "string"), ("y", "int"), ("z", "string")]
+    assert added_columns[2]["Parameters"]["iceberg.field.optional"] == "true"
     assert "z" in node.query(f"DESCRIBE TABLE {table_ref}", settings=write_settings)
     assert node.query(f"SELECT x, y, z FROM {table_ref} ORDER BY ALL", settings=write_settings) == "123\t1\t\\N\n"
 
     node.query(f"INSERT INTO {table_ref} VALUES ('456', 2, 'hello');", settings=write_settings)
+    assert glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]["StorageDescriptor"]["Columns"] == added_columns
     assert (
         node.query(f"SELECT x, y, z FROM {table_ref} ORDER BY ALL", settings=write_settings)
         == "123\t1\t\\N\n456\t2\thello\n"
     )
 
     node.query(f"ALTER TABLE {table_ref} RENAME COLUMN z TO w;", settings=write_settings)
+    renamed_columns = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]["StorageDescriptor"]["Columns"]
+    assert [col["Name"] for col in renamed_columns] == ["x", "y", "w"]
+    assert renamed_columns[2]["Parameters"]["iceberg.field.id"] == added_columns[2]["Parameters"]["iceberg.field.id"]
     assert "w" in node.query(f"DESCRIBE TABLE {table_ref}", settings=write_settings)
     assert (
         node.query(f"SELECT x, y, w FROM {table_ref} ORDER BY ALL", settings=write_settings)
         == "123\t1\t\\N\n456\t2\thello\n"
     )
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    assert "w" in node.query(f"DESCRIBE TABLE {table_ref}")
+    assert node.query(f"SELECT x, y, w FROM {table_ref} ORDER BY ALL") == "123\t1\t\\N\n456\t2\thello\n"
 
 
 def test_writes_schema_evolution_concurrent_add_columns(started_cluster):
