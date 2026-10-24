@@ -340,9 +340,8 @@ bool namesNonDeterministicRegularFunction(const String & name, const ContextPtr 
     return false;
 }
 
-/// Calls `f` on each sub-AST of `ast` until a call returns true, and returns whether one did.
-/// Besides `children`, these are the `lambda` and `parameters` of `ASTColumnsApplyTransformer`:
-/// its `clone` copies them by hand rather than through `cloneChildren`, so neither is a child.
+/// Calls `f` on each child of `ast` until a call returns true, and returns whether one did.
+/// The `lambda` and `parameters` of `ASTColumnsApplyTransformer` are among its `children`.
 template <typename F>
 bool anyChild(const ASTPtr & ast, F && f)
 {
@@ -350,14 +349,6 @@ bool anyChild(const ASTPtr & ast, F && f)
     {
         if (f(child))
             return true;
-    }
-    if (const auto * apply = ast->as<ASTColumnsApplyTransformer>())
-    {
-        for (const auto & member : {apply->lambda, apply->parameters})
-        {
-            if (member && f(member))
-                return true;
-        }
     }
     return false;
 }
@@ -570,13 +561,15 @@ bool hasWindowFunctionWithoutOrderByAnywhere(const ASTSelectQuery & select)
 }
 
 /// True if the subtree contains at least one column identifier.
-/// Not `anyChild`: an `APPLY` lambda always holds its own parameter, which is not a column.
 bool containsIdentifier(const ASTPtr & ast)
 {
     if (!ast)
         return false;
     if (ast->as<ASTIdentifier>())
         return true;
+    /// The lambda of `APPLY` always contains its own parameter.
+    if (ast->as<ASTColumnsApplyTransformer>())
+        return false;
     for (const auto & child : ast->children)
         if (containsIdentifier(child))
             return true;
@@ -1241,8 +1234,8 @@ void scanAggregatesSafe(const ASTPtr & ast, SafeAggregateScan & out)
 
     /// `SELECT * APPLY any` (or `APPLY x -> any(x)`) aggregates every expanded
     /// column, but the aggregate is not an `ASTFunction` in the AST: the
-    /// transformer keeps a bare function name (or a lambda that is not among its
-    /// children). Missing it routes an aggregating query into the non-aggregate
+    /// transformer keeps a bare function name (or a lambda over its argument).
+    /// Missing it routes an aggregating query into the non-aggregate
     /// oracles, where a partition over an empty WHERE still yields the one row
     /// every aggregate returns on no input — a false mismatch. Record the
     /// transformer itself as an aggregate: `hasAggregates` then reports it, and

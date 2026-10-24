@@ -956,8 +956,8 @@ ASTPtr QueryFuzzer::makeFuzzedColumnTransformers()
 {
     /// Build `APPLY` / `EXCEPT` / `REPLACE` transformers to attach to an asterisk or matcher,
     /// exercising forms like `* EXCEPT (...) REPLACE (...)` and `* LIKE 'pat' ...`
-    /// The fuzz() cases for these transformer nodes mutate them further (toggle strictness, recurse
-    /// into the inner expressions).
+    /// The fuzz() cases mutate them further: `EXCEPT` and `REPLACE` toggle strictness and recurse into
+    /// their inner expressions, `APPLY` only changes its column name prefix.
     auto random_column_name = [&]() -> String
     {
         if (!column_like.empty())
@@ -980,7 +980,7 @@ ASTPtr QueryFuzzer::makeFuzzedColumnTransformers()
                 makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x")),
                 makeASTFunction(func, make_intrusive<ASTIdentifier>("x")));
             lambda->setIsLambdaFunction(true);
-            apply->lambda = lambda;
+            apply->set(apply->lambda, lambda);
             apply->lambda_arg = "x";
         }
         else
@@ -8576,7 +8576,6 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     {
         if (fuzz_rand() % 50 == 0)
             apply->column_name_prefix = fuzz_rand() % 2 == 0 ? "" : "f_";
-        fuzz(apply->children);
     }
     else if (auto * except_transformer = typeid_cast<ASTColumnsExceptTransformer *>(ast.get()))
     {
