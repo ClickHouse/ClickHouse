@@ -3,7 +3,7 @@
 # An UPDATE paused after taking its block number, before it is registered, is not skipped by a later mutation or by a merge.
 # Red if v stays 0. no-parallel: global fail points; plain MergeTree only, the replicated paths register differently.
 # `mutate` holds the alter lock until the mutation is registered, so an ALTER cannot register ahead of the paused
-# UPDATE: it waits for the lock. A merge selected meanwhile sees the UPDATE's reservation and nothing above it.
+# UPDATE: it times out on the lock. A merge selected meanwhile sees the UPDATE's reservation and nothing above it.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -20,20 +20,10 @@ function wait_for_mutation()
     echo "timed out waiting for: $1"
 }
 
-function wait_for_alter_to_block()
+function alter_times_out()
 {
-    for _ in {1..600}; do
-        [ "$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE current_database = currentDatabase() AND query LIKE 'ALTER TABLE t DROP COLUMN d%'")" != "0" ] && return
-        sleep 0.1
-    done
-    echo "timed out waiting for the ALTER to start"
-}
-
-function alter_waits()
-{
-    wait_for_alter_to_block
-    # The ALTER has not registered: the UPDATE still holds the alter lock.
-    $CLICKHOUSE_CLIENT -q "SELECT 'drop column registered while the update is paused', count() FROM system.mutations WHERE database = currentDatabase() AND table = 't' AND command LIKE '%DROP COLUMN%'"
+    # The ALTER cannot take the alter lock while the UPDATE holds it, so it cannot register above the UPDATE.
+    $CLICKHOUSE_CLIENT -q "ALTER TABLE t DROP COLUMN d SETTINGS lock_acquire_timeout = 1" 2>&1 | grep -m1 -o "DEADLOCK_AVOIDED" || echo "the ALTER did not wait for the alter lock"
 }
 
 function merge_first()
@@ -53,8 +43,6 @@ function run_case()
     $CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT mt_pause_before_register_mutation"
     $CLICKHOUSE_CLIENT -q "ALTER TABLE t UPDATE v = 1 WHERE 1 SETTINGS mutations_sync = 0" &
     $CLICKHOUSE_CLIENT -q "SYSTEM WAIT FAILPOINT mt_pause_before_register_mutation PAUSE"
-    # Would take a higher block number than the UPDATE; blocks on the alter lock until the UPDATE registers.
-    $CLICKHOUSE_CLIENT -q "ALTER TABLE t DROP COLUMN d SETTINGS alter_sync = 0" &
     $2
     $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT mt_pause_before_register_mutation"
     wait
@@ -63,8 +51,8 @@ function run_case()
     $CLICKHOUSE_CLIENT -q "SELECT k, v FROM t ORDER BY k"
 }
 
-echo "-- the DROP COLUMN waits for the paused UPDATE"
-run_case 1 alter_waits
+echo "-- the DROP COLUMN cannot register above the paused UPDATE"
+run_case 1 alter_times_out
 echo "-- a merge runs while the UPDATE is paused"
 run_case 2 merge_first
 

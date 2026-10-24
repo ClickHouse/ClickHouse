@@ -5,7 +5,8 @@
 # no-shared-merge-tree -- the bounds under test are `MergeTreeMergePredicate`'s.
 
 # `ATTACH PART` of a patch takes a fresh block number without waiting, so it can land above a not yet registered
-# mutation or above a running `OPTIMIZE`'s snapshot. The merge must leave such a patch for read time.
+# mutation or above a running `OPTIMIZE`'s snapshot. The merge must leave such a patch for read time: the second
+# arm attaches it after the selection copied the snapshot, so the merge neither applies it nor records its version.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -14,7 +15,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/mergetree_reservations.lib
 
 REGISTER_FP="mt_pause_before_register_mutation"
-OPTIMIZE_FP="mt_optimize_pause_before_reading_patches"
+OPTIMIZE_FP="mt_optimize_pause_after_reservation_snapshot"
 MUTATION_QUERY_ID="05304_attached_patch_mutation_${CLICKHOUSE_DATABASE}"
 OPTIMIZE_QUERY_ID="05304_attached_patch_optimize_${CLICKHOUSE_DATABASE}"
 

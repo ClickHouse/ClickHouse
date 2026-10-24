@@ -126,12 +126,10 @@ std::expected<void, PreformattedMessage> checkAllParts(
 
 }
 
-MergeTreePartsCollector::MergeTreePartsCollector(
-    StorageMergeTree & storage_, MergeTreeTransactionPtr tx_, MergeTreeMergePredicatePtr merge_pred_, Int64 last_allocated_block_)
+MergeTreePartsCollector::MergeTreePartsCollector(StorageMergeTree & storage_, MergeTreeTransactionPtr tx_, MergeTreeMergePredicatePtr merge_pred_)
     : storage(storage_)
     , tx(std::move(tx_))
     , merge_pred(std::move(merge_pred_))
-    , last_allocated_block(last_allocated_block_)
 {
 }
 
@@ -142,6 +140,7 @@ CollectedPartsRanges MergeTreePartsCollector::grabAllPossibleRanges(
     const std::optional<PartitionIdsHint> & partitions_hint,
     LogSeriesLimiter & series_log) const
 {
+    const Int64 last_allocated_block = merge_pred->getReservations().lastAllocatedBlock();
     auto parts = filterByPartitions(collectInitial(storage, tx, last_allocated_block), partitions_hint);
     auto partitions_stats = calculateStatisticsForParts(parts, current_time);
     auto ranges = splitPartsByPreconditions(std::move(parts), storage_policy, tx, merge_pred, series_log);
@@ -154,6 +153,7 @@ std::expected<PartsRange, PreformattedMessage> MergeTreePartsCollector::grabAllP
     const time_t & current_time,
     const std::string & partition_id) const
 {
+    const Int64 last_allocated_block = merge_pred->getReservations().lastAllocatedBlock();
     auto parts = filterByPartitions(collectInitial(storage, tx, last_allocated_block), PartitionIdsHint{partition_id});
     if (auto result = checkAllParts(parts, storage_policy, tx, merge_pred); !result)
         return std::unexpected(std::move(result.error()));

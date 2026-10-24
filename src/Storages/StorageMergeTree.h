@@ -256,9 +256,8 @@ private:
 
     /// Register a prepared mutation in `current_mutations_by_version` and
     /// increment `mutation_counters`. Caller must hold
-    /// `currently_processing_in_background_mutex`. `prepared.entry` is moved only by the insert;
-    /// the caller releases `prepared.block_holder` after this call.
-    void addPreparedMutationEntry(PreparedMutationEntry & prepared);
+    /// `currently_processing_in_background_mutex`.
+    void addPreparedMutationEntry(PreparedMutationEntry prepared);
     /// Wait until mutation with version will finish mutation for all parts
     void waitForMutation(Int64 version, bool wait_for_another_mutation);
     void waitForMutation(const String & mutation_id, bool wait_for_another_mutation) override;
@@ -269,10 +268,8 @@ private:
     friend class MergeTreeMergePredicate;
     friend struct PlainCommittingBlockHolder;
 
-    /// `metadata_snapshot` is read again when `OPTIMIZE FINAL` retries after waiting for running merges;
-    /// the caller builds the merge task with the snapshot it gets back.
     std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> selectPartsToMerge(
-        StorageMetadataPtr & metadata_snapshot,
+        const StorageMetadataPtr & metadata_snapshot,
         bool aggressive,
         const String & partition_id,
         bool final,

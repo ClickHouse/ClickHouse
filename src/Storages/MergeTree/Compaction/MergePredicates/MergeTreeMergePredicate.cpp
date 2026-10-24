@@ -81,11 +81,10 @@ static MergeTreeDataPartsVector getPartsVisibleForMerge(const StorageMergeTree &
 }
 
 MergeTreeMergePredicate::MergeTreeMergePredicate(
-    const StorageMergeTree & storage_, const MergeTreeTransactionPtr & tx_, std::unique_lock<std::mutex> & merge_mutate_lock_,
-    const CommittingBlocksSnapshot & reservations_)
+    const StorageMergeTree & storage_, const MergeTreeTransactionPtr & tx_, std::unique_lock<std::mutex> & merge_mutate_lock_)
     : storage(storage_)
     , merge_mutate_lock(merge_mutate_lock_)
-    , reservations(reservations_)
+    , reservations(storage.getCommittingBlocksSnapshot())
 {
     /// The wider set is used only to find the data versions that a merge of patch parts must not span.
     /// A version that only a rollbackable outdated part has still has to be seen here, otherwise the
