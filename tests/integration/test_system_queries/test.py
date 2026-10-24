@@ -30,6 +30,8 @@ def started_cluster():
             # Disable with_remote_database_disk to reduce diversion between the public and private repo.
             # So we do not handle the test differently in the private repo
             with_remote_database_disk=False,
+            # `test_system_flush_logs` counts the rows of `system.query_log`
+            with_ci_logs_export=False,
         )
         cluster.start()
 

@@ -4,12 +4,16 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
+# The server runs with `max_server_memory_usage` of 1.5 GB, which an ASan build
+# fills up at startup already: the export of the system logs to the CI Logs
+# cluster (see helpers/ci_logs_export.py) does not fit in.
 node = cluster.add_instance(
     "node",
     main_configs=["configs/global_overcommit_tracker.xml"],
     user_configs=[
         "configs/users.xml",
     ],
+    with_ci_logs_export=False,
 )
 
 
