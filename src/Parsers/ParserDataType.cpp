@@ -7,6 +7,7 @@
 #include <Parsers/ASTTupleDataType.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTNameTypePair.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTObjectTypeArgument.h>
 #include <Parsers/CommonParsers.h>
@@ -383,6 +384,14 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// failure used to parse the argument list a second time, which doubled the work at every
     /// nesting level - a malformed `Tuple(Tuple(...))` of depth N cost 2^N and exhausted
     /// `max_parser_backtracks` instead of reporting a syntax error.
+    ///
+    /// The one exception is an element `DEFAULT` expression, e.g. `Tuple(s String DEFAULT 'Hello')`:
+    /// `ASTTupleDataType` has nowhere to keep it, so such a tuple is represented by the generic
+    /// `ASTDataType` with `ASTNameTypePair` elements carrying the default. When the first `DEFAULT`
+    /// is met, the elements parsed so far are converted to that representation and the rest of the
+    /// list is parsed by the generic parser below. The elements are never parsed twice: rewinding
+    /// would reparse every preceding nested type, and a valid tuple nesting element defaults at every
+    /// level would again cost 2^N.
     bool use_tuple_fast_path = type_name == "Tuple" && pos->type == TokenType::OpeningRoundBracket;
     if (use_tuple_fast_path)
     {
@@ -390,6 +399,14 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         ++after_bracket;
         use_tuple_fast_path = after_bracket->type != TokenType::ClosingRoundBracket;
     }
+
+    auto data_type_node = make_intrusive<ASTDataType>();
+    data_type_node->name = type_name;
+
+    ASTPtr expr_list_args = make_intrusive<ASTExpressionList>();
+    size_t arg_num = 0;
+
+    bool continue_tuple_with_generic_parser = false;
 
     if (use_tuple_fast_path)
     {
@@ -401,7 +418,10 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         tuple_node->children.push_back(arguments);
 
         bool has_named_elements = false;
+        bool has_element_default = false;
         Strings element_names_tmp;
+        ASTPtr default_element_identifier;
+        ASTPtr default_element_type;
         bool first_element = true;
 
         while (true)
@@ -425,6 +445,14 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             auto element_pos = pos;
             if (identifier_parser.parse(pos, identifier_node, expected) && type_parser.parse(pos, type_node, expected))
             {
+                if (ParserKeyword(Keyword::DEFAULT).checkWithoutMoving(pos, expected))
+                {
+                    has_element_default = true;
+                    default_element_identifier = std::move(identifier_node);
+                    default_element_type = std::move(type_node);
+                    break;
+                }
+
                 /// Named element: name Type
                 String elem_name;
                 tryGetIdentifierNameInto(identifier_node, elem_name);
@@ -451,36 +479,74 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             }
         }
 
-        if (pos->type == TokenType::ClosingRoundBracket && !arguments->children.empty())
+        if (!has_element_default)
         {
-            ++pos;
-            /// Only store element_names if tuple has any named elements
-            if (has_named_elements)
+            if (pos->type == TokenType::ClosingRoundBracket && !arguments->children.empty())
             {
-                element_names_tmp.shrink_to_fit();
-                tuple_node->element_names = std::move(element_names_tmp);
+                ++pos;
+                /// Only store element_names if tuple has any named elements
+                if (has_named_elements)
+                {
+                    element_names_tmp.shrink_to_fit();
+                    tuple_node->element_names = std::move(element_names_tmp);
+                }
+                arguments->children.shrink_to_fit();
+                node = tuple_node;
+                return true;
             }
-            arguments->children.shrink_to_fit();
-            node = tuple_node;
-            return true;
+
+            return false;
         }
 
-        return false;
+        /// An element carries a `DEFAULT` expression. Convert the elements parsed so far to the
+        /// representation of the generic parser (the same nodes it would have produced for them),
+        /// finish the current element with its default, and let the generic parser below continue
+        /// with the next one.
+        for (size_t i = 0; i < arguments->children.size(); ++i)
+        {
+            if (element_names_tmp[i].empty())
+            {
+                expr_list_args->children.push_back(arguments->children[i]);
+            }
+            else
+            {
+                auto name_type_pair = make_intrusive<ASTNameTypePair>();
+                name_type_pair->name = element_names_tmp[i];
+                name_type_pair->type = arguments->children[i];
+                name_type_pair->children.push_back(name_type_pair->type);
+                expr_list_args->children.push_back(std::move(name_type_pair));
+            }
+        }
+
+        auto name_type_pair = make_intrusive<ASTNameTypePair>();
+        tryGetIdentifierNameInto(default_element_identifier, name_type_pair->name);
+        name_type_pair->type = default_element_type;
+        name_type_pair->children.push_back(name_type_pair->type);
+
+        ParserKeyword(Keyword::DEFAULT).ignore(pos, expected);
+        ParserExpression expr_parser;
+        ASTPtr default_expression;
+        if (!expr_parser.parse(pos, default_expression, expected))
+            return false;
+        name_type_pair->default_expression = default_expression;
+        name_type_pair->children.push_back(std::move(default_expression));
+        expr_list_args->children.push_back(std::move(name_type_pair));
+
+        arg_num = expr_list_args->children.size();
+        continue_tuple_with_generic_parser = true;
     }
 
-    auto data_type_node = make_intrusive<ASTDataType>();
-    data_type_node->name = type_name;
-
-    if (pos->type != TokenType::OpeningRoundBracket)
+    if (!continue_tuple_with_generic_parser)
     {
-        node = data_type_node;
-        return true;
+        if (pos->type != TokenType::OpeningRoundBracket)
+        {
+            node = data_type_node;
+            return true;
+        }
+        ++pos;
     }
-    ++pos;
 
     /// Parse optional parameters
-    ASTPtr expr_list_args = make_intrusive<ASTExpressionList>();
-
     /// Allow mixed lists of nested and normal types.
     /// Parameters are either:
     /// - Nested table element;
@@ -491,7 +557,6 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// - JSON type argument;
     /// - another data type (or identifier);
 
-    size_t arg_num = 0;
     bool have_version_of_aggregate_function = false;
     while (true)
     {
@@ -516,12 +581,12 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
         else if (type_name == "Nested")
         {
-            ParserNameTypePair name_and_type_parser;
+            ParserNameTypePairWithDefault name_and_type_parser;
             name_and_type_parser.parse(pos, arg, expected);
         }
         else if (type_name == "Tuple")
         {
-            ParserNameTypePair name_and_type_parser;
+            ParserNameTypePairWithDefault name_and_type_parser;
             ParserDataType only_type_parser;
             name_and_type_parser.parse(pos, arg, expected) || only_type_parser.parse(pos, arg, expected);
         }

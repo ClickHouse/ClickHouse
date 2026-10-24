@@ -1,0 +1,7 @@
+-- CREATE with a subcolumn self-reference
+-- CREATE with a direct self-reference
+-- ALTER ADD COLUMN with a subcolumn self-reference
+-- ALTER MODIFY COLUMN with a subcolumn self-reference
+-- a reference to a subcolumn of another column is still allowed
+Tuple(a UInt8, b UInt8)	tuple(defaultValueOfTypeName(\'UInt8\'), other.a)
+(0,3)

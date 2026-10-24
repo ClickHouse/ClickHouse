@@ -30,6 +30,7 @@
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryMetadataCache.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/pullUpTupleElementDefaults.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTIdentifier.h>
@@ -152,6 +153,18 @@ void applyDataTypeDefaultNullableToColumnDeclarations(ASTAlterQuery & alter)
 
 using CommandSegment = std::variant<AlterCommands, MutationCommands, PartitionCommands, ExecuteCommands>;
 using CommandSegments = std::vector<CommandSegment>;
+
+/// Normalize the query itself before it can be sent to an ON CLUSTER or replicated-DDL worker.
+/// AlterCommand::parse normalizes only its private clone, which is too late for a dispatched AST.
+void pullUpTupleElementDefaultsInAlterQuery(ASTAlterQuery & alter)
+{
+    for (const auto & child : alter.command_list->children)
+    {
+        auto & command = child->as<ASTAlterCommand &>();
+        if (command.type == ASTAlterCommand::ADD_COLUMN || command.type == ASTAlterCommand::MODIFY_COLUMN)
+            pullUpTupleElementDefaults(command.col_decl->as<ASTColumnDeclaration &>());
+    }
+}
 
 struct SegmentsHolder
 {
@@ -528,6 +541,12 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
     if (getContext()->getSettingsRef()[Setting::use_legacy_to_time])
         normalizeLegacyToTimeInAlterMetadataDefinitions(query_ptr->as<ASTAlterQuery &>());
+
+    /// `ON CLUSTER` and replicated DDL serialize `query_ptr` before `AlterCommand::parse` runs.
+    /// Normalize this AST on the initiator so all workers receive ordinary column defaults.
+    /// It must run before the `data_type_default_nullable` rewrite below, which builds the data type
+    /// from the declaration and would reject a type that still carries element defaults.
+    pullUpTupleElementDefaultsInAlterQuery(query_ptr->as<ASTAlterQuery &>());
 
     if (settings[Setting::data_type_default_nullable] && !getContext()->isDDLOrOnClusterInternal()
         && !getContext()->getClientInfo().is_shared_catalog_internal)
