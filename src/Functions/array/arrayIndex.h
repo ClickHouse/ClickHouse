@@ -22,10 +22,8 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnsCommon.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Core/AccurateComparison.h>
-#include <Core/DecimalComparison.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <base/memcmpSmall.h>
 #include <Common/assert_cast.h>
@@ -633,16 +631,6 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
-    String getSignatureString() const override
-    {
-        if constexpr (std::is_same_v<ConcreteAction, HasAction>)
-            return "(Array, Any) -> UInt8"
-                   " OR (Map(Any, Any), Any) -> UInt8"
-                   " OR (JSON, String | FixedString) -> UInt8";
-        else
-            return "(Array, Any) -> UInt64";
-    }
-
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         auto first_argument_type = arguments[0].type;
@@ -914,8 +902,6 @@ private:
         if (!res)
             res = executeString(arguments);
         if (!res)
-            res = executeDecimals(arguments);
-        if (!res)
             res = executeGeneric(arguments);
         if (!res)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal internal type of first argument of function {}", getName());
@@ -951,25 +937,6 @@ private:
             null_map_item = &assert_cast<const ColumnUInt8 &>(*item_map).getData();
 
         return {null_map_data, null_map_item};
-    }
-
-    /// Under a NULL, the nested column of a `Nullable` argument holds an unspecified value: for an `Enum` it is usually 0,
-    /// which the enum may not declare, and casting it throws. Put the type's default there; the null map hides it.
-    static ColumnPtr getColumnWithDefaultsUnderNulls(const ColumnPtr & column, const NullMap * null_map, const DataTypePtr & type)
-    {
-        if (!null_map || type->isDefaultInsertTrivial() || memoryIsZero(null_map->data(), 0, null_map->size()))
-            return column;
-
-        auto patched = type->createColumn();
-        patched->reserve(column->size());
-        for (size_t row = 0; row < column->size(); ++row)
-        {
-            if ((*null_map)[row])
-                type->insertDefaultInto(*patched);
-            else
-                patched->insertFrom(*column, row);
-        }
-        return patched;
     }
 
     struct ExecutionData
@@ -1568,59 +1535,6 @@ private:
         return nullptr;
     }
 
-    /// The cast of two decimals to their common type rescales one side and can overflow: `Decimal(38, 0)` and
-    /// `Decimal(38, 30)` meet in `Decimal(38, 30)`. Compare such a pair as `equals` does instead.
-    static ColumnPtr executeDecimals(const ColumnsWithTypeAndName & arguments)
-    {
-        const auto * col_array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
-        if (!col_array)
-            return nullptr;
-
-        const DataTypePtr & element_type = assert_cast<const DataTypeArray &>(*arguments[0].type).getNestedType();
-        const DataTypePtr needle_type = removeNullable(removeLowCardinality(arguments[1].type));
-        if (!isDecimal(element_type) || !isDecimal(needle_type) || element_type->equals(*needle_type))
-            return nullptr;
-
-        /// `executeArrayImpl` unwraps a non-constant `Nullable` needle, but not a constant one.
-        ColumnPtr needle_column = arguments[1].column->convertToFullColumnIfLowCardinality();
-        ColumnPtr const_needle_null_map;
-        if (const auto * needle_const = checkAndGetColumn<ColumnConst>(needle_column.get()))
-        {
-            if (const auto * needle_nullable = checkAndGetColumn<ColumnNullable>(&needle_const->getDataColumn()))
-            {
-                if (needle_nullable->isNullAt(0))
-                    const_needle_null_map = ColumnUInt8::create(col_array->size(), UInt8(1));
-                needle_column = ColumnConst::create(needle_nullable->getNestedColumnPtr(), needle_column->size());
-            }
-        }
-
-        /// Exact: `Decimal256` holds every decimal at the same scale.
-        auto widen = [](const ColumnPtr & column, const DataTypePtr & type)
-        {
-            auto wide_type = std::make_shared<DataTypeDecimal256>(DecimalUtils::max_precision<Decimal256>, getDecimalScale(*type));
-            return ColumnWithTypeAndName{castColumn({column, type, ""}, wide_type), wide_type, ""};
-        };
-
-        ColumnWithTypeAndName elements = widen(col_array->getDataPtr(), element_type);
-        ColumnWithTypeAndName needle = widen(needle_column, needle_type);
-        if (const auto * needle_const = checkAndGetColumn<ColumnConst>(needle.column.get()))
-            needle.column = ColumnConst::create(needle_const->getDataColumnPtr(), elements.column->size());
-        else
-            needle.column = needle.column->replicate(col_array->getOffsets());
-
-        ColumnPtr found = DecimalComparison<Decimal256, Decimal256, EqualsOp>::apply(elements, needle, /* check_overflow */ true)
-                              ->convertToFullColumnIfConst();
-
-        auto [null_map_data, null_map_item] = getNullMaps(arguments);
-        if (const_needle_null_map)
-            null_map_item = &assert_cast<const ColumnUInt8 &>(*const_needle_null_map).getData();
-        auto col_res = ResultColumnType::create();
-        auto one = ColumnUInt8::create(1, UInt8(1));
-        const IColumn & found_value = *one;
-        Impl::Main<ConcreteAction, true>::vector(*found, col_array->getOffsets(), found_value, col_res->getData(), null_map_data, null_map_item);
-        return col_res;
-    }
-
     static ColumnPtr executeGeneric(const ColumnsWithTypeAndName & arguments)
     {
         const auto * col_array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
@@ -1631,11 +1545,12 @@ private:
         const DataTypePtr & index_type = arguments[1].type;
 
         DataTypePtr common_type = getLeastSupertype(DataTypes{array_elements_type, arguments[1].type});
-        auto [null_map_data, null_map_item] = getNullMaps(arguments);
-        ColumnPtr col_nested = castColumn({ getColumnWithDefaultsUnderNulls(col_array->getDataPtr(), null_map_data, array_elements_type), array_elements_type, "" }, common_type);
-        ColumnPtr item_arg = castColumn({ getColumnWithDefaultsUnderNulls(arguments[1].column, null_map_item, index_type), removeLowCardinality(index_type), "" }, common_type);
+        ColumnPtr col_nested = castColumn({ col_array->getDataPtr(), array_elements_type, "" }, common_type);
+        ColumnPtr item_arg = castColumn({ arguments[1].column, removeLowCardinality(index_type), "" }, common_type);
 
         auto col_res = ResultColumnType::create();
+
+        auto [null_map_data, null_map_item] = getNullMaps(arguments);
 
         if (const auto * item_arg_const = checkAndGetColumn<ColumnConst>(item_arg.get()))
         {

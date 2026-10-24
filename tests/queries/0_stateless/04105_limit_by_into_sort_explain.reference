@@ -317,10 +317,8 @@ ExpressionTransform
                                       DelayedJoinedBlocksTransform 0 → 2
                                         (Expression)
                                         ExpressionTransform × 2
-                                          (Expression)
-                                          ExpressionTransform × 2
-                                            (ReadFromMergeTree)
-                                            MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 2 0 → 1
+                                          (ReadFromMergeTree)
+                                          MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 2 0 → 1
                                         (Expression)
                                         ExpressionTransform × 2
                                           (BuildRuntimeFilter)

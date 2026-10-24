@@ -212,6 +212,7 @@ add_headers_and_sources(dbms Common/Scheduler/Workload)
 add_headers_and_sources(dbms Core/YTsaurus)
 add_headers_and_sources(dbms Storages/YTsaurus)
 add_headers_and_sources(dbms Storages/BigQuery)
+add_headers_and_sources(dbms Storages/Elasticsearch)
 
 add_headers_and_sources(dbms Core/Streaming)
 add_headers_and_sources(dbms Storages/Streaming)
@@ -558,7 +559,6 @@ set_property(SOURCE
     Processors/Transforms/Window/SlidingBlocks.cpp  # window functions
     Processors/Transforms/Window/SlidingIndexes.cpp  # window functions
     Processors/Transforms/Window/Partition.cpp  # window functions
-    Processors/Transforms/Window/Peers.cpp  # window functions
     Processors/Transforms/Window/Frame.cpp  # window functions
     Processors/Transforms/Window/WindowTransformParams.cpp  # window functions
     WindowFunctions/WindowFunctionRank.cpp                   # window functions

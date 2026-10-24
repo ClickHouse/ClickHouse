@@ -986,11 +986,6 @@ SerializationPtr IMergeTreeDataPart::tryGetSerialization(const String & column_n
     return serializations->tryGet(column_name);
 }
 
-SerializationPtr IMergeTreeDataPart::tryGetSubcolumnSerialization(const String & column_name, const String & subcolumn_name) const
-{
-    return serializations->tryGetSubcolumnSerialization(column_name, subcolumn_name);
-}
-
 bool IMergeTreeDataPart::isMovingPart() const
 {
     fs::path part_directory_path = getDataPartStorage().getRelativePath();
@@ -4034,11 +4029,6 @@ bool IMergeTreeDataPart::hasBrokenProjection(const String & projection_name) con
     if (it == projection_parts.end())
         return false;
     return it->second->is_broken;
-}
-
-bool IMergeTreeDataPart::hasUnloadedProjection(const String & projection_name) const
-{
-    return !hasProjection(projection_name) && checksums.has(projection_name + ".proj");
 }
 
 void IMergeTreeDataPart::setBrokenReason(const String & message, int code) const

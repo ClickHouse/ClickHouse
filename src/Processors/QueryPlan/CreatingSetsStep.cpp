@@ -111,6 +111,8 @@ void CreatingSetStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 set_settings.temporary_files_codec),
             .min_free_disk_space = set_settings.min_free_disk_space,
             .max_block_size = set_settings.max_block_size,
+            .max_bytes_for_bloom_filter = set_settings.max_bytes_for_external_set_bloom_filter,
+            .max_bytes_for_cache = set_settings.max_bytes_for_external_set_cache,
             .process_list_element = build_settings.process_list_element,
         };
     }

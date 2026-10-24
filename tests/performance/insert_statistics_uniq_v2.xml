@@ -71,6 +71,8 @@
     <fill_query>SYSTEM STOP MERGES t_insert_uniq_v2_i64_on</fill_query>
     <fill_query>SYSTEM STOP MERGES t_insert_uniq_v2_f64_off</fill_query>
     <fill_query>SYSTEM STOP MERGES t_insert_uniq_v2_f64_on</fill_query>
+    <fill_query>SYSTEM STOP MERGES t_materialize_uniq_v2_i64</fill_query>
+    <fill_query>SYSTEM STOP MERGES t_materialize_uniq_v2_f64</fill_query>
 
     <fill_query>
         INSERT INTO t_insert_uniq_v2_i64_src

@@ -99,18 +99,16 @@ def _is_llvm_coverage_family_job(job_name):
 
 
 # With the `ci-llvm-coverage` label a pull request runs the LLVM coverage family and these jobs
-# only: the style check, the AI code review, and the stateless flaky checks of the changed tests
-# with their builds (`FUNCTIONAL_TEST_FLAKY_CHECK_JOBS`; the `amd_binary` build among them is also
-# what the `excluded_from_llvm` jobs need). The coverage shards cannot serve as the flaky check:
-# they run without random settings and sanitizers and never fail the pipeline
-# (`functional_tests.py`). Made for pull requests that only add tests and need the coverage
-# report, such as the pull requests of the test-writing agents: `ci-force-all` runs about three
-# times as many machine minutes for them. `can_be_merged.py` lets a pull request that changes only
-# stateless tests merge with the label. The code review is the review of such a pull request:
-# nobody else reads a generated test, so its threads must be answered before the merge.
+# only: the style check and the stateless flaky checks of the changed tests with their builds
+# (`FUNCTIONAL_TEST_FLAKY_CHECK_JOBS`; the `amd_binary` build among them is also what the
+# `excluded_from_llvm` jobs need). The coverage shards cannot serve as the flaky check: they run
+# without random settings and sanitizers and never fail the pipeline (`functional_tests.py`).
+# Made for pull requests that only add tests and need the coverage report, such as the pull
+# requests of the test-writing agents: `ci-force-all` runs about three times as many machine
+# minutes for them. `can_be_merged.py` lets a pull request that changes only stateless tests
+# merge with the label.
 LLVM_COVERAGE_ONLY_JOBS = [
     JobNames.STYLE_CHECK,
-    JobNames.CODE_REVIEW,
     *FUNCTIONAL_TEST_FLAKY_CHECK_JOBS,
 ]
 
@@ -635,7 +633,7 @@ _PIPELINE_NOTES = {
         "Label `ci-coverage` (or a change of the coverage code) runs the LLVM coverage jobs and the `LLVM Coverage` merge job."
     ),
     Labels.CI_LLVM_COVERAGE: (
-        "Label `ci-llvm-coverage` runs the LLVM coverage jobs, the `LLVM Coverage` merge job, the stateless flaky checks and the code review only."
+        "Label `ci-llvm-coverage` runs the LLVM coverage jobs, the `LLVM Coverage` merge job and the stateless flaky checks only."
     ),
 }
 

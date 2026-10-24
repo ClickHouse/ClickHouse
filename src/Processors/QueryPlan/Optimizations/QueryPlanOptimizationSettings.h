@@ -157,7 +157,8 @@ struct QueryPlanOptimizationSettings
     bool use_query_condition_cache_for_top_k;
     bool use_query_condition_cache_for_time_conditions;
     double query_condition_cache_time_condition_grid_factor;
-    bool read_in_order_through_join;
+    /// 0 - off, 1 - on, 2 - on even when the parts have no virtual rows (`force`).
+    UInt64 read_in_order_through_join;
     bool optimize_aggregation_in_order_limit;
     bool correlated_subqueries_use_in_memory_buffer;
     bool push_limit_by_into_sort;
@@ -220,6 +221,7 @@ struct QueryPlanOptimizationSettings
     bool optimize_lazy_materialization = false;
     bool optimize_lazy_materialization_for_object_storage = false;
     bool optimize_lazy_materialization_for_file = false;
+    bool lazy_materialization_for_join = false;
     size_t max_limit_for_lazy_materialization = 0;
 
     /// If lazy FINAL optimization for ReplacingMergeTree is enabled

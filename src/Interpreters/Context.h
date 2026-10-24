@@ -26,7 +26,6 @@
 #include <Server/HTTP/HTTPContext.h>
 #include <Storages/IStorage_fwd.h>
 #include <Backups/BackupsInMemoryHolder.h>
-#include <Server/StatelessWorker/StatelessWorkerAllocation_fwd.h>
 
 #include <Poco/AutoPtr.h>
 
@@ -104,9 +103,6 @@ class MovesList;
 class ReplicatedFetchList;
 class RefreshSet;
 class Cluster;
-class IStatelessWorkersProvider;
-using StatelessWorkersProviderPtr = std::shared_ptr<IStatelessWorkersProvider>;
-class StatelessWorkersProviderRegistry;
 class Compiler;
 class MarkCache;
 class UniqueKeyIndexCache;
@@ -187,6 +183,10 @@ class DDLWorker;
 class ITableFunction;
 using TableFunctionPtr = std::shared_ptr<ITableFunction>;
 class Block;
+/// An entry of the query scalar map: the scalar block plus whether it came from the client.
+/// Defined in Context.cpp, where `Block` is complete; here `std::map` only needs the forward
+/// declaration, the same way `Scalars` is a `std::map` over the forward-declared `Block`.
+struct ScalarEntry;
 class ActionLocksManager;
 using ActionLocksManagerPtr = std::shared_ptr<ActionLocksManager>;
 class ShellCommand;
@@ -424,9 +424,6 @@ protected:
     using InteractiveCancelCallback = std::function<bool()>;
     InteractiveCancelCallback interactive_cancel_callback; /// Callback for usage in interactive sessions with CompletedPipelineExecutor
 
-    using ClientConnectedCallback = std::function<bool()>;
-    ClientConnectedCallback client_connected_callback; /// Returns false once the client has disconnected. Not inherited by copies.
-
     std::weak_ptr<QueryStatus> process_list_elem;  /// For tracking total resource usage for query.
     bool has_process_list_elem = false;     /// It's impossible to check if weak_ptr was initialized or not
     UInt64 normalized_query_hash = 0;       /// Hash of the normalized query text, used for `NORMALIZED_QUERY_HASH` quotas.
@@ -455,8 +452,13 @@ protected:
     /// History of query ids for `system.session_query_ids`, lives on the session context.
     mutable std::shared_ptr<SessionQueryIdsHistory> session_query_ids_history;
     mutable std::shared_ptr<HypotheticalObjectStore> hypothetical_object_store;
-    /// Query scalars
-    Scalars scalars;
+    /// Query scalars. Each entry carries whether it was supplied by the client over the wire (the
+    /// `Scalar` packet, i.e. the `clickhouse-client --external ... --scalar` feature or an initiator
+    /// shipping scalars to a shard) rather than computed by the server itself. The origin travels with
+    /// the block so that the analyzer's scalar-subquery cache (which keys on the query-tree hash) never
+    /// mistakes a client-supplied block for an already-computed subquery result; without this a client
+    /// could forge the result of a scalar subquery used in a row policy and bypass the policy.
+    std::map<String, ScalarEntry> scalars;
     /// Used to store constant values which are different on each instance during distributed plan, such as _shard_num.
     Scalars special_scalars;
 
@@ -662,6 +664,10 @@ protected:
     /// purpose: only Interpreter may turn it on, but it must reach every join of the
     /// query, including joins in nested plans, which EXPLAIN also prints.
     JoinAnalyzeMode join_analyze_mode = JoinAnalyzeMode::None;
+    /// True while building the plan with parallel replicas that `automatic_parallel_replicas_mode` costs against the
+    /// single-node plan. It is a context field rather than a setting, because it must reach every planning of that
+    /// plan, including views analyzed later by their own interpreters, and no `SETTINGS` clause there may undo it.
+    bool is_automatic_parallel_replicas_probe = false;
 
     /// Defined out of line: a definition in the header gives every shared object its own copy.
     static ContextPtr global_context_instance;
@@ -818,11 +824,6 @@ class Context: public ContextData, public std::enable_shared_from_this<Context>
 private:
     /// ContextData mutex
     mutable ContextSharedMutex mutex;
-
-    /// Held across the blocking allocation, so separate from `mutex`.
-    mutable std::mutex stateless_worker_allocation_mutex;
-    mutable StatelessWorkerAllocationPtr stateless_worker_allocation;
-    mutable StatelessWorkersProviderPtr stateless_worker_provider;
 
     Context();
     Context(const Context &);
@@ -1057,8 +1058,6 @@ public:
     UInt64 getCPUSlotQuantum() const;
     UInt64 getCPUSlotPreemptionTimeout() const;
     void setCPUSlotPreemption(bool cpu_slot_preemption, UInt64 cpu_slot_quantum_ns, UInt64 cpu_slot_preemption_timeout_ms);
-    bool getCPUSlotParking() const;
-    void setCPUSlotParking(bool value);
     UInt64 getConcurrentThreadsSoftLimitNum() const;
     UInt64 getConcurrentThreadsSoftLimitRatioToCores() const;
     String getConcurrentThreadsScheduler() const;
@@ -1153,6 +1152,16 @@ public:
     Block getScalar(const String & name) const;
     void addScalar(const String & name, const Block & block);
     bool hasScalar(const String & name) const;
+
+    /// Add a scalar received from the client over the wire (the `Scalar` packet). Unlike `addScalar`,
+    /// the entry is marked as client-supplied so that `hasComputedScalar` will not report it as a
+    /// server-computed subquery result. Explicit readers (`__getScalar`, `_shard_num`, forwarding to
+    /// shards) still see it through `getScalar` / `hasScalar` / `getScalars`.
+    void addClientScalar(const String & name, const Block & block);
+    /// Like `hasScalar`, but returns true only for scalars the server computed itself, never for
+    /// client-supplied ones. The analyzer's scalar-subquery cache must use this so that a forged
+    /// client scalar cannot stand in for the result of a (e.g. row-policy) scalar subquery.
+    bool hasComputedScalar(const String & name) const;
 
     std::optional<Block> tryGetSpecialScalar(const String & name) const;
     void addSpecialScalar(const String & name, const Block & block);
@@ -1565,9 +1574,6 @@ public:
     void setInteractiveCancelCallback(InteractiveCancelCallback && callback) { interactive_cancel_callback = callback; }
     InteractiveCancelCallback getInteractiveCancelCallback() const { return interactive_cancel_callback; }
 
-    void setClientConnectedCallback(ClientConnectedCallback && callback) { client_connected_callback = callback; }
-    ClientConnectedCallback getClientConnectedCallback() const { return client_connected_callback; }
-
     /** Set in executeQuery and InterpreterSelectQuery. Then it is used in QueryPipeline,
       *  to update and monitor information about the total number of resources spent for the query.
       */
@@ -1633,15 +1639,6 @@ public:
     void shutdownKeeperDispatcherBeforeConnectionsFinish() const;
     void shutdownKeeperDispatcherAfterConnectionsFinish(bool closed_all_connections) const;
     void updateKeeperConfiguration(const Poco::Util::AbstractConfiguration & config) const;
-
-    /// The provider for the named worker cluster (empty = default), built on first use.
-    StatelessWorkersProviderPtr getStatelessWorkersProvider(const String & cluster_name) const;
-    std::shared_ptr<StatelessWorkersProviderRegistry> getStatelessWorkersProviderRegistry() const;
-    void reloadStatelessWorkersConfig(const Poco::Util::AbstractConfiguration & config) const;
-    /// The query's provider, resolved once so plan sizing and the allocation use the same workers.
-    StatelessWorkersProviderPtr getStatelessWorkersProvider() const;
-    /// The query's allocation, shared by all of its distributed plans.
-    StatelessWorkerAllocationPtr getOrCreateStatelessWorkerAllocation() const;
 
     /// Set auxiliary zookeepers configuration at server starting or configuration reloading.
     void reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config);
@@ -2007,6 +2004,9 @@ public:
 
     JoinAnalyzeMode getJoinAnalyzeMode() const { return join_analyze_mode; }
     void setJoinAnalyzeMode(JoinAnalyzeMode value) { join_analyze_mode = value; }
+
+    bool isAutomaticParallelReplicasProbe() const { return is_automatic_parallel_replicas_probe; }
+    void setIsAutomaticParallelReplicasProbe(bool value) { is_automatic_parallel_replicas_probe = value; }
 
     ActionLocksManagerPtr getActionLocksManager() const;
 

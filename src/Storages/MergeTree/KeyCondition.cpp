@@ -5825,6 +5825,17 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
         = (isNativeInteger(key_expr_type_not_null) || isDateTimeOrDateTime64(key_expr_type_not_null))
         && (isNativeInteger(const_type) || isDateTimeOrDateTime64(const_type));
 
+    /// `Range` closes the open integer bound of a strict comparison by stepping it by 1, a whole second here;
+    /// a scale-0 decimal compares the same and is not stepped.
+    if (cast_not_needed && (func_name == "less" || func_name == "greater") && isDateTime64(key_expr_type_not_null)
+        && assert_cast<const DataTypeDateTime64 &>(*key_expr_type_not_null).getScale() > 0)
+    {
+        if (const_value.getType() == Field::Types::Int64)
+            const_value = DecimalField<Decimal256>(Decimal256(const_value.safeGet<Int64>()), 0);
+        else if (const_value.getType() == Field::Types::UInt64 || const_value.getType() == Field::Types::Bool)
+            const_value = DecimalField<Decimal256>(Decimal256(const_value.safeGet<UInt64>()), 0);
+    }
+
     if (!cast_not_needed && !key_expr_type_not_null->equals(*const_type))
     {
         if (const_value.getType() == Field::Types::String)
@@ -7076,14 +7087,12 @@ BoolMask KeyCondition::checkInRange(
 /// For example, CAST between UInt8/16/32/64 types all store as UInt64 in Field, so when the CAST is
 /// monotonic (value fits in the target type), the Field value doesn't change.
 /// Similarly for Int8/16/32/64 (all stored as Int64).
-/// `DateTime` is a number of seconds stored as UInt32 (UInt64 in Field), so `toUnixTimestamp(DateTime)`
-/// and casts between `DateTime` and unsigned integers don't change the Field value either.
 /// In such cases we can skip the expensive function application (which creates columns and executes
 /// the function via the full column execution machinery) and just keep the original Field value.
 ///
-/// IMPORTANT: This must only return true for pure type conversion functions (see `is_cast`),
+/// IMPORTANT: This must only return true for pure type conversion functions (_CAST, toUInt*, toInt*),
 /// NOT for arithmetic or other functions that happen to have compatible integer types on input/output.
-static bool functionIsCastPreservingFieldRepresentation(
+static bool functionIsIntegerCastPreservingFieldRepresentation(
     const FunctionBasePtr & func, const DataTypePtr & from_type, const DataTypePtr & to_type)
 {
     /// Only type conversion functions preserve Field values across integer type boundaries.
@@ -7091,8 +7100,7 @@ static bool functionIsCastPreservingFieldRepresentation(
     const auto & name = func->getName();
     bool is_cast = (name == "_CAST" || name == "CAST"
         || name == "toUInt8" || name == "toUInt16" || name == "toUInt32" || name == "toUInt64"
-        || name == "toInt8" || name == "toInt16" || name == "toInt32" || name == "toInt64"
-        || name == "toDateTime" || name == "toUnixTimestamp");
+        || name == "toInt8" || name == "toInt16" || name == "toInt32" || name == "toInt64");
 
     if (!is_cast)
         return false;
@@ -7101,17 +7109,23 @@ static bool functionIsCastPreservingFieldRepresentation(
     if (from_type->isNullable() || to_type->isNullable())
         return false;
 
-    WhichDataType from(from_type);
-    WhichDataType to(to_type);
+    auto from_id = from_type->getTypeId();
+    auto to_id = to_type->getTypeId();
 
-    /// `Date`, `Date32` and `DateTime64` must not be added here: `toDateTime(Date)`, `toUnixTimestamp(Date)`
-    /// and `toUnixTimestamp(DateTime64)` change the value, and this check only looks at the name and the types.
-    auto is_uint_or_datetime = [](WhichDataType which) { return which.isNativeUInt() || which.isDateTime(); };
+    auto is_unsigned_int = [](TypeIndex id)
+    {
+        return id == TypeIndex::UInt8 || id == TypeIndex::UInt16 || id == TypeIndex::UInt32 || id == TypeIndex::UInt64;
+    };
 
-    /// Check that both types are in the same family before calling
+    auto is_signed_int = [](TypeIndex id)
+    {
+        return id == TypeIndex::Int8 || id == TypeIndex::Int16 || id == TypeIndex::Int32 || id == TypeIndex::Int64;
+    };
+
+    /// Check that both types are in the same integer family before calling
     /// getSizeOfValueInMemory, which throws for variable-length types like String.
-    bool same_family = (is_uint_or_datetime(from) && is_uint_or_datetime(to))
-        || (from.isNativeInt() && to.isNativeInt());
+    bool same_family = (is_unsigned_int(from_id) && is_unsigned_int(to_id))
+        || (is_signed_int(from_id) && is_signed_int(to_id));
 
     if (!same_family)
         return false;
@@ -7183,7 +7197,7 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
             /// A bound referencing a column in the index block is advanced by the application itself:
             /// skipping would leave it on the previous column while `current_type` moves on.
             bool skip_apply = key_range.left.isExplicit() && key_range.right.isExplicit()
-                && functionIsCastPreservingFieldRepresentation(func, current_type, result_type);
+                && functionIsIntegerCastPreservingFieldRepresentation(func, current_type, result_type);
 
             if (!skip_apply)
             {

@@ -2262,9 +2262,6 @@ Supported for object-storage disks whose metadata lives on the object storage it
 (s3_plain, s3_plain_rewritable, web, web_index) and their cached variants. Encrypted
 variants are supported only over the writable s3_plain / s3_plain_rewritable disks, not
 over the read-only web / web_index disks.
-A writable disk holds the data of only one table: the other tables over the same path,
-or over a path inside or above it, have to use a read-only disk.
-`ALTER` cannot change the disk of a table with this setting.
 The parts already present under the path are trusted to match the columns and the sorting
 key this table declares. Nothing records the sorting key a part was written with, so a
 table declaring a different one over the same parts returns wrong results or an error.
@@ -2730,7 +2727,7 @@ memory usage by not loading useless columns of the primary key.
     merges, fetches and on startup of server. Without it the statistics of a part
     are loaded into the cache by the first query that needs them.
 )", 0, \
-        {"26.11", false, false, "New setting to prewarm the statistics cache with the column statistics of new data parts and on startup. The statistics cache is now per data part and column instead of a snapshot of the whole table; the settings `refresh_statistics_interval` and `use_statistics_cache` are obsolete."}) \
+        {"26.10", false, false, "New setting to prewarm the statistics cache with the column statistics of new data parts and on startup. The statistics cache is now per data part and column instead of a snapshot of the whole table; the settings `refresh_statistics_interval` and `use_statistics_cache` are obsolete."}) \
     DECLARE(String, columns_to_prewarm_mark_cache, "", R"(
 List of columns to prewarm mark cache for (if enabled). Empty means all columns
 )", 0) \

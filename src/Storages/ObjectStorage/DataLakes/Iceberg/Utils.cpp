@@ -37,7 +37,6 @@
 #include <Poco/UUID.h>
 #include <Poco/UUIDGenerator.h>
 #include <Common/DateLUT.h>
-#include <Common/ErrnoException.h>
 #include <Common/quoteString.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -66,11 +65,6 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
 
-#if USE_AWS_S3
-#include <IO/S3Common.h>
-#include <IO/S3/getObjectInfo.h>
-#endif
-
 
 using namespace DB;
 
@@ -84,7 +78,6 @@ extern const int BAD_ARGUMENTS;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int LOGICAL_ERROR;
 extern const int UNSUPPORTED_METHOD;
-extern const int READONLY;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -358,36 +351,6 @@ void writeMessageToFile(
     }
 }
 
-/// Whether the storage refused the request itself rather than its condition, so that a retry is refused again.
-static bool isRefusedWrite(const Exception & e)
-{
-    if (e.code() == ErrorCodes::UNSUPPORTED_METHOD || e.code() == ErrorCodes::READONLY)
-        return true;
-    if (const auto * errno_exception = dynamic_cast<const ErrnoException *>(&e))
-        return errno_exception->getErrno() == EACCES || errno_exception->getErrno() == EPERM
-            || errno_exception->getErrno() == EROFS;
-#if USE_AWS_S3
-    if (const auto * s3_exception = dynamic_cast<const S3Exception *>(&e))
-        return DB::S3::isAuthenticationError(s3_exception->getS3ErrorCode())
-            || s3_exception->getS3ErrorCode() == Aws::S3::S3Errors::SIGNATURE_DOES_NOT_MATCH;
-#endif
-    return false;
-}
-
-/// Whether `path` is known to be absent; a failed check proves nothing.
-static bool isKnownAbsent(const DB::ObjectStoragePtr & object_storage, const std::string & path)
-{
-    try
-    {
-        return !object_storage->exists(StoredObject(path));
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        return false;
-    }
-}
-
 bool writeMetadataFile(
     const IcebergPathResolver & resolver,
     const GeneratedMetadataFileWithInfo & metadata_file_info,
@@ -396,13 +359,11 @@ bool writeMetadataFile(
     DB::ContextPtr context)
 {
     auto storage_metadata_path = resolver.resolve(metadata_file_info.path);
-    bool write_attempted = false;
     try
     {
         if (object_storage->exists(StoredObject(storage_metadata_path)))
             return false;
 
-        write_attempted = true;
         Iceberg::writeMessageToFile(
             metadata_file_content,
             storage_metadata_path,
@@ -414,9 +375,10 @@ bool writeMetadataFile(
     }
     catch (const Exception & e)
     {
-        /// A refused write is not a lost race, and retrying the commit cannot get past it. Once the write was sent,
-        /// a refusal (e.g. of the check after an upload) proves nothing was written only while the file is absent.
-        if (isRefusedWrite(e) && (!write_attempted || isKnownAbsent(object_storage, storage_metadata_path)))
+        /// A backend that cannot express the commit's compare-and-swap will never be able to, so
+        /// reporting a lost race would make the caller retry an operation that can never succeed.
+        /// Propagate instead; every other failure (including a genuinely lost CAS) stays retryable.
+        if (e.code() == ErrorCodes::UNSUPPORTED_METHOD)
             throw;
         tryLogCurrentException(__PRETTY_FUNCTION__);
         return false;

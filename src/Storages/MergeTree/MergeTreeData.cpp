@@ -567,77 +567,6 @@ static bool hasColumnsWithDynamicSubcolumns(const Block & block)
     return false;
 }
 
-namespace
-{
-
-struct TableDiskRoot
-{
-    String storage_description;
-    String storage_namespace;
-    fs::path path;
-    String disk_name;
-    const MergeTreeData * owner;
-};
-
-std::mutex table_disk_roots_mutex;
-std::vector<TableDiskRoot> table_disk_roots TSA_GUARDED_BY(table_disk_roots_mutex);
-
-/// Whether one path is equal to the other one or contains it, compared by path components.
-bool pathsOverlap(const fs::path & lhs, const fs::path & rhs)
-{
-    auto [lhs_it, rhs_it] = std::mismatch(lhs.begin(), lhs.end(), rhs.begin(), rhs.end());
-    return lhs_it == lhs.end() || rhs_it == rhs.end();
-}
-
-}
-
-void MergeTreeData::acquireTableDiskRoots()
-{
-    std::vector<TableDiskRoot> roots;
-    for (const auto & disk : getDisks())
-    {
-        if (disk->isReadOnly() || disk->isWriteOnce())
-            continue;
-
-        auto path = fs::path(disk->getPath()).lexically_normal();
-        if (!path.has_filename() && path.has_relative_path())
-            path = path.parent_path();
-
-        auto object_storage = disk->getObjectStorage();
-        roots.push_back({object_storage->getDescription(), object_storage->getObjectsNamespace(), std::move(path), disk->getName(), this});
-    }
-
-    std::lock_guard lock(table_disk_roots_mutex);
-    for (const auto & root : roots)
-    {
-        for (const auto & owned : table_disk_roots)
-        {
-            if (owned.storage_description != root.storage_description || owned.storage_namespace != root.storage_namespace
-                || !pathsOverlap(owned.path, root.path))
-                continue;
-
-            String remedy;
-            if (owned.owner->is_dropped)
-                remedy = "It is dropped and keeps its data until the drop finishes, retry after that (`DROP TABLE ... SYNC` waits for the drop)";
-            else if (owned.owner->is_detached)
-                remedy = "It is detached and its detached instance is still alive, retry after it is released (in an `Atomic` database `DETACH TABLE ... SYNC` waits for that)";
-            else
-                remedy = "A writable disk with `table_disk = true` can hold the data of only one table, use a read-only disk for the other tables";
-
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Table {} cannot store its data at '{}' on disk {}: table {} already stores its data at '{}' on disk {} on the same storage. {}",
-                getStorageID().getNameForLogs(), root.path.string(), backQuote(root.disk_name),
-                owned.owner->getStorageID().getNameForLogs(), owned.path.string(), backQuote(owned.disk_name), remedy);
-        }
-    }
-    table_disk_roots.insert(table_disk_roots.end(), roots.begin(), roots.end());
-}
-
-void MergeTreeData::releaseTableDiskRoots()
-{
-    std::lock_guard lock(table_disk_roots_mutex);
-    std::erase_if(table_disk_roots, [this](const TableDiskRoot & root) { return root.owner == this; });
-}
 
 void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & relative_data_path_, bool attach, const std::string & date_column_name, bool need_create_directories)
 {
@@ -645,7 +574,6 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
     if ((*settings)[MergeTreeSetting::table_disk])
     {
         LOG_TRACE(log, "Table is located directly on disk (without database layer)");
-        acquireTableDiskRoots();
     }
     else
     {
@@ -726,40 +654,6 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
             throw Exception(ErrorCodes::METADATA_MISMATCH, "MergeTree data format version on disk doesn't support custom partitioning");
     }
 }
-
-namespace
-{
-
-/// The parts locks of any table this thread holds, counted by `PartsLockHoldCount`.
-thread_local size_t parts_locks_held = 0;
-
-}
-
-bool partsLockHeldByCurrentThread()
-{
-    return parts_locks_held > 0;
-}
-
-PartsLockHoldCount::PartsLockHoldCount() : held(true)
-{
-    ++parts_locks_held;
-}
-
-PartsLockHoldCount & PartsLockHoldCount::operator=(PartsLockHoldCount && other) noexcept
-{
-    release();
-    held = std::exchange(other.held, false);
-    return *this;
-}
-
-void PartsLockHoldCount::release() noexcept
-{
-    if (!std::exchange(held, false))
-        return;
-    chassert(parts_locks_held > 0, "a parts lock is released on a thread that did not take it");
-    --parts_locks_held;
-}
-
 DataPartsLock::DataPartsLock(SharedMutex & data_parts_mutex_, const MergeTreeData * data_)
     : wait_watch(Stopwatch(CLOCK_MONOTONIC))
     , lock(data_parts_mutex_)
@@ -769,6 +663,7 @@ DataPartsLock::DataPartsLock(SharedMutex & data_parts_mutex_, const MergeTreeDat
     ProfileEvents::increment(ProfileEvents::PartsLockWaitMicroseconds, wait_watch->elapsedMicroseconds());
     ProfileEvents::increment(ProfileEvents::PartsLocks);
 }
+
 
 DataPartsLock::~DataPartsLock()
 {
@@ -790,11 +685,6 @@ DataPartsSharedLock::DataPartsSharedLock(DB::SharedMutex & data_parts_mutex_)
     ProfileEvents::increment(ProfileEvents::SharedPartsLocks);
 }
 
-void DataPartsSharedLock::unlock()
-{
-    lock.unlock();
-    hold_count.release();
-}
 
 DataPartsSharedLock::~DataPartsSharedLock()
 {
@@ -1037,7 +927,7 @@ MergeTreeData::MergeTreeData(
             bitmap_cache = ctx->getDeleteBitmapCache();
 
         unique_key_txn_manager = std::make_unique<UniqueKeyTxnManager>(
-            *this, std::make_shared<DeleteBitmapStore>(*this, std::move(bitmap_cache)));
+            std::make_shared<DeleteBitmapStore>(*this, std::move(bitmap_cache)));
     }
 
     String reason;
@@ -2480,10 +2370,8 @@ Block MergeTreeData::getBlockWithVirtualsForFilter(
 
 
 std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
-    const ActionsDAG & filter_actions_dag, ContextPtr local_context, const RangesInDataParts & parts, const DeleteBitmapSnapshot * uk_read_snapshot) const
+    const ActionsDAG & filter_actions_dag, ContextPtr local_context, const RangesInDataParts & parts) const
 {
-    chassert(!hasUniqueKey() || uk_read_snapshot);
-
     if (parts.empty())
         return 0;
 
@@ -2533,7 +2421,7 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     {
         if ((part_values.empty() || part_values.contains(part.data_part->name))
             && !partition_pruner.canBePruned(*part.data_part))
-            res += uk_read_snapshot ? uk_read_snapshot->liveRows(*part.data_part) : part.data_part->rows_count;
+            res += part.data_part->rows_count;
     }
     return res;
 }
@@ -3802,8 +3690,6 @@ MergeTreeData::~MergeTreeData()
     {
         tryLogCurrentException(log, "Failed to deactivate a background task");
     }
-
-    releaseTableDiskRoots();
 }
 
 void MergeTreeData::loadUnexpectedDataParts()
@@ -5163,30 +5049,6 @@ size_t MergeTreeData::clearPartsFromFilesystemAndRollbackIfError(const DataParts
 }
 
 /// ----- UNIQUE KEY -----
-
-DeleteBitmapSnapshotPtr MergeTreeData::makeDeleteBitmapSnapshot(CSN snapshot_csn) const
-{
-    return std::make_shared<const DeleteBitmapSnapshot>(uniqueKeyTxnManager().deleteBitmapStore(), snapshot_csn);
-}
-
-DeleteBitmapSnapshotPtr MergeTreeData::makeDeleteBitmapSnapshot(const ContextPtr & local_context) const
-{
-    /// An explicit transaction, or `implicit_transaction=1`, is already the pin.
-    if (auto txn = local_context->getCurrentTransaction())
-        return std::make_shared<const DeleteBitmapSnapshot>(uniqueKeyTxnManager().deleteBitmapStore(), txn->getSnapshot(), txn->tid);
-
-    /// Otherwise this read pins its own snapshot for as long as the returned value lives. Not
-    /// autocommit: nothing is written, and the holder's destructor rolls it back, which for a
-    /// read-only transaction is a list erase and no Keeper traffic.
-    auto txn = TransactionManager::instance().beginTransaction();
-    const CSN snapshot_csn = txn->getSnapshot();
-    auto pin = std::make_shared<const MergeTreeTransactionHolder>(txn, /*autocommit=*/false);
-
-    LOG_TRACE(log, "UNIQUE KEY READ: pinned csn {} on tid {} for the duration of the read",
-        snapshot_csn, txn->tid);
-
-    return std::make_shared<const DeleteBitmapSnapshot>(uniqueKeyTxnManager().deleteBitmapStore(), snapshot_csn, txn->tid, std::move(pin));
-}
 
 UniqueKeyTxnManager & MergeTreeData::uniqueKeyTxnManager() const
 {
@@ -6769,20 +6631,6 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         auto copy = getDefaultSettings();
         copy->applyChanges(new_changes, local_context, /*is_loading_from_existing_metadata=*/true);
         alter_effective_settings = std::move(copy);
-    }
-
-    if ((*settings_from_storage)[MergeTreeSetting::table_disk])
-    {
-        /// The roots of a `table_disk` table are taken when it is created, so its disks are fixed.
-        const auto & new_disk = (*alter_effective_settings)[MergeTreeSetting::disk];
-        const auto new_storage_policy = new_disk.changed
-            ? local_context->getStoragePolicyFromDisk(new_disk)
-            : local_context->getStoragePolicy((*alter_effective_settings)[MergeTreeSetting::storage_policy]);
-        if (new_storage_policy != getStoragePolicy())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "The disk of table {} with `table_disk = true` cannot be changed",
-                getStorageID().getNameForLogs());
     }
 
     /// A `Replicated` database runs the same ALTER again on every other replica. Only the first run of it,
@@ -9142,13 +8990,6 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorInPartitionForIn
     return DataPartsVector(
         data_parts_by_state_and_info.lower_bound(state_with_partition),
         data_parts_by_state_and_info.upper_bound(state_with_partition));
-}
-
-MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorInPartitionForInternalUsage(
-    const MergeTreeData::DataPartState & state, const String & partition_id) const
-{
-    auto lock = readLockParts();
-    return getDataPartsVectorInPartitionForInternalUsage(state, partition_id, lock);
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVectorInPartitions(ContextPtr local_context, const std::unordered_set<String> & partition_ids) const
@@ -14955,21 +14796,7 @@ MergeTreeData::createStorageSnapshot(const StorageMetadataPtr & metadata_snapsho
     auto snapshot_data = std::make_unique<SnapshotData>();
     snapshot_data->storage = shared_from_this();
 
-    /// No later than the part list, so every kill visible at the csn has its writer's part in the list.
-    if (metadata_snapshot->hasUniqueKey())
-        snapshot_data->uk_read_snapshot = makeDeleteBitmapSnapshot(query_context);
-
-    RangesInDataPartsPtr query_ranges;
-    DataPartsVectorPtr query_parts;
-    if (const auto & uk_read_snapshot = snapshot_data->uk_read_snapshot)
-    {
-        /// Not every Active part: a UNIQUE KEY commit publishes its part Active before its commit point.
-        auto parts = getVisibleDataPartsVector(uk_read_snapshot->snapshotCSN(), uk_read_snapshot->readerTID());
-        query_ranges = std::make_shared<const RangesInDataParts>(parts);
-        query_parts = std::make_shared<const DataPartsVector>(std::move(parts));
-    }
-    else
-        std::tie(query_ranges, query_parts) = getPossiblySharedVisibleDataPartsRanges(query_context);
+    auto [query_ranges, query_parts] = getPossiblySharedVisibleDataPartsRanges(query_context);
     snapshot_data->parts = query_ranges;
 
     auto parts_info = getPartsSnapshotInfo(*query_parts);

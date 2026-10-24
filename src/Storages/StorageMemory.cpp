@@ -174,7 +174,6 @@ public:
             new_data->rows -= rows_to_remove;
             new_data->bytes -= bytes_to_remove;
             new_data->blocks.erase(new_data->blocks.begin());
-            ++new_data->first_block_number;
         }
 
         checkTemporaryTableMemoryUsage(new_data->bytes);
@@ -243,8 +242,6 @@ StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & 
     /// The blocks and the row count come from the same version of `data`, so they are consistent.
     snapshot_data->blocks = std::shared_ptr<const Blocks>(current_data, &current_data->blocks);
     snapshot_data->rows = current_data->rows;
-    snapshot_data->generation = current_data->generation;
-    snapshot_data->first_block_number = current_data->first_block_number;
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(snapshot_data));
 }
 
@@ -275,12 +272,6 @@ SinkToStoragePtr StorageMemory::write(const ASTPtr & /*query*/, const StorageMet
     return std::make_shared<MemorySink>(*this, metadata_snapshot, context);
 }
 
-
-UInt64 StorageMemory::BlocksWithCounts::nextGeneration()
-{
-    static std::atomic<UInt64> next_generation{0};
-    return next_generation.fetch_add(1, std::memory_order_relaxed);
-}
 
 void StorageMemory::setData(std::unique_ptr<BlocksWithCounts> new_data)
 {
@@ -510,7 +501,6 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
                 new_data->rows -= rows_to_remove;
                 new_data->bytes -= bytes_to_remove;
                 new_data->blocks.erase(new_data->blocks.begin());
-                ++new_data->first_block_number;
             }
 
             setData(std::move(new_data));

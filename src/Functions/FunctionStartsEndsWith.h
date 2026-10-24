@@ -22,6 +22,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 struct NameStartsWith
@@ -113,16 +114,18 @@ public:
         return true;
     }
 
-    String getSignatureString() const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if constexpr (is_utf8)
-            return
-                "(String, String) -> UInt8"
-                " OR (Array, Array) -> UInt8";
-        else
-            return
-                "(StringOrFixedString, StringOrFixedString) -> UInt8"
-                " OR (Array, Array) -> UInt8";
+        if ((!is_utf8 && isStringOrFixedString(arguments[0]) && isStringOrFixedString(arguments[1]))
+            || (isString(arguments[0]) && isString(arguments[1])))
+            return std::make_shared<DataTypeUInt8>();
+
+        if (isArray(arguments[0]) && isArray(arguments[1]))
+            return std::make_shared<DataTypeUInt8>();
+
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Illegal types {} {} of arguments of function {}. Both must be String or Array",
+            arguments[0]->getName(), arguments[1]->getName(), getName());
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

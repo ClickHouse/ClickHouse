@@ -1,12 +1,10 @@
 #include <Analyzer/Passes/LogicalExpressionOptimizerPass.h>
 
-#include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/JoinNode.h>
-#include <Analyzer/LambdaNode.h>
 #include <Analyzer/Utils.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/NaNUtils.h>
@@ -1796,44 +1794,6 @@ public:
     /// a conjunct over these can't leave ON, and full_sorting_merge rejects it there
     TableExpressionNodes preserved_join_tables;
 
-    /// Whether the join may evaluate `node` with a preserved side: it reads a column of `preserved_join_tables` (constant folding in the
-    /// join can drop every other column), or no column outside lambda and `indexHint` arguments, as the join evaluates that on the left.
-    bool mayReadPreservedJoinTables(const QueryTreeNodePtr & node) const
-    {
-        if (preserved_join_tables.empty())
-            return false;
-
-        bool reads_other_table = false;
-        std::vector<const IQueryTreeNode *> nodes_to_process{node.get()};
-        while (!nodes_to_process.empty())
-        {
-            const auto * current = nodes_to_process.back();
-            nodes_to_process.pop_back();
-
-            if (const auto * column = current->as<ColumnNode>())
-            {
-                auto source = column->getColumnSourceOrNull();
-                if (source && source->getNodeType() == QueryTreeNodeType::LAMBDA_ARGS)
-                    continue;
-                if (std::ranges::contains(preserved_join_tables, source))
-                    return true;
-                reads_other_table = true;
-            }
-            else if (const auto * function = current->as<FunctionNode>())
-            {
-                if (function->getFunctionName() == "indexHint")
-                    continue;
-                for (const auto & argument : function->getArguments().getNodes())
-                    nodes_to_process.push_back(argument.get());
-            }
-            else if (const auto * lambda = current->as<LambdaNode>())
-            {
-                nodes_to_process.push_back(lambda->getExpression().get());
-            }
-        }
-        return !reads_other_table;
-    }
-
     bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
     {
         const auto * join_node = parent->as<JoinNode>();
@@ -2517,11 +2477,7 @@ private:
                                 ErrorCodes::LOGICAL_ERROR,
                                 "Inferred comparison {} has an inconsistent order domain",
                                 compare_function_name);
-                        /// A bound that may read the preserved side of an outer join can't leave ON, so it is derived only
-                        /// to expose a contradiction with a conjunct already written on that expression.
-                        const bool reads_preserved = mayReadPreservedJoinTables(left.node);
-                        if (!existing_plain_conjuncts.contains(QueryTreeNodePtr(and_node))
-                            && (!reads_preserved || derived_conjunct_filters.contains(left.node)))
+                        if (!existing_plain_conjuncts.contains(QueryTreeNodePtr(and_node)))
                         {
                             /// Do not append a derived conjunct implied by an existing or already-derived
                             /// one; contradictions are appended so the next pass folds the AND to `false`.
@@ -2535,7 +2491,8 @@ private:
                                 existing_plain_conjuncts.emplace(and_node);
                                 function_node.getArguments().getNodes().push_back(and_node);
                             }
-                            else if (add_result != AddComparisonFilterResult::ALWAYS_TRUE && !reads_preserved)
+                            else if (add_result != AddComparisonFilterResult::ALWAYS_TRUE
+                                     && !std::ranges::contains(preserved_join_tables, getExpressionSource(left.node).first))
                             {
                                 if (left.crosses_source)
                                 {
@@ -2544,11 +2501,10 @@ private:
                                     existing_plain_conjuncts.emplace(and_node);
                                     function_node.getArguments().getNodes().push_back(and_node);
                                 }
-                                else if (preserved_join_tables.empty() && existing_hint_conjuncts.emplace(and_node).second)
+                                else if (existing_hint_conjuncts.emplace(and_node).second)
                                 {
                                     /// Within one source it filters nothing beyond the original chain,
                                     /// so add it as `indexHint`: it still prunes, but does not execute.
-                                    /// Not in an outer join ON: the join evaluates the input-less `indexHint` with its left side.
                                     auto index_hint_node = std::make_shared<FunctionNode>("indexHint");
                                     index_hint_node->getArguments().getNodes().push_back(and_node);
                                     index_hint_node->resolveAsFunction(

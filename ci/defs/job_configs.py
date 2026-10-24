@@ -1813,8 +1813,7 @@ class JobConfigs:
         runs_on=["#from param"],
         command='python3 ./ci/jobs/performance_tests.py --test-options "{PARAMETER}"',
         # TODO: switch to stateless-test image
-        # Default seccomp blocks `io_uring` (`io_uring.xml`)
-        run_in_docker="clickhouse/performance-comparison+--security-opt seccomp=unconfined",
+        run_in_docker="clickhouse/performance-comparison",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./tests/performance/",
@@ -1859,8 +1858,7 @@ class JobConfigs:
         runs_on=["#from param"],
         command='python3 ./ci/jobs/performance_tests.py --test-options "{PARAMETER}"',
         # TODO: switch to stateless-test image
-        # Default seccomp blocks `io_uring` (`io_uring.xml`)
-        run_in_docker="clickhouse/performance-comparison+--security-opt seccomp=unconfined",
+        run_in_docker="clickhouse/performance-comparison",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./tests/performance/",
@@ -1924,18 +1922,6 @@ class JobConfigs:
             runs_on=RunnerLabels.FUNC_TESTER_ARM,
             requires=[ArtifactNames.CH_ARM_RELEASE],
         ),
-    )
-    # No `requires`: the wrapper downloads both binaries from S3.
-    nightly_extended_performance_jobs = Job.Config(
-        name=JobNames.PERFORMANCE,
-        runs_on=RunnerLabels.ARM_MEDIUM_STORAGE,
-        command='python3 ./ci/jobs/nightly_extended_performance.py --test-options "{PARAMETER}"',
-        # Default seccomp blocks `io_uring` (`io_uring.xml`)
-        run_in_docker="clickhouse/performance-comparison+--security-opt seccomp=unconfined",
-        timeout=16 * 3600,
-        result_name_for_cidb="Tests",
-    ).parametrize(
-        *[Job.ParamSet(parameter=f"arm_release, master_head, nightly, {batch}/4") for batch in range(1, 5)]
     )
     docs_job_mintlify = Job.Config(
         name=JobNames.DOCS_MINTLIFY,

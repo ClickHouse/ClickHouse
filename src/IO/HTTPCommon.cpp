@@ -121,7 +121,7 @@ Strings requestCredentialSecrets(const Poco::Net::HTTPRequest & request)
 
 void assertResponseIsOk(
     const String & uri, Poco::Net::HTTPResponse & response, ReadBuffer & body, const bool allow_redirects,
-    const Strings & response_secrets)
+    const Strings & body_secrets)
 {
     auto status = response.getStatus();
 
@@ -139,7 +139,7 @@ void assertResponseIsOk(
         std::string body_text;
         readStringUntilEOF(body_text, body);
 
-        throw HTTPException(code, uri, status, response.getReason(), body_text, response_secrets);
+        throw HTTPException(code, uri, status, response.getReason(), body_text, body_secrets);
     }
 }
 
@@ -149,29 +149,24 @@ Exception HTTPException::makeExceptionMessage(
     Poco::Net::HTTPResponse::HTTPStatus http_status,
     const std::string & reason,
     const std::string & body,
-    const Strings & response_secrets)
+    const Strings & body_secrets)
 {
     std::string masked_uri = uri;
     maskURICredentials(masked_uri);
 
-    /// The reason phrase and the body are remote content that can reflect the request's own credentials back (e.g. an
-    /// auth error naming the token). Scrub those exact credential strings, keeping the rest - a useful diagnostic that
-    /// does not carry a credential.
-    const auto scrub = [&](std::string text)
-    {
-        for (const auto & secret : response_secrets)
-        {
-            if (!secret.empty())
-                boost::replace_all(text, secret, "[HIDDEN]");
-        }
-        return text;
-    };
+    /// The response body is remote content that can reflect the request's own credentials back, which
+    /// a server may echo verbatim (e.g. an auth error naming the user). Scrub those exact credential
+    /// strings, keeping the rest of the body - a useful diagnostic that does not carry a credential.
+    std::string masked_body = body;
+    for (const auto & secret : body_secrets)
+        if (!secret.empty())
+            boost::replace_all(masked_body, secret, "[HIDDEN]");
 
     return Exception(code,
         "Received error from remote server {}. "
         "HTTP status code: {} '{}', "
         "body length: {} bytes, body: '{}'",
-        masked_uri, static_cast<int>(http_status), scrub(reason), body.length(), scrub(body));
+        masked_uri, static_cast<int>(http_status), reason, body.length(), masked_body);
 }
 
 }
