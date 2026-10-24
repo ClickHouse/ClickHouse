@@ -11,8 +11,6 @@ DROP TABLE IF EXISTS mem2;
 CREATE TABLE mem2 ( `k` UInt64, `v` String ) ENGINE = Join(ANY, RIGHT, k);
 INSERT INTO mem2 VALUES (1, 'A'), (2, 'B'), (3, 'B');
 
-SET enable_analyzer = 1;
-
 SELECT '-- no parallel replicas --';
 SELECT *
 FROM tab

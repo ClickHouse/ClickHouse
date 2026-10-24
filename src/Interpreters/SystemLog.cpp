@@ -1,4 +1,5 @@
 #include <Interpreters/SystemLog.h>
+#include <Interpreters/SystemLogSettingsFromConfig.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Daemon/BaseDaemon.h>
@@ -15,6 +16,9 @@
 #include <Common/StringUtils.h>
 #include <Core/ServerSettings.h>
 #include <Core/UUID.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeString.h>
 #include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/AsynchronousMetricLog.h>
 #include <Interpreters/BackupLog.h>
@@ -48,20 +52,25 @@
 #include <Interpreters/DeadLetterQueue.h>
 #include <Interpreters/SessionLog.h>
 #include <Interpreters/TextLog.h>
+#include <Interpreters/TraceCollector.h>
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/AggregatedZooKeeperLog.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTRenameQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTTTLElement.h>
 #include <Parsers/CommonParsers.h>
+#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserSetQuery.h>
@@ -133,6 +142,18 @@ void flushAsyncTextLogsIfPossible()
 /// `ALIAS` columns keep it query-compatible with the older `wide` schema.
 constexpr auto DEFAULT_METRIC_LOG_SCHEMA_TYPE = "bucketed";
 
+bool getSystemTableSkipAliasColumnsOption(const Poco::Util::AbstractConfiguration & config)
+{
+    if (config.has("system_tables.skip_alias_columns"))
+        return config.getBool("system_tables.skip_alias_columns");
+    if (config.has("default_system_log_flush_policy.skip_alias_columns"))
+    {
+        LOG_WARNING(getLogger("SystemLog"), "Using deprecated default_system_log_flush_policy.skip_alias_columns, please use system_tables.skip_alias_columns instead");
+        return config.getBool("default_system_log_flush_policy.skip_alias_columns");
+    }
+    return false;
+}
+
 /// The schema of `system.metric_log` configured in `config_prefix`.
 ///
 /// The `bucketed` schema is the default, but it needs two things that the configuration can take
@@ -144,12 +165,13 @@ constexpr auto DEFAULT_METRIC_LOG_SCHEMA_TYPE = "bucketed";
 /// - the bucketed `Map` serialization comes from the default table definition, and an explicit
 ///   `engine` in the configuration replaces it, which would give a table with the shape of the
 ///   `bucketed` schema but without the bucketed reads that motivate it.
+
 String getMetricLogSchemaType(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
     if (config.has(config_prefix + ".schema_type"))
         return config.getString(config_prefix + ".schema_type");
 
-    if (DefaultSystemLogFlushPolicy(config).shouldSkipAliasColumns())
+    if (getSystemTableSkipAliasColumnsOption(config))
         return "wide";
 
     if (config.has(config_prefix + ".engine"))
@@ -235,25 +257,24 @@ std::shared_ptr<TSystemLog> createSystemLog(
         log_settings.engine = "ENGINE = MergeTree";
 
         /// PARTITION expr is not necessary.
-        String partition_by = config.getString(config_prefix + ".partition_by", TSystemLog::getDefaultPartitionBy());
+        String partition_by = getSystemTableOption<std::string>("partition_by", config, config_prefix).value_or(TSystemLog::getDefaultPartitionBy());
         if (!partition_by.empty())
             log_settings.engine += " PARTITION BY (" + partition_by + ")";
 
         /// TTL expr is not necessary.
-        String ttl = config.getString(config_prefix + ".ttl", "");
+        String ttl = getSystemTableOption<std::string>("ttl", config, config_prefix).value_or(TSystemLog::getDefaultTTL());
         if (!ttl.empty())
             log_settings.engine += " TTL " + ttl;
 
         /// ORDER BY expr is necessary.
-        String order_by = config.getString(config_prefix + ".order_by", TSystemLog::getDefaultOrderBy());
+        String order_by = getSystemTableOption<std::string>("order_by", config, config_prefix).value_or(TSystemLog::getDefaultOrderBy());
         log_settings.engine += " ORDER BY (" + order_by + ")";
 
-        /// SETTINGS expr is not necessary.
-        ///   https://clickhouse.com/docs/reference/engines/table-engines/mergetree-family/mergetree#settings
-        ///
         /// STORAGE POLICY expr is retained for backward compatible.
-        String storage_policy = config.getString(config_prefix + ".storage_policy", "");
-        String settings = config.getString(config_prefix + ".settings", "");
+        String storage_policy = getSystemTableOption<std::string>("storage_policy", config, config_prefix).value_or("");
+        /// Optional SETTINGS expr.
+        String settings = getSystemTableOption<std::string>("settings", config, config_prefix).value_or("");
+
         /// Some logs add engine settings to the default table definition
         /// (e.g. the bucketed Map serialization for the 'bucketed' schema of metric_log).
         String merged_settings = TSystemLog::getDefaultEngineSettings();
@@ -345,34 +366,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
                             " at least one of 'merge_rotated_tables' and 'cluster' has to be specified");
     }
 
-    log_settings.queue_settings.flush_interval_milliseconds = config.getUInt64(config_prefix + ".flush_interval_milliseconds",
-                                                                               TSystemLog::getDefaultFlushIntervalMilliseconds());
-
-    log_settings.queue_settings.max_size_rows = config.getUInt64(config_prefix + ".max_size_rows",
-                                                                 TSystemLog::getDefaultMaxSize());
-
-    if (log_settings.queue_settings.max_size_rows < 1)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{0}.max_size_rows {1} should be 1 at least",
-                        config_prefix,
-                        log_settings.queue_settings.max_size_rows);
-
-    log_settings.queue_settings.reserved_size_rows = config.getUInt64(config_prefix + ".reserved_size_rows",
-                                                                      TSystemLog::getDefaultReservedSize());
-
-    if (log_settings.queue_settings.max_size_rows < log_settings.queue_settings.reserved_size_rows)
-    {
-         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                         "{0}.max_size_rows {1} should be greater or equal to {0}.reserved_size_rows {2}",
-                         config_prefix,
-                         log_settings.queue_settings.max_size_rows,
-                         log_settings.queue_settings.reserved_size_rows);
-    }
-
-    log_settings.queue_settings.buffer_size_rows_flush_threshold = config.getUInt64(config_prefix + ".buffer_size_rows_flush_threshold",
-                                                                                    log_settings.queue_settings.max_size_rows / 2);
-
-    log_settings.queue_settings.notify_flush_on_crash = config.getBool(config_prefix + ".flush_on_crash",
-                                                                       TSystemLog::shouldNotifyFlushOnCrash());
+    readSystemLogQueueSettingsFromConfig<TSystemLog>(log_settings.queue_settings, config, config_prefix);
 
     if constexpr (std::is_same_v<TSystemLog, TraceLog>)
         log_settings.symbolize_traces = config.getBool(config_prefix + ".symbolize", true);
@@ -669,6 +663,10 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
         if (text_log)
             flushAsyncTextLogsIfPossible();
 
+        /// Not at shutdown (`ignore_errors`), which a stuck collector would delay.
+        if (trace_log && !ignore_errors)
+            TraceCollector::flush();
+
         for (auto * log : getAllLogs())
         {
             log->flushBufferToLog(std::chrono::system_clock::now());
@@ -733,6 +731,8 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
 
             if (log == text_log.get())
                 flushAsyncTextLogsIfPossible();
+            else if (log == trace_log.get())
+                TraceCollector::flush();
 
             log->flushBufferToLog(std::chrono::system_clock::now());
 
@@ -828,7 +828,7 @@ SystemLog<LogElement>::SystemLog(
     , storage_def(settings_.engine)
     , union_table_merge_rotated_tables(settings_.union_table_merge_rotated_tables)
     , union_table_cluster(settings_.union_table_cluster)
-    , flush_policy(std::make_unique<DefaultSystemLogFlushPolicy>(context_->getConfigRef()))
+    , flush_policy(std::make_unique<DefaultSystemLogFlushPolicy>(getSystemTableSkipAliasColumnsOption(context_->getConfigRef())))
 {
     for (const auto * column : {"clickhouse_version", "system_processor"})
         if (!LogElement::getColumnsDescription().has(column))
@@ -1370,6 +1370,36 @@ void SystemLog<LogElement>::addSettingsForQuery(ContextMutablePtr & mutable_cont
     }
 }
 
+/// Replace references to ALIAS columns with their expressions.
+static void replaceAliasColumns(ASTPtr & ast, const std::unordered_map<String, ASTPtr> & alias_expressions)
+{
+    if (const auto * identifier = ast->as<ASTIdentifier>())
+    {
+        if (auto it = alias_expressions.find(identifier->name()); it != alias_expressions.end())
+            ast = it->second->clone();
+        return;
+    }
+
+    /// `TTL ... GROUP BY key SET column = expr` keeps the keys and assignments outside `children`.
+    if (auto * ttl_element = ast->as<ASTTTLElement>())
+    {
+        for (auto & key : ttl_element->group_by_key)
+            replaceAliasColumns(key, alias_expressions);
+        for (auto & assignment : ttl_element->group_by_assignments)
+            replaceAliasColumns(assignment, alias_expressions);
+    }
+    /// The assigned column is a name, not an expression, so only an alias to a renamed column can be mapped.
+    else if (auto * assignment = ast->as<ASTAssignment>())
+    {
+        if (auto it = alias_expressions.find(assignment->column_name); it != alias_expressions.end())
+            if (const auto * target = it->second->as<ASTIdentifier>())
+                assignment->column_name = target->name();
+    }
+
+    for (auto & child : ast->children)
+        replaceAliasColumns(child, alias_expressions);
+}
+
 template <typename LogElement>
 ASTPtr SystemLog<LogElement>::getCreateTableQuery()
 {
@@ -1383,7 +1413,7 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
     auto alias_columns = LogElement::getNamesAndAliases();
     /// S3-backed engines do not support alias columns; `shouldSkipAliasColumns` returns
     /// `true` for `SharedSystemLogFlushPolicy` and for `DefaultSystemLogFlushPolicy` when
-    /// `default_system_log_flush_policy.skip_alias_columns` is set to `true` in config.
+    /// `system_tables.skip_alias_columns` is set to `true` in config.
     if (flush_policy->shouldSkipAliasColumns())
     {
         /// Some logs keep their user-facing interface only in the alias columns
@@ -1395,7 +1425,7 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "The table {} cannot be created without alias columns, but they are disabled "
                     "(the storage does not support them, or "
-                    "`default_system_log_flush_policy.skip_alias_columns` is set in the configuration). "
+                    "`system_tables.skip_alias_columns` is set in the configuration). "
                     "Use another schema of this table",
                     table_id.getFullTableName());
     }
@@ -1418,6 +1448,35 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
     /// does not emit those artificial wrapping parens in `system.tables.engine_full`.
     if (auto * storage = storage_with_comment.storage->as<ASTStorage>())
     {
+        /// Key and TTL expressions cannot use ALIAS columns, while the configuration may
+        /// still reference renamed columns that are kept as aliases for compatibility
+        /// (e.g. `finish_date` in `system.opentelemetry_span_log`), so replace them with
+        /// the aliased expressions.
+        if (!alias_columns.empty())
+        {
+            std::unordered_map<String, ASTPtr> alias_expressions;
+            ParserExpression expression_parser;
+            for (const auto & alias : alias_columns)
+                alias_expressions[alias.name] = parseQuery(expression_parser, alias.expression,
+                    "expression for alias column " + backQuote(alias.name),
+                    0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+
+            auto replace_aliases = [&](IAST *& key)
+            {
+                if (!key)
+                    return;
+                ASTPtr new_key = key->ptr();
+                replaceAliasColumns(new_key, alias_expressions);
+                if (new_key.get() != key)
+                    storage->replace(key, new_key);
+            };
+            replace_aliases(storage->partition_by);
+            replace_aliases(storage->order_by);
+            replace_aliases(storage->primary_key);
+            replace_aliases(storage->sample_by);
+            replace_aliases(storage->ttl_table);
+        }
+
         if (storage->partition_by)
             storage->partition_by->setParenthesized(false);
         if (storage->order_by)
@@ -1492,6 +1551,15 @@ ASTPtr SystemLog<LogElement>::getCreateUnionTableQuery()
     auto alias_columns = LogElement::getNamesAndAliases();
     if constexpr (std::is_same_v<LogElement, BucketedMetricLogElement>)
     {
+        /// The `Enum16` keys of `metrics` are numbered by the position of a metric, which changes between versions,
+        /// and a cast between two such enums fails or relabels the keys. A `String` key is cast by name.
+        ordinary_columns.modify("metrics", [](ColumnDescription & column)
+        {
+            const auto & map_type = typeid_cast<const DataTypeMap &>(*column.type);
+            column.type = std::make_shared<DataTypeMap>(
+                std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), map_type.getValueType());
+        });
+
         /// The per-metric columns of the `bucketed` schema are `ALIAS metrics['...']`, while the rotated
         /// tables of the `wide` schema (which was the default before) have them as ordinary columns and
         /// have no `metrics` column at all. An `ALIAS` in the union table would be expanded before reading
