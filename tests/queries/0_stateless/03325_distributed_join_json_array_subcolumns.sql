@@ -1,5 +1,4 @@
 SET enable_json_type=1;
-SET allow_experimental_analyzer=1;
 
 DROP TABLE IF EXISTS test_distr;
 DROP TABLE IF EXISTS test;
